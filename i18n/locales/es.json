@@ -1,0 +1,125 @@
+{
+  "app": {
+    "title": "CREUP Asambleas",
+    "description": "Plataforma interna de gestión de asambleas de la CREUP"
+  },
+  "common": {
+    "save": "Guardar",
+    "cancel": "Cancelar",
+    "delete": "Eliminar",
+    "edit": "Editar",
+    "create": "Crear",
+    "back": "Volver",
+    "search": "Buscar",
+    "loading": "Cargando...",
+    "noResults": "No se encontraron resultados",
+    "confirm": "Confirmar",
+    "close": "Cerrar",
+    "actions": "Acciones",
+    "status": "Estado",
+    "type": "Tipo",
+    "date": "Fecha",
+    "yes": "Sí",
+    "no": "No"
+  },
+  "auth": {
+    "signIn": "Iniciar sesión",
+    "signInWithGoogle": "Iniciar sesión con Google",
+    "signOut": "Cerrar sesión",
+    "unauthorized": "No tienes permisos para acceder a esta página",
+    "sessionExpired": "Tu sesión ha expirado. Inicia sesión de nuevo."
+  },
+  "nav": {
+    "assemblies": "Asambleas",
+    "admin": "Administración"
+  },
+  "roles": {
+    "admin": "Administrador",
+    "secretaria": "Secretaría",
+    "moderador": "Moderador",
+    "asociado": "Asociado",
+    "invitado": "Invitado"
+  },
+  "permissions": {
+    "descriptions": {
+      "userManageRoles": "Gestionar roles de usuarios",
+      "roleManagePermissions": "Editar matriz de permisos de roles",
+      "assemblyCreate": "Crear asambleas",
+      "assemblyManage": "Editar asambleas y cambiar estado",
+      "documentCreate": "Crear y presentar documentos",
+      "documentManage": "Editar, eliminar y aceptar documentos",
+      "amendmentCreate": "Crear y presentar enmiendas",
+      "amendmentManage": "Editar enmiendas propias en borrador",
+      "amendmentReview": "Validar, rechazar o marcar enmiendas como de forma",
+      "assemblyVoteResult": "Registrar resultado de votación en asamblea"
+    }
+  },
+  "assembly": {
+    "title": "Asambleas",
+    "create": "Crear asamblea",
+    "number": "Número",
+    "type": "Tipo",
+    "status": "Estado",
+    "startDate": "Fecha de inicio",
+    "endDate": "Fecha de fin",
+    "location": "Lugar",
+    "types": {
+      "AGO": "Asamblea General Ordinaria",
+      "AGE": "Asamblea General Extraordinaria",
+      "AGET": "Asamblea General Extraordinaria Telemática"
+    },
+    "statuses": {
+      "draft": "Borrador",
+      "provisional": "Provisional",
+      "definitive": "Definitivo"
+    }
+  },
+  "document": {
+    "title": "Documentos",
+    "create": "Crear documento",
+    "types": {
+      "platform": "Plataforma",
+      "pdf": "PDF"
+    },
+    "statuses": {
+      "draft": "Borrador",
+      "pending_review": "Pendiente de revisión",
+      "accepted": "Aceptado"
+    }
+  },
+  "amendment": {
+    "title": "Enmiendas",
+    "create": "Crear enmienda",
+    "justification": "Justificación",
+    "statuses": {
+      "draft": "Borrador",
+      "pending_review": "Pendiente de revisión",
+      "rejected_secretaria": "Rechazada por Secretaría",
+      "formal": "De forma",
+      "accepted_secretaria": "Validada por Secretaría",
+      "accepted_proponent": "Aceptada por proponente",
+      "rejected_proponent": "Rechazada por proponente",
+      "approved_vote": "Aprobada en votación",
+      "rejected_vote": "Rechazada en votación"
+    }
+  },
+  "admin": {
+    "title": "Administración",
+    "users": {
+      "title": "Usuarios",
+      "changeRole": "Cambiar rol",
+      "noUsers": "No hay usuarios registrados"
+    },
+    "roles": {
+      "title": "Roles",
+      "permissions": "Permisos",
+      "editPermissions": "Editar permisos"
+    }
+  },
+  "errors": {
+    "notFound": "Página no encontrada",
+    "forbidden": "No tienes permisos para realizar esta acción",
+    "serverError": "Error del servidor. Inténtalo de nuevo.",
+    "conflict": "El registro ha sido modificado por otro usuario. Recarga la página."
+  }
+}

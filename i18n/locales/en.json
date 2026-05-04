@@ -1,0 +1,125 @@
+{
+  "app": {
+    "title": "CREUP Assemblies",
+    "description": "CREUP internal assembly management platform"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "back": "Back",
+    "search": "Search",
+    "loading": "Loading...",
+    "noResults": "No results found",
+    "confirm": "Confirm",
+    "close": "Close",
+    "actions": "Actions",
+    "status": "Status",
+    "type": "Type",
+    "date": "Date",
+    "yes": "Yes",
+    "no": "No"
+  },
+  "auth": {
+    "signIn": "Sign in",
+    "signInWithGoogle": "Sign in with Google",
+    "signOut": "Sign out",
+    "unauthorized": "You do not have permission to access this page",
+    "sessionExpired": "Your session has expired. Please sign in again."
+  },
+  "nav": {
+    "assemblies": "Assemblies",
+    "admin": "Admin"
+  },
+  "roles": {
+    "admin": "Administrator",
+    "secretaria": "Secretariat",
+    "moderador": "Moderator",
+    "asociado": "Member",
+    "invitado": "Guest"
+  },
+  "permissions": {
+    "descriptions": {
+      "userManageRoles": "Manage user roles",
+      "roleManagePermissions": "Edit role permission matrix",
+      "assemblyCreate": "Create assemblies",
+      "assemblyManage": "Edit assemblies and change status",
+      "documentCreate": "Create and submit documents",
+      "documentManage": "Edit, delete, and accept documents",
+      "amendmentCreate": "Create and submit amendments",
+      "amendmentManage": "Edit own draft amendments",
+      "amendmentReview": "Validate, reject, or mark amendments as formal",
+      "assemblyVoteResult": "Record assembly vote result"
+    }
+  },
+  "assembly": {
+    "title": "Assemblies",
+    "create": "Create assembly",
+    "number": "Number",
+    "type": "Type",
+    "status": "Status",
+    "startDate": "Start date",
+    "endDate": "End date",
+    "location": "Location",
+    "types": {
+      "AGO": "Ordinary General Assembly",
+      "AGE": "Extraordinary General Assembly",
+      "AGET": "Telematic Extraordinary General Assembly"
+    },
+    "statuses": {
+      "draft": "Draft",
+      "provisional": "Provisional",
+      "definitive": "Definitive"
+    }
+  },
+  "document": {
+    "title": "Documents",
+    "create": "Create document",
+    "types": {
+      "platform": "Platform",
+      "pdf": "PDF"
+    },
+    "statuses": {
+      "draft": "Draft",
+      "pending_review": "Pending review",
+      "accepted": "Accepted"
+    }
+  },
+  "amendment": {
+    "title": "Amendments",
+    "create": "Create amendment",
+    "justification": "Justification",
+    "statuses": {
+      "draft": "Draft",
+      "pending_review": "Pending review",
+      "rejected_secretaria": "Rejected by Secretariat",
+      "formal": "Formal",
+      "accepted_secretaria": "Validated by Secretariat",
+      "accepted_proponent": "Accepted by proponent",
+      "rejected_proponent": "Rejected by proponent",
+      "approved_vote": "Approved by vote",
+      "rejected_vote": "Rejected by vote"
+    }
+  },
+  "admin": {
+    "title": "Admin",
+    "users": {
+      "title": "Users",
+      "changeRole": "Change role",
+      "noUsers": "No registered users"
+    },
+    "roles": {
+      "title": "Roles",
+      "permissions": "Permissions",
+      "editPermissions": "Edit permissions"
+    }
+  },
+  "errors": {
+    "notFound": "Page not found",
+    "forbidden": "You do not have permission to perform this action",
+    "serverError": "Server error. Please try again.",
+    "conflict": "This record has been modified by another user. Please reload the page."
+  }
+}
