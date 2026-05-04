@@ -31,7 +31,15 @@
   },
   "nav": {
     "assemblies": "Assemblies",
-    "admin": "Admin"
+    "admin": "Admin",
+    "dashboard": "Dashboard"
+  },
+  "accessibility": {
+    "skipToNavigation": "Skip to navigation",
+    "skipToMain": "Skip to main content",
+    "collapseSidebar": "Collapse sidebar",
+    "expandSidebar": "Expand sidebar",
+    "closeSidebar": "Close sidebar"
   },
   "roles": {
     "admin": "Administrator",
@@ -105,15 +113,26 @@
   },
   "admin": {
     "title": "Admin",
+    "dashboard": "Admin dashboard",
+    "viewSite": "View site",
     "users": {
       "title": "Users",
       "changeRole": "Change role",
-      "noUsers": "No registered users"
+      "roleChanged": "Role updated successfully",
+      "cannotChangeSelf": "You cannot change your own role",
+      "noUsers": "No registered users",
+      "email": "Email",
+      "role": "Role",
+      "university": "University",
+      "lastSync": "Last sync",
+      "registeredAt": "Registered"
     },
     "roles": {
       "title": "Roles",
       "permissions": "Permissions",
-      "editPermissions": "Edit permissions"
+      "editPermissions": "Edit permissions",
+      "permissionsUpdated": "Permissions updated successfully",
+      "adminPermissionsLocked": "Admin role permissions cannot be modified"
     }
   },
   "errors": {
