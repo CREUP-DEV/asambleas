@@ -1,8 +1,8 @@
-const LOGIN_PATH = "/login";
 const SESSION_RECHECK_INTERVAL_MS = 2 * 60 * 1000;
+const LOGIN_ROUTE_PATTERN = /^(\/[a-z]{2})?\/login$/;
 
 export default defineNuxtRouteMiddleware(async (to) => {
-  if (to.path === LOGIN_PATH) {
+  if (LOGIN_ROUTE_PATTERN.test(to.path)) {
     return;
   }
 
@@ -22,9 +22,17 @@ export default defineNuxtRouteMiddleware(async (to) => {
     });
     sessionVerified.value = true;
     lastCheckedAt.value = Date.now();
+
+    const { fetchPermissions, loaded } = usePermissions();
+    if (!loaded.value) {
+      await fetchPermissions();
+    }
   } catch {
     sessionVerified.value = false;
     lastCheckedAt.value = 0;
-    return navigateTo(LOGIN_PATH);
+    return navigateTo({
+      path: "/login",
+      query: to.fullPath !== "/" ? { redirect: to.fullPath } : undefined,
+    });
   }
 });

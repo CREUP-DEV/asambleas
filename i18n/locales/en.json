@@ -20,7 +20,9 @@
     "type": "Type",
     "date": "Date",
     "yes": "Yes",
-    "no": "No"
+    "no": "No",
+    "previous": "Previous",
+    "next": "Next"
   },
   "auth": {
     "signIn": "Sign in",
@@ -125,14 +127,21 @@
       "role": "Role",
       "university": "University",
       "lastSync": "Last sync",
-      "registeredAt": "Registered"
+      "registeredAt": "Registered",
+      "user": "User",
+      "description": "Manage users and assign roles",
+      "noRole": "No role",
+      "confirmRoleChange": "Confirm role change",
+      "confirmRoleChangeMessage": "Change {user}'s role to {role}?",
+      "page": "Page {page}"
     },
     "roles": {
       "title": "Roles",
       "permissions": "Permissions",
       "editPermissions": "Edit permissions",
       "permissionsUpdated": "Permissions updated successfully",
-      "adminPermissionsLocked": "Admin role permissions cannot be modified"
+      "adminPermissionsLocked": "Admin role permissions cannot be modified",
+      "description": "Configure role permissions"
     }
   },
   "errors": {

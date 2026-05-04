@@ -2,12 +2,12 @@ import { defineEventHandler, createError } from "h3";
 import { eq } from "drizzle-orm";
 import { db } from "../../../../db";
 import { roles, rolePermissions, permissions } from "../../../../db/schema";
+import { requireAdmin } from "../../../../utils/auth/rbac";
+import { validateCuid } from "../../../../utils/validation";
 
 export default defineEventHandler(async (event) => {
-  const roleId = getRouterParam(event, "id");
-  if (!roleId) {
-    throw createError({ statusCode: 400, message: "ID requerido" });
-  }
+  await requireAdmin(event);
+  const roleId = validateCuid(getRouterParam(event, "id"));
 
   const role = await db.query.roles.findFirst({
     where: eq(roles.id, roleId),

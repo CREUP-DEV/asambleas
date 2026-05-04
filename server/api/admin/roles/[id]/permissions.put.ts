@@ -5,17 +5,19 @@ import { db } from "../../../../db";
 import { roles, rolePermissions, permissions } from "../../../../db/schema";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import { ALL_PERMISSION_KEYS } from "~~/shared/constants/permissions";
-import { invalidatePermissionCache } from "../../../../utils/auth/rbac";
+import {
+  invalidatePermissionCache,
+  requireAdmin,
+} from "../../../../utils/auth/rbac";
+import { validateCuid } from "../../../../utils/validation";
 
 const bodySchema = z.object({
   permissionKeys: z.array(z.enum(ALL_PERMISSION_KEYS)),
 });
 
 export default defineEventHandler(async (event) => {
-  const roleId = getRouterParam(event, "id");
-  if (!roleId) {
-    throw createError({ statusCode: 400, message: "ID requerido" });
-  }
+  await requireAdmin(event);
+  const roleId = validateCuid(getRouterParam(event, "id"));
 
   const body = await readBody(event);
   const parsed = bodySchema.safeParse(body);

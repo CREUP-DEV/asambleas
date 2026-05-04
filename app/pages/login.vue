@@ -1,7 +1,13 @@
 <script setup lang="ts">
 const { t } = useI18n();
 const { signInWithGoogle } = useAuth();
+const route = useRoute();
 const isSigningIn = ref(false);
+
+const redirectPath = computed(() => {
+  const r = route.query.redirect;
+  return typeof r === "string" && r.startsWith("/") ? r : "/";
+});
 
 const handleGoogleSignIn = async () => {
   if (isSigningIn.value) {
@@ -11,7 +17,7 @@ const handleGoogleSignIn = async () => {
   isSigningIn.value = true;
 
   try {
-    await signInWithGoogle();
+    await signInWithGoogle(redirectPath.value);
   } finally {
     isSigningIn.value = false;
   }
@@ -27,7 +33,7 @@ useHead({
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center bg-elevated">
+  <main class="flex min-h-screen items-center justify-center bg-elevated">
     <UCard class="w-full max-w-sm">
       <template #header>
         <div class="text-center">
@@ -51,5 +57,5 @@ useHead({
         />
       </div>
     </UCard>
-  </div>
+  </main>
 </template>

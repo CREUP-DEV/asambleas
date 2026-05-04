@@ -3,18 +3,18 @@ import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "../../../../db";
 import { users, roles } from "../../../../db/schema";
+import { requireAdmin } from "../../../../utils/auth/rbac";
+import { isDefaultCuid, validateAuthId } from "../../../../utils/validation";
 
 import type { AuthEventContext } from "../../../../utils/auth/requireAuth";
 
 const bodySchema = z.object({
-  roleId: z.string().min(1),
+  roleId: z.string().refine(isDefaultCuid),
 });
 
 export default defineEventHandler(async (event) => {
-  const userId = getRouterParam(event, "id");
-  if (!userId) {
-    throw createError({ statusCode: 400, message: "ID requerido" });
-  }
+  await requireAdmin(event);
+  const userId = validateAuthId(getRouterParam(event, "id"));
 
   const body = await readBody(event);
   const parsed = bodySchema.safeParse(body);

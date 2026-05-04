@@ -33,28 +33,64 @@ interface RoleOption {
   name: string;
 }
 
+interface UsersResponse {
+  data: UserRow[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    hasNextPage: boolean;
+    hasPreviousPage: boolean;
+  };
+}
+
 const toast = useToast();
+const page = ref(1);
+const pageSize = 50;
 const {
   data: usersData,
   refresh: refreshUsers,
   status: usersStatus,
-} = await useFetch<{ data: UserRow[] }>("/api/admin/users");
+} = await useFetch<UsersResponse>("/api/admin/users", {
+  query: computed(() => ({ page: page.value, pageSize })),
+});
 
 const { data: rolesData } = await useFetch<{ data: RoleOption[] }>(
   "/api/admin/roles",
 );
 
 const users = computed(() => usersData.value?.data ?? []);
+const pagination = computed(() => usersData.value?.pagination);
 const roles = computed(() => rolesData.value?.data ?? []);
 const roleOptions = computed(() =>
   roles.value.map((r) => ({ label: r.name, value: r.id })),
 );
+
+const columns = [
+  { accessorKey: "name" as const, header: t("admin.users.user") },
+  { accessorKey: "role" as const, header: t("admin.users.role") },
+  { accessorKey: "university" as const, header: t("admin.users.university") },
+  { accessorKey: "createdAt" as const, header: t("admin.users.registeredAt") },
+];
 
 const changingRoleUserId = ref<string | null>(null);
 
 const getRoleOption = (roleId: string | null) => {
   return roleOptions.value.find((role) => role.value === roleId);
 };
+
+const pendingRoleChange = ref<{
+  userId: string;
+  userName: string;
+  roleName: string;
+  roleId: string;
+} | null>(null);
+
+const confirmModalOpen = computed({
+  get: () => pendingRoleChange.value !== null,
+  set: (val: boolean) => {
+    if (!val) pendingRoleChange.value = null;
+  },
+});
 
 const changeUserRole = async (userId: string, roleId: string) => {
   changingRoleUserId.value = userId;
@@ -80,24 +116,39 @@ const changeUserRole = async (userId: string, roleId: string) => {
   }
 };
 
-const handleRoleSelection = (userId: string, value: unknown) => {
+const handleRoleSelection = (
+  userId: string,
+  userName: string,
+  value: unknown,
+) => {
   const roleId =
     typeof value === "string" ? value : (value as { value?: string })?.value;
+  if (!roleId) return;
 
-  if (!roleId) {
-    return;
-  }
+  const role = roles.value.find((r) => r.id === roleId);
+  if (!role) return;
 
-  void changeUserRole(userId, roleId);
+  pendingRoleChange.value = { userId, userName, roleName: role.name, roleId };
 };
 
-const _columns = [
-  { key: "name", label: t("common.actions") },
-  { key: "email", label: t("admin.users.email") },
-  { key: "role", label: t("admin.users.role") },
-  { key: "university", label: t("admin.users.university") },
-  { key: "createdAt", label: t("admin.users.registeredAt") },
-];
+const confirmRoleChange = async () => {
+  if (!pendingRoleChange.value) return;
+  const { userId, roleId } = pendingRoleChange.value;
+  pendingRoleChange.value = null;
+  await changeUserRole(userId, roleId);
+};
+
+const goToPreviousPage = () => {
+  if (pagination.value?.hasPreviousPage) {
+    page.value -= 1;
+  }
+};
+
+const goToNextPage = () => {
+  if (pagination.value?.hasNextPage) {
+    page.value += 1;
+  }
+};
 </script>
 
 <template>
@@ -112,57 +163,118 @@ const _columns = [
       <p class="text-muted">{{ t("admin.users.noUsers") }}</p>
     </div>
 
-    <UTable v-else :data="users" class="mt-6">
-      <template #name-cell="{ row }">
-        <div class="flex items-center gap-3">
-          <img
-            v-if="row.original.image"
-            :src="row.original.image"
-            :alt="row.original.name"
-            class="size-8 rounded-full"
+    <template v-else>
+      <UTable
+        :data="users"
+        :columns="columns"
+        :aria-label="t('admin.users.title')"
+        class="mt-6"
+      >
+        <template #name-cell="{ row }">
+          <div class="flex items-center gap-3">
+            <img
+              v-if="row.original.image"
+              :src="row.original.image"
+              :alt="row.original.name"
+              class="size-8 rounded-full"
+            />
+            <div
+              v-else
+              class="bg-muted text-muted-foreground flex size-8 items-center justify-center rounded-full text-xs font-semibold"
+            >
+              {{
+                row.original.externalInitials ||
+                row.original.name?.[0]?.toUpperCase() ||
+                "?"
+              }}
+            </div>
+            <div>
+              <p class="font-medium">{{ row.original.name }}</p>
+              <p class="text-muted text-xs">{{ row.original.email }}</p>
+            </div>
+          </div>
+        </template>
+
+        <template #role-cell="{ row }">
+          <USelectMenu
+            :model-value="getRoleOption(row.original.roleId)"
+            :items="roleOptions"
+            :loading="changingRoleUserId === row.original.id"
+            :placeholder="t('admin.users.noRole')"
+            class="w-40"
+            @update:model-value="
+              (val: unknown) =>
+                handleRoleSelection(row.original.id, row.original.name, val)
+            "
           />
-          <div
-            v-else
-            class="bg-muted text-muted-foreground flex size-8 items-center justify-center rounded-full text-xs font-semibold"
-          >
+        </template>
+
+        <template #university-cell="{ row }">
+          <span class="text-sm">{{ row.original.university || "—" }}</span>
+        </template>
+
+        <template #createdAt-cell="{ row }">
+          <span class="text-muted text-sm">
             {{
-              row.original.externalInitials ||
-              row.original.name?.[0]?.toUpperCase() ||
-              "?"
+              row.original.createdAt
+                ? new Date(row.original.createdAt).toLocaleDateString()
+                : "—"
             }}
-          </div>
-          <div>
-            <p class="font-medium">{{ row.original.name }}</p>
-            <p class="text-muted text-xs">{{ row.original.email }}</p>
-          </div>
+          </span>
+        </template>
+      </UTable>
+
+      <div class="mt-4 flex items-center justify-between gap-3">
+        <p class="text-muted text-sm">
+          {{ t("admin.users.page", { page: pagination?.page ?? page }) }}
+        </p>
+        <div class="flex gap-2">
+          <UButton
+            variant="soft"
+            color="neutral"
+            :disabled="!pagination?.hasPreviousPage"
+            @click="goToPreviousPage"
+          >
+            {{ t("common.previous") }}
+          </UButton>
+          <UButton
+            variant="soft"
+            color="neutral"
+            :disabled="!pagination?.hasNextPage"
+            @click="goToNextPage"
+          >
+            {{ t("common.next") }}
+          </UButton>
         </div>
-      </template>
+      </div>
+    </template>
 
-      <template #role-cell="{ row }">
-        <USelectMenu
-          :model-value="getRoleOption(row.original.roleId)"
-          :items="roleOptions"
-          :loading="changingRoleUserId === row.original.id"
-          class="w-40"
-          @update:model-value="
-            (val: unknown) => handleRoleSelection(row.original.id, val)
-          "
-        />
-      </template>
-
-      <template #university-cell="{ row }">
-        <span class="text-sm">{{ row.original.university || "—" }}</span>
-      </template>
-
-      <template #createdAt-cell="{ row }">
-        <span class="text-muted text-sm">
+    <UModal v-model:open="confirmModalOpen">
+      <div class="p-6">
+        <h3 class="text-lg font-semibold">
+          {{ t("admin.users.confirmRoleChange") }}
+        </h3>
+        <p class="text-muted mt-2 text-sm">
           {{
-            row.original.createdAt
-              ? new Date(row.original.createdAt).toLocaleDateString()
-              : "—"
+            t("admin.users.confirmRoleChangeMessage", {
+              user: pendingRoleChange?.userName,
+              role: pendingRoleChange?.roleName,
+            })
           }}
-        </span>
-      </template>
-    </UTable>
+        </p>
+        <div class="mt-4 flex justify-end gap-2">
+          <UButton variant="ghost" @click="pendingRoleChange = null">
+            {{ t("common.cancel") }}
+          </UButton>
+          <UButton
+            color="primary"
+            :loading="changingRoleUserId !== null"
+            @click="confirmRoleChange"
+          >
+            {{ t("common.confirm") }}
+          </UButton>
+        </div>
+      </div>
+    </UModal>
   </div>
 </template>

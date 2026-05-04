@@ -4,11 +4,13 @@ export const authClient = createAuthClient();
 
 export const useAuth = () => {
   const session = authClient.useSession();
+  const localePath = useLocalePath();
+  const { clear: clearPermissions } = usePermissions();
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (callbackURL = "/") => {
     return authClient.signIn.social({
       provider: "google",
-      callbackURL: "/",
+      callbackURL,
     });
   };
 
@@ -16,7 +18,8 @@ export const useAuth = () => {
     await authClient.signOut({
       fetchOptions: {
         onSuccess: () => {
-          navigateTo("/login");
+          clearPermissions();
+          navigateTo(localePath("/login"));
         },
       },
     });
