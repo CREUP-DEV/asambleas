@@ -1,5 +1,5 @@
 import { defineEventHandler } from "h3";
-import { attachAuthContext } from "../utils/auth/rbac";
+import { attachAuthContext, requireAdmin } from "../utils/auth/rbac";
 import {
   assertSameOriginMutation,
   ensureCsrfCookie,
@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
 
   assertSameOriginMutation(event);
   await attachAuthContext(event);
+  await requireAdmin(event);
   ensureCsrfCookie(event);
   assertCsrfMutation(event);
 });

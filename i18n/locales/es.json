@@ -31,7 +31,15 @@
   },
   "nav": {
     "assemblies": "Asambleas",
-    "admin": "Administración"
+    "admin": "Administración",
+    "dashboard": "Panel"
+  },
+  "accessibility": {
+    "skipToNavigation": "Ir al menú principal",
+    "skipToMain": "Ir al contenido principal",
+    "collapseSidebar": "Contraer menú lateral",
+    "expandSidebar": "Expandir menú lateral",
+    "closeSidebar": "Cerrar menú lateral"
   },
   "roles": {
     "admin": "Administrador",
@@ -105,15 +113,26 @@
   },
   "admin": {
     "title": "Administración",
+    "dashboard": "Panel de administración",
+    "viewSite": "Ver sitio",
     "users": {
       "title": "Usuarios",
       "changeRole": "Cambiar rol",
-      "noUsers": "No hay usuarios registrados"
+      "roleChanged": "Rol actualizado correctamente",
+      "cannotChangeSelf": "No puedes cambiar tu propio rol",
+      "noUsers": "No hay usuarios registrados",
+      "email": "Correo electrónico",
+      "role": "Rol",
+      "university": "Universidad",
+      "lastSync": "Última sincronización",
+      "registeredAt": "Registrado"
     },
     "roles": {
       "title": "Roles",
       "permissions": "Permisos",
-      "editPermissions": "Editar permisos"
+      "editPermissions": "Editar permisos",
+      "permissionsUpdated": "Permisos actualizados correctamente",
+      "adminPermissionsLocked": "Los permisos del rol Admin no se pueden modificar"
     }
   },
   "errors": {
