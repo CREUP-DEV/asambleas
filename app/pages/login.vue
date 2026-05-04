@@ -1,5 +1,21 @@
 <script setup lang="ts">
 const { t } = useI18n();
+const { signInWithGoogle } = useAuth();
+const isSigningIn = ref(false);
+
+const handleGoogleSignIn = async () => {
+  if (isSigningIn.value) {
+    return;
+  }
+
+  isSigningIn.value = true;
+
+  try {
+    await signInWithGoogle();
+  } finally {
+    isSigningIn.value = false;
+  }
+};
 
 definePageMeta({
   layout: false,
@@ -29,7 +45,9 @@ useHead({
           icon="i-tabler-brand-google"
           :label="t('auth.signInWithGoogle')"
           size="lg"
+          :loading="isSigningIn"
           block
+          @click="handleGoogleSignIn"
         />
       </div>
     </UCard>
