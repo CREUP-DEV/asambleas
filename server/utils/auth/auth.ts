@@ -73,7 +73,7 @@ export const auth = betterAuth({
         attributes: {
           httpOnly: true,
           secure: isProd,
-          sameSite: "strict" as const,
+          sameSite: "lax" as const,
           path: "/",
         },
       },

@@ -20,7 +20,9 @@
     "type": "Tipo",
     "date": "Fecha",
     "yes": "Sí",
-    "no": "No"
+    "no": "No",
+    "previous": "Anterior",
+    "next": "Siguiente"
   },
   "auth": {
     "signIn": "Iniciar sesión",
@@ -125,14 +127,21 @@
       "role": "Rol",
       "university": "Universidad",
       "lastSync": "Última sincronización",
-      "registeredAt": "Registrado"
+      "registeredAt": "Registrado",
+      "user": "Usuario",
+      "description": "Gestiona usuarios y asigna roles",
+      "noRole": "Sin rol",
+      "confirmRoleChange": "Confirmar cambio de rol",
+      "confirmRoleChangeMessage": "¿Cambiar el rol de {user} a {role}?",
+      "page": "Página {page}"
     },
     "roles": {
       "title": "Roles",
       "permissions": "Permisos",
       "editPermissions": "Editar permisos",
       "permissionsUpdated": "Permisos actualizados correctamente",
-      "adminPermissionsLocked": "Los permisos del rol Admin no se pueden modificar"
+      "adminPermissionsLocked": "Los permisos del rol Admin no se pueden modificar",
+      "description": "Configura permisos por rol"
     }
   },
   "errors": {

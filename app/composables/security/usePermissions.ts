@@ -39,12 +39,19 @@ export const usePermissions = () => {
   const isInvitado = computed(() => roleName.value === SYSTEM_ROLES.INVITADO);
   const isModerador = computed(() => roleName.value === SYSTEM_ROLES.MODERADOR);
 
+  const clear = () => {
+    permissions.value = [];
+    roleName.value = null;
+    loaded.value = false;
+  };
+
   return {
     permissions: readonly(permissions),
     roleName: readonly(roleName),
     loaded: readonly(loaded),
     fetchPermissions,
     hasPermission,
+    clear,
     isAdmin,
     isSecretaria,
     isAsociado,

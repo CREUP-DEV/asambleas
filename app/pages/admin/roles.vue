@@ -61,9 +61,9 @@ const loadRolePermissions = async (roleId: string) => {
 };
 
 onMounted(async () => {
-  for (const role of editableRoles.value) {
-    await loadRolePermissions(role.id);
-  }
+  await Promise.all(
+    editableRoles.value.map((role) => loadRolePermissions(role.id)),
+  );
 });
 
 const togglePermission = async (role: RoleRow, permissionKey: string) => {

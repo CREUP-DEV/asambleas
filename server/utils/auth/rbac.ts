@@ -4,7 +4,10 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { rolePermissions, permissions } from "../../db/schema";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
-import type { PermissionKey } from "~~/shared/constants/permissions";
+import {
+  ALL_PERMISSION_KEYS,
+  type PermissionKey,
+} from "~~/shared/constants/permissions";
 import {
   getAuthUserWithRole,
   requireAuth,
@@ -101,7 +104,7 @@ export async function attachAuthContext(event: H3Event): Promise<AuthSession> {
   }
 
   context.permissions = isAdmin(user.role.name)
-    ? []
+    ? (ALL_PERMISSION_KEYS as PermissionKey[])
     : await getUserPermissions(user.role.id);
 
   return session;

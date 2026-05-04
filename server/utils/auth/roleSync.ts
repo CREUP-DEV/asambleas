@@ -96,6 +96,15 @@ function resolveTargetRole(
   return null;
 }
 
+interface RoleSyncUpdate {
+  lastRoleSyncAt: Date;
+  externalRole?: string;
+  externalName?: string;
+  externalInitials?: string;
+  university?: string | null;
+  roleId?: string;
+}
+
 export async function syncUserRole(userId: string): Promise<void> {
   const user = await db.query.users.findFirst({
     where: eq(users.id, userId),
@@ -119,7 +128,7 @@ export async function syncUserRole(userId: string): Promise<void> {
     isNewUser && user.email.toLowerCase() === getInitialAdminEmail();
   const external = await fetchExternalRole(user.email);
 
-  const updateFields: Record<string, unknown> = {
+  const updateFields: RoleSyncUpdate = {
     lastRoleSyncAt: new Date(),
   };
 
