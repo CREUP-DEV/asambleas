@@ -117,7 +117,31 @@
     },
     "agenda": {
       "title": "Orden del día",
-      "pendingDescription": "La gestión del orden del día estará disponible en la fase 7."
+      "addItem": "Añadir punto",
+      "addSubItem": "Añadir subpunto",
+      "editItem": "Editar punto",
+      "deleteItem": "Eliminar punto",
+      "deleteItemConfirm": "¿Eliminar punto del orden del día?",
+      "deleteItemDescription": "Se eliminarán también todos los subpuntos y documentos asociados. Esta acción no se puede deshacer.",
+      "noItems": "No hay puntos en el orden del día.",
+      "rootLockedDefinitive": "No se pueden añadir, editar ni eliminar puntos raíz en una asamblea definitiva.",
+      "settings": "Configuración",
+      "allowDocumentSubmission": "Permitir presentación de documentos",
+      "documentSubmissionDeadline": "Plazo presentación documentos",
+      "allowAmendments": "Permitir enmiendas",
+      "amendmentDeadline": "Plazo enmiendas",
+      "itemTitle": "Título del punto",
+      "itemCreated": "Punto creado correctamente",
+      "itemUpdated": "Punto actualizado correctamente",
+      "itemDeleted": "Punto eliminado correctamente",
+      "reordered": "Orden actualizado",
+      "expanded": "Expandido",
+      "collapsed": "Contraído",
+      "expandItem": "Expandir punto",
+      "collapseItem": "Contraer punto",
+      "dragItem": "Arrastrar punto para reordenar",
+      "expandAll": "Expandir todo",
+      "collapseAll": "Contraer todo"
     },
     "filter": {
       "allStatuses": "Todos los estados"
