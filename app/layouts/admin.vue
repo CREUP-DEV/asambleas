@@ -1,24 +1,27 @@
 <script setup lang="ts">
-import type { NavigationMenuItem } from "@nuxt/ui";
+import type { DropdownMenuItem, NavigationMenuItem } from "@nuxt/ui";
 import { useMediaQuery } from "@vueuse/core";
 
 const { t } = useI18n();
 const { session, signOut } = useAuth();
 const localePath = useLocalePath();
-
 const route = useRoute();
-const isMobileSidebar = useMediaQuery("(max-width: 1023px)");
-const sidebarOpen = useState("admin-sidebar-open", () => true);
+const { currentLocale, localeMenuItems } = useLocaleSwitcher();
 
+const isMobileSidebar = useMediaQuery("(max-width: 1023px)");
+const sidebarOpen = useState("admin-sidebar-open", () => false);
 const avatarLoadFailed = ref(false);
+
+const userName = computed(
+  () => session.value.data?.user?.name || session.value.data?.user?.email || "",
+);
+
 const userInitials = computed(() => {
-  const name =
-    session.value.data?.user?.name?.trim() ||
-    session.value.data?.user?.email?.trim() ||
-    "A";
+  const name = userName.value || "A";
   return name
+    .trim()
     .split(/\s+/)
-    .map((w) => w[0])
+    .map((word) => word[0])
     .join("")
     .slice(0, 2)
     .toUpperCase();
@@ -97,6 +100,16 @@ const navigationItems = computed<NavigationMenuItem[][]>(() => [
   ],
 ]);
 
+const userMenuItems = computed<DropdownMenuItem[][]>(() => [
+  [
+    {
+      label: t("auth.signOut"),
+      icon: "i-tabler-logout",
+      onSelect: signOut,
+    },
+  ],
+]);
+
 useHead({
   titleTemplate: (titleChunk) =>
     titleChunk ? `${titleChunk} | ${t("admin.title")}` : t("admin.title"),
@@ -172,6 +185,7 @@ useHead({
               variant="ghost"
               class="absolute top-0 -right-1 shrink-0 lg:hidden"
               :aria-label="t('accessibility.closeSidebar')"
+              :title="t('accessibility.closeSidebar')"
               @click="close"
             />
           </div>
@@ -203,59 +217,84 @@ useHead({
                 state === 'expanded' ? 'gap-3' : 'justify-center',
               ]"
             >
-              <img
-                v-if="session.data?.user?.image && !avatarLoadFailed"
-                :src="session.data.user.image"
-                :alt="
-                  session.data.user.name
-                    ? `Avatar de ${session.data.user.name}`
-                    : 'Avatar'
-                "
-                class="size-8 shrink-0 rounded-full text-xs"
-                loading="eager"
-                decoding="async"
-                @error="avatarLoadFailed = true"
-              />
-              <div
-                v-else
-                class="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
-                aria-hidden="true"
-              >
-                {{ userInitials }}
-              </div>
-
-              <Transition
-                enter-active-class="transition-all duration-200 ease-out"
-                enter-from-class="opacity-0 -translate-x-1"
-                enter-to-class="opacity-100 translate-x-0"
-                leave-active-class="transition-all duration-150 ease-in"
-                leave-from-class="opacity-100 translate-x-0"
-                leave-to-class="opacity-0 -translate-x-1"
-              >
-                <div
-                  v-if="state === 'expanded'"
-                  class="flex min-w-0 flex-1 items-center gap-1"
+              <template v-if="state === 'expanded'">
+                <img
+                  v-if="session.data?.user?.image && !avatarLoadFailed"
+                  :src="session.data.user.image"
+                  :alt="t('accessibility.userAvatar', { user: userName })"
+                  class="size-8 shrink-0 rounded-full text-xs"
+                  loading="eager"
+                  decoding="async"
+                  @error="avatarLoadFailed = true"
+                />
+                <span
+                  v-else
+                  class="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+                  aria-hidden="true"
                 >
-                  <div class="min-w-0 flex-1">
-                    <p class="line-clamp-2 text-sm leading-tight font-medium">
-                      {{ session.data?.user?.name || t("admin.title") }}
-                    </p>
-                    <p class="text-muted truncate text-xs">
-                      {{ session.data?.user?.email }}
-                    </p>
-                  </div>
+                  {{ userInitials }}
+                </span>
 
-                  <UButton
-                    icon="i-tabler-logout"
-                    variant="ghost"
-                    class="shrink-0"
-                    size="sm"
-                    :title="t('auth.signOut')"
-                    :aria-label="t('auth.signOut')"
-                    @click="signOut"
+                <Transition
+                  enter-active-class="transition-all duration-200 ease-out"
+                  enter-from-class="opacity-0 -translate-x-1"
+                  enter-to-class="opacity-100 translate-x-0"
+                  leave-active-class="transition-all duration-150 ease-in"
+                  leave-from-class="opacity-100 translate-x-0"
+                  leave-to-class="opacity-0 -translate-x-1"
+                >
+                  <div
+                    v-if="state === 'expanded'"
+                    class="flex min-w-0 flex-1 items-center gap-1"
+                  >
+                    <div class="min-w-0 flex-1">
+                      <p class="line-clamp-2 text-sm leading-tight font-medium">
+                        {{ session.data?.user?.name || t("admin.title") }}
+                      </p>
+                      <p class="text-muted truncate text-xs">
+                        {{ session.data?.user?.email }}
+                      </p>
+                    </div>
+
+                    <UButton
+                      icon="i-tabler-logout"
+                      variant="ghost"
+                      class="shrink-0"
+                      size="sm"
+                      :title="t('auth.signOut')"
+                      :aria-label="t('auth.signOut')"
+                      @click="signOut"
+                    />
+                  </div>
+                </Transition>
+              </template>
+
+              <UDropdownMenu v-else :items="userMenuItems">
+                <UButton
+                  variant="ghost"
+                  color="neutral"
+                  class="rounded-full p-0"
+                  :aria-label="t('accessibility.userMenu')"
+                  :title="t('accessibility.userMenu')"
+                >
+                  <img
+                    v-if="session.data?.user?.image && !avatarLoadFailed"
+                    :src="session.data.user.image"
+                    :alt="t('accessibility.userAvatar', { user: userName })"
+                    class="size-8 shrink-0 rounded-full text-xs"
+                    loading="eager"
+                    decoding="async"
+                    @error="avatarLoadFailed = true"
                   />
-                </div>
-              </Transition>
+                  <span
+                    v-else
+                    class="bg-muted text-muted-foreground flex size-8 shrink-0 items-center justify-center rounded-full text-xs font-semibold"
+                    aria-hidden="true"
+                  >
+                    {{ userInitials }}
+                  </span>
+                </UButton>
+              </UDropdownMenu>
             </div>
 
             <template #fallback>
@@ -281,15 +320,16 @@ useHead({
         <header
           class="border-default flex h-(--ui-header-height) shrink-0 items-center gap-3 border-b px-4"
         >
-          <UButton
-            :icon="toggleSidebarIcon"
-            color="neutral"
-            variant="ghost"
-            class="shrink-0"
-            :aria-label="toggleSidebarLabel"
-            :title="toggleSidebarLabel"
-            @click="sidebarOpen = !sidebarOpen"
-          />
+          <UTooltip :text="toggleSidebarLabel">
+            <UButton
+              :icon="toggleSidebarIcon"
+              color="neutral"
+              variant="ghost"
+              class="shrink-0"
+              :aria-label="toggleSidebarLabel"
+              @click="sidebarOpen = !sidebarOpen"
+            />
+          </UTooltip>
 
           <Transition
             mode="out-in"
@@ -314,12 +354,22 @@ useHead({
 
           <UColorModeButton />
 
+          <UDropdownMenu :items="localeMenuItems">
+            <UButton
+              :icon="currentLocale?.icon"
+              color="neutral"
+              variant="ghost"
+              size="lg"
+              :aria-label="t('language.openMenu')"
+              :title="t('language.toggle')"
+            />
+          </UDropdownMenu>
+
           <UButton
             :to="localePath('/')"
             icon="i-tabler-external-link"
             variant="ghost"
             color="neutral"
-            size="sm"
           >
             {{ t("admin.viewSite") }}
           </UButton>

@@ -41,7 +41,17 @@
     "skipToMain": "Skip to main content",
     "collapseSidebar": "Collapse sidebar",
     "expandSidebar": "Expand sidebar",
-    "closeSidebar": "Close sidebar"
+    "closeSidebar": "Close sidebar",
+    "userAvatar": "{user}'s avatar",
+    "userMenu": "Open user menu"
+  },
+  "language": {
+    "toggle": "Change language",
+    "openMenu": "Open language selector",
+    "locales": {
+      "es": "Spanish",
+      "en": "English"
+    }
   },
   "roles": {
     "admin": "Administrator",

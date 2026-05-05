@@ -147,9 +147,9 @@ export default defineNuxtConfig({
   icon: {
     provider: "server",
     fallbackToApi: false,
-    collections: ["tabler", "lucide"],
+    collections: ["tabler", "circle-flags", "lucide"],
     serverBundle: {
-      collections: ["tabler", "lucide"],
+      collections: ["tabler", "circle-flags", "lucide"],
     },
   },
 
