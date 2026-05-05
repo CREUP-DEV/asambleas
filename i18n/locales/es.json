@@ -77,21 +77,50 @@
   "assembly": {
     "title": "Asambleas",
     "create": "Crear asamblea",
+    "edit": "Editar asamblea",
+    "delete": "Eliminar asamblea",
     "number": "Número",
+    "numberShort": "Nº",
     "type": "Tipo",
     "status": "Estado",
     "startDate": "Fecha de inicio",
     "endDate": "Fecha de fin",
     "location": "Lugar",
+    "noAssemblies": "No hay asambleas",
+    "noAssembliesDescription": "Crea la primera asamblea para comenzar.",
+    "deleteConfirm": "¿Eliminar asamblea?",
+    "deleteConfirmDescription": "Esta acción no se puede deshacer. Solo se pueden eliminar asambleas en estado borrador.",
+    "created": "Asamblea creada correctamente",
+    "updated": "Asamblea actualizada correctamente",
+    "deleted": "Asamblea eliminada correctamente",
+    "statusChanged": "Estado actualizado a {status}",
+    "changeStatus": "Cambiar estado",
+    "promoteToProvisional": "Publicar como provisional",
+    "promoteToDefinitive": "Marcar como definitivo",
+    "revertToProvisional": "Revertir a provisional",
+    "revertToDraft": "Revertir a borrador",
+    "onlyDraftDelete": "Solo se pueden eliminar asambleas en estado borrador",
     "types": {
       "AGO": "Asamblea General Ordinaria",
       "AGE": "Asamblea General Extraordinaria",
       "AGET": "Asamblea General Extraordinaria Telemática"
     },
+    "typesShort": {
+      "AGO": "AGO",
+      "AGE": "AGE",
+      "AGET": "AGET"
+    },
     "statuses": {
       "draft": "Borrador",
       "provisional": "Provisional",
       "definitive": "Definitivo"
+    },
+    "agenda": {
+      "title": "Orden del día",
+      "pendingDescription": "La gestión del orden del día estará disponible en la fase 7."
+    },
+    "filter": {
+      "allStatuses": "Todos los estados"
     }
   },
   "document": {
