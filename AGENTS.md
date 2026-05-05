@@ -109,13 +109,13 @@ If external API is unreachable: log warning, do NOT block sign-in. New user with
 
 ### Default permission assignments
 
-| Role | Permissions |
-|---|---|
-| Admin | All (bypass) |
+| Role       | Permissions                                                                                                                                    |
+| ---------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| Admin      | All (bypass)                                                                                                                                   |
 | Secretaría | assembly:create, assembly:manage, document:create, document:manage, amendment:create, amendment:manage, amendment:review, assembly:vote_result |
-| Asociado | document:create, amendment:create |
-| Moderador | (none — same as Invitado for now) |
-| Invitado | (none — view-only) |
+| Asociado   | document:create, amendment:create                                                                                                              |
+| Moderador  | (none — same as Invitado for now)                                                                                                              |
+| Invitado   | (none — view-only)                                                                                                                             |
 
 ### Permission keys
 
@@ -245,30 +245,30 @@ STEP 4 — Assembly vote result (recorded by Secretaría):
 
 **Visibility rules:**
 
-| Status | Visible to |
-|---|---|
-| draft (regular) | Submitter + Secretaría + Admin |
-| draft (transactional) | Submitter + Secretaría + Admin + all chain authors |
-| pending_review | Submitter + Secretaría + Admin |
-| rejected_secretaria | All authenticated |
-| formal | All authenticated (badge "De forma") |
-| accepted_secretaria | All authenticated |
-| accepted_proponent | All authenticated (badge "Aceptada por proponente") |
-| rejected_proponent | All authenticated (badge "Rechazada — Pendiente votación") |
-| approved_vote | All authenticated (badge "Aprobada en votación") |
-| rejected_vote | All authenticated (badge "Rechazada en votación") |
+| Status                | Visible to                                                 |
+| --------------------- | ---------------------------------------------------------- |
+| draft (regular)       | Submitter + Secretaría + Admin                             |
+| draft (transactional) | Submitter + Secretaría + Admin + all chain authors         |
+| pending_review        | Submitter + Secretaría + Admin                             |
+| rejected_secretaria   | All authenticated                                          |
+| formal                | All authenticated (badge "De forma")                       |
+| accepted_secretaria   | All authenticated                                          |
+| accepted_proponent    | All authenticated (badge "Aceptada por proponente")        |
+| rejected_proponent    | All authenticated (badge "Rechazada — Pendiente votación") |
+| approved_vote         | All authenticated (badge "Aprobada en votación")           |
+| rejected_vote         | All authenticated (badge "Rechazada en votación")          |
 
 ---
 
 ## Role Behavior Summary
 
-| Role | Can see | Can do |
-|---|---|---|
-| Admin | Everything | Everything |
-| Secretaría | Everything | Create/manage assemblies, documents, review amendments, record vote results |
-| Asociado | Assemblies (provisional+), documents (definitive), accepted amendments | Submit documents (where allowed, within deadline), submit/edit amendments (where allowed, within deadline) |
-| Moderador | Same as Invitado | Same as Invitado (to be expanded) |
-| Invitado | Assemblies (provisional+), documents (definitive), accepted amendments | Nothing (view only) |
+| Role       | Can see                                                                | Can do                                                                                                     |
+| ---------- | ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| Admin      | Everything                                                             | Everything                                                                                                 |
+| Secretaría | Everything                                                             | Create/manage assemblies, documents, review amendments, record vote results                                |
+| Asociado   | Assemblies (provisional+), documents (definitive), accepted amendments | Submit documents (where allowed, within deadline), submit/edit amendments (where allowed, within deadline) |
+| Moderador  | Same as Invitado                                                       | Same as Invitado (to be expanded)                                                                          |
+| Invitado   | Assemblies (provisional+), documents (definitive), accepted amendments | Nothing (view only)                                                                                        |
 
 **Single document shortcut:** if an agenda item has exactly 1 document, open it directly. If multiple, show list.
 
@@ -368,16 +368,16 @@ server/db/schema/
 docker compose up -d
 ```
 
-Services: PostgreSQL (5433) + Adminer (8089).
+Services: PostgreSQL (5432) + Adminer (8080).
 No Redis — pg-boss uses the main PostgreSQL database.
 
-Adminer: `http://localhost:8089`
+Adminer: `http://localhost:8080`
 - system: `PostgreSQL`, server: `postgres`, user/password/db: from `.env`
 
 ### App
 
 ```bash
-pnpm dev        # Start dev server (default port 3001)
+pnpm dev
 pnpm build
 pnpm preview
 pnpm lint

@@ -7,7 +7,7 @@ const isDev = process.env.NODE_ENV !== "production";
 
 const siteUrl =
   getOptionalConfigUrl(process.env.NUXT_SITE_URL, "NUXT_SITE_URL") ||
-  "http://localhost:3001";
+  "http://localhost:3000";
 const canonicalSiteUrl = siteUrl;
 const umamiHost = getOptionalConfigUrl(
   process.env.NUXT_PUBLIC_UMAMI_HOST,

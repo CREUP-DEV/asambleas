@@ -20,6 +20,8 @@ interface Document {
 const props = defineProps<{
   assemblyId: string;
   itemId: string;
+  assemblySlug?: string;
+  itemSlug?: string;
   canManage: boolean;
 }>();
 
@@ -28,6 +30,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const localePath = useLocalePath();
 const toast = useToast();
 
 const { data: documents, refresh } = await useFetch<Document[]>(
@@ -124,7 +127,11 @@ const statusColor = (status: string) => {
 
         <div class="min-w-0 flex-1">
           <NuxtLink
-            :to="`/asambleas/${assemblyId}/punto/${itemId}/documento/${doc.id}`"
+            :to="
+              localePath(
+                `/asambleas/${assemblySlug ?? assemblyId}/punto/${itemSlug ?? itemId}/documento/${doc.id}`,
+              )
+            "
             class="text-sm font-medium hover:underline"
           >
             {{ doc.title }}

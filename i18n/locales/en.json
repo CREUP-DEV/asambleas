@@ -3,6 +3,9 @@
     "title": "CREUP Assemblies",
     "description": "CREUP internal assembly management platform"
   },
+  "hero": {
+    "cta": "View Assemblies"
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",
@@ -32,6 +35,7 @@
     "sessionExpired": "Your session has expired. Please sign in again."
   },
   "nav": {
+    "home": "Home",
     "assemblies": "Assemblies",
     "admin": "Admin",
     "dashboard": "Dashboard"
@@ -80,7 +84,6 @@
     "edit": "Edit assembly",
     "delete": "Delete assembly",
     "number": "Number",
-    "numberShort": "No.",
     "type": "Type",
     "status": "Status",
     "startDate": "Start date",

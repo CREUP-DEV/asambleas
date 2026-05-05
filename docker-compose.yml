@@ -17,7 +17,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=es-ES"
     ports:
-      - "${POSTGRES_PORT:-5433}:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - creup_asambleas_postgres_data:/var/lib/postgresql
     healthcheck:
@@ -31,7 +31,7 @@ services:
     container_name: creup-asambleas-adminer
     restart: no
     ports:
-      - "${ADMINER_PORT:-8089}:8080"
+      - "${ADMINER_PORT:-8080}:8080"
     depends_on:
       postgres:
         condition: service_healthy

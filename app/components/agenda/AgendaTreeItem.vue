@@ -4,10 +4,12 @@ import {
   CSRF_COOKIE_NAME,
   CSRF_HEADER_NAME,
 } from "~~/shared/constants/security";
+import { buildAgendaItemSlug } from "~~/shared/utils/slug";
 
 const props = defineProps<{
   item: AgendaTreeNode;
   assemblyId: string;
+  assemblySlug: string;
   canManage: boolean;
   canDrag: boolean;
   isDefinitive: boolean;
@@ -152,7 +154,11 @@ const deleteItem = async () => {
       </template>
       <template v-else>
         <NuxtLink
-          :to="localePath(`/asambleas/${assemblyId}/punto/${item.id}`)"
+          :to="
+            localePath(
+              `/asambleas/${assemblySlug}/punto/${buildAgendaItemSlug(item)}`,
+            )
+          "
           class="flex-1 text-sm font-medium hover:underline"
           >{{ item.title }}</NuxtLink
         >
@@ -241,6 +247,7 @@ const deleteItem = async () => {
       v-if="expanded && item.children.length > 0"
       :items="item.children"
       :assembly-id="assemblyId"
+      :assembly-slug="assemblySlug"
       :can-manage="canManage"
       :is-definitive="isDefinitive"
       :parent-id="item.id"

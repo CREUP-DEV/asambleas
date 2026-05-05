@@ -57,10 +57,14 @@ const {
 const { data: rolesData } = await useFetch<{ data: RoleOption[] }>(
   "/api/admin/roles",
 );
+const { data: sessionData } = await useFetch<{
+  user: { id: string } | null;
+}>("/api/auth/session");
 
 const users = computed(() => usersData.value?.data ?? []);
 const pagination = computed(() => usersData.value?.pagination);
 const roles = computed(() => rolesData.value?.data ?? []);
+const currentUserId = computed(() => sessionData.value?.user?.id ?? null);
 const roleOptions = computed(() =>
   roles.value.map((r) => ({ label: r.name, value: r.id })),
 );
@@ -119,11 +123,20 @@ const changeUserRole = async (userId: string, roleId: string) => {
 const handleRoleSelection = (
   userId: string,
   userName: string,
+  currentRoleId: string | null,
   value: unknown,
 ) => {
   const roleId =
     typeof value === "string" ? value : (value as { value?: string })?.value;
-  if (!roleId) return;
+  if (!roleId || roleId === currentRoleId) return;
+
+  if (userId === currentUserId.value) {
+    toast.add({
+      title: t("admin.users.cannotChangeSelf"),
+      color: "error",
+    });
+    return;
+  }
 
   const role = roles.value.find((r) => r.id === roleId);
   if (!role) return;
@@ -200,17 +213,23 @@ const goToNextPage = () => {
             :model-value="getRoleOption(row.original.roleId)"
             :items="roleOptions"
             :loading="changingRoleUserId === row.original.id"
+            :disabled="row.original.id === currentUserId"
             :placeholder="t('admin.users.noRole')"
             class="w-40"
             @update:model-value="
               (val: unknown) =>
-                handleRoleSelection(row.original.id, row.original.name, val)
+                handleRoleSelection(
+                  row.original.id,
+                  row.original.name,
+                  row.original.roleId,
+                  val,
+                )
             "
           />
         </template>
 
         <template #university-cell="{ row }">
-          <span class="text-sm">{{ row.original.university || "—" }}</span>
+          <span class="text-sm">{{ row.original.university || "-" }}</span>
         </template>
 
         <template #createdAt-cell="{ row }">
@@ -218,7 +237,7 @@ const goToNextPage = () => {
             {{
               row.original.createdAt
                 ? new Date(row.original.createdAt).toLocaleDateString()
-                : "—"
+                : "-"
             }}
           </span>
         </template>
@@ -249,32 +268,34 @@ const goToNextPage = () => {
       </div>
     </template>
 
-    <UModal v-model:open="confirmModalOpen">
-      <div class="p-6">
-        <h3 class="text-lg font-semibold">
-          {{ t("admin.users.confirmRoleChange") }}
-        </h3>
-        <p class="text-muted mt-2 text-sm">
-          {{
-            t("admin.users.confirmRoleChangeMessage", {
-              user: pendingRoleChange?.userName,
-              role: pendingRoleChange?.roleName,
-            })
-          }}
-        </p>
-        <div class="mt-4 flex justify-end gap-2">
-          <UButton variant="ghost" @click="pendingRoleChange = null">
-            {{ t("common.cancel") }}
-          </UButton>
-          <UButton
-            color="primary"
-            :loading="changingRoleUserId !== null"
-            @click="confirmRoleChange"
-          >
-            {{ t("common.confirm") }}
-          </UButton>
+    <UModal
+      v-model:open="confirmModalOpen"
+      :title="t('admin.users.confirmRoleChange')"
+    >
+      <template #body>
+        <div v-if="pendingRoleChange">
+          <p class="text-muted mt-2 text-sm">
+            {{
+              t("admin.users.confirmRoleChangeMessage", {
+                user: pendingRoleChange.userName,
+                role: pendingRoleChange.roleName,
+              })
+            }}
+          </p>
+          <div class="mt-4 flex justify-end gap-2">
+            <UButton variant="ghost" @click="pendingRoleChange = null">
+              {{ t("common.cancel") }}
+            </UButton>
+            <UButton
+              color="primary"
+              :loading="changingRoleUserId !== null"
+              @click="confirmRoleChange"
+            >
+              {{ t("common.confirm") }}
+            </UButton>
+          </div>
         </div>
-      </div>
+      </template>
     </UModal>
   </div>
 </template>
