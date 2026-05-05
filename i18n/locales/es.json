@@ -41,7 +41,17 @@
     "skipToMain": "Ir al contenido principal",
     "collapseSidebar": "Contraer menú lateral",
     "expandSidebar": "Expandir menú lateral",
-    "closeSidebar": "Cerrar menú lateral"
+    "closeSidebar": "Cerrar menú lateral",
+    "userAvatar": "Avatar de {user}",
+    "userMenu": "Abrir menú de usuario"
+  },
+  "language": {
+    "toggle": "Cambiar idioma",
+    "openMenu": "Abrir selector de idioma",
+    "locales": {
+      "es": "Español",
+      "en": "Inglés"
+    }
   },
   "roles": {
     "admin": "Administrador",

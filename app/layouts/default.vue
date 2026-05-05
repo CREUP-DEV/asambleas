@@ -3,6 +3,7 @@ const { t } = useI18n();
 const localePath = useLocalePath();
 const { session, signOut } = useAuth();
 const { isAdmin } = usePermissions();
+const { currentLocale, localeMenuItems } = useLocaleSwitcher();
 
 const avatarLoadFailed = ref(false);
 const navigationItems = computed(() => [
@@ -87,6 +88,17 @@ useHead({
       <template #right>
         <UColorModeButton />
 
+        <UDropdownMenu :items="localeMenuItems">
+          <UButton
+            :icon="currentLocale?.icon"
+            color="neutral"
+            variant="ghost"
+            size="lg"
+            :aria-label="t('language.openMenu')"
+            :title="t('language.toggle')"
+          />
+        </UDropdownMenu>
+
         <ClientOnly>
           <UDropdownMenu
             :items="[
@@ -99,11 +111,20 @@ useHead({
               ],
             ]"
           >
-            <UButton variant="ghost" class="rounded-full p-0">
+            <UButton
+              variant="ghost"
+              class="rounded-full p-0"
+              :aria-label="t('accessibility.userMenu')"
+              :title="t('accessibility.userMenu')"
+            >
               <img
                 v-if="session.data?.user?.image && !avatarLoadFailed"
                 :src="session.data.user.image"
-                :alt="session.data?.user?.name || 'Avatar'"
+                :alt="
+                  t('accessibility.userAvatar', {
+                    user: session.data?.user?.name || session.data?.user?.email,
+                  })
+                "
                 class="size-8 rounded-full"
                 loading="eager"
                 @error="avatarLoadFailed = true"
