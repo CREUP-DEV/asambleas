@@ -3,24 +3,38 @@ const { t } = useI18n();
 const localePath = useLocalePath();
 
 useHead({
-  title: t("app.title"),
+  title: t("nav.home"),
 });
+
+const links = computed(() => [
+  {
+    label: t("hero.cta"),
+    to: localePath("/asambleas"),
+    trailingIcon: "i-tabler-arrow-right",
+    size: "xl" as const,
+  },
+]);
 </script>
 
 <template>
-  <UContainer class="py-8">
-    <div class="text-center">
-      <h1 class="text-3xl font-bold text-primary">
-        {{ t("app.title") }}
-      </h1>
-      <p class="mt-2 text-muted">
-        {{ t("app.description") }}
-      </p>
-      <div class="mt-6">
-        <UButton :to="localePath('/asambleas')" icon="i-tabler-gavel" size="lg">
-          {{ t("nav.assemblies") }}
-        </UButton>
+  <UPageHero
+    :title="t('app.title')"
+    :description="t('app.description')"
+    :links="links"
+  >
+    <template #headline>
+      <div class="flex w-full justify-center">
+        <img
+          src="/creup-site-header-logo-light.svg"
+          alt="CREUP"
+          class="h-12 w-auto sm:h-14 dark:hidden"
+        />
+        <img
+          src="/creup-site-header-logo-dark.svg"
+          alt="CREUP"
+          class="hidden h-12 w-auto sm:h-14 dark:block"
+        />
       </div>
-    </div>
-  </UContainer>
+    </template>
+  </UPageHero>
 </template>

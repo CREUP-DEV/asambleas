@@ -9,6 +9,7 @@ import {
   ASSEMBLY_STATUS_TRANSITIONS,
   type AssemblyStatus,
 } from "~~/shared/constants/statuses";
+import { buildAssemblySlug, formatAssemblyLabel } from "~~/shared/utils/slug";
 
 const { t, locale } = useI18n();
 const route = useRoute();
@@ -40,9 +41,8 @@ if (!assembly.value) {
 }
 
 useHead({
-  title: computed(
-    () =>
-      `${t("assembly.numberShort")} ${assembly.value?.number} — ${assembly.value ? t(`assembly.types.${assembly.value.type}`) : ""}`,
+  title: computed(() =>
+    assembly.value ? formatAssemblyLabel(assembly.value) : "",
   ),
 });
 
@@ -85,7 +85,7 @@ const changeStatus = async (newStatus: AssemblyStatus) => {
   statusLoading.value = true;
   try {
     const csrfToken = useCookie(CSRF_COOKIE_NAME).value;
-    await $fetch(`/api/assemblies/${id}/status`, {
+    await $fetch(`/api/assemblies/${assembly.value.id}/status`, {
       method: "PUT",
       body: {
         status: newStatus,
@@ -146,7 +146,7 @@ const submitEdit = async () => {
   editLoading.value = true;
   try {
     const csrfToken = useCookie(CSRF_COOKIE_NAME).value;
-    await $fetch(`/api/assemblies/${id}`, {
+    await $fetch(`/api/assemblies/${assembly.value.id}`, {
       method: "PUT",
       body: {
         number: editFormData.value.number,
@@ -181,7 +181,7 @@ const deleteAssembly = async () => {
   deleteLoading.value = true;
   try {
     const csrfToken = useCookie(CSRF_COOKIE_NAME).value;
-    await $fetch(`/api/assemblies/${id}`, {
+    await $fetch(`/api/assemblies/${assembly.value.id}`, {
       method: "DELETE",
       headers: csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : undefined,
     });
@@ -201,6 +201,12 @@ const deleteAssembly = async () => {
 
 const isDraft = computed(
   () => assembly.value?.status === ASSEMBLY_STATUSES.DRAFT,
+);
+const assemblySlug = computed(() =>
+  assembly.value ? buildAssemblySlug(assembly.value) : id,
+);
+const assemblyLabel = computed(() =>
+  assembly.value ? formatAssemblyLabel(assembly.value) : "",
 );
 </script>
 
@@ -225,7 +231,7 @@ const isDraft = computed(
             {{ t(`assembly.types.${assembly.type}`) }}
           </p>
           <h1 class="mt-1 text-3xl font-bold">
-            {{ t("assembly.numberShort") }} {{ assembly.number }}
+            {{ assemblyLabel }}
           </h1>
         </div>
 
@@ -304,6 +310,7 @@ const isDraft = computed(
         </h2>
         <AgendaTree
           :assembly-id="assembly.id"
+          :assembly-slug="assemblySlug"
           :assembly-status="assembly.status"
         />
       </div>

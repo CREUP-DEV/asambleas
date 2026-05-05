@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AssemblyStatus } from "~~/shared/constants/statuses";
+import { buildAssemblySlug, formatAssemblyLabel } from "~~/shared/utils/slug";
 
 interface Assembly {
   id: string;
@@ -28,17 +29,14 @@ const dateFormatter = computed(
 
 const formatDate = (d: string | Date) =>
   dateFormatter.value.format(new Date(d));
+const assemblyLabel = computed(() => formatAssemblyLabel(props.assembly));
 </script>
 
 <template>
   <NuxtLink
-    :to="localePath(`/asambleas/${props.assembly.id}`)"
+    :to="localePath(`/asambleas/${buildAssemblySlug(props.assembly)}`)"
     class="hover:bg-elevated block rounded-xl border p-5 transition-colors"
-    :aria-label="
-      t('assembly.typesShort.' + props.assembly.type) +
-      ' ' +
-      props.assembly.number
-    "
+    :aria-label="assemblyLabel"
   >
     <div class="flex items-start justify-between gap-3">
       <div class="min-w-0">
@@ -46,7 +44,7 @@ const formatDate = (d: string | Date) =>
           {{ t(`assembly.types.${props.assembly.type}`) }}
         </p>
         <h2 class="mt-0.5 text-lg font-semibold">
-          {{ t("assembly.numberShort") }} {{ props.assembly.number }}
+          {{ assemblyLabel }}
         </h2>
       </div>
       <AssemblyStatusBadge :status="props.assembly.status" />

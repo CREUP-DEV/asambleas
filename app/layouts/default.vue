@@ -70,9 +70,10 @@ useHead({
       <template #left>
         <NuxtLink
           :to="localePath('/')"
-          class="shrink-0 text-lg font-bold text-primary"
+          class="inline-flex h-10 shrink-0 items-center text-primary"
+          :aria-label="t('app.title')"
         >
-          {{ t("app.title") }}
+          <UIcon name="i-tabler-list-numbers" class="block size-7" />
         </NuxtLink>
 
         <nav

@@ -40,14 +40,14 @@ pnpm db:migrate
 # Sembrar roles y permisos de sistema
 pnpm db:seed
 
-# Arrancar servidor de desarrollo (puerto 3001)
+# Arrancar servidor de desarrollo
 pnpm dev
 ```
 
 ## Desarrollo
 
 ```bash
-pnpm dev           # Arrancar servidor de desarrollo (puerto 3001)
+pnpm dev           # Arrancar servidor de desarrollo
 pnpm build         # Compilar para producción
 pnpm preview       # Previsualizar build de producción
 pnpm lint          # Ejecutar ESLint
@@ -73,8 +73,8 @@ pnpm i18n:audit-identical   # Buscar traducciones idénticas
 
 ### Infraestructura
 
-- **PostgreSQL:** localhost:5433
-- **Adminer:** http://localhost:8089
+- **PostgreSQL:** localhost:5432
+- **Adminer:** http://localhost:8080
 
 ## Licencia
 

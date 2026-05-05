@@ -9,6 +9,7 @@ import {
 const props = defineProps<{
   items: AgendaTreeNode[];
   assemblyId: string;
+  assemblySlug: string;
   canManage: boolean;
   isDefinitive: boolean;
   parentId: string | null;
@@ -110,6 +111,7 @@ onUnmounted(() => {
       :key="item.id"
       :item="item"
       :assembly-id="assemblyId"
+      :assembly-slug="assemblySlug"
       :can-manage="canManage"
       :can-drag="canDrag"
       :is-definitive="isDefinitive"

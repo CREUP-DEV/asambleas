@@ -13,6 +13,7 @@ const itemId = route.params.itemId as string;
 
 interface AgendaItem {
   id: string;
+  assemblyId: string;
   title: string;
   order: number;
   parentId: string | null;
@@ -66,6 +67,8 @@ const canSubmit = computed(() => {
 const showCreate = computed(
   () => canManage.value || (canCreate.value && canSubmit.value),
 );
+const resolvedAssemblyId = computed(() => item.value?.assemblyId ?? assemblyId);
+const resolvedItemId = computed(() => item.value?.id ?? itemId);
 
 const createModalOpen = ref(false);
 
@@ -126,8 +129,10 @@ onMounted(async () => {
     </div>
 
     <DocumentList
-      :assembly-id="assemblyId"
-      :item-id="itemId"
+      :assembly-id="resolvedAssemblyId"
+      :item-id="resolvedItemId"
+      :assembly-slug="assemblyId"
+      :item-slug="itemId"
       :can-manage="canManage"
       @refresh="refreshDocs"
     />
@@ -139,8 +144,8 @@ onMounted(async () => {
     >
       <template #body>
         <DocumentForm
-          :assembly-id="assemblyId"
-          :item-id="itemId"
+          :assembly-id="resolvedAssemblyId"
+          :item-id="resolvedItemId"
           :allow-pdf="canManage"
           @saved="onDocSaved"
           @cancel="createModalOpen = false"

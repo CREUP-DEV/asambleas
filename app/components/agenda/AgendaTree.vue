@@ -10,6 +10,7 @@ import { ASSEMBLY_STATUSES } from "~~/shared/constants/statuses";
 
 const props = defineProps<{
   assemblyId: string;
+  assemblySlug?: string;
   assemblyStatus: string;
 }>();
 
@@ -110,6 +111,7 @@ const addRootItem = async () => {
       v-else
       :items="tree"
       :assembly-id="assemblyId"
+      :assembly-slug="assemblySlug ?? assemblyId"
       :can-manage="canManage"
       :is-definitive="isDefinitive"
       :parent-id="null"

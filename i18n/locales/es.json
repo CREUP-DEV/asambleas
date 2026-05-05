@@ -1,7 +1,10 @@
 {
   "app": {
-    "title": "CREUP Asambleas",
-    "description": "Plataforma interna de gestión de asambleas de la CREUP"
+    "title": "Asambleas CREUP",
+    "description": "Plataforma interna de gestión de asambleas de CREUP"
+  },
+  "hero": {
+    "cta": "Ver Asambleas"
   },
   "common": {
     "save": "Guardar",
@@ -32,6 +35,7 @@
     "sessionExpired": "Tu sesión ha expirado. Inicia sesión de nuevo."
   },
   "nav": {
+    "home": "Inicio",
     "assemblies": "Asambleas",
     "admin": "Administración",
     "dashboard": "Panel"
@@ -80,7 +84,6 @@
     "edit": "Editar asamblea",
     "delete": "Eliminar asamblea",
     "number": "Número",
-    "numberShort": "Nº",
     "type": "Tipo",
     "status": "Estado",
     "startDate": "Fecha de inicio",

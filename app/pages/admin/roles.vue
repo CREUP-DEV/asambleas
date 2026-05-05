@@ -106,7 +106,7 @@ const getPermissionLabel = (key: string) => {
 <template>
   <div>
     <h1 class="text-2xl font-bold">
-      {{ t("admin.roles.title") }} — {{ t("admin.roles.permissions") }}
+      {{ t("admin.roles.title") }} - {{ t("admin.roles.permissions") }}
     </h1>
 
     <p class="text-muted mt-1 text-sm">
@@ -114,10 +114,10 @@ const getPermissionLabel = (key: string) => {
     </p>
 
     <div class="mt-6 overflow-x-auto">
-      <table class="w-full text-sm">
+      <table class="w-full table-fixed text-sm">
         <thead>
           <tr class="border-default border-b">
-            <th class="p-3 text-left font-semibold">
+            <th class="w-[44%] p-3 text-left font-semibold">
               {{ t("admin.roles.permissions") }}
             </th>
             <th
@@ -141,15 +141,17 @@ const getPermissionLabel = (key: string) => {
             <td
               v-for="role in editableRoles"
               :key="role.id"
-              class="p-3 text-center"
+              class="p-3 align-middle"
             >
-              <UCheckbox
-                :model-value="
-                  (rolePermissionsMap[role.id] ?? []).includes(pKey)
-                "
-                :disabled="loadingRoleId === role.id"
-                @update:model-value="togglePermission(role, pKey)"
-              />
+              <div class="flex justify-center">
+                <UCheckbox
+                  :model-value="
+                    (rolePermissionsMap[role.id] ?? []).includes(pKey)
+                  "
+                  :disabled="loadingRoleId === role.id"
+                  @update:model-value="togglePermission(role, pKey)"
+                />
+              </div>
             </td>
           </tr>
         </tbody>
