@@ -77,21 +77,50 @@
   "assembly": {
     "title": "Assemblies",
     "create": "Create assembly",
+    "edit": "Edit assembly",
+    "delete": "Delete assembly",
     "number": "Number",
+    "numberShort": "No.",
     "type": "Type",
     "status": "Status",
     "startDate": "Start date",
     "endDate": "End date",
     "location": "Location",
+    "noAssemblies": "No assemblies",
+    "noAssembliesDescription": "Create the first assembly to get started.",
+    "deleteConfirm": "Delete assembly?",
+    "deleteConfirmDescription": "This action cannot be undone. Only draft assemblies can be deleted.",
+    "created": "Assembly created successfully",
+    "updated": "Assembly updated successfully",
+    "deleted": "Assembly deleted successfully",
+    "statusChanged": "Status updated to {status}",
+    "changeStatus": "Change status",
+    "promoteToProvisional": "Publish as provisional",
+    "promoteToDefinitive": "Mark as definitive",
+    "revertToProvisional": "Revert to provisional",
+    "revertToDraft": "Revert to draft",
+    "onlyDraftDelete": "Only draft assemblies can be deleted",
     "types": {
       "AGO": "Ordinary General Assembly",
       "AGE": "Extraordinary General Assembly",
       "AGET": "Telematic Extraordinary General Assembly"
     },
+    "typesShort": {
+      "AGO": "AGO",
+      "AGE": "AGE",
+      "AGET": "AGET"
+    },
     "statuses": {
       "draft": "Draft",
       "provisional": "Provisional",
       "definitive": "Definitive"
+    },
+    "agenda": {
+      "title": "Agenda",
+      "pendingDescription": "Agenda management will be available in phase 7."
+    },
+    "filter": {
+      "allStatuses": "All statuses"
     }
   },
   "document": {

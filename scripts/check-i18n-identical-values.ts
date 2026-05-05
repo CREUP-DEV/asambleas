@@ -31,6 +31,26 @@ const ALLOWLIST: AllowlistEntry[] = [
     pattern: /^app\.title$/,
     reason: "Brand name stays the same across locales.",
   },
+  {
+    pattern: /^common\.no$/,
+    reason: "Short negative answer is identical in Spanish and English.",
+  },
+  {
+    pattern: /^assembly\.typesShort\.(AGO|AGE|AGET)$/,
+    reason: "Assembly type acronyms are official names.",
+  },
+  {
+    pattern: /^assembly\.statuses\.provisional$/,
+    reason: "Workflow status term is identical in Spanish and English.",
+  },
+  {
+    pattern: /^document\.types\.pdf$/,
+    reason: "File format acronym stays the same across locales.",
+  },
+  {
+    pattern: /^admin\.roles\.title$/,
+    reason: "Role management label is identical in Spanish and English.",
+  },
 ];
 
 function loadLocale(file: string): JSONValue {
