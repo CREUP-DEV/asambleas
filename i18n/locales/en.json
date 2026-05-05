@@ -117,7 +117,31 @@
     },
     "agenda": {
       "title": "Agenda",
-      "pendingDescription": "Agenda management will be available in phase 7."
+      "addItem": "Add item",
+      "addSubItem": "Add sub-item",
+      "editItem": "Edit item",
+      "deleteItem": "Delete item",
+      "deleteItemConfirm": "Delete agenda item?",
+      "deleteItemDescription": "All sub-items and associated documents will also be deleted. This action cannot be undone.",
+      "noItems": "No agenda items.",
+      "rootLockedDefinitive": "Root items cannot be added, edited, or deleted in a definitive assembly.",
+      "settings": "Settings",
+      "allowDocumentSubmission": "Allow document submission",
+      "documentSubmissionDeadline": "Document submission deadline",
+      "allowAmendments": "Allow amendments",
+      "amendmentDeadline": "Amendment deadline",
+      "itemTitle": "Item title",
+      "itemCreated": "Item created successfully",
+      "itemUpdated": "Item updated successfully",
+      "itemDeleted": "Item deleted successfully",
+      "reordered": "Order updated",
+      "expanded": "Expanded",
+      "collapsed": "Collapsed",
+      "expandItem": "Expand item",
+      "collapseItem": "Collapse item",
+      "dragItem": "Drag item to reorder",
+      "expandAll": "Expand all",
+      "collapseAll": "Collapse all"
     },
     "filter": {
       "allStatuses": "All statuses"

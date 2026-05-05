@@ -302,9 +302,10 @@ const isDraft = computed(
         <h2 class="mb-4 text-xl font-semibold">
           {{ t("assembly.agenda.title") }}
         </h2>
-        <p class="text-muted text-sm">
-          {{ t("assembly.agenda.pendingDescription") }}
-        </p>
+        <AgendaTree
+          :assembly-id="assembly.id"
+          :assembly-status="assembly.status"
+        />
       </div>
     </div>
 
