@@ -19,6 +19,7 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+const localePath = useLocalePath();
 const toast = useToast();
 
 const expanded = ref(true);
@@ -150,7 +151,11 @@ const deleteItem = async () => {
         />
       </template>
       <template v-else>
-        <span class="flex-1 text-sm font-medium">{{ item.title }}</span>
+        <NuxtLink
+          :to="localePath(`/asambleas/${assemblyId}/punto/${item.id}`)"
+          class="flex-1 text-sm font-medium hover:underline"
+          >{{ item.title }}</NuxtLink
+        >
 
         <div
           v-if="canManage"

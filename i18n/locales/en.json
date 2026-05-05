@@ -150,6 +150,28 @@
   "document": {
     "title": "Documents",
     "create": "Create document",
+    "edit": "Edit document",
+    "delete": "Delete document",
+    "noDocuments": "No documents",
+    "noDocumentsDescription": "There are no documents for this agenda item yet.",
+    "deleteConfirm": "Delete document?",
+    "deleteConfirmDescription": "This action cannot be undone.",
+    "created": "Document created successfully",
+    "updated": "Document updated successfully",
+    "deleted": "Document deleted successfully",
+    "statusChanged": "Status updated successfully",
+    "accept": "Accept",
+    "pending": "Pending review by Secretariat.",
+    "submittedBy": "Submitted by",
+    "proponent": "Proponent",
+    "titleLabel": "Title",
+    "titlePlaceholder": "Document title",
+    "contentLabel": "Content",
+    "typeSelect": "Document type",
+    "uploadFile": "Upload PDF file",
+    "viewPdf": "View PDF",
+    "platformOnly": "Only platform documents support amendments",
+    "backToItem": "Back to item",
     "types": {
       "platform": "Platform",
       "pdf": "PDF"
@@ -158,6 +180,21 @@
       "draft": "Draft",
       "pending_review": "Pending review",
       "accepted": "Accepted"
+    },
+    "editor": {
+      "bold": "Bold",
+      "italic": "Italic",
+      "underline": "Underline",
+      "heading1": "Heading 1",
+      "heading2": "Heading 2",
+      "bulletList": "Bullet list",
+      "orderedList": "Ordered list",
+      "link": "Link",
+      "removeLink": "Remove link",
+      "linkUrl": "Link URL",
+      "placeholder": "Write the content here...",
+      "visibleCharacters": "visible characters",
+      "words": "words"
     }
   },
   "amendment": {

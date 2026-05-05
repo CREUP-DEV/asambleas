@@ -150,6 +150,28 @@
   "document": {
     "title": "Documentos",
     "create": "Crear documento",
+    "edit": "Editar documento",
+    "delete": "Eliminar documento",
+    "noDocuments": "No hay documentos",
+    "noDocumentsDescription": "Aún no hay documentos en este punto del orden del día.",
+    "deleteConfirm": "¿Eliminar documento?",
+    "deleteConfirmDescription": "Esta acción no se puede deshacer.",
+    "created": "Documento creado correctamente",
+    "updated": "Documento actualizado correctamente",
+    "deleted": "Documento eliminado correctamente",
+    "statusChanged": "Estado actualizado correctamente",
+    "accept": "Aceptar",
+    "pending": "Pendiente de revisión por Secretaría.",
+    "submittedBy": "Presentado por",
+    "proponent": "Proponente",
+    "titleLabel": "Título",
+    "titlePlaceholder": "Título del documento",
+    "contentLabel": "Contenido",
+    "typeSelect": "Tipo de documento",
+    "uploadFile": "Subir archivo PDF",
+    "viewPdf": "Ver PDF",
+    "platformOnly": "Solo los documentos de plataforma admiten enmiendas",
+    "backToItem": "Volver al punto",
     "types": {
       "platform": "Plataforma",
       "pdf": "PDF"
@@ -158,6 +180,21 @@
       "draft": "Borrador",
       "pending_review": "Pendiente de revisión",
       "accepted": "Aceptado"
+    },
+    "editor": {
+      "bold": "Negrita",
+      "italic": "Cursiva",
+      "underline": "Subrayado",
+      "heading1": "Título 1",
+      "heading2": "Título 2",
+      "bulletList": "Lista de viñetas",
+      "orderedList": "Lista numerada",
+      "link": "Enlace",
+      "removeLink": "Quitar enlace",
+      "linkUrl": "URL del enlace",
+      "placeholder": "Escribe aquí el contenido...",
+      "visibleCharacters": "caracteres visibles",
+      "words": "palabras"
     }
   },
   "amendment": {
