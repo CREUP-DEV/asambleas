@@ -1,4 +1,24 @@
 export const RICH_TEXT_MAX_HTML_LENGTH = 200_000;
+export const RICH_TEXT_ALLOWED_TAGS = [
+  "p",
+  "br",
+  "strong",
+  "em",
+  "u",
+  "s",
+  "h1",
+  "h2",
+  "h3",
+  "ul",
+  "ol",
+  "li",
+  "a",
+  "blockquote",
+  "hr",
+  "code",
+  "pre",
+] as const;
+export const RICH_TEXT_ALLOWED_ATTR = ["href", "target", "rel"] as const;
 
 export function hasMeaningfulHtml(value: string | null | undefined): boolean {
   return (
