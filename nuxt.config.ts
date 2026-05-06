@@ -246,10 +246,7 @@ export default defineNuxtConfig({
       },
       {
         name: "OpenDyslexic",
-        provider: "google",
-        weights: [400, 700],
-        styles: ["normal", "italic"],
-        subsets: ["latin"],
+        provider: "none",
       },
     ],
   },

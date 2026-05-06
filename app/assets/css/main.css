@@ -1,5 +1,9 @@
 @import 'tailwindcss';
 @import '@nuxt/ui';
+@import '@fontsource/opendyslexic/400.css';
+@import '@fontsource/opendyslexic/700.css';
+@import '@fontsource/opendyslexic/400-italic.css';
+@import '@fontsource/opendyslexic/700-italic.css';
 
 @theme {
   --font-sans: 'Raleway', sans-serif;

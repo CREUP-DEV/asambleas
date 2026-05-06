@@ -8,6 +8,12 @@ importers:
 
   .:
     dependencies:
+      '@fontsource/opendyslexic':
+        specifier: ^5.2.5
+        version: 5.2.5
+      '@fontsource/raleway':
+        specifier: ^5.2.8
+        version: 5.2.8
       '@iconify-json/lucide':
         specifier: ^1.2.103
         version: 1.2.105
@@ -1101,6 +1107,12 @@ packages:
 
   '@foliojs-fork/restructure@2.0.2':
     resolution: {integrity: sha512-59SgoZ3EXbkfSX7b63tsou/SDGzwUEK6MuB5sKqgVK1/XE0fxmpsOb9DQI8LXW3KfGnAjImCGhhEb7uPPAUVNA==}
+
+  '@fontsource/opendyslexic@5.2.5':
+    resolution: {integrity: sha512-NNS9aaPQx2TlaTvb3vTEjw3xz8lKj23mBc+6rM00mSNFDygdoll0/nLMHFtDKKrBT6sMfY6TFFPOR0D9ktdspg==}
+
+  '@fontsource/raleway@5.2.8':
+    resolution: {integrity: sha512-OATNM+J4XniKQRlI1e67v3euOnCUiXwpqgMofomKc5JNYOq0JPE6E5uTXMnFaZejKN1Z7s05JrHpmYB7/tg1Fw==}
 
   '@humanfs/core@0.19.2':
     resolution: {integrity: sha512-UhXNm+CFMWcbChXywFwkmhqjs3PRCmcSa/hfBgLIb7oQ5HNb1wS0icWsGtSAUNgefHeI+eBrA8I1fxmbHsGdvA==}
@@ -7363,6 +7375,10 @@ snapshots:
       png-js: 1.1.0
 
   '@foliojs-fork/restructure@2.0.2': {}
+
+  '@fontsource/opendyslexic@5.2.5': {}
+
+  '@fontsource/raleway@5.2.8': {}
 
   '@humanfs/core@0.19.2':
     dependencies:

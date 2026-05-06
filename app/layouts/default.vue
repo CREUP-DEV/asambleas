@@ -6,6 +6,7 @@ const { isAdmin } = usePermissions();
 const { currentLocale, localeMenuItems } = useLocaleSwitcher();
 
 const avatarLoadFailed = ref(false);
+const a11yModalOpen = ref(false);
 const navigationItems = computed(() => [
   [
     {
@@ -105,6 +106,15 @@ useHead({
             :items="[
               [
                 {
+                  label: t('accessibility.preferences'),
+                  icon: 'i-tabler-accessible',
+                  onSelect: () => {
+                    a11yModalOpen = true;
+                  },
+                },
+              ],
+              [
+                {
                   label: t('auth.signOut'),
                   icon: 'i-tabler-logout',
                   onSelect: signOut,
@@ -149,5 +159,14 @@ useHead({
     <UMain id="main-content" class="flex-1">
       <slot />
     </UMain>
+
+    <UModal
+      v-model:open="a11yModalOpen"
+      :title="t('accessibility.preferences')"
+    >
+      <template #body>
+        <AccessibilityPreferences />
+      </template>
+    </UModal>
   </div>
 </template>

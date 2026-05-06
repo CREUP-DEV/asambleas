@@ -47,7 +47,22 @@
     "expandSidebar": "Expandir menú lateral",
     "closeSidebar": "Cerrar menú lateral",
     "userAvatar": "Avatar de {user}",
-    "userMenu": "Abrir menú de usuario"
+    "userMenu": "Abrir menú de usuario",
+    "preferences": "Preferencias de accesibilidad",
+    "diffModeLabel": "Modo de visualización de cambios",
+    "diffMode": {
+      "color": "Color (verde/rojo)",
+      "marks": "Marcas (negrita/tachado)"
+    },
+    "diffPreviewInsert": "Texto añadido",
+    "diffPreviewDelete": "Texto eliminado",
+    "contentFontLabel": "Fuente del contenido",
+    "font": {
+      "raleway": "Raleway (predeterminada)",
+      "atkinson": "Atkinson Hyperlegible (baja visión)",
+      "opendyslexic": "OpenDyslexic (dislexia)"
+    },
+    "fontPreviewText": "Vista previa de la fuente seleccionada. Este texto de ejemplo muestra cómo se verá el contenido de documentos y enmiendas."
   },
   "language": {
     "toggle": "Cambiar idioma",
@@ -239,6 +254,12 @@
     "transactionalDescription": "Proponer una versión alternativa para negociación",
     "transactionalCreated": "Enmienda transaccional creada correctamente",
     "viewDiff": "Ver cambios",
+    "diff": {
+      "inline": "En línea",
+      "sideBySide": "Comparado",
+      "original": "Texto original",
+      "proposed": "Propuesto"
+    },
     "incorporated": "Incorporada",
     "pendingVote": "Pendiente votación",
     "author": "Autor",
@@ -292,6 +313,14 @@
       "adminPermissionsLocked": "Los permisos del rol Admin no se pueden modificar",
       "description": "Configura permisos por rol"
     }
+  },
+  "export": {
+    "exportPdf": "Exportar PDF",
+    "starting": "Iniciando...",
+    "generating": "Generando PDF...",
+    "download": "Descargar PDF",
+    "ready": "PDF listo para descargar",
+    "failed": "Error al generar PDF"
   },
   "errors": {
     "notFound": "Página no encontrada",
