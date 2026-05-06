@@ -175,6 +175,7 @@
     "viewPdf": "View PDF",
     "platformOnly": "Only platform documents support amendments",
     "backToItem": "Back to item",
+    "timeline": "Document timeline",
     "types": {
       "platform": "Platform",
       "pdf": "PDF"
@@ -203,7 +204,52 @@
   "amendment": {
     "title": "Amendments",
     "create": "Create amendment",
+    "edit": "Edit amendment",
     "justification": "Justification",
+    "justificationPlaceholder": "Explain the reason for the amendment...",
+    "content": "Proposed text",
+    "noAmendments": "No amendments",
+    "noAmendmentsDescription": "No amendments have been submitted for this document yet.",
+    "submit": "Submit amendment",
+    "submitConfirm": "Submit amendment for review?",
+    "submitConfirmDescription": "Once submitted, you won't be able to edit it until it's reviewed.",
+    "submitted": "Amendment submitted successfully",
+    "created": "Amendment created successfully",
+    "updated": "Amendment updated successfully",
+    "review": "Review amendment",
+    "reviewAction": {
+      "accept": "Validate",
+      "reject": "Reject",
+      "formal": "Mark as formal"
+    },
+    "reviewed": "Amendment reviewed successfully",
+    "proponentDecision": "Proponent decision",
+    "proponentAction": {
+      "accept": "Accept amendment",
+      "reject": "Reject amendment"
+    },
+    "proponentDecided": "Decision recorded successfully",
+    "voteResult": "Vote result",
+    "voteAction": {
+      "approved": "Approved",
+      "rejected": "Rejected"
+    },
+    "voteRecorded": "Vote result recorded successfully",
+    "transactional": "Create transactional",
+    "transactionalDescription": "Propose an alternative version for negotiation",
+    "transactionalCreated": "Transactional amendment created successfully",
+    "viewDiff": "View changes",
+    "incorporated": "Incorporated",
+    "pendingVote": "Pending vote",
+    "author": "Author",
+    "submittedAt": "Submitted",
+    "type": {
+      "regular": "Regular",
+      "formal": "Formal"
+    },
+    "deadlinePassed": "The amendment submission deadline has passed",
+    "onlyPlatform": "Only platform documents support amendments",
+    "onlyAccepted": "Only accepted documents can be amended",
     "statuses": {
       "draft": "Draft",
       "pending_review": "Pending review",

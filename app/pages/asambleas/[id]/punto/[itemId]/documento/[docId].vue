@@ -22,6 +22,12 @@ interface DocumentDetail {
   type: "platform" | "pdf";
   status: string;
   content: string | null;
+  contentHistory: Array<{
+    contentHash: string;
+    amendmentId: string;
+    type: "formal" | "accepted_proponent" | "approved_vote";
+    incorporatedAt: string;
+  }>;
   fileUrl: string | null;
   submittedBy: string | null;
   proponentId: string | null;
@@ -49,6 +55,23 @@ if (!doc.value) {
   throw createError({ statusCode: 404, statusMessage: "Not Found" });
 }
 
+interface AgendaItemInfo {
+  id: string;
+  allowAmendments: boolean;
+  amendmentDeadline: string | null;
+}
+
+const { data: agendaItem } = await useFetch<AgendaItemInfo>(
+  `/api/assemblies/${assemblyId}/agenda-items/${itemId}`,
+  {
+    default: () => ({
+      id: "",
+      allowAmendments: false,
+      amendmentDeadline: null,
+    }),
+  },
+);
+
 useHead({ title: computed(() => doc.value?.title ?? "") });
 
 const canManage = computed(() =>
@@ -57,6 +80,17 @@ const canManage = computed(() =>
 const canReview = computed(() =>
   hasPermission(PERMISSION_KEYS.AMENDMENT_REVIEW),
 );
+const canCreateAmendment = computed(() =>
+  hasPermission(PERMISSION_KEYS.AMENDMENT_CREATE),
+);
+
+const allowAmendments = computed(
+  () => agendaItem.value?.allowAmendments ?? false,
+);
+const amendmentDeadlinePassed = computed(() => {
+  if (!agendaItem.value?.amendmentDeadline) return false;
+  return new Date() > new Date(agendaItem.value.amendmentDeadline);
+});
 
 const isPending = computed(
   () => doc.value?.status === DOCUMENT_STATUSES.PENDING_REVIEW,
@@ -212,12 +246,22 @@ const statusColor = (status: string) => {
       />
     </div>
 
-    <!-- Amendments placeholder (Phase 9) -->
+    <!-- Amendments section -->
     <div v-if="doc?.type === 'platform' && isAccepted" class="mt-8">
-      <h2 class="mb-4 text-lg font-semibold">{{ t("amendment.title") }}</h2>
-      <p class="text-muted text-sm">
-        {{ t("document.platformOnly") }}
-      </p>
+      <AmendmentList
+        :assembly-id="assemblyId"
+        :item-id="itemId"
+        :document="{
+          id: doc.id,
+          content: doc.content,
+          proponentId: doc.proponentId,
+          contentHistory: doc.contentHistory ?? [],
+        }"
+        :can-create="canCreateAmendment"
+        :allow-amendments="allowAmendments"
+        :deadline-passed="amendmentDeadlinePassed"
+        @updated="refresh"
+      />
     </div>
 
     <!-- Edit modal -->
