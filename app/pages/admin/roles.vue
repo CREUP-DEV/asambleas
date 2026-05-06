@@ -49,15 +49,17 @@ const editableRoles = computed(() =>
   allRoles.value.filter((r) => r.name !== SYSTEM_ROLES.ADMIN),
 );
 
-const rolePermissionsMap = ref<Record<string, string[]>>({});
-const loadingRoleId = ref<string | null>(null);
+const savedPermissionsMap = ref<Record<string, string[]>>({});
+const draftPermissionsMap = ref<Record<string, string[]>>({});
+const isSaving = ref(false);
 
 const loadRolePermissions = async (roleId: string) => {
-  if (rolePermissionsMap.value[roleId]) return;
+  if (savedPermissionsMap.value[roleId]) return;
   const data = await $fetch<{
     permissions: string[];
   }>(`/api/admin/roles/${roleId}/permissions`);
-  rolePermissionsMap.value[roleId] = data.permissions;
+  savedPermissionsMap.value[roleId] = data.permissions;
+  draftPermissionsMap.value[roleId] = [...data.permissions];
 };
 
 onMounted(async () => {
@@ -66,23 +68,51 @@ onMounted(async () => {
   );
 });
 
-const togglePermission = async (role: RoleRow, permissionKey: string) => {
-  loadingRoleId.value = role.id;
+const hasChanges = computed(() =>
+  editableRoles.value.some((role) => {
+    const saved = savedPermissionsMap.value[role.id] ?? [];
+    const draft = draftPermissionsMap.value[role.id] ?? [];
+    if (saved.length !== draft.length) return true;
+    return draft.some((k) => !saved.includes(k));
+  }),
+);
 
-  const current = rolePermissionsMap.value[role.id] ?? [];
+const togglePermission = (role: RoleRow, permissionKey: string) => {
+  const current = draftPermissionsMap.value[role.id] ?? [];
   const hasIt = current.includes(permissionKey);
-  const updated = hasIt
+  draftPermissionsMap.value[role.id] = hasIt
     ? current.filter((k) => k !== permissionKey)
     : [...current, permissionKey];
+};
 
+const saveChanges = async () => {
+  isSaving.value = true;
   try {
     const csrfToken = useCookie(CSRF_COOKIE_NAME).value;
-    await $fetch(`/api/admin/roles/${role.id}/permissions`, {
-      method: "PUT",
-      body: { permissionKeys: updated },
-      headers: csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : undefined,
+    const changedRoles = editableRoles.value.filter((role) => {
+      const saved = savedPermissionsMap.value[role.id] ?? [];
+      const draft = draftPermissionsMap.value[role.id] ?? [];
+      return (
+        saved.length !== draft.length || draft.some((k) => !saved.includes(k))
+      );
     });
-    rolePermissionsMap.value[role.id] = updated;
+
+    await Promise.all(
+      changedRoles.map((role) =>
+        $fetch(`/api/admin/roles/${role.id}/permissions`, {
+          method: "PUT",
+          body: { permissionKeys: draftPermissionsMap.value[role.id] },
+          headers: csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : undefined,
+        }),
+      ),
+    );
+
+    for (const role of changedRoles) {
+      savedPermissionsMap.value[role.id] = [
+        ...(draftPermissionsMap.value[role.id] ?? []),
+      ];
+    }
+
     toast.add({
       title: t("admin.roles.permissionsUpdated"),
       color: "success",
@@ -93,7 +123,15 @@ const togglePermission = async (role: RoleRow, permissionKey: string) => {
       color: "error",
     });
   } finally {
-    loadingRoleId.value = null;
+    isSaving.value = false;
+  }
+};
+
+const discardChanges = () => {
+  for (const role of editableRoles.value) {
+    draftPermissionsMap.value[role.id] = [
+      ...(savedPermissionsMap.value[role.id] ?? []),
+    ];
   }
 };
 
@@ -146,9 +184,9 @@ const getPermissionLabel = (key: string) => {
               <div class="flex justify-center">
                 <UCheckbox
                   :model-value="
-                    (rolePermissionsMap[role.id] ?? []).includes(pKey)
+                    (draftPermissionsMap[role.id] ?? []).includes(pKey)
                   "
-                  :disabled="loadingRoleId === role.id"
+                  :disabled="isSaving"
                   @update:model-value="togglePermission(role, pKey)"
                 />
               </div>
@@ -156,6 +194,25 @@ const getPermissionLabel = (key: string) => {
           </tr>
         </tbody>
       </table>
+    </div>
+
+    <div class="mt-4 flex justify-end gap-2">
+      <UButton
+        variant="ghost"
+        color="neutral"
+        :disabled="!hasChanges || isSaving"
+        @click="discardChanges"
+      >
+        {{ t("common.discard") }}
+      </UButton>
+      <UButton
+        color="primary"
+        :disabled="!hasChanges"
+        :loading="isSaving"
+        @click="saveChanges"
+      >
+        {{ t("common.save") }}
+      </UButton>
     </div>
   </div>
 </template>

@@ -25,7 +25,8 @@
     "yes": "Yes",
     "no": "No",
     "previous": "Previous",
-    "next": "Next"
+    "next": "Next",
+    "discard": "Discard changes"
   },
   "auth": {
     "signIn": "Sign in",
