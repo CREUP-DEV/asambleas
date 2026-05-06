@@ -31,6 +31,13 @@ const loading = ref(false);
 
 const justification = ref(props.existing?.justification ?? "");
 const content = ref(props.documentContent);
+const justificationTouched = ref(false);
+
+const justificationError = computed(() =>
+  justificationTouched.value && !justification.value.trim()
+    ? t("validation.justificationRequired")
+    : undefined,
+);
 
 const isValid = computed(
   () =>
@@ -106,12 +113,16 @@ async function save() {
       <DocumentRichTextEditor v-model="content" />
     </UFormField>
 
-    <UFormField :label="t('amendment.justification')">
+    <UFormField
+      :label="t('amendment.justification')"
+      :error="justificationError"
+    >
       <UTextarea
         v-model="justification"
         :placeholder="t('amendment.justificationPlaceholder')"
         :rows="4"
         autoresize
+        @blur="justificationTouched = true"
       />
     </UFormField>
 

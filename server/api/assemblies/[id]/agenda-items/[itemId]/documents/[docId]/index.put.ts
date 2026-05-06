@@ -39,6 +39,13 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody(event);
 
+  if (body && typeof body === "object" && "type" in body) {
+    throw createError({
+      statusCode: 400,
+      message: "El tipo de documento no puede modificarse",
+    });
+  }
+
   try {
     if (existing.type === "platform") {
       const parsed = updatePlatformDocumentSchema.safeParse(body);

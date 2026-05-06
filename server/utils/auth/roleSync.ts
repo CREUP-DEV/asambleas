@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "../../db";
 import { users, roles } from "../../db/schema";
@@ -12,6 +12,8 @@ const ExternalRoleResponse = z.object({
   university: z.string().nullable(),
 });
 
+type ExternalPayload = z.infer<typeof ExternalRoleResponse>;
+
 function getRoleApiUrl(): string | null {
   const url = process.env.NUXT_ROLE_API_URL?.trim();
   return url || null;
@@ -21,14 +23,6 @@ function getInitialAdminEmail(): string {
   return (process.env.INITIAL_ADMIN_EMAIL || "tic@creup.es")
     .trim()
     .toLowerCase();
-}
-
-async function getRoleIdByName(roleName: string): Promise<string | null> {
-  const role = await db.query.roles.findFirst({
-    where: eq(roles.name, roleName),
-    columns: { id: true },
-  });
-  return role?.id ?? null;
 }
 
 async function fetchExternalRole(email: string) {
@@ -105,75 +99,118 @@ interface RoleSyncUpdate {
   roleId?: string;
 }
 
+interface FreshUserRow {
+  id: string;
+  email: string;
+  roleId: string | null;
+  role: { name: string } | null | undefined;
+}
+
+export function computeRoleSyncUpdate(
+  freshUser: FreshUserRow,
+  external: ExternalPayload | null,
+  isInitialAdmin: boolean,
+): { fields: RoleSyncUpdate; assignRoleName: string | null } {
+  const isNewUser = !freshUser.roleId;
+  const fields: RoleSyncUpdate = {
+    lastRoleSyncAt: new Date(),
+  };
+
+  let assignRoleName: string | null = null;
+
+  if (external) {
+    fields.externalRole = external.role;
+    fields.externalName = external.name;
+    fields.externalInitials = external.initials;
+    fields.university = external.university;
+
+    const currentRoleName = freshUser.role?.name ?? null;
+    const target = resolveTargetRole(external.role, currentRoleName, isNewUser);
+    if (target) {
+      assignRoleName = target;
+    }
+  } else if (isNewUser) {
+    assignRoleName = SYSTEM_ROLES.INVITADO;
+  }
+
+  if (isInitialAdmin) {
+    assignRoleName = SYSTEM_ROLES.ADMIN;
+  }
+
+  return { fields, assignRoleName };
+}
+
+type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
+
+async function getRoleIdByNameTx(
+  tx: DbTx,
+  roleName: string,
+): Promise<string | null> {
+  const role = await tx.query.roles.findFirst({
+    where: eq(roles.name, roleName),
+    columns: { id: true },
+  });
+  return role?.id ?? null;
+}
+
 export async function syncUserRole(userId: string): Promise<void> {
-  const user = await db.query.users.findFirst({
+  const preview = await db.query.users.findFirst({
     where: eq(users.id, userId),
-    columns: {
-      id: true,
-      email: true,
-      roleId: true,
-    },
-    with: {
-      role: { columns: { name: true } },
-    },
+    columns: { email: true },
   });
 
-  if (!user) {
+  if (!preview) {
     logWarn("roleSync", { reason: "user not found", userId });
     return;
   }
 
-  const isNewUser = !user.roleId;
-  const isInitialAdmin =
-    isNewUser && user.email.toLowerCase() === getInitialAdminEmail();
-  const external = await fetchExternalRole(user.email);
+  const external = await fetchExternalRole(preview.email);
 
-  const updateFields: RoleSyncUpdate = {
-    lastRoleSyncAt: new Date(),
-  };
-
-  if (external) {
-    updateFields.externalRole = external.role;
-    updateFields.externalName = external.name;
-    updateFields.externalInitials = external.initials;
-    updateFields.university = external.university;
-
-    const currentRoleName = user.role?.name ?? null;
-    const targetRoleName = resolveTargetRole(
-      external.role,
-      currentRoleName,
-      isNewUser,
+  await db.transaction(async (tx) => {
+    await tx.execute(
+      sql`SELECT id FROM "users" WHERE id = ${userId} FOR UPDATE`,
     );
 
-    if (targetRoleName) {
-      const targetRoleId = await getRoleIdByName(targetRoleName);
+    const freshUser = await tx.query.users.findFirst({
+      where: eq(users.id, userId),
+      columns: { id: true, email: true, roleId: true },
+      with: { role: { columns: { name: true } } },
+    });
+
+    if (!freshUser) {
+      return;
+    }
+
+    const isNewUser = !freshUser.roleId;
+    const isInitialAdmin =
+      isNewUser && freshUser.email.toLowerCase() === getInitialAdminEmail();
+
+    const { fields: updateFields, assignRoleName } = computeRoleSyncUpdate(
+      freshUser,
+      external,
+      isInitialAdmin,
+    );
+
+    if (assignRoleName) {
+      const targetRoleId = await getRoleIdByNameTx(tx, assignRoleName);
       if (targetRoleId) {
         updateFields.roleId = targetRoleId;
-        logInfo("roleSync", {
-          action: "role changed",
-          from: currentRoleName,
-          to: targetRoleName,
-          email: user.email,
-        });
+        if (isInitialAdmin) {
+          logInfo("roleSync", {
+            action: "initial admin assigned",
+            email: freshUser.email,
+          });
+        } else {
+          logInfo("roleSync", {
+            action: "role changed",
+            from: freshUser.role?.name ?? null,
+            to: assignRoleName,
+            email: freshUser.email,
+          });
+        }
       }
     }
-  } else if (isNewUser) {
-    const invitadoRoleId = await getRoleIdByName(SYSTEM_ROLES.INVITADO);
-    if (invitadoRoleId) {
-      updateFields.roleId = invitadoRoleId;
-    }
-  }
 
-  if (isInitialAdmin) {
-    const adminRoleId = await getRoleIdByName(SYSTEM_ROLES.ADMIN);
-    if (adminRoleId) {
-      updateFields.roleId = adminRoleId;
-      logInfo("roleSync", {
-        action: "initial admin assigned",
-        email: user.email,
-      });
-    }
-  }
-
-  await db.update(users).set(updateFields).where(eq(users.id, userId));
+    await tx.update(users).set(updateFields).where(eq(users.id, userId));
+  });
 }

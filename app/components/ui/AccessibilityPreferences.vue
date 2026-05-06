@@ -51,7 +51,7 @@ const fontOptions = [
           </del>
         </p>
         <p v-else>
-          <ins class="font-bold underline no-underline">
+          <ins class="font-bold underline">
             {{ t("accessibility.diffPreviewInsert") }}
           </ins>
           {{ " " }}

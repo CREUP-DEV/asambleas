@@ -1,4 +1,4 @@
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { createError } from "h3";
 import { EXPORT_QUEUE_NAMES, type ExportQueueName } from "./queue";
@@ -128,4 +128,10 @@ export function buildExportFilename(parts: string[]) {
 
 export function getExportMetadataDir(filePath: string) {
   return dirname(filePath);
+}
+
+export async function deleteExportMetadata(jobId: string): Promise<void> {
+  validateExportJobId(jobId);
+  const metadataPath = getExportMetadataPath(jobId);
+  await unlink(metadataPath).catch(() => {});
 }

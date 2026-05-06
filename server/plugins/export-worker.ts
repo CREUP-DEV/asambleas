@@ -132,7 +132,7 @@ async function processJob<T>(
   }
 }
 
-export default defineNitroPlugin(async () => {
+export default defineNitroPlugin(async (nitroApp) => {
   if (!process.env.DATABASE_URL) {
     logWarn("export-worker.init", {
       reason: "DATABASE_URL not set, skipping pg-boss setup",
@@ -162,6 +162,11 @@ export default defineNitroPlugin(async () => {
         }
       },
     );
+
+    nitroApp.hooks.hook("close", async () => {
+      logInfo("export-worker.shutdown", {});
+      await boss.stop();
+    });
 
     logInfo("export-worker.init", { message: "pg-boss worker started" });
   } catch (error) {

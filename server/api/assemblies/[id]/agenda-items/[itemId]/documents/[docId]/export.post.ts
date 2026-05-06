@@ -1,4 +1,5 @@
 import { defineEventHandler, createError, readBody } from "h3";
+import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { db } from "../../../../../../../db";
 import { documents } from "../../../../../../../db/schema";
@@ -15,6 +16,7 @@ import {
 } from "../../../../../../../utils/export/queue";
 import {
   buildExportFilename,
+  deleteExportMetadata,
   getExportPdfPath,
   writeExportMetadata,
 } from "../../../../../../../utils/export/storage";
@@ -49,16 +51,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     const boss = await getExportQueue();
-    const jobId = await boss.send(EXPORT_QUEUE_NAMES.DOCUMENT_EXPORT, {
-      assemblyId: assembly.id,
-      itemId: item.id,
-      documentId: doc.id,
-      requestedBy: user!.id,
-      locale: parsed.data.locale,
-    });
-    if (!jobId) {
-      throw new Error("pg-boss did not return a job id");
-    }
+    const jobId = randomUUID();
 
     await writeExportMetadata({
       jobId,
@@ -77,7 +70,28 @@ export default defineEventHandler(async (event) => {
       updatedAt: new Date().toISOString(),
     });
 
-    return { jobId };
+    try {
+      const queuedJobId = await boss.send(
+        EXPORT_QUEUE_NAMES.DOCUMENT_EXPORT,
+        {
+          assemblyId: assembly.id,
+          itemId: item.id,
+          documentId: doc.id,
+          requestedBy: user!.id,
+          locale: parsed.data.locale,
+        },
+        { id: jobId },
+      );
+      if (queuedJobId) {
+        return { jobId };
+      }
+    } catch {
+      await deleteExportMetadata(jobId);
+      throw new Error("pg-boss failed to queue export job");
+    }
+
+    await deleteExportMetadata(jobId);
+    throw new Error("pg-boss did not return a job id");
   } catch {
     throw createError({
       statusCode: 500,

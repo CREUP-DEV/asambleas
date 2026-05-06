@@ -36,6 +36,13 @@ const content = ref(props.existing?.content ?? "");
 const fileUrl = ref(props.existing?.fileUrl ?? "");
 const uploading = ref(false);
 const saving = ref(false);
+const titleTouched = ref(false);
+
+const titleError = computed(() =>
+  titleTouched.value && !title.value.trim()
+    ? t("validation.titleRequired")
+    : undefined,
+);
 
 const typeOptions = computed(() => [
   { label: t("document.types.platform"), value: "platform" },
@@ -144,11 +151,12 @@ const save = async () => {
       />
     </UFormField>
 
-    <UFormField :label="t('document.titleLabel')" required>
+    <UFormField :label="t('document.titleLabel')" required :error="titleError">
       <UInput
         v-model="title"
         :placeholder="t('document.titlePlaceholder')"
         class="w-full"
+        @blur="titleTouched = true"
       />
     </UFormField>
 

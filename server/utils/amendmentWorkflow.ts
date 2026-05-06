@@ -6,6 +6,7 @@ import {
   AMENDMENT_INCORPORATED_STATUSES,
 } from "~~/shared/constants/statuses";
 import { applyPatch, hashContent } from "~~/shared/utils/diff";
+import { sanitizeRichTextHtml } from "./richText";
 import { amendments } from "../db/schema/amendment";
 import { documents } from "../db/schema/document";
 import type { ContentHistoryEntry } from "../db/schema/document";
@@ -78,7 +79,8 @@ export async function incorporateAmendment(
     });
   }
 
-  const newVersion = await hashContent(patched);
+  const sanitizedPatched = sanitizeRichTextHtml(patched);
+  const newVersion = await hashContent(sanitizedPatched);
   const historyEntry: ContentHistoryEntry = {
     contentHash: newVersion,
     amendmentId,
@@ -92,7 +94,7 @@ export async function incorporateAmendment(
   await tx
     .update(documents)
     .set({
-      content: patched,
+      content: sanitizedPatched,
       contentVersion: newVersion,
       contentHistory: [...existingHistory, historyEntry],
       updatedAt: sql`now()`,

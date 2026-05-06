@@ -2,7 +2,7 @@ import { defineEventHandler, readBody, createError } from "h3";
 import { eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "../../../../db";
-import { users, roles } from "../../../../db/schema";
+import { users, roles, auditLog } from "../../../../db/schema";
 import { requireAdmin } from "../../../../utils/auth/rbac";
 import { isDefaultCuid, validateAuthId } from "../../../../utils/validation";
 
@@ -33,7 +33,7 @@ export default defineEventHandler(async (event) => {
 
   const targetUser = await db.query.users.findFirst({
     where: eq(users.id, userId),
-    columns: { id: true, email: true },
+    columns: { id: true, email: true, roleId: true },
     with: { role: { columns: { name: true } } },
   });
 
@@ -49,10 +49,24 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  await db
-    .update(users)
-    .set({ roleId: parsed.data.roleId })
-    .where(eq(users.id, userId));
+  await db.transaction(async (tx) => {
+    await tx
+      .update(users)
+      .set({ roleId: parsed.data.roleId })
+      .where(eq(users.id, userId));
+
+    await tx.insert(auditLog).values({
+      actorUserId: context.session?.user.id ?? null,
+      action: "role.assign",
+      targetType: "user",
+      targetId: userId,
+      before: {
+        roleId: targetUser.roleId ?? null,
+        roleName: targetUser.role?.name ?? null,
+      },
+      after: { roleId: parsed.data.roleId, roleName: targetRole.name },
+    });
+  });
 
   return {
     success: true,
