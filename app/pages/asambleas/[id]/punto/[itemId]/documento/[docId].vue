@@ -200,6 +200,9 @@ const statusColor = (status: string) => {
       </div>
 
       <div v-if="canManage" class="flex shrink-0 items-center gap-2">
+        <ExportButton
+          :export-url="`/api/assemblies/${assemblyId}/agenda-items/${itemId}/documents/${docId}/export`"
+        />
         <UButton
           v-if="isPending && canReview"
           icon="i-tabler-check"

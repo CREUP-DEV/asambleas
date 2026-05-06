@@ -1,80 +1,122 @@
 # CREUP Asambleas
 
-Plataforma interna de CREUP (Coordinadora de Representantes de Estudiantes de Universidades Públicas) para gestionar asambleas, puntos del orden del día, documentación y enmiendas.
+Plataforma interna de CREUP para gestionar asambleas, orden del día, documentos, enmiendas y exportaciones PDF.
 
-## Stack técnico
+Este repositorio está separado de la web pública `creup/web`, pero comparte identidad visual y parte de las decisiones de stack.
 
-- **Framework:** Nuxt 4 + Nitro
-- **UI:** Nuxt UI v4 + Tailwind CSS v4
-- **Auth:** better-auth con OAuth de Google
-- **Base de datos:** PostgreSQL + Drizzle ORM
-- **Validación:** Zod
-- **i18n:** @nuxtjs/i18n (español + inglés)
-- **Accesibilidad:** @nuxt/a11y
-- **Analítica:** nuxt-umami (self-hosted, sin cookies)
-- **Trabajos en segundo plano:** pg-boss (cola sobre PostgreSQL)
-- **Generación PDF:** pdfmake
-- **Diffs:** diff-match-patch
+## Qué Incluye
 
-## Requisitos
+- Autenticación obligatoria con Google mediante `better-auth`.
+- Sincronización de rol externo con la intranet de CREUP.
+- RBAC con roles de sistema y matriz de permisos editable.
+- Asambleas con estados `draft`, `provisional` y `definitive`.
+- Orden del día recursivo con rutas por slug legibles.
+- Documentos de plataforma con editor TipTap y documentos PDF subidos.
+- Enmiendas por patches `diff-match-patch`, incluidas transaccionales.
+- Diff accesible con modo por color, modo por marcas y vista lado a lado.
+- Exportación PDF asíncrona con `pg-boss` y almacenamiento persistente.
+- UI en español e inglés mediante i18n.
+- Preferencias de accesibilidad para contenido: Raleway, Atkinson Hyperlegible y OpenDyslexic.
 
-- [Node.js](https://nodejs.org/) 22+
-- [pnpm](https://pnpm.io/) 10.33+
-- [Docker](https://www.docker.com/) para PostgreSQL y Adminer
+## Stack
 
-## Puesta en marcha
+- Nuxt 4 + Nitro
+- Nuxt UI v4 + Tailwind CSS v4
+- PostgreSQL + Drizzle ORM
+- `better-auth` con Google OAuth
+- `@nuxtjs/i18n`, `@nuxt/a11y`, `nuxt-security` y `nuxt-umami`
+- `pg-boss` para trabajos en segundo plano sobre PostgreSQL
+- `pdfmake` para exportaciones PDF
+- Zod v4 para validación
+
+No hay Redis ni Mailpit en este proyecto. Sesiones, colas y datos persistentes usan PostgreSQL; la caché de permisos es en memoria.
+
+## Desarrollo Local
+
+Requisitos:
+
+- Node.js 22+
+- pnpm 10.33+
+- Docker y Docker Compose
+
+Arranque:
 
 ```bash
-# Instalar dependencias
 pnpm install
-
-# Copiar variables de entorno y configurar credenciales
 cp .env.example .env
-
-# Levantar infraestructura (PostgreSQL + Adminer)
 docker compose up -d
-
-# Aplicar migraciones
 pnpm db:migrate
-
-# Sembrar roles y permisos de sistema
 pnpm db:seed
-
-# Arrancar servidor de desarrollo
 pnpm dev
 ```
 
-## Desarrollo
+Servicios locales por defecto:
 
-```bash
-pnpm dev           # Arrancar servidor de desarrollo
-pnpm build         # Compilar para producción
-pnpm preview       # Previsualizar build de producción
-pnpm lint          # Ejecutar ESLint
-pnpm lint:fix      # Corregir problemas de lint
-pnpm typecheck     # Ejecutar comprobación de tipos
+| Servicio | URL |
+| --- | --- |
+| Aplicación | `http://localhost:3000` |
+| Adminer | `http://localhost:8080` |
+| PostgreSQL | `localhost:5432` |
+
+## Variables De Entorno
+
+La referencia completa está en `.env.example`. Las variables que casi siempre hay que revisar son:
+
+| Variable | Uso |
+| --- | --- |
+| `NUXT_SITE_URL` | Origen público de la aplicación |
+| `APP_SECRET` | Secreto de sesiones, generar con `openssl rand -base64 32` |
+| `INITIAL_ADMIN_EMAIL` | Cuenta que recibirá rol `Admin` en el primer acceso |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Credenciales OAuth de Google |
+| `NUXT_ROLE_API_URL` | Endpoint externo de sincronización de rol |
+| `DATABASE_URL` | Conexión PostgreSQL |
+| `EXPORT_STORAGE_DIR` | Directorio persistente para PDFs generados |
+| `NUXT_PUBLIC_UMAMI_HOST` / `NUXT_PUBLIC_UMAMI_WEBSITE_ID` | Analítica Umami opcional |
+
+## Scripts
+
+| Comando | Uso |
+| --- | --- |
+| `pnpm dev` | Servidor de desarrollo |
+| `pnpm build` | Build de producción |
+| `pnpm preview` | Previsualización del build |
+| `pnpm lint` / `pnpm lint:fix` | ESLint |
+| `pnpm typecheck` | Tipado de Nuxt/Vue |
+| `pnpm db:generate` | Generar migraciones Drizzle |
+| `pnpm db:migrate` | Aplicar migraciones |
+| `pnpm db:seed` | Sembrar roles y permisos |
+| `pnpm db:studio` | Drizzle Studio |
+| `pnpm i18n:check` | Paridad de claves de traducción |
+| `pnpm i18n:audit-identical` | Auditoría de traducciones idénticas |
+
+## Estructura
+
+```text
+app/              Frontend Nuxt: páginas, layouts, componentes y composables
+server/           API Nitro, auth, workers, DB y utilidades de servidor
+shared/           Constantes, schemas Zod y utilidades compartidas
+i18n/locales/     Traducciones ES/EN
+drizzle/          Migraciones y seed
+ops/              Scripts operativos
+scripts/          Checks auxiliares
+server/assets/    Fuentes y assets empaquetados para servidor
 ```
 
-### Base de datos
+## Documentación Relacionada
+
+- [DEPLOYMENT.md](DEPLOYMENT.md): despliegue de producción, backups y operación.
+- [AGENTS.md](AGENTS.md): reglas obligatorias para agentes que editen el código.
+- [PLAN.md](PLAN.md): plan histórico por fases. No sustituye a `AGENTS.md`.
+
+## Verificación Antes De PR
 
 ```bash
-pnpm db:generate   # Generar migraciones Drizzle
-pnpm db:migrate    # Aplicar migraciones
-pnpm db:seed       # Sembrar roles y permisos de sistema
-pnpm db:studio     # Abrir Drizzle Studio
+pnpm lint
+pnpm typecheck
+pnpm i18n:check
+pnpm i18n:audit-identical
+pnpm build
 ```
-
-### i18n
-
-```bash
-pnpm i18n:check             # Verificar paridad de claves entre locales
-pnpm i18n:audit-identical   # Buscar traducciones idénticas
-```
-
-### Infraestructura
-
-- **PostgreSQL:** localhost:5432
-- **Adminer:** http://localhost:8080
 
 ## Licencia
 

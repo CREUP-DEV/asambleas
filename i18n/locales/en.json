@@ -47,7 +47,22 @@
     "expandSidebar": "Expand sidebar",
     "closeSidebar": "Close sidebar",
     "userAvatar": "{user}'s avatar",
-    "userMenu": "Open user menu"
+    "userMenu": "Open user menu",
+    "preferences": "Accessibility preferences",
+    "diffModeLabel": "Diff display mode",
+    "diffMode": {
+      "color": "Color (green/red)",
+      "marks": "Marks (bold/strikethrough)"
+    },
+    "diffPreviewInsert": "Added text",
+    "diffPreviewDelete": "Deleted text",
+    "contentFontLabel": "Content font",
+    "font": {
+      "raleway": "Raleway (default)",
+      "atkinson": "Atkinson Hyperlegible (low vision)",
+      "opendyslexic": "OpenDyslexic (dyslexia)"
+    },
+    "fontPreviewText": "Preview of the selected font. This sample text shows how document and amendment content will look."
   },
   "language": {
     "toggle": "Change language",
@@ -239,6 +254,12 @@
     "transactionalDescription": "Propose an alternative version for negotiation",
     "transactionalCreated": "Transactional amendment created successfully",
     "viewDiff": "View changes",
+    "diff": {
+      "inline": "Inline",
+      "sideBySide": "Side by side",
+      "original": "Original",
+      "proposed": "Proposed"
+    },
     "incorporated": "Incorporated",
     "pendingVote": "Pending vote",
     "author": "Author",
@@ -292,6 +313,14 @@
       "adminPermissionsLocked": "Admin role permissions cannot be modified",
       "description": "Configure role permissions"
     }
+  },
+  "export": {
+    "exportPdf": "Export PDF",
+    "starting": "Starting...",
+    "generating": "Generating PDF...",
+    "download": "Download PDF",
+    "ready": "PDF ready for download",
+    "failed": "Failed to generate PDF"
   },
   "errors": {
     "notFound": "Page not found",

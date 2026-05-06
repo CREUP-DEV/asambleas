@@ -277,6 +277,10 @@ const assemblyLabel = computed(() =>
             >
               {{ t("common.delete") }}
             </UButton>
+
+            <ExportButton
+              :export-url="`/api/assemblies/${assembly.id}/export`"
+            />
           </template>
         </div>
       </div>

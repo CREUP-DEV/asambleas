@@ -19,6 +19,8 @@
     "i18n:audit-identical": "tsx scripts/check-i18n-identical-values.ts"
   },
   "dependencies": {
+    "@fontsource/opendyslexic": "^5.2.5",
+    "@fontsource/raleway": "^5.2.8",
     "@iconify-json/lucide": "^1.2.103",
     "@iconify-json/tabler": "^1.2.33",
     "@nuxt/fonts": "^0.14.0",
