@@ -1,6 +1,7 @@
 import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
 import PdfPrinter from "pdfmake";
+import { logInfo, logWarn, logError } from "../utils/core/logger";
 import {
   buildAssemblyExportData,
   buildDocumentExportData,
@@ -125,7 +126,7 @@ async function processJob<T>(
         error: error instanceof Error ? error.message : "Unknown export error",
       });
     } catch {
-      console.error("[export-worker] Failed to update export metadata", error);
+      logError("export-worker.metadata", error);
     }
     throw error;
   }
@@ -133,9 +134,9 @@ async function processJob<T>(
 
 export default defineNitroPlugin(async () => {
   if (!process.env.DATABASE_URL) {
-    console.warn(
-      "[export-worker] DATABASE_URL not set, skipping pg-boss setup",
-    );
+    logWarn("export-worker.init", {
+      reason: "DATABASE_URL not set, skipping pg-boss setup",
+    });
     return;
   }
 
@@ -162,8 +163,8 @@ export default defineNitroPlugin(async () => {
       },
     );
 
-    console.log("[export-worker] pg-boss worker started");
+    logInfo("export-worker.init", { message: "pg-boss worker started" });
   } catch (error) {
-    console.error("[export-worker] Failed to start pg-boss worker:", error);
+    logError("export-worker.init", error);
   }
 });
