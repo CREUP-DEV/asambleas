@@ -322,6 +322,12 @@
     "ready": "PDF ready for download",
     "failed": "Failed to generate PDF"
   },
+  "validation": {
+    "required": "This field is required",
+    "titleRequired": "Title is required",
+    "contentRequired": "Content is required",
+    "justificationRequired": "Justification is required"
+  },
   "errors": {
     "notFound": "Page not found",
     "forbidden": "You do not have permission to perform this action",

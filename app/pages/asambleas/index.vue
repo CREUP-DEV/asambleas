@@ -168,8 +168,25 @@ const onFilterChange = (val: unknown) => {
       </div>
     </div>
 
-    <div v-if="fetchStatus === 'pending'" class="mt-8 text-center">
-      <p class="text-muted">{{ t("common.loading") }}</p>
+    <div
+      v-if="fetchStatus === 'pending'"
+      class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
+    >
+      <div
+        v-for="n in 6"
+        :key="n"
+        class="border-default space-y-3 rounded-lg border p-4"
+      >
+        <div class="flex items-center justify-between">
+          <USkeleton class="h-5 w-24" />
+          <USkeleton class="h-5 w-16 rounded-full" />
+        </div>
+        <USkeleton class="h-4 w-40" />
+        <div class="flex items-center gap-2">
+          <USkeleton class="h-4 w-20" />
+          <USkeleton class="h-4 w-28" />
+        </div>
+      </div>
     </div>
 
     <div v-else-if="assemblies.length === 0" class="mt-16 text-center">

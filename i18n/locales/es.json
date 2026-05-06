@@ -322,6 +322,12 @@
     "ready": "PDF listo para descargar",
     "failed": "Error al generar PDF"
   },
+  "validation": {
+    "required": "Este campo es obligatorio",
+    "titleRequired": "El título es obligatorio",
+    "contentRequired": "El contenido es obligatorio",
+    "justificationRequired": "La justificación es obligatoria"
+  },
   "errors": {
     "notFound": "Página no encontrada",
     "forbidden": "No tienes permisos para realizar esta acción",

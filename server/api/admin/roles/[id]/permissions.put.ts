@@ -2,7 +2,12 @@ import { defineEventHandler, readBody, createError } from "h3";
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "../../../../db";
-import { roles, rolePermissions, permissions } from "../../../../db/schema";
+import {
+  roles,
+  rolePermissions,
+  permissions,
+  auditLog,
+} from "../../../../db/schema";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import { ALL_PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import {
@@ -10,6 +15,7 @@ import {
   requireAdmin,
 } from "../../../../utils/auth/rbac";
 import { validateCuid } from "../../../../utils/validation";
+import type { AuthEventContext } from "../../../../utils/auth/requireAuth";
 
 const bodySchema = z.object({
   permissionKeys: z.array(z.enum(ALL_PERMISSION_KEYS)),
@@ -54,7 +60,17 @@ export default defineEventHandler(async (event) => {
 
   const targetPermissionIds = new Set(targetPermissions.map((p) => p.id));
 
+  const context = event.context as AuthEventContext;
+
   await db.transaction(async (tx) => {
+    const previousPermissions = await tx.query.rolePermissions.findMany({
+      where: eq(rolePermissions.roleId, roleId),
+      with: { permission: { columns: { key: true } } },
+    });
+    const previousPermissionKeys = previousPermissions
+      .map((rp) => rp.permission?.key)
+      .filter(Boolean);
+
     await tx.delete(rolePermissions).where(eq(rolePermissions.roleId, roleId));
 
     if (targetPermissionIds.size > 0) {
@@ -65,6 +81,15 @@ export default defineEventHandler(async (event) => {
         })),
       );
     }
+
+    await tx.insert(auditLog).values({
+      actorUserId: context.session?.user.id ?? null,
+      action: "permissions.set",
+      targetType: "role",
+      targetId: roleId,
+      before: { permissions: previousPermissionKeys },
+      after: { permissions: parsed.data.permissionKeys },
+    });
   });
 
   invalidatePermissionCache(roleId);

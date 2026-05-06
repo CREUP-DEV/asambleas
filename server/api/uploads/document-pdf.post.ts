@@ -4,10 +4,10 @@ import { writeFile, mkdir } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { requirePermission } from "../../utils/auth/rbac";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import { getUploadDir } from "../../utils/core/uploadPaths";
 
 const ALLOWED_MIME_TYPES = ["application/pdf"];
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024; // 20MB
-const UPLOAD_DIR = "public/uploads/documents";
 
 export default defineEventHandler(async (event) => {
   await requirePermission(event, PERMISSION_KEYS.DOCUMENT_MANAGE);
@@ -48,13 +48,11 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const filename = filePart.filename ?? "document.pdf";
-  const ext = filename.endsWith(".pdf") ? ".pdf" : "";
-  const storedName = `${randomUUID()}${ext}`;
-  const uploadPath = join(process.cwd(), UPLOAD_DIR);
+  const storedName = `${randomUUID()}.pdf`;
+  const uploadPath = getUploadDir();
 
   await mkdir(uploadPath, { recursive: true });
   await writeFile(join(uploadPath, storedName), filePart.data);
 
-  return { fileUrl: `/uploads/documents/${storedName}` };
+  return { fileUrl: `/api/uploads/documents/${storedName}` };
 });

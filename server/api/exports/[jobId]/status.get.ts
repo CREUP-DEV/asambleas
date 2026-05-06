@@ -4,6 +4,7 @@ import { hasPermission } from "../../../utils/auth/rbac";
 import { getExportQueue } from "../../../utils/export/queue";
 import {
   getExportPermissionForQueue,
+  patchExportMetadata,
   readExportMetadata,
   validateExportJobId,
 } from "../../../utils/export/storage";
@@ -33,6 +34,13 @@ export default defineEventHandler(async (event) => {
     const job = await boss.getJobById(metadata.queueName, jobId);
 
     if (!job) {
+      if (metadata.status === "queued") {
+        await patchExportMetadata(jobId, {
+          status: "failed",
+          error: "Job not found in queue",
+        });
+        return { jobId, status: "failed" };
+      }
       return { jobId, status: metadata.status };
     }
 

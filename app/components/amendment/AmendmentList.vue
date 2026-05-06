@@ -134,8 +134,21 @@ const canShowCreate = computed(
       :amendments="amendments"
     />
 
-    <div v-if="fetchStatus === 'pending'" class="py-8 text-center">
-      <UIcon name="i-tabler-loader-2" class="text-muted size-6 animate-spin" />
+    <div v-if="fetchStatus === 'pending'" class="space-y-3">
+      <div
+        v-for="n in 3"
+        :key="n"
+        class="border-default flex items-center gap-3 rounded-lg border p-4"
+      >
+        <div class="min-w-0 flex-1 space-y-2">
+          <div class="flex items-center gap-2">
+            <USkeleton class="h-5 w-16 rounded-full" />
+            <USkeleton class="h-4 w-32" />
+          </div>
+          <USkeleton class="h-4 w-48" />
+        </div>
+        <USkeleton class="h-8 w-8 shrink-0 rounded" />
+      </div>
     </div>
 
     <div

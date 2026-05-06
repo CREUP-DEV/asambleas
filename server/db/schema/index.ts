@@ -6,3 +6,4 @@ export * from "./assembly";
 export * from "./agendaItem";
 export * from "./document";
 export * from "./amendment";
+export * from "./auditLog";

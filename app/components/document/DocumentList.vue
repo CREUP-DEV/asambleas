@@ -33,7 +33,11 @@ const { t } = useI18n();
 const localePath = useLocalePath();
 const toast = useToast();
 
-const { data: documents, refresh } = await useFetch<Document[]>(
+const {
+  data: documents,
+  refresh,
+  status: fetchStatus,
+} = await useFetch<Document[]>(
   `/api/assemblies/${props.assemblyId}/agenda-items/${props.itemId}/documents`,
 );
 
@@ -104,7 +108,21 @@ const statusColor = (status: string) => {
 
 <template>
   <div>
-    <div v-if="!documents || documents.length === 0" class="py-8 text-center">
+    <div v-if="fetchStatus === 'pending'" class="divide-y divide-default">
+      <div v-for="n in 3" :key="n" class="flex items-center gap-3 py-3">
+        <USkeleton class="h-5 w-5 shrink-0 rounded" />
+        <div class="min-w-0 flex-1 space-y-1.5">
+          <USkeleton class="h-4 w-48" />
+          <USkeleton class="h-3 w-32" />
+        </div>
+        <USkeleton class="h-5 w-20 rounded-full" />
+      </div>
+    </div>
+
+    <div
+      v-else-if="!documents || documents.length === 0"
+      class="py-8 text-center"
+    >
       <p class="text-muted text-sm">{{ t("document.noDocuments") }}</p>
       <p class="text-muted mt-1 text-xs">
         {{ t("document.noDocumentsDescription") }}
