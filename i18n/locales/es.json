@@ -25,7 +25,8 @@
     "yes": "Sí",
     "no": "No",
     "previous": "Anterior",
-    "next": "Siguiente"
+    "next": "Siguiente",
+    "discard": "Descartar cambios"
   },
   "auth": {
     "signIn": "Iniciar sesión",
