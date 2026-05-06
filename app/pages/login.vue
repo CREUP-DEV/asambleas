@@ -36,7 +36,8 @@ useHead({
   <main class="flex min-h-screen items-center justify-center bg-elevated">
     <UCard class="w-full max-w-sm">
       <template #header>
-        <div class="text-center">
+        <div class="flex flex-col items-center gap-2">
+          <UIcon name="i-tabler-list-numbers" class="size-10 text-primary" />
           <h1 class="text-2xl font-bold text-primary">
             {{ t("app.title") }}
           </h1>
