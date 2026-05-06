@@ -175,6 +175,7 @@
     "viewPdf": "Ver PDF",
     "platformOnly": "Solo los documentos de plataforma admiten enmiendas",
     "backToItem": "Volver al punto",
+    "timeline": "Historial del documento",
     "types": {
       "platform": "Plataforma",
       "pdf": "PDF"
@@ -203,7 +204,52 @@
   "amendment": {
     "title": "Enmiendas",
     "create": "Crear enmienda",
+    "edit": "Editar enmienda",
     "justification": "Justificación",
+    "justificationPlaceholder": "Explica la razón de la enmienda...",
+    "content": "Texto propuesto",
+    "noAmendments": "No hay enmiendas",
+    "noAmendmentsDescription": "Aún no se han presentado enmiendas para este documento.",
+    "submit": "Enviar enmienda",
+    "submitConfirm": "¿Enviar enmienda a revisión?",
+    "submitConfirmDescription": "Una vez enviada, no podrás editarla hasta que sea revisada.",
+    "submitted": "Enmienda enviada correctamente",
+    "created": "Enmienda creada correctamente",
+    "updated": "Enmienda actualizada correctamente",
+    "review": "Revisar enmienda",
+    "reviewAction": {
+      "accept": "Validar",
+      "reject": "Rechazar",
+      "formal": "Marcar de forma"
+    },
+    "reviewed": "Enmienda revisada correctamente",
+    "proponentDecision": "Decisión del proponente",
+    "proponentAction": {
+      "accept": "Aceptar enmienda",
+      "reject": "Rechazar enmienda"
+    },
+    "proponentDecided": "Decisión registrada correctamente",
+    "voteResult": "Resultado de votación",
+    "voteAction": {
+      "approved": "Aprobada",
+      "rejected": "Rechazada"
+    },
+    "voteRecorded": "Resultado registrado correctamente",
+    "transactional": "Crear transaccional",
+    "transactionalDescription": "Proponer una versión alternativa para negociación",
+    "transactionalCreated": "Enmienda transaccional creada correctamente",
+    "viewDiff": "Ver cambios",
+    "incorporated": "Incorporada",
+    "pendingVote": "Pendiente votación",
+    "author": "Autor",
+    "submittedAt": "Enviada",
+    "type": {
+      "regular": "Ordinaria",
+      "formal": "De forma"
+    },
+    "deadlinePassed": "El plazo para presentar enmiendas ha vencido",
+    "onlyPlatform": "Solo los documentos de plataforma admiten enmiendas",
+    "onlyAccepted": "Solo se pueden enmendar documentos aceptados",
     "statuses": {
       "draft": "Borrador",
       "pending_review": "Pendiente de revisión",
