@@ -37,7 +37,8 @@ const routeRules = {
   NitroRouteConfig & { security?: NuxtSecurityRouteRules }
 >;
 
-const authHandler = "./server/handlers/auth.ts";
+const adminHandler = "./server/handlers/auth.ts";
+const protectedHandler = "./server/handlers/protected.ts";
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
@@ -175,12 +176,21 @@ export default defineNuxtConfig({
 
   routeRules,
 
+  // Nitro registers `middleware: true` handlers with `h3App.use(route, ...)`,
+  // which prefix-matches literally: a `/**` suffix never matches and the
+  // middleware silently never runs. `/api/auth` is deliberately absent, since
+  // the Google OAuth callback is a cross-origin POST.
   serverHandlers: [
     {
-      route: "/api/admin/**",
+      route: "/api/admin",
       middleware: true,
-      handler: authHandler,
+      handler: adminHandler,
     },
+    ...["/api/assemblies", "/api/exports", "/api/uploads"].map((route) => ({
+      route,
+      middleware: true,
+      handler: protectedHandler,
+    })),
   ],
 
   i18n: {
