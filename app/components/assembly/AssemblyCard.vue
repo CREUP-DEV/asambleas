@@ -35,7 +35,7 @@ const assemblyLabel = computed(() => formatAssemblyLabel(props.assembly));
 <template>
   <NuxtLink
     :to="localePath(`/asambleas/${buildAssemblySlug(props.assembly)}`)"
-    class="hover:bg-elevated block rounded-xl border p-5 transition-colors"
+    class="motion-card group hover:border-primary/60 block rounded-xl border p-5"
     :aria-label="assemblyLabel"
   >
     <div class="flex items-start justify-between gap-3">
@@ -43,7 +43,9 @@ const assemblyLabel = computed(() => formatAssemblyLabel(props.assembly));
         <p class="text-muted text-xs font-medium uppercase tracking-wide">
           {{ t(`assembly.types.${props.assembly.type}`) }}
         </p>
-        <h2 class="mt-0.5 text-lg font-semibold">
+        <h2
+          class="group-hover:text-primary mt-0.5 text-lg font-semibold transition-colors"
+        >
           {{ assemblyLabel }}
         </h2>
       </div>

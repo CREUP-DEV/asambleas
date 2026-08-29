@@ -26,8 +26,11 @@ const form = computed({
   set: (val) => emit("update:modelValue", val),
 });
 
+// The acronym is what the field is wide enough to show, and it is how the rest
+// of the app labels an assembly (`80.ª AGO`). The full name stays on the cards
+// and the detail page.
 const typeOptions = ALL_ASSEMBLY_TYPES.map((type) => ({
-  label: t(`assembly.types.${type}`),
+  label: type,
   value: type,
 }));
 
@@ -89,6 +92,7 @@ const update = (field: keyof AssemblyFormData, value: unknown) => {
     <UFormField :label="t('assembly.location')" required>
       <UInput
         :value="form.location"
+        :placeholder="t('assembly.locationPlaceholder')"
         class="w-full"
         @input="update('location', ($event.target as HTMLInputElement).value)"
       />

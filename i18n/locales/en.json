@@ -105,6 +105,7 @@
     "startDate": "Start date",
     "endDate": "End date",
     "location": "Location",
+    "locationPlaceholder": "City",
     "noAssemblies": "No assemblies",
     "noAssembliesDescription": "Create the first assembly to get started.",
     "deleteConfirm": "Delete assembly?",

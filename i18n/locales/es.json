@@ -105,6 +105,7 @@
     "startDate": "Fecha de inicio",
     "endDate": "Fecha de fin",
     "location": "Lugar",
+    "locationPlaceholder": "Ciudad",
     "noAssemblies": "No hay asambleas",
     "noAssembliesDescription": "Crea la primera asamblea para comenzar.",
     "deleteConfirm": "¿Eliminar asamblea?",
