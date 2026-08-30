@@ -24,8 +24,10 @@ logs
 .env.*
 !.env.example
 
-# Drizzle
-drizzle/meta
+# Drizzle keeps its migration journal and schema snapshots in drizzle/meta.
+# They are not build output: `db:migrate` needs the journal to know what to
+# apply, and `db:generate` diffs against the snapshots to emit the next
+# migration. Ignoring them left a fresh clone unable to do either.
 
 # IDE
 .vscode/*
