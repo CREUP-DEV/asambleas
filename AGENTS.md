@@ -235,6 +235,20 @@ Rules:
 - All `/api/admin/**` endpoints require Admin.
 - All mutation endpoints need CSRF header and same-origin protection.
 - Client mutations must include `CSRF_HEADER_NAME` from `shared/constants/security.ts`.
+- That protection comes from the `serverHandlers` middleware in `nuxt.config.ts`:
+  `server/handlers/auth.ts` for the admin section, `server/handlers/protected.ts`
+  for the authenticated non-admin sections. A new API section needs its own
+  entry, or its mutations run unprotected.
+- Middleware routes must be a plain prefix (`/api/assemblies`), never
+  `/api/assemblies/**`. Nitro registers them with `h3App.use(route, ...)`, which
+  prefix-matches literally, so a `/**` suffix silently never matches and the
+  middleware never runs.
+- `/api/auth` is deliberately left uncovered: the Google OAuth callback is a
+  cross-origin POST.
+- The CSRF cookie is issued by `server/middleware/csrfCookie.ts`, which runs on
+  every response including the page render. Issuing it from an API handler is
+  not enough: during SSR those run as internal `$fetch` calls whose `Set-Cookie`
+  never reaches the browser.
 
 Client CSRF pattern:
 
@@ -244,6 +258,21 @@ await $fetch(url, {
   method: "POST",
   headers: csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : undefined,
   body,
+});
+```
+
+## Error Pages
+
+`app/error.vue` renders only localized copy, keyed off the status code. Never
+render `error.message` or `statusMessage`: on a 5xx that is the server-side
+exception, and on a 4xx it is untranslated framework or handler text.
+
+Pages that need their own wording pass an i18n key:
+
+```ts
+throw createError({
+  statusCode: 404,
+  data: { messageKey: "assembly.notFound" },
 });
 ```
 
@@ -272,6 +301,10 @@ await $fetch(url, {
 - `updatedAt` should use `.$onUpdate(() => sql\`now()\`)`.
 - Self-referencing FKs may require raw SQL migrations.
 - Edit schema files first, then run `pnpm db:generate`.
+- `drizzle/meta` is tracked, not ignored. `db:migrate` reads the journal to know
+  what to apply and `db:generate` diffs the snapshots to emit the next
+  migration, so a clone without it can do neither. Commit what drizzle-kit
+  writes there; never hand-edit or reformat it.
 - Do not edit existing migration files after they have been committed.
 
 ## PDF Export
@@ -312,6 +345,13 @@ pg-boss v10 reminders:
 - Unknown permission keys rejected, not silently ignored.
 - Export downloads authorized.
 
+## Formatting
+
+`eslint` runs Prettier over JS, TS and Vue. Everything else Prettier owns
+(Markdown, CSS, YAML, JSON) is covered only by `pnpm format:check`, so run it
+alongside `pnpm lint`. `.prettierignore` excludes generated output, the pnpm
+lockfile and `drizzle/meta`; do not reformat those by hand.
+
 ## Commands
 
 ```bash
@@ -320,6 +360,8 @@ pnpm build
 pnpm preview
 pnpm lint
 pnpm lint:fix
+pnpm format
+pnpm format:check
 pnpm typecheck
 pnpm db:generate
 pnpm db:migrate
@@ -335,6 +377,7 @@ Run before handing off code changes:
 
 ```bash
 pnpm lint
+pnpm format:check
 pnpm typecheck
 pnpm i18n:check
 pnpm i18n:audit-identical
