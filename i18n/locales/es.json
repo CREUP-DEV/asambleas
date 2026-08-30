@@ -339,6 +339,29 @@
     "notFound": "Página no encontrada",
     "forbidden": "No tienes permisos para realizar esta acción",
     "serverError": "Error del servidor. Inténtalo de nuevo.",
-    "conflict": "El registro ha sido modificado por otro usuario. Recarga la página."
+    "conflict": "El registro ha sido modificado por otro usuario. Recarga la página.",
+    "page": {
+      "notFound": {
+        "title": "Página no encontrada",
+        "description": "La página que buscas no existe o se ha movido."
+      },
+      "forbidden": {
+        "title": "Acceso denegado",
+        "description": "No tienes permisos para ver esta página."
+      },
+      "unauthorized": {
+        "title": "Sesión no válida",
+        "description": "Inicia sesión de nuevo para continuar."
+      },
+      "server": {
+        "title": "Error del servidor",
+        "description": "Algo ha fallado por nuestra parte. Inténtalo de nuevo en unos minutos."
+      },
+      "unknown": {
+        "title": "Algo ha ido mal",
+        "description": "No hemos podido completar la operación."
+      },
+      "goBack": "Volver atrás"
+    }
   }
 }
