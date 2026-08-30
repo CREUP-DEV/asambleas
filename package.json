@@ -23,6 +23,7 @@
     "@fontsource/raleway": "^5.2.8",
     "@iconify-json/lucide": "^1.2.103",
     "@iconify-json/tabler": "^1.2.33",
+    "@internationalized/date": "^3.12.3",
     "@nuxt/fonts": "^0.14.0",
     "@nuxt/icon": "2.2.1",
     "@nuxt/ui": "4.7.0",
@@ -40,7 +41,6 @@
     "nuxt": "^4.4.2",
     "nuxt-security": "^2.5.1",
     "nuxt-umami": "^3.2.1",
-
     "pdfmake": "^0.2.18",
     "pg": "^8.20.0",
     "pg-boss": "^10.3.4",
