@@ -32,21 +32,21 @@ The public website lives in a separate `creup/web` repository. This app may mirr
 
 ## Stack
 
-| Area | Technology |
-| --- | --- |
-| Framework | Nuxt 4 + Nitro |
-| UI | Nuxt UI v4 + Tailwind CSS v4 |
-| Auth | `better-auth` + Google OAuth + Drizzle adapter |
-| Database | PostgreSQL + Drizzle ORM |
-| Jobs | `pg-boss` v10 on PostgreSQL |
-| Validation | Zod v4 (`zod/v4`) |
-| i18n | `@nuxtjs/i18n`, locales `es` default and `en` |
-| Accessibility | `@nuxt/a11y`, content font preferences |
-| Security | `nuxt-security`, CSRF double-submit cookie |
-| Analytics | `nuxt-umami`, self-hosted and cookie-free |
-| Diffs | `diff-match-patch` |
-| PDF | `pdfmake`, Raleway bundled in `server/assets/fonts` |
-| IDs | `@paralleldrive/cuid2` |
+| Area          | Technology                                          |
+| ------------- | --------------------------------------------------- |
+| Framework     | Nuxt 4 + Nitro                                      |
+| UI            | Nuxt UI v4 + Tailwind CSS v4                        |
+| Auth          | `better-auth` + Google OAuth + Drizzle adapter      |
+| Database      | PostgreSQL + Drizzle ORM                            |
+| Jobs          | `pg-boss` v10 on PostgreSQL                         |
+| Validation    | Zod v4 (`zod/v4`)                                   |
+| i18n          | `@nuxtjs/i18n`, locales `es` default and `en`       |
+| Accessibility | `@nuxt/a11y`, content font preferences              |
+| Security      | `nuxt-security`, CSRF double-submit cookie          |
+| Analytics     | `nuxt-umami`, self-hosted and cookie-free           |
+| Diffs         | `diff-match-patch`                                  |
+| PDF           | `pdfmake`, Raleway bundled in `server/assets/fonts` |
+| IDs           | `@paralleldrive/cuid2`                              |
 
 ## Local Defaults
 
@@ -105,13 +105,13 @@ server/assets/      server-bundled fonts/assets
 
 Role assignment rules:
 
-| Case | Platform role result |
-| --- | --- |
-| New user + external `Asociado` | `Asociado` |
-| New user + anything else or sync failure | `Invitado` |
-| Existing `Asociado` + external no longer `Asociado` | `Invitado` |
-| Existing `Invitado` + external becomes `Asociado` | `Asociado` |
-| Existing `Admin`, `Secretaria` or `Moderador` | Keep current platform role |
+| Case                                                | Platform role result       |
+| --------------------------------------------------- | -------------------------- |
+| New user + external `Asociado`                      | `Asociado`                 |
+| New user + anything else or sync failure            | `Invitado`                 |
+| Existing `Asociado` + external no longer `Asociado` | `Invitado`                 |
+| Existing `Invitado` + external becomes `Asociado`   | `Asociado`                 |
+| Existing `Admin`, `Secretaria` or `Moderador`       | Keep current platform role |
 
 ## RBAC
 
@@ -127,13 +127,13 @@ System roles:
 
 Default permissions:
 
-| Role | Permissions |
-| --- | --- |
-| Admin | All, via bypass |
+| Role       | Permissions                                                                                                                                                    |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Admin      | All, via bypass                                                                                                                                                |
 | Secretaria | `assembly:create`, `assembly:manage`, `document:create`, `document:manage`, `amendment:create`, `amendment:manage`, `amendment:review`, `assembly:vote_result` |
-| Asociado | `document:create`, `amendment:create` |
-| Moderador | none |
-| Invitado | none |
+| Asociado   | `document:create`, `amendment:create`                                                                                                                          |
+| Moderador  | none                                                                                                                                                           |
+| Invitado   | none                                                                                                                                                           |
 
 Permission keys:
 
@@ -239,12 +239,12 @@ Rules:
 Client CSRF pattern:
 
 ```ts
-const csrfToken = useCookie(CSRF_COOKIE_NAME).value
+const csrfToken = useCookie(CSRF_COOKIE_NAME).value;
 await $fetch(url, {
-  method: 'POST',
+  method: "POST",
   headers: csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : undefined,
   body,
-})
+});
 ```
 
 ## Shared Helpers To Prefer
@@ -362,4 +362,3 @@ docs: update deployment runbook
 refactor: extract localized content helpers
 a11y: add diff display preferences
 ```
-

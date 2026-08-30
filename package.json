@@ -10,6 +10,8 @@
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "typecheck": "nuxt typecheck",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "node ./ops/migrate.mjs",
