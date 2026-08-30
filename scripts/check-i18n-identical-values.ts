@@ -28,6 +28,10 @@ type AllowlistEntry = {
 
 const ALLOWLIST: AllowlistEntry[] = [
   {
+    pattern: /^assembly\.dateRangeShort$/,
+    reason: "Arrow-only format string for numeric date ranges.",
+  },
+  {
     pattern: /^app\.title$/,
     reason: "Brand name stays the same across locales.",
   },
