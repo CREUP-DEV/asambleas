@@ -246,12 +246,11 @@ LIMIT 20;
 
 ## Problemas Frecuentes
 
-| Síntoma | Revisión |
-| --- | --- |
-| La app no arranca | Logs de `app`, `APP_SECRET`, `DATABASE_URL`, credenciales OAuth |
-| OAuth falla | Callback en Google, `NUXT_SITE_URL`, cabecera `X-Forwarded-Proto` |
-| No conectan migraciones | Host correcto: `postgres` dentro de Compose, `localhost` desde host |
-| Export PDF falla | `EXPORT_STORAGE_DIR` existe y es escribible; fuentes en `server/assets/fonts` empaquetadas |
-| Jobs no avanzan | Logs del worker, tabla `pgboss.job`, conexión PostgreSQL |
-| Descarga 404 tras reinicio | Confirmar que `storage/exports` está montado como volumen persistente |
-
+| Síntoma                    | Revisión                                                                                   |
+| -------------------------- | ------------------------------------------------------------------------------------------ |
+| La app no arranca          | Logs de `app`, `APP_SECRET`, `DATABASE_URL`, credenciales OAuth                            |
+| OAuth falla                | Callback en Google, `NUXT_SITE_URL`, cabecera `X-Forwarded-Proto`                          |
+| No conectan migraciones    | Host correcto: `postgres` dentro de Compose, `localhost` desde host                        |
+| Export PDF falla           | `EXPORT_STORAGE_DIR` existe y es escribible; fuentes en `server/assets/fonts` empaquetadas |
+| Jobs no avanzan            | Logs del worker, tabla `pgboss.job`, conexión PostgreSQL                                   |
+| Descarga 404 tras reinicio | Confirmar que `storage/exports` está montado como volumen persistente                      |

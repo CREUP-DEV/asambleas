@@ -1,16 +1,16 @@
-@import 'tailwindcss';
-@import '@nuxt/ui';
-@import '@fontsource/opendyslexic/400.css';
-@import '@fontsource/opendyslexic/700.css';
-@import '@fontsource/opendyslexic/400-italic.css';
-@import '@fontsource/opendyslexic/700-italic.css';
+@import "tailwindcss";
+@import "@nuxt/ui";
+@import "@fontsource/opendyslexic/400.css";
+@import "@fontsource/opendyslexic/700.css";
+@import "@fontsource/opendyslexic/400-italic.css";
+@import "@fontsource/opendyslexic/700-italic.css";
 
 @theme {
-  --font-sans: 'Raleway', sans-serif;
-  --font-serif: 'Red Rose', serif;
-  --font-mono: 'Fira Code', monospace;
-  --font-atkinson: 'Atkinson Hyperlegible', sans-serif;
-  --font-opendyslexic: 'OpenDyslexic', sans-serif;
+  --font-sans: "Raleway", sans-serif;
+  --font-serif: "Red Rose", serif;
+  --font-mono: "Fira Code", monospace;
+  --font-atkinson: "Atkinson Hyperlegible", sans-serif;
+  --font-opendyslexic: "OpenDyslexic", sans-serif;
 
   --color-creup-red-50: #fdf3f3;
   --color-creup-red-100: #fde3e4;

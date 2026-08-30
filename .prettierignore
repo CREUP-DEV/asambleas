@@ -1,0 +1,11 @@
+# Generated output
+.nuxt
+.output
+dist
+node_modules
+
+# Lockfile: owned by pnpm, never hand-formatted
+pnpm-lock.yaml
+
+# Drizzle rewrites these on every db:generate; reformatting them only churns
+drizzle/meta
