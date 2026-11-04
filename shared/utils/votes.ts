@@ -1,4 +1,8 @@
-import type { AssemblySettings, Majority, VoteResult } from "../constants/domain";
+import type {
+  AssemblySettings,
+  Majority,
+  VoteResult,
+} from "../constants/domain";
 
 export interface VoteCounts {
   inFavor: number;
@@ -34,7 +38,8 @@ export function computeVoteOutcome(
 ): VoteOutcome {
   const valid = counts.inFavor + counts.against + counts.abstentions;
   const cast = valid + (counts.blank ?? 0) + (counts.invalid ?? 0);
-  const usePresent = settings.denominator === "present" && counts.present != null;
+  const usePresent =
+    settings.denominator === "present" && counts.present != null;
   const denominator = usePresent ? counts.present! : valid;
   const inconsistent = counts.present != null && cast > counts.present;
 
@@ -61,7 +66,8 @@ export function computeVoteOutcome(
       ? Math.floor(denominator / 2) + 1
       : Math.ceil((denominator * 2) / 3);
   return {
-    result: denominator > 0 && counts.inFavor >= threshold ? "approved" : "rejected",
+    result:
+      denominator > 0 && counts.inFavor >= threshold ? "approved" : "rejected",
     threshold,
     denominator,
     inconsistent,

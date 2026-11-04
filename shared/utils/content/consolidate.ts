@@ -8,7 +8,7 @@ import type {
   ReplaceOp,
   Segment,
 } from "../../types/content";
-import { validateOps } from "./ops";
+import { compareReplaceOps, validateOps } from "./ops";
 import { isHardOverlap, overlapBetween } from "./overlaps";
 
 type SourcedReplace = ReplaceOp & { source: string };
@@ -109,7 +109,9 @@ export function consolidate(
       continue;
     }
     const collisions = applied
-      .filter((other) => isHardOverlap(overlapBetween(other.ops, amendment.ops)))
+      .filter((other) =>
+        isHardOverlap(overlapBetween(other.ops, amendment.ops)),
+      )
       .map((other) => other.id);
     if (collisions.length > 0) {
       conflicts.push({ amendmentId: amendment.id, conflictsWith: collisions });
@@ -172,7 +174,7 @@ export function consolidate(
         source: deleter,
       });
     } else {
-      const ops = (replaces.get(block.id) ?? []).sort((a, b) => a.from - b.from);
+      const ops = (replaces.get(block.id) ?? []).sort(compareReplaceOps);
       annotated.push({
         id: block.id,
         type: block.type,

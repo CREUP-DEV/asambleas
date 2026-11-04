@@ -80,6 +80,9 @@ export function canReviewAmendments(actor: Actor): boolean {
 }
 
 /** Whether the actor speaks for any of the given members. */
-export function actsFor(actor: Actor, memberIds: (string | null | undefined)[]): boolean {
+export function actsFor(
+  actor: Actor,
+  memberIds: (string | null | undefined)[],
+): boolean {
   return Boolean(actor.memberId && memberIds.includes(actor.memberId));
 }

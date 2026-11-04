@@ -37,8 +37,14 @@ export const assemblies = pgTable(
     number: integer("number").notNull(),
     type: assemblyTypeEnum("type").notNull(),
     status: assemblyStatusEnum("status").notNull().default("draft"),
-    startDate: timestamp("start_date", { withTimezone: true, mode: "date" }).notNull(),
-    endDate: timestamp("end_date", { withTimezone: true, mode: "date" }).notNull(),
+    startDate: timestamp("start_date", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
+    endDate: timestamp("end_date", {
+      withTimezone: true,
+      mode: "date",
+    }).notNull(),
     location: text("location").notNull(),
     /** Free text opening the convocatoria, written by Secretaría. */
     convocationIntro: text("convocation_intro"),
@@ -83,7 +89,10 @@ export const assemblyMilestones = pgTable(
       .$onUpdate(() => sql`now()`),
   },
   (table) => [
-    uniqueIndex("assembly_milestones_key_unique").on(table.assemblyId, table.key),
+    uniqueIndex("assembly_milestones_key_unique").on(
+      table.assemblyId,
+      table.key,
+    ),
   ],
 );
 
@@ -120,9 +129,12 @@ export const assembliesRelations = relations(assemblies, ({ many, one }) => ({
   }),
 }));
 
-export const assemblyMilestonesRelations = relations(assemblyMilestones, ({ one }) => ({
-  assembly: one(assemblies, {
-    fields: [assemblyMilestones.assemblyId],
-    references: [assemblies.id],
+export const assemblyMilestonesRelations = relations(
+  assemblyMilestones,
+  ({ one }) => ({
+    assembly: one(assemblies, {
+      fields: [assemblyMilestones.assemblyId],
+      references: [assemblies.id],
+    }),
   }),
-}));
+);

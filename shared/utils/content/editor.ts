@@ -33,7 +33,11 @@ function readInline(nodes: EditorNode[] | undefined): Inline {
     text += node.text;
     for (const mark of node.marks ?? []) {
       if (!(MARK_TYPES as readonly string[]).includes(mark.type)) continue;
-      const entry: Mark = { type: mark.type as MarkType, from, to: text.length };
+      const entry: Mark = {
+        type: mark.type as MarkType,
+        from,
+        to: text.length,
+      };
       if (mark.type === "link" && typeof mark.attrs?.href === "string") {
         entry.href = mark.attrs.href;
       }
@@ -71,7 +75,11 @@ export function editorToBlocks(doc: EditorNode, newId: () => string): Block[] {
           const inline = readInline(node.content);
           const block: Block = {
             id: idFor(node),
-            type: context.list ? "list_item" : context.quote ? "quote" : "paragraph",
+            type: context.list
+              ? "list_item"
+              : context.quote
+                ? "quote"
+                : "paragraph",
             ...inline,
           };
           if (context.list) {
@@ -139,9 +147,13 @@ function inlineNodes(block: Pick<Block, "text" | "marks">): EditorNode[] {
     const marks = block.marks
       .filter((mark) => mark.from <= from && mark.to >= to)
       .map((mark) =>
-        mark.type === "link" ? { type: "link", attrs: { href: mark.href } } : { type: mark.type },
+        mark.type === "link"
+          ? { type: "link", attrs: { href: mark.href } }
+          : { type: mark.type },
       );
-    nodes.push(marks.length ? { type: "text", text, marks } : { type: "text", text });
+    nodes.push(
+      marks.length ? { type: "text", text, marks } : { type: "text", text },
+    );
   }
   return nodes;
 }
@@ -156,7 +168,11 @@ function paragraph(block: Block): EditorNode {
 }
 
 /** Builds nested lists from a run of list items starting at `start`. */
-function buildList(blocks: Block[], start: number, level: number): [EditorNode, number] {
+function buildList(
+  blocks: Block[],
+  start: number,
+  level: number,
+): [EditorNode, number] {
   const list = blocks[start]!.list ?? "bullet";
   const node: EditorNode = {
     type: list === "ordered" ? "orderedList" : "bulletList",
@@ -223,10 +239,15 @@ export function blocksToEditor(blocks: Block[]): EditorNode {
  * Converts sanitized HTML (DOCX import, pasted content) to blocks. Works with
  * any DOM implementation: DOMParser in the browser, linkedom on the server.
  */
-export function htmlElementToBlocks(root: Element, newId: () => string): Block[] {
+export function htmlElementToBlocks(
+  root: Element,
+  newId: () => string,
+): Block[] {
   const blocks: Block[] = [];
 
-  const readElementInline = (element: Element): { text: string; marks: Mark[] } => {
+  const readElementInline = (
+    element: Element,
+  ): { text: string; marks: Mark[] } => {
     let text = "";
     const marks: Mark[] = [];
     const visit = (node: Node, active: Mark[]) => {
@@ -234,7 +255,8 @@ export function htmlElementToBlocks(root: Element, newId: () => string): Block[]
         const value = (node.textContent ?? "").replace(/\s+/g, " ");
         const from = text.length;
         text += value;
-        for (const mark of active) marks.push({ ...mark, from, to: text.length });
+        for (const mark of active)
+          marks.push({ ...mark, from, to: text.length });
         return;
       }
       if (node.nodeType !== 1) return;
@@ -245,12 +267,20 @@ export function htmlElementToBlocks(root: Element, newId: () => string): Block[]
         return;
       }
       const next = [...active];
-      if (tag === "strong" || tag === "b") next.push({ type: "bold", from: 0, to: 0 });
-      if (tag === "em" || tag === "i") next.push({ type: "italic", from: 0, to: 0 });
+      if (tag === "strong" || tag === "b")
+        next.push({ type: "bold", from: 0, to: 0 });
+      if (tag === "em" || tag === "i")
+        next.push({ type: "italic", from: 0, to: 0 });
       if (tag === "u") next.push({ type: "underline", from: 0, to: 0 });
-      if (tag === "s" || tag === "del" || tag === "strike") next.push({ type: "strike", from: 0, to: 0 });
+      if (tag === "s" || tag === "del" || tag === "strike")
+        next.push({ type: "strike", from: 0, to: 0 });
       if (tag === "a" && el.getAttribute("href")) {
-        next.push({ type: "link", from: 0, to: 0, href: el.getAttribute("href")! });
+        next.push({
+          type: "link",
+          from: 0,
+          to: 0,
+          href: el.getAttribute("href")!,
+        });
       }
       el.childNodes.forEach((child) => visit(child, next));
     };
@@ -269,16 +299,27 @@ export function htmlElementToBlocks(root: Element, newId: () => string): Block[]
     };
   };
 
-  const walk = (element: Element, list: { type: "bullet" | "ordered"; level: number } | null, quote: boolean) => {
+  const walk = (
+    element: Element,
+    list: { type: "bullet" | "ordered"; level: number } | null,
+    quote: boolean,
+  ) => {
     for (const child of Array.from(element.children)) {
       const tag = child.tagName.toLowerCase();
       if (/^h[1-6]$/.test(tag)) {
         const inline = readElementInline(child);
         if (inline.text) {
-          blocks.push({ id: newId(), type: "heading", level: Math.min(4, Number(tag[1])), ...inline });
+          blocks.push({
+            id: newId(),
+            type: "heading",
+            level: Math.min(4, Number(tag[1])),
+            ...inline,
+          });
         }
       } else if (tag === "p" || tag === "div") {
-        if (child.querySelector("p, ul, ol, h1, h2, h3, h4, h5, h6, blockquote")) {
+        if (
+          child.querySelector("p, ul, ol, h1, h2, h3, h4, h5, h6, blockquote")
+        ) {
           walk(child, list, quote);
           continue;
         }
@@ -286,7 +327,13 @@ export function htmlElementToBlocks(root: Element, newId: () => string): Block[]
         if (!inline.text) continue;
         blocks.push(
           list
-            ? { id: newId(), type: "list_item", level: list.level, list: list.type, ...inline }
+            ? {
+                id: newId(),
+                type: "list_item",
+                level: list.level,
+                list: list.type,
+                ...inline,
+              }
             : { id: newId(), type: quote ? "quote" : "paragraph", ...inline },
         );
       } else if (tag === "ul" || tag === "ol") {
@@ -305,9 +352,20 @@ export function htmlElementToBlocks(root: Element, newId: () => string): Block[]
           clone.querySelectorAll("ul, ol").forEach((sub) => sub.remove());
           const inline = readElementInline(clone);
           if (inline.text) {
-            blocks.push({ id: newId(), type: "list_item", level, list: type, ...inline });
+            blocks.push({
+              id: newId(),
+              type: "list_item",
+              level,
+              list: type,
+              ...inline,
+            });
           }
-          for (const sub of nested) walk(sub.parentElement === item ? wrap(sub) : sub, { type, level }, quote);
+          for (const sub of nested)
+            walk(
+              sub.parentElement === item ? wrap(sub) : sub,
+              { type, level },
+              quote,
+            );
         }
       } else if (tag === "blockquote") {
         walk(child, list, true);
@@ -317,7 +375,8 @@ export function htmlElementToBlocks(root: Element, newId: () => string): Block[]
             .map((cell) => (cell.textContent ?? "").replace(/\s+/g, " ").trim())
             .filter(Boolean)
             .join(" | ");
-          if (text) blocks.push({ id: newId(), type: "paragraph", text, marks: [] });
+          if (text)
+            blocks.push({ id: newId(), type: "paragraph", text, marks: [] });
         }
       } else {
         walk(child, list, quote);

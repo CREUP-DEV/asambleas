@@ -70,7 +70,9 @@ export const decisions = pgTable(
       .references(() => assemblies.id, { onDelete: "cascade" }),
     kind: decisionKindEnum("kind").notNull(),
     method: decisionMethodEnum("method").notNull(),
-    voteId: text("vote_id").references(() => votes.id, { onDelete: "set null" }),
+    voteId: text("vote_id").references(() => votes.id, {
+      onDelete: "set null",
+    }),
     subjectIds: jsonb("subject_ids").$type<string[]>().notNull().default([]),
     note: text("note"),
     decidedByUserId: text("decided_by_user_id").references(() => users.id, {
@@ -97,7 +99,10 @@ export const events = pgTable(
     entityType: text("entity_type").notNull(),
     entityId: text("entity_id").notNull(),
     type: text("type").notNull(),
-    payload: jsonb("payload").$type<Record<string, unknown>>().notNull().default({}),
+    payload: jsonb("payload")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
     actorUserId: text("actor_user_id").references(() => users.id, {
       onDelete: "set null",
     }),

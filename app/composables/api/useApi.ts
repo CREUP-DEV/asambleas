@@ -96,12 +96,23 @@ export function useApi() {
     options: ApiSendOptions = {},
   ): Promise<T> {
     const token = readCsrfToken(csrfCookie.value);
-    return requestFetch<T>(url, {
+    // Nitro's typed routes cannot narrow a runtime URL, so the method union
+    // does not type-check against them; the request shape is plain ofetch.
+    const fetchJson = requestFetch as unknown as (
+      url: string,
+      options: {
+        method: ApiMethod;
+        body?: Record<string, unknown> | FormData;
+        query?: Record<string, unknown>;
+        headers?: Record<string, string>;
+      },
+    ) => Promise<T>;
+    return fetchJson(url, {
       method: options.method ?? "POST",
       body: (options.body ?? undefined) as Record<string, unknown> | undefined,
       query: options.query,
       headers: token ? { [CSRF_HEADER_NAME]: token } : undefined,
-    }) as Promise<T>;
+    });
   }
 
   /**

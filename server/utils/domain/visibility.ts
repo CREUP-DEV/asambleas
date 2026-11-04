@@ -14,8 +14,15 @@ import {
 } from "./actor";
 
 /** Draft assemblies are only visible to those who manage assemblies. */
-export function canSeeAssembly(actor: Actor, assembly: { status: AssemblyStatus }): boolean {
-  return assembly.status !== "draft" || canManageAssemblies(actor) || canModerate(actor);
+export function canSeeAssembly(
+  actor: Actor,
+  assembly: { status: AssemblyStatus },
+): boolean {
+  return (
+    assembly.status !== "draft" ||
+    canManageAssemblies(actor) ||
+    canModerate(actor)
+  );
 }
 
 /**
@@ -30,7 +37,8 @@ export function canSeeDocument(
     submittedByUserId: string | null;
   },
 ): boolean {
-  if (document.status === "published" || document.status === "postponed") return true;
+  if (document.status === "published" || document.status === "postponed")
+    return true;
   if (canManageDocuments(actor) || canModerate(actor)) return true;
   if (document.submittedByUserId === actor.user.id) return true;
   return actsFor(actor, [document.proponentMemberId]);
@@ -89,10 +97,12 @@ export function canSeePositions(
     isProponent: boolean;
   },
 ): boolean {
-  if (options.isProponent || canModerate(actor) || canReviewAmendments(actor)) return true;
+  if (options.isProponent || canModerate(actor) || canReviewAmendments(actor))
+    return true;
   if (options.settings.positionVisibility === "public") return true;
   return (
     options.settings.positionVisibility === "session" &&
-    (options.assemblyStatus === "in_session" || options.assemblyStatus === "closed")
+    (options.assemblyStatus === "in_session" ||
+      options.assemblyStatus === "closed")
   );
 }

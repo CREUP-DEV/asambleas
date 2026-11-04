@@ -363,6 +363,19 @@ export function evaluateVoteInput(
   outcome: VoteOutcome & { result: "approved" | "rejected" };
 } {
   const majority = vote.majority ?? "simple";
+  // Assent carries no counts: nobody objected, so it passes (as in the
+  // document final vote, evaluateFinalVote).
+  if (vote.method === "assent") {
+    return {
+      majority,
+      outcome: {
+        result: "approved",
+        threshold: 0,
+        denominator: 0,
+        inconsistent: false,
+      },
+    };
+  }
   const outcome = computeVoteOutcome(voteCounts(vote), majority, settings);
   if (outcome.result === "tie") {
     fail(409, "Empate: hay que repetir la votación", { tie: true });

@@ -81,7 +81,10 @@ export function isHardOverlap(kind: OverlapKind | null): boolean {
   return kind === "same_text" || kind === "removed_block";
 }
 
-export function overlapBetween(a: AmendmentOp[], b: AmendmentOp[]): OverlapKind | null {
+export function overlapBetween(
+  a: AmendmentOp[],
+  b: AmendmentOp[],
+): OverlapKind | null {
   return collide(footprint(a), footprint(b));
 }
 
