@@ -70,7 +70,6 @@ export const accounts = pgTable(
   "accounts",
   {
     id: text("id").primaryKey(),
-    issuer: text("issuer").notNull(),
     accountId: text("account_id").notNull(),
     providerId: text("provider_id").notNull(),
     userId: text("user_id")
@@ -99,8 +98,10 @@ export const accounts = pgTable(
   },
   (table) => [
     index("idx_accounts_user_id").on(table.userId),
-    uniqueIndex("accounts_issuer_account_id_unique").on(
-      table.issuer,
+    // better-auth >= 1.7.3 identifies an account by (provider, account id)
+    // again and rejects lookups that match more than one row.
+    uniqueIndex("accounts_provider_account_unique").on(
+      table.providerId,
       table.accountId,
     ),
   ],
