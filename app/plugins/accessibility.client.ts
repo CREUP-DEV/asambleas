@@ -54,7 +54,10 @@ export default defineNuxtPlugin(() => {
   watch(
     contentFont,
     (font) => {
-      root.style.setProperty("--user-content-font", CONTENT_FONT_VARIABLES[font]);
+      root.style.setProperty(
+        "--user-content-font",
+        CONTENT_FONT_VARIABLES[font],
+      );
       root.dataset.contentFont = font;
       writeStored(CONTENT_FONT_STORAGE_KEY, font);
     },

@@ -5,23 +5,27 @@ import {
   getRouterParam,
   readMultipartFormData,
 } from "h3";
-import { and, count, eq, inArray, like, ne, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, like, ne, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { db } from "../../db";
+import type { assemblies } from "../../db/schema";
 import {
   amendmentAcceptances,
   amendmentAuthors,
   amendments,
-  assemblies,
   assemblyMilestones,
   documents,
   documentVersions,
+  events,
   members,
+  users,
   votes,
 } from "../../db/schema";
 import { getUploadDir } from "../core/uploadPaths";
+import { logError } from "../core/logger";
+import { assertOptimisticLock } from "../optimisticLock";
 import {
   actsFor,
   canManageDocuments,
@@ -29,7 +33,12 @@ import {
   requireActor,
   type Actor,
 } from "./actor";
-import { resolveAssembly, resolveDocument } from "./resolvers";
+import { recordEvent } from "./events";
+import {
+  resolveAgendaItem,
+  resolveAssembly,
+  resolveDocument,
+} from "./resolvers";
 import {
   canSeeAmendment,
   canSeeDocument,
@@ -42,16 +51,23 @@ import {
   type AssemblySettings,
   type DocumentKind,
   type DocumentStatus,
+  type Majority,
+  type VoteResult,
 } from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type {
   AmendmentWindowDto,
   DocumentCapabilities,
+  DocumentContentBody,
   DocumentDto,
   DocumentSummaryDto,
+  DocumentUpdateBody,
+  EventDto,
+  FinalVoteBody,
   MemberRef,
   VersionDto,
   VoteDto,
+  VoteInput,
 } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
 import {
@@ -60,8 +76,16 @@ import {
   type AmendmentWindow,
   type Milestones,
 } from "~~/shared/utils/calendar";
+import { consolidate } from "~~/shared/utils/content/consolidate";
 import { hashContent } from "~~/shared/utils/diff";
 import { slugify } from "~~/shared/utils/slug";
+import { computeVoteOutcome } from "~~/shared/utils/votes";
+
+/**
+ * The document API (docs/api.md, "Documents"). Handlers resolve the route
+ * with `resolveDocumentRoute`, parse the body and call one function of this
+ * module. Never import from ./amendments here: it imports this module.
+ */
 
 type AssemblyRow = typeof assemblies.$inferSelect;
 export type DocumentRow = typeof documents.$inferSelect;
@@ -71,13 +95,29 @@ type MemberRow = typeof members.$inferSelect;
 
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/** Statuses from which a document can still be published. */
+export interface DocumentRouteContext {
+  actor: Actor;
+  assembly: AssemblyRow;
+  document: DocumentRow;
+}
+
+/** Statuses from which a never-published document can be published. */
 export const PUBLISHABLE_STATUSES: DocumentStatus[] = ["draft", "submitted"];
+
+const STALE_DOCUMENT_MESSAGE = "El documento ha cambiado. Recarga la página";
 
 // Small helpers -----------------------------------------------------------
 
 function toIso(value: Date | null | undefined): string | null {
   return value ? value.toISOString() : null;
+}
+
+function fail(statusCode: number, message: string, data?: unknown): never {
+  throw createError({
+    statusCode,
+    message,
+    ...(data === undefined ? {} : { data }),
+  });
 }
 
 /** Stored settings merged over the defaults, as every reader must do. */
@@ -104,17 +144,15 @@ export function parseDocumentBody<T>(
   schema: {
     safeParse(
       value: unknown,
-    ): { success: true; data: T } | { success: false; error: { issues: unknown[] } };
+    ):
+      | { success: true; data: T }
+      | { success: false; error: { issues: unknown[] } };
   },
   body: unknown,
 ): T {
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
-    throw createError({
-      statusCode: 400,
-      message: "Datos no válidos",
-      data: { issues: parsed.error.issues },
-    });
+    fail(400, "Datos no válidos", { issues: parsed.error.issues });
   }
   return parsed.data;
 }
@@ -160,12 +198,18 @@ export function documentWindow(
 }
 
 /** Whether submitted amendments may already be shown to everyone. */
-export function isWindowClosed(window: AmendmentWindow, now = new Date()): boolean {
+export function isWindowClosed(
+  window: AmendmentWindow,
+  now = new Date(),
+): boolean {
   return Boolean(window.closesAt && now > window.closesAt);
 }
 
 /** Whether members may still present documents (documents_close milestone). */
-export function documentsDeadlinePassed(milestones: Milestones, now = new Date()): boolean {
+export function documentsDeadlinePassed(
+  milestones: Milestones,
+  now = new Date(),
+): boolean {
   const close = milestones.documents_close;
   return Boolean(close && now > close);
 }
@@ -179,7 +223,8 @@ export function isProponentSide(
 ): boolean {
   return (
     actsFor(actor, [document.proponentMemberId]) ||
-    (document.submittedByUserId !== null && document.submittedByUserId === actor.user.id)
+    (document.submittedByUserId !== null &&
+      document.submittedByUserId === actor.user.id)
   );
 }
 
@@ -190,7 +235,10 @@ export function isProponentSide(
  */
 export function canEditDocument(
   actor: Actor,
-  document: Pick<DocumentRow, "status" | "proponentMemberId" | "submittedByUserId">,
+  document: Pick<
+    DocumentRow,
+    "status" | "proponentMemberId" | "submittedByUserId"
+  >,
 ): boolean {
   if (canManageDocuments(actor)) return true;
   return document.status === "draft" && isProponentSide(actor, document);
@@ -198,13 +246,13 @@ export function canEditDocument(
 
 export function requireDocumentEditor(
   actor: Actor,
-  document: Pick<DocumentRow, "status" | "proponentMemberId" | "submittedByUserId">,
+  document: Pick<
+    DocumentRow,
+    "status" | "proponentMemberId" | "submittedByUserId"
+  >,
 ): void {
   if (!canEditDocument(actor, document)) {
-    throw createError({
-      statusCode: 403,
-      message: "No tienes permiso para editar este documento",
-    });
+    fail(403, "No tienes permiso para editar este documento");
   }
 }
 
@@ -215,6 +263,22 @@ export function isTextFrozen(
   return (
     document.status === "published" ||
     document.baseVersionId !== null ||
+    document.publishedAt !== null
+  );
+}
+
+/**
+ * Drafts and submissions can be published. A withdrawn or postponed document
+ * that was already published can be published again: it keeps its base
+ * version, its reference and its amendments.
+ */
+export function isPublishable(
+  document: Pick<DocumentRow, "status" | "publishedAt">,
+): boolean {
+  if (PUBLISHABLE_STATUSES.includes(document.status))
+    return document.publishedAt === null;
+  return (
+    (document.status === "withdrawn" || document.status === "postponed") &&
     document.publishedAt !== null
   );
 }
@@ -255,8 +319,7 @@ export function documentCapabilities(
 ): DocumentCapabilities {
   return {
     edit: canEditDocument(actor, document) && !isTextFrozen(document),
-    publish:
-      canManageDocuments(actor) && PUBLISHABLE_STATUSES.includes(document.status),
+    publish: canManageDocuments(actor) && isPublishable(document),
     amend: canAmendDocument(actor, assembly, document, window, now),
     position:
       document.status === "published" &&
@@ -268,10 +331,16 @@ export function documentCapabilities(
 // Mappers -------------------------------------------------------------------
 
 export function toMemberRef(
-  member: Pick<MemberRow, "id" | "acronym" | "name" | "kind"> | null | undefined,
+  member:
+    Pick<MemberRow, "id" | "acronym" | "name" | "kind"> | null | undefined,
 ): MemberRef | null {
   if (!member) return null;
-  return { id: member.id, acronym: member.acronym, name: member.name, kind: member.kind };
+  return {
+    id: member.id,
+    acronym: member.acronym,
+    name: member.name,
+    kind: member.kind,
+  };
 }
 
 export function toVersionDto(version: VersionRow): VersionDto {
@@ -366,7 +435,9 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
     // Everyone who can see an unpublished document (its presenters, managers
     // and the Mesa) needs to read its text; editing is governed by can.edit.
     workingVersion:
-      !frozen && input.workingVersion ? toVersionDto(input.workingVersion) : null,
+      !frozen && input.workingVersion
+        ? toVersionDto(input.workingVersion)
+        : null,
     baseVersion: input.baseVersion ? toVersionDto(input.baseVersion) : null,
     consolidatedVersion: input.consolidatedVersion
       ? toVersionDto(input.consolidatedVersion)
@@ -391,7 +462,12 @@ async function countSubmittedAmendments(
   const rows = await executor
     .select({ documentId: amendments.documentId, total: count() })
     .from(amendments)
-    .where(and(inArray(amendments.documentId, documentIds), ne(amendments.status, "draft")))
+    .where(
+      and(
+        inArray(amendments.documentId, documentIds),
+        ne(amendments.status, "draft"),
+      ),
+    )
     .groupBy(amendments.documentId);
   return new Map(rows.map((row) => [row.documentId, Number(row.total)]));
 }
@@ -408,7 +484,10 @@ export async function loadDocumentSummaries(
     db.query.documents.findMany({
       where: eq(documents.assemblyId, assembly.id),
       with: { proponent: true },
-      orderBy: (table, { asc }) => [asc(table.createdAt), asc(table.id)],
+      orderBy: (table, { asc: ascending }) => [
+        ascending(table.createdAt),
+        ascending(table.id),
+      ],
     }),
     loadMilestones(assembly.id),
   ]);
@@ -444,31 +523,36 @@ export async function loadDocumentDto(
     .select()
     .from(documents)
     .where(eq(documents.id, documentId));
-  if (!document) {
-    throw createError({ statusCode: 404, message: "Documento no encontrado" });
-  }
-  const [milestones, proponent, counts, workingVersion, baseVersion, consolidatedVersion, finalVote] =
-    await Promise.all([
-      loadMilestones(assembly.id, executor),
-      document.proponentMemberId
-        ? executor
-            .select()
-            .from(members)
-            .where(eq(members.id, document.proponentMemberId))
-            .then((rows) => rows[0] ?? null)
-        : Promise.resolve(null),
-      countSubmittedAmendments([document.id], executor),
-      loadVersion(document.workingVersionId, executor),
-      loadVersion(document.baseVersionId, executor),
-      loadVersion(document.consolidatedVersionId, executor),
-      document.finalVoteId
-        ? executor
-            .select()
-            .from(votes)
-            .where(eq(votes.id, document.finalVoteId))
-            .then((rows) => rows[0] ?? null)
-        : Promise.resolve(null),
-    ]);
+  if (!document) fail(404, "Documento no encontrado");
+  const [
+    milestones,
+    proponent,
+    counts,
+    workingVersion,
+    baseVersion,
+    consolidatedVersion,
+    finalVote,
+  ] = await Promise.all([
+    loadMilestones(assembly.id, executor),
+    document.proponentMemberId
+      ? executor
+          .select()
+          .from(members)
+          .where(eq(members.id, document.proponentMemberId))
+          .then((rows) => rows[0] ?? null)
+      : Promise.resolve(null),
+    countSubmittedAmendments([document.id], executor),
+    loadVersion(document.workingVersionId, executor),
+    loadVersion(document.baseVersionId, executor),
+    loadVersion(document.consolidatedVersionId, executor),
+    document.finalVoteId
+      ? executor
+          .select()
+          .from(votes)
+          .where(eq(votes.id, document.finalVoteId))
+          .then((rows) => rows[0] ?? null)
+      : Promise.resolve(null),
+  ]);
   return toDocumentDto({
     actor,
     assembly,
@@ -484,10 +568,19 @@ export async function loadDocumentDto(
 }
 
 /** requireActor + resolveAssembly + resolveDocument for document routes. */
-export async function resolveDocumentRoute(event: H3Event) {
+export async function resolveDocumentRoute(
+  event: H3Event,
+): Promise<DocumentRouteContext> {
   const actor = await requireActor(event);
-  const assembly = await resolveAssembly(actor, getRouterParam(event, "assembly"));
-  const document = await resolveDocument(actor, assembly.id, getRouterParam(event, "document"));
+  const assembly = await resolveAssembly(
+    actor,
+    getRouterParam(event, "assembly"),
+  );
+  const document = await resolveDocument(
+    actor,
+    assembly.id,
+    getRouterParam(event, "document"),
+  );
   return { actor, assembly, document };
 }
 
@@ -497,10 +590,47 @@ export async function requireMember(memberId: string, executor: Executor = db) {
     .select({ id: members.id })
     .from(members)
     .where(eq(members.id, memberId));
-  if (!member) {
-    throw createError({ statusCode: 422, message: "El miembro indicado no existe" });
-  }
+  if (!member) fail(422, "El miembro indicado no existe");
   return member;
+}
+
+/** Reads and locks the current row until the transaction ends. */
+async function lockDocument(
+  executor: Executor,
+  documentId: string,
+): Promise<DocumentRow> {
+  const [row] = await executor
+    .select()
+    .from(documents)
+    .where(eq(documents.id, documentId))
+    .for("update");
+  if (!row) fail(404, "Documento no encontrado");
+  return row;
+}
+
+/** Whether the document has something to submit or publish. */
+async function hasContent(
+  executor: Executor,
+  document: DocumentRow,
+): Promise<boolean> {
+  if (document.format === "file") return Boolean(document.fileUrl);
+  if (!document.workingVersionId) return false;
+  const [row] = await executor
+    .select({
+      size: sql<number>`jsonb_array_length(${documentVersions.blocks})`,
+    })
+    .from(documentVersions)
+    .where(eq(documentVersions.id, document.workingVersionId));
+  return Number(row?.size ?? 0) > 0;
+}
+
+function emptyDocumentError(document: Pick<DocumentRow, "format">): never {
+  fail(
+    422,
+    document.format === "file"
+      ? "Falta subir el PDF del documento"
+      : "El documento no tiene texto",
+  );
 }
 
 // Slugs, versions and references ------------------------------------------
@@ -524,9 +654,15 @@ export async function uniqueDocumentSlug(
   const rows = await executor
     .select({ slug: documents.slug })
     .from(documents)
-    .where(and(eq(documents.assemblyId, assemblyId), like(documents.slug, `${base}%`)));
+    .where(
+      and(
+        eq(documents.assemblyId, assemblyId),
+        like(documents.slug, `${base}%`),
+      ),
+    );
   const taken = new Set(rows.map((row) => row.slug));
-  const isFree = (slug: string) => !taken.has(slug) && !RESERVED_SLUGS.has(slug);
+  const isFree = (slug: string) =>
+    !taken.has(slug) && !RESERVED_SLUGS.has(slug);
   if (isFree(base)) return base;
   let suffix = 2;
   while (!isFree(`${base}-${suffix}`)) suffix += 1;
@@ -582,7 +718,665 @@ export async function assignReference(
   return `${prefix} ${String(last + 1).padStart(3, "0")}/${year}`;
 }
 
-// Amendment visibility (history) -------------------------------------------
+// Metadata (PUT) ----------------------------------------------------------
+
+/** Fields only managers may change; the presenters get the kind defaults. */
+const MANAGER_FIELDS = [
+  "proponentMemberId",
+  "amendable",
+  "voted",
+  "majority",
+  "amendmentsOpenAt",
+  "amendmentsCloseAt",
+  "status",
+] as const satisfies readonly (keyof DocumentUpdateBody)[];
+
+function sameDate(a: Date | null, b: string | null): boolean {
+  if (a === null || b === null) return a === null && b === null;
+  return a.getTime() === new Date(b).getTime();
+}
+
+/** Body fields that differ from the stored row. */
+function changedFields(
+  document: DocumentRow,
+  body: DocumentUpdateBody,
+): (keyof DocumentUpdateBody)[] {
+  const changed: (keyof DocumentUpdateBody)[] = [];
+  const plain = [
+    "title",
+    "summary",
+    "kind",
+    "agendaItemId",
+    "proponentMemberId",
+    "amendable",
+    "voted",
+    "majority",
+    "status",
+  ] as const;
+  for (const key of plain) {
+    if (body[key] !== undefined && body[key] !== document[key])
+      changed.push(key);
+  }
+  if (
+    body.amendmentsOpenAt !== undefined &&
+    !sameDate(document.amendmentsOpenAt, body.amendmentsOpenAt)
+  ) {
+    changed.push("amendmentsOpenAt");
+  }
+  if (
+    body.amendmentsCloseAt !== undefined &&
+    !sameDate(document.amendmentsCloseAt, body.amendmentsCloseAt)
+  ) {
+    changed.push("amendmentsCloseAt");
+  }
+  return changed;
+}
+
+/** Status changes allowed through PUT (managers only). */
+function assertStatusChange(document: DocumentRow, next: DocumentStatus): void {
+  if (next === document.status) return;
+  if (next === "withdrawn") return;
+  if (next === "postponed") {
+    // Postponed documents are public, so only published texts can be postponed.
+    if (document.publishedAt === null) {
+      fail(409, "Solo se pueden aplazar documentos ya publicados");
+    }
+    return;
+  }
+  if (next === "submitted") {
+    if (document.publishedAt !== null) {
+      fail(
+        409,
+        "Este documento ya se publicó: vuelve a publicarlo en lugar de presentarlo",
+      );
+    }
+    return;
+  }
+  fail(422, "Cambio de estado no válido");
+}
+
+/**
+ * Updates the metadata of a document. Presenters may change title, summary,
+ * kind and agenda item of their draft; everything else needs document:manage.
+ * The slug never changes, since it is part of the URLs already shared.
+ */
+export async function updateDocument(
+  ctx: DocumentRouteContext,
+  body: DocumentUpdateBody,
+): Promise<DocumentDto> {
+  const { actor, assembly } = ctx;
+  requireDocumentEditor(actor, ctx.document);
+  const manager = canManageDocuments(actor);
+
+  const pending = changedFields(ctx.document, body);
+  if (
+    !manager &&
+    pending.some((key) => (MANAGER_FIELDS as readonly string[]).includes(key))
+  ) {
+    fail(403, "No tienes permiso para cambiar estos datos del documento");
+  }
+  if (
+    body.agendaItemId !== undefined &&
+    body.agendaItemId !== ctx.document.agendaItemId
+  ) {
+    const item = await resolveAgendaItem(assembly.id, body.agendaItemId);
+    if (!manager && !item.acceptsSubmissions) {
+      fail(
+        403,
+        "Este punto del orden del día no admite documentos de los miembros",
+      );
+    }
+  }
+  if (
+    body.proponentMemberId &&
+    body.proponentMemberId !== ctx.document.proponentMemberId
+  ) {
+    await requireMember(body.proponentMemberId);
+  }
+
+  await db.transaction(async (tx) => {
+    const current = await lockDocument(tx, ctx.document.id);
+    assertOptimisticLock(
+      body.updatedAt,
+      current.updatedAt,
+      STALE_DOCUMENT_MESSAGE,
+    );
+    requireDocumentEditor(actor, current);
+
+    const changed = changedFields(current, body);
+    if (changed.length === 0) return;
+
+    const patch: Partial<typeof documents.$inferInsert> = {};
+    if (changed.includes("title")) patch.title = body.title;
+    if (changed.includes("summary")) patch.summary = body.summary ?? null;
+    if (changed.includes("agendaItemId"))
+      patch.agendaItemId = body.agendaItemId;
+    if (changed.includes("kind")) {
+      patch.kind = body.kind;
+      if (!manager) {
+        // Presenters always get the defaults of the kind they pick.
+        const defaults = DOCUMENT_KIND_DEFAULTS[body.kind!];
+        patch.amendable =
+          current.format === "file" ? false : defaults.amendable;
+        patch.voted = defaults.voted;
+        patch.majority = defaults.majority;
+      }
+    }
+    if (manager) {
+      if (changed.includes("proponentMemberId")) {
+        patch.proponentMemberId = body.proponentMemberId ?? null;
+      }
+      if (changed.includes("amendable")) patch.amendable = body.amendable;
+      if (changed.includes("voted")) patch.voted = body.voted;
+      if (changed.includes("majority")) patch.majority = body.majority;
+      if (changed.includes("amendmentsOpenAt")) {
+        patch.amendmentsOpenAt = body.amendmentsOpenAt
+          ? new Date(body.amendmentsOpenAt)
+          : null;
+      }
+      if (changed.includes("amendmentsCloseAt")) {
+        patch.amendmentsCloseAt = body.amendmentsCloseAt
+          ? new Date(body.amendmentsCloseAt)
+          : null;
+      }
+      if (changed.includes("status")) {
+        assertStatusChange(current, body.status!);
+        patch.status = body.status;
+        if (body.status === "submitted" && !current.submittedAt)
+          patch.submittedAt = new Date();
+      }
+    }
+
+    if (current.format === "file" && (patch.amendable ?? current.amendable)) {
+      fail(422, "Un documento en PDF no puede ser enmendable");
+    }
+    const opensAt =
+      patch.amendmentsOpenAt !== undefined
+        ? patch.amendmentsOpenAt
+        : current.amendmentsOpenAt;
+    const closesAt =
+      patch.amendmentsCloseAt !== undefined
+        ? patch.amendmentsCloseAt
+        : current.amendmentsCloseAt;
+    if (opensAt && closesAt && closesAt <= opensAt) {
+      fail(422, "El cierre de enmiendas debe ser posterior a la apertura");
+    }
+
+    await tx.update(documents).set(patch).where(eq(documents.id, current.id));
+
+    const fields = changed.filter((key) => key !== "status");
+    if (fields.length > 0) {
+      await recordEvent(tx, {
+        assemblyId: assembly.id,
+        entityType: "document",
+        entityId: current.id,
+        documentId: current.id,
+        type: "document_updated",
+        payload: { fields },
+        actor,
+      });
+    }
+    if (patch.status) {
+      await recordEvent(tx, {
+        assemblyId: assembly.id,
+        entityType: "document",
+        entityId: current.id,
+        documentId: current.id,
+        type: "document_status_changed",
+        payload: { from: current.status, to: patch.status },
+        actor,
+      });
+    }
+  });
+
+  return loadDocumentDto(assembly, ctx.document.id, actor);
+}
+
+// Working draft -----------------------------------------------------------
+
+/** The actor may replace the working text: structured, editable, not frozen. */
+export function requireTextEditor(actor: Actor, document: DocumentRow): void {
+  requireDocumentEditor(actor, document);
+  if (document.format !== "structured") {
+    fail(409, "Este documento es un PDF y no tiene texto editable");
+  }
+  if (isTextFrozen(document)) {
+    fail(409, "El documento ya está publicado y su texto no se puede editar");
+  }
+}
+
+/**
+ * Replaces the blocks of the working draft in place. `baseHash` must be the
+ * stored contentHash the client edited; a stale hash answers 409 with
+ * `{ stale: true }`. The document's updatedAt is left alone, so saving the
+ * text never invalidates a metadata form open at the same time.
+ */
+export async function updateDocumentContent(
+  ctx: DocumentRouteContext,
+  body: DocumentContentBody,
+): Promise<DocumentDto> {
+  const { actor, assembly } = ctx;
+  requireTextEditor(actor, ctx.document);
+  const contentHash = await hashBlocks(body.blocks);
+
+  await db.transaction(async (tx) => {
+    const current = await lockDocument(tx, ctx.document.id);
+    requireTextEditor(actor, current);
+    if (!current.workingVersionId) fail(409, "El documento no tiene borrador");
+
+    const [updated] = await tx
+      .update(documentVersions)
+      .set({ blocks: body.blocks, contentHash })
+      .where(
+        and(
+          eq(documentVersions.id, current.workingVersionId),
+          eq(documentVersions.kind, "draft"),
+          eq(documentVersions.contentHash, body.baseHash),
+        ),
+      )
+      .returning({ id: documentVersions.id });
+    if (!updated) {
+      fail(
+        409,
+        "El texto ha cambiado desde que lo abriste. Recarga la página",
+        {
+          stale: true,
+        },
+      );
+    }
+    if (contentHash === body.baseHash) return;
+
+    await recordEvent(tx, {
+      assemblyId: assembly.id,
+      entityType: "document",
+      entityId: current.id,
+      documentId: current.id,
+      type: "document_content_updated",
+      payload: { contentHash, blockCount: body.blocks.length },
+      actor,
+    });
+  });
+
+  return loadDocumentDto(assembly, ctx.document.id, actor);
+}
+
+// Submission and publication ------------------------------------------------
+
+/**
+ * A presenter submits a draft for admission. Members must do it before the
+ * documents_close milestone; managers are not bound by it.
+ */
+export async function submitDocument(
+  ctx: DocumentRouteContext,
+  body: { updatedAt?: string },
+): Promise<DocumentDto> {
+  const { actor, assembly } = ctx;
+  const manager = canManageDocuments(actor);
+  if (!manager && !isProponentSide(actor, ctx.document)) {
+    fail(403, "Solo quien presenta el documento puede enviarlo");
+  }
+  if (assembly.status === "closed") fail(409, "La asamblea ya está cerrada");
+  if (!manager && documentsDeadlinePassed(await loadMilestones(assembly.id))) {
+    fail(409, "El plazo de presentación de documentos ha terminado");
+  }
+
+  await db.transaction(async (tx) => {
+    const current = await lockDocument(tx, ctx.document.id);
+    assertOptimisticLock(
+      body.updatedAt,
+      current.updatedAt,
+      STALE_DOCUMENT_MESSAGE,
+    );
+    if (current.status !== "draft")
+      fail(409, "Solo se pueden presentar borradores");
+    if (!(await hasContent(tx, current))) emptyDocumentError(current);
+
+    const submittedAt = new Date();
+    await tx
+      .update(documents)
+      .set({ status: "submitted", submittedAt })
+      .where(eq(documents.id, current.id));
+    await recordEvent(tx, {
+      assemblyId: assembly.id,
+      entityType: "document",
+      entityId: current.id,
+      documentId: current.id,
+      type: "document_submitted",
+      payload: { submittedAt: submittedAt.toISOString() },
+      actor,
+    });
+  });
+
+  return loadDocumentDto(assembly, ctx.document.id, actor);
+}
+
+/**
+ * Publishes a document (document:manage). A structured text is frozen as an
+ * immutable `base` version, which amendments anchor to. Kinds with a
+ * reference prefix get "{PREFIX} {NNN}/{YYYY}". Publishing again a withdrawn
+ * or postponed document restores it with the same base and reference.
+ */
+export async function publishDocument(
+  ctx: DocumentRouteContext,
+  body: { updatedAt?: string },
+): Promise<DocumentDto> {
+  const { actor, assembly } = ctx;
+  if (!canManageDocuments(actor)) {
+    fail(403, "No tienes permiso para publicar documentos");
+  }
+
+  await db.transaction(async (tx) => {
+    const current = await lockDocument(tx, ctx.document.id);
+    assertOptimisticLock(
+      body.updatedAt,
+      current.updatedAt,
+      STALE_DOCUMENT_MESSAGE,
+    );
+    if (!isPublishable(current)) {
+      fail(409, "El documento no se puede publicar en su estado actual");
+    }
+
+    const now = new Date();
+    let baseVersionId = current.baseVersionId;
+    if (current.format === "structured" && !baseVersionId) {
+      const working = await loadVersion(current.workingVersionId, tx);
+      if (!working || working.blocks.length === 0) emptyDocumentError(current);
+      const [base] = await tx
+        .insert(documentVersions)
+        .values({
+          documentId: current.id,
+          number: await nextVersionNumber(tx, current.id),
+          kind: "base",
+          blocks: working.blocks,
+          // Copied, not recomputed: jsonb may have reordered the keys.
+          contentHash: working.contentHash,
+          createdByUserId: actor.user.id,
+        })
+        .returning({ id: documentVersions.id });
+      baseVersionId = base!.id;
+    } else if (current.format === "file" && !current.fileUrl) {
+      emptyDocumentError(current);
+    }
+
+    const reference =
+      current.reference ?? (await assignReference(tx, current.kind, now));
+    const republished = current.publishedAt !== null;
+    await tx
+      .update(documents)
+      .set({
+        status: "published",
+        publishedAt: current.publishedAt ?? now,
+        baseVersionId,
+        reference,
+      })
+      .where(eq(documents.id, current.id));
+
+    await recordEvent(tx, {
+      assemblyId: assembly.id,
+      entityType: "document",
+      entityId: current.id,
+      documentId: current.id,
+      type: "document_published",
+      payload: { reference, baseVersionId, republished, from: current.status },
+      actor,
+    });
+  });
+
+  return loadDocumentDto(assembly, ctx.document.id, actor);
+}
+
+// Deletion ------------------------------------------------------------------
+
+/** Deletes a document that was never published (document:manage). */
+export async function deleteDocument(
+  ctx: DocumentRouteContext,
+): Promise<{ success: true }> {
+  const { actor, assembly } = ctx;
+  if (!canManageDocuments(actor)) {
+    fail(403, "No tienes permiso para eliminar documentos");
+  }
+
+  const fileUrl = await db.transaction(async (tx) => {
+    const current = await lockDocument(tx, ctx.document.id);
+    if (isTextFrozen(current)) {
+      fail(409, "No se puede eliminar un documento ya publicado");
+    }
+    await tx.delete(documents).where(eq(documents.id, current.id));
+    await recordEvent(tx, {
+      assemblyId: assembly.id,
+      entityType: "document",
+      entityId: current.id,
+      documentId: current.id,
+      type: "document_deleted",
+      payload: {
+        title: current.title,
+        kind: current.kind,
+        format: current.format,
+      },
+      actor,
+    });
+    return current.fileUrl;
+  });
+
+  await removeStoredPdf(fileUrl);
+  return { success: true };
+}
+
+// Final vote ----------------------------------------------------------------
+
+/**
+ * Result of a final vote. Assent approves without counts; a tie under
+ * tieRule "repeat" answers 409 with `{ tie: true }` and stores nothing.
+ */
+export function evaluateFinalVote(
+  vote: VoteInput,
+  majority: Majority,
+  settings: Pick<AssemblySettings, "denominator" | "tieRule">,
+): VoteResult {
+  if (vote.method === "assent") return "approved";
+  const outcome = computeVoteOutcome(
+    {
+      inFavor: vote.inFavor ?? 0,
+      against: vote.against ?? 0,
+      abstentions: vote.abstentions ?? 0,
+      blank: vote.blank ?? 0,
+      invalid: vote.invalid ?? 0,
+      present: vote.present ?? null,
+    },
+    majority,
+    settings,
+  );
+  if (outcome.inconsistent) {
+    fail(422, "Los votos emitidos superan a los miembros presentes", {
+      // Same shape as the amendment votes (evaluateVoteInput).
+      reasons: [{ index: -1, reason: "inconsistent_counts" }],
+    });
+  }
+  if (outcome.result === "tie") {
+    fail(409, "Empate: hay que repetir la votación", { tie: true });
+  }
+  return outcome.result;
+}
+
+/**
+ * The final vote on the whole text (session:moderate).
+ *
+ * - Every amendment must be decided first: 409 `{ undecided: ids }`.
+ * - Approved amendments (totality returns carry no text and are skipped) are
+ *   consolidated over the base in approval order, or in `body.order`, which
+ *   must list exactly those amendments. Conflicts answer 409
+ *   `{ conflicts }` and nothing is stored.
+ * - The vote is stored and linked as `finalVoteId` whatever its result, which
+ *   closes the amendments of the document. When approved, a structured text
+ *   gets its `consolidated` version.
+ */
+export async function recordFinalVote(
+  ctx: DocumentRouteContext,
+  body: FinalVoteBody,
+): Promise<DocumentDto> {
+  const { actor, assembly } = ctx;
+  if (!canModerate(actor))
+    fail(403, "No tienes permiso para registrar votaciones");
+  if (assembly.status === "draft" || assembly.status === "closed") {
+    fail(409, "La asamblea no está en curso");
+  }
+
+  await db.transaction(async (tx) => {
+    const document = await lockDocument(tx, ctx.document.id);
+    if (document.status !== "published")
+      fail(409, "El documento no está publicado");
+    if (!document.voted) fail(409, "Este documento no se somete a votación");
+    if (document.finalVoteId) fail(409, "El documento ya se ha votado");
+
+    const majority = body.vote.majority ?? document.majority;
+    const result = evaluateFinalVote(
+      body.vote,
+      majority,
+      assemblySettings(assembly),
+    );
+
+    const rows = await tx
+      .select({
+        id: amendments.id,
+        kind: amendments.kind,
+        status: amendments.status,
+        ops: amendments.ops,
+        number: amendments.number,
+        decidedAt: amendments.decidedAt,
+        createdAt: amendments.createdAt,
+      })
+      .from(amendments)
+      .where(eq(amendments.documentId, document.id));
+    const undecided = rows
+      .filter((row) => row.status === "submitted")
+      .map((row) => row.id);
+    if (undecided.length > 0) {
+      fail(409, "Quedan enmiendas sin decidir", { undecided });
+    }
+
+    const approved = rows
+      .filter(
+        (row) => row.status === "approved" && row.kind !== "totality_return",
+      )
+      .sort(
+        (a, b) =>
+          (a.decidedAt?.getTime() ?? 0) - (b.decidedAt?.getTime() ?? 0) ||
+          (a.number ?? Number.MAX_SAFE_INTEGER) -
+            (b.number ?? Number.MAX_SAFE_INTEGER) ||
+          a.createdAt.getTime() - b.createdAt.getTime(),
+      );
+    let ordered = approved;
+    if (body.order) {
+      const byId = new Map(approved.map((row) => [row.id, row]));
+      if (
+        body.order.length !== approved.length ||
+        body.order.some((id) => !byId.has(id))
+      ) {
+        fail(422, "El orden debe incluir exactamente las enmiendas aprobadas", {
+          approvedIds: approved.map((row) => row.id),
+        });
+      }
+      ordered = body.order.map((id) => byId.get(id)!);
+    }
+
+    let consolidated: { blocks: Block[]; applied: string[] } | null = null;
+    if (document.format === "structured") {
+      const base = await loadVersion(document.baseVersionId, tx);
+      if (!base) fail(409, "El documento no tiene texto base");
+      const outcome = consolidate(
+        base.blocks,
+        ordered.map((row) => ({ id: row.id, ops: row.ops })),
+      );
+      if (outcome.conflicts.length > 0) {
+        fail(409, "Las enmiendas aprobadas no se pueden aplicar juntas", {
+          conflicts: outcome.conflicts,
+        });
+      }
+      consolidated = { blocks: outcome.blocks, applied: outcome.applied };
+    }
+
+    const [vote] = await tx
+      .insert(votes)
+      .values({
+        assemblyId: assembly.id,
+        subjectType: "document",
+        subjectId: document.id,
+        method: body.vote.method,
+        inFavor: body.vote.inFavor ?? 0,
+        against: body.vote.against ?? 0,
+        abstentions: body.vote.abstentions ?? 0,
+        blank: body.vote.blank ?? 0,
+        invalid: body.vote.invalid ?? 0,
+        present: body.vote.present ?? null,
+        majority,
+        result,
+        note: body.vote.note ?? null,
+        recordedByUserId: actor.user.id,
+      })
+      .returning();
+
+    let consolidatedVersionId: string | null = null;
+    if (result === "approved" && consolidated) {
+      const [version] = await tx
+        .insert(documentVersions)
+        .values({
+          documentId: document.id,
+          number: await nextVersionNumber(tx, document.id),
+          kind: "consolidated",
+          blocks: consolidated.blocks,
+          contentHash: await hashBlocks(consolidated.blocks),
+          createdByUserId: actor.user.id,
+        })
+        .returning({ id: documentVersions.id });
+      consolidatedVersionId = version!.id;
+    }
+
+    await tx
+      .update(documents)
+      .set({
+        finalVoteId: vote!.id,
+        ...(consolidatedVersionId ? { consolidatedVersionId } : {}),
+      })
+      .where(eq(documents.id, document.id));
+
+    await recordEvent(tx, {
+      assemblyId: assembly.id,
+      entityType: "vote",
+      entityId: vote!.id,
+      documentId: document.id,
+      type: "vote_recorded",
+      payload: { subjectType: "document", subjectId: document.id, result },
+      actor,
+    });
+    await recordEvent(tx, {
+      assemblyId: assembly.id,
+      entityType: "document",
+      entityId: document.id,
+      documentId: document.id,
+      type: "document_voted",
+      payload: {
+        voteId: vote!.id,
+        result,
+        method: vote!.method,
+        majority,
+        inFavor: vote!.inFavor,
+        against: vote!.against,
+        abstentions: vote!.abstentions,
+        blank: vote!.blank,
+        invalid: vote!.invalid,
+        present: vote!.present,
+        consolidatedVersionId,
+        appliedAmendmentIds:
+          result === "approved" ? (consolidated?.applied ?? []) : [],
+      },
+      actor,
+    });
+  });
+
+  return loadDocumentDto(assembly, ctx.document.id, actor);
+}
+
+// History -------------------------------------------------------------------
 
 /**
  * Ids of the document's amendments, split by whether the actor can see them,
@@ -610,7 +1404,10 @@ export async function loadAmendmentVisibility(
   const ids = [...all];
   const [authorRows, partyRows] = await Promise.all([
     db
-      .select({ amendmentId: amendmentAuthors.amendmentId, memberId: amendmentAuthors.memberId })
+      .select({
+        amendmentId: amendmentAuthors.amendmentId,
+        memberId: amendmentAuthors.memberId,
+      })
       .from(amendmentAuthors)
       .where(inArray(amendmentAuthors.amendmentId, ids)),
     db
@@ -656,12 +1453,96 @@ export async function loadAmendmentVisibility(
   return { all, visible };
 }
 
+/** Whether the actor sees proponent positions on this document's amendments. */
+export function documentPositionsVisible(ctx: DocumentRouteContext): boolean {
+  return canSeePositions(ctx.actor, {
+    settings: assemblySettings(ctx.assembly),
+    assemblyStatus: ctx.assembly.status,
+    isProponent: isDocumentProponent(ctx.actor, ctx.document),
+  });
+}
+
+/**
+ * History of the document and of the amendments the actor can see, oldest
+ * first. Amendment payloads are returned as stored: the caller redacts
+ * positions (see redactAmendmentEventPayload) when they are hidden.
+ */
+export async function loadDocumentHistory(
+  ctx: DocumentRouteContext,
+): Promise<EventDto[]> {
+  const { actor, assembly, document } = ctx;
+  const milestones = await loadMilestones(assembly.id);
+  const { all, visible } = await loadAmendmentVisibility(
+    actor,
+    assembly,
+    document,
+    milestones,
+  );
+
+  const scope = [
+    and(eq(events.entityType, "document"), eq(events.entityId, document.id)),
+  ];
+  if (all.size > 0) {
+    scope.push(
+      and(
+        eq(events.entityType, "amendment"),
+        inArray(events.entityId, [...all]),
+      ),
+    );
+  }
+
+  const rows = await db
+    .select({
+      id: events.id,
+      type: events.type,
+      entityType: events.entityType,
+      entityId: events.entityId,
+      payload: events.payload,
+      createdAt: events.createdAt,
+      actorName: users.name,
+      memberId: members.id,
+      memberAcronym: members.acronym,
+      memberName: members.name,
+      memberKind: members.kind,
+    })
+    .from(events)
+    .leftJoin(users, eq(users.id, events.actorUserId))
+    .leftJoin(members, eq(members.id, events.actorMemberId))
+    .where(and(eq(events.assemblyId, assembly.id), or(...scope)))
+    .orderBy(asc(events.createdAt), asc(events.id));
+
+  return rows
+    .filter(
+      (row) => row.entityType !== "amendment" || visible.has(row.entityId),
+    )
+    .map((row) => ({
+      id: row.id,
+      type: row.type,
+      entityType: row.entityType,
+      entityId: row.entityId,
+      payload: row.payload ?? {},
+      actorName: row.actorName,
+      actorMember:
+        row.memberId && row.memberAcronym && row.memberName && row.memberKind
+          ? {
+              id: row.memberId,
+              acronym: row.memberAcronym,
+              name: row.memberName,
+              kind: row.memberKind,
+            }
+          : null,
+      createdAt: row.createdAt.toISOString(),
+    }));
+}
+
 // Uploads -------------------------------------------------------------------
 
 export interface UploadedFile {
   data: Buffer;
   filename: string;
   type: string;
+  /** Plain (non-file) multipart fields, such as `updatedAt`. */
+  fields: Record<string, string>;
 }
 
 /**
@@ -675,48 +1556,138 @@ export async function readUploadedFile(
 ): Promise<UploadedFile> {
   const declared = Number(getRequestHeader(event, "content-length") ?? 0);
   // Multipart framing adds a few hundred bytes around the file.
-  if (declared > maxBytes + 64 * 1024) {
-    throw createError({ statusCode: 413, message: tooLargeMessage });
-  }
+  if (declared > maxBytes + 64 * 1024) fail(413, tooLargeMessage);
   const parts = await readMultipartFormData(event);
-  const file = parts?.find((part) => part.name === "file");
+  const file = parts?.find(
+    (part) => part.name === "file" && part.filename !== undefined,
+  );
   if (!file || !file.data || file.data.length === 0) {
-    throw createError({ statusCode: 400, message: "Campo 'file' requerido" });
+    fail(400, "Campo 'file' requerido");
   }
-  if (file.data.length > maxBytes) {
-    throw createError({ statusCode: 413, message: tooLargeMessage });
+  if (file.data.length > maxBytes) fail(413, tooLargeMessage);
+
+  const fields: Record<string, string> = {};
+  for (const part of parts ?? []) {
+    if (part.name && part.filename === undefined && part.data.length <= 1_000) {
+      fields[part.name] = part.data.toString("utf8");
+    }
   }
-  return { data: file.data, filename: file.filename ?? "", type: file.type ?? "" };
+  return {
+    data: file.data,
+    filename: file.filename ?? "",
+    type: file.type ?? "",
+    fields,
+  };
 }
 
 export const PDF_MAX_BYTES = 20 * 1024 * 1024;
 const PDF_MIME_TYPES = ["application/pdf"];
 
+/** Public path of stored PDFs, served by /api/uploads/documents/[filename]. */
+export const PDF_URL_PREFIX = "/api/uploads/documents/";
+export const STORED_PDF_NAME =
+  /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\.pdf$/;
+
 /** Display name of an uploaded file: no path, no control characters. */
 export function cleanFileName(name: string, fallback: string): string {
   const base = name.split(/[\\/]/).pop() ?? "";
-  // eslint-disable-next-line no-control-regex
-  const cleaned = base.replace(/[\u0000-\u001F\u007F"]/g, "").trim().slice(0, 200);
+  const cleaned = base
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001F\u007F"]/g, "")
+    .trim()
+    .slice(0, 200);
   return cleaned || fallback;
 }
 
 /** Validates type and signature of a PDF and stores it under a random name. */
-export async function storePdf(file: UploadedFile): Promise<{ fileUrl: string; fileName: string }> {
+export async function storePdf(
+  file: UploadedFile,
+): Promise<{ fileUrl: string; fileName: string }> {
   if (!PDF_MIME_TYPES.includes(file.type)) {
-    throw createError({ statusCode: 415, message: "Solo se admiten archivos PDF" });
+    fail(415, "Solo se admiten archivos PDF");
   }
   if (file.data.subarray(0, 5).toString("ascii") !== "%PDF-") {
-    throw createError({
-      statusCode: 415,
-      message: "El archivo no parece ser un PDF válido",
-    });
+    fail(415, "El archivo no parece ser un PDF válido");
   }
   const storedName = `${randomUUID()}.pdf`;
   const directory = getUploadDir();
   await mkdir(directory, { recursive: true });
   await writeFile(join(directory, storedName), file.data);
   return {
-    fileUrl: `/api/uploads/documents/${storedName}`,
+    fileUrl: `${PDF_URL_PREFIX}${storedName}`,
     fileName: cleanFileName(file.filename, "documento.pdf"),
   };
+}
+
+/** Best-effort removal of a stored PDF that no document points to any more. */
+export async function removeStoredPdf(
+  fileUrl: string | null | undefined,
+): Promise<void> {
+  if (!fileUrl?.startsWith(PDF_URL_PREFIX)) return;
+  const name = fileUrl.slice(PDF_URL_PREFIX.length);
+  if (!STORED_PDF_NAME.test(name)) return;
+  try {
+    await unlink(join(getUploadDir(), name));
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+      logError("documents.removeStoredPdf", error);
+    }
+  }
+}
+
+/**
+ * Attaches the PDF of a `file` document: managers at any time, presenters
+ * while it is a draft. The previous file is removed once the change commits.
+ * An optional multipart field `updatedAt` enables the optimistic lock.
+ */
+export async function attachDocumentFile(
+  ctx: DocumentRouteContext,
+  file: UploadedFile,
+): Promise<DocumentDto> {
+  const { actor, assembly } = ctx;
+  requireDocumentEditor(actor, ctx.document);
+  if (ctx.document.format !== "file") {
+    fail(409, "Este documento no es de tipo PDF");
+  }
+  const updatedAt = file.fields.updatedAt?.trim() || undefined;
+  if (updatedAt && Number.isNaN(new Date(updatedAt).getTime())) {
+    fail(400, "Datos no válidos");
+  }
+
+  const stored = await storePdf(file);
+  let previous: string | null;
+  try {
+    previous = await db.transaction(async (tx) => {
+      const current = await lockDocument(tx, ctx.document.id);
+      assertOptimisticLock(
+        updatedAt,
+        current.updatedAt,
+        STALE_DOCUMENT_MESSAGE,
+      );
+      requireDocumentEditor(actor, current);
+      await tx
+        .update(documents)
+        .set({ fileUrl: stored.fileUrl, fileName: stored.fileName })
+        .where(eq(documents.id, current.id));
+      await recordEvent(tx, {
+        assemblyId: assembly.id,
+        entityType: "document",
+        entityId: current.id,
+        documentId: current.id,
+        type: "document_file_uploaded",
+        payload: {
+          fileName: stored.fileName,
+          replaced: current.fileUrl !== null,
+        },
+        actor,
+      });
+      return current.fileUrl;
+    });
+  } catch (error) {
+    await removeStoredPdf(stored.fileUrl);
+    throw error;
+  }
+
+  if (previous && previous !== stored.fileUrl) await removeStoredPdf(previous);
+  return loadDocumentDto(assembly, ctx.document.id, actor);
 }

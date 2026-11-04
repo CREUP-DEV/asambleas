@@ -8,8 +8,14 @@ import {
 import { eq } from "drizzle-orm";
 import { db } from "../../../../db";
 import { documents, documentVersions } from "../../../../db/schema";
-import { canManageDocuments, requireActor } from "../../../../utils/domain/actor";
-import { resolveAgendaItem, resolveAssembly } from "../../../../utils/domain/resolvers";
+import {
+  canManageDocuments,
+  requireActor,
+} from "../../../../utils/domain/actor";
+import {
+  resolveAgendaItem,
+  resolveAssembly,
+} from "../../../../utils/domain/resolvers";
 import { recordEvent } from "../../../../utils/domain/events";
 import {
   documentsDeadlinePassed,
@@ -32,7 +38,10 @@ import { documentCreateSchema } from "~~/shared/utils/schemas/document";
  */
 export default defineEventHandler(async (event): Promise<DocumentDto> => {
   const actor = await requireActor(event);
-  const assembly = await resolveAssembly(actor, getRouterParam(event, "assembly"));
+  const assembly = await resolveAssembly(
+    actor,
+    getRouterParam(event, "assembly"),
+  );
   const body = parseDocumentBody(documentCreateSchema, await readBody(event));
   const item = await resolveAgendaItem(assembly.id, body.agendaItemId);
   const manager = canManageDocuments(actor);
@@ -53,11 +62,15 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
     if (!item.acceptsSubmissions) {
       throw createError({
         statusCode: 403,
-        message: "Este punto del orden del día no admite documentos de los miembros",
+        message:
+          "Este punto del orden del día no admite documentos de los miembros",
       });
     }
     if (assembly.status === "closed") {
-      throw createError({ statusCode: 409, message: "La asamblea ya está cerrada" });
+      throw createError({
+        statusCode: 409,
+        message: "La asamblea ya está cerrada",
+      });
     }
     if (documentsDeadlinePassed(await loadMilestones(assembly.id))) {
       throw createError({
@@ -76,14 +89,22 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
     });
   }
 
+  // Members always present as themselves. Managers pick the proponent, which
+  // defaults to their own member; an explicit null leaves it empty.
   let proponentMemberId: string | null = actor.memberId;
-  if (manager) {
-    proponentMemberId = body.proponentMemberId ?? null;
+  if (manager && body.proponentMemberId !== undefined) {
+    proponentMemberId = body.proponentMemberId;
     if (proponentMemberId) await requireMember(proponentMemberId);
   }
-  const amendable = isFile ? false : manager ? (body.amendable ?? defaults.amendable) : defaults.amendable;
+  const amendable = isFile
+    ? false
+    : manager
+      ? (body.amendable ?? defaults.amendable)
+      : defaults.amendable;
   const voted = manager ? (body.voted ?? defaults.voted) : defaults.voted;
-  const majority = manager ? (body.majority ?? defaults.majority) : defaults.majority;
+  const majority = manager
+    ? (body.majority ?? defaults.majority)
+    : defaults.majority;
   const blocks = isFile ? [] : (body.blocks ?? []);
   const contentHash = await hashBlocks(blocks);
 
@@ -108,7 +129,10 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
       })
       .returning({ id: documents.id });
     if (!created) {
-      throw createError({ statusCode: 500, message: "No se pudo crear el documento" });
+      throw createError({
+        statusCode: 500,
+        message: "No se pudo crear el documento",
+      });
     }
 
     if (!isFile) {

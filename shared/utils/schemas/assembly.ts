@@ -31,7 +31,9 @@ export const ASSEMBLY_LIST_PAGE_SIZE = 20;
 const assemblyIdPattern = /^[a-z0-9]{20,32}$/;
 const assemblyEntityId = z.string().regex(assemblyIdPattern);
 const isoDateTime = z.iso.datetime({ offset: true });
-const assemblyTypeSchema = z.enum(ALL_ASSEMBLY_TYPES as [AssemblyType, ...AssemblyType[]]);
+const assemblyTypeSchema = z.enum(
+  ALL_ASSEMBLY_TYPES as [AssemblyType, ...AssemblyType[]],
+);
 
 const singleLine = (max: number) =>
   z
@@ -49,8 +51,12 @@ const multiLine = (max: number) =>
       return text === "" ? null : text;
     });
 
-const endAfterStart = <T extends { startDate?: string; endDate?: string }>(body: T) =>
-  !body.startDate || !body.endDate || new Date(body.endDate) >= new Date(body.startDate);
+const endAfterStart = <T extends { startDate?: string; endDate?: string }>(
+  body: T,
+) =>
+  !body.startDate ||
+  !body.endDate ||
+  new Date(body.endDate) >= new Date(body.startDate);
 
 export const assemblyCreateBodySchema = z
   .object({
@@ -80,7 +86,9 @@ export const assemblyUpdateBodySchema = z
     startDate: isoDateTime.optional(),
     endDate: isoDateTime.optional(),
     location: singleLine(ASSEMBLY_LOCATION_MAX_LENGTH).optional(),
-    convocationIntro: multiLine(CONVOCATION_INTRO_MAX_LENGTH).nullable().optional(),
+    convocationIntro: multiLine(CONVOCATION_INTRO_MAX_LENGTH)
+      .nullable()
+      .optional(),
     settings: assemblySettingsPatchSchema.optional(),
     updatedAt: isoDateTime,
   })
@@ -102,7 +110,9 @@ export const calendarBodySchema = z.object({
     )
     .max(MILESTONE_KEYS.length)
     .refine(
-      (milestones) => new Set(milestones.map((milestone) => milestone.key)).size === milestones.length,
+      (milestones) =>
+        new Set(milestones.map((milestone) => milestone.key)).size ===
+        milestones.length,
       { message: "duplicate_milestone" },
     ),
   agendaFinal: z.boolean().optional(),
@@ -140,9 +150,12 @@ export const agendaReorderBodySchema = z.object({
     )
     .min(1)
     .max(AGENDA_MAX_ITEMS)
-    .refine((items) => new Set(items.map((item) => item.id)).size === items.length, {
-      message: "duplicate_id",
-    }),
+    .refine(
+      (items) => new Set(items.map((item) => item.id)).size === items.length,
+      {
+        message: "duplicate_id",
+      },
+    ),
 });
 
 // Live session -----------------------------------------------------------

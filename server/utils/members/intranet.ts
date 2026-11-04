@@ -29,7 +29,9 @@ export function getIntranetApiBaseUrl(): string | null {
     if (url.protocol !== "https:" && url.protocol !== "http:") return null;
     return url.toString().replace(/\/+$/, "");
   } catch {
-    logWarn("intranet.config", { reason: "NUXT_INTRANET_API_URL is not a valid URL" });
+    logWarn("intranet.config", {
+      reason: "NUXT_INTRANET_API_URL is not a valid URL",
+    });
     return null;
   }
 }
@@ -62,7 +64,10 @@ export async function fetchIntranetRoster(
       signal: AbortSignal.timeout(INTRANET_TIMEOUT_MS),
     });
   } catch (error) {
-    throw new IntranetUnavailableError(path, error instanceof Error ? error.name : "network");
+    throw new IntranetUnavailableError(
+      path,
+      error instanceof Error ? error.name : "network",
+    );
   }
   if (!response.ok) {
     throw new IntranetUnavailableError(path, `status ${response.status}`);

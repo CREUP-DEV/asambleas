@@ -148,16 +148,15 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
   ];
   const link = [{ slot: "link" } as EditorToolbarItem];
   const history = [
-    action(
-      { kind: "undo", icon: "i-lucide-undo-2" },
-      "common.editor.undo",
-      ["meta", "z"],
-    ),
-    action(
-      { kind: "redo", icon: "i-lucide-redo-2" },
-      "common.editor.redo",
-      ["meta", "shift", "z"],
-    ),
+    action({ kind: "undo", icon: "i-lucide-undo-2" }, "common.editor.undo", [
+      "meta",
+      "z",
+    ]),
+    action({ kind: "redo", icon: "i-lucide-redo-2" }, "common.editor.redo", [
+      "meta",
+      "shift",
+      "z",
+    ]),
   ];
   if (props.compact) return [marks, link, history];
 
@@ -239,9 +238,7 @@ const editorUi = computed(() => ({
   content: "min-w-0",
   base: [
     "content-font",
-    props.compact
-      ? "min-h-16 px-3 py-2 sm:px-3"
-      : "min-h-48 px-4 py-4 sm:px-6",
+    props.compact ? "min-h-16 px-3 py-2 sm:px-3" : "min-h-48 px-4 py-4 sm:px-6",
     "[&_h1]:text-[1.75rem] [&_h2]:text-[1.375rem] [&_h3]:text-lg [&_h4]:text-base",
   ].join(" "),
 }));

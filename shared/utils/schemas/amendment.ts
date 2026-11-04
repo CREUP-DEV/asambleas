@@ -70,7 +70,9 @@ const globalReplaceSchema = z
 
 const draftKindSchema = z.enum(
   AMENDMENT_KINDS.filter(
-    (kind): kind is Exclude<(typeof AMENDMENT_KINDS)[number], "transactional"> =>
+    (
+      kind,
+    ): kind is Exclude<(typeof AMENDMENT_KINDS)[number], "transactional"> =>
       kind !== "transactional",
   ) as [
     Exclude<(typeof AMENDMENT_KINDS)[number], "transactional">,

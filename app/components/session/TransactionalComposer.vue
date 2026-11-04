@@ -1,0 +1,373 @@
+<script setup lang="ts">
+import { createId } from "@paralleldrive/cuid2";
+import type { AmendmentDto } from "~~/shared/types/api";
+import type { Block } from "~~/shared/types/content";
+import { diffPassage } from "~~/shared/utils/content/diff";
+import { validateOps } from "~~/shared/utils/content/ops";
+import {
+  isSessionDecidable,
+  isSessionOpen,
+  sessionTransactionalParties,
+  sessionTransactionalSeed,
+  type SessionTransactionalSeed,
+} from "~/composables/session/sessionModel";
+import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
+
+/**
+ * Builds a transactional amendment in the room. The editor starts from the
+ * passage its sources touch, with the sources applied in order of
+ * presentation (when two collide, the first that applies wins). The diff
+ * against the base updates as the Mesa types. Once created (and submitted),
+ * the answer of every party is recorded with the "accepted in the room"
+ * switches.
+ */
+const session = useSessionConsoleContext();
+const { t } = useI18n();
+
+const open = computed({
+  get: () => session.composer.open,
+  set: (value: boolean) => {
+    session.composer.open = value;
+  },
+});
+
+const sourceIds = ref<string[]>([]);
+const edited = ref<Block[]>([]);
+const justification = ref("");
+const authorIds = ref<string[]>([]);
+const createdId = ref<string | null>(null);
+const seed = shallowRef<SessionTransactionalSeed | null>(null);
+const editorKey = ref(0);
+const editor = useTemplateRef<{ flush: () => void }>("editor");
+
+const eligible = computed(() =>
+  session.amendments.value.filter(
+    (amendment) =>
+      isSessionOpen(amendment) || sourceIds.value.includes(amendment.id),
+  ),
+);
+const sourceItems = computed(() =>
+  eligible.value.map((amendment) => ({
+    label: `${session.label(amendment.id)} · ${amendment.authors
+      .map((author) => author.acronym)
+      .join(", ")}`,
+    value: amendment.id,
+  })),
+);
+
+/** Sources in order of presentation: the first one wins a collision. */
+const sources = computed<AmendmentDto[]>(() =>
+  sourceIds.value
+    .map((id) => session.byId.value.get(id))
+    .filter((amendment) => amendment !== undefined)
+    .sort(
+      (a, b) =>
+        (a.number ?? Number.MAX_SAFE_INTEGER) -
+          (b.number ?? Number.MAX_SAFE_INTEGER) ||
+        a.positionKey - b.positionKey,
+    ),
+);
+
+const parties = computed(() =>
+  sessionTransactionalParties(
+    sources.value,
+    session.document.value?.proponent ?? null,
+  ),
+);
+const partyItems = computed(() =>
+  parties.value.map((party) => ({
+    label: `${party.member.acronym} · ${party.member.name}`,
+    value: party.member.id,
+  })),
+);
+
+function reseed(): void {
+  seed.value = sessionTransactionalSeed(
+    session.base.value,
+    sources.value.map((amendment) => ({
+      id: amendment.id,
+      ops: amendment.ops,
+    })),
+    createId,
+  );
+  edited.value = seed.value.seed.map((block) => ({
+    ...block,
+    marks: [...block.marks],
+  }));
+  editorKey.value += 1;
+  authorIds.value = parties.value
+    .filter((party) => party.role === "author")
+    .map((party) => party.member.id);
+}
+
+watch(open, (isOpen) => {
+  if (!isOpen) return;
+  createdId.value = null;
+  justification.value = "";
+  sourceIds.value = [...session.composer.sourceIds];
+  reseed();
+});
+
+watch(
+  () => sourceIds.value.join("|"),
+  () => {
+    if (open.value && !createdId.value) reseed();
+  },
+);
+
+const ops = computed(() =>
+  seed.value && seed.value.passage.length > 0
+    ? diffPassage(
+        seed.value.passage,
+        edited.value,
+        seed.value.anchorBefore,
+        createId,
+      )
+    : [],
+);
+const opErrors = computed(() => validateOps(session.base.value, ops.value));
+const skipped = computed(() => seed.value?.skipped ?? []);
+
+const created = computed(() =>
+  createdId.value ? (session.byId.value.get(createdId.value) ?? null) : null,
+);
+const canCreate = computed(
+  () =>
+    !createdId.value &&
+    sources.value.length > 0 &&
+    ops.value.length > 0 &&
+    opErrors.value.length === 0,
+);
+
+async function create(): Promise<void> {
+  editor.value?.flush();
+  await nextTick();
+  if (!canCreate.value) return;
+  const result = await session.createTransactional({
+    sourceIds: sources.value.map((amendment) => amendment.id),
+    ops: ops.value,
+    justification: justification.value.trim(),
+    authorMemberIds: authorIds.value,
+    submit: true,
+  });
+  if (result) createdId.value = result.id;
+}
+
+function debateCreated(): void {
+  if (created.value) void session.debateAmendment(created.value);
+}
+
+function voteCreated(): void {
+  if (!created.value) return;
+  const target = created.value;
+  open.value = false;
+  session.openVote(target);
+}
+</script>
+
+<template>
+  <USlideover
+    v-model:open="open"
+    side="right"
+    :title="
+      created
+        ? t('session.composer.createdTitle', { code: created.code ?? '' })
+        : t('session.composer.title')
+    "
+    :description="t('session.composer.description')"
+    :ui="{ content: 'w-full max-w-4xl' }"
+  >
+    <template #body>
+      <div v-if="!created" class="space-y-6">
+        <UFormField
+          :label="t('session.composer.sources')"
+          :hint="t('session.composer.sourcesHint')"
+          name="composer-sources"
+          required
+        >
+          <USelectMenu
+            v-model="sourceIds"
+            :items="sourceItems"
+            value-key="value"
+            multiple
+            :placeholder="t('session.composer.sourcesPlaceholder')"
+            :search-input="{ placeholder: t('common.search') }"
+            class="w-full"
+          />
+        </UFormField>
+
+        <UAlert
+          v-if="skipped.length > 0"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-git-compare"
+          :title="t('session.composer.skippedTitle')"
+          :description="
+            t('session.composer.skipped', {
+              codes: skipped.map(session.label).join(', '),
+            })
+          "
+        />
+
+        <CommonEmptyState
+          v-if="sources.length === 0"
+          icon="i-lucide-git-merge"
+          size="sm"
+          :title="t('session.composer.noSources')"
+        />
+        <CommonEmptyState
+          v-else-if="!seed || seed.passage.length === 0"
+          icon="i-lucide-file-question"
+          size="sm"
+          :title="t('session.composer.noPassage')"
+          :description="t('session.composer.noPassageHint')"
+        />
+        <div v-else class="grid gap-4 xl:grid-cols-2">
+          <section class="min-w-0 space-y-2">
+            <h3 class="text-highlighted text-sm font-medium">
+              {{ t("session.composer.text") }}
+            </h3>
+            <ClientOnly>
+              <ContentBlockEditor
+                :key="editorKey"
+                ref="editor"
+                v-model="edited"
+                :label="t('session.composer.text')"
+                autofocus
+              />
+              <template #fallback>
+                <USkeleton class="h-48 w-full" />
+              </template>
+            </ClientOnly>
+            <UButton
+              icon="i-lucide-rotate-ccw"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              :label="t('session.composer.reset')"
+              @click="reseed"
+            />
+          </section>
+          <section class="min-w-0 space-y-2" aria-live="polite">
+            <h3 class="text-highlighted text-sm font-medium">
+              {{ t("session.composer.diff") }}
+            </h3>
+            <p v-if="ops.length === 0" class="text-muted text-sm">
+              {{ t("session.composer.noChanges") }}
+            </p>
+            <ContentAmendmentDiff
+              v-else
+              id="transactional-draft"
+              :base="session.base.value"
+              :ops="ops"
+            />
+          </section>
+        </div>
+
+        <UFormField
+          :label="t('session.composer.justification')"
+          name="composer-justification"
+        >
+          <UTextarea
+            v-model="justification"
+            :rows="3"
+            autoresize
+            :maxlength="20000"
+            class="content-font w-full"
+          />
+        </UFormField>
+
+        <UFormField
+          :label="t('session.composer.authors')"
+          :hint="t('session.composer.authorsHint')"
+          name="composer-authors"
+        >
+          <USelectMenu
+            v-model="authorIds"
+            :items="partyItems"
+            value-key="value"
+            multiple
+            :placeholder="t('session.composer.authorsPlaceholder')"
+            class="w-full"
+          />
+        </UFormField>
+
+        <section v-if="parties.length > 0" class="space-y-2">
+          <h3 class="text-highlighted text-sm font-medium">
+            {{ t("session.composer.parties") }}
+          </h3>
+          <p class="text-muted text-sm">
+            {{ t("session.composer.partiesHint") }}
+          </p>
+          <ul class="flex flex-wrap gap-2">
+            <li
+              v-for="party in parties"
+              :key="party.member.id"
+              class="inline-flex items-center gap-1"
+            >
+              <CommonMemberBadge :member="party.member" size="sm" />
+              <span class="text-muted text-xs">
+                {{ t(`session.enums.acceptanceRole.${party.role}`) }}
+              </span>
+            </li>
+          </ul>
+        </section>
+      </div>
+
+      <div v-else class="space-y-6">
+        <UAlert
+          color="success"
+          variant="subtle"
+          icon="i-lucide-git-merge"
+          :title="t('session.composer.created', { code: created.code ?? '' })"
+          :description="t('session.composer.createdHint')"
+        />
+        <SessionAcceptanceList :amendment="created" />
+        <section class="space-y-2">
+          <h3 class="text-highlighted text-sm font-medium">
+            {{ t("session.composer.diff") }}
+          </h3>
+          <ContentAmendmentDiff
+            :id="created.id"
+            :base="session.base.value"
+            :ops="created.ops"
+          />
+        </section>
+      </div>
+    </template>
+
+    <template #footer="{ close }">
+      <div class="flex w-full flex-wrap justify-end gap-2">
+        <UButton
+          color="neutral"
+          variant="ghost"
+          :label="created ? t('common.close') : t('common.cancel')"
+          @click="close"
+        />
+        <template v-if="created">
+          <UButton
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-radio"
+            :label="t('session.actions.debate')"
+            @click="debateCreated"
+          />
+          <UButton
+            icon="i-lucide-gavel"
+            :label="t('session.actions.vote')"
+            :disabled="!isSessionDecidable(created)"
+            @click="voteCreated"
+          />
+        </template>
+        <UButton
+          v-else
+          icon="i-lucide-git-merge"
+          :label="t('session.composer.submit')"
+          :loading="Boolean(session.busy.value.transactional)"
+          :disabled="!canCreate"
+          @click="create"
+        />
+      </div>
+    </template>
+  </USlideover>
+</template>

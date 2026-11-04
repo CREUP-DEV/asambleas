@@ -72,6 +72,7 @@ import {
   type VoteOutcome,
 } from "../../../shared/utils/votes";
 import { isUniqueConstraintViolation } from "../errors";
+import { buildOptimisticLockCondition } from "../optimisticLock";
 import {
   actsFor,
   canModerate,
@@ -81,7 +82,11 @@ import {
 } from "./actor";
 import { loadMilestones } from "./documents";
 import { recordEvent } from "./events";
-import { resolveAmendment, resolveAssembly, resolveDocument } from "./resolvers";
+import {
+  resolveAmendment,
+  resolveAssembly,
+  resolveDocument,
+} from "./resolvers";
 import {
   canSeeAmendment,
   canSeePositions,
@@ -189,7 +194,10 @@ export function reIdInsertedBlocks(
   takenIds: Iterable<string>,
   newId: () => string = cuid,
 ): AmendmentOp[] {
-  const taken = new Set<string>([...base.map((block) => block.id), ...takenIds]);
+  const taken = new Set<string>([
+    ...base.map((block) => block.id),
+    ...takenIds,
+  ]);
   return ops.map((op) => {
     if (op.op !== "insert") return op;
     return {
@@ -223,9 +231,17 @@ export function prepareAmendmentOps(input: {
   if (input.kind === "totality_return") {
     return input.ops.length === 0
       ? { ops: [], errors: [] }
-      : { ops: input.ops, errors: [{ index: -1, reason: "totality_return_ops" }] };
+      : {
+          ops: input.ops,
+          errors: [{ index: -1, reason: "totality_return_ops" }],
+        };
   }
-  const ops = reIdInsertedBlocks(input.ops, input.base, input.takenIds, input.newId);
+  const ops = reIdInsertedBlocks(
+    input.ops,
+    input.base,
+    input.takenIds,
+    input.newId,
+  );
   return { ops, errors: validateOps(input.base, ops) };
 }
 
@@ -264,7 +280,9 @@ export function buildAcceptanceParties(
 }
 
 /** "T{n}" with n = existing transactionals + 1, skipping codes already taken. */
-export function nextTransactionalCode(existingCodes: (string | null)[]): string {
+export function nextTransactionalCode(
+  existingCodes: (string | null)[],
+): string {
   const taken = new Set(existingCodes);
   let n = existingCodes.length + 1;
   while (taken.has(`T${n}`)) n += 1;
@@ -281,7 +299,9 @@ export interface CapabilityInput {
   acceptances: { memberId: string; decision: AcceptanceDecision }[];
 }
 
-export function amendmentCapabilities(input: CapabilityInput): AmendmentCapabilities {
+export function amendmentCapabilities(
+  input: CapabilityInput,
+): AmendmentCapabilities {
   const draft = input.status === "draft";
   const submitted = input.status === "submitted";
   return {
@@ -338,7 +358,10 @@ function voteCounts(vote: VoteInput): Required<Omit<VoteCounts, "present">> & {
 export function evaluateVoteInput(
   vote: VoteInput,
   settings: Pick<AssemblySettings, "denominator" | "tieRule">,
-): { majority: Majority; outcome: VoteOutcome & { result: "approved" | "rejected" } } {
+): {
+  majority: Majority;
+  outcome: VoteOutcome & { result: "approved" | "rejected" };
+} {
   const majority = vote.majority ?? "simple";
   const outcome = computeVoteOutcome(voteCounts(vote), majority, settings);
   if (outcome.result === "tie") {
@@ -366,10 +389,20 @@ export function redactAmendmentEventPayload(
 
 // Mappers ------------------------------------------------------------------
 
-const MEMBER_REF_COLUMNS = { id: true, acronym: true, name: true, kind: true } as const;
+const MEMBER_REF_COLUMNS = {
+  id: true,
+  acronym: true,
+  name: true,
+  kind: true,
+} as const;
 
 function toMemberRef(member: MemberRef): MemberRef {
-  return { id: member.id, acronym: member.acronym, name: member.name, kind: member.kind };
+  return {
+    id: member.id,
+    acronym: member.acronym,
+    name: member.name,
+    kind: member.kind,
+  };
 }
 
 function toVoteDto(row: VoteRow): VoteDto {
@@ -391,7 +424,9 @@ function toVoteDto(row: VoteRow): VoteDto {
   };
 }
 
-function toRelationDto(row: typeof amendmentRelations.$inferSelect): RelationDto {
+function toRelationDto(
+  row: typeof amendmentRelations.$inferSelect,
+): RelationDto {
   return {
     id: row.id,
     fromId: row.fromId,
@@ -407,7 +442,10 @@ function readMeta(row: { meta: AmendmentMeta | null }): StoredAmendmentMeta {
 }
 
 /** The presenting member first, then the rest by acronym. */
-function orderAuthors(authors: MemberRef[], presentingMemberId?: string): MemberRef[] {
+function orderAuthors(
+  authors: MemberRef[],
+  presentingMemberId?: string,
+): MemberRef[] {
   return [...authors].sort((a, b) => {
     if (a.id === presentingMemberId) return -1;
     if (b.id === presentingMemberId) return 1;
@@ -435,7 +473,9 @@ function findAmendments(executor: Executor, where: SQL | undefined) {
   });
 }
 
-export type LoadedAmendment = Awaited<ReturnType<typeof findAmendments>>[number];
+export type LoadedAmendment = Awaited<
+  ReturnType<typeof findAmendments>
+>[number];
 
 async function loadAmendment(executor: Executor, id: string) {
   const [row] = await findAmendments(executor, eq(amendments.id, id));
@@ -464,7 +504,10 @@ export async function loadAmendmentDocumentContext(
   event: H3Event,
 ): Promise<DocumentAmendmentContext> {
   const actor = await requireActor(event);
-  const assembly = await resolveAssembly(actor, getRouterParam(event, "assembly"));
+  const assembly = await resolveAssembly(
+    actor,
+    getRouterParam(event, "assembly"),
+  );
   const document = await resolveDocument(
     actor,
     assembly.id,
@@ -505,7 +548,10 @@ function isAmendmentAuthor(actor: Actor, row: LoadedAmendment): boolean {
   );
 }
 
-function isVisible(ctx: DocumentAmendmentContext, row: LoadedAmendment): boolean {
+function isVisible(
+  ctx: DocumentAmendmentContext,
+  row: LoadedAmendment,
+): boolean {
   return canSeeAmendment(
     ctx.actor,
     {
@@ -520,12 +566,22 @@ function isVisible(ctx: DocumentAmendmentContext, row: LoadedAmendment): boolean
 }
 
 /** Loads the `[amendment]` route param. Hidden amendments answer 404. */
-export async function loadAmendmentContext(event: H3Event): Promise<AmendmentContext> {
+export async function loadAmendmentContext(
+  event: H3Event,
+): Promise<AmendmentContext> {
   const ctx = await loadAmendmentDocumentContext(event);
-  const found = await resolveAmendment(ctx.document.id, getRouterParam(event, "amendment"));
+  const found = await resolveAmendment(
+    ctx.document.id,
+    getRouterParam(event, "amendment"),
+  );
   const amendment = await loadAmendment(db, found.id);
-  if (!amendment || !isVisible(ctx, amendment)) fail(404, "Enmienda no encontrada");
-  return { ...ctx, amendment, isAuthor: isAmendmentAuthor(ctx.actor, amendment) };
+  if (!amendment || !isVisible(ctx, amendment))
+    fail(404, "Enmienda no encontrada");
+  return {
+    ...ctx,
+    amendment,
+    isAuthor: isAmendmentAuthor(ctx.actor, amendment),
+  };
 }
 
 async function loadBaseBlocks(document: DocumentRow): Promise<Block[]> {
@@ -587,20 +643,28 @@ function assertAmendable(ctx: DocumentAmendmentContext): void {
 }
 
 function assertModerator(actor: Actor): void {
-  if (!canModerate(actor)) fail(403, "No tienes permiso para realizar esta acción");
+  if (!canModerate(actor))
+    fail(403, "No tienes permiso para realizar esta acción");
 }
 
 function assertValidOps(errors: OpError[]): void {
-  if (errors.length > 0) fail(422, "La enmienda no es válida", { reasons: errors });
+  if (errors.length > 0)
+    fail(422, "La enmienda no es válida", { reasons: errors });
 }
 
-async function assertMembers(ids: string[], activeOnly: boolean): Promise<void> {
+async function assertMembers(
+  ids: string[],
+  activeOnly: boolean,
+): Promise<void> {
   if (ids.length === 0) return;
   const rows = await db
     .select({ id: members.id, active: members.active })
     .from(members)
     .where(inArray(members.id, ids));
-  if (rows.length !== ids.length || (activeOnly && rows.some((row) => !row.active))) {
+  if (
+    rows.length !== ids.length ||
+    (activeOnly && rows.some((row) => !row.active))
+  ) {
     fail(422, "Algún miembro indicado no existe o no está activo");
   }
 }
@@ -628,6 +692,7 @@ async function resolveDraftAuthors(
     actor.memberId ??
     (moderate ? extra[0] : undefined);
   if (!presentingMemberId) {
+    if (!moderate) fail(403, "Tu cuenta no está vinculada a ningún miembro");
     fail(422, "Indica el miembro que presenta la enmienda");
   }
   const memberIds = unique([presentingMemberId, ...extra]);
@@ -643,7 +708,9 @@ export async function buildAmendmentDtos(
   visibleIds?: Set<string>,
 ): Promise<AmendmentDto[]> {
   const voteIds = unique(
-    rows.map((row) => row.outcomeVoteId).filter((id): id is string => Boolean(id)),
+    rows
+      .map((row) => row.outcomeVoteId)
+      .filter((id): id is string => Boolean(id)),
   );
   const voteRows =
     voteIds.length > 0
@@ -678,7 +745,9 @@ export async function buildAmendmentDtos(
       decidedAt: iso(row.decidedAt),
       approvalMethod: row.approvalMethod,
       outcomeNote: row.outcomeNote,
-      outcomeVote: row.outcomeVoteId ? (voteById.get(row.outcomeVoteId) ?? null) : null,
+      outcomeVote: row.outcomeVoteId
+        ? (voteById.get(row.outcomeVoteId) ?? null)
+        : null,
       position:
         ctx.positionsVisible && row.position
           ? {
@@ -727,7 +796,10 @@ export async function amendmentDto(
 export async function listDocumentAmendments(
   ctx: DocumentAmendmentContext,
 ): Promise<DocumentAmendmentsDto> {
-  const rows = await findAmendments(db, eq(amendments.documentId, ctx.document.id));
+  const rows = await findAmendments(
+    db,
+    eq(amendments.documentId, ctx.document.id),
+  );
   const visible = rows.filter((row) => isVisible(ctx, row));
   const visibleIds = new Set(visible.map((row) => row.id));
   const dtos = await buildAmendmentDtos(ctx, visible, visibleIds);
@@ -800,9 +872,12 @@ export async function createAmendmentDraft(
         createdByUserId: actor.user.id,
       })
       .returning({ id: amendments.id });
-    await tx
-      .insert(amendmentAuthors)
-      .values(authors.memberIds.map((memberId) => ({ amendmentId: row!.id, memberId })));
+    await tx.insert(amendmentAuthors).values(
+      authors.memberIds.map((memberId) => ({
+        amendmentId: row!.id,
+        memberId,
+      })),
+    );
 
     await recordEvent(tx, {
       assemblyId: ctx.assembly.id,
@@ -813,7 +888,9 @@ export async function createAmendmentDraft(
       payload: {
         kind: body.kind,
         authorMemberIds: authors.memberIds,
-        ...(body.onBehalfOfMemberId ? { onBehalfOfMemberId: body.onBehalfOfMemberId } : {}),
+        ...(body.onBehalfOfMemberId
+          ? { onBehalfOfMemberId: body.onBehalfOfMemberId }
+          : {}),
       },
       actor,
     });
@@ -829,14 +906,17 @@ export async function updateAmendmentDraft(
 ): Promise<AmendmentDto> {
   const { actor, amendment, document } = ctx;
   if (!ctx.isAuthor) fail(403, "Solo los autores pueden editar la enmienda");
-  if (amendment.status !== "draft") fail(409, "Solo se pueden editar borradores");
+  if (amendment.status !== "draft")
+    fail(409, "Solo se pueden editar borradores");
   assertAmendable(ctx);
 
   const transactional = amendment.kind === "transactional";
   if (transactional && body.kind) {
     fail(422, "No se puede cambiar el tipo de una transaccional");
   }
-  const kind: AmendmentKind = transactional ? "transactional" : (body.kind ?? amendment.kind);
+  const kind: AmendmentKind = transactional
+    ? "transactional"
+    : (body.kind ?? amendment.kind);
   const meta = readMeta(amendment);
 
   const authorsChanged =
@@ -887,13 +967,34 @@ export async function updateAmendmentDraft(
         ),
       )
       .returning({ id: amendments.id });
-    if (updated.length === 0) fail(409, "La enmienda ha cambiado. Recarga la página");
+    if (updated.length === 0)
+      fail(409, "La enmienda ha cambiado. Recarga la página");
 
     if (authors) {
-      await tx.delete(amendmentAuthors).where(eq(amendmentAuthors.amendmentId, amendment.id));
       await tx
-        .insert(amendmentAuthors)
-        .values(authors.memberIds.map((memberId) => ({ amendmentId: amendment.id, memberId })));
+        .delete(amendmentAuthors)
+        .where(eq(amendmentAuthors.amendmentId, amendment.id));
+      await tx.insert(amendmentAuthors).values(
+        authors.memberIds.map((memberId) => ({
+          amendmentId: amendment.id,
+          memberId,
+        })),
+      );
+    }
+
+    // The parties accepted a text: a new one needs their answer again.
+    if (transactional && body.ops !== undefined) {
+      await tx
+        .update(amendmentAcceptances)
+        .set({ decision: "pending", decidedAt: null, recordedByUserId: null })
+        .where(
+          and(
+            eq(amendmentAcceptances.amendmentId, amendment.id),
+            actor.memberId
+              ? ne(amendmentAcceptances.memberId, actor.memberId)
+              : undefined,
+          ),
+        );
     }
 
     await recordEvent(tx, {
@@ -905,7 +1006,9 @@ export async function updateAmendmentDraft(
       payload: {
         kind,
         ...(authors ? { authorMemberIds: authors.memberIds } : {}),
-        ...(body.onBehalfOfMemberId ? { onBehalfOfMemberId: body.onBehalfOfMemberId } : {}),
+        ...(body.onBehalfOfMemberId
+          ? { onBehalfOfMemberId: body.onBehalfOfMemberId }
+          : {}),
       },
       actor,
     });
@@ -914,15 +1017,20 @@ export async function updateAmendmentDraft(
   return amendmentDto(ctx, amendment.id);
 }
 
-export async function deleteAmendmentDraft(ctx: AmendmentContext): Promise<{ success: true }> {
+export async function deleteAmendmentDraft(
+  ctx: AmendmentContext,
+): Promise<{ success: true }> {
   const { amendment } = ctx;
   if (!ctx.isAuthor) fail(403, "Solo los autores pueden eliminar la enmienda");
-  if (amendment.status !== "draft") fail(409, "Solo se pueden eliminar borradores");
+  if (amendment.status !== "draft")
+    fail(409, "Solo se pueden eliminar borradores");
 
   await db.transaction(async (tx) => {
     const deleted = await tx
       .delete(amendments)
-      .where(and(eq(amendments.id, amendment.id), eq(amendments.status, "draft")))
+      .where(
+        and(eq(amendments.id, amendment.id), eq(amendments.status, "draft")),
+      )
       .returning({ id: amendments.id });
     if (deleted.length === 0) fail(409, "La enmienda ya no es un borrador");
     await recordEvent(tx, {
@@ -945,7 +1053,9 @@ function isOpenSource(row: {
   admission: AdmissionStatus;
   decidedAt: Date | null;
 }): boolean {
-  return row.status === "submitted" && row.admission === "admitted" && !row.decidedAt;
+  return (
+    row.status === "submitted" && row.admission === "admitted" && !row.decidedAt
+  );
 }
 
 async function nextNumber(tx: Tx, documentId: string): Promise<number> {
@@ -953,12 +1063,19 @@ async function nextNumber(tx: Tx, documentId: string): Promise<number> {
     .select({ value: sql<number>`coalesce(max(${amendments.number}), 0)` })
     .from(amendments)
     .where(
-      and(eq(amendments.documentId, documentId), ne(amendments.kind, "transactional")),
+      and(
+        eq(amendments.documentId, documentId),
+        ne(amendments.kind, "transactional"),
+      ),
     );
   return Number(row?.value ?? 0) + 1;
 }
 
-async function nextMemberSeq(tx: Tx, documentId: string, memberId: string): Promise<number> {
+async function nextMemberSeq(
+  tx: Tx,
+  documentId: string,
+  memberId: string,
+): Promise<number> {
   const [row] = await tx
     .select({ value: sql<number>`coalesce(max(${amendments.memberSeq}), 0)` })
     .from(amendments)
@@ -972,24 +1089,37 @@ async function nextMemberSeq(tx: Tx, documentId: string, memberId: string): Prom
   return Number(row?.value ?? 0) + 1;
 }
 
-export async function submitAmendment(ctx: AmendmentContext): Promise<AmendmentDto> {
+export async function submitAmendment(
+  ctx: AmendmentContext,
+): Promise<AmendmentDto> {
   const { actor, amendment, document, now } = ctx;
   if (!ctx.isAuthor) fail(403, "Solo los autores pueden presentar la enmienda");
-  if (amendment.status !== "draft") fail(409, "La enmienda ya se ha presentado");
+  if (amendment.status !== "draft")
+    fail(409, "La enmienda ya se ha presentado");
   assertAmendable(ctx);
 
   const transactional = amendment.kind === "transactional";
   const privileged = canModerate(actor) || canReviewAmendments(actor);
-  if (!transactional && !privileged && ctx.window.opensAt && now < ctx.window.opensAt) {
+  if (
+    !transactional &&
+    !privileged &&
+    ctx.window.opensAt &&
+    now < ctx.window.opensAt
+  ) {
     fail(409, "El plazo de enmiendas todavía no está abierto");
   }
 
   const meta = readMeta(amendment);
   const presentingId =
     meta.presentingMemberId ??
-    orderAuthors(amendment.authors.map((author) => toMemberRef(author.member)))[0]?.id;
-  const presenting = amendment.authors.find((author) => author.memberId === presentingId);
-  if (!transactional && !presenting) fail(422, "Indica el miembro que presenta la enmienda");
+    orderAuthors(
+      amendment.authors.map((author) => toMemberRef(author.member)),
+    )[0]?.id;
+  const presenting = amendment.authors.find(
+    (author) => author.memberId === presentingId,
+  );
+  if (!transactional && !presenting)
+    fail(422, "Indica el miembro que presenta la enmienda");
 
   await db.transaction(async (tx) => {
     await lockDocument(tx, document.id);
@@ -1021,12 +1151,18 @@ export async function submitAmendment(ctx: AmendmentContext): Promise<AmendmentD
           late: false,
           admission: "admitted",
         })
-        .where(and(eq(amendments.id, amendment.id), eq(amendments.status, "draft")))
+        .where(
+          and(eq(amendments.id, amendment.id), eq(amendments.status, "draft")),
+        )
         .returning({ id: amendments.id });
       payload = { code: amendment.code, late: false, admission: "admitted" };
     } else {
       const number = await nextNumber(tx, document.id);
-      const memberSeq = await nextMemberSeq(tx, document.id, presenting!.memberId);
+      const memberSeq = await nextMemberSeq(
+        tx,
+        document.id,
+        presenting!.memberId,
+      );
       const code = `${presenting!.member.acronym} ${memberSeq}`;
       const late = isLateSubmission(ctx.window, now);
       const admission: AdmissionStatus = late ? "pending" : "admitted";
@@ -1041,9 +1177,14 @@ export async function submitAmendment(ctx: AmendmentContext): Promise<AmendmentD
           code,
           late,
           admission,
-          meta: { ...meta, presentingMemberId: presenting!.memberId } as StoredAmendmentMeta,
+          meta: {
+            ...meta,
+            presentingMemberId: presenting!.memberId,
+          } as StoredAmendmentMeta,
         })
-        .where(and(eq(amendments.id, amendment.id), eq(amendments.status, "draft")))
+        .where(
+          and(eq(amendments.id, amendment.id), eq(amendments.status, "draft")),
+        )
         .returning({ id: amendments.id });
       payload = { number, code, late, admission };
     }
@@ -1067,7 +1208,9 @@ export async function submitAmendment(ctx: AmendmentContext): Promise<AmendmentD
   return amendmentDto(ctx, amendment.id);
 }
 
-export async function withdrawAmendment(ctx: AmendmentContext): Promise<AmendmentDto> {
+export async function withdrawAmendment(
+  ctx: AmendmentContext,
+): Promise<AmendmentDto> {
   const { actor, amendment, now } = ctx;
   if (!ctx.isAuthor && !canModerate(actor)) {
     fail(403, "Solo los autores o la Mesa pueden retirar la enmienda");
@@ -1081,7 +1224,12 @@ export async function withdrawAmendment(ctx: AmendmentContext): Promise<Amendmen
     const updated = await tx
       .update(amendments)
       .set({ status: "withdrawn", decidedAt: now })
-      .where(and(eq(amendments.id, amendment.id), eq(amendments.status, "submitted")))
+      .where(
+        and(
+          eq(amendments.id, amendment.id),
+          eq(amendments.status, "submitted"),
+        ),
+      )
       .returning({ id: amendments.id });
     if (updated.length === 0) fail(409, "La enmienda ya está decidida");
     await recordEvent(tx, {
@@ -1118,9 +1266,13 @@ export async function decideAmendmentAdmission(
     })
     .from(amendments)
     .where(
-      and(eq(amendments.documentId, document.id), inArray(amendments.id, body.amendmentIds)),
+      and(
+        eq(amendments.documentId, document.id),
+        inArray(amendments.id, body.amendmentIds),
+      ),
     );
-  if (rows.length !== body.amendmentIds.length) fail(404, "Enmienda no encontrada");
+  if (rows.length !== body.amendmentIds.length)
+    fail(404, "Enmienda no encontrada");
 
   const eligible =
     body.decision === "admitted"
@@ -1140,7 +1292,9 @@ export async function decideAmendmentAdmission(
   }
 
   const evaluated =
-    body.method === "vote" && body.vote ? evaluateVoteInput(body.vote, ctx.settings) : null;
+    body.method === "vote" && body.vote
+      ? evaluateVoteInput(body.vote, ctx.settings)
+      : null;
   const admission: AmendmentAdmissionResult["admission"] =
     !evaluated || evaluated.outcome.result === "approved"
       ? body.decision
@@ -1186,7 +1340,11 @@ export async function decideAmendmentAdmission(
       admission === "admitted"
         ? await tx
             .update(amendments)
-            .set({ admission: "admitted", status: "submitted", decidedAt: null })
+            .set({
+              admission: "admitted",
+              status: "submitted",
+              decidedAt: null,
+            })
             .where(
               and(
                 inArray(amendments.id, body.amendmentIds),
@@ -1196,11 +1354,16 @@ export async function decideAmendmentAdmission(
             .returning({ id: amendments.id })
         : await tx
             .update(amendments)
-            .set({ admission: "inadmissible", status: "inadmissible", decidedAt: now })
+            .set({
+              admission: "inadmissible",
+              status: "inadmissible",
+              decidedAt: now,
+            })
             .where(
               and(
                 inArray(amendments.id, body.amendmentIds),
-                eq(amendments.status, "submitted"),
+                // A failed vote to re-admit leaves inadmissible ones as they were.
+                inArray(amendments.status, ["submitted", "inadmissible"]),
               ),
             )
             .returning({ id: amendments.id });
@@ -1215,7 +1378,11 @@ export async function decideAmendmentAdmission(
         entityType: "vote",
         entityId: voteRow.id,
         type: "vote_recorded",
-        payload: { subjectType: "decision", subjectId: decisionId, result: voteRow.result },
+        payload: {
+          subjectType: "decision",
+          subjectId: decisionId,
+          result: voteRow.result,
+        },
         actor,
       });
     }
@@ -1225,7 +1392,11 @@ export async function decideAmendmentAdmission(
       entityType: "decision",
       entityId: decisionId,
       type: "decision_recorded",
-      payload: { kind: decision!.kind, method: body.method, subjectIds: body.amendmentIds },
+      payload: {
+        kind: decision!.kind,
+        method: body.method,
+        subjectIds: body.amendmentIds,
+      },
       actor,
     });
     for (const id of body.amendmentIds) {
@@ -1234,11 +1405,16 @@ export async function decideAmendmentAdmission(
         documentId: document.id,
         entityType: "amendment",
         entityId: id,
-        type: admission === "admitted" ? "amendment_admitted" : "amendment_inadmissible",
+        type:
+          admission === "admitted"
+            ? "amendment_admitted"
+            : "amendment_inadmissible",
         payload: {
           decisionId,
           method: body.method,
-          ...(voteRow ? { voteId: voteRow.id, voteResult: voteRow.result } : {}),
+          ...(voteRow
+            ? { voteId: voteRow.id, voteResult: voteRow.result }
+            : {}),
         },
         actor,
       });
@@ -1273,7 +1449,10 @@ export async function setAmendmentPosition(
     fail(403, "Solo el proponente o la Mesa pueden fijar la posición");
   }
   if (amendment.status !== "submitted") {
-    fail(409, "Solo se puede fijar la posición de enmiendas presentadas y sin decidir");
+    fail(
+      409,
+      "Solo se puede fijar la posición de enmiendas presentadas y sin decidir",
+    );
   }
   assertNotFinal(ctx);
 
@@ -1287,14 +1466,20 @@ export async function setAmendmentPosition(
     await tx
       .insert(amendmentPositions)
       .values({ amendmentId: amendment.id, ...values })
-      .onConflictDoUpdate({ target: amendmentPositions.amendmentId, set: values });
+      .onConflictDoUpdate({
+        target: amendmentPositions.amendmentId,
+        set: values,
+      });
     await recordEvent(tx, {
       assemblyId: ctx.assembly.id,
       documentId: ctx.document.id,
       entityType: "amendment",
       entityId: amendment.id,
       type: "position_changed",
-      payload: { position: body.position, by: ctx.isProponent ? "proponent" : "moderator" },
+      payload: {
+        position: body.position,
+        by: ctx.isProponent ? "proponent" : "moderator",
+      },
       actor,
     });
   });
@@ -1320,12 +1505,18 @@ async function approvalWarnings(
       ),
     );
   const links = await tx
-    .select({ fromId: amendmentRelations.fromId, toId: amendmentRelations.toId })
+    .select({
+      fromId: amendmentRelations.fromId,
+      toId: amendmentRelations.toId,
+    })
     .from(amendmentRelations)
     .where(
       and(
         eq(amendmentRelations.kind, "incompatible"),
-        or(eq(amendmentRelations.fromId, target.id), eq(amendmentRelations.toId, target.id)),
+        or(
+          eq(amendmentRelations.fromId, target.id),
+          eq(amendmentRelations.toId, target.id),
+        ),
       ),
     );
   const linkedIds = unique(
@@ -1357,7 +1548,10 @@ export async function applyAmendmentOutcome(
   const { actor, amendment, document, now } = ctx;
   assertModerator(actor);
   assertNotFinal(ctx);
-  const lock = buildOptimisticLockCondition(amendments.updatedAt, body.updatedAt);
+  const lock = buildOptimisticLockCondition(
+    amendments.updatedAt,
+    body.updatedAt,
+  );
   const sourceIds = amendment.sources.map((source) => source.sourceId);
   const base = {
     assemblyId: ctx.assembly.id,
@@ -1367,9 +1561,14 @@ export async function applyAmendmentOutcome(
   };
 
   if (body.action === "approve" || body.action === "vote") {
-    if (amendment.status !== "submitted") fail(409, "La enmienda ya está decidida");
-    if (amendment.admission !== "admitted") fail(409, "La enmienda no está admitida");
-    const evaluated = body.action === "vote" ? evaluateVoteInput(body.vote, ctx.settings) : null;
+    if (amendment.status !== "submitted")
+      fail(409, "La enmienda ya está decidida");
+    if (amendment.admission !== "admitted")
+      fail(409, "La enmienda no está admitida");
+    const evaluated =
+      body.action === "vote"
+        ? evaluateVoteInput(body.vote, ctx.settings)
+        : null;
 
     const result = await db.transaction(async (tx) => {
       if (amendment.kind === "transactional") {
@@ -1401,7 +1600,8 @@ export async function applyAmendmentOutcome(
           .returning();
       }
 
-      const approved = body.action === "approve" || evaluated?.outcome.result === "approved";
+      const approved =
+        body.action === "approve" || evaluated?.outcome.result === "approved";
       const updated = await tx
         .update(amendments)
         .set({
@@ -1412,7 +1612,10 @@ export async function applyAmendmentOutcome(
               : "vote"
             : null,
           outcomeVoteId: voteRow?.id ?? null,
-          outcomeNote: body.action === "approve" ? (body.note ?? null) : (body.vote.note ?? null),
+          outcomeNote:
+            body.action === "approve"
+              ? (body.note ?? null)
+              : (body.vote.note ?? null),
           decidedAt: now,
         })
         .where(
@@ -1424,7 +1627,8 @@ export async function applyAmendmentOutcome(
           ),
         )
         .returning({ id: amendments.id });
-      if (updated.length === 0) fail(409, "La enmienda ha cambiado. Recarga la página");
+      if (updated.length === 0)
+        fail(409, "La enmienda ha cambiado. Recarga la página");
 
       if (voteRow) {
         await recordEvent(tx, {
@@ -1432,7 +1636,11 @@ export async function applyAmendmentOutcome(
           entityType: "vote",
           entityId: voteRow.id,
           type: "vote_recorded",
-          payload: { subjectType: "amendment", subjectId: amendment.id, result: voteRow.result },
+          payload: {
+            subjectType: "amendment",
+            subjectId: amendment.id,
+            result: voteRow.result,
+          },
         });
       }
       await recordEvent(tx, {
@@ -1440,7 +1648,11 @@ export async function applyAmendmentOutcome(
         entityId: amendment.id,
         type: approved ? "amendment_approved" : "amendment_rejected",
         payload: {
-          method: approved ? (body.action === "approve" ? body.method : "vote") : "vote",
+          method: approved
+            ? body.action === "approve"
+              ? body.method
+              : "vote"
+            : "vote",
           ...(voteRow
             ? {
                 voteId: voteRow.id,
@@ -1452,11 +1664,20 @@ export async function applyAmendmentOutcome(
         },
       });
 
-      if (approved && amendment.kind === "transactional" && sourceIds.length > 0) {
+      if (
+        approved &&
+        amendment.kind === "transactional" &&
+        sourceIds.length > 0
+      ) {
         const transacted = await tx
           .update(amendments)
           .set({ status: "transacted", decidedAt: now })
-          .where(and(inArray(amendments.id, sourceIds), eq(amendments.status, "submitted")))
+          .where(
+            and(
+              inArray(amendments.id, sourceIds),
+              eq(amendments.status, "submitted"),
+            ),
+          )
           .returning({ id: amendments.id });
         for (const row of transacted) {
           await recordEvent(tx, {
@@ -1482,27 +1703,47 @@ export async function applyAmendmentOutcome(
   }
 
   if (body.action === "withdraw" || body.action === "lapse") {
-    if (amendment.status !== "submitted") fail(409, "La enmienda ya está decidida");
+    if (amendment.status !== "submitted")
+      fail(409, "La enmienda ya está decidida");
     const status = body.action === "withdraw" ? "withdrawn" : "lapsed";
     await db.transaction(async (tx) => {
       const updated = await tx
         .update(amendments)
         .set({ status, decidedAt: now, outcomeNote: body.note ?? null })
-        .where(and(eq(amendments.id, amendment.id), eq(amendments.status, "submitted"), lock))
+        .where(
+          and(
+            eq(amendments.id, amendment.id),
+            eq(amendments.status, "submitted"),
+            lock,
+          ),
+        )
         .returning({ id: amendments.id });
-      if (updated.length === 0) fail(409, "La enmienda ha cambiado. Recarga la página");
+      if (updated.length === 0)
+        fail(409, "La enmienda ha cambiado. Recarga la página");
       await recordEvent(tx, {
         ...base,
         entityId: amendment.id,
-        type: body.action === "withdraw" ? "amendment_withdrawn" : "amendment_lapsed",
+        type:
+          body.action === "withdraw"
+            ? "amendment_withdrawn"
+            : "amendment_lapsed",
         payload: { by: "moderator" },
       });
     });
-    return { amendment: await amendmentDto(ctx, amendment.id), vote: null, warnings: null };
+    return {
+      amendment: await amendmentDto(ctx, amendment.id),
+      vote: null,
+      warnings: null,
+    };
   }
 
   // reopen
-  const reopenable: AmendmentStatus[] = ["approved", "rejected", "withdrawn", "lapsed"];
+  const reopenable: AmendmentStatus[] = [
+    "approved",
+    "rejected",
+    "withdrawn",
+    "lapsed",
+  ];
   if (!reopenable.includes(amendment.status)) {
     fail(409, "Esta enmienda no se puede reabrir");
   }
@@ -1524,7 +1765,8 @@ export async function applyAmendmentOutcome(
         ),
       )
       .returning({ id: amendments.id });
-    if (updated.length === 0) fail(409, "La enmienda ha cambiado. Recarga la página");
+    if (updated.length === 0)
+      fail(409, "La enmienda ha cambiado. Recarga la página");
     await recordEvent(tx, {
       ...base,
       entityId: amendment.id,
@@ -1534,11 +1776,18 @@ export async function applyAmendmentOutcome(
 
     // Reopening an approved transactional gives its sources back, unless
     // another approved transactional also absorbed them.
-    if (amendment.status === "approved" && amendment.kind === "transactional" && sourceIds.length > 0) {
+    if (
+      amendment.status === "approved" &&
+      amendment.kind === "transactional" &&
+      sourceIds.length > 0
+    ) {
       const stillAbsorbed = await tx
         .select({ sourceId: amendmentSources.sourceId })
         .from(amendmentSources)
-        .innerJoin(amendments, eq(amendments.id, amendmentSources.transactionalId))
+        .innerJoin(
+          amendments,
+          eq(amendments.id, amendmentSources.transactionalId),
+        )
         .where(
           and(
             inArray(amendmentSources.sourceId, sourceIds),
@@ -1552,20 +1801,32 @@ export async function applyAmendmentOutcome(
         const restored = await tx
           .update(amendments)
           .set({ status: "submitted", decidedAt: null })
-          .where(and(inArray(amendments.id, restore), eq(amendments.status, "transacted")))
+          .where(
+            and(
+              inArray(amendments.id, restore),
+              eq(amendments.status, "transacted"),
+            ),
+          )
           .returning({ id: amendments.id });
         for (const row of restored) {
           await recordEvent(tx, {
             ...base,
             entityId: row.id,
             type: "amendment_reopened",
-            payload: { previousStatus: "transacted", transactionalId: amendment.id },
+            payload: {
+              previousStatus: "transacted",
+              transactionalId: amendment.id,
+            },
           });
         }
       }
     }
   });
-  return { amendment: await amendmentDto(ctx, amendment.id), vote: null, warnings: null };
+  return {
+    amendment: await amendmentDto(ctx, amendment.id),
+    vote: null,
+    warnings: null,
+  };
 }
 
 // Transactionals -------------------------------------------------------------
@@ -1579,7 +1840,10 @@ export async function createTransactionalAmendment(
 
   const sources = await findAmendments(
     db,
-    and(eq(amendments.documentId, document.id), inArray(amendments.id, body.sourceIds)),
+    and(
+      eq(amendments.documentId, document.id),
+      inArray(amendments.id, body.sourceIds),
+    ),
   );
   if (
     sources.length !== body.sourceIds.length ||
@@ -1592,19 +1856,26 @@ export async function createTransactionalAmendment(
   }
 
   const sourceAuthorIds = unique(
-    sources.flatMap((source) => source.authors.map((author) => author.memberId)),
+    sources.flatMap((source) =>
+      source.authors.map((author) => author.memberId),
+    ),
   );
   const moderate = canModerate(actor);
   const sourceAuthor =
     actsFor(actor, sourceAuthorIds) ||
     sources.some((source) => source.createdByUserId === actor.user.id);
   if (!moderate && !ctx.isProponent && !sourceAuthor) {
-    fail(403, "Solo los autores, el proponente o la Mesa pueden proponer transaccionales");
+    fail(
+      403,
+      "Solo los autores, el proponente o la Mesa pueden proponer transaccionales",
+    );
   }
 
   let authorIds: string[];
   if (moderate) {
-    authorIds = unique(body.authorMemberIds ?? (actor.memberId ? [actor.memberId] : []));
+    authorIds = unique(
+      body.authorMemberIds ?? (actor.memberId ? [actor.memberId] : []),
+    );
   } else {
     const parties = new Set([...sourceAuthorIds, document.proponentMemberId]);
     authorIds = unique([
@@ -1612,7 +1883,10 @@ export async function createTransactionalAmendment(
       ...(body.authorMemberIds ?? []),
     ]);
     if (authorIds.some((id) => id !== actor.memberId && !parties.has(id))) {
-      fail(403, "Solo las partes de la transaccional pueden figurar como autoras");
+      fail(
+        403,
+        "Solo las partes de la transaccional pueden figurar como autoras",
+      );
     }
   }
   await assertMembers(authorIds, false);
@@ -1639,11 +1913,16 @@ export async function createTransactionalAmendment(
       .select({ code: amendments.code })
       .from(amendments)
       .where(
-        and(eq(amendments.documentId, document.id), eq(amendments.kind, "transactional")),
+        and(
+          eq(amendments.documentId, document.id),
+          eq(amendments.kind, "transactional"),
+        ),
       );
     const code = nextTransactionalCode(existing.map((row) => row.code));
 
-    const meta: StoredAmendmentMeta = authorIds[0] ? { presentingMemberId: authorIds[0] } : {};
+    const meta: StoredAmendmentMeta = authorIds[0]
+      ? { presentingMemberId: authorIds[0] }
+      : {};
     const [row] = await tx
       .insert(amendments)
       .values({
@@ -1670,16 +1949,21 @@ export async function createTransactionalAmendment(
         .insert(amendmentAuthors)
         .values(authorIds.map((memberId) => ({ amendmentId, memberId })));
     }
-    await tx
-      .insert(amendmentSources)
-      .values(body.sourceIds.map((sourceId) => ({ transactionalId: amendmentId, sourceId })));
+    await tx.insert(amendmentSources).values(
+      body.sourceIds.map((sourceId) => ({
+        transactionalId: amendmentId,
+        sourceId,
+      })),
+    );
     if (parties.length > 0) {
       await tx.insert(amendmentAcceptances).values(
         parties.map((party) => ({
           amendmentId,
           memberId: party.memberId,
           role: party.role,
-          decision: party.accepted ? ("accepted" as const) : ("pending" as const),
+          decision: party.accepted
+            ? ("accepted" as const)
+            : ("pending" as const),
           decidedAt: party.accepted ? now : null,
           recordedByUserId: party.accepted ? actor.user.id : null,
         })),
@@ -1733,7 +2017,8 @@ export async function recordAmendmentAcceptance(
   if (amendment.kind !== "transactional") {
     fail(409, "Solo las transaccionales necesitan aceptación");
   }
-  if (!OPEN_STATUSES.includes(amendment.status)) fail(409, "La enmienda ya está decidida");
+  if (!OPEN_STATUSES.includes(amendment.status))
+    fail(409, "La enmienda ya está decidida");
   assertNotFinal(ctx);
 
   const moderate = canModerate(actor);
@@ -1742,14 +2027,21 @@ export async function recordAmendmentAcceptance(
   if (memberId !== actor.memberId && !moderate) {
     fail(403, "Solo la Mesa puede registrar la respuesta de otra parte");
   }
-  const party = amendment.acceptances.find((acceptance) => acceptance.memberId === memberId);
+  const party = amendment.acceptances.find(
+    (acceptance) => acceptance.memberId === memberId,
+  );
   if (!party) fail(404, "Ese miembro no es parte de la transaccional");
-  if (party.decision !== "pending" && !moderate) fail(409, "Esta parte ya ha respondido");
+  if (party.decision !== "pending" && !moderate)
+    fail(409, "Esta parte ya ha respondido");
 
   await db.transaction(async (tx) => {
     await tx
       .update(amendmentAcceptances)
-      .set({ decision: body.decision, decidedAt: now, recordedByUserId: actor.user.id })
+      .set({
+        decision: body.decision,
+        decidedAt: now,
+        recordedByUserId: actor.user.id,
+      })
       .where(eq(amendmentAcceptances.id, party.id));
     await recordEvent(tx, {
       assemblyId: ctx.assembly.id,
@@ -1761,7 +2053,9 @@ export async function recordAmendmentAcceptance(
         memberId,
         role: party.role,
         decision: body.decision,
-        ...(memberId !== actor.memberId ? { recordedForMemberId: memberId } : {}),
+        ...(memberId !== actor.memberId
+          ? { recordedForMemberId: memberId }
+          : {}),
       },
       actor,
     });
@@ -1773,7 +2067,11 @@ export async function recordAmendmentAcceptance(
 // Relations ------------------------------------------------------------------
 
 function assertRelationRole(ctx: DocumentAmendmentContext): void {
-  if (!canModerate(ctx.actor) && !canReviewAmendments(ctx.actor) && !ctx.isProponent) {
+  if (
+    !canModerate(ctx.actor) &&
+    !canReviewAmendments(ctx.actor) &&
+    !ctx.isProponent
+  ) {
     fail(403, "No tienes permiso para gestionar relaciones entre enmiendas");
   }
 }
@@ -1904,7 +2202,9 @@ export async function deleteAmendmentRelation(
 
 // History --------------------------------------------------------------------
 
-export async function amendmentHistory(ctx: AmendmentContext): Promise<EventDto[]> {
+export async function amendmentHistory(
+  ctx: AmendmentContext,
+): Promise<EventDto[]> {
   const rows = await db
     .select({
       id: events.id,
@@ -1936,7 +2236,11 @@ export async function amendmentHistory(ctx: AmendmentContext): Promise<EventDto[
     type: row.type,
     entityType: row.entityType,
     entityId: row.entityId,
-    payload: redactAmendmentEventPayload(row.type, row.payload, ctx.positionsVisible),
+    payload: redactAmendmentEventPayload(
+      row.type,
+      row.payload,
+      ctx.positionsVisible,
+    ),
     actorName: row.actorName,
     actorMember:
       row.memberId && row.memberAcronym && row.memberName && row.memberKind

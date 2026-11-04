@@ -1,4 +1,7 @@
-<script lang="ts">
+<script setup lang="ts">
+import type { Block, ConsolidatedBlock } from "~~/shared/types/content";
+import { renderAnnotated, renderBlocks } from "~~/shared/utils/content/render";
+
 export type ContentViewMode = "plain" | "diff" | "provenance" | "clean";
 
 /** Gutter marker of one block: amendments touching it and whether they overlap. */
@@ -6,14 +9,6 @@ export interface BlockMarker {
   count: number;
   overlap: boolean;
 }
-</script>
-
-<script setup lang="ts">
-import type { Block, ConsolidatedBlock } from "~~/shared/types/content";
-import {
-  renderAnnotated,
-  renderBlocks,
-} from "~~/shared/utils/content/render";
 
 /**
  * Read-only structured content. The HTML comes only from
@@ -81,7 +76,8 @@ const html = computed(() => {
     });
   }
   if (props.blocks) return renderBlocks(props.blocks);
-  if (props.annotated) return renderAnnotated(props.annotated, { mode: "clean" });
+  if (props.annotated)
+    return renderAnnotated(props.annotated, { mode: "clean" });
   return "";
 });
 
@@ -91,8 +87,14 @@ const markerEntries = computed(() =>
 const hasMarkers = computed(() => markerEntries.value.length > 0);
 
 function markerLabel(marker: BlockMarker): string {
-  const count = t("common.content.markerCount", { count: marker.count }, marker.count);
-  return marker.overlap ? `${count}. ${t("common.content.markerOverlap")}` : count;
+  const count = t(
+    "common.content.markerCount",
+    { count: marker.count },
+    marker.count,
+  );
+  return marker.overlap
+    ? `${count}. ${t("common.content.markerOverlap")}`
+    : count;
 }
 
 // DOM decoration ----------------------------------------------------------------
@@ -172,11 +174,9 @@ function scheduleLayout(): void {
 
 useResizeObserver(contentEl, scheduleLayout);
 
-watch(
-  [html, () => props.selected, () => props.interactive],
-  () => decorate(),
-  { flush: "post" },
-);
+watch([html, () => props.selected, () => props.interactive], () => decorate(), {
+  flush: "post",
+});
 watch([html, markerEntries], scheduleLayout, { flush: "post" });
 
 onMounted(() => {
@@ -199,8 +199,18 @@ function closestWithin(target: EventTarget | null, selector: string) {
   return element && root.contains(element) ? element : null;
 }
 
+/** True while the user has text selected inside this view (drag to select). */
+function hasTextSelection(): boolean {
+  const root = contentEl.value;
+  const selection = window.getSelection();
+  if (!root || !selection || selection.isCollapsed) return false;
+  return selection.rangeCount > 0 && root.contains(selection.anchorNode);
+}
+
 function onClick(event: MouseEvent): void {
   if (closestWithin(event.target, "a[href]")) return;
+  // Selecting a passage is not a click: consumers read getSelectedBlockIds().
+  if (hasTextSelection()) return;
   const fragment = closestWithin(event.target, "[data-amendment-id]");
   if (fragment?.dataset.amendmentId) {
     emit("amendment-click", fragment.dataset.amendmentId);

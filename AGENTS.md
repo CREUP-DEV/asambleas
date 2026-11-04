@@ -38,7 +38,7 @@ The public website lives in a separate `creup/web` repository. This app may mirr
 | UI            | Nuxt UI v4 + Tailwind CSS v4                        |
 | Auth          | `better-auth` + Google OAuth + Drizzle adapter      |
 | Database      | PostgreSQL + Drizzle ORM                            |
-| Jobs          | `pg-boss` v10 on PostgreSQL                         |
+| Jobs          | `pg-boss` v12 on PostgreSQL                         |
 | Validation    | Zod v4 (`zod/v4`)                                   |
 | i18n          | `@nuxtjs/i18n`, locales `es` default and `en`       |
 | Accessibility | `@nuxt/a11y`, content font preferences              |
@@ -53,6 +53,7 @@ The public website lives in a separate `creup/web` repository. This app may mirr
 - App: `http://localhost:3000`
 - PostgreSQL: `localhost:5432`
 - Adminer: `http://localhost:8080`
+- Intranet API base: `NUXT_INTRANET_API_URL` (role sync falls back to `${base}/user/role`; members from `/usuarios/asociados` and `/usuarios/sectoriales`)
 - Role sync env var: `NUXT_ROLE_API_URL`
 - Export storage env var: `EXPORT_STORAGE_DIR`
 
@@ -129,13 +130,13 @@ System roles:
 
 Default permissions:
 
-| Role       | Permissions                                                                                                                                                    |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Admin      | All, via bypass                                                                                                                                                |
-| Secretaria | `assembly:create`, `assembly:manage`, `document:create`, `document:manage`, `amendment:create`, `amendment:manage`, `amendment:review`, `assembly:vote_result` |
-| Asociado   | `document:create`, `amendment:create`                                                                                                                          |
-| Moderador  | none                                                                                                                                                           |
-| Invitado   | none                                                                                                                                                           |
+| Role       | Permissions                                                                                                                                                                                         |
+| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Admin      | All, via bypass                                                                                                                                                                                     |
+| Secretaria | `assembly:create`, `assembly:manage`, `document:create`, `document:manage`, `amendment:create`, `amendment:manage`, `amendment:review`, `assembly:vote_result`, `session:moderate`, `member:manage` |
+| Asociado   | `document:create`, `amendment:create`                                                                                                                                                               |
+| Moderador  | `session:moderate`                                                                                                                                                                                  |
+| Invitado   | none                                                                                                                                                                                                |
 
 Permission keys:
 
@@ -150,9 +151,11 @@ amendment:create
 amendment:manage
 amendment:review
 assembly:vote_result
+session:moderate
+member:manage
 ```
 
-Use `requirePermission(event, PERMISSION_KEYS.X)`, `hasPermission`, `requireAdmin` and `getAuthUserWithRole` from `server/utils/auth/rbac.ts`.
+Use `requirePermission(event, PERMISSION_KEYS.X)`, `hasPermission`, `requireAdmin` and `getAuthUserWithRole` from `server/utils/auth/rbac.ts`. Domain endpoints use `requireActor` and its helpers from `server/utils/domain/actor.ts`.
 
 ## Domain Rules
 
@@ -309,9 +312,10 @@ Security and reliability:
 - Keep PDF labels localized and use shared assembly/date formatters.
 - Raleway font files must be available from `server/assets/fonts` after build.
 
-pg-boss v10 reminders:
+pg-boss v12 reminders:
 
 - `work(queueName, { batchSize: 1 }, handler)` receives `Job<T>[]`.
+- Queues must exist before `send` or `work`: create them on boot with `createQueue` (idempotent).
 - `send(queueName, data)` returns a job ID.
 - `getJobById(queueName, jobId)` requires queue name first.
 - Common states: `created`, `retry`, `active`, `completed`, `cancelled`, `failed`.

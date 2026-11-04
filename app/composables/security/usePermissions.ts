@@ -6,15 +6,7 @@ import { SYSTEM_ROLES } from "~~/shared/constants/roles";
  * Kept for the existing callers; new code can use `useMe` directly.
  */
 export const usePermissions = () => {
-  const {
-    me,
-    loaded,
-    permissions,
-    isAdmin,
-    can,
-    refresh,
-    clear,
-  } = useMe();
+  const { me, loaded, permissions, isAdmin, can, refresh, clear } = useMe();
 
   const roleName = computed(() => me.value?.role ?? null);
 
