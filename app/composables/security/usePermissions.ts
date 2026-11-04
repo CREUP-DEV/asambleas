@@ -1,37 +1,30 @@
 import type { PermissionKey } from "~~/shared/constants/permissions";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 
-interface PermissionsResponse {
-  permissions: PermissionKey[];
-  role: string | null;
-}
-
+/**
+ * Role and permission checks for the UI, built on `useMe` (GET /api/me).
+ * Kept for the existing callers; new code can use `useMe` directly.
+ */
 export const usePermissions = () => {
-  const permissions = useState<PermissionKey[]>("user-permissions", () => []);
-  const roleName = useState<string | null>("user-role", () => null);
-  const loaded = useState("permissions-loaded", () => false);
+  const {
+    me,
+    loaded,
+    permissions,
+    isAdmin,
+    can,
+    refresh,
+    clear,
+  } = useMe();
 
-  const fetchPermissions = async () => {
-    try {
-      const data = await $fetch<PermissionsResponse>("/api/auth/permissions", {
-        headers: import.meta.server ? useRequestHeaders(["cookie"]) : undefined,
-      });
-      permissions.value = data.permissions;
-      roleName.value = data.role;
-      loaded.value = true;
-    } catch {
-      permissions.value = [];
-      roleName.value = null;
-      loaded.value = false;
-    }
+  const roleName = computed(() => me.value?.role ?? null);
+
+  /** Loads the permissions. Never throws, so it cannot break navigation. */
+  const fetchPermissions = async (): Promise<void> => {
+    await refresh();
   };
 
-  const hasPermission = (key: PermissionKey) => {
-    if (roleName.value === SYSTEM_ROLES.ADMIN) return true;
-    return permissions.value.includes(key);
-  };
+  const hasPermission = (key: PermissionKey) => can(key);
 
-  const isAdmin = computed(() => roleName.value === SYSTEM_ROLES.ADMIN);
   const isSecretaria = computed(
     () => roleName.value === SYSTEM_ROLES.SECRETARIA,
   );
@@ -39,16 +32,10 @@ export const usePermissions = () => {
   const isInvitado = computed(() => roleName.value === SYSTEM_ROLES.INVITADO);
   const isModerador = computed(() => roleName.value === SYSTEM_ROLES.MODERADOR);
 
-  const clear = () => {
-    permissions.value = [];
-    roleName.value = null;
-    loaded.value = false;
-  };
-
   return {
-    permissions: readonly(permissions),
-    roleName: readonly(roleName),
-    loaded: readonly(loaded),
+    permissions,
+    roleName,
+    loaded,
     fetchPermissions,
     hasPermission,
     clear,

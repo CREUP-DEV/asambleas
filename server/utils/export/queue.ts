@@ -1,6 +1,15 @@
 import { PgBoss } from "pg-boss";
+import { z } from "zod/v4";
+import {
+  EXPORT_LOCALES,
+  EXPORT_VARIANTS,
+  type ExportVariant,
+} from "../../../shared/utils/schemas/export";
 
 let boss: PgBoss | null = null;
+
+/** Attempts after the first one. Deterministic failures are never retried. */
+export const EXPORT_RETRY_LIMIT = 2;
 
 export async function getExportQueue(): Promise<PgBoss> {
   if (boss) return boss;
@@ -21,7 +30,7 @@ export async function getExportQueue(): Promise<PgBoss> {
   // createQueue is idempotent, so running it on every boot is safe.
   for (const name of Object.values(EXPORT_QUEUE_NAMES)) {
     await instance.createQueue(name, {
-      retryLimit: 2,
+      retryLimit: EXPORT_RETRY_LIMIT,
       retryDelay: 5,
       expireInSeconds: 3600,
       deleteAfterSeconds: 7 * 24 * 3600,
@@ -44,16 +53,22 @@ export const EXPORT_QUEUE_NAMES = {
 export type ExportQueueName =
   (typeof EXPORT_QUEUE_NAMES)[keyof typeof EXPORT_QUEUE_NAMES];
 
-export interface AssemblyExportJobData {
-  assemblyId: string;
-  requestedBy: string;
-  locale: "es" | "en";
-}
+export { EXPORT_VARIANTS, type ExportVariant };
 
-export interface DocumentExportJobData {
-  assemblyId: string;
-  itemId: string;
-  documentId: string;
-  requestedBy: string;
-  locale: "es" | "en";
-}
+/**
+ * Job payloads are validated again in the worker, so jobs queued by an
+ * older version of the app fail cleanly instead of rendering garbage.
+ */
+export const assemblyExportJobSchema = z.object({
+  assemblyId: z.string().min(1),
+  requestedBy: z.string().min(1),
+  locale: z.enum(EXPORT_LOCALES),
+});
+
+export const documentExportJobSchema = assemblyExportJobSchema.extend({
+  documentId: z.string().min(1),
+  variant: z.enum(EXPORT_VARIANTS),
+});
+
+export type AssemblyExportJobData = z.infer<typeof assemblyExportJobSchema>;
+export type DocumentExportJobData = z.infer<typeof documentExportJobSchema>;
