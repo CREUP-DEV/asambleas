@@ -1,0 +1,6 @@
+# Dependencies allowed to run install scripts. pnpm >= 11 fails on any undeclared one.
+allowBuilds:
+  "@parcel/watcher": true
+  esbuild: true
+  unrs-resolver: true
+  vue-demi: true
