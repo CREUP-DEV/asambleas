@@ -22,6 +22,7 @@ import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { db } from "../../db";
 import {
+  agendaItems,
   amendmentAcceptances,
   amendmentAuthors,
   amendments,
@@ -46,11 +47,7 @@ import {
   type Actor,
 } from "./actor";
 import { recordEvent } from "./events";
-import {
-  resolveAgendaItem,
-  resolveAssembly,
-  resolveDocument,
-} from "./resolvers";
+import { resolveAssembly, resolveDocument } from "./resolvers";
 import {
   amendmentsPublic,
   canSeeAmendment,
@@ -736,16 +733,22 @@ export async function requireMember(memberId: string, executor: Executor = db) {
   return member;
 }
 
-/** Reads and locks the current row until the transaction ends. */
+/**
+ * Reads and locks the current row until the transaction ends. `no key update`
+ * serializes every change of the document and still lets other transactions
+ * insert rows that reference it (see "Row locks" by shareLockAssembly); only
+ * a transaction that deletes the row takes `update`.
+ */
 async function lockDocument(
   executor: Executor,
   documentId: string,
+  strength: "no key update" | "update" = "no key update",
 ): Promise<DocumentRow> {
   const [row] = await executor
     .select()
     .from(documents)
     .where(eq(documents.id, documentId))
-    .for("update");
+    .for(strength);
   if (!row) fail(404, "Documento no encontrado");
   return row;
 }
@@ -914,8 +917,31 @@ function changedFields(
   return changed;
 }
 
-/** Status changes allowed through PUT (managers only). */
-function assertStatusChange(document: DocumentRow, next: DocumentStatus): void {
+/** Statuses a document can be withdrawn from: it was presented. */
+const WITHDRAWABLE_STATUSES: readonly DocumentStatus[] = [
+  "submitted",
+  "published",
+  "postponed",
+];
+
+/**
+ * Status changes allowed through PUT (managers only):
+ * - `withdrawn`: only a presented document (submitted, published or
+ *   postponed). A draft is still private to its proponent and may be
+ *   unfinished; an unwanted one is deleted instead.
+ * - `postponed`: only a published text, since postponed documents are public.
+ * - `submitted`: only to restore a withdrawn submission, back to the status it
+ *   had: submitted (submittedAt is set) and never published. A text that was
+ *   published is restored by publishing it again, and a draft is presented
+ *   through POST .../submit, which checks its content.
+ */
+export function assertStatusChange(
+  document: Pick<
+    DocumentRow,
+    "status" | "finalVoteId" | "publishedAt" | "baseVersionId" | "submittedAt"
+  >,
+  next: DocumentStatus,
+): void {
   if (next === document.status) return;
   // The final vote settled the text: annul it first to change the status.
   if (document.finalVoteId) {
@@ -924,24 +950,69 @@ function assertStatusChange(document: DocumentRow, next: DocumentStatus): void {
       "El documento ya se ha votado: anula la votación final antes de cambiar su estado",
     );
   }
-  if (next === "withdrawn") return;
+  if (next === "withdrawn") {
+    if (!WITHDRAWABLE_STATUSES.includes(document.status)) {
+      fail(
+        409,
+        "Un borrador no se puede retirar: si ya no hace falta, elimínalo",
+      );
+    }
+    return;
+  }
   if (next === "postponed") {
-    // Postponed documents are public, so only published texts can be postponed.
     if (document.publishedAt === null) {
       fail(409, "Solo se pueden aplazar documentos ya publicados");
     }
     return;
   }
   if (next === "submitted") {
-    if (document.publishedAt !== null) {
+    if (isTextFrozen(document)) {
       fail(
         409,
         "Este documento ya se publicó: vuelve a publicarlo en lugar de presentarlo",
       );
     }
+    if (document.status !== "withdrawn") {
+      fail(409, "Solo se puede recuperar un documento retirado");
+    }
+    if (document.submittedAt === null) {
+      fail(
+        409,
+        "El documento se retiró sin llegar a presentarse y no se puede recuperar como presentado",
+      );
+    }
     return;
   }
   fail(422, "Cambio de estado no válido");
+}
+
+/**
+ * The agenda item a document moves to, read under the assembly share lock so
+ * neither an agenda delete nor a change of acceptsSubmissions (both under
+ * lockAssembly) can happen between this check and the commit.
+ */
+async function requireAgendaTarget(
+  executor: Executor,
+  assemblyId: string,
+  agendaItemId: string,
+  manager: boolean,
+): Promise<void> {
+  const [item] = await executor
+    .select({ acceptsSubmissions: agendaItems.acceptsSubmissions })
+    .from(agendaItems)
+    .where(
+      and(
+        eq(agendaItems.id, agendaItemId),
+        eq(agendaItems.assemblyId, assemblyId),
+      ),
+    );
+  if (!item) fail(404, "Punto no encontrado");
+  if (!manager && !item.acceptsSubmissions) {
+    fail(
+      403,
+      "Este punto del orden del día no admite documentos de los miembros",
+    );
+  }
 }
 
 /**
@@ -965,18 +1036,6 @@ export async function updateDocument(
     fail(403, "No tienes permiso para cambiar estos datos del documento");
   }
   if (
-    body.agendaItemId !== undefined &&
-    body.agendaItemId !== ctx.document.agendaItemId
-  ) {
-    const item = await resolveAgendaItem(assembly.id, body.agendaItemId);
-    if (!manager && !item.acceptsSubmissions) {
-      fail(
-        403,
-        "Este punto del orden del día no admite documentos de los miembros",
-      );
-    }
-  }
-  if (
     body.proponentMemberId &&
     body.proponentMemberId !== ctx.document.proponentMemberId
   ) {
@@ -984,6 +1043,14 @@ export async function updateDocument(
   }
 
   await db.transaction(async (tx) => {
+    // A move takes the assembly before the document ("Row locks"). The share
+    // lock conflicts with the NO KEY UPDATE of an agenda delete, so the two
+    // serialize: the delete then finds the document under its new item and
+    // refuses (hasProtectedDocuments) instead of cascading to it, or the move
+    // finds its target gone (requireAgendaTarget).
+    if (body.agendaItemId !== undefined) {
+      await shareLockAssembly(tx, assembly.id);
+    }
     const current = await lockDocument(tx, ctx.document.id);
     assertOptimisticLock(
       body.updatedAt,
@@ -994,6 +1061,9 @@ export async function updateDocument(
 
     const changed = changedFields(current, body);
     if (changed.length === 0) return;
+    if (changed.includes("agendaItemId")) {
+      await requireAgendaTarget(tx, assembly.id, body.agendaItemId!, manager);
+    }
 
     const patch: Partial<typeof documents.$inferInsert> = {};
     if (changed.includes("title")) patch.title = body.title;
@@ -1029,10 +1099,9 @@ export async function updateDocument(
           : null;
       }
       if (changed.includes("status")) {
+        // Restoring keeps the original submittedAt (assertStatusChange).
         assertStatusChange(current, body.status!);
         patch.status = body.status;
-        if (body.status === "submitted" && !current.submittedAt)
-          patch.submittedAt = new Date();
       }
     }
 
@@ -1286,7 +1355,7 @@ export async function deleteDocument(
   }
 
   const fileUrl = await db.transaction(async (tx) => {
-    const current = await lockDocument(tx, ctx.document.id);
+    const current = await lockDocument(tx, ctx.document.id, "update");
     if (isTextFrozen(current)) {
       fail(409, "No se puede eliminar un documento ya publicado");
     }
@@ -1323,18 +1392,58 @@ const LIVE_FIELDS = [
 type LivePointer = Record<(typeof LIVE_FIELDS)[number], string | null>;
 
 /**
+ * Row locks. Every transaction that locks more than one of these rows takes
+ * them in this order, so two transactions never wait on each other:
+ *
+ * 1. the assembly: FOR SHARE (shareLockAssembly) in the transactions that
+ *    move the live projection from a document or amendment path and in
+ *    updateDocument when the body sets an agenda item (so a move serializes
+ *    with an agenda delete of its target), NO KEY UPDATE in lockAssembly
+ *    (agenda, calendar, PUT .../live-state);
+ * 2. the document: NO KEY UPDATE, or FOR SHARE in the amendment paths
+ *    (lockDocument here and in amendments.ts);
+ * 3. amendment rows, in id order (lockAmendments in amendments.ts);
+ * 4. acceptance rows;
+ * 5. the live_state row (lockLiveState, the PUT .../live-state upsert).
+ *
+ * Explicit locks are NO KEY UPDATE or FOR SHARE, never FOR UPDATE, except on
+ * a row the transaction deletes (deleteDocument, and the agenda delete, which
+ * locks the documents its cascade removes after the assembly). The foreign
+ * key checks of an insert or update take FOR KEY SHARE on the rows they
+ * reference: the assembly for events, votes and decisions, the document for
+ * versions, amendments and live_state, the amendment for relations, sources
+ * and positions. Only FOR UPDATE conflicts with FOR KEY SHARE, so those
+ * checks never wait on a lock of this list and may come in any order.
+ *
+ * Known exception: deleting a draft assembly takes FOR UPDATE on it before
+ * its cascade reaches the documents, so it can deadlock with a draft being
+ * saved in that assembly at the same instant. Only managers see a draft
+ * assembly, and Postgres aborts one of the two, so it is accepted.
+ */
+export async function shareLockAssembly(
+  tx: Executor,
+  assemblyId: string,
+): Promise<void> {
+  await tx
+    .select({ id: assemblies.id })
+    .from(assemblies)
+    .where(eq(assemblies.id, assemblyId))
+    .for("share");
+}
+
+/**
  * Locks the live_state row of a session, or returns null when the session has
  * not started (no row). The assembly is share-locked first: updateLiveState
- * locks it for update and then writes a full row read earlier, so without it
- * a concurrent PUT .../live-state could overwrite this change.
+ * locks it (lockAssembly) and then writes a full row read earlier, so without
+ * it a concurrent PUT .../live-state could overwrite this change. Callers
+ * take that share lock before any document lock (see "Row locks" above);
+ * taking it again here is a no-op that keeps the helper safe on its own.
  */
 async function lockLiveState(
   tx: Executor,
   assemblyId: string,
 ): Promise<LivePointer | null> {
-  await tx.execute(
-    sql`select ${assemblies.id} from ${assemblies} where ${assemblies.id} = ${assemblyId} for share`,
-  );
+  await shareLockAssembly(tx, assemblyId);
   const [row] = await tx
     .select({
       agendaItemId: liveState.agendaItemId,
@@ -1344,7 +1453,7 @@ async function lockLiveState(
     })
     .from(liveState)
     .where(eq(liveState.assemblyId, assemblyId))
-    .for("update");
+    .for("no key update");
   return row ?? null;
 }
 
@@ -1488,6 +1597,8 @@ export async function recordFinalVote(
   }
 
   await db.transaction(async (tx) => {
+    // The projection shows the vote: assembly before document ("Row locks").
+    await shareLockAssembly(tx, assembly.id);
     const document = await lockDocument(tx, ctx.document.id);
     if (document.status !== "published")
       fail(409, "El documento no está publicado");
@@ -1676,6 +1787,8 @@ export async function annulFinalVote(
   if (assembly.status === "closed") fail(409, "La asamblea ya está cerrada");
 
   await db.transaction(async (tx) => {
+    // The projection may stop showing the vote: assembly before document.
+    await shareLockAssembly(tx, assembly.id);
     const document = await lockDocument(tx, ctx.document.id);
     assertOptimisticLock(
       body.updatedAt,

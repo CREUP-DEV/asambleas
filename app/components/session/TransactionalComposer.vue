@@ -27,6 +27,12 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * for the same amendments resumes it. Changing the sources, resetting the
  * text, cancelling, starting a transactional for other amendments or leaving
  * the page all ask before discarding what was typed.
+ *
+ * The console follows the document in debate, which another Mesa member can
+ * move. A draft belongs to the document it was started on: while the console
+ * shows another one the panel names that document instead of the form, the
+ * draft is kept, and it comes back when the console returns to it. Starting
+ * a transactional on the new document asks first, naming the old one.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -51,7 +57,25 @@ const editor = useTemplateRef<{ flush: () => void }>("editor");
 /** Set when the Mesa discards the draft: the next opening starts afresh. */
 let discarded = false;
 /** The document the draft was started on: it only applies to that base. */
-let draftDocumentId: string | null = null;
+const draftDocumentId = ref<string | null>(null);
+/** Its title, kept to name it once the console shows another document. */
+const draftDocumentTitle = ref("");
+
+/** The draft was started on a document the console no longer shows. */
+const onOtherDocument = computed(
+  () =>
+    seed.value !== null && draftDocumentId.value !== session.documentId.value,
+);
+
+function documentTitle(id: string | null): string {
+  if (!id) return "";
+  if (session.document.value?.id === id) return session.document.value.title;
+  for (const row of session.agendaRows.value) {
+    const document = row.documents.find((candidate) => candidate.id === id);
+    if (document) return document.title;
+  }
+  return "";
+}
 
 const eligible = computed(() =>
   session.amendments.value.filter(
@@ -119,7 +143,8 @@ function reseed(): void {
 
 function startFresh(ids: string[]): void {
   discarded = false;
-  draftDocumentId = session.documentId.value;
+  draftDocumentId.value = session.documentId.value;
+  draftDocumentTitle.value = documentTitle(draftDocumentId.value);
   createdId.value = null;
   justification.value = "";
   authorsTouched.value = false;
@@ -136,33 +161,67 @@ function textEdited(): boolean {
   );
 }
 
-/** A draft not created yet that holds something the Mesa typed or chose. */
+/**
+ * A draft not created yet that holds something the Mesa typed or chose,
+ * on whichever document it was started: the console moving to another one
+ * does not make it any less worth keeping. With the editor unmounted, the
+ * text is the one it emitted when it was removed.
+ */
 function hasDraft(): boolean {
   if (discarded || createdId.value || !seed.value) return false;
-  if (draftDocumentId !== session.documentId.value) return false;
   return (
     textEdited() || justification.value.trim() !== "" || authorsTouched.value
   );
 }
 
+/** The question before discarding the draft, naming its document if hidden. */
+function discardMessage(): string {
+  return onOtherDocument.value
+    ? t("session.composer.discardOtherConfirm", {
+        title: draftDocumentTitle.value,
+      })
+    : t("session.composer.discardConfirm");
+}
+
 watch(open, (isOpen) => {
   if (!isOpen) return;
   const requested = [...session.composer.sourceIds];
-  if (
-    !discarded &&
-    !createdId.value &&
-    seed.value &&
-    draftDocumentId === session.documentId.value
-  ) {
-    // Reopened for the same amendments: resume the draft as it was.
-    if (sessionSameIds(requested, sourceIds.value)) return;
-    // Opened for other amendments: keep the draft unless the Mesa drops it.
-    if (hasDraft() && !window.confirm(t("session.composer.replaceConfirm"))) {
-      return;
+  if (!discarded && !createdId.value && seed.value) {
+    if (onOtherDocument.value) {
+      // A draft left on another document: it cannot continue here, and it
+      // is kept for when the console returns there unless the Mesa drops it.
+      if (
+        hasDraft() &&
+        !window.confirm(
+          t("session.composer.replaceOtherConfirm", {
+            title: draftDocumentTitle.value,
+          }),
+        )
+      ) {
+        open.value = false;
+        return;
+      }
+    } else {
+      // Reopened for the same amendments: resume the draft as it was.
+      if (sessionSameIds(requested, sourceIds.value)) return;
+      // Opened for other amendments: keep the draft unless the Mesa drops it.
+      if (hasDraft() && !window.confirm(t("session.composer.replaceConfirm"))) {
+        return;
+      }
     }
   }
   startFresh(requested);
 });
+
+// Another Mesa member moved the console to another document. With nothing
+// to keep, the panel (about the old document's amendments) just closes.
+// With a draft, it stays open and names the document the draft belongs to.
+watch(
+  () => session.documentId.value,
+  () => {
+    if (open.value && !hasDraft()) open.value = false;
+  },
+);
 
 function onSourcesChange(value: string[] | null | undefined): void {
   const next = [...(value ?? [])];
@@ -193,7 +252,7 @@ function resetText(): void {
 /** The footer button: discards the draft, after asking if there is one. */
 function cancel(close: () => void): void {
   if (hasDraft()) {
-    if (!window.confirm(t("session.composer.discardConfirm"))) return;
+    if (!window.confirm(discardMessage())) return;
     discarded = true;
   }
   close();
@@ -201,7 +260,7 @@ function cancel(close: () => void): void {
 
 onBeforeRouteLeave(() => {
   if (!hasDraft()) return true;
-  return window.confirm(t("session.composer.discardConfirm"));
+  return window.confirm(discardMessage());
 });
 
 function onBeforeUnload(event: BeforeUnloadEvent): void {
@@ -230,8 +289,12 @@ const skipped = computed(() => seed.value?.skipped ?? []);
 const created = computed(() =>
   createdId.value ? (session.byId.value.get(createdId.value) ?? null) : null,
 );
+// Never while the draft belongs to another document: right after the console
+// switches, the new document's data may still hold the old one's, so the
+// sources and the checks below would wrongly pass against the wrong URL.
 const canCreate = computed(
   () =>
+    !onOtherDocument.value &&
     !createdId.value &&
     sources.value.length > 0 &&
     ops.value.length > 0 &&
@@ -277,7 +340,17 @@ function voteCreated(): void {
     :ui="{ content: 'w-full max-w-4xl' }"
   >
     <template #body>
-      <div v-if="!created" class="space-y-6">
+      <UAlert
+        v-if="onOtherDocument"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-file-clock"
+        :title="t('session.composer.otherDocumentTitle')"
+        :description="
+          t('session.composer.otherDocument', { title: draftDocumentTitle })
+        "
+      />
+      <div v-else-if="!created" class="space-y-6">
         <UFormField
           :label="t('session.composer.sources')"
           :hint="t('session.composer.sourcesHint')"

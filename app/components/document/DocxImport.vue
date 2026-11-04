@@ -77,7 +77,11 @@ async function upload(file: File): Promise<void> {
   } catch (error) {
     const status = errorStatus(error);
     if (status === 415) fail("document.import.invalidFile");
-    else if (status === 413) fail("document.import.tooLarge");
+    // The file is within 15 MB (checked above): the server refused what it
+    // expands to (size, markup or number of paragraphs).
+    else if (status === 413 || status === 422)
+      fail("document.import.tooComplex");
+    else if (status === 429) fail("document.import.busy");
     else notifyError(error, "document.import.error");
   } finally {
     uploading.value = false;

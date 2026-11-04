@@ -1,4 +1,5 @@
 import { defineEventHandler } from "h3";
+import type { H3Event } from "h3";
 import {
   readUploadedFile,
   requireTextEditor,
@@ -21,5 +22,26 @@ export default defineEventHandler(async (event): Promise<DocxImportDto> => {
     DOCX_MAX_BYTES,
     "El archivo supera el límite de 15 MB",
   );
-  return convertDocx(file.data);
+  return convertDocx(file.data, {
+    owner: actor.user.id,
+    signal: clientGoneSignal(event),
+  });
 });
+
+/**
+ * Aborts when the client disconnects before the response is sent, so a
+ * conversion nobody waits for is skipped or stopped. It watches the response:
+ * the request stream is already finished once its body has been read.
+ */
+function clientGoneSignal(event: H3Event): AbortSignal {
+  const controller = new AbortController();
+  const response = event.node.res;
+  if (response.destroyed) {
+    controller.abort();
+  } else {
+    response.once("close", () => {
+      if (!response.writableFinished) controller.abort();
+    });
+  }
+  return controller.signal;
+}

@@ -1,5 +1,7 @@
 import {
   computed,
+  getCurrentScope,
+  onScopeDispose,
   shallowRef,
   watch,
   type Ref,
@@ -92,18 +94,32 @@ export function keepLastGoodData<T>(
     failed.value = false;
   }
 
-  // Synchronous, so nothing ever sees the reset value: on failure Nuxt sets
-  // the error, then resets the data, then sets the status, all in one go.
+  function markFailed(error: unknown): void {
+    failed.value = !isGone(error);
+    // Nothing to keep when nothing good ever arrived: that is the page's
+    // full error state, not stale data.
+    stale.value = everGood && failed.value;
+  }
+
+  // On failure Nuxt sets the error, then resets the data while the status is
+  // still "pending", then sets the status to "error", all in one go. Sync
+  // watchers (Nuxt's own reactive-key watcher, a `resetOn`, a fetch key
+  // computed from this data) run between those writes, so the switch to the
+  // kept value must happen on the error, before the reset: from then on the
+  // getter answers with the kept value and no observer ever sees the reset.
+  watch(
+    () => source.error.value,
+    (error) => {
+      if (error && source.status.value === "pending") markFailed(error);
+    },
+    { flush: "sync" },
+  );
+
   watch(
     () => source.status.value,
     (status) => {
       if (status === "success") markGood(source.data.value);
-      else if (status === "error") {
-        failed.value = !isGone(source.error.value);
-        // Nothing to keep when nothing good ever arrived: that is the
-        // page's full error state, not stale data.
-        stale.value = everGood && failed.value;
-      }
+      else if (status === "error") markFailed(source.error.value);
     },
     { flush: "sync", immediate: true },
   );
@@ -140,6 +156,96 @@ export function keepLastGoodData<T>(
   });
 
   return { data, stale, failed };
+}
+
+/** A source `useRetryFailed` refreshes while its last request failed. */
+export interface RetryableSource {
+  /** The wrapper's `failed`. */
+  failed: Readonly<Ref<boolean>>;
+  /** The asyncData status: a request already in flight is left alone. */
+  status: Readonly<Ref<string>>;
+  refresh: () => Promise<unknown>;
+}
+
+export interface RetryFailedOptions {
+  /** Delay before the first retry; it doubles after every failed attempt. */
+  baseDelay?: number;
+  /** Longest delay between attempts. */
+  maxDelay?: number;
+  /** Called when a retry leaves every source up to date. */
+  onRecovered?: () => void;
+}
+
+const RETRY_BASE_MS = 3_000;
+const RETRY_MAX_MS = 30_000;
+
+/**
+ * Retries the sources whose last refresh failed until every one succeeds,
+ * with exponential backoff, for screens nobody operates (the projection):
+ * live events only refresh what they touch and polls only run while the
+ * stream is down, so a refresh that fails while the stream stays up would
+ * otherwise never be retried. As soon as no source is failed, the retry
+ * stops and the backoff starts over. Client-only; stops with the calling
+ * scope.
+ */
+export function useRetryFailed(
+  sources: RetryableSource[],
+  options: RetryFailedOptions = {},
+): void {
+  if (import.meta.server) return;
+  const baseDelay = options.baseDelay ?? RETRY_BASE_MS;
+  const maxDelay = options.maxDelay ?? RETRY_MAX_MS;
+  const anyFailed = computed(() =>
+    sources.some((source) => source.failed.value),
+  );
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let attempt = 0;
+  let disposed = false;
+
+  function cancel(): void {
+    clearTimeout(timer);
+    timer = undefined;
+    attempt = 0;
+  }
+
+  function schedule(): void {
+    if (disposed || timer !== undefined) return;
+    const delay = Math.min(baseDelay * 2 ** attempt, maxDelay);
+    attempt += 1;
+    // Jitter keeps clients that failed together from retrying in lockstep.
+    timer = setTimeout(() => void retry(), delay * (0.8 + Math.random() * 0.4));
+  }
+
+  async function retry(): Promise<void> {
+    timer = undefined;
+    const due = sources.filter(
+      (source) => source.failed.value && source.status.value !== "pending",
+    );
+    await Promise.allSettled(due.map((source) => source.refresh()));
+    if (disposed) return;
+    // A source that fails again stays `failed`, so the watcher below does
+    // not fire: re-arm here, with a longer delay. Sources skipped because
+    // they were in flight are covered too.
+    if (anyFailed.value) schedule();
+    else options.onRecovered?.();
+  }
+
+  const stop = watch(
+    anyFailed,
+    (isFailed) => {
+      if (isFailed) schedule();
+      else cancel();
+    },
+    { flush: "sync", immediate: true },
+  );
+
+  if (getCurrentScope()) {
+    onScopeDispose(() => {
+      disposed = true;
+      stop();
+      cancel();
+    });
+  }
 }
 
 /** Toast id shared by every source, so one failed poll shows one toast. */

@@ -221,19 +221,27 @@ const menuUi = {
       :aria-label="t('shell.nav.mainLabel')"
     />
 
-    <template v-if="assemblyItems.length > 0">
-      <USeparator v-if="props.collapsed" class="px-2" />
-      <UNavigationMenu
-        :items="assemblyItems"
-        orientation="vertical"
-        :collapsed="props.collapsed"
-        tooltip
-        :ui="menuUi"
-        :aria-label="
-          t('shell.assembly.navLabel', { assembly: assembly?.label ?? '' })
-        "
-      />
-    </template>
+    <!--
+      The hub page stores the assembly while it renders, after the layout has
+      already been rendered on the server, so this block exists only on the
+      client. Rendering it during hydration would mismatch and shift every
+      generated id below it.
+    -->
+    <ClientOnly>
+      <template v-if="assemblyItems.length > 0">
+        <USeparator v-if="props.collapsed" class="px-2" />
+        <UNavigationMenu
+          :items="assemblyItems"
+          orientation="vertical"
+          :collapsed="props.collapsed"
+          tooltip
+          :ui="menuUi"
+          :aria-label="
+            t('shell.assembly.navLabel', { assembly: assembly?.label ?? '' })
+          "
+        />
+      </template>
+    </ClientOnly>
 
     <template v-if="adminItems.length > 0">
       <USeparator v-if="props.collapsed" class="px-2" />

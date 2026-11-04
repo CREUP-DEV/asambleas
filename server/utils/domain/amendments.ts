@@ -82,7 +82,12 @@ import {
   requireActor,
   type Actor,
 } from "./actor";
-import { clearLiveVote, loadMilestones, pointLiveVote } from "./documents";
+import {
+  clearLiveVote,
+  loadMilestones,
+  pointLiveVote,
+  shareLockAssembly,
+} from "./documents";
 import { recordEvent } from "./events";
 import {
   resolveAmendment,
@@ -701,17 +706,20 @@ async function loadBaseBlocks(document: DocumentRow): Promise<Block[]> {
 /**
  * Re-reads the document under a row lock and refuses once its final vote is
  * recorded, so the "already voted" guard holds against a concurrent final
- * vote (recordFinalVote locks the row for update).
- * - `update` also serializes numbering and block re-ids per document, and
- *   requires the document to be still published.
+ * vote (recordFinalVote locks the row with no key update).
+ * - `no key update` also serializes numbering and block re-ids per document,
+ *   and requires the document to be still published.
  * - `share` only holds a concurrent final vote off until this transaction
  *   commits; several amendment changes may hold it at once.
- * A transaction takes it once, in one mode, before any amendment row lock.
+ * Neither blocks the foreign key checks of rows that reference the document.
+ * A transaction takes it once, in one mode, after the assembly share lock
+ * when it moves the projection and before any amendment row lock ("Row
+ * locks" in documents.ts).
  */
 async function lockDocument(
   tx: Tx,
   documentId: string,
-  mode: "update" | "share" = "update",
+  mode: "no key update" | "share" = "no key update",
 ): Promise<void> {
   const [row] = await tx
     .select({
@@ -724,7 +732,7 @@ async function lockDocument(
     .for(mode);
   if (!row) fail(404, "Documento no encontrado");
   assertNotVoted(row);
-  if (mode === "update" && row.status !== "published") {
+  if (mode === "no key update" && row.status !== "published") {
     fail(409, "El documento no admite enmiendas");
   }
 }
@@ -733,6 +741,9 @@ async function lockDocument(
  * Locks amendment rows of the document in id order. Taking every row a
  * transaction needs in one ordered pass keeps two transactions (say, the
  * approvals of T1 and of a transactional over T1) from waiting on each other.
+ * No key update leaves the foreign key checks of relations, sources and
+ * positions free, since the locked rows only change status and outcome
+ * fields, never their key.
  */
 function lockAmendments(tx: Tx, documentId: string, ids: string[]) {
   return tx
@@ -748,7 +759,7 @@ function lockAmendments(tx: Tx, documentId: string, ids: string[]) {
       and(eq(amendments.documentId, documentId), inArray(amendments.id, ids)),
     )
     .orderBy(asc(amendments.id))
-    .for("update");
+    .for("no key update");
 }
 
 /**
@@ -1528,7 +1539,12 @@ export async function decideAmendmentAdmission(
         : "admitted";
 
   const result = await db.transaction(async (tx) => {
+    // A vote is projected: assembly before document ("Row locks").
+    if (evaluated) await shareLockAssembly(tx, ctx.assembly.id);
     await lockDocument(tx, document.id, "share");
+    // In id order, as an approval locks its lineage: the update below then
+    // only touches rows this transaction already holds.
+    await lockAmendments(tx, document.id, body.amendmentIds);
     const decisionId = cuid();
     let voteRow: VoteRow | undefined;
     if (evaluated && body.vote) {
@@ -1807,6 +1823,8 @@ export async function applyAmendmentOutcome(
       body.action === "approve" || evaluated?.outcome.result === "approved";
 
     const result = await db.transaction(async (tx) => {
+      // A vote is projected: assembly before document ("Row locks").
+      if (body.action === "vote") await shareLockAssembly(tx, ctx.assembly.id);
       await lockDocument(tx, document.id, "share");
       // An approved transactional absorbs its sources and, through nested
       // transactionals, theirs. They must all be still open, or a source and
@@ -1823,7 +1841,7 @@ export async function applyAmendmentOutcome(
           .select({ decision: amendmentAcceptances.decision })
           .from(amendmentAcceptances)
           .where(eq(amendmentAcceptances.amendmentId, amendment.id))
-          .for("update");
+          .for("no key update");
         if (parties.some((party) => party.decision !== "accepted")) {
           fail(409, "Todas las partes deben aceptar la transaccional");
         }
@@ -2006,6 +2024,9 @@ export async function applyAmendmentOutcome(
     fail(409, "Esta enmienda no se puede reabrir");
   }
   await db.transaction(async (tx) => {
+    // The projection may stop showing the voided vote, which is only known
+    // under the amendment lock: assembly before document ("Row locks").
+    await shareLockAssembly(tx, ctx.assembly.id);
     await lockDocument(tx, document.id, "share");
     // Reopening an approved transactional gives back everything it absorbed,
     // nested transactionals included, unless another approved transactional

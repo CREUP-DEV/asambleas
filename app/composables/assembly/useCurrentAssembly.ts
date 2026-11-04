@@ -311,5 +311,8 @@ export function formatAssemblyDateRange(
       ? formatter.format(from)
       : `${formatter.format(from)} – ${formatter.format(to)}`;
   }
-  return formatter.formatRange(from, to);
+  // ICU versions differ in the spaces around the range dash (thin or
+  // narrow no-break spaces), so the server and the browser would render
+  // different strings and break hydration.
+  return formatter.formatRange(from, to).replace(/[\u2009\u202f]/g, " ");
 }

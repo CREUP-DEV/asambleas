@@ -661,7 +661,9 @@
         "tracked_changes": "El archivo tiene cambios con control de cambios sin aceptar ni rechazar. Revisa que el texto importado sea el definitivo.",
         "comments": "El archivo tiene comentarios. Los comentarios no se importan.",
         "images_dropped": "Se han descartado imágenes y otros elementos que no son texto."
-      }
+      },
+      "tooComplex": "El documento es demasiado extenso o complejo para importarlo. Divídelo en partes o simplifica su formato.",
+      "busy": "Ya hay una importación en curso. Espera unos segundos y vuelve a intentarlo."
     },
     "file": {
       "title": "Documento en PDF",
@@ -1088,6 +1090,10 @@
         "secretaria": "Por decisión de Secretaría",
         "assent": "Por asentimiento",
         "vote": "Por votación"
+      },
+      "admissionMotion": {
+        "admit_late": "Votación para admitirla",
+        "inadmission": "Votación para declararla inadmisible"
       }
     },
     "vote": {
@@ -2314,7 +2320,11 @@
       "reseedConfirm": "Al cambiar las enmiendas que se transaccionan, el texto vuelve a generarse y se pierde lo que has escrito. ¿Continuar?",
       "resetConfirm": "Se perderán los cambios del texto transaccional. ¿Volver al texto inicial?",
       "discardConfirm": "La transaccional todavía no se ha creado y se perderá lo que has escrito. ¿Descartarla?",
-      "replaceConfirm": "Hay una transaccional a medio redactar para otras enmiendas. ¿Descartarla y empezar una nueva?"
+      "replaceConfirm": "Hay una transaccional a medio redactar para otras enmiendas. ¿Descartarla y empezar una nueva?",
+      "otherDocumentTitle": "Esta transaccional es de otro documento",
+      "otherDocument": "Se empezó sobre «{title}» y la consola sigue ahora otro documento. Lo que has escrito se conserva: podrás seguir cuando se vuelva a «{title}».",
+      "replaceOtherConfirm": "Hay una transaccional a medio redactar sobre «{title}». ¿Descartarla y empezar una nueva sobre este documento? Si cancelas, se conserva para cuando se vuelva a «{title}».",
+      "discardOtherConfirm": "La transaccional sobre «{title}» todavía no se ha creado y se perderá lo que has escrito. ¿Descartarla?"
     },
     "preview": {
       "title": "Texto consolidado",

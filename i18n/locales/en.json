@@ -661,7 +661,9 @@
         "tracked_changes": "The file has tracked changes that were neither accepted nor rejected. Check that the imported text is the final one.",
         "comments": "The file has comments. Comments are not imported.",
         "images_dropped": "Images and other non-text elements were left out."
-      }
+      },
+      "tooComplex": "The document is too long or complex to import. Split it into parts or simplify its formatting.",
+      "busy": "An import is already in progress. Wait a few seconds and try again."
     },
     "file": {
       "title": "PDF document",
@@ -1088,6 +1090,10 @@
         "secretaria": "By decision of the Secretariat",
         "assent": "By assent",
         "vote": "By vote"
+      },
+      "admissionMotion": {
+        "admit_late": "Vote to admit it",
+        "inadmission": "Vote to declare it inadmissible"
       }
     },
     "vote": {
@@ -2314,7 +2320,11 @@
       "reseedConfirm": "Changing the amendments being transacted regenerates the text and loses what you have typed. Continue?",
       "resetConfirm": "Your changes to the transactional text will be lost. Go back to the initial text?",
       "discardConfirm": "The transactional has not been created yet and what you have typed will be lost. Discard it?",
-      "replaceConfirm": "There is an unfinished transactional for other amendments. Discard it and start a new one?"
+      "replaceConfirm": "There is an unfinished transactional for other amendments. Discard it and start a new one?",
+      "otherDocumentTitle": "This transactional belongs to another document",
+      "otherDocument": "It was started on “{title}” and the console now follows another document. What you typed is kept: you can carry on when the console returns to “{title}”.",
+      "replaceOtherConfirm": "There is an unfinished transactional on “{title}”. Discard it and start a new one on this document? If you cancel, it is kept for when the console returns to “{title}”.",
+      "discardOtherConfirm": "The transactional on “{title}” has not been created yet and what you have typed will be lost. Discard it?"
     },
     "preview": {
       "title": "Consolidated text",

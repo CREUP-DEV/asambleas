@@ -9,7 +9,10 @@ import type {
   VoteDto,
 } from "~~/shared/types/api";
 import { errorStatus, useApi } from "~/composables/api/useApi";
-import { keepLastGoodData } from "~/composables/fetch/lastGoodData";
+import {
+  keepLastGoodData,
+  useRetryFailed,
+} from "~/composables/fetch/lastGoodData";
 import { useAssemblyLive } from "~/composables/live/useAssemblyLive";
 import { useAppNow } from "~/composables/time/useAppNow";
 import { buildSessionAgendaRows } from "~/composables/session/sessionModel";
@@ -24,8 +27,9 @@ import { formatTime } from "~/utils/format";
  *
  * Nobody watches the projector to reload it, so a failed refresh never
  * wipes the screen: every source keeps its last good data (and the footer
- * says it is not up to date), and the live stream stays keyed on the
- * assembly id, reconnecting and polling until the server is back.
+ * says it is not up to date) and is retried on its own until it loads
+ * again, and the live stream stays keyed on the assembly id, reconnecting
+ * and polling until the server is back.
  */
 definePageMeta({ layout: false });
 
@@ -196,6 +200,42 @@ function onLive(events: LiveEventDto[]): void {
 }
 
 const { connected, polling } = useAssemblyLive(() => assemblyId, onLive);
+
+// Live events only refresh what they touch, and polls only run while the
+// stream is down: a refresh that fails while the stream stays up (a 502
+// under the refetch herd of a vote) is retried here, with backoff, until it
+// succeeds. Independent of live events, so events about other sources never
+// postpone it.
+useRetryFailed(
+  [
+    { failed: liveFailed, status: liveFetch.status, refresh: refreshLive },
+    {
+      failed: assemblyFailed,
+      status: assemblyFetch.status,
+      refresh: refreshAssembly,
+    },
+    {
+      failed: agendaFailed,
+      status: agendaFetch.status,
+      refresh: refreshAgenda,
+    },
+    {
+      failed: documentFailed,
+      status: documentFetch.status,
+      refresh: refreshDocument,
+    },
+    {
+      failed: amendmentsFailed,
+      status: amendmentsFetch.status,
+      refresh: refreshAmendments,
+    },
+  ],
+  {
+    onRecovered: () => {
+      lastUpdate.value = new Date();
+    },
+  },
+);
 
 // Derived ------------------------------------------------------------------------
 

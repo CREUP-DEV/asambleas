@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { createRequire } from "node:module";
 import { inflateRawSync } from "node:zlib";
 import { createError } from "h3";
@@ -7,11 +8,14 @@ import JSZip from "jszip";
 // runConverter). This import keeps it among the server's traced dependencies.
 import "mammoth";
 import { parseHTML } from "linkedom";
-import { createId } from "@paralleldrive/cuid2";
 import { z } from "zod/v4";
 import type { DocxImportDto } from "../../../shared/types/api";
 import { htmlElementToBlocks } from "../../../shared/utils/content/editor";
-import { blocksSchema } from "../../../shared/utils/schemas/content";
+import {
+  BLOCK_TEXT_MAX_LENGTH,
+  blocksSchema,
+  DOCUMENT_MAX_BLOCKS,
+} from "../../../shared/utils/schemas/content";
 import { logError, logWarn } from "../core/logger";
 
 /**
@@ -41,16 +45,52 @@ export const DOCX_MAX_BYTES = 15 * 1024 * 1024;
  *   answers 413. A worker thread is not enough: when a worker reaches its
  *   resourceLimits, V8 can abort the whole process instead of the worker.
  *
- * The HTML mammoth returns is then capped in bytes and tags before linkedom
- * parses it here (about 0.3 KB of heap per tag). Only one conversion runs at
- * a time, so concurrent uploads cannot multiply the converter's memory.
+ * The HTML mammoth returns is then parsed with linkedom and walked into blocks
+ * here, synchronously: that is the part of an import that still runs on this
+ * process's event loop, in three stretches (parsing, walking and validating)
+ * with a turn of the loop between them. Before parsing, one pass over the
+ * HTML (inspectHtml) bounds what they cost:
+ *
+ * - the nodes linkedom builds, a text node for every entity included;
+ * - the nesting depth;
+ * - the elements the walk visits, about 30 µs each with or without text;
+ * - the marks that nested formatting multiplies;
+ * - the text of each block, since one huge string costs several times more
+ *   per byte than many small ones;
+ * - the text and nodes the walk reads, counting every read: each row of a
+ *   table reads all the cells nested in it again;
+ * - the nodes the walk copies to read list items, more the deeper they are.
+ *
+ * The walk then stops at the first block past the document limit, and block
+ * ids come from the system CSPRNG instead of cuid2, whose createId costs about
+ * 0.35 ms each.
+ *
+ * Only one conversion runs at a time, so concurrent uploads cannot multiply
+ * the converter's memory, and each user has at most one running or waiting,
+ * so nobody can hold the queue. A conversion whose client went away leaves
+ * the queue at once, and a running one is stopped.
  *
  * Measured: real CREUP resolutions and consolidated texts (0.4 to 0.8 MB, 200
  * to 600 blocks) convert in about 1 s, process start included, within 48 MB
  * of heap. A dense 3,000-paragraph document (the block limit) with ten
- * formatted runs each, 250,000 elements, needs 256 to 384 MB and 4.5 s. The
- * 150 KB upload above answers 413 after about 7 s, and this process's event
- * loop never stalls for more than about 90 ms.
+ * formatted runs each, 250,000 elements, needs 256 to 384 MB and 4.5 s in the
+ * converter. The 150 KB upload above answers 413 after about 7 s.
+ *
+ * The longest stretch this process's event loop is then blocked, measured on
+ * a development machine with other work running:
+ *
+ * - 0.2 s for 3,000 plain paragraphs and 0.4 s for a 3,000-row table;
+ * - 0.65 to 0.95 s for the largest documents the bounds admit, about 100,000
+ *   nodes, such as 3,000 densely formatted paragraphs or list items;
+ * - for uploads built against the bounds, each pushing one of them to the
+ *   limit, 0.15 to 0.6 s with nested tables, table cells or 6 MB of text,
+ *   and 0.85 to 1.35 s with 3,000 list items of 15 line breaks, the worst
+ *   case found.
+ *
+ * Heavier load or a cold process can double these.
+ *
+ * Before the bounds, 4 to 12 KB files stalled it for 8 to 38 s: 30,000
+ * paragraphs, text in ten nested tables, or a paragraph of entities.
  */
 export interface DocxLimits {
   /** Entries in the central directory. A Word file holds a few dozen. */
@@ -63,8 +103,53 @@ export interface DocxLimits {
   converterTimeoutMs: number;
   /** UTF-8 bytes of HTML the converter may return. */
   maxHtmlBytes: number;
-  /** `<` in that HTML (opening and closing tags), parsed again here. */
-  maxHtmlTags: number;
+  /**
+   * Nodes linkedom builds from that HTML, at 2.5 to 5 µs each: elements, and
+   * a text node for every entity (`&amp;`, `&lt;`, `&gt;`) and for every run
+   * of text around them. An entity in an attribute value counts as one too.
+   */
+  maxHtmlNodes: number;
+  /**
+   * Elements nested inside each other in that HTML. Three nested tables
+   * holding a five-level list in bold italic superscript links reach 27.
+   */
+  maxHtmlDepth: number;
+  /**
+   * Paragraphs, headings and list items outside tables, plus table rows: the
+   * elements the walk visits. Each yields at most one block, but one without
+   * text yields none and a footnote takes two (an item and its paragraph).
+   */
+  maxBlockElements: number;
+  /**
+   * Marks the walk creates: one per bold, italic, underline, strikethrough or
+   * link element around each text node outside tables. Nested links
+   * multiply them: 30,000 line breaks inside 26 nested links made 870,000.
+   */
+  maxMarks: number;
+  /**
+   * Bytes of text that one block is built from: a paragraph, heading or list
+   * item outside tables, or a row of an outermost table with every table
+   * nested in it. A block holds at most BLOCK_TEXT_MAX_LENGTH characters;
+   * entities and runs of spaces, which collapse, make the HTML longer.
+   */
+  maxBlockTextBytes: number;
+  /**
+   * Bytes of text the walk reads, plus NODE_READ_BYTES for each node it
+   * visits, counted again every time it reads them: 30 to 50 ns a byte. It
+   * reads text and nodes outside tables once, and those in a table nested t
+   * deep t(t+1)/2 times: every row of the outermost table reads each cell
+   * nested in it. 7 MB of text ten tables deep took 38 s.
+   */
+  maxWalkReads: number;
+  /**
+   * Nodes the walk copies to read list items, at about 4 to 7 µs each with
+   * the reading. It copies each item with everything nested in it, and each
+   * nested list once more, so a node d lists deep is copied 2d - 1 times:
+   * 90,000 line breaks five lists deep took 2 to 3.5 s.
+   */
+  maxListCopies: number;
+  /** Blocks the walk may produce; it stops at the first one past this. */
+  maxBlocks: number;
 }
 
 export const DOCX_LIMITS: DocxLimits = {
@@ -73,8 +158,29 @@ export const DOCX_LIMITS: DocxLimits = {
   converterHeapMb: 512,
   converterTimeoutMs: 15_000,
   maxHtmlBytes: 8 * 1024 * 1024,
-  maxHtmlTags: 300_000,
+  // 3,000 paragraphs, each with ten bold or italic words among plain text,
+  // come to about 93,000; a 3,000-row table of six columns to 57,000.
+  maxHtmlNodes: 100_000,
+  maxHtmlDepth: 32,
+  maxBlockElements: 2 * DOCUMENT_MAX_BLOCKS,
+  // Ten runs, bold and italic, in each of 3,000 paragraphs.
+  maxMarks: 20 * DOCUMENT_MAX_BLOCKS,
+  // Five bytes per character, as if every one were an entity.
+  maxBlockTextBytes: 5 * BLOCK_TEXT_MAX_LENGTH,
+  // 3,000 densely formatted paragraphs come to 1 MB, 3,000 table rows of six
+  // cells to 0.55 MB.
+  maxWalkReads: 6 * 1024 * 1024,
+  // A list of 3,000 densely formatted items, 93,000 nodes, copies each once.
+  maxListCopies: 100_000,
+  maxBlocks: DOCUMENT_MAX_BLOCKS,
 };
+
+/**
+ * What visiting a node costs the walk in bytes of text read, with room to
+ * spare: a read of a node in nested tables took 80 to 190 ns, of a byte of
+ * text 30 to 50 ns.
+ */
+const NODE_READ_BYTES = 8;
 
 /** Conversions running at once, and waiting for a slot, before a 429. */
 const MAX_RUNNING_CONVERSIONS = 1;
@@ -83,7 +189,41 @@ const MAX_WAITING_CONVERSIONS = 6;
 const ZIP_SIGNATURE = [0x50, 0x4b, 0x03, 0x04];
 const CENTRAL_FILE_HEADER = Buffer.from([0x50, 0x4b, 0x01, 0x02]);
 const LESS_THAN = 0x3c;
+const GREATER_THAN = 0x3e;
+const SLASH = 0x2f;
+const AMPERSAND = 0x26;
 const NEWLINE = 0x0a;
+
+/** Elements outside tables that htmlElementToBlocks turns into a block. */
+const BLOCK_ELEMENTS = new Set([
+  "p",
+  "div",
+  "li",
+  "h1",
+  "h2",
+  "h3",
+  "h4",
+  "h5",
+  "h6",
+]);
+/** Lists, whose items htmlElementToBlocks copies before reading them. */
+const LIST_ELEMENTS = new Set(["ul", "ol"]);
+/** Elements htmlElementToBlocks turns into a mark on the text inside them. */
+const MARK_ELEMENTS = new Set([
+  "strong",
+  "b",
+  "em",
+  "i",
+  "u",
+  "s",
+  "del",
+  "strike",
+  "a",
+]);
+
+/** Block ids shaped like the editor's cuid2 ids: a letter, then base 36. */
+const BLOCK_ID_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
+const BLOCK_ID_LENGTH = 24;
 
 /** JSZip compression magics (lib/compressions.js and lib/flate.js). */
 const STORE_MAGIC = "\x00\x00";
@@ -208,6 +348,25 @@ function converterFailedError() {
   });
 }
 
+function tooExtensiveError() {
+  return createError({
+    statusCode: 422,
+    message:
+      "El documento es demasiado extenso o tiene párrafos demasiado largos",
+  });
+}
+
+/**
+ * The client went away. Nobody receives this answer; 499 is the status
+ * proxies log for a request the client closed.
+ */
+function cancelledError() {
+  return createError({
+    statusCode: 499,
+    message: "La importación se ha cancelado",
+  });
+}
+
 function invalidFile(): never {
   throw invalidFileError();
 }
@@ -216,23 +375,156 @@ function tooLarge(): never {
   throw tooLargeError();
 }
 
+function tooExtensive(): never {
+  throw tooExtensiveError();
+}
+
 /** A Buffer view over the same memory, without copying. */
 function asBuffer(data: Uint8Array): Buffer {
   return Buffer.from(data.buffer, data.byteOffset, data.byteLength);
 }
 
-/** Occurrences of `byte` in `data`, counting no further than `max + 1`. */
-function countByte(data: Uint8Array, byte: number, max: number): number {
-  const buffer = asBuffer(data);
-  let count = 0;
-  for (
-    let index = buffer.indexOf(byte);
-    index !== -1 && count <= max;
-    index = buffer.indexOf(byte, index + 1)
-  ) {
-    count++;
+/** The lowercase ASCII name of the tag whose name starts at `start`. */
+function tagName(html: Buffer, start: number): string {
+  let end = start;
+  while (end < html.length && end - start < 16) {
+    const byte = html[end]!;
+    const isNameByte =
+      (byte >= 0x61 && byte <= 0x7a) || (byte >= 0x30 && byte <= 0x39);
+    if (!isNameByte) break;
+    end++;
   }
-  return count;
+  return html.toString("latin1", start, end);
+}
+
+/**
+ * Times the walk reads a node or text inside `tables` nested tables. The
+ * outermost table reads each of its rows, nested ones included, and each row
+ * the text of every cell inside it, so text t tables deep is read once by
+ * each of the t rows around it for each of the cells between that row and
+ * the text: t(t+1)/2 times.
+ */
+function readsAt(tables: number): number {
+  return tables === 0 ? 1 : (tables * (tables + 1)) / 2;
+}
+
+/**
+ * Bounds the work of parsing and walking the converter's HTML, in one pass
+ * before linkedom sees it: 413 past `maxHtmlNodes`, 422 past any other limit
+ * on the HTML. mammoth writes balanced markup and escapes `<`, `>` and `&` in
+ * text and attribute values, so every `<` starts a tag, `</` closes the
+ * innermost open element, the first `>` ends the tag, `/>` marks one with no
+ * content, such as `<br />`, and every `&` starts an entity.
+ */
+function inspectHtml(html: Buffer, limits: DocxLimits): void {
+  let nodes = 0;
+  let depth = 0;
+  let tables = 0;
+  // Lists open outside tables: the walk copies what is inside them.
+  let lists = 0;
+  let blockElements = 0;
+  // Mark elements open around the current text, and the marks the walk will
+  // create from them: one per open mark element for each text node.
+  let markElements = 0;
+  let marks = 0;
+  let blockText = 0;
+  let walkReads = 0;
+  let listCopies = 0;
+
+  const addReads = (bytes: number) => {
+    walkReads += readsAt(tables) * bytes;
+    if (walkReads > limits.maxWalkReads) tooExtensive();
+  };
+  const addNodes = (count: number) => {
+    nodes += count;
+    if (nodes > limits.maxHtmlNodes) tooLarge();
+    addReads(NODE_READ_BYTES * count);
+    if (lists > 0) {
+      listCopies += (2 * lists - 1) * count;
+      if (listCopies > limits.maxListCopies) tooExtensive();
+    }
+  };
+  // The next `&` not yet counted. It only moves forward, so counting the
+  // entities of every run of text and every tag scans the HTML once.
+  let nextEntity = html.indexOf(AMPERSAND);
+  const entitiesBefore = (end: number) => {
+    let count = 0;
+    while (nextEntity !== -1 && nextEntity < end) {
+      count++;
+      nextEntity = html.indexOf(AMPERSAND, nextEntity + 1);
+    }
+    return count;
+  };
+  const readText = (start: number, end: number) => {
+    // linkedom makes a text node of each entity and of each run of text
+    // between them: `a &amp; b` is three.
+    const textNodes = 2 * entitiesBefore(end) + 1;
+    addNodes(textNodes);
+    addReads(end - start);
+    blockText += end - start;
+    if (blockText > limits.maxBlockTextBytes) tooExtensive();
+    // Text in table cells is read whole, without marks.
+    if (markElements > 0 && tables === 0) {
+      marks += markElements * textNodes;
+      if (marks > limits.maxMarks) tooExtensive();
+    }
+  };
+
+  let textStart = 0;
+  let index = html.indexOf(LESS_THAN);
+  while (index !== -1) {
+    if (index > textStart) readText(textStart, index);
+    const end = html.indexOf(GREATER_THAN, index);
+    if (end === -1) invalidFile();
+    // Entities in attribute values are decoded while parsing; each counts
+    // as a node.
+    const attributeEntities = entitiesBefore(end);
+    if (attributeEntities > 0) addNodes(attributeEntities);
+    if (html[index + 1] === SLASH) {
+      depth--;
+      const name = tagName(html, index + 2);
+      if (name === "table") tables--;
+      else if (tables === 0 && LIST_ELEMENTS.has(name)) lists--;
+      else if (MARK_ELEMENTS.has(name)) markElements--;
+    } else {
+      addNodes(1);
+      const name = tagName(html, index + 1);
+      const isBlock = tables === 0 && BLOCK_ELEMENTS.has(name);
+      // Rows of nested tables count too: the outer table's walk visits them.
+      if (name === "tr" || isBlock) {
+        if (++blockElements > limits.maxBlockElements) tooExtensive();
+      }
+      // A block's text starts at its element, or at a row of the outermost
+      // table, which takes in everything nested in it.
+      if (isBlock || (name === "tr" && tables === 1)) blockText = 0;
+      // An element with no content (`<br />`) opens nothing.
+      if (html[end - 1] !== SLASH) {
+        if (++depth > limits.maxHtmlDepth) tooExtensive();
+        if (name === "table") tables++;
+        else if (tables === 0 && LIST_ELEMENTS.has(name)) lists++;
+        else if (MARK_ELEMENTS.has(name)) markElements++;
+      }
+    }
+    textStart = end + 1;
+    index = html.indexOf(LESS_THAN, textStart);
+  }
+  // linkedom keeps text after the last tag too, though the walk ignores it.
+  if (html.length > textStart) readText(textStart, html.length);
+}
+
+/**
+ * A fresh block id: a lowercase letter and 23 lowercase letters or digits,
+ * like the cuid2 ids the editor mints, from the system CSPRNG. The modulo
+ * bias leaves more than 120 bits of entropy. cuid2's createId costs about
+ * 0.35 ms each, which for 3,000 blocks held the event loop for a second.
+ */
+function newBlockId(): string {
+  const bytes = randomBytes(BLOCK_ID_LENGTH);
+  let id = BLOCK_ID_ALPHABET[bytes[0]! % 26]!;
+  for (let index = 1; index < BLOCK_ID_LENGTH; index++) {
+    id += BLOCK_ID_ALPHABET[bytes[index]! % BLOCK_ID_ALPHABET.length]!;
+  }
+  return id;
 }
 
 /**
@@ -252,10 +544,19 @@ function exceedsEntryLimit(data: Buffer, maxEntries: number): boolean {
   return false;
 }
 
-function entryData(file: JSZip.JSZipObject): LoadedEntryData {
-  const data = (file as unknown as { _data?: LoadedEntryData })._data;
+/**
+ * JSZip's CompressedObject for an entry, or null for an entry whose headers
+ * declare it empty. For those JSZip discards the stored bytes, whatever they
+ * are, and keeps a promise of an empty string instead (lib/object.js,
+ * `isCompressedEmpty`), so neither this process nor mammoth, which reads the
+ * archive through the same JSZip, ever inflates them. Word does not write
+ * empty parts, but other generators and re-zipping tools do.
+ */
+function entryData(file: JSZip.JSZipObject): LoadedEntryData | null {
+  const data = (file as unknown as { _data?: unknown })._data;
   if (!data || typeof data !== "object") invalidFile();
-  return data;
+  if (typeof (data as { then?: unknown }).then === "function") return null;
+  return data as LoadedEntryData;
 }
 
 function declaredSize(data: LoadedEntryData): number {
@@ -304,7 +605,10 @@ function inspectEntries(
   const entries = Object.values(zip.files).filter((file) => !file.dir);
 
   let declaredTotal = 0;
-  for (const file of entries) declaredTotal += declaredSize(entryData(file));
+  for (const file of entries) {
+    const data = entryData(file);
+    if (data) declaredTotal += declaredSize(data);
+  }
   // Honest archives over the budget are refused without inflating anything.
   if (declaredTotal > limits.maxUncompressedBytes) tooLarge();
 
@@ -313,6 +617,9 @@ function inspectEntries(
   let commentsXml: string | null = null;
   for (const file of entries) {
     const data = entryData(file);
+    // Declared empty: nothing to inflate, and an empty main part is refused
+    // below as a missing one.
+    if (!data) continue;
     const content = realContent(data, remaining);
     if (content.byteLength > remaining) tooLarge();
     if (content.byteLength !== declaredSize(data)) invalidFile();
@@ -352,18 +659,58 @@ async function inspectArchive(
 
 let runningConversions = 0;
 const waitingConversions: (() => void)[] = [];
+/** Users with a conversion running or waiting. */
+const conversionOwners = new Set<string>();
+
+/**
+ * Waits until a finishing conversion hands this one its slot. When `signal`
+ * aborts first, the conversion leaves the queue at once, frees `owner` to
+ * import again and answers 499.
+ */
+function waitForSlot(owner: string, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onAbort = () => {
+      const position = waitingConversions.indexOf(handOver);
+      if (position !== -1) waitingConversions.splice(position, 1);
+      conversionOwners.delete(owner);
+      reject(cancelledError());
+    };
+    // Called once this waiter has been taken off the queue.
+    const handOver = () => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    };
+    waitingConversions.push(handOver);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
 
 /**
  * Runs `task` once fewer than MAX_RUNNING_CONVERSIONS are running, so
  * concurrent imports cannot multiply the converter's memory. Answers 429 when
- * the queue is full. The slot is taken synchronously, before any await.
+ * `owner` already has a conversion running or waiting, so one user cannot
+ * hold the queue, and when the queue is full; 499 when `signal` aborts before
+ * the task starts. The slot is taken synchronously, before any await.
  */
-async function withConversionSlot<T>(task: () => Promise<T>): Promise<T> {
+async function withConversionSlot<T>(
+  owner: string,
+  signal: AbortSignal | undefined,
+  task: () => Promise<T>,
+): Promise<T> {
+  if (signal?.aborted) throw cancelledError();
+  if (conversionOwners.has(owner)) {
+    throw createError({
+      statusCode: 429,
+      message: "Ya tienes una importación en curso; espera a que termine",
+    });
+  }
   if (runningConversions < MAX_RUNNING_CONVERSIONS) {
     runningConversions++;
+    conversionOwners.add(owner);
   } else if (waitingConversions.length < MAX_WAITING_CONVERSIONS) {
+    conversionOwners.add(owner);
     // The slot is handed over by the task that releases it.
-    await new Promise<void>((resolve) => waitingConversions.push(resolve));
+    await waitForSlot(owner, signal);
   } else {
     throw createError({
       statusCode: 429,
@@ -374,6 +721,7 @@ async function withConversionSlot<T>(task: () => Promise<T>): Promise<T> {
   try {
     return await task();
   } finally {
+    conversionOwners.delete(owner);
     const next = waitingConversions.shift();
     if (next) next();
     else runningConversions--;
@@ -396,13 +744,19 @@ function converterEnv(): NodeJS.ProcessEnv {
  * to `converterHeapMb` of heap and `converterTimeoutMs` of wall clock. The
  * process gets neither NODE_OPTIONS nor this process's flags or secrets. 413
  * when it runs out of heap or time or returns too much HTML, 415 when mammoth
- * rejects the file, 500 when the process cannot run at all.
+ * rejects the file, 500 when the process cannot run at all. When
+ * `abortSignal` aborts, the process is killed and the conversion answers 499.
  */
 function runConverter(
   data: Buffer,
   limits: DocxLimits,
+  abortSignal?: AbortSignal,
 ): Promise<{ html: Buffer; imagesDropped: boolean }> {
   return new Promise((resolve, reject) => {
+    if (abortSignal?.aborted) {
+      reject(cancelledError());
+      return;
+    }
     let child: ReturnType<typeof spawn>;
     try {
       mammothEntry ??= createRequire(import.meta.url).resolve("mammoth");
@@ -437,16 +791,19 @@ function runConverter(
       () => abort(tooLargeError()),
       limits.converterTimeoutMs,
     );
+    const onAbort = () => abort(cancelledError());
     const settle = (action: () => void) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      abortSignal?.removeEventListener("abort", onAbort);
       action();
     };
     const abort = (error: Error) => {
       settle(() => reject(error));
       child.kill("SIGKILL");
     };
+    abortSignal?.addEventListener("abort", onAbort, { once: true });
     child.on("error", (error) => {
       logError("docx.converter", error);
       abort(converterFailedError());
@@ -502,35 +859,66 @@ function runConverter(
   });
 }
 
+/** Lets the event loop run whatever is waiting, timers and I/O included. */
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => setImmediate(resolve));
+}
+
+export interface ConvertDocxOptions {
+  /** The user importing: each may have one conversion running or waiting. */
+  owner: string;
+  /**
+   * Aborts when the client goes away: a queued conversion then leaves the
+   * queue and a running one stops, answering 499.
+   */
+  signal?: AbortSignal;
+  limits?: DocxLimits;
+}
+
 /**
  * Converts a DOCX file to blocks with fresh ids. Throws 415 when the file is
- * not a DOCX, 413 when it is too large, 429 when too many imports are running
- * and 422 when it holds no usable text or exceeds the content limits.
+ * not a DOCX, 413 when it is too large, 429 when the user already has an
+ * import running or too many are, and 422 when it holds no usable text or
+ * exceeds the content limits.
  */
 export async function convertDocx(
   data: Buffer,
-  limits: DocxLimits = DOCX_LIMITS,
+  { owner, signal, limits = DOCX_LIMITS }: ConvertDocxOptions,
 ): Promise<DocxImportDto> {
   if (!hasZipSignature(data)) invalidFile();
 
-  const { blocks, warnings } = await withConversionSlot(async () => {
-    const { warnings } = await inspectArchive(data, limits);
-    const { html, imagesDropped } = await runConverter(data, limits);
-    if (imagesDropped) warnings.add("images_dropped");
-    if (countByte(html, LESS_THAN, limits.maxHtmlTags) > limits.maxHtmlTags) {
-      tooLarge();
-    }
+  const { blocks, warnings } = await withConversionSlot(
+    owner,
+    signal,
+    async () => {
+      // Aborted between being handed the slot and starting.
+      if (signal?.aborted) throw cancelledError();
+      const { warnings } = await inspectArchive(data, limits);
+      const { html, imagesDropped } = await runConverter(data, limits, signal);
+      if (imagesDropped) warnings.add("images_dropped");
+      inspectHtml(html, limits);
 
-    const { document } = parseHTML(
-      `<!doctype html><html><body>${html.toString("utf8")}</body></html>`,
-    );
-    const blocks = htmlElementToBlocks(
-      document.body as unknown as Element,
-      () => createId(),
-    );
-    return { blocks, warnings };
-  });
+      const { document } = parseHTML(
+        `<!doctype html><html><body>${html.toString("utf8")}</body></html>`,
+      );
+      // Parsing, walking and validating each block the event loop; a turn
+      // between them lets other requests through.
+      await nextTurn();
+      if (signal?.aborted) throw cancelledError();
+      let produced = 0;
+      const blocks = htmlElementToBlocks(
+        document.body as unknown as Element,
+        () => {
+          // Stops the walk at the first block past the limit.
+          if (++produced > limits.maxBlocks) tooExtensive();
+          return newBlockId();
+        },
+      );
+      return { blocks, warnings };
+    },
+  );
 
+  await nextTurn();
   if (blocks.length === 0) {
     throw createError({
       statusCode: 422,
@@ -538,13 +926,7 @@ export async function convertDocx(
     });
   }
   const parsed = blocksSchema.safeParse(blocks);
-  if (!parsed.success) {
-    throw createError({
-      statusCode: 422,
-      message:
-        "El documento es demasiado extenso o tiene párrafos demasiado largos",
-    });
-  }
+  if (!parsed.success) tooExtensive();
 
   const order: DocxWarning[] = [
     "tracked_changes",
