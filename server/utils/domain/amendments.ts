@@ -38,6 +38,9 @@ import type {
   AmendmentDraftBody,
   AmendmentDto,
   AmendmentUpdateBody,
+  AmendmentAdmissionDto,
+  AmendmentOutcomeDto,
+  ApprovalWarnings,
   DecisionDto,
   DocumentAmendmentsDto,
   EventDto,
@@ -110,29 +113,11 @@ export interface StoredAmendmentMeta extends AmendmentMeta {
   presentingMemberId?: string;
 }
 
-/** Ids the client can offer to lapse after an approval. */
-export interface ApprovalWarnings {
-  /** Approved amendments that collide with this one in the base text. */
-  overlapsWithApproved: string[];
-  /** Undecided or approved amendments linked by an "incompatible" relation. */
-  incompatible: string[];
-}
-
 /** Response of POST .../amendments/[amendment]/outcome. */
-export interface AmendmentOutcomeResult {
-  amendment: AmendmentDto;
-  vote: VoteDto | null;
-  /** Present when the amendment ended up approved, null otherwise. */
-  warnings: ApprovalWarnings | null;
-}
-
+export type AmendmentOutcomeResult = AmendmentOutcomeDto;
 /** Response of POST .../amendments/admission. */
-export interface AmendmentAdmissionResult {
-  decision: DecisionDto;
-  /** The admission applied to every amendment (a failed vote reverses it). */
-  admission: Exclude<AdmissionStatus, "pending">;
-  amendmentIds: string[];
-}
+export type AmendmentAdmissionResult = AmendmentAdmissionDto;
+export type { ApprovalWarnings };
 
 const OPEN_STATUSES: AmendmentStatus[] = ["draft", "submitted"];
 const SYMMETRIC_RELATIONS: RelationKind[] = ["incompatible", "duplicate"];
