@@ -319,6 +319,7 @@ export function documentCapabilities(
 ): DocumentCapabilities {
   return {
     edit: canEditDocument(actor, document) && !isTextFrozen(document),
+    manage: canManageDocuments(actor),
     publish: canManageDocuments(actor) && isPublishable(document),
     amend: canAmendDocument(actor, assembly, document, window, now),
     position:
