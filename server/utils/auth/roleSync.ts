@@ -4,19 +4,33 @@ import { db } from "../../db";
 import { users, roles } from "../../db/schema";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import { logError, logInfo, logWarn } from "../core/logger";
+import { getIntranetApiBaseUrl, intranetUrl, INTRANET_TIMEOUT_MS } from "../members/intranet";
+import { linkUserToIntranetMember } from "../members/link";
+
+// The intranet serializes nullable columns: an account without initials or
+// university answers with null, which must not discard the whole sync.
+const nullableText = z
+  .string()
+  .nullish()
+  .transform((value) => value?.trim() || null);
 
 const ExternalRoleResponse = z.object({
-  role: z.string(),
-  name: z.string(),
-  initials: z.string(),
-  university: z.string().nullable(),
+  role: z.string().trim().min(1),
+  name: nullableText,
+  initials: nullableText,
+  university: nullableText,
 });
 
 type ExternalPayload = z.infer<typeof ExternalRoleResponse>;
 
+/**
+ * `NUXT_ROLE_API_URL` when set; otherwise `POST {NUXT_INTRANET_API_URL}/user/role`.
+ */
 function getRoleApiUrl(): string | null {
   const url = process.env.NUXT_ROLE_API_URL?.trim();
-  return url || null;
+  if (url) return url;
+  const base = getIntranetApiBaseUrl();
+  return base ? intranetUrl(base, "user/role") : null;
 }
 
 function getInitialAdminEmail(): string {
@@ -28,7 +42,9 @@ function getInitialAdminEmail(): string {
 async function fetchExternalRole(email: string) {
   const apiUrl = getRoleApiUrl();
   if (!apiUrl) {
-    logWarn("roleSync", { reason: "NUXT_ROLE_API_URL not configured" });
+    logWarn("roleSync", {
+      reason: "NUXT_ROLE_API_URL and NUXT_INTRANET_API_URL not configured",
+    });
     return null;
   }
 
@@ -37,7 +53,7 @@ async function fetchExternalRole(email: string) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ email }),
-      signal: AbortSignal.timeout(10_000),
+      signal: AbortSignal.timeout(INTRANET_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -93,8 +109,8 @@ function resolveTargetRole(
 interface RoleSyncUpdate {
   lastRoleSyncAt: Date;
   externalRole?: string;
-  externalName?: string;
-  externalInitials?: string;
+  externalName?: string | null;
+  externalInitials?: string | null;
   university?: string | null;
   roleId?: string;
 }
@@ -213,4 +229,28 @@ export async function syncUserRole(userId: string): Promise<void> {
 
     await tx.update(users).set(updateFields).where(eq(users.id, userId));
   });
+
+  if (external) {
+    await linkMember(userId, external);
+  }
+}
+
+/**
+ * Links the account to its member (Asociado and Sectorial accounts are the
+ * member in the intranet). Runs after the role transaction has committed, so
+ * a failure here never undoes the role update nor blocks sign-in.
+ */
+async function linkMember(userId: string, external: ExternalPayload): Promise<void> {
+  try {
+    const memberId = await linkUserToIntranetMember(userId, external);
+    if (memberId) {
+      logInfo("roleSync", { action: "member linked", userId, memberId });
+    }
+  } catch (error) {
+    logWarn("roleSync", {
+      reason: "member link failed",
+      userId,
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
 }
