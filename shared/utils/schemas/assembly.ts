@@ -71,7 +71,6 @@ export const assemblyCreateBodySchema = z
 
 const assemblySettingsPatchSchema = z
   .object({
-    amendmentVisibility: z.enum(["immediate", "after_close"]),
     positionVisibility: z.enum(["mesa", "session", "public"]),
     acceptedAmendments: z.enum(["assent", "vote"]),
     tieRule: z.enum(["rejected", "repeat"]),
