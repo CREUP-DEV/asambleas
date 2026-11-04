@@ -218,6 +218,12 @@ export interface VersionDto {
 export interface DocumentCapabilities {
   /** Edit metadata and the working draft (before publication). */
   edit: boolean;
+  /**
+   * Secretaría-level management at any stage: metadata (window override,
+   * majority, voted), status changes (withdraw, postpone) and deleting a
+   * never-published document. document:manage.
+   */
+  manage: boolean;
   publish: boolean;
   /** Present amendments now (window open or late submission allowed). */
   amend: boolean;
