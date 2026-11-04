@@ -12,7 +12,8 @@ import { sessionVoteOutcome } from "~/composables/session/sessionModel";
  * Vote entry used by every session dialog: method, counts, majority and
  * note, with a live preview of the result the server will compute
  * (`computeVoteOutcome` with the assembly settings), including the tie rule
- * and counts that exceed the members present.
+ * and counts that exceed the members present. Assent, when offered, has no
+ * counts: only the method and the note are shown.
  */
 const props = withDefaults(
   defineProps<{
@@ -73,6 +74,7 @@ function setField<K extends "method" | "majority" | "note">(
   vote.value = { ...vote.value, [key]: value };
 }
 
+const assent = computed(() => vote.value.method === "assent");
 const outcome = computed(() => sessionVoteOutcome(vote.value, props.settings));
 const cast = computed(
   () =>
@@ -127,7 +129,7 @@ const denominatorText = computed(() =>
         />
       </UFormField>
       <UFormField
-        v-if="showMajority"
+        v-if="showMajority && !assent"
         :label="t('session.vote.majority')"
         :name="`${uid}-majority`"
       >
@@ -142,7 +144,11 @@ const denominatorText = computed(() =>
       </UFormField>
     </div>
 
-    <fieldset class="space-y-3">
+    <p v-if="assent" class="text-muted text-sm">
+      {{ t("session.vote.assentNoCount") }}
+    </p>
+
+    <fieldset v-else class="space-y-3">
       <legend class="text-highlighted mb-2 text-sm font-medium">
         {{ t("session.vote.counts") }}
       </legend>
@@ -197,6 +203,7 @@ const denominatorText = computed(() =>
     </UFormField>
 
     <div
+      v-if="!assent"
       class="border-default bg-elevated/40 space-y-2 rounded-lg border p-3"
       aria-live="polite"
       aria-atomic="true"

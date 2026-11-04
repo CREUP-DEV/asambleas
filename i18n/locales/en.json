@@ -114,6 +114,11 @@
       "placeholder": "Write the text here",
       "label": "Content editor",
       "toolbar": "Text formatting"
+    },
+    "staleData": {
+      "title": "The data could not be refreshed",
+      "description": "The last loaded data stays on screen. Retry now or wait for the next update.",
+      "retry": "Retry"
     }
   },
   "auth": {
@@ -276,7 +281,9 @@
       "nextMilestone": "Next deadline",
       "liveOn": "Live",
       "liveOffline": "Live connection lost",
-      "livePolling": "The live connection was lost. Data refreshes every 15 seconds while it reconnects."
+      "livePolling": "The live connection was lost. Data refreshes every 15 seconds while it reconnects.",
+      "stale": "Not up to date",
+      "staleDescription": "The assembly could not be refreshed. Showing the last loaded data. Select to retry."
     },
     "sections": {
       "label": "Assembly sections",
@@ -607,7 +614,20 @@
       "remoteTitle": "Someone else has saved changes to the text",
       "remoteDescription": "Your changes are not saved yet. Saving now would cause a conflict: load the saved version and your text will be kept so you can recover it.",
       "loadRemote": "Load the saved version",
-      "imported": "Text imported and saved"
+      "imported": "Text imported and saved",
+      "frozen": {
+        "notice": "The text has been published and can no longer be edited. You can still change the document's details and status.",
+        "title": "Published text",
+        "description": "When it was published, the text was frozen as the base version, and changes are proposed as amendments. Here you can still change the document's details, its amendment window and its status.",
+        "fileTitle": "Published PDF",
+        "fileDescription": "If you replace the PDF, everyone in the assembly will see the new file. The previous one stays recorded in the history.",
+        "fileVoted": "The PDF has already been voted on and cannot be replaced."
+      },
+      "refreshError": {
+        "title": "The document could not be refreshed",
+        "description": "You are seeing the last version loaded, and your unsaved changes are still here. Try again once you are back online."
+      },
+      "returningToDocuments": "Returning to the document list"
     },
     "recovery": {
       "title": "Your version was not saved",
@@ -755,6 +775,45 @@
         "referenceNone": "This type of document has no reference",
         "scheduled": "Publication planned in the calendar: {date}",
         "assemblyDraft": "The assembly is still a draft: only its managers will see the document until it is convened"
+      }
+    },
+    "republish": {
+      "button": "Publish again",
+      "title": "Publish the document again",
+      "description": "It is published again with the same base text, the same reference and its amendments.",
+      "confirm": "Publish it again",
+      "working": "Publishing the document again...",
+      "success": "Document published again"
+    },
+    "manage": {
+      "menu": "More actions",
+      "working": "Applying the change...",
+      "statusError": "The document status could not be changed",
+      "deleteError": "The document could not be deleted",
+      "withdraw": {
+        "label": "Withdraw",
+        "title": "Withdraw the document?",
+        "description": "It will not be dealt with at the assembly. The Secretariat can restore it later to publish it.",
+        "descriptionPublished": "It stops being published: it will not accept amendments or be dealt with at the assembly. It keeps its text, reference and amendments, and can be published again.",
+        "confirm": "Withdraw document",
+        "success": "Document withdrawn"
+      },
+      "postpone": {
+        "label": "Postpone",
+        "title": "Postpone the document?",
+        "description": "It will not be dealt with at this assembly. It stays public with its text, reference and amendments, but accepts no new amendments until it is published again.",
+        "confirm": "Postpone document",
+        "success": "Document postponed"
+      },
+      "restore": {
+        "label": "Restore",
+        "title": "Restore the document?",
+        "description": "It goes back to submitted, waiting for the Secretariat to publish it.",
+        "confirm": "Restore document",
+        "success": "Document restored"
+      },
+      "delete": {
+        "description": "“{title}” will be deleted with its text and details. This action cannot be undone."
       }
     }
   },
@@ -1023,6 +1082,12 @@
         "relation_created": "Relation added",
         "relation_deleted": "Relation removed",
         "other": "Change recorded"
+      },
+      "admissionMethods": {
+        "mesa": "By decision of the presiding board",
+        "secretaria": "By decision of the Secretariat",
+        "assent": "By assent",
+        "vote": "By vote"
       }
     },
     "vote": {
@@ -1119,7 +1184,26 @@
       "saveFailed": "The amendment could not be saved",
       "submitted": "Amendment submitted",
       "submittedLate": "It was submitted late and awaits admission.",
-      "submitFailed": "The amendment could not be submitted"
+      "submitFailed": "The amendment could not be submitted",
+      "onBehalfOnlyHint": "Your account does not present amendments of its own: choose the member you are recording it for.",
+      "sync": {
+        "remote_newer": {
+          "title": "Someone else has saved changes to this draft",
+          "description": "Your changes are not saved yet. Load the saved version or overwrite it with yours.",
+          "refused": "Nothing was saved: someone else saved it first. Load their version (your changes will be lost) or overwrite it with yours."
+        },
+        "conflict": {
+          "title": "The draft could not be saved",
+          "description": "The draft or the document changed while you were editing. Load the saved version to continue."
+        },
+        "not_editable": {
+          "title": "This draft can no longer be edited",
+          "description": "It was presented, withdrawn or deleted while you were editing, or the document no longer accepts amendments."
+        },
+        "keepMine": "Keep mine",
+        "overwrite": "Overwrite",
+        "overwriteConfirm": "Overwrite the saved version with yours? The other person's changes will be lost."
+      }
     },
     "errors": {
       "empty": "The amendment proposes no change.",
@@ -1966,7 +2050,8 @@
       "retry": "Retry the export",
       "again": "Generate again",
       "timeout": "The export is taking too long. Try again later."
-    }
+    },
+    "editRecord": "Edit document record"
   },
   "session": {
     "title": "Session console",
@@ -2073,7 +2158,8 @@
       "inadmit": "Declare inadmissible",
       "more": "More actions for {code}",
       "undo": "Undo",
-      "retry": "Retry"
+      "retry": "Retry",
+      "readmit": "Re-admit"
     },
     "toasts": {
       "approved": "{code} approved",
@@ -2091,7 +2177,8 @@
       "relationCreated": "Link recorded",
       "transactionalCreated": "Transactional {code} created",
       "finalApproved": "Final text approved",
-      "finalRejected": "Final text rejected"
+      "finalRejected": "Final text rejected",
+      "finalAnnulled": "Final vote annulled"
     },
     "errors": {
       "live": "The debate could not be updated",
@@ -2100,7 +2187,8 @@
       "relation": "The link could not be saved",
       "transactional": "The transactional could not be created",
       "acceptance": "The answer could not be recorded",
-      "finalVote": "The final vote could not be recorded"
+      "finalVote": "The final vote could not be recorded",
+      "annulFinalVote": "The final vote could not be annulled"
     },
     "vote": {
       "title": "Vote on {code}",
@@ -2135,12 +2223,11 @@
       "tieRejected": "In a tie, the proposal is rejected.",
       "inconsistentTitle": "Impossible count",
       "inconsistent": "More votes were cast than there are members present.",
-      "submit": "Record vote"
+      "submit": "Record vote",
+      "assentNoCount": "Assent has no count: the text is approved."
     },
     "admission": {
-      "title": "Admission of late amendments",
       "description": "The decision is recorded with its method and, when voted, with the count.",
-      "empty": "No amendments are awaiting admission",
       "amendments": "Amendments",
       "selectAll": "Select all",
       "select": "Select {code}",
@@ -2150,7 +2237,11 @@
       "method": "How it is decided",
       "note": "Note",
       "submitAdmit": "Admit | Admit 1 amendment | Admit {count} amendments",
-      "submitReject": "Declare inadmissible | Declare 1 amendment inadmissible | Declare {count} amendments inadmissible"
+      "submitReject": "Declare inadmissible | Declare 1 amendment inadmissible | Declare {count} amendments inadmissible",
+      "titleAdmit": "Admit amendments",
+      "titleInadmit": "Declare amendments inadmissible",
+      "emptyAdmit": "No amendments can be admitted",
+      "emptyInadmit": "No amendments can be declared inadmissible"
     },
     "relation": {
       "title": "Links of {code}",
@@ -2173,7 +2264,8 @@
       "candidates": "Affected amendments",
       "select": "Mark {code} as lapsed",
       "keep": "Keep them",
-      "submit": "Mark as lapsed | Mark 1 as lapsed | Mark {count} as lapsed"
+      "submit": "Mark as lapsed | Mark 1 as lapsed | Mark {count} as lapsed",
+      "descriptionTotality": "The return of the text was approved: the other amendments are left without object. Mark them as lapsed?"
     },
     "assent": {
       "title": "Approve accepted amendments by assent",
@@ -2191,7 +2283,7 @@
     "acceptance": {
       "title": "Acceptances: {accepted} of {total}",
       "none": "This transactional has no parties that must accept it.",
-      "inRoom": "Accepted in the room"
+      "answerFor": "Answer from {member}"
     },
     "composer": {
       "title": "New transactional amendment",
@@ -2217,7 +2309,11 @@
       "partiesHint": "Answers given in the room are recorded right after creating it.",
       "submit": "Create and submit",
       "created": "Transactional {code} submitted",
-      "createdHint": "Record each party's answer. It can be voted on once every party accepts it."
+      "createdHint": "Record each party's answer. It can be voted on once every party accepts it.",
+      "reseedConfirm": "Changing the amendments being transacted regenerates the text and loses what you have typed. Continue?",
+      "resetConfirm": "Your changes to the transactional text will be lost. Go back to the initial text?",
+      "discardConfirm": "The transactional has not been created yet and what you have typed will be lost. Discard it?",
+      "replaceConfirm": "There is an unfinished transactional for other amendments. Discard it and start a new one?"
     },
     "preview": {
       "title": "Consolidated text",
@@ -2233,7 +2329,8 @@
       "finalRejected": "Final text rejected",
       "notVoted": "This document is not put to a vote",
       "notPublished": "The document is not published",
-      "undecided": "1 amendment is still undecided | {count} amendments are still undecided"
+      "undecided": "1 amendment is still undecided | {count} amendments are still undecided",
+      "totalityReturnBlocked": "{code}, a totality amendment returning the text, is approved: the text goes back and there is no final vote. Reopen it if it was approved by mistake."
     },
     "finalVote": {
       "title": "Final vote on the text",
@@ -2241,7 +2338,15 @@
       "undecided": "1 amendment is still undecided | {count} amendments are still undecided",
       "conflictsTitle": "The approved amendments cannot be applied together",
       "conflictsHint": "Reopen or decide one of them again before the final vote.",
-      "submit": "Record final vote"
+      "submit": "Record final vote",
+      "confirmTitle": "Check the result before recording it",
+      "confirmDescription": "The final vote closes the document's amendments. If there is a mistake, the Mesa will have to annul it.",
+      "confirm": "Confirm and record",
+      "annul": "Annul final vote",
+      "annulTitle": "Annul the final vote",
+      "annulDescription": "The vote stays in the history, but the document goes back to awaiting its final vote and the consolidated text is discarded. The amendments can be decided again.",
+      "annulNote": "Reason",
+      "annulSubmit": "Annul vote"
     },
     "enums": {
       "amendmentKind": {
@@ -2328,7 +2433,9 @@
       "blank": "Blank",
       "invalid": "Invalid",
       "majority": "Majority"
-    }
+    },
+    "stale": "Showing the last data received",
+    "loadFailed": "The data could not be loaded"
   },
   "documents": {
     "title": "Documents",

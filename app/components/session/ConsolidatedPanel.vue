@@ -6,6 +6,8 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * The text as it stands: the base with every approved amendment applied in
  * approval order, each fragment linked to its amendment (provenance), the
  * conflicts that stop amendments from applying together, and the final vote.
+ * A wrongly recorded final vote can be annulled while the assembly is open:
+ * the vote stays in the record and the text awaits its final vote again.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -15,6 +17,35 @@ const preview = computed(() => session.preview.value);
 const structured = computed(() => document.value?.format === "structured");
 const finalVote = computed(() => document.value?.finalVote ?? null);
 const undecided = computed(() => session.undecided.value.length);
+
+const canAnnul = computed(
+  () =>
+    Boolean(finalVote.value) &&
+    Boolean(document.value?.can.moderate) &&
+    session.assembly.value?.status !== "closed",
+);
+// Kept in the console so anyDialogOpen pauses the page shortcuts while the
+// modal is open.
+const annulOpen = computed({
+  get: () => session.finalVoteAnnulDialog.open,
+  set: (value: boolean) => {
+    session.finalVoteAnnulDialog.open = value;
+  },
+});
+const annulNote = ref("");
+watch(annulOpen, (isOpen) => {
+  if (isOpen) annulNote.value = "";
+});
+// Another Mesa member may annul it first (live update): nothing left to
+// annul. The console closes the modal when the live document changes.
+watch(canAnnul, (can) => {
+  if (!can) annulOpen.value = false;
+});
+
+async function annul(): Promise<void> {
+  const ok = await session.annulFinalVote(annulNote.value);
+  if (ok) annulOpen.value = false;
+}
 
 const loading = computed(
   () => !document.value && session.documentStatus.value === "pending",
@@ -43,6 +74,12 @@ const finalBlockedReason = computed(() => {
   if (!document.value.voted) return t("session.preview.notVoted");
   if (document.value.status !== "published")
     return t("session.preview.notPublished");
+  // Before the undecided count: with the text returned, the remaining
+  // amendments lapse and there is no final vote at all.
+  if (preview.value.totalityReturn)
+    return t("session.preview.totalityReturnBlocked", {
+      code: session.label(preview.value.totalityReturn.id),
+    });
   if (undecided.value > 0)
     return t(
       "session.preview.undecided",
@@ -88,13 +125,25 @@ const finalBlockedReason = computed(() => {
           </p>
           <p class="text-default text-sm tabular-nums">
             {{
-              t("session.card.voteCounts", {
-                inFavor: finalVote.inFavor,
-                against: finalVote.against,
-                abstentions: finalVote.abstentions,
-              })
+              finalVote.method === "assent"
+                ? t("session.enums.approvalMethod.assent")
+                : t("session.card.voteCounts", {
+                    inFavor: finalVote.inFavor,
+                    against: finalVote.against,
+                    abstentions: finalVote.abstentions,
+                  })
             }}
           </p>
+          <UButton
+            v-if="canAnnul"
+            class="mt-2"
+            size="xs"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-rotate-ccw"
+            :label="t('session.finalVote.annul')"
+            @click="annulOpen = true"
+          />
         </div>
         <template v-else>
           <UButton
@@ -183,5 +232,51 @@ const finalBlockedReason = computed(() => {
         </ContentView>
       </template>
     </template>
+
+    <UModal
+      v-model:open="annulOpen"
+      :title="t('session.finalVote.annulTitle')"
+      :description="t('session.finalVote.annulDescription')"
+    >
+      <template #body>
+        <form
+          id="session-final-vote-annul-form"
+          class="space-y-4"
+          @submit.prevent="annul"
+        >
+          <UFormField
+            :label="t('session.finalVote.annulNote')"
+            :hint="t('session.vote.optional')"
+            name="final-vote-annul-note"
+          >
+            <UTextarea
+              v-model="annulNote"
+              :rows="2"
+              autoresize
+              :maxlength="2000"
+              class="w-full"
+            />
+          </UFormField>
+        </form>
+      </template>
+      <template #footer="{ close }">
+        <div class="flex w-full flex-wrap justify-end gap-2">
+          <UButton
+            color="neutral"
+            variant="ghost"
+            :label="t('common.cancel')"
+            @click="close"
+          />
+          <UButton
+            type="submit"
+            form="session-final-vote-annul-form"
+            color="error"
+            icon="i-lucide-rotate-ccw"
+            :label="t('session.finalVote.annulSubmit')"
+            :loading="Boolean(session.busy.value['final-vote-annul'])"
+          />
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

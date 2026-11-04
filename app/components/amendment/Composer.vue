@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { createId } from "@paralleldrive/cuid2";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type {
   AmendmentDraftBody,
   AmendmentDto,
@@ -12,6 +13,9 @@ import { blockLabels } from "~~/shared/utils/content/render";
 import {
   amendmentErrorKey,
   amendmentErrorReasons,
+  composerAuthorMemberIds,
+  composerAuthorSeed,
+  composerSyncState,
   contiguousBlockRange,
   deletePassageOps,
   passageAmendmentOps,
@@ -32,6 +36,11 @@ import {
  * Shows a live diff preview, validates with validateOps before sending, and
  * shows the reasons of a 422. Saving creates or updates a draft; presenting
  * saves and then submits it.
+ *
+ * The optimistic-lock token only moves with this composer's own saves. When
+ * someone else saves the draft (or a save is refused with 409), the author
+ * chooses: load the stored version (`reload`, the parent remounts the
+ * composer) or overwrite it with theirs after confirming.
  */
 const props = withDefaults(
   defineProps<{
@@ -60,17 +69,21 @@ const emit = defineEmits<{
   close: [];
   saved: [amendment: AmendmentDto];
   submitted: [amendment: AmendmentDto];
+  /** A save was refused: the parent refetches the list. */
   conflict: [];
+  /** Load the stored version: the parent refetches and remounts the composer. */
+  reload: [];
 }>();
 
 const { t } = useI18n();
 const api = useApi();
 const toast = useToast();
-const { member } = useMe();
+const { member, can } = useMe();
 const formId = useId();
 
 // State ----------------------------------------------------------------------
-// Seeded once: later changes of `draft` only refresh its updatedAt.
+// Seeded once from `draft`. Later copies of it never replace the text nor the
+// lock token: see the sync state below.
 
 const seed = props.draft
   ? seedComposerFromDraft(props.base, props.draft)
@@ -105,34 +118,93 @@ const draftId = ref<string | null>(props.draft?.id ?? null);
 const updatedAt = ref<string | null>(props.draft?.updatedAt ?? null);
 
 const canActOnBehalf = computed(() => props.document.can.moderate);
-const onBehalfOfMemberId = ref<string | undefined>(undefined);
-const coAuthorIds = ref<string[]>([]);
-
-(function seedAuthors(): void {
-  const authors = props.draft?.authors ?? [];
-  const own = member.value?.id;
-  if (own && authors.some((author) => author.id === own)) {
-    coAuthorIds.value = authors
-      .filter((author) => author.id !== own)
-      .map((author) => author.id);
-  } else if (authors.length > 0 && canActOnBehalf.value) {
-    onBehalfOfMemberId.value = authors[0]!.id;
-    coAuthorIds.value = authors.slice(1).map((author) => author.id);
-  } else {
-    coAuthorIds.value = authors
-      .filter((author) => author.id !== own)
-      .map((author) => author.id);
-  }
-})();
-
-watch(
-  () => props.draft?.updatedAt,
-  (value) => {
-    if (value && props.draft?.id === draftId.value) updatedAt.value = value;
-  },
+const seedAuthors = props.draft?.authors ?? [];
+const authorSeed = composerAuthorSeed(
+  seedAuthors.map((author) => author.id),
+  member.value?.id ?? null,
+  canActOnBehalf.value,
+);
+const onBehalfOfMemberId = ref<string | undefined>(
+  authorSeed.onBehalfOfMemberId,
+);
+const coAuthorIds = ref<string[]>(authorSeed.coAuthorIds);
+/** The stored presenting member, shown when nobody is picked on behalf. */
+const presentingMember =
+  seedAuthors.find((author) => author.id === authorSeed.presentingMemberId) ??
+  null;
+const showPresenting = computed(
+  () =>
+    presentingMember !== null &&
+    presentingMember.id !== member.value?.id &&
+    !onBehalfOfMemberId.value,
 );
 
+// Sync with the stored draft ---------------------------------------------------
+
 const busy = ref<"save" | "submit" | null>(null);
+/** A save was refused (409, or 404 when it is gone or hidden now). */
+const conflicted = ref(false);
+const confirmingOverwrite = ref(false);
+const reloading = ref(false);
+
+const syncState = computed(() =>
+  composerSyncState({
+    draftId: draftId.value,
+    token: updatedAt.value,
+    remote: props.draft,
+    conflicted: conflicted.value,
+    documentOpen:
+      props.document.status === "published" &&
+      props.document.amendable &&
+      !props.document.finalVote,
+  }),
+);
+
+watch(syncState, (state) => {
+  if (state !== "remote_newer") confirmingOverwrite.value = false;
+});
+
+function loadRemote(): void {
+  reloading.value = true;
+  emit("reload");
+}
+
+/** Keeps this version: takes the stored token, then saves over it. */
+async function overwrite(): Promise<void> {
+  const remote = props.draft;
+  if (!remote || remote.id !== draftId.value) return;
+  updatedAt.value = remote.updatedAt;
+  conflicted.value = false;
+  confirmingOverwrite.value = false;
+  await saveDraft();
+}
+
+// Presenting moves the draft on (status and token): not a conflict. During a
+// plain save the live list can deliver this save's own token before the
+// response does, so a brief "remote newer" is not someone else's change.
+// overwrite() adopts the remote token first, so nothing real is hidden.
+const showSync = computed(
+  () =>
+    syncState.value !== "in_sync" &&
+    busy.value !== "submit" &&
+    !(busy.value === "save" && !conflicted.value),
+);
+
+const syncDescription = computed(() => {
+  switch (syncState.value) {
+    case "remote_newer":
+      return conflicted.value
+        ? t("amendment.composer.sync.remote_newer.refused")
+        : t("amendment.composer.sync.remote_newer.description");
+    case "conflict":
+      return t("amendment.composer.sync.conflict.description");
+    case "not_editable":
+      return t("amendment.composer.sync.not_editable.description");
+    default:
+      return undefined;
+  }
+});
+
 const attempted = ref(false);
 /** Presenting needs a justification; saving a draft does not. */
 const presentAttempted = ref(false);
@@ -255,23 +327,39 @@ const opReasons = computed<string[]>(() => {
   return [...new Set(validateOps(props.base, ops.value).map((e) => e.reason))];
 });
 
+/**
+ * A moderator presents on behalf of a member when their account has none, or
+ * when it cannot present amendments of its own (no amendment:create). Only a
+ * new amendment needs it: a stored draft keeps its presenting member.
+ */
+const onBehalfRequired = computed(
+  () =>
+    canActOnBehalf.value &&
+    (!member.value ||
+      (!draftId.value && !can(PERMISSION_KEYS.AMENDMENT_CREATE))),
+);
 const needsMember = computed(
-  () => !member.value && !onBehalfOfMemberId.value && canActOnBehalf.value,
+  () => onBehalfRequired.value && !onBehalfOfMemberId.value,
 );
 const cannotPresent = computed(() => !member.value && !canActOnBehalf.value);
+const syncBlocked = computed(() => syncState.value !== "in_sync");
 
 const blocked = computed(
   () =>
     localIssues.value.length > 0 ||
     opReasons.value.length > 0 ||
     needsMember.value ||
-    cannotPresent.value,
+    cannotPresent.value ||
+    syncBlocked.value,
 );
 const justificationMissing = computed(() => !justification.value.trim());
 
+// The shared clock ticks every minute, so a window that closes while the
+// page is open is seen as closed, and hydration matches the server.
+const now = useAppNow();
 const windowClosed = computed(() => {
   const closesAt = toDate(props.document.window.closesAt);
-  return Boolean(closesAt && closesAt.getTime() <= Date.now());
+  return Boolean(closesAt && closesAt.getTime() <= now.value);
 });
 
 // Members ------------------------------------------------------------------------
@@ -293,13 +381,13 @@ const memberItems = computed(() =>
       value: item.id,
     })),
 );
-const coAuthorItems = computed(() =>
-  memberItems.value.filter(
-    (item) =>
-      item.value !== member.value?.id &&
-      item.value !== onBehalfOfMemberId.value,
-  ),
-);
+/** Everyone but the actor's member and the presenting one (always included). */
+const coAuthorItems = computed(() => {
+  const presenting = onBehalfOfMemberId.value ?? authorSeed.presentingMemberId;
+  return memberItems.value.filter(
+    (item) => item.value !== member.value?.id && item.value !== presenting,
+  );
+});
 
 // Saving ---------------------------------------------------------------------
 
@@ -319,7 +407,11 @@ async function persist(): Promise<AmendmentDto | null> {
     kind: amendmentKind.value,
     ops: ops.value,
     justification: justification.value.trim(),
-    authorMemberIds: coAuthorIds.value,
+    // A co-author editing someone else's draft stays among its authors.
+    authorMemberIds: composerAuthorMemberIds(
+      coAuthorIds.value,
+      authorSeed.keptMemberId,
+    ),
     globalReplace:
       mode.value === "global"
         ? { find: find.value.trim(), replace: replacement.value }
@@ -329,19 +421,28 @@ async function persist(): Promise<AmendmentDto | null> {
       : {}),
   };
 
+  const updating = Boolean(draftId.value && updatedAt.value);
   try {
-    const saved =
-      draftId.value && updatedAt.value
-        ? await api.send<AmendmentDto>(
-            `${props.amendmentsUrl}/${draftId.value}`,
-            { method: "PUT", body: { ...body, updatedAt: updatedAt.value } },
-          )
-        : await api.send<AmendmentDto>(props.amendmentsUrl, { body });
+    const saved = updating
+      ? await api.send<AmendmentDto>(
+          `${props.amendmentsUrl}/${draftId.value}`,
+          { method: "PUT", body: { ...body, updatedAt: updatedAt.value } },
+        )
+      : await api.send<AmendmentDto>(props.amendmentsUrl, { body });
     draftId.value = saved.id;
     updatedAt.value = saved.updatedAt;
+    conflicted.value = false;
     emit("saved", saved);
     return saved;
   } catch (error) {
+    const status = api.errorStatus(error);
+    if (updating && (status === 409 || status === 404)) {
+      // Someone saved first, or the draft changed state or disappeared.
+      // Keep this text and the old token: the author decides what to do.
+      conflicted.value = true;
+      emit("conflict");
+      return null;
+    }
     handleError(error, "amendment.composer.saveFailed");
     return null;
   }
@@ -668,7 +769,12 @@ onMounted(() => {
     <UFormField
       v-if="canActOnBehalf"
       :label="t('amendment.composer.onBehalf')"
-      :help="t('amendment.composer.onBehalfHint')"
+      :required="onBehalfRequired"
+      :help="
+        onBehalfRequired && member
+          ? t('amendment.composer.onBehalfOnlyHint')
+          : t('amendment.composer.onBehalfHint')
+      "
       :error="
         attempted && needsMember
           ? t('amendment.composer.onBehalfRequired')
@@ -691,6 +797,15 @@ onMounted(() => {
       :label="t('amendment.composer.coAuthors')"
       :help="t('amendment.composer.coAuthorsHint')"
     >
+      <div
+        v-if="showPresenting && presentingMember"
+        class="mb-2 flex flex-wrap items-center gap-2"
+      >
+        <CommonMemberBadge :member="presentingMember" size="xs" show-name />
+        <span class="text-dimmed text-xs">
+          {{ t("amendment.detail.presenting") }}
+        </span>
+      </div>
       <USelectMenu
         v-model="coAuthorIds"
         :items="coAuthorItems"
@@ -704,32 +819,105 @@ onMounted(() => {
     </UFormField>
 
     <footer
-      class="border-default bg-default sticky bottom-0 -mx-1 flex flex-wrap items-center gap-2 border-t px-1 pt-3 pb-1"
+      class="border-default bg-default sticky bottom-0 -mx-1 flex flex-col gap-2 border-t px-1 pt-3 pb-1"
     >
-      <UButton
-        color="neutral"
-        variant="ghost"
-        :label="t('amendment.actions.cancel')"
-        :disabled="busy !== null"
-        @click="emit('close')"
-      />
-      <UButton
-        class="ms-auto"
-        icon="i-lucide-save"
-        color="neutral"
-        variant="outline"
-        :loading="busy === 'save'"
-        :disabled="busy !== null || cannotPresent"
-        :label="t('amendment.composer.saveDraft')"
-        @click="saveDraft"
-      />
-      <UButton
-        type="submit"
-        icon="i-lucide-send"
-        :loading="busy === 'submit'"
-        :disabled="busy !== null || cannotPresent"
-        :label="t('amendment.composer.submit')"
-      />
+      <!-- The stored draft moved on: the author chooses, nothing is adopted silently. -->
+      <UAlert
+        v-if="showSync"
+        :color="syncState === 'not_editable' ? 'error' : 'warning'"
+        variant="subtle"
+        :icon="
+          syncState === 'not_editable' ? 'i-lucide-file-lock' : 'i-lucide-users'
+        "
+        role="alert"
+        :title="t(`amendment.composer.sync.${syncState}.title`)"
+        :description="syncDescription"
+      >
+        <template #actions>
+          <div
+            v-if="confirmingOverwrite"
+            class="flex flex-wrap items-center gap-2"
+            role="group"
+          >
+            <span class="text-sm">
+              {{ t("amendment.composer.sync.overwriteConfirm") }}
+            </span>
+            <UButton
+              color="error"
+              size="sm"
+              :loading="busy === 'save'"
+              :disabled="busy !== null"
+              :label="t('amendment.composer.sync.overwrite')"
+              @click="overwrite"
+            />
+            <UButton
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              :disabled="busy !== null"
+              :label="t('common.cancel')"
+              @click="confirmingOverwrite = false"
+            />
+          </div>
+          <div v-else class="flex flex-wrap items-center gap-2">
+            <UButton
+              v-if="syncState === 'not_editable'"
+              color="neutral"
+              variant="outline"
+              size="sm"
+              :label="t('common.close')"
+              @click="emit('close')"
+            />
+            <template v-else>
+              <UButton
+                color="warning"
+                size="sm"
+                icon="i-lucide-refresh-ccw"
+                :loading="reloading"
+                :disabled="busy !== null || reloading"
+                :label="t('document.authoring.loadRemote')"
+                @click="loadRemote"
+              />
+              <UButton
+                v-if="syncState === 'remote_newer'"
+                color="neutral"
+                variant="outline"
+                size="sm"
+                :disabled="busy !== null || reloading"
+                :label="t('amendment.composer.sync.keepMine')"
+                @click="confirmingOverwrite = true"
+              />
+            </template>
+          </div>
+        </template>
+      </UAlert>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <UButton
+          color="neutral"
+          variant="ghost"
+          :label="t('amendment.actions.cancel')"
+          :disabled="busy !== null"
+          @click="emit('close')"
+        />
+        <UButton
+          class="ms-auto"
+          icon="i-lucide-save"
+          color="neutral"
+          variant="outline"
+          :loading="busy === 'save'"
+          :disabled="busy !== null || cannotPresent || syncBlocked"
+          :label="t('amendment.composer.saveDraft')"
+          @click="saveDraft"
+        />
+        <UButton
+          type="submit"
+          icon="i-lucide-send"
+          :loading="busy === 'submit'"
+          :disabled="busy !== null || cannotPresent || syncBlocked"
+          :label="t('amendment.composer.submit')"
+        />
+      </div>
     </footer>
   </form>
 </template>

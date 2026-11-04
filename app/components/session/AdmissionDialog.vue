@@ -6,16 +6,20 @@ import {
 } from "~~/shared/constants/domain";
 import {
   isSessionVoteReady,
+  sessionAdmissionCandidates,
   sessionCleanVote,
   sessionEmptyVote,
   sessionVoteOutcome,
+  type SessionAdmissionDecision,
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 
 /**
- * Admits late amendments, or declares them inadmissible, one by one or in
- * bulk. The decision is recorded with its method (Mesa, Secretaría, assent
- * or a vote with its counts) and an optional note.
+ * Admits amendments or declares them inadmissible, one by one or in bulk:
+ * late amendments pending admission, an on-time amendment the Mesa finds
+ * inadmissible, or an inadmissible one to re-admit after a mistake. The
+ * decision is recorded with its method (Mesa, Secretaría, assent or a vote
+ * with its counts) and an optional note.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -27,20 +31,34 @@ const open = computed({
   },
 });
 
-const candidates = computed(() => session.queue.value.pending);
 const selected = ref<string[]>([]);
-const decision = ref<"admitted" | "inadmissible">("admitted");
+const decision = ref<SessionAdmissionDecision>("admitted");
 const method = ref<DecisionMethod>("mesa");
 const note = ref("");
 const vote = ref<VoteInput>(sessionEmptyVote("simple"));
 
+/** Pending admission plus what the dialog was opened for, if eligible. */
+const candidates = computed(() =>
+  sessionAdmissionCandidates(
+    session.amendments.value,
+    decision.value,
+    session.admissionDialog.ids,
+  ),
+);
+/**
+ * Ticked amendments the current decision applies to. Switching the decision
+ * keeps the ticks, so switching back restores them.
+ */
+const chosen = computed(() => {
+  const available = new Set(candidates.value.map((amendment) => amendment.id));
+  return selected.value.filter((id) => available.has(id));
+});
+
 watch(open, (isOpen) => {
   if (!isOpen) return;
-  const available = new Set(candidates.value.map((amendment) => amendment.id));
-  selected.value = session.admissionDialog.ids.filter((id) =>
-    available.has(id),
-  );
+  // The decision first: the candidates depend on it.
   decision.value = session.admissionDialog.decision;
+  selected.value = [...session.admissionDialog.ids];
   method.value = "mesa";
   note.value = "";
   vote.value = sessionEmptyVote("simple");
@@ -49,7 +67,7 @@ watch(open, (isOpen) => {
 const allSelected = computed(
   () =>
     candidates.value.length > 0 &&
-    selected.value.length === candidates.value.length,
+    chosen.value.length === candidates.value.length,
 );
 
 function toggleAll(value: boolean | "indeterminate"): void {
@@ -80,14 +98,14 @@ const outcome = computed(() =>
 );
 const blocked = computed(
   () =>
-    selected.value.length === 0 ||
+    chosen.value.length === 0 ||
     (method.value === "vote" && !isSessionVoteReady(vote.value, outcome.value)),
 );
 
 async function submit(): Promise<void> {
   if (blocked.value) return;
   const ok = await session.decideAdmission({
-    amendmentIds: selected.value,
+    amendmentIds: chosen.value,
     decision: decision.value,
     method: method.value,
     note: note.value.trim() || null,
@@ -100,7 +118,11 @@ async function submit(): Promise<void> {
 <template>
   <UModal
     v-model:open="open"
-    :title="t('session.admission.title')"
+    :title="
+      decision === 'admitted'
+        ? t('session.admission.titleAdmit')
+        : t('session.admission.titleInadmit')
+    "
     :description="t('session.admission.description')"
     :ui="{ content: 'sm:max-w-2xl' }"
   >
@@ -114,7 +136,11 @@ async function submit(): Promise<void> {
           v-if="candidates.length === 0"
           icon="i-lucide-inbox"
           size="sm"
-          :title="t('session.admission.empty')"
+          :title="
+            decision === 'admitted'
+              ? t('session.admission.emptyAdmit')
+              : t('session.admission.emptyInadmit')
+          "
         />
         <fieldset v-else class="space-y-2">
           <legend class="text-highlighted mb-2 text-sm font-medium">
@@ -132,7 +158,7 @@ async function submit(): Promise<void> {
               class="flex flex-wrap items-center gap-2 px-3 py-2"
             >
               <UCheckbox
-                :model-value="selected.includes(amendment.id)"
+                :model-value="chosen.includes(amendment.id)"
                 :aria-label="
                   t('session.admission.select', {
                     code: session.label(amendment.id),
@@ -155,6 +181,12 @@ async function submit(): Promise<void> {
                 variant="subtle"
                 size="sm"
                 :label="t('session.queue.late')"
+              />
+              <CommonStatusBadge
+                v-if="amendment.admission !== 'admitted'"
+                kind="admission"
+                :value="amendment.admission"
+                size="sm"
               />
             </li>
           </ul>
@@ -211,13 +243,13 @@ async function submit(): Promise<void> {
             decision === 'admitted'
               ? t(
                   'session.admission.submitAdmit',
-                  { count: selected.length },
-                  selected.length,
+                  { count: chosen.length },
+                  chosen.length,
                 )
               : t(
                   'session.admission.submitReject',
-                  { count: selected.length },
-                  selected.length,
+                  { count: chosen.length },
+                  chosen.length,
                 )
           "
           :loading="Boolean(session.busy.value.admission)"

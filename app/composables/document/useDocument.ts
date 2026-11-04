@@ -1,6 +1,7 @@
 import type { MaybeRefOrGetter, Ref } from "vue";
 import type { DocumentDto, LiveEventDto } from "~~/shared/types/api";
 import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
+import { keepLastGoodData, useStaleDataNotice } from "../fetch/lastGoodData";
 import { useAssemblyLive } from "../live/useAssemblyLive";
 
 export interface UseDocumentOptions {
@@ -14,13 +15,18 @@ export interface UseDocumentOptions {
 
 export interface UseDocumentReturn {
   /**
-   * The document; undefined while loading or after an error. Writable: store
-   * mutation responses (a full DocumentDto) here so `updatedAt` and
+   * The document; undefined until it first loads, or when it is gone (404).
+   * A failed refresh keeps the last good document, so the editor or the
+   * composer showing it is never unmounted. Writable: store mutation
+   * responses (a full DocumentDto) here so `updatedAt` and
    * `workingVersion.contentHash` stay current for the next request.
    */
   document: Ref<DocumentDto | undefined>;
   pending: Ref<boolean>;
+  /** The last request's error; with `document` set, the refresh failed. */
   error: Ref<unknown>;
+  /** True while the last refresh failed and the last good document shows. */
+  stale: Readonly<Ref<boolean>>;
   refresh: () => Promise<void>;
   /** Refetches when a batch touches this document, or asks to poll. */
   handleLiveEvents: (events: LiveEventDto[]) => void;
@@ -47,6 +53,8 @@ export function isDocumentLiveBatch(
  * Shared fetch key: `document:{assembly}:{document}`, so every component of
  * a page that asks for the same document shares one request and one state.
  *
+ * A failed refresh shows a warning toast and keeps the last good document.
+ *
  * The result can be awaited (to have the data before rendering, e.g. to
  * redirect during SSR) or used directly.
  */
@@ -67,7 +75,10 @@ export function useDocument(
     },
   );
 
-  const data = asyncData.data as Ref<DocumentDto | undefined>;
+  const { data, stale } = keepLastGoodData(asyncData, {
+    resetOn: () => `${assemblyParam.value}:${documentParam.value}`,
+  });
+  useStaleDataNotice(stale);
 
   async function refresh(): Promise<void> {
     if (!assemblyParam.value || !documentParam.value) return;
@@ -92,6 +103,7 @@ export function useDocument(
     document: data,
     pending: asyncData.pending as Ref<boolean>,
     error: asyncData.error as Ref<unknown>,
+    stale,
     refresh,
     handleLiveEvents,
   };

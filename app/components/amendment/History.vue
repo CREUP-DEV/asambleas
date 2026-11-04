@@ -1,15 +1,19 @@
 <script setup lang="ts">
 import type { TimelineItem } from "@nuxt/ui";
-import type { EventDto } from "~~/shared/types/api";
+import type { DecisionDto, EventDto } from "~~/shared/types/api";
 
 /**
  * Immutable history of one amendment (GET .../amendments/{id}/history) as a
- * timeline. It reloads when `version` (the amendment's updatedAt) changes.
+ * timeline. It reloads when `version` changes (see amendmentHistoryVersion).
+ * Admission decisions show how they were taken; with `decisionsUrl`, a vote's
+ * counts and the decision note are looked up in the assembly's decisions.
  */
 const props = defineProps<{
   /** URL of the amendment: .../amendments/{id}. */
   url: string;
   version?: string;
+  /** GET /api/assemblies/{assembly}/decisions, for admission vote counts. */
+  decisionsUrl?: string;
 }>();
 
 const { t, te, locale } = useI18n();
@@ -21,13 +25,52 @@ const loading = ref(false);
 const failed = ref(false);
 let request = 0;
 
+/** Admission decisions by id, as GET .../decisions returns them. */
+const decisionsById = shallowRef(new Map<string, DecisionDto>());
+/** Decision ids already looked up, so a missing one is not fetched again. */
+const lookedUp = new Set<string>();
+
+function admissionDecisionId(event: EventDto): string | null {
+  if (
+    event.type !== "amendment_admitted" &&
+    event.type !== "amendment_inadmissible"
+  ) {
+    return null;
+  }
+  return text(event.payload?.decisionId);
+}
+
+async function loadDecisions(list: EventDto[]): Promise<void> {
+  const url = props.decisionsUrl;
+  if (!url) return;
+  const missing = list
+    .map(admissionDecisionId)
+    .filter((id): id is string => id !== null && !lookedUp.has(id));
+  if (missing.length === 0) return;
+  missing.forEach((id) => lookedUp.add(id));
+  try {
+    const decisions = await api.get<DecisionDto[]>(url);
+    // Merge: an older response resolving last must not drop newer decisions.
+    decisionsById.value = new Map([
+      ...decisionsById.value,
+      ...decisions.map((decision) => [decision.id, decision] as const),
+    ]);
+  } catch {
+    // Method and result come with the event; counts are a bonus.
+    missing.forEach((id) => lookedUp.delete(id));
+  }
+}
+
 async function load(): Promise<void> {
   const current = ++request;
   loading.value = true;
   failed.value = false;
   try {
     const result = await api.get<EventDto[]>(`${props.url}/history`);
-    if (current === request) events.value = result;
+    if (current === request) {
+      events.value = result;
+      void loadDecisions(result);
+    }
   } catch {
     if (current === request) failed.value = true;
   } finally {
@@ -60,6 +103,28 @@ function text(value: unknown): string | null {
   return typeof value === "string" && value ? value : null;
 }
 
+/** "By vote · Carried · 28 in favour, 0 against, 8 abstentions · note". */
+function admissionDetail(payload: Record<string, unknown>): string | null {
+  const method = text(payload.method);
+  const decisionId = text(payload.decisionId);
+  const decision = decisionId ? decisionsById.value.get(decisionId) : undefined;
+  const vote = decision?.vote ?? null;
+  const result = vote?.result ?? text(payload.voteResult);
+  const parts = [
+    method ? t(`amendment.history.admissionMethods.${method}`) : null,
+    result ? t(`common.status.vote.${result}`) : null,
+    vote && vote.method !== "assent"
+      ? t("amendment.vote.inline", {
+          inFavor: vote.inFavor,
+          against: vote.against,
+          abstentions: vote.abstentions,
+        })
+      : null,
+    decision?.note?.trim() || null,
+  ];
+  return parts.filter(Boolean).join(" · ") || null;
+}
+
 function detailOf(event: EventDto): string | null {
   const payload = event.payload ?? {};
   switch (event.type) {
@@ -77,6 +142,9 @@ function detailOf(event: EventDto): string | null {
     }
     case "amendment_submitted":
       return payload.late === true ? t("amendment.late") : null;
+    case "amendment_admitted":
+    case "amendment_inadmissible":
+      return admissionDetail(payload);
     case "relation_created":
     case "relation_deleted": {
       const kind = text(payload.kind);

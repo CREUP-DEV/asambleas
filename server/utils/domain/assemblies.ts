@@ -7,6 +7,7 @@ import {
   desc,
   eq,
   inArray,
+  isNotNull,
   isNull,
   ne,
   or,
@@ -72,7 +73,10 @@ export type AgendaItemRow = typeof agendaItems.$inferSelect;
 export type Executor =
   typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
-/** Document statuses that keep an agenda item from being deleted. */
+/**
+ * Document statuses that keep an agenda item from being deleted. A document
+ * whose text is frozen (see isTextFrozen) also keeps it, whatever its status.
+ */
 export const AGENDA_PROTECTED_DOCUMENT_STATUSES = [
   "submitted",
   "published",
@@ -182,10 +186,12 @@ export function canSeeDraftAssemblies(actor: Actor): boolean {
  * SQL version of canSeeDocument, used to count the documents of several
  * assemblies at once. Undefined means every document is visible.
  */
+/** SQL mirror of canSeeDocument: the Mesa sees every presented document, not drafts. */
 function visibleDocumentsCondition(actor: Actor): SQL | undefined {
-  if (canManageDocuments(actor) || canModerate(actor)) return undefined;
+  if (canManageDocuments(actor)) return undefined;
   return or(
     inArray(documents.status, [...VISIBLE_DOCUMENT_STATUSES]),
+    canModerate(actor) ? ne(documents.status, "draft") : undefined,
     eq(documents.submittedByUserId, actor.user.id),
     actor.memberId
       ? eq(documents.proponentMemberId, actor.memberId)
@@ -553,7 +559,13 @@ export function rootSequence(items: OrderedItem[]): string[] {
     .map((item) => item.id);
 }
 
-/** Whether any document under these items blocks deleting them. */
+/**
+ * Whether any document under these items blocks deleting them: one that is
+ * submitted, published or postponed, or one that was ever published (it has a
+ * base version or a publication date). Deleting the item would cascade to
+ * such a document with its versions, reference and amendments, which
+ * deleteDocument refuses for the same reason (isTextFrozen).
+ */
 export async function hasProtectedDocuments(
   executor: Executor,
   agendaItemIds: string[],
@@ -565,7 +577,11 @@ export async function hasProtectedDocuments(
     .where(
       and(
         inArray(documents.agendaItemId, agendaItemIds),
-        inArray(documents.status, [...AGENDA_PROTECTED_DOCUMENT_STATUSES]),
+        or(
+          inArray(documents.status, [...AGENDA_PROTECTED_DOCUMENT_STATUSES]),
+          isNotNull(documents.publishedAt),
+          isNotNull(documents.baseVersionId),
+        ),
       ),
     )
     .limit(1);

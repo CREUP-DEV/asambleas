@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AmendmentDto } from "~~/shared/types/api";
+import { PROPONENT_POSITIONS } from "~~/shared/constants/domain";
 import {
   SESSION_REOPENABLE,
   isSessionOpen,
@@ -13,7 +14,8 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * One amendment of the console queue: who presents it, its kind, the
  * proponent's position, admission and status, and the Mesa's actions. The
  * amendment under debate shows its changes and, for a transactional, the
- * answers of its parties.
+ * answers of its parties. Focusing anything inside the card (click or Tab)
+ * makes it the target of the keyboard shortcuts.
  */
 const props = defineProps<{ amendment: AmendmentDto }>();
 
@@ -35,6 +37,7 @@ const missing = computed(() => sessionMissingAcceptances(props.amendment));
 const reopenable = computed(() =>
   SESSION_REOPENABLE.includes(props.amendment.status),
 );
+const inadmissible = computed(() => props.amendment.status === "inadmissible");
 const decided = computed(() => props.amendment.status !== "submitted");
 
 const expandedByUser = ref<boolean | null>(null);
@@ -79,7 +82,37 @@ const relateItem = computed<DropdownMenuItem>(() => ({
   onSelect: () => session.openRelation(props.amendment),
 }));
 
+const POSITION_ICONS = {
+  pending: "i-lucide-circle-dashed",
+  accept: "i-lucide-thumbs-up",
+  reject: "i-lucide-thumbs-down",
+  transact: "i-lucide-git-merge",
+} as const;
+
+/** The proponent's position as stated in the room (feeds bulk assent). */
+const positionItem = computed<DropdownMenuItem | null>(() => {
+  if (props.amendment.status !== "submitted" || !props.amendment.can.position)
+    return null;
+  const current = props.amendment.position?.position ?? "pending";
+  return {
+    label: t("amendment.position.title"),
+    icon: "i-lucide-user-round-check",
+    children: PROPONENT_POSITIONS.map((position) => ({
+      type: "checkbox" as const,
+      label: t(`amendment.position.options.${position}`),
+      icon: POSITION_ICONS[position],
+      checked: current === position,
+      onSelect: () => {
+        if (current !== position) {
+          void session.setPosition(props.amendment, position);
+        }
+      },
+    })),
+  };
+});
+
 const menuItems = computed<DropdownMenuItem[][]>(() => {
+  const position = positionItem.value ? [positionItem.value] : [];
   if (open.value) {
     return [
       [
@@ -95,6 +128,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           disabled: missing.value > 0,
           onSelect: () => void session.approve(props.amendment, "formal"),
         },
+        ...position,
       ],
       [
         {
@@ -107,6 +141,12 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           icon: "i-lucide-circle-slash",
           kbds: ["l"],
           onSelect: () => void session.lapse(props.amendment),
+        },
+        {
+          label: t("session.actions.inadmit"),
+          icon: "i-lucide-octagon-x",
+          color: "error",
+          onSelect: () => session.openAdmission([id.value], "inadmissible"),
         },
       ],
       [
@@ -122,7 +162,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
   }
   if (pendingAdmission.value) {
     return [
-      [debateItem.value],
+      [debateItem.value, ...position],
       [
         {
           label: t("session.actions.withdraw"),
@@ -151,6 +191,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
     ]"
     :data-status="amendment.status"
     @click="focusCard"
+    @focusin="focusCard"
   >
     <header class="flex flex-wrap items-center gap-x-2 gap-y-1.5">
       <h3 class="text-highlighted text-base font-bold tabular-nums">
@@ -274,7 +315,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           "
           :loading="Boolean(session.busy.value.live) && !busy"
           :disabled="busy"
-          @click.stop="toggleDebate"
+          @click="toggleDebate"
         />
         <UTooltip
           :text="
@@ -327,6 +368,16 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           @click="session.openAdmission([amendment.id], 'inadmissible')"
         />
       </template>
+      <UButton
+        v-else-if="inadmissible"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-rotate-ccw"
+        :label="t('session.actions.readmit')"
+        :disabled="busy"
+        @click="session.openAdmission([amendment.id], 'admitted')"
+      />
       <UButton
         v-else-if="reopenable"
         size="xs"

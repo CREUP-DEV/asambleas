@@ -5,9 +5,13 @@ import { consolidate } from "~~/shared/utils/content/consolidate";
 import { validateOps } from "~~/shared/utils/content/ops";
 import {
   amendmentBlockMarkers,
+  amendmentHistoryVersion,
   amendmentDisplayLabel,
   amendmentErrorKey,
   amendmentErrorReasons,
+  composerAuthorMemberIds,
+  composerAuthorSeed,
+  composerSyncState,
   consolidationInputs,
   contiguousBlockRange,
   deletePassageOps,
@@ -16,6 +20,7 @@ import {
   extendBlockSelection,
   filterAmendmentList,
   groupAmendmentsByOverlap,
+  isNewerAmendmentVersion,
   passageAmendmentOps,
   passageSeed,
   seedComposerFromDraft,
@@ -371,5 +376,181 @@ describe("api errors", () => {
     expect(amendmentErrorKey("noop")).toBe("amendment.errors.noop");
     expect(amendmentErrorKey("something_new")).toBe("amendment.errors.unknown");
     expect(amendmentErrorReasons(new Error("x"))).toEqual([]);
+  });
+});
+
+describe("composer authors", () => {
+  it("keeps the presenting member out of the picker", () => {
+    const seed = composerAuthorSeed(["P", "B", "C"], "P", false);
+    expect(seed).toEqual({
+      onBehalfOfMemberId: undefined,
+      coAuthorIds: ["B", "C"],
+      presentingMemberId: "P",
+      keptMemberId: null,
+    });
+    expect(
+      composerAuthorMemberIds(seed.coAuthorIds, seed.keptMemberId),
+    ).toEqual(["B", "C"]);
+  });
+
+  it("keeps a co-author who edits someone else's draft", () => {
+    const seed = composerAuthorSeed(["P", "B", "C"], "B", false);
+    expect(seed.coAuthorIds).toEqual(["C"]);
+    expect(seed.presentingMemberId).toBe("P");
+    expect(seed.keptMemberId).toBe("B");
+    expect(
+      composerAuthorMemberIds(seed.coAuthorIds, seed.keptMemberId),
+    ).toEqual(["C", "B"]);
+    // Removing every visible co-author still sends the editor's own member.
+    expect(composerAuthorMemberIds([], seed.keptMemberId)).toEqual(["B"]);
+  });
+
+  it("edits on behalf of the presenting member when not an author", () => {
+    const moderator = composerAuthorSeed(["P", "B"], "M", true);
+    expect(moderator.onBehalfOfMemberId).toBe("P");
+    expect(moderator.coAuthorIds).toEqual(["B"]);
+    expect(moderator.keptMemberId).toBeNull();
+    expect(
+      composerAuthorMemberIds(moderator.coAuthorIds, moderator.keptMemberId),
+    ).toEqual(["B"]);
+
+    const other = composerAuthorSeed(["P", "B"], null, false);
+    expect(other.onBehalfOfMemberId).toBeUndefined();
+    expect(other.coAuthorIds).toEqual(["B"]);
+    expect(other.keptMemberId).toBeNull();
+  });
+
+  it("starts empty for a new amendment", () => {
+    expect(composerAuthorSeed([], "P", true)).toEqual({
+      onBehalfOfMemberId: undefined,
+      coAuthorIds: [],
+      presentingMemberId: null,
+      keptMemberId: null,
+    });
+  });
+});
+
+describe("composer sync", () => {
+  const t1 = "2026-11-01T10:00:00.000Z";
+  const t2 = "2026-11-01T10:05:00.000Z";
+  const remote = (
+    updatedAt: string,
+    status: AmendmentDto["status"] = "draft",
+  ) => ({ id: "d1", status, updatedAt }) as const;
+
+  it("compares versions strictly by time", () => {
+    expect(isNewerAmendmentVersion(t2, t1)).toBe(true);
+    expect(isNewerAmendmentVersion(t1, t2)).toBe(false);
+    expect(isNewerAmendmentVersion(t1, t1)).toBe(false);
+    expect(isNewerAmendmentVersion(null, t1)).toBe(false);
+    expect(isNewerAmendmentVersion("nope", t1)).toBe(false);
+  });
+
+  it("never adopts a newer stored copy silently", () => {
+    const base = { draftId: "d1", token: t1, conflicted: false };
+    expect(composerSyncState({ ...base, remote: remote(t1) })).toBe("in_sync");
+    // An older copy landing after the composer's own save is not a conflict.
+    expect(composerSyncState({ ...base, token: t2, remote: remote(t1) })).toBe(
+      "in_sync",
+    );
+    expect(composerSyncState({ ...base, remote: remote(t2) })).toBe(
+      "remote_newer",
+    );
+    expect(
+      composerSyncState({ ...base, remote: remote(t2, "submitted") }),
+    ).toBe("not_editable");
+    expect(
+      composerSyncState({ ...base, remote: remote(t1, "submitted") }),
+    ).toBe("not_editable");
+    // The list may briefly lack a draft just created: not a conflict yet.
+    expect(composerSyncState({ ...base, remote: null })).toBe("in_sync");
+  });
+
+  it("waits for the stored copy after a refused save", () => {
+    const base = { draftId: "d1", token: t1, conflicted: true };
+    expect(composerSyncState({ ...base, remote: remote(t1) })).toBe("conflict");
+    expect(composerSyncState({ ...base, remote: remote(t2) })).toBe(
+      "remote_newer",
+    );
+    expect(composerSyncState({ ...base, remote: null })).toBe("not_editable");
+    expect(
+      composerSyncState({ ...base, remote: remote(t1, "withdrawn") }),
+    ).toBe("not_editable");
+  });
+
+  it("ends the edit once the document stops admitting amendments", () => {
+    expect(
+      composerSyncState({
+        draftId: "d1",
+        token: t1,
+        remote: remote(t1),
+        conflicted: true,
+        documentOpen: false,
+      }),
+    ).toBe("not_editable");
+  });
+
+  it("has nothing to sync before the first save", () => {
+    expect(
+      composerSyncState({
+        draftId: null,
+        token: null,
+        remote: null,
+        conflicted: false,
+      }),
+    ).toBe("in_sync");
+  });
+});
+
+describe("history version", () => {
+  const member = (id: string) => ({
+    id,
+    acronym: id,
+    name: id,
+    kind: "asociado" as const,
+  });
+
+  it("changes with positions, acceptances and relations", () => {
+    const plain = amendment("a1", []);
+    const v0 = amendmentHistoryVersion(plain, []);
+    expect(amendmentHistoryVersion(plain, [])).toBe(v0);
+
+    const positioned = amendment("a1", [], {
+      position: {
+        position: "accept",
+        comment: null,
+        updatedAt: "2026-11-01T11:00:00.000Z",
+      },
+    });
+    expect(amendmentHistoryVersion(positioned, [])).not.toBe(v0);
+
+    const pending = amendment("a1", [], {
+      acceptances: [
+        {
+          member: member("m1"),
+          role: "author",
+          decision: "pending",
+          decidedAt: null,
+        },
+      ],
+    });
+    const accepted = amendment("a1", [], {
+      acceptances: [
+        {
+          member: member("m1"),
+          role: "author",
+          decision: "accepted",
+          decidedAt: "2026-11-01T12:00:00.000Z",
+        },
+      ],
+    });
+    expect(amendmentHistoryVersion(accepted, [])).not.toBe(
+      amendmentHistoryVersion(pending, []),
+    );
+
+    expect(amendmentHistoryVersion(plain, ["r1"])).not.toBe(v0);
+    expect(amendmentHistoryVersion(plain, ["r2", "r1"])).toBe(
+      amendmentHistoryVersion(plain, ["r1", "r2"]),
+    );
   });
 });

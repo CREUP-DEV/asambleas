@@ -7,7 +7,6 @@ import {
   type DocumentKind,
   type Majority,
 } from "~~/shared/constants/domain";
-import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type {
   AgendaItemDto,
   AssemblyDto,
@@ -18,13 +17,14 @@ import type {
 import { formatDateTime, toDate } from "~/utils/format";
 
 /**
- * Metadata of a document before publication: title, summary, kind, agenda
- * item, proponent, amendable / voted / majority and the amendment window
- * override. Sends only the fields that changed, with `updatedAt`.
+ * Metadata of a document: title, summary, kind, agenda item, proponent,
+ * amendable / voted / majority and the amendment window override. Sends only
+ * the fields that changed, with `updatedAt`.
  *
- * Presenters may change title, summary, kind and agenda item; the server
- * gives them the defaults of the kind. Everything else needs
- * document:manage and is read-only otherwise.
+ * Presenters may change title, summary, kind and agenda item of their draft;
+ * the server gives them the defaults of the kind. Everything else needs
+ * document:manage (`document.can.manage`) and is read-only otherwise.
+ * Managers keep this form after publication, when the text is frozen.
  *
  * Emits `saved` with the updated DocumentDto (store it), and `stale` after an
  * optimistic-lock conflict (refetch the document; the form then reloads).
@@ -45,12 +45,11 @@ const dirty = defineModel<boolean>("dirty", { default: false });
 const { t, locale } = useI18n();
 const toast = useToast();
 const { send, notifyError, isConflict } = useApi();
-const { can } = useMe();
 
 const TITLE_MAX = 300;
 const SUMMARY_MAX = 5_000;
 
-const manager = computed(() => can(PERMISSION_KEYS.DOCUMENT_MANAGE));
+const manager = computed(() => props.document.can.manage);
 const isFile = computed(() => props.document.format === "file");
 
 interface FormState {
@@ -81,17 +80,10 @@ function sameInstant(a: string | null, b: string | null): boolean {
 const calendarOpensAt = computed(() => milestoneAt("amendments_open"));
 const calendarClosesAt = computed(() => milestoneAt("amendments_close"));
 
-/**
- * The DTO only carries the effective window (override over calendar), so an
- * override is detected as a value that differs from the calendar.
- */
+/** Form state from the stored document (the override as stored, null = calendar). */
 function snapshot(document: DocumentDto): FormState {
-  const opensAt = sameInstant(document.window.opensAt, calendarOpensAt.value)
-    ? null
-    : document.window.opensAt;
-  const closesAt = sameInstant(document.window.closesAt, calendarClosesAt.value)
-    ? null
-    : document.window.closesAt;
+  const opensAt = document.amendmentsOpenAt;
+  const closesAt = document.amendmentsCloseAt;
   return {
     title: document.title,
     summary: document.summary ?? "",
@@ -172,11 +164,6 @@ watch(
     }
   },
 );
-
-// Settings that depend on the calendar: re-detect the override.
-watch([calendarOpensAt, calendarClosesAt], () => {
-  if (!dirty.value) resetForm();
-});
 
 // Kind defaults ---------------------------------------------------------------
 

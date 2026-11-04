@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import type { AmendmentDto } from "~~/shared/types/api";
+import type { AcceptanceDto, AmendmentDto } from "~~/shared/types/api";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 
 /**
- * Parties of a transactional and their answers. The Mesa records an answer
- * given in the room with the "accepted in the room" switch; switching it off
- * records a rejection.
+ * Parties of a transactional and their answers. The Mesa records the answer
+ * each party gives in the room with an explicit accept or reject button, so
+ * a pending party can be recorded as rejecting it directly, and a recorded
+ * answer can be corrected. Every button names its party.
  */
 const props = defineProps<{ amendment: AmendmentDto }>();
 
@@ -25,12 +26,21 @@ function busyFor(memberId: string): boolean {
   );
 }
 
-function onToggle(memberId: string, value: boolean): void {
-  void session.recordAcceptance(
-    props.amendment.id,
-    memberId,
-    value ? "accepted" : "rejected",
-  );
+type Answer = "accepted" | "rejected";
+
+/** The answer being recorded for each party, to show it as loading. */
+const sending = ref<Record<string, Answer>>({});
+
+async function answer(party: AcceptanceDto, decision: Answer): Promise<void> {
+  const memberId = party.member.id;
+  if (party.decision === decision || busyFor(memberId)) return;
+  sending.value = { ...sending.value, [memberId]: decision };
+  try {
+    await session.recordAcceptance(props.amendment.id, memberId, decision);
+  } finally {
+    const { [memberId]: _done, ...rest } = sending.value;
+    sending.value = rest;
+  }
 }
 </script>
 
@@ -64,14 +74,42 @@ function onToggle(memberId: string, value: boolean): void {
           size="sm"
           class="ms-auto"
         />
-        <USwitch
-          :model-value="party.decision === 'accepted'"
-          :label="t('session.acceptance.inRoom')"
-          :loading="busyFor(party.member.id)"
-          :disabled="decided || busyFor(party.member.id)"
-          size="sm"
-          @update:model-value="(value) => onToggle(party.member.id, value)"
-        />
+        <UFieldGroup
+          size="xs"
+          role="group"
+          :aria-label="
+            t('session.acceptance.answerFor', { member: party.member.acronym })
+          "
+        >
+          <UButton
+            icon="i-lucide-check"
+            color="success"
+            :variant="party.decision === 'accepted' ? 'solid' : 'outline'"
+            :aria-pressed="party.decision === 'accepted'"
+            :label="
+              t('amendment.acceptances.recordAccept', {
+                member: party.member.acronym,
+              })
+            "
+            :loading="sending[party.member.id] === 'accepted'"
+            :disabled="decided || busyFor(party.member.id)"
+            @click="answer(party, 'accepted')"
+          />
+          <UButton
+            icon="i-lucide-x"
+            color="error"
+            :variant="party.decision === 'rejected' ? 'solid' : 'outline'"
+            :aria-pressed="party.decision === 'rejected'"
+            :label="
+              t('amendment.acceptances.recordReject', {
+                member: party.member.acronym,
+              })
+            "
+            :loading="sending[party.member.id] === 'rejected'"
+            :disabled="decided || busyFor(party.member.id)"
+            @click="answer(party, 'rejected')"
+          />
+        </UFieldGroup>
       </li>
     </ul>
   </section>

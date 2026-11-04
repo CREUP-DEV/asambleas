@@ -138,7 +138,10 @@ time, even when one office plays several roles:
 - **Transactionals**: `amendment_sources` links a transactional to 1..N parent
   amendments. `amendment_acceptances` holds one row per party (each parent's
   authors and, by default, the document proponent). It can be voted only once
-  every party accepted. Approving it marks its parents `transacted`.
+  every party accepted. Approving it marks its parents `transacted` and, when
+  it is built over another transactional, everything that one absorbs too.
+  Its whole lineage must still be open when it is approved, so a parent and
+  its transactional never both end up approved.
 - **Events**: `events` is an append-only log (`entity`, `type`, `payload`,
   `actor`, `at`) that gives the immutable history and feeds live updates.
 
@@ -176,12 +179,18 @@ the milestones as a print view and a PDF.
 
 - Assembly `status`: `draft`, `convened`, `in_session`, `closed`.
   `agendaFinalizedAt` marks the final agenda.
-- Per-assembly policies, with defaults from the research: who sees submitted
-  amendments (default: authors and managers until the window closes, then
-  everyone), who sees proponent positions, whether accepted amendments need a
-  vote, the tie rule, and the majority denominator.
+- Per-assembly policies, with defaults from the research: who sees presented
+  amendments (default: authors, reviewers and the Mesa until the window
+  closes, then everyone; they are also public when there is no close date and
+  once the session starts), who sees proponent positions, whether accepted
+  amendments need a vote, the tie rule, and the majority denominator. Drafts
+  of documents and amendments stay private to their authors and managers.
 - `live_state` (one row per assembly): current agenda item, document and
-  amendment under debate, plus the last recorded vote.
+  amendment under debate, plus the last recorded vote. The server projects
+  every vote it records (amendment outcome, admission, final vote) and stops
+  projecting it when it is voided (amendment reopened, final vote annulled).
+- A wrongly recorded final vote can be annulled while the assembly is open:
+  the vote row and the consolidated version stay for the record.
 - Live updates: mutations `pg_notify('assembly_events', ...)`. A Nitro plugin
   `LISTEN`s and fans out to SSE streams at `GET /api/assemblies/[id]/live`.
   Events carry ids only; clients refetch through the normal, permission-checked

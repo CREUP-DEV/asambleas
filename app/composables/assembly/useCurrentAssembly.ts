@@ -2,6 +2,7 @@ import type { ComputedRef, InjectionKey, Ref } from "vue";
 import type { AgendaDto, AssemblyDto, LiveEventDto } from "~~/shared/types/api";
 import { APP_TIME_ZONE, intlLocale, toDate } from "~/utils/format";
 import type { DateInput } from "~/utils/format";
+import { keepLastGoodData, useStaleDataNotice } from "../fetch/lastGoodData";
 
 /**
  * The assembly shown by the hub page (app/pages/asambleas/[assembly].vue)
@@ -11,13 +12,22 @@ import type { DateInput } from "~/utils/format";
  * connection of the assembly, and fans its events out to the section pages
  * that subscribe with `onLive`. Section pages must not open their own
  * `useAssemblyLive` stream: one per tab is enough.
+ *
+ * A failed refresh never takes the assembly away once it has loaded: the
+ * last good DTO stays (see keepLastGoodData), so the open section, its
+ * dialogs and unsaved input survive, and the live stream stays connected.
  */
 
 export type AssemblyLiveHandler = (events: LiveEventDto[]) => void;
 
 export interface CurrentAssemblyContext {
-  /** The loaded assembly; null only while loading or after an error. */
+  /**
+   * The loaded assembly; null only until it first loads, or when it is
+   * gone (404). A failed refresh keeps the last good DTO.
+   */
   assembly: Readonly<Ref<AssemblyDto | null>>;
+  /** True while the last refresh failed and the last good DTO is shown. */
+  stale: Readonly<Ref<boolean>>;
   /** Canonical slug ("80-ago"), or the route param until the DTO loads. */
   slug: ComputedRef<string>;
   /** "/api/assemblies/<id>" (the route param until the DTO loads). */
@@ -66,6 +76,9 @@ function touchesAssembly(event: LiveEventDto): boolean {
 export interface ProvideCurrentAssemblyOptions {
   /** The fetched DTO (the `data` ref of useFetch). */
   data: Ref<AssemblyDto | null | undefined>;
+  /** The `status` and `error` refs of the same useFetch. */
+  status: Readonly<Ref<string>>;
+  error: Readonly<Ref<unknown>>;
   pending: Readonly<Ref<boolean>>;
   refresh: () => Promise<void>;
   /** The `[assembly]` route param (slug or id). */
@@ -87,8 +100,16 @@ export function provideCurrentAssembly(
     () => null,
   );
 
+  // The route param never changes for a mounted hub (another assembly
+  // mounts another hub); the reset only guards against reusing one.
+  const lastGood = keepLastGoodData(
+    { data: options.data, status: options.status, error: options.error },
+    { resetOn: options.routeParam },
+  );
+  useStaleDataNotice(lastGood.stale);
+
   const assembly = computed<AssemblyDto | null>(
-    () => options.data.value ?? null,
+    () => lastGood.data.value ?? null,
   );
   const slug = computed(
     () => assembly.value?.slug ?? options.routeParam() ?? "",
@@ -120,6 +141,7 @@ export function provideCurrentAssembly(
 
   const handlers = new Set<AssemblyLiveHandler>();
 
+  // Keyed on the kept assembly, so a failed refresh never closes the stream.
   const live = useAssemblyLive(
     () => assembly.value?.id,
     (events) => {
@@ -152,6 +174,7 @@ export function provideCurrentAssembly(
 
   const context: CurrentAssemblyContext = {
     assembly,
+    stale: lastGood.stale,
     slug,
     apiBase,
     basePath,
@@ -159,7 +182,7 @@ export function provideCurrentAssembly(
     pending: options.pending,
     refresh: options.refresh,
     setAssembly: (dto) => {
-      options.data.value = dto;
+      lastGood.data.value = dto;
     },
     onLive,
     live,
@@ -189,6 +212,7 @@ export function useCurrentAssembly(): CurrentAssemblyContext {
   );
   return {
     assembly,
+    stale: readonly(ref(false)),
     slug,
     apiBase: computed(
       () => `/api/assemblies/${encodeURIComponent(shared.value?.id ?? "")}`,
@@ -210,6 +234,10 @@ export function useCurrentAssembly(): CurrentAssemblyContext {
  * The agenda of the current assembly (flat items plus visible documents),
  * shared by the overview, agenda and convocatoria pages under one key and
  * refreshed on live events. Awaitable, like useFetch.
+ *
+ * `data` keeps the last good agenda when a refresh fails (`stale` is then
+ * true), so the tree and any dialog open on it stay. It stays writable for
+ * optimistic updates and their rollbacks.
  */
 export function useAssemblyAgenda() {
   const { assembly, apiBase, onLive } = useCurrentAssembly();
@@ -217,12 +245,29 @@ export function useAssemblyAgenda() {
     key: computed(() => `assembly-agenda-${assembly.value?.id ?? "none"}`),
     dedupe: "defer",
   });
+  const { data, stale } = keepLastGoodData(result, {
+    resetOn: () => assembly.value?.id,
+  });
+  useStaleDataNotice(stale);
   onLive((events) => {
     if (events.some((event) => !IGNORED_LIVE_TYPES.has(event.type))) {
       void result.refresh();
     }
   });
-  return result;
+  const agenda = {
+    data,
+    stale,
+    pending: result.pending,
+    status: result.status,
+    error: result.error,
+    refresh: result.refresh,
+    execute: result.execute,
+    clear: result.clear,
+  };
+  return Object.assign(
+    Promise.resolve(result).then(() => agenda),
+    agenda,
+  );
 }
 
 // Formatting --------------------------------------------------------------

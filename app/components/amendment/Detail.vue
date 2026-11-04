@@ -6,6 +6,7 @@ import { touchedBlockIds } from "~~/shared/utils/content/ops";
 import {
   amendmentErrorKey,
   amendmentErrorReasons,
+  amendmentHistoryVersion,
   type AmendmentOverlap,
   type AmendmentRelationView,
 } from "~/composables/amendment/workspace";
@@ -30,8 +31,10 @@ const props = withDefaults(
     overlaps?: AmendmentOverlap[];
     /** Show the close button (off inside a slideover, which has its own). */
     closable?: boolean;
+    /** GET .../decisions of the assembly, for admission votes in the history. */
+    decisionsUrl?: string;
   }>(),
-  { overlaps: () => [], closable: true },
+  { overlaps: () => [], closable: true, decisionsUrl: undefined },
 );
 
 const emit = defineEmits<{
@@ -70,9 +73,12 @@ const decided = computed(
     props.amendment.status !== "draft" &&
     props.amendment.status !== "submitted",
 );
+// The shared clock ticks every minute, so a window that closes while the
+// page is open is seen as closed, and hydration matches the server.
+const now = useAppNow();
 const windowClosed = computed(() => {
   const closesAt = toDate(props.document.window.closesAt);
-  return Boolean(closesAt && closesAt.getTime() <= Date.now());
+  return Boolean(closesAt && closesAt.getTime() <= now.value);
 });
 const canManageRelations = computed(
   () =>
@@ -100,6 +106,14 @@ const where = computed(() => {
 
 const presenting = computed(() => props.amendment.authors[0] ?? null);
 const coAuthors = computed(() => props.amendment.authors.slice(1));
+
+/** Positions, acceptances and relations do not move updatedAt: fold them in. */
+const historyVersion = computed(() =>
+  amendmentHistoryVersion(
+    props.amendment,
+    props.relations.map((view) => view.relation.id),
+  ),
+);
 
 function handleError(error: unknown, fallbackKey: string): void {
   reasons.value = amendmentErrorReasons(error);
@@ -451,7 +465,11 @@ async function remove(): Promise<void> {
       @select="emit('select', $event)"
     />
 
-    <AmendmentHistory :url="url" :version="amendment.updatedAt" />
+    <AmendmentHistory
+      :url="url"
+      :version="historyVersion"
+      :decisions-url="decisionsUrl"
+    />
 
     <footer
       v-if="

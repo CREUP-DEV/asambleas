@@ -172,7 +172,7 @@ function documentPath(document: DocumentSummaryDto): string {
     </div>
 
     <UAlert
-      v-else-if="error"
+      v-else-if="error && !agenda"
       color="error"
       variant="subtle"
       icon="i-lucide-circle-alert"

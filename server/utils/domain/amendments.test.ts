@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
 
 // Only the pure helpers are tested here: stub every module that touches the
@@ -16,11 +16,17 @@ vi.mock("h3", () => ({
 vi.mock("../../db", () => ({ db: {} }));
 vi.mock("./actor", () => ({
   actsFor: vi.fn(),
+  canManageAssemblies: vi.fn(),
+  canManageDocuments: vi.fn(),
   canModerate: vi.fn(),
   canReviewAmendments: vi.fn(),
   requireActor: vi.fn(),
 }));
-vi.mock("./documents", () => ({ loadMilestones: vi.fn() }));
+vi.mock("./documents", () => ({
+  clearLiveVote: vi.fn(),
+  loadMilestones: vi.fn(),
+  pointLiveVote: vi.fn(),
+}));
 vi.mock("./events", () => ({ recordEvent: vi.fn() }));
 vi.mock("./resolvers", () => ({
   resolveAmendment: vi.fn(),
@@ -28,6 +34,7 @@ vi.mock("./resolvers", () => ({
   resolveDocument: vi.fn(),
 }));
 vi.mock("./visibility", () => ({
+  amendmentsPublic: vi.fn(),
   canSeeAmendment: vi.fn(),
   canSeePositions: vi.fn(),
   isDocumentProponent: vi.fn(),
@@ -38,14 +45,23 @@ const {
   amendmentCapabilities,
   amendmentSortKey,
   buildAcceptanceParties,
+  buildSourceMap,
+  collectAncestors,
   computeApprovalWarnings,
   evaluateVoteInput,
   insertedBlockIds,
+  lineageToRestore,
   nextTransactionalCode,
   prepareAmendmentOps,
   reIdInsertedBlocks,
   redactAmendmentEventPayload,
+  requestedDraftAuthorIds,
+  unauthorizedTransactionalAuthors,
 } = await import("./amendments");
+// The visibility rules are pure too; their actor helpers are the stubs above.
+const visibility =
+  await vi.importActual<typeof import("./visibility")>("./visibility");
+const actorHelpers = await import("./actor");
 
 const block = (id: string, text: string): Block => ({
   id,
@@ -415,5 +431,367 @@ describe("redactAmendmentEventPayload", () => {
     expect(
       redactAmendmentEventPayload("amendment_submitted", payload, false),
     ).toEqual(payload);
+  });
+});
+
+describe("nested transactional lineage", () => {
+  // T2 over T1 and C; T1 over A and B; T3 over A.
+  const sourceMap = buildSourceMap([
+    { transactionalId: "t1", sourceId: "a" },
+    { transactionalId: "t1", sourceId: "b" },
+    { transactionalId: "t2", sourceId: "t1" },
+    { transactionalId: "t2", sourceId: "c" },
+    { transactionalId: "t3", sourceId: "a" },
+  ]);
+
+  it("groups the sources of each transactional", () => {
+    expect(sourceMap.get("t1")).toEqual(["a", "b"]);
+    expect(sourceMap.get("a")).toBeUndefined();
+  });
+
+  it("collects every absorbed amendment at any depth", () => {
+    expect(collectAncestors(sourceMap, ["t2"])).toEqual(["t1", "c", "a", "b"]);
+    expect(collectAncestors(sourceMap, ["t1", "c"])).toEqual(["a", "b"]);
+    expect(collectAncestors(sourceMap, ["a"])).toEqual([]);
+  });
+
+  it("survives cycles", () => {
+    const cyclic = buildSourceMap([
+      { transactionalId: "x", sourceId: "y" },
+      { transactionalId: "y", sourceId: "x" },
+    ]);
+    expect(collectAncestors(cyclic, ["x"])).toEqual(["y", "x"]);
+  });
+
+  it("restores the whole lineage on reopen", () => {
+    expect(lineageToRestore(sourceMap, "t2", []).sort()).toEqual([
+      "a",
+      "b",
+      "c",
+      "t1",
+    ]);
+  });
+
+  it("keeps what another approved transactional still absorbs", () => {
+    expect(lineageToRestore(sourceMap, "t2", ["t3"]).sort()).toEqual([
+      "b",
+      "c",
+      "t1",
+    ]);
+    // The reopened transactional itself never counts as another one.
+    expect(lineageToRestore(sourceMap, "t2", ["t2"]).sort()).toEqual([
+      "a",
+      "b",
+      "c",
+      "t1",
+    ]);
+  });
+});
+
+describe("requestedDraftAuthorIds", () => {
+  const input = {
+    authorMemberIds: ["p"],
+    onBehalfOfMemberId: undefined,
+    actorMemberId: "b",
+    presentingMemberId: "p",
+    currentAuthorIds: ["p", "b"],
+  };
+
+  it("keeps a co-author who edits a draft presented by another member", () => {
+    expect(requestedDraftAuthorIds(input)).toEqual(["p", "b"]);
+  });
+
+  it("leaves the request alone otherwise", () => {
+    expect(
+      requestedDraftAuthorIds({ ...input, authorMemberIds: undefined }),
+    ).toBeUndefined();
+    // resolveDraftAuthors always keeps the presenting member.
+    expect(requestedDraftAuthorIds({ ...input, actorMemberId: "p" })).toEqual([
+      "p",
+    ]);
+    // Not an author: a reviewer or the Mesa editing.
+    expect(
+      requestedDraftAuthorIds({ ...input, currentAuthorIds: ["p"] }),
+    ).toEqual(["p"]);
+    expect(
+      requestedDraftAuthorIds({ ...input, onBehalfOfMemberId: "q" }),
+    ).toEqual(["p"]);
+    expect(requestedDraftAuthorIds({ ...input, actorMemberId: null })).toEqual([
+      "p",
+    ]);
+  });
+
+  it("does not duplicate the actor", () => {
+    expect(
+      requestedDraftAuthorIds({ ...input, authorMemberIds: ["b", "p"] }),
+    ).toEqual(["b", "p"]);
+  });
+});
+
+describe("unauthorizedTransactionalAuthors", () => {
+  const input = {
+    actorMemberId: "me",
+    currentAuthorIds: ["me", "old"],
+    partyMemberIds: ["a1", "a2", null],
+  };
+
+  it("accepts the actor, current authors and the parties", () => {
+    expect(
+      unauthorizedTransactionalAuthors(["me", "old", "a1", "a2"], input),
+    ).toEqual([]);
+  });
+
+  it("lists anyone else", () => {
+    expect(
+      unauthorizedTransactionalAuthors(["me", "stranger", "a1"], input),
+    ).toEqual(["stranger"]);
+  });
+});
+
+describe("visibility", () => {
+  const { amendmentsPublic, canSeeAmendment, canSeeDocument } = visibility;
+  type Actor = Parameters<typeof canSeeAmendment>[0];
+  type AmendmentInput = Parameters<typeof canSeeAmendment>[1];
+  type DocumentInput = Parameters<typeof canSeeDocument>[1];
+  type Role = "member" | "moderator" | "reviewer" | "manager";
+
+  const closesAt = new Date("2026-03-10T12:00:00Z");
+  const before = new Date("2026-03-09T12:00:00Z");
+  const after = new Date("2026-03-11T12:00:00Z");
+
+  const actor = (role: Role, memberId: string | null = "m1") =>
+    ({ user: { id: `user-${role}` }, memberId, role }) as unknown as Actor;
+  const roleOf = (value: Actor) => (value as unknown as { role: Role }).role;
+
+  beforeAll(() => {
+    vi.mocked(actorHelpers.actsFor).mockImplementation((who, ids) =>
+      Boolean(who.memberId && ids.includes(who.memberId)),
+    );
+    vi.mocked(actorHelpers.canModerate).mockImplementation(
+      (who) => roleOf(who) === "moderator",
+    );
+    vi.mocked(actorHelpers.canReviewAmendments).mockImplementation((who) =>
+      ["reviewer", "manager"].includes(roleOf(who)),
+    );
+    vi.mocked(actorHelpers.canManageDocuments).mockImplementation(
+      (who) => roleOf(who) === "manager",
+    );
+  });
+
+  afterAll(() => {
+    vi.mocked(actorHelpers.actsFor).mockReset();
+    vi.mocked(actorHelpers.canModerate).mockReset();
+    vi.mocked(actorHelpers.canReviewAmendments).mockReset();
+    vi.mocked(actorHelpers.canManageDocuments).mockReset();
+  });
+
+  describe("amendmentsPublic", () => {
+    it("follows the close date before the session", () => {
+      expect(amendmentsPublic({ closesAt }, "convened", before)).toBe(false);
+      expect(amendmentsPublic({ closesAt }, "convened", after)).toBe(true);
+    });
+
+    it("is public without a close date", () => {
+      expect(amendmentsPublic({ closesAt: null }, "convened", before)).toBe(
+        true,
+      );
+    });
+
+    it("is public once the session starts, whatever the date", () => {
+      expect(amendmentsPublic({ closesAt }, "in_session", before)).toBe(true);
+      expect(amendmentsPublic({ closesAt }, "closed", before)).toBe(true);
+    });
+  });
+
+  describe("canSeeAmendment", () => {
+    const afterClose = {
+      settings: {
+        amendmentVisibility: "after_close",
+      } as Parameters<typeof canSeeAmendment>[2]["settings"],
+      windowClosed: false,
+    };
+    const amendment = (
+      status: AmendmentInput["status"],
+      extra: Partial<AmendmentInput> = {},
+    ): AmendmentInput => ({
+      status,
+      late: false,
+      createdByUserId: "user-author",
+      authorMemberIds: ["author"],
+      partyMemberIds: [],
+      ...extra,
+    });
+
+    it("hides every presented amendment while the window is open", () => {
+      for (const status of [
+        "submitted",
+        "withdrawn",
+        "inadmissible",
+        "lapsed",
+      ] as const) {
+        expect(
+          canSeeAmendment(actor("member"), amendment(status), afterClose),
+        ).toBe(false);
+        expect(
+          canSeeAmendment(
+            actor("member", "author"),
+            amendment(status),
+            afterClose,
+          ),
+        ).toBe(true);
+        expect(
+          canSeeAmendment(actor("moderator"), amendment(status), afterClose),
+        ).toBe(true);
+      }
+    });
+
+    it("shows a transactional to its parties", () => {
+      expect(
+        canSeeAmendment(
+          actor("member", "party"),
+          amendment("submitted", { partyMemberIds: ["party"] }),
+          afterClose,
+        ),
+      ).toBe(true);
+    });
+
+    it("shows presented amendments to everyone once public", () => {
+      expect(
+        canSeeAmendment(actor("member"), amendment("withdrawn"), {
+          ...afterClose,
+          windowClosed: true,
+        }),
+      ).toBe(true);
+    });
+
+    it("keeps drafts from the Mesa alone", () => {
+      expect(
+        canSeeAmendment(actor("moderator"), amendment("draft"), afterClose),
+      ).toBe(false);
+      expect(
+        canSeeAmendment(actor("reviewer"), amendment("draft"), afterClose),
+      ).toBe(true);
+      expect(
+        canSeeAmendment(
+          actor("moderator"),
+          amendment("draft", { createdByUserId: "user-moderator" }),
+          afterClose,
+        ),
+      ).toBe(true);
+    });
+  });
+
+  describe("seesAllPresentedAmendments", () => {
+    const { seesAllPresentedAmendments } = visibility;
+    const options = (
+      amendmentVisibility: "after_close" | "immediate",
+      windowClosed: boolean,
+    ) => ({
+      settings: { amendmentVisibility } as Parameters<
+        typeof seesAllPresentedAmendments
+      >[1]["settings"],
+      windowClosed,
+    });
+
+    it("is false only for others under after_close before publication", () => {
+      expect(
+        seesAllPresentedAmendments(
+          actor("member"),
+          options("after_close", false),
+        ),
+      ).toBe(false);
+      expect(
+        seesAllPresentedAmendments(
+          actor("member"),
+          options("after_close", true),
+        ),
+      ).toBe(true);
+      expect(
+        seesAllPresentedAmendments(
+          actor("member"),
+          options("immediate", false),
+        ),
+      ).toBe(true);
+    });
+
+    it("lets reviewers and the Mesa see everything presented", () => {
+      for (const role of ["moderator", "reviewer", "manager"] as const) {
+        expect(
+          seesAllPresentedAmendments(
+            actor(role),
+            options("after_close", false),
+          ),
+        ).toBe(true);
+      }
+    });
+  });
+
+  describe("decisions", () => {
+    const { decisionAmendmentIds, filterDecisionsByAmendment } = visibility;
+    type Decision = Parameters<typeof filterDecisionsByAmendment>[0][number];
+    const decision = (
+      id: string,
+      kind: Decision["kind"],
+      subjectIds: string[],
+    ): Decision => ({
+      id,
+      kind,
+      method: "mesa",
+      subjectIds,
+      note: `nota ${id}`,
+      vote: null,
+      decidedAt: "2026-03-10T12:00:00.000Z",
+    });
+    const list = [
+      decision("d1", "inadmission", ["hidden"]),
+      decision("d2", "admit_late", ["hidden", "mine"]),
+      decision("d3", "agenda_change", ["item"]),
+      decision("d4", "inadmission", ["mine"]),
+    ];
+    const isVisible = (id: string) => id === "mine";
+
+    it("collects only the amendment ids of admission decisions", () => {
+      expect(decisionAmendmentIds(list)).toEqual(["hidden", "mine"]);
+    });
+
+    it("drops decisions that name only hidden amendments", () => {
+      const result = filterDecisionsByAmendment(list, isVisible);
+      expect(result.map((item) => item.id)).toEqual(["d2", "d3", "d4"]);
+    });
+
+    it("keeps the visible subjects and the note of mixed decisions", () => {
+      const [mixed] = filterDecisionsByAmendment(list, isVisible);
+      expect(mixed).toMatchObject({
+        id: "d2",
+        subjectIds: ["mine"],
+        note: "nota d2",
+      });
+    });
+
+    it("leaves other kinds and fully visible decisions untouched", () => {
+      const result = filterDecisionsByAmendment(list, isVisible);
+      expect(result[1]).toBe(list[2]);
+      expect(result[2]).toBe(list[3]);
+    });
+  });
+
+  describe("canSeeDocument", () => {
+    const document = (status: DocumentInput["status"]): DocumentInput => ({
+      status,
+      proponentMemberId: "proponent",
+      submittedByUserId: "user-proponent",
+    });
+
+    it("keeps drafts from the Mesa but shows it submissions", () => {
+      expect(canSeeDocument(actor("moderator"), document("draft"))).toBe(false);
+      expect(canSeeDocument(actor("moderator"), document("submitted"))).toBe(
+        true,
+      );
+      expect(canSeeDocument(actor("manager"), document("draft"))).toBe(true);
+      expect(
+        canSeeDocument(actor("member", "proponent"), document("draft")),
+      ).toBe(true);
+      expect(canSeeDocument(actor("member"), document("published"))).toBe(true);
+    });
   });
 });

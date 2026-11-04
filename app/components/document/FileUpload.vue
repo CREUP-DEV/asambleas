@@ -5,7 +5,8 @@ import type { DocumentDto } from "~~/shared/types/api";
  * The PDF of a `file` document: shows the current file with a link to open
  * it and a drop zone to upload or replace it (POST .../file, multipart
  * `file` plus `updatedAt`). Emits `uploaded` with the updated document, and
- * `stale` after an optimistic-lock conflict.
+ * `stale` after an optimistic-lock conflict. With `replaceable` false (the
+ * PDF was voted) only the current file shows.
  */
 const props = withDefaults(
   defineProps<{
@@ -13,8 +14,10 @@ const props = withDefaults(
     /** "/api/assemblies/{assembly}/documents/{document}" (slugs or ids). */
     documentApi: string;
     disabled?: boolean;
+    /** Show the drop zone to upload or replace the PDF. */
+    replaceable?: boolean;
   }>(),
-  { disabled: false },
+  { disabled: false, replaceable: true },
 );
 
 const emit = defineEmits<{
@@ -129,6 +132,7 @@ async function upload(selected: File): Promise<void> {
     />
 
     <UFileUpload
+      v-if="replaceable"
       v-model="file"
       accept="application/pdf,.pdf"
       variant="area"

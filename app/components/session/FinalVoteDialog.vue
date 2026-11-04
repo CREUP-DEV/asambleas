@@ -1,18 +1,24 @@
 <script setup lang="ts">
 import type { VoteInput } from "~~/shared/types/api";
 import type { ConsolidationConflict } from "~~/shared/types/content";
+import { VOTE_METHODS } from "~~/shared/constants/domain";
 import {
-  isSessionVoteReady,
+  isSessionFinalVoteReady,
   sessionCleanVote,
   sessionEmptyVote,
+  sessionFinalVoteResult,
   sessionVoteOutcome,
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 
 /**
- * Final vote on the whole text. The document's majority is the default.
- * When approved, the server consolidates the approved amendments; if they
- * cannot be applied together it answers 409 and the conflicts are listed.
+ * Final vote on the whole text. The document's majority is the default, and
+ * texts nobody opposes (minutes, for instance) can be approved by assent,
+ * without counts. Recording takes two steps: the Mesa checks the result
+ * before confirming it. When approved, the server consolidates the approved
+ * amendments; if they cannot be applied together it answers 409 and the
+ * conflicts are listed. An approved totality return blocks the vote: the
+ * text goes back to its proponent.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -25,10 +31,17 @@ const open = computed({
 });
 const document = computed(() => session.document.value);
 
+/** Every method, assent included: a text nobody opposes needs no count. */
+const FINAL_VOTE_METHODS = [...VOTE_METHODS];
+
 const vote = ref<VoteInput>(sessionEmptyVote("simple"));
 const serverConflicts = ref<ConsolidationConflict[]>([]);
 const serverUndecided = ref<string[]>([]);
 const serverTie = ref(false);
+const serverTotalityReturn = ref<string | null>(null);
+/** Second step: the result is shown for a last check before recording. */
+const confirming = ref(false);
+const summary = useTemplateRef<HTMLElement>("summary");
 
 watch(open, (isOpen) => {
   if (!isOpen) return;
@@ -36,7 +49,18 @@ watch(open, (isOpen) => {
   serverConflicts.value = [];
   serverUndecided.value = [];
   serverTie.value = false;
+  serverTotalityReturn.value = null;
+  confirming.value = false;
 });
+
+// Any change to the vote sends the Mesa back to the first step.
+watch(
+  vote,
+  () => {
+    confirming.value = false;
+  },
+  { deep: true },
+);
 
 const undecided = computed(() => session.undecided.value);
 const conflicts = computed(() =>
@@ -44,14 +68,22 @@ const conflicts = computed(() =>
     ? serverConflicts.value
     : session.preview.value.conflicts,
 );
+const totalityReturn = computed(
+  () => session.preview.value.totalityReturn?.id ?? serverTotalityReturn.value,
+);
 const outcome = computed(() =>
   sessionVoteOutcome(vote.value, session.settings.value),
 );
+const expected = computed(() =>
+  sessionFinalVoteResult(vote.value, outcome.value),
+);
+const assent = computed(() => vote.value.method === "assent");
 const blocked = computed(
   () =>
     !document.value ||
     undecided.value.length > 0 ||
-    !isSessionVoteReady(vote.value, outcome.value),
+    Boolean(totalityReturn.value) ||
+    !isSessionFinalVoteReady(vote.value, outcome.value),
 );
 
 function conflictText(conflict: ConsolidationConflict): string {
@@ -64,8 +96,24 @@ function conflictText(conflict: ConsolidationConflict): string {
     : t("session.preview.conflictInvalid", { code });
 }
 
-async function submit(): Promise<void> {
+/**
+ * Submitting the form (button or Enter in a count) only opens the check
+ * step. Recording needs the separate confirm button, so pressing Enter twice
+ * never records a vote.
+ */
+function review(): void {
   if (blocked.value) return;
+  confirming.value = true;
+  void nextTick(() => summary.value?.focus());
+}
+
+function cancelOrBack(close: () => void): void {
+  if (confirming.value) confirming.value = false;
+  else close();
+}
+
+async function record(): Promise<void> {
+  if (blocked.value || !confirming.value) return;
   const result = await session.finalVote({
     vote: sessionCleanVote(vote.value),
   });
@@ -73,9 +121,11 @@ async function submit(): Promise<void> {
     open.value = false;
     return;
   }
+  confirming.value = false;
   serverConflicts.value = result.conflicts;
   serverUndecided.value = result.undecided;
   serverTie.value = result.tie;
+  serverTotalityReturn.value = result.totalityReturn;
 }
 </script>
 
@@ -91,8 +141,19 @@ async function submit(): Promise<void> {
         v-if="document"
         id="session-final-vote-form"
         class="space-y-4"
-        @submit.prevent="submit"
+        @submit.prevent="review"
       >
+        <UAlert
+          v-if="totalityReturn"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-undo-2"
+          :title="
+            t('session.preview.totalityReturnBlocked', {
+              code: session.label(totalityReturn),
+            })
+          "
+        />
         <UAlert
           v-if="undecided.length > 0 || serverUndecided.length > 0"
           color="warning"
@@ -139,7 +200,54 @@ async function submit(): Promise<void> {
           :description="t('session.vote.tieRepeat')"
         />
 
-        <SessionVoteFields v-model="vote" :settings="session.settings.value" />
+        <SessionVoteFields
+          v-model="vote"
+          :settings="session.settings.value"
+          :methods="FINAL_VOTE_METHODS"
+        />
+
+        <div
+          v-if="confirming"
+          ref="summary"
+          tabindex="-1"
+          role="status"
+          class="rounded-lg border p-3 outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          :class="
+            expected === 'approved'
+              ? 'border-success/50 bg-success/10'
+              : 'border-error/50 bg-error/10'
+          "
+        >
+          <p class="text-highlighted font-semibold">
+            {{ t("session.finalVote.confirmTitle") }}
+          </p>
+          <p
+            class="text-default mt-1 flex flex-wrap items-center gap-2 text-sm"
+          >
+            <UBadge
+              :color="expected === 'approved' ? 'success' : 'error'"
+              variant="solid"
+              :label="t(`session.vote.result.${expected}`)"
+            />
+            <span class="tabular-nums">
+              {{
+                assent
+                  ? t("session.enums.approvalMethod.assent")
+                  : `${t(`session.enums.voteMethod.${vote.method}`)} · ${t(
+                      "session.card.voteCounts",
+                      {
+                        inFavor: vote.inFavor ?? 0,
+                        against: vote.against ?? 0,
+                        abstentions: vote.abstentions ?? 0,
+                      },
+                    )}`
+              }}
+            </span>
+          </p>
+          <p class="text-muted mt-2 text-xs">
+            {{ t("session.finalVote.confirmDescription") }}
+          </p>
+        </div>
       </form>
     </template>
     <template #footer="{ close }">
@@ -147,15 +255,25 @@ async function submit(): Promise<void> {
         <UButton
           color="neutral"
           variant="ghost"
-          :label="t('common.cancel')"
-          @click="close"
+          :label="confirming ? t('common.back') : t('common.cancel')"
+          @click="cancelOrBack(close)"
         />
         <UButton
+          v-if="confirming"
+          type="button"
+          icon="i-lucide-gavel"
+          :color="expected === 'approved' ? 'primary' : 'error'"
+          :label="t('session.finalVote.confirm')"
+          :loading="Boolean(session.busy.value['final-vote'])"
+          :disabled="blocked"
+          @click="record"
+        />
+        <UButton
+          v-else
           type="submit"
           form="session-final-vote-form"
           icon="i-lucide-gavel"
           :label="t('session.finalVote.submit')"
-          :loading="Boolean(session.busy.value['final-vote'])"
           :disabled="blocked"
         />
       </div>

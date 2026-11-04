@@ -14,6 +14,8 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
+/** Shared client clock: SSR-consistent, ticks every minute. */
+const appNow = useAppNow();
 
 // Re-evaluated when a countdown expires, so the banner flips on its own.
 const tick = ref(0);
@@ -34,7 +36,7 @@ const state = computed<BannerState | null>(() => {
     return null;
   }
   if (document.finalVote) return "voted";
-  const now = Date.now();
+  const now = appNow.value;
   const opensAt = toDate(document.window.opensAt);
   const closesAt = toDate(document.window.closesAt);
   if (opensAt && opensAt.getTime() > now) return "upcoming";

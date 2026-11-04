@@ -59,6 +59,7 @@ useHead({
 
 const isDesktop = useMediaQuery("(min-width: 1024px)");
 const textView = useTemplateRef<TextViewHandle>("textView");
+const workspaceBox = useTemplateRef<HTMLElement>("workspaceBox");
 
 // Document state ----------------------------------------------------------------
 
@@ -74,6 +75,25 @@ const canAmend = computed(
 );
 const finalText = computed(
   () => document.value?.consolidatedVersion?.blocks ?? null,
+);
+/** The working draft is edited on .../editar until the text is frozen. */
+const canEditDraft = computed(
+  () =>
+    Boolean(document.value?.can.edit) && document.value?.status !== "published",
+);
+/**
+ * Secretaría manages the document record there at every stage (metadata,
+ * amendment window, status), also once the text is frozen: published,
+ * withdrawn or postponed after publication.
+ */
+const canEditRecord = computed(
+  () => Boolean(document.value?.can.manage) && !canEditDraft.value,
+);
+/** Assembly decisions, to show how late amendments were admitted. */
+const decisionsUrl = computed(() =>
+  assembly.value
+    ? `/api/assemblies/${encodeURIComponent(assembly.value.id)}/decisions`
+    : undefined,
 );
 const labels = computed(() => blockLabels(base.value));
 
@@ -213,6 +233,13 @@ function openComposer(options: Partial<Omit<ComposerState, "key">>): void {
   detailOpen.value = false;
   textMode.value = "original";
   mobilePane.value = "amendments";
+  // The workspace is as tall as the hub's scroll area: bring all of it into
+  // view so the composer's action bar is on screen.
+  if (isDesktop.value) {
+    void nextTick(() =>
+      workspaceBox.value?.scrollIntoView({ block: "nearest" }),
+    );
+  }
 }
 
 function amendSelection(
@@ -225,6 +252,32 @@ function amendSelection(
 
 function closeComposer(): void {
   composer.value = null;
+}
+
+/** Loads the stored draft into a fresh composer (after a save conflict). */
+async function reloadComposer(): Promise<void> {
+  const key = composer.value?.key;
+  await refreshAll();
+  const current = composer.value;
+  // Closed, or another composer opened meanwhile: leave that one alone.
+  if (!current || current.key !== key) return;
+  // A refusal for the document or the assembly: reloading would not help.
+  if (
+    !isPublished.value ||
+    document.value?.finalVote ||
+    assembly.value?.status === "closed"
+  ) {
+    composer.value = null;
+    return;
+  }
+  const stored = current.draftId ? list.byId.value.get(current.draftId) : null;
+  if (current.draftId && stored?.status !== "draft") {
+    // Presented, withdrawn or deleted meanwhile: show it instead, if visible.
+    composer.value = null;
+    if (stored) selectAmendment(stored.id);
+    return;
+  }
+  composer.value = { ...current, key: (composerSeq += 1) };
 }
 
 function onComposerSaved(amendment: AmendmentDto): void {
@@ -480,13 +533,22 @@ const filteredBlockLabel = computed(() =>
     <template v-else>
       <DocumentHeader :document="document" :assembly="assembly">
         <UButton
-          v-if="document.can.edit && document.status !== 'published'"
+          v-if="canEditDraft"
           :to="documentPath('editar')"
           icon="i-lucide-pencil"
           color="neutral"
           variant="outline"
           size="sm"
           :label="t('workspace.editDraft')"
+        />
+        <UButton
+          v-else-if="canEditRecord"
+          :to="documentPath('editar')"
+          icon="i-lucide-file-cog"
+          color="neutral"
+          variant="outline"
+          size="sm"
+          :label="t('workspace.editRecord')"
         />
         <UButton
           v-if="isPublished"
@@ -576,8 +638,11 @@ const filteredBlockLabel = computed(() =>
           :aria-label="t('workspace.panes.label')"
         />
 
+        <!-- As tall as the hub body's scroll area (viewport minus navbar,
+             section toolbar and padding), like the session console. -->
         <div
-          class="border-default flex flex-col overflow-hidden rounded-lg border lg:h-[calc(100svh-3rem)] lg:min-h-[32rem] lg:flex-row"
+          ref="workspaceBox"
+          class="border-default flex flex-col overflow-hidden rounded-lg border lg:h-[calc(100dvh-var(--ui-header-height)-6.25rem)] lg:min-h-[32rem] lg:flex-row"
         >
           <!-- Text -->
           <UDashboardPanel
@@ -927,6 +992,7 @@ const filteredBlockLabel = computed(() =>
                 @saved="onComposerSaved"
                 @submitted="onComposerSubmitted"
                 @conflict="refreshAll()"
+                @reload="reloadComposer"
               />
 
               <!-- Detail (wide screens) -->
@@ -940,6 +1006,7 @@ const filteredBlockLabel = computed(() =>
                 :relations="list.relationsOf(selectedAmendment.id)"
                 :candidates="relationCandidates"
                 :overlaps="selectedOverlaps"
+                :decisions-url="decisionsUrl"
                 @close="closeDetail"
                 @select="selectAmendment"
                 @edit="onDetailEdit"
@@ -1076,6 +1143,7 @@ const filteredBlockLabel = computed(() =>
               :relations="list.relationsOf(selectedAmendment.id)"
               :candidates="relationCandidates"
               :overlaps="selectedOverlaps"
+              :decisions-url="decisionsUrl"
               :closable="false"
               @select="selectAmendment"
               @edit="onDetailEdit"

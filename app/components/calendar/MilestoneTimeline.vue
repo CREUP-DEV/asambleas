@@ -32,8 +32,9 @@ const MILESTONE_ICONS: Record<MilestoneKey, string> = {
   candidacies_close: "i-lucide-user-check",
 };
 
-// SSR and hydration agree on "now"; Countdown takes over on the client.
-const renderedAt = useState<number>("countdown-rendered-at", () => Date.now());
+// The shared clock: SSR and hydration agree on "now", then it ticks, so the
+// next milestone moves on while the page stays open.
+const now = useAppNow();
 
 interface MilestoneItem extends TimelineItem {
   at: string;
@@ -44,9 +45,8 @@ interface MilestoneItem extends TimelineItem {
 
 const items = computed<MilestoneItem[]>(() => {
   const sorted = [...props.milestones].sort((a, b) => a.at.localeCompare(b.at));
-  const now = renderedAt.value;
   const nextIndex = sorted.findIndex(
-    (milestone) => new Date(milestone.at).getTime() > now,
+    (milestone) => new Date(milestone.at).getTime() > now.value,
   );
   const list: MilestoneItem[] = sorted.map((milestone, index) => ({
     value: milestone.key,
@@ -66,7 +66,7 @@ const items = computed<MilestoneItem[]>(() => {
       date: formatDateTime(props.startDate, { locale: locale.value }),
       title: t("calendar.assemblyStart"),
       icon: "i-lucide-landmark",
-      upcoming: new Date(props.startDate).getTime() > now,
+      upcoming: new Date(props.startDate).getTime() > now.value,
       next: false,
       warned: false,
     });

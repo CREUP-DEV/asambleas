@@ -20,7 +20,8 @@ const { data, status, error, refresh } = await useFetch<AssemblyListDto>(
   { key: "home-assemblies", query: { page: 1 } },
 );
 
-const renderedAt = useState<number>("home-rendered-at", () => Date.now());
+// The shared clock: the greeting, the date and the upcoming list follow it.
+const now = useAppNow();
 
 const assemblies = computed(() => data.value?.items ?? []);
 
@@ -34,7 +35,7 @@ const upcoming = computed<AssemblySummaryDto[]>(() =>
       (item) =>
         item.status !== "in_session" &&
         item.status !== "closed" &&
-        new Date(item.endDate).getTime() >= renderedAt.value,
+        new Date(item.endDate).getTime() >= now.value,
     )
     .sort(
       (a, b) =>
@@ -59,7 +60,7 @@ const greetingKey = computed(() => {
       hour: "2-digit",
       hourCycle: "h23",
       timeZone: APP_TIME_ZONE,
-    }).format(new Date(renderedAt.value)),
+    }).format(new Date(now.value)),
   );
   if (hour >= 6 && hour < 14) return "home.greeting.morning";
   if (hour >= 14 && hour < 21) return "home.greeting.afternoon";
@@ -72,9 +73,7 @@ const greeting = computed(() =>
     : t(`${greetingKey.value}Anonymous`),
 );
 
-const today = computed(() =>
-  formatDate(renderedAt.value, { locale: locale.value }),
-);
+const today = computed(() => formatDate(now.value, { locale: locale.value }));
 
 const roleLabel = computed(() => {
   const role = me.value?.role ?? null;

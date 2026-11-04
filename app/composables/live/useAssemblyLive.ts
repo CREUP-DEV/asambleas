@@ -62,8 +62,10 @@ function dedupe(events: LiveEventDto[]): LiveEventDto[] {
  *   `{ type: "poll", entityType: "assembly", entityId }` event, meaning
  *   "refetch everything". It keeps trying the stream and stops polling as soon
  *   as the stream is back.
- * - After any reconnection a `poll` event is delivered too, since changes made
- *   while disconnected were never received.
+ * - Once the stream is ready a `poll` event is delivered too: after a
+ *   reconnection, since changes made while disconnected were never received,
+ *   and after the first connection, since changes made between the page's
+ *   own fetch (SSR or client) and the stream's `ready` were never sent.
  * - Client-only. Closes the stream when the id changes and when the calling
  *   scope (component) is disposed. An undefined id means "not connected".
  *
@@ -207,6 +209,9 @@ export function useAssemblyLive(
   function connect(id: string): void {
     teardown();
     activeId = id;
+    // The stream has no replay: anything recorded since the page fetched its
+    // data and before `ready` is lost, so resync once the stream is ready.
+    missedChanges = true;
     open(id, generation);
   }
 

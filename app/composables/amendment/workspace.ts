@@ -20,10 +20,7 @@ import type {
 } from "~~/shared/types/content";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { diffPassage } from "~~/shared/utils/content/diff";
-import {
-  indexBlocks,
-  touchedBlockIds,
-} from "~~/shared/utils/content/ops";
+import { indexBlocks, touchedBlockIds } from "~~/shared/utils/content/ops";
 import {
   findOverlaps,
   type OverlapKind,
@@ -618,6 +615,141 @@ export function seedComposerFromDraft(
     };
   }
   return { ...empty, mode: "passage", ...draftPassage(base, draft.ops) };
+}
+
+// Composer authors ---------------------------------------------------------------
+
+export interface ComposerAuthorSeed {
+  /** Member the draft is presented on behalf of (moderators only). */
+  onBehalfOfMemberId: string | undefined;
+  /** Co-authors shown in the picker: never the presenting nor the actor's member. */
+  coAuthorIds: string[];
+  /** The stored presenting member (authors[0]); null for a new amendment. */
+  presentingMemberId: string | null;
+  /**
+   * The actor's member when it is a co-author but not the presenting member.
+   * The picker hides it, so it is sent back on every save and the actor never
+   * drops out of a draft they are editing.
+   */
+  keptMemberId: string | null;
+}
+
+/**
+ * Splits a draft's authors (presenting member first, as the API orders them)
+ * into what the composer shows. A moderator who is not an author edits it on
+ * behalf of the presenting member.
+ */
+export function composerAuthorSeed(
+  authorIds: string[],
+  ownMemberId: string | null,
+  canActOnBehalf: boolean,
+): ComposerAuthorSeed {
+  const [presenting, ...rest] = authorIds;
+  if (!presenting) {
+    return {
+      onBehalfOfMemberId: undefined,
+      coAuthorIds: [],
+      presentingMemberId: null,
+      keptMemberId: null,
+    };
+  }
+  const ownIsAuthor = ownMemberId !== null && authorIds.includes(ownMemberId);
+  return {
+    onBehalfOfMemberId: !ownIsAuthor && canActOnBehalf ? presenting : undefined,
+    coAuthorIds: rest.filter((id) => id !== ownMemberId),
+    presentingMemberId: presenting,
+    keptMemberId:
+      ownIsAuthor && ownMemberId !== presenting ? ownMemberId : null,
+  };
+}
+
+/** `authorMemberIds` to send: the picked co-authors plus the kept own member. */
+export function composerAuthorMemberIds(
+  coAuthorIds: string[],
+  keptMemberId: string | null,
+): string[] {
+  return keptMemberId && !coAuthorIds.includes(keptMemberId)
+    ? [...coAuthorIds, keptMemberId]
+    : [...coAuthorIds];
+}
+
+// Composer sync ------------------------------------------------------------------
+
+/**
+ * True when `remote` is strictly later than `local` (ISO dates). A refresh
+ * that started before the composer's own save may land after it with the
+ * older copy; that one is not newer and must not look like a conflict.
+ */
+export function isNewerAmendmentVersion(
+  remote: string | null | undefined,
+  local: string | null | undefined,
+): boolean {
+  if (!remote || !local) return false;
+  const r = Date.parse(remote);
+  const l = Date.parse(local);
+  if (Number.isNaN(r) || Number.isNaN(l)) return false;
+  return r > l;
+}
+
+/**
+ * Where the draft being edited stands against the stored one:
+ * - `in_sync`: saving uses the composer's own lock token;
+ * - `remote_newer`: someone else saved it: load theirs or overwrite;
+ * - `conflict`: a save was refused and the stored copy has not arrived yet;
+ * - `not_editable`: it was submitted, withdrawn or deleted meanwhile, or the
+ *   document stopped admitting amendments (final vote, unpublished).
+ */
+export type ComposerSyncState =
+  "in_sync" | "remote_newer" | "conflict" | "not_editable";
+
+export function composerSyncState(input: {
+  draftId: string | null;
+  /** The composer's optimistic-lock token (updatedAt of its last load or save). */
+  token: string | null;
+  /** The stored draft, as the live list has it. */
+  remote: Pick<AmendmentDto, "id" | "status" | "updatedAt"> | null;
+  /** A save was refused with 409 or 404. */
+  conflicted: boolean;
+  /** The document still admits amendments (published, amendable, not voted). */
+  documentOpen?: boolean;
+}): ComposerSyncState {
+  const { draftId, token, remote, conflicted, documentOpen = true } = input;
+  if (!draftId) return "in_sync";
+  if (!documentOpen) return "not_editable";
+  const current = remote && remote.id === draftId ? remote : null;
+  const newer =
+    current !== null && isNewerAmendmentVersion(current.updatedAt, token);
+  // Only drafts are edited: a stored copy past that stage ends the edit.
+  if (current ? current.status !== "draft" : conflicted) return "not_editable";
+  if (newer) return "remote_newer";
+  return conflicted ? "conflict" : "in_sync";
+}
+
+// History ------------------------------------------------------------------------
+
+/**
+ * Changes whenever something that writes to the amendment's history changes.
+ * Positions, acceptances and relations live in their own tables and do not
+ * touch updatedAt (the optimistic-lock token), so they are folded in here.
+ */
+export function amendmentHistoryVersion(
+  amendment: Pick<AmendmentDto, "updatedAt" | "position" | "acceptances">,
+  relationIds: string[],
+): string {
+  return [
+    amendment.updatedAt,
+    amendment.position
+      ? `${amendment.position.position}@${amendment.position.updatedAt}`
+      : "",
+    amendment.acceptances
+      .map(
+        (acceptance) =>
+          `${acceptance.member.id}:${acceptance.decision}@${acceptance.decidedAt ?? ""}`,
+      )
+      .sort()
+      .join(","),
+    [...relationIds].sort().join(","),
+  ].join("|");
 }
 
 // Consolidation ------------------------------------------------------------------

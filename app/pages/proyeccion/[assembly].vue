@@ -9,7 +9,9 @@ import type {
   VoteDto,
 } from "~~/shared/types/api";
 import { errorStatus, useApi } from "~/composables/api/useApi";
+import { keepLastGoodData } from "~/composables/fetch/lastGoodData";
 import { useAssemblyLive } from "~/composables/live/useAssemblyLive";
+import { useAppNow } from "~/composables/time/useAppNow";
 import { buildSessionAgendaRows } from "~/composables/session/sessionModel";
 import { formatTime } from "~/utils/format";
 
@@ -19,6 +21,11 @@ import { formatTime } from "~/utils/format";
  * with its diff and one block of context), the result of the last vote and
  * the Mesa's message; when nothing is in debate, the agenda. It follows the
  * live state and is open to every signed-in user.
+ *
+ * Nobody watches the projector to reload it, so a failed refresh never
+ * wipes the screen: every source keeps its last good data (and the footer
+ * says it is not up to date), and the live stream stays keyed on the
+ * assembly id, reconnecting and polling until the server is back.
  */
 definePageMeta({ layout: false });
 
@@ -31,16 +38,24 @@ const assemblyUrl = computed(
   () => `/api/assemblies/${encodeURIComponent(param.value)}`,
 );
 
-const {
-  data: assembly,
-  error: assemblyError,
-  refresh: refreshAssembly,
-} = await useFetch<AssemblyDto>(() => assemblyUrl.value, {
+/** Gone for this screen: deleted, or not visible to the signed-in user. */
+function isGone(error: unknown): boolean {
+  const status = errorStatus(error);
+  return status === 403 || status === 404;
+}
+
+/** A document the screen cannot show means nothing in debate; rethrow the rest. */
+function nullIfGone(error: unknown): null {
+  if (isGone(error)) return null;
+  throw error;
+}
+
+const assemblyFetch = await useFetch<AssemblyDto>(() => assemblyUrl.value, {
   key: computed(() => `assembly-${param.value}`),
 });
 
-if (!assembly.value) {
-  const status = errorStatus(assemblyError.value) ?? 500;
+if (!assemblyFetch.data.value) {
+  const status = errorStatus(assemblyFetch.error.value) ?? 500;
   throw createError({
     statusCode: status,
     data: status === 404 ? { messageKey: "projection.notFound" } : undefined,
@@ -48,40 +63,108 @@ if (!assembly.value) {
   });
 }
 
-const { data: live, refresh: refreshLive } = await useAsyncData(
+/** Stable for the whole page: the stream never depends on a refetch. */
+const assemblyId = assemblyFetch.data.value.id;
+
+const {
+  data: assembly,
+  stale: assemblyStale,
+  failed: assemblyFailed,
+} = keepLastGoodData(assemblyFetch, { isGone });
+const refreshAssembly = assemblyFetch.refresh;
+
+const liveFetch = await useAsyncData(
   () => `projection-live-${param.value}`,
   () => api.get<LiveStateDto>(`${assemblyUrl.value}/live-state`),
 );
-const { data: agenda, refresh: refreshAgenda } = await useAsyncData(
+const {
+  data: live,
+  stale: liveStale,
+  failed: liveFailed,
+} = keepLastGoodData(liveFetch, {
+  isGone,
+});
+const refreshLive = liveFetch.refresh;
+
+const agendaFetch = await useAsyncData(
   () => `projection-agenda-${param.value}`,
   () => api.get<AgendaDto>(`${assemblyUrl.value}/agenda`),
 );
+const {
+  data: agenda,
+  stale: agendaStale,
+  failed: agendaFailed,
+} = keepLastGoodData(agendaFetch, {
+  isGone,
+});
+const refreshAgenda = agendaFetch.refresh;
 
+// From the kept live state, so a failed live-state refresh does not switch
+// the document fetches to "none".
 const documentId = computed(() => live.value?.documentId ?? null);
 const documentUrl = computed(() =>
   documentId.value
     ? `${assemblyUrl.value}/documents/${encodeURIComponent(documentId.value)}`
     : null,
 );
-const { data: document, refresh: refreshDocument } = await useAsyncData(
+const documentFetch = await useAsyncData(
   () => `projection-document-${documentId.value ?? "none"}`,
   () =>
     documentUrl.value
-      ? api.get<DocumentDto>(documentUrl.value).catch(() => null)
+      ? api.get<DocumentDto>(documentUrl.value).catch(nullIfGone)
       : Promise.resolve(null),
 );
-const { data: amendmentsDto, refresh: refreshAmendments } = await useAsyncData(
+// Reset when the Mesa moves to another document: the previous one must not
+// stand in for it if its fetch fails.
+const {
+  data: document,
+  stale: documentStale,
+  failed: documentFailed,
+} = keepLastGoodData(documentFetch, { isGone, resetOn: documentId });
+const refreshDocument = documentFetch.refresh;
+
+const amendmentsFetch = await useAsyncData(
   () => `projection-amendments-${documentId.value ?? "none"}`,
   () =>
     documentUrl.value
       ? api
           .get<DocumentAmendmentsDto>(`${documentUrl.value}/amendments`)
-          .catch(() => null)
+          .catch(nullIfGone)
       : Promise.resolve(null),
+);
+const {
+  data: amendmentsDto,
+  stale: amendmentsStale,
+  failed: amendmentsFailed,
+} = keepLastGoodData(amendmentsFetch, { isGone, resetOn: documentId });
+const refreshAmendments = amendmentsFetch.refresh;
+
+/** Some source failed its last refresh and shows its last good data. */
+const stale = computed(
+  () =>
+    assemblyStale.value ||
+    liveStale.value ||
+    agendaStale.value ||
+    documentStale.value ||
+    amendmentsStale.value,
+);
+
+/**
+ * Some source failed its last refresh, whether or not it had data to keep
+ * (one that never loaded is not `stale`, but it is not up to date either).
+ */
+const failed = computed(
+  () =>
+    assemblyFailed.value ||
+    liveFailed.value ||
+    agendaFailed.value ||
+    documentFailed.value ||
+    amendmentsFailed.value,
 );
 
 // Live updates -------------------------------------------------------------------
 
+/** When everything was last refreshed successfully. */
 const lastUpdate = ref<Date | null>(null);
 
 function onLive(events: LiveEventDto[]): void {
@@ -105,15 +188,14 @@ function onLive(events: LiveEventDto[]): void {
   if (poll || touchesDocument) {
     refreshes.push(refreshDocument(), refreshAmendments());
   }
+  // asyncData refreshes resolve even when they fail: only stamp the time
+  // when every source is up to date.
   void Promise.all(refreshes).then(() => {
-    lastUpdate.value = new Date();
+    if (!failed.value) lastUpdate.value = new Date();
   });
 }
 
-const { connected, polling } = useAssemblyLive(
-  () => assembly.value?.id,
-  onLive,
-);
+const { connected, polling } = useAssemblyLive(() => assemblyId, onLive);
 
 // Derived ------------------------------------------------------------------------
 
@@ -196,18 +278,9 @@ const amendmentStats = computed(() => {
 
 // Clock and fullscreen -----------------------------------------------------------
 
-const now = ref<Date | null>(null);
-let clockTimer: ReturnType<typeof setInterval> | undefined;
-onMounted(() => {
-  now.value = new Date();
-  clockTimer = setInterval(() => {
-    now.value = new Date();
-  }, 15_000);
-});
-onBeforeUnmount(() => clearInterval(clockTimer));
-const clock = computed(() =>
-  now.value ? formatTime(now.value, { locale: locale.value }) : "",
-);
+// The app's shared clock: it ticks right after every minute boundary.
+const now = useAppNow();
+const clock = computed(() => formatTime(now.value, { locale: locale.value }));
 
 const {
   isFullscreen,
@@ -305,7 +378,14 @@ useHead(() => ({
               : t("projection.vote.rejected")
           }}
         </p>
+        <p
+          v-if="vote.method === 'assent'"
+          class="mt-[clamp(0.5rem,1vw,1rem)] text-[clamp(1.25rem,2vw,2.25rem)] leading-tight font-semibold"
+        >
+          {{ t("session.enums.approvalMethod.assent") }}
+        </p>
         <dl
+          v-else
           class="mt-[clamp(0.5rem,1vw,1rem)] flex flex-wrap gap-x-[clamp(1.5rem,3vw,3rem)] gap-y-2"
         >
           <div v-for="count in voteCounts" :key="count.key">
@@ -469,8 +549,9 @@ useHead(() => ({
         <h1 class="text-[clamp(2rem,4vw,4.5rem)] leading-tight font-extrabold">
           {{ t("projection.agenda") }}
         </h1>
+        <!-- An agenda that never loaded is not an empty agenda -->
         <p v-if="rows.length === 0" class="text-muted">
-          {{ t("projection.agendaEmpty") }}
+          {{ agenda ? t("projection.agendaEmpty") : t("agenda.loadError") }}
         </p>
         <SessionProjectionAgenda
           v-else
@@ -504,12 +585,20 @@ useHead(() => ({
         }}
       </span>
       <ClientOnly>
-        <span v-if="lastUpdate">
-          {{
-            t("projection.updated", {
-              time: formatTime(lastUpdate, { locale }),
-            })
-          }}
+        <span class="inline-flex flex-wrap items-center gap-x-3">
+          <span v-if="stale" class="text-warning font-medium">
+            {{ t("projection.stale") }}
+          </span>
+          <span v-else-if="failed" class="text-warning font-medium">
+            {{ t("projection.loadFailed") }}
+          </span>
+          <span v-if="lastUpdate">
+            {{
+              t("projection.updated", {
+                time: formatTime(lastUpdate, { locale }),
+              })
+            }}
+          </span>
         </span>
       </ClientOnly>
     </footer>

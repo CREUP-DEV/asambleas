@@ -59,12 +59,14 @@ const canCreateDocument = computed(() =>
   me.can(PERMISSION_KEYS.DOCUMENT_MANAGE),
 );
 
-const renderedAt = useState<number>("countdown-rendered-at", () => Date.now());
+// The shared clock, so "Presentar documento" closes with the deadline even
+// in a tab that stays open for days.
+const now = useAppNow();
 const documentsClosed = computed(() => {
   const close = assembly.value?.milestones.find(
     (milestone) => milestone.key === "documents_close",
   );
-  return Boolean(close && new Date(close.at).getTime() <= renderedAt.value);
+  return Boolean(close && new Date(close.at).getTime() <= now.value);
 });
 
 const submitBlockedReason = computed<string | null>(() => {
@@ -81,7 +83,11 @@ const canSubmitDocument = computed(
     submitBlockedReason.value === null,
 );
 
-/** Statuses that keep an item from being deleted (server rule). */
+/**
+ * Documents that keep an item from being deleted (server rule): presented
+ * or public ones, and any document that was ever published, since it keeps
+ * its reference, base text and amendments even after a withdrawal.
+ */
 const PROTECTED_STATUSES = new Set(["submitted", "published", "postponed"]);
 
 function canDelete(itemId: string): boolean {
@@ -90,8 +96,10 @@ function canDelete(itemId: string): boolean {
   if (item.parentId === null && rootsLocked.value) return false;
   for (const id of agendaSubtreeIds(items.value, itemId)) {
     if (
-      (documentsByItem.value.get(id) ?? []).some((document) =>
-        PROTECTED_STATUSES.has(document.status),
+      (documentsByItem.value.get(id) ?? []).some(
+        (document) =>
+          PROTECTED_STATUSES.has(document.status) ||
+          document.publishedAt !== null,
       )
     ) {
       return false;

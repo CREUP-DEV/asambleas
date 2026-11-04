@@ -5,12 +5,13 @@ import {
   MAJORITIES,
   VOTE_METHODS,
 } from "../../constants/domain";
+import type { FinalVoteAnnulBody, FinalVoteBody } from "../../types/api";
 import { blocksSchema } from "./content";
 
 /**
  * Request bodies of the document endpoints. They mirror the types in
  * shared/types/api.ts (DocumentCreateBody, DocumentUpdateBody,
- * DocumentContentBody, FinalVoteBody).
+ * DocumentContentBody, FinalVoteBody, FinalVoteAnnulBody).
  */
 
 const ENTITY_ID_PATTERN = /^[a-z0-9]{20,32}$/;
@@ -92,3 +93,22 @@ export const finalVoteSchema = z.object({
     })
     .optional(),
 });
+
+/** Body of DELETE .../final-vote (FinalVoteAnnulBody). An empty note is null. */
+export const finalVoteAnnulSchema = z.object({
+  updatedAt: isoDateSchema,
+  note: z
+    .string()
+    .trim()
+    .max(2_000)
+    .transform((value) => value || null)
+    .nullable()
+    .optional(),
+});
+
+// Compile-time checks: every parsed body is assignable to its API type.
+type Assignable<T, U extends T> = U;
+export type _DocumentSchemaChecks = [
+  Assignable<FinalVoteBody, z.output<typeof finalVoteSchema>>,
+  Assignable<FinalVoteAnnulBody, z.output<typeof finalVoteAnnulSchema>>,
+];
