@@ -77,10 +77,17 @@
   --ui-primary: var(--color-creup-red-900);
   --ui-secondary: var(--color-creup-blue-950);
   --user-content-font: var(--font-sans);
+  /* Nuxt UI's dimmed text (neutral-400 on white, 2.6:1) fails WCAG AA for
+     the small hints and labels that use it; one step darker reaches 4.8:1. */
+  --ui-text-dimmed: var(--ui-color-neutral-500);
 }
 
 html {
   scroll-behavior: smooth;
+  /* Raleway defaults to old-style figures, where "80.ª" reads as "8o.ª" and
+     references such as "PO 001/2026" look like letters. A feature setting
+     (not font-variant-numeric) keeps lining figures under tabular-nums too. */
+  font-feature-settings: "lnum";
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -102,6 +109,53 @@ html {
 .dark {
   --ui-primary: var(--color-creup-red-400);
   --ui-secondary: var(--color-creup-blue-400);
+  /* neutral-500 on the dark background is 3.7:1; neutral-400 is 7:1. */
+  --ui-text-dimmed: var(--ui-color-neutral-400);
+}
+
+/*
+ * Content annotation palette (`.cx-*`, rendered by shared/utils/content/
+ * render.ts and app/components/content/*). Diff colours follow the semantic
+ * success/error scales, so they track the theme; provenance colours are a
+ * fixed set of six that stay distinguishable in both colour modes.
+ */
+:root {
+  --cx-ins-fg: var(--ui-color-success-800);
+  --cx-ins-bg: var(--ui-color-success-100);
+  --cx-del-fg: var(--ui-color-error-700);
+  --cx-del-bg: var(--ui-color-error-50);
+  --cx-ring: var(--ui-primary);
+  --cx-selected-bg: color-mix(in oklab, var(--ui-primary) 9%, transparent);
+  --cx-hover-bg: color-mix(in oklab, var(--ui-text) 5%, transparent);
+  --cx-prov-0: #1d4ed8;
+  --cx-prov-1: #b45309;
+  --cx-prov-2: #047857;
+  --cx-prov-3: #7e22ce;
+  --cx-prov-4: #be185d;
+  --cx-prov-5: #0e7490;
+}
+
+.dark {
+  --cx-ins-fg: var(--ui-color-success-300);
+  --cx-ins-bg: color-mix(
+    in oklab,
+    var(--ui-color-success-500) 20%,
+    transparent
+  );
+  --cx-del-fg: var(--ui-color-error-300);
+  --cx-del-bg: color-mix(in oklab, var(--ui-color-error-500) 16%, transparent);
+  --cx-selected-bg: color-mix(in oklab, var(--ui-primary) 16%, transparent);
+  --cx-prov-0: #60a5fa;
+  --cx-prov-1: #fbbf24;
+  --cx-prov-2: #34d399;
+  --cx-prov-3: #c084fc;
+  --cx-prov-4: #f472b6;
+  --cx-prov-5: #22d3ee;
+}
+
+/* Marks mode carries no hue: emphasis rings use the text colour. */
+.diff-marks {
+  --cx-ring: var(--ui-text-highlighted);
 }
 
 @layer components {
@@ -187,6 +241,223 @@ html {
     color: var(--ui-primary);
     text-decoration: underline;
     text-underline-offset: 0.18em;
+  }
+
+  /* Document and amendment content outside .rich-text (the editor). */
+  .content-font {
+    font-family: var(--user-content-font);
+  }
+
+  /*
+   * Diffs. Colour mode is the default, so server-rendered pages and the first
+   * paint (before the preference plugin runs) already read correctly; the
+   * `diff-marks` class on <html> switches to weight and strike only.
+   */
+  .cx-ins,
+  .cx-del {
+    border-radius: 0.125rem;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .cx-ins {
+    color: var(--cx-ins-fg);
+    background-color: var(--cx-ins-bg);
+    text-decoration: none;
+  }
+
+  .cx-del {
+    color: var(--cx-del-fg);
+    background-color: var(--cx-del-bg);
+    text-decoration-line: line-through;
+    text-decoration-thickness: 0.09em;
+  }
+
+  .diff-marks .cx-ins {
+    color: inherit;
+    background-color: transparent;
+    font-weight: 700;
+    text-decoration-line: underline;
+    text-decoration-thickness: 0.1em;
+    text-underline-offset: 0.2em;
+  }
+
+  .diff-marks .cx-del {
+    color: inherit;
+    background-color: transparent;
+    text-decoration-line: line-through;
+    text-decoration-thickness: 0.1em;
+  }
+
+  /* Whole blocks added or removed by an amendment (diff mode only). */
+  .cx-block-inserted,
+  .cx-block-deleted {
+    border-inline-start: 3px solid;
+    padding-inline-start: 0.625rem;
+  }
+
+  .cx-block-inserted {
+    border-inline-start-color: var(--cx-ins-fg);
+  }
+
+  .cx-block-deleted {
+    border-inline-start-color: var(--cx-del-fg);
+    border-inline-start-style: dashed;
+  }
+
+  .diff-marks .cx-block-inserted,
+  .diff-marks .cx-block-deleted {
+    border-inline-start-color: currentColor;
+  }
+
+  .diff-marks .cx-block-inserted {
+    border-inline-start-width: 4px;
+  }
+
+  /* Provenance: consolidated text underlined per amendment, with its label. */
+  .cx-prov {
+    text-decoration-line: underline;
+    text-decoration-color: var(--cx-prov-color, var(--ui-primary));
+    text-decoration-thickness: 0.12em;
+    text-underline-offset: 0.22em;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .cx-ref {
+    margin-inline-start: 0.1em;
+    font-family: var(--font-sans);
+    font-size: 0.68em;
+    font-weight: 700;
+    line-height: 0;
+    color: var(--cx-prov-color, var(--ui-primary));
+  }
+
+  .cx-prov-0 {
+    --cx-prov-color: var(--cx-prov-0);
+  }
+
+  .cx-prov-1 {
+    --cx-prov-color: var(--cx-prov-1);
+  }
+
+  .cx-prov-2 {
+    --cx-prov-color: var(--cx-prov-2);
+  }
+
+  .cx-prov-3 {
+    --cx-prov-color: var(--cx-prov-3);
+  }
+
+  .cx-prov-4 {
+    --cx-prov-color: var(--cx-prov-4);
+  }
+
+  .cx-prov-5 {
+    --cx-prov-color: var(--cx-prov-5);
+  }
+
+  /* The amendment in focus stands out with a ring, never with hue alone. */
+  .cx-focus {
+    border-radius: 0.125rem;
+    box-shadow: 0 0 0 2px var(--cx-ring);
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+  }
+
+  .cx-prov.cx-focus {
+    background-color: color-mix(
+      in oklab,
+      var(--cx-prov-color, var(--ui-primary)) 14%,
+      transparent
+    );
+  }
+
+  /* Selected blocks: a tint plus a bar in the margin, without shifting text. */
+  .cx-selected {
+    border-radius: 0.25rem;
+    background-color: var(--cx-selected-bg);
+    box-shadow:
+      -0.375rem 0 0 0 var(--cx-selected-bg),
+      -0.625rem 0 0 0 var(--ui-primary);
+  }
+
+  /* Interactive views: blocks and amended fragments act as buttons. */
+  .cx-interactive [data-block-id],
+  .cx-interactive [data-amendment-id] {
+    cursor: pointer;
+    border-radius: 0.25rem;
+  }
+
+  .cx-interactive [data-block-id]:hover:not(.cx-selected) {
+    background-color: var(--cx-hover-bg);
+  }
+
+  .cx-interactive [data-block-id]:focus-visible,
+  .cx-interactive [data-amendment-id]:focus-visible {
+    outline: 2px solid var(--ui-primary);
+    outline-offset: 2px;
+  }
+
+  /* Gutter with the amendment count of each block. */
+  .cx-has-gutter {
+    padding-inline-start: 2.25rem;
+  }
+
+  .cx-gutter {
+    position: absolute;
+    inset-block: 0;
+    inset-inline-start: 0;
+    width: 1.75rem;
+    pointer-events: none;
+  }
+
+  /* Height must match MARKER_HEIGHT in ContentView.vue. */
+  .cx-marker {
+    position: absolute;
+    inset-inline-start: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    height: 22px;
+    min-width: 22px;
+    padding-inline: 0.3rem;
+    border: 1px solid var(--ui-border-accented);
+    border-radius: 999px;
+    background-color: var(--ui-bg-elevated);
+    color: var(--ui-text-toned);
+    font-family: var(--font-sans);
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+    pointer-events: auto;
+  }
+
+  .cx-marker--overlap {
+    border-color: var(--ui-color-warning-500);
+    background-color: color-mix(
+      in oklab,
+      var(--ui-color-warning-400) 28%,
+      var(--ui-bg)
+    );
+    color: var(--ui-text-highlighted);
+  }
+
+  button.cx-marker {
+    cursor: pointer;
+  }
+
+  button.cx-marker:hover {
+    border-color: var(--ui-primary);
+  }
+
+  button.cx-marker:focus-visible {
+    outline: 2px solid var(--ui-primary);
+    outline-offset: 2px;
   }
 
   .motion-card {
@@ -303,5 +574,65 @@ html {
   .page-shell-leave-to {
     opacity: 1 !important;
     transform: none !important;
+  }
+}
+
+/*
+ * Print (the convocatoria and documents): app chrome marked `.no-print` is
+ * hidden, `.print-only` content appears, and content keeps its diff colours.
+ */
+.print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    margin: 2cm 1.8cm;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: revert-layer;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  .rich-text {
+    font-size: 11pt;
+    line-height: 1.55;
+  }
+
+  .rich-text h2,
+  .rich-text h3,
+  .rich-text h4 {
+    break-after: avoid;
+  }
+
+  .rich-text p,
+  .rich-text li,
+  .rich-text blockquote {
+    orphans: 3;
+    widows: 3;
+  }
+
+  .cx-gutter {
+    display: none;
+  }
+
+  .cx-has-gutter {
+    padding-inline-start: 0;
+  }
+
+  .cx-selected,
+  .cx-interactive [data-block-id]:hover {
+    background-color: transparent !important;
+    box-shadow: none !important;
   }
 }

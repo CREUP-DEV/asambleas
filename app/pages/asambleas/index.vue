@@ -1,257 +1,295 @@
 <script setup lang="ts">
-import {
-  CSRF_COOKIE_NAME,
-  CSRF_HEADER_NAME,
-} from "~~/shared/constants/security";
-import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
-import {
-  ASSEMBLY_STATUSES,
-  type AssemblyStatus,
-} from "~~/shared/constants/statuses";
 import { ALL_ASSEMBLY_TYPES } from "~~/shared/constants/assemblyTypes";
+import type { AssemblyType } from "~~/shared/constants/assemblyTypes";
+import { ASSEMBLY_STATUSES } from "~~/shared/constants/domain";
+import type { AssemblyStatus } from "~~/shared/constants/domain";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import type { AssemblyListDto } from "~~/shared/types/api";
+
+type TypeFilter = AssemblyType | "all";
+type StatusFilter = AssemblyStatus | "all";
 
 const { t } = useI18n();
-const toast = useToast();
-const { hasPermission } = usePermissions();
+const route = useRoute();
+const router = useRouter();
+const { can } = useMe();
 
-useHead({ title: t("assembly.title") });
+useHead({ title: () => t("assemblies.title") });
 
-interface Assembly {
-  id: string;
-  number: number;
-  type: string;
-  status: AssemblyStatus;
-  startDate: string;
-  endDate: string;
-  location: string;
-  updatedAt: string;
-}
-
-interface AssembliesResponse {
-  data: Assembly[];
-  pagination: {
-    page: number;
-    pageSize: number;
-    hasNextPage: boolean;
-    hasPreviousPage: boolean;
-  };
-}
-
-const page = ref(1);
-const filterStatus = ref<AssemblyStatus | undefined>(undefined);
-
-const {
-  data: assembliesData,
-  refresh,
-  status: fetchStatus,
-} = await useFetch<AssembliesResponse>("/api/assemblies", {
-  query: computed(() => ({
-    page: page.value,
-    status: filterStatus.value,
-  })),
-});
-
-const assemblies = computed(() => assembliesData.value?.data ?? []);
-const pagination = computed(() => assembliesData.value?.pagination);
-
-const canCreate = computed(() =>
-  hasPermission(PERMISSION_KEYS.ASSEMBLY_CREATE),
+const canCreate = computed(() => can(PERMISSION_KEYS.ASSEMBLY_CREATE));
+const canSeeDrafts = computed(
+  () =>
+    can(PERMISSION_KEYS.ASSEMBLY_MANAGE) ||
+    can(PERMISSION_KEYS.SESSION_MODERATE),
 );
 
-const statusFilterOptions = [
-  { label: t("assembly.filter.allStatuses"), value: undefined },
-  {
-    label: t("assembly.statuses.draft"),
-    value: ASSEMBLY_STATUSES.DRAFT,
-  },
-  {
-    label: t("assembly.statuses.provisional"),
-    value: ASSEMBLY_STATUSES.PROVISIONAL,
-  },
-  {
-    label: t("assembly.statuses.definitive"),
-    value: ASSEMBLY_STATUSES.DEFINITIVE,
-  },
-];
+// Filters live in the URL so they survive reloads and can be shared.
 
-const emptyForm = () => ({
-  number: null as number | null,
-  type: ALL_ASSEMBLY_TYPES[0] as string,
-  startDate: "",
-  endDate: "",
-  location: "",
+function queryValue(key: string): string | undefined {
+  const value = route.query[key];
+  return typeof value === "string" ? value : undefined;
+}
+
+function isType(value: string | undefined): value is AssemblyType {
+  return (ALL_ASSEMBLY_TYPES as readonly string[]).includes(value ?? "");
+}
+
+function isStatus(value: string | undefined): value is AssemblyStatus {
+  return (ASSEMBLY_STATUSES as readonly string[]).includes(value ?? "");
+}
+
+function updateQuery(changes: Record<string, string | undefined>): void {
+  const query = Object.fromEntries(
+    Object.entries({ ...route.query, ...changes }).filter(
+      ([, value]) => value !== undefined,
+    ),
+  );
+  void router.replace({ query });
+}
+
+const typeFilter = computed<TypeFilter>({
+  get: () => {
+    const value = queryValue("type");
+    return isType(value) ? value : "all";
+  },
+  set: (value) =>
+    updateQuery({ type: value === "all" ? undefined : value, page: undefined }),
 });
 
-const modalOpen = ref(false);
-const formData = ref(emptyForm());
-const formLoading = ref(false);
+const statusFilter = computed<StatusFilter>({
+  get: () => {
+    const value = queryValue("status");
+    return isStatus(value) ? value : "all";
+  },
+  set: (value) =>
+    updateQuery({
+      status: value === "all" ? undefined : value,
+      page: undefined,
+    }),
+});
 
-const openCreateModal = () => {
-  formData.value = emptyForm();
-  modalOpen.value = true;
-};
+const page = computed<number>({
+  get: () => {
+    const value = Number(queryValue("page"));
+    return Number.isInteger(value) && value > 1 ? value : 1;
+  },
+  set: (value) => updateQuery({ page: value > 1 ? String(value) : undefined }),
+});
 
-const submitForm = async () => {
-  if (
-    !formData.value.number ||
-    !formData.value.startDate ||
-    !formData.value.endDate ||
-    !formData.value.location
-  ) {
-    toast.add({ title: t("errors.serverError"), color: "error" });
-    return;
-  }
+const hasFilters = computed(
+  () => typeFilter.value !== "all" || statusFilter.value !== "all",
+);
 
-  formLoading.value = true;
-  try {
-    const csrfToken = useCookie(CSRF_COOKIE_NAME).value;
-    await $fetch("/api/assemblies", {
-      method: "POST",
-      body: {
-        number: formData.value.number,
-        type: formData.value.type,
-        startDate: new Date(formData.value.startDate).toISOString(),
-        endDate: new Date(formData.value.endDate).toISOString(),
-        location: formData.value.location,
-      },
-      headers: csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : undefined,
-    });
-    toast.add({ title: t("assembly.created"), color: "success" });
-    modalOpen.value = false;
-    page.value = 1;
-    await refresh();
-  } catch (err: unknown) {
-    const statusCode = (err as { statusCode?: number })?.statusCode;
-    if (statusCode === 409) {
-      toast.add({
-        title: t("errors.conflict"),
-        color: "error",
-      });
-    } else {
-      toast.add({ title: t("errors.serverError"), color: "error" });
+function clearFilters(): void {
+  updateQuery({ type: undefined, status: undefined, page: undefined });
+}
+
+const typeItems = computed(() => [
+  { label: t("assemblies.filters.allTypes"), value: "all" },
+  ...ALL_ASSEMBLY_TYPES.map((type) => ({
+    label: `${type} · ${t(`assemblies.types.${type}`)}`,
+    value: type,
+  })),
+]);
+
+const statusItems = computed(() => [
+  { label: t("assemblies.filters.allStatuses"), value: "all" },
+  ...ASSEMBLY_STATUSES.filter(
+    (status) => status !== "draft" || canSeeDrafts.value,
+  ).map((status) => ({
+    label: t(`assemblies.statuses.${status}`),
+    value: status,
+  })),
+]);
+
+const { data, status, error, refresh } = await useFetch<AssemblyListDto>(
+  "/api/assemblies",
+  {
+    key: "assemblies-list",
+    query: computed(() => ({
+      type: typeFilter.value === "all" ? undefined : typeFilter.value,
+      status: statusFilter.value === "all" ? undefined : statusFilter.value,
+      page: page.value,
+    })),
+  },
+);
+
+const items = computed(() => data.value?.items ?? []);
+const total = computed(() => data.value?.total ?? 0);
+const pageSize = computed(() => data.value?.pageSize ?? 20);
+const loading = computed(() => status.value === "pending");
+
+const summary = computed(() =>
+  loading.value
+    ? t("assemblies.loading")
+    : t("assemblies.count", { count: total.value }, total.value),
+);
+
+// A page past the end (e.g. after a filter change elsewhere): go back.
+watch(
+  () => [total.value, page.value] as const,
+  ([count, current]) => {
+    if (
+      !loading.value &&
+      count > 0 &&
+      items.value.length === 0 &&
+      current > 1
+    ) {
+      page.value = Math.max(1, Math.ceil(count / pageSize.value));
     }
-  } finally {
-    formLoading.value = false;
-  }
-};
+  },
+);
 
-const onFilterChange = (val: unknown) => {
-  filterStatus.value = (val as { value?: AssemblyStatus } | undefined)?.value;
-  page.value = 1;
-};
+const createOpen = ref(false);
 </script>
 
 <template>
-  <UContainer class="py-8">
-    <div class="flex flex-wrap items-center justify-between gap-4">
-      <h1 class="text-2xl font-bold">{{ t("assembly.title") }}</h1>
+  <UDashboardPanel id="assemblies">
+    <template #header>
+      <UDashboardNavbar :title="t('assemblies.title')">
+        <template #right>
+          <UButton
+            v-if="canCreate"
+            icon="i-lucide-plus"
+            @click="createOpen = true"
+          >
+            <span class="hidden sm:inline">{{ t("assemblies.new") }}</span>
+            <span class="sr-only sm:hidden">{{ t("assemblies.new") }}</span>
+          </UButton>
+        </template>
+      </UDashboardNavbar>
 
-      <div class="flex items-center gap-3">
-        <USelectMenu
-          :model-value="
-            statusFilterOptions.find((o) => o.value === filterStatus)
-          "
-          :items="statusFilterOptions"
-          class="w-48"
-          :aria-label="t('assembly.filter.allStatuses')"
-          @update:model-value="onFilterChange"
-        />
-
-        <UButton
-          v-if="canCreate"
-          icon="i-tabler-plus"
-          color="primary"
-          @click="openCreateModal"
-        >
-          {{ t("assembly.create") }}
-        </UButton>
-      </div>
-    </div>
-
-    <div
-      v-if="fetchStatus === 'pending'"
-      class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3"
-    >
-      <div
-        v-for="n in 6"
-        :key="n"
-        class="border-default space-y-3 rounded-lg border p-4"
-      >
-        <div class="flex items-center justify-between">
-          <USkeleton class="h-5 w-24" />
-          <USkeleton class="h-5 w-16 rounded-full" />
-        </div>
-        <USkeleton class="h-4 w-40" />
-        <div class="flex items-center gap-2">
-          <USkeleton class="h-4 w-20" />
-          <USkeleton class="h-4 w-28" />
-        </div>
-      </div>
-    </div>
-
-    <div v-else-if="assemblies.length === 0" class="mt-16 text-center">
-      <UIcon name="i-tabler-gavel" class="text-muted mx-auto size-12" />
-      <h2 class="mt-4 text-lg font-semibold">
-        {{ t("assembly.noAssemblies") }}
-      </h2>
-      <p class="text-muted mt-1 text-sm">
-        {{ t("assembly.noAssembliesDescription") }}
-      </p>
-      <UButton
-        v-if="canCreate"
-        class="mt-4"
-        icon="i-tabler-plus"
-        color="primary"
-        @click="openCreateModal"
-      >
-        {{ t("assembly.create") }}
-      </UButton>
-    </div>
-
-    <div v-else class="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      <AssemblyCard
-        v-for="assembly in assemblies"
-        :key="assembly.id"
-        :assembly="assembly"
-      />
-    </div>
-
-    <div
-      v-if="assemblies.length > 0"
-      class="mt-6 flex items-center justify-end gap-2"
-    >
-      <UButton
-        variant="soft"
-        color="neutral"
-        :disabled="!pagination?.hasPreviousPage"
-        @click="page--"
-      >
-        {{ t("common.previous") }}
-      </UButton>
-      <UButton
-        variant="soft"
-        color="neutral"
-        :disabled="!pagination?.hasNextPage"
-        @click="page++"
-      >
-        {{ t("common.next") }}
-      </UButton>
-    </div>
-
-    <UModal v-model:open="modalOpen" :title="t('assembly.create')">
-      <template #body>
-        <AssemblyForm
-          v-model="formData"
-          :loading="formLoading"
-          @submit="submitForm"
-        >
-          <template #actions>
-            <UButton variant="ghost" color="neutral" @click="modalOpen = false">
-              {{ t("common.cancel") }}
+      <UDashboardToolbar>
+        <template #left>
+          <div class="flex flex-wrap items-center gap-2 py-2">
+            <USelect
+              v-model="typeFilter"
+              :items="typeItems"
+              :aria-label="t('assemblies.filters.type')"
+              icon="i-lucide-tag"
+              class="w-48 sm:w-64"
+            />
+            <USelect
+              v-model="statusFilter"
+              :items="statusItems"
+              :aria-label="t('assemblies.filters.status')"
+              icon="i-lucide-circle-dot"
+              class="w-44"
+            />
+            <UButton
+              v-if="hasFilters"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-filter-x"
+              @click="clearFilters"
+            >
+              {{ t("assemblies.filters.clear") }}
             </UButton>
-          </template>
-        </AssemblyForm>
+          </div>
+        </template>
+        <template #right>
+          <p
+            class="text-muted hidden text-sm whitespace-nowrap md:block"
+            aria-live="polite"
+          >
+            {{ summary }}
+          </p>
+        </template>
+      </UDashboardToolbar>
+    </template>
+
+    <template #body>
+      <p class="sr-only md:hidden" aria-live="polite">{{ summary }}</p>
+
+      <UAlert
+        v-if="error"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-alert"
+        :title="t('assemblies.loadFailed')"
+        :actions="[
+          {
+            label: t('assemblies.retry'),
+            color: 'error',
+            variant: 'outline',
+            onClick: () => refresh(),
+          },
+        ]"
+      />
+
+      <ul
+        v-else-if="loading && items.length === 0"
+        class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+        :aria-label="t('assemblies.loading')"
+        aria-busy="true"
+      >
+        <li
+          v-for="n in 6"
+          :key="n"
+          class="ring-default space-y-3 rounded-lg p-5 ring"
+        >
+          <div class="flex justify-between gap-3">
+            <USkeleton class="h-6 w-28" />
+            <USkeleton class="h-5 w-20" />
+          </div>
+          <USkeleton class="h-4 w-48" />
+          <USkeleton class="h-4 w-40" />
+          <USkeleton class="h-4 w-32" />
+        </li>
+      </ul>
+
+      <CommonEmptyState
+        v-else-if="items.length === 0"
+        :icon="hasFilters ? 'i-lucide-filter-x' : 'i-lucide-landmark'"
+        :title="hasFilters ? t('assemblies.noMatches') : t('assemblies.empty')"
+        :description="
+          hasFilters
+            ? t('assemblies.noMatchesDescription')
+            : canCreate
+              ? t('assemblies.emptyDescriptionManager')
+              : t('assemblies.emptyDescription')
+        "
+      >
+        <template v-if="hasFilters || canCreate" #action>
+          <UButton
+            v-if="hasFilters"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-filter-x"
+            @click="clearFilters"
+          >
+            {{ t("assemblies.filters.clear") }}
+          </UButton>
+          <UButton v-else icon="i-lucide-plus" @click="createOpen = true">
+            {{ t("assemblies.new") }}
+          </UButton>
+        </template>
+      </CommonEmptyState>
+
+      <template v-else>
+        <ul
+          class="grid gap-4 transition-opacity sm:grid-cols-2 xl:grid-cols-3"
+          :class="{ 'opacity-60': loading }"
+          :aria-busy="loading"
+          :aria-label="t('assemblies.listLabel')"
+        >
+          <li v-for="assembly in items" :key="assembly.id">
+            <AssemblyCard :assembly="assembly" :heading-level="2" />
+          </li>
+        </ul>
+
+        <div v-if="total > pageSize" class="flex justify-center pt-2">
+          <UPagination
+            v-model:page="page"
+            :total="total"
+            :items-per-page="pageSize"
+            :sibling-count="1"
+            show-edges
+          />
+        </div>
       </template>
-    </UModal>
-  </UContainer>
+
+      <AssemblyCreateModal v-if="canCreate" v-model:open="createOpen" />
+    </template>
+  </UDashboardPanel>
 </template>

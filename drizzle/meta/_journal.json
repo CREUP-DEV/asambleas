@@ -15,6 +15,34 @@
       "when": 1777887771598,
       "tag": "0001_furry_mindworm",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793762831805,
+      "tag": "0002_scope_account_identity_by_issuer",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793763727214,
+      "tag": "0003_drop_legacy_domain",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793763860675,
+      "tag": "0004_assembly_domain",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793813671724,
+      "tag": "0005_tearful_agent_brand",
+      "breakpoints": true
     }
   ]
 }

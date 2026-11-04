@@ -9,12 +9,7 @@ const BASE_LOCALE = "es.json";
 const TARGET_LOCALE = "en.json";
 
 type JSONValue =
-  | string
-  | number
-  | boolean
-  | null
-  | JSONValue[]
-  | { [key: string]: JSONValue };
+  string | number | boolean | null | JSONValue[] | { [key: string]: JSONValue };
 
 type IdenticalMatch = {
   key: string;

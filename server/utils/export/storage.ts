@@ -1,7 +1,12 @@
 import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 import { createError } from "h3";
-import { EXPORT_QUEUE_NAMES, type ExportQueueName } from "./queue";
+import {
+  EXPORT_QUEUE_NAMES,
+  type ExportQueueName,
+  type ExportVariant,
+} from "./queue";
+import type { ExportLocale } from "./labels";
 import {
   PERMISSION_KEYS,
   type PermissionKey,
@@ -15,7 +20,9 @@ export interface ExportMetadata {
   requestedBy: string;
   assemblyId: string;
   documentId?: string;
-  locale: "es" | "en";
+  /** Document exports only. */
+  variant?: ExportVariant;
+  locale: ExportLocale;
   status: ExportStatus;
   filename: string;
   filePath: string;
