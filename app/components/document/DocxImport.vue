@@ -47,13 +47,24 @@ dialog.onChange((files) => {
   if (file) void upload(file);
 });
 
-function fail(key: string): void {
+function fail(key: string, titleKey = "document.import.error"): void {
   toast.add({
-    title: t("document.import.error"),
+    title: t(titleKey),
     description: t(key),
     color: "error",
     icon: "i-lucide-circle-alert",
   });
+}
+
+/**
+ * The reason code the server attached to a refusal (`createError({ data })`
+ * reaches the client at `error.data.data`), e.g. `"empty"` for a file with
+ * no usable text, which shares its 422 with "exceeds the content limits".
+ */
+function errorReason(error: unknown): unknown {
+  if (!error || typeof error !== "object") return undefined;
+  return (error as { data?: { data?: { reason?: unknown } } | null }).data?.data
+    ?.reason;
 }
 
 async function upload(file: File): Promise<void> {
@@ -77,6 +88,9 @@ async function upload(file: File): Promise<void> {
   } catch (error) {
     const status = errorStatus(error);
     if (status === 415) fail("document.import.invalidFile");
+    // Blank, or only images (which are dropped): splitting it cannot help.
+    else if (status === 422 && errorReason(error) === "empty")
+      fail("document.import.emptyDescription", "document.import.empty");
     // The file is within 15 MB (checked above): the server refused what it
     // expands to (size, markup or number of paragraphs).
     else if (status === 413 || status === 422)

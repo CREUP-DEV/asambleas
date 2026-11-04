@@ -715,17 +715,21 @@ async function loadBaseBlocks(document: DocumentRow): Promise<Block[]> {
  * A transaction takes it once, in one mode, after the assembly share lock
  * when it moves the projection and before any amendment row lock ("Row
  * locks" in documents.ts).
+ * Returns the agenda item of the locked row: a vote that moves the
+ * projection uses it, not the one read before the transaction, since the
+ * document may have moved in between.
  */
 async function lockDocument(
   tx: Tx,
   documentId: string,
   mode: "no key update" | "share" = "no key update",
-): Promise<void> {
+): Promise<{ agendaItemId: string | null }> {
   const [row] = await tx
     .select({
       status: documents.status,
       finalVoteId: documents.finalVoteId,
       consolidatedVersionId: documents.consolidatedVersionId,
+      agendaItemId: documents.agendaItemId,
     })
     .from(documents)
     .where(eq(documents.id, documentId))
@@ -735,6 +739,7 @@ async function lockDocument(
   if (mode === "no key update" && row.status !== "published") {
     fail(409, "El documento no admite enmiendas");
   }
+  return { agendaItemId: row.agendaItemId };
 }
 
 /**
@@ -1484,6 +1489,23 @@ export async function withdrawAmendment(
 
 // Admission ------------------------------------------------------------------
 
+/**
+ * Whether an amendment may take the requested admission decision: admitting
+ * needs one that is still pending (submitted and not yet admitted) or
+ * inadmissible; declaring it inadmissible needs one still submitted. Keyed on
+ * the decision requested, not on the outcome of its vote, so a failed vote to
+ * admit cannot overturn an admission that committed in the meantime.
+ */
+export function admissionEligible(
+  row: { status: string; admission: string | null },
+  decision: AdmissionBody["decision"],
+): boolean {
+  return decision === "admitted"
+    ? (row.status === "submitted" && row.admission !== "admitted") ||
+        row.status === "inadmissible"
+    : row.status === "submitted";
+}
+
 export async function decideAmendmentAdmission(
   ctx: DocumentAmendmentContext,
   body: AdmissionBody,
@@ -1510,15 +1532,7 @@ export async function decideAmendmentAdmission(
   if (rows.length !== body.amendmentIds.length)
     fail(404, "Enmienda no encontrada");
 
-  const eligible =
-    body.decision === "admitted"
-      ? rows.every(
-          (row) =>
-            (row.status === "submitted" && row.admission !== "admitted") ||
-            row.status === "inadmissible",
-        )
-      : rows.every((row) => row.status === "submitted");
-  if (!eligible) {
+  if (!rows.every((row) => admissionEligible(row, body.decision))) {
     fail(
       409,
       body.decision === "admitted"
@@ -1543,8 +1557,27 @@ export async function decideAmendmentAdmission(
     if (evaluated) await shareLockAssembly(tx, ctx.assembly.id);
     await lockDocument(tx, document.id, "share");
     // In id order, as an approval locks its lineage: the update below then
-    // only touches rows this transaction already holds.
-    await lockAmendments(tx, document.id, body.amendmentIds);
+    // only touches rows this transaction already holds. The check above ran
+    // before the lock, so a concurrent decision may have committed since.
+    // Eligibility alone is not enough (both directions can be eligible, so
+    // an opposite decision would be overturned): the locked rows must still
+    // be exactly what the operator decided on.
+    const locked = await lockAmendments(tx, document.id, body.amendmentIds);
+    const seen = new Map(rows.map((row) => [row.id, row]));
+    if (
+      locked.length !== body.amendmentIds.length ||
+      !locked.every((row) => {
+        const before = seen.get(row.id);
+        return (
+          before !== undefined &&
+          before.status === row.status &&
+          before.admission === row.admission &&
+          admissionEligible(row, body.decision)
+        );
+      })
+    ) {
+      fail(409, "Las enmiendas han cambiado. Recarga la página");
+    }
     const decisionId = cuid();
     let voteRow: VoteRow | undefined;
     if (evaluated && body.vote) {
@@ -1825,7 +1858,9 @@ export async function applyAmendmentOutcome(
     const result = await db.transaction(async (tx) => {
       // A vote is projected: assembly before document ("Row locks").
       if (body.action === "vote") await shareLockAssembly(tx, ctx.assembly.id);
-      await lockDocument(tx, document.id, "share");
+      // The projection takes the agenda item from the locked row: the share
+      // lock holds off a move, but one may have committed since the resolve.
+      const { agendaItemId } = await lockDocument(tx, document.id, "share");
       // An approved transactional absorbs its sources and, through nested
       // transactionals, theirs. They must all be still open, or a source and
       // the transactional that absorbs it could both end up approved. The
@@ -1962,7 +1997,7 @@ export async function applyAmendmentOutcome(
           actor,
           subject: {
             documentId: document.id,
-            agendaItemId: document.agendaItemId,
+            agendaItemId,
             amendmentId: amendment.id,
           },
         });

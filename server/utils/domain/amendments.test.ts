@@ -43,6 +43,7 @@ vi.mock("./visibility", () => ({
 vi.mock("../errors", () => ({ isUniqueConstraintViolation: vi.fn() }));
 
 const {
+  admissionEligible,
   amendmentCapabilities,
   amendmentSortKey,
   buildAcceptanceParties,
@@ -417,6 +418,29 @@ describe("evaluateVoteInput", () => {
     );
     expect(result.majority).toBe("two_thirds");
     expect(result.outcome.result).toBe("rejected");
+  });
+});
+
+describe("admissionEligible", () => {
+  const pending = { status: "submitted", admission: "pending" };
+  const admitted = { status: "submitted", admission: "admitted" };
+  const inadmissible = { status: "inadmissible", admission: "inadmissible" };
+  const approved = { status: "approved", admission: "admitted" };
+
+  it("admits pending and inadmissible amendments only", () => {
+    expect(admissionEligible(pending, "admitted")).toBe(true);
+    expect(admissionEligible(inadmissible, "admitted")).toBe(true);
+    // Already admitted, say by a concurrent decision: a second admission
+    // (or a failed vote to admit) must not apply to it.
+    expect(admissionEligible(admitted, "admitted")).toBe(false);
+    expect(admissionEligible(approved, "admitted")).toBe(false);
+  });
+
+  it("declares inadmissible any amendment still submitted", () => {
+    expect(admissionEligible(pending, "inadmissible")).toBe(true);
+    expect(admissionEligible(admitted, "inadmissible")).toBe(true);
+    expect(admissionEligible(inadmissible, "inadmissible")).toBe(false);
+    expect(admissionEligible(approved, "inadmissible")).toBe(false);
   });
 });
 

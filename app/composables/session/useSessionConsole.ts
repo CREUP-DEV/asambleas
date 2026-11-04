@@ -29,7 +29,11 @@ import {
 } from "~~/shared/constants/domain";
 import { useApi } from "../api/useApi";
 import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
-import { keepLastGoodData, useStaleDataNotice } from "../fetch/lastGoodData";
+import {
+  keepLastGoodData,
+  onlyForKey,
+  useStaleDataNotice,
+} from "../fetch/lastGoodData";
 import { useAssemblyLive } from "../live/useAssemblyLive";
 import {
   buildSessionAgendaRows,
@@ -54,6 +58,11 @@ export type SessionFinalVoteResult =
       /** An approved totality return: the text goes back, no final vote. */
       totalityReturn: string | null;
     };
+
+/** A document's amendments, tagged with the document they were fetched for. */
+export type SessionAmendmentsDto = DocumentAmendmentsDto & {
+  documentId: string;
+};
 
 export interface SessionLapseDialog {
   open: boolean;
@@ -198,26 +207,46 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   } = documentFetch;
   // Switching documents forgets the kept one: it must never stand in for
   // the document now under debate.
-  const { data: document, stale: documentStale } = keepLastGoodData(
+  const { data: fetchedDocument, stale: documentStale } = keepLastGoodData(
     documentFetch,
     { resetOn: documentId },
+  );
+  // Nor may the previous document's DTO, which Nuxt carries into the new
+  // key's entry until it loads: the panels show their loading state, so no
+  // final vote typed for the old document reaches the new one's URL.
+  const document = onlyForKey(
+    fetchedDocument,
+    documentId,
+    (fetched) => fetched.id,
   );
 
   const amendmentsFetch = useAsyncData(
     () => `session-amendments-${documentId.value ?? "none"}`,
-    () =>
-      documentUrl.value
-        ? api.get<DocumentAmendmentsDto>(`${documentUrl.value}/amendments`)
-        : Promise.resolve(null),
+    async (): Promise<SessionAmendmentsDto | null> => {
+      // Tagged with the document it was fetched for: the DTO carries no
+      // document id, and an empty list would say nothing either.
+      const forDocument = documentId.value;
+      const url = documentUrl.value;
+      if (!forDocument || !url) return null;
+      const dto = await api.get<DocumentAmendmentsDto>(`${url}/amendments`);
+      return { ...dto, documentId: forDocument };
+    },
   );
   const {
     status: amendmentsStatus,
     error: amendmentsError,
     refresh: refreshAmendments,
   } = amendmentsFetch;
-  const { data: amendmentsDto, stale: amendmentsStale } = keepLastGoodData(
+  const { data: fetchedAmendments, stale: amendmentsStale } = keepLastGoodData(
     amendmentsFetch,
     { resetOn: documentId },
+  );
+  // The previous document's list, carried like its DTO, would count its
+  // undecided amendments (or none) against the new document.
+  const amendmentsDto = onlyForKey(
+    fetchedAmendments,
+    documentId,
+    (fetched) => fetched.documentId,
   );
 
   // One shared "showing the last data received" toast (same id as the hub).
@@ -1001,8 +1030,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
    */
   async function annulFinalVote(note: string | null): Promise<boolean> {
     const current = document.value;
-    // Right after a switch, the new document's entry still holds the old
-    // DTO until it loads: its updatedAt must not go to the new URL.
+    // `document` already hides the DTO carried over from the previous
+    // document; checked again because its updatedAt must never go to
+    // another document's URL.
     if (!current || current.id !== documentId.value) return false;
     const body: FinalVoteAnnulBody = {
       updatedAt: current.updatedAt,

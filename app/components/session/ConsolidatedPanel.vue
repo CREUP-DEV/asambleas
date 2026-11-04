@@ -74,6 +74,10 @@ const finalBlockedReason = computed(() => {
   if (!document.value.voted) return t("session.preview.notVoted");
   if (document.value.status !== "published")
     return t("session.preview.notPublished");
+  // Until this document's amendments arrive (or after they failed to load),
+  // an empty list would read as "nothing undecided" and unlock the vote.
+  if (!session.amendmentsDto.value)
+    return t("session.preview.amendmentsLoading");
   // Before the undecided count: with the text returned, the remaining
   // amendments lapse and there is no final vote at all.
   if (preview.value.totalityReturn)

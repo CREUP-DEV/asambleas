@@ -3,7 +3,9 @@ import {
   getCurrentScope,
   onScopeDispose,
   shallowRef,
+  toValue,
   watch,
+  type MaybeRefOrGetter,
   type Ref,
   type ShallowRef,
   type WatchSource,
@@ -156,6 +158,35 @@ export function keepLastGoodData<T>(
   });
 
   return { data, stale, failed };
+}
+
+/**
+ * Hides data that belongs to another key.
+ *
+ * When the reactive key of a useFetch / useAsyncData changes, Nuxt seeds the
+ * new key's entry with the old key's data, and it stays there until the new
+ * request lands (for good if that request fails). Whatever reads the data in
+ * that window takes the old record for the new one, and a mutation sent from
+ * it goes to the new key's URL.
+ *
+ * `onlyForKey` reads as null while `keyOf(value)` differs from `key`, so the
+ * page shows its loading state instead. Writes go through to the source.
+ */
+export function onlyForKey<T, K>(
+  source: Ref<T | null | undefined>,
+  key: MaybeRefOrGetter<K>,
+  keyOf: (value: T) => K,
+): WritableComputedRef<T | null | undefined> {
+  return computed<T | null | undefined>({
+    get: () => {
+      const value = source.value;
+      if (value === null || value === undefined) return value;
+      return keyOf(value) === toValue(key) ? value : null;
+    },
+    set: (value) => {
+      source.value = value;
+    },
+  });
 }
 
 /** A source `useRetryFailed` refreshes while its last request failed. */

@@ -357,6 +357,20 @@ function tooExtensiveError() {
 }
 
 /**
+ * Nothing to import: a blank file, or one whose text sits only where the
+ * import does not read it (images, headers, footers, shapes). It shares its
+ * 422 with {@link tooExtensiveError}, so `data.reason` tells the client that
+ * splitting the file cannot help.
+ */
+function emptyDocumentError() {
+  return createError({
+    statusCode: 422,
+    message: "El documento no contiene texto que se pueda importar",
+    data: { reason: "empty" },
+  });
+}
+
+/**
  * The client went away. Nobody receives this answer; 499 is the status
  * proxies log for a request the client closed.
  */
@@ -919,12 +933,7 @@ export async function convertDocx(
   );
 
   await nextTurn();
-  if (blocks.length === 0) {
-    throw createError({
-      statusCode: 422,
-      message: "El documento no contiene texto que se pueda importar",
-    });
-  }
+  if (blocks.length === 0) throw emptyDocumentError();
   const parsed = blocksSchema.safeParse(blocks);
   if (!parsed.success) tooExtensive();
 

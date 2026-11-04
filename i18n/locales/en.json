@@ -2341,7 +2341,8 @@
       "notVoted": "This document is not put to a vote",
       "notPublished": "The document is not published",
       "undecided": "1 amendment is still undecided | {count} amendments are still undecided",
-      "totalityReturnBlocked": "{code}, a totality amendment returning the text, is approved: the text goes back and there is no final vote. Reopen it if it was approved by mistake."
+      "totalityReturnBlocked": "{code}, a totality amendment returning the text, is approved: the text goes back and there is no final vote. Reopen it if it was approved by mistake.",
+      "amendmentsLoading": "Loading the document's amendments…"
     },
     "finalVote": {
       "title": "Final vote on the text",

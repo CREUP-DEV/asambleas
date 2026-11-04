@@ -223,6 +223,17 @@ watch(
   },
 );
 
+// The notice replaces the form, editor included, possibly under the caret:
+// move focus to it so a keyboard or screen-reader user learns why the text
+// field went away and where the draft is, instead of landing on the panel.
+const otherAlert = useTemplateRef<{ $el?: HTMLElement }>("otherAlert");
+watch(onOtherDocument, (other) => {
+  if (!other) return;
+  void nextTick(() => {
+    if (open.value && onOtherDocument.value) otherAlert.value?.$el?.focus?.();
+  });
+});
+
 function onSourcesChange(value: string[] | null | undefined): void {
   const next = [...(value ?? [])];
   if (sessionSameIds(next, sourceIds.value)) {
@@ -342,9 +353,13 @@ function voteCreated(): void {
     <template #body>
       <UAlert
         v-if="onOtherDocument"
+        ref="otherAlert"
+        role="alert"
+        tabindex="-1"
         color="warning"
         variant="subtle"
         icon="i-lucide-file-clock"
+        class="outline-none focus-visible:ring-2 focus-visible:ring-primary"
         :title="t('session.composer.otherDocumentTitle')"
         :description="
           t('session.composer.otherDocument', { title: draftDocumentTitle })
