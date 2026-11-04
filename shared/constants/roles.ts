@@ -2,6 +2,8 @@ export const SYSTEM_ROLES = {
   ADMIN: "Admin",
   SECRETARIA: "Secretaría",
   MODERADOR: "Moderador",
+  /** Members of the Comisión Ejecutiva (intranet type "CEA"). */
+  CEA: "CEA",
   ASOCIADO: "Asociado",
   INVITADO: "Invitado",
 } as const;

@@ -97,6 +97,34 @@ export const amendments = pgTable(
       withTimezone: true,
       mode: "date",
     }),
+    /**
+     * Secretaría checked the form of the submitted amendment. On-time
+     * amendments are admitted at the same time; late ones still need the
+     * Mesa's admission decision.
+     */
+    validatedAt: timestamp("validated_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    validatedByUserId: text("validated_by_user_id").references(
+      () => users.id,
+      { onDelete: "set null" },
+    ),
+    /**
+     * Visible to everyone who can see the document. Until then only its
+     * authors, the Secretaría and the Mesa see it. Set by the Secretaría,
+     * when validating or later.
+     */
+    publishedAt: timestamp("published_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    /** Last correction the Secretaría asked for (the amendment went back to draft). */
+    correctionNote: text("correction_note"),
+    correctionRequestedAt: timestamp("correction_requested_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     approvalMethod: approvalMethodEnum("approval_method"),
     outcomeVoteId: text("outcome_vote_id"),
     outcomeNote: text("outcome_note"),

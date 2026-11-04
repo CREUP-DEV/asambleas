@@ -100,6 +100,17 @@ export const documents = pgTable(
       withTimezone: true,
       mode: "date",
     }),
+    /**
+     * Internal deadline the Secretaría sets for documents it expects (CEA
+     * reports, resolutions...). Drives the documentation tracking panel.
+     */
+    dueAt: timestamp("due_at", { withTimezone: true, mode: "date" }),
+    /** Last correction the Secretaría asked for (the document went back to draft). */
+    correctionNote: text("correction_note"),
+    correctionRequestedAt: timestamp("correction_requested_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     publishedAt: timestamp("published_at", {
       withTimezone: true,
       mode: "date",

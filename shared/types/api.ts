@@ -69,6 +69,76 @@ export interface MeDto {
   member: MemberRef | null;
 }
 
+/**
+ * GET /api/me/work: what the signed-in user has to do or is waiting for,
+ * across assemblies that are not closed. Drives the home page.
+ */
+export interface MeWorkDto {
+  /** Documents the user's member presents: drafts, expected, presented, published. */
+  documents: MeWorkDocumentDto[];
+  /** Amendments the user's member authored that are not decided yet. */
+  amendments: MeWorkAmendmentDto[];
+  /** For the Secretaría (document:manage / amendment:review): items waiting for it. */
+  review: MeWorkReviewDto[];
+}
+
+export interface MeWorkAssemblyRef {
+  id: string;
+  slug: string;
+  label: string;
+}
+
+export interface MeWorkDocumentDto {
+  assembly: MeWorkAssemblyRef;
+  document: DocumentSummaryDto;
+}
+
+export interface MeWorkAmendmentDto {
+  assembly: MeWorkAssemblyRef;
+  document: { id: string; slug: string; title: string };
+  amendment: {
+    id: string;
+    code: string | null;
+    status: AmendmentStatus;
+    reviewState: AmendmentReviewState | null;
+    correctionNote: string | null;
+    updatedAt: IsoDate;
+  };
+}
+
+export interface MeWorkReviewDto {
+  assembly: MeWorkAssemblyRef;
+  /** Documents presented and waiting for validation (publication). */
+  documentsToValidate: number;
+  /** Amendments presented and waiting for validation. */
+  amendmentsToValidate: number;
+  /** Amendments validated but not published yet. */
+  amendmentsToPublish: number;
+  /** Expected documents past their internal deadline and not presented. */
+  documentsOverdue: number;
+}
+
+/**
+ * GET /api/assemblies/[assembly]/review (document:manage or
+ * amendment:review): the Secretaría's validation inbox.
+ */
+export interface ReviewQueueDto {
+  /** Presented documents waiting for validation (publication). */
+  documents: DocumentSummaryDto[];
+  /** Amendments waiting for validation or publication, by document. */
+  amendments: ReviewQueueAmendmentDto[];
+}
+
+export interface ReviewQueueAmendmentDto {
+  document: {
+    id: string;
+    slug: string;
+    title: string;
+    reference: string | null;
+  };
+  amendment: AmendmentDto;
+}
+
 // Assemblies -------------------------------------------------------------
 
 export interface MilestoneDto {
@@ -201,6 +271,18 @@ export interface DocumentSummaryDto {
   amendmentCount: number;
   window: AmendmentWindowDto;
   publishedAt: IsoDate | null;
+  /** Presented to the Secretaría (null while it is a draft). */
+  submittedAt: IsoDate | null;
+  /** Internal deadline set by the Secretaría for expected documents. */
+  dueAt: IsoDate | null;
+  /** Text or PDF is present (a placeholder created by the Secretaría has none). */
+  hasContent: boolean;
+  /**
+   * The Secretaría asked for a correction and the document went back to
+   * draft. Only returned to its presenters and managers; null otherwise.
+   */
+  correctionNote: string | null;
+  correctionRequestedAt: IsoDate | null;
   /** Final text approved and stored. */
   consolidated: boolean;
   updatedAt: IsoDate;
@@ -236,7 +318,6 @@ export interface DocumentDto extends DocumentSummaryDto {
   summary: string | null;
   fileUrl: string | null;
   fileName: string | null;
-  submittedAt: IsoDate | null;
   /**
    * Stored per-document amendment window override; null means the assembly
    * calendar applies. `window` is the effective one.
@@ -268,6 +349,8 @@ export interface DocumentCreateBody {
   voted?: boolean;
   majority?: Majority;
   blocks?: Block[];
+  /** Managers only: internal deadline for an expected document. */
+  dueAt?: IsoDate | null;
 }
 
 export interface DocumentUpdateBody {
@@ -281,7 +364,19 @@ export interface DocumentUpdateBody {
   majority?: Majority;
   amendmentsOpenAt?: IsoDate | null;
   amendmentsCloseAt?: IsoDate | null;
+  /** Managers only. */
+  dueAt?: IsoDate | null;
   status?: "withdrawn" | "postponed" | "submitted";
+  updatedAt: IsoDate;
+}
+
+/**
+ * POST .../documents/[document]/correction (document:manage): a submitted
+ * document goes back to draft with a note for its presenters, who fix it
+ * and present it again. Returns DocumentDto.
+ */
+export interface CorrectionBody {
+  note: string;
   updatedAt: IsoDate;
 }
 
@@ -320,7 +415,22 @@ export interface AmendmentCapabilities {
   position: boolean;
   moderate: boolean;
   review: boolean;
+  /** Validate it or ask for a correction (submitted, not validated yet). */
+  validate: boolean;
+  /** Make it visible to everyone (validated, not published yet). */
+  publish: boolean;
 }
+
+/**
+ * Where an amendment stands for its authors and the Secretaría:
+ * - "pending_validation": presented, the Secretaría has not checked it;
+ * - "correction_requested": back to draft with a note to fix;
+ * - "validated": checked but not visible to everyone yet;
+ * - "published": visible to everyone who can see the document.
+ * Null for drafts that were never presented.
+ */
+export type AmendmentReviewState =
+  "pending_validation" | "correction_requested" | "validated" | "published";
 
 export interface AmendmentDto {
   id: string;
@@ -338,6 +448,11 @@ export interface AmendmentDto {
   changeKinds: ChangeKind[];
   authors: MemberRef[];
   submittedAt: IsoDate | null;
+  validatedAt: IsoDate | null;
+  publishedAt: IsoDate | null;
+  reviewState: AmendmentReviewState | null;
+  /** Only returned to its authors and the Secretaría/Mesa; null otherwise. */
+  correctionNote: string | null;
   decidedAt: IsoDate | null;
   approvalMethod: ApprovalMethod | null;
   outcomeNote: string | null;
@@ -436,6 +551,33 @@ export type OutcomeAction =
   | { action: "reopen"; note?: string | null };
 
 export type OutcomeBody = OutcomeAction & { updatedAt: IsoDate };
+
+/**
+ * POST .../documents/[document]/amendments/validate (amendment:review):
+ * validates submitted amendments in bulk. On-time ones are admitted at the
+ * same time (method "secretaria"); late ones keep admission "pending" for the
+ * Mesa. With `publish` they become visible to everyone at once.
+ * Returns DocumentAmendmentsDto.
+ */
+export interface ValidateAmendmentsBody {
+  amendmentIds: string[];
+  publish: boolean;
+}
+
+/**
+ * POST .../documents/[document]/amendments/publish (amendment:review):
+ * makes validated amendments visible to everyone. Returns
+ * DocumentAmendmentsDto.
+ */
+export interface PublishAmendmentsBody {
+  amendmentIds: string[];
+}
+
+/**
+ * POST .../amendments/[amendment]/correction (amendment:review): a submitted,
+ * not yet validated amendment goes back to draft with a note for its authors
+ * (CorrectionBody). Returns AmendmentDto.
+ */
 
 export interface RelationBody {
   fromId: string;

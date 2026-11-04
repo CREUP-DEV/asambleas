@@ -241,9 +241,12 @@ export const DECISION_METHODS = [
 ] as const;
 export type DecisionMethod = (typeof DECISION_METHODS)[number];
 
+/**
+ * Per-assembly policies. Who sees a presented amendment is no longer a
+ * policy: the Secretaría validates and publishes each one (see
+ * amendments.publishedAt).
+ */
 export interface AssemblySettings {
-  /** Who sees submitted amendments before the window closes. */
-  amendmentVisibility: "immediate" | "after_close";
   /** Who sees the proponent's position on each amendment. */
   positionVisibility: "mesa" | "session" | "public";
   /** Whether amendments accepted by the proponent are incorporated by assent or voted. */
@@ -255,7 +258,6 @@ export interface AssemblySettings {
 }
 
 export const DEFAULT_ASSEMBLY_SETTINGS: AssemblySettings = {
-  amendmentVisibility: "after_close",
   positionVisibility: "session",
   acceptedAmendments: "assent",
   tieRule: "rejected",

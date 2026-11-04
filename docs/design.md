@@ -196,6 +196,52 @@ the milestones as a print view and a PDF.
   Events carry ids only; clients refetch through the normal, permission-checked
   endpoints. If the stream drops, clients fall back to polling. No Redis.
 
+## Validation by the Secretaría and documentation tracking
+
+Every document and every amendment is presented by the user who wrote it,
+acting for their member: a council or sectorial (Asociado accounts), or a CEA
+area (CEA accounts, intranet type `CEA`, linked to an `executive` member by
+their intranet initials). Nothing a member presents is visible to the rest of
+the assembly until the Secretaría has checked it.
+
+**Documents.** A presenter writes or uploads the draft and presents it
+(`submitted`). The Secretaría then either:
+
+- validates it, which publishes it (`published`, reference assigned, base
+  version frozen); or
+- asks for a correction (`POST .../correction` with a note): the document goes
+  back to `draft`, the note is shown to its presenters, and they present it
+  again.
+
+**Expected documentation.** The Secretaría can create a document in advance
+for the member that has to provide it (a CEA report, a resolution) with an
+internal deadline (`dueAt`). It starts as an empty draft that the member fills
+in. The tracking panel lists, per agenda item, every document with who presents
+it, its deadline and where it stands: to do (no content yet), in preparation,
+presented (waiting for validation), correction requested, or published.
+Overdue ones stand out.
+
+**Amendments.** Presenting an amendment no longer admits it. The Secretaría
+reviews each presented amendment and:
+
+- validates it. An on-time amendment is admitted at the same time; a late one
+  still needs the Mesa's admission decision. When validating, the Secretaría
+  chooses per amendment whether it becomes visible to everyone right away or
+  stays private until it publishes it later (`POST .../amendments/publish`);
+- or asks for a correction: the amendment goes back to draft with a note for
+  its authors.
+
+Until it is published, an amendment is visible only to its authors, its
+creator, the parties of a transactional and the Secretaría and Mesa. A
+transactional created by the Mesa in session is validated and published at
+once. `reviewState` on `AmendmentDto` tells authors where their amendment
+stands. The time-based `amendmentVisibility` setting is gone.
+
+**Where people see their work.** The home page (`GET /api/me/work`) lists what
+each user has to do (expected documents, corrections requested) and where
+their documents and amendments stand. The Secretaría gets a validation inbox
+per assembly (`GET .../review`) and the tracking panel.
+
 ## Permissions
 
 The existing keys stay, plus:
@@ -204,9 +250,25 @@ The existing keys stay, plus:
 - `session:moderate`: Mesa actions such as live state, admissions, votes,
   decisions and transactionals on behalf of parties.
 
-The default `Moderador` role gets `session:moderate`.
+The default `Moderador` role gets `session:moderate`. The `CEA` role (synced
+from the intranet type `CEA`) gets `document:create` and `amendment:create`,
+like `Asociado`. Validating documents needs `document:manage`; validating and
+publishing amendments needs `amendment:review` (both held by the Secretaría).
 
 ## Interface
+
+The people using the platform are not technical. Every screen follows these
+rules:
+
+- plain language, no internal terms (say "Enviar a Secretaría", not
+  "Presentar (submitted)"; "Quién lo presenta", not "Proponente");
+- one primary action per screen, secondary actions in a "Más" menu, advanced
+  options folded away;
+- every status is a sentence that says what happens next ("Secretaría lo está
+  revisando", "Tienes que corregirlo: …");
+- lists stay clean: editing controls appear in an explicit edit mode, not on
+  every row;
+- empty states explain what to do.
 
 One authenticated shell built on Nuxt UI dashboard components
 (`UDashboardGroup`, `UDashboardSidebar`, `UDashboardPanel`) with the CREUP
