@@ -9,6 +9,8 @@ export const PERMISSION_KEYS = {
   AMENDMENT_MANAGE: "amendment:manage",
   AMENDMENT_REVIEW: "amendment:review",
   ASSEMBLY_VOTE_RESULT: "assembly:vote_result",
+  SESSION_MODERATE: "session:moderate",
+  MEMBER_MANAGE: "member:manage",
 } as const;
 
 export type PermissionKey =
@@ -33,6 +35,8 @@ export const PERMISSION_DESCRIPTION_I18N_KEYS: Record<PermissionKey, string> = {
     "permissions.descriptions.amendmentReview",
   [PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT]:
     "permissions.descriptions.assemblyVoteResult",
+  [PERMISSION_KEYS.SESSION_MODERATE]: "permissions.descriptions.sessionModerate",
+  [PERMISSION_KEYS.MEMBER_MANAGE]: "permissions.descriptions.memberManage",
 };
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
@@ -45,8 +49,10 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     PERMISSION_KEYS.AMENDMENT_MANAGE,
     PERMISSION_KEYS.AMENDMENT_REVIEW,
     PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT,
+    PERMISSION_KEYS.SESSION_MODERATE,
+    PERMISSION_KEYS.MEMBER_MANAGE,
   ],
   Asociado: [PERMISSION_KEYS.DOCUMENT_CREATE, PERMISSION_KEYS.AMENDMENT_CREATE],
-  Moderador: [],
+  Moderador: [PERMISSION_KEYS.SESSION_MODERATE],
   Invitado: [],
 };
