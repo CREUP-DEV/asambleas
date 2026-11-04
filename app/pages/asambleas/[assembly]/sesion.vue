@@ -226,7 +226,10 @@ defineShortcuts({
             :default-size="22"
             :min-size="15"
             :max-size="35"
-            :ui="{ root: 'min-h-0', body: 'gap-3 sm:gap-3 p-3 sm:p-4' }"
+            :ui="{
+              root: 'min-h-0',
+              body: 'relative gap-3 sm:gap-3 p-3 sm:p-4',
+            }"
           >
             <template #header>
               <UDashboardNavbar
@@ -246,7 +249,10 @@ defineShortcuts({
             :default-size="42"
             :min-size="28"
             :max-size="60"
-            :ui="{ root: 'min-h-0', body: 'gap-3 sm:gap-3 p-3 sm:p-4' }"
+            :ui="{
+              root: 'min-h-0',
+              body: 'relative gap-3 sm:gap-3 p-3 sm:p-4',
+            }"
           >
             <template #header>
               <UDashboardNavbar
@@ -262,7 +268,10 @@ defineShortcuts({
 
           <UDashboardPanel
             id="preview"
-            :ui="{ root: 'min-h-0', body: 'gap-3 sm:gap-3 p-3 sm:p-4' }"
+            :ui="{
+              root: 'min-h-0',
+              body: 'relative gap-3 sm:gap-3 p-3 sm:p-4',
+            }"
           >
             <template #header>
               <UDashboardNavbar

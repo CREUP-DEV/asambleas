@@ -258,12 +258,21 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
       (section.path === "" ||
         childPaths.value.size === 0 ||
         childPaths.value.has(section.path)),
-  ).map((section) => ({
-    label: t(`assembly.sections.${section.key}`),
-    icon: section.icon,
-    to: sectionPath(section.path),
-    exact: section.path === "",
-  }));
+  ).map((section) => {
+    const to = sectionPath(section.path);
+    return {
+      label: t(`assembly.sections.${section.key}`),
+      icon: section.icon,
+      to,
+      exact: section.path === "",
+      // A document (documentos/<slug>/...) is a sibling route of the list,
+      // not a child, so the router alone would not mark Documents active.
+      active:
+        section.path === ""
+          ? route.path === to
+          : route.path === to || route.path.startsWith(`${to}/`),
+    };
+  });
   if (hasProjectionPage && value.can.moderate) {
     // Opens on its own window, typically on the projector.
     items.splice(items.length - (value.can.manage ? 1 : 0), 0, {
@@ -284,7 +293,11 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
 
   <UDashboardPanel v-else id="assembly-hub">
     <template #header>
-      <UDashboardNavbar :title="assembly?.label ?? t('assembly.hub.loading')">
+      <!-- The label never truncates: the centre line gives way instead. -->
+      <UDashboardNavbar
+        :title="assembly?.label ?? t('assembly.hub.loading')"
+        :ui="{ left: 'shrink-0', title: 'shrink-0', center: 'min-w-0' }"
+      >
         <template #trailing>
           <template v-if="assembly">
             <CommonStatusBadge kind="assembly" :value="assembly.status" />
@@ -336,7 +349,10 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
         </template>
 
         <!-- Centre (large screens): what, when and where. -->
-        <p v-if="assembly" class="text-muted flex items-center gap-x-3 text-sm">
+        <p
+          v-if="assembly"
+          class="text-muted flex min-w-0 items-center gap-x-3 text-sm"
+        >
           <span class="truncate">{{ typeName }}</span>
           <span class="inline-flex items-center gap-1 whitespace-nowrap">
             <UIcon

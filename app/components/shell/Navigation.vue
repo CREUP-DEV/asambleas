@@ -116,7 +116,13 @@ const assemblyItems = computed<NavigationMenuItem[]>(() => {
       label: t("shell.assembly.agenda"),
       icon: "i-lucide-list-tree",
       to: path("agenda"),
-      active: isWithin(path("agenda")) || isWithin(path("documents")),
+      active: isWithin(path("agenda")),
+    },
+    {
+      label: t("shell.assembly.documents"),
+      icon: "i-lucide-files",
+      to: path("documents"),
+      active: isWithin(path("documents")),
     },
     {
       label: t("shell.assembly.calendar"),
