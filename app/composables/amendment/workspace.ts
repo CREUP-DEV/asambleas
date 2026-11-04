@@ -11,23 +11,23 @@ import {
   AMENDMENT_CLOSED_STATUSES,
   type AmendmentKind,
   type AmendmentStatus,
-} from "../../../shared/constants/domain";
-import type { AmendmentDto, RelationDto } from "../../../shared/types/api";
+} from "~~/shared/constants/domain";
+import type { AmendmentDto, RelationDto } from "~~/shared/types/api";
 import type {
   AmendmentInput,
   AmendmentOp,
   Block,
-} from "../../../shared/types/content";
-import { consolidate } from "../../../shared/utils/content/consolidate";
-import { diffPassage } from "../../../shared/utils/content/diff";
+} from "~~/shared/types/content";
+import { consolidate } from "~~/shared/utils/content/consolidate";
+import { diffPassage } from "~~/shared/utils/content/diff";
 import {
   indexBlocks,
   touchedBlockIds,
-} from "../../../shared/utils/content/ops";
+} from "~~/shared/utils/content/ops";
 import {
   findOverlaps,
   type OverlapKind,
-} from "../../../shared/utils/content/overlaps";
+} from "~~/shared/utils/content/overlaps";
 
 type AmendmentLike = Pick<
   AmendmentDto,

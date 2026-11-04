@@ -1,0 +1,248 @@
+<script setup lang="ts">
+import { DOCUMENT_KINDS, DOCUMENT_STATUSES } from "~~/shared/constants/domain";
+import type { DocumentSummaryDto } from "~~/shared/types/api";
+
+/**
+ * Every document of the assembly in agenda order, with search and filters.
+ * The agenda page shows the same documents inside the item tree; this list
+ * is the quick way to find one and see where its amendments stand.
+ */
+
+const { t } = useI18n();
+const current = useCurrentAssembly();
+const { assembly, sectionPath } = current;
+
+useHead({
+  title: () =>
+    [t("documents.title"), assembly.value?.label].filter(Boolean).join(" · "),
+});
+
+const { data: agenda, pending, error, refresh } = await useAssemblyAgenda();
+
+const numbers = computed(
+  () =>
+    new Map(
+      flattenAgendaTree(buildAgendaTree(agenda.value?.items ?? [])).map(
+        (node) => [node.item.id, node.number],
+      ),
+    ),
+);
+const itemTitles = computed(
+  () =>
+    new Map((agenda.value?.items ?? []).map((item) => [item.id, item.title])),
+);
+
+const search = ref("");
+const status = ref<string>("all");
+const kind = ref<string>("all");
+
+const statusItems = computed(() => [
+  { label: t("documents.allStatuses"), value: "all" },
+  ...DOCUMENT_STATUSES.map((value) => ({
+    label: t(`common.status.document.${value}`),
+    value,
+  })),
+]);
+const kindItems = computed(() => [
+  { label: t("documents.allKinds"), value: "all" },
+  ...DOCUMENT_KINDS.map((value) => ({
+    label: t(`agenda.documentKinds.${value}`),
+    value,
+  })),
+]);
+
+function normalized(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .toLocaleLowerCase("es");
+}
+
+const filtered = computed<DocumentSummaryDto[]>(() => {
+  const query = normalized(search.value.trim());
+  return (agenda.value?.documents ?? []).filter((document) => {
+    if (status.value !== "all" && document.status !== status.value) {
+      return false;
+    }
+    if (kind.value !== "all" && document.kind !== kind.value) return false;
+    if (!query) return true;
+    return [
+      document.title,
+      document.reference ?? "",
+      document.proponent?.acronym ?? "",
+      document.proponent?.name ?? "",
+    ].some((field) => normalized(field).includes(query));
+  });
+});
+
+/** Documents grouped under their agenda item, in agenda order. */
+const groups = computed(() => {
+  const order = [...numbers.value.keys()];
+  const byItem = new Map<string, DocumentSummaryDto[]>();
+  for (const document of filtered.value) {
+    const list = byItem.get(document.agendaItemId);
+    if (list) list.push(document);
+    else byItem.set(document.agendaItemId, [document]);
+  }
+  return [...byItem.entries()]
+    .sort(([a], [b]) => order.indexOf(a) - order.indexOf(b))
+    .map(([itemId, documents]) => ({
+      itemId,
+      number: numbers.value.get(itemId) ?? "",
+      title: itemTitles.value.get(itemId) ?? "",
+      documents,
+    }));
+});
+
+const total = computed(() => agenda.value?.documents.length ?? 0);
+const filtering = computed(
+  () =>
+    search.value.trim() !== "" ||
+    status.value !== "all" ||
+    kind.value !== "all",
+);
+
+function resetFilters() {
+  search.value = "";
+  status.value = "all";
+  kind.value = "all";
+}
+
+function documentPath(document: DocumentSummaryDto): string {
+  return sectionPath(`documentos/${encodeURIComponent(document.slug)}`);
+}
+</script>
+
+<template>
+  <div v-if="assembly" class="space-y-6">
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="min-w-0 space-y-1">
+        <h2 class="text-highlighted text-xl font-semibold">
+          {{ t("documents.title") }}
+        </h2>
+        <p class="text-muted text-sm">
+          {{ t("agenda.documentsCount", total) }}
+        </p>
+      </div>
+      <UButton
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-list-tree"
+        :label="t('documents.byAgenda')"
+        :to="sectionPath('orden-del-dia')"
+      />
+    </div>
+
+    <div
+      v-if="total > 0"
+      class="flex flex-col gap-2 sm:flex-row sm:items-center"
+      role="search"
+    >
+      <UInput
+        v-model="search"
+        icon="i-lucide-search"
+        :placeholder="t('documents.searchPlaceholder')"
+        :aria-label="t('documents.searchLabel')"
+        class="sm:max-w-sm sm:flex-1"
+      />
+      <USelect
+        v-model="status"
+        :items="statusItems"
+        :aria-label="t('documents.statusFilter')"
+        class="sm:w-48"
+      />
+      <USelect
+        v-model="kind"
+        :items="kindItems"
+        :aria-label="t('documents.kindFilter')"
+        class="sm:w-56"
+      />
+      <UButton
+        v-if="filtering"
+        color="neutral"
+        variant="ghost"
+        icon="i-lucide-x"
+        :label="t('documents.clearFilters')"
+        @click="resetFilters"
+      />
+    </div>
+
+    <div v-if="pending && !agenda" class="space-y-3">
+      <USkeleton v-for="n in 3" :key="n" class="h-16 w-full" />
+    </div>
+
+    <UAlert
+      v-else-if="error"
+      color="error"
+      variant="subtle"
+      icon="i-lucide-circle-alert"
+      :title="t('agenda.loadError')"
+      :actions="[
+        {
+          label: t('agenda.retry'),
+          color: 'error',
+          variant: 'outline',
+          onClick: () => refresh(),
+        },
+      ]"
+    />
+
+    <CommonEmptyState
+      v-else-if="total === 0"
+      icon="i-lucide-files"
+      :title="t('documents.emptyTitle')"
+      :description="t('documents.emptyDescription')"
+    >
+      <template #action>
+        <UButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-list-tree"
+          :label="t('documents.byAgenda')"
+          :to="sectionPath('orden-del-dia')"
+        />
+      </template>
+    </CommonEmptyState>
+
+    <CommonEmptyState
+      v-else-if="filtered.length === 0"
+      icon="i-lucide-search-x"
+      :title="t('documents.noMatchesTitle')"
+      :description="t('documents.noMatchesDescription')"
+    >
+      <template #action>
+        <UButton
+          color="neutral"
+          variant="outline"
+          :label="t('documents.clearFilters')"
+          @click="resetFilters"
+        />
+      </template>
+    </CommonEmptyState>
+
+    <div v-else class="space-y-6">
+      <section
+        v-for="group in groups"
+        :key="group.itemId"
+        :aria-labelledby="`documents-item-${group.itemId}`"
+        class="space-y-2"
+      >
+        <h3
+          :id="`documents-item-${group.itemId}`"
+          class="text-muted text-sm font-semibold"
+        >
+          <span v-if="group.number" class="tabular-nums">
+            {{ group.number }}.
+          </span>
+          {{ group.title }}
+        </h3>
+        <AgendaDocumentRow
+          v-for="document in group.documents"
+          :key="document.id"
+          :document="document"
+          :to="documentPath(document)"
+        />
+      </section>
+    </div>
+  </div>
+</template>

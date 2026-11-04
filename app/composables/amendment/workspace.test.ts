@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { AmendmentDto } from "../../../shared/types/api";
-import type { AmendmentOp, Block } from "../../../shared/types/content";
-import { consolidate } from "../../../shared/utils/content/consolidate";
-import { validateOps } from "../../../shared/utils/content/ops";
+import type { AmendmentDto } from "~~/shared/types/api";
+import type { AmendmentOp, Block } from "~~/shared/types/content";
+import { consolidate } from "~~/shared/utils/content/consolidate";
+import { validateOps } from "~~/shared/utils/content/ops";
 import {
   amendmentBlockMarkers,
   amendmentDisplayLabel,

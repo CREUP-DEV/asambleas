@@ -1,17 +1,46 @@
 <script setup lang="ts">
+import type { RadioGroupItem } from "@nuxt/ui";
+import {
+  CONTENT_FONTS,
+  DIFF_DISPLAY_MODES,
+  isContentFont,
+  isDiffDisplayMode,
+} from "~/composables/accessibility/useAccessibilityPreferences";
+
+/**
+ * Preferences for document and amendment content only (UI chrome keeps its
+ * own font). The previews use the same classes as real content, so what is
+ * shown here is exactly how diffs and text will look.
+ */
 const { t } = useI18n();
-const { diffDisplayMode, contentFont } = useAccessibilityPreferences();
+const { diffDisplayMode, contentFont, contentFontFamily } =
+  useAccessibilityPreferences();
 
-const diffModeOptions = [
-  { value: "color", label: "accessibility.diffMode.color" },
-  { value: "marks", label: "accessibility.diffMode.marks" },
-];
+const diffModeItems = computed<RadioGroupItem[]>(() =>
+  DIFF_DISPLAY_MODES.map((value) => ({
+    value,
+    label: t(`accessibility.diffMode.${value}`),
+  })),
+);
+const fontItems = computed<RadioGroupItem[]>(() =>
+  CONTENT_FONTS.map((value) => ({
+    value,
+    label: t(`accessibility.font.${value}`),
+  })),
+);
 
-const fontOptions = [
-  { value: "raleway", label: "accessibility.font.raleway" },
-  { value: "atkinson", label: "accessibility.font.atkinson" },
-  { value: "opendyslexic", label: "accessibility.font.opendyslexic" },
-];
+const diffModeModel = computed({
+  get: () => diffDisplayMode.value,
+  set: (value: unknown) => {
+    if (isDiffDisplayMode(value)) diffDisplayMode.value = value;
+  },
+});
+const fontModel = computed({
+  get: () => contentFont.value,
+  set: (value: unknown) => {
+    if (isContentFont(value)) contentFont.value = value;
+  },
+});
 </script>
 
 <template>
@@ -20,84 +49,32 @@ const fontOptions = [
       {{ t("accessibility.preferences") }}
     </h3>
 
-    <!-- Diff display mode -->
-    <UFormField :label="t('accessibility.diffModeLabel')">
-      <div class="flex flex-col gap-2">
-        <label
-          v-for="option in diffModeOptions"
-          :key="option.value"
-          class="flex items-center gap-2"
-        >
-          <input
-            type="radio"
-            :value="option.value"
-            :checked="diffDisplayMode === option.value"
-            name="diff-mode"
-            class="accent-primary"
-            @change="diffDisplayMode = option.value as 'color' | 'marks'"
-          />
-          <span class="text-sm">{{ t(option.label) }}</span>
-        </label>
-      </div>
+    <div class="space-y-3">
+      <URadioGroup
+        v-model="diffModeModel"
+        :legend="t('accessibility.diffModeLabel')"
+        :items="diffModeItems"
+      />
+      <!-- The diff classes follow the <html> diff-color / diff-marks class. -->
+      <p class="border-default content-font rounded border p-3 text-sm">
+        <ins class="cx-ins">{{ t("accessibility.diffPreviewInsert") }}</ins>
+        {{ " " }}
+        <del class="cx-del">{{ t("accessibility.diffPreviewDelete") }}</del>
+      </p>
+    </div>
 
-      <div class="border-default mt-3 rounded border p-3 text-sm">
-        <p v-if="diffDisplayMode === 'color'">
-          <ins class="bg-green-100 text-green-800 no-underline">
-            {{ t("accessibility.diffPreviewInsert") }}
-          </ins>
-          {{ " " }}
-          <del class="text-red-700 line-through">
-            {{ t("accessibility.diffPreviewDelete") }}
-          </del>
-        </p>
-        <p v-else>
-          <ins class="font-bold underline">
-            {{ t("accessibility.diffPreviewInsert") }}
-          </ins>
-          {{ " " }}
-          <del class="line-through">
-            {{ t("accessibility.diffPreviewDelete") }}
-          </del>
-        </p>
-      </div>
-    </UFormField>
-
-    <!-- Content font -->
-    <UFormField :label="t('accessibility.contentFontLabel')">
-      <div class="flex flex-col gap-2">
-        <label
-          v-for="option in fontOptions"
-          :key="option.value"
-          class="flex items-center gap-2"
-        >
-          <input
-            type="radio"
-            :value="option.value"
-            :checked="contentFont === option.value"
-            name="content-font"
-            class="accent-primary"
-            @change="
-              contentFont = option.value as
-                'raleway' | 'atkinson' | 'opendyslexic'
-            "
-          />
-          <span class="text-sm">{{ t(option.label) }}</span>
-        </label>
-      </div>
-
+    <div class="space-y-3">
+      <URadioGroup
+        v-model="fontModel"
+        :legend="t('accessibility.contentFontLabel')"
+        :items="fontItems"
+      />
       <p
-        class="border-default mt-3 rounded border p-3 text-sm"
-        :style="{
-          fontFamily:
-            contentFont === 'atkinson'
-              ? 'var(--font-atkinson)'
-              : contentFont === 'opendyslexic'
-                ? 'var(--font-opendyslexic)'
-                : 'var(--font-sans)',
-        }"
+        class="border-default rounded border p-3 text-sm"
+        :style="{ fontFamily: contentFontFamily }"
       >
         {{ t("accessibility.fontPreviewText") }}
       </p>
-    </UFormField>
+    </div>
   </div>
 </template>

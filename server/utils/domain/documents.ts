@@ -330,7 +330,7 @@ export function documentCapabilities(
 
 // Mappers -------------------------------------------------------------------
 
-export function toMemberRef(
+function memberRefOrNull(
   member:
     Pick<MemberRow, "id" | "acronym" | "name" | "kind"> | null | undefined,
 ): MemberRef | null {
@@ -496,7 +496,7 @@ export async function loadDocumentSummaries(
   const now = new Date();
   return visible.map(({ proponent, ...document }) =>
     toDocumentSummaryDto(document, {
-      proponent: toMemberRef(proponent),
+      proponent: memberRefOrNull(proponent),
       amendmentCount: counts.get(document.id) ?? 0,
       window: documentWindow(document, milestones, now),
     }),
@@ -558,7 +558,7 @@ export async function loadDocumentDto(
     assembly,
     document,
     milestones,
-    proponent: toMemberRef(proponent),
+    proponent: memberRefOrNull(proponent),
     amendmentCount: counts.get(document.id) ?? 0,
     workingVersion,
     baseVersion,
