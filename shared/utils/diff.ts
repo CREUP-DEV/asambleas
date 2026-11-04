@@ -1,23 +1,4 @@
-import DiffMatchPatch from "diff-match-patch";
-
-const dmp = new DiffMatchPatch();
-
-export function computePatch(base: string, modified: string): string {
-  const patches = dmp.patch_make(base, modified);
-  return dmp.patch_toText(patches);
-}
-
-export function applyPatch(base: string, patch: string): string | null {
-  const patches = dmp.patch_fromText(patch);
-  const [result, success] = dmp.patch_apply(patches, base);
-
-  if (success.some((applied) => !applied)) {
-    return null;
-  }
-
-  return result;
-}
-
+/** SHA-256 hex digest of a string, used as the contentHash of versions. */
 export async function hashContent(content: string): Promise<string> {
   const encoder = new TextEncoder();
   const data = encoder.encode(content);

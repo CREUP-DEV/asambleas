@@ -27,6 +27,33 @@ const routeRules = {
       "X-Robots-Tag": "noindex, nofollow, noarchive",
     },
   },
+  // Whole documents travel as JSON blocks (drafts, totality amendments), and
+  // DOCX imports and PDFs go up as multipart. nuxt-security's defaults (2 MB
+  // JSON, 8 MB uploads) would answer 413 before the handlers' own limits.
+  "/api/assemblies/**": {
+    security: {
+      requestSizeLimiter: {
+        maxRequestSizeInBytes: 6_000_000,
+        maxUploadFileRequestInBytes: 8_000_000,
+      },
+    },
+  },
+  "/api/assemblies/*/documents/*/import": {
+    security: {
+      requestSizeLimiter: {
+        maxRequestSizeInBytes: 6_000_000,
+        maxUploadFileRequestInBytes: 16_000_000,
+      },
+    },
+  },
+  "/api/assemblies/*/documents/*/file": {
+    security: {
+      requestSizeLimiter: {
+        maxRequestSizeInBytes: 6_000_000,
+        maxUploadFileRequestInBytes: 21_000_000,
+      },
+    },
+  },
   "/_nuxt/**": {
     headers: {
       "Cache-Control": "public, max-age=31536000, immutable",
@@ -104,8 +131,10 @@ export default defineNuxtConfig({
 
   security: {
     nonce: true,
+    // Delegates in the same room share the venue's public IP, and every live
+    // change makes each client refetch, so the per-IP budget is generous.
     rateLimiter: {
-      tokensPerInterval: 500,
+      tokensPerInterval: 12000,
       interval: 300000,
     },
     headers: {
@@ -186,7 +215,13 @@ export default defineNuxtConfig({
       middleware: true,
       handler: adminHandler,
     },
-    ...["/api/assemblies", "/api/exports", "/api/uploads"].map((route) => ({
+    ...[
+      "/api/assemblies",
+      "/api/exports",
+      "/api/uploads",
+      "/api/members",
+      "/api/me",
+    ].map((route) => ({
       route,
       middleware: true,
       handler: protectedHandler,

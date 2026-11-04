@@ -1,68 +1,140 @@
 <script setup lang="ts">
-import type { AssemblyStatus } from "~~/shared/constants/statuses";
-import { buildAssemblySlug, formatAssemblyLabel } from "~~/shared/utils/slug";
+import type { AssemblySummaryDto } from "~~/shared/types/api";
+import { formatAssemblyDateRange } from "~/composables/assembly/useCurrentAssembly";
+import { assemblyPath } from "~/components/shell/Navigation.vue";
 
-interface Assembly {
-  id: string;
-  number: number;
-  type: string;
-  status: AssemblyStatus;
-  startDate: string | Date;
-  endDate: string | Date;
-  location: string;
-}
-
-const props = defineProps<{
-  assembly: Assembly;
-}>();
-
-const { t, locale } = useI18n();
-const localePath = useLocalePath();
-
-const dateFormatter = computed(
-  () =>
-    new Intl.DateTimeFormat(locale.value, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }),
+/**
+ * Summary card of an assembly: label, type, status, dates, place, document
+ * count and a countdown to its next milestone. The whole card links to the
+ * assembly; the heading link carries the accessible name.
+ */
+const props = withDefaults(
+  defineProps<{
+    assembly: AssemblySummaryDto;
+    /** Heading level of the label, to fit the page outline. */
+    headingLevel?: 2 | 3 | 4;
+    /** Emphasises a live assembly. */
+    highlight?: boolean;
+  }>(),
+  { headingLevel: 3, highlight: false },
 );
 
-const formatDate = (d: string | Date) =>
-  dateFormatter.value.format(new Date(d));
-const assemblyLabel = computed(() => formatAssemblyLabel(props.assembly));
+const { t, te, locale } = useI18n();
+const localePath = useLocalePath();
+
+const to = computed(() => localePath(assemblyPath(props.assembly.slug)));
+
+const typeName = computed(() => {
+  const key = `assemblies.types.${props.assembly.type}`;
+  return te(key) ? t(key) : props.assembly.type;
+});
+
+/** "14–16 de noviembre de 2026", the same format as the assembly hub. */
+const dates = computed(() =>
+  formatAssemblyDateRange(
+    props.assembly.startDate,
+    props.assembly.endDate,
+    locale.value,
+  ),
+);
+
+const isLive = computed(() => props.assembly.status === "in_session");
+
+const milestone = computed(() => props.assembly.nextMilestone);
+const milestoneLabel = computed(() =>
+  milestone.value ? t(`assemblies.milestones.${milestone.value.key}`) : "",
+);
+
+const headingTag = computed(() => `h${props.headingLevel}`);
 </script>
 
 <template>
-  <NuxtLink
-    :to="localePath(`/asambleas/${buildAssemblySlug(props.assembly)}`)"
-    class="motion-card group hover:border-primary/60 block rounded-xl border p-5"
-    :aria-label="assemblyLabel"
+  <article
+    class="bg-default hover:ring-accented has-[a:focus-visible]:ring-primary relative flex h-full flex-col gap-3 rounded-lg p-4 transition-shadow hover:shadow-sm has-[a:focus-visible]:ring-2 sm:p-5"
+    :class="highlight || isLive ? 'ring-success ring-2' : 'ring-default ring'"
   >
-    <div class="flex items-start justify-between gap-3">
+    <header class="flex items-start justify-between gap-3">
       <div class="min-w-0">
-        <p class="text-muted text-xs font-medium uppercase tracking-wide">
-          {{ t(`assembly.types.${props.assembly.type}`) }}
-        </p>
-        <h2
-          class="group-hover:text-primary mt-0.5 text-lg font-semibold transition-colors"
+        <component
+          :is="headingTag"
+          class="text-highlighted text-lg leading-tight font-semibold"
         >
-          {{ assemblyLabel }}
-        </h2>
+          <NuxtLink
+            :to="to"
+            class="after:absolute after:inset-0 after:rounded-lg focus-visible:outline-none"
+          >
+            {{ assembly.label }}
+          </NuxtLink>
+        </component>
+        <p class="text-muted mt-0.5 truncate text-sm">{{ typeName }}</p>
       </div>
-      <AssemblyStatusBadge :status="props.assembly.status" />
-    </div>
+      <div class="flex shrink-0 flex-col items-end gap-1">
+        <CommonStatusBadge
+          kind="assembly"
+          :value="assembly.status"
+          :icon="isLive ? 'i-lucide-radio' : undefined"
+        />
+        <UBadge
+          v-if="assembly.agendaFinalizedAt"
+          :label="t('assemblies.card.agendaFinal')"
+          color="neutral"
+          variant="outline"
+          size="sm"
+          icon="i-lucide-lock"
+        />
+      </div>
+    </header>
 
-    <div class="text-muted mt-3 flex flex-col gap-1 text-sm">
+    <dl class="grid gap-1.5 text-sm">
       <div class="flex items-center gap-2">
-        <UIcon name="i-tabler-calendar" class="size-4 shrink-0" />
-        <span>{{ formatDate(props.assembly.startDate) }}</span>
-        <span>→</span>
-        <span>{{ formatDate(props.assembly.endDate) }}</span>
+        <dt class="sr-only">{{ t("assemblies.card.dates") }}</dt>
+        <UIcon
+          name="i-lucide-calendar"
+          class="text-dimmed size-4 shrink-0"
+          aria-hidden="true"
+        />
+        <dd class="min-w-0">
+          <time :datetime="assembly.startDate">{{ dates }}</time>
+        </dd>
       </div>
       <div class="flex items-center gap-2">
-        <UIcon name="i-tabler-map-pin" class="size-4 shrink-0" />
-        <span class="truncate">{{ props.assembly.location }}</span>
+        <dt class="sr-only">{{ t("assemblies.card.location") }}</dt>
+        <UIcon
+          name="i-lucide-map-pin"
+          class="text-dimmed size-4 shrink-0"
+          aria-hidden="true"
+        />
+        <dd class="min-w-0 truncate">{{ assembly.location }}</dd>
       </div>
-    </div>
-  </NuxtLink>
+      <div class="flex items-center gap-2">
+        <dt class="sr-only">{{ t("assemblies.card.documentsLabel") }}</dt>
+        <UIcon
+          name="i-lucide-files"
+          class="text-dimmed size-4 shrink-0"
+          aria-hidden="true"
+        />
+        <dd>
+          {{
+            t(
+              "assemblies.card.documents",
+              { count: assembly.documentCount },
+              assembly.documentCount,
+            )
+          }}
+        </dd>
+      </div>
+    </dl>
+
+    <footer
+      v-if="milestone"
+      class="border-default mt-auto border-t pt-3 text-sm"
+    >
+      <span class="sr-only">{{ t("assemblies.card.nextMilestone") }}</span>
+      <CommonCountdown
+        :to="milestone.at"
+        :label="milestoneLabel"
+        icon="i-lucide-clock"
+      />
+    </footer>
+  </article>
 </template>

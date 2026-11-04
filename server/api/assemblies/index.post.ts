@@ -1,49 +1,85 @@
-import { defineEventHandler, readBody, createError } from "h3";
-import { assemblies } from "../../db/schema";
-import { requirePermission } from "../../utils/auth/rbac";
-import { throwMutationError } from "../../utils/errors";
-import { runCrudTransaction } from "../../utils/crud";
+import { createError, defineEventHandler, setResponseStatus } from "h3";
+import type { AssemblyDto } from "~~/shared/types/api";
+import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
-import { createAssemblySchema } from "~~/shared/utils/schemas/assembly";
+import { defaultMilestones } from "~~/shared/utils/calendar";
+import { assemblyCreateBodySchema } from "~~/shared/utils/schemas/assembly";
+import { db } from "../../db";
+import { assemblies } from "../../db/schema";
+import { requireActor, requireCan } from "../../utils/domain/actor";
+import {
+  findAssemblyByTypeNumber,
+  insertMilestones,
+  loadAssemblyDto,
+  readAssemblyBody,
+  throwAssemblyMutationError,
+} from "../../utils/domain/assemblies";
+import { recordEvent } from "../../utils/domain/events";
 
-export default defineEventHandler(async (event) => {
-  await requirePermission(event, PERMISSION_KEYS.ASSEMBLY_CREATE);
+/** Creates a draft assembly and, unless told not to, its default calendar. */
+export default defineEventHandler(async (event): Promise<AssemblyDto> => {
+  const actor = await requireActor(event);
+  requireCan(actor, PERMISSION_KEYS.ASSEMBLY_CREATE);
+  const body = await readAssemblyBody(event, assemblyCreateBodySchema);
 
-  const body = await readBody(event);
-  const parsed = createAssemblySchema.safeParse(body);
-  if (!parsed.success) {
-    throw createError({
-      statusCode: 400,
-      message: "Datos de asamblea inválidos",
-    });
-  }
-
-  const { number, type, startDate, endDate, location } = parsed.data;
-
-  if (new Date(endDate) < new Date(startDate)) {
-    throw createError({
-      statusCode: 400,
-      message: "La fecha de fin no puede ser anterior a la fecha de inicio",
-    });
-  }
+  const startDate = new Date(body.startDate);
+  const endDate = new Date(body.endDate);
 
   try {
-    const assembly = await runCrudTransaction(async (tx) => {
+    const assemblyId = await db.transaction(async (tx) => {
+      if (await findAssemblyByTypeNumber(body.type, body.number, tx)) {
+        throw createError({
+          statusCode: 409,
+          message: "Ya existe una asamblea de ese tipo con ese número",
+        });
+      }
+
       const [created] = await tx
         .insert(assemblies)
         .values({
-          number,
-          type: type as "AGO" | "AGE" | "AGET",
-          startDate: new Date(startDate),
-          endDate: new Date(endDate),
-          location,
+          number: body.number,
+          type: body.type,
+          status: "draft",
+          startDate,
+          endDate,
+          location: body.location,
+          settings: { ...DEFAULT_ASSEMBLY_SETTINGS },
         })
-        .returning();
-      return created;
-    }, "Error al crear la asamblea");
+        .returning({ id: assemblies.id });
+      if (!created) {
+        throw createError({
+          statusCode: 500,
+          message: "No se pudo crear la asamblea",
+        });
+      }
 
-    return assembly;
+      const applyDefaults = body.applyDefaultCalendar !== false;
+      if (applyDefaults) {
+        await insertMilestones(
+          tx,
+          created.id,
+          defaultMilestones(body.type, startDate),
+        );
+      }
+
+      await recordEvent(tx, {
+        assemblyId: created.id,
+        entityType: "assembly",
+        entityId: created.id,
+        type: "assembly_created",
+        payload: {
+          number: body.number,
+          type: body.type,
+          defaultCalendar: applyDefaults,
+        },
+        actor,
+      });
+      return created.id;
+    });
+
+    setResponseStatus(event, 201);
+    return await loadAssemblyDto(actor, assemblyId);
   } catch (error) {
-    throwMutationError("assemblies.post", error, event);
+    throwAssemblyMutationError("assemblies.create", error, event);
   }
 });

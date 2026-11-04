@@ -1,31 +1,36 @@
-import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import PdfPrinter from "pdfmake";
+import type { TDocumentDefinitions } from "pdfmake/interfaces";
+import type { Job } from "pg-boss";
+import type { z } from "zod/v4";
 import { logInfo, logWarn, logError } from "../utils/core/logger";
 import {
   buildAssemblyExportData,
   buildDocumentExportData,
 } from "../utils/export/buildData";
+import { buildAssemblyPdf, buildDocumentPdf } from "../utils/export/pdfBuilder";
 import {
-  buildAssemblyPdf,
-  buildDocumentPdf,
-  type ExportLocale,
-} from "../utils/export/pdfBuilder";
+  RALEWAY_FILES,
+  pdfmake,
+  registerPdfFonts,
+  type RalewayFile,
+} from "../utils/export/pdfmake";
 import {
   EXPORT_QUEUE_NAMES,
+  EXPORT_RETRY_LIMIT,
+  assemblyExportJobSchema,
+  documentExportJobSchema,
   getExportQueue,
-  type AssemblyExportJobData,
-  type DocumentExportJobData,
 } from "../utils/export/queue";
+import { ExportRejectedError } from "../utils/export/rules";
 import {
   getExportMetadataDir,
   patchExportMetadata,
   readExportMetadata,
 } from "../utils/export/storage";
 
-let printer: PdfPrinter | null = null;
+let fontsReady = false;
 
-async function readServerFont(name: string) {
+async function readServerFont(name: RalewayFile): Promise<Buffer> {
   const raw = await useStorage("assets:server").getItemRaw(`fonts/${name}`);
   if (!raw) {
     throw new Error(`PDF font asset not found: ${name}`);
@@ -33,21 +38,20 @@ async function readServerFont(name: string) {
   return Buffer.isBuffer(raw) ? raw : Buffer.from(raw as Uint8Array);
 }
 
-async function getPdfPrinter() {
-  if (printer) return printer;
-
-  printer = new PdfPrinter({
-    Raleway: {
-      normal: await readServerFont("Raleway-Regular.woff"),
-      bold: await readServerFont("Raleway-Bold.woff"),
-      italics: await readServerFont("Raleway-Italic.woff"),
-      bolditalics: await readServerFont("Raleway-BoldItalic.woff"),
-    },
-  });
-
-  return printer;
+async function ensurePdfFonts() {
+  if (fontsReady) return;
+  const names = Object.values(RALEWAY_FILES);
+  const buffers = await Promise.all(names.map(readServerFont));
+  registerPdfFonts(
+    Object.fromEntries(names.map((name, i) => [name, buffers[i]!])) as Record<
+      RalewayFile,
+      Buffer
+    >,
+  );
+  fontsReady = true;
 }
 
+/** Metadata is written before the job is queued; without it the job is void. */
 async function readExportMetadataWithRetry(jobId: string) {
   let lastError: unknown;
   for (let attempt = 0; attempt < 5; attempt += 1) {
@@ -58,76 +62,90 @@ async function readExportMetadataWithRetry(jobId: string) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
-  throw lastError;
+  logError("export-worker.metadata", lastError, { jobId });
+  throw new ExportRejectedError("Export metadata missing or unreadable");
 }
 
 async function writePdf(
   jobId: string,
   filePath: string,
-  docDefinition: Parameters<PdfPrinter["createPdfKitDocument"]>[0],
+  docDefinition: TDocumentDefinitions,
 ) {
   await mkdir(getExportMetadataDir(filePath), { recursive: true });
-  const pdfDoc = (await getPdfPrinter()).createPdfKitDocument(docDefinition);
-  const output = createWriteStream(filePath);
-
-  await new Promise<void>((resolve, reject) => {
-    pdfDoc.on("error", reject);
-    output.on("error", reject);
-    output.on("finish", resolve);
-    pdfDoc.pipe(output);
-    pdfDoc.end();
-  });
+  await ensurePdfFonts();
+  await pdfmake.createPdf(docDefinition).write(filePath);
 
   await patchExportMetadata(jobId, { status: "done", error: undefined });
 }
 
-async function processAssemblyExport(job: {
-  id: string;
-  data: AssemblyExportJobData;
-}) {
-  const metadata = await readExportMetadataWithRetry(job.id);
-  await patchExportMetadata(job.id, { status: "processing" });
-  const exportData = await buildAssemblyExportData(job.data.assemblyId);
-  const docDefinition = buildAssemblyPdf(
-    exportData,
-    (job.data.locale || metadata.locale) as ExportLocale,
-  );
-  await writePdf(job.id, metadata.filePath, docDefinition);
+/** Job payloads queued by an older version of the app fail without retry. */
+function parseJobData<S extends z.ZodType>(
+  schema: S,
+  data: unknown,
+): z.infer<S> {
+  const parsed = schema.safeParse(data);
+  if (!parsed.success)
+    throw new ExportRejectedError("Invalid export job payload");
+  return parsed.data;
 }
 
-async function processDocumentExport(job: {
-  id: string;
-  data: DocumentExportJobData;
-}) {
+async function processAssemblyExport(job: Job<unknown>) {
+  const data = parseJobData(assemblyExportJobSchema, job.data);
   const metadata = await readExportMetadataWithRetry(job.id);
-  await patchExportMetadata(job.id, { status: "processing" });
-  const exportData = await buildDocumentExportData(
-    job.data.assemblyId,
-    job.data.itemId,
-    job.data.documentId,
+  await patchExportMetadata(job.id, { status: "processing", error: undefined });
+  const exportData = await buildAssemblyExportData(data);
+  await writePdf(
+    job.id,
+    metadata.filePath,
+    buildAssemblyPdf(exportData, data.locale),
   );
-  const docDefinition = buildDocumentPdf(
-    exportData,
-    (job.data.locale || metadata.locale) as ExportLocale,
-  );
-  await writePdf(job.id, metadata.filePath, docDefinition);
 }
 
-async function processJob<T>(
-  job: { id: string; data: T },
-  processor: (job: { id: string; data: T }) => Promise<void>,
+async function processDocumentExport(job: Job<unknown>) {
+  const data = parseJobData(documentExportJobSchema, job.data);
+  const metadata = await readExportMetadataWithRetry(job.id);
+  await patchExportMetadata(job.id, { status: "processing", error: undefined });
+  const exportData = await buildDocumentExportData(data);
+  await writePdf(
+    job.id,
+    metadata.filePath,
+    buildDocumentPdf(exportData, data.locale),
+  );
+}
+
+/**
+ * A rejected export (the requester can no longer export it) is marked
+ * failed and completes, so pg-boss does not retry it. Other errors are
+ * retried: the metadata goes back to queued, so clients keep polling, and
+ * only the last attempt marks it failed.
+ */
+async function processJob(
+  job: Job<unknown>,
+  processor: (job: Job<unknown>) => Promise<void>,
 ) {
   try {
     await processor(job);
   } catch (error) {
+    const rejected = error instanceof ExportRejectedError;
+    const final = rejected || job.retryCount >= EXPORT_RETRY_LIMIT;
+    const message =
+      error instanceof Error ? error.message : "Unknown export error";
     try {
       await patchExportMetadata(job.id, {
-        status: "failed",
-        error: error instanceof Error ? error.message : "Unknown export error",
+        status: final ? "failed" : "queued",
+        error: message,
       });
-    } catch {
-      logError("export-worker.metadata", error);
+    } catch (metadataError) {
+      logError("export-worker.metadata", metadataError);
     }
+    if (rejected) {
+      logWarn("export-worker.rejected", { jobId: job.id, reason: message });
+      return;
+    }
+    logError("export-worker.job", error, {
+      jobId: job.id,
+      retryCount: job.retryCount,
+    });
     throw error;
   }
 }
@@ -143,20 +161,20 @@ export default defineNitroPlugin(async (nitroApp) => {
   try {
     const boss = await getExportQueue();
 
-    await boss.work<AssemblyExportJobData>(
+    await boss.work<unknown>(
       EXPORT_QUEUE_NAMES.ASSEMBLY_EXPORT,
       { batchSize: 1 },
-      async (jobs) => {
+      async (jobs: Job<unknown>[]) => {
         for (const job of jobs) {
           await processJob(job, processAssemblyExport);
         }
       },
     );
 
-    await boss.work<DocumentExportJobData>(
+    await boss.work<unknown>(
       EXPORT_QUEUE_NAMES.DOCUMENT_EXPORT,
       { batchSize: 1 },
-      async (jobs) => {
+      async (jobs: Job<unknown>[]) => {
         for (const job of jobs) {
           await processJob(job, processDocumentExport);
         }

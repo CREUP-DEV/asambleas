@@ -1,32 +1,114 @@
 import { z } from "zod/v4";
+import {
+  DOCUMENT_FORMATS,
+  DOCUMENT_KINDS,
+  MAJORITIES,
+  VOTE_METHODS,
+} from "../../constants/domain";
+import type { FinalVoteAnnulBody, FinalVoteBody } from "../../types/api";
+import { blocksSchema } from "./content";
 
-const PDF_FILE_URL_REGEX =
-  /^\/api\/uploads\/documents\/[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\.pdf$/;
+/**
+ * Request bodies of the document endpoints. They mirror the types in
+ * shared/types/api.ts (DocumentCreateBody, DocumentUpdateBody,
+ * DocumentContentBody, FinalVoteBody, FinalVoteAnnulBody).
+ */
 
-export const createPlatformDocumentSchema = z.object({
-  title: z.string().min(1).max(500),
-  content: z.string().min(1),
+const ENTITY_ID_PATTERN = /^[a-z0-9]{20,32}$/;
+
+export const entityIdSchema = z.string().regex(ENTITY_ID_PATTERN);
+
+export const isoDateSchema = z.iso.datetime({ offset: true });
+
+const titleSchema = z.string().trim().min(1).max(300);
+/** An empty summary is stored as null. */
+const summarySchema = z
+  .string()
+  .trim()
+  .max(5_000)
+  .transform((value) => value || null);
+
+export const documentCreateSchema = z.object({
+  agendaItemId: entityIdSchema,
+  kind: z.enum(DOCUMENT_KINDS),
+  format: z.enum(DOCUMENT_FORMATS),
+  title: titleSchema,
+  summary: summarySchema.nullable().optional(),
+  proponentMemberId: entityIdSchema.nullable().optional(),
+  amendable: z.boolean().optional(),
+  voted: z.boolean().optional(),
+  majority: z.enum(MAJORITIES).optional(),
+  blocks: blocksSchema.optional(),
 });
 
-export const createPdfDocumentSchema = z.object({
-  title: z.string().min(1).max(500),
-  fileUrl: z.string().regex(PDF_FILE_URL_REGEX),
+export const documentUpdateSchema = z.object({
+  title: titleSchema.optional(),
+  summary: summarySchema.nullable().optional(),
+  kind: z.enum(DOCUMENT_KINDS).optional(),
+  agendaItemId: entityIdSchema.optional(),
+  proponentMemberId: entityIdSchema.nullable().optional(),
+  amendable: z.boolean().optional(),
+  voted: z.boolean().optional(),
+  majority: z.enum(MAJORITIES).optional(),
+  amendmentsOpenAt: isoDateSchema.nullable().optional(),
+  amendmentsCloseAt: isoDateSchema.nullable().optional(),
+  status: z.enum(["withdrawn", "postponed", "submitted"]).optional(),
+  updatedAt: isoDateSchema,
 });
 
-export const updatePlatformDocumentSchema = z.object({
-  title: z.string().min(1).max(500).optional(),
-  content: z.string().min(1).optional(),
-  updatedAt: z.iso.datetime(),
+/** SHA-256 hex digest, as produced by hashContent. */
+export const contentHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
+
+export const documentContentSchema = z.object({
+  blocks: blocksSchema,
+  baseHash: contentHashSchema,
 });
 
-export const updatePdfDocumentSchema = z.object({
-  title: z.string().min(1).max(500).optional(),
-  fileUrl: z.string().regex(PDF_FILE_URL_REGEX).optional(),
-  updatedAt: z.iso.datetime(),
+/** Optional body of submit and publish: the updatedAt the client last saw. */
+export const documentActionSchema = z
+  .object({ updatedAt: isoDateSchema.optional() })
+  .default({});
+
+const voteCountSchema = z.number().int().min(0).max(100_000);
+
+export const voteInputSchema = z.object({
+  method: z.enum(VOTE_METHODS),
+  inFavor: voteCountSchema.optional(),
+  against: voteCountSchema.optional(),
+  abstentions: voteCountSchema.optional(),
+  blank: voteCountSchema.optional(),
+  invalid: voteCountSchema.optional(),
+  present: voteCountSchema.nullable().optional(),
+  majority: z.enum(MAJORITIES).optional(),
+  note: z.string().trim().max(2_000).nullable().optional(),
 });
 
-export const updateDocumentStatusSchema = z.object({
-  status: z.enum(["pending_review", "accepted"]),
-  proponentId: z.string().nullable().optional(),
-  updatedAt: z.iso.datetime(),
+export const finalVoteSchema = z.object({
+  vote: voteInputSchema,
+  order: z
+    .array(entityIdSchema)
+    .max(2_000)
+    .refine((ids) => new Set(ids).size === ids.length, {
+      message: "duplicate_amendment_id",
+    })
+    .optional(),
 });
+
+/** Body of DELETE .../final-vote (FinalVoteAnnulBody). An empty note is null. */
+export const finalVoteAnnulSchema = z.object({
+  updatedAt: isoDateSchema,
+  note: z
+    .string()
+    .trim()
+    .max(2_000)
+    .transform((value) => value || null)
+    .nullable()
+    .optional(),
+});
+
+// Compile-time checks: every parsed body is assignable to its API type.
+type Assignable<T, U extends T> = U;
+export type _DocumentSchemaChecks = [
+  Assignable<FinalVoteBody, z.output<typeof finalVoteSchema>>,
+  Assignable<FinalVoteAnnulBody, z.output<typeof finalVoteAnnulSchema>>,
+];

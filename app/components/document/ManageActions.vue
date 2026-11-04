@@ -1,0 +1,265 @@
+<script setup lang="ts">
+import type { DropdownMenuItem } from "@nuxt/ui";
+import type { DocumentDto, DocumentUpdateBody } from "~~/shared/types/api";
+
+/**
+ * Secretaría actions on a document (`document.can.manage`) at any stage:
+ * withdraw, postpone, recover a withdrawn submission and delete a document
+ * that was never published. Each one asks for confirmation first. Publishing
+ * (and publishing again) stays with the page's publish dialog.
+ *
+ * Status changes PUT `{ status, updatedAt }` and emit `updated` with the
+ * returned DocumentDto (store it); a conflict emits `stale` (refetch).
+ * Deleting emits `deleted` once the server confirms: the parent leaves.
+ *
+ * The availability mirrors the server (assertStatusChange, deleteDocument):
+ * - only a presented document (submitted, published, postponed) can be
+ *   withdrawn: a draft is still private to its proponent, and an unwanted one
+ *   is deleted instead;
+ * - only published texts can be postponed;
+ * - a withdrawn submission that was never published goes back to "submitted"
+ *   (a text that was published is published again instead);
+ * - frozen texts cannot be deleted.
+ * A document with a final vote keeps its status: the vote must be annulled
+ * first.
+ */
+const props = withDefaults(
+  defineProps<{
+    document: DocumentDto;
+    /** "/api/assemblies/{assembly}/documents/{document}" (slugs or ids). */
+    documentApi: string;
+    disabled?: boolean;
+  }>(),
+  { disabled: false },
+);
+
+const emit = defineEmits<{
+  updated: [document: DocumentDto];
+  deleted: [];
+  stale: [];
+}>();
+
+/** True while a request runs. */
+const busy = defineModel<boolean>("busy", { default: false });
+
+const { t } = useI18n();
+const toast = useToast();
+const { send, notifyError, isConflict } = useApi();
+
+type StatusAction = "withdraw" | "postpone" | "restore";
+type ManageAction = StatusAction | "delete";
+
+const STATUS_TARGETS: Record<
+  StatusAction,
+  NonNullable<DocumentUpdateBody["status"]>
+> = {
+  withdraw: "withdrawn",
+  postpone: "postponed",
+  restore: "submitted",
+};
+
+const ICONS: Record<ManageAction, string> = {
+  withdraw: "i-lucide-archive-x",
+  postpone: "i-lucide-calendar-clock",
+  restore: "i-lucide-archive-restore",
+  delete: "i-lucide-trash-2",
+};
+
+const CONFIRM_COLORS = {
+  withdraw: "error",
+  postpone: "warning",
+  restore: "primary",
+  delete: "error",
+} as const satisfies Record<ManageAction, string>;
+
+/** The text was frozen at some point (same rule as the server). */
+const everPublished = computed(
+  () =>
+    props.document.publishedAt !== null ||
+    props.document.baseVersion !== null ||
+    props.document.status === "published",
+);
+
+/** A final vote decided the document; annul it before changing the status. */
+const decided = computed(
+  () => props.document.finalVote !== null || props.document.consolidated,
+);
+
+/** Statuses a document can be withdrawn from: it was presented. */
+const WITHDRAWABLE = new Set<DocumentDto["status"]>([
+  "submitted",
+  "published",
+  "postponed",
+]);
+
+const available = computed<ManageAction[]>(() => {
+  const current = props.document;
+  if (!current.can.manage) return [];
+  const list: ManageAction[] = [];
+  if (!decided.value) {
+    if (current.publishedAt !== null && current.status !== "postponed")
+      list.push("postpone");
+    if (WITHDRAWABLE.has(current.status)) list.push("withdraw");
+  }
+  if (
+    current.status === "withdrawn" &&
+    !everPublished.value &&
+    current.submittedAt !== null
+  )
+    list.push("restore");
+  if (!everPublished.value) list.push("delete");
+  return list;
+});
+
+const pendingAction = ref<ManageAction | null>(null);
+const confirmOpen = ref(false);
+const statusText = ref("");
+
+function ask(action: ManageAction): void {
+  pendingAction.value = action;
+  confirmOpen.value = true;
+}
+
+const items = computed<DropdownMenuItem[][]>(() => {
+  const statusItems: DropdownMenuItem[] = available.value
+    .filter((action): action is StatusAction => action !== "delete")
+    .map((action) => ({
+      label: t(`document.manage.${action}.label`),
+      icon: ICONS[action],
+      onSelect: () => ask(action),
+    }));
+  const dangerItems: DropdownMenuItem[] = available.value.includes("delete")
+    ? [
+        {
+          label: t("document.delete"),
+          icon: ICONS.delete,
+          color: "error",
+          onSelect: () => ask("delete"),
+        },
+      ]
+    : [];
+  return [statusItems, dangerItems].filter((group) => group.length > 0);
+});
+
+const copy = computed(() => {
+  const action = pendingAction.value ?? "withdraw";
+  if (action === "delete") {
+    return {
+      title: t("document.deleteConfirm"),
+      description: t("document.manage.delete.description", {
+        title: props.document.title,
+      }),
+      confirm: t("document.delete"),
+      icon: ICONS.delete,
+      color: CONFIRM_COLORS.delete,
+    };
+  }
+  const description =
+    action === "withdraw" && props.document.publishedAt !== null
+      ? t("document.manage.withdraw.descriptionPublished")
+      : t(`document.manage.${action}.description`);
+  return {
+    title: t(`document.manage.${action}.title`),
+    description,
+    confirm: t(`document.manage.${action}.confirm`),
+    icon: ICONS[action],
+    color: CONFIRM_COLORS[action],
+  };
+});
+
+async function confirm(): Promise<void> {
+  const action = pendingAction.value;
+  if (!action || busy.value) return;
+  busy.value = true;
+  statusText.value = t("document.manage.working");
+  try {
+    if (action === "delete") {
+      await send(props.documentApi, { method: "DELETE" });
+      confirmOpen.value = false;
+      statusText.value = t("document.deleted");
+      toast.add({
+        title: t("document.deleted"),
+        color: "success",
+        icon: "i-lucide-trash-2",
+      });
+      emit("deleted");
+      return;
+    }
+    const body: DocumentUpdateBody = {
+      status: STATUS_TARGETS[action],
+      updatedAt: props.document.updatedAt,
+    };
+    const updated = await send<DocumentDto>(props.documentApi, {
+      method: "PUT",
+      body,
+    });
+    confirmOpen.value = false;
+    statusText.value = t(`document.manage.${action}.success`);
+    emit("updated", updated);
+    toast.add({
+      title: t(`document.manage.${action}.success`),
+      color: "success",
+      icon: "i-lucide-check",
+    });
+  } catch (error) {
+    statusText.value = "";
+    notifyError(
+      error,
+      action === "delete"
+        ? "document.manage.deleteError"
+        : "document.manage.statusError",
+    );
+    if (isConflict(error)) {
+      confirmOpen.value = false;
+      emit("stale");
+    }
+  } finally {
+    busy.value = false;
+  }
+}
+</script>
+
+<template>
+  <UDropdownMenu
+    v-if="items.length > 0"
+    :items="items"
+    :content="{ align: 'end' }"
+  >
+    <UButton
+      color="neutral"
+      variant="outline"
+      icon="i-lucide-ellipsis-vertical"
+      :label="t('document.manage.menu')"
+      :loading="busy"
+      :disabled="disabled || busy"
+    />
+  </UDropdownMenu>
+
+  <UModal
+    v-model:open="confirmOpen"
+    :title="copy.title"
+    :description="copy.description"
+    :dismissible="!busy"
+    :ui="{ footer: 'justify-end gap-2' }"
+  >
+    <template #footer="{ close }">
+      <UButton
+        color="neutral"
+        variant="ghost"
+        :label="t('common.cancel')"
+        :disabled="busy"
+        @click="close"
+      />
+      <UButton
+        :color="copy.color"
+        :icon="copy.icon"
+        :label="copy.confirm"
+        :loading="busy"
+        :disabled="busy"
+        @click="confirm"
+      />
+    </template>
+  </UModal>
+
+  <p class="sr-only" role="status" aria-live="polite">{{ statusText }}</p>
+</template>

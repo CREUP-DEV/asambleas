@@ -10,89 +10,83 @@ import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { db } from "../../../db";
-import { documents } from "../../../db/schema";
-import {
-  getAuthUserWithRole,
-  requireAuth,
-} from "../../../utils/auth/requireAuth";
-import { isAdmin } from "../../../utils/auth/rbac";
+import { assemblies, documents } from "../../../db/schema";
 import { getUploadDir } from "../../../utils/core/uploadPaths";
-import { SYSTEM_ROLES } from "~~/shared/constants/roles";
+import { requireActor } from "../../../utils/domain/actor";
 import {
-  ASSEMBLY_STATUSES,
-  DOCUMENT_STATUSES,
-} from "~~/shared/constants/statuses";
+  canSeeAssembly,
+  canSeeDocument,
+} from "../../../utils/domain/visibility";
+import {
+  cleanFileName,
+  PDF_URL_PREFIX,
+  STORED_PDF_NAME,
+} from "../../../utils/domain/documents";
 
-const UUID_V4_PDF =
-  /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}\.pdf$/;
+function notFound(): never {
+  throw createError({ statusCode: 404, message: "Documento no encontrado" });
+}
 
+/** RFC 6266 header with an ASCII fallback and the UTF-8 name. */
+function contentDisposition(name: string): string {
+  const ascii = name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\x20-\x7e]/g, "_")
+    .replace(/["\\]/g, "_");
+  return `inline; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
+}
+
+/**
+ * Serves the PDF of a `file` document to whoever can see that document.
+ * Files nobody points to answer 404.
+ */
 export default defineEventHandler(async (event) => {
-  await requireAuth(event);
-  const user = await getAuthUserWithRole(event);
+  const actor = await requireActor(event);
 
   const filename = getRouterParam(event, "filename");
-  if (!filename || !UUID_V4_PDF.test(filename)) {
+  if (!filename || !STORED_PDF_NAME.test(filename)) {
     throw createError({ statusCode: 400, message: "Archivo no válido" });
   }
 
-  const fileUrl = `/api/uploads/documents/${filename}`;
+  const [row] = await db
+    .select({
+      status: documents.status,
+      format: documents.format,
+      proponentMemberId: documents.proponentMemberId,
+      submittedByUserId: documents.submittedByUserId,
+      fileName: documents.fileName,
+      assemblyStatus: assemblies.status,
+    })
+    .from(documents)
+    .innerJoin(assemblies, eq(assemblies.id, documents.assemblyId))
+    .where(eq(documents.fileUrl, `${PDF_URL_PREFIX}${filename}`))
+    .limit(1);
 
-  const doc = await db.query.documents.findFirst({
-    where: eq(documents.fileUrl, fileUrl),
-    columns: {
-      id: true,
-      status: true,
-      submittedBy: true,
-      fileUrl: true,
-      type: true,
-    },
-    with: {
-      agendaItem: {
-        columns: { id: true, assemblyId: true },
-        with: {
-          assembly: {
-            columns: { id: true, status: true },
-          },
-        },
-      },
-    },
-  });
-
-  if (!doc || doc.type !== "pdf" || !doc.fileUrl) {
-    throw createError({ statusCode: 404, message: "Documento no encontrado" });
-  }
-
-  const assembly = doc.agendaItem.assembly;
-
-  const canSeeDrafts =
-    isAdmin(user?.role?.name) || user?.role?.name === SYSTEM_ROLES.SECRETARIA;
-
-  if (assembly.status === ASSEMBLY_STATUSES.DRAFT && !canSeeDrafts) {
-    throw createError({ statusCode: 404, message: "Documento no encontrado" });
-  }
-
-  const canSeeDocument =
-    doc.status === DOCUMENT_STATUSES.ACCEPTED ||
-    canSeeDrafts ||
-    (doc.submittedBy !== null && doc.submittedBy === user?.id);
-
-  if (!canSeeDocument) {
-    throw createError({ statusCode: 404, message: "Documento no encontrado" });
+  if (
+    !row ||
+    row.format !== "file" ||
+    !canSeeAssembly(actor, { status: row.assemblyStatus }) ||
+    !canSeeDocument(actor, row)
+  ) {
+    notFound();
   }
 
   const filePath = join(getUploadDir(), filename);
   try {
     const fileStat = await stat(filePath);
-    if (!fileStat.isFile()) {
-      throw new Error("Upload path is not a file");
-    }
+    if (!fileStat.isFile()) notFound();
   } catch {
-    throw createError({ statusCode: 404, message: "Archivo no encontrado" });
+    notFound();
   }
 
   setResponseHeaders(event, {
     "Content-Type": "application/pdf",
-    "Content-Disposition": `inline; filename="${filename}"`,
+    "Content-Disposition": contentDisposition(
+      cleanFileName(row.fileName ?? "", filename),
+    ),
+    "Cache-Control": "private, no-store",
+    "X-Content-Type-Options": "nosniff",
   });
 
   return sendStream(event, createReadStream(filePath));
