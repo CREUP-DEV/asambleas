@@ -113,16 +113,6 @@ export function readAssemblyQuery<S extends z.ZodType>(
   return parsed.data;
 }
 
-/** Unique violation, also when drizzle wraps the driver error in `cause`. */
-function isUniqueViolation(error: unknown): boolean {
-  let current: unknown = error;
-  for (let depth = 0; depth < 3 && current; depth += 1) {
-    if (isUniqueConstraintViolation(current)) return true;
-    current = (current as { cause?: unknown }).cause;
-  }
-  return false;
-}
-
 /**
  * Like throwMutationError, but a unique violation gets a specific message:
  * `uniqueMessage` describes the only unique index the write can hit.
@@ -134,7 +124,7 @@ export function throwAssemblyMutationError(
   uniqueMessage = "Ya existe una asamblea de ese tipo con ese número",
 ): never {
   if (error && typeof error === "object" && "statusCode" in error) throw error;
-  if (isUniqueViolation(error)) fail(409, uniqueMessage);
+  if (isUniqueConstraintViolation(error)) fail(409, uniqueMessage);
   throwMutationError(scope, error, event);
 }
 

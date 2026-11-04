@@ -9,7 +9,10 @@ const DAY = 24 * HOUR;
  * Default offsets before the assembly start (RFAG and RRI 2026, see
  * docs/proceso-asambleas.md §3). Every value stays editable per assembly.
  */
-export const DEFAULT_MILESTONE_OFFSETS: Record<AssemblyType, Partial<Record<MilestoneKey, number>>> = {
+export const DEFAULT_MILESTONE_OFFSETS: Record<
+  AssemblyType,
+  Partial<Record<MilestoneKey, number>>
+> = {
   AGO: {
     convocation: 30 * DAY,
     agenda_requests_close: 21 * DAY,
@@ -78,7 +81,10 @@ export function checkCalendar(
   const at = (key: MilestoneKey) => milestones[key]?.getTime();
 
   const convocation = at("convocation");
-  if (convocation !== undefined && start.getTime() - convocation < MINIMUM_NOTICE[type]) {
+  if (
+    convocation !== undefined &&
+    start.getTime() - convocation < MINIMUM_NOTICE[type]
+  ) {
     warnings.push({ code: "short_notice", keys: ["convocation"] });
   }
 
@@ -86,18 +92,38 @@ export function checkCalendar(
   const close = at("amendments_close");
   const publish = at("documents_publish");
   if (open !== undefined && publish !== undefined && open < publish) {
-    warnings.push({ code: "amendments_before_publication", keys: ["amendments_open", "documents_publish"] });
+    warnings.push({
+      code: "amendments_before_publication",
+      keys: ["amendments_open", "documents_publish"],
+    });
   }
   if (open !== undefined && close !== undefined && close <= open) {
-    warnings.push({ code: "amendments_close_before_open", keys: ["amendments_open", "amendments_close"] });
+    warnings.push({
+      code: "amendments_close_before_open",
+      keys: ["amendments_open", "amendments_close"],
+    });
   }
   const documentsClose = at("documents_close");
-  if (documentsClose !== undefined && close !== undefined && documentsClose >= close) {
-    warnings.push({ code: "amendments_overlap_documents", keys: ["documents_close", "amendments_close"] });
+  if (
+    documentsClose !== undefined &&
+    close !== undefined &&
+    documentsClose >= close
+  ) {
+    warnings.push({
+      code: "amendments_overlap_documents",
+      keys: ["documents_close", "amendments_close"],
+    });
   }
   const agendaFinal = at("agenda_final");
-  if (agendaFinal !== undefined && publish !== undefined && agendaFinal > publish) {
-    warnings.push({ code: "agenda_after_publication", keys: ["agenda_final", "documents_publish"] });
+  if (
+    agendaFinal !== undefined &&
+    publish !== undefined &&
+    agendaFinal > publish
+  ) {
+    warnings.push({
+      code: "agenda_after_publication",
+      keys: ["agenda_final", "documents_publish"],
+    });
   }
   for (const key of MILESTONE_KEYS) {
     const value = at(key);
@@ -115,23 +141,34 @@ export interface AmendmentWindow {
 
 /** The window that applies to a document: its own override or the assembly's. */
 export function amendmentWindow(
-  document: { amendmentsOpenAt: Date | string | null; amendmentsCloseAt: Date | string | null },
+  document: {
+    amendmentsOpenAt: Date | string | null;
+    amendmentsCloseAt: Date | string | null;
+  },
   milestones: Milestones,
 ): AmendmentWindow {
   const toDate = (value: Date | string | null | undefined) =>
     value ? new Date(value) : null;
   return {
-    opensAt: toDate(document.amendmentsOpenAt) ?? milestones.amendments_open ?? null,
-    closesAt: toDate(document.amendmentsCloseAt) ?? milestones.amendments_close ?? null,
+    opensAt:
+      toDate(document.amendmentsOpenAt) ?? milestones.amendments_open ?? null,
+    closesAt:
+      toDate(document.amendmentsCloseAt) ?? milestones.amendments_close ?? null,
   };
 }
 
-export function isWindowOpen(window: AmendmentWindow, now = new Date()): boolean {
+export function isWindowOpen(
+  window: AmendmentWindow,
+  now = new Date(),
+): boolean {
   if (window.opensAt && now < window.opensAt) return false;
   if (window.closesAt && now > window.closesAt) return false;
   return true;
 }
 
-export function isLateSubmission(window: AmendmentWindow, at = new Date()): boolean {
+export function isLateSubmission(
+  window: AmendmentWindow,
+  at = new Date(),
+): boolean {
   return Boolean(window.closesAt && at > window.closesAt);
 }

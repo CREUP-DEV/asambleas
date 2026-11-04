@@ -53,9 +53,12 @@ export const documents = pgTable(
     /** Official reference such as "RES 012/2026", assigned on admission. */
     reference: text("reference"),
     status: documentStatusEnum("status").notNull().default("draft"),
-    proponentMemberId: text("proponent_member_id").references(() => members.id, {
-      onDelete: "set null",
-    }),
+    proponentMemberId: text("proponent_member_id").references(
+      () => members.id,
+      {
+        onDelete: "set null",
+      },
+    ),
     submittedByUserId: text("submitted_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
@@ -63,8 +66,14 @@ export const documents = pgTable(
     voted: boolean("voted").notNull().default(true),
     majority: majorityEnum("majority").notNull().default("simple"),
     /** Override of the assembly amendment window for this document. */
-    amendmentsOpenAt: timestamp("amendments_open_at", { withTimezone: true, mode: "date" }),
-    amendmentsCloseAt: timestamp("amendments_close_at", { withTimezone: true, mode: "date" }),
+    amendmentsOpenAt: timestamp("amendments_open_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    amendmentsCloseAt: timestamp("amendments_close_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     /** Editable draft, before publication. */
     workingVersionId: text("working_version_id").references(
       (): AnyPgColumn => documentVersions.id,
@@ -87,8 +96,14 @@ export const documents = pgTable(
       (): AnyPgColumn => documents.id,
       { onDelete: "set null" },
     ),
-    submittedAt: timestamp("submitted_at", { withTimezone: true, mode: "date" }),
-    publishedAt: timestamp("published_at", { withTimezone: true, mode: "date" }),
+    submittedAt: timestamp("submitted_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    publishedAt: timestamp("published_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -98,7 +113,10 @@ export const documents = pgTable(
       .$onUpdate(() => sql`now()`),
   },
   (table) => [
-    uniqueIndex("documents_assembly_slug_unique").on(table.assemblyId, table.slug),
+    uniqueIndex("documents_assembly_slug_unique").on(
+      table.assemblyId,
+      table.slug,
+    ),
     index("idx_documents_agenda_item_id").on(table.agendaItemId),
     index("idx_documents_status").on(table.status),
     index("idx_documents_proponent").on(table.proponentMemberId),
@@ -130,7 +148,10 @@ export const documentVersions = pgTable(
       .$onUpdate(() => sql`now()`),
   },
   (table) => [
-    uniqueIndex("document_versions_number_unique").on(table.documentId, table.number),
+    uniqueIndex("document_versions_number_unique").on(
+      table.documentId,
+      table.number,
+    ),
   ],
 );
 
@@ -155,9 +176,12 @@ export const documentsRelations = relations(documents, ({ one, many }) => ({
   amendments: many(amendments),
 }));
 
-export const documentVersionsRelations = relations(documentVersions, ({ one }) => ({
-  document: one(documents, {
-    fields: [documentVersions.documentId],
-    references: [documents.id],
+export const documentVersionsRelations = relations(
+  documentVersions,
+  ({ one }) => ({
+    document: one(documents, {
+      fields: [documentVersions.documentId],
+      references: [documents.id],
+    }),
   }),
-}));
+);

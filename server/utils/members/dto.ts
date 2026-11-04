@@ -22,6 +22,7 @@ export function toMemberDto(member: MemberRow): MemberDto {
     source: member.source,
     active: member.active,
     syncedAt: member.syncedAt?.toISOString() ?? null,
+    updatedAt: member.updatedAt.toISOString(),
   };
 }
 

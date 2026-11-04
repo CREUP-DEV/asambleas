@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { createId } from "@paralleldrive/cuid2";
 import type { EditorToolbarItem } from "@nuxt/ui";
-import type { JSONContent } from "@tiptap/core";
+import type { Editor, JSONContent } from "@tiptap/core";
 import type { Block } from "~~/shared/types/content";
 import {
   blocksToEditor,
@@ -47,8 +47,11 @@ const { t } = useI18n();
 
 const EMIT_DELAY_MS = 200;
 
-const editorComponent = useTemplateRef("editorComponent");
-const editor = computed(() => editorComponent.value?.editor);
+// Typed by hand: inferring it from the template is circular for vue-tsc.
+const editorComponent = useTemplateRef<{ editor?: Editor }>("editorComponent");
+const editor = computed<Editor | undefined>(
+  () => editorComponent.value?.editor,
+);
 
 // UEditor resets its content whenever v-model differs from the editor JSON,
 // which would drop the cursor and the undo history. It is therefore bound to
@@ -191,7 +194,9 @@ const linkOpen = ref(false);
 const linkHref = ref("");
 const linkInvalid = ref(false);
 
-const linkActive = computed(() => editor.value?.isActive("link") ?? false);
+const linkActive = computed<boolean>(
+  () => editor.value?.isActive("link") ?? false,
+);
 const linkDisabled = computed(() => {
   const instance = editor.value;
   if (!instance || !instance.isEditable) return true;

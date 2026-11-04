@@ -48,6 +48,8 @@ export interface MemberDto extends MemberRef {
   source: MemberSource;
   active: boolean;
   syncedAt: IsoDate | null;
+  /** Optimistic lock token for PUT /api/members/[id]. */
+  updatedAt: IsoDate;
 }
 
 export interface MemberSyncResult {
@@ -407,7 +409,11 @@ export interface VoteInput {
 }
 
 export type OutcomeAction =
-  | { action: "approve"; method: Exclude<ApprovalMethod, "vote">; note?: string | null }
+  | {
+      action: "approve";
+      method: Exclude<ApprovalMethod, "vote">;
+      note?: string | null;
+    }
   | { action: "vote"; vote: VoteInput }
   | { action: "withdraw"; note?: string | null }
   | { action: "lapse"; note?: string | null }

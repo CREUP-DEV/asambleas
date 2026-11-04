@@ -31,14 +31,11 @@ import { renderAnnotated, renderBlocks } from "./render";
  *
  *   FUZZ_SEED=<seed> pnpm exec vitest run shared/utils/content/engine.fuzz.test.ts
  *
- * Known engine defects are pinned as `it.fails` cases with minimal
- * reproductions at the end of the file. The random properties exclude only
- * those exact patterns; set FUZZ_INCLUDE_KNOWN_DEFECTS=1 to drop the
- * exclusions once the engine is fixed. FUZZ_ALL_FAILURES=1 lists every
- * failing seed, with the tags a property records (property 2 records `tie`,
- * the known defect's pattern), instead of stopping at the first one:
+ * Defects the properties found are pinned at the end of the file as minimal
+ * reproductions. FUZZ_ALL_FAILURES=1 lists every failing seed, with the tags
+ * a property records, instead of stopping at the first one:
  *
- *   FUZZ_INCLUDE_KNOWN_DEFECTS=1 FUZZ_ALL_FAILURES=1 pnpm exec vitest run ...
+ *   FUZZ_ALL_FAILURES=1 pnpm exec vitest run ...
  *
  * Each property also counts the situations it is meant to exercise and
  * fails when a generator change leaves them too rare.
@@ -90,7 +87,6 @@ const env =
   (globalThis as { process?: { env?: Record<string, string | undefined> } })
     .process?.env ?? {};
 const ONLY_SEED = env.FUZZ_SEED ? Number(env.FUZZ_SEED) : null;
-const SKIP_KNOWN_DEFECTS = env.FUZZ_INCLUDE_KNOWN_DEFECTS !== "1";
 const ALL_FAILURES = env.FUZZ_ALL_FAILURES === "1";
 
 type Context = Record<string, unknown>;
@@ -655,32 +651,6 @@ function isReplace(op: AmendmentOp): op is ReplaceOp {
   return op.op === "replace";
 }
 
-/**
- * The pattern of the known defect pinned in "known engine defects": a point
- * insertion at the first offset of a range another amendment replaces.
- */
-function hasPointRangeTie(a: AmendmentOp[], b: AmendmentOp[]): boolean {
-  const tie = (points: ReplaceOp[], ranges: ReplaceOp[]) =>
-    points.some(
-      (point) =>
-        point.from === point.to &&
-        ranges.some(
-          (range) =>
-            range.blockId === point.blockId &&
-            range.from < range.to &&
-            range.from === point.from,
-        ),
-    );
-  const ra = a.filter(isReplace);
-  const rb = b.filter(isReplace);
-  return tie(ra, rb) || tie(rb, ra);
-}
-
-/** The known defect, unless FUZZ_INCLUDE_KNOWN_DEFECTS asks to keep it. */
-function pointRangeTie(a: AmendmentOp[], b: AmendmentOp[]): boolean {
-  return SKIP_KNOWN_DEFECTS && hasPointRangeTie(a, b);
-}
-
 /** Keys an amendment's operations act on: blocks it edits or removes. */
 function blockKeys(amendment: AmendmentInput): string[] {
   return amendment.ops.flatMap((op) =>
@@ -1236,17 +1206,12 @@ describe("amendment engine properties", () => {
       });
       const amendments: AmendmentInput[] = [];
       for (const candidate of candidates) {
-        const clash = amendments.some(
-          (other) =>
-            isHardOverlap(overlapBetween(other.ops, candidate.ops)) ||
-            pointRangeTie(other.ops, candidate.ops),
+        const clash = amendments.some((other) =>
+          isHardOverlap(overlapBetween(other.ops, candidate.ops)),
         );
         if (!clash) amendments.push(candidate);
       }
       Object.assign(ctx, { base, amendments });
-      ctx.tie = amendments.some((a, i) =>
-        amendments.slice(i + 1).some((b) => hasPointRangeTie(a.ops, b.ops)),
-      );
       coverage.hit("2+ amendments", amendments.length >= 2);
       coverage.hit("4+ amendments", amendments.length >= 4);
       coverage.hit(
@@ -1373,10 +1338,6 @@ describe("amendment engine properties", () => {
       assertWellFormed(result);
 
       const applied = amendments.filter((a) => result.applied.includes(a.id));
-      const tie = applied.some((a, i) =>
-        applied.slice(i + 1).some((b) => pointRangeTie(a.ops, b.ops)),
-      );
-      if (tie) return;
       const replaces = applied.flatMap((a) => a.ops).filter(isReplace);
       for (const block of result.blocks) {
         const original = base.find((candidate) => candidate.id === block.id);
@@ -1550,11 +1511,9 @@ describe("amendment engine properties", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Known engine defects, as minimal reproductions. Each `it.fails` starts
-// passing (and so fails the suite) once the engine is fixed: then turn it
-// into a plain `it` and remove `pointRangeTie` from the properties.
+// Defects the properties found, as minimal reproductions.
 
-describe("known engine defects", () => {
+describe("engine regressions", () => {
   const base: Block[] = [
     { id: "base0", type: "paragraph", text: "uno dos tres", marks: [] },
   ];
@@ -1586,30 +1545,23 @@ describe("known engine defects", () => {
   };
 
   // Found by property 2. overlapBetween treats a point insertion at the first
-  // offset of another amendment's replaced range as compatible, but
-  // consolidate sorts replaces by `from` alone (stable sort, so approval
-  // order breaks the tie). With the range first, buildSegments moves the
-  // cursor past the range and the point op moves it back, so the replaced
-  // base text is emitted again: [A, B] gives "uno DOScinco dos tres" while
-  // [B, A] gives "uno cinco DOS tres". Reporting the pair as `same_text`
-  // would also be a valid fix.
-  it.fails(
-    "consolidates a point insertion at the start of another amendment's range in any order",
-    () => {
-      if (isHardOverlap(overlapBetween(replaceDos.ops, insertBeforeDos.ops))) {
-        return;
-      }
-      const forward = consolidate(base, [replaceDos, insertBeforeDos]);
-      const backward = consolidate(base, [insertBeforeDos, replaceDos]);
-      expect(backward.blocks[0]!.text).toBe("uno cinco DOS tres");
-      expect(forward.blocks[0]!.text).toBe(backward.blocks[0]!.text);
-    },
-  );
+  // offset of another amendment's replaced range as compatible. consolidate
+  // used to sort replaces by `from` alone, so with the range first the
+  // replaced base text was emitted twice ("uno DOScinco dos tres").
+  // compareReplaceOps now puts the point first at the same offset.
+  it("consolidates a point insertion at the start of another amendment's range in any order", () => {
+    if (isHardOverlap(overlapBetween(replaceDos.ops, insertBeforeDos.ops))) {
+      return;
+    }
+    const forward = consolidate(base, [replaceDos, insertBeforeDos]);
+    const backward = consolidate(base, [insertBeforeDos, replaceDos]);
+    expect(backward.blocks[0]!.text).toBe("uno cinco DOS tres");
+    expect(forward.blocks[0]!.text).toBe(backward.blocks[0]!.text);
+  });
 
-  // Same tie inside one amendment: validateOps sorts by `from` alone, so the
-  // same two operations are rejected as overlapping in one order and
-  // accepted in the other.
-  it.fails("validates the same operations alike in any order", () => {
+  // Same tie inside one amendment: validateOps used to reject the two
+  // operations as overlapping in one order and accept them in the other.
+  it("validates the same operations alike in any order", () => {
     const ops = [...replaceDos.ops, ...insertBeforeDos.ops];
     const reasons = (list: AmendmentOp[]) =>
       validateOps(base, list).map((error) => error.reason);
@@ -1617,26 +1569,23 @@ describe("known engine defects", () => {
   });
 
   // diffPassage only knows the passage, so it keeps any id it does not
-  // recognise as the caller's fresh id. A block that carries the id of a base
-  // block outside the passage is inserted under that id, and validateOps
-  // rejects the result as `duplicate_block_id`. The editor never reads ids
-  // from pasted HTML, so only callers that build the edited blocks
-  // themselves can hit this. Passing every base id to diffPassage would fix
-  // it; until then, callers must give such blocks fresh ids.
-  it.fails(
-    "gives a fresh id to an edited block that reuses the id of a base block outside the passage",
-    () => {
-      const document: Block[] = [
-        { id: "base0", type: "paragraph", text: "uno", marks: [] },
-        { id: "base1", type: "paragraph", text: "dos", marks: [] },
-      ];
-      const ops = diffPassage(
-        [document[1]!],
-        [document[1]!, { ...document[0]! }],
-        "base0",
-        idSequence("fresh"),
-      );
-      expect(validateOps(document, ops)).toEqual([]);
-    },
-  );
+  // recognise as the caller's fresh id. That is a contract on callers: load
+  // the editor with exactly the passage (the editor never reads ids from
+  // pasted HTML). A caller that breaks it gets a `duplicate_block_id`
+  // rejection, never a silently corrupted amendment.
+  it("rejects an edited block that reuses the id of a base block outside the passage", () => {
+    const document: Block[] = [
+      { id: "base0", type: "paragraph", text: "uno", marks: [] },
+      { id: "base1", type: "paragraph", text: "dos", marks: [] },
+    ];
+    const ops = diffPassage(
+      [document[1]!],
+      [document[1]!, { ...document[0]! }],
+      "base0",
+      idSequence("fresh"),
+    );
+    expect(validateOps(document, ops).map((e) => e.reason)).toContain(
+      "duplicate_block_id",
+    );
+  });
 });

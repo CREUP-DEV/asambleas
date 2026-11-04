@@ -6,7 +6,12 @@
  * the frozen base version (see AmendmentOp).
  */
 
-export const BLOCK_TYPES = ["heading", "paragraph", "list_item", "quote"] as const;
+export const BLOCK_TYPES = [
+  "heading",
+  "paragraph",
+  "list_item",
+  "quote",
+] as const;
 export type BlockType = (typeof BLOCK_TYPES)[number];
 
 export const MARK_TYPES = [

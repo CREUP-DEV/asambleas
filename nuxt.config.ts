@@ -27,6 +27,33 @@ const routeRules = {
       "X-Robots-Tag": "noindex, nofollow, noarchive",
     },
   },
+  // Whole documents travel as JSON blocks (drafts, totality amendments), and
+  // DOCX imports and PDFs go up as multipart. nuxt-security's defaults (2 MB
+  // JSON, 8 MB uploads) would answer 413 before the handlers' own limits.
+  "/api/assemblies/**": {
+    security: {
+      requestSizeLimiter: {
+        maxRequestSizeInBytes: 6_000_000,
+        maxUploadFileRequestInBytes: 8_000_000,
+      },
+    },
+  },
+  "/api/assemblies/*/documents/*/import": {
+    security: {
+      requestSizeLimiter: {
+        maxRequestSizeInBytes: 6_000_000,
+        maxUploadFileRequestInBytes: 16_000_000,
+      },
+    },
+  },
+  "/api/assemblies/*/documents/*/file": {
+    security: {
+      requestSizeLimiter: {
+        maxRequestSizeInBytes: 6_000_000,
+        maxUploadFileRequestInBytes: 21_000_000,
+      },
+    },
+  },
   "/_nuxt/**": {
     headers: {
       "Cache-Control": "public, max-age=31536000, immutable",

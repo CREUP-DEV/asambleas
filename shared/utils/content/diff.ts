@@ -129,7 +129,12 @@ export function diffPassage(
   for (const block of edited) {
     const original = baseById.get(block.id);
     const order = baseOrder.get(block.id);
-    if (original && order !== undefined && order > lastIndex && !kept.has(block.id)) {
+    if (
+      original &&
+      order !== undefined &&
+      order > lastIndex &&
+      !kept.has(block.id)
+    ) {
       flush();
       kept.add(block.id);
       lastIndex = order;

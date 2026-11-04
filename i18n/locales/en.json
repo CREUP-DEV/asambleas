@@ -19,14 +19,102 @@
     "confirm": "Confirm",
     "close": "Close",
     "actions": "Actions",
-    "status": "Status",
+    "status": {
+      "assembly": {
+        "draft": "Draft",
+        "convened": "Convened",
+        "in_session": "In session",
+        "closed": "Closed"
+      },
+      "document": {
+        "draft": "Draft",
+        "submitted": "Submitted",
+        "published": "Published",
+        "withdrawn": "Withdrawn",
+        "postponed": "Postponed"
+      },
+      "amendment": {
+        "draft": "Draft",
+        "submitted": "Submitted",
+        "inadmissible": "Not admitted",
+        "withdrawn": "Withdrawn",
+        "transacted": "Merged into compromise",
+        "lapsed": "Lapsed",
+        "approved": "Approved",
+        "rejected": "Rejected"
+      },
+      "admission": {
+        "pending": "Awaiting admission",
+        "admitted": "Admitted",
+        "inadmissible": "Not admitted"
+      },
+      "position": {
+        "pending": "No position yet",
+        "accept": "Accepts",
+        "reject": "Rejects",
+        "transact": "Proposes a compromise"
+      },
+      "vote": {
+        "approved": "Carried",
+        "rejected": "Defeated"
+      },
+      "acceptance": {
+        "pending": "Awaiting reply",
+        "accepted": "Accepts",
+        "rejected": "Declines"
+      }
+    },
     "type": "Type",
     "date": "Date",
     "yes": "Yes",
     "no": "No",
     "previous": "Previous",
     "next": "Next",
-    "discard": "Discard changes"
+    "discard": "Discard changes",
+    "statusLabel": "Status",
+    "errors": {
+      "validation": "The data sent is not valid. Check the form.",
+      "unauthorized": "Your session has expired. Sign in again.",
+      "forbidden": "You do not have permission to do this.",
+      "notFound": "We could not find what you were looking for. It may have been deleted.",
+      "conflict": "Someone else changed this in the meantime. The current version will load; review your changes and try again.",
+      "tooLarge": "The file is too large.",
+      "rateLimited": "Too many requests in a row. Wait a moment and try again.",
+      "server": "Server error. Try again in a few minutes.",
+      "network": "Cannot reach the server. Check your connection.",
+      "unknown": "The operation could not be completed."
+    },
+    "content": {
+      "empty": "There is no content to show.",
+      "markerCount": "{count} amendment affects this block | {count} amendments affect this block",
+      "markerOverlap": "Some amendments overlap",
+      "totalityTitle": "Amendment to the whole text",
+      "totalityNote": "This amendment proposes no specific changes to the text: it asks for the whole text to be sent back.",
+      "previewUnavailable": "The changes cannot be shown",
+      "previewUnavailableDescription": "The operations of this amendment no longer match the base text of the document."
+    },
+    "editor": {
+      "bold": "Bold",
+      "italic": "Italic",
+      "underline": "Underline",
+      "strike": "Strikethrough",
+      "link": "Link",
+      "linkPlaceholder": "https://example.org",
+      "linkUrl": "Link address",
+      "applyLink": "Apply link",
+      "removeLink": "Remove link",
+      "invalidLink": "Only http, https and email links are allowed.",
+      "heading": "Heading",
+      "subheading": "Subheading",
+      "bulletList": "Bulleted list",
+      "orderedList": "Numbered list",
+      "quote": "Quote",
+      "undo": "Undo",
+      "redo": "Redo",
+      "placeholder": "Write the text here",
+      "label": "Content editor",
+      "toolbar": "Text formatting"
+    }
   },
   "auth": {
     "signIn": "Sign in",
@@ -87,11 +175,13 @@
       "assemblyCreate": "Create assemblies",
       "assemblyManage": "Edit assemblies and change status",
       "documentCreate": "Create and submit documents",
-      "documentManage": "Edit, delete, and accept documents",
+      "documentManage": "Edit, publish and withdraw any document",
       "amendmentCreate": "Create and submit amendments",
-      "amendmentManage": "Edit own draft amendments",
-      "amendmentReview": "Validate, reject, or mark amendments as formal",
-      "assemblyVoteResult": "Record assembly vote result"
+      "amendmentManage": "Manage other members' amendments",
+      "amendmentReview": "Review amendment admission",
+      "assemblyVoteResult": "Record assembly vote result",
+      "sessionModerate": "Moderate the session: live state, admissions, votes and transactionals",
+      "memberManage": "Sync and edit members"
     }
   },
   "assembly": {
@@ -170,6 +260,228 @@
     },
     "filter": {
       "allStatuses": "All statuses"
+    },
+    "notFound": "There is no assembly at this address, or you do not have access to it.",
+    "hub": {
+      "loading": "Loading the assembly",
+      "loadError": "The assembly could not be loaded",
+      "loadErrorDescription": "Check your connection and try again.",
+      "retry": "Try again",
+      "deletedElsewhere": "This assembly has been deleted",
+      "statusError": "The status could not be changed",
+      "moreStatusActions": "More status actions",
+      "type": "Type",
+      "dates": "Dates",
+      "location": "Venue",
+      "nextMilestone": "Next deadline",
+      "liveOn": "Live",
+      "liveOffline": "Live connection lost",
+      "livePolling": "The live connection was lost. Data refreshes every 15 seconds while it reconnects."
+    },
+    "sections": {
+      "label": "Assembly sections",
+      "overview": "Overview",
+      "agenda": "Agenda",
+      "documents": "Documents",
+      "calendar": "Calendar",
+      "convocation": "Notice of meeting",
+      "session": "Session",
+      "projection": "Projection",
+      "settings": "Settings",
+      "projectionNewWindow": "Projection (opens in a new window)"
+    },
+    "transitions": {
+      "draft_convened": {
+        "label": "Convene",
+        "title": "Convene the assembly?",
+        "description": "The {label} will stop being a draft and every participant will see it, with its agenda and calendar.",
+        "done": "Assembly convened"
+      },
+      "convened_draft": {
+        "label": "Back to draft",
+        "title": "Turn back into a draft?",
+        "description": "The {label} will be hidden from participants until it is convened again.",
+        "done": "The assembly is a draft again"
+      },
+      "convened_in_session": {
+        "label": "Open session",
+        "title": "Open the session?",
+        "description": "The {label} will be in session: the Mesa console and the live projection become active.",
+        "done": "Session opened"
+      },
+      "in_session_convened": {
+        "label": "Suspend session",
+        "title": "Suspend the session?",
+        "description": "The {label} will go back to convened. You can reopen the session later.",
+        "done": "Session suspended"
+      },
+      "in_session_closed": {
+        "label": "Close assembly",
+        "title": "Close the assembly?",
+        "description": "The {label} will be closed and no more documents can be submitted.",
+        "done": "Assembly closed"
+      },
+      "closed_in_session": {
+        "label": "Reopen session",
+        "title": "Reopen the session?",
+        "description": "The {label} will be in session again.",
+        "done": "Session reopened"
+      }
+    },
+    "overview": {
+      "title": "Overview",
+      "statsLabel": "Assembly figures",
+      "stats": {
+        "items": "agenda item | agenda items",
+        "documents": "document | documents",
+        "published": "{count} published | {count} published | {count} published",
+        "amendments": "amendment | amendments",
+        "openWindows": "amendment window open | amendment windows open"
+      },
+      "agendaTitle": "Agenda",
+      "calendarTitle": "Calendar",
+      "openAgenda": "See the full agenda",
+      "editCalendar": "Edit the calendar",
+      "documentsShort": "Documents:",
+      "amendmentsShort": "Amendments:",
+      "quickLinks": "Quick links",
+      "links": {
+        "agenda": {
+          "title": "Agenda",
+          "description": "Items, with the documents and amendments of each one."
+        },
+        "convocation": {
+          "title": "Notice of meeting",
+          "description": "Print-ready notice with the agenda and the deadlines."
+        },
+        "calendar": {
+          "title": "Calendar",
+          "description": "Assembly deadlines and regulatory warnings."
+        },
+        "settings": {
+          "title": "Settings",
+          "description": "Basic data and rules of this assembly."
+        }
+      }
+    },
+    "settingsPage": {
+      "title": "Settings",
+      "intro": "Basic data of the assembly and the procedural rules that apply to it alone.",
+      "forbiddenTitle": "You cannot change the settings",
+      "forbiddenDescription": "Only the people who manage the assembly can edit its data and rules.",
+      "backToOverview": "Back to the overview"
+    },
+    "basics": {
+      "title": "Basic data",
+      "number": "Number",
+      "type": "Assembly type",
+      "startDate": "Start",
+      "endDate": "End",
+      "location": "Venue",
+      "timeZone": "Spanish mainland time",
+      "numberInvalid": "Enter a whole number between 1 and 9999",
+      "dateRequired": "Enter the date and time",
+      "locationRequired": "Enter the venue",
+      "tooLong": "At most {max} characters",
+      "endBeforeStart": "The end cannot be before the start",
+      "startMoved": "Calendar deadlines are not recalculated when the start changes. Review them after saving.",
+      "reviewCalendar": "Go to the calendar",
+      "slugChanges": "Changing the number or the type changes the assembly's address. Old links will stop working.",
+      "saved": "Assembly data saved",
+      "saveError": "The data could not be saved"
+    },
+    "settings": {
+      "title": "Assembly rules",
+      "intro": "Defaults follow the regulations and usual practice. Change them only if this assembly needs it.",
+      "default": "Default",
+      "changed": "Unsaved",
+      "saved": "Rules saved",
+      "saveError": "The rules could not be saved",
+      "amendmentVisibility": {
+        "label": "Visibility of submitted amendments",
+        "help": "Who sees amendments while the window is still open. Their authors, the Secretariat and the Mesa always see them.",
+        "options": {
+          "after_close": {
+            "label": "When the window closes",
+            "description": "Until the window closes, only their authors and the assembly managers see them. Afterwards, everyone does."
+          },
+          "immediate": {
+            "label": "As soon as they are submitted",
+            "description": "Every participant sees each amendment from the moment it is submitted."
+          }
+        }
+      },
+      "positionVisibility": {
+        "label": "Visibility of the proponent's position",
+        "help": "The position each document's proponent takes on each amendment: accept it, reject it or negotiate a transactional.",
+        "options": {
+          "mesa": {
+            "label": "Mesa only",
+            "description": "Seen by the Mesa de Moderación, the Secretariat and the proponent."
+          },
+          "session": {
+            "label": "During the session",
+            "description": "Shown to every participant while the assembly is in session."
+          },
+          "public": {
+            "label": "Always public",
+            "description": "Everyone sees it as soon as it is recorded."
+          }
+        }
+      },
+      "acceptedAmendments": {
+        "label": "Amendments accepted by the proponent",
+        "help": "What happens to an amendment the proponent accepts.",
+        "options": {
+          "assent": {
+            "label": "Incorporated by assent",
+            "description": "They go into the text unless someone asks for a vote."
+          },
+          "vote": {
+            "label": "Voted anyway",
+            "description": "Every accepted amendment is put to a vote like the others."
+          }
+        }
+      },
+      "tieRule": {
+        "label": "Ties",
+        "help": "Outcome of a simple-majority vote that ends in a tie.",
+        "options": {
+          "rejected": {
+            "label": "Rejected",
+            "description": "A tie counts as a rejection."
+          },
+          "repeat": {
+            "label": "The vote is repeated",
+            "description": "No outcome is recorded until a new vote breaks the tie."
+          }
+        }
+      },
+      "denominator": {
+        "label": "Basis for majorities",
+        "help": "What absolute and two-thirds majorities are calculated on.",
+        "options": {
+          "valid_votes": {
+            "label": "Valid votes",
+            "description": "In favour, against and abstentions. Blank and spoilt votes do not count."
+          },
+          "present": {
+            "label": "Members present",
+            "description": "Every member present with a vote. The Mesa must enter how many there are for each vote."
+          }
+        }
+      }
+    },
+    "danger": {
+      "title": "Danger zone",
+      "description": "Deleting the assembly also deletes its agenda, documents and calendar. It cannot be undone.",
+      "onlyDraft": "Only draft assemblies can be deleted. Turn it back into a draft before deleting it.",
+      "delete": "Delete assembly",
+      "confirmTitle": "Delete the {label}?",
+      "confirmDescription": "Its agenda, documents and calendar will be deleted. This cannot be undone.",
+      "typeLabel": "Type {label} to confirm",
+      "deleted": "{label} deleted",
+      "deleteError": "The assembly could not be deleted"
     }
   },
   "document": {
@@ -221,6 +533,229 @@
       "placeholder": "Write the content here...",
       "visibleCharacters": "visible characters",
       "words": "words"
+    },
+    "kinds": {
+      "positioning": "Position paper",
+      "resolution": "Resolution",
+      "internal_motion": "Internal motion",
+      "executive_report": "Executive report",
+      "regulation": "Regulation",
+      "statutes": "Statutes",
+      "budget": "Budget",
+      "accounts": "Annual accounts",
+      "work_plan": "Work plan",
+      "agreement": "Agreement",
+      "report": "Report",
+      "minutes": "Minutes",
+      "candidacy": "Candidacy",
+      "venue": "Venue bid",
+      "other": "Other"
+    },
+    "formats": {
+      "structured": "Amendable text on the platform",
+      "file": "PDF file"
+    },
+    "majorities": {
+      "simple": "Simple majority",
+      "absolute": "Absolute majority",
+      "two_thirds": "Two-thirds majority"
+    },
+    "header": {
+      "reference": "Reference",
+      "proponent": "Presented by",
+      "amendmentsOpen": "Amendments open",
+      "amendmentsClose": "Amendments close",
+      "amendmentsClosed": "Amendment period closed"
+    },
+    "stats": {
+      "words": "no words | {count} word | {count} words",
+      "paragraphs": "no paragraphs | {count} paragraph | {count} paragraphs"
+    },
+    "authoring": {
+      "pageTitle": "Edit document",
+      "loading": "Loading the document",
+      "redirecting": "Opening the document",
+      "loadError": "The document could not be loaded",
+      "loadErrorDescription": "Check your connection and try again.",
+      "notFound": "Document not found",
+      "notFoundDescription": "It does not exist or you do not have access to it.",
+      "retry": "Try again",
+      "backToDocuments": "Back to documents",
+      "backToWorkspace": "View document",
+      "noLongerEditable": "This document can no longer be edited",
+      "leaveConfirm": "You have unsaved changes. Leave anyway?",
+      "submittedTitle": "Submitted, awaiting publication",
+      "submittedDescription": "Submitted on {date}. The Secretariat can review and publish it.",
+      "submittedNoDate": "The Secretariat can review and publish it.",
+      "inactive": {
+        "withdrawn": "This document has been withdrawn.",
+        "postponed": "This document has been postponed."
+      },
+      "text": "Document text",
+      "editorLabel": "Document text",
+      "editorPlaceholder": "Type or paste the document text here, or import it from Word.",
+      "save": "Save text",
+      "saveShortcut": "Save the text",
+      "saving": "Saving...",
+      "savedAt": "Saved at {time}",
+      "unsaved": "Unsaved changes",
+      "notSaved": "Your changes have not been saved",
+      "upToDate": "All changes saved",
+      "saveError": "The text could not be saved",
+      "conflictTitle": "Someone else saved the text first",
+      "conflictDescription": "The saved version has been loaded. Your version is kept so you can recover it.",
+      "remoteTitle": "Someone else has saved changes to the text",
+      "remoteDescription": "Your changes are not saved yet. Saving now would cause a conflict: load the saved version and your text will be kept so you can recover it.",
+      "loadRemote": "Load the saved version",
+      "imported": "Text imported and saved"
+    },
+    "recovery": {
+      "title": "Your version was not saved",
+      "description": "Someone else saved the text while you were editing it, or the document changed status. The editor now shows the saved version; yours is here.",
+      "restore": "Restore my version",
+      "copy": "Copy text",
+      "copied": "Text copied",
+      "copyFailed": "The text could not be copied",
+      "discard": "Discard my version",
+      "show": "Show my version",
+      "hide": "Hide my version",
+      "yourVersion": "Your version of the text"
+    },
+    "import": {
+      "button": "Import Word",
+      "uploading": "Importing {name}...",
+      "title": "Import from Word",
+      "description": "Review the text of {name} before it replaces the draft.",
+      "preview": "Preview of the imported text",
+      "stats": "{blocks} paragraphs and headings, {words} words",
+      "replaces": "The current text will be replaced | The current text will be replaced ({count} paragraph) | The current text will be replaced ({count} paragraphs)",
+      "unsavedLost": "Unsaved changes to the draft will be lost.",
+      "empty": "The file has no text to import",
+      "emptyDescription": "Check that it is the right document.",
+      "confirm": "Replace the draft",
+      "cancel": "Cancel",
+      "error": "The file could not be imported",
+      "invalidFile": "The file is not a valid Word document (.docx).",
+      "tooLarge": "The file is larger than the 15 MB limit.",
+      "warnings": {
+        "tracked_changes": "The file has tracked changes that were neither accepted nor rejected. Check that the imported text is the final one.",
+        "comments": "The file has comments. Comments are not imported.",
+        "images_dropped": "Images and other non-text elements were left out."
+      }
+    },
+    "file": {
+      "title": "PDF document",
+      "current": "Current file",
+      "unnamed": "document.pdf",
+      "view": "View PDF",
+      "opensNewTab": "(opens in a new tab)",
+      "none": "The PDF has not been uploaded yet",
+      "noneDescription": "Upload it before submitting or publishing the document.",
+      "dropLabel": "Drop the PDF here or click to choose it",
+      "replaceLabel": "Drop another PDF here to replace the current one",
+      "dropDescription": "PDF files only, up to 20 MB",
+      "uploading": "Uploading {name}...",
+      "uploaded": "PDF uploaded",
+      "error": "The PDF could not be uploaded",
+      "invalidType": "Only PDF files are accepted.",
+      "tooLarge": "The file is larger than the 20 MB limit."
+    },
+    "metadata": {
+      "heading": "Document details",
+      "title": "Title",
+      "summary": "Summary",
+      "summaryDescription": "A few lines for the document list and the notice of meeting.",
+      "optional": "Optional",
+      "kind": "Document type",
+      "format": "Format",
+      "agendaItem": "Agenda item",
+      "agendaUnavailable": "The agenda could not be loaded",
+      "proponent": "Proponent",
+      "proponentPlaceholder": "Choose who presents it",
+      "searchMember": "Search by acronym or name",
+      "noProponent": "No proponent",
+      "managerOnly": "Only the Secretariat can change who presents it.",
+      "procedure": "Procedure",
+      "kindDefaultsHint": "Whether it accepts amendments, whether it is voted on and with which majority depend on the document type. The Secretariat can adjust them.",
+      "applyDefaults": "Use the type defaults",
+      "amendable": "Accepts amendments",
+      "fileNotAmendable": "PDF documents do not accept amendments.",
+      "voted": "Voted on",
+      "majority": "Required majority",
+      "windowOverride": "Own amendment period",
+      "windowOverrideDescription": "When off, the assembly calendar applies.",
+      "opensAt": "Amendments open",
+      "closesAt": "Amendments close",
+      "calendarValue": "Calendar: {date}",
+      "calendarNone": "The calendar does not set this date",
+      "timeZone": "Madrid time",
+      "save": "Save details",
+      "reset": "Undo changes",
+      "saved": "Details saved",
+      "saveError": "The details could not be saved",
+      "conflictTitle": "The document changed while you were editing it",
+      "conflictDescription": "The current details have been loaded. Review them and make your changes again.",
+      "errors": {
+        "titleRequired": "The title is required.",
+        "titleTooLong": "The title cannot be longer than {max} characters.",
+        "summaryTooLong": "The summary cannot be longer than {max} characters.",
+        "closeBeforeOpen": "The closing date must be after the opening date."
+      }
+    },
+    "submit": {
+      "button": "Submit",
+      "title": "Submit the document",
+      "description": "The Secretariat will review it for publication. Once submitted, you can no longer edit it.",
+      "confirm": "Submit document",
+      "deadline": "Submission deadline",
+      "working": "Submitting the document...",
+      "success": "Document submitted",
+      "error": "The document could not be submitted"
+    },
+    "publish": {
+      "button": "Publish",
+      "title": "Publish the document",
+      "description": "The text will be frozen as the base version: it can no longer be edited, and amendments will be made against it.",
+      "descriptionFile": "The document will be visible to everyone in the assembly.",
+      "confirm": "Publish document",
+      "cancel": "Cancel",
+      "checklist": "Checks",
+      "blocked": "Resolve the items marked in red to continue.",
+      "working": "Publishing the document...",
+      "success": "Document published",
+      "successReference": "Reference: {reference}",
+      "error": "The document could not be published",
+      "states": {
+        "ok": "Done",
+        "warning": "Warning",
+        "error": "Missing",
+        "info": "Information"
+      },
+      "checks": {
+        "textReady": "The document has text ({count} paragraph) | The document has text ({count} paragraphs and headings)",
+        "textEmpty": "The document has no text",
+        "textUnsaved": "Changes to the text will be saved before continuing",
+        "fileReady": "PDF uploaded: {name}",
+        "fileMissing": "The PDF has not been uploaded",
+        "metadataUnsaved": "There are unsaved changes to the document details. Save or undo them before continuing.",
+        "noDeadline": "The calendar sets no submission deadline",
+        "deadlineOpen": "Submissions open until {date}",
+        "deadlinePassed": "The submission deadline ended on {date}",
+        "deadlineManager": "As the Secretariat you can still submit it.",
+        "noProponent": "The document has no proponent",
+        "notAmendable": "This document does not accept amendments",
+        "windowRange": "Amendments from {opens} to {closes}",
+        "windowFromPublication": "Amendments from publication until {closes}",
+        "windowNoClose": "There is no closing date for amendments: they will stay open until one is set",
+        "windowPast": "The amendment period ended on {date}: any amendments submitted will be late",
+        "windowOverride": "This document's own period",
+        "windowCalendar": "Following the assembly calendar",
+        "referenceKeep": "Keeps the reference {reference}",
+        "referenceAssign": "Will receive the next {prefix} reference of {year}",
+        "referenceNone": "This type of document has no reference",
+        "scheduled": "Publication planned in the calendar: {date}",
+        "assemblyDraft": "The assembly is still a draft: only its managers will see the document until it is convened"
+      }
     }
   },
   "amendment": {
@@ -288,37 +823,438 @@
       "rejected_proponent": "Rejected by proponent",
       "approved_vote": "Approved by vote",
       "rejected_vote": "Rejected by vote"
+    },
+    "draftLabel": "Draft",
+    "draftShort": "Dft.",
+    "unknownAmendment": "Unavailable amendment",
+    "late": "Late",
+    "kinds": {
+      "partial": "Partial",
+      "formal": "Formal",
+      "totality_return": "Total rejection (return)",
+      "totality_alternative": "Alternative full text",
+      "transactional": "Transactional"
+    },
+    "changeKinds": {
+      "suppression": "Deletion",
+      "addition": "Addition",
+      "modification": "Modification"
+    },
+    "approvalMethods": {
+      "proponent": "proponent acceptance",
+      "assent": "assent",
+      "vote": "vote",
+      "formal": "formal correction"
+    },
+    "actions": {
+      "cancel": "Cancel",
+      "delete": "Delete draft",
+      "edit": "Edit",
+      "retry": "Try again",
+      "submit": "Submit",
+      "withdraw": "Withdraw"
+    },
+    "card": {
+      "global": "Whole text",
+      "sources": "Combines {list}",
+      "transactedIn": "Merged into {list}"
+    },
+    "list": {
+      "label": "Amendments in text order",
+      "overlapGroup": "Same passage · one amendment | Same passage · {count} amendments",
+      "totalityGroup": "To the whole text",
+      "count": "No amendments | One amendment | {count} amendments",
+      "loading": "Loading amendments",
+      "error": "The amendments could not be loaded",
+      "empty": "No amendments yet",
+      "emptyDescription": "Amendments to this document will appear here, in text order, once they are submitted.",
+      "emptyCanAmend": "Select one or more paragraphs in the text and press “Amend” to submit the first one.",
+      "emptyFiltered": "No amendment matches the filters"
+    },
+    "filters": {
+      "search": "Search amendments",
+      "searchPlaceholder": "Code, member or justification",
+      "button": "Filters",
+      "buttonActive": "Active filters: {count}",
+      "status": "Status",
+      "kind": "Type",
+      "member": "Presenting member",
+      "memberSearch": "Search member",
+      "late": "Deadline",
+      "lateOptions": {
+        "any": "On time or late",
+        "late": "Late only",
+        "on_time": "On time only"
+      },
+      "mine": "Only my member's",
+      "any": "Any",
+      "clear": "Clear filters",
+      "block": "Only the chosen paragraph",
+      "blockNamed": "Only those touching {block}",
+      "removeBlock": "Remove the paragraph filter"
+    },
+    "detail": {
+      "close": "Close the amendment",
+      "paragraph": "paragraph {n}",
+      "changes": "Proposed changes",
+      "globalReplace": "Replaces “{find}” with “{replace}” throughout the text",
+      "occurrences": "one occurrence | {count} occurrences",
+      "returnNote": "Proposes returning the document to its proponent: it does not change the text and only carries a justification.",
+      "justification": "Justification",
+      "noJustification": "No justification yet.",
+      "authors": "Presented by",
+      "presenting": "presenting",
+      "submittedAt": "Submitted on {date}",
+      "outcome": "Outcome",
+      "approvedBy": "Approved by {method}",
+      "decidedAt": "Decided on {date}",
+      "overlaps": "Overlaps in the text with",
+      "overlapKinds": {
+        "same_text": "same fragment",
+        "removed_block": "deleted paragraph",
+        "same_position": "same position"
+      },
+      "transactional": "Transactional links",
+      "sources": "Source amendments:",
+      "transactedIn": "Included in:",
+      "submitted": "Amendment submitted",
+      "submittedLate": "It was submitted late and awaits admission.",
+      "submitFailed": "The amendment could not be submitted",
+      "withdrawConfirm": "Withdraw this amendment? It will not be debated.",
+      "withdrawn": "Amendment withdrawn",
+      "withdrawFailed": "The amendment could not be withdrawn",
+      "deleteConfirm": "Delete this draft? This cannot be undone.",
+      "deleted": "Draft deleted",
+      "deleteFailed": "The draft could not be deleted"
+    },
+    "position": {
+      "title": "Proponent's position",
+      "edit": "Change",
+      "none": "The proponent has not taken a position yet.",
+      "label": "Position",
+      "options": {
+        "pending": "Pending",
+        "accept": "Accepts",
+        "reject": "Rejects",
+        "transact": "Proposes a transactional"
+      },
+      "descriptions": {
+        "pending": "Not decided yet.",
+        "accept": "The proponent takes it into the text.",
+        "reject": "The proponent does not accept it: it will be debated and voted.",
+        "transact": "The proponent seeks an agreed wording with its authors."
+      },
+      "comment": "Comment",
+      "commentPlaceholder": "Reason for the position (optional)",
+      "save": "Save position",
+      "saved": "Position saved",
+      "saveFailed": "The position could not be saved"
+    },
+    "acceptances": {
+      "title": "Parties to the transactional",
+      "summary": "{accepted} of {total} accepted",
+      "none": "This transactional has no parties.",
+      "roles": {
+        "author": "author of a source amendment",
+        "proponent": "document proponent"
+      },
+      "accept": "Accept",
+      "reject": "Reject",
+      "recordAccept": "{member} accepts",
+      "recordReject": "{member} rejects",
+      "recorded": "Answer recorded",
+      "failed": "The answer could not be recorded",
+      "waiting": "It can be voted once every party accepts it.",
+      "ready": "Every party accepted it: it can now be voted."
+    },
+    "relations": {
+      "title": "Relations with other amendments",
+      "empty": "No relations recorded.",
+      "add": "Add relation",
+      "kind": "Relation",
+      "target": "With amendment",
+      "targetPlaceholder": "Choose an amendment",
+      "targetSearch": "Search by code",
+      "note": "Note",
+      "notePlaceholder": "Optional, e.g. “if X falls, this one falls”",
+      "save": "Save relation",
+      "added": "Relation added",
+      "addFailed": "The relation could not be added",
+      "removed": "Relation removed",
+      "removeFailed": "The relation could not be removed",
+      "remove": "Remove the relation “{relation} {label}”",
+      "kinds": {
+        "incompatible": "Incompatible with",
+        "duplicate": "Duplicate of",
+        "depends_on": "Depends on",
+        "consequence_of": "Consequence of",
+        "subsumed_by": "Subsumed by",
+        "same_in_other_document": "Same amendment in another document as"
+      },
+      "inverse": {
+        "incompatible": "Incompatible with",
+        "duplicate": "Duplicate of",
+        "depends_on": "Required by",
+        "consequence_of": "Leads to",
+        "subsumed_by": "Subsumes",
+        "same_in_other_document": "Same amendment in another document as"
+      }
+    },
+    "history": {
+      "title": "History",
+      "empty": "No recorded changes.",
+      "error": "The history could not be loaded",
+      "by": "by {actor}",
+      "events": {
+        "amendment_created": "Amendment created",
+        "amendment_updated": "Draft edited",
+        "amendment_deleted": "Draft deleted",
+        "amendment_submitted": "Submitted",
+        "amendment_admitted": "Admitted",
+        "amendment_inadmissible": "Declared inadmissible",
+        "amendment_withdrawn": "Withdrawn",
+        "amendment_lapsed": "Lapsed",
+        "amendment_transacted": "Absorbed by a transactional",
+        "amendment_approved": "Approved",
+        "amendment_rejected": "Rejected",
+        "amendment_reopened": "Reopened",
+        "position_changed": "Proponent's position set",
+        "acceptance_recorded": "A party answered",
+        "relation_created": "Relation added",
+        "relation_deleted": "Relation removed",
+        "other": "Change recorded"
+      }
+    },
+    "vote": {
+      "counts": "Count",
+      "inline": "{inFavor} in favour, {against} against, {abstentions} abstentions",
+      "inFavor": "In favour",
+      "against": "Against",
+      "abstentions": "Abstentions",
+      "blank": "Blank",
+      "invalid": "Invalid",
+      "present": "Present",
+      "recordedAt": "Recorded on {date}",
+      "methods": {
+        "assent": "By assent",
+        "show_of_hands": "Show of hands",
+        "secret": "Secret ballot",
+        "roll_call": "Roll call",
+        "portal": "Voting portal"
+      },
+      "majorities": {
+        "simple": "Simple majority",
+        "absolute": "Absolute majority",
+        "two_thirds": "Two-thirds majority"
+      }
+    },
+    "composer": {
+      "titleNew": "New amendment",
+      "titleEdit": "Edit draft",
+      "close": "Close the amendment editor",
+      "mode": "What to amend",
+      "modes": {
+        "passage": "Change the selected passage",
+        "delete": "Delete the selected passage",
+        "global": "Replace a term throughout the text",
+        "return": "Whole text: return",
+        "alternative": "Whole text: alternative text"
+      },
+      "modeDescriptions": {
+        "passage": "Edit the text as you want it to read: the change is worked out for you.",
+        "delete": "Proposes removing the selected paragraphs.",
+        "global": "Changes a word or phrase everywhere in the document.",
+        "return": "Proposes returning the document unchanged. It only carries a justification.",
+        "alternative": "Proposes replacing the whole document with a new text."
+      },
+      "passageCount": "No paragraphs selected | One paragraph selected | {count} paragraphs selected",
+      "editorLabel": "Amended text of the passage",
+      "editorPlaceholder": "Write the text you propose",
+      "editorHint": "You can change words, delete or add paragraphs. Whatever you leave untouched stays as it is.",
+      "deleteHint": "The selected paragraphs will be removed. Check the preview.",
+      "find": "Current term",
+      "findPlaceholder": "e.g. Executive Committee",
+      "replace": "New term",
+      "replacePlaceholder": "Leave it empty to remove it",
+      "globalHint": "Type the term to see how often it appears.",
+      "occurrences": "No occurrences | One occurrence (paragraphs affected: {blocks}) | {count} occurrences (paragraphs affected: {blocks})",
+      "returnNote": "A return amendment does not change the text. Explain in the justification why it should be returned.",
+      "alternativeHint": "Write the full text you propose instead of the current one.",
+      "alternativeLabel": "Full alternative text",
+      "alternativePlaceholder": "Write the alternative text here",
+      "copyOriginal": "Start from the current text",
+      "preview": "Preview of the changes",
+      "issues": {
+        "no_selection": "Select one or more paragraphs in the text first.",
+        "no_changes": "You have not changed anything yet.",
+        "find_empty": "Type the term you want to replace.",
+        "same_term": "The new term is the same as the current one.",
+        "no_matches": "The term does not appear in the text (whole words, case-sensitive).",
+        "alternative_empty": "Write the alternative text."
+      },
+      "errorsTitle": "The amendment cannot be saved like this",
+      "kind": "Nature",
+      "kindDescriptions": {
+        "partial": "Changes the content of the text.",
+        "formal": "Fixes typos, style or numbering without changing the meaning."
+      },
+      "justification": "Justification",
+      "justificationPlaceholder": "Explain why you propose this change",
+      "justificationRequired": "A justification is required to submit the amendment.",
+      "onBehalf": "Submit on behalf of",
+      "onBehalfPlaceholder": "Choose the presenting member",
+      "onBehalfHint": "For amendments dictated in session. Who recorded it is kept on record.",
+      "onBehalfRequired": "Choose the member presenting the amendment.",
+      "coAuthors": "Co-authors",
+      "coAuthorsHint": "Other members presenting the amendment jointly.",
+      "coAuthorsPlaceholder": "Add members (optional)",
+      "memberSearch": "Search member",
+      "lateTitle": "Amendment window closed",
+      "lateWarning": "It will be submitted late and will need to be admitted.",
+      "noMember": "Your account is not linked to any member",
+      "noMemberDescription": "Only members can submit amendments. Contact the Secretariat if you think this is a mistake.",
+      "saveDraft": "Save draft",
+      "submit": "Submit",
+      "saved": "Draft saved",
+      "saveFailed": "The amendment could not be saved",
+      "submitted": "Amendment submitted",
+      "submittedLate": "It was submitted late and awaits admission.",
+      "submitFailed": "The amendment could not be submitted"
+    },
+    "errors": {
+      "empty": "The amendment proposes no change.",
+      "delete_empty": "A deletion does not say which paragraphs it removes.",
+      "unknown_block": "It refers to a paragraph that is not in the published text.",
+      "duplicate_delete": "It deletes the same paragraph twice.",
+      "unknown_anchor": "It adds text after a paragraph that does not exist.",
+      "duplicate_anchor": "It adds two blocks of text at the same point.",
+      "insert_empty": "An added paragraph is empty.",
+      "duplicate_block_id": "Some new paragraphs are repeated.",
+      "out_of_range": "A change falls outside the paragraph text.",
+      "anchor_mismatch": "The original text changed since the amendment was written.",
+      "noop": "A change leaves the text as it was.",
+      "replace_in_deleted_block": "It changes a paragraph that the same amendment deletes.",
+      "overlapping_ops": "Two changes of the amendment overlap.",
+      "totality_return_ops": "A return amendment cannot change the text.",
+      "inconsistent_counts": "The votes cast exceed the members present.",
+      "unknown": "The amendment is not valid."
     }
   },
   "admin": {
-    "title": "Admin",
+    "title": "Administration",
     "dashboard": "Admin dashboard",
     "viewSite": "View site",
     "users": {
       "title": "Users",
       "changeRole": "Change role",
-      "roleChanged": "Role updated successfully",
+      "roleChanged": "{user} now has the {role} role",
       "cannotChangeSelf": "You cannot change your own role",
       "noUsers": "No registered users",
       "email": "Email",
       "role": "Role",
       "university": "University",
       "lastSync": "Last sync",
-      "registeredAt": "Registered",
+      "registeredAt": "Joined",
       "user": "User",
-      "description": "Manage users and assign roles",
+      "description": "Accounts that have signed in and their platform role. The Associate and Guest roles are synced from the intranet on every sign-in.",
       "noRole": "No role",
       "confirmRoleChange": "Confirm role change",
-      "confirmRoleChangeMessage": "Change {user}'s role to {role}?",
-      "page": "Page {page}"
+      "confirmRoleChangeMessage": "Change the role of {user} to {role}?",
+      "page": "Page {page}",
+      "member": "Intranet acronym",
+      "you": "You",
+      "roleFor": "Role of {user}",
+      "intranetRole": "Intranet role: {role}",
+      "neverSynced": "Never",
+      "roleChangeFailed": "The role could not be changed"
     },
     "roles": {
-      "title": "Roles",
+      "title": "Roles and permissions",
       "permissions": "Permissions",
       "editPermissions": "Edit permissions",
-      "permissionsUpdated": "Permissions updated successfully",
-      "adminPermissionsLocked": "Admin role permissions cannot be modified",
-      "description": "Configure role permissions"
+      "permissionsUpdated": "Permissions updated",
+      "adminPermissionsLocked": "The Administrator role has every permission and cannot be edited.",
+      "description": "Choose what each role can do. Changes apply when you save.",
+      "matrix": "Permissions by role",
+      "permission": "Permission",
+      "grant": "{permission} for {role}",
+      "roleChanged": "Unsaved changes",
+      "unsaved": "{count} role has unsaved changes | {count} roles have unsaved changes",
+      "discard": "Discard changes",
+      "discarded": "Changes discarded",
+      "saveFailed": "The permissions could not be saved",
+      "leaveConfirm": "There are unsaved permission changes. Leave anyway?",
+      "noRoles": "There are no editable roles"
+    },
+    "intro": "Manage who can access the platform, what each role can do and which members present documents and amendments.",
+    "sections": "Administration sections",
+    "forbidden": "Your role does not give access to this administration section.",
+    "loadFailed": "The data could not be loaded",
+    "loading": "Loading",
+    "retry": "Try again",
+    "refresh": "Refresh",
+    "none": "Not set",
+    "pagination": "Pagination",
+    "previous": "Previous",
+    "next": "Next",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "save": "Save",
+    "members": {
+      "title": "Members",
+      "description": "Member councils, sectoral bodies and executive areas that present documents and amendments. Councils and sectoral bodies are synced from the intranet; executive areas are added here.",
+      "sync": "Sync with the intranet",
+      "syncing": "Syncing with the intranet…",
+      "syncDoneTitle": "Sync complete",
+      "syncDone": "{created} new, {updated} updated and {deactivated} deactivated.",
+      "syncFailed": "The intranet sync failed",
+      "create": "New member",
+      "createTitle": "New member",
+      "createDescription": "For executive areas and other members that do not come from the intranet.",
+      "createAction": "Create member",
+      "created": "{acronym} created",
+      "updated": "{acronym} updated",
+      "edit": "Edit",
+      "editMember": "Edit {acronym}",
+      "editTitle": "Edit {acronym}",
+      "search": "Search by acronym, name or university",
+      "allKinds": "All kinds",
+      "onlyActive": "Active only",
+      "onlyInactive": "Inactive only",
+      "allStatuses": "Active and inactive",
+      "clearFilters": "Clear filters",
+      "count": "No members | {shown} of {total} member | {shown} of {total} members",
+      "acronym": "Acronym",
+      "name": "Name",
+      "kind": "Kind",
+      "university": "University",
+      "region": "Region",
+      "source": "Source",
+      "status": "Status",
+      "actions": "Actions",
+      "sources": {
+        "intranet": "From the intranet",
+        "manual": "Added by hand"
+      },
+      "syncedAt": "Synced on {date}",
+      "active": "Active",
+      "inactive": "Inactive",
+      "activeLabel": "Active member",
+      "activeHelp": "Inactive members cannot present documents or amendments.",
+      "acronymLocked": "A synced member's acronym is changed in the intranet.",
+      "empty": "No members yet",
+      "emptyDescription": "Sync with the intranet to import the member councils and sectoral bodies.",
+      "noMatches": "No members match the filters",
+      "errors": {
+        "acronymRequired": "The acronym is required",
+        "acronymInvalid": "Use letters, digits and simple separators (20 characters at most)",
+        "nameRequired": "The name is required",
+        "tooLong": "It is too long",
+        "duplicate": "A member with that acronym already exists",
+        "conflictTitle": "The changes were not saved",
+        "conflict": "Another member uses that acronym or someone else edited this member. Check the refreshed list.",
+        "saveFailed": "The member could not be saved"
+      }
     }
   },
   "export": {
@@ -327,7 +1263,120 @@
     "generating": "Generating PDF...",
     "download": "Download PDF",
     "ready": "PDF ready for download",
-    "failed": "Failed to generate PDF"
+    "failed": "Failed to generate PDF",
+    "pdf": {
+      "untitled": "Untitled",
+      "emptyDocument": "This document has no text.",
+      "agendaPoint": "Agenda item {number}: {title}",
+      "presentedBy": "Presented by {members}",
+      "voteCounts": "votes in favour: {inFavor}, against: {against}, abstentions: {abstentions}",
+      "finalVote": {
+        "approved": "Approved at the {assembly} on {date} by {majority} ({counts}).",
+        "rejected": "Rejected at the {assembly} on {date} ({counts}); it required a {majority}."
+      },
+      "majorities": {
+        "simple": "simple majority",
+        "absolute": "absolute majority",
+        "two_thirds": "two-thirds majority"
+      },
+      "footer": {
+        "generatedAt": "Generated on {date}",
+        "page": "Page {page} of {total}"
+      },
+      "links": {
+        "title": "Links"
+      },
+      "version": {
+        "consolidated": "Final approved text, with the amendments incorporated.",
+        "base": "Published text, without amendments incorporated.",
+        "working": "Unpublished working draft.",
+        "annotated": "Published text with the approved amendments marked in place."
+      },
+      "watermarkDraft": "DRAFT",
+      "legend": {
+        "inserted": {
+          "sample": "added text",
+          "text": "text added by an amendment"
+        },
+        "removed": {
+          "sample": "removed text",
+          "text": "text removed by an amendment"
+        },
+        "code": "The superscript code names the amendment behind each change. See the annex."
+      },
+      "conflicts": "Approved amendments that could not be incorporated because they clash with others or no longer fit the text: {codes}.",
+      "annex": {
+        "title": "Annex: amendments",
+        "empty": "No amendments were submitted.",
+        "code": "Code",
+        "authors": "Presented by",
+        "kind": "Type",
+        "outcome": "Status",
+        "votes": "Votes (Y/N/Abs)",
+        "sources": "Combines {codes}",
+        "late": "Late",
+        "notApplied": "Not incorporated: clashes with {codes}",
+        "notAppliedInvalid": "Not incorporated: no longer fits the text"
+      },
+      "amendmentStatuses": {
+        "draft": "Draft",
+        "submitted": "Submitted",
+        "pendingAdmission": "Awaiting admission",
+        "admitted": "Admitted, awaiting decision",
+        "approved": "Approved",
+        "approvedBy": "Approved ({method})",
+        "transacted": "Merged into a transactional",
+        "transactedInto": "Merged into {codes}",
+        "inadmissible": "Inadmissible",
+        "withdrawn": "Withdrawn",
+        "lapsed": "Lapsed",
+        "rejected": "Rejected"
+      },
+      "approvalMethods": {
+        "proponent": "accepted by the proponent",
+        "assent": "by assent",
+        "vote": "by vote",
+        "formal": "formal correction"
+      },
+      "amendmentKinds": {
+        "partial": "Partial",
+        "formal": "Formal",
+        "totality_return": "Whole text: return",
+        "totality_alternative": "Whole text: alternative",
+        "transactional": "Transactional"
+      },
+      "documentKinds": {
+        "positioning": "Position paper",
+        "resolution": "Resolution",
+        "internal_motion": "Internal motion",
+        "executive_report": "Executive Committee report",
+        "regulation": "Regulation",
+        "statutes": "Statutes",
+        "budget": "Budget",
+        "accounts": "Accounts",
+        "work_plan": "Work plan",
+        "agreement": "Agreement",
+        "report": "Report",
+        "minutes": "Minutes",
+        "candidacy": "Candidacy",
+        "venue": "Venue",
+        "other": "Other document"
+      },
+      "assemblyTypes": {
+        "AGO": "Ordinary General Assembly",
+        "AGE": "Extraordinary General Assembly",
+        "AGET": "Telematic Extraordinary General Assembly"
+      },
+      "agendaTitle": "Agenda",
+      "agendaEmpty": "The agenda is still empty.",
+      "noPublishedDocuments": "No documents have been published yet.",
+      "fileDocument": "PDF document ({file}). See it on the platform.",
+      "fileDocumentUnnamed": "PDF document. See it on the platform.",
+      "dateRange": "From {start} to {end}",
+      "filename": {
+        "annotated": "annotated"
+      }
+    }
   },
   "validation": {
     "required": "This field is required",
@@ -362,6 +1411,923 @@
         "description": "We could not complete the operation."
       },
       "goBack": "Go back"
+    }
+  },
+  "shell": {
+    "appName": "CREUP Assemblies",
+    "skipToNavigation": "Skip to navigation",
+    "skipToContent": "Skip to content",
+    "brand": {
+      "home": "CREUP Assemblies: go to home",
+      "product": "Assemblies"
+    },
+    "nav": {
+      "mainLabel": "Main navigation",
+      "home": "Home",
+      "assemblies": "Assemblies",
+      "admin": "Administration",
+      "users": "Users",
+      "roles": "Roles and permissions",
+      "members": "Members"
+    },
+    "assembly": {
+      "navLabel": "{assembly} sections",
+      "overview": "Overview",
+      "agenda": "Agenda",
+      "calendar": "Calendar",
+      "convocation": "Notice of meeting",
+      "session": "Session",
+      "projection": "Projection",
+      "projectionNewTab": "Projection (opens in a new tab)",
+      "settings": "Settings"
+    },
+    "live": {
+      "region": "Assembly in session",
+      "single": "In session: {assembly}",
+      "multiple": "{count} assemblies in session",
+      "follow": "Follow",
+      "dismiss": "Hide the session notice",
+      "started": "Session started: {assembly}"
+    },
+    "user": {
+      "menu": "User menu for {name}",
+      "accessibility": "Accessibility preferences",
+      "accessibilityDescription": "Font and change marks for the text of documents and amendments.",
+      "done": "Done",
+      "language": "Language",
+      "theme": "Theme",
+      "themes": {
+        "system": "Match the system",
+        "light": "Light",
+        "dark": "Dark"
+      },
+      "signOut": "Sign out"
+    },
+    "roles": {
+      "admin": "Administrator",
+      "secretaria": "Secretariat",
+      "moderador": "Moderator",
+      "asociado": "Associate",
+      "invitado": "Guest",
+      "none": "No role"
+    },
+    "memberKinds": {
+      "asociado": "Member council",
+      "sectorial": "Sectoral body",
+      "executive": "Executive area",
+      "other": "Other"
+    }
+  },
+  "home": {
+    "title": "Home",
+    "greeting": {
+      "morning": "Good morning, {name}",
+      "afternoon": "Good afternoon, {name}",
+      "evening": "Good evening, {name}",
+      "morningAnonymous": "Good morning",
+      "afternoonAnonymous": "Good afternoon",
+      "eveningAnonymous": "Good evening"
+    },
+    "loadFailed": "The assemblies could not be loaded",
+    "retry": "Try again",
+    "loading": "Loading assemblies",
+    "aside": "Your account",
+    "live": {
+      "title": "In session now",
+      "follow": "Follow the session",
+      "projection": "Projection",
+      "projectionNewTab": "Open the projection in a new tab"
+    },
+    "upcoming": {
+      "title": "Upcoming assemblies",
+      "all": "See all",
+      "empty": "No upcoming assemblies",
+      "emptyDescription": "When an assembly is convened, it will show up here with its deadlines."
+    },
+    "member": {
+      "title": "Your member",
+      "actingFor": "You present documents and amendments on behalf of this member.",
+      "none": "Your account is not linked to any member. If you represent a council, a sectoral body or an area, ask the Secretariat to check it.",
+      "role": "Platform role"
+    },
+    "admin": {
+      "title": "Administration",
+      "users": "Users",
+      "roles": "Roles and permissions",
+      "members": "Members"
+    }
+  },
+  "assemblies": {
+    "title": "Assemblies",
+    "new": "New assembly",
+    "listLabel": "Assembly list",
+    "loading": "Loading assemblies",
+    "loadFailed": "The assemblies could not be loaded",
+    "retry": "Try again",
+    "count": "No assemblies | {count} assembly | {count} assemblies",
+    "empty": "No assemblies yet",
+    "emptyDescription": "Assemblies will appear here once the Secretariat convenes them.",
+    "emptyDescriptionManager": "Create the first assembly to start preparing its calendar and agenda.",
+    "noMatches": "No assemblies match the filters",
+    "noMatchesDescription": "Try another type or status, or clear the filters.",
+    "filters": {
+      "type": "Filter by type",
+      "status": "Filter by status",
+      "allTypes": "All types",
+      "allStatuses": "All statuses",
+      "clear": "Clear filters"
+    },
+    "types": {
+      "AGO": "Ordinary General Assembly",
+      "AGE": "Extraordinary General Assembly",
+      "AGET": "Online Extraordinary General Assembly"
+    },
+    "statuses": {
+      "draft": "Draft",
+      "convened": "Convened",
+      "in_session": "In session",
+      "closed": "Closed"
+    },
+    "milestones": {
+      "convocation": "Notice of meeting",
+      "agenda_requests_close": "Agenda proposals close",
+      "agenda_final": "Final agenda",
+      "documents_close": "Document submissions close",
+      "documents_publish": "Documents published",
+      "amendments_open": "Amendments open",
+      "amendments_close": "Amendments close",
+      "candidacies_close": "Candidacies close"
+    },
+    "card": {
+      "dates": "Dates",
+      "location": "Venue",
+      "documentsLabel": "Documents",
+      "documents": "No documents | {count} document | {count} documents",
+      "agendaFinal": "Final agenda",
+      "nextMilestone": "Next milestone"
+    },
+    "create": {
+      "title": "New assembly",
+      "description": "It is created as a draft, visible only to assembly managers until it is convened.",
+      "type": "Type",
+      "number": "Number",
+      "suggesting": "Looking up the next number…",
+      "start": "Start",
+      "end": "End",
+      "timeZoneHelp": "Times in Spanish peninsular time (Europe/Madrid).",
+      "location": "Venue",
+      "locationPlaceholder": "City and venue",
+      "defaultCalendar": "Fill in the regulatory calendar",
+      "defaultCalendarHelp": "Creates the milestones (notice, documents, amendments…) with the default deadlines for this type of assembly. You can adjust them later.",
+      "cancel": "Cancel",
+      "submit": "Create assembly",
+      "created": "{assembly} created",
+      "errors": {
+        "required": "This field is required",
+        "number": "Enter a whole number between 1 and 9999",
+        "endBeforeStart": "The end cannot be before the start",
+        "tooLong": "It is too long",
+        "duplicate": "There is already an {type} with number {number}",
+        "failed": "The assembly could not be created"
+      }
+    }
+  },
+  "agenda": {
+    "title": "Agenda",
+    "final": "Final",
+    "provisional": "Provisional agenda",
+    "itemsCount": "No items | {count} item | {count} items",
+    "documentsCount": "no documents | {count} document | {count} documents",
+    "seeConvocation": "See notice of meeting",
+    "addItem": "Add item",
+    "addFirstItem": "Add the first item",
+    "rootsLockedShort": "The agenda is final: main items cannot be added",
+    "rootsLockedTitle": "Final agenda",
+    "rootsLockedDescription": "Main items cannot be created, moved or deleted. Sub-items still can.",
+    "reopenInCalendar": "Reopen it in the calendar",
+    "loading": "Loading the agenda",
+    "loadError": "The agenda could not be loaded",
+    "retry": "Try again",
+    "emptyTitle": "The agenda is empty",
+    "emptyDescription": "No items have been published yet.",
+    "emptyManagerDescription": "Add the agenda items. You can then create sub-items and documents in each one.",
+    "acceptsSubmissions": "Accepts documents from members",
+    "acceptsSubmissionsHelp": "Members can submit documents under this item until the documents deadline.",
+    "acceptsSubmissionsBadge": "Accepts documents",
+    "lockedRoot": "Main item locked: the agenda is final",
+    "documentsOf": "Documents of item {number}: {title}",
+    "submissionsClosedAssembly": "The assembly is closed: documents can no longer be submitted.",
+    "submissionsDeadlinePassed": "The deadline for submitting documents has passed.",
+    "submissionsOpened": "The item “{title}” now accepts documents from members",
+    "submissionsClosed": "The item “{title}” no longer accepts documents from members",
+    "moved": "“{title}” is now item {number}",
+    "moveError": "The item could not be moved",
+    "saveError": "The item could not be saved",
+    "deleteError": "The item could not be deleted",
+    "created": "Item {number} created: {title}",
+    "updated": "Item updated: {title}",
+    "createdToast": "Item created",
+    "updatedToast": "Item updated",
+    "deleted": "Item deleted: {title}",
+    "deletedToast": "Item deleted",
+    "deleteTitle": "Delete the item?",
+    "deleteDescription": "You are about to delete item {number}: {title}.",
+    "deleteChildren": "Its sub-item will be deleted too. | Its {count} sub-items will be deleted too.",
+    "deleteDocuments": "The draft document it holds will be deleted. | The {count} draft documents it holds will be deleted.",
+    "deleteIrreversible": "This cannot be undone.",
+    "move": {
+      "group": "Move the item",
+      "up": "Move item {number} up: {title}",
+      "down": "Move item {number} down: {title}",
+      "indent": "Make item {number} a sub-item of the previous one: {title}",
+      "outdent": "Move item {number} up one level: {title}",
+      "upShort": "Move up",
+      "downShort": "Move down",
+      "indentShort": "Make sub-item",
+      "outdentShort": "Up one level"
+    },
+    "actions": {
+      "edit": "Edit item",
+      "addSubItem": "Add sub-item",
+      "newDocument": "New document",
+      "delete": "Delete item",
+      "menu": "Actions for item {number}: {title}",
+      "submitDocument": "Submit a document"
+    },
+    "form": {
+      "title": "Title",
+      "description": "Description",
+      "descriptionHelp": "Optional. Shown under the title in the agenda and in the notice of meeting.",
+      "editTitle": "Edit item",
+      "newItemTitle": "New item",
+      "newSubItemTitle": "New sub-item",
+      "parentHint": "Inside item {number}: {title}",
+      "hint": "Items are numbered automatically by their position.",
+      "titleRequired": "Enter the item title",
+      "tooLong": "At most {max} characters",
+      "create": "Create item",
+      "saveError": "The item could not be saved"
+    },
+    "document": {
+      "windowCloses": "Amendments close",
+      "windowOpens": "Amendments open",
+      "windowClosed": "Amendment window closed",
+      "consolidated": "Final text",
+      "amendments": "No amendments | {count} amendment | {count} amendments"
+    },
+    "documentKinds": {
+      "positioning": "Position paper",
+      "resolution": "Resolution",
+      "internal_motion": "Internal motion",
+      "executive_report": "Executive report",
+      "regulation": "Regulation",
+      "statutes": "Statutes",
+      "budget": "Budget",
+      "accounts": "Accounts",
+      "work_plan": "Work plan",
+      "agreement": "Agreement",
+      "report": "Report",
+      "minutes": "Minutes",
+      "candidacy": "Candidacy",
+      "venue": "Venue bid",
+      "other": "Other"
+    },
+    "formats": {
+      "structured": "Text on the platform",
+      "file": "PDF file"
+    },
+    "formatDescriptions": {
+      "structured": "Written or imported on the platform; amendments are made on the text.",
+      "file": "A PDF is uploaded. It cannot be amended."
+    },
+    "majorities": {
+      "simple": "Simple majority",
+      "absolute": "Absolute majority",
+      "two_thirds": "Two-thirds majority"
+    },
+    "newDocument": {
+      "title": "New document",
+      "submitTitle": "Submit a document",
+      "under": "Under item {number}: {title}",
+      "kind": "Document type",
+      "proponent": "Proponent",
+      "noProponent": "No proponent",
+      "searchMember": "Search members",
+      "membersError": "The member list could not be loaded",
+      "format": "Format",
+      "documentTitle": "Document title",
+      "titleRequired": "Enter the document title",
+      "summary": "Summary",
+      "summaryHelp": "Optional. One or two sentences about what the document contains.",
+      "rules": "Amendments and voting",
+      "rulesHelp": "Defaults for this document type. You can change them.",
+      "amendable": "Accepts amendments",
+      "fileNotAmendable": "PDF documents cannot be amended.",
+      "voted": "Put to a vote",
+      "majority": "Required majority",
+      "amendableYes": "Accepts amendments",
+      "amendableNo": "Does not accept amendments",
+      "votedWith": "Voted by {majority}",
+      "notVoted": "Not voted",
+      "create": "Create document",
+      "submit": "Submit",
+      "created": "Document created",
+      "error": "The document could not be created"
+    }
+  },
+  "calendar": {
+    "title": "Calendar",
+    "intro": "Deadlines of the assembly. All times are Spanish mainland time.",
+    "applyDefaults": "Apply default deadlines",
+    "milestonesTitle": "Deadlines",
+    "timeZoneHint": "Spanish mainland time (Europe/Madrid)",
+    "clear": "Remove date",
+    "clearMilestone": "Remove the date of {milestone}",
+    "noteLabel": "Note for {milestone}",
+    "notePlaceholder": "Optional note",
+    "changed": "Unsaved",
+    "hasWarning": "Check this deadline",
+    "noWarnings": "The calendar meets the regulatory deadlines.",
+    "defaultHint": "Default: {date}",
+    "noDefault": "No default deadline for this assembly type",
+    "afterStart": "After the assembly starts",
+    "daysBeforeStart": "On the start day | 1 day before the start | {count} days before the start",
+    "hoursBeforeStart": "Right at the start | 1 hour before the start | {count} hours before the start",
+    "defaultsApplied": "There are no default deadlines for this assembly type | 1 default deadline applied. Save to confirm it. | {count} default deadlines applied. Save to confirm them.",
+    "defaultsConfirmTitle": "Apply the default deadlines?",
+    "defaultsConfirmDescription": "The dates you have already set will be replaced by the ones the regulations set for this assembly type. Nothing is saved until you press Save.",
+    "agendaFinal": "Final agenda",
+    "agendaFinalOn": "Main items are locked: they cannot be created, moved or deleted.",
+    "agendaFinalOff": "The agenda is provisional and can be fully reorganised.",
+    "agendaFinalizedAt": "Final since {date}",
+    "unsaved": "No changes | 1 unsaved change | {count} unsaved changes",
+    "unsavedConfirm": "The calendar has unsaved changes. Leave without saving them?",
+    "saved": "Calendar saved",
+    "saveError": "The calendar could not be saved",
+    "discarded": "Changes discarded",
+    "remoteChanged": "The calendar has changed",
+    "remoteChangedDescription": "Someone else saved changes while you were editing. You can load them (losing yours) or save yours over them.",
+    "loadRemote": "Load the changes",
+    "seeConvocation": "See how the deadlines look in the notice of meeting",
+    "assemblyStart": "Assembly starts",
+    "next": "Next",
+    "emptyTitle": "No deadlines",
+    "emptyDescription": "No deadlines have been set for this assembly yet.",
+    "warningMilestones": "Affects: {milestones}",
+    "reviewCalendar": "Review the calendar",
+    "milestones": {
+      "convocation": "Notice of meeting",
+      "agenda_requests_close": "Agenda item requests close",
+      "agenda_final": "Final agenda",
+      "documents_close": "Document submissions close",
+      "documents_publish": "Documents published",
+      "amendments_open": "Amendment window opens",
+      "amendments_close": "Amendment window closes",
+      "candidacies_close": "Candidacies close"
+    },
+    "explanations": {
+      "convocation": "Date the assembly is convened. It sets the minimum notice the regulations require.",
+      "agenda_requests_close": "Last moment to ask for an item to be added to the agenda.",
+      "agenda_final": "Date the agenda becomes final.",
+      "documents_close": "Last moment for members to submit resolutions, internal motions and other documents.",
+      "documents_publish": "Date the documents to be debated are published.",
+      "amendments_open": "From here on, amendments to the published documents can be submitted.",
+      "amendments_close": "Amendments submitted after this are late and need an admission decision.",
+      "candidacies_close": "Last moment to stand for the posts being elected."
+    },
+    "warnings": {
+      "short_notice": "The notice of meeting does not give the minimum notice the regulations require",
+      "amendments_before_publication": "The amendment window opens before the documents are published",
+      "amendments_close_before_open": "The amendment window closes before it opens",
+      "amendments_overlap_documents": "The documents deadline ends after the amendment window: the last documents will have no time to receive amendments",
+      "after_start": "A deadline falls after the assembly starts",
+      "agenda_after_publication": "The agenda becomes final after the documents are published"
+    }
+  },
+  "convocation": {
+    "heading": "Notice of the {assembly}",
+    "back": "Back to the {assembly}",
+    "editIntro": "Edit introduction",
+    "print": "Print",
+    "draftWarning": "The assembly is still a draft: participants cannot see this notice yet.",
+    "provisionalWarning": "The agenda is still provisional and may change.",
+    "provisionalAgenda": "Provisional agenda",
+    "issuer": "Executive Secretariat",
+    "place": "Venue",
+    "dates": "Dates",
+    "start": "Starts",
+    "end": "Ends",
+    "introLabel": "Introduction",
+    "introHelp": "Free text that opens the notice. Leave it empty to use the default text.",
+    "introSaved": "Introduction saved",
+    "introError": "The introduction could not be saved",
+    "restoreDefault": "Use the default text",
+    "defaultIntro": "At the request of the Presidency, the Executive Secretariat hereby convenes all CREUP members to the {assembly}, to be held in {location} ({dates}), with the agenda set out below.",
+    "defaultIntroNotice": "The default text is shown. You can customise it with Edit introduction.",
+    "agendaTitle": "Agenda",
+    "agendaEmpty": "The agenda has no items yet.",
+    "signedAt": "{location}, {date}.",
+    "signature": "The CREUP Executive Secretariat",
+    "annexTitle": "Annex: deadlines and procedures",
+    "annexIntro": "Deadlines of this assembly and what to do at each one.",
+    "annexEmpty": "The deadlines of this assembly have not been set yet.",
+    "timeZoneNote": "All times are Spanish mainland time.",
+    "procedures": {
+      "convocation": "This notice is published. The deadlines below run from this moment.",
+      "agenda_requests_close": "Members can ask the Secretariat to add items to the agenda until this date.",
+      "agenda_final": "The Secretariat publishes the final agenda. From then on only the assembly can change its items.",
+      "documents_close": "Members submit their resolutions, internal motions and other documents on the platform, under the matching agenda item.",
+      "documents_publish": "Every document to be debated is published on the platform.",
+      "amendments_open": "The amendment window opens. Amendments are submitted on the platform by editing the document text directly, with a justification.",
+      "amendments_close": "The amendment window closes. Later amendments are late and the Mesa decides whether to admit them.",
+      "candidacies_close": "Last day to stand for the posts elected at this assembly."
+    }
+  },
+  "workspace": {
+    "title": "Document",
+    "loading": "Loading the document",
+    "notFound": "Document not found",
+    "notFoundDescription": "It does not exist or you do not have access to it.",
+    "loadError": "The document could not be loaded",
+    "loadErrorDescription": "Check your connection and try again.",
+    "retry": "Try again",
+    "backToDocuments": "Back to documents",
+    "editDraft": "Edit draft",
+    "consolidatedPage": "Consolidated text",
+    "detailDescription": "Amendment details",
+    "newAmendment": "New amendment",
+    "includeAccepted": "Include those accepted by the proponent",
+    "newMenu": {
+      "selection": "Amend the selection",
+      "global": "Replace a term throughout the text",
+      "return": "Whole text: return",
+      "alternative": "Whole text: alternative text"
+    },
+    "panes": {
+      "label": "View",
+      "text": "Text",
+      "amendments": "Amendments"
+    },
+    "modes": {
+      "label": "How to view the text",
+      "original": "Original text",
+      "amended": "With amendment",
+      "consolidated": "Consolidated",
+      "compare": "Compare"
+    },
+    "tabs": {
+      "label": "Amendment lists",
+      "all": "Amendments",
+      "mine": "My drafts"
+    },
+    "mine": {
+      "empty": "You have no drafts",
+      "emptyDescription": "Drafts you save without submitting will appear here."
+    },
+    "selection": {
+      "label": "Paragraph selection",
+      "hint": "Click a paragraph to select it (Shift + click for a range) or select text to amend it.",
+      "count": "One paragraph selected | {count} paragraphs selected",
+      "amend": "Amend",
+      "addAfter": "Add paragraph after",
+      "delete": "Delete",
+      "clear": "Clear the selection"
+    },
+    "amended": {
+      "empty": "Choose an amendment",
+      "emptyDescription": "Pick an amendment from the list to see it over the full text.",
+      "showing": "Changes of {label} over the full text.",
+      "overlaps": "Overlaps with:",
+      "invalid": "This amendment no longer fits the published text."
+    },
+    "consolidated": {
+      "final": "Voted text: this is the final consolidated version.",
+      "none": "No amendments approved yet: the consolidated text matches the original.",
+      "applied": "One amendment incorporated. Underlined fragments show where they come from. | {count} amendments incorporated. Underlined fragments show where they come from.",
+      "conflicts": "Some approved amendments cannot be applied together",
+      "conflictWith": "{label} clashes with {others} and was not applied.",
+      "conflictInvalid": "{label} no longer fits the text and was not applied."
+    },
+    "compare": {
+      "original": "Original text",
+      "consolidated": "Consolidated text (provisional)",
+      "final": "Voted consolidated text"
+    },
+    "text": {
+      "file": "PDF document",
+      "fileDescription": "This document was uploaded as a PDF and cannot be amended on the platform.",
+      "openPdf": "Open the PDF",
+      "unpublished": "Unpublished document",
+      "unpublishedDescription": "Amendments can be submitted once the Secretariat publishes it.",
+      "empty": "The document has no text yet"
+    },
+    "window": {
+      "open": "Amendment window open",
+      "closes": "Closes",
+      "openUnbounded": "Amendments can be submitted",
+      "openUnboundedDescription": "No closing date has been set.",
+      "upcoming": "The amendment window is not open yet",
+      "opens": "Opens",
+      "closed": "Amendment window closed",
+      "closedLateTitle": "Amendment window closed: late submissions",
+      "closedLate": "If you submit an amendment now, it will be late and will need to be admitted.",
+      "closedSince": "Closed",
+      "voted": "The text has been voted: it takes no more amendments."
+    },
+    "consolidatedView": {
+      "back": "Back to the workspace",
+      "text": "Consolidated text",
+      "legend": "Click an underlined fragment to see the amendment it comes from.",
+      "storedOnly": "The final vote used its own application order: the stored text is shown, without provenance.",
+      "finalVote": "Final vote",
+      "provisional": "Provisional text: the document has not been voted yet",
+      "provisionalDescription": "It includes the amendments approved so far.",
+      "pending": "It includes the amendments approved so far. One amendment is still to be decided. | It includes the amendments approved so far. {count} amendments are still to be decided.",
+      "unpublished": "No consolidated text yet",
+      "unpublishedDescription": "The document has not been published yet.",
+      "openWorkspace": "Open in the workspace",
+      "annex": "Annex of amendments",
+      "annexDescription": "No amendment has been decided yet. | One decided amendment, grouped by outcome. | {count} decided amendments, grouped by outcome.",
+      "none": "None.",
+      "showChanges": "Show changes",
+      "hideChanges": "Hide changes",
+      "outcomes": {
+        "approved": "Incorporated",
+        "rejected": "Rejected",
+        "withdrawn": "Withdrawn",
+        "lapsed": "Lapsed",
+        "transacted": "Merged into transactionals",
+        "inadmissible": "Inadmissible"
+      }
+    },
+    "export": {
+      "clean": "Clean PDF",
+      "annotated": "Annotated PDF",
+      "retry": "Retry the export",
+      "again": "Generate again",
+      "timeout": "The export is taking too long. Try again later."
+    }
+  },
+  "session": {
+    "title": "Session console",
+    "pageTitle": "Session · {label}",
+    "loadError": "The assembly could not be loaded",
+    "loadErrorHint": "Check your connection and try again.",
+    "forbidden": "Only the Mesa can use the session console",
+    "forbiddenHint": "You can follow the session live on the projection screen.",
+    "notInSession": "The assembly is not in session",
+    "notInSessionHint": "You can prepare the debate. Open the session from the assembly header before voting.",
+    "toolbar": {
+      "live": "Live",
+      "polling": "Reconnecting (polling)",
+      "offline": "Offline",
+      "now": "Under debate:",
+      "nothing": "nothing yet",
+      "message": "Message",
+      "messageLabel": "Message on the projection",
+      "messageHint": "The whole room sees it.",
+      "messageSave": "Show",
+      "messageClear": "Remove",
+      "shortcuts": "Shortcuts",
+      "refresh": "Reload data",
+      "projection": "Open projection",
+      "projectionNewTab": "Open projection (new tab)"
+    },
+    "shortcuts": {
+      "title": "Keyboard shortcuts",
+      "next": "Next amendment",
+      "previous": "Previous amendment",
+      "assent": "Approve by assent",
+      "vote": "Record a vote",
+      "transact": "Draft a transactional",
+      "lapse": "Mark as lapsed",
+      "hint": "They act on the selected amendment and are off while you type.",
+      "nothingFocused": "Select an amendment with J or K",
+      "unavailable": "That action is not available for {code}"
+    },
+    "agenda": {
+      "title": "Agenda",
+      "empty": "The agenda is empty",
+      "error": "The agenda could not be loaded",
+      "progress": "{done} of {total} documents with a final text",
+      "progressLabel": "Agenda progress",
+      "debateItem": "Put item {title} under debate",
+      "debateDocument": "Put under debate",
+      "debateDocumentNamed": "Put {title} under debate",
+      "amendments": "No amendments | 1 amendment | {count} amendments",
+      "final": "Final text approved",
+      "inDebate": "Under debate"
+    },
+    "queue": {
+      "title": "Amendments",
+      "noDocument": "No document selected",
+      "noDocumentHint": "Pick a document from the agenda or put it under debate.",
+      "error": "The amendments could not be loaded",
+      "counts": "{total} amendments · {undecided} undecided · {approved} approved",
+      "hideDecided": "Hide decided",
+      "assentAccepted": "Approve accepted ones by assent ({count})",
+      "assentHint": "Approves at once the admitted amendments the proponent accepts.",
+      "assentDisabled": "This assembly also votes on the amendments the proponent accepts.",
+      "notAmendable": "This document does not take amendments",
+      "notAmendableHint": "You can go straight to the final vote.",
+      "empty": "No amendments were submitted",
+      "emptyHint": "If the document is voted on, you can go to the final vote.",
+      "late": "Late",
+      "pendingTitle": "Awaiting admission ({count})",
+      "pendingHint": "Amendments submitted after the deadline: the Mesa decides whether to admit them before the debate.",
+      "admitAll": "Admit…",
+      "inadmitAll": "Declare inadmissible…",
+      "listLabel": "Amendments in text order",
+      "clusterLabel": "Group of {count} amendments on the same passage",
+      "clusterTitle": "{codes} change the same passage",
+      "clusterHint": "They cannot all be approved as written: transact them, withdraw some or vote on one.",
+      "transactCluster": "Transact these {count}"
+    },
+    "card": {
+      "label": "Amendment {code}",
+      "inDebate": "Under debate",
+      "position": "Proponent:",
+      "sources": "Transacts {codes}",
+      "transactionals": "Transacted in {codes}",
+      "missingAcceptances": "1 acceptance missing | {count} acceptances missing",
+      "needsAcceptances": "Every party must accept the transactional before it is decided",
+      "voteCounts": "In favour {inFavor} · Against {against} · Abstentions {abstentions}",
+      "show": "Show changes",
+      "hide": "Hide changes"
+    },
+    "actions": {
+      "debate": "Debate",
+      "undebate": "Stop debating",
+      "assent": "Assent",
+      "assentHint": "Approve by assent",
+      "vote": "Vote",
+      "voteHint": "Record the vote",
+      "proponent": "Accepted by the proponent",
+      "formal": "Formal correction",
+      "withdraw": "Withdrawn",
+      "lapse": "Lapses",
+      "reopen": "Reopen",
+      "relate": "Link",
+      "transact": "Transact",
+      "admit": "Admit",
+      "inadmit": "Declare inadmissible",
+      "more": "More actions for {code}",
+      "undo": "Undo",
+      "retry": "Retry"
+    },
+    "toasts": {
+      "approved": "{code} approved",
+      "voted": "Vote on {code} recorded",
+      "voteApproved": "{code} approved by vote",
+      "voteRejected": "{code} rejected by vote",
+      "withdrawn": "{code} withdrawn",
+      "lapsed": "{code} lapsed",
+      "reopened": "{code} reopened",
+      "lapsedMany": "1 amendment marked as lapsed | {count} amendments marked as lapsed",
+      "assentMany": "No amendments approved | 1 amendment approved by assent | {count} amendments approved by assent",
+      "admitted": "1 amendment admitted | {count} amendments admitted",
+      "inadmissible": "1 amendment declared inadmissible | {count} amendments declared inadmissible",
+      "admissionVoteFailed": "The vote did not pass: the opposite decision applies",
+      "relationCreated": "Link recorded",
+      "transactionalCreated": "Transactional {code} created",
+      "finalApproved": "Final text approved",
+      "finalRejected": "Final text rejected"
+    },
+    "errors": {
+      "live": "The debate could not be updated",
+      "outcome": "The decision could not be recorded",
+      "admission": "The admission could not be recorded",
+      "relation": "The link could not be saved",
+      "transactional": "The transactional could not be created",
+      "acceptance": "The answer could not be recorded",
+      "finalVote": "The final vote could not be recorded"
+    },
+    "vote": {
+      "title": "Vote on {code}",
+      "description": "Amendments are decided by simple majority unless the Mesa sets another one.",
+      "method": "Method",
+      "majority": "Majority",
+      "counts": "Count",
+      "inFavor": "In favour",
+      "against": "Against",
+      "abstentions": "Abstentions",
+      "blank": "Blank",
+      "invalid": "Invalid",
+      "present": "Present",
+      "optional": "Optional",
+      "presentPlaceholder": "Not given",
+      "presentHint": "This assembly computes majorities over the members present: enter how many there are.",
+      "note": "Note",
+      "previewTitle": "Expected result",
+      "result": {
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "tie": "Tie"
+      },
+      "thresholdSimple": "Needs more votes in favour than against",
+      "threshold": "Needs 1 vote in favour | Needs {count} votes in favour",
+      "cast": "no votes cast | 1 vote cast | {count} votes cast",
+      "denominator": "Basis: {count} {base}",
+      "denominatorValid": "valid votes",
+      "denominatorPresent": "members present",
+      "tieTitle": "Tie",
+      "tieRepeat": "This assembly's rules require the vote to be repeated.",
+      "tieRejected": "In a tie, the proposal is rejected.",
+      "inconsistentTitle": "Impossible count",
+      "inconsistent": "More votes were cast than there are members present.",
+      "submit": "Record vote"
+    },
+    "admission": {
+      "title": "Admission of late amendments",
+      "description": "The decision is recorded with its method and, when voted, with the count.",
+      "empty": "No amendments are awaiting admission",
+      "amendments": "Amendments",
+      "selectAll": "Select all",
+      "select": "Select {code}",
+      "decision": "Decision",
+      "admit": "Admit",
+      "reject": "Declare inadmissible",
+      "method": "How it is decided",
+      "note": "Note",
+      "submitAdmit": "Admit | Admit 1 amendment | Admit {count} amendments",
+      "submitReject": "Declare inadmissible | Declare 1 amendment inadmissible | Declare {count} amendments inadmissible"
+    },
+    "relation": {
+      "title": "Links of {code}",
+      "description": "Mark amendments that are incompatible, duplicated or depend on each other.",
+      "existing": "Recorded links",
+      "remove": "Remove link",
+      "kind": "Kind of link",
+      "target": "With amendment",
+      "targetPlaceholder": "Choose an amendment",
+      "note": "Note",
+      "submit": "Add link"
+    },
+    "lapse": {
+      "title": "After deciding {code}",
+      "titleBatch": "After the batch approval",
+      "descriptionApproved": "These amendments change the same text or are incompatible with the approved one. Mark them as lapsed?",
+      "descriptionRejected": "These amendments depended on the rejected one. Mark them as lapsed?",
+      "collisionsTitle": "Collides with amendments already approved",
+      "collisions": "{codes} are already approved and change the same text: the consolidated text cannot include them all.",
+      "candidates": "Affected amendments",
+      "select": "Mark {code} as lapsed",
+      "keep": "Keep them",
+      "submit": "Mark as lapsed | Mark 1 as lapsed | Mark {count} as lapsed"
+    },
+    "assent": {
+      "title": "Approve accepted amendments by assent",
+      "description": "Admitted amendments the proponent accepts. They are approved one after another.",
+      "empty": "No accepted amendments are pending",
+      "ready": "1 amendment ready | {count} amendments ready",
+      "skippedTitle": "Left for the Mesa",
+      "skip": {
+        "acceptances": "the transactional still lacks acceptances",
+        "overlap_approved": "collides with {codes}, already approved",
+        "overlap_candidate": "collides with {codes} in this batch"
+      },
+      "submit": "Approve | Approve 1 amendment | Approve {count} amendments"
+    },
+    "acceptance": {
+      "title": "Acceptances: {accepted} of {total}",
+      "none": "This transactional has no parties that must accept it.",
+      "inRoom": "Accepted in the room"
+    },
+    "composer": {
+      "title": "New transactional amendment",
+      "createdTitle": "Transactional {code}",
+      "description": "Combine several amendments into a text every party accepts.",
+      "sources": "Amendments it transacts",
+      "sourcesHint": "Admitted and undecided only",
+      "sourcesPlaceholder": "Choose one or more amendments",
+      "skippedTitle": "Some amendments could not be combined",
+      "skipped": "{codes} could not be applied together with the earlier ones: the text starts from the first one that fits. Adjust it by hand.",
+      "noSources": "Choose the amendments to transact",
+      "noPassage": "These amendments change no passage",
+      "noPassageHint": "Totality amendments without text cannot be transacted here.",
+      "text": "Transactional text",
+      "reset": "Back to the initial text",
+      "diff": "Changes to the base text",
+      "noChanges": "No changes to the base text yet.",
+      "justification": "Justification",
+      "authors": "Presented by",
+      "authorsHint": "Parties that sign the transactional",
+      "authorsPlaceholder": "Choose who presents it",
+      "parties": "Parties that must accept it",
+      "partiesHint": "Answers given in the room are recorded right after creating it.",
+      "submit": "Create and submit",
+      "created": "Transactional {code} submitted",
+      "createdHint": "Record each party's answer. It can be voted on once every party accepts it."
+    },
+    "preview": {
+      "title": "Consolidated text",
+      "noDocument": "No document selected",
+      "fileDocument": "PDF document: there is no text to consolidate",
+      "totalityReturn": "{code}, a totality amendment returning the text, is approved",
+      "conflictsTitle": "1 approved amendment cannot be applied | {count} approved amendments cannot be applied",
+      "conflictWith": "{code} collides with {others}",
+      "conflictInvalid": "{code} no longer fits the base text",
+      "applied": "No amendments applied | 1 amendment applied | {count} amendments applied",
+      "empty": "The base text is empty",
+      "finalApproved": "Final text approved",
+      "finalRejected": "Final text rejected",
+      "notVoted": "This document is not put to a vote",
+      "notPublished": "The document is not published",
+      "undecided": "1 amendment is still undecided | {count} amendments are still undecided"
+    },
+    "finalVote": {
+      "title": "Final vote on the text",
+      "open": "Final vote on the text",
+      "undecided": "1 amendment is still undecided | {count} amendments are still undecided",
+      "conflictsTitle": "The approved amendments cannot be applied together",
+      "conflictsHint": "Reopen or decide one of them again before the final vote.",
+      "submit": "Record final vote"
+    },
+    "enums": {
+      "amendmentKind": {
+        "partial": "Partial",
+        "formal": "Formal",
+        "totality_return": "Totality (return)",
+        "totality_alternative": "Totality (alternative text)",
+        "transactional": "Transactional"
+      },
+      "approvalMethod": {
+        "proponent": "Accepted by the proponent",
+        "assent": "By assent",
+        "vote": "By vote",
+        "formal": "Formal correction"
+      },
+      "changeKind": {
+        "suppression": "Deletion",
+        "addition": "Addition",
+        "modification": "Modification"
+      },
+      "decisionMethod": {
+        "mesa": "Presiding board",
+        "secretaria": "Secretariat",
+        "assent": "Assent",
+        "vote": "Vote"
+      },
+      "majority": {
+        "simple": "Simple majority",
+        "absolute": "Absolute majority",
+        "two_thirds": "Two thirds"
+      },
+      "relationKind": {
+        "incompatible": "is incompatible with",
+        "duplicate": "duplicates",
+        "depends_on": "depends on",
+        "consequence_of": "is a consequence of",
+        "subsumed_by": "is subsumed by",
+        "same_in_other_document": "matches one in another document"
+      },
+      "voteMethod": {
+        "assent": "Assent",
+        "show_of_hands": "Show of hands",
+        "secret": "Secret ballot",
+        "roll_call": "Roll call",
+        "portal": "Online portal"
+      },
+      "acceptanceRole": {
+        "author": "Author",
+        "proponent": "Proponent"
+      }
+    }
+  },
+  "projection": {
+    "pageTitle": "Projection · {label}",
+    "notFound": "This assembly does not exist or you cannot see it.",
+    "logo": "CREUP logo",
+    "clock": "Current time: {time}",
+    "fullscreen": "Full screen",
+    "exitFullscreen": "Exit full screen",
+    "agenda": "Agenda",
+    "agendaEmpty": "There is no agenda yet.",
+    "inDebate": "Under debate",
+    "amendment": "Amendment {code}",
+    "amendmentHidden": "The amendment under debate is not public yet.",
+    "amendmentStats": "{approved} amendments approved · {undecided} undecided · {total} in total",
+    "finalApproved": "Final text approved",
+    "finalRejected": "Final text rejected",
+    "live": "Live",
+    "polling": "Reconnecting",
+    "offline": "Offline",
+    "updated": "Updated at {time}",
+    "vote": {
+      "amendment": "Vote on amendment {code}",
+      "amendmentUnknown": "Vote on an amendment",
+      "document": "Final vote: {title}",
+      "documentUnknown": "document",
+      "decision": "Vote on a decision of the Mesa",
+      "other": "Vote",
+      "approved": "Approved",
+      "rejected": "Rejected",
+      "inFavor": "In favour",
+      "against": "Against",
+      "abstentions": "Abstentions",
+      "blank": "Blank",
+      "invalid": "Invalid",
+      "majority": "Majority"
     }
   }
 }

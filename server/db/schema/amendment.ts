@@ -29,13 +29,28 @@ import {
 } from "../../../shared/constants/domain";
 
 export const amendmentKindEnum = pgEnum("amendment_kind", AMENDMENT_KINDS);
-export const amendmentStatusEnum = pgEnum("amendment_status", AMENDMENT_STATUSES);
-export const admissionStatusEnum = pgEnum("admission_status", ADMISSION_STATUSES);
+export const amendmentStatusEnum = pgEnum(
+  "amendment_status",
+  AMENDMENT_STATUSES,
+);
+export const admissionStatusEnum = pgEnum(
+  "admission_status",
+  ADMISSION_STATUSES,
+);
 export const approvalMethodEnum = pgEnum("approval_method", APPROVAL_METHODS);
-export const proponentPositionEnum = pgEnum("proponent_position", PROPONENT_POSITIONS);
-export const acceptanceDecisionEnum = pgEnum("acceptance_decision", ACCEPTANCE_DECISIONS);
+export const proponentPositionEnum = pgEnum(
+  "proponent_position",
+  PROPONENT_POSITIONS,
+);
+export const acceptanceDecisionEnum = pgEnum(
+  "acceptance_decision",
+  ACCEPTANCE_DECISIONS,
+);
 export const acceptanceRoleEnum = pgEnum("acceptance_role", ACCEPTANCE_ROLES);
-export const relationKindEnum = pgEnum("amendment_relation_kind", RELATION_KINDS);
+export const relationKindEnum = pgEnum(
+  "amendment_relation_kind",
+  RELATION_KINDS,
+);
 
 export interface AmendmentMeta {
   /** Set for global term replacements ("y en lo sucesivo"). */
@@ -78,7 +93,10 @@ export const amendments = pgTable(
     submittedByUserId: text("submitted_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
-    submittedAt: timestamp("submitted_at", { withTimezone: true, mode: "date" }),
+    submittedAt: timestamp("submitted_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     approvalMethod: approvalMethodEnum("approval_method"),
     outcomeVoteId: text("outcome_vote_id"),
     outcomeNote: text("outcome_note"),
@@ -94,7 +112,10 @@ export const amendments = pgTable(
   (table) => [
     index("idx_amendments_document_id").on(table.documentId),
     index("idx_amendments_status").on(table.status),
-    uniqueIndex("amendments_document_number_unique").on(table.documentId, table.number),
+    uniqueIndex("amendments_document_number_unique").on(
+      table.documentId,
+      table.number,
+    ),
   ],
 );
 
@@ -151,7 +172,10 @@ export const amendmentAcceptances = pgTable(
     }),
   },
   (table) => [
-    uniqueIndex("amendment_acceptances_party_unique").on(table.amendmentId, table.memberId),
+    uniqueIndex("amendment_acceptances_party_unique").on(
+      table.amendmentId,
+      table.memberId,
+    ),
   ],
 );
 
@@ -192,7 +216,11 @@ export const amendmentRelations = pgTable(
       .notNull(),
   },
   (table) => [
-    uniqueIndex("amendment_relations_unique").on(table.fromId, table.toId, table.kind),
+    uniqueIndex("amendment_relations_unique").on(
+      table.fromId,
+      table.toId,
+      table.kind,
+    ),
     index("idx_amendment_relations_to").on(table.toId),
   ],
 );
@@ -220,55 +248,70 @@ export const amendmentsRelations = relations(amendments, ({ one, many }) => ({
   }),
 }));
 
-export const amendmentAuthorsRelations = relations(amendmentAuthors, ({ one }) => ({
-  amendment: one(amendments, {
-    fields: [amendmentAuthors.amendmentId],
-    references: [amendments.id],
+export const amendmentAuthorsRelations = relations(
+  amendmentAuthors,
+  ({ one }) => ({
+    amendment: one(amendments, {
+      fields: [amendmentAuthors.amendmentId],
+      references: [amendments.id],
+    }),
+    member: one(members, {
+      fields: [amendmentAuthors.memberId],
+      references: [members.id],
+    }),
   }),
-  member: one(members, {
-    fields: [amendmentAuthors.memberId],
-    references: [members.id],
-  }),
-}));
+);
 
-export const amendmentSourcesRelations = relations(amendmentSources, ({ one }) => ({
-  transactional: one(amendments, {
-    fields: [amendmentSources.transactionalId],
-    references: [amendments.id],
-    relationName: "transactional_sources",
+export const amendmentSourcesRelations = relations(
+  amendmentSources,
+  ({ one }) => ({
+    transactional: one(amendments, {
+      fields: [amendmentSources.transactionalId],
+      references: [amendments.id],
+      relationName: "transactional_sources",
+    }),
+    source: one(amendments, {
+      fields: [amendmentSources.sourceId],
+      references: [amendments.id],
+      relationName: "source_transactionals",
+    }),
   }),
-  source: one(amendments, {
-    fields: [amendmentSources.sourceId],
-    references: [amendments.id],
-    relationName: "source_transactionals",
-  }),
-}));
+);
 
-export const amendmentAcceptancesRelations = relations(amendmentAcceptances, ({ one }) => ({
-  amendment: one(amendments, {
-    fields: [amendmentAcceptances.amendmentId],
-    references: [amendments.id],
+export const amendmentAcceptancesRelations = relations(
+  amendmentAcceptances,
+  ({ one }) => ({
+    amendment: one(amendments, {
+      fields: [amendmentAcceptances.amendmentId],
+      references: [amendments.id],
+    }),
+    member: one(members, {
+      fields: [amendmentAcceptances.memberId],
+      references: [members.id],
+    }),
   }),
-  member: one(members, {
-    fields: [amendmentAcceptances.memberId],
-    references: [members.id],
-  }),
-}));
+);
 
-export const amendmentPositionsRelations = relations(amendmentPositions, ({ one }) => ({
-  amendment: one(amendments, {
-    fields: [amendmentPositions.amendmentId],
-    references: [amendments.id],
+export const amendmentPositionsRelations = relations(
+  amendmentPositions,
+  ({ one }) => ({
+    amendment: one(amendments, {
+      fields: [amendmentPositions.amendmentId],
+      references: [amendments.id],
+    }),
   }),
-}));
+);
 
-export const amendmentRelationsRelations = relations(amendmentRelations, ({ one }) => ({
-  from: one(amendments, {
-    fields: [amendmentRelations.fromId],
-    references: [amendments.id],
+export const amendmentRelationsRelations = relations(
+  amendmentRelations,
+  ({ one }) => ({
+    from: one(amendments, {
+      fields: [amendmentRelations.fromId],
+      references: [amendments.id],
+    }),
+    to: one(amendments, {
+      fields: [amendmentRelations.toId],
+      references: [amendments.id],
+    }),
   }),
-  to: one(amendments, {
-    fields: [amendmentRelations.toId],
-    references: [amendments.id],
-  }),
-}));
+);

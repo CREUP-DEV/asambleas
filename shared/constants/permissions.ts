@@ -35,7 +35,8 @@ export const PERMISSION_DESCRIPTION_I18N_KEYS: Record<PermissionKey, string> = {
     "permissions.descriptions.amendmentReview",
   [PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT]:
     "permissions.descriptions.assemblyVoteResult",
-  [PERMISSION_KEYS.SESSION_MODERATE]: "permissions.descriptions.sessionModerate",
+  [PERMISSION_KEYS.SESSION_MODERATE]:
+    "permissions.descriptions.sessionModerate",
   [PERMISSION_KEYS.MEMBER_MANAGE]: "permissions.descriptions.memberManage",
 };
 

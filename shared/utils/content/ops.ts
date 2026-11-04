@@ -20,6 +20,18 @@ export function isPoint(op: Pick<ReplaceOp, "from" | "to">): boolean {
 }
 
 /**
+ * Text order for replacements in one block. At the same offset a point
+ * insertion goes before a range that starts there, so the inserted text lands
+ * in front of the rewritten passage whatever order the ops arrived in.
+ */
+export function compareReplaceOps(
+  a: Pick<ReplaceOp, "from" | "to">,
+  b: Pick<ReplaceOp, "from" | "to">,
+): number {
+  return a.from - b.from || a.to - b.to;
+}
+
+/**
  * Checks that operations are anchored to the base and consistent with each
  * other. An empty array means the amendment can be stored and applied.
  */
@@ -42,7 +54,8 @@ export function validateOps(base: Block[], ops: AmendmentOp[]): OpError[] {
       }
       for (const id of op.blockIds) {
         if (!index.has(id)) errors.push({ index: i, reason: "unknown_block" });
-        if (deleted.has(id)) errors.push({ index: i, reason: "duplicate_delete" });
+        if (deleted.has(id))
+          errors.push({ index: i, reason: "duplicate_delete" });
         deleted.add(id);
       }
       return;
@@ -101,13 +114,17 @@ export function validateOps(base: Block[], ops: AmendmentOp[]): OpError[] {
 
   for (const [blockId, list] of replacesByBlock) {
     if (deleted.has(blockId)) {
-      errors.push({ index: list[0]!.index, reason: "replace_in_deleted_block" });
+      errors.push({
+        index: list[0]!.index,
+        reason: "replace_in_deleted_block",
+      });
     }
-    const sorted = [...list].sort((a, b) => a.op.from - b.op.from);
+    const sorted = [...list].sort((a, b) => compareReplaceOps(a.op, b.op));
     for (let k = 1; k < sorted.length; k += 1) {
       const prev = sorted[k - 1]!.op;
       const next = sorted[k]!.op;
-      const samePoint = isPoint(prev) && isPoint(next) && prev.from === next.from;
+      const samePoint =
+        isPoint(prev) && isPoint(next) && prev.from === next.from;
       if (prev.to > next.from || samePoint) {
         errors.push({ index: sorted[k]!.index, reason: "overlapping_ops" });
       }

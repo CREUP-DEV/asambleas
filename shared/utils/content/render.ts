@@ -12,7 +12,13 @@ import type {
  * construction: no stored HTML is ever echoed back.
  */
 
-const MARK_ORDER: MarkType[] = ["link", "bold", "italic", "underline", "strike"];
+const MARK_ORDER: MarkType[] = [
+  "link",
+  "bold",
+  "italic",
+  "underline",
+  "strike",
+];
 const MARK_TAGS: Record<Exclude<MarkType, "link">, string> = {
   bold: "strong",
   italic: "em",
@@ -216,7 +222,10 @@ export function renderAnnotated(
 export function blockLabels(
   blocks: Block[],
 ): Map<string, { heading: string | null; paragraph: number }> {
-  const labels = new Map<string, { heading: string | null; paragraph: number }>();
+  const labels = new Map<
+    string,
+    { heading: string | null; paragraph: number }
+  >();
   let heading: string | null = null;
   let paragraph = 0;
   for (const block of blocks) {
