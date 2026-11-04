@@ -81,6 +81,10 @@
 
 html {
   scroll-behavior: smooth;
+  /* Raleway defaults to old-style figures, where "80.ª" reads as "8o.ª" and
+     references such as "PO 001/2026" look like letters. A feature setting
+     (not font-variant-numeric) keeps lining figures under tabular-nums too. */
+  font-feature-settings: "lnum";
 }
 
 @media (prefers-reduced-motion: reduce) {

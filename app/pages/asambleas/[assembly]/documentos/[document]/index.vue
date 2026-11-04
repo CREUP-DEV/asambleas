@@ -176,7 +176,9 @@ const showMineTab = computed(
 
 const panelUi = {
   root: "min-h-0 lg:min-h-0",
-  body: "gap-4 p-4 sm:p-5 overflow-visible lg:overflow-y-auto",
+  // The body is the containing block of absolute descendants (sr-only text),
+  // so they never stretch the panel group and make it scroll on focus.
+  body: "relative gap-4 p-4 sm:p-5 overflow-visible lg:overflow-y-auto",
 };
 
 // Selection and composer -------------------------------------------------------------
