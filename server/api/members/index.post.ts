@@ -1,4 +1,9 @@
-import { createError, defineEventHandler, readBody, setResponseStatus } from "h3";
+import {
+  createError,
+  defineEventHandler,
+  readBody,
+  setResponseStatus,
+} from "h3";
 import { sql } from "drizzle-orm";
 import type { MemberDto } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
@@ -16,7 +21,10 @@ export default defineEventHandler(async (event): Promise<MemberDto> => {
 
   const parsed = memberCreateBodySchema.safeParse(await readBody(event));
   if (!parsed.success) {
-    throw createError({ statusCode: 400, message: "Datos del miembro no válidos" });
+    throw createError({
+      statusCode: 400,
+      message: "Datos del miembro no válidos",
+    });
   }
   const body = parsed.data;
 
@@ -28,7 +36,10 @@ export default defineEventHandler(async (event): Promise<MemberDto> => {
         .where(sql`lower(${members.acronym}) = lower(${body.acronym})`)
         .limit(1);
       if (duplicate) {
-        throw createError({ statusCode: 409, message: "Ya existe un miembro con esas siglas" });
+        throw createError({
+          statusCode: 409,
+          message: "Ya existe un miembro con esas siglas",
+        });
       }
 
       const [created] = await tx
@@ -44,7 +55,10 @@ export default defineEventHandler(async (event): Promise<MemberDto> => {
         })
         .returning();
       if (!created) {
-        throw createError({ statusCode: 500, message: "No se pudo crear el miembro" });
+        throw createError({
+          statusCode: 500,
+          message: "No se pudo crear el miembro",
+        });
       }
 
       await tx.insert(auditLog).values({

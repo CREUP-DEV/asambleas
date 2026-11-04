@@ -44,8 +44,10 @@ function previousBlocks(
     if (!TYPES.has(node.type.name)) return true;
     const id = idOf(node);
     if (id && !blocks.has(id)) {
+      // assoc 1: content inserted right at the block's start (a copy dropped
+      // just before it) pushes the original forward rather than taking over.
       let mapped = pos;
-      for (const tr of transactions) mapped = tr.mapping.map(mapped, -1);
+      for (const tr of transactions) mapped = tr.mapping.map(mapped, 1);
       blocks.set(id, { pos: mapped, text: node.textContent });
     }
     return false;

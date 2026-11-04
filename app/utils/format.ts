@@ -24,8 +24,7 @@ export function intlLocale(locale?: string): string {
 
 function activeLocale(): string {
   const i18n = tryUseNuxtApp()?.$i18n as
-    | { locale?: { value?: string } }
-    | undefined;
+    { locale?: { value?: string } } | undefined;
   return i18n?.locale?.value ?? "es";
 }
 
@@ -101,7 +100,10 @@ export function formatDateTime(
 }
 
 /** "10:30". */
-export function formatTime(value: DateInput, options: FormatOptions = {}): string {
+export function formatTime(
+  value: DateInput,
+  options: FormatOptions = {},
+): string {
   const date = toDate(value);
   if (!date) return "";
   return dateFormatter(intlLocale(options.locale), {

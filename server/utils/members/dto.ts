@@ -3,7 +3,9 @@ import type { members } from "../../db/schema";
 
 export type MemberRow = typeof members.$inferSelect;
 
-export function toMemberRef(member: Pick<MemberRow, "id" | "acronym" | "name" | "kind">): MemberRef {
+export function toMemberRef(
+  member: Pick<MemberRow, "id" | "acronym" | "name" | "kind">,
+): MemberRef {
   return {
     id: member.id,
     acronym: member.acronym,

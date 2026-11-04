@@ -15,7 +15,8 @@ export const MEMBER_DETAIL_MAX_LENGTH = 200;
 /** Letters, digits and a few separators: "CEUM", "VPU", "CAUB", "UC3M", "DA-UPM". */
 export const MEMBER_ACRONYM_PATTERN = /^[\p{L}\p{N}][\p{L}\p{N} .&'/-]*$/u;
 
-const cleanLine = (value: string) => normalizeText(value).replace(/\s+/g, " ").trim();
+const cleanLine = (value: string) =>
+  normalizeText(value).replace(/\s+/g, " ").trim();
 
 const memberAcronymSchema = z
   .string()

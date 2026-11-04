@@ -1,17 +1,10 @@
 <script setup lang="ts">
-import {
-  CSRF_COOKIE_NAME,
-  CSRF_HEADER_NAME,
-} from "~~/shared/constants/security";
-
-const { t } = useI18n();
+import type { TableColumn } from "@nuxt/ui";
+import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
 
 definePageMeta({
-  layout: "admin",
-});
-
-useHead({
-  title: t("admin.users.title"),
+  middleware: ["admin"],
+  adminAccess: ["admin"],
 });
 
 interface UserRow {
@@ -43,259 +36,335 @@ interface UsersResponse {
   };
 }
 
+const PAGE_SIZE = 50;
+
+const { t, locale } = useI18n();
 const toast = useToast();
+const api = useApi();
+const { me } = useMe();
+
+useHead({ title: () => t("admin.users.title") });
+
 const page = ref(1);
-const pageSize = 50;
+
 const {
   data: usersData,
-  refresh: refreshUsers,
   status: usersStatus,
+  error: usersError,
+  refresh: refreshUsers,
 } = await useFetch<UsersResponse>("/api/admin/users", {
-  query: computed(() => ({ page: page.value, pageSize })),
+  key: "admin-users",
+  query: computed(() => ({ page: page.value, pageSize: PAGE_SIZE })),
 });
 
 const { data: rolesData } = await useFetch<{ data: RoleOption[] }>(
   "/api/admin/roles",
+  { key: "admin-roles" },
 );
-const { data: sessionData } = await useFetch<{
-  user: { id: string } | null;
-}>("/api/auth/session");
 
 const users = computed(() => usersData.value?.data ?? []);
 const pagination = computed(() => usersData.value?.pagination);
-const roles = computed(() => rolesData.value?.data ?? []);
-const currentUserId = computed(() => sessionData.value?.user?.id ?? null);
-const roleOptions = computed(() =>
-  roles.value.map((r) => ({ label: r.name, value: r.id })),
+const currentUserId = computed(() => me.value?.id ?? null);
+const loading = computed(
+  () => usersStatus.value === "pending" && users.value.length === 0,
 );
 
-const columns = [
-  { accessorKey: "name" as const, header: t("admin.users.user") },
-  { accessorKey: "role" as const, header: t("admin.users.role") },
-  { accessorKey: "university" as const, header: t("admin.users.university") },
-  { accessorKey: "createdAt" as const, header: t("admin.users.registeredAt") },
-];
+function roleName(name: string): string {
+  const key = roleLabelKey(name);
+  return key ? t(key) : name;
+}
 
-const changingRoleUserId = ref<string | null>(null);
+const roleOptions = computed(() =>
+  (rolesData.value?.data ?? []).map((role) => ({
+    label: roleName(role.name),
+    value: role.id,
+  })),
+);
 
-const getRoleOption = (roleId: string | null) => {
-  return roleOptions.value.find((role) => role.value === roleId);
-};
+function formatDay(value: string | null): string {
+  return value
+    ? formatDate(value, { locale: locale.value, style: "medium" })
+    : "";
+}
 
-const pendingRoleChange = ref<{
+const columns = computed<TableColumn<UserRow>[]>(() => [
+  { accessorKey: "name", header: t("admin.users.user") },
+  { id: "role", header: t("admin.users.role") },
+  { accessorKey: "externalInitials", header: t("admin.users.member") },
+  { accessorKey: "university", header: t("admin.users.university") },
+  { accessorKey: "lastRoleSyncAt", header: t("admin.users.lastSync") },
+  { accessorKey: "createdAt", header: t("admin.users.registeredAt") },
+]);
+
+const changingUserId = ref<string | null>(null);
+const pendingChange = ref<{
   userId: string;
   userName: string;
-  roleName: string;
   roleId: string;
+  roleName: string;
 } | null>(null);
+const statusMessage = ref("");
 
-const confirmModalOpen = computed({
-  get: () => pendingRoleChange.value !== null,
-  set: (val: boolean) => {
-    if (!val) pendingRoleChange.value = null;
+// Re-mounts the role selects when a change is cancelled, so they show the
+// stored role again instead of the one picked.
+const selectResetKey = ref(0);
+watch(pendingChange, (value) => {
+  if (value === null) selectResetKey.value += 1;
+});
+
+const confirmOpen = computed({
+  get: () => pendingChange.value !== null,
+  set: (open: boolean) => {
+    if (!open) pendingChange.value = null;
   },
 });
 
-const changeUserRole = async (userId: string, roleId: string) => {
-  changingRoleUserId.value = userId;
-  try {
-    const csrfToken = useCookie(CSRF_COOKIE_NAME).value;
-    await $fetch(`/api/admin/users/${userId}/role`, {
-      method: "PUT",
-      body: { roleId },
-      headers: csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : undefined,
-    });
-    toast.add({
-      title: t("admin.users.roleChanged"),
-      color: "success",
-    });
-    await refreshUsers();
-  } catch {
-    toast.add({
-      title: t("errors.serverError"),
-      color: "error",
-    });
-  } finally {
-    changingRoleUserId.value = null;
-  }
-};
-
-const handleRoleSelection = (
-  userId: string,
-  userName: string,
-  currentRoleId: string | null,
-  value: unknown,
-) => {
-  const roleId =
-    typeof value === "string" ? value : (value as { value?: string })?.value;
-  if (!roleId || roleId === currentRoleId) return;
-
-  if (userId === currentUserId.value) {
-    toast.add({
-      title: t("admin.users.cannotChangeSelf"),
-      color: "error",
-    });
+function selectRole(user: UserRow, roleId: unknown): void {
+  if (typeof roleId !== "string" || roleId === user.roleId) return;
+  if (user.id === currentUserId.value) {
+    toast.add({ title: t("admin.users.cannotChangeSelf"), color: "warning" });
     return;
   }
+  const option = roleOptions.value.find((role) => role.value === roleId);
+  if (!option) return;
+  pendingChange.value = {
+    userId: user.id,
+    userName: user.name || user.email,
+    roleId,
+    roleName: option.label,
+  };
+}
 
-  const role = roles.value.find((r) => r.id === roleId);
-  if (!role) return;
-
-  pendingRoleChange.value = { userId, userName, roleName: role.name, roleId };
-};
-
-const confirmRoleChange = async () => {
-  if (!pendingRoleChange.value) return;
-  const { userId, roleId } = pendingRoleChange.value;
-  pendingRoleChange.value = null;
-  await changeUserRole(userId, roleId);
-};
-
-const goToPreviousPage = () => {
-  if (pagination.value?.hasPreviousPage) {
-    page.value -= 1;
+async function confirmRoleChange(): Promise<void> {
+  const change = pendingChange.value;
+  if (!change) return;
+  pendingChange.value = null;
+  changingUserId.value = change.userId;
+  try {
+    await api.send(`/api/admin/users/${change.userId}/role`, {
+      method: "PUT",
+      body: { roleId: change.roleId },
+    });
+    const message = t("admin.users.roleChanged", {
+      user: change.userName,
+      role: change.roleName,
+    });
+    statusMessage.value = message;
+    toast.add({ title: message, color: "success", icon: "i-lucide-check" });
+    await refreshUsers();
+  } catch (error) {
+    api.notifyError(error, "admin.users.roleChangeFailed");
+  } finally {
+    changingUserId.value = null;
   }
-};
+}
 
-const goToNextPage = () => {
-  if (pagination.value?.hasNextPage) {
-    page.value += 1;
-  }
-};
+function goToPage(next: number): void {
+  if (next < 1) return;
+  page.value = next;
+}
 </script>
 
 <template>
-  <div>
-    <h1 class="text-2xl font-bold">{{ t("admin.users.title") }}</h1>
+  <UDashboardPanel id="admin-users">
+    <template #header>
+      <UDashboardNavbar :title="t('admin.users.title')">
+        <template #right>
+          <UButton
+            icon="i-lucide-refresh-cw"
+            color="neutral"
+            variant="ghost"
+            :loading="usersStatus === 'pending'"
+            :aria-label="t('admin.refresh')"
+            @click="refreshUsers()"
+          />
+        </template>
+      </UDashboardNavbar>
+    </template>
 
-    <div v-if="usersStatus === 'pending'" class="mt-6 text-center">
-      <p class="text-muted">{{ t("common.loading") }}</p>
-    </div>
+    <template #body>
+      <p class="text-muted text-sm">{{ t("admin.users.description") }}</p>
 
-    <div v-else-if="users.length === 0" class="mt-6 text-center">
-      <p class="text-muted">{{ t("admin.users.noUsers") }}</p>
-    </div>
+      <p class="sr-only" aria-live="polite" aria-atomic="true">
+        {{ statusMessage }}
+      </p>
 
-    <template v-else>
+      <UAlert
+        v-if="usersError"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-alert"
+        :title="t('admin.loadFailed')"
+        :actions="[
+          {
+            label: t('admin.retry'),
+            color: 'error',
+            variant: 'outline',
+            onClick: () => refreshUsers(),
+          },
+        ]"
+      />
+
       <UTable
+        v-else
         :data="users"
         :columns="columns"
+        :loading="loading"
         :aria-label="t('admin.users.title')"
-        class="mt-6"
+        class="border-default rounded-lg border"
+        :ui="{ td: 'align-middle' }"
       >
         <template #name-cell="{ row }">
-          <div class="flex items-center gap-3">
-            <img
-              v-if="row.original.image"
-              :src="row.original.image"
-              :alt="row.original.name"
-              class="size-8 rounded-full"
+          <div class="flex min-w-48 items-center gap-3">
+            <UAvatar
+              :src="row.original.image ?? undefined"
+              :alt="row.original.name || row.original.email"
+              size="sm"
             />
-            <div
-              v-else
-              class="bg-muted text-muted-foreground flex size-8 items-center justify-center rounded-full text-xs font-semibold"
-            >
-              {{
-                row.original.externalInitials ||
-                row.original.name?.[0]?.toUpperCase() ||
-                "?"
-              }}
-            </div>
-            <div>
-              <p class="font-medium">{{ row.original.name }}</p>
-              <p class="text-muted text-xs">{{ row.original.email }}</p>
+            <div class="min-w-0">
+              <p class="text-highlighted truncate font-medium">
+                {{ row.original.name }}
+                <UBadge
+                  v-if="row.original.id === currentUserId"
+                  :label="t('admin.users.you')"
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                  class="ms-1"
+                />
+              </p>
+              <p class="text-muted truncate text-xs">
+                {{ row.original.email }}
+              </p>
             </div>
           </div>
         </template>
 
         <template #role-cell="{ row }">
-          <USelectMenu
-            :model-value="getRoleOption(row.original.roleId)"
+          <USelect
+            :key="`${row.original.id}-${selectResetKey}`"
+            :model-value="row.original.roleId ?? undefined"
             :items="roleOptions"
-            :loading="changingRoleUserId === row.original.id"
-            :disabled="row.original.id === currentUserId"
+            :loading="changingUserId === row.original.id"
+            :disabled="
+              row.original.id === currentUserId || changingUserId !== null
+            "
             :placeholder="t('admin.users.noRole')"
-            class="w-40"
+            :aria-label="
+              t('admin.users.roleFor', {
+                user: row.original.name || row.original.email,
+              })
+            "
+            class="w-44"
             @update:model-value="
-              (val: unknown) =>
-                handleRoleSelection(
-                  row.original.id,
-                  row.original.name,
-                  row.original.roleId,
-                  val,
-                )
+              (value: unknown) => selectRole(row.original, value)
             "
           />
         </template>
 
+        <template #externalInitials-cell="{ row }">
+          <span v-if="row.original.externalInitials" class="font-medium">
+            {{ row.original.externalInitials }}
+          </span>
+          <span v-else class="text-dimmed">{{ t("admin.none") }}</span>
+          <p v-if="row.original.externalRole" class="text-muted text-xs">
+            {{
+              t("admin.users.intranetRole", { role: row.original.externalRole })
+            }}
+          </p>
+        </template>
+
         <template #university-cell="{ row }">
-          <span class="text-sm">{{ row.original.university || "-" }}</span>
+          <span v-if="row.original.university" class="text-sm">
+            {{ row.original.university }}
+          </span>
+          <span v-else class="text-dimmed">{{ t("admin.none") }}</span>
+        </template>
+
+        <template #lastRoleSyncAt-cell="{ row }">
+          <span v-if="row.original.lastRoleSyncAt" class="text-muted text-sm">
+            {{ formatDay(row.original.lastRoleSyncAt) }}
+          </span>
+          <span v-else class="text-dimmed">{{
+            t("admin.users.neverSynced")
+          }}</span>
         </template>
 
         <template #createdAt-cell="{ row }">
           <span class="text-muted text-sm">
-            {{
-              row.original.createdAt
-                ? new Date(row.original.createdAt).toLocaleDateString()
-                : "-"
-            }}
+            {{ formatDay(row.original.createdAt) }}
           </span>
+        </template>
+
+        <template #empty>
+          <CommonEmptyState
+            icon="i-lucide-users"
+            :title="t('admin.users.noUsers')"
+          />
         </template>
       </UTable>
 
-      <div class="mt-4 flex items-center justify-between gap-3">
+      <nav
+        v-if="
+          pagination && (pagination.hasNextPage || pagination.hasPreviousPage)
+        "
+        class="flex items-center justify-between gap-3"
+        :aria-label="t('admin.pagination')"
+      >
         <p class="text-muted text-sm">
-          {{ t("admin.users.page", { page: pagination?.page ?? page }) }}
+          {{ t("admin.users.page", { page: pagination.page }) }}
         </p>
         <div class="flex gap-2">
           <UButton
-            variant="soft"
             color="neutral"
-            :disabled="!pagination?.hasPreviousPage"
-            @click="goToPreviousPage"
+            variant="outline"
+            icon="i-lucide-chevron-left"
+            :disabled="!pagination.hasPreviousPage"
+            @click="goToPage(page - 1)"
           >
-            {{ t("common.previous") }}
+            {{ t("admin.previous") }}
           </UButton>
           <UButton
-            variant="soft"
             color="neutral"
-            :disabled="!pagination?.hasNextPage"
-            @click="goToNextPage"
+            variant="outline"
+            trailing-icon="i-lucide-chevron-right"
+            :disabled="!pagination.hasNextPage"
+            @click="goToPage(page + 1)"
           >
-            {{ t("common.next") }}
+            {{ t("admin.next") }}
           </UButton>
         </div>
-      </div>
-    </template>
+      </nav>
 
-    <UModal
-      v-model:open="confirmModalOpen"
-      :title="t('admin.users.confirmRoleChange')"
-    >
-      <template #body>
-        <div v-if="pendingRoleChange">
-          <p class="text-muted mt-2 text-sm">
+      <UModal
+        v-model:open="confirmOpen"
+        :title="t('admin.users.confirmRoleChange')"
+      >
+        <template #body>
+          <p v-if="pendingChange" class="text-sm">
             {{
               t("admin.users.confirmRoleChangeMessage", {
-                user: pendingRoleChange.userName,
-                role: pendingRoleChange.roleName,
+                user: pendingChange.userName,
+                role: pendingChange.roleName,
               })
             }}
           </p>
-          <div class="mt-4 flex justify-end gap-2">
-            <UButton variant="ghost" @click="pendingRoleChange = null">
-              {{ t("common.cancel") }}
-            </UButton>
+        </template>
+        <template #footer>
+          <div class="flex w-full justify-end gap-2">
             <UButton
-              color="primary"
-              :loading="changingRoleUserId !== null"
-              @click="confirmRoleChange"
+              color="neutral"
+              variant="ghost"
+              @click="pendingChange = null"
             >
-              {{ t("common.confirm") }}
+              {{ t("admin.cancel") }}
+            </UButton>
+            <UButton color="primary" @click="confirmRoleChange">
+              {{ t("admin.confirm") }}
             </UButton>
           </div>
-        </div>
-      </template>
-    </UModal>
-  </div>
+        </template>
+      </UModal>
+    </template>
+  </UDashboardPanel>
 </template>

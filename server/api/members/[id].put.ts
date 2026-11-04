@@ -19,22 +19,34 @@ export default defineEventHandler(async (event): Promise<MemberDto> => {
 
   const parsed = memberUpdateBodySchema.safeParse(await readBody(event));
   if (!parsed.success) {
-    throw createError({ statusCode: 400, message: "Datos del miembro no válidos" });
+    throw createError({
+      statusCode: 400,
+      message: "Datos del miembro no válidos",
+    });
   }
   const { updatedAt, ...changes } = parsed.data;
 
   try {
     const updated = await db.transaction(async (tx) => {
-      const current = await tx.query.members.findFirst({ where: eq(members.id, memberId) });
+      const current = await tx.query.members.findFirst({
+        where: eq(members.id, memberId),
+      });
       if (!current) {
-        throw createError({ statusCode: 404, message: "Miembro no encontrado" });
+        throw createError({
+          statusCode: 404,
+          message: "Miembro no encontrado",
+        });
       }
 
-      if (changes.acronym !== undefined && changes.acronym !== current.acronym) {
+      if (
+        changes.acronym !== undefined &&
+        changes.acronym !== current.acronym
+      ) {
         if (current.source !== "manual") {
           throw createError({
             statusCode: 422,
-            message: "Las siglas de un miembro sincronizado se cambian en la intranet",
+            message:
+              "Las siglas de un miembro sincronizado se cambian en la intranet",
           });
         }
         const [duplicate] = await tx
@@ -48,7 +60,10 @@ export default defineEventHandler(async (event): Promise<MemberDto> => {
           )
           .limit(1);
         if (duplicate) {
-          throw createError({ statusCode: 409, message: "Ya existe un miembro con esas siglas" });
+          throw createError({
+            statusCode: 409,
+            message: "Ya existe un miembro con esas siglas",
+          });
         }
       }
 
@@ -59,12 +74,18 @@ export default defineEventHandler(async (event): Promise<MemberDto> => {
       const [row] = await tx
         .update(members)
         .set(values)
-        .where(and(eq(members.id, memberId), buildOptimisticLockCondition(members.updatedAt, updatedAt)))
+        .where(
+          and(
+            eq(members.id, memberId),
+            buildOptimisticLockCondition(members.updatedAt, updatedAt),
+          ),
+        )
         .returning();
       if (!row) {
         throw createError({
           statusCode: 409,
-          message: "El miembro ha cambiado mientras lo editabas. Recarga e inténtalo de nuevo",
+          message:
+            "El miembro ha cambiado mientras lo editabas. Recarga e inténtalo de nuevo",
         });
       }
 

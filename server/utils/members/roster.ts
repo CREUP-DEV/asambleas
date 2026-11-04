@@ -1,5 +1,8 @@
 import { z } from "zod/v4";
-import type { MemberKind, MemberSource } from "../../../shared/constants/domain";
+import type {
+  MemberKind,
+  MemberSource,
+} from "../../../shared/constants/domain";
 import { acronymKey } from "./dto";
 
 /**
@@ -50,14 +53,17 @@ const ACRONYM_MAX_LENGTH = 20;
 const NAME_MAX_LENGTH = 200;
 const DETAIL_MAX_LENGTH = 200;
 
-const clip = (value: string | null, max: number) => (value === null ? null : value.slice(0, max));
+const clip = (value: string | null, max: number) =>
+  value === null ? null : value.slice(0, max);
 
 /**
  * Turns both intranet lists into one roster keyed by acronym. Rows without
  * initials cannot be matched and are skipped. An acronym listed twice keeps
  * its first appearance (asociados come first).
  */
-export function normalizeRoster(lists: { kind: RosterKind; entries: IntranetRosterEntry[] }[]): {
+export function normalizeRoster(
+  lists: { kind: RosterKind; entries: IntranetRosterEntry[] }[],
+): {
   members: RosterMember[];
   skipped: number;
   duplicates: string[];
@@ -118,8 +124,13 @@ export interface RosterSyncPlan {
  * Compares the roster with the stored members. Manual members are never
  * touched, even when the roster lists their acronym.
  */
-export function planRosterSync(roster: RosterMember[], existing: ExistingMember[]): RosterSyncPlan {
-  const existingByKey = new Map(existing.map((member) => [acronymKey(member.acronym), member]));
+export function planRosterSync(
+  roster: RosterMember[],
+  existing: ExistingMember[],
+): RosterSyncPlan {
+  const existingByKey = new Map(
+    existing.map((member) => [acronymKey(member.acronym), member]),
+  );
   const listed = new Set<string>();
   const plan: RosterSyncPlan = {
     create: [],
@@ -154,7 +165,8 @@ export function planRosterSync(roster: RosterMember[], existing: ExistingMember[
 
   for (const member of existing) {
     if (member.source !== "intranet" || !member.active) continue;
-    if (!listed.has(acronymKey(member.acronym))) plan.deactivate.push(member.id);
+    if (!listed.has(acronymKey(member.acronym)))
+      plan.deactivate.push(member.id);
   }
 
   return plan;

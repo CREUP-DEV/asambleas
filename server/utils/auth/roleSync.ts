@@ -4,7 +4,11 @@ import { db } from "../../db";
 import { users, roles } from "../../db/schema";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import { logError, logInfo, logWarn } from "../core/logger";
-import { getIntranetApiBaseUrl, intranetUrl, INTRANET_TIMEOUT_MS } from "../members/intranet";
+import {
+  getIntranetApiBaseUrl,
+  intranetUrl,
+  INTRANET_TIMEOUT_MS,
+} from "../members/intranet";
 import { linkUserToIntranetMember } from "../members/link";
 
 // The intranet serializes nullable columns: an account without initials or
@@ -240,7 +244,10 @@ export async function syncUserRole(userId: string): Promise<void> {
  * member in the intranet). Runs after the role transaction has committed, so
  * a failure here never undoes the role update nor blocks sign-in.
  */
-async function linkMember(userId: string, external: ExternalPayload): Promise<void> {
+async function linkMember(
+  userId: string,
+  external: ExternalPayload,
+): Promise<void> {
   try {
     const memberId = await linkUserToIntranetMember(userId, external);
     if (memberId) {

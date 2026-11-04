@@ -1,23 +1,15 @@
 <script setup lang="ts">
-import {
-  CSRF_COOKIE_NAME,
-  CSRF_HEADER_NAME,
-} from "~~/shared/constants/security";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import {
   ALL_PERMISSION_KEYS,
   PERMISSION_DESCRIPTION_I18N_KEYS,
 } from "~~/shared/constants/permissions";
 import type { PermissionKey } from "~~/shared/constants/permissions";
-
-const { t } = useI18n();
+import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
 
 definePageMeta({
-  layout: "admin",
-});
-
-useHead({
-  title: t("admin.roles.title"),
+  middleware: ["admin"],
+  adminAccess: ["admin"],
 });
 
 interface RoleRow {
@@ -27,192 +19,315 @@ interface RoleRow {
   isSystem: boolean;
 }
 
-interface PermissionRow {
-  id: string;
-  key: string;
-  description: string | null;
-}
-
+const { t, te } = useI18n();
 const toast = useToast();
+const api = useApi();
 
-const { data: rolesData } = await useFetch<{
-  data: RoleRow[];
-}>("/api/admin/roles");
+useHead({ title: () => t("admin.roles.title") });
 
-const { data: permissionsData } = await useFetch<{ data: PermissionRow[] }>(
-  "/api/admin/permissions",
-);
-
-const allRoles = computed(() => rolesData.value?.data ?? []);
-const _allPermissions = computed(() => permissionsData.value?.data ?? []);
-const editableRoles = computed(() =>
-  allRoles.value.filter((r) => r.name !== SYSTEM_ROLES.ADMIN),
-);
-
-const savedPermissionsMap = ref<Record<string, string[]>>({});
-const draftPermissionsMap = ref<Record<string, string[]>>({});
-const isSaving = ref(false);
-
-const loadRolePermissions = async (roleId: string) => {
-  if (savedPermissionsMap.value[roleId]) return;
-  const data = await $fetch<{
-    permissions: string[];
-  }>(`/api/admin/roles/${roleId}/permissions`);
-  savedPermissionsMap.value[roleId] = data.permissions;
-  draftPermissionsMap.value[roleId] = [...data.permissions];
-};
-
-onMounted(async () => {
-  await Promise.all(
-    editableRoles.value.map((role) => loadRolePermissions(role.id)),
-  );
+const {
+  data: rolesData,
+  status: rolesStatus,
+  error: rolesError,
+  refresh: refreshRoles,
+} = await useFetch<{ data: RoleRow[] }>("/api/admin/roles", {
+  key: "admin-roles",
 });
 
-const hasChanges = computed(() =>
-  editableRoles.value.some((role) => {
-    const saved = savedPermissionsMap.value[role.id] ?? [];
-    const draft = draftPermissionsMap.value[role.id] ?? [];
-    if (saved.length !== draft.length) return true;
-    return draft.some((k) => !saved.includes(k));
-  }),
+/** Admin bypasses every check, so its permissions are not editable. */
+const editableRoles = computed(() =>
+  (rolesData.value?.data ?? []).filter(
+    (role) => role.name !== SYSTEM_ROLES.ADMIN,
+  ),
 );
 
-const togglePermission = (role: RoleRow, permissionKey: string) => {
-  const current = draftPermissionsMap.value[role.id] ?? [];
-  const hasIt = current.includes(permissionKey);
-  draftPermissionsMap.value[role.id] = hasIt
-    ? current.filter((k) => k !== permissionKey)
-    : [...current, permissionKey];
-};
+const saved = ref<Record<string, PermissionKey[]>>({});
+const draft = ref<Record<string, PermissionKey[]>>({});
+const loadingPermissions = ref(false);
+const permissionsFailed = ref(false);
+const saving = ref(false);
+const statusMessage = ref("");
 
-const saveChanges = async () => {
-  isSaving.value = true;
+async function loadPermissions(): Promise<void> {
+  const roles = editableRoles.value.filter((role) => !saved.value[role.id]);
+  if (roles.length === 0) return;
+  loadingPermissions.value = true;
+  permissionsFailed.value = false;
   try {
-    const csrfToken = useCookie(CSRF_COOKIE_NAME).value;
-    const changedRoles = editableRoles.value.filter((role) => {
-      const saved = savedPermissionsMap.value[role.id] ?? [];
-      const draft = draftPermissionsMap.value[role.id] ?? [];
-      return (
-        saved.length !== draft.length || draft.some((k) => !saved.includes(k))
-      );
+    const results = await Promise.all(
+      roles.map((role) =>
+        api.get<{ permissions: PermissionKey[] }>(
+          `/api/admin/roles/${role.id}/permissions`,
+        ),
+      ),
+    );
+    roles.forEach((role, index) => {
+      const keys = results[index]?.permissions ?? [];
+      saved.value[role.id] = [...keys];
+      draft.value[role.id] = [...keys];
     });
+  } catch (error) {
+    permissionsFailed.value = true;
+    api.notifyError(error, "admin.loadFailed");
+  } finally {
+    loadingPermissions.value = false;
+  }
+}
 
+onMounted(loadPermissions);
+watch(editableRoles, loadPermissions);
+
+function changed(roleId: string): boolean {
+  const before = saved.value[roleId] ?? [];
+  const after = draft.value[roleId] ?? [];
+  return (
+    before.length !== after.length || after.some((key) => !before.includes(key))
+  );
+}
+
+const changedRoles = computed(() =>
+  editableRoles.value.filter((role) => changed(role.id)),
+);
+const hasChanges = computed(() => changedRoles.value.length > 0);
+
+function isGranted(roleId: string, key: PermissionKey): boolean {
+  return (draft.value[roleId] ?? []).includes(key);
+}
+
+function toggle(roleId: string, key: PermissionKey, value: boolean): void {
+  const current = draft.value[roleId] ?? [];
+  draft.value[roleId] = value
+    ? [...new Set([...current, key])]
+    : current.filter((existing) => existing !== key);
+}
+
+function discard(): void {
+  for (const role of editableRoles.value) {
+    draft.value[role.id] = [...(saved.value[role.id] ?? [])];
+  }
+  statusMessage.value = t("admin.roles.discarded");
+}
+
+async function save(): Promise<void> {
+  const roles = changedRoles.value;
+  if (roles.length === 0) return;
+  saving.value = true;
+  try {
     await Promise.all(
-      changedRoles.map((role) =>
-        $fetch(`/api/admin/roles/${role.id}/permissions`, {
+      roles.map((role) =>
+        api.send(`/api/admin/roles/${role.id}/permissions`, {
           method: "PUT",
-          body: { permissionKeys: draftPermissionsMap.value[role.id] },
-          headers: csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : undefined,
+          body: { permissionKeys: draft.value[role.id] ?? [] },
         }),
       ),
     );
-
-    for (const role of changedRoles) {
-      savedPermissionsMap.value[role.id] = [
-        ...(draftPermissionsMap.value[role.id] ?? []),
-      ];
+    for (const role of roles) {
+      saved.value[role.id] = [...(draft.value[role.id] ?? [])];
     }
-
+    statusMessage.value = t("admin.roles.permissionsUpdated");
     toast.add({
       title: t("admin.roles.permissionsUpdated"),
       color: "success",
+      icon: "i-lucide-check",
     });
-  } catch {
-    toast.add({
-      title: t("errors.serverError"),
-      color: "error",
-    });
+  } catch (error) {
+    api.notifyError(error, "admin.roles.saveFailed");
+    // Some roles may have been saved: reload what the server holds.
+    saved.value = {};
+    await loadPermissions();
   } finally {
-    isSaving.value = false;
+    saving.value = false;
   }
-};
+}
 
-const discardChanges = () => {
-  for (const role of editableRoles.value) {
-    draftPermissionsMap.value[role.id] = [
-      ...(savedPermissionsMap.value[role.id] ?? []),
-    ];
-  }
-};
+function roleName(name: string): string {
+  const key = roleLabelKey(name);
+  return key ? t(key) : name;
+}
 
-const getPermissionLabel = (key: string) => {
-  const i18nKey = PERMISSION_DESCRIPTION_I18N_KEYS[key as PermissionKey];
-  return i18nKey ? t(i18nKey) : key;
-};
+function permissionLabel(key: PermissionKey): string {
+  const i18nKey = PERMISSION_DESCRIPTION_I18N_KEYS[key];
+  return i18nKey && te(i18nKey) ? t(i18nKey) : key;
+}
+
+onBeforeRouteLeave(() => {
+  if (!hasChanges.value || saving.value) return true;
+  return window.confirm(t("admin.roles.leaveConfirm"));
+});
 </script>
 
 <template>
-  <div>
-    <h1 class="text-2xl font-bold">
-      {{ t("admin.roles.title") }} - {{ t("admin.roles.permissions") }}
-    </h1>
-
-    <p class="text-muted mt-1 text-sm">
-      {{ t("admin.roles.adminPermissionsLocked") }}
-    </p>
-
-    <div class="mt-6 overflow-x-auto">
-      <table class="w-full table-fixed text-sm">
-        <thead>
-          <tr class="border-default border-b">
-            <th class="w-[44%] p-3 text-left font-semibold">
-              {{ t("admin.roles.permissions") }}
-            </th>
-            <th
-              v-for="role in editableRoles"
-              :key="role.id"
-              class="p-3 text-center font-semibold"
-            >
-              {{ role.name }}
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr
-            v-for="pKey in ALL_PERMISSION_KEYS"
-            :key="pKey"
-            class="border-default border-b"
+  <UDashboardPanel id="admin-roles">
+    <template #header>
+      <UDashboardNavbar :title="t('admin.roles.title')">
+        <template #right>
+          <UButton
+            color="neutral"
+            variant="ghost"
+            :disabled="!hasChanges || saving"
+            class="hidden sm:inline-flex"
+            @click="discard"
           >
-            <td class="p-3">
-              {{ getPermissionLabel(pKey) }}
-            </td>
-            <td
-              v-for="role in editableRoles"
-              :key="role.id"
-              class="p-3 align-middle"
-            >
-              <div class="flex justify-center">
-                <UCheckbox
-                  :model-value="
-                    (draftPermissionsMap[role.id] ?? []).includes(pKey)
-                  "
-                  :disabled="isSaving"
-                  @update:model-value="togglePermission(role, pKey)"
-                />
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
-    </div>
+            {{ t("admin.roles.discard") }}
+          </UButton>
+          <UButton
+            icon="i-lucide-save"
+            :disabled="!hasChanges"
+            :loading="saving"
+            @click="save"
+          >
+            {{ t("admin.save") }}
+          </UButton>
+        </template>
+      </UDashboardNavbar>
+    </template>
 
-    <div class="mt-4 flex justify-end gap-2">
-      <UButton
-        variant="ghost"
-        color="neutral"
-        :disabled="!hasChanges || isSaving"
-        @click="discardChanges"
+    <template #body>
+      <div class="space-y-1">
+        <p class="text-muted text-sm">{{ t("admin.roles.description") }}</p>
+        <p class="text-muted flex items-center gap-1.5 text-sm">
+          <UIcon name="i-lucide-lock" class="size-4" aria-hidden="true" />
+          {{ t("admin.roles.adminPermissionsLocked") }}
+        </p>
+      </div>
+
+      <p class="sr-only" aria-live="polite" aria-atomic="true">
+        {{ statusMessage }}
+      </p>
+
+      <UAlert
+        v-if="hasChanges"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-pencil"
+        :title="
+          t(
+            'admin.roles.unsaved',
+            { count: changedRoles.length },
+            changedRoles.length,
+          )
+        "
+        :actions="[
+          {
+            label: t('admin.roles.discard'),
+            color: 'neutral',
+            variant: 'outline',
+            onClick: discard,
+          },
+        ]"
+      />
+
+      <UAlert
+        v-if="rolesError || permissionsFailed"
+        color="error"
+        variant="subtle"
+        icon="i-lucide-circle-alert"
+        :title="t('admin.loadFailed')"
+        :actions="[
+          {
+            label: t('admin.retry'),
+            color: 'error',
+            variant: 'outline',
+            onClick: async () => {
+              await refreshRoles();
+              await loadPermissions();
+            },
+          },
+        ]"
+      />
+
+      <div
+        v-else-if="
+          rolesStatus === 'pending' ||
+          (loadingPermissions && Object.keys(saved).length === 0)
+        "
+        class="space-y-2"
+        :aria-busy="true"
+        :aria-label="t('admin.loading')"
       >
-        {{ t("common.discard") }}
-      </UButton>
-      <UButton
-        color="primary"
-        :disabled="!hasChanges"
-        :loading="isSaving"
-        @click="saveChanges"
+        <USkeleton v-for="n in 8" :key="n" class="h-10 w-full" />
+      </div>
+
+      <CommonEmptyState
+        v-else-if="editableRoles.length === 0"
+        icon="i-lucide-shield"
+        :title="t('admin.roles.noRoles')"
+      />
+
+      <div
+        v-else
+        class="border-default overflow-x-auto rounded-lg border"
+        role="region"
+        :aria-label="t('admin.roles.matrix')"
+        tabindex="0"
       >
-        {{ t("common.save") }}
-      </UButton>
-    </div>
-  </div>
+        <table class="w-full min-w-[36rem] text-sm">
+          <caption class="sr-only">
+            {{
+              t("admin.roles.matrix")
+            }}
+          </caption>
+          <thead class="bg-elevated/50">
+            <tr class="border-default border-b">
+              <th scope="col" class="p-3 text-start font-semibold">
+                {{ t("admin.roles.permission") }}
+              </th>
+              <th
+                v-for="role in editableRoles"
+                :key="role.id"
+                scope="col"
+                class="p-3 text-center font-semibold whitespace-nowrap"
+              >
+                {{ roleName(role.name) }}
+                <span
+                  v-if="changed(role.id)"
+                  class="bg-warning ms-1 inline-block size-1.5 rounded-full align-middle"
+                  :title="t('admin.roles.roleChanged')"
+                />
+                <span v-if="changed(role.id)" class="sr-only">
+                  {{ t("admin.roles.roleChanged") }}
+                </span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="key in ALL_PERMISSION_KEYS"
+              :key="key"
+              class="border-default hover:bg-elevated/40 border-b last:border-b-0"
+            >
+              <th scope="row" class="p-3 text-start font-normal">
+                <span class="text-highlighted block">
+                  {{ permissionLabel(key) }}
+                </span>
+                <code class="text-dimmed text-xs">{{ key }}</code>
+              </th>
+              <td
+                v-for="role in editableRoles"
+                :key="role.id"
+                class="p-3 text-center align-middle"
+              >
+                <div class="flex justify-center">
+                  <UCheckbox
+                    :model-value="isGranted(role.id, key)"
+                    :disabled="saving || !saved[role.id]"
+                    :aria-label="
+                      t('admin.roles.grant', {
+                        permission: permissionLabel(key),
+                        role: roleName(role.name),
+                      })
+                    "
+                    @update:model-value="
+                      (value: boolean | 'indeterminate') =>
+                        toggle(role.id, key, value === true)
+                    "
+                  />
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </template>
+  </UDashboardPanel>
 </template>

@@ -1,6 +1,7 @@
 import type {
   Content,
   ContentText,
+  Style,
   TDocumentDefinitions,
   TableCell,
 } from "pdfmake/interfaces";
@@ -149,18 +150,53 @@ const PAGE_MARGINS: [number, number, number, number] = [50, 62, 50, 54];
 const CONTENT_WIDTH = 595.28 - PAGE_MARGINS[0] - PAGE_MARGINS[2];
 const LIGHT_RED = "#f4e9ea";
 
+/**
+ * Raleway's "fi"/"fl" ligatures have no Unicode mapping in the embedded
+ * font, so the text layer would read "fnal" when copied, searched or read
+ * aloud. fontkit drops a feature only when given the object form, which
+ * pdfmake forwards untouched although its typings only list the array.
+ */
+const NO_LIGATURES = { liga: false, clig: false } as unknown as NonNullable<
+  Style["fontFeatures"]
+>;
+
 const STYLES = {
   ...CONTENT_STYLES,
-  docTitle: { fontSize: 18, bold: true, color: CREUP_RED, margin: [0, 0, 0, 4] },
+  docTitle: {
+    fontSize: 18,
+    bold: true,
+    color: CREUP_RED,
+    margin: [0, 0, 0, 4],
+  },
   docSubtitle: { fontSize: 10, color: MUTED_GREY, margin: [0, 0, 0, 2] },
   meta: { fontSize: 9, color: "#333333", margin: [0, 0, 0, 1] },
   note: { fontSize: 9, italics: true, color: MUTED_GREY, margin: [0, 2, 0, 2] },
-  sectionTitle: { fontSize: 14, bold: true, color: CREUP_RED, margin: [0, 0, 0, 8] },
-  linksTitle: { fontSize: 9, bold: true, color: CREUP_RED, margin: [0, 10, 0, 3] },
+  sectionTitle: {
+    fontSize: 14,
+    bold: true,
+    color: CREUP_RED,
+    margin: [0, 0, 0, 8],
+  },
+  linksTitle: {
+    fontSize: 9,
+    bold: true,
+    color: CREUP_RED,
+    margin: [0, 10, 0, 3],
+  },
   legend: { fontSize: 8.5, color: "#333333", margin: [0, 0, 0, 1] },
-  tableHeader: { fontSize: 8.5, bold: true, color: CREUP_RED, fillColor: LIGHT_RED },
+  tableHeader: {
+    fontSize: 8.5,
+    bold: true,
+    color: CREUP_RED,
+    fillColor: LIGHT_RED,
+  },
   tableCell: { fontSize: 8.5 },
-  coverLabel: { fontSize: 30, bold: true, color: CREUP_RED, margin: [0, 160, 0, 6] },
+  coverLabel: {
+    fontSize: 30,
+    bold: true,
+    color: CREUP_RED,
+    margin: [0, 160, 0, 6],
+  },
   coverType: { fontSize: 15, color: "#333333", margin: [0, 0, 0, 18] },
   coverMeta: { fontSize: 11, color: "#333333", margin: [0, 0, 0, 4] },
   agendaItem: { fontSize: 10.5, margin: [0, 5, 0, 1] },
@@ -205,7 +241,7 @@ function frame(input: {
   return {
     content: input.content,
     styles: STYLES,
-    defaultStyle: { font: "Raleway", fontSize: 10 },
+    defaultStyle: { font: "Raleway", fontSize: 10, fontFeatures: NO_LIGATURES },
     pageSize: "A4",
     pageMargins: PAGE_MARGINS,
     language: EXPORT_INTL_LOCALES[locale],
@@ -218,7 +254,12 @@ function frame(input: {
     },
     header: () => ({
       columns: [
-        { text: `CREUP · ${assembly.label}`, bold: true, color: CREUP_RED, width: "auto" },
+        {
+          text: `CREUP · ${assembly.label}`,
+          bold: true,
+          color: CREUP_RED,
+          width: "auto",
+        },
         {
           text: truncate(input.headerRight, 95),
           alignment: "right",
@@ -277,7 +318,10 @@ function finalVoteLine(
     counts: voteCounts(vote, t),
   };
   return {
-    text: t(vote.result === "approved" ? "finalVote.approved" : "finalVote.rejected", params),
+    text: t(
+      vote.result === "approved" ? "finalVote.approved" : "finalVote.rejected",
+      params,
+    ),
     style: "meta",
     bold: true,
     margin: [0, 2, 0, 1],
@@ -294,7 +338,11 @@ function documentHeading(input: {
   pageBreak?: boolean;
 }): Content[] {
   const { meta, assembly, locale, t } = input;
-  const title: ContentText = { text: meta.title || t("untitled"), style: "docTitle" };
+  // pdfmake reads `id` to nest bookmarks under it; its typings omit it here.
+  const title: ContentText & { id?: string } = {
+    text: meta.title || t("untitled"),
+    style: "docTitle",
+  };
   if (input.outlineId) {
     title.id = input.outlineId;
     title.outline = true;
@@ -308,12 +356,18 @@ function documentHeading(input: {
   const lines: Content[] = [title, { text: subtitle, style: "docSubtitle" }];
   if (meta.agendaNumbering && meta.agendaTitle) {
     lines.push({
-      text: t("agendaPoint", { number: meta.agendaNumbering, title: meta.agendaTitle }),
+      text: t("agendaPoint", {
+        number: meta.agendaNumbering,
+        title: meta.agendaTitle,
+      }),
       style: "meta",
     });
   }
   if (meta.proponent) {
-    lines.push({ text: t("presentedBy", { members: meta.proponent }), style: "meta" });
+    lines.push({
+      text: t("presentedBy", { members: meta.proponent }),
+      style: "meta",
+    });
   }
   const vote = finalVoteLine(meta, assembly, locale, t);
   if (vote) lines.push(vote);
@@ -352,7 +406,9 @@ function outcomeLabel(row: ExportAnnexRow, t: Translate): string {
         : t("amendmentStatuses.approved");
     case "transacted":
       return row.transactedInto.length > 0
-        ? t("amendmentStatuses.transactedInto", { codes: row.transactedInto.join(", ") })
+        ? t("amendmentStatuses.transactedInto", {
+            codes: row.transactedInto.join(", "),
+          })
         : t("amendmentStatuses.transacted");
     default:
       return t(`amendmentStatuses.${row.status}`);
@@ -386,7 +442,9 @@ function annexRow(row: ExportAnnexRow, t: Translate): TableCell[] {
     { stack: kind, style: "tableCell" },
     { stack: outcome, style: "tableCell" },
     {
-      text: row.vote ? `${row.vote.inFavor} / ${row.vote.against} / ${row.vote.abstentions}` : "-",
+      text: row.vote
+        ? `${row.vote.inFavor} / ${row.vote.against} / ${row.vote.abstentions}`
+        : "-",
       alignment: "center",
       style: "tableCell",
     },
@@ -401,7 +459,8 @@ function annexSection(rows: ExportAnnexRow[], t: Translate): Content[] {
     outline: true,
     outlineText: t("annex.title"),
   };
-  if (rows.length === 0) return [title, { text: t("annex.empty"), style: "note" }];
+  if (rows.length === 0)
+    return [title, { text: t("annex.empty"), style: "note" }];
 
   const header: TableCell[] = [
     t("annex.code"),
@@ -429,7 +488,11 @@ function legendSection(t: Translate): Content[] {
   return [
     {
       text: [
-        { text: t("legend.inserted.sample"), decoration: "underline", decorationColor: CREUP_RED },
+        {
+          text: t("legend.inserted.sample"),
+          decoration: "underline",
+          decorationColor: CREUP_RED,
+        },
         `: ${t("legend.inserted.text")}`,
       ],
       style: "legend",
@@ -520,7 +583,8 @@ export function buildDocumentPdf(
   });
   // Keeps headings with the text that follows them.
   definition.pageBreakBefore = (node, queries) =>
-    node.headlineLevel !== undefined && queries.getFollowingNodesOnPage().length === 0;
+    node.headlineLevel !== undefined &&
+    queries.getFollowingNodesOnPage().length === 0;
   if (body.variant === "clean" && body.source === "working") {
     definition.watermark = {
       text: t("watermarkDraft"),
@@ -532,12 +596,19 @@ export function buildDocumentPdf(
   return definition;
 }
 
-function agendaContent(nodes: ExportAgendaNode[], t: Translate, depth = 0): Content[] {
+function agendaContent(
+  nodes: ExportAgendaNode[],
+  t: Translate,
+  depth = 0,
+): Content[] {
   const content: Content[] = [];
   const indent = depth * 16;
   for (const node of nodes) {
     content.push({
-      text: [{ text: `${node.numbering}. `, bold: true, color: CREUP_RED }, node.title],
+      text: [
+        { text: `${node.numbering}. `, bold: true, color: CREUP_RED },
+        node.title,
+      ],
       style: "agendaItem",
       bold: depth === 0,
       margin: [indent, depth === 0 ? 7 : 3, 0, 1],
@@ -583,7 +654,12 @@ export function buildAssemblyPdf(
     { text: assembly.label, style: "coverLabel" },
     { text: typeName, style: "coverType" },
     {
-      text: formatExportDateRange(assembly.startDate, assembly.endDate, locale, t),
+      text: formatExportDateRange(
+        assembly.startDate,
+        assembly.endDate,
+        locale,
+        t,
+      ),
       style: "coverMeta",
     },
     { text: assembly.location, style: "coverMeta" },
@@ -600,7 +676,11 @@ export function buildAssemblyPdf(
   ];
 
   if (data.documents.length === 0) {
-    content.push({ text: t("noPublishedDocuments"), style: "note", margin: [0, 14, 0, 0] });
+    content.push({
+      text: t("noPublishedDocuments"),
+      style: "note",
+      margin: [0, 14, 0, 0],
+    });
   }
 
   data.documents.forEach((entry, index) => {
@@ -627,7 +707,11 @@ export function buildAssemblyPdf(
       return;
     }
     content.push(
-      ...cleanBody(entry.blocks, { links, outline: { parentId: outlineId } }, t),
+      ...cleanBody(
+        entry.blocks,
+        { links, outline: { parentId: outlineId } },
+        t,
+      ),
       ...linksSection(links, t),
     );
   });

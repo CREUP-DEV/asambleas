@@ -19,7 +19,9 @@ import { normalizeRoster, planRosterSync } from "./roster";
  * matched by acronym (the intranet's `initials`), case-insensitively. Manual
  * members are never touched.
  */
-export async function syncIntranetRoster(actorUserId: string | null): Promise<MemberSyncResult> {
+export async function syncIntranetRoster(
+  actorUserId: string | null,
+): Promise<MemberSyncResult> {
   const base = getIntranetApiBaseUrl();
   if (!base) {
     throw createError({
@@ -93,10 +95,16 @@ export async function syncIntranetRoster(actorUserId: string | null): Promise<Me
         .where(eq(members.id, id));
     }
     if (plan.unchanged.length > 0) {
-      await tx.update(members).set({ syncedAt: now }).where(inArray(members.id, plan.unchanged));
+      await tx
+        .update(members)
+        .set({ syncedAt: now })
+        .where(inArray(members.id, plan.unchanged));
     }
     if (plan.deactivate.length > 0) {
-      await tx.update(members).set({ active: false }).where(inArray(members.id, plan.deactivate));
+      await tx
+        .update(members)
+        .set({ active: false })
+        .where(inArray(members.id, plan.deactivate));
     }
 
     const result: MemberSyncResult = {

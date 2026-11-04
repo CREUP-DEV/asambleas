@@ -1,172 +1,83 @@
 <script setup lang="ts">
+/**
+ * Authenticated dashboard shell. Every page renders its own UDashboardPanel
+ * (with a UDashboardNavbar in #header, which carries the mobile sidebar
+ * toggle) directly inside <main>, so pages can lay out sibling resizable
+ * panels. Chrome-free pages (projection, print) use `layout: false`.
+ */
 const { t } = useI18n();
-const localePath = useLocalePath();
-const { session, signOut } = useAuth();
-const { isAdmin } = usePermissions();
-const { currentLocale, localeMenuItems } = useLocaleSwitcher();
 
-const avatarLoadFailed = ref(false);
-const a11yModalOpen = ref(false);
-const navigationItems = computed(() => [
-  [
-    {
-      label: t("nav.assemblies"),
-      to: localePath("/asambleas"),
-      icon: "i-tabler-gavel",
-    },
-    ...(isAdmin.value
-      ? [
-          {
-            label: t("nav.admin"),
-            to: localePath("/admin"),
-            icon: "i-tabler-settings",
-          },
-        ]
-      : []),
-  ],
-]);
-
-watch(
-  () => session.value.data?.user?.image,
-  () => {
-    avatarLoadFailed.value = false;
-  },
-);
-
-const userInitials = computed(() => {
-  const name =
-    session.value.data?.user?.name?.trim() ||
-    session.value.data?.user?.email?.trim() ||
-    "U";
-  return name
-    .split(/\s+/)
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-});
+const sidebarOpen = ref(false);
 
 useHead({
   titleTemplate: (titleChunk) =>
-    titleChunk ? `${titleChunk} | ${t("app.title")}` : t("app.title"),
+    titleChunk ? `${titleChunk} | ${t("shell.appName")}` : t("shell.appName"),
 });
 </script>
 
 <template>
-  <div class="flex min-h-screen flex-col">
+  <div>
     <a
       href="#main-navigation"
-      class="bg-primary text-primary-foreground sr-only z-50 rounded px-4 py-2 focus:not-sr-only focus:absolute focus:top-4 focus:left-4"
+      class="bg-primary text-inverted sr-only rounded-md px-4 py-2 focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-50"
     >
-      {{ t("accessibility.skipToNavigation") }}
+      {{ t("shell.skipToNavigation") }}
     </a>
     <a
       href="#main-content"
-      class="bg-primary text-primary-foreground sr-only z-50 rounded px-4 py-2 focus:not-sr-only focus:absolute focus:top-4 focus:left-48"
+      class="bg-primary text-inverted sr-only rounded-md px-4 py-2 focus:not-sr-only focus:fixed focus:start-4 focus:top-4 focus:z-50"
     >
-      {{ t("accessibility.skipToMain") }}
+      {{ t("shell.skipToContent") }}
     </a>
 
-    <UHeader>
-      <template #left>
-        <NuxtLink
-          :to="localePath('/')"
-          class="inline-flex h-10 shrink-0 items-center text-primary"
-          :aria-label="t('app.title')"
-        >
-          <UIcon name="i-tabler-list-numbers" class="block size-7" />
-        </NuxtLink>
+    <UDashboardGroup class="print:static print:block print:overflow-visible">
+      <UDashboardSidebar
+        id="main"
+        v-model:open="sidebarOpen"
+        collapsible
+        resizable
+        :default-size="18"
+        :min-size="14"
+        :max-size="26"
+        class="print:hidden"
+        :ui="{ footer: 'lg:border-t lg:border-default' }"
+      >
+        <template #header="{ collapsed }">
+          <ShellBrand :collapsed="collapsed" />
+        </template>
 
-        <nav
-          id="main-navigation"
-          tabindex="-1"
-          class="ml-6 hidden lg:block"
-          :aria-label="t('accessibility.skipToNavigation')"
-        >
-          <UNavigationMenu :items="navigationItems" />
-        </nav>
-      </template>
-
-      <template #right>
-        <UColorModeButton />
-
-        <UDropdownMenu :items="localeMenuItems">
-          <UButton
-            :icon="currentLocale?.icon"
-            color="neutral"
-            variant="ghost"
-            size="lg"
-            :aria-label="t('language.openMenu')"
-            :title="t('language.toggle')"
-          />
-        </UDropdownMenu>
-
-        <ClientOnly>
-          <UDropdownMenu
-            :items="[
-              [
-                {
-                  label: t('accessibility.preferences'),
-                  icon: 'i-tabler-accessible',
-                  onSelect: () => {
-                    a11yModalOpen = true;
-                  },
-                },
-              ],
-              [
-                {
-                  label: t('auth.signOut'),
-                  icon: 'i-tabler-logout',
-                  onSelect: signOut,
-                },
-              ],
-            ]"
+        <template #default="{ collapsed }">
+          <div
+            id="main-navigation"
+            tabindex="-1"
+            class="flex flex-1 flex-col gap-2 focus:outline-none"
           >
-            <UButton
-              variant="ghost"
-              class="rounded-full p-0"
-              :aria-label="t('accessibility.userMenu')"
-              :title="t('accessibility.userMenu')"
-            >
-              <img
-                v-if="session.data?.user?.image && !avatarLoadFailed"
-                :src="session.data.user.image"
-                :alt="
-                  t('accessibility.userAvatar', {
-                    user: session.data?.user?.name || session.data?.user?.email,
-                  })
-                "
-                class="size-8 rounded-full"
-                loading="eager"
-                @error="avatarLoadFailed = true"
-              />
-              <div
-                v-else
-                class="bg-muted text-muted-foreground flex size-8 items-center justify-center rounded-full text-xs font-semibold"
-              >
-                {{ userInitials }}
-              </div>
-            </UButton>
-          </UDropdownMenu>
+            <ShellNavigation :collapsed="collapsed" />
 
-          <template #fallback>
-            <div class="bg-muted size-8 rounded-full" aria-hidden="true" />
-          </template>
-        </ClientOnly>
-      </template>
-    </UHeader>
+            <div class="mt-auto hidden pt-2 lg:flex">
+              <UDashboardSidebarCollapse :class="collapsed ? 'mx-auto' : ''" />
+            </div>
+          </div>
+        </template>
 
-    <UMain id="main-content" class="flex-1">
-      <slot />
-    </UMain>
+        <template #footer="{ collapsed }">
+          <ShellUserMenu :collapsed="collapsed" />
+        </template>
+      </UDashboardSidebar>
 
-    <UModal
-      v-model:open="a11yModalOpen"
-      :title="t('accessibility.preferences')"
-    >
-      <template #body>
-        <AccessibilityPreferences />
-      </template>
-    </UModal>
+      <!--
+        Panels fill <main> and scroll their own body. The overflow is a
+        safety net for pages that render plain content instead of a panel.
+      -->
+      <main
+        id="main-content"
+        tabindex="-1"
+        class="flex min-w-0 flex-1 overflow-y-auto focus:outline-none print:block print:overflow-visible"
+      >
+        <slot />
+      </main>
+    </UDashboardGroup>
+
+    <ShellSessionBanner class="print:hidden" />
   </div>
 </template>

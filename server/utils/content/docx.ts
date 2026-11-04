@@ -3,9 +3,9 @@ import JSZip from "jszip";
 import mammoth from "mammoth";
 import { parseHTML } from "linkedom";
 import { createId } from "@paralleldrive/cuid2";
-import type { DocxImportDto } from "~~/shared/types/api";
-import { htmlElementToBlocks } from "~~/shared/utils/content/editor";
-import { blocksSchema } from "~~/shared/utils/schemas/content";
+import type { DocxImportDto } from "../../../shared/types/api";
+import { htmlElementToBlocks } from "../../../shared/utils/content/editor";
+import { blocksSchema } from "../../../shared/utils/schemas/content";
 
 /**
  * DOCX import: Word file -> sanitized blocks. The file is never stored. Only
@@ -54,14 +54,16 @@ function invalidFile(): never {
 function declaredUncompressedSize(zip: JSZip): number {
   let total = 0;
   for (const file of Object.values(zip.files)) {
-    const size = (file as unknown as { _data?: { uncompressedSize?: number } })._data
-      ?.uncompressedSize;
+    const size = (file as unknown as { _data?: { uncompressedSize?: number } })
+      ._data?.uncompressedSize;
     if (typeof size === "number" && size > 0) total += size;
   }
   return total;
 }
 
-async function inspectArchive(data: Buffer): Promise<{ warnings: Set<DocxWarning> }> {
+async function inspectArchive(
+  data: Buffer,
+): Promise<{ warnings: Set<DocxWarning> }> {
   let zip: JSZip;
   try {
     zip = await JSZip.loadAsync(data);
@@ -117,8 +119,12 @@ export async function convertDocx(data: Buffer): Promise<DocxImportDto> {
   }
   if (imagesDropped) warnings.add("images_dropped");
 
-  const { document } = parseHTML(`<!doctype html><html><body>${html}</body></html>`);
-  const blocks = htmlElementToBlocks(document.body as unknown as Element, () => createId());
+  const { document } = parseHTML(
+    `<!doctype html><html><body>${html}</body></html>`,
+  );
+  const blocks = htmlElementToBlocks(document.body as unknown as Element, () =>
+    createId(),
+  );
 
   if (blocks.length === 0) {
     throw createError({
@@ -130,11 +136,16 @@ export async function convertDocx(data: Buffer): Promise<DocxImportDto> {
   if (!parsed.success) {
     throw createError({
       statusCode: 422,
-      message: "El documento es demasiado extenso o tiene párrafos demasiado largos",
+      message:
+        "El documento es demasiado extenso o tiene párrafos demasiado largos",
     });
   }
 
-  const order: DocxWarning[] = ["tracked_changes", "comments", "images_dropped"];
+  const order: DocxWarning[] = [
+    "tracked_changes",
+    "comments",
+    "images_dropped",
+  ];
   return {
     blocks: parsed.data,
     warnings: order.filter((warning) => warnings.has(warning)),

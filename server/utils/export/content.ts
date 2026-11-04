@@ -31,10 +31,30 @@ export const MUTED_GREY = "#6b6b6b";
 
 /** Styles referenced by the nodes this module produces. */
 export const CONTENT_STYLES: Record<string, Style> = {
-  heading1: { fontSize: 15, bold: true, color: CREUP_RED, margin: [0, 14, 0, 6] },
-  heading2: { fontSize: 13, bold: true, color: CREUP_RED, margin: [0, 12, 0, 5] },
-  heading3: { fontSize: 11.5, bold: true, color: CREUP_RED, margin: [0, 10, 0, 4] },
-  heading4: { fontSize: 10.5, bold: true, color: CREUP_RED, margin: [0, 8, 0, 3] },
+  heading1: {
+    fontSize: 15,
+    bold: true,
+    color: CREUP_RED,
+    margin: [0, 14, 0, 6],
+  },
+  heading2: {
+    fontSize: 13,
+    bold: true,
+    color: CREUP_RED,
+    margin: [0, 12, 0, 5],
+  },
+  heading3: {
+    fontSize: 11.5,
+    bold: true,
+    color: CREUP_RED,
+    margin: [0, 10, 0, 4],
+  },
+  heading4: {
+    fontSize: 10.5,
+    bold: true,
+    color: CREUP_RED,
+    margin: [0, 8, 0, 3],
+  },
   paragraph: { fontSize: 10, lineHeight: 1.35, margin: [0, 0, 0, 7] },
   quote: {
     fontSize: 10,
@@ -83,7 +103,10 @@ interface SegmentStyle {
   decorationColor: string;
 }
 
-const INSERTED: SegmentStyle = { decoration: "underline", decorationColor: CREUP_RED };
+const INSERTED: SegmentStyle = {
+  decoration: "underline",
+  decorationColor: CREUP_RED,
+};
 const REMOVED: SegmentStyle = {
   decoration: "lineThrough",
   decorationColor: MUTED_GREY,
@@ -123,7 +146,9 @@ function markedInlines(
   for (let k = 0; k < points.length - 1; k += 1) {
     const from = points[k]!;
     const to = points[k + 1]!;
-    const active = local.filter((entry) => entry.from <= from && entry.to >= to);
+    const active = local.filter(
+      (entry) => entry.from <= from && entry.to >= to,
+    );
     const types = new Set(active.map((entry) => entry.mark.type));
 
     let piece: Inline = { text: text.slice(from, to) };
@@ -228,7 +253,11 @@ function blockNode(item: Item, ctx: PdfContentContext): ContentText {
   const text = emptySafe(item.inlines);
   if (item.shape.type === "heading") {
     const level = headingLevel(item.shape.level);
-    const node: ContentText = { text, style: `heading${level}`, headlineLevel: level };
+    const node: ContentText = {
+      text,
+      style: `heading${level}`,
+      headlineLevel: level,
+    };
     const label = plainText(item.inlines).slice(0, 120);
     if (ctx.outline && item.countable && label) {
       node.outline = true;
@@ -303,7 +332,10 @@ function assemble(items: Item[], ctx: PdfContentContext): Content[] {
 // Public converters -----------------------------------------------------
 
 /** Plain rendering of a version (clean text). */
-export function blocksToPdf(blocks: Block[], ctx: PdfContentContext): Content[] {
+export function blocksToPdf(
+  blocks: Block[],
+  ctx: PdfContentContext,
+): Content[] {
   return assemble(
     blocks.map((block) => ({
       shape: block,

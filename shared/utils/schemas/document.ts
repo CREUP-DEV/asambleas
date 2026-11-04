@@ -20,7 +20,12 @@ export const entityIdSchema = z.string().regex(ENTITY_ID_PATTERN);
 export const isoDateSchema = z.iso.datetime({ offset: true });
 
 const titleSchema = z.string().trim().min(1).max(300);
-const summarySchema = z.string().trim().max(5_000);
+/** An empty summary is stored as null. */
+const summarySchema = z
+  .string()
+  .trim()
+  .max(5_000)
+  .transform((value) => value || null);
 
 export const documentCreateSchema = z.object({
   agendaItemId: entityIdSchema,

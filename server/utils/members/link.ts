@@ -5,7 +5,10 @@ import { logInfo } from "../core/logger";
 import type { RosterKind } from "./roster";
 
 /** Intranet account types that are members themselves (intranet `users.type`). */
-export const INTRANET_MEMBER_TYPES: ReadonlyMap<string, RosterKind> = new Map<string, RosterKind>([
+export const INTRANET_MEMBER_TYPES: ReadonlyMap<string, RosterKind> = new Map<
+  string,
+  RosterKind
+>([
   ["Asociado", "asociado"],
   ["Sectorial", "sectorial"],
 ]);
@@ -46,7 +49,10 @@ export async function linkUserToIntranetMember(
   external: ExternalMemberIdentity,
 ): Promise<string | null> {
   const kind = INTRANET_MEMBER_TYPES.get(external.role);
-  const acronym = external.initials?.replace(/\s+/g, " ").trim().slice(0, ACRONYM_MAX_LENGTH);
+  const acronym = external.initials
+    ?.replace(/\s+/g, " ")
+    .trim()
+    .slice(0, ACRONYM_MAX_LENGTH);
   if (!kind || !acronym) return null;
 
   let memberId = await findMemberIdByAcronym(acronym);
@@ -58,21 +64,26 @@ export async function linkUserToIntranetMember(
         kind,
         acronym,
         name: external.name?.trim().slice(0, 200) || acronym,
-        university: kind === "asociado" ? external.university?.trim().slice(0, 200) || null : null,
+        university:
+          kind === "asociado"
+            ? external.university?.trim().slice(0, 200) || null
+            : null,
         source: "intranet",
         active: true,
         syncedAt: new Date(),
       })
       .onConflictDoNothing({ target: members.acronym });
     memberId = await findMemberIdByAcronym(acronym);
-    if (memberId) logInfo("members.link", { action: "member created", acronym });
+    if (memberId)
+      logInfo("members.link", { action: "member created", acronym });
   }
   if (!memberId) return null;
 
   await db
     .update(users)
     .set({ memberId })
-    .where(sql`${users.id} = ${userId} and ${users.memberId} is distinct from ${memberId}`);
+    .where(
+      sql`${users.id} = ${userId} and ${users.memberId} is distinct from ${memberId}`,
+    );
   return memberId;
 }
-

@@ -90,7 +90,8 @@ export function formatExportDateRange(
   locale: ExportLocale,
   t: Translate,
 ): string {
-  if (madridDay(start) === madridDay(end)) return formatExportDate(start, locale);
+  if (madridDay(start) === madridDay(end))
+    return formatExportDate(start, locale);
   return t("dateRange", {
     start: formatExportDate(start, locale),
     end: formatExportDate(end, locale),

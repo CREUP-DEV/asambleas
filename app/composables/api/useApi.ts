@@ -128,8 +128,7 @@ export function useApi() {
       title,
       description,
       color: status === 409 ? "warning" : "error",
-      icon:
-        status === 409 ? "i-lucide-refresh-ccw" : "i-lucide-circle-alert",
+      icon: status === 409 ? "i-lucide-refresh-ccw" : "i-lucide-circle-alert",
     });
     return status;
   }

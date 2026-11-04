@@ -34,7 +34,14 @@ import { renderAnnotated, renderBlocks } from "./render";
  * Known engine defects are pinned as `it.fails` cases with minimal
  * reproductions at the end of the file. The random properties exclude only
  * those exact patterns; set FUZZ_INCLUDE_KNOWN_DEFECTS=1 to drop the
- * exclusions once the engine is fixed.
+ * exclusions once the engine is fixed. FUZZ_ALL_FAILURES=1 lists every
+ * failing seed, with the tags a property records (property 2 records `tie`,
+ * the known defect's pattern), instead of stopping at the first one:
+ *
+ *   FUZZ_INCLUDE_KNOWN_DEFECTS=1 FUZZ_ALL_FAILURES=1 pnpm exec vitest run ...
+ *
+ * Each property also counts the situations it is meant to exercise and
+ * fails when a generator change leaves them too rare.
  */
 
 // ---------------------------------------------------------------------------
@@ -84,6 +91,7 @@ const env =
     .process?.env ?? {};
 const ONLY_SEED = env.FUZZ_SEED ? Number(env.FUZZ_SEED) : null;
 const SKIP_KNOWN_DEFECTS = env.FUZZ_INCLUDE_KNOWN_DEFECTS !== "1";
+const ALL_FAILURES = env.FUZZ_ALL_FAILURES === "1";
 
 type Context = Record<string, unknown>;
 
@@ -100,20 +108,73 @@ function forAll(
     ONLY_SEED !== null
       ? [ONLY_SEED]
       : Array.from({ length: runs }, (_, i) => firstSeed + i);
+  const failures: string[] = [];
   for (const seed of seeds) {
     const ctx: Context = {};
     try {
       property(new Rng(seed), ctx);
     } catch (error) {
-      if (error instanceof Error) {
-        const input = JSON.stringify(ctx);
-        const shown =
-          input.length > 8000 ? `${input.slice(0, 8000)}...` : input;
-        error.message = `[seed ${seed}] ${error.message}\ninput: ${shown}`;
+      if (!(error instanceof Error)) throw error;
+      if (ALL_FAILURES) {
+        // Boolean entries of ctx are tags that help classify failures.
+        const tags = Object.entries(ctx)
+          .filter(([, value]) => typeof value === "boolean")
+          .map(([key, value]) => `${key}=${String(value)}`);
+        const reason = error.message.split("\n")[0]!.slice(0, 160);
+        failures.push(`[seed ${seed}] ${tags.join(" ")} ${reason}`);
+        continue;
       }
+      const input = JSON.stringify(ctx);
+      const shown = input.length > 8000 ? `${input.slice(0, 8000)}...` : input;
+      error.message = `[seed ${seed}] ${error.message}\ninput: ${shown}`;
       throw error;
     }
   }
+  if (failures.length > 0) {
+    throw new Error(
+      `${failures.length} failing seeds:\n${failures.join("\n")}`,
+    );
+  }
+}
+
+/**
+ * Counts how often a property met each situation it is meant to exercise,
+ * so a generator change cannot quietly turn a property into a no-op. The
+ * minimums apply to full runs only, not to a single FUZZ_SEED.
+ */
+class Coverage {
+  private readonly counts = new Map<string, number>();
+
+  hit(label: string, condition = true): void {
+    if (condition) this.counts.set(label, (this.counts.get(label) ?? 0) + 1);
+  }
+
+  expectAtLeast(minimums: Record<string, number>): void {
+    if (ONLY_SEED !== null) return;
+    const seen = Object.fromEntries(
+      Object.keys(minimums).map((label) => [
+        label,
+        this.counts.get(label) ?? 0,
+      ]),
+    );
+    for (const [label, minimum] of Object.entries(minimums)) {
+      expect(
+        seen[label],
+        `coverage of "${label}" (${JSON.stringify(seen)})`,
+      ).toBeGreaterThanOrEqual(minimum);
+    }
+  }
+}
+
+/** True when some key is produced by two or more of the items. */
+function sharesKey<T>(items: T[], keysOf: (item: T) => string[]): boolean {
+  const seen = new Set<string>();
+  for (const item of items) {
+    const keys = new Set(keysOf(item));
+    for (const key of keys) if (seen.has(key)) return true;
+    keys.forEach((key) => seen.add(key));
+  }
+  return false;
 }
 
 // ---------------------------------------------------------------------------
@@ -595,11 +656,10 @@ function isReplace(op: AmendmentOp): op is ReplaceOp {
 }
 
 /**
- * The known defect pinned in "known engine defects": a point insertion at the
- * first offset of a range another amendment replaces.
+ * The pattern of the known defect pinned in "known engine defects": a point
+ * insertion at the first offset of a range another amendment replaces.
  */
-function pointRangeTie(a: AmendmentOp[], b: AmendmentOp[]): boolean {
-  if (!SKIP_KNOWN_DEFECTS) return false;
+function hasPointRangeTie(a: AmendmentOp[], b: AmendmentOp[]): boolean {
   const tie = (points: ReplaceOp[], ranges: ReplaceOp[]) =>
     points.some(
       (point) =>
@@ -614,6 +674,25 @@ function pointRangeTie(a: AmendmentOp[], b: AmendmentOp[]): boolean {
   const ra = a.filter(isReplace);
   const rb = b.filter(isReplace);
   return tie(ra, rb) || tie(rb, ra);
+}
+
+/** The known defect, unless FUZZ_INCLUDE_KNOWN_DEFECTS asks to keep it. */
+function pointRangeTie(a: AmendmentOp[], b: AmendmentOp[]): boolean {
+  return SKIP_KNOWN_DEFECTS && hasPointRangeTie(a, b);
+}
+
+/** Keys an amendment's operations act on: blocks it edits or removes. */
+function blockKeys(amendment: AmendmentInput): string[] {
+  return amendment.ops.flatMap((op) =>
+    op.op === "replace" ? [op.blockId] : op.op === "delete" ? op.blockIds : [],
+  );
+}
+
+/** Anchors an amendment inserts after. */
+function anchorKeys(amendment: AmendmentInput): string[] {
+  return amendment.ops.flatMap((op) =>
+    op.op === "insert" ? [op.afterBlockId ?? "(start)"] : [],
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -1053,6 +1132,7 @@ function formatsByChar(block: Pick<Block, "text" | "marks">): string[][] {
 
 describe("amendment engine properties", () => {
   it("1. diffPassage and consolidate reproduce any edited passage", () => {
+    const coverage = new Coverage();
     forAll(400, 1_000_000, (rng, ctx) => {
       const base = randomDocument(rng, 1, 8);
       const start = rng.int(0, base.length - 1);
@@ -1068,6 +1148,29 @@ describe("amendment engine properties", () => {
       const anchorBefore = start > 0 ? base[start - 1]!.id : null;
       const ops = diffPassage(passage, edited, anchorBefore, newId);
       Object.assign(ctx, { base, start, end, edited, ops });
+      coverage.hit(
+        "replace",
+        ops.some((op) => op.op === "replace"),
+      );
+      coverage.hit(
+        "insert",
+        ops.some((op) => op.op === "insert"),
+      );
+      coverage.hit(
+        "delete",
+        ops.some((op) => op.op === "delete"),
+      );
+      coverage.hit(
+        "insert at start",
+        ops.some((op) => op.op === "insert" && op.afterBlockId === null),
+      );
+      coverage.hit("moved or repeated block", movedIds.size > 0);
+      coverage.hit(
+        "replace, insert and delete",
+        ["replace", "insert", "delete"].every((kind) =>
+          ops.some((op) => op.op === kind),
+        ),
+      );
 
       // A passage block keeps its id unless the operations delete it; the
       // first copy of a kept block is the kept one.
@@ -1114,9 +1217,18 @@ describe("amendment engine properties", () => {
       );
       assertWellFormed(result);
     });
+    coverage.expectAtLeast({
+      replace: 100,
+      insert: 80,
+      delete: 50,
+      "insert at start": 5,
+      "moved or repeated block": 30,
+      "replace, insert and delete": 12,
+    });
   });
 
   it("2. amendments without hard overlaps consolidate alike in any order", () => {
+    const coverage = new Coverage();
     forAll(300, 2_000_000, (rng, ctx) => {
       const base = randomDocument(rng, 2, 5, { maxWords: 5 });
       const candidates = randomAmendments(rng, base, rng.int(2, 7), {
@@ -1132,6 +1244,20 @@ describe("amendment engine properties", () => {
         if (!clash) amendments.push(candidate);
       }
       Object.assign(ctx, { base, amendments });
+      ctx.tie = amendments.some((a, i) =>
+        amendments.slice(i + 1).some((b) => hasPointRangeTie(a.ops, b.ops)),
+      );
+      coverage.hit("2+ amendments", amendments.length >= 2);
+      coverage.hit("4+ amendments", amendments.length >= 4);
+      coverage.hit(
+        "dropped a hard overlap",
+        amendments.length < candidates.length,
+      );
+      coverage.hit("2+ edit one block", sharesKey(amendments, blockKeys));
+      coverage.hit(
+        "2+ insert at one anchor",
+        sharesKey(amendments, anchorKeys),
+      );
 
       expect(
         findOverlaps(amendments).pairs.filter((pair) =>
@@ -1158,9 +1284,17 @@ describe("amendment engine properties", () => {
         assertWellFormed(result);
       }
     });
+    coverage.expectAtLeast({
+      "2+ amendments": 150,
+      "4+ amendments": 25,
+      "dropped a hard overlap": 100,
+      "2+ edit one block": 30,
+      "2+ insert at one anchor": 20,
+    });
   });
 
   it("3. overlaps are symmetric and clusters partition the overlapping ids", () => {
+    const coverage = new Coverage();
     forAll(400, 3_000_000, (rng, ctx) => {
       const base = randomDocument(rng, 2, 5, { maxWords: 5 });
       const amendments = randomAmendments(rng, base, rng.int(2, 7), {
@@ -1184,20 +1318,54 @@ describe("amendment engine properties", () => {
       const permuted = findOverlaps(rng.shuffle(amendments));
       expect(pairTable(permuted.pairs)).toEqual(pairTable(expected));
       expect(canonicalClusters(permuted)).toEqual(canonicalClusters(report));
+
+      coverage.hit("no overlap", report.pairs.length === 0);
+      for (const kind of new Set(report.pairs.map((pair) => pair.kind))) {
+        coverage.hit(kind);
+      }
+      coverage.hit("2+ clusters", report.clusters.length >= 2);
+      coverage.hit(
+        "cluster of 3+",
+        report.clusters.some((c) => c.length >= 3),
+      );
+      coverage.hit(
+        "cluster linked through a third",
+        report.clusters.some((cluster) =>
+          cluster.some((a, i) =>
+            cluster
+              .slice(i + 1)
+              .some(
+                (b) =>
+                  !report.pairs.some(
+                    (p) => pairKey(p.a, p.b) === pairKey(a, b),
+                  ),
+              ),
+          ),
+        ),
+      );
+    });
+    coverage.expectAtLeast({
+      "no overlap": 25,
+      same_text: 80,
+      removed_block: 80,
+      same_position: 50,
+      "2+ clusters": 20,
+      "cluster of 3+": 80,
+      "cluster linked through a third": 70,
     });
   });
 
   it("4. consolidated marks stay in bounds and untouched marks keep their text", () => {
     type TaggedMark = Mark & { key: string };
+    const coverage = new Coverage();
     forAll(300, 4_000_000, (rng, ctx) => {
-      const base = randomDocument(rng, 2, 6, { maxMarks: 4 }).map(
-        (block) => ({
-          ...block,
-          marks: block.marks.map(
-            (mark, k): TaggedMark => ({ ...mark, key: `${block.id}#${k}` }),
-          ),
-        }),
-      );
+      const base = randomDocument(rng, 2, 6, { maxMarks: 4 }).map((block) => ({
+        ...block,
+        marks: block.marks.map((mark, k): TaggedMark => ({
+          ...mark,
+          key: `${block.id}#${k}`,
+        })),
+      }));
       const amendments = randomAmendments(rng, base, rng.int(1, 6));
       Object.assign(ctx, { base, amendments });
 
@@ -1218,6 +1386,7 @@ describe("amendment engine properties", () => {
           const untouched = ops.every(
             (op) => op.to <= mark.from || op.from >= mark.to,
           );
+          coverage.hit("edited inside a mark", !untouched);
           if (!untouched) continue;
           const mapped = (block.marks as TaggedMark[]).find(
             (candidate) => candidate.key === mark.key,
@@ -1226,8 +1395,22 @@ describe("amendment engine properties", () => {
           expect(block.text.slice(mapped!.from, mapped!.to)).toBe(
             original.text.slice(mark.from, mark.to),
           );
+          coverage.hit("shifted mark", mapped!.from !== mark.from);
+          coverage.hit(
+            "insertion at a mark edge",
+            ops.some(
+              (op) =>
+                op.from === op.to &&
+                (op.from === mark.from || op.from === mark.to),
+            ),
+          );
         }
       }
+    });
+    coverage.expectAtLeast({
+      "edited inside a mark": 150,
+      "shifted mark": 80,
+      "insertion at a mark edge": 25,
     });
   });
 
@@ -1264,8 +1447,7 @@ describe("amendment engine properties", () => {
       expect(scan.breaks).toBe(
         blocks.reduce(
           (count, block) =>
-            count +
-            (block.text === "" ? 1 : block.text.split("\n").length - 1),
+            count + (block.text === "" ? 1 : block.text.split("\n").length - 1),
           0,
         ),
       );
@@ -1300,7 +1482,9 @@ describe("amendment engine properties", () => {
         const visible = result.annotated.filter(
           (block) => mode === "diff" || block.status !== "deleted",
         );
-        expect(annotatedScan.blockIds).toEqual(visible.map((block) => block.id));
+        expect(annotatedScan.blockIds).toEqual(
+          visible.map((block) => block.id),
+        );
         for (const id of annotatedScan.amendmentIds) {
           expect(ids.has(id), `unknown amendment ${id}`).toBe(true);
         }
@@ -1409,15 +1593,18 @@ describe("known engine defects", () => {
   // base text is emitted again: [A, B] gives "uno DOScinco dos tres" while
   // [B, A] gives "uno cinco DOS tres". Reporting the pair as `same_text`
   // would also be a valid fix.
-  it.fails("consolidates a point insertion at the start of another amendment's range in any order", () => {
-    if (isHardOverlap(overlapBetween(replaceDos.ops, insertBeforeDos.ops))) {
-      return;
-    }
-    const forward = consolidate(base, [replaceDos, insertBeforeDos]);
-    const backward = consolidate(base, [insertBeforeDos, replaceDos]);
-    expect(backward.blocks[0]!.text).toBe("uno cinco DOS tres");
-    expect(forward.blocks[0]!.text).toBe(backward.blocks[0]!.text);
-  });
+  it.fails(
+    "consolidates a point insertion at the start of another amendment's range in any order",
+    () => {
+      if (isHardOverlap(overlapBetween(replaceDos.ops, insertBeforeDos.ops))) {
+        return;
+      }
+      const forward = consolidate(base, [replaceDos, insertBeforeDos]);
+      const backward = consolidate(base, [insertBeforeDos, replaceDos]);
+      expect(backward.blocks[0]!.text).toBe("uno cinco DOS tres");
+      expect(forward.blocks[0]!.text).toBe(backward.blocks[0]!.text);
+    },
+  );
 
   // Same tie inside one amendment: validateOps sorts by `from` alone, so the
   // same two operations are rejected as overlapping in one order and
@@ -1428,4 +1615,28 @@ describe("known engine defects", () => {
       validateOps(base, list).map((error) => error.reason);
     expect(reasons(ops)).toEqual(reasons([...ops].reverse()));
   });
+
+  // diffPassage only knows the passage, so it keeps any id it does not
+  // recognise as the caller's fresh id. A block that carries the id of a base
+  // block outside the passage is inserted under that id, and validateOps
+  // rejects the result as `duplicate_block_id`. The editor never reads ids
+  // from pasted HTML, so only callers that build the edited blocks
+  // themselves can hit this. Passing every base id to diffPassage would fix
+  // it; until then, callers must give such blocks fresh ids.
+  it.fails(
+    "gives a fresh id to an edited block that reuses the id of a base block outside the passage",
+    () => {
+      const document: Block[] = [
+        { id: "base0", type: "paragraph", text: "uno", marks: [] },
+        { id: "base1", type: "paragraph", text: "dos", marks: [] },
+      ];
+      const ops = diffPassage(
+        [document[1]!],
+        [document[1]!, { ...document[0]! }],
+        "base0",
+        idSequence("fresh"),
+      );
+      expect(validateOps(document, ops)).toEqual([]);
+    },
+  );
 });

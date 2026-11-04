@@ -11,7 +11,10 @@
 export type DiffDisplayMode = "color" | "marks";
 export type ContentFont = "raleway" | "atkinson" | "opendyslexic";
 
-export const DIFF_DISPLAY_MODES: readonly DiffDisplayMode[] = ["color", "marks"];
+export const DIFF_DISPLAY_MODES: readonly DiffDisplayMode[] = [
+  "color",
+  "marks",
+];
 export const CONTENT_FONTS: readonly ContentFont[] = [
   "raleway",
   "atkinson",
