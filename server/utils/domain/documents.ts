@@ -432,6 +432,8 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
     fileUrl: document.fileUrl,
     fileName: document.fileName,
     submittedAt: toIso(document.submittedAt),
+    amendmentsOpenAt: toIso(document.amendmentsOpenAt),
+    amendmentsCloseAt: toIso(document.amendmentsCloseAt),
     // Everyone who can see an unpublished document (its presenters, managers
     // and the Mesa) needs to read its text; editing is governed by can.edit.
     workingVersion:

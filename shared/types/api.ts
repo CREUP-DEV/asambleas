@@ -231,7 +231,17 @@ export interface DocumentDto extends DocumentSummaryDto {
   fileUrl: string | null;
   fileName: string | null;
   submittedAt: IsoDate | null;
-  /** Only present for those who can edit, before publication. */
+  /**
+   * Stored per-document amendment window override; null means the assembly
+   * calendar applies. `window` is the effective one.
+   */
+  amendmentsOpenAt: IsoDate | null;
+  amendmentsCloseAt: IsoDate | null;
+  /**
+   * Working draft, returned to everyone who can see the unpublished document
+   * (proponent, managers, the Mesa) and hidden once the text is frozen.
+   * Editing is governed by `can.edit`.
+   */
   workingVersion: VersionDto | null;
   baseVersion: VersionDto | null;
   consolidatedVersion: VersionDto | null;
@@ -432,6 +442,41 @@ export interface FinalVoteBody {
   vote: VoteInput;
   /** Amendment ids in application order; defaults to approval order. */
   order?: string[];
+}
+
+/**
+ * DELETE .../documents/[document]/final-vote: annuls a wrongly recorded final
+ * vote (session:moderate, assembly not closed). The vote row stays for the
+ * record; the document loses finalVoteId and its consolidated version, and a
+ * `final_vote_annulled` event is recorded. Returns DocumentDto.
+ */
+export interface FinalVoteAnnulBody {
+  updatedAt: IsoDate;
+  note?: string | null;
+}
+
+/** Ids the client can offer to lapse after an approval. */
+export interface ApprovalWarnings {
+  /** Approved amendments that collide with this one in the base text. */
+  overlapsWithApproved: string[];
+  /** Undecided or approved amendments linked by an "incompatible" relation. */
+  incompatible: string[];
+}
+
+/** Response of POST .../amendments/[amendment]/outcome. */
+export interface AmendmentOutcomeDto {
+  amendment: AmendmentDto;
+  vote: VoteDto | null;
+  /** Present when the amendment ended up approved, null otherwise. */
+  warnings: ApprovalWarnings | null;
+}
+
+/** Response of POST .../amendments/admission. */
+export interface AmendmentAdmissionDto {
+  decision: DecisionDto;
+  /** The admission applied to every amendment (a failed vote reverses it). */
+  admission: Exclude<AdmissionStatus, "pending">;
+  amendmentIds: string[];
 }
 
 // Votes, decisions, live -------------------------------------------------
