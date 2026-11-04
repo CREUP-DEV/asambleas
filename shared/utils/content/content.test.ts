@@ -1,0 +1,249 @@
+import { describe, expect, it } from "vitest";
+import type { AmendmentOp, Block } from "../../types/content";
+import { consolidate, mapPosition, previewAmendment } from "./consolidate";
+import { diffPassage, diffText } from "./diff";
+import { blocksToEditor, editorToBlocks } from "./editor";
+import { changeKinds, globalReplaceOps, positionKey, validateOps } from "./ops";
+import { findOverlaps, overlapBetween } from "./overlaps";
+import { renderAnnotated, renderBlocks } from "./render";
+
+let counter = 0;
+const newId = () => `new${String(counter++).padStart(4, "0")}`;
+
+const p = (id: string, text: string, marks: Block["marks"] = []): Block => ({
+  id,
+  type: "paragraph",
+  text,
+  marks,
+});
+
+const base: Block[] = [
+  { id: "h001", type: "heading", level: 1, text: "3. Devolución de la beca", marks: [] },
+  p("b001", "El alumnado deberá reintegrar la ayuda en su totalidad cuando no supere el 50 % de los créditos."),
+  p("b002", "Las universidades habilitarán un procedimiento de alegaciones."),
+  p("b003", "Disposición final."),
+];
+
+function apply(text: string, ops: { from: number; to: number; text: string }[]) {
+  return [...ops]
+    .sort((a, b) => b.from - a.from)
+    .reduce((acc, op) => acc.slice(0, op.from) + op.text + acc.slice(op.to), text);
+}
+
+describe("diffText", () => {
+  it("produces a word-level modification merged across whitespace", () => {
+    const ops = diffText(base[1]!, base[1]!.text.replace("en su totalidad", "de forma proporcional"));
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({ baseText: "en su totalidad", text: "de forma proporcional" });
+  });
+
+  it("round-trips arbitrary edits", () => {
+    const edited = "El alumnado podrá reintegrar parte de la ayuda cuando no supere el 40 % de los créditos matriculados.";
+    const ops = diffText(base[1]!, edited);
+    expect(validateOps(base, ops)).toEqual([]);
+    expect(apply(base[1]!.text, ops)).toBe(edited);
+  });
+
+  it("returns nothing when the text is unchanged", () => {
+    expect(diffText(base[1]!, base[1]!.text)).toEqual([]);
+  });
+});
+
+describe("diffPassage", () => {
+  it("detects edits, deletions and insertions in a passage", () => {
+    const passage = [base[1]!, base[2]!];
+    const edited = [
+      p("b001", base[1]!.text.replace("50 %", "40 %")),
+      p("fresh01", "Nuevo párrafo añadido."),
+    ];
+    const ops = diffPassage(passage, edited, "h001", newId);
+    expect(validateOps(base, ops)).toEqual([]);
+    expect(ops.find((op) => op.op === "delete")).toEqual({ op: "delete", blockIds: ["b002"] });
+    expect(ops.find((op) => op.op === "insert")).toMatchObject({ afterBlockId: "b001" });
+    expect(changeKinds(ops)).toEqual(["suppression", "addition", "modification"]);
+  });
+
+  it("anchors insertions before the first block to the previous base block", () => {
+    const ops = diffPassage([base[1]!], [p("fresh02", "Antes."), base[1]!], "h001", newId);
+    expect(ops).toEqual([{ op: "insert", afterBlockId: "h001", blocks: [p("fresh02", "Antes.")] }]);
+  });
+
+  it("treats a moved block as delete plus insert", () => {
+    const ops = diffPassage([base[1]!, base[2]!], [base[2]!, base[1]!], "h001", newId);
+    expect(validateOps(base, ops)).toEqual([]);
+    const result = consolidate(base, [{ id: "a", ops }]);
+    expect(result.blocks.map((b) => b.text)).toEqual([
+      base[0]!.text,
+      base[2]!.text,
+      base[1]!.text,
+      base[3]!.text,
+    ]);
+  });
+});
+
+describe("validateOps", () => {
+  it("rejects anchors that do not match the base", () => {
+    const ops: AmendmentOp[] = [
+      { op: "replace", blockId: "b001", from: 0, to: 2, text: "Un", baseText: "Xx" },
+    ];
+    expect(validateOps(base, ops).map((e) => e.reason)).toContain("anchor_mismatch");
+  });
+
+  it("rejects overlapping ops and edits inside deleted blocks", () => {
+    const ops: AmendmentOp[] = [
+      { op: "replace", blockId: "b002", from: 0, to: 3, text: "Unas", baseText: "Las" },
+      { op: "replace", blockId: "b002", from: 2, to: 5, text: "x", baseText: "s u" },
+      { op: "delete", blockIds: ["b002"] },
+    ];
+    const reasons = validateOps(base, ops).map((e) => e.reason);
+    expect(reasons).toContain("overlapping_ops");
+    expect(reasons).toContain("replace_in_deleted_block");
+  });
+});
+
+describe("overlaps", () => {
+  const replace = (blockId: string, from: number, to: number, text = "x"): AmendmentOp => {
+    const block = base.find((b) => b.id === blockId)!;
+    return { op: "replace", blockId, from, to, text, baseText: block.text.slice(from, to) };
+  };
+
+  it("does not flag edits to different sentences of the same paragraph", () => {
+    expect(overlapBetween([replace("b001", 0, 11)], [replace("b001", 40, 55)])).toBeNull();
+  });
+
+  it("flags intersecting ranges, removed blocks and shared anchors", () => {
+    expect(overlapBetween([replace("b001", 0, 20)], [replace("b001", 10, 30)])).toBe("same_text");
+    expect(overlapBetween([replace("b002", 0, 3)], [{ op: "delete", blockIds: ["b002"] }])).toBe("removed_block");
+    expect(
+      overlapBetween(
+        [{ op: "insert", afterBlockId: "b002", blocks: [p("n1aa", "a")] }],
+        [{ op: "insert", afterBlockId: "b002", blocks: [p("n2aa", "b")] }],
+      ),
+    ).toBe("same_position");
+  });
+
+  it("clusters chains of overlapping amendments", () => {
+    const report = findOverlaps([
+      { id: "A", ops: [replace("b001", 0, 20)] },
+      { id: "B", ops: [replace("b001", 15, 40)] },
+      { id: "C", ops: [replace("b001", 35, 50)] },
+      { id: "D", ops: [replace("b003", 0, 5)] },
+    ]);
+    expect(report.clusters).toEqual([["A", "B", "C"]]);
+    expect(report.pairs).toHaveLength(2);
+  });
+
+  it("orders amendments by position in the text", () => {
+    expect(positionKey([replace("b002", 0, 3)], base)).toBeGreaterThan(
+      positionKey([replace("b001", 50, 52)], base),
+    );
+  });
+});
+
+describe("consolidate", () => {
+  it("applies non-conflicting amendments with provenance", () => {
+    const a = { id: "A", ops: diffText(base[1]!, base[1]!.text.replace("en su totalidad", "de forma proporcional")) };
+    const b = { id: "B", ops: diffText(base[1]!, base[1]!.text.replace("50 %", "40 %")) };
+    const result = consolidate(base, [a, b]);
+    expect(result.conflicts).toEqual([]);
+    expect(result.blocks[1]!.text).toBe(
+      "El alumnado deberá reintegrar la ayuda de forma proporcional cuando no supere el 40 % de los créditos.",
+    );
+    const sources = result.annotated[1]!.segments.filter((s) => s.source).map((s) => s.source);
+    expect(new Set(sources)).toEqual(new Set(["A", "B"]));
+  });
+
+  it("skips an amendment that collides with one already applied", () => {
+    const a = { id: "A", ops: diffText(base[1]!, base[1]!.text.replace("50 %", "40 %")) };
+    const b = { id: "B", ops: diffText(base[1]!, base[1]!.text.replace("50 %", "60 %")) };
+    const result = consolidate(base, [a, b]);
+    expect(result.applied).toEqual(["A"]);
+    expect(result.conflicts).toEqual([{ amendmentId: "B", conflictsWith: ["A"] }]);
+  });
+
+  it("keeps insertions after the same anchor in approval order", () => {
+    const a = { id: "A", ops: [{ op: "insert", afterBlockId: "b002", blocks: [p("ins1aaa", "Primero.")] }] as AmendmentOp[] };
+    const b = { id: "B", ops: [{ op: "insert", afterBlockId: "b002", blocks: [p("ins2aaa", "Segundo.")] }] as AmendmentOp[] };
+    const result = consolidate(base, [b, a]);
+    expect(result.blocks.map((x) => x.text).slice(3, 5)).toEqual(["Segundo.", "Primero."]);
+  });
+
+  it("maps marks around replaced text", () => {
+    const marked: Block[] = [p("m001", "uno dos tres", [{ type: "bold", from: 4, to: 7 }])];
+    const ops = diffText(marked[0]!, "uno cinco dos tres");
+    const result = consolidate(marked, [{ id: "A", ops }]);
+    const block = result.blocks[0]!;
+    expect(block.text).toBe("uno cinco dos tres");
+    expect(block.text.slice(block.marks[0]!.from, block.marks[0]!.to)).toBe("dos");
+  });
+
+  it("maps positions through insertions and replacements", () => {
+    const ops = [{ from: 2, to: 2, text: "XX" }, { from: 5, to: 8, text: "Y" }];
+    expect(mapPosition(2, ops, -1)).toBe(2);
+    expect(mapPosition(2, ops, 1)).toBe(4);
+    expect(mapPosition(6, ops, -1)).toBe(7);
+    expect(mapPosition(10, ops, 1)).toBe(10);
+  });
+
+  it("previews only the touched blocks", () => {
+    const ops = diffText(base[2]!, "Las universidades habilitarán un procedimiento ágil de alegaciones.");
+    const preview = previewAmendment(base, { id: "A", ops });
+    expect(preview.map((b) => b.id)).toEqual(["b002"]);
+  });
+});
+
+describe("globalReplaceOps", () => {
+  it("replaces whole words only", () => {
+    const blocks = [p("g001", "centros adscritos y centrosx"), p("g002", "Los centros.")];
+    const ops = globalReplaceOps(blocks, "centros", "centros públicos");
+    expect(ops).toHaveLength(2);
+    expect(validateOps(blocks, ops)).toEqual([]);
+  });
+});
+
+describe("render", () => {
+  it("escapes text and drops unsafe links", () => {
+    const html = renderBlocks([
+      p("r001", "<script>x</script> & enlace", [
+        { type: "link", from: 21, to: 27, href: "javascript:alert(1)" },
+        { type: "bold", from: 0, to: 8 },
+      ]),
+    ]);
+    expect(html).not.toContain("<script>");
+    expect(html).not.toContain("javascript:");
+    expect(html).toContain("<strong>&lt;script&gt;</strong>");
+  });
+
+  it("renders nested lists", () => {
+    const html = renderBlocks([
+      { id: "l001", type: "list_item", list: "bullet", level: 0, text: "a", marks: [] },
+      { id: "l002", type: "list_item", list: "bullet", level: 1, text: "b", marks: [] },
+      { id: "l003", type: "list_item", list: "bullet", level: 0, text: "c", marks: [] },
+      p("l004", "fin"),
+    ]);
+    expect(html).toBe(
+      '<ul><li data-block-id="l001">a<ul><li data-block-id="l002">b</li></ul></li><li data-block-id="l003">c</li></ul><p data-block-id="l004">fin</p>',
+    );
+  });
+
+  it("renders diffs with ins and del", () => {
+    const ops = diffText(base[2]!, "Las universidades crearán un procedimiento de alegaciones.");
+    const { annotated } = consolidate(base, [{ id: "A", ops }]);
+    const html = renderAnnotated([annotated[2]!], { mode: "diff" });
+    expect(html).toContain('<del class="cx-del" data-amendment-id="A">habilitarán</del>');
+    expect(html).toContain('<ins class="cx-ins" data-amendment-id="A">crearán</ins>');
+  });
+});
+
+describe("editor conversion", () => {
+  it("round-trips blocks through the editor JSON", () => {
+    const blocks: Block[] = [
+      { id: "e001", type: "heading", level: 2, text: "Título", marks: [] },
+      p("e002", "Texto con negrita", [{ type: "bold", from: 10, to: 17 }]),
+      { id: "e003", type: "list_item", list: "ordered", level: 0, text: "uno", marks: [] },
+      { id: "e004", type: "list_item", list: "ordered", level: 1, text: "uno.uno", marks: [] },
+      { id: "e005", type: "quote", text: "cita", marks: [] },
+    ];
+    expect(editorToBlocks(blocksToEditor(blocks), newId)).toEqual(blocks);
+  });
+});

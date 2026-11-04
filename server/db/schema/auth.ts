@@ -8,6 +8,7 @@ import {
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { roles } from "./rbac";
+import { members } from "./member";
 
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
@@ -20,6 +21,10 @@ export const users = pgTable("users", {
   externalName: text("external_name"),
   externalInitials: text("external_initials"),
   university: text("university"),
+  /** The member this account acts for (an Asociado account is its member). */
+  memberId: text("member_id").references(() => members.id, {
+    onDelete: "set null",
+  }),
   lastRoleSyncAt: timestamp("last_role_sync_at", {
     withTimezone: true,
     mode: "date",
@@ -126,6 +131,10 @@ export const usersRelations = relations(users, ({ one, many }) => ({
   role: one(roles, {
     fields: [users.roleId],
     references: [roles.id],
+  }),
+  member: one(members, {
+    fields: [users.memberId],
+    references: [members.id],
   }),
   sessions: many(sessions),
   accounts: many(accounts),

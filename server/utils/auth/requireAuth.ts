@@ -18,6 +18,7 @@ export interface AuthUserWithRole {
   externalName: string | null;
   externalInitials: string | null;
   university: string | null;
+  memberId: string | null;
   lastRoleSyncAt: Date | null;
   role: {
     id: string;
@@ -76,6 +77,7 @@ export async function getAuthUserWithRole(
       externalName: true,
       externalInitials: true,
       university: true,
+      memberId: true,
       lastRoleSyncAt: true,
     },
     with: {

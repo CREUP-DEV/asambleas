@@ -1,6 +1,6 @@
 # CREUP Assemblies - Agent Instructions
 
-These instructions are the source of truth for agents editing this repository. `PLAN.md` is historical context only.
+These instructions are the source of truth for agents editing this repository. The domain model and the API live in [`docs/design.md`](docs/design.md), [`docs/api.md`](docs/api.md) and [`shared/types/api.ts`](shared/types/api.ts); [`docs/proceso-asambleas.md`](docs/proceso-asambleas.md) records how CREUP assemblies work today.
 
 ## Non-Negotiable Rules
 
@@ -12,8 +12,8 @@ These instructions are the source of truth for agents editing this repository. `
 - Do not introduce Redis or Mailpit. Use PostgreSQL, pg-boss or in-memory cache as described here.
 - Validate all untrusted input with Zod v4 from `zod/v4`.
 - Protect every mutation with CSRF and same-origin checks.
-- Sanitize rich text server-side before storage.
-- Use patches for amendments. Never store full modified HTML copies per amendment.
+- Store document content as structured blocks validated with `blocksSchema`; never store or echo raw HTML. Render it only through `shared/utils/content/render.ts`, which escapes everything.
+- Store amendments as operations anchored to the document's frozen base version. Never store modified copies of the text.
 - Use optimistic locking on shared PUT/PATCH mutations.
 - Run the verification checklist before finishing code changes.
 
@@ -62,7 +62,7 @@ The public website lives in a separate `creup/web` repository. This app may mirr
 app/
   components/       UI components grouped by domain
   composables/      Auth, permissions, locale, accessibility and workflow helpers
-  layouts/          public and admin layouts
+  layouts/          the authenticated dashboard shell
   middleware/       global auth redirect
   pages/            Nuxt pages
   utils/            client-side domain utilities
@@ -70,11 +70,13 @@ server/
   api/              Nitro endpoints
   db/               Drizzle client and schema
   handlers/         global auth/CSRF middleware
-  plugins/          startup validation and export worker
-  utils/            auth, RBAC, rich text, export, workflow and CRUD helpers
+  plugins/          export worker and live updates hub
+  utils/            auth, RBAC, domain (actor, visibility, events, resolvers), live, export and CRUD helpers
 shared/
-  constants/        roles, permissions, statuses and security constants
-  utils/            schemas, rich text, diff, slug and config helpers
+  constants/        roles, permissions, domain enums and security constants
+  types/            content (blocks, amendment operations) and the API contract
+  utils/            amendment engine (content/), schemas, calendar, votes, slug and config helpers
+docs/               design, API and research on how assemblies run
 i18n/locales/       es.json and en.json
 drizzle/            migrations and seed
 server/assets/      server-bundled fonts/assets
@@ -91,7 +93,7 @@ server/assets/      server-bundled fonts/assets
   - Raleway;
   - Atkinson Hyperlegible;
   - OpenDyslexic.
-- Diff UI must support color mode and marks mode. Prefer the shared `app/utils/diffRenderer.ts` wrapper over direct component-level diff logic.
+- Diff UI must support color mode and marks mode. Render diffs, provenance and plain text through the shared engine (`shared/utils/content/render.ts`) and `app/components/content/*`, never with component-level diff logic.
 
 ## Authentication And Role Sync
 
@@ -154,67 +156,51 @@ Use `requirePermission(event, PERMISSION_KEYS.X)`, `hasPermission`, `requireAdmi
 
 ## Domain Rules
 
+Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`docs/api.md`](docs/api.md).
+
+### Members
+
+- Documents and amendments are presented by members (`members`): student councils (asociados), sectorials and executive areas.
+- Asociados and sectorials are synced from the intranet roster (`/usuarios/asociados`, `/usuarios/sectoriales`) and keyed by acronym (the intranet's `initials`).
+- `users.memberId` links an account to the member it acts for. In the intranet an Asociado account is the member itself.
+
 ### Assemblies
 
-Status workflow:
-
-```text
-draft -> provisional -> definitive
-         <- provisional
-```
-
-- `draft`: visible only to Admin and Secretaria.
-- `provisional`: visible to all authenticated users and editable by managers.
-- `definitive`: visible to all authenticated users; root agenda structure is locked.
-- Public routes should use readable slugs. Resolve slugs server-side before DB queries.
+- Status: `draft -> convened -> in_session -> closed` (see `ASSEMBLY_STATUS_TRANSITIONS`).
+  - `draft` is visible only to managers.
+  - `agendaFinalizedAt` marks the final agenda (ODD definitivo): root agenda items are then locked.
+- Each type keeps its own counter: `(type, number)` is unique.
+- Calendar milestones live in `assembly_milestones`, seeded from `shared/utils/calendar.ts` and checked by `checkCalendar`.
+- Per-assembly policies live in `assemblies.settings`. Always read them merged over `DEFAULT_ASSEMBLY_SETTINGS`.
+- Public routes use readable slugs (`80-ago`). Resolve them server-side with `server/utils/domain/resolvers.ts`.
 
 ### Agenda Items
 
-- Recursive tree through `parentId`.
-- Load flat rows and build tree client-side with shared helpers.
-- In definitive assemblies, do not alter locked root-item structure.
+- Recursive tree through `parentId`. Load the rows flat and build the tree client-side.
 - Reorder operations must validate parent existence, assembly ownership and cycles.
 
 ### Documents
 
-- `platform`: rich text document, amendable.
-- `pdf`: uploaded PDF, not amendable.
-- Platform document content must be sanitized server-side before insert/update.
+- `format`:
+  - `structured`: blocks, amendable when `amendable`;
+  - `file`: an uploaded PDF, never amendable.
+- Kind defaults (amendable, voted, majority) come from `DOCUMENT_KIND_DEFAULTS`.
+- The proponent edits the working draft. Publishing freezes it as the immutable `base` version, and amendments anchor to that.
+- The final vote stores the `consolidated` version produced by `consolidate`.
 - PDF uploads must validate size, MIME and magic bytes.
-- `proponentId` is assigned by Secretaria for official documents and defaults to `submittedBy` for user documents.
 
 ### Amendments
 
-Store only `contentPatch`, never full modified HTML snapshots.
-
-Workflow:
-
-```text
-draft -> pending_review
-  -> rejected_secretaria
-  -> formal
-  -> accepted_secretaria
-    -> accepted_proponent
-    -> rejected_proponent
-      -> approved_vote
-      -> rejected_vote
-```
-
-Statuses `formal`, `accepted_proponent` and `approved_vote` incorporate the patch into the document:
-
-1. `applyPatch(document.content, amendment.contentPatch)`;
-2. `hashContent(newContent)`;
-3. update document `content` and `contentVersion`;
-4. append a `contentHistory` entry with the resulting content hash.
-
-Transactional amendments:
-
-- are linked through `parentAmendmentId`;
-- are allowed from `accepted_secretaria`;
-- go through the same workflow;
-- drafts must be visible to authors across the negotiation chain and to permitted managers.
-
-The proponent decision step belongs to the document proponent. Secretaria should assign a proponent before that step instead of deciding as proponent.
+- Operations: `replace`, `insert` and `delete`, anchored to base block ids. Validate them with `validateOps`. Only `totality_return` may have no operations.
+- Status: `draft -> submitted ->` one of `approved`, `rejected`, `withdrawn`, `lapsed`, `transacted` or `inadmissible`. Each step is recorded in its own record:
+  - admission, with `late` computed by the server;
+  - proponent position;
+  - votes;
+  - decisions;
+  - acceptances.
+- Transactionals link 1..N parents through `amendment_sources`. They need every party's acceptance before they can be voted. Approving one marks its parents `transacted`.
+- Overlaps come from `findOverlaps` and are computed from the ranges each amendment really changes. Relations between amendments live in `amendment_relations`.
+- Every state change calls `recordEvent`, which appends to the history and notifies live listeners.
 
 ## API Rules
 
@@ -278,21 +264,19 @@ throw createError({
 
 ## Shared Helpers To Prefer
 
-- `server/utils/auth/requireAuth.ts`: session helpers.
-- `server/utils/auth/rbac.ts`: permissions and role checks.
-- `server/utils/auth/roleSync.ts`: external role sync.
-- `server/utils/validation.ts`: `validateCuid`, `validateAuthId`.
-- `server/utils/routeResolvers.ts`: slug/CUID route resolution.
-- `server/utils/optimisticLock.ts`: `assertOptimisticLock`, `buildOptimisticLockCondition`.
-- `server/utils/crud.ts`: `runCrudTransaction`.
-- `server/utils/errors.ts`: mutation error handling.
-- `server/utils/richText.ts`: server-side DOMPurify sanitization.
-- `server/utils/amendmentWorkflow.ts`: amendment transitions and incorporation.
+- `server/utils/domain/actor.ts`: `requireActor`, `requireCan`, `canModerate`, `canManageDocuments` and related checks. Admin passes every check.
+- `server/utils/domain/visibility.ts`: who sees assemblies, documents, amendments and positions.
+- `server/utils/domain/resolvers.ts`: slug and CUID route resolution with 404 on hidden targets.
+- `server/utils/domain/events.ts`: `recordEvent` (history plus live notification).
+- `server/utils/live/hub.ts`: live updates through Postgres `LISTEN/NOTIFY` and SSE.
+- `server/utils/auth/rbac.ts` and `server/utils/auth/roleSync.ts`: permissions and external role sync.
+- `server/utils/validation.ts`, `server/utils/optimisticLock.ts`, `server/utils/crud.ts` and `server/utils/errors.ts`.
+- `shared/utils/content/*`, the amendment engine:
+  - `validateOps`, `diffPassage`, `findOverlaps`, `consolidate` and `previewAmendment`;
+  - rendering, editor conversion and `globalReplaceOps`.
+- `shared/utils/calendar.ts`, `shared/utils/votes.ts`, `shared/utils/slug.ts` and `shared/utils/diff.ts` (`hashContent`).
+- `shared/utils/schemas/*`: Zod schemas matching `shared/types/api.ts`.
 - `server/utils/export/*`: queue, storage and PDF building.
-- `shared/utils/diff.ts`: `computePatch`, `applyPatch`, `hashContent`.
-- `shared/utils/richText.ts`: rich text checks and plain text extraction.
-- `shared/utils/slug.ts`: readable route slugs.
-- `shared/utils/schemas/*`: Zod schemas.
 
 ## Database And Migrations
 
@@ -311,7 +295,7 @@ throw createError({
 
 Flow:
 
-1. `POST /api/assemblies/[id]/export` or document export endpoint creates a pg-boss job.
+1. `POST /api/assemblies/[assembly]/export` or `POST /api/assemblies/[assembly]/documents/[document]/export` creates a pg-boss job. Queues are created on boot (`createQueue`).
 2. Worker generates PDF with `pdfmake`.
 3. Worker writes metadata and PDF to `EXPORT_STORAGE_DIR`.
 4. Client polls `GET /api/exports/[jobId]/status`.
@@ -339,7 +323,7 @@ pg-boss v10 reminders:
 - Admin APIs are not protected by UI checks alone.
 - Route params and body/query data validated before DB access.
 - Mutations include CSRF and same-origin checks.
-- Rich text sanitized before storage and before `v-html`.
+- Document content stored as validated blocks and rendered escaped; no raw HTML in `v-html`.
 - Uploaded PDFs validated by type and file signature.
 - Optimistic locking applied to shared updates.
 - Unknown permission keys rejected, not silently ignored.
@@ -381,6 +365,7 @@ pnpm format:check
 pnpm typecheck
 pnpm i18n:check
 pnpm i18n:audit-identical
+pnpm test
 pnpm build
 ```
 
@@ -390,7 +375,7 @@ Also verify manually when relevant:
 - Google sign-in calls role sync and preserves privileged roles;
 - admin pages reject non-admin users server-side;
 - ES and EN UI both render new strings;
-- document/amendment rich text remains sanitized;
+- document content stays block-based and escaped on render;
 - amendment incorporation updates document content and history;
 - PDF export survives app restart because files are persisted.
 

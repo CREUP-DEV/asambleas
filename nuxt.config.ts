@@ -104,8 +104,10 @@ export default defineNuxtConfig({
 
   security: {
     nonce: true,
+    // Delegates in the same room share the venue's public IP, and every live
+    // change makes each client refetch, so the per-IP budget is generous.
     rateLimiter: {
-      tokensPerInterval: 500,
+      tokensPerInterval: 12000,
       interval: 300000,
     },
     headers: {
@@ -186,7 +188,13 @@ export default defineNuxtConfig({
       middleware: true,
       handler: adminHandler,
     },
-    ...["/api/assemblies", "/api/exports", "/api/uploads"].map((route) => ({
+    ...[
+      "/api/assemblies",
+      "/api/exports",
+      "/api/uploads",
+      "/api/members",
+      "/api/me",
+    ].map((route) => ({
       route,
       middleware: true,
       handler: protectedHandler,
