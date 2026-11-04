@@ -114,6 +114,11 @@
       "placeholder": "Escribe aquí el texto",
       "label": "Editor de contenido",
       "toolbar": "Formato del texto"
+    },
+    "staleData": {
+      "title": "No se han podido actualizar los datos",
+      "description": "Se mantienen en pantalla los últimos datos cargados. Puedes reintentarlo ahora o esperar a la próxima actualización.",
+      "retry": "Reintentar"
     }
   },
   "auth": {
@@ -276,7 +281,9 @@
       "nextMilestone": "Próximo plazo",
       "liveOn": "En directo",
       "liveOffline": "Sin conexión en directo",
-      "livePolling": "Se ha perdido la conexión en directo. Los datos se actualizan cada 15 segundos mientras se recupera."
+      "livePolling": "Se ha perdido la conexión en directo. Los datos se actualizan cada 15 segundos mientras se recupera.",
+      "stale": "Sin actualizar",
+      "staleDescription": "No se ha podido actualizar la asamblea. Se muestran los últimos datos cargados. Pulsa para reintentarlo."
     },
     "sections": {
       "label": "Secciones de la asamblea",
@@ -607,7 +614,20 @@
       "remoteTitle": "Otra persona ha guardado cambios en el texto",
       "remoteDescription": "Tus cambios aún no están guardados. Si guardas ahora habrá un conflicto: carga la versión guardada y tu texto quedará a mano para recuperarlo.",
       "loadRemote": "Cargar la versión guardada",
-      "imported": "Texto importado y guardado"
+      "imported": "Texto importado y guardado",
+      "frozen": {
+        "notice": "El texto se ha publicado y ya no se puede editar. Puedes seguir cambiando los datos y el estado del documento.",
+        "title": "Texto publicado",
+        "description": "Al publicarse, el texto quedó congelado como versión base y los cambios se proponen como enmiendas. Aquí puedes seguir cambiando los datos del documento, su plazo de enmiendas y su estado.",
+        "fileTitle": "PDF publicado",
+        "fileDescription": "Si sustituyes el PDF, todas las personas de la asamblea verán el archivo nuevo. El anterior queda registrado en el historial.",
+        "fileVoted": "El PDF ya se ha votado y no se puede sustituir."
+      },
+      "refreshError": {
+        "title": "No se ha podido actualizar el documento",
+        "description": "Se muestra la última versión cargada y tus cambios sin guardar siguen aquí. Vuelve a intentarlo cuando tengas conexión."
+      },
+      "returningToDocuments": "Volviendo a la lista de documentos"
     },
     "recovery": {
       "title": "Tu versión no se ha guardado",
@@ -755,6 +775,45 @@
         "referenceNone": "Este tipo de documento no lleva referencia",
         "scheduled": "Publicación prevista en el calendario: {date}",
         "assemblyDraft": "La asamblea aún es un borrador: solo quien la gestiona verá el documento hasta que se convoque"
+      }
+    },
+    "republish": {
+      "button": "Volver a publicar",
+      "title": "Volver a publicar el documento",
+      "description": "Se publica de nuevo con el mismo texto base, la misma referencia y sus enmiendas.",
+      "confirm": "Publicar de nuevo",
+      "working": "Volviendo a publicar el documento...",
+      "success": "Documento publicado de nuevo"
+    },
+    "manage": {
+      "menu": "Más acciones",
+      "working": "Aplicando el cambio...",
+      "statusError": "No se ha podido cambiar el estado del documento",
+      "deleteError": "No se ha podido eliminar el documento",
+      "withdraw": {
+        "label": "Retirar",
+        "title": "¿Retirar el documento?",
+        "description": "No se tratará en la asamblea. Secretaría puede recuperarlo más adelante para publicarlo.",
+        "descriptionPublished": "Deja de estar publicado: no admitirá enmiendas ni se tratará en la asamblea. Conserva su texto, su referencia y sus enmiendas, y se puede volver a publicar.",
+        "confirm": "Retirar documento",
+        "success": "Documento retirado"
+      },
+      "postpone": {
+        "label": "Aplazar",
+        "title": "¿Aplazar el documento?",
+        "description": "No se tratará en esta asamblea. Sigue siendo público con su texto, su referencia y sus enmiendas, pero no admite enmiendas nuevas hasta que se vuelva a publicar.",
+        "confirm": "Aplazar documento",
+        "success": "Documento aplazado"
+      },
+      "restore": {
+        "label": "Recuperar",
+        "title": "¿Recuperar el documento?",
+        "description": "Vuelve a quedar presentado, pendiente de que Secretaría lo publique.",
+        "confirm": "Recuperar documento",
+        "success": "Documento recuperado"
+      },
+      "delete": {
+        "description": "Se eliminará «{title}» con su texto y sus datos. Esta acción no se puede deshacer."
       }
     }
   },
@@ -1023,6 +1082,12 @@
         "relation_created": "Relación añadida",
         "relation_deleted": "Relación quitada",
         "other": "Cambio registrado"
+      },
+      "admissionMethods": {
+        "mesa": "Por decisión de la Mesa",
+        "secretaria": "Por decisión de Secretaría",
+        "assent": "Por asentimiento",
+        "vote": "Por votación"
       }
     },
     "vote": {
@@ -1119,7 +1184,26 @@
       "saveFailed": "No se ha podido guardar la enmienda",
       "submitted": "Enmienda presentada",
       "submittedLate": "Se ha presentado fuera de plazo: queda pendiente de admisión.",
-      "submitFailed": "No se ha podido presentar la enmienda"
+      "submitFailed": "No se ha podido presentar la enmienda",
+      "onBehalfOnlyHint": "Tu cuenta no presenta enmiendas propias: elige el miembro en cuyo nombre la registras.",
+      "sync": {
+        "remote_newer": {
+          "title": "Otra persona ha guardado cambios en este borrador",
+          "description": "Tus cambios aún no están guardados. Carga la versión guardada o sobrescríbela con la tuya.",
+          "refused": "No se ha guardado nada: otra persona lo guardó antes. Carga su versión (perderás tus cambios) o sobrescríbela con la tuya."
+        },
+        "conflict": {
+          "title": "No se ha podido guardar el borrador",
+          "description": "El borrador o el documento han cambiado mientras lo editabas. Carga la versión guardada para seguir."
+        },
+        "not_editable": {
+          "title": "Este borrador ya no se puede editar",
+          "description": "Se ha presentado, retirado o eliminado mientras lo editabas, o el documento ya no admite enmiendas."
+        },
+        "keepMine": "Conservar la mía",
+        "overwrite": "Sobrescribir",
+        "overwriteConfirm": "¿Sobrescribir la versión guardada con la tuya? Se perderán los cambios de la otra persona."
+      }
     },
     "errors": {
       "empty": "La enmienda no propone ningún cambio.",
@@ -1966,7 +2050,8 @@
       "retry": "Reintentar la exportación",
       "again": "Generar de nuevo",
       "timeout": "La exportación está tardando demasiado. Inténtalo más tarde."
-    }
+    },
+    "editRecord": "Editar la ficha del documento"
   },
   "session": {
     "title": "Consola de sesión",
@@ -2073,7 +2158,8 @@
       "inadmit": "Inadmitir",
       "more": "Más acciones para {code}",
       "undo": "Deshacer",
-      "retry": "Reintentar"
+      "retry": "Reintentar",
+      "readmit": "Readmitir"
     },
     "toasts": {
       "approved": "{code} aprobada",
@@ -2091,7 +2177,8 @@
       "relationCreated": "Relación registrada",
       "transactionalCreated": "Transaccional {code} creada",
       "finalApproved": "Texto final aprobado",
-      "finalRejected": "Texto final rechazado"
+      "finalRejected": "Texto final rechazado",
+      "finalAnnulled": "Votación final anulada"
     },
     "errors": {
       "live": "No se ha podido actualizar el debate",
@@ -2100,7 +2187,8 @@
       "relation": "No se ha podido guardar la relación",
       "transactional": "No se ha podido crear la transaccional",
       "acceptance": "No se ha podido registrar la respuesta",
-      "finalVote": "No se ha podido registrar la votación final"
+      "finalVote": "No se ha podido registrar la votación final",
+      "annulFinalVote": "No se ha podido anular la votación final"
     },
     "vote": {
       "title": "Votación de {code}",
@@ -2135,12 +2223,11 @@
       "tieRejected": "En caso de empate, la propuesta se rechaza.",
       "inconsistentTitle": "Recuento imposible",
       "inconsistent": "Hay más votos emitidos que miembros presentes.",
-      "submit": "Registrar votación"
+      "submit": "Registrar votación",
+      "assentNoCount": "Por asentimiento no hay recuento: el texto queda aprobado."
     },
     "admission": {
-      "title": "Admisión de enmiendas fuera de plazo",
       "description": "La decisión queda registrada con su método y, si se vota, con el recuento.",
-      "empty": "No hay enmiendas pendientes de admisión",
       "amendments": "Enmiendas",
       "selectAll": "Seleccionar todas",
       "select": "Seleccionar {code}",
@@ -2150,7 +2237,11 @@
       "method": "Cómo se decide",
       "note": "Nota",
       "submitAdmit": "Admitir | Admitir 1 enmienda | Admitir {count} enmiendas",
-      "submitReject": "Inadmitir | Inadmitir 1 enmienda | Inadmitir {count} enmiendas"
+      "submitReject": "Inadmitir | Inadmitir 1 enmienda | Inadmitir {count} enmiendas",
+      "titleAdmit": "Admitir enmiendas",
+      "titleInadmit": "Declarar enmiendas inadmisibles",
+      "emptyAdmit": "No hay enmiendas que se puedan admitir",
+      "emptyInadmit": "No hay enmiendas que se puedan inadmitir"
     },
     "relation": {
       "title": "Relaciones de {code}",
@@ -2173,7 +2264,8 @@
       "candidates": "Enmiendas afectadas",
       "select": "Marcar {code} como decaída",
       "keep": "Mantenerlas",
-      "submit": "Marcar como decaídas | Marcar 1 como decaída | Marcar {count} como decaídas"
+      "submit": "Marcar como decaídas | Marcar 1 como decaída | Marcar {count} como decaídas",
+      "descriptionTotality": "Se ha aprobado la devolución del texto: el resto de enmiendas quedan sin objeto. ¿Las marcas como decaídas?"
     },
     "assent": {
       "title": "Aprobar por asentimiento las aceptadas",
@@ -2191,7 +2283,7 @@
     "acceptance": {
       "title": "Aceptaciones: {accepted} de {total}",
       "none": "Esta transaccional no tiene partes que deban aceptarla.",
-      "inRoom": "Aceptada en sala"
+      "answerFor": "Respuesta de {member}"
     },
     "composer": {
       "title": "Nueva transaccional",
@@ -2217,7 +2309,11 @@
       "partiesHint": "Las respuestas en sala se registran justo después de crearla.",
       "submit": "Crear y presentar",
       "created": "Transaccional {code} presentada",
-      "createdHint": "Registra la respuesta de cada parte. Se puede votar cuando todas la aceptan."
+      "createdHint": "Registra la respuesta de cada parte. Se puede votar cuando todas la aceptan.",
+      "reseedConfirm": "Al cambiar las enmiendas que se transaccionan, el texto vuelve a generarse y se pierde lo que has escrito. ¿Continuar?",
+      "resetConfirm": "Se perderán los cambios del texto transaccional. ¿Volver al texto inicial?",
+      "discardConfirm": "La transaccional todavía no se ha creado y se perderá lo que has escrito. ¿Descartarla?",
+      "replaceConfirm": "Hay una transaccional a medio redactar para otras enmiendas. ¿Descartarla y empezar una nueva?"
     },
     "preview": {
       "title": "Texto consolidado",
@@ -2233,7 +2329,8 @@
       "finalRejected": "Texto final rechazado",
       "notVoted": "Este documento no se somete a votación",
       "notPublished": "El documento no está publicado",
-      "undecided": "Queda 1 enmienda por decidir | Quedan {count} enmiendas por decidir"
+      "undecided": "Queda 1 enmienda por decidir | Quedan {count} enmiendas por decidir",
+      "totalityReturnBlocked": "{code}, enmienda a la totalidad de devolución, está aprobada: el texto se devuelve y no hay votación final. Reábrela si se aprobó por error."
     },
     "finalVote": {
       "title": "Votación final del texto",
@@ -2241,7 +2338,15 @@
       "undecided": "Queda 1 enmienda por decidir | Quedan {count} enmiendas por decidir",
       "conflictsTitle": "Las enmiendas aprobadas no se pueden aplicar juntas",
       "conflictsHint": "Reabre o vuelve a decidir alguna de ellas antes de la votación final.",
-      "submit": "Registrar votación final"
+      "submit": "Registrar votación final",
+      "confirmTitle": "Comprueba el resultado antes de registrarlo",
+      "confirmDescription": "La votación final cierra las enmiendas del documento. Si hay un error, la Mesa tendrá que anularla.",
+      "confirm": "Confirmar y registrar",
+      "annul": "Anular votación final",
+      "annulTitle": "Anular la votación final",
+      "annulDescription": "La votación queda en el historial, pero el documento vuelve a estar pendiente de votación final y se descarta el texto consolidado. Las enmiendas se pueden volver a decidir.",
+      "annulNote": "Motivo",
+      "annulSubmit": "Anular votación"
     },
     "enums": {
       "amendmentKind": {
@@ -2328,7 +2433,9 @@
       "blank": "En blanco",
       "invalid": "Nulos",
       "majority": "Mayoría"
-    }
+    },
+    "stale": "Mostrando los últimos datos recibidos",
+    "loadFailed": "No se han podido cargar los datos"
   },
   "documents": {
     "title": "Documentos",

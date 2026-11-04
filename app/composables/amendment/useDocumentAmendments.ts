@@ -7,6 +7,7 @@ import type {
 } from "~~/shared/types/api";
 import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
 import { isDocumentLiveBatch } from "../document/useDocument";
+import { keepLastGoodData, useStaleDataNotice } from "../fetch/lastGoodData";
 import { useAssemblyLive } from "../live/useAssemblyLive";
 import {
   amendmentBlockMarkers,
@@ -55,15 +56,19 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     return `/api/assemblies/${encodeURIComponent(assembly)}/documents/${encodeURIComponent(document)}/amendments`;
   });
 
-  const { data, status, error, refresh } =
-    useAsyncData<DocumentAmendmentsDto | null>(
-      computed(() => `document-amendments:${url.value ?? "none"}`),
-      () =>
-        url.value
-          ? api.get<DocumentAmendmentsDto>(url.value)
-          : Promise.resolve(null),
-      { default: () => null },
-    );
+  const amendmentsFetch = useAsyncData<DocumentAmendmentsDto | null>(
+    computed(() => `document-amendments:${url.value ?? "none"}`),
+    () =>
+      url.value
+        ? api.get<DocumentAmendmentsDto>(url.value)
+        : Promise.resolve(null),
+    { default: () => null },
+  );
+  const { status, error, refresh } = amendmentsFetch;
+  // A failed poll keeps the list (and the composer or detail open on it);
+  // switching documents forgets it.
+  const { data, stale } = keepLastGoodData(amendmentsFetch, { resetOn: url });
+  useStaleDataNotice(stale);
 
   const pending = computed(() => status.value === "pending");
 
@@ -167,6 +172,7 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
 
   return {
     data,
+    stale,
     status,
     pending,
     error,

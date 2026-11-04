@@ -9,6 +9,11 @@ import { useDocumentAmendments } from "./useDocumentAmendments";
  * assembly hub: the hub's assembly, the document of the `[document]` route
  * param (useDocument), its frozen base text and its amendments. Everything
  * stays fresh through the hub's single live stream.
+ *
+ * A failed refresh keeps the last good assembly and document (the hub and
+ * useDocument both keep them), so `!document || !assembly` only holds
+ * before the first load or when the document is gone: a composer or dialog
+ * open on the page is never unmounted by a network blip.
  */
 export function useDocumentWorkspace() {
   const route = useRoute();
@@ -21,6 +26,7 @@ export function useDocumentWorkspace() {
     document,
     pending: documentPending,
     error: documentError,
+    stale: documentStale,
     refresh: refreshDocument,
   } = useDocument(assemblyParam, documentParam);
 
@@ -51,8 +57,11 @@ export function useDocumentWorkspace() {
     return hub.sectionPath(page ? `${path}/${page}` : path);
   }
 
+  /** Only the first load: a refresh keeps showing the current document. */
   const pending = computed(() => documentPending.value && !document.value);
   const errorStatusCode = computed(() => errorStatus(documentError.value));
+  /** The last refresh of the assembly or the document failed. */
+  const stale = computed(() => hub.stale.value || documentStale.value);
 
   async function refreshAll(): Promise<void> {
     await Promise.all([refreshDocument(), amendments.refresh()]);
@@ -71,6 +80,7 @@ export function useDocumentWorkspace() {
     pending,
     error: documentError,
     errorStatusCode,
+    stale,
     refreshDocument,
     refreshAll,
   };

@@ -1,5 +1,6 @@
 import { defineEventHandler } from "h3";
 import {
+  assertFileReplaceable,
   attachDocumentFile,
   PDF_MAX_BYTES,
   readUploadedFile,
@@ -13,6 +14,7 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
   const ctx = await resolveDocumentRoute(event);
   // Refuse before reading a large body the actor may not upload.
   requireDocumentEditor(ctx.actor, ctx.document);
+  assertFileReplaceable(ctx.document);
   const file = await readUploadedFile(
     event,
     PDF_MAX_BYTES,

@@ -6,6 +6,7 @@
 import type {
   AgendaItemDto,
   AmendmentDto,
+  ApprovalWarnings,
   DocumentSummaryDto,
   MemberRef,
   RelationDto,
@@ -77,6 +78,47 @@ export function isSessionOpen(amendment: AmendmentDto): boolean {
 /** Late (or manually reviewed) and still waiting for an admission decision. */
 export function isSessionPendingAdmission(amendment: AmendmentDto): boolean {
   return amendment.status === "submitted" && amendment.admission === "pending";
+}
+
+export type SessionAdmissionDecision = "admitted" | "inadmissible";
+
+/**
+ * Whether the server accepts `decision` for the amendment (mirrors the
+ * admission endpoint): any undecided amendment can be declared inadmissible,
+ * on time or late; admitting covers late ones still pending and re-admits
+ * those declared inadmissible.
+ */
+export function isSessionAdmissionEligible(
+  amendment: AmendmentDto,
+  decision: SessionAdmissionDecision,
+): boolean {
+  if (decision === "inadmissible") return amendment.status === "submitted";
+  return (
+    (amendment.status === "submitted" && amendment.admission !== "admitted") ||
+    amendment.status === "inadmissible"
+  );
+}
+
+/**
+ * Amendments the admission dialog lists for `decision`, in text order: those
+ * pending admission plus the ones it was opened for (an on-time amendment to
+ * declare inadmissible, an inadmissible one to re-admit), keeping only those
+ * the server would accept. Old inadmissions and on-time amendments are never
+ * swept in by a bulk action.
+ */
+export function sessionAdmissionCandidates(
+  list: AmendmentDto[],
+  decision: SessionAdmissionDecision,
+  requested: string[] = [],
+): AmendmentDto[] {
+  const asked = new Set(requested);
+  return sortSessionAmendments(
+    list.filter(
+      (amendment) =>
+        (isSessionPendingAdmission(amendment) || asked.has(amendment.id)) &&
+        isSessionAdmissionEligible(amendment, decision),
+    ),
+  );
 }
 
 /** A transactional that still lacks the acceptance of some party. */
@@ -197,11 +239,6 @@ export function sessionQueueOrder(
 
 // Lapse suggestions ----------------------------------------------------------
 
-export interface SessionApprovalWarnings {
-  overlapsWithApproved: string[];
-  incompatible: string[];
-}
-
 export interface SessionLapseOffer {
   /** Undecided amendments the Mesa may want to mark as lapsed. */
   lapse: string[];
@@ -219,6 +256,8 @@ function unique(ids: string[]): string[] {
  *   as incompatible, duplicate, or subsumed by it, become lapse candidates;
  *   approved ones that hard-overlap it are reported as collisions (the final
  *   consolidation would refuse them).
+ * - an approved totality return: the text goes back to its proponent, so
+ *   every other undecided amendment is left without object.
  * - rejected: undecided amendments that depend on it, or are a consequence of
  *   it, become lapse candidates.
  * The server's `warnings` are merged in. A transactional's own sources are
@@ -228,12 +267,21 @@ export function sessionLapseOffer(
   target: AmendmentDto,
   list: AmendmentDto[],
   relations: RelationDto[],
-  warnings: SessionApprovalWarnings | null = null,
+  warnings: ApprovalWarnings | null = null,
 ): SessionLapseOffer {
   const byId = new Map(list.map((amendment) => [amendment.id, amendment]));
   const excluded = new Set([target.id, ...target.sourceIds]);
   const undecided = (id: string) =>
     !excluded.has(id) && byId.get(id)?.status === "submitted";
+
+  if (target.status === "approved" && target.kind === "totality_return") {
+    return {
+      lapse: sortSessionAmendments(list)
+        .map((amendment) => amendment.id)
+        .filter(undecided),
+      collisions: [],
+    };
+  }
 
   if (target.status === "rejected") {
     const dependants = relations
@@ -484,6 +532,35 @@ export function sessionTransactionalSeed(
   };
 }
 
+/** Same ids, in any order and ignoring repeats. */
+export function sessionSameIds(a: string[], b: string[]): boolean {
+  const left = new Set(a);
+  const right = new Set(b);
+  return left.size === right.size && [...left].every((id) => right.has(id));
+}
+
+function blockContent(block: Block): string {
+  return JSON.stringify([
+    block.type,
+    block.text,
+    block.level ?? null,
+    block.list ?? null,
+    block.marks,
+  ]);
+}
+
+/**
+ * Whether two block lists hold the same text and formatting. Ids are left
+ * out: the editor may give a block a new id without changing its content.
+ * Used to tell whether the Mesa has edited a transactional draft.
+ */
+export function sessionSameBlocks(a: Block[], b: Block[]): boolean {
+  return (
+    a.length === b.length &&
+    a.every((block, index) => blockContent(block) === blockContent(b[index]!))
+  );
+}
+
 export interface SessionParty {
   member: MemberRef;
   role: AcceptanceRole;
@@ -574,9 +651,37 @@ export function isSessionVoteReady(
   return sessionVoteCast(vote) > 0 && !isSessionVoteBlocked(outcome);
 }
 
-/** Counts without empty fields, so the request carries what was typed. */
+/**
+ * Whether the final vote on a text can be recorded. Assent (minutes, texts
+ * nobody opposes) carries no counts and approves; any other method needs a
+ * count the server would accept.
+ */
+export function isSessionFinalVoteReady(
+  vote: VoteInput,
+  outcome: VoteOutcome,
+): boolean {
+  return vote.method === "assent" || isSessionVoteReady(vote, outcome);
+}
+
+/** The result a final vote will store: assent always approves. */
+export function sessionFinalVoteResult(
+  vote: VoteInput,
+  outcome: VoteOutcome,
+): VoteOutcome["result"] {
+  return vote.method === "assent" ? "approved" : outcome.result;
+}
+
+/**
+ * Counts without empty fields, so the request carries what was typed. Assent
+ * has no counts, present members or majority: only the method and the note.
+ */
 export function sessionCleanVote(vote: VoteInput): VoteInput {
   const clean: VoteInput = { method: vote.method };
+  if (vote.method === "assent") {
+    const note = vote.note?.trim();
+    if (note) clean.note = note;
+    return clean;
+  }
   for (const key of [
     "inFavor",
     "against",

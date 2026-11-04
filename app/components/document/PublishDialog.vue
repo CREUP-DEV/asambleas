@@ -8,13 +8,20 @@ import { formatDateTime, toDate } from "~/utils/format";
  * "Publicar" (Secretaría publishes it and freezes the text), with a
  * checklist of what will happen and what is missing. Blocking items disable
  * the confirm button. The parent performs the request on `confirm`.
+ *
+ * Publishing again a withdrawn or postponed document (`publishedAt` set)
+ * keeps its base text, reference and amendments; the copy says so and the
+ * text check counts the frozen base instead of the working draft.
  */
 const props = withDefaults(
   defineProps<{
     mode: "submit" | "publish";
     document: DocumentDto;
     assembly: AssemblyDto;
-    /** Blocks of the draft as it will be saved (structured documents). */
+    /**
+     * Blocks of the draft as it will be saved (structured documents). Ignored
+     * once the text is frozen: the base version is counted instead.
+     */
     blockCount: number;
     /** The text has changes that will be saved first. */
     textDirty?: boolean;
@@ -65,12 +72,16 @@ function milestone(key: string): string | null {
 
 const isFile = computed(() => props.document.format === "file");
 
-function sameInstant(a: string | null, b: string | null): boolean {
-  const left = toDate(a);
-  const right = toDate(b);
-  if (!left || !right) return !left && !right;
-  return left.getTime() === right.getTime();
-}
+/** Publishing again a document that was already published. */
+const republish = computed(
+  () => props.mode === "publish" && props.document.publishedAt !== null,
+);
+
+const textBlocks = computed(() =>
+  props.document.baseVersion
+    ? props.document.baseVersion.blocks.length
+    : props.blockCount,
+);
 
 const contentCheck = computed<Check>(() => {
   if (isFile.value) {
@@ -88,14 +99,14 @@ const contentCheck = computed<Check>(() => {
           title: t("document.publish.checks.fileMissing"),
         };
   }
-  return props.blockCount > 0
+  return textBlocks.value > 0
     ? {
         key: "content",
         state: "ok",
         title: t(
           "document.publish.checks.textReady",
-          { count: props.blockCount },
-          props.blockCount,
+          { count: textBlocks.value },
+          textBlocks.value,
         ),
       }
     : {
@@ -142,8 +153,8 @@ const windowCheck = computed<Check>(() => {
   }
   const { opensAt, closesAt } = props.document.window;
   const override =
-    !sameInstant(opensAt, milestone("amendments_open")) ||
-    !sameInstant(closesAt, milestone("amendments_close"));
+    props.document.amendmentsOpenAt !== null ||
+    props.document.amendmentsCloseAt !== null;
   const source = override
     ? t("document.publish.checks.windowOverride")
     : t("document.publish.checks.windowCalendar");
@@ -215,7 +226,7 @@ const referenceCheck = computed<Check>(() => {
 const checks = computed<Check[]>(() => {
   const list: Check[] = [contentCheck.value];
 
-  if (!isFile.value && props.textDirty) {
+  if (!isFile.value && props.textDirty && !props.document.baseVersion) {
     list.push({
       key: "unsaved",
       state: "info",
@@ -266,23 +277,32 @@ const blocked = computed(() =>
   checks.value.some((check) => check.state === "error"),
 );
 
-const copy = computed(() =>
-  props.mode === "submit"
-    ? {
-        title: t("document.submit.title"),
-        description: t("document.submit.description"),
-        confirm: t("document.submit.confirm"),
-        icon: "i-lucide-send",
-      }
-    : {
-        title: t("document.publish.title"),
-        description: isFile.value
-          ? t("document.publish.descriptionFile")
-          : t("document.publish.description"),
-        confirm: t("document.publish.confirm"),
-        icon: "i-lucide-megaphone",
-      },
-);
+const copy = computed(() => {
+  if (props.mode === "submit") {
+    return {
+      title: t("document.submit.title"),
+      description: t("document.submit.description"),
+      confirm: t("document.submit.confirm"),
+      icon: "i-lucide-send",
+    };
+  }
+  if (republish.value) {
+    return {
+      title: t("document.republish.title"),
+      description: t("document.republish.description"),
+      confirm: t("document.republish.confirm"),
+      icon: "i-lucide-rotate-ccw",
+    };
+  }
+  return {
+    title: t("document.publish.title"),
+    description: isFile.value
+      ? t("document.publish.descriptionFile")
+      : t("document.publish.description"),
+    confirm: t("document.publish.confirm"),
+    icon: "i-lucide-megaphone",
+  };
+});
 </script>
 
 <template>

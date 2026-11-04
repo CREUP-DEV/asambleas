@@ -28,7 +28,7 @@ const api = useApi();
 
 const routeParam = () => String(route.params.assembly ?? "");
 
-const { data, error, pending, refresh } = await useFetch<AssemblyDto>(
+const { data, error, status, pending, refresh } = await useFetch<AssemblyDto>(
   () => `/api/assemblies/${encodeURIComponent(routeParam())}`,
   { key: computed(() => `assembly-${routeParam()}`) },
 );
@@ -50,8 +50,12 @@ watch(error, (value) => {
   if (value && errorStatus(value) === 404) showError(notFound());
 });
 
+// A failed refresh keeps the last good assembly on screen (the context
+// handles it): only the first load can end in the error state below.
 const current = provideCurrentAssembly({
   data,
+  status,
+  error,
   pending,
   refresh: async () => {
     await refresh();
@@ -67,7 +71,17 @@ const current = provideCurrentAssembly({
     void navigateTo(localePath("/asambleas"));
   },
 });
-const { assembly, sectionPath, live } = current;
+const { assembly, sectionPath, live, stale } = current;
+
+const retrying = ref(false);
+async function retryRefresh() {
+  retrying.value = true;
+  try {
+    await refresh();
+  } finally {
+    retrying.value = false;
+  }
+}
 
 const isPrintView = computed(() => Boolean(route.meta.print));
 
@@ -274,8 +288,23 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
         <template #trailing>
           <template v-if="assembly">
             <CommonStatusBadge kind="assembly" :value="assembly.status" />
+            <UTooltip v-if="stale" :text="t('assembly.hub.staleDescription')">
+              <UButton
+                color="warning"
+                variant="soft"
+                size="xs"
+                icon="i-lucide-refresh-ccw"
+                :loading="retrying"
+                :aria-label="t('assembly.hub.staleDescription')"
+                @click="retryRefresh"
+              >
+                <span class="hidden sm:inline">{{
+                  t("assembly.hub.stale")
+                }}</span>
+              </UButton>
+            </UTooltip>
             <UTooltip
-              v-if="live.polling.value"
+              v-else-if="live.polling.value"
               :text="t('assembly.hub.livePolling')"
             >
               <UBadge
@@ -380,7 +409,7 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
         <USkeleton class="h-72 w-full" />
       </div>
 
-      <!-- Error -->
+      <!-- Error (only when it never loaded: later failures keep the data) -->
       <UAlert
         v-else-if="!assembly"
         color="error"

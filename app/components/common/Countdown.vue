@@ -3,8 +3,9 @@ import type { DateInput } from "~/utils/format";
 
 /**
  * Relative time to (or since) a date: "dentro de 3 días", "hace 2 horas".
- * Updates every minute on the minute, announces changes politely, and shows
- * the absolute date (Europe/Madrid) as a tooltip and in `datetime`.
+ * Follows the app's shared clock (useAppNow, every minute on the minute),
+ * announces changes politely, and shows the absolute date (Europe/Madrid)
+ * as a tooltip and in `datetime`.
  *
  * `urgent` turns on within `urgentHours` of the date; `expired` is emitted
  * once when the date passes while the component is mounted.
@@ -25,13 +26,9 @@ const emit = defineEmits<{ expired: [] }>();
 
 const { locale } = useI18n();
 
-// SSR and hydration share the render time so the text matches; the client
-// switches to its own clock once mounted.
-const renderedAt = useState<number>("countdown-rendered-at", () => Date.now());
-const nuxtApp = useNuxtApp();
-const now = ref(
-  import.meta.client && !nuxtApp.isHydrating ? Date.now() : renderedAt.value,
-);
+// SSR and hydration share the render time so the text matches; the shared
+// clock moves on once the app is hydrated.
+const now = useAppNow();
 
 const target = computed(() => toDate(props.to));
 const iso = computed(() => target.value?.toISOString());
@@ -52,20 +49,9 @@ const urgent = computed(
     remainingMs.value <= props.urgentHours * 3_600_000,
 );
 
-let timer: ReturnType<typeof setTimeout> | undefined;
-
-function tick(): void {
-  now.value = Date.now();
-  // Next update right after the next minute boundary.
-  timer = setTimeout(tick, 60_000 - (now.value % 60_000) + 50);
-}
-
 watch(past, (isPast, wasPast) => {
   if (isPast && wasPast === false) emit("expired");
 });
-
-onMounted(tick);
-onBeforeUnmount(() => clearTimeout(timer));
 </script>
 
 <template>

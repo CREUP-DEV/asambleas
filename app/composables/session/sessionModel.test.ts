@@ -5,11 +5,21 @@ import { diffPassage } from "~~/shared/utils/content/diff";
 import { validateOps } from "~~/shared/utils/content/ops";
 import {
   buildSessionQueue,
+  isSessionAdmissionEligible,
+  isSessionFinalVoteReady,
+  isSessionVoteReady,
+  sessionAdmissionCandidates,
   sessionAssentPlan,
+  sessionCleanVote,
   sessionConsolidatedPreview,
+  sessionEmptyVote,
+  sessionFinalVoteResult,
   sessionLapseOffer,
+  sessionSameBlocks,
+  sessionSameIds,
   sessionTransactionalSeed,
   sessionTransactionalParties,
+  sessionVoteOutcome,
   buildSessionAgendaRows,
   sessionErrorData,
   sessionQueueOrder,
@@ -248,6 +258,121 @@ describe("session model", () => {
     expect(
       sessionErrorData({ data: { statusCode: 409, data: { tie: true } } }),
     ).toEqual({ tie: true });
+    expect(
+      sessionErrorData({
+        data: { statusCode: 409, data: { totalityReturn: "t1" } },
+      }),
+    ).toEqual({ totalityReturn: "t1" });
     expect(sessionErrorData(new Error("x"))).toBe(null);
+  });
+
+  it("decides who can be admitted or declared inadmissible", () => {
+    const onTime = a1;
+    const late = a4;
+    const inadmissible = am("i1", {
+      status: "inadmissible",
+      admission: "inadmissible",
+      late: true,
+      positionKey: 3,
+    });
+    const approved = am("p1", { status: "approved", positionKey: 4 });
+
+    // Mirrors the server: inadmission for any undecided amendment, admission
+    // for pending ones and to re-admit inadmissible ones.
+    expect(isSessionAdmissionEligible(onTime, "inadmissible")).toBe(true);
+    expect(isSessionAdmissionEligible(late, "inadmissible")).toBe(true);
+    expect(isSessionAdmissionEligible(inadmissible, "inadmissible")).toBe(
+      false,
+    );
+    expect(isSessionAdmissionEligible(approved, "inadmissible")).toBe(false);
+    expect(isSessionAdmissionEligible(onTime, "admitted")).toBe(false);
+    expect(isSessionAdmissionEligible(late, "admitted")).toBe(true);
+    expect(isSessionAdmissionEligible(inadmissible, "admitted")).toBe(true);
+    expect(isSessionAdmissionEligible(approved, "admitted")).toBe(false);
+
+    const list = [onTime, late, inadmissible, approved, a5];
+    const ids = (decision: "admitted" | "inadmissible", requested?: string[]) =>
+      sessionAdmissionCandidates(list, decision, requested).map((x) => x.id);
+
+    // Bulk actions only reach the amendments pending admission.
+    expect(ids("admitted")).toEqual(["a4"]);
+    expect(ids("inadmissible")).toEqual(["a4"]);
+    // From a card: re-admit an inadmissible one, or inadmit an on-time one.
+    expect(ids("admitted", ["i1"])).toEqual(["a4", "i1"]);
+    expect(ids("inadmissible", ["a1"])).toEqual(["a1", "a4"]);
+    // Requested ids the server would refuse are left out.
+    expect(ids("admitted", ["a1", "p1"])).toEqual(["a4"]);
+    expect(ids("inadmissible", ["i1"])).toEqual(["a4"]);
+  });
+
+  it("offers to lapse everything after a totality return", () => {
+    const ret = am("t1", {
+      kind: "totality_return",
+      status: "approved",
+      positionKey: 0,
+    });
+    const decided = am("w1", { status: "withdrawn", positionKey: 5 });
+    const offer = sessionLapseOffer(ret, [ret, a2, a1, a4, decided, a5], []);
+    expect(offer.lapse).toEqual(["a1", "a2", "a4"]);
+    expect(offer.collisions).toEqual([]);
+    // A rejected return offers nothing.
+    expect(
+      sessionLapseOffer({ ...ret, status: "rejected" }, [ret, a1], []).lapse,
+    ).toEqual([]);
+  });
+
+  it("records a final vote by assent", () => {
+    const settings = {
+      denominator: "valid_votes",
+      tieRule: "repeat",
+    } as const;
+    const empty = sessionEmptyVote("simple");
+    const emptyOutcome = sessionVoteOutcome(empty, settings);
+    expect(isSessionVoteReady(empty, emptyOutcome)).toBe(false);
+    expect(isSessionFinalVoteReady(empty, emptyOutcome)).toBe(false);
+
+    const assent = { ...empty, method: "assent" as const, note: "  Actas " };
+    const assentOutcome = sessionVoteOutcome(assent, settings);
+    expect(isSessionFinalVoteReady(assent, assentOutcome)).toBe(true);
+    expect(sessionFinalVoteResult(assent, assentOutcome)).toBe("approved");
+    // Only the method and the note travel: no counts, present or majority.
+    expect(sessionCleanVote(assent)).toEqual({
+      method: "assent",
+      note: "Actas",
+    });
+
+    const hands = { ...empty, inFavor: 30, against: 12 };
+    const handsOutcome = sessionVoteOutcome(hands, settings);
+    expect(isSessionFinalVoteReady(hands, handsOutcome)).toBe(true);
+    expect(sessionFinalVoteResult(hands, handsOutcome)).toBe("approved");
+    expect(sessionCleanVote(hands)).toMatchObject({
+      method: "show_of_hands",
+      inFavor: 30,
+      against: 12,
+      majority: "simple",
+    });
+  });
+
+  it("compares drafts and source sets", () => {
+    expect(sessionSameIds(["a", "b"], ["b", "a", "a"])).toBe(true);
+    expect(sessionSameIds(["a"], ["a", "b"])).toBe(false);
+    expect(sessionSameIds([], [])).toBe(true);
+
+    const renamed = base.map((block, i) => ({ ...block, id: `n${i}` }));
+    expect(sessionSameBlocks(base, renamed)).toBe(true);
+    expect(
+      sessionSameBlocks(base, [
+        base[0]!,
+        { ...base[1]!, text: "La casa es pequeña." },
+        base[2]!,
+      ]),
+    ).toBe(false);
+    expect(sessionSameBlocks(base, base.slice(0, 2))).toBe(false);
+    expect(
+      sessionSameBlocks(
+        [base[0]!],
+        [{ ...base[0]!, marks: [{ type: "bold", from: 0, to: 2 }] }],
+      ),
+    ).toBe(false);
   });
 });

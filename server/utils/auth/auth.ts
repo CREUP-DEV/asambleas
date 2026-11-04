@@ -28,8 +28,26 @@ function getTrustedOrigins() {
 
 const isProd = process.env.NODE_ENV === "production";
 
+/**
+ * Self-service account endpoints that better-auth exposes by default. Names
+ * and emails come from Google and the intranet role sync, and the history
+ * shows users.name as the actor, so nobody may rename, re-email or delete
+ * their own account. The app only uses sign-in, the OAuth callback, sign-out
+ * and get-session. better-auth compares these exactly against the path under
+ * /api/auth, so each one is listed on its own.
+ */
+const DISABLED_AUTH_PATHS = [
+  "/update-user",
+  "/change-email",
+  "/change-password",
+  "/delete-user",
+  "/delete-user/callback",
+  "/update-session",
+];
+
 export const auth = betterAuth({
   baseURL: getAuthBaseUrl(),
+  disabledPaths: DISABLED_AUTH_PATHS,
   secret: requireConfigString(process.env.APP_SECRET, "APP_SECRET"),
   database: drizzleAdapter(db, {
     provider: "pg",

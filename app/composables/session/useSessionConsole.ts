@@ -2,29 +2,34 @@ import type { InjectionKey, MaybeRefOrGetter, Ref } from "vue";
 import type {
   AdmissionBody,
   AgendaDto,
+  AmendmentAdmissionDto,
   AmendmentDto,
+  AmendmentOutcomeDto,
+  ApprovalWarnings,
   AssemblyDto,
-  DecisionDto,
   DocumentAmendmentsDto,
   DocumentDto,
+  FinalVoteAnnulBody,
   FinalVoteBody,
   LiveEventDto,
   LiveStateBody,
   LiveStateDto,
   OutcomeAction,
+  PositionBody,
   RelationBody,
   RelationDto,
   TransactionalBody,
-  VoteDto,
   VoteInput,
 } from "~~/shared/types/api";
 import type { ConsolidationConflict } from "~~/shared/types/content";
 import {
   DEFAULT_ASSEMBLY_SETTINGS,
   type AssemblySettings,
+  type ProponentPosition,
 } from "~~/shared/constants/domain";
 import { useApi } from "../api/useApi";
 import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
+import { keepLastGoodData, useStaleDataNotice } from "../fetch/lastGoodData";
 import { useAssemblyLive } from "../live/useAssemblyLive";
 import {
   buildSessionAgendaRows,
@@ -36,22 +41,8 @@ import {
   sessionErrorIds,
   sessionLapseOffer,
   sessionQueueOrder,
-  type SessionApprovalWarnings,
+  type SessionAdmissionDecision,
 } from "./sessionModel";
-
-/** Response of POST .../amendments/[amendment]/outcome. */
-export interface SessionOutcomeResult {
-  amendment: AmendmentDto;
-  vote: VoteDto | null;
-  warnings: SessionApprovalWarnings | null;
-}
-
-/** Response of POST .../amendments/admission. */
-export interface SessionAdmissionResult {
-  decision: DecisionDto;
-  admission: "admitted" | "inadmissible";
-  amendmentIds: string[];
-}
 
 export type SessionFinalVoteResult =
   | { ok: true; document: DocumentDto }
@@ -60,6 +51,8 @@ export type SessionFinalVoteResult =
       conflicts: ConsolidationConflict[];
       undecided: string[];
       tie: boolean;
+      /** An approved totality return: the text goes back, no final vote. */
+      totalityReturn: string | null;
     };
 
 export interface SessionLapseDialog {
@@ -103,14 +96,19 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
 
   // Data ----------------------------------------------------------------------
 
+  // Every fetch below keeps its last good data when a refresh fails (venue
+  // Wi-Fi, a server restart), so the console never empties mid-session.
   const standalone = hub
     ? null
     : useFetch<AssemblyDto>(() => assemblyUrl.value, {
         key: computed(() => `assembly-${param.value}`),
       });
+  const standaloneAssembly = standalone
+    ? keepLastGoodData(standalone, { resetOn: param })
+    : null;
 
   const assembly = computed<AssemblyDto | null>(
-    () => (hub ? hub.assembly.value : standalone?.data.value) ?? null,
+    () => (hub ? hub.assembly.value : standaloneAssembly?.data.value) ?? null,
   );
   const assemblyPending = computed(() =>
     hub ? hub.pending.value : standalone?.status.value === "pending",
@@ -118,24 +116,27 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   const refreshAssembly = (): Promise<void> =>
     hub ? hub.refresh() : (standalone?.refresh() ?? Promise.resolve());
 
-  const {
-    data: agenda,
-    status: agendaStatus,
-    error: agendaError,
-    refresh: refreshAgenda,
-  } = useAsyncData(
+  const agendaFetch = useAsyncData(
     () => `session-agenda-${param.value}`,
     () => api.get<AgendaDto>(`${assemblyUrl.value}/agenda`),
   );
-
   const {
-    data: liveState,
-    status: liveStatus,
-    refresh: refreshLive,
-  } = useAsyncData(
+    status: agendaStatus,
+    error: agendaError,
+    refresh: refreshAgenda,
+  } = agendaFetch;
+  const { data: agenda, stale: agendaStale } = keepLastGoodData(agendaFetch, {
+    resetOn: param,
+  });
+
+  const liveFetch = useAsyncData(
     () => `session-live-${param.value}`,
     () => api.get<LiveStateDto>(`${assemblyUrl.value}/live-state`),
   );
+  const { status: liveStatus, refresh: refreshLive } = liveFetch;
+  const { data: liveState, stale: liveStale } = keepLastGoodData(liveFetch, {
+    resetOn: param,
+  });
 
   const settings = computed<AssemblySettings>(() => ({
     ...DEFAULT_ASSEMBLY_SETTINGS,
@@ -183,30 +184,52 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       : null,
   );
 
-  const {
-    data: document,
-    status: documentStatus,
-    error: documentError,
-    refresh: refreshDocument,
-  } = useAsyncData(
+  const documentFetch = useAsyncData(
     () => `session-document-${documentId.value ?? "none"}`,
     () =>
       documentUrl.value
         ? api.get<DocumentDto>(documentUrl.value)
         : Promise.resolve(null),
   );
-
   const {
-    data: amendmentsDto,
-    status: amendmentsStatus,
-    error: amendmentsError,
-    refresh: refreshAmendments,
-  } = useAsyncData(
+    status: documentStatus,
+    error: documentError,
+    refresh: refreshDocument,
+  } = documentFetch;
+  // Switching documents forgets the kept one: it must never stand in for
+  // the document now under debate.
+  const { data: document, stale: documentStale } = keepLastGoodData(
+    documentFetch,
+    { resetOn: documentId },
+  );
+
+  const amendmentsFetch = useAsyncData(
     () => `session-amendments-${documentId.value ?? "none"}`,
     () =>
       documentUrl.value
         ? api.get<DocumentAmendmentsDto>(`${documentUrl.value}/amendments`)
         : Promise.resolve(null),
+  );
+  const {
+    status: amendmentsStatus,
+    error: amendmentsError,
+    refresh: refreshAmendments,
+  } = amendmentsFetch;
+  const { data: amendmentsDto, stale: amendmentsStale } = keepLastGoodData(
+    amendmentsFetch,
+    { resetOn: documentId },
+  );
+
+  // One shared "showing the last data received" toast (same id as the hub).
+  useStaleDataNotice(
+    computed(
+      () =>
+        agendaStale.value ||
+        liveStale.value ||
+        documentStale.value ||
+        amendmentsStale.value ||
+        Boolean(standaloneAssembly?.stale.value),
+    ),
   );
 
   const amendments = computed(() => amendmentsDto.value?.amendments ?? []);
@@ -436,6 +459,13 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     return setLive({ message: message?.trim() ? message.trim() : null });
   }
 
+  // Votes on the projection are the server's job: it points the live state at
+  // every vote it records (and at what was voted) and clears it when that
+  // vote is voided (amendment reopened, final vote annulled), recording a
+  // `live_changed` event that onLive picks up. The console never sends a
+  // voteId after a vote: a late request could put a voided result back on
+  // screen.
+
   // Dialogs ---------------------------------------------------------------------
 
   const voteDialog = reactive({
@@ -449,16 +479,25 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   const admissionDialog = reactive({
     open: false,
     ids: [] as string[],
-    decision: "admitted" as "admitted" | "inadmissible",
+    decision: "admitted" as SessionAdmissionDecision,
   });
   const composer = reactive({ open: false, sourceIds: [] as string[] });
   const finalVoteDialog = reactive({ open: false });
+  const finalVoteAnnulDialog = reactive({ open: false });
   const assentDialog = reactive({ open: false });
   const lapseDialog = reactive<SessionLapseDialog>({
     open: false,
     targetId: null,
     lapse: [],
     collisions: [],
+  });
+
+  // The document follows the live state, which another Mesa member can move.
+  // A document-level dialog left open would then record or annul the final
+  // vote of a document the Mesa did not open it for.
+  watch(documentId, () => {
+    finalVoteDialog.open = false;
+    finalVoteAnnulDialog.open = false;
   });
 
   const anyDialogOpen = computed(
@@ -468,6 +507,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       admissionDialog.open ||
       composer.open ||
       finalVoteDialog.open ||
+      finalVoteAnnulDialog.open ||
       assentDialog.open ||
       lapseDialog.open,
   );
@@ -482,9 +522,14 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     relationDialog.open = true;
   }
 
+  /**
+   * Opens the admission dialog: `ids` are preselected, and are listed even
+   * when they are not pending admission (an on-time amendment to declare
+   * inadmissible, an inadmissible one to re-admit).
+   */
   function openAdmission(
     ids: string[],
-    decision: "admitted" | "inadmissible",
+    decision: SessionAdmissionDecision,
   ): void {
     admissionDialog.ids = ids;
     admissionDialog.decision = decision;
@@ -513,11 +558,11 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     amendment: AmendmentDto,
     action: OutcomeAction,
     options: OutcomeOptions = {},
-  ): Promise<SessionOutcomeResult | null> {
+  ): Promise<AmendmentOutcomeDto | null> {
     const fresh = byId.value.get(amendment.id) ?? amendment;
     try {
       const result = await track(amendment.id, () =>
-        api.send<SessionOutcomeResult>(
+        api.send<AmendmentOutcomeDto>(
           documentApi(
             `/amendments/${encodeURIComponent(amendment.id)}/outcome`,
           ),
@@ -531,16 +576,6 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         action.action === "reopen"
       ) {
         void refreshAmendments();
-      }
-      if (result.vote) {
-        void setLive(
-          {
-            documentId: result.amendment.documentId,
-            amendmentId: result.amendment.id,
-            voteId: result.vote.id,
-          },
-          { silent: true },
-        );
       }
 
       if (options.toast !== false) {
@@ -595,7 +630,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
 
   function offerLapses(
     target: AmendmentDto,
-    warnings: SessionApprovalWarnings | null,
+    warnings: ApprovalWarnings | null,
   ): void {
     const offer = sessionLapseOffer(
       target,
@@ -660,7 +695,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
 
   /** Approves by assent every amendment of the plan, one after another. */
   async function bulkAssent(ids: string[]): Promise<number> {
-    const results: SessionOutcomeResult[] = [];
+    const results: AmendmentOutcomeDto[] = [];
     await track("bulk-assent", async () => {
       for (const id of ids) {
         const amendment = byId.value.get(id);
@@ -703,18 +738,60 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     return done;
   }
 
+  // Proponent position ------------------------------------------------------------
+
+  /**
+   * Records the position the proponent states in the room (accept, reject,
+   * transact). The comment already stored is kept: the console only changes
+   * the position itself.
+   */
+  async function setPosition(
+    amendment: AmendmentDto,
+    position: ProponentPosition,
+  ): Promise<AmendmentDto | null> {
+    const fresh = byId.value.get(amendment.id) ?? amendment;
+    const body: PositionBody = {
+      position,
+      comment: fresh.position?.comment ?? null,
+    };
+    try {
+      const updated = await track(amendment.id, () =>
+        api.send<AmendmentDto>(
+          documentApi(
+            `/amendments/${encodeURIComponent(amendment.id)}/position`,
+          ),
+          { method: "PUT", body },
+        ),
+      );
+      upsertAmendment(updated);
+      toast.add({
+        id: `session-position-${updated.id}`,
+        title: t("amendment.position.saved"),
+        color: "success",
+        icon: "i-lucide-check",
+      });
+      return updated;
+    } catch (error) {
+      api.notifyError(error, "amendment.position.saveFailed");
+      onConflict(error);
+      return null;
+    }
+  }
+
   // Admission ---------------------------------------------------------------------
 
   async function decideAdmission(body: AdmissionBody): Promise<boolean> {
     try {
       const result = await track("admission", () =>
-        api.send<SessionAdmissionResult>(documentApi("/amendments/admission"), {
+        api.send<AmendmentAdmissionDto>(documentApi("/amendments/admission"), {
           body,
         }),
       );
       void refreshAmendments();
       const count = result.amendmentIds.length;
       const reversed = result.admission !== body.decision;
+      const opposite: SessionAdmissionDecision =
+        result.admission === "admitted" ? "inadmissible" : "admitted";
       toast.add({
         title: reversed
           ? t("session.toasts.admissionVoteFailed")
@@ -723,10 +800,19 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
             : t("session.toasts.inadmissible", { count }, count),
         color: reversed ? "warning" : "success",
         icon: reversed ? "i-lucide-triangle-alert" : "i-lucide-check",
+        // A mistaken decision is corrected with a new, recorded one.
+        actions: [
+          {
+            label: t("session.actions.undo"),
+            color: "neutral",
+            variant: "outline",
+            onClick: () => {
+              openAdmission(result.amendmentIds, opposite);
+            },
+          },
+        ],
       });
-      if (result.decision.vote) {
-        void setLive({ voteId: result.decision.vote.id }, { silent: true });
-      }
+      // A decision vote is put on the projection by the server.
       return true;
     } catch (error) {
       if (sessionErrorData(error)?.tie === true) {
@@ -858,16 +944,6 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       document.value = updated;
       void refreshAgenda();
       void refreshAmendments();
-      if (updated.finalVote) {
-        void setLive(
-          {
-            documentId: updated.id,
-            amendmentId: null,
-            voteId: updated.finalVote.id,
-          },
-          { silent: true },
-        );
-      }
       toast.add({
         title:
           updated.finalVote?.result === "approved"
@@ -884,11 +960,59 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         : [];
       const undecidedIds = sessionErrorIds(error, "undecided");
       const tie = data?.tie === true;
-      if (conflicts.length === 0 && undecidedIds.length === 0 && !tie) {
+      const totalityReturn =
+        typeof data?.totalityReturn === "string" ? data.totalityReturn : null;
+      if (
+        conflicts.length === 0 &&
+        undecidedIds.length === 0 &&
+        !tie &&
+        !totalityReturn
+      ) {
         api.notifyError(error, "session.errors.finalVote");
       }
       onConflict(error);
-      return { ok: false, conflicts, undecided: undecidedIds, tie };
+      return {
+        ok: false,
+        conflicts,
+        undecided: undecidedIds,
+        tie,
+        totalityReturn,
+      };
+    }
+  }
+
+  /**
+   * Annuls a wrongly recorded final vote (DELETE .../final-vote). The vote
+   * stays in the record; the document goes back to awaiting its final vote,
+   * loses the consolidated text and its amendments can be decided again.
+   */
+  async function annulFinalVote(note: string | null): Promise<boolean> {
+    const current = document.value;
+    if (!current) return false;
+    const body: FinalVoteAnnulBody = {
+      updatedAt: current.updatedAt,
+      note: note?.trim() ? note.trim() : null,
+    };
+    try {
+      const updated = await track("final-vote-annul", () =>
+        api.send<DocumentDto>(documentApi("/final-vote"), {
+          method: "DELETE",
+          body,
+        }),
+      );
+      document.value = updated;
+      void refreshAgenda();
+      void refreshAmendments();
+      toast.add({
+        title: t("session.toasts.finalAnnulled"),
+        color: "success",
+        icon: "i-lucide-rotate-ccw",
+      });
+      return true;
+    } catch (error) {
+      api.notifyError(error, "session.errors.annulFinalVote");
+      onConflict(error);
+      return false;
     }
   }
 
@@ -948,6 +1072,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     admissionDialog,
     composer,
     finalVoteDialog,
+    finalVoteAnnulDialog,
     assentDialog,
     lapseDialog,
     anyDialogOpen,
@@ -968,7 +1093,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     deleteRelation,
     createTransactional,
     recordAcceptance,
+    setPosition,
     finalVote,
+    annulFinalVote,
   };
 }
 

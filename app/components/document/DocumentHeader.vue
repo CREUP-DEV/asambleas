@@ -33,6 +33,8 @@ defineSlots<{
 }>();
 
 const { t } = useI18n();
+/** Shared client clock: SSR-consistent, ticks every minute. */
+const appNow = useAppNow();
 const localePath = useLocalePath();
 
 const assemblyPath = computed(() =>
@@ -62,7 +64,7 @@ const expiredTick = ref(0);
 const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
   void expiredTick.value;
   if (!amendableText.value || props.document.consolidated) return null;
-  const now = Date.now();
+  const now = appNow.value;
   if (opensAt.value && opensAt.value.getTime() > now) return "upcoming";
   if (!closesAt.value) return null;
   return closesAt.value.getTime() > now ? "open" : "closed";

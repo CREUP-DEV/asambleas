@@ -7,6 +7,8 @@ import { validateOps } from "~~/shared/utils/content/ops";
 import {
   isSessionDecidable,
   isSessionOpen,
+  sessionSameBlocks,
+  sessionSameIds,
   sessionTransactionalParties,
   sessionTransactionalSeed,
   type SessionTransactionalSeed,
@@ -18,8 +20,13 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * passage its sources touch, with the sources applied in order of
  * presentation (when two collide, the first that applies wins). The diff
  * against the base updates as the Mesa types. Once created (and submitted),
- * the answer of every party is recorded with the "accepted in the room"
- * switches.
+ * the answer of every party is recorded in the acceptance list.
+ *
+ * The text typed live is never thrown away silently: closing the panel
+ * (Escape, the overlay, the close button) keeps the draft, and reopening it
+ * for the same amendments resumes it. Changing the sources, resetting the
+ * text, cancelling, starting a transactional for other amendments or leaving
+ * the page all ask before discarding what was typed.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -35,10 +42,16 @@ const sourceIds = ref<string[]>([]);
 const edited = ref<Block[]>([]);
 const justification = ref("");
 const authorIds = ref<string[]>([]);
+/** The Mesa chose the authors by hand: a reseed keeps its choice. */
+const authorsTouched = ref(false);
 const createdId = ref<string | null>(null);
 const seed = shallowRef<SessionTransactionalSeed | null>(null);
 const editorKey = ref(0);
 const editor = useTemplateRef<{ flush: () => void }>("editor");
+/** Set when the Mesa discards the draft: the next opening starts afresh. */
+let discarded = false;
+/** The document the draft was started on: it only applies to that base. */
+let draftDocumentId: string | null = null;
 
 const eligible = computed(() =>
   session.amendments.value.filter(
@@ -81,6 +94,7 @@ const partyItems = computed(() =>
   })),
 );
 
+/** Restarts the text from the current sources (the editor is remounted). */
 function reseed(): void {
   seed.value = sessionTransactionalSeed(
     session.base.value,
@@ -95,24 +109,109 @@ function reseed(): void {
     marks: [...block.marks],
   }));
   editorKey.value += 1;
-  authorIds.value = parties.value
-    .filter((party) => party.role === "author")
-    .map((party) => party.member.id);
+  const partyIds = new Set(parties.value.map((party) => party.member.id));
+  authorIds.value = authorsTouched.value
+    ? authorIds.value.filter((id) => partyIds.has(id))
+    : parties.value
+        .filter((party) => party.role === "author")
+        .map((party) => party.member.id);
+}
+
+function startFresh(ids: string[]): void {
+  discarded = false;
+  draftDocumentId = session.documentId.value;
+  createdId.value = null;
+  justification.value = "";
+  authorsTouched.value = false;
+  sourceIds.value = [...ids];
+  reseed();
+}
+
+/** Whether the text differs from the seed. Flushes the editor first. */
+function textEdited(): boolean {
+  // The editor emits with a short delay: take what is on screen right now.
+  editor.value?.flush();
+  return (
+    seed.value !== null && !sessionSameBlocks(edited.value, seed.value.seed)
+  );
+}
+
+/** A draft not created yet that holds something the Mesa typed or chose. */
+function hasDraft(): boolean {
+  if (discarded || createdId.value || !seed.value) return false;
+  if (draftDocumentId !== session.documentId.value) return false;
+  return (
+    textEdited() || justification.value.trim() !== "" || authorsTouched.value
+  );
 }
 
 watch(open, (isOpen) => {
   if (!isOpen) return;
-  createdId.value = null;
-  justification.value = "";
-  sourceIds.value = [...session.composer.sourceIds];
-  reseed();
+  const requested = [...session.composer.sourceIds];
+  if (
+    !discarded &&
+    !createdId.value &&
+    seed.value &&
+    draftDocumentId === session.documentId.value
+  ) {
+    // Reopened for the same amendments: resume the draft as it was.
+    if (sessionSameIds(requested, sourceIds.value)) return;
+    // Opened for other amendments: keep the draft unless the Mesa drops it.
+    if (hasDraft() && !window.confirm(t("session.composer.replaceConfirm"))) {
+      return;
+    }
+  }
+  startFresh(requested);
 });
 
-watch(
-  () => sourceIds.value.join("|"),
-  () => {
-    if (open.value && !createdId.value) reseed();
-  },
+function onSourcesChange(value: string[] | null | undefined): void {
+  const next = [...(value ?? [])];
+  if (sessionSameIds(next, sourceIds.value)) {
+    sourceIds.value = next;
+    return;
+  }
+  // Cancelling leaves the selection as it was: the menu is controlled.
+  if (textEdited() && !window.confirm(t("session.composer.reseedConfirm"))) {
+    return;
+  }
+  sourceIds.value = next;
+  reseed();
+}
+
+function onAuthorsChange(value: string[] | null | undefined): void {
+  authorIds.value = [...(value ?? [])];
+  authorsTouched.value = true;
+}
+
+function resetText(): void {
+  if (textEdited() && !window.confirm(t("session.composer.resetConfirm"))) {
+    return;
+  }
+  reseed();
+}
+
+/** The footer button: discards the draft, after asking if there is one. */
+function cancel(close: () => void): void {
+  if (hasDraft()) {
+    if (!window.confirm(t("session.composer.discardConfirm"))) return;
+    discarded = true;
+  }
+  close();
+}
+
+onBeforeRouteLeave(() => {
+  if (!hasDraft()) return true;
+  return window.confirm(t("session.composer.discardConfirm"));
+});
+
+function onBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!hasDraft()) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+onMounted(() => window.addEventListener("beforeunload", onBeforeUnload));
+onBeforeUnmount(() =>
+  window.removeEventListener("beforeunload", onBeforeUnload),
 );
 
 const ops = computed(() =>
@@ -186,13 +285,14 @@ function voteCreated(): void {
           required
         >
           <USelectMenu
-            v-model="sourceIds"
+            :model-value="sourceIds"
             :items="sourceItems"
             value-key="value"
             multiple
             :placeholder="t('session.composer.sourcesPlaceholder')"
             :search-input="{ placeholder: t('common.search') }"
             class="w-full"
+            @update:model-value="onSourcesChange"
           />
         </UFormField>
 
@@ -245,7 +345,7 @@ function voteCreated(): void {
               variant="ghost"
               size="sm"
               :label="t('session.composer.reset')"
-              @click="reseed"
+              @click="resetText"
             />
           </section>
           <section class="min-w-0 space-y-2" aria-live="polite">
@@ -283,12 +383,13 @@ function voteCreated(): void {
           name="composer-authors"
         >
           <USelectMenu
-            v-model="authorIds"
+            :model-value="authorIds"
             :items="partyItems"
             value-key="value"
             multiple
             :placeholder="t('session.composer.authorsPlaceholder')"
             class="w-full"
+            @update:model-value="onAuthorsChange"
           />
         </UFormField>
 
@@ -342,7 +443,7 @@ function voteCreated(): void {
           color="neutral"
           variant="ghost"
           :label="created ? t('common.close') : t('common.cancel')"
-          @click="close"
+          @click="cancel(close)"
         />
         <template v-if="created">
           <UButton

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DocumentSummaryDto } from "~~/shared/types/api";
+import { isWindowOpen } from "~~/shared/utils/calendar";
 
 /**
  * One document under an agenda item: title and reference linking to the
@@ -13,18 +14,44 @@ const props = defineProps<{
 
 const { t } = useI18n();
 
-const renderedAt = useState<number>("countdown-rendered-at", () => Date.now());
+// The shared clock, so a window that opens or closes while the page is open
+// changes state without waiting for a refetch.
+const now = useAppNow();
+
+/** Whether the document has an amendment window (as the server computes it). */
+const hasWindow = computed(
+  () =>
+    props.document.amendable &&
+    props.document.status === "published" &&
+    props.document.format === "structured",
+);
+
+/**
+ * Whether the amendment window is open right now. `window.open` is the
+ * server's answer at fetch time; for a document with a window it is exactly
+ * `isWindowOpen` over its dates, so it is recomputed against the clock (no
+ * live event fires when a window opens or closes on time).
+ */
+const openNow = computed(() => {
+  const { open, opensAt, closesAt } = props.document.window;
+  if (!hasWindow.value) return open;
+  return isWindowOpen(
+    {
+      opensAt: opensAt ? new Date(opensAt) : null,
+      closesAt: closesAt ? new Date(closesAt) : null,
+    },
+    new Date(now.value),
+  );
+});
 
 /** The window countdown worth showing, if any. */
 const windowCountdown = computed<{ label: string; at: string } | null>(() => {
-  const doc = props.document;
-  if (!doc.amendable || doc.status !== "published") return null;
-  const now = renderedAt.value;
-  const { opensAt, closesAt, open } = doc.window;
-  if (open && closesAt && new Date(closesAt).getTime() > now) {
+  if (!hasWindow.value) return null;
+  const { opensAt, closesAt } = props.document.window;
+  if (openNow.value && closesAt && new Date(closesAt).getTime() > now.value) {
     return { label: t("agenda.document.windowCloses"), at: closesAt };
   }
-  if (!open && opensAt && new Date(opensAt).getTime() > now) {
+  if (!openNow.value && opensAt && new Date(opensAt).getTime() > now.value) {
     return { label: t("agenda.document.windowOpens"), at: opensAt };
   }
   return null;
@@ -38,15 +65,9 @@ const amendmentsLabel = computed(() =>
   ),
 );
 
-const windowClosed = computed(() => {
-  const doc = props.document;
-  return (
-    doc.amendable &&
-    doc.status === "published" &&
-    !doc.window.open &&
-    !windowCountdown.value
-  );
-});
+const windowClosed = computed(
+  () => hasWindow.value && !openNow.value && !windowCountdown.value,
+);
 </script>
 
 <template>

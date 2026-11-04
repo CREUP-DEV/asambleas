@@ -32,11 +32,17 @@ const api = useApi();
 const toast = useToast();
 const titleId = useId();
 
+/** Links across documents are not created here: both ends share the document. */
+type LocalRelationKind = Exclude<RelationKind, "same_in_other_document">;
+const LOCAL_KINDS = RELATION_KINDS.filter(
+  (value): value is LocalRelationKind => value !== "same_in_other_document",
+);
+
 const adding = ref(false);
 const saving = ref(false);
 const removing = ref<string | null>(null);
 const targetId = ref<string | undefined>(undefined);
-const kind = ref<RelationKind>("incompatible");
+const kind = ref<LocalRelationKind>("incompatible");
 const note = ref("");
 
 const manageable = computed(
@@ -53,7 +59,7 @@ const targetItems = computed(() =>
     })),
 );
 const kindItems = computed(() =>
-  RELATION_KINDS.map((value) => ({
+  LOCAL_KINDS.map((value) => ({
     label: t(`amendment.relations.kinds.${value}`),
     value,
   })),

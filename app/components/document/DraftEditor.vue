@@ -154,7 +154,8 @@ async function doSave(): Promise<boolean> {
     saveFailed.value = true;
     // 409: someone saved first (stale baseHash) or the text was frozen
     // meanwhile. Either way keep the user's text and reload; a frozen text
-    // also turns can.edit off, and the page moves to the workspace.
+    // also turns can.edit off: the page hides the editor (managers) or
+    // moves to the workspace (presenters).
     if (isConflict(error)) {
       recovery.value = cloneBlocks(snapshot);
       adoptNext = true;

@@ -20,8 +20,10 @@ import {
 
 /**
  * Deletes an item and its sub-items. Refused while any of them holds a
- * submitted, published or postponed document; drafts and withdrawn
- * documents under them are deleted with them.
+ * submitted, published or postponed document, or one that was ever published
+ * (withdrawn after publication included), whose versions, reference and
+ * amendments must survive. Drafts and documents withdrawn before publication
+ * are deleted with them.
  */
 export default defineEventHandler(async (event): Promise<{ success: true }> => {
   const actor = await requireActor(event);
@@ -48,7 +50,7 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
         throw createError({
           statusCode: 409,
           message:
-            "El punto o sus subpuntos contienen documentos presentados o publicados",
+            "El punto o sus subpuntos contienen documentos presentados o que ya se han publicado",
         });
       }
 

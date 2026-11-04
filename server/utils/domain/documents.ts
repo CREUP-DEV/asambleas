@@ -5,20 +5,32 @@ import {
   getRouterParam,
   readMultipartFormData,
 } from "h3";
-import { and, asc, count, eq, inArray, like, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  eq,
+  inArray,
+  like,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { db } from "../../db";
-import type { assemblies } from "../../db/schema";
 import {
   amendmentAcceptances,
   amendmentAuthors,
   amendments,
+  assemblies,
   assemblyMilestones,
   documents,
   documentVersions,
   events,
+  liveState,
   members,
   users,
   votes,
@@ -40,10 +52,16 @@ import {
   resolveDocument,
 } from "./resolvers";
 import {
+  amendmentsPublic,
   canSeeAmendment,
   canSeeDocument,
   canSeePositions,
+  decisionAmendmentIds,
+  filterDecisionsByAmendment,
   isDocumentProponent,
+  seesAllPresentedAmendments,
+  type AmendmentVisibilityContext,
+  type AmendmentVisibilityOptions,
 } from "./visibility";
 import {
   DEFAULT_ASSEMBLY_SETTINGS,
@@ -57,12 +75,14 @@ import {
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type {
   AmendmentWindowDto,
+  DecisionDto,
   DocumentCapabilities,
   DocumentContentBody,
   DocumentDto,
   DocumentSummaryDto,
   DocumentUpdateBody,
   EventDto,
+  FinalVoteAnnulBody,
   FinalVoteBody,
   MemberRef,
   VersionDto,
@@ -195,14 +215,6 @@ export function documentWindow(
       document.format === "structured" &&
       isWindowOpen(window, now),
   };
-}
-
-/** Whether submitted amendments may already be shown to everyone. */
-export function isWindowClosed(
-  window: AmendmentWindow,
-  now = new Date(),
-): boolean {
-  return Boolean(window.closesAt && now > window.closesAt);
 }
 
 /** Whether members may still present documents (documents_close milestone). */
@@ -457,27 +469,140 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
 
 // Loaders -------------------------------------------------------------------
 
-async function countSubmittedAmendments(
-  documentIds: string[],
+/** An amendment with what `canSeeAmendment` needs to judge it. */
+interface AmendmentVisibilityRow extends AmendmentVisibilityContext {
+  id: string;
+  documentId: string;
+}
+
+/** Loads the amendments matching `where` with their authors and parties. */
+async function loadAmendmentVisibilityRows(
+  executor: Executor,
+  where: SQL | undefined,
+): Promise<AmendmentVisibilityRow[]> {
+  const rows = await executor
+    .select({
+      id: amendments.id,
+      documentId: amendments.documentId,
+      status: amendments.status,
+      late: amendments.late,
+      createdByUserId: amendments.createdByUserId,
+    })
+    .from(amendments)
+    .where(where);
+  if (rows.length === 0) return [];
+
+  const ids = rows.map((row) => row.id);
+  const [authorRows, partyRows] = await Promise.all([
+    executor
+      .select({
+        amendmentId: amendmentAuthors.amendmentId,
+        memberId: amendmentAuthors.memberId,
+      })
+      .from(amendmentAuthors)
+      .where(inArray(amendmentAuthors.amendmentId, ids)),
+    executor
+      .select({
+        amendmentId: amendmentAcceptances.amendmentId,
+        memberId: amendmentAcceptances.memberId,
+      })
+      .from(amendmentAcceptances)
+      .where(inArray(amendmentAcceptances.amendmentId, ids)),
+  ]);
+  const group = (list: { amendmentId: string; memberId: string }[]) => {
+    const map = new Map<string, string[]>();
+    for (const row of list) {
+      const entry = map.get(row.amendmentId) ?? [];
+      entry.push(row.memberId);
+      map.set(row.amendmentId, entry);
+    }
+    return map;
+  };
+  const authors = group(authorRows);
+  const parties = group(partyRows);
+  return rows.map((row) => ({
+    ...row,
+    authorMemberIds: authors.get(row.id) ?? [],
+    partyMemberIds: parties.get(row.id) ?? [],
+  }));
+}
+
+/** `canSeeAmendment` options for one document's amendments. */
+function amendmentVisibilityOptions(
+  assembly: AssemblyRow,
+  document: Pick<DocumentRow, "amendmentsOpenAt" | "amendmentsCloseAt">,
+  milestones: Milestones,
+  now: Date,
+): AmendmentVisibilityOptions {
+  return {
+    settings: assemblySettings(assembly),
+    windowClosed: amendmentsPublic(
+      amendmentWindow(document, milestones),
+      assembly.status,
+      now,
+    ),
+  };
+}
+
+/**
+ * Amendments past draft that the actor can see, per document. Documents whose
+ * presented amendments the actor sees in full are counted in SQL; the others
+ * (`after_close` before the amendments are public) count only the ones the
+ * actor authored, created or is a party to, as `canSeeAmendment` decides.
+ */
+async function countVisibleAmendments(
+  actor: Actor,
+  assembly: AssemblyRow,
+  rows: Pick<DocumentRow, "id" | "amendmentsOpenAt" | "amendmentsCloseAt">[],
+  milestones: Milestones,
+  now: Date,
   executor: Executor = db,
 ): Promise<Map<string, number>> {
-  if (documentIds.length === 0) return new Map();
-  const rows = await executor
-    .select({ documentId: amendments.documentId, total: count() })
-    .from(amendments)
-    .where(
-      and(
-        inArray(amendments.documentId, documentIds),
-        ne(amendments.status, "draft"),
-      ),
-    )
-    .groupBy(amendments.documentId);
-  return new Map(rows.map((row) => [row.documentId, Number(row.total)]));
+  const allIds: string[] = [];
+  const restricted = new Map<string, AmendmentVisibilityOptions>();
+  for (const row of rows) {
+    const options = amendmentVisibilityOptions(assembly, row, milestones, now);
+    if (seesAllPresentedAmendments(actor, options)) allIds.push(row.id);
+    else restricted.set(row.id, options);
+  }
+
+  const counts = new Map<string, number>();
+  const [totals, hidden] = await Promise.all([
+    allIds.length > 0
+      ? executor
+          .select({ documentId: amendments.documentId, total: count() })
+          .from(amendments)
+          .where(
+            and(
+              inArray(amendments.documentId, allIds),
+              ne(amendments.status, "draft"),
+            ),
+          )
+          .groupBy(amendments.documentId)
+      : Promise.resolve([]),
+    restricted.size > 0
+      ? loadAmendmentVisibilityRows(
+          executor,
+          and(
+            inArray(amendments.documentId, [...restricted.keys()]),
+            ne(amendments.status, "draft"),
+          ),
+        )
+      : Promise.resolve([]),
+  ]);
+  for (const row of totals) counts.set(row.documentId, Number(row.total));
+  for (const row of hidden) {
+    const options = restricted.get(row.documentId);
+    if (!options || !canSeeAmendment(actor, row, options)) continue;
+    counts.set(row.documentId, (counts.get(row.documentId) ?? 0) + 1);
+  }
+  return counts;
 }
 
 /**
  * Summaries of the documents of an assembly that the actor can see, in
- * creation order. `amendmentCount` counts every amendment past draft.
+ * creation order. `amendmentCount` counts the amendments past draft that the
+ * actor can see (see countVisibleAmendments).
  */
 export async function loadDocumentSummaries(
   assembly: typeof assemblies.$inferSelect,
@@ -495,8 +620,14 @@ export async function loadDocumentSummaries(
     loadMilestones(assembly.id),
   ]);
   const visible = rows.filter((row) => canSeeDocument(actor, row));
-  const counts = await countSubmittedAmendments(visible.map((row) => row.id));
   const now = new Date();
+  const counts = await countVisibleAmendments(
+    actor,
+    assembly,
+    visible,
+    milestones,
+    now,
+  );
   return visible.map(({ proponent, ...document }) =>
     toDocumentSummaryDto(document, {
       proponent: memberRefOrNull(proponent),
@@ -527,10 +658,10 @@ export async function loadDocumentDto(
     .from(documents)
     .where(eq(documents.id, documentId));
   if (!document) fail(404, "Documento no encontrado");
+  const now = new Date();
   const [
     milestones,
     proponent,
-    counts,
     workingVersion,
     baseVersion,
     consolidatedVersion,
@@ -544,7 +675,6 @@ export async function loadDocumentDto(
           .where(eq(members.id, document.proponentMemberId))
           .then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
-    countSubmittedAmendments([document.id], executor),
     loadVersion(document.workingVersionId, executor),
     loadVersion(document.baseVersionId, executor),
     loadVersion(document.consolidatedVersionId, executor),
@@ -556,6 +686,14 @@ export async function loadDocumentDto(
           .then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
   ]);
+  const counts = await countVisibleAmendments(
+    actor,
+    assembly,
+    [document],
+    milestones,
+    now,
+    executor,
+  );
   return toDocumentDto({
     actor,
     assembly,
@@ -567,6 +705,7 @@ export async function loadDocumentDto(
     baseVersion,
     consolidatedVersion,
     finalVote,
+    now,
   });
 }
 
@@ -778,6 +917,13 @@ function changedFields(
 /** Status changes allowed through PUT (managers only). */
 function assertStatusChange(document: DocumentRow, next: DocumentStatus): void {
   if (next === document.status) return;
+  // The final vote settled the text: annul it first to change the status.
+  if (document.finalVoteId) {
+    fail(
+      409,
+      "El documento ya se ha votado: anula la votación final antes de cambiar su estado",
+    );
+  }
   if (next === "withdrawn") return;
   if (next === "postponed") {
     // Postponed documents are public, so only published texts can be postponed.
@@ -1165,6 +1311,121 @@ export async function deleteDocument(
   return { success: true };
 }
 
+// Live projection -----------------------------------------------------------
+
+const LIVE_FIELDS = [
+  "agendaItemId",
+  "documentId",
+  "amendmentId",
+  "voteId",
+] as const;
+
+type LivePointer = Record<(typeof LIVE_FIELDS)[number], string | null>;
+
+/**
+ * Locks the live_state row of a session, or returns null when the session has
+ * not started (no row). The assembly is share-locked first: updateLiveState
+ * locks it for update and then writes a full row read earlier, so without it
+ * a concurrent PUT .../live-state could overwrite this change.
+ */
+async function lockLiveState(
+  tx: Executor,
+  assemblyId: string,
+): Promise<LivePointer | null> {
+  await tx.execute(
+    sql`select ${assemblies.id} from ${assemblies} where ${assemblies.id} = ${assemblyId} for share`,
+  );
+  const [row] = await tx
+    .select({
+      agendaItemId: liveState.agendaItemId,
+      documentId: liveState.documentId,
+      amendmentId: liveState.amendmentId,
+      voteId: liveState.voteId,
+    })
+    .from(liveState)
+    .where(eq(liveState.assemblyId, assemblyId))
+    .for("update");
+  return row ?? null;
+}
+
+async function writeLiveState(
+  tx: Executor,
+  assemblyId: string,
+  previous: LivePointer,
+  next: LivePointer,
+  actor: Actor,
+): Promise<void> {
+  const changed = LIVE_FIELDS.filter((key) => next[key] !== previous[key]);
+  if (changed.length === 0) return;
+  await tx
+    .update(liveState)
+    .set({ ...next, updatedByUserId: actor.user.id, updatedAt: sql`now()` })
+    .where(eq(liveState.assemblyId, assemblyId));
+  await recordEvent(tx, {
+    assemblyId,
+    entityType: "live",
+    entityId: assemblyId,
+    type: "live_changed",
+    // Same shape as updateLiveState: ids only.
+    payload: { changed, ...next },
+    actor,
+  });
+}
+
+/**
+ * Projects a vote the server has just recorded, inside the transaction that
+ * recorded it, when the session has a live_state row. An amendment or
+ * document vote also points the projection at what was voted (choosing a new
+ * document selects its agenda item, as PUT .../live-state does); a decision
+ * vote only replaces the vote. Records `live_changed`.
+ */
+export async function pointLiveVote(
+  tx: Executor,
+  input: {
+    assemblyId: string;
+    voteId: string;
+    actor: Actor;
+    subject?: {
+      documentId: string;
+      agendaItemId: string | null;
+      amendmentId: string | null;
+    };
+  },
+): Promise<void> {
+  const previous = await lockLiveState(tx, input.assemblyId);
+  if (!previous) return;
+  const next: LivePointer = { ...previous, voteId: input.voteId };
+  if (input.subject) {
+    if (input.subject.documentId !== previous.documentId) {
+      next.agendaItemId = input.subject.agendaItemId;
+    }
+    next.documentId = input.subject.documentId;
+    next.amendmentId = input.subject.amendmentId;
+  }
+  await writeLiveState(tx, input.assemblyId, previous, next, input.actor);
+}
+
+/**
+ * Stops projecting a vote that has just been voided (amendment reopened,
+ * final vote annulled). Leaves the projection alone when it shows anything
+ * else. Records `live_changed` when it clears it.
+ */
+export async function clearLiveVote(
+  tx: Executor,
+  input: { assemblyId: string; voteId: string | null; actor: Actor },
+): Promise<void> {
+  if (!input.voteId) return;
+  const previous = await lockLiveState(tx, input.assemblyId);
+  if (!previous || previous.voteId !== input.voteId) return;
+  await writeLiveState(
+    tx,
+    input.assemblyId,
+    previous,
+    { ...previous, voteId: null },
+    input.actor,
+  );
+}
+
 // Final vote ----------------------------------------------------------------
 
 /**
@@ -1204,14 +1465,16 @@ export function evaluateFinalVote(
 /**
  * The final vote on the whole text (session:moderate).
  *
+ * - An approved totality return (devolución) sends the text back: there is
+ *   nothing left to vote, 409 `{ totalityReturn: id }` (RFAG 2026 art. 23ter).
  * - Every amendment must be decided first: 409 `{ undecided: ids }`.
- * - Approved amendments (totality returns carry no text and are skipped) are
- *   consolidated over the base in approval order, or in `body.order`, which
- *   must list exactly those amendments. Conflicts answer 409
- *   `{ conflicts }` and nothing is stored.
+ * - Approved amendments are consolidated over the base in approval order, or
+ *   in `body.order`, which must list exactly those amendments. Conflicts
+ *   answer 409 `{ conflicts }` and nothing is stored.
  * - The vote is stored and linked as `finalVoteId` whatever its result, which
  *   closes the amendments of the document. When approved, a structured text
- *   gets its `consolidated` version.
+ *   gets its `consolidated` version. The live projection shows the vote.
+ * - DELETE .../final-vote annuls it (annulFinalVote).
  */
 export async function recordFinalVote(
   ctx: DocumentRouteContext,
@@ -1250,6 +1513,14 @@ export async function recordFinalVote(
       })
       .from(amendments)
       .where(eq(amendments.documentId, document.id));
+    const totalityReturn = rows.find(
+      (row) => row.status === "approved" && row.kind === "totality_return",
+    );
+    if (totalityReturn) {
+      fail(409, "Se ha aprobado la devolución del texto", {
+        totalityReturn: totalityReturn.id,
+      });
+    }
     const undecided = rows
       .filter((row) => row.status === "submitted")
       .map((row) => row.id);
@@ -1258,9 +1529,7 @@ export async function recordFinalVote(
     }
 
     const approved = rows
-      .filter(
-        (row) => row.status === "approved" && row.kind !== "totality_return",
-      )
+      .filter((row) => row.status === "approved")
       .sort(
         (a, b) =>
           (a.decidedAt?.getTime() ?? 0) - (b.decidedAt?.getTime() ?? 0) ||
@@ -1374,6 +1643,77 @@ export async function recordFinalVote(
       },
       actor,
     });
+    await pointLiveVote(tx, {
+      assemblyId: assembly.id,
+      voteId: vote!.id,
+      actor,
+      subject: {
+        documentId: document.id,
+        agendaItemId: document.agendaItemId,
+        amendmentId: null,
+      },
+    });
+  });
+
+  return loadDocumentDto(assembly, ctx.document.id, actor);
+}
+
+/**
+ * Annuls a wrongly recorded final vote (session:moderate, assembly not
+ * closed), with the optimistic lock on the document. The vote row and the
+ * consolidated version stay for the record; the document loses `finalVoteId`
+ * and `consolidatedVersionId`, so its amendments can be decided (or
+ * reopened) and the final vote taken again. Records `final_vote_annulled` and
+ * stops projecting the vote.
+ */
+export async function annulFinalVote(
+  ctx: DocumentRouteContext,
+  body: FinalVoteAnnulBody,
+): Promise<DocumentDto> {
+  const { actor, assembly } = ctx;
+  if (!canModerate(actor))
+    fail(403, "No tienes permiso para anular votaciones");
+  if (assembly.status === "closed") fail(409, "La asamblea ya está cerrada");
+
+  await db.transaction(async (tx) => {
+    const document = await lockDocument(tx, ctx.document.id);
+    assertOptimisticLock(
+      body.updatedAt,
+      document.updatedAt,
+      STALE_DOCUMENT_MESSAGE,
+    );
+    if (!document.finalVoteId) {
+      fail(409, "El documento no tiene votación final");
+    }
+    const [vote] = await tx
+      .select({ id: votes.id, result: votes.result })
+      .from(votes)
+      .where(eq(votes.id, document.finalVoteId));
+
+    await tx
+      .update(documents)
+      .set({ finalVoteId: null, consolidatedVersionId: null })
+      .where(eq(documents.id, document.id));
+
+    await recordEvent(tx, {
+      assemblyId: assembly.id,
+      entityType: "document",
+      entityId: document.id,
+      documentId: document.id,
+      type: "final_vote_annulled",
+      payload: {
+        voteId: document.finalVoteId,
+        result: vote?.result ?? null,
+        consolidatedVersionId: document.consolidatedVersionId,
+        note: body.note ?? null,
+      },
+      actor,
+    });
+    await clearLiveVote(tx, {
+      assemblyId: assembly.id,
+      voteId: document.finalVoteId,
+      actor,
+    });
   });
 
   return loadDocumentDto(assembly, ctx.document.id, actor);
@@ -1391,69 +1731,76 @@ export async function loadAmendmentVisibility(
   document: DocumentRow,
   milestones: Milestones,
   now = new Date(),
+  executor: Executor = db,
 ): Promise<{ all: Set<string>; visible: Set<string> }> {
-  const rows = await db
-    .select({
-      id: amendments.id,
-      status: amendments.status,
-      late: amendments.late,
-      createdByUserId: amendments.createdByUserId,
-    })
-    .from(amendments)
-    .where(eq(amendments.documentId, document.id));
+  const rows = await loadAmendmentVisibilityRows(
+    executor,
+    eq(amendments.documentId, document.id),
+  );
   const all = new Set(rows.map((row) => row.id));
-  if (rows.length === 0) return { all, visible: new Set() };
-
-  const ids = [...all];
-  const [authorRows, partyRows] = await Promise.all([
-    db
-      .select({
-        amendmentId: amendmentAuthors.amendmentId,
-        memberId: amendmentAuthors.memberId,
-      })
-      .from(amendmentAuthors)
-      .where(inArray(amendmentAuthors.amendmentId, ids)),
-    db
-      .select({
-        amendmentId: amendmentAcceptances.amendmentId,
-        memberId: amendmentAcceptances.memberId,
-      })
-      .from(amendmentAcceptances)
-      .where(inArray(amendmentAcceptances.amendmentId, ids)),
-  ]);
-  const group = (list: { amendmentId: string; memberId: string }[]) => {
-    const map = new Map<string, string[]>();
-    for (const row of list) {
-      const entry = map.get(row.amendmentId) ?? [];
-      entry.push(row.memberId);
-      map.set(row.amendmentId, entry);
-    }
-    return map;
-  };
-  const authors = group(authorRows);
-  const parties = group(partyRows);
-  const options = {
-    settings: assemblySettings(assembly),
-    windowClosed: isWindowClosed(amendmentWindow(document, milestones), now),
-  };
+  const options = amendmentVisibilityOptions(
+    assembly,
+    document,
+    milestones,
+    now,
+  );
   const visible = new Set(
     rows
-      .filter((row) =>
-        canSeeAmendment(
-          actor,
-          {
-            status: row.status,
-            late: row.late,
-            createdByUserId: row.createdByUserId,
-            authorMemberIds: authors.get(row.id) ?? [],
-            partyMemberIds: parties.get(row.id) ?? [],
-          },
-          options,
-        ),
-      )
+      .filter((row) => canSeeAmendment(actor, row, options))
       .map((row) => row.id),
   );
   return { all, visible };
+}
+
+/**
+ * Procedural decisions as the actor may read them (filterDecisionsByAmendment):
+ * an admission decision only names the amendments the actor can see, with the
+ * same rules as the amendment endpoints (the document must be visible too),
+ * and is left out when it names none. The decisions themselves come from
+ * loadDecisionDtos.
+ */
+export async function filterVisibleDecisions(
+  actor: Actor,
+  assembly: AssemblyRow,
+  list: DecisionDto[],
+  executor: Executor = db,
+): Promise<DecisionDto[]> {
+  const subjectIds = decisionAmendmentIds(list);
+  if (subjectIds.length === 0) return list;
+
+  const [documentRows, milestones, rows] = await Promise.all([
+    executor
+      .select({
+        id: documents.id,
+        status: documents.status,
+        proponentMemberId: documents.proponentMemberId,
+        submittedByUserId: documents.submittedByUserId,
+        amendmentsOpenAt: documents.amendmentsOpenAt,
+        amendmentsCloseAt: documents.amendmentsCloseAt,
+      })
+      .from(documents)
+      .where(eq(documents.assemblyId, assembly.id)),
+    loadMilestones(assembly.id, executor),
+    loadAmendmentVisibilityRows(executor, inArray(amendments.id, subjectIds)),
+  ]);
+  const now = new Date();
+  const documentOptions = new Map<string, AmendmentVisibilityOptions>();
+  for (const row of documentRows) {
+    if (!canSeeDocument(actor, row)) continue;
+    documentOptions.set(
+      row.id,
+      amendmentVisibilityOptions(assembly, row, milestones, now),
+    );
+  }
+  const visible = new Set(
+    rows
+      .filter((row) => {
+        const options = documentOptions.get(row.documentId);
+        return options !== undefined && canSeeAmendment(actor, row, options);
+      })
+      .map((row) => row.id),
+  );
+  return filterDecisionsByAmendment(list, (id) => visible.has(id));
 }
 
 /** Whether the actor sees proponent positions on this document's amendments. */
@@ -1502,7 +1849,10 @@ export async function loadDocumentHistory(
       entityId: events.entityId,
       payload: events.payload,
       createdAt: events.createdAt,
-      actorName: users.name,
+      // The intranet's name (role sync), not the Google display name.
+      actorName: sql<
+        string | null
+      >`coalesce(${users.externalName}, ${users.name})`,
       memberId: members.id,
       memberAcronym: members.acronym,
       memberName: members.name,
@@ -1638,10 +1988,22 @@ export async function removeStoredPdf(
   }
 }
 
+/** The PDF that was voted cannot be replaced. */
+export function assertFileReplaceable(
+  document: Pick<DocumentRow, "finalVoteId">,
+): void {
+  if (document.finalVoteId) {
+    fail(409, "El documento ya se ha votado y su PDF no se puede sustituir");
+  }
+}
+
 /**
- * Attaches the PDF of a `file` document: managers at any time, presenters
- * while it is a draft. The previous file is removed once the change commits.
- * An optional multipart field `updatedAt` enables the optimistic lock.
+ * Attaches the PDF of a `file` document: managers until the final vote,
+ * presenters while it is a draft. Before publication the previous file is
+ * removed once the change commits. Once published, the previous file is kept
+ * on disk and recorded in the event (`previousFileUrl`, `previousFileName`),
+ * since delegates may have read it. An optional multipart field `updatedAt`
+ * enables the optimistic lock.
  */
 export async function attachDocumentFile(
   ctx: DocumentRouteContext,
@@ -1652,13 +2014,14 @@ export async function attachDocumentFile(
   if (ctx.document.format !== "file") {
     fail(409, "Este documento no es de tipo PDF");
   }
+  assertFileReplaceable(ctx.document);
   const updatedAt = file.fields.updatedAt?.trim() || undefined;
   if (updatedAt && Number.isNaN(new Date(updatedAt).getTime())) {
     fail(400, "Datos no válidos");
   }
 
   const stored = await storePdf(file);
-  let previous: string | null;
+  let previous: { fileUrl: string | null; keep: boolean };
   try {
     previous = await db.transaction(async (tx) => {
       const current = await lockDocument(tx, ctx.document.id);
@@ -1668,6 +2031,8 @@ export async function attachDocumentFile(
         STALE_DOCUMENT_MESSAGE,
       );
       requireDocumentEditor(actor, current);
+      assertFileReplaceable(current);
+      const keep = current.publishedAt !== null && current.fileUrl !== null;
       await tx
         .update(documents)
         .set({ fileUrl: stored.fileUrl, fileName: stored.fileName })
@@ -1681,16 +2046,28 @@ export async function attachDocumentFile(
         payload: {
           fileName: stored.fileName,
           replaced: current.fileUrl !== null,
+          ...(keep
+            ? {
+                previousFileUrl: current.fileUrl,
+                previousFileName: current.fileName,
+              }
+            : {}),
         },
         actor,
       });
-      return current.fileUrl;
+      return { fileUrl: current.fileUrl, keep };
     });
   } catch (error) {
     await removeStoredPdf(stored.fileUrl);
     throw error;
   }
 
-  if (previous && previous !== stored.fileUrl) await removeStoredPdf(previous);
+  if (
+    previous.fileUrl &&
+    !previous.keep &&
+    previous.fileUrl !== stored.fileUrl
+  ) {
+    await removeStoredPdf(previous.fileUrl);
+  }
   return loadDocumentDto(assembly, ctx.document.id, actor);
 }

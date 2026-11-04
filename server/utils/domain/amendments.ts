@@ -41,7 +41,6 @@ import type {
   AmendmentAdmissionDto,
   AmendmentOutcomeDto,
   ApprovalWarnings,
-  DecisionDto,
   DocumentAmendmentsDto,
   EventDto,
   MemberRef,
@@ -83,7 +82,7 @@ import {
   requireActor,
   type Actor,
 } from "./actor";
-import { loadMilestones } from "./documents";
+import { clearLiveVote, loadMilestones, pointLiveVote } from "./documents";
 import { recordEvent } from "./events";
 import {
   resolveAmendment,
@@ -91,6 +90,7 @@ import {
   resolveDocument,
 } from "./resolvers";
 import {
+  amendmentsPublic,
   canSeeAmendment,
   canSeePositions,
   isDocumentProponent,
@@ -117,7 +117,6 @@ export interface StoredAmendmentMeta extends AmendmentMeta {
 export type AmendmentOutcomeResult = AmendmentOutcomeDto;
 /** Response of POST .../amendments/admission. */
 export type AmendmentAdmissionResult = AmendmentAdmissionDto;
-export type { ApprovalWarnings };
 
 const OPEN_STATUSES: AmendmentStatus[] = ["draft", "submitted"];
 const SYMMETRIC_RELATIONS: RelationKind[] = ["incompatible", "duplicate"];
@@ -272,6 +271,109 @@ export function nextTransactionalCode(
   let n = existingCodes.length + 1;
   while (taken.has(`T${n}`)) n += 1;
   return `T${n}`;
+}
+
+/** transactional id -> its source ids, from `amendment_sources` rows. */
+export function buildSourceMap(
+  rows: { transactionalId: string; sourceId: string }[],
+): Map<string, string[]> {
+  const map = new Map<string, string[]>();
+  for (const row of rows) {
+    const entry = map.get(row.transactionalId) ?? [];
+    entry.push(row.sourceId);
+    map.set(row.transactionalId, entry);
+  }
+  return map;
+}
+
+/**
+ * Every amendment absorbed by `roots`: their sources and, through nested
+ * transactionals (a transactional over another), the sources of those at any
+ * depth, in breadth-first order. A root only appears when another root
+ * absorbs it.
+ */
+export function collectAncestors(
+  sourceMap: Map<string, string[]>,
+  roots: string[],
+): string[] {
+  const seen = new Set<string>();
+  const queue = roots.flatMap((id) => sourceMap.get(id) ?? []);
+  const result: string[] = [];
+  while (queue.length > 0) {
+    const id = queue.shift()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    result.push(id);
+    queue.push(...(sourceMap.get(id) ?? []));
+  }
+  return result;
+}
+
+/**
+ * What reopening an approved transactional gives back: its whole lineage,
+ * except what another approved transactional still absorbs.
+ */
+export function lineageToRestore(
+  sourceMap: Map<string, string[]>,
+  transactionalId: string,
+  otherApprovedIds: string[],
+): string[] {
+  const kept = new Set(
+    collectAncestors(
+      sourceMap,
+      otherApprovedIds.filter((id) => id !== transactionalId),
+    ),
+  );
+  return collectAncestors(sourceMap, [transactionalId]).filter(
+    (id) => !kept.has(id),
+  );
+}
+
+/**
+ * Authors requested by a draft update. The actor's member is always kept
+ * (AmendmentDraftBody): a co-author editing someone else's draft sends the
+ * other authors only and must not drop out of it. Moderators presenting on
+ * behalf of a member, and actors who are not authors, are left as sent.
+ */
+export function requestedDraftAuthorIds(input: {
+  authorMemberIds: string[] | undefined;
+  onBehalfOfMemberId: string | null | undefined;
+  actorMemberId: string | null;
+  presentingMemberId: string | undefined;
+  currentAuthorIds: string[];
+}): string[] | undefined {
+  const { authorMemberIds, actorMemberId } = input;
+  if (
+    authorMemberIds === undefined ||
+    input.onBehalfOfMemberId ||
+    !actorMemberId ||
+    actorMemberId === input.presentingMemberId ||
+    !input.currentAuthorIds.includes(actorMemberId)
+  ) {
+    return authorMemberIds;
+  }
+  return unique([...authorMemberIds, actorMemberId]);
+}
+
+/**
+ * Authors a non-moderator may not add to a transactional: anyone but the
+ * actor's member, its current authors and its parties (the authors of its
+ * sources and the proponent), as when it is created.
+ */
+export function unauthorizedTransactionalAuthors(
+  nextAuthorIds: string[],
+  input: {
+    actorMemberId: string | null;
+    currentAuthorIds: string[];
+    partyMemberIds: (string | null)[];
+  },
+): string[] {
+  const allowed = new Set<string | null>([
+    input.actorMemberId,
+    ...input.currentAuthorIds,
+    ...input.partyMemberIds,
+  ]);
+  return nextAuthorIds.filter((id) => !allowed.has(id));
 }
 
 export interface CapabilityInput {
@@ -486,7 +588,11 @@ export interface DocumentAmendmentContext {
   document: DocumentRow;
   settings: AssemblySettings;
   window: AmendmentWindow;
-  /** The amendment window is over: everything submitted becomes public. */
+  /**
+   * Presented amendments are public under `after_close` (amendmentsPublic):
+   * the window closed, has no close date, or the session started. The `late`
+   * flag is computed separately with `isLateSubmission`.
+   */
   windowClosed: boolean;
   isProponent: boolean;
   positionsVisible: boolean;
@@ -525,7 +631,7 @@ export async function loadAmendmentDocumentContext(
     document,
     settings,
     window,
-    windowClosed: isLateSubmission(window, now),
+    windowClosed: amendmentsPublic(window, assembly.status, now),
     isProponent,
     positionsVisible: canSeePositions(actor, {
       settings,
@@ -592,11 +698,107 @@ async function loadBaseBlocks(document: DocumentRow): Promise<Block[]> {
   return version.blocks;
 }
 
-/** Serializes numbering and block re-ids per document. */
-async function lockDocument(tx: Tx, documentId: string): Promise<void> {
-  await tx.execute(
-    sql`select ${documents.id} from ${documents} where ${documents.id} = ${documentId} for update`,
-  );
+/**
+ * Re-reads the document under a row lock and refuses once its final vote is
+ * recorded, so the "already voted" guard holds against a concurrent final
+ * vote (recordFinalVote locks the row for update).
+ * - `update` also serializes numbering and block re-ids per document, and
+ *   requires the document to be still published.
+ * - `share` only holds a concurrent final vote off until this transaction
+ *   commits; several amendment changes may hold it at once.
+ * A transaction takes it once, in one mode, before any amendment row lock.
+ */
+async function lockDocument(
+  tx: Tx,
+  documentId: string,
+  mode: "update" | "share" = "update",
+): Promise<void> {
+  const [row] = await tx
+    .select({
+      status: documents.status,
+      finalVoteId: documents.finalVoteId,
+      consolidatedVersionId: documents.consolidatedVersionId,
+    })
+    .from(documents)
+    .where(eq(documents.id, documentId))
+    .for(mode);
+  if (!row) fail(404, "Documento no encontrado");
+  assertNotVoted(row);
+  if (mode === "update" && row.status !== "published") {
+    fail(409, "El documento no admite enmiendas");
+  }
+}
+
+/**
+ * Locks amendment rows of the document in id order. Taking every row a
+ * transaction needs in one ordered pass keeps two transactions (say, the
+ * approvals of T1 and of a transactional over T1) from waiting on each other.
+ */
+function lockAmendments(tx: Tx, documentId: string, ids: string[]) {
+  return tx
+    .select({
+      id: amendments.id,
+      status: amendments.status,
+      admission: amendments.admission,
+      decidedAt: amendments.decidedAt,
+      outcomeVoteId: amendments.outcomeVoteId,
+    })
+    .from(amendments)
+    .where(
+      and(eq(amendments.documentId, documentId), inArray(amendments.id, ids)),
+    )
+    .orderBy(asc(amendments.id))
+    .for("update");
+}
+
+/**
+ * Locks `sourceIds` and every amendment they absorb through nested
+ * transactionals (plus `alsoLock`, in the same ordered pass) and fails 409
+ * unless that lineage is still open (submitted, admitted, undecided).
+ * Returns the lineage.
+ */
+async function lockOpenLineage(
+  tx: Tx,
+  documentId: string,
+  sourceIds: string[],
+  alsoLock: string[] = [],
+): Promise<string[]> {
+  const lineage =
+    sourceIds.length > 0
+      ? unique([
+          ...sourceIds,
+          ...collectAncestors(await loadSourceMap(tx, documentId), sourceIds),
+        ])
+      : [];
+  const ids = unique([...lineage, ...alsoLock]);
+  if (ids.length === 0) return [];
+  const rows = await lockAmendments(tx, documentId, ids);
+  const byId = new Map(rows.map((row) => [row.id, row]));
+  if (
+    lineage.some((id) => {
+      const row = byId.get(id);
+      return !row || !isOpenSource(row);
+    })
+  ) {
+    fail(409, "Alguna de las enmiendas de origen ya está decidida");
+  }
+  return lineage;
+}
+
+/** Every transactional -> sources edge of the document. */
+async function loadSourceMap(
+  executor: Executor,
+  documentId: string,
+): Promise<Map<string, string[]>> {
+  const rows = await executor
+    .select({
+      transactionalId: amendmentSources.transactionalId,
+      sourceId: amendmentSources.sourceId,
+    })
+    .from(amendmentSources)
+    .innerJoin(amendments, eq(amendments.id, amendmentSources.transactionalId))
+    .where(eq(amendments.documentId, documentId));
+  return buildSourceMap(rows);
 }
 
 async function otherInsertedIds(
@@ -619,10 +821,18 @@ async function otherInsertedIds(
 // Guards ---------------------------------------------------------------------
 
 /** The final vote fixes the text: nothing about its amendments changes afterwards. */
-function assertNotFinal(ctx: DocumentAmendmentContext): void {
-  if (ctx.document.finalVoteId || ctx.document.consolidatedVersionId) {
+function assertNotVoted(document: {
+  finalVoteId: string | null;
+  consolidatedVersionId: string | null;
+}): void {
+  if (document.finalVoteId || document.consolidatedVersionId) {
     fail(409, "El documento ya se ha votado");
   }
+}
+
+/** Early check on the loaded document; lockDocument re-checks it in the transaction. */
+function assertNotFinal(ctx: DocumentAmendmentContext): void {
+  assertNotVoted(ctx.document);
 }
 
 /** Presenting or editing amendments needs a published, structured, amendable text. */
@@ -916,20 +1126,46 @@ export async function updateAmendmentDraft(
     ? "transactional"
     : (body.kind ?? amendment.kind);
   const meta = readMeta(amendment);
+  const currentAuthorIds = amendment.authors.map((author) => author.memberId);
 
+  const requestedAuthorIds = requestedDraftAuthorIds({
+    authorMemberIds: body.authorMemberIds,
+    onBehalfOfMemberId: body.onBehalfOfMemberId,
+    actorMemberId: actor.memberId,
+    presentingMemberId: meta.presentingMemberId,
+    currentAuthorIds,
+  });
   const authorsChanged =
-    body.authorMemberIds !== undefined || Boolean(body.onBehalfOfMemberId);
+    requestedAuthorIds !== undefined || Boolean(body.onBehalfOfMemberId);
   const authors = authorsChanged
     ? await resolveDraftAuthors(actor, {
         onBehalfOfMemberId: body.onBehalfOfMemberId,
         authorMemberIds:
-          body.authorMemberIds ??
-          amendment.authors
-            .map((author) => author.memberId)
-            .filter((id) => id !== meta.presentingMemberId),
+          requestedAuthorIds ??
+          currentAuthorIds.filter((id) => id !== meta.presentingMemberId),
         currentPresentingId: meta.presentingMemberId,
       })
     : null;
+  // Joint ordinary amendments may name any active member, but only the
+  // parties may sign a transactional (as in createTransactionalAmendment).
+  if (
+    authors &&
+    transactional &&
+    !canModerate(actor) &&
+    unauthorizedTransactionalAuthors(authors.memberIds, {
+      actorMemberId: actor.memberId,
+      currentAuthorIds,
+      partyMemberIds: [
+        ...amendment.acceptances.map((acceptance) => acceptance.memberId),
+        document.proponentMemberId,
+      ],
+    }).length > 0
+  ) {
+    fail(
+      403,
+      "Solo las partes de la transaccional pueden figurar como autoras",
+    );
+  }
 
   const nextMeta: StoredAmendmentMeta = { ...meta };
   if (authors) nextMeta.presentingMemberId = authors.presentingMemberId;
@@ -1125,21 +1361,11 @@ export async function submitAmendment(
     let updated: { id: string }[];
 
     if (transactional) {
-      const sourceIds = amendment.sources.map((source) => source.sourceId);
-      const sources =
-        sourceIds.length > 0
-          ? await tx
-              .select({
-                status: amendments.status,
-                admission: amendments.admission,
-                decidedAt: amendments.decidedAt,
-              })
-              .from(amendments)
-              .where(inArray(amendments.id, sourceIds))
-          : [];
-      if (sources.length !== sourceIds.length || !sources.every(isOpenSource)) {
-        fail(409, "Alguna de las enmiendas de origen ya está decidida");
-      }
+      await lockOpenLineage(
+        tx,
+        document.id,
+        amendment.sources.map((source) => source.sourceId),
+      );
       updated = await tx
         .update(amendments)
         .set({
@@ -1219,6 +1445,7 @@ export async function withdrawAmendment(
   assertNotFinal(ctx);
 
   await db.transaction(async (tx) => {
+    await lockDocument(tx, ctx.document.id, "share");
     const updated = await tx
       .update(amendments)
       .set({ status: "withdrawn", decidedAt: now })
@@ -1301,6 +1528,7 @@ export async function decideAmendmentAdmission(
         : "admitted";
 
   const result = await db.transaction(async (tx) => {
+    await lockDocument(tx, document.id, "share");
     const decisionId = cuid();
     let voteRow: VoteRow | undefined;
     if (evaluated && body.vote) {
@@ -1417,6 +1645,13 @@ export async function decideAmendmentAdmission(
         actor,
       });
     }
+    if (voteRow) {
+      await pointLiveVote(tx, {
+        assemblyId: ctx.assembly.id,
+        voteId: voteRow.id,
+        actor,
+      });
+    }
 
     return { decision: decision!, voteRow };
   });
@@ -1455,6 +1690,7 @@ export async function setAmendmentPosition(
   assertNotFinal(ctx);
 
   await db.transaction(async (tx) => {
+    await lockDocument(tx, ctx.document.id, "share");
     const values = {
       position: body.position,
       comment: body.comment ?? null,
@@ -1567,8 +1803,21 @@ export async function applyAmendmentOutcome(
       body.action === "vote"
         ? evaluateVoteInput(body.vote, ctx.settings)
         : null;
+    const approved =
+      body.action === "approve" || evaluated?.outcome.result === "approved";
 
     const result = await db.transaction(async (tx) => {
+      await lockDocument(tx, document.id, "share");
+      // An approved transactional absorbs its sources and, through nested
+      // transactionals, theirs. They must all be still open, or a source and
+      // the transactional that absorbs it could both end up approved. The
+      // amendment itself is locked in the same ordered pass.
+      const lineage = await lockOpenLineage(
+        tx,
+        document.id,
+        approved && amendment.kind === "transactional" ? sourceIds : [],
+        [amendment.id],
+      );
       if (amendment.kind === "transactional") {
         const parties = await tx
           .select({ decision: amendmentAcceptances.decision })
@@ -1598,8 +1847,6 @@ export async function applyAmendmentOutcome(
           .returning();
       }
 
-      const approved =
-        body.action === "approve" || evaluated?.outcome.result === "approved";
       const updated = await tx
         .update(amendments)
         .set({
@@ -1662,17 +1909,13 @@ export async function applyAmendmentOutcome(
         },
       });
 
-      if (
-        approved &&
-        amendment.kind === "transactional" &&
-        sourceIds.length > 0
-      ) {
+      if (lineage.length > 0) {
         const transacted = await tx
           .update(amendments)
           .set({ status: "transacted", decidedAt: now })
           .where(
             and(
-              inArray(amendments.id, sourceIds),
+              inArray(amendments.id, lineage),
               eq(amendments.status, "submitted"),
             ),
           )
@@ -1682,7 +1925,11 @@ export async function applyAmendmentOutcome(
             ...base,
             entityId: row.id,
             type: "amendment_transacted",
-            payload: { transactionalId: amendment.id, code: amendment.code },
+            payload: {
+              transactionalId: amendment.id,
+              code: amendment.code,
+              ...(sourceIds.includes(row.id) ? {} : { nested: true }),
+            },
           });
         }
       }
@@ -1690,6 +1937,18 @@ export async function applyAmendmentOutcome(
       const warnings = approved
         ? await approvalWarnings(tx, document.id, amendment)
         : null;
+      if (voteRow) {
+        await pointLiveVote(tx, {
+          assemblyId: ctx.assembly.id,
+          voteId: voteRow.id,
+          actor,
+          subject: {
+            documentId: document.id,
+            agendaItemId: document.agendaItemId,
+            amendmentId: amendment.id,
+          },
+        });
+      }
       return { voteRow, warnings };
     });
 
@@ -1705,6 +1964,7 @@ export async function applyAmendmentOutcome(
       fail(409, "La enmienda ya está decidida");
     const status = body.action === "withdraw" ? "withdrawn" : "lapsed";
     await db.transaction(async (tx) => {
+      await lockDocument(tx, document.id, "share");
       const updated = await tx
         .update(amendments)
         .set({ status, decidedAt: now, outcomeNote: body.note ?? null })
@@ -1746,6 +2006,37 @@ export async function applyAmendmentOutcome(
     fail(409, "Esta enmienda no se puede reabrir");
   }
   await db.transaction(async (tx) => {
+    await lockDocument(tx, document.id, "share");
+    // Reopening an approved transactional gives back everything it absorbed,
+    // nested transactionals included, unless another approved transactional
+    // still absorbs it.
+    let restore: string[] = [];
+    if (amendment.status === "approved" && amendment.kind === "transactional") {
+      const sourceMap = await loadSourceMap(tx, document.id);
+      const otherApproved = await tx
+        .select({ id: amendments.id })
+        .from(amendments)
+        .where(
+          and(
+            eq(amendments.documentId, document.id),
+            eq(amendments.kind, "transactional"),
+            eq(amendments.status, "approved"),
+            ne(amendments.id, amendment.id),
+          ),
+        );
+      restore = lineageToRestore(
+        sourceMap,
+        amendment.id,
+        otherApproved.map((row) => row.id),
+      );
+    }
+    // One ordered pass, as approval does; the row also tells which vote
+    // this reopening voids.
+    const locked = await lockAmendments(tx, document.id, [
+      amendment.id,
+      ...restore,
+    ]);
+    const current = locked.find((row) => row.id === amendment.id);
     const updated = await tx
       .update(amendments)
       .set({
@@ -1763,62 +2054,49 @@ export async function applyAmendmentOutcome(
         ),
       )
       .returning({ id: amendments.id });
-    if (updated.length === 0)
+    if (updated.length === 0 || !current)
       fail(409, "La enmienda ha cambiado. Recarga la página");
     await recordEvent(tx, {
       ...base,
       entityId: amendment.id,
       type: "amendment_reopened",
-      payload: { previousStatus: amendment.status },
+      payload: {
+        previousStatus: current.status,
+        ...(current.outcomeVoteId
+          ? { voidedVoteId: current.outcomeVoteId }
+          : {}),
+      },
     });
 
-    // Reopening an approved transactional gives its sources back, unless
-    // another approved transactional also absorbed them.
-    if (
-      amendment.status === "approved" &&
-      amendment.kind === "transactional" &&
-      sourceIds.length > 0
-    ) {
-      const stillAbsorbed = await tx
-        .select({ sourceId: amendmentSources.sourceId })
-        .from(amendmentSources)
-        .innerJoin(
-          amendments,
-          eq(amendments.id, amendmentSources.transactionalId),
-        )
+    if (current.status === "approved" && restore.length > 0) {
+      const restored = await tx
+        .update(amendments)
+        .set({ status: "submitted", decidedAt: null })
         .where(
           and(
-            inArray(amendmentSources.sourceId, sourceIds),
-            ne(amendmentSources.transactionalId, amendment.id),
-            eq(amendments.status, "approved"),
+            inArray(amendments.id, restore),
+            eq(amendments.status, "transacted"),
           ),
-        );
-      const keep = new Set(stillAbsorbed.map((row) => row.sourceId));
-      const restore = sourceIds.filter((id) => !keep.has(id));
-      if (restore.length > 0) {
-        const restored = await tx
-          .update(amendments)
-          .set({ status: "submitted", decidedAt: null })
-          .where(
-            and(
-              inArray(amendments.id, restore),
-              eq(amendments.status, "transacted"),
-            ),
-          )
-          .returning({ id: amendments.id });
-        for (const row of restored) {
-          await recordEvent(tx, {
-            ...base,
-            entityId: row.id,
-            type: "amendment_reopened",
-            payload: {
-              previousStatus: "transacted",
-              transactionalId: amendment.id,
-            },
-          });
-        }
+        )
+        .returning({ id: amendments.id });
+      for (const row of restored) {
+        await recordEvent(tx, {
+          ...base,
+          entityId: row.id,
+          type: "amendment_reopened",
+          payload: {
+            previousStatus: "transacted",
+            transactionalId: amendment.id,
+          },
+        });
       }
     }
+
+    await clearLiveVote(tx, {
+      assemblyId: ctx.assembly.id,
+      voteId: current.outcomeVoteId,
+      actor,
+    });
   });
   return {
     amendment: await amendmentDto(ctx, amendment.id),
@@ -1853,11 +2131,25 @@ export async function createTransactionalAmendment(
     fail(409, "Solo se pueden transaccionar enmiendas admitidas y sin decidir");
   }
 
-  const sourceAuthorIds = unique(
-    sources.flatMap((source) =>
+  // Over another transactional, the authors of what it absorbs are parties
+  // too: their amendments become transacted when this one is approved.
+  const nestedIds = collectAncestors(
+    await loadSourceMap(db, document.id),
+    body.sourceIds,
+  ).filter((id) => !body.sourceIds.includes(id));
+  const nestedAuthors =
+    nestedIds.length > 0
+      ? await db
+          .select({ memberId: amendmentAuthors.memberId })
+          .from(amendmentAuthors)
+          .where(inArray(amendmentAuthors.amendmentId, nestedIds))
+      : [];
+  const sourceAuthorIds = unique([
+    ...sources.flatMap((source) =>
       source.authors.map((author) => author.memberId),
     ),
-  );
+    ...nestedAuthors.map((row) => row.memberId),
+  ]);
   const moderate = canModerate(actor);
   const sourceAuthor =
     actsFor(actor, sourceAuthorIds) ||
@@ -1899,6 +2191,8 @@ export async function createTransactionalAmendment(
 
   const id = await db.transaction(async (tx) => {
     await lockDocument(tx, document.id);
+    // The sources may have been decided since they were read.
+    await lockOpenLineage(tx, document.id, body.sourceIds);
     const { ops, errors } = prepareAmendmentOps({
       kind: "transactional",
       ops: body.ops,
@@ -2033,6 +2327,7 @@ export async function recordAmendmentAcceptance(
     fail(409, "Esta parte ya ha respondido");
 
   await db.transaction(async (tx) => {
+    await lockDocument(tx, ctx.document.id, "share");
     await tx
       .update(amendmentAcceptances)
       .set({
@@ -2081,6 +2376,14 @@ export async function createAmendmentRelation(
   const { actor, document } = ctx;
   assertRelationRole(ctx);
   assertNotFinal(ctx);
+  // Both ends belong to this document, so this kind would record a false
+  // cross-document link.
+  if (body.kind === "same_in_other_document") {
+    fail(
+      422,
+      "Esta relación solo se puede registrar entre enmiendas de documentos distintos",
+    );
+  }
 
   const ends = await findAmendments(
     db,
@@ -2110,6 +2413,7 @@ export async function createAmendmentRelation(
 
   try {
     const row = await db.transaction(async (tx) => {
+      await lockDocument(tx, document.id, "share");
       const [created] = await tx
         .insert(amendmentRelations)
         .values({
@@ -2175,6 +2479,7 @@ export async function deleteAmendmentRelation(
   }
 
   await db.transaction(async (tx) => {
+    await lockDocument(tx, document.id, "share");
     const deleted = await tx
       .delete(amendmentRelations)
       .where(eq(amendmentRelations.id, relation.id))
@@ -2211,7 +2516,10 @@ export async function amendmentHistory(
       entityId: events.entityId,
       payload: events.payload,
       createdAt: events.createdAt,
-      actorName: users.name,
+      // The intranet's name (role sync), not the Google display name.
+      actorName: sql<
+        string | null
+      >`coalesce(${users.externalName}, ${users.name})`,
       memberId: members.id,
       memberAcronym: members.acronym,
       memberName: members.name,

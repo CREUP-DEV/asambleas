@@ -99,7 +99,17 @@ function notAvailable(amendment: AmendmentDto): void {
   });
 }
 
-function withFocused(run: (amendment: AmendmentDto) => void): void {
+/**
+ * Runs an action shortcut on the focused amendment: the card last clicked,
+ * tabbed into or reached with j/k. A held key (auto-repeat) acts once, and
+ * nothing is sent while a request for that amendment is still in flight, so
+ * a double press never records the same decision twice.
+ */
+function withFocused(
+  event: KeyboardEvent | undefined,
+  run: (amendment: AmendmentDto) => void,
+): void {
+  if (event?.repeat) return;
   if (session.anyDialogOpen.value || !session.canModerate.value) return;
   const amendment = session.focused.value;
   if (!amendment) {
@@ -111,32 +121,33 @@ function withFocused(run: (amendment: AmendmentDto) => void): void {
     });
     return;
   }
+  if (session.busy.value[amendment.id]) return;
   run(amendment);
 }
 
 defineShortcuts({
   j: () => move(1),
   k: () => move(-1),
-  a: () =>
-    withFocused((amendment) =>
+  a: (event?: KeyboardEvent) =>
+    withFocused(event, (amendment) =>
       isSessionDecidable(amendment)
         ? void session.approve(amendment, "assent")
         : notAvailable(amendment),
     ),
-  v: () =>
-    withFocused((amendment) =>
+  v: (event?: KeyboardEvent) =>
+    withFocused(event, (amendment) =>
       isSessionDecidable(amendment)
         ? session.openVote(amendment)
         : notAvailable(amendment),
     ),
-  t: () =>
-    withFocused((amendment) =>
+  t: (event?: KeyboardEvent) =>
+    withFocused(event, (amendment) =>
       isSessionOpen(amendment)
         ? session.openComposer([amendment.id])
         : notAvailable(amendment),
     ),
-  l: () =>
-    withFocused((amendment) =>
+  l: (event?: KeyboardEvent) =>
+    withFocused(event, (amendment) =>
       amendment.status === "submitted"
         ? void session.lapse(amendment)
         : notAvailable(amendment),
