@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TimelineItem } from "@nuxt/ui";
+import type { DecisionKind } from "~~/shared/constants/domain";
 import type { DecisionDto, EventDto } from "~~/shared/types/api";
 
 /**
@@ -103,15 +104,52 @@ function text(value: unknown): string | null {
   return typeof value === "string" && value ? value : null;
 }
 
-/** "By vote · Carried · 28 in favour, 0 against, 8 abstentions · note". */
-function admissionDetail(payload: Record<string, unknown>): string | null {
+type AdmissionMotion = Extract<DecisionKind, "admit_late" | "inadmission">;
+
+/**
+ * The motion an admission vote was on. A defeated vote applies the opposite
+ * outcome (a failed vote to declare an amendment inadmissible admits it), so
+ * the event type alone does not say what was voted: the decision does, and
+ * without it the motion is the event's outcome, flipped when the vote failed.
+ */
+function admissionMotion(
+  type: EventDto["type"],
+  decision: DecisionDto | undefined,
+  result: string | null,
+): AdmissionMotion {
+  if (decision?.kind === "admit_late" || decision?.kind === "inadmission") {
+    return decision.kind;
+  }
+  const admitted = type === "amendment_admitted";
+  // As the server does: only a carried vote keeps the motion's own outcome.
+  const failed = result !== null && result !== "approved";
+  const motionWasAdmit = failed ? !admitted : admitted;
+  return motionWasAdmit ? "admit_late" : "inadmission";
+}
+
+/**
+ * "By assent · note", or for a vote "Vote to declare it inadmissible ·
+ * Defeated · 10 in favour, 20 against, 3 abstentions · note": a vote names
+ * its motion, so a defeated one does not read as contradicting the outcome.
+ */
+function admissionDetail(
+  type: EventDto["type"],
+  payload: Record<string, unknown>,
+): string | null {
   const method = text(payload.method);
   const decisionId = text(payload.decisionId);
   const decision = decisionId ? decisionsById.value.get(decisionId) : undefined;
   const vote = decision?.vote ?? null;
   const result = vote?.result ?? text(payload.voteResult);
+  const voted = method === "vote" || result !== null;
   const parts = [
-    method ? t(`amendment.history.admissionMethods.${method}`) : null,
+    voted
+      ? t(
+          `amendment.history.admissionMotion.${admissionMotion(type, decision, result)}`,
+        )
+      : method
+        ? t(`amendment.history.admissionMethods.${method}`)
+        : null,
     result ? t(`common.status.vote.${result}`) : null,
     vote && vote.method !== "assent"
       ? t("amendment.vote.inline", {
@@ -144,7 +182,7 @@ function detailOf(event: EventDto): string | null {
       return payload.late === true ? t("amendment.late") : null;
     case "amendment_admitted":
     case "amendment_inadmissible":
-      return admissionDetail(payload);
+      return admissionDetail(event.type, payload);
     case "relation_created":
     case "relation_deleted": {
       const kind = text(payload.kind);

@@ -26,6 +26,7 @@ vi.mock("./documents", () => ({
   clearLiveVote: vi.fn(),
   loadMilestones: vi.fn(),
   pointLiveVote: vi.fn(),
+  shareLockAssembly: vi.fn(),
 }));
 vi.mock("./events", () => ({ recordEvent: vi.fn() }));
 vi.mock("./resolvers", () => ({

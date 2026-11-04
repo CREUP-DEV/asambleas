@@ -375,6 +375,16 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     amendmentsDto.value = { ...current, amendments: next };
   }
 
+  /**
+   * Stores a document a mutation returned, only if the console still shows
+   * it: another Mesa member may have moved the debate (and the console with
+   * it) while the request was in flight, and the fetch key now points at
+   * the new document's entry.
+   */
+  function storeDocument(updated: DocumentDto): void {
+    if (updated.id === documentId.value) document.value = updated;
+  }
+
   function documentApi(path = ""): string {
     return `${documentUrl.value ?? ""}${path}`;
   }
@@ -833,12 +843,14 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   // Relations ---------------------------------------------------------------------
 
   async function createRelation(body: RelationBody): Promise<boolean> {
+    // A relation carries no document id: remember which document it is for.
+    const forDocument = documentId.value;
     try {
       const relation = await track("relation", () =>
         api.send<RelationDto>(documentApi("/amendments/relations"), { body }),
       );
       const current = amendmentsDto.value;
-      if (current) {
+      if (current && documentId.value === forDocument) {
         amendmentsDto.value = {
           ...current,
           relations: [...current.relations, relation],
@@ -858,6 +870,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   }
 
   async function deleteRelation(id: string): Promise<boolean> {
+    const forDocument = documentId.value;
     try {
       await track(`relation-${id}`, () =>
         api.send(
@@ -868,7 +881,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         ),
       );
       const current = amendmentsDto.value;
-      if (current) {
+      if (current && documentId.value === forDocument) {
         amendmentsDto.value = {
           ...current,
           relations: current.relations.filter((relation) => relation.id !== id),
@@ -941,7 +954,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       const updated = await track("final-vote", () =>
         api.send<DocumentDto>(documentApi("/final-vote"), { body }),
       );
-      document.value = updated;
+      storeDocument(updated);
       void refreshAgenda();
       void refreshAmendments();
       toast.add({
@@ -988,7 +1001,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
    */
   async function annulFinalVote(note: string | null): Promise<boolean> {
     const current = document.value;
-    if (!current) return false;
+    // Right after a switch, the new document's entry still holds the old
+    // DTO until it loads: its updatedAt must not go to the new URL.
+    if (!current || current.id !== documentId.value) return false;
     const body: FinalVoteAnnulBody = {
       updatedAt: current.updatedAt,
       note: note?.trim() ? note.trim() : null,
@@ -1000,7 +1015,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
           body,
         }),
       );
-      document.value = updated;
+      storeDocument(updated);
       void refreshAgenda();
       void refreshAmendments();
       toast.add({

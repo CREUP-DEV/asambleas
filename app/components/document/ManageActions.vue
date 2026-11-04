@@ -13,9 +13,14 @@ import type { DocumentDto, DocumentUpdateBody } from "~~/shared/types/api";
  * Deleting emits `deleted` once the server confirms: the parent leaves.
  *
  * The availability mirrors the server (assertStatusChange, deleteDocument):
- * only published texts can be postponed, a withdrawn document that was never
- * published goes back to "submitted", and frozen texts cannot be deleted. A
- * document with a final vote keeps its status: the vote must be annulled
+ * - only a presented document (submitted, published, postponed) can be
+ *   withdrawn: a draft is still private to its proponent, and an unwanted one
+ *   is deleted instead;
+ * - only published texts can be postponed;
+ * - a withdrawn submission that was never published goes back to "submitted"
+ *   (a text that was published is published again instead);
+ * - frozen texts cannot be deleted.
+ * A document with a final vote keeps its status: the vote must be annulled
  * first.
  */
 const props = withDefaults(
@@ -80,6 +85,13 @@ const decided = computed(
   () => props.document.finalVote !== null || props.document.consolidated,
 );
 
+/** Statuses a document can be withdrawn from: it was presented. */
+const WITHDRAWABLE = new Set<DocumentDto["status"]>([
+  "submitted",
+  "published",
+  "postponed",
+]);
+
 const available = computed<ManageAction[]>(() => {
   const current = props.document;
   if (!current.can.manage) return [];
@@ -87,9 +99,13 @@ const available = computed<ManageAction[]>(() => {
   if (!decided.value) {
     if (current.publishedAt !== null && current.status !== "postponed")
       list.push("postpone");
-    if (current.status !== "withdrawn") list.push("withdraw");
+    if (WITHDRAWABLE.has(current.status)) list.push("withdraw");
   }
-  if (current.status === "withdrawn" && !everPublished.value)
+  if (
+    current.status === "withdrawn" &&
+    !everPublished.value &&
+    current.submittedAt !== null
+  )
     list.push("restore");
   if (!everPublished.value) list.push("delete");
   return list;

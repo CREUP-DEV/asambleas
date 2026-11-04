@@ -77,6 +77,9 @@
   --ui-primary: var(--color-creup-red-900);
   --ui-secondary: var(--color-creup-blue-950);
   --user-content-font: var(--font-sans);
+  /* Nuxt UI's dimmed text (neutral-400 on white, 2.6:1) fails WCAG AA for
+     the small hints and labels that use it; one step darker reaches 4.8:1. */
+  --ui-text-dimmed: var(--ui-color-neutral-500);
 }
 
 html {
@@ -106,6 +109,8 @@ html {
 .dark {
   --ui-primary: var(--color-creup-red-400);
   --ui-secondary: var(--color-creup-blue-400);
+  /* neutral-500 on the dark background is 3.7:1; neutral-400 is 7:1. */
+  --ui-text-dimmed: var(--ui-color-neutral-400);
 }
 
 /*

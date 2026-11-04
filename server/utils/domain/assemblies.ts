@@ -7,7 +7,6 @@ import {
   desc,
   eq,
   inArray,
-  isNotNull,
   isNull,
   ne,
   or,
@@ -132,7 +131,17 @@ export function throwAssemblyMutationError(
   throwMutationError(scope, error, event);
 }
 
-/** Serializes concurrent writes on the same assembly (agenda, calendar, live state). */
+/**
+ * Serializes concurrent writes on the same assembly (agenda, calendar, live
+ * state). The lock is the first one its transaction takes; the order and
+ * strengths every transaction follows are under "Row locks" in documents.ts
+ * (shareLockAssembly). NO KEY UPDATE conflicts with itself and with the share
+ * lock of the vote, projection and document move paths (so an agenda delete
+ * and a document moving into its items serialize), but not with the FOR KEY
+ * SHARE that every event, vote or document insert takes on the assembly, so
+ * those never wait here. None of the callers deletes the row or changes its key (id,
+ * type, number).
+ */
 export async function lockAssembly(
   tx: Executor,
   assemblyId: string,
@@ -141,7 +150,7 @@ export async function lockAssembly(
     .select()
     .from(assemblies)
     .where(eq(assemblies.id, assemblyId))
-    .for("update");
+    .for("no key update");
   if (!row) fail(404, "Asamblea no encontrada");
   return row;
 }
@@ -571,21 +580,29 @@ export async function hasProtectedDocuments(
   agendaItemIds: string[],
 ): Promise<boolean> {
   if (agendaItemIds.length === 0) return false;
-  const [row] = await executor
-    .select({ id: documents.id })
+  // Locks every document under the items, after the assembly ("Row locks" in
+  // documents.ts): the cascade deletes the unprotected ones, and a draft
+  // submitted meanwhile is read with its new status once that commits. A
+  // document moved into these items is not matched here; the move holds the
+  // assembly share lock (updateDocument), so it commits before lockAssembly
+  // returns or starts after this transaction ends.
+  const rows = await executor
+    .select({
+      status: documents.status,
+      publishedAt: documents.publishedAt,
+      baseVersionId: documents.baseVersionId,
+    })
     .from(documents)
-    .where(
-      and(
-        inArray(documents.agendaItemId, agendaItemIds),
-        or(
-          inArray(documents.status, [...AGENDA_PROTECTED_DOCUMENT_STATUSES]),
-          isNotNull(documents.publishedAt),
-          isNotNull(documents.baseVersionId),
-        ),
-      ),
-    )
-    .limit(1);
-  return Boolean(row);
+    .where(inArray(documents.agendaItemId, agendaItemIds))
+    .for("update");
+  const protectedStatuses: readonly string[] =
+    AGENDA_PROTECTED_DOCUMENT_STATUSES;
+  return rows.some(
+    (row) =>
+      protectedStatuses.includes(row.status) ||
+      row.publishedAt !== null ||
+      row.baseVersionId !== null,
+  );
 }
 
 // Decisions ---------------------------------------------------------------------
