@@ -116,6 +116,26 @@ async function buildDocx(body: string, extra: Record<string, string> = {}) {
 const p = (style: string | null, text: string, bold = false) =>
   `<w:p>${style ? `<w:pPr><w:pStyle w:val="${style}"/></w:pPr>` : ""}<w:r>${bold ? "<w:rPr><w:b/></w:rPr>" : ""}<w:t xml:space="preserve">${text}</w:t></w:r></w:p>`;
 
+/** A paragraph holding only an inline picture, embedded as `rIdImg`. */
+const imageParagraph = `<w:p><w:r><w:drawing xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><wp:inline><wp:extent cx="9525" cy="9525"/><wp:docPr id="1" name="Imagen 1"/><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic><pic:nvPicPr><pic:cNvPr id="0" name="image1.png"/><pic:cNvPicPr/></pic:nvPicPr><pic:blipFill><a:blip r:embed="rIdImg"/></pic:blipFill><pic:spPr/></pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>`;
+
+/** The parts `imageParagraph` needs: the image, its type and relationship. */
+const imageParts: Record<string, string> = {
+  "[Content_Types].xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">
+<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>
+<Default Extension="xml" ContentType="application/xml"/>
+<Default Extension="png" ContentType="image/png"/>
+<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>
+</Types>`,
+  "word/_rels/document.xml.rels": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rIdImg" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="media/image1.png"/>
+</Relationships>`,
+  // Only its relationship matters: the converter never decodes it.
+  "word/media/image1.png": "not really a png",
+};
+
 const MiB = 1024 * 1024;
 
 interface RawEntry {
@@ -261,9 +281,42 @@ describe("convertDocx", { timeout: 30_000 }, () => {
     });
   });
 
-  it("rejects an empty document", async () => {
-    const data = await buildDocx("<w:p/>");
-    await expect(convert(data)).rejects.toMatchObject({ statusCode: 422 });
+  it("rejects an empty document, telling it apart from a limit hit", async () => {
+    const empty = { statusCode: 422, data: { reason: "empty" } };
+    await expect(convert(await buildDocx("<w:p/>"))).rejects.toMatchObject(
+      empty,
+    );
+    await expect(
+      convert(await buildDocx(p(null, "   ") + p(null, ""))),
+    ).rejects.toMatchObject(empty);
+
+    // The other 422 carries no reason, so the client does not call a file
+    // over the limits empty.
+    const three = await buildDocx(
+      p(null, "Uno") + p(null, "Dos") + p(null, "Tres"),
+    );
+    const error = await convert(three, { ...DOCX_LIMITS, maxBlocks: 2 }).then(
+      () => null,
+      (reason: unknown) => reason,
+    );
+    expect(error).toMatchObject({ statusCode: 422 });
+    expect((error as { data?: unknown }).data).toBeUndefined();
+  });
+
+  it("rejects a document of images alone as empty", async () => {
+    // A scanned page pasted into Word: the image is dropped, no text is left.
+    const data = await buildDocx(imageParagraph, imageParts);
+    await expect(convert(data)).rejects.toMatchObject({
+      statusCode: 422,
+      data: { reason: "empty" },
+    });
+  });
+
+  it("drops images and keeps the text around them, with a warning", async () => {
+    const data = await buildDocx(p(null, "Texto") + imageParagraph, imageParts);
+    const result = await convert(data);
+    expect(result.blocks.map((block) => block.text)).toEqual(["Texto"]);
+    expect(result.warnings).toEqual(["images_dropped"]);
   });
 
   it("converts a hand-written archive, so the zip helper is sound", async () => {

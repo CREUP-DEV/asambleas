@@ -2341,7 +2341,8 @@
       "notVoted": "Este documento no se somete a votación",
       "notPublished": "El documento no está publicado",
       "undecided": "Queda 1 enmienda por decidir | Quedan {count} enmiendas por decidir",
-      "totalityReturnBlocked": "{code}, enmienda a la totalidad de devolución, está aprobada: el texto se devuelve y no hay votación final. Reábrela si se aprobó por error."
+      "totalityReturnBlocked": "{code}, enmienda a la totalidad de devolución, está aprobada: el texto se devuelve y no hay votación final. Reábrela si se aprobó por error.",
+      "amendmentsLoading": "Cargando las enmiendas del documento…"
     },
     "finalVote": {
       "title": "Votación final del texto",

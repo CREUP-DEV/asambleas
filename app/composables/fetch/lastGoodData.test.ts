@@ -10,6 +10,7 @@ import {
 } from "vue";
 import {
   keepLastGoodData,
+  onlyForKey,
   useRetryFailed,
   type RetryableSource,
   type RetryFailedOptions,
@@ -248,6 +249,102 @@ describe("keepLastGoodData", () => {
     fake.fail(404);
     expect(stale.value).toBe(false);
     expect(failed.value).toBe(false);
+  });
+});
+
+describe("onlyForKey", () => {
+  interface Tagged {
+    documentId: string;
+    items: string[];
+  }
+
+  it("shows a value only while it belongs to the key", () => {
+    const key = ref("doc-1");
+    const source = ref<Dto | null | undefined>({ id: "doc-1" });
+    const shown = onlyForKey(source, key, (value) => value.id);
+    expect(shown.value).toEqual({ id: "doc-1" });
+
+    key.value = "doc-2";
+    expect(shown.value).toBeNull();
+
+    source.value = { id: "doc-2" };
+    expect(shown.value).toEqual({ id: "doc-2" });
+  });
+
+  it("lets nothing through as it is", () => {
+    const source = ref<Dto | null | undefined>(undefined);
+    const shown = onlyForKey(
+      source,
+      () => "doc-1",
+      (value) => value.id,
+    );
+    expect(shown.value).toBeUndefined();
+    source.value = null;
+    expect(shown.value).toBeNull();
+  });
+
+  it("writes through to the source", () => {
+    const source = ref<Dto | null | undefined>({ id: "doc-1" });
+    const shown = onlyForKey(
+      source,
+      () => "doc-1",
+      (value) => value.id,
+    );
+    shown.value = { id: "doc-1" };
+    expect(source.value).toEqual({ id: "doc-1" });
+    expect(shown.value).toBe(source.value);
+  });
+
+  it("hides the old key's data Nuxt carries into the new key's entry", () => {
+    // Nuxt seeds the new key's entry with the old key's data: the wrapped
+    // source keeps answering with doc-1's DTO while doc-2 loads.
+    const key = ref("doc-1");
+    const fake = fakeAsyncData<Dto | undefined>({ id: "doc-1" }, undefined);
+    const { data } = keepLastGoodData(fake.source, { resetOn: key });
+    const shown = onlyForKey(data, key, (value) => value.id);
+    const seen: (string | undefined)[] = [];
+    watch(
+      () => shown.value?.id,
+      (id) => seen.push(id),
+      { flush: "sync" },
+    );
+
+    key.value = "doc-2";
+    fake.start();
+    expect(data.value).toEqual({ id: "doc-1" });
+    expect(shown.value).toBeNull();
+
+    fake.succeed({ id: "doc-2" });
+    expect(shown.value).toEqual({ id: "doc-2" });
+    // No observer ever saw doc-1 under doc-2's key.
+    expect(seen).toEqual([undefined, "doc-2"]);
+  });
+
+  it("keeps hiding carried data when the new key's request fails", () => {
+    const key = ref("doc-1");
+    const fake = fakeAsyncData<Dto | undefined>({ id: "doc-1" }, undefined);
+    const { data } = keepLastGoodData(fake.source, { resetOn: key });
+    const shown = onlyForKey(data, key, (value) => value.id);
+
+    key.value = "doc-2";
+    // The carried value is written while the entry is idle, as Nuxt does
+    // when it builds the new entry: the wrapper counts it as good.
+    fake.source.data.value = { id: "doc-1" };
+    fake.start();
+    fake.fail(502);
+    expect(shown.value).toBeNull();
+  });
+
+  it("tells apart lists by their tag, empty ones included", () => {
+    const key = ref("doc-1");
+    const source = ref<Tagged | null | undefined>({
+      documentId: "doc-1",
+      items: [],
+    });
+    const shown = onlyForKey(source, key, (value) => value.documentId);
+    expect(shown.value?.items).toEqual([]);
+    key.value = "doc-2";
+    expect(shown.value).toBeNull();
   });
 });
 

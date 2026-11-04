@@ -81,6 +81,9 @@ const assent = computed(() => vote.value.method === "assent");
 const blocked = computed(
   () =>
     !document.value ||
+    // The amendments of this document have not loaded: an empty list would
+    // hide undecided amendments and a totality return.
+    !session.amendmentsDto.value ||
     undecided.value.length > 0 ||
     Boolean(totalityReturn.value) ||
     !isSessionFinalVoteReady(vote.value, outcome.value),
