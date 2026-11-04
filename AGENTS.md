@@ -281,6 +281,12 @@ throw createError({
 - `shared/utils/schemas/*`: Zod schemas matching `shared/types/api.ts`.
 - `server/utils/export/*`: queue, storage and PDF building.
 
+Import `shared/` from `app/` through the `~~/shared/...` alias, never a
+relative path. The SSR build keeps shared modules external, and Rollup
+renders an external that was imported relatively as a wrong relative path, so
+`pnpm build` fails in Nitro with "Could not resolve". Vitest resolves `~~`
+and `~` too (`vitest.config.ts`).
+
 ## Database And Migrations
 
 - CUID2 primary keys use `text('id').primaryKey().$defaultFn(cuid)`.

@@ -2329,5 +2329,20 @@
       "invalid": "Nulos",
       "majority": "Mayoría"
     }
+  },
+  "documents": {
+    "title": "Documentos",
+    "byAgenda": "Ver en el orden del día",
+    "searchPlaceholder": "Buscar por título, referencia o miembro",
+    "searchLabel": "Buscar documentos",
+    "statusFilter": "Filtrar por estado",
+    "kindFilter": "Filtrar por tipo",
+    "allStatuses": "Todos los estados",
+    "allKinds": "Todos los tipos",
+    "clearFilters": "Quitar filtros",
+    "emptyTitle": "Aún no hay documentos",
+    "emptyDescription": "Los documentos se presentan desde los puntos del orden del día que admiten propuestas.",
+    "noMatchesTitle": "Ningún documento coincide",
+    "noMatchesDescription": "Prueba con otra búsqueda o quita los filtros."
   }
 }

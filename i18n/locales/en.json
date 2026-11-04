@@ -2329,5 +2329,20 @@
       "invalid": "Invalid",
       "majority": "Majority"
     }
+  },
+  "documents": {
+    "title": "Documents",
+    "byAgenda": "View in the agenda",
+    "searchPlaceholder": "Search by title, reference or member",
+    "searchLabel": "Search documents",
+    "statusFilter": "Filter by status",
+    "kindFilter": "Filter by type",
+    "allStatuses": "All statuses",
+    "allKinds": "All types",
+    "clearFilters": "Clear filters",
+    "emptyTitle": "No documents yet",
+    "emptyDescription": "Documents are submitted from the agenda items that accept proposals.",
+    "noMatchesTitle": "No document matches",
+    "noMatchesDescription": "Try another search or clear the filters."
   }
 }
