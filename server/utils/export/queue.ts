@@ -1,4 +1,4 @@
-import PgBoss from "pg-boss";
+import { PgBoss } from "pg-boss";
 
 let boss: PgBoss | null = null;
 
@@ -10,17 +10,25 @@ export async function getExportQueue(): Promise<PgBoss> {
     throw new Error("DATABASE_URL is required for pg-boss queue");
   }
 
-  boss = new PgBoss({
+  const instance = new PgBoss({
     connectionString: databaseUrl,
     schema: "pgboss",
-    retryLimit: 2,
-    retryDelay: 5,
-    expireInHours: 1,
-    archiveCompletedAfterSeconds: 3600,
-    deleteAfterDays: 7,
   });
 
-  await boss.start();
+  await instance.start();
+
+  // pg-boss >= 10 rejects send() and work() on a queue that was never created.
+  // createQueue is idempotent, so running it on every boot is safe.
+  for (const name of Object.values(EXPORT_QUEUE_NAMES)) {
+    await instance.createQueue(name, {
+      retryLimit: 2,
+      retryDelay: 5,
+      expireInSeconds: 3600,
+      deleteAfterSeconds: 7 * 24 * 3600,
+    });
+  }
+
+  boss = instance;
   return boss;
 }
 

@@ -1,6 +1,7 @@
-import { createWriteStream } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import PdfPrinter from "pdfmake";
+import * as pdfmakeModule from "pdfmake";
+import type { TDocumentDefinitions } from "pdfmake/interfaces";
+import type { Job } from "pg-boss";
 import { logInfo, logWarn, logError } from "../utils/core/logger";
 import {
   buildAssemblyExportData,
@@ -23,7 +24,14 @@ import {
   readExportMetadata,
 } from "../utils/export/storage";
 
-let printer: PdfPrinter | null = null;
+type PdfMake = typeof pdfmakeModule;
+
+// pdfmake 0.3 exports a CommonJS singleton whose methods live on its
+// prototype, so the namespace object only carries them under `default`.
+const pdfmake: PdfMake =
+  (pdfmakeModule as unknown as { default?: PdfMake }).default ?? pdfmakeModule;
+
+let fontsReady = false;
 
 async function readServerFont(name: string) {
   const raw = await useStorage("assets:server").getItemRaw(`fonts/${name}`);
@@ -33,10 +41,10 @@ async function readServerFont(name: string) {
   return Buffer.isBuffer(raw) ? raw : Buffer.from(raw as Uint8Array);
 }
 
-async function getPdfPrinter() {
-  if (printer) return printer;
+async function ensurePdfFonts() {
+  if (fontsReady) return;
 
-  printer = new PdfPrinter({
+  pdfmake.setFonts({
     Raleway: {
       normal: await readServerFont("Raleway-Regular.woff"),
       bold: await readServerFont("Raleway-Bold.woff"),
@@ -44,8 +52,11 @@ async function getPdfPrinter() {
       bolditalics: await readServerFont("Raleway-BoldItalic.woff"),
     },
   });
+  // Exports never embed remote images or local files by path.
+  pdfmake.setUrlAccessPolicy(() => false);
+  pdfmake.setLocalAccessPolicy(() => false);
 
-  return printer;
+  fontsReady = true;
 }
 
 async function readExportMetadataWithRetry(jobId: string) {
@@ -64,19 +75,11 @@ async function readExportMetadataWithRetry(jobId: string) {
 async function writePdf(
   jobId: string,
   filePath: string,
-  docDefinition: Parameters<PdfPrinter["createPdfKitDocument"]>[0],
+  docDefinition: TDocumentDefinitions,
 ) {
   await mkdir(getExportMetadataDir(filePath), { recursive: true });
-  const pdfDoc = (await getPdfPrinter()).createPdfKitDocument(docDefinition);
-  const output = createWriteStream(filePath);
-
-  await new Promise<void>((resolve, reject) => {
-    pdfDoc.on("error", reject);
-    output.on("error", reject);
-    output.on("finish", resolve);
-    pdfDoc.pipe(output);
-    pdfDoc.end();
-  });
+  await ensurePdfFonts();
+  await pdfmake.createPdf(docDefinition).write(filePath);
 
   await patchExportMetadata(jobId, { status: "done", error: undefined });
 }
@@ -146,7 +149,7 @@ export default defineNitroPlugin(async (nitroApp) => {
     await boss.work<AssemblyExportJobData>(
       EXPORT_QUEUE_NAMES.ASSEMBLY_EXPORT,
       { batchSize: 1 },
-      async (jobs) => {
+      async (jobs: Job<AssemblyExportJobData>[]) => {
         for (const job of jobs) {
           await processJob(job, processAssemblyExport);
         }
@@ -156,7 +159,7 @@ export default defineNitroPlugin(async (nitroApp) => {
     await boss.work<DocumentExportJobData>(
       EXPORT_QUEUE_NAMES.DOCUMENT_EXPORT,
       { batchSize: 1 },
-      async (jobs) => {
+      async (jobs: Job<DocumentExportJobData>[]) => {
         for (const job of jobs) {
           await processJob(job, processDocumentExport);
         }

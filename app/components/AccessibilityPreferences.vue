@@ -78,9 +78,7 @@ const fontOptions = [
             class="accent-primary"
             @change="
               contentFont = option.value as
-                | 'raleway'
-                | 'atkinson'
-                | 'opendyslexic'
+                'raleway' | 'atkinson' | 'opendyslexic'
             "
           />
           <span class="text-sm">{{ t(option.label) }}</span>
