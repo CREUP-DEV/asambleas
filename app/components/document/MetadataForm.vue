@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { FormError, FormSubmitEvent } from "@nuxt/ui";
+import type { FormError, FormErrorEvent, FormSubmitEvent } from "@nuxt/ui";
 import {
   DOCUMENT_KIND_DEFAULTS,
   DOCUMENT_KINDS,
@@ -15,24 +15,45 @@ import type {
   MemberDto,
 } from "~~/shared/types/api";
 import { formatDateTime, toDate } from "~/utils/format";
+import {
+  kindSelectItems,
+  presenterKindGroups,
+} from "~/composables/document/documentKinds";
 
 /**
  * Metadata of a document: title, summary, kind, agenda item, proponent,
- * amendable / voted / majority and the amendment window override. Sends only
- * the fields that changed, with `updatedAt`.
+ * internal deadline, amendable / voted / majority and the amendment window
+ * override. Sends only the fields that changed, with `updatedAt`.
  *
- * Presenters may change title, summary, kind and agenda item of their draft;
- * the server gives them the defaults of the kind. Everything else needs
- * document:manage (`document.can.manage`) and is read-only otherwise.
- * Managers keep this form after publication, when the text is frozen.
+ * Presenters see only what is theirs to fill in: title, type and summary
+ * (the agenda item folded under "Más opciones"); the server gives them the
+ * defaults of the kind. Everything else needs document:manage
+ * (`document.can.manage`): who presents it and the internal deadline stay in
+ * view, and the rules (format, amendments, vote, window) are folded under
+ * "Opciones avanzadas". Managers keep this form after publication, when the
+ * text is frozen.
+ *
+ * Presenters choose among the types their member usually presents first
+ * (the rest under "Otros tipos"); a PDF only offers the types that take no
+ * amendments, as when it was created.
  *
  * Emits `saved` with the updated DocumentDto (store it), and `stale` after an
  * optimistic-lock conflict (refetch the document; the form then reloads).
+ * `save()` (exposed) validates and stores pending changes without a toast,
+ * so a page can save them before sending the document.
  */
-const props = defineProps<{
-  document: DocumentDto;
-  assembly: AssemblyDto;
-}>();
+const props = withDefaults(
+  defineProps<{
+    document: DocumentDto;
+    assembly: AssemblyDto;
+    /**
+     * Show "Guardar datos" as a secondary button (the page has its own
+     * primary action and saves these changes before it).
+     */
+    secondarySave?: boolean;
+  }>(),
+  { secondarySave: false },
+);
 
 const emit = defineEmits<{
   saved: [document: DocumentDto];
@@ -64,6 +85,7 @@ interface FormState {
   windowOverride: boolean;
   opensAt: string | null;
   closesAt: string | null;
+  dueAt: string | null;
 }
 
 function milestoneAt(key: "amendments_open" | "amendments_close") {
@@ -96,6 +118,8 @@ function snapshot(document: DocumentDto): FormState {
     windowOverride: opensAt !== null || closesAt !== null,
     opensAt,
     closesAt,
+    // Older servers omit it: no deadline.
+    dueAt: document.dueAt ?? null,
   };
 }
 
@@ -138,6 +162,7 @@ function buildBody(): DocumentUpdateBody {
     body.amendmentsOpenAt = desiredWindow.value.opensAt;
   if (!sameInstant(desiredWindow.value.closesAt, before.closesAt))
     body.amendmentsCloseAt = desiredWindow.value.closesAt;
+  if (!sameInstant(state.dueAt, before.dueAt)) body.dueAt = state.dueAt;
   return body;
 }
 
@@ -202,12 +227,31 @@ function applyKindDefaults(): void {
 
 // Options -----------------------------------------------------------------
 
-const kindItems = computed(() =>
-  DOCUMENT_KINDS.map((kind) => ({
-    label: t(`document.kinds.${kind}`),
-    value: kind,
-  })),
-);
+const { member: myMember } = useMe();
+
+/**
+ * Managers get every type. Presenters get the usual ones of their member
+ * first, and a PDF only the types that take no amendments (the server
+ * would silently store it without them otherwise).
+ */
+const kindItems = computed(() => {
+  const label = (kind: DocumentKind) => t(`document.kinds.${kind}`);
+  if (manager.value) {
+    return DOCUMENT_KINDS.map((kind) => ({ label: label(kind), value: kind }));
+  }
+  return kindSelectItems(
+    presenterKindGroups({
+      memberKind: props.document.proponent?.kind ?? myMember.value?.kind,
+      format: props.document.format,
+      current: initial.value.kind,
+    }),
+    label,
+    {
+      common: t("document.kindGroups.common"),
+      others: t("document.kindGroups.others"),
+    },
+  );
+});
 
 const majorityItems = computed(() =>
   MAJORITIES.map((majority) => ({
@@ -302,6 +346,29 @@ const showWindow = computed(
   () => manager.value && !isFile.value && state.amendable,
 );
 
+/** The internal deadline matters until the document is published. */
+const showDueAt = computed(
+  () => manager.value && props.document.publishedAt === null,
+);
+
+// Folded sections -----------------------------------------------------------
+
+/** Managers: format, amendments, vote and window. */
+const advancedOpen = ref(false);
+/** Presenters: the agenda item. */
+const moreOpen = ref(false);
+
+/** Open the folded section that holds a field with an error. */
+function revealErrors(names: (string | undefined)[]): void {
+  if (names.some((name) => name === "opensAt" || name === "closesAt")) {
+    advancedOpen.value = true;
+  }
+}
+
+function onError(event: FormErrorEvent): void {
+  revealErrors(event.errors.map((error) => error.name));
+}
+
 // Validation and submit -----------------------------------------------------
 
 function validate(current: Partial<FormState>): FormError[] {
@@ -336,8 +403,19 @@ function validate(current: Partial<FormState>): FormError[] {
   return errors;
 }
 
-async function onSubmit(_event: FormSubmitEvent<FormState>): Promise<void> {
-  if (saving.value || changedCount.value === 0) return;
+let inflight: Promise<boolean> | null = null;
+
+/** PUT the changed fields. Resolves to true once they are stored. */
+function persist(notify: boolean): Promise<boolean> {
+  if (inflight) return inflight;
+  if (changedCount.value === 0) return Promise.resolve(true);
+  inflight = doPersist(notify).finally(() => {
+    inflight = null;
+  });
+  return inflight;
+}
+
+async function doPersist(notify: boolean): Promise<boolean> {
   saving.value = true;
   try {
     const updated = await send<DocumentDto>(
@@ -346,11 +424,14 @@ async function onSubmit(_event: FormSubmitEvent<FormState>): Promise<void> {
     );
     resyncNext = true;
     emit("saved", updated);
-    toast.add({
-      title: t("document.metadata.saved"),
-      color: "success",
-      icon: "i-lucide-check",
-    });
+    if (notify) {
+      toast.add({
+        title: t("document.metadata.saved"),
+        color: "success",
+        icon: "i-lucide-check",
+      });
+    }
+    return true;
   } catch (error) {
     notifyError(error, "document.metadata.saveError");
     if (isConflict(error)) {
@@ -358,21 +439,69 @@ async function onSubmit(_event: FormSubmitEvent<FormState>): Promise<void> {
       resyncNext = true;
       emit("stale");
     }
+    return false;
   } finally {
     saving.value = false;
   }
 }
 
-defineExpose({ reset: resetForm });
+async function onSubmit(_event: FormSubmitEvent<FormState>): Promise<void> {
+  await persist(true);
+}
+
+interface FormHandle {
+  validate: (options: { silent: true }) => Promise<unknown>;
+  errors: { id?: string; name?: string }[];
+}
+const form = useTemplateRef<FormHandle>("form");
+
+/**
+ * Validates the pending changes without storing them (nothing pending
+ * resolves to true). On invalid data it shows the errors, opens their
+ * section, brings the first one into view with the focus and resolves to
+ * false. Call it before opening a dialog: a modal keeps the focus.
+ */
+async function check(): Promise<boolean> {
+  if (changedCount.value === 0 || !form.value) return true;
+  if ((await form.value.validate({ silent: true })) !== false) return true;
+  const errors = form.value.errors ?? [];
+  revealErrors(errors.map((error) => error.name));
+  toast.add({
+    title: t("document.metadata.invalid"),
+    color: "warning",
+    icon: "i-lucide-circle-alert",
+  });
+  await nextTick();
+  const first = errors.find((error) => error.id)?.id;
+  const field = first ? window.document.getElementById(first) : null;
+  field?.scrollIntoView({ block: "center" });
+  field?.focus({ preventScroll: true });
+  return false;
+}
+
+/**
+ * Validates and stores the pending changes without a toast (nothing to do
+ * resolves to true). Resolves to false on invalid data (see `check`), a
+ * conflict (the form shows its notice) or a failed request.
+ */
+async function save(): Promise<boolean> {
+  if (!inflight && changedCount.value === 0) return true;
+  if (!(await check())) return false;
+  return persist(false);
+}
+
+defineExpose({ reset: resetForm, check, save });
 </script>
 
 <template>
   <UForm
+    ref="form"
     :state="state"
     :validate="validate"
     :validate-on="['blur', 'change']"
     class="space-y-4"
     @submit="onSubmit"
+    @error="onError"
   >
     <UAlert
       v-if="conflictNotice"
@@ -393,6 +522,10 @@ defineExpose({ reset: resetForm });
       />
     </UFormField>
 
+    <UFormField name="kind" :label="t('document.metadata.kind')" required>
+      <USelect v-model="state.kind" :items="kindItems" class="w-full" />
+    </UFormField>
+
     <UFormField
       name="summary"
       :label="t('document.metadata.summary')"
@@ -409,173 +542,209 @@ defineExpose({ reset: resetForm });
       />
     </UFormField>
 
-    <UFormField name="kind" :label="t('document.metadata.kind')" required>
-      <USelect v-model="state.kind" :items="kindItems" class="w-full" />
-    </UFormField>
-
-    <UFormField name="format" :label="t('document.metadata.format')">
-      <p class="text-default flex items-center gap-2 text-sm">
-        <UIcon
-          :name="isFile ? 'i-lucide-file-text' : 'i-lucide-text'"
-          class="text-muted size-4"
-          aria-hidden="true"
-        />
-        {{ t(`document.formats.${document.format}`) }}
+    <!-- Presenters: who presents it (read only) and the agenda item, folded -->
+    <template v-if="!manager">
+      <p
+        v-if="document.proponent"
+        class="text-muted flex flex-wrap items-center gap-2 text-sm"
+      >
+        {{ t("document.metadata.presentedBy") }}
+        <CommonMemberBadge :member="document.proponent" show-name />
       </p>
-    </UFormField>
 
-    <UFormField name="agendaItemId" :label="t('document.metadata.agendaItem')">
-      <USkeleton
-        v-if="agendaStatus === 'pending' && !agenda"
-        class="h-8 w-full"
-      />
-      <USelect
-        v-else-if="agendaItems.length > 0"
-        v-model="state.agendaItemId"
-        :items="agendaItems"
-        class="w-full"
-      />
-      <p v-else class="text-muted text-sm">
-        {{ currentAgendaTitle ?? t("document.metadata.agendaUnavailable") }}
-      </p>
-    </UFormField>
-
-    <UFormField
-      name="proponentMemberId"
-      :label="t('document.metadata.proponent')"
-      :description="manager ? undefined : t('document.metadata.managerOnly')"
-    >
-      <USelectMenu
-        v-if="manager"
-        v-model="state.proponentMemberId"
-        :items="memberItems"
-        value-key="value"
-        :filter-fields="['label', 'description']"
-        :loading="membersStatus === 'pending'"
-        :placeholder="t('document.metadata.proponentPlaceholder')"
-        :search-input="{ placeholder: t('document.metadata.searchMember') }"
-        clear
-        class="w-full"
-      />
-      <CommonMemberBadge
-        v-else-if="document.proponent"
-        :member="document.proponent"
-        show-name
-      />
-      <p v-else class="text-muted text-sm">
-        {{ t("document.metadata.noProponent") }}
-      </p>
-    </UFormField>
-
-    <USeparator />
-
-    <div class="space-y-3">
-      <div class="flex items-center justify-between gap-2">
-        <h4 class="text-highlighted text-sm font-semibold">
-          {{ t("document.metadata.procedure") }}
-        </h4>
+      <UCollapsible v-model:open="moreOpen">
         <UButton
-          v-if="differsFromDefaults"
-          size="xs"
           color="neutral"
           variant="link"
-          icon="i-lucide-rotate-ccw"
-          :label="t('document.metadata.applyDefaults')"
-          @click="applyKindDefaults"
+          size="sm"
+          class="px-0"
+          :icon="moreOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+          :label="t('document.metadata.more')"
         />
-      </div>
+        <template #content>
+          <div class="pt-2">
+            <UFormField
+              name="agendaItemId"
+              :label="t('document.metadata.agendaItem')"
+              :description="t('document.metadata.agendaItemHelp')"
+            >
+              <USkeleton
+                v-if="agendaStatus === 'pending' && !agenda"
+                class="h-8 w-full"
+              />
+              <USelect
+                v-else-if="agendaItems.length > 0"
+                v-model="state.agendaItemId"
+                :items="agendaItems"
+                class="w-full"
+              />
+              <p v-else class="text-muted text-sm">
+                {{
+                  currentAgendaTitle ?? t("document.metadata.agendaUnavailable")
+                }}
+              </p>
+            </UFormField>
+          </div>
+        </template>
+      </UCollapsible>
+    </template>
 
-      <p v-if="!manager" class="text-muted text-xs">
-        {{ t("document.metadata.kindDefaultsHint") }}
-      </p>
-
+    <!-- Managers: where it goes, who presents it and by when -->
+    <template v-else>
       <UFormField
-        name="amendable"
-        :description="
-          isFile ? t('document.metadata.fileNotAmendable') : undefined
-        "
+        name="agendaItemId"
+        :label="t('document.metadata.agendaItem')"
       >
-        <USwitch
-          v-if="manager"
-          v-model="state.amendable"
-          :disabled="isFile"
-          :label="t('document.metadata.amendable')"
+        <USkeleton
+          v-if="agendaStatus === 'pending' && !agenda"
+          class="h-8 w-full"
         />
-        <USwitch
-          v-else
-          :model-value="effective.amendable"
-          disabled
-          :label="t('document.metadata.amendable')"
-        />
-      </UFormField>
-
-      <UFormField name="voted">
-        <USwitch
-          v-if="manager"
-          v-model="state.voted"
-          :label="t('document.metadata.voted')"
-        />
-        <USwitch
-          v-else
-          :model-value="effective.voted"
-          disabled
-          :label="t('document.metadata.voted')"
-        />
-      </UFormField>
-
-      <UFormField
-        v-if="effective.voted"
-        name="majority"
-        :label="t('document.metadata.majority')"
-      >
         <USelect
-          v-if="manager"
-          v-model="state.majority"
-          :items="majorityItems"
+          v-else-if="agendaItems.length > 0"
+          v-model="state.agendaItemId"
+          :items="agendaItems"
           class="w-full"
         />
-        <p v-else class="text-default text-sm">
-          {{ t(`document.majorities.${effective.majority}`) }}
+        <p v-else class="text-muted text-sm">
+          {{ currentAgendaTitle ?? t("document.metadata.agendaUnavailable") }}
         </p>
       </UFormField>
-    </div>
 
-    <template v-if="showWindow">
-      <USeparator />
-      <div class="space-y-3">
-        <UFormField
-          name="windowOverride"
-          :description="t('document.metadata.windowOverrideDescription')"
-        >
-          <USwitch
-            v-model="state.windowOverride"
-            :label="t('document.metadata.windowOverride')"
-            @update:model-value="onOverrideToggle"
-          />
-        </UFormField>
+      <UFormField
+        name="proponentMemberId"
+        :label="t('document.metadata.proponent')"
+      >
+        <USelectMenu
+          v-model="state.proponentMemberId"
+          :items="memberItems"
+          value-key="value"
+          :filter-fields="['label', 'description']"
+          :loading="membersStatus === 'pending'"
+          :placeholder="t('document.metadata.proponentPlaceholder')"
+          :search-input="{ placeholder: t('document.metadata.searchMember') }"
+          clear
+          class="w-full"
+        />
+      </UFormField>
 
-        <template v-if="state.windowOverride">
-          <UFormField
-            name="opensAt"
-            :label="t('document.metadata.opensAt')"
-            :description="calendarHint(calendarOpensAt)"
-            :hint="t('document.metadata.timeZone')"
-          >
-            <DocumentDateTimeInput v-model="state.opensAt" />
-          </UFormField>
-          <UFormField
-            name="closesAt"
-            :label="t('document.metadata.closesAt')"
-            :description="calendarHint(calendarClosesAt)"
-            :hint="t('document.metadata.timeZone')"
-          >
-            <DocumentDateTimeInput
-              v-model="state.closesAt"
-              :min="state.opensAt"
-            />
-          </UFormField>
+      <UFormField
+        v-if="showDueAt"
+        name="dueAt"
+        :label="t('document.metadata.dueAt')"
+        :hint="t('document.metadata.optional')"
+        :description="t('document.metadata.dueAtDescription')"
+      >
+        <DocumentDateTimeInput v-model="state.dueAt" name="dueAt" />
+      </UFormField>
+
+      <UCollapsible v-model:open="advancedOpen">
+        <UButton
+          color="neutral"
+          variant="link"
+          size="sm"
+          class="px-0"
+          :icon="advancedOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+          :label="t('document.metadata.advanced')"
+        />
+        <template #content>
+          <div class="space-y-4 pt-2">
+            <UFormField name="format" :label="t('document.metadata.format')">
+              <p class="text-default flex items-center gap-2 text-sm">
+                <UIcon
+                  :name="isFile ? 'i-lucide-file-text' : 'i-lucide-text'"
+                  class="text-muted size-4"
+                  aria-hidden="true"
+                />
+                {{ t(`document.formats.${document.format}`) }}
+              </p>
+            </UFormField>
+
+            <div class="space-y-3">
+              <div class="flex items-center justify-between gap-2">
+                <h4 class="text-highlighted text-sm font-semibold">
+                  {{ t("document.metadata.procedure") }}
+                </h4>
+                <UButton
+                  v-if="differsFromDefaults"
+                  size="xs"
+                  color="neutral"
+                  variant="link"
+                  icon="i-lucide-rotate-ccw"
+                  :label="t('document.metadata.applyDefaults')"
+                  @click="applyKindDefaults"
+                />
+              </div>
+
+              <UFormField
+                name="amendable"
+                :description="
+                  isFile ? t('document.metadata.fileNotAmendable') : undefined
+                "
+              >
+                <USwitch
+                  v-model="state.amendable"
+                  :disabled="isFile"
+                  :label="t('document.metadata.amendable')"
+                />
+              </UFormField>
+
+              <UFormField name="voted">
+                <USwitch
+                  v-model="state.voted"
+                  :label="t('document.metadata.voted')"
+                />
+              </UFormField>
+
+              <UFormField
+                v-if="effective.voted"
+                name="majority"
+                :label="t('document.metadata.majority')"
+              >
+                <USelect
+                  v-model="state.majority"
+                  :items="majorityItems"
+                  class="w-full"
+                />
+              </UFormField>
+            </div>
+
+            <div v-if="showWindow" class="space-y-3">
+              <UFormField
+                name="windowOverride"
+                :description="t('document.metadata.windowOverrideDescription')"
+              >
+                <USwitch
+                  v-model="state.windowOverride"
+                  :label="t('document.metadata.windowOverride')"
+                  @update:model-value="onOverrideToggle"
+                />
+              </UFormField>
+
+              <template v-if="state.windowOverride">
+                <UFormField
+                  name="opensAt"
+                  :label="t('document.metadata.opensAt')"
+                  :description="calendarHint(calendarOpensAt)"
+                  :hint="t('document.metadata.timeZone')"
+                >
+                  <DocumentDateTimeInput v-model="state.opensAt" />
+                </UFormField>
+                <UFormField
+                  name="closesAt"
+                  :label="t('document.metadata.closesAt')"
+                  :description="calendarHint(calendarClosesAt)"
+                  :hint="t('document.metadata.timeZone')"
+                >
+                  <DocumentDateTimeInput
+                    v-model="state.closesAt"
+                    :min="state.opensAt"
+                  />
+                </UFormField>
+              </template>
+            </div>
+          </div>
         </template>
-      </div>
+      </UCollapsible>
     </template>
 
     <div class="flex flex-wrap items-center justify-end gap-2 pt-1">
@@ -590,6 +759,8 @@ defineExpose({ reset: resetForm });
       <UButton
         type="submit"
         icon="i-lucide-save"
+        :color="secondarySave ? 'neutral' : 'primary'"
+        :variant="secondarySave ? 'outline' : 'solid'"
         :label="t('document.metadata.save')"
         :loading="saving"
         :disabled="!dirty"

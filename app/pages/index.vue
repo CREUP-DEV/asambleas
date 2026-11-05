@@ -1,11 +1,27 @@
 <script setup lang="ts">
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
-import type { AssemblyListDto, AssemblySummaryDto } from "~~/shared/types/api";
+import type {
+  AssemblyListDto,
+  AssemblySummaryDto,
+  MeWorkDto,
+} from "~~/shared/types/api";
+import {
+  homeWorkReviewPending,
+  homeWorkTasks,
+  homeWorkUpdates,
+} from "~/components/home/-work";
 import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
 import {
   assemblyPath,
   projectionPath,
 } from "~/components/shell/Navigation.vue";
+
+/**
+ * Home: what the signed-in user has to do (GET /api/me/work), where their
+ * documents and amendments stand, the Secretaría's pending review per
+ * assembly, a live-session banner and the upcoming assemblies. It leads with
+ * the work and stays calm: few cards, one sentence per item.
+ */
 
 const { t, locale } = useI18n();
 const localePath = useLocalePath();
@@ -14,13 +30,25 @@ const { me, member, isAdmin, can } = useMe();
 useHead({ title: () => t("home.title") });
 
 // The list is sorted by start date, newest first, so every assembly still
-// to come (and any in session) is on the first page.
-const { data, status, error, refresh } = await useFetch<AssemblyListDto>(
-  "/api/assemblies",
-  { key: "home-assemblies", query: { page: 1 } },
-);
+// to come (and any in session) is on the first page. Each request fails on
+// its own: a missing work list never hides the assemblies, or the reverse.
+const [assembliesFetch, workFetch] = await Promise.all([
+  useFetch<AssemblyListDto>("/api/assemblies", {
+    key: "home-assemblies",
+    query: { page: 1 },
+  }),
+  useFetch<MeWorkDto>("/api/me/work", { key: "me-work" }),
+]);
+const { data, status, error, refresh } = assembliesFetch;
+const {
+  data: work,
+  status: workStatus,
+  error: workError,
+  refresh: refreshWork,
+} = workFetch;
 
-// The shared clock: the greeting, the date and the upcoming list follow it.
+// The shared clock: the greeting, the date, deadlines and the upcoming list
+// follow it.
 const now = useAppNow();
 
 const assemblies = computed(() => data.value?.items ?? []);
@@ -28,6 +56,9 @@ const assemblies = computed(() => data.value?.items ?? []);
 const inSession = computed(() =>
   assemblies.value.filter((item) => item.status === "in_session"),
 );
+
+/** The next few assemblies; the full list is one click away. */
+const UPCOMING_LIMIT = 4;
 
 const upcoming = computed<AssemblySummaryDto[]>(() =>
   assemblies.value
@@ -40,12 +71,32 @@ const upcoming = computed<AssemblySummaryDto[]>(() =>
     .sort(
       (a, b) =>
         new Date(a.startDate).getTime() - new Date(b.startDate).getTime(),
-    ),
+    )
+    .slice(0, UPCOMING_LIMIT),
 );
 
 const loading = computed(
   () => status.value === "pending" && assemblies.value.length === 0,
 );
+
+// Work ------------------------------------------------------------------
+
+const tasks = computed(() =>
+  work.value ? homeWorkTasks(work.value, now.value) : [],
+);
+const updates = computed(() => (work.value ? homeWorkUpdates(work.value) : []));
+const review = computed(() =>
+  work.value ? homeWorkReviewPending(work.value.review) : [],
+);
+const workLoading = computed(
+  () => workStatus.value === "pending" && !work.value,
+);
+const nothingToDo = computed(
+  () => tasks.value.length === 0 && review.value.length === 0,
+);
+// With an assembly in session, following it is the screen's main action:
+// the work below keeps secondary buttons.
+const workIsPrimary = computed(() => inSession.value.length === 0);
 
 // Greeting --------------------------------------------------------------
 
@@ -127,22 +178,6 @@ const adminLinks = computed(() =>
           </p>
         </header>
 
-        <UAlert
-          v-if="error"
-          color="error"
-          variant="subtle"
-          icon="i-lucide-circle-alert"
-          :title="t('home.loadFailed')"
-          :actions="[
-            {
-              label: t('home.retry'),
-              color: 'error',
-              variant: 'outline',
-              onClick: () => refresh(),
-            },
-          ]"
-        />
-
         <section
           v-if="inSession.length > 0"
           aria-labelledby="home-live-title"
@@ -200,72 +235,188 @@ const adminLinks = computed(() =>
         </section>
 
         <div class="grid gap-6 lg:grid-cols-3 lg:gap-8">
-          <section
-            aria-labelledby="home-upcoming-title"
-            class="flex flex-col gap-3 lg:col-span-2"
-          >
-            <div class="flex items-center justify-between gap-3">
+          <div class="flex min-w-0 flex-col gap-8 lg:col-span-2">
+            <!-- What to do -->
+            <section
+              aria-labelledby="home-todo-title"
+              class="flex flex-col gap-3"
+            >
+              <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <h2
+                  id="home-todo-title"
+                  class="text-highlighted text-lg font-semibold"
+                >
+                  {{ t("home.todo.title") }}
+                </h2>
+                <p
+                  v-if="tasks.length > 0"
+                  class="text-muted text-sm"
+                  role="status"
+                >
+                  {{
+                    t("home.todo.count", { count: tasks.length }, tasks.length)
+                  }}
+                </p>
+              </div>
+
+              <div
+                v-if="workLoading"
+                class="ring-default space-y-4 rounded-lg p-4 ring"
+                role="status"
+              >
+                <span class="sr-only">{{ t("home.todo.loading") }}</span>
+                <div v-for="n in 2" :key="n" class="flex gap-3">
+                  <USkeleton class="size-8 shrink-0 rounded-full" />
+                  <div class="flex-1 space-y-2">
+                    <USkeleton class="h-4 w-1/2" />
+                    <USkeleton class="h-4 w-3/4" />
+                  </div>
+                </div>
+              </div>
+
+              <UAlert
+                v-else-if="workError && !work"
+                color="error"
+                variant="subtle"
+                icon="i-lucide-circle-alert"
+                :title="t('home.todo.loadFailed')"
+                :actions="[
+                  {
+                    label: t('home.retry'),
+                    color: 'error',
+                    variant: 'outline',
+                    onClick: () => refreshWork(),
+                  },
+                ]"
+              />
+
+              <template v-else>
+                <ul
+                  v-if="review.length > 0"
+                  class="grid gap-4"
+                  :class="review.length > 1 ? 'sm:grid-cols-2' : ''"
+                >
+                  <li v-for="(entry, index) in review" :key="entry.assembly.id">
+                    <HomeReviewCard
+                      :review="entry"
+                      :heading-level="3"
+                      :primary="workIsPrimary && index === 0"
+                    />
+                  </li>
+                </ul>
+
+                <UCard v-if="tasks.length > 0">
+                  <HomeTaskList
+                    :tasks="tasks"
+                    :primary="workIsPrimary && review.length === 0"
+                  />
+                </UCard>
+
+                <CommonEmptyState
+                  v-if="nothingToDo"
+                  icon="i-lucide-circle-check-big"
+                  :title="t('home.todo.emptyTitle')"
+                  :description="
+                    member
+                      ? t('home.todo.emptyDescription')
+                      : t('home.todo.emptyNoMember')
+                  "
+                  variant="outline"
+                />
+              </template>
+            </section>
+
+            <!-- Where the rest stands -->
+            <section
+              v-if="updates.length > 0"
+              aria-labelledby="home-mine-title"
+              class="flex flex-col gap-3"
+            >
               <h2
-                id="home-upcoming-title"
+                id="home-mine-title"
                 class="text-highlighted text-lg font-semibold"
               >
-                {{ t("home.upcoming.title") }}
+                {{ t("home.mine.title") }}
               </h2>
-              <UButton
-                :to="localePath('/asambleas')"
-                color="neutral"
-                variant="link"
-                trailing-icon="i-lucide-arrow-right"
-              >
-                {{ t("home.upcoming.all") }}
-              </UButton>
-            </div>
+              <UCard>
+                <HomeUpdateList :updates="updates" />
+              </UCard>
+            </section>
 
-            <ul
-              v-if="loading"
-              class="grid gap-4 sm:grid-cols-2"
-              :aria-label="t('home.loading')"
-              aria-busy="true"
+            <!-- Upcoming assemblies -->
+            <section
+              aria-labelledby="home-upcoming-title"
+              class="flex flex-col gap-3"
             >
-              <li
-                v-for="n in 2"
-                :key="n"
-                class="ring-default space-y-3 rounded-lg p-5 ring"
-              >
-                <div class="flex justify-between gap-3">
-                  <USkeleton class="h-6 w-28" />
-                  <USkeleton class="h-5 w-20" />
-                </div>
-                <USkeleton class="h-4 w-48" />
-                <USkeleton class="h-4 w-40" />
-                <USkeleton class="h-4 w-32" />
-              </li>
-            </ul>
-
-            <CommonEmptyState
-              v-else-if="!error && upcoming.length === 0"
-              icon="i-lucide-calendar-off"
-              :title="t('home.upcoming.empty')"
-              :description="t('home.upcoming.emptyDescription')"
-              variant="outline"
-            >
-              <template #action>
+              <div class="flex items-center justify-between gap-3">
+                <h2
+                  id="home-upcoming-title"
+                  class="text-highlighted text-lg font-semibold"
+                >
+                  {{ t("home.upcoming.title") }}
+                </h2>
                 <UButton
                   :to="localePath('/asambleas')"
                   color="neutral"
-                  variant="outline"
+                  variant="link"
+                  trailing-icon="i-lucide-arrow-right"
                 >
                   {{ t("home.upcoming.all") }}
                 </UButton>
-              </template>
-            </CommonEmptyState>
+              </div>
 
-            <ul v-else-if="!error" class="grid gap-4 sm:grid-cols-2">
-              <li v-for="assembly in upcoming" :key="assembly.id">
-                <AssemblyCard :assembly="assembly" :heading-level="3" />
-              </li>
-            </ul>
-          </section>
+              <UAlert
+                v-if="error"
+                color="error"
+                variant="subtle"
+                icon="i-lucide-circle-alert"
+                :title="t('home.loadFailed')"
+                :actions="[
+                  {
+                    label: t('home.retry'),
+                    color: 'error',
+                    variant: 'outline',
+                    onClick: () => refresh(),
+                  },
+                ]"
+              />
+
+              <ul
+                v-else-if="loading"
+                class="grid gap-4 sm:grid-cols-2"
+                :aria-label="t('home.loading')"
+                aria-busy="true"
+              >
+                <li
+                  v-for="n in 2"
+                  :key="n"
+                  class="ring-default space-y-3 rounded-lg p-5 ring"
+                >
+                  <div class="flex justify-between gap-3">
+                    <USkeleton class="h-6 w-28" />
+                    <USkeleton class="h-5 w-20" />
+                  </div>
+                  <USkeleton class="h-4 w-48" />
+                  <USkeleton class="h-4 w-40" />
+                </li>
+              </ul>
+
+              <CommonEmptyState
+                v-else-if="upcoming.length === 0"
+                icon="i-lucide-calendar-off"
+                :title="t('home.upcoming.empty')"
+                :description="t('home.upcoming.emptyDescription')"
+                variant="outline"
+                size="sm"
+              />
+
+              <ul v-else class="grid gap-4 sm:grid-cols-2">
+                <li v-for="assembly in upcoming" :key="assembly.id">
+                  <AssemblyCard :assembly="assembly" :heading-level="3" />
+                </li>
+              </ul>
+            </section>
+          </div>
 
           <aside class="flex flex-col gap-4" :aria-label="t('home.aside')">
             <UCard>
@@ -277,9 +428,6 @@ const adminLinks = computed(() =>
 
               <div v-if="member" class="flex flex-col gap-3">
                 <CommonMemberBadge :member="member" size="lg" show-name />
-                <p class="text-muted text-sm">
-                  {{ t(`shell.memberKinds.${member.kind}`) }}
-                </p>
                 <p class="text-muted text-sm">
                   {{ t("home.member.actingFor") }}
                 </p>

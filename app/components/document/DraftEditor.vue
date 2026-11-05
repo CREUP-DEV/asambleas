@@ -12,6 +12,9 @@ import { formatTime } from "~/utils/format";
  * only when there is nothing unsaved, compared by `contentHash` (jsonb
  * reorders keys, so blocks themselves are never compared with the server).
  *
+ * While the stored draft is empty, uploading a Word file is offered as the
+ * main way in, above the editor (writing directly stays possible).
+ *
  * Emits `saved` with the updated document (store it) and `stale` when the
  * document must be refetched (save conflict, text frozen meanwhile).
  */
@@ -21,8 +24,13 @@ const props = withDefaults(
     /** "/api/assemblies/{assembly}/documents/{document}" (slugs or ids). */
     documentApi: string;
     disabled?: boolean;
+    /**
+     * Id of a heading outside that already names this section (a numbered
+     * step): the editor then shows no heading of its own.
+     */
+    labelledby?: string;
   }>(),
-  { disabled: false },
+  { disabled: false, labelledby: undefined },
 );
 
 const emit = defineEmits<{
@@ -233,6 +241,16 @@ const statusText = computed(() => {
 
 const headingId = useId();
 
+/**
+ * Nothing stored yet: offer the Word upload as the main way in. Based on the
+ * stored copy, so the card does not vanish (and move the editor) while the
+ * user types; it goes once the first text is saved.
+ */
+const storedEmpty = computed(
+  () => (props.document.workingVersion?.blocks.length ?? 0) === 0,
+);
+const showWordCard = computed(() => storedEmpty.value && !recovery.value);
+
 defineExpose({
   save,
   flush: () => editor.value?.flush(),
@@ -243,16 +261,21 @@ defineExpose({
 </script>
 
 <template>
-  <section class="space-y-3" :aria-labelledby="headingId">
+  <section class="space-y-3" :aria-labelledby="labelledby ?? headingId">
     <div class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
       <div class="min-w-0">
-        <h3 :id="headingId" class="text-highlighted text-base font-semibold">
+        <h3
+          v-if="!labelledby"
+          :id="headingId"
+          class="text-highlighted text-base font-semibold"
+        >
           {{ t("document.authoring.text") }}
         </h3>
         <DocumentContentStats :blocks="blocks" />
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <DocumentDocxImport
+          v-if="!showWordCard"
           :document-api="documentApi"
           :current-count="blocks.length"
           :unsaved="unsaved"
@@ -263,9 +286,12 @@ defineExpose({
           :text="t('document.authoring.saveShortcut')"
           :kbds="['meta', 's']"
         >
+          <!-- Secondary: sending or publishing saves the text first -->
           <UButton
             icon="i-lucide-save"
             size="sm"
+            color="neutral"
+            variant="outline"
             :label="t('document.authoring.save')"
             :loading="saving"
             :disabled="disabled || !unsaved"
@@ -302,6 +328,37 @@ defineExpose({
       ]"
       role="alert"
     />
+
+    <div
+      v-if="showWordCard"
+      class="border-default bg-elevated/40 flex flex-col items-center gap-3 rounded-lg border border-dashed p-4 text-center sm:p-6"
+      data-testid="word-upload-card"
+    >
+      <UIcon
+        name="i-lucide-file-type"
+        class="text-primary size-8"
+        aria-hidden="true"
+      />
+      <div class="space-y-1">
+        <p class="text-highlighted font-medium">
+          {{ t("document.authoring.wordCard.title") }}
+        </p>
+        <p class="text-muted max-w-prose text-sm">
+          {{ t("document.authoring.wordCard.description") }}
+        </p>
+      </div>
+      <DocumentDocxImport
+        prominent
+        :document-api="documentApi"
+        :current-count="blocks.length"
+        :unsaved="unsaved"
+        :disabled="disabled || saving"
+        @import="onImport"
+      />
+      <p class="text-muted text-xs">
+        {{ t("document.authoring.wordCard.orWrite") }}
+      </p>
+    </div>
 
     <DocumentRecoveryPanel
       v-if="recovery"

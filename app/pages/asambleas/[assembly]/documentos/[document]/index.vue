@@ -4,21 +4,42 @@ import { consolidate } from "~~/shared/utils/content/consolidate";
 import { touchedBlockIds, validateOps } from "~~/shared/utils/content/ops";
 import { blockLabels } from "~~/shared/utils/content/render";
 import {
+  amendmentReviewQueue,
+  amendmentsAwaitingActor,
   consolidationInputs,
   contiguousBlockRange,
   extendBlockSelection,
+  isAmendmentPrivate,
   type AmendmentComposerMode,
+  type AmendmentReviewFilter,
   type BlockSelection,
 } from "~/composables/amendment/workspace";
+import {
+  documentAudience,
+  documentProgress,
+} from "~/composables/document/documentProgress";
 
 /**
- * Document workspace (inside the assembly hub): the text on the left with
- * four views (original with gutter markers, one amendment over the full
- * text, live consolidation with provenance, side by side), and the
- * amendments on the right, grouped by the passage they act on. Selecting
- * blocks opens the composer in place of the list. On narrow screens the two
- * panels stack behind a toggle and the amendment detail opens in a
- * slideover.
+ * Document workspace (inside the assembly hub). Its one primary action, for
+ * those who can amend, is "Presentar una enmienda": pick the paragraph in
+ * the text, then choose in plain words what to do with it ("Cambiar este
+ * texto", "Añadir un párrafo después", "Quitar este párrafo"); changing a
+ * word everywhere and totality amendments sit in a "Más" menu. The
+ * composer then opens in place of the list. Once a paragraph is picked, the
+ * selection bar's "Cambiar este texto" is the one primary button.
+ *
+ * The text is on the left, with four views in a compact "Ver" menu
+ * (original with gutter markers, one amendment over the full text, live
+ * consolidation with provenance, side by side); the amendments are on the
+ * right, grouped by the passage they act on, with "Mis enmiendas" showing
+ * where the actor's own stand with the Secretaría (its badge counts what
+ * waits for them). Corrections the Secretaría asked for get a notice above
+ * the workspace; the Secretaría gets a quiet line with what it still has to
+ * review or publish. Secondary links live in the header's "Más" menu. On
+ * narrow screens the two panels stack behind a toggle and the amendment
+ * detail opens in a slideover.
+ *
+ * `?enmienda=<id>` opens that amendment (links from the home page).
  */
 
 interface TextViewHandle {
@@ -39,6 +60,7 @@ interface ComposerState {
 }
 
 const { t } = useI18n();
+const route = useRoute();
 const { member } = useMe();
 const workspace = useDocumentWorkspace();
 const {
@@ -60,6 +82,7 @@ useHead({
 const isDesktop = useMediaQuery("(min-width: 1024px)");
 const textView = useTemplateRef<TextViewHandle>("textView");
 const workspaceBox = useTemplateRef<HTMLElement>("workspaceBox");
+const selectionBar = useTemplateRef<HTMLElement>("selectionBar");
 
 // Document state ----------------------------------------------------------------
 
@@ -86,9 +109,30 @@ const canEditDraft = computed(
  * amendment window, status), also once the text is frozen: published,
  * withdrawn or postponed after publication.
  */
+/** The Secretaría looks at a presented document to validate it. */
+const reviewing = computed(
+  () =>
+    Boolean(document.value?.can.manage) &&
+    document.value?.status === "submitted",
+);
 const canEditRecord = computed(
   () => Boolean(document.value?.can.manage) && !canEditDraft.value,
 );
+/**
+ * The header tells the presenter of a draft what comes next ("Tienes que
+ * corregirlo: …") with its own button ("Corregir y volver a enviar"); the
+ * page then offers no second "Editar borrador". The Secretaría, which has
+ * no such step, keeps that button.
+ */
+const headerHasNextStep = computed(() => {
+  const doc = document.value;
+  if (!doc || !canEditDraft.value) return false;
+  const audience = documentAudience(doc, {
+    memberId: member.value?.id,
+    manager: doc.can.manage,
+  });
+  return documentProgress(doc, audience).action !== null;
+});
 /** Assembly decisions, to show how late amendments were admitted. */
 const decisionsUrl = computed(() =>
   assembly.value
@@ -96,6 +140,26 @@ const decisionsUrl = computed(() =>
     : undefined,
 );
 const labels = computed(() => blockLabels(base.value));
+
+/** Secondary links of the header, in its "Más" menu. */
+const moreItems = computed(() => {
+  const items: { label: string; icon: string; to: string }[] = [];
+  if (isPublished.value) {
+    items.push({
+      label: t("workspace.more.consolidated"),
+      icon: "i-lucide-file-check",
+      to: documentPath("consolidado"),
+    });
+  }
+  if (canEditRecord.value) {
+    items.push({
+      label: t("workspace.editRecord"),
+      icon: "i-lucide-file-cog",
+      to: documentPath("editar"),
+    });
+  }
+  return items;
+});
 
 function blockReference(blockId: string | null | undefined): string | null {
   if (!blockId) return null;
@@ -132,47 +196,128 @@ const paneItems = computed(() => [
   },
 ]);
 
-const modeItems = computed(() => [
-  {
-    label: t("workspace.modes.original"),
-    value: "original",
-    icon: "i-lucide-file-text",
-  },
-  {
-    label: t("workspace.modes.amended"),
-    value: "amended",
-    icon: "i-lucide-file-diff",
-  },
-  {
-    label: t("workspace.modes.consolidated"),
-    value: "consolidated",
-    icon: "i-lucide-file-check",
-  },
-  {
-    label: t("workspace.modes.compare"),
-    value: "compare",
-    icon: "i-lucide-columns-2",
-  },
-]);
+const MODE_ICONS: Record<TextMode, string> = {
+  original: "i-lucide-file-text",
+  amended: "i-lucide-file-diff",
+  consolidated: "i-lucide-file-check",
+  compare: "i-lucide-columns-2",
+};
+const TEXT_MODES = Object.keys(MODE_ICONS) as TextMode[];
 
-const listTabItems = computed(() => [
-  {
-    label: t("workspace.tabs.all"),
-    value: "all",
-    badge: String(list.listed.value.length),
-  },
-  {
-    label: t("workspace.tabs.mine"),
-    value: "mine",
-    badge:
-      list.drafts.value.length > 0
-        ? String(list.drafts.value.length)
-        : undefined,
-  },
-]);
+/** The "Ver" menu: how to show the text, and what the result includes. */
+const viewItems = computed(() => {
+  const groups = [
+    TEXT_MODES.map((mode) => ({
+      label: t(`workspace.modes.${mode}`),
+      icon: MODE_ICONS[mode],
+      type: "checkbox" as const,
+      checked: textMode.value === mode,
+      onSelect: () => {
+        textMode.value = mode;
+      },
+    })),
+  ];
+  if (showAcceptedToggle.value) {
+    groups.push([
+      {
+        label: t("workspace.includeAccepted"),
+        icon: "i-lucide-check-check",
+        type: "checkbox" as const,
+        checked: includeAccepted.value,
+        onSelect: () => {
+          includeAccepted.value = !includeAccepted.value;
+          if (textMode.value === "original" || textMode.value === "amended") {
+            textMode.value = "consolidated";
+          }
+        },
+      },
+    ]);
+  }
+  return groups;
+});
+const textModeLabel = computed(() => t(`workspace.modes.${textMode.value}`));
+
+/** The actor's drafts: corrections asked by the Secretaría, then unsent ones. */
+const awaiting = computed(() => amendmentsAwaitingActor(list.mine.value));
+const corrections = computed(() => awaiting.value.corrections);
+
+const listTabItems = computed(() => {
+  // "Mis enmiendas" counts only what waits for the actor, in warning colour
+  // when the Secretaría asked for a correction.
+  const waiting = corrections.value.length + awaiting.value.drafts.length;
+  return [
+    {
+      label: t("workspace.tabs.all"),
+      value: "all",
+      badge: String(list.listed.value.length),
+    },
+    {
+      label: t("workspace.tabs.mine"),
+      value: "mine",
+      badge:
+        waiting > 0
+          ? {
+              label: String(waiting),
+              color:
+                corrections.value.length > 0
+                  ? ("warning" as const)
+                  : ("neutral" as const),
+              variant: "subtle" as const,
+            }
+          : undefined,
+    },
+  ];
+});
 const showMineTab = computed(
-  () => canAmend.value || list.drafts.value.length > 0,
+  () => canAmend.value || list.mine.value.length > 0,
 );
+/** The actor sees amendments that are not public: offer to filter by review. */
+const showReviewFilter = computed(() =>
+  list.listed.value.some(isAmendmentPrivate),
+);
+
+/** What the Secretaría still has to check or publish in this document. */
+const reviewQueue = computed(() => amendmentReviewQueue(list.listed.value));
+const reviewQueueItems = computed(() =>
+  (
+    [
+      {
+        filter: "pending_validation",
+        count: reviewQueue.value.toValidate,
+        icon: "i-lucide-inbox",
+        label: t(
+          "workspace.reviewQueue.toValidate",
+          { count: reviewQueue.value.toValidate },
+          reviewQueue.value.toValidate,
+        ),
+      },
+      {
+        filter: "validated",
+        count: reviewQueue.value.toPublish,
+        icon: "i-lucide-eye-off",
+        label: t(
+          "workspace.reviewQueue.toPublish",
+          { count: reviewQueue.value.toPublish },
+          reviewQueue.value.toPublish,
+        ),
+      },
+    ] satisfies {
+      filter: AmendmentReviewFilter;
+      count: number;
+      icon: string;
+      label: string;
+    }[]
+  ).filter((item) => item.count > 0),
+);
+
+/** Shows only those amendments, or every one again on a second press. */
+function toggleReviewFilter(filter: AmendmentReviewFilter): void {
+  const current = list.filters.value.review;
+  list.filters.value = {
+    ...list.filters.value,
+    review: current === filter ? "any" : filter,
+  };
+}
 
 const panelUi = {
   root: "min-h-0 lg:min-h-0",
@@ -186,6 +331,15 @@ const panelUi = {
 const selection = ref<BlockSelection>({ ids: [], anchor: null });
 const composer = ref<ComposerState | null>(null);
 let composerSeq = 0;
+/** "Presentar una enmienda" was pressed with nothing selected yet. */
+const picking = ref(false);
+
+watch(
+  () => selection.value.ids.length,
+  (count) => {
+    if (count > 0) picking.value = false;
+  },
+);
 
 const composerDraft = computed(() =>
   composer.value?.draftId
@@ -233,6 +387,7 @@ function openComposer(options: Partial<Omit<ComposerState, "key">>): void {
     ...options,
   };
   detailOpen.value = false;
+  picking.value = false;
   textMode.value = "original";
   mobilePane.value = "amendments";
   // The workspace is as tall as the hub's scroll area: bring all of it into
@@ -250,6 +405,25 @@ function amendSelection(
 ): void {
   if (selection.value.ids.length === 0) return;
   openComposer({ mode, selection: [...selection.value.ids], appendParagraph });
+}
+
+/**
+ * The primary action: with a passage selected, amend it; otherwise show the
+ * text and ask for the paragraph (the selection bar then offers what to do).
+ */
+function startAmendment(): void {
+  if (selection.value.ids.length > 0) {
+    amendSelection("passage");
+    return;
+  }
+  detailOpen.value = false;
+  textMode.value = "original";
+  mobilePane.value = "text";
+  picking.value = true;
+  void nextTick(() => {
+    selectionBar.value?.scrollIntoView({ block: "nearest" });
+    selectionBar.value?.focus({ preventScroll: true });
+  });
 }
 
 function closeComposer(): void {
@@ -287,22 +461,18 @@ function onComposerSaved(amendment: AmendmentDto): void {
   if (composer.value) composer.value.draftId = amendment.id;
 }
 
+/** Sent to the Secretaría: show it among the actor's own, with its state. */
 function onComposerSubmitted(amendment: AmendmentDto): void {
   list.upsert(amendment);
   composer.value = null;
   clearSelection();
-  listTab.value = "all";
+  listTab.value = "mine";
   selectAmendment(amendment.id);
 }
 
-const newAmendmentItems = computed(() => [
+/** Amendments that do not start from a paragraph, in the selection bar. */
+const otherAmendmentItems = computed(() => [
   [
-    {
-      label: t("workspace.newMenu.selection"),
-      icon: "i-lucide-text-cursor-input",
-      disabled: selection.value.ids.length === 0,
-      onSelect: () => amendSelection("passage"),
-    },
     {
       label: t("workspace.newMenu.global"),
       icon: "i-lucide-replace-all",
@@ -310,6 +480,7 @@ const newAmendmentItems = computed(() => [
     },
   ],
   [
+    { type: "label" as const, label: t("workspace.newMenu.totality") },
     {
       label: t("workspace.newMenu.return"),
       icon: "i-lucide-file-x",
@@ -331,10 +502,56 @@ const selectionReference = computed(() =>
 
 const selectedId = ref<string | null>(null);
 const detailOpen = ref(false);
+const listHeading = useTemplateRef<HTMLElement>("listHeading");
+/**
+ * Where the selected card sat in the list it was picked from, so focus can
+ * go to its neighbour when it leaves the list (sent back for correction,
+ * deleted).
+ */
+let selectedIndex = -1;
 
 const selectedAmendment = computed(() =>
   selectedId.value ? (list.byId.value.get(selectedId.value) ?? null) : null,
 );
+
+/** Ids of the cards in the list on screen, in order. */
+function shownIds(): string[] {
+  if (listTab.value === "mine" && showMineTab.value) {
+    return list.mine.value.map((amendment) => amendment.id);
+  }
+  return list.groups.value.flatMap((group) =>
+    group.amendments.map((amendment) => amendment.id),
+  );
+}
+
+/**
+ * Gives focus back to the list once the detail is gone: the same card, its
+ * neighbour, or the list tabs. A slideover returns focus by itself, unless
+ * the card it came from left the list.
+ */
+async function restoreListFocus(id: string | null): Promise<void> {
+  await nextTick();
+  const box = workspaceBox.value;
+  if (!box) return;
+  const cards = [
+    ...box.querySelectorAll<HTMLElement>("[data-amendment-card]"),
+  ].filter((card) => card.offsetParent !== null);
+  const target =
+    cards.find((card) => card.dataset.amendmentCard === id) ??
+    (selectedIndex >= 0
+      ? cards[Math.min(selectedIndex, cards.length - 1)]
+      : undefined) ??
+    box.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ??
+    listHeading.value;
+  target?.focus();
+}
+
+function onSlideoverClosed(): void {
+  const active = globalThis.document?.activeElement;
+  if (!active || active === globalThis.document.body) {
+    void restoreListFocus(selectedId.value);
+  }
+}
 
 function scrollToAmendment(amendment: AmendmentDto): void {
   const first = touchedBlockIds(amendment.ops)[0];
@@ -348,6 +565,7 @@ function selectAmendment(
 ): void {
   selectedId.value = id;
   if (composing.value) return;
+  if (!options.fromText) selectedIndex = shownIds().indexOf(id);
   detailOpen.value = true;
   const amendment = list.byId.value.get(id);
   if (!options.fromText && textMode.value === "original") {
@@ -359,14 +577,48 @@ function selectAmendment(
 }
 
 function closeDetail(): void {
+  const inPanel = showDesktopDetail.value;
   detailOpen.value = false;
+  if (inPanel) void restoreListFocus(selectedId.value);
 }
 
 function onDetailRemoved(id: string): void {
+  const inPanel = showDesktopDetail.value;
   list.remove(id);
   if (selectedId.value === id) selectedId.value = null;
   detailOpen.value = false;
+  if (inPanel) void restoreListFocus(null);
 }
+
+/** "Ver qué corregir": the first correction, among the actor's own. */
+function openCorrections(): void {
+  const first = corrections.value[0];
+  if (!first) return;
+  listTab.value = "mine";
+  selectAmendment(first.id);
+  mobilePane.value = "amendments";
+}
+
+/**
+ * On arrival, `?enmienda=<id>` opens that amendment (a draft among the
+ * actor's own). Client only: whether the detail opens in the panel or in a
+ * slideover depends on the screen width.
+ */
+let landed = false;
+function landOnAmendment(): void {
+  if (landed || !list.data.value) return;
+  landed = true;
+  const wanted = route.query.enmienda;
+  const id = typeof wanted === "string" ? wanted : null;
+  const target = id ? list.byId.value.get(id) : undefined;
+  if (!target) return;
+  if (target.status === "draft") listTab.value = "mine";
+  selectAmendment(target.id);
+  mobilePane.value = "amendments";
+}
+onMounted(() => {
+  watch(() => list.data.value, landOnAmendment, { immediate: true });
+});
 
 function onDetailEdit(amendment: AmendmentDto): void {
   openComposer({ draftId: amendment.id });
@@ -533,49 +785,69 @@ const filteredBlockLabel = computed(() =>
     </CommonEmptyState>
 
     <template v-else>
-      <DocumentHeader :document="document" :assembly="assembly">
-        <UButton
-          v-if="canEditDraft"
-          :to="documentPath('editar')"
-          icon="i-lucide-pencil"
-          color="neutral"
-          variant="outline"
-          size="sm"
-          :label="t('workspace.editDraft')"
-        />
-        <UButton
-          v-else-if="canEditRecord"
-          :to="documentPath('editar')"
-          icon="i-lucide-file-cog"
-          color="neutral"
-          variant="outline"
-          size="sm"
-          :label="t('workspace.editRecord')"
-        />
-        <UButton
-          v-if="isPublished"
-          :to="documentPath('consolidado')"
-          icon="i-lucide-file-check"
-          color="neutral"
-          variant="outline"
-          size="sm"
-          :label="t('workspace.consolidatedPage')"
-        />
-        <ExportButton
-          v-if="isStructured && isPublished"
-          :assembly="assembly.id"
-          :document="document.id"
-          variant="clean"
-        />
-        <UButton
-          v-if="document.format === 'file' && document.fileUrl"
-          :to="document.fileUrl"
-          external
-          target="_blank"
-          icon="i-lucide-file-text"
-          size="sm"
-          :label="t('workspace.text.openPdf')"
-        />
+      <DocumentHeader
+        :document="document"
+        :assembly="assembly"
+        :edit-to="canEditDraft ? documentPath('editar') : null"
+      >
+        <div class="flex flex-col items-start gap-1.5 sm:items-end">
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- With a paragraph picked, the selection bar's "Cambiar este
+                 texto" is the primary button. -->
+            <UButton
+              v-if="canAmend && isStructured && !composing"
+              icon="i-lucide-pencil-line"
+              :variant="selection.ids.length > 0 ? 'outline' : 'solid'"
+              :label="t('workspace.cta.present')"
+              @click="startAmendment"
+            />
+            <!-- A presented document waits for the Secretaría: its button
+                 says what it does there. -->
+            <UButton
+              v-else-if="canEditDraft && !headerHasNextStep"
+              :to="documentPath('editar')"
+              :icon="reviewing ? 'i-lucide-badge-check' : 'i-lucide-pencil'"
+              :label="
+                reviewing
+                  ? t('workspace.reviewAndValidate')
+                  : t('workspace.editDraft')
+              "
+            />
+            <UDropdownMenu
+              v-if="moreItems.length > 0"
+              :items="moreItems"
+              :content="{ align: 'end' }"
+            >
+              <UButton
+                icon="i-lucide-ellipsis"
+                trailing-icon="i-lucide-chevron-down"
+                color="neutral"
+                variant="outline"
+                :label="t('workspace.more.label')"
+              />
+            </UDropdownMenu>
+          </div>
+          <!-- Only where the selection bar, which says the same, is not on
+               screen: another view of the text, or the list on a phone. -->
+          <p
+            v-if="
+              canAmend &&
+              isStructured &&
+              !composing &&
+              selection.ids.length === 0
+            "
+            class="text-muted text-sm"
+            :class="
+              textMode === 'original'
+                ? mobilePane === 'text'
+                  ? 'hidden'
+                  : 'lg:hidden'
+                : ''
+            "
+          >
+            {{ t("workspace.cta.hint") }}
+          </p>
+        </div>
       </DocumentHeader>
 
       <p
@@ -631,6 +903,33 @@ const filteredBlockLabel = computed(() =>
 
       <!-- Workspace -->
       <template v-else>
+        <!-- The Secretaría sent some of the actor's amendments back. -->
+        <UAlert
+          v-if="corrections.length > 0 && canAmend && !composing"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-message-square-warning"
+          :title="
+            t(
+              'workspace.corrections.title',
+              { count: corrections.length },
+              corrections.length,
+            )
+          "
+          :description="
+            t('workspace.corrections.description', corrections.length)
+          "
+          :actions="[
+            {
+              label: t('workspace.corrections.action'),
+              icon: 'i-lucide-pencil-line',
+              color: 'neutral',
+              variant: 'outline',
+              onClick: openCorrections,
+            },
+          ]"
+        />
+
         <UTabs
           v-model="mobilePane"
           :items="paneItems"
@@ -665,24 +964,35 @@ const filteredBlockLabel = computed(() =>
                 }"
               >
                 <template #left>
-                  <UTabs
-                    v-model="textMode"
-                    :items="modeItems"
-                    :content="false"
-                    variant="pill"
-                    size="xs"
-                    :aria-label="t('workspace.modes.label')"
-                  />
+                  <UDropdownMenu
+                    :items="viewItems"
+                    :content="{ align: 'start' }"
+                  >
+                    <UButton
+                      color="neutral"
+                      variant="ghost"
+                      size="sm"
+                      :icon="MODE_ICONS[textMode]"
+                      trailing-icon="i-lucide-chevron-down"
+                      :label="textModeLabel"
+                      :aria-label="
+                        t('workspace.modes.button', { mode: textModeLabel })
+                      "
+                    />
+                  </UDropdownMenu>
                 </template>
                 <template #right>
-                  <USwitch
+                  <UBadge
                     v-if="
-                      (textMode === 'consolidated' || textMode === 'compare') &&
-                      showAcceptedToggle
+                      includeAccepted &&
+                      showAcceptedToggle &&
+                      (textMode === 'consolidated' || textMode === 'compare')
                     "
-                    v-model="includeAccepted"
+                    color="neutral"
+                    variant="soft"
                     size="sm"
-                    :label="t('workspace.includeAccepted')"
+                    icon="i-lucide-check-check"
+                    :label="t('workspace.includeAcceptedOn')"
                   />
                 </template>
               </UDashboardToolbar>
@@ -693,7 +1003,14 @@ const filteredBlockLabel = computed(() =>
               <template v-if="textMode === 'original'">
                 <div
                   v-if="canAmend && !composing"
-                  class="border-default bg-default/95 sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 backdrop-blur"
+                  ref="selectionBar"
+                  tabindex="-1"
+                  class="bg-default/95 sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 backdrop-blur transition-shadow focus-visible:outline-none"
+                  :class="
+                    picking
+                      ? 'border-primary ring-primary/40 ring-2'
+                      : 'border-default'
+                  "
                   role="region"
                   :aria-label="t('workspace.selection.label')"
                 >
@@ -716,7 +1033,7 @@ const filteredBlockLabel = computed(() =>
                     <span class="ms-auto flex flex-wrap items-center gap-1.5">
                       <UButton
                         icon="i-lucide-pencil-line"
-                        size="xs"
+                        size="sm"
                         :label="t('workspace.selection.amend')"
                         @click="amendSelection('passage')"
                       />
@@ -724,7 +1041,7 @@ const filteredBlockLabel = computed(() =>
                         icon="i-lucide-between-horizontal-end"
                         color="neutral"
                         variant="outline"
-                        size="xs"
+                        size="sm"
                         :label="t('workspace.selection.addAfter')"
                         @click="amendSelection('passage', true)"
                       />
@@ -732,8 +1049,10 @@ const filteredBlockLabel = computed(() =>
                         icon="i-lucide-trash-2"
                         color="neutral"
                         variant="outline"
-                        size="xs"
-                        :label="t('workspace.selection.delete')"
+                        size="sm"
+                        :label="
+                          t('workspace.selection.delete', selection.ids.length)
+                        "
                         @click="amendSelection('delete')"
                       />
                       <UButton
@@ -746,14 +1065,35 @@ const filteredBlockLabel = computed(() =>
                       />
                     </span>
                   </template>
-                  <p v-else class="text-muted text-sm">
-                    <UIcon
-                      name="i-lucide-mouse-pointer-click"
-                      class="me-1 size-4 align-text-bottom"
-                      aria-hidden="true"
-                    />
-                    {{ t("workspace.selection.hint") }}
-                  </p>
+                  <template v-else>
+                    <p
+                      class="min-w-0 flex-1 text-sm"
+                      :class="picking ? 'text-highlighted' : 'text-muted'"
+                      aria-live="polite"
+                    >
+                      <UIcon
+                        name="i-lucide-mouse-pointer-click"
+                        class="me-1 size-4 align-text-bottom"
+                        aria-hidden="true"
+                      />
+                      {{ t("workspace.selection.hint") }}
+                      <span class="text-dimmed hidden text-xs sm:inline">
+                        {{ t("workspace.selection.rangeHint") }}
+                      </span>
+                    </p>
+                    <UDropdownMenu
+                      :items="otherAmendmentItems"
+                      :content="{ align: 'end' }"
+                    >
+                      <UButton
+                        color="neutral"
+                        variant="ghost"
+                        size="sm"
+                        trailing-icon="i-lucide-chevron-down"
+                        :label="t('workspace.newMenu.label')"
+                      />
+                    </UDropdownMenu>
+                  </template>
                 </div>
 
                 <div @mouseup="onTextPointerUp" @keyup.shift="onTextPointerUp">
@@ -957,23 +1297,14 @@ const filteredBlockLabel = computed(() =>
                     size="sm"
                     :aria-label="t('workspace.tabs.label')"
                   />
-                  <h2 v-else class="text-highlighted text-sm font-semibold">
-                    {{ t("workspace.tabs.all") }}
-                  </h2>
-                </template>
-                <template #right>
-                  <UDropdownMenu
-                    v-if="canAmend"
-                    :items="newAmendmentItems"
-                    :content="{ align: 'end' }"
+                  <h2
+                    v-else
+                    ref="listHeading"
+                    tabindex="-1"
+                    class="text-highlighted text-sm font-semibold outline-none"
                   >
-                    <UButton
-                      icon="i-lucide-plus"
-                      size="sm"
-                      trailing-icon="i-lucide-chevron-down"
-                      :label="t('workspace.newAmendment')"
-                    />
-                  </UDropdownMenu>
+                    {{ t("workspace.panes.amendments") }}
+                  </h2>
                 </template>
               </UDashboardToolbar>
             </template>
@@ -1013,14 +1344,15 @@ const filteredBlockLabel = computed(() =>
                 @select="selectAmendment"
                 @edit="onDetailEdit"
                 @updated="list.upsert"
+                @replaced="list.replace"
                 @removed="onDetailRemoved"
                 @changed="refreshAll()"
               />
 
-              <!-- My drafts -->
+              <!-- My amendments: drafts, corrections and where the rest stand -->
               <template v-else-if="listTab === 'mine' && showMineTab">
                 <CommonEmptyState
-                  v-if="list.drafts.value.length === 0"
+                  v-if="list.mine.value.length === 0"
                   icon="i-lucide-file-pen"
                   :title="t('workspace.mine.empty')"
                   :description="
@@ -1028,13 +1360,19 @@ const filteredBlockLabel = computed(() =>
                   "
                   size="sm"
                 />
-                <ul v-else class="flex flex-col gap-2">
-                  <li v-for="draft in list.drafts.value" :key="draft.id">
+                <ul
+                  v-else
+                  class="flex flex-col gap-2"
+                  :aria-label="t('workspace.tabs.mine')"
+                >
+                  <li v-for="item in list.mine.value" :key="item.id">
                     <AmendmentCard
-                      :amendment="draft"
-                      :label="list.labelOf(draft.id)"
+                      :amendment="item"
+                      :label="list.labelOf(item.id)"
                       :label-of="list.labelOf"
-                      :selected="selectedId === draft.id"
+                      :relations="list.relationsOf(item.id)"
+                      :selected="selectedId === item.id"
+                      show-published
                       @select="selectAmendment"
                     />
                   </li>
@@ -1043,10 +1381,38 @@ const filteredBlockLabel = computed(() =>
 
               <!-- All amendments -->
               <template v-else>
+                <!-- Secretaría: what it still has to check or publish. -->
+                <div
+                  v-if="reviewQueueItems.length > 0"
+                  class="flex flex-wrap items-center gap-x-2 gap-y-1.5"
+                  role="group"
+                  :aria-label="t('workspace.reviewQueue.label')"
+                >
+                  <span class="text-muted text-sm" aria-hidden="true">
+                    {{ t("workspace.reviewQueue.label") }}:
+                  </span>
+                  <UButton
+                    v-for="item in reviewQueueItems"
+                    :key="item.filter"
+                    size="xs"
+                    color="neutral"
+                    :variant="
+                      list.filters.value.review === item.filter
+                        ? 'subtle'
+                        : 'ghost'
+                    "
+                    :icon="item.icon"
+                    :label="item.label"
+                    :aria-pressed="list.filters.value.review === item.filter"
+                    @click="toggleReviewFilter(item.filter)"
+                  />
+                </div>
+
                 <AmendmentFilterBar
                   v-model="list.filters.value"
                   :author-options="list.authorOptions.value"
                   :can-filter-mine="Boolean(member)"
+                  :show-review-filter="showReviewFilter"
                   :block-label="filteredBlockLabel"
                 />
                 <p class="sr-only" aria-live="polite">{{ listAnnouncement }}</p>
@@ -1133,6 +1499,7 @@ const filteredBlockLabel = computed(() =>
           :title="selectedAmendment ? list.labelOf(selectedAmendment.id) : ''"
           :description="t('workspace.detailDescription')"
           :ui="{ content: 'max-w-full sm:max-w-lg', body: 'p-4 sm:p-6' }"
+          @after:leave="onSlideoverClosed"
         >
           <template #body>
             <AmendmentDetail
@@ -1147,9 +1514,11 @@ const filteredBlockLabel = computed(() =>
               :overlaps="selectedOverlaps"
               :decisions-url="decisionsUrl"
               :closable="false"
+              @close="closeDetail"
               @select="selectAmendment"
               @edit="onDetailEdit"
               @updated="list.upsert"
+              @replaced="list.replace"
               @removed="onDetailRemoved"
               @changed="refreshAll()"
             />

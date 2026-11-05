@@ -23,6 +23,17 @@ import {
   buildSessionAgendaRows,
   sessionErrorData,
   sessionQueueOrder,
+  sessionQueueCounts,
+  sessionValidationIds,
+  sessionValidationBreakdown,
+  sessionFinalVoteBlockers,
+  isSessionAwaitingValidation,
+  isSessionOpen,
+  isSessionPendingAdmission,
+  isSessionPublishable,
+  isSessionUndecided,
+  isSessionUnpublished,
+  isSessionValidatable,
 } from "./sessionModel";
 
 const b = (id: string, text: string): Block => ({
@@ -52,7 +63,12 @@ const am = (id: string, over: Partial<AmendmentDto>): AmendmentDto => ({
   positionKey: 0,
   changeKinds: [],
   authors: [],
-  submittedAt: null,
+  // Validated and published by the Secretaría unless a test says otherwise.
+  submittedAt: "2026-01-01T00:00:00Z",
+  validatedAt: "2026-01-01T00:00:00Z",
+  publishedAt: "2026-01-01T00:00:00Z",
+  reviewState: "published",
+  correctionNote: null,
   decidedAt: null,
   approvalMethod: null,
   outcomeNote: null,
@@ -70,9 +86,20 @@ const am = (id: string, over: Partial<AmendmentDto>): AmendmentDto => ({
     position: false,
     moderate: true,
     review: true,
+    validate: false,
+    publish: false,
   },
   ...over,
 });
+/** Presented, not validated by the Secretaría yet. */
+const unvalidated = (id: string, over: Partial<AmendmentDto>): AmendmentDto =>
+  am(id, {
+    admission: "pending",
+    validatedAt: null,
+    publishedAt: null,
+    reviewState: "pending_validation",
+    ...over,
+  });
 const rep = (blockId: string, from: number, to: number, text: string) => {
   const bt = base.find((x) => x.id === blockId)!.text.slice(from, to);
   return { op: "replace" as const, blockId, from, to, text, baseText: bt };
@@ -91,10 +118,18 @@ describe("session model", () => {
     admission: "pending",
     late: true,
   });
-  const a5 = am("a5", { status: "draft", positionKey: 0 });
+  const a5 = am("a5", {
+    status: "draft",
+    positionKey: 0,
+    submittedAt: null,
+    validatedAt: null,
+    publishedAt: null,
+    reviewState: null,
+  });
 
   it("builds a queue", () => {
     const q = buildSessionQueue([a1, a2, a3, a4, a5]);
+    expect(q.validation).toEqual([]);
     expect(q.pending.map((x) => x.id)).toEqual(["a4"]);
     expect(
       q.entries.map((e) =>
@@ -104,6 +139,172 @@ describe("session model", () => {
       ),
     ).toEqual(["a3", "a1+a2"]);
     expect(sessionQueueOrder(q)).toEqual(["a4", "a3", "a1", "a2"]);
+  });
+
+  describe("validation by the Secretaría", () => {
+    // Presented on time, not validated: overlaps a1 but must not join it.
+    const v1 = unvalidated("v1", {
+      ops: [rep("b2", 3, 7, "cabaña")],
+      positionKey: 1.1,
+      can: { ...a1.can, validate: true },
+    });
+    // Presented late, not validated.
+    const v2 = unvalidated("v2", { positionKey: 0.5, late: true });
+    // Sent back to its authors: a draft again, with a note.
+    const v3 = unvalidated("v3", {
+      status: "draft",
+      positionKey: 0.2,
+      reviewState: "correction_requested",
+      correctionNote: "Falta la justificación",
+    });
+    // Validated, not published: debated like any other.
+    const hidden = am("h1", {
+      positionKey: 3,
+      publishedAt: null,
+      reviewState: "validated",
+      can: { ...a1.can, publish: true },
+    });
+
+    it("keeps unvalidated amendments out of the debate", () => {
+      const q = buildSessionQueue([a1, a2, a3, a4, a5, v1, v2, v3, hidden]);
+      expect(q.validation.map((x) => x.id)).toEqual(["v3", "v2", "v1"]);
+      // v2's admission is pending, but it is not the Mesa's to admit yet.
+      expect(q.pending.map((x) => x.id)).toEqual(["a4"]);
+      expect(
+        q.entries.map((e) =>
+          e.type === "cluster"
+            ? e.amendments.map((x) => x.id).join("+")
+            : e.amendment.id,
+        ),
+      ).toEqual(["a3", "a1+a2", "h1"]);
+      // The folded group is not reachable with j/k.
+      expect(sessionQueueOrder(q)).toEqual(["a4", "a3", "a1", "a2", "h1"]);
+    });
+
+    it("leaves plain drafts out and counts the group apart", () => {
+      const q = buildSessionQueue([a5, v3]);
+      expect(q.validation.map((x) => x.id)).toEqual(["v3"]);
+      expect(sessionQueueCounts([a1, a4, a5, v1, v2, v3, hidden])).toEqual({
+        total: 3,
+        undecided: 3,
+        approved: 0,
+        awaitingValidation: 3,
+      });
+      expect(
+        sessionQueueCounts([{ ...a1, status: "approved" }, a5]),
+      ).toMatchObject({ total: 1, undecided: 0, approved: 1 });
+    });
+
+    it("classifies review states", () => {
+      expect(isSessionAwaitingValidation(v1)).toBe(true);
+      expect(isSessionAwaitingValidation(v3)).toBe(true);
+      expect(isSessionAwaitingValidation(a5)).toBe(false);
+      expect(isSessionAwaitingValidation(hidden)).toBe(false);
+      // Withdrawn before validation: closed, not waiting for anything.
+      expect(isSessionAwaitingValidation({ ...v2, status: "withdrawn" })).toBe(
+        false,
+      );
+
+      expect(isSessionOpen(v1)).toBe(false);
+      expect(isSessionOpen({ ...v1, admission: "admitted" })).toBe(false);
+      expect(isSessionOpen(hidden)).toBe(true);
+      expect(isSessionPendingAdmission(v2)).toBe(false);
+      expect(isSessionPendingAdmission(a4)).toBe(true);
+      expect(isSessionUndecided(v1)).toBe(false);
+      expect(isSessionUndecided(hidden)).toBe(true);
+
+      expect(isSessionUnpublished(hidden)).toBe(true);
+      expect(isSessionUnpublished(a1)).toBe(false);
+      expect(isSessionPublishable(hidden)).toBe(true);
+      expect(isSessionPublishable({ ...hidden, can: a1.can })).toBe(false);
+
+      expect(isSessionValidatable(v1)).toBe(true);
+      // Without the permission, or already back with its authors.
+      expect(isSessionValidatable(v2)).toBe(false);
+      expect(
+        isSessionValidatable({ ...v3, can: { ...v3.can, validate: true } }),
+      ).toBe(false);
+    });
+
+    it("lists what a bulk validation sends", () => {
+      const v4 = unvalidated("v4", {
+        positionKey: 0.1,
+        can: { ...a1.can, validate: true },
+      });
+      const list = [a1, v1, v2, v3, v4, hidden];
+      expect(sessionValidationIds(list)).toEqual(["v4", "v1"]);
+      expect(sessionValidationIds(list, ["v1", "v2", "a1"])).toEqual(["v1"]);
+      expect(sessionValidationIds(list, [])).toEqual([]);
+    });
+
+    it("says who the folded group waits for", () => {
+      expect(sessionValidationBreakdown([a1, a5, v1, v2, v3, hidden])).toEqual({
+        toValidate: 2,
+        inCorrection: 1,
+      });
+      expect(sessionValidationBreakdown([a1, hidden])).toEqual({
+        toValidate: 0,
+        inCorrection: 0,
+      });
+    });
+
+    it("splits what blocks the final vote by who has to act", () => {
+      // v3 is a draft again (sent back): it no longer blocks the vote.
+      const decided = { ...a2, status: "approved" as const };
+      expect(
+        sessionFinalVoteBlockers([a1, decided, a4, a5, v1, v2, v3, hidden]),
+      ).toEqual({
+        undecided: ["a1", "a4", "h1"],
+        awaitingValidation: ["v2", "v1"],
+      });
+      expect(sessionFinalVoteBlockers([decided, a5])).toEqual({
+        undecided: [],
+        awaitingValidation: [],
+      });
+    });
+
+    it("adds the ids a refused final vote reported", () => {
+      const decided = { ...a2, status: "approved" as const };
+      // "x9" is not loaded yet; a2 was decided since the server answered.
+      expect(
+        sessionFinalVoteBlockers([a1, decided, v1], ["v1", "a2", "x9", "a1"]),
+      ).toEqual({ undecided: ["a1", "x9"], awaitingValidation: ["v1"] });
+    });
+
+    it("never offers unvalidated amendments for admission", () => {
+      const list = [a1, a4, v1, v2];
+      expect(isSessionAdmissionEligible(v2, "admitted")).toBe(false);
+      expect(isSessionAdmissionEligible(v1, "inadmissible")).toBe(false);
+      const ids = (
+        decision: "admitted" | "inadmissible",
+        requested?: string[],
+      ) =>
+        sessionAdmissionCandidates(list, decision, requested).map((x) => x.id);
+      expect(ids("admitted")).toEqual(["a4"]);
+      expect(ids("admitted", ["v2"])).toEqual(["a4"]);
+      expect(ids("inadmissible", ["v1", "a1"])).toEqual(["a1", "a4"]);
+    });
+
+    it("never offers unvalidated amendments to lapse or assent", () => {
+      const approved = { ...a1, status: "approved" as const };
+      const offer = sessionLapseOffer(approved, [approved, a2, v1], [], {
+        overlapsWithApproved: [],
+        incompatible: ["v1"],
+      });
+      expect(offer.lapse).toEqual(["a2"]);
+
+      const accept = {
+        position: "accept" as const,
+        comment: null,
+        updatedAt: "",
+      };
+      const plan = sessionAssentPlan([
+        { ...v1, admission: "admitted", position: accept },
+        { ...a3, position: accept },
+      ]);
+      expect(plan.ready.map((x) => x.id)).toEqual(["a3"]);
+      expect(plan.skipped).toEqual([]);
+    });
   });
 
   it("offers lapses", () => {

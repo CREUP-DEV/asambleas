@@ -50,6 +50,13 @@
       "when": 1793834234782,
       "tag": "0006_good_bishop",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793839458305,
+      "tag": "0007_narrow_dreaming_celestial",
+      "breakpoints": true
     }
   ]
 }

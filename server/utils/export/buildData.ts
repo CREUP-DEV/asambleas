@@ -12,7 +12,7 @@ import type { AmendmentOp, Block } from "../../../shared/types/content";
 import { consolidate } from "../../../shared/utils/content/consolidate";
 import { formatAssemblyLabel } from "../../../shared/utils/slug";
 import type { Actor } from "../domain/actor";
-import { loadAmendmentVisibility, loadMilestones } from "../domain/documents";
+import { loadAmendmentVisibility } from "../domain/documents";
 import { canSeeAssembly, canSeeDocument } from "../domain/visibility";
 import { loadExportActor } from "./actor";
 import {
@@ -211,28 +211,26 @@ async function annotatedBody(
   document: DocumentRow,
 ): Promise<ExportBody> {
   const baseVersionId = document.baseVersionId!;
-  const [baseBlocks, amendmentRows, milestones] = await Promise.all([
+  const [baseBlocks, amendmentRows, { visible }] = await Promise.all([
     loadVersionBlocks([baseVersionId]),
     loadAnnexAmendments(document.id),
-    loadMilestones(assembly.id),
+    loadAmendmentVisibility(actor, document),
   ]);
-  const { visible } = await loadAmendmentVisibility(
-    actor,
-    assembly,
-    document,
-    milestones,
-  );
 
+  // Only what the requester may read: an amendment that is not published
+  // stays out of the text, its codes and the annex. Deciding one needs it
+  // published, so for approved amendments this is a second guard.
+  const readable = amendmentRows.filter((row) => visible.has(row.id));
   const result = consolidate(
     baseBlocks.get(baseVersionId) ?? [],
-    consolidationInput(amendmentRows),
+    consolidationInput(readable),
   );
   return {
     variant: "annotated",
     blocks: result.annotated,
-    codes: amendmentCodes(amendmentRows),
+    codes: amendmentCodes(readable),
     annex: buildAnnexRows({
-      amendments: amendmentRows,
+      amendments: readable,
       visibleIds: visible,
       conflicts: result.conflicts,
     }),

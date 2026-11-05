@@ -70,14 +70,89 @@ export const SESSION_REOPENABLE: AmendmentStatus[] = [
   "lapsed",
 ];
 
-/** Submitted and admitted: the Mesa can decide it now. */
-export function isSessionOpen(amendment: AmendmentDto): boolean {
-  return amendment.status === "submitted" && amendment.admission === "admitted";
+// Validation by the Secretaría ------------------------------------------------
+
+/**
+ * Not checked by the Secretaría yet: presented and waiting for validation,
+ * or sent back to its authors for a correction (a draft again). The Mesa
+ * cannot debate, admit or decide it until the Secretaría validates it.
+ */
+export function isSessionAwaitingValidation(amendment: AmendmentDto): boolean {
+  return (
+    (amendment.status === "submitted" &&
+      amendment.reviewState === "pending_validation") ||
+    (amendment.status === "draft" &&
+      amendment.reviewState === "correction_requested")
+  );
 }
 
-/** Late (or manually reviewed) and still waiting for an admission decision. */
+/**
+ * Validated but not published: only its authors, the Secretaría and the
+ * Mesa see it. It can be debated; the rest of the assembly cannot read it yet.
+ */
+export function isSessionUnpublished(amendment: AmendmentDto): boolean {
+  return amendment.reviewState === "validated";
+}
+
+/** The actor may validate it now (presented, not validated yet). */
+export function isSessionValidatable(amendment: AmendmentDto): boolean {
+  return (
+    amendment.status === "submitted" &&
+    amendment.reviewState === "pending_validation" &&
+    amendment.can.validate
+  );
+}
+
+/** The actor may make it visible to everyone (validated, not published). */
+export function isSessionPublishable(amendment: AmendmentDto): boolean {
+  return isSessionUnpublished(amendment) && amendment.can.publish;
+}
+
+/**
+ * Ids the actor can validate among `ids` (all of the list when omitted), in
+ * text order: what a bulk "validate" sends.
+ */
+export function sessionValidationIds(
+  list: AmendmentDto[],
+  ids?: string[],
+): string[] {
+  const wanted = ids ? new Set(ids) : null;
+  return sortSessionAmendments(list)
+    .filter(
+      (amendment) =>
+        (!wanted || wanted.has(amendment.id)) &&
+        isSessionValidatable(amendment),
+    )
+    .map((amendment) => amendment.id);
+}
+
+/** Submitted and admitted: the Mesa can decide it now. */
+export function isSessionOpen(amendment: AmendmentDto): boolean {
+  return (
+    amendment.status === "submitted" &&
+    amendment.admission === "admitted" &&
+    !isSessionAwaitingValidation(amendment)
+  );
+}
+
+/**
+ * Validated, but late (or manually reviewed) and still waiting for the
+ * Mesa's admission decision. Amendments the Secretaría has not validated
+ * yet are never here, even though their admission is pending too.
+ */
 export function isSessionPendingAdmission(amendment: AmendmentDto): boolean {
-  return amendment.status === "submitted" && amendment.admission === "pending";
+  return (
+    amendment.status === "submitted" &&
+    amendment.admission === "pending" &&
+    !isSessionAwaitingValidation(amendment)
+  );
+}
+
+/** Still to be decided by the Mesa: submitted and validated. */
+export function isSessionUndecided(amendment: AmendmentDto): boolean {
+  return (
+    amendment.status === "submitted" && !isSessionAwaitingValidation(amendment)
+  );
 }
 
 export type SessionAdmissionDecision = "admitted" | "inadmissible";
@@ -86,12 +161,14 @@ export type SessionAdmissionDecision = "admitted" | "inadmissible";
  * Whether the server accepts `decision` for the amendment (mirrors the
  * admission endpoint): any undecided amendment can be declared inadmissible,
  * on time or late; admitting covers late ones still pending and re-admits
- * those declared inadmissible.
+ * those declared inadmissible. Nothing the Secretaría has not validated yet
+ * is offered: it checks every amendment before the Mesa decides on it.
  */
 export function isSessionAdmissionEligible(
   amendment: AmendmentDto,
   decision: SessionAdmissionDecision,
 ): boolean {
+  if (isSessionAwaitingValidation(amendment)) return false;
   if (decision === "inadmissible") return amendment.status === "submitted";
   return (
     (amendment.status === "submitted" && amendment.admission !== "admitted") ||
@@ -158,6 +235,11 @@ export type SessionQueueEntry =
     };
 
 export interface SessionQueue {
+  /**
+   * Amendments the Secretaría has not validated yet (or sent back for a
+   * correction), in text order. They are not part of the debate.
+   */
+  validation: AmendmentDto[];
   /** Late amendments waiting for an admission decision, in text order. */
   pending: AmendmentDto[];
   /** Everything else, in text order, with overlapping ones grouped. */
@@ -169,22 +251,31 @@ function clusterable(amendment: AmendmentDto): boolean {
   return (
     amendment.ops.length > 0 &&
     amendment.admission === "admitted" &&
+    !isSessionAwaitingValidation(amendment) &&
     (amendment.status === "submitted" || amendment.status === "approved")
   );
 }
 
 /**
- * The console queue of a document. Drafts are left out. Late amendments
- * pending admission come first; the rest follow the text, and amendments
- * that act on the same passage (findOverlaps) are grouped where the first of
- * them appears.
+ * The console queue of a document. Drafts are left out, except those the
+ * Secretaría sent back for a correction. Amendments not validated yet go to
+ * their own group, outside the debate. Late amendments pending admission
+ * come next; the rest follow the text, and amendments that act on the same
+ * passage (findOverlaps) are grouped where the first of them appears.
  */
 export function buildSessionQueue(list: AmendmentDto[]): SessionQueue {
   const sorted = sortSessionAmendments(
-    list.filter((amendment) => amendment.status !== "draft"),
+    list.filter(
+      (amendment) =>
+        amendment.status !== "draft" || isSessionAwaitingValidation(amendment),
+    ),
   );
-  const pending = sorted.filter(isSessionPendingAdmission);
-  const rest = sorted.filter(
+  const validation = sorted.filter(isSessionAwaitingValidation);
+  const ready = sorted.filter(
+    (amendment) => !isSessionAwaitingValidation(amendment),
+  );
+  const pending = ready.filter(isSessionPendingAdmission);
+  const rest = ready.filter(
     (amendment) => !isSessionPendingAdmission(amendment),
   );
 
@@ -216,10 +307,92 @@ export function buildSessionQueue(list: AmendmentDto[]): SessionQueue {
       openIds: members.filter(isSessionOpen).map((other) => other.id),
     });
   }
-  return { pending, entries };
+  return { validation, pending, entries };
 }
 
-/** Amendment ids in the order the console shows them (for j/k navigation). */
+/**
+ * Figures of the debate queue: amendments the Secretaría has not validated
+ * yet are counted apart, since the Mesa cannot decide them.
+ */
+export function sessionQueueCounts(list: AmendmentDto[]): {
+  total: number;
+  undecided: number;
+  approved: number;
+  awaitingValidation: number;
+} {
+  const awaiting = list.filter(isSessionAwaitingValidation);
+  const listed = list.filter(
+    (amendment) =>
+      amendment.status !== "draft" && !isSessionAwaitingValidation(amendment),
+  );
+  return {
+    total: listed.length,
+    undecided: listed.filter(isSessionUndecided).length,
+    approved: listed.filter((amendment) => amendment.status === "approved")
+      .length,
+    awaitingValidation: awaiting.length,
+  };
+}
+
+/**
+ * Who the amendments outside the debate are waiting for: the Secretaría
+ * (presented, not validated yet) or their authors (sent back for a
+ * correction).
+ */
+export function sessionValidationBreakdown(list: AmendmentDto[]): {
+  toValidate: number;
+  inCorrection: number;
+} {
+  const awaiting = list.filter(isSessionAwaitingValidation);
+  const inCorrection = awaiting.filter(
+    (amendment) => amendment.reviewState === "correction_requested",
+  ).length;
+  return { toValidate: awaiting.length - inCorrection, inCorrection };
+}
+
+/**
+ * What still stops the final vote, split by who has to act, in text order.
+ * The server blocks it while any amendment is submitted, validated or not:
+ * the Mesa decides the validated ones (`undecided`); the Secretaría has to
+ * validate the rest or send them back to their authors
+ * (`awaitingValidation`). `serverIds` are the ids a refused final vote
+ * reported (409 `{ undecided }`): they count too, unless the console already
+ * knows they are decided. Ids the console has not loaded count as undecided.
+ */
+export function sessionFinalVoteBlockers(
+  list: AmendmentDto[],
+  serverIds: string[] = [],
+): { undecided: string[]; awaitingValidation: string[] } {
+  const byId = new Map(list.map((amendment) => [amendment.id, amendment]));
+  const ids = sortSessionAmendments(
+    list.filter((amendment) => amendment.status === "submitted"),
+  ).map((amendment) => amendment.id);
+  const known = new Set(ids);
+  for (const id of serverIds) {
+    if (known.has(id)) continue;
+    const amendment = byId.get(id);
+    if (amendment && amendment.status !== "submitted") continue;
+    known.add(id);
+    ids.push(id);
+  }
+  const undecided: string[] = [];
+  const awaitingValidation: string[] = [];
+  for (const id of ids) {
+    const amendment = byId.get(id);
+    if (amendment && isSessionAwaitingValidation(amendment)) {
+      awaitingValidation.push(id);
+    } else {
+      undecided.push(id);
+    }
+  }
+  return { undecided, awaitingValidation };
+}
+
+/**
+ * Amendment ids in the order the console shows them (for j/k navigation).
+ * The group waiting for validation is left out: it is folded away and
+ * nothing in it can be decided.
+ */
 export function sessionQueueOrder(
   queue: SessionQueue,
   visible: (amendment: AmendmentDto) => boolean = () => true,
@@ -271,8 +444,15 @@ export function sessionLapseOffer(
 ): SessionLapseOffer {
   const byId = new Map(list.map((amendment) => [amendment.id, amendment]));
   const excluded = new Set([target.id, ...target.sourceIds]);
-  const undecided = (id: string) =>
-    !excluded.has(id) && byId.get(id)?.status === "submitted";
+  // Amendments the Secretaría has not validated are not the Mesa's yet.
+  const undecided = (id: string) => {
+    const amendment = byId.get(id);
+    return (
+      !excluded.has(id) &&
+      amendment !== undefined &&
+      isSessionUndecided(amendment)
+    );
+  };
 
   if (target.status === "approved" && target.kind === "totality_return") {
     return {

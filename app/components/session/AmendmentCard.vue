@@ -4,8 +4,12 @@ import type { AmendmentDto } from "~~/shared/types/api";
 import { PROPONENT_POSITIONS } from "~~/shared/constants/domain";
 import {
   SESSION_REOPENABLE,
+  isSessionAwaitingValidation,
   isSessionOpen,
   isSessionPendingAdmission,
+  isSessionPublishable,
+  isSessionUnpublished,
+  isSessionValidatable,
   sessionMissingAcceptances,
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
@@ -16,6 +20,11 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * amendment under debate shows its changes and, for a transactional, the
  * answers of its parties. Focusing anything inside the card (click or Tab)
  * makes it the target of the keyboard shortcuts.
+ *
+ * An amendment the Secretaría has not validated yet only says so, offers
+ * "Validar y publicar" to whoever can, and shows its changes: the Mesa
+ * cannot debate or decide it. A validated one that is not public yet says
+ * who can read it.
  */
 const props = defineProps<{ amendment: AmendmentDto }>();
 
@@ -29,6 +38,17 @@ const debated = computed(
   () => session.liveState.value?.amendmentId === id.value,
 );
 const busy = computed(() => Boolean(session.busy.value[id.value]));
+/** This amendment, or a bulk validation that includes it, is being sent. */
+const reviewBusy = computed(
+  () => busy.value || Boolean(session.busy.value.validate),
+);
+const awaiting = computed(() => isSessionAwaitingValidation(props.amendment));
+const correctionRequested = computed(
+  () => props.amendment.reviewState === "correction_requested",
+);
+const validatable = computed(() => isSessionValidatable(props.amendment));
+const unpublished = computed(() => isSessionUnpublished(props.amendment));
+const publishable = computed(() => isSessionPublishable(props.amendment));
 const open = computed(() => isSessionOpen(props.amendment));
 const pendingAdmission = computed(() =>
   isSessionPendingAdmission(props.amendment),
@@ -60,13 +80,19 @@ const voteSummary = computed(() => {
   });
 });
 
+/**
+ * Makes this card the target of the shortcuts. A card waiting for the
+ * Secretaría clears the target instead: nothing in it can be decided, and a
+ * key pressed after clicking it must not act on another card.
+ */
 function focusCard(): void {
-  session.focusedId.value = id.value;
+  session.focusedId.value = awaiting.value ? null : id.value;
 }
 
+/** Debating a validated amendment that is not public yet asks first. */
 function toggleDebate(): void {
   if (debated.value) void session.clearDebatedAmendment();
-  else void session.debateAmendment(props.amendment);
+  else void session.requestDebate(props.amendment);
 }
 
 const debateItem = computed<DropdownMenuItem>(() => ({
@@ -111,8 +137,22 @@ const positionItem = computed<DropdownMenuItem | null>(() => {
   };
 });
 
+/** Validated but private: the Secretaría or the Mesa may make it public. */
+const publishItem = computed<DropdownMenuItem[]>(() =>
+  publishable.value
+    ? [
+        {
+          label: t("session.actions.publish"),
+          icon: "i-lucide-eye",
+          onSelect: () => void session.publishAmendments([id.value]),
+        },
+      ]
+    : [],
+);
+
 const menuItems = computed<DropdownMenuItem[][]>(() => {
   const position = positionItem.value ? [positionItem.value] : [];
+  if (awaiting.value) return [];
   if (open.value) {
     return [
       [
@@ -157,6 +197,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           kbds: ["t"],
           onSelect: () => session.openComposer([id.value]),
         },
+        ...publishItem.value,
       ],
     ];
   }
@@ -170,10 +211,11 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           onSelect: () => void session.withdraw(props.amendment),
         },
         relateItem.value,
+        ...publishItem.value,
       ],
     ];
   }
-  return [[debateItem.value, relateItem.value]];
+  return [[debateItem.value, relateItem.value, ...publishItem.value]];
 });
 </script>
 
@@ -210,38 +252,90 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
       </span>
       <span class="ms-auto inline-flex flex-wrap items-center gap-1">
         <UBadge
-          v-if="debated"
-          color="primary"
-          variant="solid"
-          size="sm"
-          icon="i-lucide-radio"
-          :label="t('session.card.inDebate')"
-        />
-        <UBadge
-          v-if="amendment.late"
+          v-if="awaiting"
           color="warning"
-          variant="outline"
+          variant="subtle"
           size="sm"
-          :label="t('session.queue.late')"
+          :icon="
+            correctionRequested ? 'i-lucide-pencil-line' : 'i-lucide-hourglass'
+          "
+          :label="
+            correctionRequested
+              ? t('session.card.correctionBadge')
+              : t('session.card.awaitingBadge')
+          "
         />
-        <CommonStatusBadge
-          v-if="amendment.admission !== 'admitted'"
-          kind="admission"
-          :value="amendment.admission"
-          size="sm"
-        />
-        <CommonStatusBadge
-          kind="amendment"
-          :value="amendment.status"
-          size="sm"
-        />
+        <template v-else>
+          <UBadge
+            v-if="debated"
+            color="primary"
+            variant="solid"
+            size="sm"
+            icon="i-lucide-radio"
+            :label="t('session.card.inDebate')"
+          />
+          <UTooltip v-if="unpublished" :text="t('session.card.notPublicHint')">
+            <UBadge
+              color="neutral"
+              variant="outline"
+              size="sm"
+              icon="i-lucide-eye-off"
+            >
+              {{ t("session.card.notPublic") }}
+              <span class="sr-only">{{ t("session.card.notPublicHint") }}</span>
+            </UBadge>
+          </UTooltip>
+          <UBadge
+            v-if="amendment.late"
+            color="warning"
+            variant="outline"
+            size="sm"
+            :label="t('session.queue.late')"
+          />
+          <CommonStatusBadge
+            v-if="amendment.admission !== 'admitted'"
+            kind="admission"
+            :value="amendment.admission"
+            size="sm"
+          />
+          <CommonStatusBadge
+            kind="amendment"
+            :value="amendment.status"
+            size="sm"
+          />
+        </template>
       </span>
     </header>
+
+    <!-- What happens next with an amendment outside the debate. -->
+    <div v-if="awaiting" class="mt-1.5 space-y-1 text-sm">
+      <p class="text-default">
+        {{
+          correctionRequested
+            ? t("session.card.correctionRequested")
+            : validatable
+              ? t("session.card.awaitingCanValidate")
+              : t("session.card.awaiting")
+        }}
+      </p>
+      <p
+        v-if="correctionRequested && amendment.correctionNote"
+        class="text-muted border-default border-s-2 ps-2 whitespace-pre-line"
+      >
+        <span class="text-highlighted font-medium">{{
+          t("session.card.correctionNote")
+        }}</span>
+        {{ amendment.correctionNote }}
+      </p>
+    </div>
 
     <div
       class="text-muted mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"
     >
-      <span v-if="amendment.position" class="inline-flex items-center gap-1">
+      <span
+        v-if="amendment.position && !awaiting"
+        class="inline-flex items-center gap-1"
+      >
         {{ t("session.card.position") }}
         <UTooltip
           :text="amendment.position.comment ?? undefined"
@@ -302,7 +396,21 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
     </div>
 
     <footer class="mt-3 flex flex-wrap items-center gap-1.5">
-      <template v-if="open">
+      <template v-if="awaiting">
+        <UTooltip v-if="validatable" :text="t('session.actions.validateHint')">
+          <UButton
+            size="xs"
+            color="primary"
+            variant="soft"
+            icon="i-lucide-badge-check"
+            :label="t('session.actions.validate')"
+            :loading="busy"
+            :disabled="reviewBusy"
+            @click="session.validateAmendments([amendment.id])"
+          />
+        </UTooltip>
+      </template>
+      <template v-else-if="open">
         <UButton
           size="xs"
           :color="debated ? 'primary' : 'neutral'"
@@ -389,7 +497,11 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         @click="session.reopen(amendment)"
       />
 
-      <UDropdownMenu :items="menuItems" :content="{ align: 'end' }">
+      <UDropdownMenu
+        v-if="menuItems.length > 0"
+        :items="menuItems"
+        :content="{ align: 'end' }"
+      >
         <UButton
           size="xs"
           color="neutral"

@@ -11,6 +11,7 @@ import { documents, documentVersions } from "../../../../db/schema";
 import {
   canManageDocuments,
   requireActor,
+  UNLINKED_ACCOUNT_MESSAGE,
 } from "../../../../utils/domain/actor";
 import {
   resolveAgendaItem,
@@ -32,9 +33,11 @@ import type { DocumentDto } from "~~/shared/types/api";
 import { documentCreateSchema } from "~~/shared/utils/schemas/document";
 
 /**
- * Managers create documents anywhere. Members with document:create present
- * them under agenda items that accept submissions, until documents_close,
- * always as their own member and with the kind defaults.
+ * Managers create documents anywhere, for any member, and may set an internal
+ * deadline (`dueAt`): an expected document starts as an empty draft that its
+ * member fills in and presents. Members with document:create present them
+ * under agenda items that accept submissions, until documents_close, always
+ * as their own member and with the kind defaults.
  */
 export default defineEventHandler(async (event): Promise<DocumentDto> => {
   const actor = await requireActor(event);
@@ -47,6 +50,12 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
   const manager = canManageDocuments(actor);
 
   if (!manager) {
+    if (body.dueAt) {
+      throw createError({
+        statusCode: 403,
+        message: "Solo la Secretaría puede fijar la fecha límite interna",
+      });
+    }
     if (!actor.can(PERMISSION_KEYS.DOCUMENT_CREATE)) {
       throw createError({
         statusCode: 403,
@@ -56,7 +65,7 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
     if (!actor.memberId) {
       throw createError({
         statusCode: 403,
-        message: "Tu cuenta no está vinculada a ningún miembro",
+        message: UNLINKED_ACCOUNT_MESSAGE,
       });
     }
     if (!item.acceptsSubmissions) {
@@ -126,6 +135,7 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
         amendable,
         voted,
         majority,
+        dueAt: manager && body.dueAt ? new Date(body.dueAt) : null,
       })
       .returning({ id: documents.id });
     if (!created) {
@@ -166,6 +176,7 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
         format: body.format,
         agendaItemId: item.id,
         proponentMemberId,
+        ...(manager && body.dueAt ? { dueAt: body.dueAt } : {}),
       },
       actor,
     });

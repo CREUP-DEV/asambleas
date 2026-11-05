@@ -425,9 +425,11 @@ export interface AmendmentCapabilities {
  * Where an amendment stands for its authors and the Secretaría:
  * - "pending_validation": presented, the Secretaría has not checked it;
  * - "correction_requested": back to draft with a note to fix;
- * - "validated": checked but not visible to everyone yet;
+ * - "validated": checked but not visible to everyone yet, and still relevant
+ *   to the debate (not withdrawn nor inadmissible);
  * - "published": visible to everyone who can see the document.
- * Null for drafts that were never presented.
+ * Null for drafts that were never presented, and for amendments settled
+ * while private (withdrawn, lapsed or inadmissible before being published).
  */
 export type AmendmentReviewState =
   "pending_validation" | "correction_requested" | "validated" | "published";

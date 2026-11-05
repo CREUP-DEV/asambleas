@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { TableColumn } from "@nuxt/ui";
+import type { MemberDto } from "~~/shared/types/api";
 import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
 
 definePageMeta({
@@ -19,6 +20,13 @@ interface UserRow {
   lastRoleSyncAt: string | null;
   createdAt: string;
   role: { id: string; name: string } | null;
+  /** The member the account acts for; undefined if the server omits it. */
+  memberId?: string | null;
+}
+
+/** A row of the table: the user with its linked member resolved. */
+interface UserTableRow extends UserRow {
+  member: MemberDto | null;
 }
 
 interface RoleOption {
@@ -62,6 +70,16 @@ const { data: rolesData } = await useFetch<{ data: RoleOption[] }>(
   { key: "admin-roles" },
 );
 
+// Every member, inactive ones too, so a link to one still shows.
+const { data: membersData } = await useFetch<MemberDto[]>("/api/members", {
+  key: "admin-users-members",
+  query: { all: 1 },
+});
+
+// The list reads as text; the role and member selects appear only in edit
+// mode, so the table stays calm and narrow on small screens.
+const editing = ref(false);
+
 const users = computed(() => usersData.value?.data ?? []);
 const pagination = computed(() => usersData.value?.pagination);
 const currentUserId = computed(() => me.value?.id ?? null);
@@ -87,10 +105,47 @@ function formatDay(value: string | null): string {
     : "";
 }
 
-const columns = computed<TableColumn<UserRow>[]>(() => [
+/** Sentinel for "no member" in the member select. */
+const NO_MEMBER = "__none__";
+
+const membersById = computed(
+  () => new Map((membersData.value ?? []).map((item) => [item.id, item])),
+);
+
+function memberOptionsFor(user: UserRow) {
+  return [
+    { label: t("admin.users.noMember"), value: NO_MEMBER },
+    ...(membersData.value ?? [])
+      .filter((item) => item.active || item.id === user.memberId)
+      .map((item) => ({
+        label: item.active
+          ? `${item.acronym} · ${item.name}`
+          : t("admin.users.inactiveMember", {
+              member: `${item.acronym} · ${item.name}`,
+            }),
+        value: item.id,
+      })),
+  ];
+}
+
+function memberValue(user: UserRow): string | undefined {
+  if (user.memberId === undefined) return undefined;
+  return user.memberId ?? NO_MEMBER;
+}
+
+const rows = computed<UserTableRow[]>(() =>
+  users.value.map((user) => ({
+    ...user,
+    member: user.memberId
+      ? (membersById.value.get(user.memberId) ?? null)
+      : null,
+  })),
+);
+
+const columns = computed<TableColumn<UserTableRow>[]>(() => [
   { accessorKey: "name", header: t("admin.users.user") },
   { id: "role", header: t("admin.users.role") },
-  { accessorKey: "externalInitials", header: t("admin.users.member") },
+  { id: "member", header: t("admin.users.actsFor") },
   { accessorKey: "university", header: t("admin.users.university") },
   { accessorKey: "lastRoleSyncAt", header: t("admin.users.lastSync") },
   { accessorKey: "createdAt", header: t("admin.users.registeredAt") },
@@ -159,6 +214,74 @@ async function confirmRoleChange(): Promise<void> {
   }
 }
 
+// Member link ----------------------------------------------------------------
+
+const linkingUserId = ref<string | null>(null);
+const pendingLink = ref<{
+  userId: string;
+  userName: string;
+  memberId: string | null;
+  memberName: string;
+} | null>(null);
+const memberSelectKey = ref(0);
+watch(pendingLink, (value) => {
+  if (value === null) memberSelectKey.value += 1;
+});
+
+const linkConfirmOpen = computed({
+  get: () => pendingLink.value !== null,
+  set: (open: boolean) => {
+    if (!open) pendingLink.value = null;
+  },
+});
+
+function selectMember(user: UserRow, value: unknown): void {
+  if (typeof value !== "string") return;
+  const memberId = value === NO_MEMBER ? null : value;
+  if (memberId === (user.memberId ?? null)) return;
+  const member = memberId ? membersById.value.get(memberId) : null;
+  if (memberId && !member) return;
+  pendingLink.value = {
+    userId: user.id,
+    userName: user.name || user.email,
+    memberId,
+    memberName: member ? `${member.acronym} · ${member.name}` : "",
+  };
+}
+
+async function confirmMemberLink(): Promise<void> {
+  const change = pendingLink.value;
+  if (!change) return;
+  pendingLink.value = null;
+  linkingUserId.value = change.userId;
+  try {
+    await api.send(`/api/admin/users/${change.userId}/member`, {
+      method: "PUT",
+      body: { memberId: change.memberId },
+    });
+    const message = change.memberId
+      ? t("admin.users.memberLinked", {
+          user: change.userName,
+          member: change.memberName,
+        })
+      : t("admin.users.memberUnlinked", { user: change.userName });
+    statusMessage.value = message;
+    toast.add({ title: message, color: "success", icon: "i-lucide-check" });
+    await refreshUsers();
+  } catch (error) {
+    api.notifyError(error, "admin.users.memberLinkFailed");
+  } finally {
+    linkingUserId.value = null;
+  }
+}
+
+function toggleEditing(): void {
+  editing.value = !editing.value;
+  statusMessage.value = editing.value
+    ? t("admin.users.editingOn")
+    : t("admin.users.editingOff");
+}
+
 function goToPage(next: number): void {
   if (next < 1) return;
   page.value = next;
@@ -170,6 +293,20 @@ function goToPage(next: number): void {
     <template #header>
       <UDashboardNavbar :title="t('admin.users.title')">
         <template #right>
+          <UButton
+            color="neutral"
+            variant="outline"
+            :icon="editing ? 'i-lucide-check' : 'i-lucide-pencil'"
+            :disabled="changingUserId !== null || linkingUserId !== null"
+            @click="toggleEditing"
+          >
+            <span class="hidden sm:inline">{{
+              editing ? t("admin.users.editDone") : t("admin.users.edit")
+            }}</span>
+            <span class="sr-only sm:hidden">{{
+              editing ? t("admin.users.editDone") : t("admin.users.edit")
+            }}</span>
+          </UButton>
           <UButton
             icon="i-lucide-refresh-cw"
             color="neutral"
@@ -184,6 +321,14 @@ function goToPage(next: number): void {
 
     <template #body>
       <p class="text-muted text-sm">{{ t("admin.users.description") }}</p>
+      <p v-if="editing" class="text-muted flex items-center gap-1.5 text-sm">
+        <UIcon
+          name="i-lucide-pencil"
+          class="size-4 shrink-0"
+          aria-hidden="true"
+        />
+        {{ t("admin.users.editingHelp") }}
+      </p>
 
       <p class="sr-only" aria-live="polite" aria-atomic="true">
         {{ statusMessage }}
@@ -207,7 +352,7 @@ function goToPage(next: number): void {
 
       <UTable
         v-else
-        :data="users"
+        :data="rows"
         :columns="columns"
         :loading="loading"
         :aria-label="t('admin.users.title')"
@@ -241,7 +386,15 @@ function goToPage(next: number): void {
         </template>
 
         <template #role-cell="{ row }">
+          <span v-if="!editing" class="text-sm">
+            {{
+              row.original.role
+                ? roleName(row.original.role.name)
+                : t("admin.users.noRole")
+            }}
+          </span>
           <USelect
+            v-else
             :key="`${row.original.id}-${selectResetKey}`"
             :model-value="row.original.roleId ?? undefined"
             :items="roleOptions"
@@ -262,16 +415,61 @@ function goToPage(next: number): void {
           />
         </template>
 
-        <template #externalInitials-cell="{ row }">
-          <span v-if="row.original.externalInitials" class="font-medium">
-            {{ row.original.externalInitials }}
-          </span>
-          <span v-else class="text-dimmed">{{ t("admin.none") }}</span>
-          <p v-if="row.original.externalRole" class="text-muted text-xs">
-            {{
-              t("admin.users.intranetRole", { role: row.original.externalRole })
-            }}
-          </p>
+        <template #member-cell="{ row }">
+          <div class="min-w-40 space-y-1" :class="editing ? 'w-56' : ''">
+            <template v-if="!editing">
+              <div
+                v-if="row.original.member"
+                class="flex flex-wrap items-center gap-1.5"
+              >
+                <CommonMemberBadge :member="row.original.member" show-name />
+                <UBadge
+                  v-if="!row.original.member.active"
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                  :label="t('admin.members.inactive')"
+                />
+              </div>
+              <span v-else-if="row.original.memberId" class="text-dimmed">
+                {{ t("admin.none") }}
+              </span>
+              <span v-else class="text-dimmed text-sm">
+                {{ t("admin.users.noMember") }}
+              </span>
+            </template>
+            <USelectMenu
+              v-else
+              :key="`${row.original.id}-${memberSelectKey}`"
+              :model-value="memberValue(row.original)"
+              :items="memberOptionsFor(row.original)"
+              value-key="value"
+              :loading="linkingUserId === row.original.id"
+              :disabled="linkingUserId !== null"
+              :placeholder="t('admin.users.chooseMember')"
+              :search-input="{ placeholder: t('admin.users.searchMember') }"
+              :aria-label="
+                t('admin.users.memberFor', {
+                  user: row.original.name || row.original.email,
+                })
+              "
+              class="w-full"
+              @update:model-value="
+                (value: unknown) => selectMember(row.original, value)
+              "
+            />
+            <p
+              v-if="row.original.externalInitials || row.original.externalRole"
+              class="text-muted text-xs"
+            >
+              {{
+                t("admin.users.intranetInfo", {
+                  initials: row.original.externalInitials ?? t("admin.none"),
+                  role: row.original.externalRole ?? t("admin.none"),
+                })
+              }}
+            </p>
+          </div>
         </template>
 
         <template #university-cell="{ row }">
@@ -360,6 +558,40 @@ function goToPage(next: number): void {
               {{ t("admin.cancel") }}
             </UButton>
             <UButton color="primary" @click="confirmRoleChange">
+              {{ t("admin.confirm") }}
+            </UButton>
+          </div>
+        </template>
+      </UModal>
+
+      <UModal
+        v-model:open="linkConfirmOpen"
+        :title="t('admin.users.confirmMemberLink')"
+      >
+        <template #body>
+          <p v-if="pendingLink" class="text-sm">
+            {{
+              pendingLink.memberId
+                ? t("admin.users.confirmMemberLinkMessage", {
+                    user: pendingLink.userName,
+                    member: pendingLink.memberName,
+                  })
+                : t("admin.users.confirmMemberUnlinkMessage", {
+                    user: pendingLink.userName,
+                  })
+            }}
+          </p>
+        </template>
+        <template #footer>
+          <div class="flex w-full justify-end gap-2">
+            <UButton
+              color="neutral"
+              variant="ghost"
+              @click="pendingLink = null"
+            >
+              {{ t("admin.cancel") }}
+            </UButton>
+            <UButton color="primary" @click="confirmMemberLink">
               {{ t("admin.confirm") }}
             </UButton>
           </div>

@@ -108,13 +108,16 @@ server/assets/      server-bundled fonts/assets
 
 Role assignment rules:
 
-| Case                                                | Platform role result       |
-| --------------------------------------------------- | -------------------------- |
-| New user + external `Asociado`                      | `Asociado`                 |
-| New user + anything else or sync failure            | `Invitado`                 |
-| Existing `Asociado` + external no longer `Asociado` | `Invitado`                 |
-| Existing `Invitado` + external becomes `Asociado`   | `Asociado`                 |
-| Existing `Admin`, `Secretaria` or `Moderador`       | Keep current platform role |
+| Case                                                                        | Platform role result                               | Member link (`users.memberId`)                                                                     |
+| --------------------------------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| New user + external `Asociado`                                              | `Asociado` (`Invitado` if its role row is missing) | The council with its intranet initials                                                             |
+| New user + external `CEA`                                                   | `CEA` (`Invitado` if its role row is missing)      | The `executive` area with its initials, created if missing                                         |
+| New user + anything else or sync failure                                    | `Invitado`                                         | A `Sectorial` account: the sectorial with its initials; otherwise none                             |
+| Existing `Invitado`, `Asociado` or `CEA` + external `Asociado`              | `Asociado`                                         | The council with its initials                                                                      |
+| Existing `Invitado`, `Asociado` or `CEA` + external `CEA`                   | `CEA`                                              | Linked again by initials when the role or the initials change; otherwise kept, even if set by hand |
+| Existing `Asociado` or `CEA` + any other external type                      | `Invitado`                                         | Cleared; linked again only if the new type is `Sectorial`                                          |
+| Existing `Invitado` whose type stops being `Asociado`, `Sectorial` or `CEA` | `Invitado`                                         | Cleared                                                                                            |
+| Existing `Admin`, `Secretaria` or `Moderador`                               | Keep current platform role                         | Never cleared; linked by initials like any account of its intranet type                            |
 
 ## RBAC
 
@@ -123,6 +126,7 @@ System roles:
 - `Admin`
 - `Secretaria`
 - `Moderador`
+- `CEA`
 - `Asociado`
 - `Invitado`
 
@@ -134,6 +138,7 @@ Default permissions:
 | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Admin      | All, via bypass                                                                                                                                                                                     |
 | Secretaria | `assembly:create`, `assembly:manage`, `document:create`, `document:manage`, `amendment:create`, `amendment:manage`, `amendment:review`, `assembly:vote_result`, `session:moderate`, `member:manage` |
+| CEA        | `document:create`, `amendment:create`                                                                                                                                                               |
 | Asociado   | `document:create`, `amendment:create`                                                                                                                                                               |
 | Moderador  | `session:moderate`                                                                                                                                                                                  |
 | Invitado   | none                                                                                                                                                                                                |
@@ -166,6 +171,7 @@ Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`
 - Documents and amendments are presented by members (`members`): student councils (asociados), sectorials and executive areas.
 - Asociados and sectorials are synced from the intranet roster (`/usuarios/asociados`, `/usuarios/sectoriales`) and keyed by acronym (the intranet's `initials`).
 - `users.memberId` links an account to the member it acts for. In the intranet an Asociado account is the member itself.
+- CEA accounts (intranet type `CEA`) act for an `executive` member keyed by their intranet initials. An admin can link any account by hand (`PUT /api/admin/users/[id]/member`).
 
 ### Assemblies
 
@@ -191,6 +197,7 @@ Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`
 - The proponent edits the working draft. Publishing freezes it as the immutable `base` version, and amendments anchor to that.
 - The final vote stores the `consolidated` version produced by `consolidate`.
 - PDF uploads must validate size, MIME and magic bytes.
+- Presenters send documents to the Secretaría (`submitted`). Publishing is the Secretaría's validation; `POST .../correction` sends a document back to draft with a note. Managers can create expected documents for a member, with an internal deadline (`dueAt`), for the tracking panel.
 
 ### Amendments
 
@@ -201,6 +208,7 @@ Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`
   - votes;
   - decisions;
   - acceptances.
+- Presenting never admits. The Secretaría validates each amendment (admitting the on-time ones; late ones still need the Mesa) or sends it back with a correction note, and publishes it when validating or later. Only published amendments are visible beyond their authors, the Secretaría and the Mesa (`publishedAt`). Transactionals the Mesa presents, and late amendments it admits, are published at once.
 - Transactionals link 1..N parents through `amendment_sources`. They need every party's acceptance before they can be voted. Approving one marks its parents `transacted`.
 - Overlaps come from `findOverlaps` and are computed from the ranges each amendment really changes. Relations between amendments live in `amendment_relations`.
 - Every state change calls `recordEvent`, which appends to the history and notifies live listeners.

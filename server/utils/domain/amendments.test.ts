@@ -21,8 +21,10 @@ vi.mock("./actor", () => ({
   canModerate: vi.fn(),
   canReviewAmendments: vi.fn(),
   requireActor: vi.fn(),
+  UNLINKED_ACCOUNT_MESSAGE: "Tu cuenta no está vinculada a ningún miembro",
 }));
 vi.mock("./documents", () => ({
+  assemblySettings: vi.fn(),
   clearLiveVote: vi.fn(),
   loadMilestones: vi.fn(),
   pointLiveVote: vi.fn(),
@@ -35,10 +37,10 @@ vi.mock("./resolvers", () => ({
   resolveDocument: vi.fn(),
 }));
 vi.mock("./visibility", () => ({
-  amendmentsPublic: vi.fn(),
   canSeeAmendment: vi.fn(),
   canSeePositions: vi.fn(),
   isDocumentProponent: vi.fn(),
+  redactCorrectionNote: vi.fn(),
 }));
 vi.mock("../errors", () => ({ isUniqueConstraintViolation: vi.fn() }));
 
@@ -293,7 +295,41 @@ describe("amendmentCapabilities", () => {
     review: false,
     actorMemberId: "m1",
     acceptances: [],
+    validatedAt: null,
+    publishedAt: null,
   };
+  const at = new Date("2026-03-10T12:00:00Z");
+
+  it("lets reviewers validate presented amendments not validated yet", () => {
+    const pending = { ...input, status: "submitted" as const };
+    expect(amendmentCapabilities({ ...pending, review: true })).toMatchObject({
+      validate: true,
+      publish: false,
+    });
+    expect(amendmentCapabilities(pending).validate).toBe(false);
+    expect(amendmentCapabilities({ ...input, review: true }).validate).toBe(
+      false,
+    );
+  });
+
+  it("lets reviewers publish validated amendments not published yet", () => {
+    const validated = {
+      ...input,
+      status: "submitted" as const,
+      review: true,
+      validatedAt: at,
+    };
+    expect(amendmentCapabilities(validated)).toMatchObject({
+      validate: false,
+      publish: true,
+    });
+    expect(
+      amendmentCapabilities({ ...validated, publishedAt: at }).publish,
+    ).toBe(false);
+    expect(
+      amendmentCapabilities({ ...validated, status: "approved" }).publish,
+    ).toBe(true);
+  });
 
   it("lets authors edit and submit drafts", () => {
     expect(amendmentCapabilities({ ...input, isAuthor: true })).toMatchObject({
@@ -574,15 +610,11 @@ describe("unauthorizedTransactionalAuthors", () => {
 });
 
 describe("visibility", () => {
-  const { amendmentsPublic, canSeeAmendment, canSeeDocument } = visibility;
+  const { canSeeAmendment, canSeeDocument } = visibility;
   type Actor = Parameters<typeof canSeeAmendment>[0];
   type AmendmentInput = Parameters<typeof canSeeAmendment>[1];
   type DocumentInput = Parameters<typeof canSeeDocument>[1];
   type Role = "member" | "moderator" | "reviewer" | "manager";
-
-  const closesAt = new Date("2026-03-10T12:00:00Z");
-  const before = new Date("2026-03-09T12:00:00Z");
-  const after = new Date("2026-03-11T12:00:00Z");
 
   const actor = (role: Role, memberId: string | null = "m1") =>
     ({ user: { id: `user-${role}` }, memberId, role }) as unknown as Actor;
@@ -610,144 +642,113 @@ describe("visibility", () => {
     vi.mocked(actorHelpers.canManageDocuments).mockReset();
   });
 
-  describe("amendmentsPublic", () => {
-    it("follows the close date before the session", () => {
-      expect(amendmentsPublic({ closesAt }, "convened", before)).toBe(false);
-      expect(amendmentsPublic({ closesAt }, "convened", after)).toBe(true);
-    });
-
-    it("is public without a close date", () => {
-      expect(amendmentsPublic({ closesAt: null }, "convened", before)).toBe(
-        true,
-      );
-    });
-
-    it("is public once the session starts, whatever the date", () => {
-      expect(amendmentsPublic({ closesAt }, "in_session", before)).toBe(true);
-      expect(amendmentsPublic({ closesAt }, "closed", before)).toBe(true);
-    });
-  });
-
   describe("canSeeAmendment", () => {
-    const afterClose = {
-      settings: {
-        amendmentVisibility: "after_close",
-      } as Parameters<typeof canSeeAmendment>[2]["settings"],
-      windowClosed: false,
-    };
+    const publishedAt = new Date("2026-03-10T12:00:00Z");
     const amendment = (
       status: AmendmentInput["status"],
       extra: Partial<AmendmentInput> = {},
     ): AmendmentInput => ({
       status,
-      late: false,
+      publishedAt: null,
       createdByUserId: "user-author",
       authorMemberIds: ["author"],
       partyMemberIds: [],
       ...extra,
     });
 
-    it("hides every presented amendment while the window is open", () => {
+    it("hides presented amendments until the Secretaría publishes them", () => {
       for (const status of [
         "submitted",
         "withdrawn",
         "inadmissible",
         "lapsed",
       ] as const) {
+        expect(canSeeAmendment(actor("member"), amendment(status))).toBe(false);
         expect(
-          canSeeAmendment(actor("member"), amendment(status), afterClose),
-        ).toBe(false);
-        expect(
-          canSeeAmendment(
-            actor("member", "author"),
-            amendment(status),
-            afterClose,
-          ),
+          canSeeAmendment(actor("member", "author"), amendment(status)),
         ).toBe(true);
-        expect(
-          canSeeAmendment(actor("moderator"), amendment(status), afterClose),
-        ).toBe(true);
+        for (const role of ["moderator", "reviewer", "manager"] as const) {
+          expect(canSeeAmendment(actor(role), amendment(status))).toBe(true);
+        }
       }
     });
 
-    it("shows a transactional to its parties", () => {
+    it("shows published amendments to everyone", () => {
+      expect(
+        canSeeAmendment(
+          actor("member"),
+          amendment("submitted", { publishedAt }),
+        ),
+      ).toBe(true);
+      expect(
+        canSeeAmendment(
+          actor("member"),
+          amendment("approved", { publishedAt }),
+        ),
+      ).toBe(true);
+    });
+
+    it("shows a transactional to its parties and its creator", () => {
       expect(
         canSeeAmendment(
           actor("member", "party"),
           amendment("submitted", { partyMemberIds: ["party"] }),
-          afterClose,
+        ),
+      ).toBe(true);
+      expect(
+        canSeeAmendment(
+          actor("member", null),
+          amendment("submitted", { createdByUserId: "user-member" }),
         ),
       ).toBe(true);
     });
 
-    it("shows presented amendments to everyone once public", () => {
-      expect(
-        canSeeAmendment(actor("member"), amendment("withdrawn"), {
-          ...afterClose,
-          windowClosed: true,
-        }),
-      ).toBe(true);
-    });
-
-    it("keeps drafts from the Mesa alone", () => {
-      expect(
-        canSeeAmendment(actor("moderator"), amendment("draft"), afterClose),
-      ).toBe(false);
-      expect(
-        canSeeAmendment(actor("reviewer"), amendment("draft"), afterClose),
-      ).toBe(true);
+    it("keeps drafts from the Mesa alone, even returned for correction", () => {
+      expect(canSeeAmendment(actor("moderator"), amendment("draft"))).toBe(
+        false,
+      );
+      expect(canSeeAmendment(actor("reviewer"), amendment("draft"))).toBe(true);
       expect(
         canSeeAmendment(
           actor("moderator"),
           amendment("draft", { createdByUserId: "user-moderator" }),
-          afterClose,
         ),
       ).toBe(true);
+      expect(canSeeAmendment(actor("member"), amendment("draft"))).toBe(false);
     });
   });
 
   describe("seesAllPresentedAmendments", () => {
     const { seesAllPresentedAmendments } = visibility;
-    const options = (
-      amendmentVisibility: "after_close" | "immediate",
-      windowClosed: boolean,
-    ) => ({
-      settings: { amendmentVisibility } as Parameters<
-        typeof seesAllPresentedAmendments
-      >[1]["settings"],
-      windowClosed,
-    });
 
-    it("is false only for others under after_close before publication", () => {
-      expect(
-        seesAllPresentedAmendments(
-          actor("member"),
-          options("after_close", false),
-        ),
-      ).toBe(false);
-      expect(
-        seesAllPresentedAmendments(
-          actor("member"),
-          options("after_close", true),
-        ),
-      ).toBe(true);
-      expect(
-        seesAllPresentedAmendments(
-          actor("member"),
-          options("immediate", false),
-        ),
-      ).toBe(true);
-    });
-
-    it("lets reviewers and the Mesa see everything presented", () => {
+    it("is true only for the Secretaría and the Mesa", () => {
+      expect(seesAllPresentedAmendments(actor("member"))).toBe(false);
       for (const role of ["moderator", "reviewer", "manager"] as const) {
-        expect(
-          seesAllPresentedAmendments(
-            actor(role),
-            options("after_close", false),
-          ),
-        ).toBe(true);
+        expect(seesAllPresentedAmendments(actor(role))).toBe(true);
       }
+    });
+  });
+
+  describe("redactCorrectionNote", () => {
+    const { redactCorrectionNote } = visibility;
+    const payload = { note: "Corrige la justificación", other: 1 };
+
+    it("removes the note of correction events for others", () => {
+      for (const type of [
+        "document_correction_requested",
+        "amendment_correction_requested",
+      ]) {
+        expect(redactCorrectionNote(type, payload, false)).toEqual({
+          other: 1,
+        });
+        expect(redactCorrectionNote(type, payload, true)).toBe(payload);
+      }
+    });
+
+    it("leaves other events alone", () => {
+      expect(redactCorrectionNote("decision_recorded", payload, false)).toBe(
+        payload,
+      );
     });
   });
 

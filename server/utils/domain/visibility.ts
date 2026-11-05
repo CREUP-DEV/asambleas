@@ -58,7 +58,8 @@ export function isDocumentProponent(
 
 export interface AmendmentVisibilityContext {
   status: AmendmentStatus;
-  late: boolean;
+  /** Set by the Secretaría: the amendment is visible to everyone. */
+  publishedAt: Date | null;
   createdByUserId: string | null;
   authorMemberIds: string[];
   /** For transactionals: authors of the parents and the proponent. */
@@ -66,71 +67,74 @@ export interface AmendmentVisibilityContext {
 }
 
 /**
- * Whether the presented amendments of a document are public under the
- * `after_close` policy: the window was closed by date, it has no close date
- * at all, or the assembly is already in session (or closed), where the Mesa
- * debates and projects them. This is not the `late` flag, which keeps using
- * `isLateSubmission`.
+ * Whether the actor sees every presented (non-draft) amendment, published or
+ * not: the Secretaría (amendment:review or amendment:manage) and the Mesa.
+ * Callers use it to skip the per-amendment rule of `canSeeAmendment`.
  */
-export function amendmentsPublic(
-  window: { closesAt: Date | null },
-  assemblyStatus: AssemblyStatus,
-  now = new Date(),
-): boolean {
-  if (assemblyStatus === "in_session" || assemblyStatus === "closed")
-    return true;
-  return !window.closesAt || now > window.closesAt;
+export function seesAllPresentedAmendments(actor: Actor): boolean {
+  return canReviewAmendments(actor) || canModerate(actor);
 }
 
-export interface AmendmentVisibilityOptions {
-  settings: AssemblySettings;
-  /** Whether the document's amendments are public (`amendmentsPublic`). */
-  windowClosed: boolean;
-}
-
-/**
- * Whether the actor sees every presented (non-draft) amendment of a document
- * without being one of its authors: the `after_close` policy does not hide
- * them (another policy, or the amendments are public already), or the actor
- * reviews amendments or sits at the Mesa. Callers use it to skip the
- * per-amendment rule of `canSeeAmendment`.
- */
-export function seesAllPresentedAmendments(
+/** The actor wrote the amendment, created it or is a party of the transactional. */
+export function isAmendmentInsider(
   actor: Actor,
-  options: AmendmentVisibilityOptions,
+  amendment: Pick<
+    AmendmentVisibilityContext,
+    "createdByUserId" | "authorMemberIds" | "partyMemberIds"
+  >,
 ): boolean {
   return (
-    options.settings.amendmentVisibility !== "after_close" ||
-    options.windowClosed ||
-    canReviewAmendments(actor) ||
-    canModerate(actor)
+    amendment.createdByUserId === actor.user.id ||
+    actsFor(actor, amendment.authorMemberIds) ||
+    actsFor(actor, amendment.partyMemberIds)
   );
 }
 
 /**
- * - Drafts: their authors, the parties of a transactional, and reviewers
- *   (amendment:review or amendment:manage). The Mesa alone does not read
- *   members' private drafts; the drafts it creates itself are covered by
- *   `createdByUserId`.
- * - Under `after_close`, while amendments are not public yet
- *   (`windowClosed`, see `amendmentsPublic`), every presented amendment
- *   (submitted, withdrawn, inadmissible...) is visible only to its authors,
- *   the parties of a transactional, reviewers and the Mesa.
- * - Everything else: everyone who can see the document.
+ * Who sees an amendment of a document the actor can see. Visibility is per
+ * amendment: the Secretaría publishes each one, when validating it or later.
+ * - Drafts: their authors, the user who created them, the parties of a
+ *   transactional and reviewers (amendment:review or amendment:manage). The
+ *   Mesa alone does not read members' private drafts; the drafts it creates
+ *   itself are covered by `createdByUserId`.
+ * - Presented and published (`publishedAt`): everyone.
+ * - Presented, not published yet (waiting for validation, validated but kept
+ *   private, or decided before publication): its authors, its creator, the
+ *   parties of a transactional, reviewers and the Mesa.
  */
 export function canSeeAmendment(
   actor: Actor,
   amendment: AmendmentVisibilityContext,
-  options: AmendmentVisibilityOptions,
 ): boolean {
-  const isAuthor =
-    amendment.createdByUserId === actor.user.id ||
-    actsFor(actor, amendment.authorMemberIds) ||
-    actsFor(actor, amendment.partyMemberIds);
+  const insider = isAmendmentInsider(actor, amendment);
   if (amendment.status === "draft") {
-    return isAuthor || canReviewAmendments(actor);
+    return insider || canReviewAmendments(actor);
   }
-  return isAuthor || seesAllPresentedAmendments(actor, options);
+  if (amendment.publishedAt) return true;
+  return insider || seesAllPresentedAmendments(actor);
+}
+
+/** Event types whose payload carries a correction note (`note`). */
+const CORRECTION_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "document_correction_requested",
+  "amendment_correction_requested",
+]);
+
+/**
+ * Correction notes are meant for the presenters and the Secretaría or Mesa
+ * only (correctionNote in the DTOs). The history keeps them in the payload,
+ * so they are removed for everyone else, even after publication.
+ */
+export function redactCorrectionNote(
+  type: string,
+  payload: Record<string, unknown>,
+  noteVisible: boolean,
+): Record<string, unknown> {
+  if (noteVisible || !CORRECTION_EVENT_TYPES.has(type) || !("note" in payload))
+    return payload;
+  const rest = { ...payload };
+  delete rest.note;
+  return rest;
 }
 
 /** Decision kinds whose `subjectIds` are amendment ids. */
@@ -153,7 +157,7 @@ export function decisionAmendmentIds(decisions: DecisionDto[]): string[] {
  * Decisions as the actor may read them. An admission decision keeps only the
  * amendments the actor can see in `subjectIds` and is dropped when it names
  * none of them, so its note and vote do not reveal amendments that are still
- * private (`after_close`). A decision that keeps at least one subject keeps
+ * private (not published). A decision that keeps at least one subject keeps
  * its note: it is the reason its visible amendment was admitted or refused.
  * Other kinds are returned unchanged.
  */

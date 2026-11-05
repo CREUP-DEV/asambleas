@@ -6,6 +6,7 @@ import {
   isSessionFinalVoteReady,
   sessionCleanVote,
   sessionEmptyVote,
+  sessionFinalVoteBlockers,
   sessionFinalVoteResult,
   sessionVoteOutcome,
 } from "~/composables/session/sessionModel";
@@ -18,7 +19,9 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * before confirming it. When approved, the server consolidates the approved
  * amendments; if they cannot be applied together it answers 409 and the
  * conflicts are listed. An approved totality return blocks the vote: the
- * text goes back to its proponent.
+ * text goes back to its proponent. Amendments still open block it too,
+ * listed apart when the Secretaría has not validated them yet, since the
+ * Mesa cannot decide those.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -63,6 +66,10 @@ watch(
 );
 
 const undecided = computed(() => session.undecided.value);
+/** Every amendment still open, split by who has to act (server ids too). */
+const blockers = computed(() =>
+  sessionFinalVoteBlockers(session.amendments.value, serverUndecided.value),
+);
 const conflicts = computed(() =>
   serverConflicts.value.length > 0
     ? serverConflicts.value
@@ -158,24 +165,33 @@ async function record(): Promise<void> {
           "
         />
         <UAlert
-          v-if="undecided.length > 0 || serverUndecided.length > 0"
+          v-if="blockers.undecided.length > 0"
           color="warning"
           variant="subtle"
           icon="i-lucide-list-todo"
           :title="
             t(
               'session.finalVote.undecided',
-              { count: Math.max(undecided.length, serverUndecided.length) },
-              Math.max(undecided.length, serverUndecided.length),
+              { count: blockers.undecided.length },
+              blockers.undecided.length,
+            )
+          "
+          :description="blockers.undecided.map(session.label).join(', ')"
+        />
+        <UAlert
+          v-if="blockers.awaitingValidation.length > 0"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-hourglass"
+          :title="
+            t(
+              'session.preview.awaitingValidation',
+              { count: blockers.awaitingValidation.length },
+              blockers.awaitingValidation.length,
             )
           "
           :description="
-            (serverUndecided.length > 0
-              ? serverUndecided
-              : undecided.map((a) => a.id)
-            )
-              .map(session.label)
-              .join(', ')
+            blockers.awaitingValidation.map(session.label).join(', ')
           "
         />
         <UAlert

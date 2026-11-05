@@ -18,6 +18,7 @@ import {
   emptyAmendmentFilters,
   filterAmendmentList,
   groupAmendmentsByOverlap,
+  mineAmendments,
   sortAmendments,
   type AmendmentFilters,
 } from "./workspace";
@@ -42,7 +43,8 @@ export interface UseDocumentAmendmentsOptions {
  * derives from them: text order, overlap clusters, gutter markers, filters
  * and the actor's drafts. Refreshes itself on live events for the document.
  *
- * The main list leaves drafts out; `drafts` holds the actor's own.
+ * The main list leaves drafts out; `mine` holds the actor's drafts and
+ * every amendment their member presents, whatever its review state.
  */
 export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
   const { t } = useI18n();
@@ -85,10 +87,8 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
   const listed = computed(() =>
     amendments.value.filter((amendment) => amendment.status !== "draft"),
   );
-  const drafts = computed(() =>
-    amendments.value.filter(
-      (amendment) => amendment.status === "draft" && amendment.can.edit,
-    ),
+  const mine = computed(() =>
+    mineAmendments(amendments.value, member.value?.id ?? null),
   );
 
   const overlaps = computed(() => amendmentOverlapIndex(amendments.value));
@@ -143,6 +143,17 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     data.value = { ...current, amendments: list };
   }
 
+  /**
+   * Takes a full answer of the amendments API (validation and publication
+   * return the whole list), keeping the current one when it is for another
+   * document.
+   */
+  function replace(dto: DocumentAmendmentsDto): void {
+    const current = data.value;
+    if (current && current.baseVersionId !== dto.baseVersionId) return;
+    data.value = dto;
+  }
+
   function remove(id: string): void {
     const current = data.value;
     if (!current) return;
@@ -179,7 +190,7 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     refresh,
     amendments,
     listed,
-    drafts,
+    mine,
     relations,
     byId,
     overlaps,
@@ -193,6 +204,7 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     shortLabelOf,
     relationsOf,
     upsert,
+    replace,
     remove,
     live,
   };

@@ -5,13 +5,19 @@ import {
   MAJORITIES,
   VOTE_METHODS,
 } from "../../constants/domain";
-import type { FinalVoteAnnulBody, FinalVoteBody } from "../../types/api";
+import type {
+  CorrectionBody,
+  DocumentCreateBody,
+  DocumentUpdateBody,
+  FinalVoteAnnulBody,
+  FinalVoteBody,
+} from "../../types/api";
 import { blocksSchema } from "./content";
 
 /**
  * Request bodies of the document endpoints. They mirror the types in
  * shared/types/api.ts (DocumentCreateBody, DocumentUpdateBody,
- * DocumentContentBody, FinalVoteBody, FinalVoteAnnulBody).
+ * DocumentContentBody, CorrectionBody, FinalVoteBody, FinalVoteAnnulBody).
  */
 
 const ENTITY_ID_PATTERN = /^[a-z0-9]{20,32}$/;
@@ -39,6 +45,7 @@ export const documentCreateSchema = z.object({
   voted: z.boolean().optional(),
   majority: z.enum(MAJORITIES).optional(),
   blocks: blocksSchema.optional(),
+  dueAt: isoDateSchema.nullable().optional(),
 });
 
 export const documentUpdateSchema = z.object({
@@ -52,7 +59,19 @@ export const documentUpdateSchema = z.object({
   majority: z.enum(MAJORITIES).optional(),
   amendmentsOpenAt: isoDateSchema.nullable().optional(),
   amendmentsCloseAt: isoDateSchema.nullable().optional(),
+  dueAt: isoDateSchema.nullable().optional(),
   status: z.enum(["withdrawn", "postponed", "submitted"]).optional(),
+  updatedAt: isoDateSchema,
+});
+
+export const CORRECTION_NOTE_MAX_LENGTH = 2_000;
+
+/**
+ * Body of POST .../correction for documents and amendments (CorrectionBody):
+ * the note tells the presenters what to fix, so it cannot be empty.
+ */
+export const correctionBodySchema = z.object({
+  note: z.string().trim().min(1).max(CORRECTION_NOTE_MAX_LENGTH),
   updatedAt: isoDateSchema,
 });
 
@@ -109,6 +128,9 @@ export const finalVoteAnnulSchema = z.object({
 // Compile-time checks: every parsed body is assignable to its API type.
 type Assignable<T, U extends T> = U;
 export type _DocumentSchemaChecks = [
+  Assignable<DocumentCreateBody, z.output<typeof documentCreateSchema>>,
+  Assignable<DocumentUpdateBody, z.output<typeof documentUpdateSchema>>,
+  Assignable<CorrectionBody, z.output<typeof correctionBodySchema>>,
   Assignable<FinalVoteBody, z.output<typeof finalVoteSchema>>,
   Assignable<FinalVoteAnnulBody, z.output<typeof finalVoteAnnulSchema>>,
 ];

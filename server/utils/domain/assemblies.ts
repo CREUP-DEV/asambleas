@@ -192,11 +192,11 @@ export function canSeeDraftAssemblies(actor: Actor): boolean {
 }
 
 /**
- * SQL version of canSeeDocument, used to count the documents of several
- * assemblies at once. Undefined means every document is visible.
+ * SQL mirror of canSeeDocument, used to count the documents of several
+ * assemblies at once: the Mesa sees every presented document, not drafts.
+ * Undefined means every document is visible.
  */
-/** SQL mirror of canSeeDocument: the Mesa sees every presented document, not drafts. */
-function visibleDocumentsCondition(actor: Actor): SQL | undefined {
+export function visibleDocumentsCondition(actor: Actor): SQL | undefined {
   if (canManageDocuments(actor)) return undefined;
   return or(
     inArray(documents.status, [...VISIBLE_DOCUMENT_STATUSES]),
@@ -686,7 +686,8 @@ type LiveStateFields = Required<
 
 /**
  * Applies a partial live-state change: `undefined` keeps a field, `null`
- * clears it. Every id must belong to the assembly. Choosing an amendment also
+ * clears it. Every id must belong to the assembly, and an amendment must be
+ * published (everyone follows the projection). Choosing an amendment also
  * selects its document, choosing a document also selects its agenda item,
  * and switching documents clears an amendment of the previous one.
  */
@@ -715,7 +716,10 @@ export async function updateLiveState(
 
     if (body.amendmentId) {
       const [amendment] = await tx
-        .select({ documentId: amendments.documentId })
+        .select({
+          documentId: amendments.documentId,
+          publishedAt: amendments.publishedAt,
+        })
         .from(amendments)
         .innerJoin(documents, eq(documents.id, amendments.documentId))
         .where(
@@ -725,6 +729,14 @@ export async function updateLiveState(
           ),
         );
       if (!amendment) fail(422, "La enmienda no pertenece a esta asamblea");
+      // Every delegate follows the projection: it never points at an
+      // amendment they cannot read. Publication is never undone.
+      if (!amendment.publishedAt) {
+        fail(
+          409,
+          "La Secretaría tiene que publicar esta enmienda antes de proyectarla",
+        );
+      }
       if (body.documentId === undefined) next.documentId = amendment.documentId;
       else if (next.documentId !== amendment.documentId) {
         fail(422, "La enmienda no pertenece al documento indicado");

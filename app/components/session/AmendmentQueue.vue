@@ -1,20 +1,80 @@
 <script setup lang="ts">
 import type { AmendmentDto } from "~~/shared/types/api";
+import {
+  sessionValidationBreakdown,
+  sessionValidationIds,
+} from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
+import { assemblyPath } from "~/components/shell/Navigation.vue";
 
 /**
  * The amendments of the document on screen, in text order. Late ones
  * waiting for admission come first; amendments that change the same passage
- * are grouped with a conflict callout and a one-click transactional.
+ * are grouped with a conflict callout and a one-click transactional. Those
+ * the Secretaría has not validated yet sit apart, folded away, since the
+ * Mesa cannot debate them: whoever can validate them does it there (asking
+ * first when it is several at once) or opens them in Validación, where they
+ * can also be sent back to their authors.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
+const localePath = useLocalePath();
 
 const document = computed(() => session.document.value);
 const queue = computed(() => session.queue.value);
 const visible = (amendment: AmendmentDto) => session.isVisible(amendment);
 
 const pending = computed(() => queue.value.pending);
+const awaitingValidation = computed(() => queue.value.validation);
+const validationOpen = ref(false);
+const validatable = computed(() =>
+  sessionValidationIds(awaitingValidation.value),
+);
+const validating = computed(() => Boolean(session.busy.value.validate));
+/** Who the folded group waits for, as one short line under its title. */
+const validationDetail = computed(() => {
+  const { toValidate, inCorrection } = sessionValidationBreakdown(
+    awaitingValidation.value,
+  );
+  return [
+    toValidate > 0
+      ? t(
+          "session.queue.validationToValidate",
+          { count: toValidate },
+          toValidate,
+        )
+      : null,
+    inCorrection > 0
+      ? t(
+          "session.queue.validationInCorrection",
+          { count: inCorrection },
+          inCorrection,
+        )
+      : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+});
+const validationPath = computed(() =>
+  session.assembly.value
+    ? localePath(assemblyPath(session.assembly.value.slug, "validation"))
+    : null,
+);
+
+/** Validating several at once publishes them all: ask first. */
+async function validateAll(): Promise<void> {
+  const ids = validatable.value;
+  const count = ids.length;
+  if (count === 0) return;
+  const confirmed = await session.confirm({
+    title: t("session.validateConfirm.title", { count }, count),
+    description: t("session.validateConfirm.description", { count }, count),
+    items: ids.map(session.label),
+    confirmLabel: t("session.actions.validate"),
+    confirmIcon: "i-lucide-badge-check",
+  });
+  if (confirmed) await session.validateAmendments(ids);
+}
 const entries = computed(() =>
   queue.value.entries
     .map((entry) =>
@@ -35,18 +95,7 @@ const entries = computed(() =>
     .map((entry) => entry!),
 );
 
-const counts = computed(() => {
-  const list = session.amendments.value.filter(
-    (amendment) => amendment.status !== "draft",
-  );
-  return {
-    total: list.length,
-    undecided: list.filter((amendment) => amendment.status === "submitted")
-      .length,
-    approved: list.filter((amendment) => amendment.status === "approved")
-      .length,
-  };
-});
+const counts = computed(() => session.queueCounts.value);
 
 const hideDecided = computed({
   get: () => session.hideDecided.value,
@@ -73,7 +122,8 @@ const failed = computed(
 
 <template>
   <div class="space-y-4">
-    <div v-if="loading" class="space-y-3" aria-busy="true">
+    <div v-if="loading" class="space-y-3" role="status">
+      <span class="sr-only">{{ t("session.queue.loading") }}</span>
       <USkeleton v-for="n in 4" :key="n" class="h-24 w-full" />
     </div>
 
@@ -163,7 +213,7 @@ const failed = computed(
         :description="t('session.queue.notAmendableHint')"
       />
       <CommonEmptyState
-        v-else-if="counts.total === 0"
+        v-else-if="counts.total === 0 && awaitingValidation.length === 0"
         icon="i-lucide-inbox"
         :title="t('session.queue.empty')"
         :description="t('session.queue.emptyHint')"
@@ -229,6 +279,104 @@ const failed = computed(
           :key="amendment.id"
           :amendment="amendment"
         />
+      </section>
+
+      <!-- Not validated by the Secretaría yet: outside the debate, folded away. -->
+      <section
+        v-if="awaitingValidation.length > 0"
+        :aria-label="
+          t(
+            'session.queue.validationTitle',
+            { count: awaitingValidation.length },
+            awaitingValidation.length,
+          )
+        "
+      >
+        <UCollapsible
+          v-model:open="validationOpen"
+          class="border-default rounded-xl border"
+          :ui="{ content: 'space-y-3 px-3 pb-3' }"
+        >
+          <UButton
+            color="neutral"
+            variant="ghost"
+            block
+            icon="i-lucide-hourglass"
+            trailing-icon="i-lucide-chevron-down"
+            class="group justify-start rounded-xl p-3"
+            :ui="{
+              leadingIcon: 'self-start mt-0.5',
+              trailingIcon:
+                'ms-auto self-start mt-0.5 transition-transform duration-200 group-data-[state=open]:rotate-180 motion-reduce:transition-none',
+            }"
+          >
+            <span class="flex min-w-0 flex-col items-start text-start">
+              <span class="text-highlighted font-semibold">
+                {{
+                  t(
+                    "session.queue.validationTitle",
+                    { count: awaitingValidation.length },
+                    awaitingValidation.length,
+                  )
+                }}
+              </span>
+              <span
+                v-if="validationDetail"
+                class="text-muted text-xs font-normal"
+              >
+                {{ validationDetail }}
+              </span>
+            </span>
+          </UButton>
+
+          <template #content>
+            <p class="text-muted text-sm">
+              {{
+                validatable.length > 0
+                  ? t("session.queue.validationHintCanValidate")
+                  : t("session.queue.validationHint")
+              }}
+            </p>
+            <div
+              v-if="validatable.length > 0"
+              class="flex flex-wrap items-center gap-x-4 gap-y-2"
+            >
+              <UButton
+                v-if="validatable.length >= 2"
+                size="sm"
+                color="primary"
+                variant="soft"
+                icon="i-lucide-badge-check"
+                :label="
+                  t(
+                    'session.queue.validateAll',
+                    { count: validatable.length },
+                    validatable.length,
+                  )
+                "
+                :loading="validating"
+                @click="validateAll"
+              />
+              <UButton
+                v-if="validationPath"
+                :to="validationPath"
+                target="_blank"
+                size="sm"
+                color="neutral"
+                variant="link"
+                class="px-0"
+                trailing-icon="i-lucide-external-link"
+                :label="t('session.queue.openValidation')"
+                :aria-label="t('session.queue.openValidationNewTab')"
+              />
+            </div>
+            <SessionAmendmentCard
+              v-for="amendment in awaitingValidation"
+              :key="amendment.id"
+              :amendment="amendment"
+            />
+          </template>
+        </UCollapsible>
       </section>
 
       <ol class="space-y-3" :aria-label="t('session.queue.listLabel')">
