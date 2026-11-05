@@ -25,6 +25,8 @@ import { affectsReviewQueue } from "~/components/review/-live";
  * would replace (with who is missing; one any of them rejected is gone),
  * the amendments validated but kept private and, in "Fuera de plazo", the
  * late ones that wait for the assembly to decide whether to treat them.
+ * Validating a transactional always publishes it: it replaces amendments
+ * that are already public, and the help says so while one is listed.
  * Documents need document:manage, amendments amendment:review; each part
  * shows only to whoever holds it.
  *
@@ -90,6 +92,14 @@ const amendmentCount = computed(() =>
   reviewGroups.value.reduce(
     (total, group) => total + reviewGroupSize(group),
     0,
+  ),
+);
+/** A transactional is listed: say that validating one publishes it. */
+const transactionalListed = computed(() =>
+  reviewGroups.value.some((group) =>
+    [...group.toValidate, ...group.awaitingAuthors].some(
+      (amendment) => amendment.kind === "transactional",
+    ),
   ),
 );
 const lateCount = computed(() =>
@@ -374,8 +384,11 @@ function documentBusyFor(id: string): "publish" | "correction" | null {
                 :label="String(amendmentCount)"
               />
             </h3>
-            <p v-if="amendmentCount > 0" class="text-muted text-sm">
+            <p v-if="amendmentCount > 0" class="text-muted max-w-3xl text-sm">
               {{ t("review.amendments.help") }}
+              <template v-if="transactionalListed">
+                {{ t("review.amendments.transactionalsPublished") }}
+              </template>
             </p>
           </div>
           <p v-if="amendmentCount === 0" class="text-muted text-sm">

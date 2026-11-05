@@ -11,7 +11,9 @@ import {
  * Presenting a document with other members, inside a form:
  *
  * - "¿Lo presentáis varios miembros?", folded unless there are co-presenters
- *   already, holds a member search to add them;
+ *   already, holds a member search to add them, saying that they prepare
+ *   the text too but cannot change who answers the amendments (only that
+ *   member or the Secretaría can; the server refuses it with `main_only`);
  * - with several presenters, the required choice of who answers the
  *   amendments (the main presenter), with what that means in one line.
  *

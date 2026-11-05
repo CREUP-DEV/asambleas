@@ -169,7 +169,7 @@ const announcement = computed(() => {
       return t("session.now.announceAmendment", {
         code: session.label(amendment.id),
         who: amendment.authors.map((author) => author.acronym).join(", "),
-        status: stageText(session.stageOf(amendment)),
+        status: stageText(session.stageOf(amendment), amendment),
       });
     }
     case "document": {

@@ -250,7 +250,8 @@ the Mesa on its behalf) answers the amendments to the document. Likewise an
 amendment with co-authors must name its main author (`mainAuthorId`), and only
 that member answers the transactionals proposed over it. Co-presenters and
 co-authors always see what the main one decided (who, what, when) on the
-document or amendment and in the "Novedades" of their home page.
+document or amendment and in the "Novedades" of their home page. Only the main
+presenter itself or the Secretaría changes who the main presenter is.
 
 **Amendment flow.**
 
@@ -260,7 +261,9 @@ document or amendment and in the "Novedades" of their home page.
 3. If it is late, the assembly decides whether to treat it; the Secretaría
    (or the Mesa) records that decision. Until then it cannot go further.
 4. The document's main presenter accepts or rejects it (its position, with an
-   optional comment), only once it is validated and, if late, admitted.
+   optional comment), only once it is validated, published and, if late,
+   admitted, and never after the document's final vote. The Mesa can record
+   the answer on its behalf, and everyone sees who recorded it.
 5. The assembly votes it. Each document has a rule for accepted amendments
    (`documents.acceptedAmendments`, default from its kind): with
    "incorporate" (regulations by default) an amendment the main presenter
@@ -281,7 +284,8 @@ or more of them:
 1. it is presented ("pending_authors");
 2. the main author of each amendment it would replace accepts or rejects it;
    if any of them rejects it, it is closed and the originals carry on;
-3. the Secretaría validates it (and publishes it, now or later);
+3. the Secretaría validates it, which always publishes it (it builds on
+   amendments that are already public);
 4. once validated and accepted by every main author, it replaces those
    amendments (they become `transacted`) and follows the normal amendment
    flow: the document's main presenter answers it and the assembly votes it
@@ -290,7 +294,13 @@ or more of them:
 The Mesa can still draft one live in the console: it is validated and
 published at once, and it replaces the originals as soon as their main
 authors accept it in the room. Transactionals build only on published,
-undecided amendments.
+admitted, undecided amendments.
+
+When a transactional replaces its originals, any other transactional still
+open over any of them lapses. When an original is settled another way
+(withdrawn, lapsed, declared inadmissible, voted, or incorporated by the main
+presenter's acceptance) before the transactional replaces it, the
+transactional closes by itself, and its authors see why in their news.
 
 **Session console.** Several people use it at once (Presidencia moderates,
 Secretaría records results), all live. It leads with what is being debated
@@ -313,9 +323,13 @@ Presidencia hold every permission, users and roles included. The Mesa's
 Vocalía and Presidencia use the `Moderador` role (`session:moderate`). The
 admin pages open by permission (`user:manage_roles` for users and their
 grants, `role:manage_permissions` for roles), and only an Admin can give or
-take the Admin role. Besides role permissions, a user can be granted
-individual permissions (`user_permissions`); a user's permissions are the
-union of both.
+take the Admin role. Only an Admin changes the access of Secretaría and
+Presidencia: giving or taking either role, what either grants, and the
+individual grants of whoever holds one, so neither can change the other's.
+Nobody but an Admin raises their own access or locks themselves out of the
+admin pages, and the last Admin cannot leave the role. Besides role
+permissions, a user can be granted individual permissions
+(`user_permissions`); a user's permissions are the union of both.
 
 **Intranet.** Calls to the intranet API send `Authorization: Bearer
 <NUXT_INTRANET_API_TOKEN>` when the token is configured. The intranet's

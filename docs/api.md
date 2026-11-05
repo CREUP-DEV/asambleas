@@ -29,7 +29,9 @@ The usual AGENTS.md handler order applies:
   rows take `updatedAt` and use `buildOptimisticLockCondition`, so the write is
   atomic. A conflict returns 409.
 - **Row locks.** Transactions lock rows in one order: assembly, document,
-  amendments (by id), acceptances, `live_state`. A transaction that moves the
+  amendments (by id), acceptances, `live_state`. A path that settles an
+  amendment locks the transactionals over it in the same amendment pass,
+  since settling it closes them. A transaction that moves the
   live projection from a document or amendment path, or moves a document to
   another agenda item, share-locks the assembly before the document, so the
   move serializes with an agenda delete of its target. Explicit locks are `FOR NO KEY UPDATE` or `FOR SHARE`,
@@ -54,7 +56,7 @@ The usual AGENTS.md handler order applies:
 | PUT    | `/api/members/[id]`                 | `member:manage`           | Edits name, kind or active, with `updatedAt`.                                               |
 | POST   | `/api/members/sync`                 | `member:manage`           | Syncs the intranet roster. Returns `MemberSyncResult`.                                      |
 | GET    | `/api/admin/users`                  | `user:manage_roles`       | Paginated user rows, each with `member` and `extraPermissions`.                             |
-| PUT    | `/api/admin/users/[id]/role`        | `user:manage_roles`       | Body `{ roleId }`. Only an Admin gives or takes the Admin role, see "Admin section".        |
+| PUT    | `/api/admin/users/[id]/role`        | `user:manage_roles`       | Body `{ roleId }`. Only an Admin gives or takes Admin, Secretaría or Presidencia.           |
 | PUT    | `/api/admin/users/[id]/member`      | `user:manage_roles`       | Body `{ memberId: string \| null }`. Links an account to a member, see below.               |
 | PUT    | `/api/admin/users/[id]/permissions` | `user:manage_roles`       | Body `{ permissions: PermissionKey[] }`. Sets the user's own grants, see "Permissions".     |
 | GET    | `/api/admin/roles`                  | see notes                 | The roles. `user:manage_roles` or `role:manage_permissions`.                                |
@@ -90,20 +92,36 @@ each endpoint checks its own:
   either, since assigning roles and grants shows them too;
 - only an Admin gives or takes the Admin role: `PUT .../users/[id]/role`
   answers 403 to anyone else when the new role or the user's current one is
-  Admin. Nobody changes their own role (400);
+  Admin. Only an Admin changes its own role (403 for anyone else, "Solo un
+  Admin puede cambiar su propio rol"), and the last Admin cannot leave the
+  role (409): give it to someone else first. The Admin accounts are locked
+  in id order, so two Admins leaving at once cannot both go;
 - only an Admin may touch the Admin role's permissions (403 for anyone
   else); it holds every permission anyway, so even an Admin gets 400;
-- holding these permissions never lets anyone raise their own access. A
-  non-Admin gets 403 when it changes the grants or the member link of its
-  own account (acting for a member is acting with its rights), the
-  permissions of the role it holds (it could also lock the Secretaría out),
-  or when it adds or removes a key it does not hold itself: as a user's
+- only an Admin changes the access of the association's Secretaría and
+  Presidencia (403 for anyone else, "Solo un Admin puede cambiar el rol o
+  los permisos de Secretaría y Presidencia"): giving or taking either role
+  (`PUT .../users/[id]/role` when the new role or the user's current one is
+  one of them; saving the role the user already has is fine), what either
+  role grants (`PUT .../roles/[id]/permissions`), and the grants of an
+  account that holds either role (`PUT .../users/[id]/permissions`). So
+  Secretaría and Presidencia cannot change each other's access
+  (`touchesLeadershipRole` in `server/utils/auth/rbac.ts`);
+- holding these permissions never lets anyone raise their own access or
+  lock themselves out. A non-Admin gets 403 when it changes its own role
+  (above), the grants or the member link of its own account (acting for a
+  member is acting with its rights), when it takes `user:manage_roles` or
+  `role:manage_permissions` away from the role it holds (it would lock
+  itself, and everyone with that role, out of this section; giving them is
+  fine, and so are other changes to that role under the next rule), or
+  when it adds or removes a key it does not hold itself: as a user's
   grant, in a role, or by giving a user a role that holds a key its current
   one does not (or the other way round). Only the keys that change count,
   so saving an unchanged list is fine. An Admin passes all of these
   (`adminGrantViolation` in `server/utils/auth/rbac.ts`). Secretaría and
   Presidencia hold every key, so in practice this keeps each one away from
-  its own account and role;
+  its own account and role assignment, and keeps their own role able to
+  manage users and roles;
 - an Admin account's grants and member link may be edited by anyone with
   `user:manage_roles`: they change nothing about what an Admin can do,
   since Admin holds every key.
@@ -238,7 +256,11 @@ presenter; up to 20, no repeats). The rules (`planPresenters` in
   `coProponentMemberIds: [own]`);
 - on `PUT`, presenters may change them while the document is a draft (it is
   the only time they can edit it), with the same rules, and their own member
-  cannot leave (422). Managers change them at any time. Fields left out keep
+  cannot leave (422). Only the main presenter itself or a manager changes
+  who the main presenter is: a co-presenter (or the user who created the
+  document without presenting it) naming another one, itself included, or
+  none gets 403 with `data: { reason: "main_only" }`; it may still change
+  the co-presenters. Managers change them at any time. Fields left out keep
   their value. Naming a new main presenter without `coProponentMemberIds`
   keeps the former one as a co-presenter: always for a presenter, and for a
   manager when the new one was already a presenter (otherwise a manager
@@ -265,8 +287,10 @@ accepted amendment is (`acceptedRulePlan`, `applyAcceptedAmendmentsRule`):
   the presenter could answer now (validated, admitted, published, and for a
   transactional accepted by its main authors) is approved at once
   (`approvalMethod: "proponent"`, `amendment_approved` with
-  `reason: "rule_changed"`). A transactional presented under the earlier
-  rule whose sources are still open is left for the Mesa;
+  `reason: "rule_changed"` and the main presenter as `memberId`), which
+  closes the pending transactionals over it (see transactionals). A
+  transactional presented under the earlier rule whose sources are still
+  open is left for the Mesa;
 - to `vote`: every amendment approved by the presenter's acceptance goes
   back to undecided, keeping the answer (`amendment_reopened` with
   `reason: "rule_changed"`), for the assembly to vote.
@@ -393,7 +417,7 @@ All paths are under `/api/assemblies/[assembly]/documents/[document]/amendments`
 | PUT    | `/[amendment]`            | author while the amendment is a draft                | `AmendmentUpdateBody`                                                                                         |
 | DELETE | `/[amendment]`            | author while the amendment is a draft                |                                                                                                               |
 | POST   | `/[amendment]/submit`     | author                                               | See submission rules below.                                                                                   |
-| POST   | `/[amendment]/withdraw`   | author or moderator                                  | Allowed until the amendment is decided.                                                                       |
+| POST   | `/[amendment]/withdraw`   | author or moderator                                  | Allowed until the amendment is decided. Closes the pending transactionals over it.                            |
 | POST   | `/validate`               | `amendment:review`                                   | `ValidateAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                              |
 | POST   | `/publish`                | `amendment:review`                                   | `PublishAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                               |
 | POST   | `/[amendment]/correction` | `amendment:review`                                   | `CorrectionBody`. See validation below. Returns `AmendmentDto`.                                               |
@@ -487,17 +511,20 @@ becomes visible to everyone when validating it or later.
   the same time (`admission=admitted`); a late one keeps `admission=pending`
   until the assembly decides whether to treat it (the Secretaría or the Mesa
   records it, see late amendments). With `publish` it also sets
-  `publishedAt`. Records `amendment_validated` (`{ publish, admission }`,
-  plus `method: "secretaria"` when it admits) per amendment. Validating a
-  transactional makes it replace what it groups: those amendments must still
-  be open (409, saying which one still needs the Secretaría's validation or
-  the assembly's decision to treat it, or is already decided) and become
-  `transacted` (`amendment_transacted`).
+  `publishedAt`; a transactional is published whatever `publish` says
+  (`publishOnValidation`), since it replaces published amendments and
+  cannot stay private. Records `amendment_validated` (`{ publish,
+admission }`, `publish` being what happened to that amendment, plus
+  `method: "secretaria"` when it admits) per amendment. Validating a
+  transactional makes it replace what it groups: those amendments must
+  still be open (409, saying which one still needs the Secretaría's
+  validation or the assembly's decision to treat it, or is already
+  decided) and become `transacted` (`amendment_transacted`).
 - `POST .../publish` (`PublishAmendmentsBody`) makes validated amendments
   visible to everyone: each one must be validated, past draft and not
   published yet (409). Records `amendment_published`. Publishing only changes
   who sees an amendment, so it is the one amendment change still allowed
-  after the final vote.
+  after the final vote (`can.publish` is the only capability left then).
 - `POST .../[amendment]/correction` (`CorrectionBody`: a note of 1 to 2000
   characters and the amendment's `updatedAt` for the optimistic lock) sends a
   `submitted`, not yet validated amendment back to `draft` with the note in
@@ -549,7 +576,8 @@ inadmissible, for instance).
 - It creates a `decisions` row (`admit_late` or `inadmission`), with a vote
   when the method is `vote`.
 - It sets `admission`. Inadmissible amendments also get
-  `status=inadmissible`.
+  `status=inadmissible`, which closes the pending transactionals over them
+  (see transactionals); they are locked in the same ordered pass.
 - The Mesa does not skip the Secretaría: admitting an on-time amendment
   (`late=false`) that is `submitted` and not validated returns 409 (the
   Secretaría validates it, which admits it). So does a vote on its
@@ -585,29 +613,38 @@ reject, transact, or back to pending, with an optional comment). Returns the
   presenter) but cannot give it. The `position_changed` event names whose
   answer it is (`memberId`: the main presenter, also when the Mesa records
   it, with `by: "moderator"`), which the home page's news credit.
+  `PositionDto.recordedBy` says who recorded the answer, as it was then:
+  `"mesa"` when the amendment's latest `position_changed` has
+  `by: "moderator"`, `"presenter"` when it has `by: "proponent"`, so an
+  answer keeps its author when the document later gets another main
+  presenter. Without that event it compares the member of the user stored
+  in `amendment_positions.decidedByUserId` with the document's current main
+  presenter (`"presenter"` for the pending row created on submission, which
+  nobody recorded).
 - Only once the amendment can be answered (`positionBlocker`), 409
   otherwise: presented and undecided, validated by the Secretaría and, if
-  late, admitted by the assembly (`admission: "admitted"`), and for a
-  transactional once every main author accepted it.
+  late, admitted by the assembly (`admission: "admitted"`), for a
+  transactional once every main author accepted it, and published, so the
+  answer is about something every delegate can read (under either rule;
+  a late one is published when the assembly admits it). The message says
+  what is missing. `can.position` follows the same rule, and is false once
+  the document is voted.
 - `positionUpdatedAt` is the `PositionDto.updatedAt` the client saw (null
   when there was no answer): when it is sent and the stored answer changed
   since, 409, so two people answering at once do not overwrite each other.
 - Under the document's `incorporate` rule, accepting approves the amendment
   at once: `status: "approved"`, `approvalMethod: "proponent"`, `decidedAt`,
-  with `amendment_approved` (`{ method: "proponent", byPosition: true }`)
-  after `position_changed`. It must be published first (409): `can.position`
-  stays true for a validated amendment the Secretaría keeps private, since
-  rejecting it, proposing a transactional or leaving it pending are still
-  open, and the client disables only "accept" (`amendmentAcceptBlocked`).
-  Changing the
-  answer of an amendment approved that way to anything but `accept` reopens
-  it (`submitted`, `amendment_reopened` with `reason: "position_changed"`).
+  with `amendment_approved` (`{ method: "proponent", byPosition: true,
+memberId }`, the main presenter) after `position_changed`, and closes the
+  pending transactionals over it (see transactionals). Changing the answer
+  of an amendment approved that way to anything but `accept` reopens it
+  (`submitted`, `amendment_reopened` with `reason: "position_changed"`).
   One the Mesa approved otherwise (by vote, say) is decided: 409. Under the
   `vote` rule an answer never decides anything.
 - After the final vote nothing changes (409).
 - Locks: the document (share), the amendment (and what a transactional
-  replaces, with the other transactionals over that) in id order, its
-  acceptances, then its position row.
+  replaces, with the other transactionals over that or over the amendment)
+  in id order, its acceptances, then its position row.
 
 **Outcome.** The body is an `OutcomeBody`; the response is an
 `AmendmentOutcomeDto`.
@@ -621,6 +658,9 @@ reject, transact, or back to pending, with an optional comment). Returns the
   the debate: `admission: "admitted"` (validated and, if late, admitted by
   the assembly), 409 otherwise. An author can still withdraw its own
   amendment through `POST .../withdraw`.
+- Every outcome that settles the amendment (`approve`, `vote`, `withdraw`,
+  `lapse`) closes the pending transactionals over it (see transactionals),
+  locked in the same ordered pass as the amendment.
 - `reopen` brings the amendment back to `submitted`. Its vote row stays for
   the record, but the `amendment_reopened` event records it as
   `voidedVoteId` and the projection stops showing it.
@@ -682,8 +722,9 @@ propose one over published amendments, before or during the session
      waits. Each one accepts or rejects it (`POST .../acceptance`); any
      rejection closes it and the originals carry on. The Secretaría's inbox
      lists it read only (`can.validate` false) and its counts leave it out;
-  2. once all accepted, to the Secretaría, which validates it and publishes
-     it, now or later (`POST .../validate` answers 409 until then);
+  2. once all accepted, to the Secretaría, which validates it
+     (`POST .../validate` answers 409 until then); validating it publishes
+     it;
   3. validated and accepted, it replaces those amendments: they become
      `transacted` (`amendment_transacted` with `transactionalId` and `code`)
      and it follows the normal flow (the main presenter's answer, then the
@@ -694,14 +735,9 @@ propose one over published amendments, before or during the session
   authors accept it in the room (the Mesa records their answers); at once
   when there is nobody else to ask.
 - Validated and accepted happen in either order: whichever comes last makes
-  it replace its sources, which must still be open (409 otherwise). It
-  happens on validation whether or not the Secretaría publishes the
-  transactional then: a private one replaces published originals, which
-  delegates then see as `transacted` without a link to it
-  (`transactionalIds` lists only what the viewer can see) until it is
-  published. Whether a transactional should be published when it is
-  validated, or replace its sources only once published, is for the users
-  to decide.
+  it replace its sources, which must still be open (409 otherwise).
+  Validating a transactional always publishes it, so delegates see what
+  replaced the originals.
 - Two transactionals over the same amendment cannot both replace it. When
   one does, every other submitted transactional over any of those
   amendments lapses: `status: "lapsed"`, `decidedAt`, and `amendment_lapsed`
@@ -709,12 +745,32 @@ propose one over published amendments, before or during the session
   that replaced them), which its authors see in their news. Validating, in
   one request, two transactionals that group the same amendment returns 409:
   the Secretaría validates one, and the other lapses.
-- A transactional whose sources are no longer all open for another reason
-  (one was voted, withdrawn, or approved by the presenter's acceptance under
-  `incorporate`) cannot go through either. It stays submitted, but nobody is
-  asked to accept it any more (`can.accept` false, left out of the home
-  page's `acceptances`, and accepting it returns 409); its proposer withdraws
-  it (`POST .../withdraw`) or the Mesa closes it.
+- A transactional that has not replaced its sources yet (waiting for its
+  main authors, for the Secretaría or, the Mesa's, for the answers in the
+  room) is closed at once when one of those amendments is settled another
+  way: withdrawn (by its authors or the Mesa), lapsed, declared
+  inadmissible, approved or rejected (by vote or as the Mesa records it),
+  or incorporated by the main presenter's acceptance (also when the
+  document's rule changes to `incorporate`). It becomes `withdrawn` with
+  `decidedAt`, and `amendment_withdrawn` records
+  `{ by: "sources_closed", sourceId, sourceCode, sourceStatus }`: the
+  amendment that closed it and where it ended up. Its `decidedAt` is the
+  same instant as that amendment's, so the `AmendmentDto` alone tells
+  which source closed it (`sourceIds`, their `status` and `decidedAt`):
+  clients put that reason into words in the viewer's language, and
+  `outcomeNote` stays empty, for the Mesa's own words (a Spanish note would
+  reach English readers untranslated). Its authors and its parties (every
+  author of what it groups) read it in their news, also when their own act
+  closed it. One left behind because another transactional replaced its
+  sources is not withdrawn but `lapsed`, with the reason
+  `sources_transacted` (above): it lost its object, as the assembly calls
+  it, and clients tell it apart that way. Every path that settles an
+  amendment locks the transactionals over it in the same ordered pass
+  (`closeTransactionalsOver` in `server/utils/domain/transactionalClosure.ts`).
+  An older one left submitted with a source already closed is still never
+  asked for an answer (`can.accept` false, left out of the home page's
+  `acceptances`, and accepting it returns 409); its proposer withdraws it
+  or the Mesa closes it.
 - Every path that replaces sources locks the transactional, its sources and
   the other transactionals over them in one ordered pass, after the
   document (share). Presenting a transactional takes the document
@@ -727,7 +783,8 @@ propose one over published amendments, before or during the session
 **After the final vote.** Every amendment change (drafts, submission,
 validation, correction, withdrawal, admission, position, outcome, acceptance,
 relations) returns 409 once the document has a final vote; only publishing
-is still allowed. Each one re-reads the document under a row
+is still allowed. The capabilities say so: every `can` flag but `publish`,
+`moderate` and `review` is false. Each one re-reads the document under a row
 lock inside its transaction, so a change racing the final vote either commits
 first (and the final vote sees it) or is refused.
 
@@ -742,7 +799,8 @@ the room (403 for anyone else; 404 when that member is not a party).
   final (409): the originals are gone.
 - Any rejection closes it: `status: "withdrawn"`, `decidedAt` and
   `amendment_withdrawn` (`{ by: "author_rejection", memberId }`) after
-  `acceptance_recorded`. The originals carry on. Who rejected it is in its
+  `acceptance_recorded`. The home page's news tell it through the
+  rejection only. The originals carry on. Who rejected it is in its
   `acceptances` (decision `rejected`, member, `decidedAt`) and in that
   event; `outcomeNote` stays empty, for the Mesa's own words, so clients put
   it into words in the viewer's language.
@@ -801,15 +859,14 @@ managers and the Mesa), soonest first:
   presenter, not voted yet, with something to answer, in assembly order and
   then creation order. `positionsPending` counts, over the amendments of the
   document the actor can see, the `submitted` ones without an answer that
-  the main presenter can answer now (validated, admitted if late, and for a
-  transactional accepted by its main authors); under the `incorporate` rule
-  only published ones, since the answer may approve them. Documents with 0
-  are left out;
-- `acceptances`: the submitted transactionals waiting for the actor's
-  member, as main author of an amendment they would replace, in assembly and
-  document order, each with `replaces`: the member's amendments it would
-  replace. One that can no longer go through (an amendment it groups is
-  decided, or replaced by another transactional) is left out;
+  the main presenter can answer now (`positionBlocker`: validated,
+  published, admitted if late, and for a transactional accepted by its main
+  authors), under either rule. Documents with 0 are left out;
+- `acceptances`: the submitted transactionals the actor's member can
+  still answer, as main author of an amendment they would replace
+  (`awaitsPartyAnswer`: its answer pending, everything it groups still
+  open, the document published and not voted), in assembly and document
+  order, each with `replaces`: the member's amendments it would replace;
 - `news` ("Novedades"): what others decided about the member's work in the
   last 30 days, newest first, at most 30 (`MeWorkNewsDto`):
   - for a co-presenter, the main presenter's answers to the document's
@@ -827,24 +884,47 @@ managers and the Mesa), soonest first:
     `amendment_withdrawn`, `amendment_lapsed` (with
     `reason: "sources_transacted"` for a transactional closed because
     another one replaced what it grouped), `amendment_transacted` and
-    `amendment_reopened`;
+    `amendment_reopened`. A transactional a main author's rejection closed
+    is told by that rejection (`acceptance_recorded`): its
+    `amendment_withdrawn` with `by: "author_rejection"` is left out;
+  - for the authors of the amendments a transactional groups (its parties
+    among them), that transactional closing by itself:
+    `amendment_withdrawn` with `by: "sources_closed"` and
+    `amendment_lapsed` with `reason: "sources_transacted"`;
   - for the presenters of a document (main and co-presenters), what was
     settled about it, with `amendment: null`: `document_published` (the
     Secretaría's validation), `document_correction_requested`,
     `document_voted` and `document_status_changed`.
 
-  `by` is the member that decided: the party, for an answer to a
-  transactional, and the main presenter, for an answer to an amendment, also
-  when the Mesa recorded it (the event's `memberId`; an older answer the
-  Mesa recorded without it gives null); otherwise the member the actor acted
-  for, or null. `value` is the decision in short: the position
-  (`position_changed`), the answer (`acceptance_recorded`), the admission
-  left by a validation (`amendment_validated`), the approval method
-  (`amendment_approved`, `proponent` when it was incorporated), the result
-  of the final vote (`document_voted`) or the new status
-  (`document_status_changed`); null otherwise. Decisions taken by the user, or
-  for the user's member, are left out, and so is anything the actor cannot
-  see (the document and the amendment, as their endpoints decide).
+  `by` is the member that decided: null for a transactional that closed by
+  itself (`amendment_withdrawn` with `by: "sources_closed"`,
+  `amendment_lapsed` with `reason: "sources_transacted"`), which nobody
+  decided; the party, for an answer to a transactional; the main
+  presenter, also when the Mesa recorded it, for an answer to an amendment
+  (`position_changed`), for an amendment its acceptance incorporated
+  (`amendment_approved` with method `proponent`) and for one a new answer
+  took out again (`amendment_reopened` with
+  `reason: "position_changed"`): the event's `memberId`, or the document's
+  current main presenter for older events without it; otherwise the member
+  the actor acted for, or null. `value` is the decision in short: the
+  position (`position_changed`), the answer (`acceptance_recorded`), the
+  admission left by a validation (`amendment_validated`), the approval
+  method (`amendment_approved`, `proponent` when it was incorporated), the
+  code of the transactional that replaced the amendment
+  (`amendment_transacted`) or that replaced first what a lapsed
+  transactional grouped (`amendment_lapsed` with
+  `reason: "sources_transacted"`), the code of the amendment whose fate
+  closed a transactional (`amendment_withdrawn` with
+  `by: "sources_closed"`), the result of the final vote (`document_voted`)
+  or the new status (`document_status_changed`); null otherwise.
+  `ownAmendment` is true when the amendment is one the member wrote (main
+  author or co-author), false for document news and for transactionals it
+  is only a party to. Decisions taken by the user, or for the user's
+  member, are left out (an incorporation the member's own acceptance
+  caused, too), and so is anything the actor cannot see (the document and
+  the amendment, as their endpoints decide). A transactional that closed by
+  itself is not a decision, so it stays, also when the user's own act on
+  what it grouped (withdrawing it, say) closed it.
 
 An account without a member gets empty `documents`, `amendments`,
 `proponent`, `acceptances` and `news`.

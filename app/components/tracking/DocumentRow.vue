@@ -3,7 +3,8 @@ import type { DocumentSummaryDto } from "~~/shared/types/api";
 import { isPendingProgress } from "~/composables/document/documentProgress";
 
 /**
- * One document of the tracking panel: what it is, who presents it, its
+ * One document of the tracking panel: what it is, who presents it (the main
+ * presenter, then at most two co-presenters before "N más"), its
  * internal deadline and where it stands, as the Secretaría reads it
  * (useDocumentProgress). Drafts show their deadline on a line of its own;
  * an overdue one is marked with an icon and words, not only with colour. In
@@ -119,11 +120,12 @@ const when = computed<{ label: string; at: string } | null>(() => {
       >
         <span>{{ t(`agenda.documentKinds.${document.kind}`) }}</span>
         <span aria-hidden="true">·</span>
-        <span class="inline-flex min-w-0 items-center gap-1.5">
+        <span class="inline-flex min-w-0 flex-wrap items-center gap-x-1.5">
           <span>{{ t("tracking.row.presenter") }}</span>
-          <CommonMemberBadge
+          <DocumentPresenters
             v-if="document.proponent"
-            :member="document.proponent"
+            :document="document"
+            :max-others="2"
             show-name
           />
           <span v-else class="text-warning font-medium">

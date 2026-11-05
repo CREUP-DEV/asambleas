@@ -20,10 +20,12 @@ import type {
   ConsolidationResult,
 } from "~~/shared/types/content";
 import type {
+  AcceptedAmendmentRule,
   AmendmentStatus,
   AssemblySettings,
   Majority,
 } from "~~/shared/constants/domain";
+import { amendmentAcceptBlocked } from "~/composables/amendment/workspace";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
 import {
@@ -164,6 +166,90 @@ export function isSessionReplacing(amendment: AmendmentDto): boolean {
     amendment.validatedAt !== null &&
     amendment.acceptances.every((party) => party.decision === "accepted")
   );
+}
+
+/**
+ * The amendments whose settling closed a transactional on its own: one still
+ * waiting (it never replaced what it groups, and no main author turned it
+ * down) is withdrawn by the server in the same moment one of the amendments
+ * it groups is decided, withdrawn, lapsed, declared inadmissible or
+ * incorporated (one left behind because another transactional replaced them
+ * first lapses instead). That moment tells it apart from one withdrawn by
+ * whoever proposed it or by the Mesa: it was closed at the very instant a
+ * loaded source stopped being open. Empty for anything else. The DTO does
+ * not say why it was withdrawn, so should that amendment be reopened and
+ * settled again later, the instants no longer match and it reads as an
+ * ordinary withdrawal.
+ */
+export function sessionClosingSourceIds(
+  amendment: AmendmentDto,
+  byId: ReadonlyMap<string, AmendmentDto>,
+): string[] {
+  if (
+    amendment.kind !== "transactional" ||
+    amendment.status !== "withdrawn" ||
+    sessionTransactionalRejectors(amendment).length > 0 ||
+    isSessionReplacing(amendment)
+  ) {
+    return [];
+  }
+  const closedAt = instant(amendment.decidedAt);
+  if (closedAt === null) return [];
+  return amendment.sourceIds.filter((id) => {
+    const source = byId.get(id);
+    return (
+      source !== undefined &&
+      source.status !== "submitted" &&
+      source.status !== "draft" &&
+      instant(source.decidedAt) === closedAt
+    );
+  });
+}
+
+/**
+ * The transactionals that got ahead of a lapsed one: it still waited (no
+ * main author turned it down) when another transactional replaced some
+ * amendment it groups, and the server let it lapse in that same moment
+ * (the replaced amendment turned `transacted` at the very instant it
+ * lapsed). Named through sessionReplacingIds of those amendments, without
+ * itself. Empty for anything else, including one the Mesa declared lapsed.
+ */
+export function sessionLapsingTransactionalIds(
+  amendment: AmendmentDto,
+  byId: ReadonlyMap<string, AmendmentDto>,
+): string[] {
+  if (
+    amendment.kind !== "transactional" ||
+    amendment.status !== "lapsed" ||
+    sessionTransactionalRejectors(amendment).length > 0 ||
+    isSessionReplacing(amendment)
+  ) {
+    return [];
+  }
+  const lapsedAt = instant(amendment.decidedAt);
+  if (lapsedAt === null) return [];
+  const ids = new Set<string>();
+  for (const id of amendment.sourceIds) {
+    const source = byId.get(id);
+    if (
+      source === undefined ||
+      source.status !== "transacted" ||
+      instant(source.decidedAt) !== lapsedAt
+    ) {
+      continue;
+    }
+    for (const replacing of sessionReplacingIds(source, byId)) {
+      if (replacing !== amendment.id) ids.add(replacing);
+    }
+  }
+  return [...ids];
+}
+
+/** Milliseconds of an ISO date, or null when there is none. */
+function instant(value: string | null): number | null {
+  if (!value) return null;
+  const ms = new Date(value).getTime();
+  return Number.isFinite(ms) ? ms : null;
 }
 
 /**
@@ -433,6 +519,65 @@ export function isSessionProjectable(amendment: AmendmentDto): boolean {
  */
 export function isSessionDebatable(amendment: AmendmentDto): boolean {
   return isSessionOpen(amendment) && isSessionProjectable(amendment);
+}
+
+// The main presenter's answer -------------------------------------------------
+
+/**
+ * What the console offers to record the answer of the document's main
+ * presenter, which the Mesa gives for it in the room. Only published
+ * amendments are answered (validated and, if late, admitted: what
+ * `can.position` says), never after the final vote, and an incorporated one
+ * keeps its answer open until then (changing it takes it out of the text).
+ * - null: nothing to offer, now or later from here;
+ * - `waitsPublication`: open to the Mesa but still private, so no answer can
+ *   be recorded until the Secretaría publishes it: the console shows the
+ *   answer disabled, with that reason;
+ * - `acceptBlocked`: accepting is refused while it is private under the
+ *   "incorporate" rule (amendmentAcceptBlocked).
+ */
+export interface SessionPositionMenu {
+  waitsPublication: boolean;
+  acceptBlocked: boolean;
+}
+
+export function sessionPositionMenu(
+  amendment: AmendmentDto,
+  rule: AcceptedAmendmentRule,
+  voted: boolean,
+): SessionPositionMenu | null {
+  if (voted) return null;
+  if (amendment.status !== "submitted" && !isSessionIncorporated(amendment)) {
+    return null;
+  }
+  const acceptBlocked = amendmentAcceptBlocked(amendment, rule);
+  if (amendment.publishedAt === null) {
+    // Validated, admitted and accepted by every main author, only private:
+    // the Mesa sees why it cannot answer it yet.
+    const reached =
+      isSessionOpen(amendment) && sessionMissingAcceptances(amendment) === 0;
+    return reached && (amendment.can.position || amendment.can.moderate)
+      ? { waitsPublication: true, acceptBlocked }
+      : null;
+  }
+  return amendment.can.position
+    ? { waitsPublication: false, acceptBlocked }
+    : null;
+}
+
+/**
+ * The Mesa recorded this answer for the main presenter (said as "La Mesa,
+ * en nombre de UPV"). An answer set back to pending is not one: it reads as
+ * the main presenter's ("Respuesta de UPV:", pending), whoever cleared it.
+ */
+export function isSessionPositionByMesa(
+  position: AmendmentDto["position"],
+): boolean {
+  return (
+    position !== null &&
+    position.recordedBy === "mesa" &&
+    position.position !== "pending"
+  );
 }
 
 /** Text order (totality amendments first, as positionKey encodes), then number. */
@@ -713,6 +858,9 @@ export function sessionFinalVoteReasons(input: {
  * the queue show with what happens next:
  * - `turned_down`: a transactional some main author did not accept: it is
  *   closed and the amendments it would have replaced carry on;
+ * - `closed`: a transactional the server closed on its own because an
+ *   amendment it groups was settled first (sessionClosingSourceIds, only
+ *   known with `byId`);
  * - `superseded`: a presented transactional that can never go ahead,
  *   since an amendment it would replace is no longer open
  *   (isSessionSuperseded, only known with `byId`): it has to be withdrawn;
@@ -731,6 +879,7 @@ export function sessionFinalVoteReasons(input: {
  */
 export type SessionAmendmentStage =
   | "turned_down"
+  | "closed"
   | "superseded"
   | "awaiting_authors"
   | "awaiting_validation"
@@ -747,6 +896,9 @@ export function sessionAmendmentStage(
 ): SessionAmendmentStage {
   if (sessionTransactionalRejectors(amendment).length > 0) {
     return "turned_down";
+  }
+  if (byId && sessionClosingSourceIds(amendment, byId).length > 0) {
+    return "closed";
   }
   if (byId && isSessionSuperseded(amendment, byId)) return "superseded";
   if (isSessionAwaitingAuthors(amendment)) return "awaiting_authors";

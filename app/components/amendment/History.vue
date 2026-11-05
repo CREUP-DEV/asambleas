@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { TimelineItem } from "@nuxt/ui";
-import type { DecisionKind } from "~~/shared/constants/domain";
+import {
+  PROPONENT_POSITIONS,
+  type DecisionKind,
+  type ProponentPosition,
+} from "~~/shared/constants/domain";
 import type { DecisionDto, EventDto, MemberRef } from "~~/shared/types/api";
 
 /**
@@ -12,8 +16,14 @@ import type { DecisionDto, EventDto, MemberRef } from "~~/shared/types/api";
  * On a transactional, each answer of a main author names who answered,
  * also when the Mesa recorded it in the room (the event's actor is then the
  * Mesa), and a transactional closed by a main author's rejection says so
- * instead of "Retirada". Events carry only the member's id: `members` (the
- * transactional's parties and authors) names it.
+ * instead of "Retirada". One closed on its own because an amendment it
+ * groups was settled says so too ("closedBySources"), and one that lapsed
+ * because another transactional replaced the same amendments names it.
+ * An answer of the document's main presenter that the Mesa recorded on its
+ * behalf says so ("La Mesa, en nombre de CEUM, la aceptó"). Events carry
+ * only the member's id: `members` (the transactional's parties, the
+ * authors and the document's presenters) names it, and `labelOf` names the
+ * amendments they point to.
  */
 const props = withDefaults(
   defineProps<{
@@ -22,10 +32,20 @@ const props = withDefaults(
     version?: string;
     /** GET /api/assemblies/{assembly}/decisions, for admission vote counts. */
     decisionsUrl?: string;
-    /** Members the events may name by id (parties, authors). */
+    /** Members the events may name by id (parties, authors, presenters). */
     members?: MemberRef[];
+    /**
+     * Names another amendment of the document ("T2", "12 · CEUM 4"), or
+     * null when the viewer does not see it (the event's code is used).
+     */
+    labelOf?: (id: string) => string | null;
   }>(),
-  { version: undefined, decisionsUrl: undefined, members: () => [] },
+  {
+    version: undefined,
+    decisionsUrl: undefined,
+    members: () => [],
+    labelOf: undefined,
+  },
 );
 
 const { t, te, locale } = useI18n();
@@ -133,6 +153,63 @@ function closedByRejection(event: EventDto): boolean {
   );
 }
 
+/**
+ * A transactional closed on its own because an amendment it groups was
+ * settled (decided, withdrawn, lapsed, incorporated) or replaced by another
+ * transactional before it went through.
+ */
+function closedBySources(event: EventDto): boolean {
+  return (
+    event.type === "amendment_withdrawn" &&
+    event.payload?.by === "sources_closed"
+  );
+}
+
+/** A transactional that lapsed because another one replaced its amendments. */
+function lapsedBySources(event: EventDto): boolean {
+  return (
+    event.type === "amendment_lapsed" &&
+    event.payload?.reason === "sources_transacted"
+  );
+}
+
+/**
+ * How an event names another amendment: its label in the document when the
+ * list has it, else the code the event recorded ("T2"), else null.
+ */
+function amendmentName(id: string | null, code: string | null): string | null {
+  if (id && props.labelOf) {
+    const label = props.labelOf(id);
+    if (label) return label;
+  }
+  return code;
+}
+
+function isPosition(value: string | null): value is ProponentPosition {
+  return (PROPONENT_POSITIONS as readonly string[]).includes(value ?? "");
+}
+
+/**
+ * The main presenter's answer. When the Mesa recorded it on the
+ * presenter's behalf (`by: "moderator"`), that is said in full, also when it
+ * set the answer back to none ("pending"); otherwise the event's actor
+ * already says who answered. Hidden positions come with an empty payload,
+ * and an unknown value is left out rather than shown raw.
+ */
+function positionDetail(payload: Record<string, unknown>): string | null {
+  const position = text(payload.position);
+  if (!isPosition(position)) return null;
+  if (payload.by !== "moderator") {
+    return t(`amendment.position.options.${position}`);
+  }
+  const memberId = text(payload.memberId);
+  const member =
+    (memberId
+      ? props.members.find((item) => item.id === memberId)?.acronym
+      : null) ?? t("amendment.position.thePresenter");
+  return t(`amendment.position.answersByMesa.${position}`, { member });
+}
+
 type AdmissionMotion = Extract<DecisionKind, "admit_late" | "inadmission">;
 
 /**
@@ -195,10 +272,8 @@ function admissionDetail(
 function detailOf(event: EventDto): string | null {
   const payload = event.payload ?? {};
   switch (event.type) {
-    case "position_changed": {
-      const position = text(payload.position);
-      return position ? t(`amendment.position.options.${position}`) : null;
-    }
+    case "position_changed":
+      return positionDetail(payload);
     case "acceptance_recorded": {
       const decision = text(payload.decision);
       if (!decision) return null;
@@ -209,11 +284,30 @@ function detailOf(event: EventDto): string | null {
         : t(`common.status.acceptance.${decision}`);
     }
     case "amendment_withdrawn": {
-      if (!closedByRejection(event)) return null;
+      if (closedBySources(event)) {
+        const source = amendmentName(
+          text(payload.sourceId),
+          text(payload.sourceCode),
+        );
+        return source
+          ? t("amendment.history.closedBySourcesDetail", { source })
+          : text(payload.note);
+      }
+      if (!closedByRejection(event)) return text(payload.note);
       const party = memberAcronym(event, text(payload.memberId));
       return party
         ? t("amendment.acceptances.answers.rejected", { member: party })
         : null;
+    }
+    case "amendment_lapsed": {
+      if (!lapsedBySources(event)) return text(payload.note);
+      const replacement = amendmentName(
+        text(payload.transactionalId),
+        text(payload.code),
+      );
+      return replacement
+        ? t("amendment.history.lapsedBySources", { label: replacement })
+        : t("amendment.history.lapsedBySourcesUnknown");
     }
     case "amendment_approved": {
       const method = text(payload.method);
@@ -247,7 +341,9 @@ const items = computed<TimelineItem[]>(() =>
   events.value.map((event) => {
     const key = closedByRejection(event)
       ? "amendment.history.closedByRejection"
-      : `amendment.history.events.${event.type}`;
+      : closedBySources(event)
+        ? "amendment.history.closedBySources"
+        : `amendment.history.events.${event.type}`;
     const detail = detailOf(event);
     const actor = actorOf(event);
     return {

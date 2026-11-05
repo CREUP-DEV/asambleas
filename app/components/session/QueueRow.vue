@@ -45,6 +45,7 @@ const detailsId = computed(() => `session-row-${id.value}-details`);
 
 const STAGE_DOT: Record<SessionAmendmentStage, string> = {
   turned_down: "bg-(--ui-text-dimmed)",
+  closed: "bg-(--ui-text-dimmed)",
   superseded: "bg-warning",
   awaiting_authors: "bg-(--ui-text-dimmed)",
   awaiting_validation: "bg-(--ui-text-dimmed)",
@@ -63,7 +64,7 @@ const STAGE_DOT: Record<SessionAmendmentStage, string> = {
 };
 
 const stageText = useSessionStageLabel();
-const stageLabel = computed(() => stageText(stage.value));
+const stageLabel = computed(() => stageText(stage.value, props.amendment));
 
 const authors = computed(() =>
   props.amendment.authors.map((author) => author.acronym).join(", "),

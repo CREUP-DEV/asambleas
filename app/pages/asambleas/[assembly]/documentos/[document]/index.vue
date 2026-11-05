@@ -36,10 +36,14 @@ import {
  *
  * The document's main presenter (and the Mesa, which can answer for it) get
  * "Revisar enmiendas", with how many amendments wait for the main
- * presenter's answer (validated, admitted if late, and for a transactional,
- * accepted by the main authors), which leads to the guided review
+ * presenter's answer (published, admitted if late, and for a transactional,
+ * accepted by the main authors; none once the document was voted), which
+ * leads to the guided review
  * (.../revisar). For the main presenter with something pending it is the
- * primary button instead of "Presentar una enmienda".
+ * primary button instead of "Presentar una enmienda". Its co-presenters,
+ * who do not answer, find "Ver las respuestas" in the "Más" menu: the same
+ * page, read-only, with what the main presenter (or the Mesa for it)
+ * answered.
  *
  * "Proponer una transaccional" (any member who can amend, the document's
  * presenter, and the Mesa) is a secondary action: in the header's "Más"
@@ -214,6 +218,7 @@ const reviewBacklog = computed(() =>
   proponentReviewBacklog(
     list.listed.value,
     document.value?.acceptedAmendments ?? "vote",
+    { finalVoted: Boolean(document.value?.finalVote) },
   ),
 );
 /** Status of any amendment, so a transactional tells whether it replaced its sources. */
@@ -227,6 +232,28 @@ const showReviewEntry = computed(
     isPublished.value &&
     list.listed.value.length > 0,
 );
+/**
+ * A co-presenter reads the main presenter's answers on the review page,
+ * read-only: the member presents the document jointly and neither answers
+ * nor moderates (the review page's own rule, `readsAnswers`).
+ */
+const showAnswersEntry = computed(() => {
+  const doc = document.value;
+  const memberId = member.value?.id ?? null;
+  if (
+    !doc ||
+    memberId === null ||
+    !isStructured.value ||
+    !isPublished.value ||
+    list.listed.value.length === 0 ||
+    doc.can.position ||
+    doc.can.moderate ||
+    isDocumentPresenter.value
+  ) {
+    return false;
+  }
+  return doc.coProponents.some((coProponent) => coProponent.id === memberId);
+});
 /**
  * "Revisar enmiendas" leads for the presenter with something pending. A
  * paragraph picked (the selection bar leads) or a composer open (its send
@@ -258,6 +285,13 @@ const moreItems = computed(() => {
       label: t("workspace.more.transactional"),
       icon: "i-lucide-git-merge",
       onSelect: () => startTransactional([]),
+    });
+  }
+  if (showAnswersEntry.value) {
+    items.push({
+      label: t("workspace.more.answers"),
+      icon: "i-lucide-list-checks",
+      to: documentPath("revisar"),
     });
   }
   if (isPublished.value) {

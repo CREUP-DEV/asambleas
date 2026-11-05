@@ -7,8 +7,7 @@ import {
   ANSWER_STATUS_ICONS,
   amendmentOutcome,
   answerStatus,
-  isIncorporated,
-  isPositionHidden,
+  presenterAnswerKey,
   visibleAnswerProgress,
   type PositionWaitCounts,
   type ProponentReviewItem,
@@ -17,10 +16,12 @@ import {
 /**
  * What a co-presenter sees in the review mode: only the main presenter (or
  * the Mesa for it) answers the amendments, and this says so up front. Then a
- * calm list of every amendment the main presenter answered or answers now,
- * each with what it decided and when ("CEA-AC la aceptó el 5 nov 2026,
- * 10:30"), its comment, how the amendment ended once it is decided ("La
- * asamblea la rechazó."), and a link to the amendment in the document.
+ * calm list of every published amendment the main presenter answered or
+ * answers now, each with what it decided and when ("CEA-AC la aceptó el 5
+ * nov 2026, 10:30", or "La Mesa, en nombre de CEA-AC, la aceptó..." when the
+ * Mesa recorded it), its comment, how the amendment ended once it is
+ * decided ("La asamblea la rechazó."), and a link to the amendment in the
+ * document.
  * Nothing here can be changed. An answer hidden from the viewer says so
  * instead of passing for unanswered, and stays out of the progress line.
  *
@@ -86,7 +87,11 @@ const progress = computed(() => visibleAnswerProgress(props.items));
 
 const HIDDEN_ICON = { name: "i-lucide-eye-off", color: "text-dimmed" };
 
-/** What the main presenter decided and when, as a sentence. */
+/**
+ * What the main presenter decided and when, as a sentence; one the Mesa
+ * recorded on its behalf says so ("La Mesa, en nombre de CEA-AC, la
+ * aceptó...").
+ */
 function answerOf(item: ProponentReviewItem): {
   icon: { name: string; color: string };
   sentence: string;
@@ -94,29 +99,22 @@ function answerOf(item: ProponentReviewItem): {
 } {
   const { amendment } = item;
   const member = presenterName.value;
-  // Hidden from the viewer; an incorporated one still says so by its status.
-  if (isPositionHidden(amendment) && !isIncorporated(amendment)) {
+  const key = presenterAnswerKey(amendment);
+  if (key === "hidden" || key === "pending") {
     return {
-      icon: HIDDEN_ICON,
-      sentence: t("proponentReview.coPresenter.hidden", { member }),
+      icon: key === "hidden" ? HIDDEN_ICON : ANSWER_STATUS_ICONS.pending,
+      sentence: t(`proponentReview.coPresenter.${key}`, { member }),
       comment: null,
     };
   }
   const status = answerStatus(amendment);
-  if (status === "pending") {
-    return {
-      icon: ANSWER_STATUS_ICONS.pending,
-      sentence: t("proponentReview.coPresenter.pending", { member }),
-      comment: null,
-    };
-  }
   const date = formatDateTime(amendment.position?.updatedAt, {
     locale: locale.value,
   });
   return {
     icon: ANSWER_STATUS_ICONS[status],
     sentence: date
-      ? t(`proponentReview.coPresenter.answered.${status}`, { member, date })
+      ? t(`proponentReview.coPresenter.${key}`, { member, date })
       : t(`proponentReview.answers.${status}`),
     comment: amendment.position?.comment?.trim() || null,
   };

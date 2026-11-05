@@ -14,6 +14,10 @@ import type {
   DocumentDto,
   MemberDto,
 } from "~~/shared/types/api";
+import {
+  documentPresenterMembers,
+  formatMemberList,
+} from "~/composables/document/documentPresenters";
 
 /**
  * "Añadir documento esperado": the Secretaría creates, in advance, an empty
@@ -34,7 +38,7 @@ const props = defineProps<{
 const open = defineModel<boolean>("open", { default: false });
 const emit = defineEmits<{ created: [document: DocumentDto] }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const api = useApi();
 const toast = useToast();
 const now = useAppNow();
@@ -190,14 +194,19 @@ async function onSubmit(event: FormSubmitEvent<ExpectedForm>) {
     });
     emit("created", created);
     open.value = false;
+    // Every presenter, the main one first ("UPV, UV y UM").
+    const presenters = documentPresenterMembers(created).map(
+      (member) => member.acronym,
+    );
     toast.add({
       title: t("tracking.expected.created"),
-      description: created.proponent
-        ? t("tracking.expected.createdFor", {
-            title: created.title,
-            member: created.proponent.acronym,
-          })
-        : created.title,
+      description:
+        presenters.length > 0
+          ? t("tracking.expected.createdFor", {
+              title: created.title,
+              member: formatMemberList(presenters, locale.value),
+            })
+          : created.title,
       color: "success",
       icon: "i-lucide-file-plus",
     });

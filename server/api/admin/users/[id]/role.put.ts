@@ -1,5 +1,5 @@
 import { defineEventHandler, readBody, createError } from "h3";
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "../../../../db";
 import { users, roles, auditLog } from "../../../../db/schema";
@@ -10,6 +10,7 @@ import {
   adminGrantViolation,
   getUserPermissions,
   requireAnyPermission,
+  touchesLeadershipRole,
 } from "../../../../utils/auth/rbac";
 import { isDefaultCuid, validateAuthId } from "../../../../utils/validation";
 
@@ -21,9 +22,10 @@ const bodySchema = z.object({
 
 /**
  * Changes a user's role (user:manage_roles). Only an Admin gives or takes
- * the Admin role (403 otherwise), and nobody changes their own role. A
- * non-Admin may not give or take, through the role, a permission it does
- * not hold itself (403, adminGrantViolation).
+ * the Admin role, and only an Admin changes its own role (403 otherwise,
+ * adminGrantViolation); the last Admin cannot leave the role (409), so
+ * someone can always manage it. A non-Admin may not give or take, through
+ * the role, a permission it does not hold itself (403).
  */
 export default defineEventHandler(async (event) => {
   const { admin, permissions } = await requireAnyPermission(event, [
@@ -56,6 +58,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: "Usuario no encontrado" });
   }
 
+  const context = event.context as AuthEventContext;
+  const self = targetUser.id === context.session?.user.id;
+  if (!admin && self) {
+    throw createError({
+      statusCode: 403,
+      message: ADMIN_GRANT_MESSAGES.own_user_role,
+    });
+  }
+
   if (
     !admin &&
     (targetRole.name === SYSTEM_ROLES.ADMIN ||
@@ -67,11 +78,13 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const context = event.context as AuthEventContext;
-  if (targetUser.id === context.session?.user.id) {
+  if (
+    targetUser.roleId !== targetRole.id &&
+    touchesLeadershipRole(admin, [targetRole.name, targetUser.role?.name])
+  ) {
     throw createError({
-      statusCode: 400,
-      message: "No puedes cambiar tu propio rol",
+      statusCode: 403,
+      message: ADMIN_GRANT_MESSAGES.leadership,
     });
   }
 
@@ -80,7 +93,7 @@ export default defineEventHandler(async (event) => {
       admin,
       callerPermissions: permissions,
       ownTarget: false,
-      target: "account",
+      target: "user_role",
       before: targetUser.roleId
         ? await getUserPermissions(targetUser.roleId)
         : [],
@@ -94,7 +107,28 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  const leavesAdmin =
+    targetUser.role?.name === SYSTEM_ROLES.ADMIN &&
+    targetRole.name !== SYSTEM_ROLES.ADMIN;
+
   await db.transaction(async (tx) => {
+    if (leavesAdmin && targetUser.roleId) {
+      // The Admin accounts, locked in id order: two Admins leaving the role
+      // at once cannot both see the other one still there.
+      const admins = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(eq(users.roleId, targetUser.roleId))
+        .orderBy(asc(users.id))
+        .for("no key update");
+      if (admins.every((row) => row.id === targetUser.id)) {
+        throw createError({
+          statusCode: 409,
+          message:
+            "Tiene que quedar al menos un Admin: da antes el rol Admin a otra persona",
+        });
+      }
+    }
     await tx
       .update(users)
       .set({ roleId: parsed.data.roleId })

@@ -2,32 +2,35 @@
 import type { ProponentPosition } from "~~/shared/constants/domain";
 import type {
   AmendmentDto,
-  DocumentSummaryDto,
+  DocumentDto,
   PositionBody,
 } from "~~/shared/types/api";
 import {
-  amendmentAcceptBlocked,
   amendmentAwaitsPosition,
   amendmentPositionBlocker,
   amendmentPositionNext,
+  type AmendmentPositionContext,
 } from "~/composables/amendment/workspace";
 
 /**
  * The answer of the document's main presenter to an amendment (accept,
  * reject, propose a transactional), said as who, what and when, so its
- * co-presenters always see what it decided. Then what happens next by the
- * document's rule ("Si la acepta quien presenta el documento, se incorpora
- * sin votación" / "La votará la asamblea").
+ * co-presenters always see what it decided. An answer the Mesa recorded on
+ * the presenter's behalf says so ("La Mesa, en nombre de CEUM, la
+ * aceptó"). Then what happens next by the document's rule ("Si la acepta
+ * quien presenta el documento, se incorpora sin votación" / "La votará la
+ * asamblea").
  *
  * It can be answered (`can.position`: the main presenter, or the Mesa for
- * it) only once the amendment reached it: validated, admitted if late, and
- * for a transactional, accepted by the main authors (amendmentAwaitsPosition).
- * Until then it only says it can be answered later: the review panel above
- * already says what it waits for. Under the "incorporate" rule one the
- * Secretaría keeps private (only the Mesa sees it) can be answered, but not
- * accepted until it is published (amendmentAcceptBlocked), and the answer
- * can change until the final vote: accepting approves it at once, and
- * changing it reopens it.
+ * it) only once the amendment reached it: published by the Secretaría (so
+ * validated), admitted if late, and for a transactional, accepted by the
+ * main authors (amendmentAwaitsPosition), and never after the document's
+ * final vote. Until then it only says it can be answered later: the review
+ * panel above already says what it waits for, except publication, which
+ * the Mesa (who sees a private amendment, with its authors and the
+ * Secretaría) is told here. Under the "incorporate" rule the answer can
+ * change until the final vote: accepting approves it at once, and changing
+ * it reopens it.
  *
  * Answering is the main action for the main presenter while nobody has
  * answered yet ("Responder", solid); changing an answer, or the Mesa
@@ -40,7 +43,8 @@ const props = defineProps<{
   amendment: AmendmentDto;
   /** URL of the amendment: .../amendments/{id}. */
   url: string;
-  document: Pick<DocumentSummaryDto, "proponent" | "acceptedAmendments">;
+  document: Pick<DocumentDto, "proponent" | "acceptedAmendments"> &
+    Partial<Pick<DocumentDto, "finalVote">>;
 }>();
 
 const emit = defineEmits<{
@@ -90,27 +94,16 @@ const OPTIONS: ProponentPosition[] = [
   "transact",
   "pending",
 ];
-/** Accepting a private one would put unpublished text in the document. */
-const acceptBlocked = computed(() =>
-  amendmentAcceptBlocked(props.amendment, props.document.acceptedAmendments),
-);
 const items = computed(() =>
-  OPTIONS.map((value) => {
-    const blocked = value === "accept" && acceptBlocked.value;
-    return {
-      label: t(`amendment.position.options.${value}`),
-      description: t(
-        blocked
-          ? "amendment.position.blocked.publication"
-          : value === "accept" &&
-              props.document.acceptedAmendments === "incorporate"
-            ? "amendment.position.descriptions.acceptIncorporate"
-            : `amendment.position.descriptions.${value}`,
-      ),
-      value,
-      disabled: blocked,
-    };
-  }),
+  OPTIONS.map((value) => ({
+    label: t(`amendment.position.options.${value}`),
+    description: t(
+      value === "accept" && props.document.acceptedAmendments === "incorporate"
+        ? "amendment.position.descriptions.acceptIncorporate"
+        : `amendment.position.descriptions.${value}`,
+    ),
+    value,
+  })),
 );
 
 /** Who answers: the main presenter, by its acronym. */
@@ -124,6 +117,19 @@ const isMainPresenter = computed(
     props.document.proponent.id === member.value?.id,
 );
 const answer = computed(() => props.amendment.position?.position ?? "pending");
+/**
+ * Who said it: the main presenter ("Respuesta de CEUM: la acepta"), or the
+ * Mesa on its behalf ("La Mesa, en nombre de CEUM, la aceptó").
+ */
+const answerText = computed(() => {
+  const value = answer.value;
+  if (value === "pending") return null;
+  return props.amendment.position?.recordedBy === "mesa"
+    ? t(`amendment.position.answersByMesa.${value}`, {
+        member: presenter.value,
+      })
+    : t(`amendment.position.answers.${value}`, { member: presenter.value });
+});
 const answeredAt = computed(() =>
   answer.value !== "pending" && props.amendment.position
     ? formatDateTime(props.amendment.position.updatedAt, {
@@ -132,25 +138,35 @@ const answeredAt = computed(() =>
     : null,
 );
 
+/** Nothing is answered once the document was voted. */
+const context = computed<AmendmentPositionContext>(() => ({
+  finalVoted: Boolean(props.document.finalVote),
+}));
 const reachable = computed(() =>
-  amendmentAwaitsPosition(props.amendment, props.document.acceptedAmendments),
+  amendmentAwaitsPosition(
+    props.amendment,
+    props.document.acceptedAmendments,
+    context.value,
+  ),
 );
 const blocker = computed(() =>
-  amendmentPositionBlocker(props.amendment, props.document.acceptedAmendments),
+  amendmentPositionBlocker(
+    props.amendment,
+    props.document.acceptedAmendments,
+    context.value,
+  ),
 );
 const next = computed(() =>
-  amendmentPositionNext(props.amendment, props.document.acceptedAmendments),
+  amendmentPositionNext(
+    props.amendment,
+    props.document.acceptedAmendments,
+    context.value,
+  ),
 );
-/**
- * What happens next, as a key: while accepting waits for publication, that
- * is said instead of "if accepted, it goes into the text".
- */
-const nextKey = computed(() => {
-  if (!next.value) return null;
-  return acceptBlocked.value && next.value === "incorporateIfAccepted"
-    ? "amendment.position.blocked.publication"
-    : `amendment.position.next.${next.value}`;
-});
+/** What happens next, as a key. */
+const nextKey = computed(() =>
+  next.value ? `amendment.position.next.${next.value}` : null,
+);
 const canEdit = computed(
   () => props.amendment.can.position && reachable.value && !editing.value,
 );
@@ -166,12 +182,18 @@ const editLabel = computed(() => {
     ? t("amendment.position.answer")
     : t("amendment.position.edit");
 });
-/** Not answerable yet: who will answer it, later. */
-const laterText = computed(() =>
-  isMainPresenter.value
+/**
+ * Not answerable yet: who will answer it, later. Waiting for publication
+ * says so: the review panel only says it is not public yet.
+ */
+const laterText = computed(() => {
+  if (blocker.value === "publication") {
+    return t("amendment.position.blocked.publication");
+  }
+  return isMainPresenter.value
     ? t("amendment.position.laterYou")
-    : t("amendment.position.later", { member: presenter.value }),
-);
+    : t("amendment.position.later", { member: presenter.value });
+});
 
 function startEditing(): void {
   reset();
@@ -249,11 +271,7 @@ async function save(): Promise<void> {
       <div v-if="answer !== 'pending'" class="flex flex-col gap-1.5">
         <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
           <CommonStatusBadge kind="position" :value="answer" size="xs" />
-          <span class="text-default">
-            {{
-              t(`amendment.position.answers.${answer}`, { member: presenter })
-            }}
-          </span>
+          <span class="text-default">{{ answerText }}</span>
           <span v-if="answeredAt" class="text-dimmed text-xs">
             {{ answeredAt }}
           </span>

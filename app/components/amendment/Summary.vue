@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import type { AmendmentDto } from "~~/shared/types/api";
+import { transactionalRejectedBy } from "~/composables/amendment/transactional";
+import { useTransactionalProgressText } from "~/composables/amendment/useTransactionalProgressText";
 import { amendmentAuthorsInOrder } from "~/composables/amendment/workspace";
 
 /**
  * Compact amendment card with its outcome: label, presenting members (the
  * main author first), kind, status, how it was approved (an amendment the
  * main presenter accepted under the "incorporate" rule says so in plain
- * words) and the vote counts. Used in the consolidated
+ * words) and the vote counts. A transactional a main author rejected says
+ * who did, from its acceptances (its outcome note is left for the Mesa's
+ * own words), instead of a bare "Retirada". Used in the consolidated
  * text popover and its annex. The default slot adds actions.
  */
 const props = withDefaults(
@@ -24,6 +28,13 @@ const props = withDefaults(
 const { t, locale } = useI18n();
 
 const heading = computed(() => `h${props.headingLevel}`);
+const { join } = useTransactionalProgressText();
+/** "CEUM y CAUB" when main authors' rejections closed it, else "". */
+const rejectedBy = computed(() =>
+  join(
+    transactionalRejectedBy(props.amendment).map((member) => member.acronym),
+  ),
+);
 const authors = computed(() => amendmentAuthorsInOrder(props.amendment));
 /** "Aprobada sin votación…" or "Aprobada por votación". */
 const approvedText = computed(() => {
@@ -71,7 +82,9 @@ const sources = computed(() =>
         :member="author"
         size="xs"
       />
+      <!-- Closed by a main author's rejection: the line below says so. -->
       <CommonStatusBadge
+        v-if="!rejectedBy"
         kind="amendment"
         :value="amendment.status"
         size="xs"
@@ -103,7 +116,13 @@ const sources = computed(() =>
       />
     </div>
 
-    <p v-if="approvedText" class="text-muted text-sm">
+    <p v-if="rejectedBy" class="text-muted text-sm">
+      {{ t("amendment.detail.rejectedByAuthors", { members: rejectedBy }) }}
+      <template v-if="amendment.decidedAt">
+        · {{ formatDateTime(amendment.decidedAt, { locale }) }}
+      </template>
+    </p>
+    <p v-else-if="approvedText" class="text-muted text-sm">
       {{ approvedText }}
       <template v-if="amendment.decidedAt">
         · {{ formatDateTime(amendment.decidedAt, { locale }) }}

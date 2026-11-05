@@ -283,36 +283,75 @@ export async function requireAnyPermission(
 export const ADMIN_GRANT_MESSAGES = {
   own_account:
     "Solo un Admin puede cambiar los permisos o el miembro de su propia cuenta",
-  own_role: "No puedes cambiar los permisos de tu propio rol",
+  own_user_role: "Solo un Admin puede cambiar su propio rol",
+  own_role:
+    "No puedes quitar a tu propio rol los permisos de gestionar usuarios y roles: perderías el acceso a esta sección",
   not_held: "Solo puedes dar o quitar permisos que tú también tienes",
+  leadership:
+    "Solo un Admin puede cambiar el rol o los permisos de Secretaría y Presidencia",
 } as const;
+
+/**
+ * The association's Secretaría and Presidencia hold every permission; only
+ * an Admin changes those roles' permissions, gives or takes them, or changes
+ * the extra permissions of someone who holds them, so neither can strip the
+ * other.
+ */
+export const LEADERSHIP_ROLES: readonly string[] = [
+  SYSTEM_ROLES.SECRETARIA,
+  SYSTEM_ROLES.PRESIDENCIA,
+];
+
+/** True when a non-Admin change touches a leadership role (see LEADERSHIP_ROLES). */
+export function touchesLeadershipRole(
+  admin: boolean,
+  roleNames: readonly (string | null | undefined)[],
+): boolean {
+  return (
+    !admin &&
+    roleNames.some((name) => !!name && LEADERSHIP_ROLES.includes(name))
+  );
+}
 
 /**
  * Why a non-Admin may not make this change in the admin section, or null
  * when it may (docs/api.md, "Admin section"). Holding user:manage_roles or
- * role:manage_permissions must not let anyone raise their own access:
+ * role:manage_permissions must not let anyone raise their own access nor
+ * lock themselves out:
  * - `own_account`: the grants and member link of one's own account;
- * - `own_role`: the permissions of the role one holds;
+ * - `own_user_role`: which role one's own account holds;
+ * - `own_role`: taking user:manage_roles or role:manage_permissions
+ *   (ADMIN_SECTION_PERMISSIONS) away from the role one holds. Other
+ *   changes to that role follow the next rule;
  * - `not_held`: adding or removing a key the caller does not hold itself
  *   (only the keys that change count, so saving an unchanged list that
  *   contains such a key is fine).
+ * `target` says what changes: the grants or member link of an account,
+ * the role an account holds (`user_role`) or the permissions of a role.
  * An Admin passes every check: it holds every key anyway.
  */
 export function adminGrantViolation(input: {
   admin: boolean;
   callerPermissions: readonly string[];
   ownTarget: boolean;
-  target: "account" | "role";
+  target: "account" | "user_role" | "role";
   before?: readonly string[];
   after?: readonly string[];
 }): keyof typeof ADMIN_GRANT_MESSAGES | null {
   if (input.admin) return null;
-  if (input.ownTarget) {
-    return input.target === "account" ? "own_account" : "own_role";
-  }
+  if (input.ownTarget && input.target === "account") return "own_account";
+  if (input.ownTarget && input.target === "user_role") return "own_user_role";
   if (input.before && input.after) {
     const before = new Set(input.before);
     const after = new Set(input.after);
+    if (
+      input.ownTarget &&
+      ADMIN_SECTION_PERMISSIONS.some(
+        (key) => before.has(key) && !after.has(key),
+      )
+    ) {
+      return "own_role";
+    }
     const changed = [
       ...input.after.filter((key) => !before.has(key)),
       ...input.before.filter((key) => !after.has(key)),

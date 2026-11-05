@@ -9,8 +9,10 @@ import {
 
 /**
  * What the Mesa has in debate, for the live view: the agenda item, the
- * document and, when there is one, the amendment with its change in
- * readable type, a sentence on where it stands and its justification
+ * document (with who presents it: the main presenter, then at most two
+ * co-presenters before "N más") and, when there is one, the amendment with
+ * its change in readable type, a sentence on where it stands and its
+ * justification
  * (folded away, unless the amendment changes no text and the justification
  * is all there is to read). Nothing here is announced by itself: the page keeps one
  * short aria-live line for that, so a refresh never reads the passage aloud.
@@ -118,10 +120,10 @@ const amendmentLink = computed(() =>
         </p>
         <div
           v-if="document?.proponent && !amendment"
-          class="flex items-center gap-2 pt-1 text-sm"
+          class="flex flex-wrap items-center gap-x-2 gap-y-1 pt-1 text-sm"
         >
           <span class="text-muted">{{ t("liveView.now.presentedBy") }}</span>
-          <CommonMemberBadge :member="document.proponent" show-name />
+          <DocumentPresenters :document="document" :max-others="2" show-name />
         </div>
       </div>
 

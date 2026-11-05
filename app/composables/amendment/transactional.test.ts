@@ -11,7 +11,9 @@ import {
   proponentReviewBacklog,
   transactionalAfterSecretaria,
   transactionalAnswerOf,
+  transactionalAnswerNotNeeded,
   transactionalAuthorTurn,
+  transactionalClosure,
   transactionalAuthorsToAsk,
   transactionalComposerSeed,
   transactionalGroupSources,
@@ -21,6 +23,7 @@ import {
   transactionalProgressMessage,
   transactionalProgressOf,
   type TransactionalProgressView,
+  transactionalRejectedBy,
   transactionalRejectedByAuthors,
   transactionalSameBlocks,
   transactionalSameIds,
@@ -135,6 +138,23 @@ const replace = (
   };
 };
 
+const vote: NonNullable<AmendmentDto["outcomeVote"]> = {
+  id: "v",
+  subjectType: "amendment",
+  subjectId: "t",
+  method: "show_of_hands",
+  inFavor: 1,
+  against: 9,
+  abstentions: 0,
+  blank: 0,
+  invalid: 0,
+  present: null,
+  majority: "simple",
+  result: "rejected",
+  note: null,
+  recordedAt: "2026-11-03T10:00:00.000Z",
+};
+
 describe("transactional sources", () => {
   const change = [replace("b2", 3, 10, "Comité")];
 
@@ -186,6 +206,28 @@ describe("transactional sources", () => {
       live([party("ceum", "author", "accepted"), party("cea", "proponent")]),
     ).toBe(true);
     expect(live([])).toBe(true);
+    // Accepted by every main author, but still with the Secretaría (not
+    // published): it has not replaced what it groups yet.
+    expect(
+      transactionalSourceEligible(
+        amendment("t", change, {
+          kind: "transactional",
+          reviewState: "pending_validation",
+          admission: "pending",
+          acceptances: [party("ceum", "author", "accepted")],
+        }),
+      ),
+    ).toBe(false);
+    // Closed by a main author's rejection.
+    expect(
+      transactionalSourceEligible(
+        amendment("t", change, {
+          kind: "transactional",
+          status: "withdrawn",
+          acceptances: [party("ceum", "author", "rejected")],
+        }),
+      ),
+    ).toBe(false);
     // Offered nowhere: not in the candidates, the groups or the composer.
     const pendingLive = amendment("live", change, {
       kind: "transactional",
@@ -436,6 +478,191 @@ describe("transactional progress", () => {
         transactional({ status: "rejected", acceptances }),
       ),
     ).toBe(true);
+    // Who closed it, from its acceptances (its outcome note may be empty).
+    expect(
+      transactionalRejectedBy(
+        transactional({ status: "withdrawn", outcomeNote: null, acceptances }),
+      ).map((m) => m.acronym),
+    ).toEqual(["CEUM"]);
+  });
+
+  it("names nobody when no main author rejected it", () => {
+    // Still open, closed on its own, or voted down.
+    expect(
+      transactionalRejectedBy(
+        transactional({ acceptances: [party("ceum", "author")] }),
+      ),
+    ).toEqual([]);
+    expect(
+      transactionalRejectedBy(
+        transactional({
+          status: "withdrawn",
+          acceptances: [party("ceum", "author")],
+        }),
+      ),
+    ).toEqual([]);
+    expect(
+      transactionalRejectedBy(
+        transactional({
+          status: "rejected",
+          outcomeVote: vote,
+          acceptances: [party("ceum", "author", "rejected")],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it("says why it closed on its own", () => {
+    // The server stamps the settled amendment and the transactionals it
+    // closes with the same instant.
+    const at = "2026-11-03T10:00:00.000Z";
+    const closed = (status: AmendmentDto["status"], decidedAt = at) =>
+      transactional({
+        status,
+        decidedAt,
+        acceptances: [party("ceum", "author")],
+      });
+    const lookup =
+      (
+        rows: Record<
+          string,
+          AmendmentDto["status"] | Pick<AmendmentDto, "status" | "decidedAt">
+        >,
+      ) =>
+      (id: string): Pick<AmendmentDto, "status" | "decidedAt"> | undefined => {
+        const row = rows[id];
+        if (row === undefined) return undefined;
+        if (typeof row !== "string") return row;
+        return { status: row, decidedAt: row === "submitted" ? null : at };
+      };
+    // Another transactional replaced one of its amendments.
+    expect(
+      transactionalClosure(
+        closed("lapsed"),
+        lookup({ s1: "submitted", s2: "transacted" }),
+      ),
+    ).toEqual({ reason: "source_replaced", sourceId: "s2" });
+    // One was settled otherwise: the first settled one in its order.
+    for (const status of [
+      "approved",
+      "rejected",
+      "withdrawn",
+      "lapsed",
+      "inadmissible",
+    ] as const) {
+      expect(
+        transactionalClosure(
+          closed("withdrawn"),
+          lookup({ s1: status, s2: "transacted" }),
+        ),
+      ).toEqual({ reason: "source_decided", sourceId: "s1" });
+    }
+    // The same instant written another way still matches.
+    expect(
+      transactionalClosure(
+        closed("withdrawn"),
+        lookup({
+          s1: { status: "approved", decidedAt: "2026-11-03T11:00:00+01:00" },
+        }),
+      ),
+    ).toEqual({ reason: "source_decided", sourceId: "s1" });
+    // Nothing settled in sight (withdrawn by its authors, or hidden).
+    expect(
+      transactionalClosure(closed("withdrawn"), lookup({ s1: "submitted" })),
+    ).toEqual({ reason: "closed", sourceId: null });
+    expect(transactionalClosure(closed("withdrawn"))).toEqual({
+      reason: "closed",
+      sourceId: null,
+    });
+    // No date on the transactional: nothing can be matched.
+    expect(
+      transactionalClosure(
+        transactional({
+          status: "withdrawn",
+          decidedAt: null,
+          acceptances: [party("ceum", "author")],
+        }),
+        lookup({ s1: "approved" }),
+      ),
+    ).toEqual({ reason: "closed", sourceId: null });
+    // Open, rejected by a main author, voted, or not a transactional.
+    expect(transactionalClosure(closed("submitted"))).toBeNull();
+    expect(
+      transactionalClosure(
+        transactional({
+          status: "withdrawn",
+          acceptances: [party("ceum", "author", "rejected")],
+        }),
+      ),
+    ).toBeNull();
+    expect(
+      transactionalClosure(
+        transactional({ status: "rejected", outcomeVote: vote }),
+      ),
+    ).toBeNull();
+    expect(
+      transactionalClosure(
+        amendment("a", [], { status: "withdrawn", sourceIds: ["s1"] }),
+        lookup({ s1: "approved" }),
+      ),
+    ).toBeNull();
+  });
+
+  it("does not blame sources settled at another moment", () => {
+    const replacedAt = "2026-11-03T10:00:00.000Z";
+    const closedAt = "2026-11-03T12:30:00.000Z";
+    const lookup =
+      (rows: Record<string, Pick<AmendmentDto, "status" | "decidedAt">>) =>
+      (id: string) =>
+        rows[id];
+    // It replaced its own sources (they are "transacted" because of it), and
+    // the Mesa withdrew or lapsed it later with no note: nothing replaced it.
+    for (const status of ["withdrawn", "lapsed"] as const) {
+      expect(
+        transactionalClosure(
+          transactional({
+            status,
+            decidedAt: closedAt,
+            reviewState: "published",
+            acceptances: [party("ceum", "author", "accepted")],
+          }),
+          lookup({
+            s1: { status: "transacted", decidedAt: replacedAt },
+            s2: { status: "transacted", decidedAt: replacedAt },
+          }),
+        ),
+      ).toEqual({ reason: "closed", sourceId: null });
+    }
+    // Its author withdrew it while every source was open; one was voted
+    // afterwards, which did not close it.
+    expect(
+      transactionalClosure(
+        transactional({
+          status: "withdrawn",
+          decidedAt: replacedAt,
+          acceptances: [party("ceum", "author")],
+        }),
+        lookup({
+          s1: { status: "approved", decidedAt: closedAt },
+          s2: { status: "submitted", decidedAt: null },
+        }),
+      ),
+    ).toEqual({ reason: "closed", sourceId: null });
+    // Of two settled sources, the one settled when it closed is named, even
+    // if another one comes first in its order.
+    expect(
+      transactionalClosure(
+        transactional({
+          status: "withdrawn",
+          decidedAt: closedAt,
+          acceptances: [party("ceum", "author")],
+        }),
+        lookup({
+          s1: { status: "rejected", decidedAt: "2026-11-04T09:00:00.000Z" },
+          s2: { status: "withdrawn", decidedAt: closedAt },
+        }),
+      ),
+    ).toEqual({ reason: "source_decided", sourceId: "s2" });
   });
 
   it("leaves a transactional voted down to its outcome", () => {
@@ -797,7 +1024,14 @@ describe("main authors of a transactional", () => {
   it("keeps showing the main author's answer once given", () => {
     const over = {
       ...source("a", ["ceum", "caub"], "caub"),
-      transactionalIds: ["open", "answered", "rejected", "silent", "hidden"],
+      transactionalIds: [
+        "open",
+        "answered",
+        "rejected",
+        "silent",
+        "voted",
+        "hidden",
+      ],
     };
     const transactional = (
       id: string,
@@ -826,15 +1060,75 @@ describe("main authors of a transactional", () => {
             party("ceuca", "author", "rejected"),
           ],
         }),
-        // Decided without its answer: nothing to show.
+        // Closed on its own while waiting for its answer: it is told the
+        // answer is no longer needed.
         transactional("silent", "pending", { status: "lapsed" }),
+        // Voted without its answer: nothing to show.
+        transactional("voted", "pending", {
+          status: "rejected",
+          outcomeVote: vote,
+        }),
       ].map((item) => [item.id, item]),
     );
     expect(transactionalsOverSource(over, byId).map((t) => t.id)).toEqual([
       "open",
       "answered",
       "rejected",
+      "silent",
     ]);
+  });
+
+  it("tells a main author its answer is no longer needed", () => {
+    const closed = (
+      status: AmendmentDto["status"],
+      decision: AcceptanceDto["decision"] = "pending",
+      extra: Partial<AmendmentDto> = {},
+    ) =>
+      amendment("t", [], {
+        kind: "transactional",
+        status,
+        acceptances: [
+          party("caub", "author", decision),
+          party("ceuca", "author", "accepted"),
+        ],
+        ...extra,
+      });
+    // Closed because one of its amendments was settled or replaced.
+    expect(transactionalAnswerNotNeeded(closed("withdrawn"), "caub")).toBe(
+      true,
+    );
+    expect(transactionalAnswerNotNeeded(closed("lapsed"), "caub")).toBe(true);
+    // Still open: the answer is needed.
+    expect(transactionalAnswerNotNeeded(closed("submitted"), "caub")).toBe(
+      false,
+    );
+    // Already answered, or never asked.
+    expect(
+      transactionalAnswerNotNeeded(closed("withdrawn", "accepted"), "caub"),
+    ).toBe(false);
+    expect(transactionalAnswerNotNeeded(closed("withdrawn"), "ceum")).toBe(
+      false,
+    );
+    expect(transactionalAnswerNotNeeded(closed("withdrawn"), null)).toBe(false);
+    // Closed by another main author's rejection: that is the news.
+    expect(
+      transactionalAnswerNotNeeded(
+        closed("withdrawn", "pending", {
+          acceptances: [
+            party("caub", "author"),
+            party("ceuca", "author", "rejected"),
+          ],
+        }),
+        "caub",
+      ),
+    ).toBe(false);
+    // Voted: its outcome is the news.
+    expect(
+      transactionalAnswerNotNeeded(
+        closed("rejected", "pending", { outcomeVote: vote }),
+        "caub",
+      ),
+    ).toBe(false);
   });
 });
 
@@ -849,6 +1143,7 @@ describe("the main presenter's review", () => {
         position: {
           position: "pending",
           comment: null,
+          recordedBy: "presenter",
           updatedAt: "2026-11-01",
         },
       }),
@@ -857,6 +1152,7 @@ describe("the main presenter's review", () => {
         position: {
           position: "accept",
           comment: null,
+          recordedBy: "presenter",
           updatedAt: "2026-11-01",
         },
       }),
@@ -870,6 +1166,7 @@ describe("the main presenter's review", () => {
         position: {
           position: "accept",
           comment: null,
+          recordedBy: "presenter",
           updatedAt: "2026-11-01",
         },
       }),
@@ -903,11 +1200,21 @@ describe("the main presenter's review", () => {
     }
   });
 
-  it("counts one the Secretaría keeps private only when it is voted", () => {
-    // Under "vote" the Mesa can answer it already; under "incorporate"
-    // accepting it would put unpublished text in the document.
+  it("leaves out one the Secretaría keeps private, whatever the rule", () => {
+    // Only published amendments are answered: delegates cannot read it yet.
     const list = [amendment("private", [], { can, reviewState: "validated" })];
-    expect(proponentReviewBacklog(list, "vote").total).toBe(1);
+    expect(proponentReviewBacklog(list, "vote").total).toBe(0);
     expect(proponentReviewBacklog(list, "incorporate").total).toBe(0);
+  });
+
+  it("counts nothing once the document was voted", () => {
+    const list = [amendment("open", [], { can })];
+    expect(proponentReviewBacklog(list, "vote").total).toBe(1);
+    expect(
+      proponentReviewBacklog(list, "vote", { finalVoted: true }).total,
+    ).toBe(0);
+    expect(
+      proponentReviewBacklog(list, "incorporate", { finalVoted: true }).total,
+    ).toBe(0);
   });
 });

@@ -10,6 +10,11 @@ import type { AcceptedAmendmentRule } from "~~/shared/constants/domain";
 import type { Actor } from "./actor";
 import { recordEvent } from "./events";
 import { acceptedRulePlan, authorsApproval } from "./reviewState";
+import {
+  closeTransactionalsOver,
+  competingTransactionalIds,
+  loadSourceMap,
+} from "./transactionalClosure";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -19,13 +24,14 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  * already answered (acceptedRulePlan, docs/api.md "Documents"):
  * - to "incorporate", the accepted ones it could answer now are approved
  *   at once (approval method "proponent", amendment_approved with reason
- *   "rule_changed");
+ *   "rule_changed" and the main presenter as `memberId`), which closes the
+ *   pending transactionals over them (closeTransactionalsOver);
  * - to "vote", the ones its acceptance approved go back to undecided
  *   (amendment_reopened with reason "rule_changed"), keeping the answer.
  * The caller holds the document NO KEY UPDATE (updateDocument), which every
  * amendment path waits for (they take it FOR SHARE), and refuses the change
- * after the final vote. The amendment rows are locked in id order, then the
- * acceptances ("Row locks").
+ * after the final vote. The amendment rows (with the transactionals over
+ * them) are locked in id order, then the acceptances ("Row locks").
  */
 export async function applyAcceptedAmendmentsRule(
   tx: Tx,
@@ -33,6 +39,8 @@ export async function applyAcceptedAmendmentsRule(
     assemblyId: string;
     documentId: string;
     rule: AcceptedAmendmentRule;
+    /** The document's main presenter, whose acceptance is applied. */
+    mainPresenterId: string | null;
     actor: Actor;
     now: Date;
   },
@@ -60,10 +68,20 @@ export async function applyAcceptedAmendmentsRule(
     );
   if (candidates.length === 0) return;
   const ids = candidates.map((row) => row.id);
+  // Incorporating them closes the transactionals over them: locked in the
+  // same ordered pass.
+  const sourceMap =
+    input.rule === "incorporate"
+      ? await loadSourceMap(tx, input.documentId)
+      : new Map<string, string[]>();
+  const dependentIds = competingTransactionalIds(sourceMap, null, ids).filter(
+    (id) => !ids.includes(id),
+  );
 
-  const locked = await tx
+  const lockedAll = await tx
     .select({
       id: amendments.id,
+      code: amendments.code,
       kind: amendments.kind,
       status: amendments.status,
       admission: amendments.admission,
@@ -72,9 +90,10 @@ export async function applyAcceptedAmendmentsRule(
       approvalMethod: amendments.approvalMethod,
     })
     .from(amendments)
-    .where(inArray(amendments.id, ids))
+    .where(inArray(amendments.id, [...ids, ...dependentIds]))
     .orderBy(asc(amendments.id))
     .for("no key update");
+  const locked = lockedAll.filter((row) => ids.includes(row.id));
   const transactionalIds = locked
     .filter((row) => row.kind === "transactional")
     .map((row) => row.id);
@@ -160,9 +179,29 @@ export async function applyAcceptedAmendmentsRule(
         ...base,
         entityId: row.id,
         type: "amendment_approved",
-        payload: { method: "proponent", reason: "rule_changed" },
+        payload: {
+          method: "proponent",
+          reason: "rule_changed",
+          memberId: input.mainPresenterId,
+        },
       });
     }
+    const approvedIds = new Set(approved.map((row) => row.id));
+    await closeTransactionalsOver(tx, {
+      assemblyId: input.assemblyId,
+      documentId: input.documentId,
+      actor: input.actor,
+      now: input.now,
+      sourceMap,
+      closed: locked
+        .filter((row) => approvedIds.has(row.id))
+        .map((row) => ({
+          id: row.id,
+          code: row.code,
+          status: "approved" as const,
+        })),
+      candidates: lockedAll.filter((row) => dependentIds.includes(row.id)),
+    });
   }
   if (plan.reopen.length > 0) {
     const reopened = await tx

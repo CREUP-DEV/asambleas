@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AmendmentDto } from "~~/shared/types/api";
-import { PROPONENT_POSITIONS } from "~~/shared/constants/domain";
 import {
   isSessionAwaitingAuthors,
   isSessionAwaitingValidation,
@@ -15,6 +14,8 @@ import {
   isSessionTransactable,
   isSessionUnpublished,
   isSessionValidatable,
+  sessionClosingSourceIds,
+  sessionLapsingTransactionalIds,
   sessionMissingAcceptances,
   sessionReplacedIds,
   sessionReplacingIds,
@@ -22,6 +23,7 @@ import {
   sessionTransactionalRejectors,
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
+import { useSessionPosition } from "~/composables/session/useSessionPosition";
 
 /**
  * One amendment of the console queue: who presents it, its kind, the
@@ -34,20 +36,27 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * "Validar y publicar" to whoever can, and shows its changes: the Mesa
  * cannot debate or decide it. A transactional proposed by a member says it
  * waits for the main authors of the amendments it would replace, and the
- * Mesa can withdraw it from "Más". One a main author turned down says so:
- * it is closed and those amendments carry on. One another transactional
- * got ahead of (an amendment it would replace is no longer open) says so
- * and offers only its withdrawal. One drafted in the room that still
- * waits for some main author offers no decision: its parties' answers come
- * first (shown with its changes). A transactional says which
- * amendments it already replaced, and a replaced amendment names the
- * transactional debated in its place. A validated one that is not public
+ * Mesa can withdraw it from "Más". One a main author turned down says who:
+ * it is closed and those amendments carry on. One the server closed on its
+ * own because an amendment it groups was settled first says which, and one
+ * that lapsed because another transactional replaced them first names that
+ * transactional. One
+ * another transactional got ahead of (an amendment it would replace is no
+ * longer open) says so and offers only its withdrawal. One drafted in the
+ * room that still waits for some main author offers no decision: its
+ * parties' answers come first (shown with its changes). A transactional
+ * says which amendments it already replaced, and a replaced amendment
+ * names the transactional debated in its place. A validated one that is not public
  * yet says who can read it, and nobody decides it until it is. A late one
  * waiting for the assembly's decision to treat it offers only that
  * decision (and its withdrawal): it cannot be debated or decided before.
  * One the main presenter accepted in a document that incorporates
  * accepted amendments is already in the text: until the final vote,
- * changing that answer (from "Más") is what takes it out again.
+ * changing that answer (from "Más") is what takes it out again. The answer
+ * says who gave it, or that the Mesa recorded it on the main presenter's
+ * behalf; only published amendments are answered (useSessionPosition), and
+ * a private one the Mesa could otherwise answer says on the card that the
+ * answer waits for the Secretaría to publish it.
  *
  * In the queue it opens under its compact row (`embedded`): the row
  * already shows the code and who presents it, and carries the anchor the
@@ -59,6 +68,7 @@ const props = withDefaults(
 );
 
 const session = useSessionConsoleContext();
+const answer = useSessionPosition(session);
 const { t } = useI18n();
 
 const id = computed(() => props.amendment.id);
@@ -89,6 +99,18 @@ const rejectors = computed(() =>
  */
 const supersededCodes = computed(() =>
   sessionSupersededSourceIds(props.amendment, session.byId.value)
+    .map(session.label)
+    .join(", "),
+);
+/** Closed by the server because one of these was settled first. */
+const closedCodes = computed(() =>
+  sessionClosingSourceIds(props.amendment, session.byId.value)
+    .map(session.label)
+    .join(", "),
+);
+/** Lapsed on its own because this transactional replaced its sources first. */
+const lapsedByCodes = computed(() =>
+  sessionLapsingTransactionalIds(props.amendment, session.byId.value)
     .map(session.label)
     .join(", "),
 );
@@ -180,42 +202,20 @@ const relateItem = computed<DropdownMenuItem>(() => ({
   onSelect: () => session.openRelation(props.amendment),
 }));
 
-const POSITION_ICONS = {
-  pending: "i-lucide-circle-dashed",
-  accept: "i-lucide-thumbs-up",
-  reject: "i-lucide-thumbs-down",
-  transact: "i-lucide-git-merge",
-} as const;
-
 /**
  * The main presenter's answer as stated in the room (feeds bulk assent).
- * An incorporated amendment keeps it: changing the answer reopens it. Not
- * after the final vote: the text is fixed and the server refuses it.
+ * An incorporated amendment keeps it: changing the answer reopens it. Only
+ * published amendments are answered, and never after the final vote: the
+ * text is fixed and the server refuses it.
  */
-const positionItem = computed<DropdownMenuItem | null>(() => {
-  if (
-    (props.amendment.status !== "submitted" && !incorporated.value) ||
-    !props.amendment.can.position ||
-    voted.value
-  )
-    return null;
-  const current = props.amendment.position?.position ?? "pending";
-  return {
-    label: t("amendment.position.title"),
-    icon: "i-lucide-user-round-check",
-    children: PROPONENT_POSITIONS.map((position) => ({
-      type: "checkbox" as const,
-      label: t(`amendment.position.options.${position}`),
-      icon: POSITION_ICONS[position],
-      checked: current === position,
-      onSelect: () => {
-        if (current !== position) {
-          void session.setPosition(props.amendment, position);
-        }
-      },
-    })),
-  };
-});
+const positionItem = computed(() => answer.menuItem(props.amendment));
+/** Who gave the answer shown: the main presenter, or the Mesa for it. */
+const positionLabel = computed(() => answer.label(props.amendment));
+/**
+ * Private, so nobody can answer it yet: said on the card too, since the
+ * disabled entry in "Más" cannot be reached by keyboard.
+ */
+const positionWait = computed(() => answer.waitHint(props.amendment));
 
 /**
  * An incorporated amendment is taken out by changing the main presenter's
@@ -406,7 +406,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
               : correctionRequested
                 ? t('session.card.correctionBadge')
                 : rejectors
-                  ? t('session.stage.turned_down')
+                  ? t('session.stage.turned_down', { members: rejectors })
                   : awaitingAuthors
                     ? t('session.card.authorsBadge')
                     : t('session.card.awaitingBadge')
@@ -445,11 +445,11 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
             :value="amendment.admission"
             size="sm"
           />
-          <!-- Closed by a main author, or left behind by another
-               transactional: say that, not the status it carries. -->
+          <!-- Closed by a main author or by the server, or left behind by
+               another transactional: say that, not the status it carries. -->
           <UBadge
-            v-if="rejectors || supersededCodes"
-            :color="rejectors ? 'neutral' : 'warning'"
+            v-if="rejectors || closedCodes || supersededCodes"
+            :color="rejectors || closedCodes ? 'neutral' : 'warning'"
             variant="subtle"
             size="sm"
             :icon="
@@ -459,8 +459,10 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
             "
             :label="
               rejectors
-                ? t('session.stage.turned_down')
-                : t('session.stage.superseded')
+                ? t('session.stage.turned_down', { members: rejectors })
+                : closedCodes
+                  ? t('session.stage.closed')
+                  : t('session.stage.superseded')
             "
           />
           <CommonStatusBadge
@@ -501,11 +503,17 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
       </p>
     </div>
 
-    <!-- Settled without the Mesa: turned down by a main author, left
-         behind by another transactional, or in the text because the main
-         presenter accepted it. -->
+    <!-- Settled without the Mesa: turned down by a main author, closed or
+         lapsed on its own, left behind by another transactional, or in the
+         text because the main presenter accepted it. -->
     <p v-if="!awaiting && rejectors" class="text-default mt-1.5 text-sm">
       {{ t("session.now.stage.turned_down", { members: rejectors }) }}
+    </p>
+    <p v-else-if="closedCodes" class="text-default mt-1.5 text-sm">
+      {{ t("session.now.stage.closed", { codes: closedCodes }) }}
+    </p>
+    <p v-else-if="lapsedByCodes" class="text-default mt-1.5 text-sm">
+      {{ t("session.now.stage.lapsedBy", { codes: lapsedByCodes }) }}
     </p>
     <p
       v-else-if="!awaiting && supersededCodes"
@@ -524,7 +532,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         v-if="amendment.position && !awaiting"
         class="inline-flex items-center gap-1"
       >
-        {{ t("session.card.position") }}
+        {{ positionLabel }}
         <UTooltip
           :text="amendment.position.comment ?? undefined"
           :disabled="!amendment.position.comment"
@@ -538,6 +546,14 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
             "
           />
         </UTooltip>
+      </span>
+      <span v-if="positionWait" class="inline-flex items-center gap-1">
+        <UIcon
+          name="i-lucide-eye-off"
+          class="size-3.5 shrink-0"
+          aria-hidden="true"
+        />
+        {{ positionWait }}
       </span>
       <span v-if="amendment.changeKinds.length > 0">
         {{
@@ -569,8 +585,12 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         {{ t(`session.enums.approvalMethod.${amendment.approvalMethod}`) }}
       </span>
       <span v-if="voteSummary" class="tabular-nums">{{ voteSummary }}</span>
-      <!-- Turned down: the sentence above already says who and what follows. -->
-      <span v-if="amendment.outcomeNote && !rejectors" class="italic">
+      <!-- Turned down or closed by the server: the sentence above already
+           says who or why, and what follows. -->
+      <span
+        v-if="amendment.outcomeNote && !rejectors && !closedCodes"
+        class="italic"
+      >
         {{ amendment.outcomeNote }}
       </span>
     </div>

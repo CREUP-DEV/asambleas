@@ -30,9 +30,9 @@ export interface ReviewBadgeState {
 
 /**
  * What the Secretaría can do to an amendment from the inbox: validate it
- * (and publish it or not), publish it, send it back, or record the
- * assembly's decision on a late one ("admit": it is treated, "inadmit": it
- * is not).
+ * (and publish it or not; a transactional is always published), publish
+ * it, send it back, or record the assembly's decision on a late one
+ * ("admit": it is treated, "inadmit": it is not).
  */
 export type ReviewAmendmentAction =
   | "validate_publish"
@@ -237,9 +237,66 @@ export function groupReviewAmendments(
     .filter((group) => reviewGroupSize(group) + group.late.length > 0);
 }
 
+type SourcesLike = Pick<AmendmentDto, "id" | "kind" | "sourceIds">;
+
+/** Whether both are transactionals that group some amendment in common. */
+export function shareSources(a: SourcesLike, b: SourcesLike): boolean {
+  if (a.id === b.id) return false;
+  if (a.kind !== "transactional" || b.kind !== "transactional") return false;
+  const sources = new Set(a.sourceIds);
+  return b.sourceIds.some((id) => sources.has(id));
+}
+
+/**
+ * The amendments that can be validated together, in the order given: a
+ * transactional that groups an amendment an earlier one already groups is
+ * left out. Only one of them can replace it (the server refuses both at
+ * once and closes the other when the first replaces it), so the first in
+ * text order wins.
+ */
+export function withoutSharedSources<T extends SourcesLike>(
+  amendments: readonly T[],
+): T[] {
+  const kept: T[] = [];
+  for (const amendment of amendments) {
+    if (kept.some((other) => shareSources(other, amendment))) continue;
+    kept.push(amendment);
+  }
+  return kept;
+}
+
+/**
+ * Transactionals that cannot join the selection because a selected one
+ * already groups one of their amendments: maps each of them to the first
+ * selected transactional, in the order given, that blocks it. Selected ones
+ * are never blocked, so they can always be unselected.
+ */
+export function blockedBySelection(
+  amendments: readonly SourcesLike[],
+  selected: ReadonlySet<string>,
+): Map<string, string> {
+  const chosen = amendments.filter((amendment) => selected.has(amendment.id));
+  const blocked = new Map<string, string>();
+  for (const amendment of amendments) {
+    if (selected.has(amendment.id)) continue;
+    const blocker = chosen.find((other) => shareSources(other, amendment));
+    if (blocker) blocked.set(amendment.id, blocker.id);
+  }
+  return blocked;
+}
+
 export interface ReviewSelection {
-  /** Selected amendments the actor may validate now. */
+  /**
+   * Selected amendments the actor may validate now, without two
+   * transactionals that group the same amendment.
+   */
   validate: string[];
+  /**
+   * Those of `validate` that may stay private once validated: all but the
+   * transactionals, which replace public amendments and so are always
+   * published when validated.
+   */
+  validateOnly: string[];
   /** Selected amendments the actor may publish now. */
   publish: string[];
 }
@@ -253,24 +310,103 @@ export function splitReviewSelection(
   group: Pick<ReviewDocumentGroup, "toValidate" | "toPublish">,
   selected: ReadonlySet<string>,
 ): ReviewSelection {
+  const validate = withoutSharedSources(
+    validatableNow(group).filter((amendment) => selected.has(amendment.id)),
+  );
   return {
-    validate: group.toValidate
-      .filter(
-        (amendment) =>
-          selected.has(amendment.id) &&
-          isAwaitingValidation(amendment) &&
-          amendment.can.validate,
-      )
+    validate: validate.map((amendment) => amendment.id),
+    validateOnly: validate
+      .filter((amendment) => amendment.kind !== "transactional")
       .map((amendment) => amendment.id),
-    publish: group.toPublish
-      .filter(
-        (amendment) =>
-          selected.has(amendment.id) &&
-          isAwaitingPublication(amendment) &&
-          amendment.can.publish,
-      )
+    publish: publishableNow(group)
+      .filter((amendment) => selected.has(amendment.id))
       .map((amendment) => amendment.id),
   };
+}
+
+/** Amendments of a group the actor may validate now, in text order. */
+function validatableNow(
+  group: Pick<ReviewDocumentGroup, "toValidate">,
+): AmendmentDto[] {
+  return group.toValidate.filter(
+    (amendment) => isAwaitingValidation(amendment) && amendment.can.validate,
+  );
+}
+
+/** Amendments of a group the actor may publish now, in text order. */
+function publishableNow(
+  group: Pick<ReviewDocumentGroup, "toPublish">,
+): AmendmentDto[] {
+  return group.toPublish.filter(
+    (amendment) => isAwaitingPublication(amendment) && amendment.can.publish,
+  );
+}
+
+/** Every amendment of a group that can be selected for a bulk action. */
+export function selectableReviewIds(
+  group: Pick<ReviewDocumentGroup, "toValidate" | "toPublish">,
+): string[] {
+  return [...validatableNow(group), ...publishableNow(group)].map(
+    (amendment) => amendment.id,
+  );
+}
+
+/**
+ * What "Seleccionar todas" selects: every selectable amendment but a
+ * transactional that groups an amendment an earlier one already groups.
+ * Given the current selection, it keeps it and adds what still fits, so a
+ * transactional the user chose is never swapped for another one.
+ */
+export function selectAllReviewIds(
+  group: Pick<ReviewDocumentGroup, "toValidate" | "toPublish">,
+  keep: ReadonlySet<string> = new Set(),
+): string[] {
+  const validatable = validatableNow(group);
+  const chosen = new Set(
+    withoutSharedSources([
+      ...validatable.filter((amendment) => keep.has(amendment.id)),
+      ...validatable.filter((amendment) => !keep.has(amendment.id)),
+    ]).map((amendment) => amendment.id),
+  );
+  return [
+    ...validatable.filter((amendment) => chosen.has(amendment.id)),
+    ...publishableNow(group),
+  ].map((amendment) => amendment.id);
+}
+
+/**
+ * Whether selecting makes sense: at least two selectable amendments can be
+ * acted on together. Every pair counts, not only what "Seleccionar todas"
+ * picks: if T1 groups an amendment with T2 and another with T3, the pick is
+ * just T1, yet T2 and T3 can be validated together.
+ */
+export function canSelectSeveral(
+  group: Pick<ReviewDocumentGroup, "toValidate" | "toPublish">,
+): boolean {
+  const validatable = validatableNow(group);
+  const publishable = publishableNow(group).length;
+  if (publishable > 1 || (publishable === 1 && validatable.length > 0)) {
+    return true;
+  }
+  return validatable.some((amendment, index) =>
+    validatable
+      .slice(index + 1)
+      .some((other) => !shareSources(amendment, other)),
+  );
+}
+
+/**
+ * Whether nothing else can join the selection: every selectable amendment
+ * is selected or kept out by a selected transactional.
+ */
+export function isSelectionFull(
+  group: Pick<ReviewDocumentGroup, "toValidate" | "toPublish">,
+  selected: ReadonlySet<string>,
+): boolean {
+  const blocked = blockedBySelection(validatableNow(group), selected);
+  return selectableReviewIds(group).every(
+    (id) => selected.has(id) || blocked.has(id),
+  );
 }
 
 /** Whether the actor can record the assembly's decision on it. */

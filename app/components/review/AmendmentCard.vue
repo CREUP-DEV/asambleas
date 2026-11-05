@@ -17,9 +17,9 @@ import {
  * where it stands, its changes over the published text and its
  * justification. The actions depend on where it stands:
  * - waiting for validation: "Validar y publicar" (main), "Pedir corrección"
- *   and, under "Más", "Validar sin publicar" (for a transactional, with a
- *   warning: validating it takes the amendments it groups out of the debate
- *   even while it stays private);
+ *   and, under "Más", "Validar sin publicar". A transactional has no "Más":
+ *   validating it always publishes it, since it replaces the amendments it
+ *   groups, which are public;
  * - validated but kept private: "Publicar";
  * - a transactional waiting for the main authors of the amendments it would
  *   replace: none, its status line names who still has to answer;
@@ -28,7 +28,9 @@ import {
  * The main author is named first, then the co-authors. A transactional
  * lists the amendments it groups once the parent has loaded their codes.
  * The parent runs every action. The selection checkbox shows only when the
- * list has several amendments to act on.
+ * list has several amendments to act on; it is disabled, with the reason
+ * under it, while another selected transactional groups some of the same
+ * amendments (`selectBlockedBy`).
  */
 const props = withDefaults(
   defineProps<{
@@ -47,6 +49,11 @@ const props = withDefaults(
      * order; null until the parent has them.
      */
     sourceLabels?: string[] | null;
+    /**
+     * Code of the selected transactional that groups some of the same
+     * amendments: this one cannot be selected with it. Null otherwise.
+     */
+    selectBlockedBy?: string | null;
   }>(),
   {
     baseLoading: false,
@@ -54,6 +61,7 @@ const props = withDefaults(
     disabled: false,
     multiSelect: false,
     sourceLabels: null,
+    selectBlockedBy: null,
   },
 );
 
@@ -64,6 +72,7 @@ const { t, locale } = useI18n();
 const now = useAppNow();
 
 const titleId = useId();
+const blockedHintId = useId();
 
 const label = computed(
   () => amendmentDisplayLabel(props.amendment) ?? t("review.amendments.noCode"),
@@ -188,16 +197,18 @@ const sentAbsolute = computed(() =>
 // The changes start open, except a whole alternative text, which is long.
 const changesOpen = ref(props.amendment.kind !== "totality_alternative");
 
+/** Shown with the checkbox only: the reason it cannot be selected now. */
+const selectBlocked = computed(
+  () => props.multiSelect && canAct.value && props.selectBlockedBy !== null,
+);
+
 const moreItems = computed<DropdownMenuItem[]>(() => {
-  if (stage.value === "validate") {
+  // A transactional replaces public amendments: validating it publishes it.
+  if (stage.value === "validate" && !isTransactional.value) {
     return [
       {
         label: t("review.amendments.validateOnly"),
-        // Validating a transactional is what makes it replace the
-        // amendments it groups, published or not.
-        description: isTransactional.value
-          ? t("review.amendments.validateOnlyTransactionalHelp")
-          : t("review.amendments.validateOnlyHelp"),
+        description: t("review.amendments.validateOnlyHelp"),
         icon: "i-lucide-check",
         disabled: props.disabled,
         onSelect: () => emit("action", "validate_only"),
@@ -240,7 +251,9 @@ const moreBusy = computed(
         v-if="multiSelect && canAct"
         v-model="selected"
         class="mt-0.5"
+        :disabled="selectBlocked"
         :aria-label="t('review.amendments.select', { label })"
+        :aria-describedby="selectBlocked ? blockedHintId : undefined"
       />
       <div class="min-w-0 flex-1 space-y-1">
         <div class="flex flex-wrap items-center gap-1.5">
@@ -317,6 +330,22 @@ const moreBusy = computed(
         </p>
       </div>
     </div>
+
+    <!-- Why its checkbox is disabled: visible, not a tooltip, for phones. -->
+    <p
+      v-if="selectBlocked"
+      :id="blockedHintId"
+      class="text-muted flex items-start gap-1.5 text-sm"
+    >
+      <UIcon
+        name="i-lucide-info"
+        class="mt-0.5 size-4 shrink-0"
+        aria-hidden="true"
+      />
+      <span>{{
+        t("review.amendments.sharesSourcesWith", { label: selectBlockedBy })
+      }}</span>
+    </p>
 
     <!-- Waiting for its authors: who is missing is the whole status. -->
     <div

@@ -16,6 +16,7 @@ import {
   adminGrantViolation,
   invalidateUserPermissionCache,
   requireAnyPermission,
+  touchesLeadershipRole,
 } from "../../../../utils/auth/rbac";
 import { logError } from "../../../../utils/core/logger";
 import { validateAuthId } from "../../../../utils/validation";
@@ -80,9 +81,16 @@ export default defineEventHandler(async (event) => {
   const target = await db.query.users.findFirst({
     where: eq(users.id, userId),
     columns: { id: true },
+    with: { role: { columns: { name: true } } },
   });
   if (!target) {
     throw createError({ statusCode: 404, message: "Usuario no encontrado" });
+  }
+  if (touchesLeadershipRole(caller.admin, [target.role?.name])) {
+    throw createError({
+      statusCode: 403,
+      message: ADMIN_GRANT_MESSAGES.leadership,
+    });
   }
 
   const rows =

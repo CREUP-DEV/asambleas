@@ -2,9 +2,12 @@
 import type { AmendmentStatus } from "~~/shared/constants/domain";
 import type { AcceptanceBody, AmendmentDto } from "~~/shared/types/api";
 import {
+  transactionalAnswerNotNeeded,
   transactionalAnswerOf,
   transactionalAuthorTurn,
+  transactionalClosure,
   transactionalRejectedByAuthors,
+  type TransactionalClosureSource,
 } from "~/composables/amendment/transactional";
 import { amendmentMainAuthor } from "~/composables/amendment/workspace";
 
@@ -17,7 +20,10 @@ import { amendmentMainAuthor } from "~/composables/amendment/workspace";
  * while it waits for them. A rejection closes it for everyone and cannot be
  * undone, so "Rechazar" asks first. Only one card on the screen gets the
  * primary button (`primary`). The Mesa records answers given in the room
- * from the transactional's own detail.
+ * from the transactional's own detail. When it closed before the main
+ * author answered (an amendment it groups was settled, another
+ * transactional replaced one, or it was withdrawn), it says the answer is
+ * no longer needed and why, so nobody keeps waiting for it.
  */
 const props = withDefaults(
   defineProps<{
@@ -29,10 +35,16 @@ const props = withDefaults(
     actorMemberId: string | null;
     labelOf: (id: string) => string;
     statusOf?: (id: string) => AmendmentStatus | undefined;
+    /**
+     * The amendments of the document the viewer sees, whole (status and
+     * when it was settled), to tell which one closed it. Without it, the
+     * closure is not explained.
+     */
+    amendmentOf?: (id: string) => TransactionalClosureSource | undefined;
     /** "Aceptar" is the screen's primary action (the first card to answer). */
     primary?: boolean;
   }>(),
-  { statusOf: undefined, primary: false },
+  { statusOf: undefined, amendmentOf: undefined, primary: false },
 );
 
 const emit = defineEmits<{
@@ -87,6 +99,27 @@ const showState = computed(
     (party.value.decision !== "pending" ||
       props.transactional.status === "submitted"),
 );
+/**
+ * Closed before the main author answered: why the answer is no longer
+ * needed ("Ya no hace falta responder: ..."), naming the amendment settled
+ * or replaced at the moment it closed when the viewer sees it, or just that
+ * it closed (withdrawn, or no lookup to tell).
+ */
+const notNeeded = computed(() => {
+  if (
+    !transactionalAnswerNotNeeded(
+      props.transactional,
+      mainAuthor.value?.id ?? null,
+    )
+  ) {
+    return null;
+  }
+  const closure = transactionalClosure(props.transactional, props.amendmentOf);
+  if (!closure?.sourceId) return t("transactional.answer.notNeeded.closed");
+  return t(`transactional.answer.notNeeded.${closure.reason}`, {
+    source: props.labelOf(closure.sourceId),
+  });
+});
 /**
  * Decided otherwise (voted, lapsed...): the progress line says nothing
  * then, so its outcome is shown.
@@ -230,6 +263,18 @@ async function answer(decision: AcceptanceBody["decision"]): Promise<void> {
           </div>
         </template>
       </template>
+      <!-- Closed on its own before anyone answered for this amendment. -->
+      <p
+        v-else-if="notNeeded"
+        class="text-muted flex items-start gap-1.5 text-sm"
+      >
+        <UIcon
+          name="i-lucide-info"
+          class="mt-0.5 size-4 shrink-0"
+          aria-hidden="true"
+        />
+        {{ notNeeded }}
+      </p>
       <!-- Everyone else (co-authors included): who answered, what, when. -->
       <p v-else-if="showState" class="text-default text-sm">
         {{

@@ -9,11 +9,13 @@ vi.mock("./requireAuth", () => ({
 }));
 
 const {
+  ADMIN_GRANT_MESSAGES,
   ADMIN_SECTION_PERMISSIONS,
   adminGrantViolation,
   getEffectivePermissions,
   hasAnyPermission,
   mergePermissions,
+  touchesLeadershipRole,
 } = await import("./rbac");
 
 describe("hasAnyPermission", () => {
@@ -87,13 +89,76 @@ describe("adminGrantViolation", () => {
     ownTarget: false,
   };
 
-  it("keeps a non-Admin away from its own account and role", () => {
+  it("keeps a non-Admin away from its own account and the role it holds", () => {
     expect(
       adminGrantViolation({ ...base, ownTarget: true, target: "account" }),
     ).toBe("own_account");
     expect(
-      adminGrantViolation({ ...base, ownTarget: true, target: "role" }),
+      adminGrantViolation({ ...base, ownTarget: true, target: "user_role" }),
+    ).toBe("own_user_role");
+    expect(ADMIN_GRANT_MESSAGES.own_user_role).toMatch(/Admin/);
+  });
+
+  it("lets a non-Admin change its own role but not lock itself out", () => {
+    const own = {
+      ...base,
+      callerPermissions: [
+        USER_MANAGE_ROLES,
+        ROLE_MANAGE_PERMISSIONS,
+        SESSION_MODERATE,
+      ],
+      ownTarget: true,
+      target: "role" as const,
+    };
+    // Nothing to judge before the lists are known.
+    expect(adminGrantViolation(own)).toBeNull();
+    expect(
+      adminGrantViolation({
+        ...own,
+        before: [USER_MANAGE_ROLES, ROLE_MANAGE_PERMISSIONS, SESSION_MODERATE],
+        after: [USER_MANAGE_ROLES, ROLE_MANAGE_PERMISSIONS],
+      }),
+    ).toBeNull();
+    expect(
+      adminGrantViolation({
+        ...own,
+        before: [USER_MANAGE_ROLES, ROLE_MANAGE_PERMISSIONS],
+        after: [ROLE_MANAGE_PERMISSIONS],
+      }),
     ).toBe("own_role");
+    expect(
+      adminGrantViolation({
+        ...own,
+        before: [USER_MANAGE_ROLES, ROLE_MANAGE_PERMISSIONS],
+        after: [USER_MANAGE_ROLES],
+      }),
+    ).toBe("own_role");
+    // Giving them to its own role is fine.
+    expect(
+      adminGrantViolation({
+        ...own,
+        before: [SESSION_MODERATE],
+        after: [SESSION_MODERATE, USER_MANAGE_ROLES],
+      }),
+    ).toBeNull();
+    // Another role may lose them, as long as the caller holds them.
+    expect(
+      adminGrantViolation({
+        ...own,
+        ownTarget: false,
+        before: [USER_MANAGE_ROLES],
+        after: [],
+      }),
+    ).toBeNull();
+    // And an Admin may do anything.
+    expect(
+      adminGrantViolation({
+        ...own,
+        admin: true,
+        before: [USER_MANAGE_ROLES],
+        after: [],
+      }),
+    ).toBeNull();
   });
 
   it("lets an Admin change anything, its own account included", () => {
@@ -141,5 +206,27 @@ describe("adminGrantViolation", () => {
     expect(
       adminGrantViolation({ ...base, target: "role", before: [], after: [] }),
     ).toBeNull();
+  });
+});
+
+describe("touchesLeadershipRole", () => {
+  it("stops a non-Admin from touching Secretaría or Presidencia", () => {
+    expect(touchesLeadershipRole(false, ["Secretaría"])).toBe(true);
+    expect(touchesLeadershipRole(false, ["Asociado", "Presidencia"])).toBe(
+      true,
+    );
+    expect(touchesLeadershipRole(false, ["Asociado", null, undefined])).toBe(
+      false,
+    );
+  });
+
+  it("lets an Admin change them", () => {
+    expect(touchesLeadershipRole(true, ["Secretaría", "Presidencia"])).toBe(
+      false,
+    );
+  });
+
+  it("has a message for the refusal", () => {
+    expect(ADMIN_GRANT_MESSAGES.leadership).toMatch(/Admin/);
   });
 });

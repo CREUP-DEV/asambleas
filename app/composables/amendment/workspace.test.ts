@@ -375,7 +375,12 @@ describe("consolidation inputs", () => {
       decidedAt: "2026-11-01T10:00:00.000Z",
     });
     const accepted = amendment("acc", [replace("b4", 0, 6, "Fin")], {
-      position: { position: "accept", comment: null, updatedAt: "" },
+      position: {
+        position: "accept",
+        comment: null,
+        recordedBy: "presenter",
+        updatedAt: "",
+      },
     });
     expect(
       consolidationInputs([first, second, accepted]).map((x) => x.id),
@@ -594,30 +599,71 @@ describe("the main presenter's answer", () => {
     }
   });
 
-  it("waits for publication only to accept it when that incorporates it", () => {
+  it("answers only published amendments, whatever the rule", () => {
     const private_ = amendment("a", [], { reviewState: "validated" });
-    // The Mesa can answer for the presenter already, under either rule.
+    // Delegates cannot read it yet: not even the Mesa answers it for the
+    // presenter until the Secretaría publishes it.
     for (const rule of rules) {
-      expect(amendmentAwaitsPosition(private_, rule)).toBe(true);
-      expect(amendmentPositionBlocker(private_, rule)).toBeNull();
+      expect(amendmentAwaitsPosition(private_, rule)).toBe(false);
+      expect(amendmentPositionBlocker(private_, rule)).toBe("publication");
+      expect(amendmentPositionNext(private_, rule)).toBeNull();
     }
-    expect(amendmentPositionNext(private_, "incorporate")).toBe(
-      "incorporateIfAccepted",
-    );
-    // Under "incorporate" the server refuses to put unpublished text in:
-    // only accepting waits.
+    // Late, validated and private: the assembly decides first.
+    expect(
+      amendmentPositionBlocker(
+        amendment("a", [], {
+          reviewState: "validated",
+          late: true,
+          admission: "pending",
+        }),
+        "vote",
+      ),
+    ).toBe("admission");
+    // A transactional validated before it was always published: same rule.
+    expect(
+      amendmentPositionBlocker(
+        amendment("t", [], { kind: "transactional", reviewState: "validated" }),
+        "incorporate",
+      ),
+    ).toBe("publication");
+    // Decided ones wait for nothing.
+    expect(
+      amendmentPositionBlocker({ ...private_, status: "withdrawn" }, "vote"),
+    ).toBeNull();
+    // Kept for older callers; it never decides anything on its own now.
     expect(amendmentAcceptBlocked(private_, "incorporate")).toBe(true);
-    expect(amendmentAcceptBlocked(private_, "vote")).toBe(false);
     expect(amendmentAcceptBlocked(amendment("a", []), "incorporate")).toBe(
       false,
     );
-    // Decided ones are not answered with an acceptance that approves them.
-    expect(
-      amendmentAcceptBlocked(
-        { ...private_, status: "withdrawn" },
-        "incorporate",
-      ),
-    ).toBe(false);
+  });
+
+  it("takes no answer once the document was voted", () => {
+    const voted = { finalVoted: true };
+    for (const rule of rules) {
+      expect(amendmentAwaitsPosition(amendment("a", []), rule, voted)).toBe(
+        false,
+      );
+      expect(
+        amendmentPositionBlocker(amendment("a", []), rule, voted),
+      ).toBeNull();
+      expect(amendmentPositionNext(amendment("a", []), rule, voted)).toBeNull();
+      // Not voted yet: the amendment-level rule applies.
+      expect(
+        amendmentAwaitsPosition(amendment("a", []), rule, {
+          finalVoted: false,
+        }),
+      ).toBe(true);
+    }
+    // Not even one the presenter's acceptance incorporated.
+    const incorporated = amendment("a", [], {
+      status: "approved",
+      approvalMethod: "proponent",
+      decidedAt: "2026-11-02T10:00:00.000Z",
+    });
+    expect(amendmentAwaitsPosition(incorporated, "incorporate")).toBe(true);
+    expect(amendmentAwaitsPosition(incorporated, "incorporate", voted)).toBe(
+      false,
+    );
   });
 
   it("keeps an amendment incorporated by the presenter open to a change", () => {
@@ -721,7 +767,12 @@ describe("the main presenter's answer", () => {
   it("says what happens next with the document's rule", () => {
     const answered = (position: "pending" | "accept" | "reject") =>
       amendment("a", [], {
-        position: { position, comment: null, updatedAt: "2026-11-02" },
+        position: {
+          position,
+          comment: null,
+          recordedBy: "presenter",
+          updatedAt: "2026-11-02",
+        },
       });
     expect(amendmentPositionNext(amendment("a", []), "incorporate")).toBe(
       "incorporateIfAccepted",
@@ -851,6 +902,7 @@ describe("history version", () => {
       position: {
         position: "accept",
         comment: null,
+        recordedBy: "presenter",
         updatedAt: "2026-11-01T11:00:00.000Z",
       },
     });

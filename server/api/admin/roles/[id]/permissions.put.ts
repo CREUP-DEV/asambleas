@@ -18,6 +18,7 @@ import {
   adminGrantViolation,
   invalidatePermissionCache,
   requireAnyPermission,
+  touchesLeadershipRole,
 } from "../../../../utils/auth/rbac";
 import { validateCuid } from "../../../../utils/validation";
 import type { AuthEventContext } from "../../../../utils/auth/requireAuth";
@@ -29,10 +30,11 @@ const bodySchema = z.object({
 /**
  * Sets the permissions of a role (role:manage_permissions). Only an Admin
  * may touch the Admin role, which holds every permission anyway (403 for
- * anyone else, 400 for an Admin). A non-Admin may not change the role it
- * holds, nor add or remove a key it does not hold itself (403,
- * adminGrantViolation): otherwise it could raise its own access or lock
- * the Secretaría out of the admin section.
+ * anyone else, 400 for an Admin). A non-Admin may not take
+ * user:manage_roles or role:manage_permissions away from the role it holds
+ * (it would lock itself, and everyone with that role, out of the admin
+ * section), nor add or remove a key it does not hold itself (403,
+ * adminGrantViolation): otherwise it could raise its own access.
  */
 export default defineEventHandler(async (event) => {
   const caller = await requireAnyPermission(event, [
@@ -86,6 +88,12 @@ export default defineEventHandler(async (event) => {
             message: "Solo un Admin puede cambiar los permisos del rol Admin",
           },
     );
+  }
+  if (touchesLeadershipRole(admin, [role.name])) {
+    throw createError({
+      statusCode: 403,
+      message: ADMIN_GRANT_MESSAGES.leadership,
+    });
   }
   deny({});
 

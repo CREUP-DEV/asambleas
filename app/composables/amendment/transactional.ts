@@ -23,10 +23,10 @@ import { consolidate } from "~~/shared/utils/content/consolidate";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
 import { MAX_TRANSACTIONAL_SOURCES } from "~~/shared/utils/schemas/amendment";
 import {
-  amendmentAcceptBlocked,
   amendmentAwaitsPosition,
   amendmentMainAuthor,
   sortAmendments,
+  type AmendmentPositionContext,
 } from "./workspace";
 
 // Sources ------------------------------------------------------------------------
@@ -63,10 +63,11 @@ function acceptedByMainAuthors(
  * recorded before validation existed, hence public), admitted and still
  * undecided, and changing some passage of the text (a "devolución" has no
  * text to start from). Late amendments still waiting for the assembly's
- * decision are left out, as the server does, and so is a transactional its
- * main authors have not all accepted yet, such as the Mesa's live one,
- * published at once (the server's transactionalSourceReason,
- * `awaits_authors`).
+ * decision are left out, as the server does. A transactional is a source
+ * only once its main authors accepted it (it then replaced what it groups):
+ * one still waiting for them, such as the Mesa's live one, published at
+ * once, or one a main author rejected, is left out (the server's
+ * transactionalSourceReason, `awaits_authors`).
  */
 export function transactionalSourceEligible(amendment: SourceLike): boolean {
   return (
@@ -258,8 +259,11 @@ export function transactionalSameIds(a: string[], b: string[]): boolean {
  *   it is closed and the original amendments carry on;
  * - `authors`: the main authors of the amendments it would replace still
  *   have to answer (also the Mesa's live one, published at once);
- * - `validation` / `publication`: the Secretaría has to check it, or to
- *   publish it once checked;
+ * - `validation`: the Secretaría has to check it; validating a
+ *   transactional always publishes it, since it replaces amendments
+ *   everyone can read;
+ * - `publication`: checked but still private, only for transactionals
+ *   validated before that rule: the Secretaría has to publish it;
  * - `admission`: late, the assembly still has to decide whether to treat it;
  * - `replaced`: accepted and validated, it replaced the original amendments
  *   (they are "transacted") and follows the normal flow;
@@ -339,6 +343,108 @@ export function transactionalRejectedByAuthors(
     CLOSED_BY_REJECTION.includes(amendment.status) &&
     amendment.acceptances.some((party) => party.decision === "rejected")
   );
+}
+
+/**
+ * The main authors whose rejection closed a transactional, in the order the
+ * API lists them, from its acceptances (its outcome note stays for the
+ * Mesa's own words, so it may be null). Empty when it was not closed by a
+ * rejection: still open, voted, or closed for another reason (one of the
+ * amendments it groups was settled or replaced: transactionalClosure).
+ */
+export function transactionalRejectedBy(
+  amendment: Pick<
+    AmendmentDto,
+    "kind" | "status" | "acceptances" | "outcomeVote"
+  >,
+): MemberRef[] {
+  if (!transactionalRejectedByAuthors(amendment)) return [];
+  return amendment.acceptances
+    .filter((party) => party.decision === "rejected")
+    .map((party) => party.member);
+}
+
+/**
+ * Why a transactional was closed without anyone rejecting it or voting it,
+ * so the main authors still asked learn that their answer is no longer
+ * needed:
+ * - `source_replaced`: another transactional replaced one of the amendments
+ *   it groups (that one is `transacted`);
+ * - `source_decided`: one of them was settled otherwise (approved,
+ *   incorporated, rejected, withdrawn, lapsed or inadmissible);
+ * - `closed`: closed for another reason, or the viewer does not see the
+ *   amendment that was settled.
+ * `sourceId` names that amendment (null for `closed`). What counts is what
+ * happened when it closed, not where its sources stand now: the server
+ * stamps the settled amendment and the transactionals it closes with the
+ * same `decidedAt`, so only a source settled at that very instant is named
+ * (the first in the transactional's order). A source settled earlier (the
+ * transactional itself replaced it, before the Mesa withdrew it) or later
+ * (after its author withdrew it) did not close it: `closed` then. Null while
+ * it is open, and once it was voted or a main author rejected it
+ * (transactionalRejectedBy).
+ */
+export type TransactionalClosureReason =
+  "source_replaced" | "source_decided" | "closed";
+
+export interface TransactionalClosure {
+  reason: TransactionalClosureReason;
+  sourceId: string | null;
+}
+
+/** Statuses a transactional is left in when it closes on its own. */
+const CLOSED_ON_ITS_OWN: readonly AmendmentStatus[] = ["withdrawn", "lapsed"];
+
+/** A source as transactionalClosure looks it up: where it stands, since when. */
+export type TransactionalClosureSource = Pick<
+  AmendmentDto,
+  "status" | "decidedAt"
+>;
+
+/** Both dates are set and name the same instant. */
+function sameInstant(a: string | null, b: string | null): boolean {
+  if (a === null || b === null) return false;
+  const left = new Date(a).getTime();
+  return !Number.isNaN(left) && left === new Date(b).getTime();
+}
+
+export function transactionalClosure(
+  amendment: Pick<
+    AmendmentDto,
+    | "kind"
+    | "status"
+    | "acceptances"
+    | "outcomeVote"
+    | "sourceIds"
+    | "decidedAt"
+  >,
+  sourceOf?: (id: string) => TransactionalClosureSource | undefined,
+): TransactionalClosure | null {
+  if (
+    amendment.kind !== "transactional" ||
+    !CLOSED_ON_ITS_OWN.includes(amendment.status) ||
+    amendment.outcomeVote !== null ||
+    transactionalRejectedByAuthors(amendment)
+  ) {
+    return null;
+  }
+  for (const id of amendment.sourceIds) {
+    const source = sourceOf?.(id);
+    if (
+      source === undefined ||
+      source.status === "submitted" ||
+      source.status === "draft" ||
+      !sameInstant(source.decidedAt, amendment.decidedAt)
+    ) {
+      continue;
+    }
+    return {
+      reason:
+        source.status === "transacted" ? "source_replaced" : "source_decided",
+      sourceId: id,
+    };
+  }
+  return { reason: "closed", sourceId: null };
 }
 
 /**
@@ -488,10 +594,11 @@ export function transactionalProgressMessage(
 }
 
 /**
- * While the Secretaría has it, what happens once it is checked: it replaces
- * the amendments it combines (`validation`), or it already did (`publication`
- * with the originals recorded as replaced). Null past that stage, or when
- * main authors still have to answer (that comes first).
+ * While the Secretaría has it, what happens once it is checked: it is
+ * published and replaces the amendments it combines (`validation`), or it
+ * already replaced them (`publication`, an older private one, with the
+ * originals recorded as replaced). Null past that stage, or when main
+ * authors still have to answer (that comes first).
  */
 export function transactionalAfterSecretaria(
   view: TransactionalProgressView,
@@ -517,8 +624,8 @@ export function transactionalAfterSecretaria(
  * the answer of the server left it:
  * - `authors`: the main authors of the amendments it would replace accept
  *   or reject it (`members`, those still to answer); a rejection closes it;
- * - `secretaria`: the Secretaría checks and publishes it (skipped when the
- *   Mesa proposed it: it is public at once);
+ * - `secretaria`: the Secretaría checks it, which publishes it (skipped
+ *   when the Mesa proposed it: it is public at once);
  * - `replaces`: it replaces the amendments it combines;
  * - `answer`: the document's main presenter answers it, and the assembly
  *   votes it, or it is incorporated if accepted (`rule`, the document's).
@@ -606,10 +713,36 @@ export function transactionalAuthorTurn(
 }
 
 /**
+ * The main author was asked to answer a transactional that then closed
+ * without a vote or a rejection before it answered (withdrawn or lapsed:
+ * one of the amendments it groups was settled or replaced, or it was
+ * withdrawn; transactionalClosure says which): the answer is no longer
+ * needed, and the main author is told so instead of being left waiting.
+ */
+export function transactionalAnswerNotNeeded(
+  transactional: Pick<
+    AmendmentDto,
+    "kind" | "status" | "acceptances" | "outcomeVote"
+  >,
+  mainAuthorId: string | null,
+): boolean {
+  return (
+    transactional.kind === "transactional" &&
+    CLOSED_ON_ITS_OWN.includes(transactional.status) &&
+    transactional.outcomeVote === null &&
+    !transactionalRejectedByAuthors(transactional) &&
+    transactionalAnswerOf(transactional.acceptances, mainAuthorId)?.decision ===
+      "pending"
+  );
+}
+
+/**
  * Transactionals over `source` worth showing on it, with its main author's
  * answer (who, what, when): open ones, ones a main author's rejection
- * closed, and any its main author already answered, whatever became of it
- * since, so its co-authors keep seeing that answer. Transactionals the
+ * closed, any its main author already answered, whatever became of it
+ * since, so its co-authors keep seeing that answer, and any that closed on
+ * its own while waiting for that answer (transactionalAnswerNotNeeded), so
+ * nobody wonders whether they still have to answer. Transactionals the
  * viewer does not see are left out; the order is the API's.
  */
 export function transactionalsOverSource<
@@ -630,6 +763,7 @@ export function transactionalsOverSource<
         item.kind === "transactional" &&
         (item.status === "submitted" ||
           transactionalRejectedByAuthors(item) ||
+          transactionalAnswerNotNeeded(item, mainAuthorId) ||
           (transactionalAnswerOf(item.acceptances, mainAuthorId)?.decision ??
             "pending") !== "pending"),
     );
@@ -652,17 +786,16 @@ export function transactionalPartySources<
 /**
  * What waits for the document's main presenter in the review mode (the Mesa
  * can answer for it too), by the document's rule for accepted amendments:
- * undecided amendments that reached it (validated, admitted, and for a
- * transactional, accepted by the main authors: amendmentAwaitsPosition)
- * without its answer yet, among those the viewer can answer
- * (`can.position`, held by the main presenter and the Mesa only). It is the
- * count of the review mode's pending steps (isPositionReviewable) and of the
- * server's countPositionsPending: under the "incorporate" rule one the
- * Secretaría keeps private is left out until it is published (it can be
- * answered, but not accepted: amendmentAcceptBlocked); under "vote" it
- * counts, though only the Mesa sees it until it is published. Answers
- * belong to the amendment, not to whoever records them, so the main
- * presenter and the Mesa count the same answers.
+ * undecided amendments that reached it (published, so validated, admitted
+ * if late, and for a transactional, accepted by the main authors:
+ * amendmentAwaitsPosition) without its answer yet, among those the viewer
+ * can answer (`can.position`, held by the main presenter and the Mesa
+ * only), and nothing once the document was voted (`context.finalVoted`).
+ * It is the count of the review mode's pending steps (isPositionReviewable)
+ * and of the server's countPositionsPending, under either rule: one the
+ * Secretaría keeps private waits until it is published. Answers belong to
+ * the amendment, not to whoever records them, so the main presenter and
+ * the Mesa count the same answers.
  */
 export function proponentReviewBacklog(
   list: Pick<
@@ -678,14 +811,14 @@ export function proponentReviewBacklog(
     | "can"
   >[],
   rule: AcceptedAmendmentRule,
+  context: AmendmentPositionContext = {},
 ): { positions: number; total: number } {
   let positions = 0;
   for (const amendment of list) {
     if (
       amendment.can.position &&
       amendment.status === "submitted" &&
-      amendmentAwaitsPosition(amendment, rule) &&
-      !amendmentAcceptBlocked(amendment, rule) &&
+      amendmentAwaitsPosition(amendment, rule, context) &&
       (amendment.position === null || amendment.position.position === "pending")
     ) {
       positions += 1;

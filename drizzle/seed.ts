@@ -1777,7 +1777,12 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
         events.push({
           ...base,
           type: "amendment_approved",
-          payload: { method: outcome.approvalMethod, byPosition: true },
+          // Whose acceptance incorporated it, as setAmendmentPosition says.
+          payload: {
+            method: outcome.approvalMethod,
+            byPosition: true,
+            memberId: member(proponentOf[item.document]),
+          },
           actorMemberId: member(proponentOf[item.document]),
           createdAt: outcome.at,
         });

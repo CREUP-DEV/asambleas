@@ -64,6 +64,10 @@ import {
   isSessionUndecided,
   isSessionUnpublished,
   isSessionValidatable,
+  isSessionPositionByMesa,
+  sessionClosingSourceIds,
+  sessionLapsingTransactionalIds,
+  sessionPositionMenu,
 } from "./sessionModel";
 
 const b = (id: string, text: string): Block => ({
@@ -341,6 +345,7 @@ describe("session model", () => {
 
       const accept = {
         position: "accept" as const,
+        recordedBy: "presenter" as const,
         comment: null,
         updatedAt: "",
       };
@@ -377,6 +382,7 @@ describe("session model", () => {
   it("plans bulk assent", () => {
     const accept = {
       position: "accept" as const,
+      recordedBy: "presenter" as const,
       comment: null,
       updatedAt: "",
     };
@@ -974,6 +980,148 @@ describe("session model", () => {
       ).toBe(false);
     });
 
+    it("says a transactional closed on its own and why", () => {
+      // T5 over s1 and s2 still waited for UPV when s1 was withdrawn: in the
+      // same moment the server closed T5 (withdrawn, no outcome note: the
+      // console puts the reason into words).
+      const at = "2026-01-02T10:00:00.000Z";
+      const s1 = am("s1", {
+        status: "withdrawn",
+        decidedAt: at,
+        transactionalIds: ["t5"],
+      });
+      const s2 = am("s2", { transactionalIds: ["t5"] });
+      const t5 = am("t5", {
+        kind: "transactional",
+        status: "withdrawn",
+        decidedAt: "2026-01-02T10:00:00Z",
+        outcomeNote: null,
+        sourceIds: ["s1", "s2"],
+        acceptances: [party("ceum", "accepted"), party("upv", "pending")],
+      });
+      const byId = new Map([s1, s2, t5].map((x) => [x.id, x]));
+      expect(sessionClosingSourceIds(t5, byId)).toEqual(["s1"]);
+      expect(sessionAmendmentStage(t5, byId)).toBe("closed");
+      // Without the other amendments, the stage cannot tell.
+      expect(sessionAmendmentStage(t5)).toBe("withdrawn");
+      // It cannot come back: what it grouped is no longer all open.
+      expect(isSessionReopenable(t5, byId)).toBe(false);
+      // Incorporated by the main presenter's acceptance in that moment: the
+      // same.
+      const incorporated = new Map(byId)
+        .set("s1", { ...s1, status: "submitted", decidedAt: null })
+        .set("s2", {
+          ...s2,
+          status: "approved",
+          approvalMethod: "proponent",
+          decidedAt: at,
+        });
+      expect(sessionClosingSourceIds(t5, incorporated)).toEqual(["s2"]);
+      // Withdrawn earlier by whoever proposed it: an ordinary withdrawal.
+      const earlier = { ...t5, decidedAt: "2026-01-02T09:00:00Z" };
+      expect(sessionClosingSourceIds(earlier, byId)).toEqual([]);
+      expect(sessionAmendmentStage(earlier, byId)).toBe("withdrawn");
+      // The source was reopened since: nothing to name.
+      expect(
+        sessionClosingSourceIds(
+          t5,
+          new Map(byId).set("s1", { ...s1, status: "submitted" }),
+        ),
+      ).toEqual([]);
+      // Reopened and settled again later: the instants no longer match, and
+      // without the server naming the closure it reads as a withdrawal.
+      const settledAgain = new Map(byId).set("s1", {
+        ...s1,
+        decidedAt: "2026-01-02T11:00:00Z",
+      });
+      expect(sessionClosingSourceIds(t5, settledAgain)).toEqual([]);
+      expect(sessionAmendmentStage(t5, settledAgain)).toBe("withdrawn");
+      // Turned down by a main author: that is what it says.
+      const rejected = {
+        ...t5,
+        acceptances: [party("ceum", "accepted"), party("upv", "rejected")],
+      };
+      expect(sessionClosingSourceIds(rejected, byId)).toEqual([]);
+      expect(sessionAmendmentStage(rejected, byId)).toBe("turned_down");
+      // Still presented, or not a transactional: nothing.
+      expect(
+        sessionClosingSourceIds({ ...t5, status: "submitted" }, byId),
+      ).toEqual([]);
+      expect(
+        sessionClosingSourceIds(
+          { ...s2, status: "withdrawn", decidedAt: at, sourceIds: ["s1"] },
+          byId,
+        ),
+      ).toEqual([]);
+    });
+
+    it("names the transactional that got ahead of a lapsed one", () => {
+      // T1 and T2 both group s1. T2 was accepted by everyone and validated
+      // first: s1 turned transacted and, in that same moment, the server let
+      // T1 lapse (no outcome note).
+      const at = "2026-01-02T10:00:00.000Z";
+      const s1 = am("s1", {
+        status: "transacted",
+        decidedAt: at,
+        transactionalIds: ["t1", "t2"],
+      });
+      const s2 = am("s2", { transactionalIds: ["t1"] });
+      const t1 = am("t1", {
+        kind: "transactional",
+        status: "lapsed",
+        decidedAt: "2026-01-02T10:00:00Z",
+        sourceIds: ["s1", "s2"],
+        acceptances: [party("ceum", "accepted"), party("upv", "pending")],
+      });
+      const t2 = am("t2", {
+        kind: "transactional",
+        sourceIds: ["s1"],
+        acceptances: [party("ceum", "accepted")],
+      });
+      const byId = new Map([s1, s2, t1, t2].map((x) => [x.id, x]));
+      expect(sessionLapsingTransactionalIds(t1, byId)).toEqual(["t2"]);
+      // Still a lapsed amendment: the badge keeps its status.
+      expect(sessionAmendmentStage(t1, byId)).toBe("lapsed");
+      // The Mesa declared it lapsed at another moment: nothing to name.
+      expect(
+        sessionLapsingTransactionalIds(
+          { ...t1, decidedAt: "2026-01-02T12:00:00Z" },
+          byId,
+        ),
+      ).toEqual([]);
+      // What it grouped is not loaded: nothing to name either.
+      expect(sessionLapsingTransactionalIds(t1, new Map([["t1", t1]]))).toEqual(
+        [],
+      );
+      // The transactional that replaced s1 is not loaded: kept by id, it
+      // may be the one, but never the lapsed one itself.
+      expect(
+        sessionLapsingTransactionalIds(
+          t1,
+          new Map([
+            ["s1", s1],
+            ["t1", t1],
+          ]),
+        ),
+      ).toEqual(["t2"]);
+      // Turned down by a main author, or not lapsed: not this.
+      expect(
+        sessionLapsingTransactionalIds(
+          { ...t1, acceptances: [party("upv", "rejected")] },
+          byId,
+        ),
+      ).toEqual([]);
+      expect(
+        sessionLapsingTransactionalIds({ ...t1, status: "withdrawn" }, byId),
+      ).toEqual([]);
+      expect(
+        sessionLapsingTransactionalIds(
+          { ...s2, status: "lapsed", decidedAt: at, sourceIds: ["s1"] },
+          byId,
+        ),
+      ).toEqual([]);
+    });
+
     it("tells what a transactional replaced and what replaced an amendment", () => {
       const s1 = am("s1", { status: "transacted", transactionalIds: ["t2"] });
       const s2 = am("s2", { transactionalIds: ["tx", "t2"] });
@@ -997,6 +1145,124 @@ describe("session model", () => {
       expect(
         sessionReplacingIds({ ...s1, transactionalIds: ["zz"] }, byId),
       ).toEqual(["zz"]);
+    });
+  });
+
+  describe("the main presenter's answer", () => {
+    const can = (over: Partial<AmendmentDto["can"]>) => ({
+      ...a1.can,
+      moderate: false,
+      ...over,
+    });
+    const answerable = am("p", { can: can({ position: true }) });
+    const none = { waitsPublication: false, acceptBlocked: false };
+
+    it("is recorded only on published amendments, until the final vote", () => {
+      expect(sessionPositionMenu(answerable, "vote", false)).toEqual(none);
+      expect(sessionPositionMenu(answerable, "incorporate", false)).toEqual(
+        none,
+      );
+      // After the final vote nothing changes.
+      expect(sessionPositionMenu(answerable, "vote", true)).toBe(null);
+      // Nobody here may record it.
+      expect(
+        sessionPositionMenu(am("p", { can: can({}) }), "vote", false),
+      ).toBe(null);
+      // Decided, except an incorporated one: changing its answer takes it
+      // out of the text again.
+      expect(
+        sessionPositionMenu(
+          { ...answerable, status: "rejected" },
+          "vote",
+          false,
+        ),
+      ).toBe(null);
+      expect(
+        sessionPositionMenu(
+          { ...answerable, status: "approved", approvalMethod: "proponent" },
+          "incorporate",
+          false,
+        ),
+      ).toEqual(none);
+      // Not validated, or late and not admitted: not the presenter's yet.
+      expect(
+        sessionPositionMenu(
+          unvalidated("u", { can: can({ moderate: true }) }),
+          "vote",
+          false,
+        ),
+      ).toBe(null);
+      expect(
+        sessionPositionMenu(
+          { ...a4, can: can({ moderate: true }) },
+          "vote",
+          false,
+        ),
+      ).toBe(null);
+    });
+
+    it("waits for the Secretaría to publish a private one", () => {
+      const hidden = am("h", {
+        publishedAt: null,
+        reviewState: "validated",
+        can: can({ moderate: true }),
+      });
+      // The Mesa sees it disabled: every answer waits for publication, and
+      // under "incorporate" accepting would put unpublished text in.
+      expect(sessionPositionMenu(hidden, "incorporate", false)).toEqual({
+        waitsPublication: true,
+        acceptBlocked: true,
+      });
+      expect(sessionPositionMenu(hidden, "vote", false)).toEqual({
+        waitsPublication: true,
+        acceptBlocked: false,
+      });
+      // Even where the server would still take the answer.
+      expect(
+        sessionPositionMenu(
+          { ...hidden, can: can({ position: true }) },
+          "vote",
+          false,
+        ),
+      ).toEqual({ waitsPublication: true, acceptBlocked: false });
+      // Nobody else is shown anything.
+      expect(
+        sessionPositionMenu({ ...hidden, can: can({}) }, "vote", false),
+      ).toBe(null);
+      expect(sessionPositionMenu(hidden, "vote", true)).toBe(null);
+      // A transactional some main author has not accepted: not yet.
+      expect(
+        sessionPositionMenu(
+          {
+            ...hidden,
+            kind: "transactional",
+            acceptances: [
+              {
+                member: { id: "m", acronym: "M", name: "M", kind: "asociado" },
+                role: "author",
+                decision: "pending",
+                decidedAt: null,
+              },
+            ],
+          },
+          "vote",
+          false,
+        ),
+      ).toBe(null);
+    });
+
+    it("says when the Mesa recorded it for the main presenter", () => {
+      const position = (
+        value: "accept" | "pending",
+        recordedBy: "presenter" | "mesa",
+      ) => ({ position: value, comment: null, recordedBy, updatedAt: "" });
+      expect(isSessionPositionByMesa(position("accept", "mesa"))).toBe(true);
+      expect(isSessionPositionByMesa(position("accept", "presenter"))).toBe(
+        false,
+      );
+      // Set back to pending: nobody answered.
+      expect(isSessionPositionByMesa(position("pending", "mesa"))).toBe(false);
+      expect(isSessionPositionByMesa(null)).toBe(false);
     });
   });
 
@@ -1151,6 +1417,7 @@ describe("session model", () => {
       // Nor is it approved in bulk by assent.
       const accept = {
         position: "accept" as const,
+        recordedBy: "presenter" as const,
         comment: null,
         updatedAt: "",
       };

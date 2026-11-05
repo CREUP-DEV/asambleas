@@ -3,7 +3,8 @@ import type { DocumentSummaryDto } from "~~/shared/types/api";
 
 /**
  * A presented document waiting for the Secretaría: what it is, who presents
- * it (the main presenter, then any co-presenters) and since when, with
+ * it (the main presenter, then at most two co-presenters before "N más")
+ * and since when, with
  * "Validar y publicar" as the main action and "Pedir corrección" next to
  * it. The parent runs both.
  */
@@ -26,8 +27,6 @@ const { t, locale } = useI18n();
 const now = useAppNow();
 
 const titleId = useId();
-
-const coPresenters = computed(() => props.document.coProponents ?? []);
 
 const submittedRelative = computed(() =>
   props.document.submittedAt
@@ -85,22 +84,15 @@ const submittedAbsolute = computed(() =>
       </p>
     </div>
 
-    <div class="flex flex-wrap items-center gap-2 text-sm">
+    <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
       <span class="text-muted">{{ t("review.presentedBy") }}</span>
-      <CommonMemberBadge
+      <DocumentPresenters
         v-if="document.proponent"
-        :member="document.proponent"
+        :document="document"
+        :max-others="2"
         show-name
       />
       <span v-else class="text-dimmed">{{ t("review.noPresenter") }}</span>
-      <template v-if="coPresenters.length > 0">
-        <span class="text-muted">{{ t("review.togetherWith") }}</span>
-        <CommonMemberBadge
-          v-for="member in coPresenters"
-          :key="member.id"
-          :member="member"
-        />
-      </template>
     </div>
 
     <p class="text-muted flex items-start gap-1.5 text-sm">

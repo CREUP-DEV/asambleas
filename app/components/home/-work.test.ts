@@ -18,7 +18,7 @@ import {
   homeWorkNews,
   homeWorkNewsDeduped,
   homeWorkNewsItem,
-  homeWorkOwnAmendmentIds,
+  homeWorkNewsLink,
   homeWorkProponentCounts,
   homeWorkReviewPending,
   homeWorkReviewTotal,
@@ -93,6 +93,7 @@ const upv = {
   kind: "asociado" as const,
 };
 
+/** Someone else's amendment unless a test says the member authored it. */
 const news = (
   id: string,
   over: Partial<MeWorkNewsDto> = {},
@@ -101,6 +102,7 @@ const news = (
   assembly: ago,
   document: { id: "d1", slug: "d1", title: "Resolución" },
   amendment: { id: "e2", code: "CEUM 2" },
+  ownAmendment: false,
   type: "position_changed",
   by: upv,
   value: "accept",
@@ -367,7 +369,8 @@ describe("home work", () => {
   });
 
   describe("news", () => {
-    const own = new Set(["e2"]);
+    /** The member authored the amendment the news is about. */
+    const mine = { ownAmendment: true };
     const words = (item: ReturnType<typeof homeWorkNewsItem>) => ({
       sentence: item.sentence.key,
       who: item.who
@@ -380,14 +383,14 @@ describe("home work", () => {
     });
 
     it("says what the main presenter answered", () => {
-      expect(words(homeWorkNewsItem(news("n"), own))).toEqual({
+      expect(words(homeWorkNewsItem(news("n", mine)))).toEqual({
         sentence: "home.news.position.accept",
         who: ["home.news.who.mainPresenter", { member: "UPV" }],
         // The amendment is the user's own: "tu enmienda CEUM 2".
         phrase: ["home.news.phrase.yourAmendment", { code: "CEUM 2" }],
         tone: "success",
       });
-      // Not provably the user's (a co-presented document): neutral wording.
+      // Someone else's, in a document the member co-presents: neutral.
       expect(
         words(homeWorkNewsItem(news("n", { value: "reject" }))),
       ).toMatchObject({
@@ -395,39 +398,99 @@ describe("home work", () => {
         phrase: ["home.news.phrase.amendment", { code: "CEUM 2" }],
         tone: "error",
       });
-      // Recorded by the Mesa on its behalf, or an unknown answer.
+      // Recorded by the Mesa before answers named the main presenter, or an
+      // unknown answer.
       expect(
-        words(homeWorkNewsItem(news("n", { by: null, value: "maybe" }), own)),
+        words(homeWorkNewsItem(news("n", { ...mine, by: null, value: "x" }))),
       ).toMatchObject({
         sentence: "home.news.position.pending",
         who: ["home.news.who.mainPresenterUnknown", {}],
       });
     });
 
-    it("says what a main author answered to a transactional", () => {
+    it("leads co-presenters to the review of the main presenter's answers", () => {
+      // A co-presenter reads the answer to someone else's amendment in the
+      // read-only review, on that amendment.
+      const answer = homeWorkNewsItem(news("n"));
+      expect(answer.target).toBe("review");
+      expect(homeWorkNewsLink(answer)).toBe("/revisar?enmienda=e2");
+      // The answer to the member's own amendment opens the document on it.
+      const own = homeWorkNewsItem(news("n", mine));
+      expect(own.target).toBe("document");
+      expect(homeWorkNewsLink(own)).toBe("?enmienda=e2");
+      // Everything else opens the document, with the amendment if any.
+      const voted = homeWorkNewsItem(
+        news("n", { ...mine, type: "amendment_rejected", value: null }),
+      );
+      expect(voted.target).toBe("document");
+      expect(
+        homeWorkNewsLink(
+          homeWorkNewsItem(
+            news("n", {
+              type: "document_published",
+              amendment: null,
+              value: null,
+            }),
+          ),
+        ),
+      ).toBe("");
+    });
+
+    it("says what a main author answered to the member's transactional", () => {
+      const rejected = news("n", {
+        ...mine,
+        type: "acceptance_recorded",
+        amendment: { id: "t2", code: "T2" },
+        by: { ...upv, acronym: "CAUB" },
+        value: "rejected",
+      });
+      expect(words(homeWorkNewsItem(rejected))).toEqual({
+        sentence: "home.news.acceptance.rejected",
+        who: "CAUB",
+        phrase: ["home.news.phrase.yourTransactional", { code: "T2" }],
+        tone: "error",
+      });
+      expect(
+        words(homeWorkNewsItem({ ...rejected, value: "accepted" })),
+      ).toMatchObject({
+        sentence: "home.news.acceptance.accepted",
+        phrase: ["home.news.phrase.yourTransactional", { code: "T2" }],
+        tone: "success",
+      });
+      expect(
+        homeWorkNewsItem({ ...rejected, value: "pending" }).sentence.key,
+      ).toBe("home.news.acceptance.pending");
+      // Unknown party: still a sentence.
+      expect(homeWorkNewsItem({ ...rejected, by: null }).who).toEqual({
+        key: "home.news.who.mainAuthorUnknown",
+        params: {},
+      });
+    });
+
+    it("says what a transactional over the member's amendment means for it", () => {
+      // "CAUB rechazó la transaccional T2: sigue tu enmienda."
       const rejected = news("n", {
         type: "acceptance_recorded",
         amendment: { id: "t2", code: "T2" },
         by: { ...upv, acronym: "CAUB" },
         value: "rejected",
       });
-      expect(words(homeWorkNewsItem(rejected, own))).toEqual({
-        sentence: "home.news.acceptance.rejected",
+      expect(words(homeWorkNewsItem(rejected))).toEqual({
+        sentence: "home.news.acceptance.rejectedOverYours",
         who: "CAUB",
         phrase: ["home.news.phrase.transactional", { code: "T2" }],
-        tone: "error",
+        // The member's amendment carries on: not bad news for it.
+        tone: "neutral",
       });
       expect(
-        homeWorkNewsItem({ ...rejected, value: "accepted" }).sentence.key,
-      ).toBe("home.news.acceptance.accepted");
-      // A transactional the member proposed, still open: "tu transaccional".
-      expect(
-        homeWorkNewsItem({ ...rejected, value: "accepted" }, new Set(["t2"]))
-          .phrase,
-      ).toEqual({
-        key: "home.news.phrase.yourTransactional",
-        params: { code: "T2" },
+        words(homeWorkNewsItem({ ...rejected, value: "accepted" })),
+      ).toMatchObject({
+        sentence: "home.news.acceptance.acceptedOverYours",
+        phrase: ["home.news.phrase.transactional", { code: "T2" }],
+        tone: "neutral",
       });
+      // Not a position: it opens the document on the transactional.
+      expect(homeWorkNewsItem(rejected).target).toBe("document");
     });
 
     it("names the main presenter who incorporated an amendment", () => {
@@ -436,7 +499,11 @@ describe("home work", () => {
       expect(
         words(
           homeWorkNewsItem(
-            news("n", { type: "amendment_approved", value: "proponent" }),
+            news("n", {
+              ...mine,
+              type: "amendment_approved",
+              value: "proponent",
+            }),
           ),
         ),
       ).toEqual({
@@ -447,6 +514,60 @@ describe("home work", () => {
       });
     });
 
+    it("says plainly why a transactional was closed", () => {
+      const closed = (value: string | null, own: boolean) =>
+        homeWorkNewsItem(
+          news("n", {
+            type: "amendment_withdrawn",
+            amendment: { id: "t2", code: "T2" },
+            ownAmendment: own,
+            by: null,
+            value,
+          }),
+        );
+      // Closed on its own: CEUM 2, which it groups, was settled first (the
+      // value names it). The member's own transactional, or one over its
+      // amendment (a party).
+      expect(words(closed("CEUM 2", true))).toEqual({
+        sentence: "home.news.amendment.closedBy",
+        who: null,
+        phrase: ["home.news.phrase.yourTransactional", { code: "T2" }],
+        tone: "neutral",
+      });
+      expect(closed("CEUM 2", true).sentence.params).toEqual({
+        code: "CEUM 2",
+      });
+      expect(words(closed("CEUM 2", false))).toMatchObject({
+        sentence: "home.news.amendment.closedBy",
+        phrase: ["home.news.phrase.transactional", { code: "T2" }],
+      });
+      // Withdrawn by whoever proposed it or by the Mesa: no value.
+      expect(closed(null, true).sentence).toEqual({
+        key: "home.news.amendment.withdrawn",
+        params: {},
+      });
+      // Left behind because another transactional replaced what it groups.
+      expect(
+        homeWorkNewsItem(
+          news("n", {
+            type: "amendment_lapsed",
+            amendment: { id: "t1", code: "T1" },
+            by: null,
+            value: "T2",
+          }),
+        ),
+      ).toMatchObject({
+        sentence: {
+          key: "home.news.amendment.lapsedBy",
+          params: { code: "T2" },
+        },
+        phrase: {
+          key: "home.news.phrase.transactional",
+          params: { code: "T1" },
+        },
+      });
+    });
+
     it("says one decision once", () => {
       const at = "2026-11-04T10:00:00Z";
       const t2 = { id: "t2", code: "T2" };
@@ -454,6 +575,7 @@ describe("home work", () => {
       // in the same transaction.
       const rejection = [
         news("r1", {
+          ...mine,
           type: "acceptance_recorded",
           amendment: t2,
           by: { ...upv, acronym: "CAUB" },
@@ -461,6 +583,7 @@ describe("home work", () => {
           at,
         }),
         news("r2", {
+          ...mine,
           type: "amendment_withdrawn",
           amendment: t2,
           by: null,
@@ -479,21 +602,31 @@ describe("home work", () => {
       // The main presenter accepts, which incorporates it: the
       // incorporation names who, the bare answer goes.
       const accepted = [
-        news("p1", { at }),
-        news("p2", { type: "amendment_approved", value: "proponent", at }),
+        news("p1", { ...mine, at }),
+        news("p2", {
+          ...mine,
+          type: "amendment_approved",
+          value: "proponent",
+          at,
+        }),
       ];
       expect(homeWorkNewsDeduped(accepted).map((x) => x.id)).toEqual(["p2"]);
       // Takes it out again: the answer says so, the reopening goes.
       const changed = [
-        news("c1", { value: "reject", at }),
-        news("c2", { type: "amendment_reopened", value: null, at }),
+        news("c1", { ...mine, value: "reject", at }),
+        news("c2", { ...mine, type: "amendment_reopened", value: null, at }),
       ];
       expect(homeWorkNewsDeduped(changed).map((x) => x.id)).toEqual(["c1"]);
-      // Another amendment at the same time is another decision.
+      // Another amendment at the same time is another decision: the
+      // amendment settled and the transactional it closed on its own.
       expect(
         homeWorkNewsDeduped([
           rejection[0]!,
-          { ...rejection[1]!, amendment: { id: "t3", code: "T3" } },
+          {
+            ...rejection[1]!,
+            amendment: { id: "t3", code: "T3" },
+            value: "CEUM 2",
+          },
         ]).map((x) => x.id),
       ).toEqual(["r1", "r2"]);
       expect(
@@ -501,33 +634,6 @@ describe("home work", () => {
           (x) => x.key,
         ),
       ).toEqual(["p2", "r1"]);
-    });
-
-    it("names the member's own amendments once they are decided", () => {
-      // Settled, so no longer in the work list, but the server only sends
-      // these for amendments the member authored.
-      const approved = homeWorkNewsItem(
-        news("n", { type: "amendment_approved", value: "vote", by: null }),
-      );
-      expect(approved.phrase).toEqual({
-        key: "home.news.phrase.yourAmendment",
-        params: { code: "CEUM 2" },
-      });
-      expect(approved.tone).toBe("success");
-      // A transactional it proposed, closed because a main author said no.
-      expect(
-        homeWorkNewsItem(
-          news("n", {
-            type: "amendment_withdrawn",
-            amendment: { id: "t2", code: "T2" },
-            value: null,
-          }),
-        ).phrase?.key,
-      ).toBe("home.news.phrase.yourTransactional");
-      // A main presenter's answer on a co-presented document stays neutral.
-      expect(homeWorkNewsItem(news("n")).phrase?.key).toBe(
-        "home.news.phrase.amendment",
-      );
     });
 
     it("tells transactional codes apart", () => {
@@ -540,7 +646,8 @@ describe("home work", () => {
 
     it("words decisions of the Secretaría and the assembly", () => {
       const key = (over: Partial<MeWorkNewsDto>) =>
-        homeWorkNewsItem(news("n", { by: null, ...over }), own).sentence.key;
+        homeWorkNewsItem(news("n", { ...mine, by: null, ...over })).sentence
+          .key;
       expect(key({ type: "amendment_approved", value: "proponent" })).toBe(
         "home.news.amendment.incorporated",
       );
@@ -565,7 +672,12 @@ describe("home work", () => {
       );
       // Named after the transactional that replaced it.
       const transacted = homeWorkNewsItem(
-        news("n", { type: "amendment_transacted", value: "T2", by: null }),
+        news("n", {
+          ...mine,
+          type: "amendment_transacted",
+          value: "T2",
+          by: null,
+        }),
       );
       expect(transacted.sentence).toEqual({
         key: "home.news.amendment.transactedBy",
@@ -575,6 +687,7 @@ describe("home work", () => {
       // A transactional of the member that another one got ahead of.
       const behind = homeWorkNewsItem(
         news("n", {
+          ...mine,
           type: "amendment_lapsed",
           amendment: { id: "t1", code: "T1" },
           value: "T2",
@@ -608,46 +721,50 @@ describe("home work", () => {
         homeWorkNewsItem(news("n", { amendment: { id: "x", code: null } }))
           .phrase?.key,
       ).toBe("home.news.phrase.someAmendment");
+      // A document's news names no amendment, even if flagged as own.
+      expect(
+        homeWorkNewsItem(
+          news("n", { ...mine, type: "document_published", amendment: null }),
+        ).phrase,
+      ).toBe(null);
     });
 
-    it("lists the latest first and knows the user's amendments", () => {
+    it("lists the latest first and says whose amendment it is as the server does", () => {
       const work = empty({
-        amendments: [amend("e1")],
-        acceptances: [answer("t3", ["CEUM 5"])],
         news: [
           news("old", { at: "2026-11-01T10:00:00Z" }),
           news("new", {
+            ...mine,
             at: "2026-11-05T09:00:00Z",
             amendment: { id: "e1", code: "E1" },
           }),
+          // Decided and gone from the work list: still the member's.
+          news("voted", {
+            ...mine,
+            type: "amendment_rejected",
+            by: null,
+            value: null,
+            at: "2026-11-03T10:00:00Z",
+          }),
         ],
       });
-      expect([...homeWorkOwnAmendmentIds(work)].sort()).toEqual([
-        "ceum 5",
-        "e1",
-      ]);
       const items = homeWorkNews(work);
-      expect(items.map((item) => item.key)).toEqual(["new", "old"]);
-      expect(items[0]!.phrase?.key).toBe("home.news.phrase.yourAmendment");
-      expect(items[1]!.phrase?.key).toBe("home.news.phrase.amendment");
-      // Decided and gone from the work list, but the news settling it say
-      // it is the member's: the main presenter's answer says "tu enmienda".
-      const decided = homeWorkNews(
-        empty({
-          news: [
-            news("answer", { at: "2026-11-03T10:00:00Z" }),
-            news("voted", {
-              type: "amendment_rejected",
-              by: null,
-              value: null,
-              at: "2026-11-05T10:00:00Z",
-            }),
-          ],
-        }),
-      );
-      expect(decided.map((item) => item.phrase?.key)).toEqual([
+      expect(items.map((item) => item.key)).toEqual(["new", "voted", "old"]);
+      expect(items.map((item) => item.phrase?.key)).toEqual([
         "home.news.phrase.yourAmendment",
         "home.news.phrase.yourAmendment",
+        "home.news.phrase.amendment",
+      ]);
+      // Nothing in the work list makes someone else's amendment "tu
+      // enmienda": only the server's flag does.
+      expect(
+        homeWorkNews({ ...work, amendments: [amend("e2")] }).map(
+          (item) => item.phrase?.key,
+        ),
+      ).toEqual([
+        "home.news.phrase.yourAmendment",
+        "home.news.phrase.yourAmendment",
+        "home.news.phrase.amendment",
       ]);
     });
   });

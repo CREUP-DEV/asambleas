@@ -8,6 +8,7 @@ import {
   authorsApproval,
   awaitsAssemblyDecision,
   awaitsAuthors,
+  awaitsPartyAnswer,
   awaitsPublication,
   awaitsValidation,
   countPositionsPending,
@@ -19,6 +20,9 @@ import {
   pickMainAuthor,
   positionBlocker,
   positionEffect,
+  positionRecordedBy,
+  publishOnValidation,
+  POSITION_BLOCKER_MESSAGES,
   replacesSources,
   submissionLate,
   transactionalReopenBlocker,
@@ -409,6 +413,7 @@ describe("position of the main presenter", () => {
     status: "submitted" as const,
     admission: "admitted" as const,
     validatedAt: at,
+    publishedAt: at,
     approvalMethod: null,
   };
 
@@ -423,6 +428,33 @@ describe("position of the main presenter", () => {
     expect(
       positionBlocker({ ...answerable, admission: "pending" }, "vote"),
     ).toBe("not_admitted");
+  });
+
+  it("answers only what every delegate can read, under either rule", () => {
+    const kept = { ...answerable, publishedAt: null };
+    expect(positionBlocker(kept, "vote")).toBe("not_published");
+    expect(positionBlocker(kept, "incorporate")).toBe("not_published");
+    // A late one waits for the assembly first: admitting it publishes it.
+    expect(positionBlocker({ ...kept, admission: "pending" }, "vote")).toBe(
+      "not_admitted",
+    );
+  });
+
+  it("changes nothing once the document is voted", () => {
+    expect(positionBlocker(answerable, "vote", true)).toBe("voted");
+    expect(
+      positionBlocker(
+        {
+          ...answerable,
+          status: "approved",
+          approvalMethod: "proponent",
+        },
+        "incorporate",
+        true,
+      ),
+    ).toBe("voted");
+    expect(POSITION_BLOCKER_MESSAGES.voted).toMatch(/votado/);
+    expect(POSITION_BLOCKER_MESSAGES.not_published).toMatch(/publicado/);
   });
 
   it("waits for the main authors of a transactional", () => {
@@ -529,16 +561,18 @@ describe("countPositionsPending", () => {
         ],
         "vote",
       ),
-    ).toBe(2);
+    ).toBe(1);
   });
 
-  it("waits for publication when an answer can incorporate the amendment", () => {
-    expect(
-      countPositionsPending(
-        [amendment(), amendment({ publishedAt: null })],
-        "incorporate",
-      ),
-    ).toBe(1);
+  it("waits for publication under either rule", () => {
+    for (const rule of ["vote", "incorporate"] as const) {
+      expect(
+        countPositionsPending(
+          [amendment(), amendment({ publishedAt: null })],
+          rule,
+        ),
+      ).toBe(1);
+    }
   });
 });
 
@@ -793,5 +827,140 @@ describe("agendaPositions", () => {
     ]);
     expect(position.get("x")).toBe(0);
     expect(position.get("a")).toBe(1);
+  });
+});
+
+describe("positionRecordedBy", () => {
+  it("says the main presenter answered when its own account did", () => {
+    expect(
+      positionRecordedBy({
+        decidedByUserId: "u1",
+        recorderMemberId: "main",
+        mainPresenterId: "main",
+      }),
+    ).toBe("presenter");
+  });
+
+  it("says the Mesa recorded it when someone else did", () => {
+    expect(
+      positionRecordedBy({
+        decidedByUserId: "u2",
+        recorderMemberId: "mesa",
+        mainPresenterId: "main",
+      }),
+    ).toBe("mesa");
+    // An account that acts for no member, or one no longer found.
+    expect(
+      positionRecordedBy({
+        decidedByUserId: "u2",
+        recorderMemberId: null,
+        mainPresenterId: "main",
+      }),
+    ).toBe("mesa");
+    expect(
+      positionRecordedBy({
+        decidedByUserId: "u2",
+        recorderMemberId: undefined,
+        mainPresenterId: null,
+      }),
+    ).toBe("mesa");
+  });
+
+  it("counts a row nobody answered as the presenter's", () => {
+    expect(
+      positionRecordedBy({
+        decidedByUserId: null,
+        recorderMemberId: null,
+        mainPresenterId: "main",
+      }),
+    ).toBe("presenter");
+  });
+
+  it("keeps who recorded it when the document gets another main presenter", () => {
+    // The former main presenter answered; "new" presents it now.
+    expect(
+      positionRecordedBy({
+        decidedByUserId: "u1",
+        recordedAs: "proponent",
+        recorderMemberId: "former",
+        mainPresenterId: "new",
+      }),
+    ).toBe("presenter");
+    // The Mesa answered for a main presenter whose account it shares now.
+    expect(
+      positionRecordedBy({
+        decidedByUserId: "u2",
+        recordedAs: "moderator",
+        recorderMemberId: "new",
+        mainPresenterId: "new",
+      }),
+    ).toBe("mesa");
+    // Also when the user who recorded it is gone.
+    expect(
+      positionRecordedBy({
+        decidedByUserId: null,
+        recordedAs: "moderator",
+        recorderMemberId: null,
+        mainPresenterId: "main",
+      }),
+    ).toBe("mesa");
+  });
+
+  it("compares members when the event does not say", () => {
+    expect(
+      positionRecordedBy({
+        decidedByUserId: "u1",
+        recordedAs: undefined,
+        recorderMemberId: "main",
+        mainPresenterId: "main",
+      }),
+    ).toBe("presenter");
+    expect(
+      positionRecordedBy({
+        decidedByUserId: "u2",
+        recordedAs: "something else",
+        recorderMemberId: "other",
+        mainPresenterId: "main",
+      }),
+    ).toBe("mesa");
+  });
+});
+
+describe("publishOnValidation", () => {
+  it("publishes as the Secretaría chose", () => {
+    expect(publishOnValidation({ kind: "partial" }, true)).toBe(true);
+    expect(publishOnValidation({ kind: "partial" }, false)).toBe(false);
+  });
+
+  it("always publishes a transactional", () => {
+    expect(publishOnValidation({ kind: "transactional" }, false)).toBe(true);
+    expect(publishOnValidation({ kind: "transactional" }, true)).toBe(true);
+  });
+});
+
+describe("awaitsPartyAnswer", () => {
+  const open = {
+    status: "submitted" as const,
+    memberId: "m1",
+    parties: [
+      { memberId: "m1", decision: "pending" as const },
+      { memberId: "m2", decision: "accepted" as const },
+    ],
+    sourcesOpen: true,
+    voted: false,
+  };
+
+  it("asks a party that has not answered a transactional it can still take", () => {
+    expect(awaitsPartyAnswer(open)).toBe(true);
+    expect(awaitsPartyAnswer({ ...open, memberId: "m2" })).toBe(false);
+    expect(awaitsPartyAnswer({ ...open, memberId: "m3" })).toBe(false);
+    expect(awaitsPartyAnswer({ ...open, memberId: null })).toBe(false);
+  });
+
+  it("stops asking once it cannot go through", () => {
+    expect(awaitsPartyAnswer({ ...open, sourcesOpen: false })).toBe(false);
+    expect(awaitsPartyAnswer({ ...open, status: "withdrawn" })).toBe(false);
+    expect(awaitsPartyAnswer({ ...open, status: "draft" })).toBe(false);
+    expect(awaitsPartyAnswer({ ...open, voted: true })).toBe(false);
   });
 });

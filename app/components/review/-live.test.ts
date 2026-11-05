@@ -22,16 +22,23 @@ describe("affectsReviewQueue", () => {
     expect(affectsReviewQueue([{ type: "amendment_transacted" }])).toBe(true);
   });
 
+  it("reacts to outcomes, which close transactionals still waiting", () => {
+    expect(affectsReviewQueue([{ type: "amendment_approved" }])).toBe(true);
+    expect(affectsReviewQueue([{ type: "amendment_rejected" }])).toBe(true);
+    expect(affectsReviewQueue([{ type: "document_voted" }])).toBe(true);
+    expect(affectsReviewQueue([{ type: "final_vote_annulled" }])).toBe(true);
+  });
+
   it("reacts to the polling fallback, when anything may have changed", () => {
     expect(affectsReviewQueue([{ type: "poll" }])).toBe(true);
   });
 
-  it("ignores votes, outcomes, positions and draft edits", () => {
+  it("ignores vote tallies, positions and draft edits", () => {
     expect(
       affectsReviewQueue([
         { type: "live_changed" },
         { type: "vote_recorded" },
-        { type: "amendment_approved" },
+        { type: "position_changed" },
         { type: "amendment_updated" },
         { type: "document_content_updated" },
       ]),

@@ -19,6 +19,8 @@ vi.mock("./visibility", () => ({
 const {
   NEWS_DOCUMENT_TYPES,
   NEWS_OUTCOME_TYPES,
+  isAutomaticClosure,
+  isNewsEvent,
   isOthersDecision,
   newsByMemberId,
   newsValue,
@@ -51,6 +53,33 @@ describe("newsValue", () => {
     expect(newsValue("amendment_approved", { method: "proponent" })).toBe(
       "proponent",
     );
+  });
+
+  it("names the transactional that replaced the amendment", () => {
+    expect(
+      newsValue("amendment_transacted", { transactionalId: "t", code: "T2" }),
+    ).toBe("T2");
+    expect(
+      newsValue("amendment_lapsed", {
+        reason: "sources_transacted",
+        transactionalId: "t",
+        code: "T2",
+      }),
+    ).toBe("T2");
+    // The Mesa lapsing an amendment names nobody.
+    expect(newsValue("amendment_lapsed", { by: "moderator" })).toBeNull();
+  });
+
+  it("names the amendment whose fate closed a transactional", () => {
+    expect(
+      newsValue("amendment_withdrawn", {
+        by: "sources_closed",
+        sourceId: "a",
+        sourceCode: "CEUM 4",
+        sourceStatus: "approved",
+      }),
+    ).toBe("CEUM 4");
+    expect(newsValue("amendment_withdrawn", { by: "author" })).toBeNull();
   });
 
   it("says how a document was settled", () => {
@@ -101,10 +130,95 @@ describe("newsByMemberId", () => {
     ).toBe("presenter");
   });
 
-  it("credits nobody for an older answer the Mesa recorded", () => {
+  it("credits the document's main presenter for an older answer the Mesa recorded", () => {
     expect(
       newsByMemberId("position_changed", { by: "moderator" }, "mesa"),
     ).toBeNull();
+    expect(
+      newsByMemberId(
+        "position_changed",
+        { by: "moderator" },
+        "mesa",
+        "presenter",
+      ),
+    ).toBe("presenter");
+  });
+
+  it("credits the main presenter for what its acceptance incorporated", () => {
+    expect(
+      newsByMemberId(
+        "amendment_approved",
+        { method: "proponent", byPosition: true, memberId: "presenter" },
+        "mesa",
+        "other",
+      ),
+    ).toBe("presenter");
+    // Recorded before the event named it, or by a change of rule.
+    expect(
+      newsByMemberId(
+        "amendment_approved",
+        { method: "proponent", reason: "rule_changed" },
+        "secretaria",
+        "presenter",
+      ),
+    ).toBe("presenter");
+    expect(
+      newsByMemberId(
+        "amendment_reopened",
+        { previousStatus: "approved", reason: "position_changed" },
+        "mesa",
+        "presenter",
+      ),
+    ).toBe("presenter");
+    // Approved by the Mesa or the assembly: whoever recorded it.
+    expect(
+      newsByMemberId(
+        "amendment_approved",
+        { method: "vote" },
+        "mesa",
+        "presenter",
+      ),
+    ).toBe("mesa");
+    expect(
+      newsByMemberId(
+        "amendment_reopened",
+        { previousStatus: "approved", reason: "rule_changed" },
+        "secretaria",
+        "presenter",
+      ),
+    ).toBe("secretaria");
+  });
+
+  it("names nobody for a transactional that closed by itself", () => {
+    // Whoever settled what it grouped did not decide about it.
+    expect(
+      newsByMemberId(
+        "amendment_withdrawn",
+        {
+          by: "sources_closed",
+          sourceId: "a",
+          sourceCode: "CEUM 4",
+          sourceStatus: "approved",
+        },
+        "mesa",
+        "presenter",
+      ),
+    ).toBeNull();
+    expect(
+      newsByMemberId(
+        "amendment_lapsed",
+        { reason: "sources_transacted", transactionalId: "t", code: "T2" },
+        "presenter",
+        "presenter",
+      ),
+    ).toBeNull();
+    // Withdrawn or lapsed by somebody: that somebody.
+    expect(newsByMemberId("amendment_withdrawn", { by: "author" }, "a")).toBe(
+      "a",
+    );
+    expect(
+      newsByMemberId("amendment_lapsed", { by: "moderator" }, "mesa"),
+    ).toBe("mesa");
   });
 
   it("names the member the actor acted for otherwise", () => {
@@ -157,6 +271,59 @@ describe("isOthersDecision", () => {
     ).toBe(false);
   });
 
+  it("leaves out what the member's own acceptance incorporated", () => {
+    const incorporated = event({
+      type: "amendment_approved",
+      payload: { method: "proponent", byPosition: true },
+      actorMemberId: "mesa",
+    });
+    expect(isOthersDecision(incorporated, me, "m")).toBe(false);
+    expect(isOthersDecision(incorporated, me, "presenter")).toBe(true);
+  });
+
+  it("keeps a transactional that closed by itself, also when the user's own act closed it", () => {
+    const closed = event({
+      type: "amendment_withdrawn",
+      payload: {
+        by: "sources_closed",
+        sourceId: "a",
+        sourceCode: "CEUM 4",
+        sourceStatus: "withdrawn",
+      },
+      actorUserId: "me",
+      actorMemberId: "m",
+    });
+    expect(isOthersDecision(closed, me)).toBe(true);
+    expect(
+      isOthersDecision(
+        event({
+          type: "amendment_lapsed",
+          payload: {
+            reason: "sources_transacted",
+            transactionalId: "t",
+            code: "T2",
+          },
+          actorUserId: "me",
+          actorMemberId: "m",
+        }),
+        me,
+        "m",
+      ),
+    ).toBe(true);
+    // Withdrawing its own amendment is still its own decision.
+    expect(
+      isOthersDecision(
+        event({
+          type: "amendment_withdrawn",
+          payload: { by: "author" },
+          actorUserId: "me",
+          actorMemberId: "m",
+        }),
+        me,
+      ),
+    ).toBe(false);
+  });
+
   it("keeps an answer the Mesa recorded for another main presenter", () => {
     expect(
       isOthersDecision(
@@ -167,5 +334,134 @@ describe("isOthersDecision", () => {
         me,
       ),
     ).toBe(true);
+  });
+});
+
+describe("isNewsEvent", () => {
+  const none = {
+    presented: false,
+    coPresented: false,
+    authored: false,
+    overOwn: false,
+  };
+  const onAmendment = (
+    type: string,
+    payload: Record<string, unknown> = {},
+  ) => ({
+    entityType: "amendment",
+    type,
+    payload,
+  });
+
+  it("tells co-presenters and authors the main presenter's answer", () => {
+    const answer = onAmendment("position_changed", { position: "accept" });
+    expect(isNewsEvent(answer, { ...none, coPresented: true })).toBe(true);
+    expect(isNewsEvent(answer, { ...none, authored: true })).toBe(true);
+    expect(isNewsEvent(answer, { ...none, overOwn: true })).toBe(false);
+    expect(isNewsEvent(answer, none)).toBe(false);
+  });
+
+  it("tells authors what was settled about their amendment", () => {
+    for (const type of NEWS_OUTCOME_TYPES) {
+      expect(isNewsEvent(onAmendment(type), { ...none, authored: true })).toBe(
+        true,
+      );
+    }
+    expect(
+      isNewsEvent(onAmendment("amendment_created"), {
+        ...none,
+        authored: true,
+      }),
+    ).toBe(false);
+  });
+
+  it("leaves out the withdrawal a main author's rejection caused", () => {
+    expect(
+      isNewsEvent(
+        onAmendment("amendment_withdrawn", {
+          by: "author_rejection",
+          memberId: "x",
+        }),
+        { ...none, authored: true, overOwn: true },
+      ),
+    ).toBe(false);
+    expect(
+      isNewsEvent(
+        onAmendment("acceptance_recorded", { decision: "rejected" }),
+        {
+          ...none,
+          overOwn: true,
+        },
+      ),
+    ).toBe(true);
+  });
+
+  it("tells the parties of a transactional that it closed by itself", () => {
+    const party = { ...none, overOwn: true };
+    expect(
+      isNewsEvent(
+        onAmendment("amendment_withdrawn", {
+          by: "sources_closed",
+          sourceId: "a",
+          sourceCode: "CEUM 4",
+          sourceStatus: "rejected",
+        }),
+        party,
+      ),
+    ).toBe(true);
+    expect(
+      isNewsEvent(
+        onAmendment("amendment_lapsed", {
+          reason: "sources_transacted",
+          transactionalId: "t",
+          code: "T2",
+        }),
+        party,
+      ),
+    ).toBe(true);
+    // Its own authors withdrawing it, or the Mesa, is theirs to tell.
+    expect(
+      isNewsEvent(onAmendment("amendment_withdrawn", { by: "author" }), party),
+    ).toBe(false);
+    expect(
+      isNewsEvent(onAmendment("amendment_lapsed", { by: "moderator" }), party),
+    ).toBe(false);
+    expect(isNewsEvent(onAmendment("amendment_approved"), party)).toBe(false);
+  });
+
+  it("tells presenters what was settled about their document", () => {
+    const published = {
+      entityType: "document",
+      type: "document_published",
+      payload: {},
+    };
+    expect(isNewsEvent(published, { ...none, presented: true })).toBe(true);
+    expect(isNewsEvent(published, { ...none, authored: true })).toBe(false);
+    expect(
+      isNewsEvent(
+        { ...published, type: "document_updated" },
+        { ...none, presented: true },
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("isAutomaticClosure", () => {
+  it("tells a transactional closed by itself from one somebody closed", () => {
+    expect(
+      isAutomaticClosure("amendment_withdrawn", { by: "sources_closed" }),
+    ).toBe(true);
+    expect(
+      isAutomaticClosure("amendment_lapsed", { reason: "sources_transacted" }),
+    ).toBe(true);
+    expect(isAutomaticClosure("amendment_withdrawn", { by: "moderator" })).toBe(
+      false,
+    );
+    expect(
+      isAutomaticClosure("amendment_withdrawn", { by: "author_rejection" }),
+    ).toBe(false);
+    expect(isAutomaticClosure("amendment_lapsed", { by: "moderator" })).toBe(
+      false,
+    );
   });
 });
