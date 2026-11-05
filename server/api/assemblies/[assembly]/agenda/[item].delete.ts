@@ -12,6 +12,7 @@ import {
   lockAssembly,
   throwAssemblyMutationError,
 } from "../../../../utils/domain/assemblies";
+import { agendaSubtreeEntries } from "../../../../utils/domain/changes";
 import { recordEvent } from "../../../../utils/domain/events";
 import {
   resolveAgendaItem,
@@ -42,10 +43,8 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
       const current = await lockAssembly(tx, assembly.id);
       if (item.parentId === null) assertRootsUnlocked(current);
 
-      const subtree = agendaSubtree(
-        await loadAgendaItems(assembly.id, tx),
-        item.id,
-      );
+      const items = await loadAgendaItems(assembly.id, tx);
+      const subtree = agendaSubtree(items, item.id);
       if (await hasProtectedDocuments(tx, [...subtree])) {
         throw createError({
           statusCode: 409,
@@ -59,7 +58,12 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
         entityType: "agenda_item",
         entityId: item.id,
         type: "agenda_item_deleted",
-        payload: { parentId: item.parentId, deletedIds: [...subtree] },
+        payload: {
+          parentId: item.parentId,
+          deletedIds: [...subtree],
+          title: item.title,
+          deletedItems: agendaSubtreeEntries(items, item.id),
+        },
         actor,
       });
       await tx

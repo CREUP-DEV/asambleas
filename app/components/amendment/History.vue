@@ -27,7 +27,8 @@ import type { DecisionDto, EventDto, MemberRef } from "~~/shared/types/api";
  * behalf says so ("La Mesa, en nombre de CEUM, la aceptó"). Events carry
  * only the member's id: `members` (the transactional's parties, the
  * authors and the document's presenters) names it, and `labelOf` names the
- * amendments they point to.
+ * amendments they point to. What an Admin did while acting as an account
+ * says so to that account and to Admins (`impersonatedBy`).
  */
 const props = withDefaults(
   defineProps<{
@@ -54,6 +55,7 @@ const props = withDefaults(
 
 const { t, te, locale } = useI18n();
 const api = useApi();
+const { isAdmin } = useMe();
 const titleId = useId();
 
 const events = ref<EventDto[]>([]);
@@ -423,11 +425,28 @@ const items = computed<TimelineItem[]>(() =>
         : `amendment.history.events.${event.type}`;
     const detail = detailOf(event);
     const actor = actorOf(event);
+    // The server fills it only for the account acted as ("como tú") and
+    // for Admins, who are never that account: they read whose it was.
+    // (An account deleted since leaves no name: the Admin log still says it.)
+    const impersonated = !event.impersonatedBy
+      ? null
+      : !isAdmin.value
+        ? t("activity.impersonatedBy", { admin: event.impersonatedBy.name })
+        : event.actorName
+          ? t("activity.impersonatedByFor", {
+              admin: event.impersonatedBy.name,
+              actor: event.actorName,
+            })
+          : null;
     return {
       value: event.id,
       date: formatDateTime(event.createdAt, { locale: locale.value }),
       title: te(key) ? t(key) : t("amendment.history.events.other"),
-      description: [detail, actor ? t("amendment.history.by", { actor }) : null]
+      description: [
+        detail,
+        actor ? t("amendment.history.by", { actor }) : null,
+        impersonated,
+      ]
         .filter(Boolean)
         .join(" · "),
       icon: ICONS[event.type] ?? "i-lucide-circle-dot",

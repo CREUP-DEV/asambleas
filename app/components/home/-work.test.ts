@@ -382,6 +382,15 @@ describe("home work", () => {
       tone: item.tone,
     });
 
+    it("names the Admin who did it while acting as the account", () => {
+      expect(homeWorkNewsItem(news("n")).impersonatedBy).toBeNull();
+      expect(
+        homeWorkNewsItem(
+          news("n", { impersonatedBy: { id: "a".repeat(32), name: "Admin" } }),
+        ).impersonatedBy,
+      ).toBe("Admin");
+    });
+
     it("says what the main presenter answered", () => {
       expect(words(homeWorkNewsItem(news("n", mine)))).toEqual({
         sentence: "home.news.position.accept",

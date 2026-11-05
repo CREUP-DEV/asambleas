@@ -8,6 +8,8 @@ import {
   PERMISSION_KEYS,
   type PermissionKey,
 } from "~~/shared/constants/permissions";
+import { IMPERSONATION_REASON_MAX_LENGTH } from "~~/shared/constants/activity";
+import { IMPERSONATION_TTL_MINUTES } from "~~/shared/constants/security";
 import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
 
 /**
@@ -23,6 +25,13 @@ import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
  * An Admin who gives up the Administrator role is warned first, and the
  * last Admin cannot (409). The server refuses all of these too
  * (PUT /api/admin/users/[id]/role, /member and /permissions).
+ *
+ * Only an Admin sees the actions column: each person's activity (the
+ * Admin-only /admin/actividad, filtered by them) and "Acceder como", which
+ * asks for a reason and then reloads the app as that account (POST
+ * /api/admin/users/[id]/impersonate). Never for oneself nor another Admin.
+ * While an Admin acts as an account that may open this page, it is
+ * read-only: the server refuses every change then.
  */
 definePageMeta({
   middleware: ["admin"],
@@ -75,7 +84,8 @@ const PAGE_SIZE = 50;
 const { t, te, locale } = useI18n();
 const toast = useToast();
 const api = useApi();
-const { me, isAdmin, can, refresh: refreshMe } = useMe();
+const { me, isAdmin, can, impersonation, refresh: refreshMe } = useMe();
+const { startImpersonating } = useAuth();
 const localePath = useLocalePath();
 
 useHead({ title: () => t("admin.users.title") });
@@ -230,6 +240,10 @@ const columns = computed<TableColumn<UserTableRow>[]>(() => [
   { accessorKey: "university", header: t("admin.users.university") },
   { accessorKey: "lastRoleSyncAt", header: t("admin.users.lastSync") },
   { accessorKey: "createdAt", header: t("admin.users.registeredAt") },
+  // The activity log and acting as someone are Admin-only.
+  ...(isAdmin.value
+    ? [{ id: "actions", header: t("admin.users.actions") }]
+    : []),
 ]);
 
 const changingUserId = ref<string | null>(null);
@@ -606,6 +620,70 @@ async function savePermissions(): Promise<void> {
   }
 }
 
+// Activity and acting as another account (Admin only) --------------------------
+
+function displayName(user: UserRow): string {
+  return user.name || user.email;
+}
+
+/** The Admin-only activity log, filtered by this person. */
+function activityLink(user: UserRow) {
+  return localePath({ path: "/admin/actividad", query: { user: user.id } });
+}
+
+/** Only an Admin acts as someone else: never as itself nor another Admin. */
+function canImpersonate(user: UserRow): boolean {
+  return (
+    isAdmin.value &&
+    !impersonation.value &&
+    !isSelf(user) &&
+    !isAdminRoleName(user.role?.name)
+  );
+}
+
+const impersonationTarget = ref<UserRow | null>(null);
+const impersonationReason = ref("");
+const impersonationStarting = ref(false);
+const impersonationReasonError = ref<string | undefined>(undefined);
+
+const impersonationOpen = computed({
+  get: () => impersonationTarget.value !== null,
+  set: (open: boolean) => {
+    if (!open && !impersonationStarting.value) impersonationTarget.value = null;
+  },
+});
+
+const impersonationReasonReady = computed(
+  () => impersonationReason.value.trim().length > 0,
+);
+
+function openImpersonation(user: UserRow): void {
+  if (!canImpersonate(user)) return;
+  impersonationReason.value = "";
+  impersonationReasonError.value = undefined;
+  impersonationTarget.value = user;
+}
+
+async function confirmImpersonation(): Promise<void> {
+  const user = impersonationTarget.value;
+  if (!user || impersonationStarting.value) return;
+  if (!impersonationReasonReady.value) {
+    impersonationReasonError.value = t(
+      "admin.users.impersonation.reasonRequired",
+    );
+    return;
+  }
+  impersonationReasonError.value = undefined;
+  impersonationStarting.value = true;
+  try {
+    // Reloads the app as that account; the dialog stays busy until then.
+    await startImpersonating(user.id, impersonationReason.value.trim());
+  } catch (error) {
+    impersonationStarting.value = false;
+    api.notifyError(error, "admin.users.impersonation.failed");
+  }
+}
+
 function toggleEditing(): void {
   editing.value = !editing.value;
   statusMessage.value = editing.value
@@ -628,7 +706,11 @@ function goToPage(next: number): void {
             color="neutral"
             variant="outline"
             :icon="editing ? 'i-lucide-check' : 'i-lucide-pencil'"
-            :disabled="changingUserId !== null || linkingUserId !== null"
+            :disabled="
+              changingUserId !== null ||
+              linkingUserId !== null ||
+              (impersonation !== null && !editing)
+            "
             @click="toggleEditing"
           >
             <span class="hidden sm:inline">{{
@@ -652,6 +734,13 @@ function goToPage(next: number): void {
 
     <template #body>
       <p class="text-muted text-sm">{{ t("admin.users.description") }}</p>
+      <UAlert
+        v-if="impersonation"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-lock"
+        :title="t('admin.impersonationReadOnly')"
+      />
       <p v-if="editing" class="text-muted flex items-center gap-1.5 text-sm">
         <UIcon
           name="i-lucide-pencil"
@@ -912,6 +1001,41 @@ function goToPage(next: number): void {
           <span class="text-muted text-sm whitespace-nowrap">
             {{ formatDay(row.original.createdAt) }}
           </span>
+        </template>
+
+        <template #actions-cell="{ row }">
+          <div class="flex flex-col items-start gap-1">
+            <UButton
+              :to="activityLink(row.original)"
+              color="neutral"
+              variant="link"
+              size="xs"
+              class="px-0 whitespace-nowrap"
+              icon="i-lucide-history"
+              :label="t('admin.users.viewActivity')"
+              :aria-label="
+                t('admin.users.viewActivityFor', {
+                  user: displayName(row.original),
+                })
+              "
+            />
+            <UButton
+              v-if="canImpersonate(row.original)"
+              color="warning"
+              variant="outline"
+              size="xs"
+              class="whitespace-nowrap"
+              icon="i-lucide-venetian-mask"
+              :label="t('admin.users.impersonation.button')"
+              :aria-label="
+                t('admin.users.impersonation.buttonFor', {
+                  user: displayName(row.original),
+                })
+              "
+              :disabled="impersonationStarting"
+              @click="openImpersonation(row.original)"
+            />
+          </div>
         </template>
 
         <template #empty>
@@ -1224,6 +1348,117 @@ function goToPage(next: number): void {
                 {{ t("admin.save") }}
               </UButton>
             </div>
+          </div>
+        </template>
+      </UModal>
+
+      <UModal
+        v-model:open="impersonationOpen"
+        :title="
+          t('admin.users.impersonation.title', {
+            user: impersonationTarget ? displayName(impersonationTarget) : '',
+          })
+        "
+        :description="
+          t('admin.users.impersonation.description', {
+            user: impersonationTarget ? displayName(impersonationTarget) : '',
+          })
+        "
+        :dismissible="!impersonationStarting"
+      >
+        <template #body>
+          <form
+            v-if="impersonationTarget"
+            id="impersonation-form"
+            class="space-y-4"
+            @submit.prevent="confirmImpersonation"
+          >
+            <ul class="space-y-2 text-sm">
+              <li class="flex items-start gap-2">
+                <UIcon
+                  name="i-lucide-timer"
+                  class="text-muted mt-0.5 size-4 shrink-0"
+                  aria-hidden="true"
+                />
+                <span>
+                  {{
+                    t("admin.users.impersonation.timeLimit", {
+                      minutes: IMPERSONATION_TTL_MINUTES,
+                    })
+                  }}
+                </span>
+              </li>
+              <li class="flex items-start gap-2">
+                <UIcon
+                  name="i-lucide-scroll-text"
+                  class="text-muted mt-0.5 size-4 shrink-0"
+                  aria-hidden="true"
+                />
+                <span>
+                  {{
+                    t("admin.users.impersonation.recorded", {
+                      user: displayName(impersonationTarget),
+                    })
+                  }}
+                </span>
+              </li>
+              <li class="flex items-start gap-2">
+                <UIcon
+                  name="i-lucide-lock"
+                  class="text-muted mt-0.5 size-4 shrink-0"
+                  aria-hidden="true"
+                />
+                <span>{{ t("admin.users.impersonation.readOnly") }}</span>
+              </li>
+            </ul>
+            <UFormField
+              :label="t('admin.users.impersonation.reason')"
+              :help="
+                t('admin.users.impersonation.reasonHelp', {
+                  user: displayName(impersonationTarget),
+                })
+              "
+              :hint="
+                t('admin.users.impersonation.reasonCount', {
+                  count: impersonationReason.length,
+                  max: IMPERSONATION_REASON_MAX_LENGTH,
+                })
+              "
+              :error="impersonationReasonError"
+              name="reason"
+              required
+            >
+              <UInput
+                v-model="impersonationReason"
+                :maxlength="IMPERSONATION_REASON_MAX_LENGTH"
+                :disabled="impersonationStarting"
+                autocomplete="off"
+                required
+                class="w-full"
+              />
+            </UFormField>
+          </form>
+        </template>
+        <template #footer>
+          <div class="flex w-full justify-end gap-2">
+            <UButton
+              color="neutral"
+              variant="ghost"
+              :disabled="impersonationStarting"
+              @click="impersonationOpen = false"
+            >
+              {{ t("admin.cancel") }}
+            </UButton>
+            <UButton
+              type="submit"
+              form="impersonation-form"
+              color="warning"
+              icon="i-lucide-venetian-mask"
+              :loading="impersonationStarting"
+              :disabled="!impersonationReasonReady"
+            >
+              {{ t("admin.users.impersonation.confirm") }}
+            </UButton>
           </div>
         </template>
       </UModal>

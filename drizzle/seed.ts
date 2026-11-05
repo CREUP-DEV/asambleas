@@ -24,8 +24,13 @@
  * The demo is skipped when the 80.ª AGO already exists: a database seeded
  * before these were added keeps its demo as it was (reset it to get them).
  *
+ * Grants it adds are recorded as `rbac.seed` audit rows (one per role).
+ *
  * Runs under tsx, outside Nuxt: import only from `shared/**` and
- * `server/db/schema`, with relative paths.
+ * `server/db/schema`, with relative paths. The one exception is
+ * `server/utils/domain/audit.ts` (recordAudit, the only audit_log writer),
+ * whose runtime imports are only packages and the schema
+ * (server/utils/domain/traceability.test.ts keeps it that way).
  */
 import "dotenv/config";
 import { resolve } from "node:path";
@@ -35,6 +40,8 @@ import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import * as schema from "../server/db/schema";
 import type { AmendmentMeta } from "../server/db/schema";
+import { recordAudit } from "../server/utils/domain/audit";
+import { AUDIT_ACTIONS } from "../shared/constants/activity";
 import { requireConfigString } from "../shared/utils/config";
 import { SYSTEM_ROLES, SYSTEM_ROLE_NAMES } from "../shared/constants/roles";
 import {
@@ -153,11 +160,40 @@ async function seedRbac(db: Db): Promise<void> {
   }
 
   if (assignments.length > 0) {
-    const inserted = await db
-      .insert(schema.rolePermissions)
-      .values(assignments)
-      .onConflictDoNothing()
-      .returning({ id: schema.rolePermissions.id });
+    const keyById = new Map(
+      allPermissions.map((permission) => [permission.id, permission.key]),
+    );
+    const inserted = await db.transaction(async (tx) => {
+      const rows = await tx
+        .insert(schema.rolePermissions)
+        .values(assignments)
+        .onConflictDoNothing()
+        .returning({
+          roleId: schema.rolePermissions.roleId,
+          permissionId: schema.rolePermissions.permissionId,
+        });
+      // One `rbac.seed` row per role that gained keys (in catalog order), so
+      // the permission history of every role starts somewhere.
+      const added = new Map<string, Set<string>>();
+      for (const row of rows) {
+        const key = keyById.get(row.permissionId);
+        if (!key) continue;
+        const keys = added.get(row.roleId) ?? new Set<string>();
+        keys.add(key);
+        added.set(row.roleId, keys);
+      }
+      for (const [roleId, keys] of added) {
+        await recordAudit(tx, {
+          actor: null,
+          source: "seed",
+          action: AUDIT_ACTIONS.RBAC_SEED,
+          targetType: "role",
+          targetId: roleId,
+          after: { added: ALL_PERMISSION_KEYS.filter((key) => keys.has(key)) },
+        });
+      }
+      return rows;
+    });
     console.log(
       `  ${inserted.length} role-permission assignments created (skipped existing)`,
     );

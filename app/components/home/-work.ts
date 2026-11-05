@@ -402,6 +402,11 @@ export interface HomeWorkNews {
    * of someone else, the read-only review of those answers.
    */
   target: "document" | "review";
+  /**
+   * The Admin who did it while acting as the user's account (the user did
+   * not decide it), by name; null otherwise.
+   */
+  impersonatedBy: string | null;
   at: string;
 }
 
@@ -452,6 +457,7 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
     assembly: news.assembly,
     document: { ...news.document },
     amendment,
+    impersonatedBy: news.impersonatedBy?.name ?? null,
     at: news.at,
   };
   const phrase = amendmentPhrase(amendment, mine, transactional);

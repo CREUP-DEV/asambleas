@@ -18,6 +18,8 @@ export interface ExportMetadata {
   jobId: string;
   queueName: ExportQueueName;
   requestedBy: string;
+  /** The impersonation the request ran under (absent in older metadata). */
+  impersonationId?: string | null;
   assemblyId: string;
   documentId?: string;
   /** Document exports only. */

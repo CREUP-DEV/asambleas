@@ -2,17 +2,14 @@ import { defineEventHandler, readBody, createError } from "h3";
 import { eq, inArray } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "../../../../db";
-import {
-  roles,
-  rolePermissions,
-  permissions,
-  auditLog,
-} from "../../../../db/schema";
+import { roles, rolePermissions, permissions } from "../../../../db/schema";
+import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import {
   ALL_PERMISSION_KEYS,
   PERMISSION_KEYS,
 } from "~~/shared/constants/permissions";
+import { normalizePermissionKeys } from "~~/shared/utils/schemas/permissions";
 import {
   ADMIN_GRANT_MESSAGES,
   adminGrantViolation,
@@ -20,8 +17,8 @@ import {
   requireAnyPermission,
   touchesLeadershipRole,
 } from "../../../../utils/auth/rbac";
+import { recordAudit } from "../../../../utils/domain/audit";
 import { validateCuid } from "../../../../utils/validation";
-import type { AuthEventContext } from "../../../../utils/auth/requireAuth";
 
 const bodySchema = z.object({
   permissionKeys: z.array(z.enum(ALL_PERMISSION_KEYS)),
@@ -35,6 +32,7 @@ const bodySchema = z.object({
  * (it would lock itself, and everyone with that role, out of the admin
  * section), nor add or remove a key it does not hold itself (403,
  * adminGrantViolation): otherwise it could raise its own access.
+ * Writes `permissions.set` (target the role) when the set changes.
  */
 export default defineEventHandler(async (event) => {
   const caller = await requireAnyPermission(event, [
@@ -107,8 +105,6 @@ export default defineEventHandler(async (event) => {
 
   const targetPermissionIds = new Set(targetPermissions.map((p) => p.id));
 
-  const context = event.context as AuthEventContext;
-
   await db.transaction(async (tx) => {
     const previousPermissions = await tx.query.rolePermissions.findMany({
       where: eq(rolePermissions.roleId, roleId),
@@ -133,13 +129,17 @@ export default defineEventHandler(async (event) => {
       );
     }
 
-    await tx.insert(auditLog).values({
-      actorUserId: context.session?.user.id ?? null,
-      action: "permissions.set",
+    // Both sides in catalog order, so an unchanged set writes no row.
+    await recordAudit(tx, {
+      event,
+      actor: caller,
+      action: AUDIT_ACTIONS.PERMISSIONS_SET,
       targetType: "role",
       targetId: roleId,
-      before: { permissions: previousPermissionKeys },
-      after: { permissions: parsed.data.permissionKeys },
+      before: { permissions: normalizePermissionKeys(previousPermissionKeys) },
+      after: {
+        permissions: normalizePermissionKeys(parsed.data.permissionKeys),
+      },
     });
   });
 

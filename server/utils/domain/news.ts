@@ -4,6 +4,7 @@ import {
   eq,
   gte,
   inArray,
+  isNotNull,
   isNull,
   ne,
   or,
@@ -27,6 +28,11 @@ import type { MeWorkAssemblyRef, MeWorkNewsDto } from "~~/shared/types/api";
 import { toMemberRef } from "../members/dto";
 import type { Actor } from "./actor";
 import { canSeeLoadedAmendment, findAmendmentsByIds } from "./amendments";
+import {
+  impersonatedByFor,
+  loadImpersonators,
+  seesImpersonator,
+} from "./impersonators";
 import { coPresentedBy, withCoProponentIds } from "./presenters";
 import {
   canSeeDocument,
@@ -58,7 +64,9 @@ import {
  * Decisions the member took itself are left out, and so is anything the
  * actor cannot see. A transactional closing by itself is nobody's decision:
  * it names nobody (`by` null) and reaches its authors and parties also when
- * their own act on what it grouped closed it.
+ * their own act on what it grouped closed it. What an Admin did while
+ * acting as the user's account (events.impersonation_id) is not the user's
+ * own decision either, so it reaches that account's news.
  */
 
 /** How far back the news go. */
@@ -244,7 +252,10 @@ export interface NewsAssembly {
  * main presenter or as a party). `mainPresenterId` is the main presenter of
  * the event's document (newsByMemberId). A transactional that closed by
  * itself (isAutomaticClosure) is nobody's decision, so it always counts,
- * also for the user whose act on what it grouped closed it.
+ * also for the user whose act on what it grouped closed it. So does what an
+ * Admin did while acting as this very account (`impersonationId` set): the
+ * account did not decide it. Done as another account of the member, it
+ * stays that member's own decision.
  */
 export function isOthersDecision(
   event: {
@@ -252,12 +263,14 @@ export function isOthersDecision(
     payload: Record<string, unknown>;
     actorUserId: string | null;
     actorMemberId: string | null;
+    /** events.impersonation_id: an Admin did it while acting as actorUserId. */
+    impersonationId?: string | null;
   },
   actor: { userId: string; memberId: string },
   mainPresenterId: string | null = null,
 ): boolean {
   if (isAutomaticClosure(event.type, event.payload)) return true;
-  if (event.actorUserId === actor.userId) return false;
+  if (event.actorUserId === actor.userId) return Boolean(event.impersonationId);
   return (
     newsByMemberId(
       event.type,
@@ -400,6 +413,7 @@ export async function loadWorkNews(
       payload: events.payload,
       actorUserId: events.actorUserId,
       actorMemberId: events.actorMemberId,
+      impersonationId: events.impersonationId,
       createdAt: events.createdAt,
     })
     .from(events)
@@ -410,10 +424,12 @@ export async function loadWorkNews(
         or(...scopes),
         // Not this user's own decisions (the rest is checked below), except
         // a transactional that closed by itself: its act on what that
-        // transactional grouped closed it, but nobody decided it.
+        // transactional grouped closed it, but nobody decided it. Nor what
+        // an Admin did while acting as this account: the user did not.
         or(
           isNull(events.actorUserId),
           ne(events.actorUserId, actor.user.id),
+          isNotNull(events.impersonationId),
           and(
             eq(events.type, "amendment_withdrawn"),
             sql`${events.payload}->>'by' = 'sources_closed'`,
@@ -533,6 +549,15 @@ export async function loadWorkNews(
           .where(inArray(members.id, byIds))
       : [];
   const memberById = new Map(memberRows.map((row) => [row.id, row]));
+  // An Admin's act as this very account names the Admin. News are the
+  // account's own page, so only its own acts say it ("actuando como tú");
+  // Admins read the rest in the activity log.
+  const self = { user: actor.user, isAdmin: false };
+  const impersonators = await loadImpersonators(
+    visible
+      .filter((row) => seesImpersonator(self, row.actorUserId))
+      .map((row) => row.impersonationId),
+  );
 
   return visible.map((row) => {
     const amendment = isDocumentNews(row)
@@ -549,6 +574,7 @@ export async function loadWorkNews(
       ownAmendment: amendment !== null && authoredIds.has(amendment.id),
       type: row.type,
       by: member ? toMemberRef(member) : null,
+      impersonatedBy: impersonatedByFor(self, row, impersonators),
       value: newsValue(row.type, row.payload),
       at: row.createdAt.toISOString(),
     };

@@ -1,11 +1,14 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { members, users } from "../../db/schema";
+import { AUDIT_ACTIONS } from "../../../shared/constants/activity";
 import type {
   MemberKind,
   MemberSource,
 } from "../../../shared/constants/domain";
 import { logInfo, logWarn } from "../core/logger";
+import { recordAudit } from "../domain/audit";
+import { memberAuditState } from "./sync";
 
 /** Member kinds an intranet account can act for. */
 export type LinkedMemberKind = Extract<
@@ -152,6 +155,11 @@ function findMemberByAcronym(
  * initials. Role sync clears it when the account stops acting for its
  * member (stopsActingForMember in roleSync.ts).
  *
+ * Traceability (source `intranet`, no actor): a member created here writes
+ * `member.create` (after.reason "sign_in_link"), and a link that really
+ * changes writes `user.member_link` (after.reason "role_sync"), each in the
+ * transaction of its write.
+ *
  * Returns the linked member id, or null when nothing was linked.
  */
 export async function linkUserToIntranetMember(
@@ -181,13 +189,28 @@ export async function linkUserToIntranetMember(
 
   let member = await findMemberByAcronym(acronym);
   if (!member) {
-    // Two sign-ins of the same member can race: the unique index settles it.
-    await db
-      .insert(members)
-      .values(newLinkedMember(kind, acronym, external))
-      .onConflictDoNothing({ target: members.acronym });
-    member = await findMemberByAcronym(acronym);
-    if (member) logInfo("members.link", { action: "member created", acronym });
+    // Two sign-ins of the same member can race: the unique index settles it,
+    // and only the one that inserted records the creation.
+    const created = await db.transaction(async (tx) => {
+      const [row] = await tx
+        .insert(members)
+        .values(newLinkedMember(kind, acronym, external))
+        .onConflictDoNothing({ target: members.acronym })
+        .returning();
+      if (row) {
+        await recordAudit(tx, {
+          actor: null,
+          source: "intranet",
+          action: AUDIT_ACTIONS.MEMBER_CREATE,
+          targetType: "member",
+          targetId: row.id,
+          after: { ...memberAuditState(row), reason: "sign_in_link" },
+        });
+      }
+      return row ?? null;
+    });
+    member = created ?? (await findMemberByAcronym(acronym));
+    if (created) logInfo("members.link", { action: "member created", acronym });
   }
   if (!member) return null;
   if (!canLinkToMember(kind, member.kind)) {
@@ -200,12 +223,27 @@ export async function linkUserToIntranetMember(
   }
 
   // Only over the link read above: a manual link an admin saved in the
-  // meantime wins.
-  await db
-    .update(users)
-    .set({ memberId: member.id })
-    .where(
-      sql`${users.id} = ${userId} and ${users.memberId} is not distinct from ${account.memberId} and ${users.memberId} is distinct from ${member.id}`,
-    );
+  // meantime wins. The audit row is written only when the link changed.
+  const linkedMemberId = member.id;
+  await db.transaction(async (tx) => {
+    const changed = await tx
+      .update(users)
+      .set({ memberId: linkedMemberId })
+      .where(
+        sql`${users.id} = ${userId} and ${users.memberId} is not distinct from ${account.memberId} and ${users.memberId} is distinct from ${linkedMemberId}`,
+      )
+      .returning({ id: users.id });
+    if (changed.length > 0) {
+      await recordAudit(tx, {
+        actor: null,
+        source: "intranet",
+        action: AUDIT_ACTIONS.USER_MEMBER_LINK,
+        targetType: "user",
+        targetId: userId,
+        before: { memberId: account.memberId },
+        after: { memberId: linkedMemberId, reason: "role_sync" },
+      });
+    }
+  });
   return member.id;
 }

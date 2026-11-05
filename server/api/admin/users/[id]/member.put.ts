@@ -1,8 +1,10 @@
 import { createError, defineEventHandler, getRouterParam, readBody } from "h3";
 import { eq } from "drizzle-orm";
 import { db } from "../../../../db";
-import { auditLog, members, users } from "../../../../db/schema";
+import { members, users } from "../../../../db/schema";
 import { loadAdminUser } from "../../../../utils/auth/adminUsers";
+import { recordAudit } from "../../../../utils/domain/audit";
+import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import {
   ADMIN_GRANT_MESSAGES,
@@ -22,17 +24,18 @@ import { userMemberLinkBodySchema } from "~~/shared/utils/schemas/member";
  * sign-in (docs/api.md, "Linking accounts to members"). Needs
  * user:manage_roles; only an Admin changes the member of its own account
  * (403 otherwise), since acting for a member is acting with its rights.
- * Returns the row as the admin users list shows it.
+ * Writes `user.member_link` when the link changes. Returns the row as the
+ * admin users list shows it.
  */
 export default defineEventHandler(async (event) => {
-  const { session, admin, user } = await requireAnyPermission(event, [
+  const caller = await requireAnyPermission(event, [
     PERMISSION_KEYS.USER_MANAGE_ROLES,
   ]);
   const userId = validateAuthId(getRouterParam(event, "id"));
   const violation = adminGrantViolation({
-    admin,
+    admin: caller.admin,
     callerPermissions: [],
-    ownTarget: userId === user.id,
+    ownTarget: userId === caller.user.id,
     target: "account",
   });
   if (violation) {
@@ -74,9 +77,10 @@ export default defineEventHandler(async (event) => {
   if (target.memberId !== memberId) {
     await db.transaction(async (tx) => {
       await tx.update(users).set({ memberId }).where(eq(users.id, userId));
-      await tx.insert(auditLog).values({
-        actorUserId: session?.user.id ?? null,
-        action: "user.member_link",
+      await recordAudit(tx, {
+        event,
+        actor: caller,
+        action: AUDIT_ACTIONS.USER_MEMBER_LINK,
         targetType: "user",
         targetId: userId,
         before: { memberId: target.memberId },

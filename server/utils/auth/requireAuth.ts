@@ -4,7 +4,11 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { users } from "../../db/schema";
 import { auth } from "./auth";
+import { resolveImpersonation } from "./impersonation";
+import type { ImpersonationContext } from "./impersonation";
 import type { PermissionKey } from "~~/shared/constants/permissions";
+
+export type { ImpersonationContext } from "./impersonation";
 
 export type AuthSession = Awaited<ReturnType<typeof auth.api.getSession>>;
 
@@ -26,10 +30,28 @@ export interface AuthUserWithRole {
   } | null;
 }
 
+/**
+ * What the auth helpers leave on event.context. Identity comes only from
+ * `user` (through getAuthUserWithRole, requireActor or the RBAC helpers),
+ * never from `session.user`: while an Admin acts as another account the
+ * session still belongs to the Admin.
+ */
 export interface AuthEventContext {
+  /** The better-auth session: always the signed-in (real) user's. */
   session?: AuthSession;
+  /**
+   * The effective user every check, visibility rule and authorship column
+   * uses: the account acted as while an Admin impersonates it, otherwise
+   * the signed-in user.
+   */
   user?: AuthUserWithRole;
+  /** The signed-in user, set on every request; the same object as `user` when nobody is impersonating. */
+  realUser?: AuthUserWithRole;
+  /** The impersonation the request runs under, or null (set with `realUser`). */
+  impersonation?: ImpersonationContext | null;
+  /** The effective user's role. */
   role?: AuthUserWithRole["role"];
+  /** The effective user's permissions (attachAuthContext). */
   permissions?: PermissionKey[];
 }
 
@@ -55,18 +77,11 @@ export async function requireAuth(event: H3Event) {
   return session;
 }
 
-export async function getAuthUserWithRole(
-  event: H3Event,
+async function loadUserWithRole(
+  userId: string,
 ): Promise<AuthUserWithRole | null> {
-  const context = event.context as AuthEventContext;
-
-  if (context.user) {
-    return context.user;
-  }
-
-  const session = await requireAuth(event);
   const user = await db.query.users.findFirst({
-    where: eq(users.id, session.user.id),
+    where: eq(users.id, userId),
     columns: {
       id: true,
       name: true,
@@ -84,11 +99,43 @@ export async function getAuthUserWithRole(
       role: { columns: { id: true, name: true } },
     },
   });
+  return user ?? null;
+}
 
-  if (user) {
-    context.user = user;
-    context.role = user.role;
+/**
+ * The effective user of the request, loaded once and cached on the
+ * context. When the signed-in user is Admin and an impersonation applies to
+ * their session (impersonation.ts), the request runs entirely as the
+ * target: `context.user` is the target, `context.realUser` the Admin and
+ * `context.impersonation` the row. Losing the Admin role, the expiry or the
+ * target becoming Admin stop it at once, since the real role is read on
+ * every request.
+ */
+export async function getAuthUserWithRole(
+  event: H3Event,
+): Promise<AuthUserWithRole | null> {
+  const context = event.context as AuthEventContext;
+
+  if (context.user) {
+    return context.user;
   }
 
-  return user ?? null;
+  const session = await requireAuth(event);
+  const realUser = await loadUserWithRole(session.user.id);
+  if (!realUser) {
+    return null;
+  }
+
+  const impersonated = await resolveImpersonation(event, {
+    sessionId: session.session.id,
+    realUser,
+  });
+  const user = impersonated?.user ?? realUser;
+
+  context.realUser = realUser;
+  context.impersonation = impersonated?.impersonation ?? null;
+  context.user = user;
+  context.role = user.role;
+
+  return user;
 }

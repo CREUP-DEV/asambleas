@@ -113,6 +113,11 @@ import {
 } from "./documents";
 import { recordEvent } from "./events";
 import {
+  impersonatedByFor,
+  loadImpersonators,
+  seesImpersonator,
+} from "./impersonators";
+import {
   resolveAmendment,
   resolveAssembly,
   resolveDocument,
@@ -2051,7 +2056,21 @@ export async function deleteAmendmentDraft(
       entityType: "amendment",
       entityId: amendment.id,
       type: "amendment_deleted",
-      payload: { kind: amendment.kind, code: amendment.code },
+      // An explicit allowlist (never the correction note): enough to say
+      // what was deleted and who still sees it once the row is gone
+      // (insidersOfPayload). Only kind and code reach non-Admins.
+      payload: {
+        kind: amendment.kind,
+        code: amendment.code,
+        documentId: ctx.document.id,
+        createdByUserId: amendment.createdByUserId,
+        submittedByUserId: amendment.submittedByUserId,
+        authorMemberIds: amendment.authors.map((author) => author.memberId),
+        mainAuthorId: loadedMainAuthor(amendment),
+        ...(amendment.kind === "transactional"
+          ? { sourceIds: amendment.sources.map((source) => source.sourceId) }
+          : {}),
+      },
       actor: ctx.actor,
     });
   });
@@ -4170,6 +4189,8 @@ export async function amendmentHistory(
       entityId: events.entityId,
       payload: events.payload,
       createdAt: events.createdAt,
+      actorUserId: events.actorUserId,
+      impersonationId: events.impersonationId,
       // The intranet's name (role sync), not the Google display name.
       actorName: sql<
         string | null
@@ -4192,6 +4213,12 @@ export async function amendmentHistory(
     .orderBy(asc(events.createdAt), asc(events.id));
 
   const notesVisible = canReadCorrection(ctx.actor, ctx.amendment);
+  // An Admin's act as an account names the Admin to that account and Admins.
+  const impersonators = await loadImpersonators(
+    rows
+      .filter((row) => seesImpersonator(ctx.actor, row.actorUserId))
+      .map((row) => row.impersonationId),
+  );
   return rows.map((row) => ({
     id: row.id,
     type: row.type,
@@ -4212,6 +4239,7 @@ export async function amendmentHistory(
             kind: row.memberKind,
           }
         : null,
+    impersonatedBy: impersonatedByFor(ctx.actor, row, impersonators),
     createdAt: row.createdAt.toISOString(),
   }));
 }

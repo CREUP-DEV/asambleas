@@ -2,7 +2,8 @@ import { defineEventHandler, readBody, createError } from "h3";
 import { asc, eq } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "../../../../db";
-import { users, roles, auditLog } from "../../../../db/schema";
+import { users, roles } from "../../../../db/schema";
+import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import {
@@ -12,9 +13,9 @@ import {
   requireAnyPermission,
   touchesLeadershipRole,
 } from "../../../../utils/auth/rbac";
+import { endImpersonations } from "../../../../utils/auth/impersonation";
+import { recordAudit } from "../../../../utils/domain/audit";
 import { isDefaultCuid, validateAuthId } from "../../../../utils/validation";
-
-import type { AuthEventContext } from "../../../../utils/auth/requireAuth";
 
 const bodySchema = z.object({
   roleId: z.string().refine(isDefaultCuid),
@@ -26,11 +27,16 @@ const bodySchema = z.object({
  * adminGrantViolation); the last Admin cannot leave the role (409), so
  * someone can always manage it. A non-Admin may not give or take, through
  * the role, a permission it does not hold itself (403).
+ *
+ * Writes `role.assign` (before/after role) when the role changes. Giving or
+ * taking the Admin role also ends, as `revoked`, the impersonations it
+ * stops: an Admin who is no longer one, or a target who now is.
  */
 export default defineEventHandler(async (event) => {
-  const { admin, permissions } = await requireAnyPermission(event, [
+  const caller = await requireAnyPermission(event, [
     PERMISSION_KEYS.USER_MANAGE_ROLES,
   ]);
+  const { admin, permissions } = caller;
   const userId = validateAuthId(getRouterParam(event, "id"));
 
   const body = await readBody(event);
@@ -58,8 +64,8 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, message: "Usuario no encontrado" });
   }
 
-  const context = event.context as AuthEventContext;
-  const self = targetUser.id === context.session?.user.id;
+  // Identity comes from the caller, never from the session.
+  const self = targetUser.id === caller.user.id;
   if (!admin && self) {
     throw createError({
       statusCode: 403,
@@ -110,6 +116,10 @@ export default defineEventHandler(async (event) => {
   const leavesAdmin =
     targetUser.role?.name === SYSTEM_ROLES.ADMIN &&
     targetRole.name !== SYSTEM_ROLES.ADMIN;
+  const touchesAdmin =
+    targetUser.roleId !== targetRole.id &&
+    (targetUser.role?.name === SYSTEM_ROLES.ADMIN ||
+      targetRole.name === SYSTEM_ROLES.ADMIN);
 
   await db.transaction(async (tx) => {
     if (leavesAdmin && targetUser.roleId) {
@@ -134,17 +144,29 @@ export default defineEventHandler(async (event) => {
       .set({ roleId: parsed.data.roleId })
       .where(eq(users.id, userId));
 
-    await tx.insert(auditLog).values({
-      actorUserId: context.session?.user.id ?? null,
-      action: "role.assign",
+    // No row when the role stays the same (recordAudit skips the no-op).
+    await recordAudit(tx, {
+      event,
+      actor: caller,
+      action: AUDIT_ACTIONS.ROLE_ASSIGN,
       targetType: "user",
       targetId: userId,
       before: {
         roleId: targetUser.roleId ?? null,
         roleName: targetUser.role?.name ?? null,
       },
-      after: { roleId: parsed.data.roleId, roleName: targetRole.name },
+      after: { roleId: targetRole.id, roleName: targetRole.name },
     });
+
+    if (touchesAdmin) {
+      // The lookup would also close them on the Admin's next request; closing
+      // them here keeps the impersonations list right meanwhile. The rows
+      // name the impersonating Admin, so the caller's IP stays out of them.
+      await endImpersonations(tx, { userId }, "revoked", {
+        ipAddress: null,
+        userAgent: null,
+      });
+    }
   });
 
   return {

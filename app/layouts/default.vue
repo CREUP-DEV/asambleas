@@ -1,11 +1,18 @@
 <script setup lang="ts">
+import { useImpersonationBannerOffset } from "~/components/shell/ImpersonationBanner.vue";
+
 /**
  * Authenticated dashboard shell. Every page renders its own UDashboardPanel
  * (with a UDashboardNavbar in #header, which carries the mobile sidebar
  * toggle) directly inside <main>, so pages can lay out sibling resizable
  * panels. Chrome-free pages (projection, print) use `layout: false`.
+ *
+ * The dashboard is fixed to the viewport; while an Admin acts as another
+ * account it starts below the impersonation banner (app.vue), so the banner
+ * never covers the navbars.
  */
 const { t } = useI18n();
+const bannerOffset = useImpersonationBannerOffset();
 
 const sidebarOpen = ref(false);
 
@@ -30,7 +37,10 @@ useHead({
       {{ t("shell.skipToContent") }}
     </a>
 
-    <UDashboardGroup class="print:static print:block print:overflow-visible">
+    <UDashboardGroup
+      class="print:static print:block print:overflow-visible"
+      :style="bannerOffset !== '0px' ? { top: bannerOffset } : undefined"
+    >
       <!-- The banner landmark holds the brand, the navigation and the user
            menu (preferences, language, sign out). On phones the drawer is a
            dialog instead. -->

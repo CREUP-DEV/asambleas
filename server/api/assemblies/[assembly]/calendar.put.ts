@@ -12,6 +12,7 @@ import {
   readAssemblyBody,
   throwAssemblyMutationError,
 } from "../../../utils/domain/assemblies";
+import { diffChanges } from "../../../utils/domain/changes";
 import { recordEvent } from "../../../utils/domain/events";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 
@@ -33,8 +34,36 @@ export default defineEventHandler(async (event): Promise<AssemblyDto> => {
       const current = await lockAssembly(tx, assembly.id);
       const updated: string[] = [];
       const removed: string[] = [];
+      // Date and note of each listed milestone before and after, for the
+      // history ("key" and "key.note"); the assembly lock keeps them still.
+      const stored = new Map(
+        (
+          await tx
+            .select({
+              key: assemblyMilestones.key,
+              at: assemblyMilestones.at,
+              note: assemblyMilestones.note,
+            })
+            .from(assemblyMilestones)
+            .where(eq(assemblyMilestones.assemblyId, assembly.id))
+        ).map((row) => [row.key, row]),
+      );
+      const before: Record<string, Date | string | null> = {};
+      const after: Record<string, Date | string | null> = {};
 
       for (const milestone of body.milestones) {
+        const previous = stored.get(milestone.key);
+        before[milestone.key] = previous?.at ?? null;
+        before[`${milestone.key}.note`] = previous?.note ?? null;
+        after[milestone.key] =
+          milestone.at === null ? null : new Date(milestone.at);
+        after[`${milestone.key}.note`] =
+          milestone.at === null
+            ? null
+            : milestone.note === undefined
+              ? (previous?.note ?? null)
+              : milestone.note;
+
         if (milestone.at === null) {
           const rows = await tx
             .delete(assemblyMilestones)
@@ -67,7 +96,7 @@ export default defineEventHandler(async (event): Promise<AssemblyDto> => {
           entityType: "assembly",
           entityId: assembly.id,
           type: "calendar_updated",
-          payload: { updated, removed },
+          payload: { updated, removed, changes: diffChanges(before, after) },
           actor,
         });
       }
