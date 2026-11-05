@@ -228,7 +228,9 @@ reviews each presented amendment and:
   chooses per amendment whether it becomes visible to everyone right away or
   stays private until it publishes it later (`POST .../amendments/publish`);
 - or asks for a correction: the amendment goes back to draft with a note for
-  its authors.
+  its authors. On the document page the Secretaría finds the ones it sent back
+  under "N devueltas para corregir", next to what it still has to validate or
+  publish, until the authors send them again.
 
 Until it is published, an amendment is visible only to its authors, its
 creator, the parties of a transactional and the Secretaría and Mesa. A
@@ -316,7 +318,12 @@ projection.
 **Live view for attendees.** A phone-friendly page that follows the session:
 the item, document and amendment under debate with its change, the last
 result, who has the floor when visible, and the status of every amendment of
-the current document with the provisional consolidated text.
+the current document with the provisional consolidated text. Under the
+amendment in debate it says in one line how the document's main presenter
+answered it ("Respuesta de CEUM: la acepta"), or that the Mesa recorded the
+answer on its behalf, without the comment. It shows this only when the
+assembly does not keep answers to the Mesa (`positionVisibility` other than
+"mesa"), since the page shows what the room sees.
 
 **Roles and per-user permissions.** The association's Secretaría and
 Presidencia hold every permission, users and roles included. The Mesa's

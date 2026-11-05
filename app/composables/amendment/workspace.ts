@@ -246,13 +246,54 @@ export function amendmentsAwaitingActor<
   };
 }
 
-/** What the Secretaría still has to do on the listed amendments. */
+type ReturnedInput = Pick<AmendmentDto, "status" | "reviewState"> & {
+  can: Pick<AmendmentCapabilities, "edit">;
+};
+
+/**
+ * Sent back for correction, seen by someone who cannot edit it (the
+ * Secretaría): a draft again, waiting for its authors to fix it and send it
+ * again. Its authors, who can edit it, find it in "Mis enmiendas" instead.
+ * Drafts never sent (reviewers receive those too) do not count.
+ */
+export function isAmendmentReturnedForCorrection(
+  amendment: ReturnedInput,
+): boolean {
+  return (
+    amendment.status === "draft" &&
+    amendment.reviewState === "correction_requested" &&
+    !amendment.can.edit
+  );
+}
+
+/** The amendments sent back for correction the viewer cannot edit, in order. */
+export function amendmentsReturnedForCorrection<T extends ReturnedInput>(
+  list: T[],
+): T[] {
+  return list.filter(isAmendmentReturnedForCorrection);
+}
+
+/**
+ * What the Secretaría still has to do on the document's amendments (drafts
+ * included): presented ones to validate or publish, and how many it sent
+ * back for correction (counted for reviewers only, `can.review`).
+ */
 export function amendmentReviewQueue(
-  list: { can: Pick<AmendmentCapabilities, "validate" | "publish"> }[],
-): { toValidate: number; toPublish: number } {
+  list: (Pick<AmendmentDto, "status" | "reviewState"> & {
+    can: Pick<
+      AmendmentCapabilities,
+      "validate" | "publish" | "edit" | "review"
+    >;
+  })[],
+): { toValidate: number; toPublish: number; returned: number } {
+  const presented = list.filter((amendment) => amendment.status !== "draft");
   return {
-    toValidate: list.filter((amendment) => amendment.can.validate).length,
-    toPublish: list.filter((amendment) => amendment.can.publish).length,
+    toValidate: presented.filter((amendment) => amendment.can.validate).length,
+    toPublish: presented.filter((amendment) => amendment.can.publish).length,
+    returned: list.filter(
+      (amendment) =>
+        amendment.can.review && isAmendmentReturnedForCorrection(amendment),
+    ).length,
   };
 }
 
@@ -786,14 +827,19 @@ export function amendmentBlockMarkers(
 
 export type AmendmentLateFilter = "any" | "late" | "on_time";
 
-/** Review states a listed (non-draft) amendment can be in. */
-export type AmendmentReviewFilter =
-  "any" | Exclude<AmendmentReviewState, "correction_requested">;
+/**
+ * Where an amendment stands with the Secretaría. Every value but
+ * `correction_requested` narrows the presented amendments; that one shows
+ * instead the drafts sent back for correction the viewer cannot edit
+ * (isAmendmentReturnedForCorrection), which never mix with the others.
+ */
+export type AmendmentReviewFilter = "any" | AmendmentReviewState;
 
 export const AMENDMENT_REVIEW_FILTERS: readonly AmendmentReviewFilter[] = [
   "any",
   "pending_authors",
   "pending_validation",
+  "correction_requested",
   "validated",
   "published",
 ];
@@ -846,13 +892,26 @@ function fold(text: string): string {
     .toLowerCase();
 }
 
+/**
+ * The amendments that pass every filter. The `correction_requested` review
+ * filter keeps only the drafts sent back that the viewer cannot edit
+ * (isAmendmentReturnedForCorrection); every other value leaves drafts out.
+ */
 export function filterAmendmentList(
   list: AmendmentDto[],
   filters: AmendmentFilters,
   actorMemberId: string | null,
 ): AmendmentDto[] {
   const query = fold(filters.query.trim());
+  const returnedOnly = filters.review === "correction_requested";
   return list.filter((amendment) => {
+    if (
+      returnedOnly
+        ? !isAmendmentReturnedForCorrection(amendment)
+        : amendment.status === "draft"
+    ) {
+      return false;
+    }
     if (
       filters.statuses.length > 0 &&
       !filters.statuses.includes(amendment.status)

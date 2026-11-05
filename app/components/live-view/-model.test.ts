@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   AmendmentDto,
   LiveEventDto,
+  PositionDto,
   SpeakersDto,
   SpeakingTurnDto,
   VoteDto,
@@ -15,6 +16,7 @@ import {
   liveAmendmentRows,
   liveAmendmentState,
   liveAmendmentStats,
+  livePositionLine,
   liveReplacedBy,
   liveSpeakers,
   liveVoteCounts,
@@ -511,6 +513,50 @@ describe("live amendments", () => {
       liveAmendmentCode(amendment("a", { code: null, number: null })),
     ).toBe("");
     expect(liveAmendmentCode(null)).toBe("");
+  });
+});
+
+describe("live position line", () => {
+  const presenter = { acronym: "CEUM" };
+  const answered = (
+    position: PositionDto["position"],
+    recordedBy: PositionDto["recordedBy"] = "presenter",
+  ) =>
+    amendment("a", {
+      position: {
+        position,
+        comment: "Por qué",
+        recordedBy,
+        updatedAt: "2026-11-14T10:00:00Z",
+      },
+    });
+
+  it("names the main presenter and its answer", () => {
+    expect(livePositionLine(answered("accept"), presenter)).toEqual({
+      key: "amendment.position.answers.accept",
+      params: { member: "CEUM" },
+    });
+    expect(livePositionLine(answered("reject"), presenter)?.key).toBe(
+      "amendment.position.answers.reject",
+    );
+    expect(livePositionLine(answered("transact"), presenter)?.key).toBe(
+      "amendment.position.answers.transact",
+    );
+  });
+
+  it("says when the Mesa recorded the answer on its behalf", () => {
+    expect(livePositionLine(answered("reject", "mesa"), presenter)).toEqual({
+      key: "amendment.position.answersByMesa.reject",
+      params: { member: "CEUM" },
+    });
+  });
+
+  it("says nothing without an answer, a position or a main presenter", () => {
+    expect(livePositionLine(answered("pending"), presenter)).toBeNull();
+    expect(livePositionLine(answered("pending", "mesa"), presenter)).toBeNull();
+    expect(livePositionLine(amendment("a"), presenter)).toBeNull();
+    expect(livePositionLine(answered("accept"), null)).toBeNull();
+    expect(livePositionLine(answered("accept"), undefined)).toBeNull();
   });
 });
 

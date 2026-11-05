@@ -10,6 +10,7 @@
 import type {
   AmendmentDto,
   LiveEventDto,
+  MemberRef,
   SpeakersDto,
   SpeakingTurnDto,
   VoteDto,
@@ -394,6 +395,30 @@ export function liveAmendmentNote(
     };
   }
   return null;
+}
+
+/**
+ * How the document's main presenter answered the amendment, as one sentence
+ * naming it by its acronym ("Respuesta de CEUM: la acepta"), or saying the
+ * Mesa recorded it on its behalf ("La Mesa, en nombre de CEUM, la aceptó").
+ * Null while nobody has answered, when the viewer does not receive the
+ * answer (the server sends no position) or the document has no main
+ * presenter. Whether the room may see it is the caller's rule.
+ */
+export function livePositionLine(
+  amendment: Pick<AmendmentDto, "position">,
+  presenter: Pick<MemberRef, "acronym"> | null | undefined,
+): LiveAmendmentNote | null {
+  const position = amendment.position;
+  if (!position || !presenter || position.position === "pending") return null;
+  const group =
+    position.recordedBy === "mesa"
+      ? "amendment.position.answersByMesa"
+      : "amendment.position.answers";
+  return {
+    key: `${group}.${position.position}`,
+    params: { member: presenter.acronym },
+  };
 }
 
 // Votes -----------------------------------------------------------------------

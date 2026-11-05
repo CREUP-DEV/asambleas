@@ -34,6 +34,9 @@ import {
   amendmentLateOnSend,
   amendmentReviewQueue,
   amendmentReviewSentenceKey,
+  amendmentsReturnedForCorrection,
+  AMENDMENT_REVIEW_FILTERS,
+  isAmendmentReturnedForCorrection,
   amendmentReviewView,
   amendmentSentNotice,
   amendmentsAwaitingActor,
@@ -1123,7 +1126,68 @@ describe("review by the Secretaría", () => {
         amendment("c", [], { can: can({ publish: true }) }),
         amendment("d", []),
       ]),
-    ).toEqual({ toValidate: 2, toPublish: 1 });
+    ).toEqual({ toValidate: 2, toPublish: 1, returned: 0 });
+  });
+
+  it("tells the amendments sent back for correction the viewer cannot edit", () => {
+    const sentBack = amendment("sent", [], {
+      status: "draft",
+      reviewState: "correction_requested",
+    });
+    // Its authors fix it: theirs, in "Mis enmiendas".
+    const ownCorrection = amendment("fix", [], {
+      status: "draft",
+      reviewState: "correction_requested",
+      can: can({ edit: true }),
+    });
+    // Never sent: reviewers receive it too, but nothing was returned.
+    const unsent = amendment("draft", [], {
+      status: "draft",
+      reviewState: null,
+    });
+    const pending = amendment("p", [], { reviewState: "pending_validation" });
+    const list = [pending, sentBack, ownCorrection, unsent];
+
+    expect(isAmendmentReturnedForCorrection(sentBack)).toBe(true);
+    expect(isAmendmentReturnedForCorrection(ownCorrection)).toBe(false);
+    expect(isAmendmentReturnedForCorrection(unsent)).toBe(false);
+    expect(isAmendmentReturnedForCorrection(pending)).toBe(false);
+    expect(amendmentsReturnedForCorrection(list)).toEqual([sentBack]);
+  });
+
+  it("counts what the Secretaría sent back, for reviewers only", () => {
+    const reviewer = can({ review: true });
+    const list = [
+      amendment("p", [], {
+        reviewState: "pending_validation",
+        can: can({ review: true, validate: true }),
+      }),
+      amendment("s1", [], {
+        status: "draft",
+        reviewState: "correction_requested",
+        can: reviewer,
+      }),
+      amendment("s2", [], {
+        status: "draft",
+        reviewState: "correction_requested",
+        can: reviewer,
+      }),
+      amendment("u", [], { status: "draft", reviewState: null, can: reviewer }),
+    ];
+    expect(amendmentReviewQueue(list)).toEqual({
+      toValidate: 1,
+      toPublish: 0,
+      returned: 2,
+    });
+    // Someone else who cannot edit them (not a reviewer): nothing to count.
+    expect(
+      amendmentReviewQueue([
+        amendment("s", [], {
+          status: "draft",
+          reviewState: "correction_requested",
+        }),
+      ]).returned,
+    ).toBe(0);
   });
 
   it("keeps the original timing when a correction is sent again", () => {
@@ -1354,6 +1418,79 @@ describe("review by the Secretaría", () => {
     expect(
       activeAmendmentFilterCount({ ...filters, review: "validated" }),
     ).toBe(1);
+  });
+
+  it("lists the amendments sent back for correction only under their filter", () => {
+    const member = {
+      id: "m1",
+      acronym: "CEUM",
+      name: "CEUM",
+      kind: "asociado" as const,
+    };
+    const published = amendment("x", [replace("b1", 0, 6, "Primero")], {
+      reviewState: "published",
+    });
+    const pending = amendment("p", [], { reviewState: "pending_validation" });
+    const sentBack = amendment("s", [replace("b2", 0, 2, "Un")], {
+      status: "draft",
+      reviewState: "correction_requested",
+      authors: [member],
+    });
+    const otherSentBack = amendment("o", [replace("b4", 0, 6, "Último")], {
+      status: "draft",
+      reviewState: "correction_requested",
+      late: true,
+    });
+    // The author's own correction and an unsent draft are never listed.
+    const ownCorrection = amendment("fix", [], {
+      status: "draft",
+      reviewState: "correction_requested",
+      can: { ...amendment("y", []).can, edit: true },
+    });
+    const unsent = amendment("d", [], { status: "draft", reviewState: null });
+    const list = [
+      published,
+      pending,
+      sentBack,
+      otherSentBack,
+      ownCorrection,
+      unsent,
+    ];
+    const filters = emptyAmendmentFilters();
+    const returned = { ...filters, review: "correction_requested" as const };
+
+    expect(AMENDMENT_REVIEW_FILTERS).toContain("correction_requested");
+    // Any other review filter keeps drafts out.
+    expect(filterAmendmentList(list, filters, null)).toEqual([
+      published,
+      pending,
+    ]);
+    expect(
+      filterAmendmentList(
+        list,
+        { ...filters, review: "pending_validation" },
+        null,
+      ),
+    ).toEqual([pending]);
+    // Under its own filter, only the returned drafts the viewer cannot edit.
+    expect(filterAmendmentList(list, returned, null)).toEqual([
+      sentBack,
+      otherSentBack,
+    ]);
+    // The other filters narrow them as usual.
+    expect(
+      filterAmendmentList(list, { ...returned, memberIds: ["m1"] }, null),
+    ).toEqual([sentBack]);
+    expect(
+      filterAmendmentList(list, { ...returned, late: "late" }, null),
+    ).toEqual([otherSentBack]);
+    expect(
+      filterAmendmentList(list, { ...returned, blockId: "b4" }, null),
+    ).toEqual([otherSentBack]);
+    expect(
+      filterAmendmentList(list, { ...returned, query: "ceum" }, null),
+    ).toEqual([sentBack]);
+    expect(activeAmendmentFilterCount(returned)).toBe(1);
   });
 });
 
