@@ -119,8 +119,9 @@ const SENTENCE_COLORS: Record<string, string> = {
         <span>{{ document.title }}</span>
         <span
           v-if="document.reference"
-          class="text-muted ms-1.5 text-sm font-normal tabular-nums"
-          >· {{ document.reference }}</span
+          class="text-muted text-sm font-normal tabular-nums"
+        >
+          · {{ document.reference }}</span
         >
       </NuxtLink>
       <div class="text-muted flex flex-wrap items-center gap-1.5 text-xs">

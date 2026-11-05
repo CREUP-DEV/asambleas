@@ -30,6 +30,7 @@ import {
 const session = useSessionConsoleContext();
 const speakers = session.speakers;
 const { t } = useI18n();
+const toast = useToast();
 
 const view = computed(() => speakers.view.value);
 const speaking = computed(() => view.value.speaking);
@@ -81,7 +82,7 @@ const memberItems = computed(() =>
   (members.value ?? [])
     .filter((member) => member.active)
     .map((member) => ({
-      label: `${member.acronym} · ${member.name}`,
+      label: memberLabel(member),
       value: member.id,
     })),
 );
@@ -146,13 +147,30 @@ const renameItem = (turn: SpeakingTurnDto): DropdownMenuItem => ({
   onSelect: () => session.openSpeakerRename(turn),
 });
 
+/**
+ * Gives the floor out of turn. It ends the turn of whoever was speaking, so
+ * the Mesa is told: the menu item does not say it, unlike "Siguiente".
+ */
+async function giveFloorNow(turn: SpeakingTurnDto): Promise<void> {
+  const current = speaking.value;
+  const ok = await speakers.giveFloor(turn);
+  if (ok && current && current.id !== turn.id) {
+    toast.add({
+      id: `session-speaker-ended-${current.id}`,
+      title: t("session.speakers.interrupted", { who: who(current) }),
+      color: "neutral",
+      icon: "i-lucide-mic-off",
+    });
+  }
+}
+
 function turnMenu(turn: SpeakingTurnDto): DropdownMenuItem[][] {
   return [
     [
       {
         label: t("session.speakers.giveNow"),
         icon: "i-lucide-mic",
-        onSelect: () => void speakers.giveFloor(turn),
+        onSelect: () => void giveFloorNow(turn),
       },
       renameItem(turn),
     ],
@@ -281,9 +299,10 @@ function duration(turn: SpeakingTurnDto): string | null {
       {{ speakers.loading.value ? "" : announcement }}
     </p>
 
-    <div v-if="speakers.loading.value" class="space-y-2" aria-busy="true">
-      <USkeleton class="h-20 w-full" />
-      <USkeleton class="h-10 w-full" />
+    <div v-if="speakers.loading.value" class="space-y-2" role="status">
+      <span class="sr-only">{{ t("common.loading") }}</span>
+      <USkeleton aria-hidden="true" class="h-20 w-full" />
+      <USkeleton aria-hidden="true" class="h-10 w-full" />
     </div>
 
     <UAlert
@@ -408,6 +427,8 @@ function duration(turn: SpeakingTurnDto): string | null {
             :loading="membersStatus === 'pending'"
             :placeholder="t('session.speakers.memberPlaceholder')"
             icon="i-lucide-search"
+            :trailing="false"
+            open-on-click
             class="w-full"
           />
         </UFormField>

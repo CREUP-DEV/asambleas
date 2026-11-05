@@ -290,7 +290,12 @@ const warnedKeys = computed(() =>
         role="status"
       >
         <span class="sr-only">{{ t("assembly.overview.loading") }}</span>
-        <USkeleton v-for="index in 3" :key="index" class="h-6 w-36" />
+        <USkeleton
+          v-for="index in 3"
+          :key="index"
+          aria-hidden="true"
+          class="h-6 w-36"
+        />
       </div>
       <ul
         v-else
@@ -338,7 +343,12 @@ const warnedKeys = computed(() =>
 
         <div v-if="agendaPending && !agenda" class="space-y-2" role="status">
           <span class="sr-only">{{ t("agenda.loading") }}</span>
-          <USkeleton v-for="index in 5" :key="index" class="h-8 w-full" />
+          <USkeleton
+            v-for="index in 5"
+            :key="index"
+            aria-hidden="true"
+            class="h-8 w-full"
+          />
         </div>
         <UAlert
           v-else-if="agendaError && !agenda"
@@ -377,7 +387,7 @@ const warnedKeys = computed(() =>
           <li
             v-for="row in rows"
             :key="row.item.id"
-            class="flex items-start justify-between gap-3 py-2"
+            class="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 py-2"
             :style="{ paddingInlineStart: `${row.depth * 1.25}rem` }"
           >
             <NuxtLink
@@ -392,29 +402,35 @@ const warnedKeys = computed(() =>
             </NuxtLink>
             <span
               v-if="totalsFor(row.item.id).documents > 0"
-              class="text-muted flex shrink-0 items-center gap-2 text-xs tabular-nums"
+              class="text-muted flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums"
             >
               <span class="inline-flex items-center gap-1">
                 <UIcon
                   name="i-lucide-file"
-                  class="size-3.5"
+                  class="size-3.5 shrink-0"
                   aria-hidden="true"
                 />
-                <span class="sr-only">{{
-                  t("assembly.overview.documentsShort")
-                }}</span>
-                {{ totalsFor(row.item.id).documents }}
+                {{
+                  t(
+                    "assembly.overview.documentCount",
+                    { count: totalsFor(row.item.id).documents },
+                    totalsFor(row.item.id).documents,
+                  )
+                }}
               </span>
               <span class="inline-flex items-center gap-1">
                 <UIcon
                   name="i-lucide-message-square-diff"
-                  class="size-3.5"
+                  class="size-3.5 shrink-0"
                   aria-hidden="true"
                 />
-                <span class="sr-only">{{
-                  t("assembly.overview.amendmentsShort")
-                }}</span>
-                {{ totalsFor(row.item.id).amendments }}
+                {{
+                  t(
+                    "assembly.overview.amendmentCount",
+                    { count: totalsFor(row.item.id).amendments },
+                    totalsFor(row.item.id).amendments,
+                  )
+                }}
               </span>
             </span>
           </li>

@@ -22,6 +22,7 @@ import type { AmendmentInput, Block } from "~~/shared/types/content";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
 import { MAX_TRANSACTIONAL_SOURCES } from "~~/shared/utils/schemas/amendment";
+import { sessionReplacingIds } from "~/composables/session/sessionModel";
 import {
   amendmentAwaitsPosition,
   amendmentMainAuthor,
@@ -767,6 +768,52 @@ export function transactionalsOverSource<
           (transactionalAnswerOf(item.acceptances, mainAuthorId)?.decision ??
             "pending") !== "pending"),
     );
+}
+
+export interface TransactionalLinks {
+  /** The transactionals that replaced it (it is `transacted`). */
+  replacedBy: string[];
+  /** Open transactionals proposed over it (it is still `submitted`). */
+  proposed: string[];
+}
+
+/**
+ * How an amendment stands with the transactionals over it, for one line on
+ * its card: a replaced (`transacted`) amendment names the ones that replaced
+ * it (sessionReplacingIds: the one that did stays named whatever happened
+ * to it later), a presented one the open transactionals proposed over it
+ * that no main author turned down. Drafts and unknown ids (not loaded) are
+ * left out; any other status has neither.
+ */
+export function transactionalLinksOf(
+  amendment: AmendmentDto,
+  byId: ReadonlyMap<string, AmendmentDto>,
+): TransactionalLinks {
+  if (amendment.status === "transacted") {
+    return {
+      replacedBy: sessionReplacingIds(amendment, byId).filter((id) =>
+        byId.has(id),
+      ),
+      proposed: [],
+    };
+  }
+  if (amendment.status === "submitted") {
+    return {
+      replacedBy: [],
+      proposed: amendment.transactionalIds.filter((id) => {
+        const transactional = byId.get(id);
+        return (
+          transactional !== undefined &&
+          transactional.kind === "transactional" &&
+          transactional.status === "submitted" &&
+          !transactional.acceptances.some(
+            (party) => party.decision === "rejected",
+          )
+        );
+      }),
+    };
+  }
+  return { replacedBy: [], proposed: [] };
 }
 
 /**

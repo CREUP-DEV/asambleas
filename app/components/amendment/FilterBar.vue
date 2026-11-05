@@ -57,7 +57,7 @@ const kindItems = computed(() =>
 );
 const memberItems = computed(() =>
   props.authorOptions.map((member) => ({
-    label: `${member.acronym} · ${member.name}`,
+    label: memberLabel(member),
     value: member.id,
   })),
 );
@@ -130,6 +130,14 @@ function clearAll(): void {
                 :search-input="false"
                 class="w-full"
                 :placeholder="t('amendment.filters.any')"
+                :aria-label="
+                  selectMenuLabel(
+                    t('amendment.filters.status'),
+                    statusItems,
+                    filters.statuses,
+                    t('amendment.filters.any'),
+                  )
+                "
                 @update:model-value="patch({ statuses: $event })"
               />
             </UFormField>
@@ -155,6 +163,14 @@ function clearAll(): void {
                 :search-input="false"
                 class="w-full"
                 :placeholder="t('amendment.filters.any')"
+                :aria-label="
+                  selectMenuLabel(
+                    t('amendment.filters.kind'),
+                    kindItems,
+                    filters.kinds,
+                    t('amendment.filters.any'),
+                  )
+                "
                 @update:model-value="patch({ kinds: $event })"
               />
             </UFormField>
@@ -166,9 +182,17 @@ function clearAll(): void {
                 multiple
                 class="w-full"
                 :placeholder="t('amendment.filters.any')"
-                :search-input="{
-                  placeholder: t('amendment.filters.memberSearch'),
-                }"
+                :aria-label="
+                  selectMenuLabel(
+                    t('amendment.filters.member'),
+                    memberItems,
+                    filters.memberIds,
+                    t('amendment.filters.any'),
+                  )
+                "
+                :search-input="
+                  labelledSearch(t('amendment.filters.memberSearch'))
+                "
                 @update:model-value="patch({ memberIds: $event })"
               />
             </UFormField>

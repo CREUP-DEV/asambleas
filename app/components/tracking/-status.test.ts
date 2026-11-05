@@ -4,6 +4,7 @@ import {
   groupByAgendaItem,
   matchesTrackingFilter,
   summarizeTracking,
+  trackingBucket,
   trackingState,
   type TrackedDocument,
 } from "./-status";
@@ -68,13 +69,47 @@ describe("trackingState", () => {
   });
 });
 
+describe("trackingBucket", () => {
+  it("puts overdue drafts under overdue and the rest under their state", () => {
+    expect(trackingBucket(doc("draft", { dueAt: PAST }), NOW)).toBe("overdue");
+    expect(
+      trackingBucket(doc("draft", { hasContent: true, dueAt: PAST }), NOW),
+    ).toBe("overdue");
+    expect(trackingBucket(doc("draft", { dueAt: FUTURE }), NOW)).toBe(
+      "expected",
+    );
+    expect(trackingBucket(doc("submitted", { dueAt: PAST }), NOW)).toBe(
+      "submitted",
+    );
+  });
+
+  it("keeps a late correction under correction", () => {
+    expect(
+      trackingBucket(
+        doc("draft", {
+          hasContent: true,
+          correctionNote: "Falta el anexo",
+          correctionRequestedAt: PAST,
+          dueAt: PAST,
+        }),
+        NOW,
+      ),
+    ).toBe("correction");
+  });
+});
+
 describe("summarizeTracking", () => {
-  it("counts every state and the overdue ones", () => {
+  it("counts each document once, so the tiles add up to the total", () => {
     const summary = summarizeTracking(
       [
         doc("draft", { dueAt: PAST }),
         doc("draft", { hasContent: true, dueAt: PAST }),
-        doc("draft", { correctionRequestedAt: PAST, hasContent: true }),
+        doc("draft"),
+        doc("draft", {
+          correctionRequestedAt: PAST,
+          hasContent: true,
+          dueAt: PAST,
+        }),
         doc("submitted", { dueAt: PAST }),
         doc("published"),
         doc("published"),
@@ -83,27 +118,32 @@ describe("summarizeTracking", () => {
       NOW,
     );
     expect(summary).toEqual({
-      total: 7,
+      total: 8,
       overdue: 2,
       expected: 1,
-      preparing: 1,
+      preparing: 0,
       correction: 1,
       submitted: 1,
       published: 2,
       withdrawn: 1,
       postponed: 0,
     });
+    const { total, ...tiles } = summary;
+    expect(Object.values(tiles).reduce((sum, count) => sum + count, 0)).toBe(
+      total,
+    );
   });
 });
 
 describe("matchesTrackingFilter", () => {
-  it("filters by state, by overdue or not at all", () => {
+  it("filters by the same tile the document counts under", () => {
     const late = doc("draft", { dueAt: PAST });
     expect(matchesTrackingFilter(late, "all", NOW)).toBe(true);
-    expect(matchesTrackingFilter(late, "expected", NOW)).toBe(true);
     expect(matchesTrackingFilter(late, "overdue", NOW)).toBe(true);
+    expect(matchesTrackingFilter(late, "expected", NOW)).toBe(false);
     expect(matchesTrackingFilter(late, "published", NOW)).toBe(false);
     expect(matchesTrackingFilter(doc("draft"), "overdue", NOW)).toBe(false);
+    expect(matchesTrackingFilter(doc("draft"), "expected", NOW)).toBe(true);
   });
 });
 

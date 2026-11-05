@@ -92,17 +92,32 @@ interface ListFrame {
 type RenderableBlock = Pick<Block, "id" | "type" | "level" | "list"> & {
   inner: string;
   attrs?: string;
+  /** Extra class of the block element, e.g. "cx-block-inserted". */
+  className?: string;
 };
 
-function wrapBlocks(items: RenderableBlock[]): string {
+export interface RenderOptions {
+  /**
+   * Headings as real <h2>-<h4> (the default). Excerpts pass false so their
+   * headings are styled paragraphs and stay out of the page outline.
+   */
+  headings?: boolean;
+}
+
+function wrapBlocks(items: RenderableBlock[], headings = true): string {
   let html = "";
   const stack: ListFrame[] = [];
   const closeFrame = () => {
     html += `</li></${stack.pop()!.tag}>`;
   };
+  const attrsOf = (item: RenderableBlock, ...classes: string[]) => {
+    const names = [...classes, item.className].filter(Boolean).join(" ");
+    const classAttr = names ? ` class="${escapeHtml(names)}"` : "";
+    return `data-block-id="${escapeHtml(item.id)}"${item.attrs ?? ""}${classAttr}`;
+  };
 
   for (const item of items) {
-    const attrs = `data-block-id="${escapeHtml(item.id)}"${item.attrs ?? ""}`;
+    const attrs = attrsOf(item);
     if (item.type === "list_item") {
       const level = Math.max(0, Math.min(6, item.level ?? 0));
       const tag = item.list === "ordered" ? "ol" : "ul";
@@ -123,7 +138,9 @@ function wrapBlocks(items: RenderableBlock[]): string {
     while (stack.length > 0) closeFrame();
     if (item.type === "heading") {
       const level = Math.max(2, Math.min(4, (item.level ?? 1) + 1));
-      html += `<h${level} ${attrs}>${item.inner}</h${level}>`;
+      html += headings
+        ? `<h${level} ${attrs}>${item.inner}</h${level}>`
+        : `<p ${attrsOf(item, "cx-heading", `cx-heading-${level}`)}>${item.inner}</p>`;
     } else if (item.type === "quote") {
       html += `<blockquote ${attrs}><p>${item.inner}</p></blockquote>`;
     } else {
@@ -135,23 +152,36 @@ function wrapBlocks(items: RenderableBlock[]): string {
 }
 
 /** Plain rendering of a version. Headings start at h2 so pages keep their h1. */
-export function renderBlocks(blocks: Block[]): string {
+export function renderBlocks(
+  blocks: Block[],
+  options: RenderOptions = {},
+): string {
   return wrapBlocks(
     blocks.map((block) => ({
       ...block,
       inner: renderInline(block.text, block.marks) || "<br>",
     })),
+    options.headings,
   );
 }
 
 export type AnnotatedMode = "diff" | "provenance" | "clean";
 
-export interface AnnotatedOptions {
+export interface AnnotatedOptions extends RenderOptions {
   mode: AnnotatedMode;
   /** Short label shown next to provenance, e.g. "12" or "T1". */
   label?: (amendmentId: string) => string;
   /** Highlights the segments of one amendment. */
   focus?: string | null;
+  /**
+   * Visually hidden words read before each insertion and removal in diff
+   * mode (e.g. "Added:"), so the change is not told by colour alone.
+   */
+  diffLabels?: { inserted: string; removed: string };
+}
+
+function srOnly(label: string | undefined): string {
+  return label ? `<span class="sr-only">${escapeHtml(label)} </span>` : "";
 }
 
 function segmentHtml(
@@ -164,11 +194,11 @@ function segmentHtml(
   const focused = options.focus === segment.source ? " cx-focus" : "";
   if (segment.removed) {
     return options.mode === "diff"
-      ? `<del class="cx-del${focused}" data-amendment-id="${id}">${inner}</del>`
+      ? `<del class="cx-del${focused}" data-amendment-id="${id}">${srOnly(options.diffLabels?.removed)}${inner}</del>`
       : "";
   }
   if (options.mode === "diff") {
-    return `<ins class="cx-ins${focused}" data-amendment-id="${id}">${inner}</ins>`;
+    return `<ins class="cx-ins${focused}" data-amendment-id="${id}">${srOnly(options.diffLabels?.inserted)}${inner}</ins>`;
   }
   if (options.mode === "provenance") {
     const label = options.label?.(segment.source);
@@ -207,12 +237,14 @@ export function renderAnnotated(
     }
 
     let attrs = "";
+    let className: string | undefined;
     if (block.status !== "kept" && block.source) {
-      attrs = ` data-amendment-id="${escapeHtml(block.source)}" class="cx-block-${block.status}"`;
+      attrs = ` data-amendment-id="${escapeHtml(block.source)}"`;
+      className = `cx-block-${block.status}`;
     }
-    items.push({ ...block, inner: inner || "<br>", attrs });
+    items.push({ ...block, inner: inner || "<br>", attrs, className });
   }
-  return wrapBlocks(items);
+  return wrapBlocks(items, options.headings);
 }
 
 /**

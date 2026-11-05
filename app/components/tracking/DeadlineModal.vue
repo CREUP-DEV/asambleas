@@ -108,7 +108,11 @@ async function save(value: string | null, mode: "save" | "clear") {
         :label="t('tracking.deadline.label')"
         :help="t('tracking.deadline.help')"
       >
-        <DocumentDateTimeInput v-model="dueAt" :min="minDue" />
+        <DocumentDateTimeInput
+          v-model="dueAt"
+          :min="minDue"
+          :aria-label="t('tracking.deadline.label')"
+        />
       </UFormField>
       <p
         v-if="inPast && !unchanged"

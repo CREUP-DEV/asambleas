@@ -794,6 +794,12 @@ transactional (409 for a draft or a decided one). The party is found by
 member: the actor's, or `memberId` when the Mesa records the answer given in
 the room (403 for anyone else; 404 when that member is not a party).
 
+- Each `AcceptanceDto` says who recorded the answer in `recordedBy`:
+  `"mesa"` when the latest `acceptance_recorded` event for that party has
+  `recordedForMemberId` (the Mesa recorded it in the room), `"party"`
+  otherwise, including a pending row and the proposer's own acceptance
+  with no event. It comes from the event, never from current member
+  links, like `PositionDto.recordedBy`.
 - A party answers once (409 afterwards); the Mesa can correct an answer
   until the transactional replaced its sources, after which the answers are
   final (409): the originals are gone.

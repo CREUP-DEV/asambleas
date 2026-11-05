@@ -12,7 +12,8 @@ import {
  * - `expected`: a draft without content yet. Often created in advance by the
  *   Secretaría for the member that has to provide it, but also a draft the
  *   member has just started: nothing tells them apart, so only the variants
- *   with a deadline (set by the Secretaría) mention that it is waited for;
+ *   with a deadline (set by the Secretaría) mention that it is waited for.
+ *   A PDF document waits for its file, not for a text;
  * - `preparing`: a draft with content, not sent yet;
  * - `correction`: the Secretaría sent it back with a note;
  * - `submitted`: sent to the Secretaría, waiting for validation;
@@ -38,7 +39,7 @@ export type DocumentProgressColor =
   "neutral" | "info" | "success" | "warning" | "error";
 
 /** The presenter's next step on a draft. */
-export type DocumentProgressAction = "prepare" | "continue" | "fix";
+export type DocumentProgressAction = "prepare" | "upload" | "continue" | "fix";
 
 export interface DocumentProgress {
   state: DocumentProgressState;
@@ -61,7 +62,9 @@ export interface DocumentProgress {
 type ProgressInput = Pick<
   DocumentSummaryDto,
   "status" | "dueAt" | "hasContent" | "correctionNote" | "correctionRequestedAt"
->;
+> &
+  // Optional: the tracking panel's rows do without it (labels do not change).
+  Partial<Pick<DocumentSummaryDto, "format">>;
 
 const KEY = "document.progress";
 
@@ -199,6 +202,7 @@ export function documentProgress(
 
   const timing = dueAt === null ? "" : overdue ? "Overdue" : "Due";
   if (state === "expected") {
+    const file = document.format === "file";
     return {
       state,
       overdue,
@@ -207,8 +211,8 @@ export function documentProgress(
       color: overdue ? "error" : "neutral",
       icon: overdue ? "i-lucide-alarm-clock" : "i-lucide-file-clock",
       labelKey: overdue ? `${KEY}.label.overdue` : `${KEY}.label.expected`,
-      sentenceKey: `${KEY}.${voice}.expected${timing}`,
-      action: presenter ? "prepare" : null,
+      sentenceKey: `${KEY}.${voice}.${file ? "expectedFile" : "expected"}${timing}`,
+      action: presenter ? (file ? "upload" : "prepare") : null,
     };
   }
 

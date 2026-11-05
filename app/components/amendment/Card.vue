@@ -2,6 +2,7 @@
 import type { AmendmentStatus } from "~~/shared/constants/domain";
 import type { AmendmentDto } from "~~/shared/types/api";
 import {
+  transactionalLinksOf,
   transactionalProgressMessage,
   transactionalProgressOf,
 } from "~/composables/amendment/transactional";
@@ -20,10 +21,13 @@ import {
  * stands with the Secretaría while it is a draft or waits for it, the
  * outcome otherwise), the Secretaría's note when it asked for a correction,
  * the kind when it is not the usual partial one, change typology, admission
- * and the main presenter's answer, the late mark, relations and
- * transactional links. A presented transactional says instead, in one line,
- * what it waits for (the main authors still to answer, or who rejected it)
- * or which amendments it replaced; while the Secretaría has it, the usual
+ * and the main presenter's answer (naming it when the page knows who it
+ * is), the late mark (and once the assembly admitted it, that it did),
+ * relations and transactional links: the transactional that replaced it, or
+ * the open ones proposed over it. A presented transactional says instead,
+ * in one line, what it waits for (the main authors still to answer, or who
+ * rejected it) or which amendments it replaced; while the Secretaría has
+ * it, the usual
  * review badge stays (as in the detail), so the Secretaría still finds it
  * "Por revisar". A late amendment the assembly still has to decide on says
  * so in a line of its own. An amendment that is not public yet has a dashed
@@ -46,12 +50,21 @@ const props = withDefaults(
      * a transactional can tell whether it replaced the ones it combines.
      */
     statusOf?: (id: string) => AmendmentStatus | undefined;
+    /**
+     * Every amendment of the document (the workspace list), so its
+     * transactional links tell a replacement from a proposal.
+     */
+    byId?: ReadonlyMap<string, AmendmentDto>;
+    /** Acronym of the document's main presenter, who answers it. */
+    presenter?: string | null;
   }>(),
   {
     relations: () => [],
     selected: false,
     showPublished: false,
     statusOf: undefined,
+    byId: undefined,
+    presenter: null,
   },
 );
 
@@ -128,9 +141,35 @@ const sources = computed(() =>
     ? ""
     : props.amendment.sourceIds.map((id) => props.labelOf(id)).join(", "),
 );
-const transactedIn = computed(() =>
-  props.amendment.transactionalIds.map((id) => props.labelOf(id)).join(", "),
+/**
+ * "Transaccionada en T1" once a transactional replaced it, "En la
+ * transaccional propuesta T2" while one is only proposed over it.
+ */
+const links = computed(() =>
+  props.byId
+    ? transactionalLinksOf(props.amendment, props.byId)
+    : {
+        replacedBy:
+          props.amendment.status === "transacted"
+            ? props.amendment.transactionalIds
+            : [],
+        proposed: [],
+      },
 );
+const transactedIn = computed(() =>
+  links.value.replacedBy.map((id) => props.labelOf(id)).join(", "),
+);
+const proposedIn = computed(() =>
+  links.value.proposed.map((id) => props.labelOf(id)).join(", "),
+);
+/** "VPU la acepta": whose answer it is, when the page knows. */
+const positionLabel = computed(() => {
+  const position = props.amendment.position?.position;
+  if (!props.presenter || !position || position === "pending") return undefined;
+  return t(`amendment.card.position.${position}`, {
+    member: props.presenter,
+  });
+});
 const showTags = computed(
   () =>
     showKind.value ||
@@ -259,6 +298,7 @@ function relationLabel(view: AmendmentRelationView): string {
         v-if="showPosition && amendment.position"
         kind="position"
         :value="amendment.position.position"
+        :label="positionLabel"
         size="xs"
       />
       <UBadge
@@ -267,7 +307,11 @@ function relationLabel(view: AmendmentRelationView): string {
         variant="subtle"
         size="xs"
         icon="i-lucide-clock-alert"
-        :label="t('amendment.late')"
+        :label="
+          amendment.admission === 'admitted'
+            ? t('amendment.lateAdmitted')
+            : t('amendment.late')
+        "
       />
       <UBadge
         v-if="amendment.globalReplace"
@@ -287,7 +331,7 @@ function relationLabel(view: AmendmentRelationView): string {
     </span>
 
     <span
-      v-if="relations.length > 0 || sources || transactedIn"
+      v-if="relations.length > 0 || sources || transactedIn || proposedIn"
       class="mt-2 flex flex-wrap gap-1"
     >
       <UBadge
@@ -305,6 +349,20 @@ function relationLabel(view: AmendmentRelationView): string {
         size="xs"
         icon="i-lucide-git-merge"
         :label="t('amendment.card.transactedIn', { list: transactedIn })"
+      />
+      <UBadge
+        v-if="proposedIn"
+        color="neutral"
+        variant="soft"
+        size="xs"
+        icon="i-lucide-git-pull-request-arrow"
+        :label="
+          t(
+            'amendment.card.proposedIn',
+            { list: proposedIn },
+            links.proposed.length,
+          )
+        "
       />
       <UBadge
         v-for="view in relations"

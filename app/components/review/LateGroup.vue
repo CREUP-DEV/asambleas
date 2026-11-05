@@ -183,10 +183,11 @@ watch(targetAmendments, (list) => {
 });
 
 /**
- * What the dialog is about. It keeps the last amendments it named while it
- * closes, so its text never reads "0 enmiendas".
+ * What the dialog is about, and whether they are all public already (then
+ * it does not say treating them publishes them). It keeps the last
+ * amendments it named while it closes, so its text never reads "0 enmiendas".
  */
-const dialogView = ref({ subject: "", count: 1 });
+const dialogView = ref({ subject: "", count: 1, allPublic: false });
 watch(
   targetAmendments,
   (list) => {
@@ -201,6 +202,7 @@ watch(
               list.length,
             ),
       count: list.length,
+      allPublic: list.every((amendment) => amendment.publishedAt !== null),
     };
   },
   { immediate: true },
@@ -310,8 +312,9 @@ const summary = computed(() =>
           </NuxtLink>
           <span
             v-if="group.document.reference"
-            class="text-muted ms-1.5 text-sm font-normal tabular-nums"
-            >· {{ group.document.reference }}</span
+            class="text-muted text-sm font-normal tabular-nums"
+          >
+            · {{ group.document.reference }}</span
           >
         </h4>
         <p class="text-muted text-sm">{{ summary }}</p>
@@ -388,6 +391,7 @@ const summary = computed(() =>
       v-model:open="dialogOpen"
       :subject="dialogView.subject"
       :count="dialogView.count"
+      :all-public="dialogView.allPublic"
       :document-title="group.document.title"
       :initial-decision="target?.decision ?? 'admitted'"
       :settings="props.settings"

@@ -55,6 +55,49 @@ describe("documentProgress", () => {
     expect(progress.action).toBeNull();
   });
 
+  it("waits for the PDF of a file document, not for a text", () => {
+    const presenter = documentProgress(
+      doc({ hasContent: false, format: "file" }),
+      "presenter",
+      NOW,
+    );
+    expect(presenter.state).toBe("expected");
+    expect(presenter.sentenceKey).toBe(
+      "document.progress.presenter.expectedFile",
+    );
+    expect(presenter.labelKey).toBe("document.progress.label.expected");
+    expect(presenter.action).toBe("upload");
+    expect(
+      documentProgress(
+        doc({ hasContent: false, format: "file", dueAt: FUTURE }),
+        "presenter",
+        NOW,
+      ).sentenceKey,
+    ).toBe("document.progress.presenter.expectedFileDue");
+
+    const manager = documentProgress(
+      doc({ hasContent: false, format: "file", dueAt: PAST }),
+      "manager",
+      NOW,
+    );
+    expect(manager.sentenceKey).toBe(
+      "document.progress.manager.expectedFileOverdue",
+    );
+    expect(manager.labelKey).toBe("document.progress.label.overdue");
+    expect(manager.action).toBeNull();
+    expect(
+      documentProgress(doc({ hasContent: false, format: "file" }), "other", NOW)
+        .sentenceKey,
+    ).toBe("document.progress.manager.expectedFile");
+    expect(
+      documentProgress(
+        doc({ hasContent: false, format: "structured" }),
+        "presenter",
+        NOW,
+      ).action,
+    ).toBe("prepare");
+  });
+
   it("treats a missing hasContent (older server) as content present", () => {
     const progress = documentProgress(
       doc({ hasContent: undefined as unknown as boolean }),

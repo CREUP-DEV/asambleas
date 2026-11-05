@@ -6,7 +6,8 @@ import type { DocumentSummaryDto } from "~~/shared/types/api";
  * it (the main presenter, then at most two co-presenters before "N más")
  * and since when, with
  * "Validar y publicar" as the main action and "Pedir corrección" next to
- * it. The parent runs both.
+ * it. The parent runs both. Every action names the document it acts on
+ * through `aria-describedby`, so a list of buttons tells them apart.
  */
 const props = withDefaults(
   defineProps<{
@@ -108,6 +109,7 @@ const submittedAbsolute = computed(() =>
       <UButton
         icon="i-lucide-check-check"
         :label="t('review.documents.publish')"
+        :aria-describedby="titleId"
         :loading="busy === 'publish'"
         :disabled="disabled && busy !== 'publish'"
         @click="emit('publish')"
@@ -117,6 +119,7 @@ const submittedAbsolute = computed(() =>
         variant="outline"
         icon="i-lucide-undo-2"
         :label="t('review.askCorrection')"
+        :aria-describedby="titleId"
         :loading="busy === 'correction'"
         :disabled="disabled && busy !== 'correction'"
         @click="emit('correction')"
@@ -126,6 +129,7 @@ const submittedAbsolute = computed(() =>
         variant="ghost"
         icon="i-lucide-arrow-up-right"
         :label="t('review.documents.open')"
+        :aria-describedby="titleId"
         :to="props.to"
       />
     </div>

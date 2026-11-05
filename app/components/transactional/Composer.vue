@@ -289,7 +289,7 @@ const parties = computed<MemberRef[]>(() => {
 });
 const partyItems = computed(() =>
   parties.value.map((party) => ({
-    label: `${party.acronym} · ${party.name}`,
+    label: memberLabel(party),
     value: party.id,
   })),
 );
@@ -329,7 +329,7 @@ const mainAuthorItems = computed(() =>
   authorIds.value.map((id) => {
     const party = parties.value.find((item) => item.id === id);
     return {
-      label: party ? `${party.acronym} · ${party.name}` : id,
+      label: party ? memberLabel(party) : id,
       value: id,
     };
   }),
@@ -821,7 +821,7 @@ const stepBadge =
               :label="t('transactional.composer.editorLabel')"
             />
             <template #fallback>
-              <USkeleton class="h-32 w-full" />
+              <USkeleton aria-hidden="true" class="h-32 w-full" />
             </template>
           </ClientOnly>
           <p class="text-dimmed text-xs">
@@ -946,6 +946,15 @@ const stepBadge =
                 multiple
                 class="w-full"
                 :placeholder="t('transactional.composer.authorsPlaceholder')"
+                :aria-label="
+                  selectMenuLabel(
+                    t('transactional.composer.authors'),
+                    partyItems,
+                    authorIds,
+                    t('transactional.composer.authorsPlaceholder'),
+                  )
+                "
+                :search-input="labelledSearch(t('common.search'))"
                 @update:model-value="onAuthorsChange"
               />
             </UFormField>

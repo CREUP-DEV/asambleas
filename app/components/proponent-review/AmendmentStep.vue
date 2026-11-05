@@ -4,7 +4,10 @@ import type { AcceptedAmendmentRule } from "~~/shared/constants/domain";
 import type { AmendmentDto, MemberRef } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
 import { NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/amendment";
-import { amendmentAuthorsInOrder } from "~/composables/amendment/workspace";
+import {
+  amendmentAuthorsInOrder,
+  type AmendmentRelationView,
+} from "~/composables/amendment/workspace";
 import {
   PROPONENT_ANSWERS,
   acceptHelpKey,
@@ -34,6 +37,10 @@ import {
  * "Proponer la transaccional" opens the composer of the workspace on this
  * amendment (when it can be combined).
  *
+ * Under where it stands, one quiet line each for what the document page
+ * also shows: a pending transactional over it (which would replace it) and
+ * its relations with other amendments ("Incompatible con 5 · UGR 1").
+ *
  * A transactional lists the amendments it replaced; their changes fold
  * away.
  */
@@ -45,6 +52,10 @@ const props = withDefaults(
     acceptedAmendments: AcceptedAmendmentRule;
     /** For a transactional: the amendments it replaced, as the actor sees them. */
     sources?: AmendmentDto[];
+    /** Transactionals over this amendment still on their way. */
+    pendingTransactionals?: AmendmentDto[];
+    /** Its relations with other amendments of the document. */
+    relations?: AmendmentRelationView[];
     /** "12 · CEUM 4" for an amendment id. */
     labelOf?: ((id: string) => string) | null;
     /** The choice being saved, if any. */
@@ -67,6 +78,8 @@ const props = withDefaults(
   }>(),
   {
     sources: () => [],
+    pendingTransactionals: () => [],
+    relations: () => [],
     labelOf: null,
     busy: null,
     disabled: false,
@@ -158,6 +171,44 @@ const replaced = computed(() =>
     : [],
 );
 const sourcesOpen = ref(false);
+
+/** "12 · CEUM 4" for another amendment of the document. */
+function otherLabel(id: string): string {
+  return props.labelOf?.(id) ?? t("proponentReview.noCode");
+}
+
+/**
+ * The context lines under where it stands: a pending transactional over it
+ * (one line for all of them) and each relation, worded as in the document's
+ * amendment cards.
+ */
+const context = computed(() => {
+  const lines: { key: string; icon: string; text: string }[] = [];
+  const pending = props.pendingTransactionals;
+  if (pending.length > 0) {
+    lines.push({
+      key: "pending-transactionals",
+      icon: "i-lucide-git-merge",
+      text: t(
+        "proponentReview.context.pendingTransactional",
+        { list: pending.map((item) => otherLabel(item.id)).join(", ") },
+        pending.length,
+      ),
+    });
+  }
+  for (const view of props.relations) {
+    const kind =
+      view.direction === "from"
+        ? `amendment.relations.kinds.${view.relation.kind}`
+        : `amendment.relations.inverse.${view.relation.kind}`;
+    lines.push({
+      key: view.relation.id,
+      icon: "i-lucide-link-2",
+      text: `${t(kind)} ${otherLabel(view.otherId)}`,
+    });
+  }
+  return lines;
+});
 
 /** When the comment is saved, then who reads it. */
 const commentHelp = computed(() =>
@@ -260,6 +311,20 @@ defineExpose({
         trailing-icon="i-lucide-arrow-right"
         :label="t('proponentReview.answer.proposeTransactional')"
       />
+      <ul v-if="context.length > 0" class="text-muted space-y-1 text-sm">
+        <li
+          v-for="line in context"
+          :key="line.key"
+          class="flex items-start gap-1.5"
+        >
+          <UIcon
+            :name="line.icon"
+            class="mt-0.5 size-4 shrink-0"
+            aria-hidden="true"
+          />
+          <span>{{ line.text }}</span>
+        </li>
+      </ul>
     </header>
 
     <section v-if="replaced.length > 0" class="space-y-2">

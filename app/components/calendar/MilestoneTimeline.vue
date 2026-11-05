@@ -116,6 +116,7 @@ const activeIndex = computed(() => {
             v-if="item.upcoming"
             :to="item.at"
             :urgent-hours="72"
+            max-unit="day"
             class="text-sm"
           />
           <span v-if="item.description" class="block whitespace-pre-line">{{

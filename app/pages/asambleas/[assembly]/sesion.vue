@@ -42,6 +42,10 @@ const isDesktop = useMediaQuery("(min-width: 1024px)");
 
 // One line under each folded section's title, so it is useful folded.
 const speakersSummary = computed(() => {
+  // Until the turns arrive, an empty list would claim nobody asked.
+  if (session.speakers.loading.value || session.speakers.unavailable.value) {
+    return null;
+  }
   const { speaking, waiting } = session.speakers.view.value;
   const parts = [
     speaking
@@ -179,11 +183,12 @@ defineShortcuts({
 
 <template>
   <div class="space-y-3">
-    <div v-if="assemblyLoading" class="space-y-3" aria-busy="true">
-      <USkeleton class="h-12 w-full" />
+    <div v-if="assemblyLoading" class="space-y-3" role="status">
+      <span class="sr-only">{{ t("assembly.hub.loading") }}</span>
+      <USkeleton aria-hidden="true" class="h-12 w-full" />
       <div class="grid gap-3 lg:grid-cols-[2fr_1fr]">
-        <USkeleton class="h-96" />
-        <USkeleton class="h-96" />
+        <USkeleton aria-hidden="true" class="h-96" />
+        <USkeleton aria-hidden="true" class="h-96" />
       </div>
     </div>
 
@@ -340,11 +345,12 @@ defineShortcuts({
       <SessionTransactionalComposer />
 
       <template #fallback>
-        <div class="space-y-3" aria-busy="true">
-          <USkeleton class="h-12 w-full" />
+        <div class="space-y-3" role="status">
+          <span class="sr-only">{{ t("common.loading") }}</span>
+          <USkeleton aria-hidden="true" class="h-12 w-full" />
           <div class="grid gap-3 lg:grid-cols-[2fr_1fr]">
-            <USkeleton class="h-96" />
-            <USkeleton class="h-96" />
+            <USkeleton aria-hidden="true" class="h-96" />
+            <USkeleton aria-hidden="true" class="h-96" />
           </div>
         </div>
       </template>

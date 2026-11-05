@@ -46,6 +46,7 @@ vi.mock("./visibility", () => ({
 vi.mock("../errors", () => ({ isUniqueConstraintViolation: vi.fn() }));
 
 const {
+  acceptanceRecordedBy,
   admissionEligible,
   amendmentCapabilities,
   amendmentSortKey,
@@ -656,6 +657,18 @@ describe("redactAmendmentEventPayload", () => {
     expect(
       redactAmendmentEventPayload("amendment_submitted", payload, false),
     ).toEqual(payload);
+  });
+});
+
+describe("acceptanceRecordedBy", () => {
+  it("is the Mesa's when the latest answer names the party it was for", () => {
+    expect(acceptanceRecordedBy("ugr")).toBe("mesa");
+  });
+
+  it("is the party's own otherwise, also with no recorded answer", () => {
+    expect(acceptanceRecordedBy(null)).toBe("party");
+    expect(acceptanceRecordedBy(undefined)).toBe("party");
+    expect(acceptanceRecordedBy("")).toBe("party");
   });
 });
 

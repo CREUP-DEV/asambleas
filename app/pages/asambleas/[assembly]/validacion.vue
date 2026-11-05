@@ -13,6 +13,7 @@ import {
   groupReviewAmendments,
   removeReviewAmendments,
   removeReviewDocument,
+  reviewGroupActionable,
   reviewGroupSize,
   reviewQueueKey,
 } from "~/components/review/-queue";
@@ -91,6 +92,17 @@ const lateGroups = computed(() =>
 const amendmentCount = computed(() =>
   reviewGroups.value.reduce(
     (total, group) => total + reviewGroupSize(group),
+    0,
+  ),
+);
+/**
+ * What the "Enmiendas" badge counts: those to validate or to publish, as the
+ * home page does. Transactionals waiting for their authors are listed, but
+ * nothing can be done with them yet.
+ */
+const actionableCount = computed(() =>
+  reviewGroups.value.reduce(
+    (total, group) => total + reviewGroupActionable(group),
     0,
   ),
 );
@@ -285,13 +297,14 @@ function documentBusyFor(id: string): "publish" | "correction" | null {
         {{ statusMessage }}
       </p>
 
-      <div
-        v-if="pending && !queue"
-        class="space-y-3"
-        aria-busy="true"
-        :aria-label="t('review.loading')"
-      >
-        <USkeleton v-for="n in 3" :key="n" class="h-28 w-full" />
+      <div v-if="pending && !queue" class="space-y-3" role="status">
+        <span class="sr-only">{{ t("review.loading") }}</span>
+        <USkeleton
+          v-for="n in 3"
+          :key="n"
+          aria-hidden="true"
+          class="h-28 w-full"
+        />
       </div>
 
       <UAlert
@@ -381,7 +394,7 @@ function documentBusyFor(id: string): "publish" | "correction" | null {
                 color="neutral"
                 variant="soft"
                 size="sm"
-                :label="String(amendmentCount)"
+                :label="String(actionableCount)"
               />
             </h3>
             <p v-if="amendmentCount > 0" class="text-muted max-w-3xl text-sm">

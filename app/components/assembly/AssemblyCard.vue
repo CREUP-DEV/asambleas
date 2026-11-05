@@ -42,7 +42,7 @@ const isLive = computed(() => props.assembly.status === "in_session");
 
 const milestone = computed(() => props.assembly.nextMilestone);
 const milestoneLabel = computed(() =>
-  milestone.value ? t(`assemblies.milestones.${milestone.value.key}`) : "",
+  milestone.value ? t(`calendar.milestones.${milestone.value.key}`) : "",
 );
 
 const headingTag = computed(() => `h${props.headingLevel}`);

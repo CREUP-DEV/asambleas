@@ -276,6 +276,7 @@ describe("live amendments", () => {
       role: "author" as const,
       decision,
       decidedAt: null,
+      recordedBy: "party" as const,
     });
     // CEUM 1 and UPV 1 replaced by T1 (accepted by both, still debated);
     // T2 over UPV 1 was turned down by UPV.

@@ -162,14 +162,15 @@ async function onDeadlineSaved() {
         {{ statusMessage }}
       </p>
 
-      <div
-        v-if="pending && !agenda"
-        class="space-y-3"
-        aria-busy="true"
-        :aria-label="t('tracking.loading')"
-      >
-        <USkeleton class="h-16 w-full" />
-        <USkeleton v-for="n in 3" :key="n" class="h-20 w-full" />
+      <div v-if="pending && !agenda" class="space-y-3" role="status">
+        <span class="sr-only">{{ t("tracking.loading") }}</span>
+        <USkeleton aria-hidden="true" class="h-16 w-full" />
+        <USkeleton
+          v-for="n in 3"
+          :key="n"
+          aria-hidden="true"
+          class="h-20 w-full"
+        />
       </div>
 
       <UAlert

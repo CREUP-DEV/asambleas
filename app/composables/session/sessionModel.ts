@@ -685,9 +685,12 @@ export function buildSessionQueue(list: AmendmentDto[]): SessionQueue {
 
 /**
  * Figures of the debate queue: amendments the Secretaría has not validated
- * yet are counted apart, since the Mesa cannot decide them.
+ * yet are counted apart, since the Mesa cannot decide them. `presented`
+ * counts every one past draft, validated or not: the figure the agenda
+ * shows for the document (its amendmentCount), so both say the same.
  */
 export function sessionQueueCounts(list: AmendmentDto[]): {
+  presented: number;
   total: number;
   undecided: number;
   approved: number;
@@ -699,6 +702,7 @@ export function sessionQueueCounts(list: AmendmentDto[]): {
       amendment.status !== "draft" && !isSessionAwaitingValidation(amendment),
   );
   return {
+    presented: list.filter((amendment) => amendment.status !== "draft").length,
     total: listed.length,
     undecided: listed.filter(isSessionUndecided).length,
     approved: listed.filter((amendment) => amendment.status === "approved")
@@ -921,8 +925,9 @@ export function sessionAmendmentStage(
  * around to those skipped before it. Late amendments still waiting for the
  * assembly's decision, those not validated yet, private ones the actor
  * cannot publish, decided ones and transactionals that can no longer go
- * ahead (isSessionSuperseded) are never offered. Null when nothing else is
- * left.
+ * ahead (isSessionSuperseded) are never offered. When the current one was
+ * transacted, the transactional debated in its place comes first, wherever
+ * it sits in the text. Null when nothing else is left.
  */
 export function sessionNextAmendmentId(
   queue: SessionQueue,
@@ -943,6 +948,13 @@ export function sessionNextAmendmentId(
       !isSessionSuperseded(amendment, byId)
     );
   });
+  const current = currentId ? byId.get(currentId) : undefined;
+  if (current?.status === "transacted") {
+    const replacing = sessionReplacingIds(current, byId).find((id) =>
+      order.includes(id),
+    );
+    if (replacing) return replacing;
+  }
   const index = currentId ? order.indexOf(currentId) : -1;
   const after = index === -1 ? order : order.slice(index + 1);
   const before = index === -1 ? [] : order.slice(0, index);

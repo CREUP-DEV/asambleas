@@ -119,7 +119,7 @@ const coItems = computed(() => {
     .filter((member): member is MemberRef => Boolean(member));
   return [...missing, ...listed].map((member) => ({
     label: member.acronym,
-    description: member.name,
+    description: memberNameRepeatsAcronym(member) ? undefined : member.name,
     value: member.id,
   }));
 });
@@ -145,7 +145,7 @@ watch(
 const mainItems = computed(() =>
   order.value.map((id) => {
     const member = byId.value.get(id);
-    const label = member ? `${member.acronym} · ${member.name}` : id;
+    const label = member ? memberLabel(member) : id;
     return {
       label,
       description:
@@ -200,9 +200,17 @@ function onMainChange(value: unknown): void {
               :loading="loading"
               :disabled="disabled"
               :placeholder="t('document.presenters.coPlaceholder')"
-              :search-input="{
-                placeholder: t('document.metadata.searchMember'),
-              }"
+              :aria-label="
+                selectMenuLabel(
+                  t('document.presenters.coLabel'),
+                  coItems,
+                  editableCoIds,
+                  t('document.presenters.coPlaceholder'),
+                )
+              "
+              :search-input="
+                labelledSearch(t('document.metadata.searchMember'))
+              "
               class="w-full"
             />
           </UFormField>

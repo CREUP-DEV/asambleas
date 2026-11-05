@@ -643,8 +643,9 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         </UTooltip>
       </template>
       <template v-else-if="open">
+        <!-- Under its row, which already offers "Debatir": only the way out. -->
         <UButton
-          v-if="debated || debatable"
+          v-if="debated || (debatable && !embedded)"
           size="xs"
           :color="debated ? 'primary' : 'neutral'"
           :variant="debated ? 'solid' : 'outline'"

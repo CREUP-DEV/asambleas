@@ -75,9 +75,18 @@ function relative(value: string | null): string {
     : "";
 }
 
-/** The date worth showing once it left the presenter's hands. */
+/**
+ * The date worth showing once it left the presenter's hands, or since the
+ * Secretaría sent it back to them.
+ */
 const when = computed<{ label: string; at: string } | null>(() => {
   const document = props.document;
+  if (document.status === "draft" && document.correctionRequestedAt) {
+    return {
+      label: t("tracking.row.sentBack"),
+      at: document.correctionRequestedAt,
+    };
+  }
   if (document.status === "submitted" && document.submittedAt) {
     return { label: t("tracking.row.sent"), at: document.submittedAt };
   }
@@ -110,8 +119,9 @@ const when = computed<{ label: string; at: string } | null>(() => {
         <span>{{ document.title }}</span>
         <span
           v-if="document.reference"
-          class="text-muted ms-1.5 text-sm font-normal tabular-nums"
-          >· {{ document.reference }}</span
+          class="text-muted text-sm font-normal tabular-nums"
+        >
+          · {{ document.reference }}</span
         >
       </NuxtLink>
 
@@ -119,8 +129,8 @@ const when = computed<{ label: string; at: string } | null>(() => {
         class="text-muted flex flex-wrap items-center gap-x-2 gap-y-1 text-sm"
       >
         <span>{{ t(`agenda.documentKinds.${document.kind}`) }}</span>
-        <span aria-hidden="true">·</span>
         <span class="inline-flex min-w-0 flex-wrap items-center gap-x-1.5">
+          <span aria-hidden="true">·</span>
           <span>{{ t("tracking.row.presenter") }}</span>
           <DocumentPresenters
             v-if="document.proponent"
@@ -163,10 +173,10 @@ const when = computed<{ label: string; at: string } | null>(() => {
         />
         <span>{{ t("tracking.row.deadline") }}</span>
         <time :datetime="progress.dueAt">{{ absolute(progress.dueAt) }}</time>
-        <template v-if="overdueInLine">
+        <span v-if="overdueInLine" class="inline-flex gap-x-1.5">
           <span aria-hidden="true">·</span>
           <span>{{ t("tracking.row.overdue") }}</span>
-        </template>
+        </span>
       </p>
 
       <div v-if="showSentence" class="space-y-0.5">

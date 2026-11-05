@@ -119,7 +119,13 @@ function party(
   decision: AcceptanceDto["decision"] = "pending",
   role: AcceptanceDto["role"] = "author",
 ): AcceptanceDto {
-  return { member, role, decision, decidedAt: null };
+  return {
+    member,
+    role,
+    decision,
+    decidedAt: null,
+    recordedBy: "party" as const,
+  };
 }
 
 /** A transactional its main authors accepted and the Secretaría published. */

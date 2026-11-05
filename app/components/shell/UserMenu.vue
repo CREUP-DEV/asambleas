@@ -17,6 +17,20 @@ const colorMode = useColorMode();
 const preferencesOpen = ref(false);
 const signingOut = ref(false);
 
+/**
+ * The dialog opens from a menu item that is gone once the menu closes, so
+ * on close focus goes back to the menu button instead of the page body.
+ */
+const menuButton = useTemplateRef<{ $el?: unknown }>("menuButton");
+const preferencesContent = {
+  onCloseAutoFocus: (event: Event) => {
+    const button = menuButton.value?.$el;
+    if (!(button instanceof HTMLElement) || !button.isConnected) return;
+    event.preventDefault();
+    button.focus();
+  },
+};
+
 const name = computed(() => me.value?.name || me.value?.email || "");
 
 const initials = computed(() =>
@@ -124,6 +138,7 @@ const items = computed<DropdownMenuItem[][]>(() => [
       }"
     >
       <UButton
+        ref="menuButton"
         color="neutral"
         variant="ghost"
         :block="!props.collapsed"
@@ -155,6 +170,7 @@ const items = computed<DropdownMenuItem[][]>(() => [
       v-model:open="preferencesOpen"
       :title="t('shell.user.accessibility')"
       :description="t('shell.user.accessibilityDescription')"
+      :content="preferencesContent"
     >
       <template #body>
         <AccessibilityPreferences />

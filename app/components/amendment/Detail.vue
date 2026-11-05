@@ -11,6 +11,7 @@ import {
   transactionalAuthorTurn,
   transactionalClosure,
   transactionalGroupSources,
+  transactionalLinksOf,
   transactionalRejectedBy,
   transactionalRejectedByAuthors,
   transactionalSourceEligible,
@@ -48,9 +49,12 @@ import {
  * answered. Once closed, its outcome says why: who rejected it (from its
  * acceptances, as its outcome note is left for the Mesa's own words), or
  * which amendment it groups was settled or replaced meanwhile, when no
- * note says it. A draft sent back for correction has one way forward,
- * "Corregir y volver a enviar" in the review panel: the composer shows the
- * note and sends it, so the footer offers no direct send.
+ * note says it. A replaced amendment's outcome names the transactional that
+ * replaced it. A draft (new, or sent back for correction) has no answer
+ * from the main presenter to show. A draft sent back for correction has
+ * one way forward, "Corregir y volver a enviar" in the review panel: the
+ * composer shows the note and sends it, so the footer offers no direct
+ * send.
  *
  * Whoever can propose a transactional finds it as a secondary action: in
  * the footer's "Más" menu for this amendment, and next to the amendments
@@ -143,8 +147,14 @@ const canManageRelations = computed(
       props.amendment.can.review ||
       props.document.can.position),
 );
+/**
+ * Not on a draft: it can only be answered once published, and one sent back
+ * for correction still carries the row from its first sending.
+ */
 const showPosition = computed(
-  () => props.amendment.position !== null || props.amendment.can.position,
+  () =>
+    props.amendment.status !== "draft" &&
+    (props.amendment.position !== null || props.amendment.can.position),
 );
 const showRelations = computed(
   () =>
@@ -260,6 +270,10 @@ const closedBecause = computed(() => {
     source: props.labelOf(closure.sourceId),
   });
 });
+/** The transactionals that replaced it (it is `transacted`), for its outcome. */
+const replacedBy = computed(
+  () => transactionalLinksOf(props.amendment, byId.value).replacedBy,
+);
 /** History labels: only the amendments the viewer sees (else the event's code). */
 function historyLabelOf(id: string): string | null {
   return byId.value.has(id) ? props.labelOf(id) : null;
@@ -438,7 +452,11 @@ async function remove(): Promise<void> {
           color="warning"
           variant="subtle"
           icon="i-lucide-clock-alert"
-          :label="t('amendment.late')"
+          :label="
+            amendment.admission === 'admitted'
+              ? t('amendment.lateAdmitted')
+              : t('amendment.late')
+          "
         />
         <UBadge
           v-if="showKind"
@@ -587,7 +605,11 @@ async function remove(): Promise<void> {
         "
         class="text-sm"
       >
-        {{ t("amendment.detail.approvedByPresenter") }}
+        {{
+          amendment.position?.recordedBy === "mesa"
+            ? t("amendment.detail.approvedByMesa")
+            : t("amendment.detail.approvedByPresenter")
+        }}
       </p>
       <p
         v-else-if="amendment.status === 'approved' && amendment.approvalMethod"
@@ -597,6 +619,18 @@ async function remove(): Promise<void> {
           t("amendment.detail.approvedBy", {
             method: t(`amendment.approvalMethods.${amendment.approvalMethod}`),
           })
+        }}
+      </p>
+      <!-- Replaced: which transactional took its place. -->
+      <p v-else-if="amendment.status === 'transacted'" class="text-sm">
+        {{
+          replacedBy.length > 0
+            ? t(
+                "amendment.detail.replacedBy",
+                { list: join(replacedBy.map((id) => labelOf(id))) },
+                replacedBy.length,
+              )
+            : t("amendment.detail.replacedByUnknown")
         }}
       </p>
       <!-- Closed by a main author's rejection: who said no. -->

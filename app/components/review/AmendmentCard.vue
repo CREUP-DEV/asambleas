@@ -23,14 +23,17 @@ import {
  * - validated but kept private: "Publicar";
  * - a transactional waiting for the main authors of the amendments it would
  *   replace: none, its status line names who still has to answer;
- * - late and waiting for the assembly: "La asamblea decide tratarla" (main),
- *   "No la trata" and, under "Más", "Publicar ya" while it is private.
+ * - late and waiting for the assembly: "Tratarla" (main), "No tratarla" and,
+ *   under "Más", "Publicar ya" while it is private.
  * The main author is named first, then the co-authors. A transactional
  * lists the amendments it groups once the parent has loaded their codes.
  * The parent runs every action. The selection checkbox shows only when the
  * list has several amendments to act on; it is disabled, with the reason
  * under it, while another selected transactional groups some of the same
- * amendments (`selectBlockedBy`).
+ * amendments (`selectBlockedBy`). Its code is an h5, or an h6 inside a
+ * subgroup with its own h5 heading (`headingLevel`). Every action names the
+ * amendment it acts on through `aria-describedby`, so a list of buttons does
+ * not read several identical "Publicar".
  */
 const props = withDefaults(
   defineProps<{
@@ -54,6 +57,8 @@ const props = withDefaults(
      * amendments: this one cannot be selected with it. Null otherwise.
      */
     selectBlockedBy?: string | null;
+    /** h5 under the document's h4, h6 inside a subgroup's h5. */
+    headingLevel?: 5 | 6;
   }>(),
   {
     baseLoading: false,
@@ -62,6 +67,7 @@ const props = withDefaults(
     multiSelect: false,
     sourceLabels: null,
     selectBlockedBy: null,
+    headingLevel: 5,
   },
 );
 
@@ -73,6 +79,7 @@ const now = useAppNow();
 
 const titleId = useId();
 const blockedHintId = useId();
+const headingTag = computed(() => `h${props.headingLevel}`);
 
 const label = computed(
   () => amendmentDisplayLabel(props.amendment) ?? t("review.amendments.noCode"),
@@ -257,9 +264,13 @@ const moreBusy = computed(
       />
       <div class="min-w-0 flex-1 space-y-1">
         <div class="flex flex-wrap items-center gap-1.5">
-          <h5 :id="titleId" class="text-highlighted font-semibold tabular-nums">
+          <component
+            :is="headingTag"
+            :id="titleId"
+            class="text-highlighted font-semibold tabular-nums"
+          >
             {{ label }}
-          </h5>
+          </component>
           <UBadge
             v-if="amendment.kind !== 'partial'"
             color="neutral"
@@ -410,6 +421,7 @@ const moreBusy = computed(
           changesOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
         "
         :label="t('amendment.detail.changes')"
+        :aria-describedby="titleId"
       />
       <template #content>
         <div class="space-y-2">
@@ -429,11 +441,13 @@ const moreBusy = computed(
             <div
               v-if="base === null && baseLoading"
               class="space-y-2"
-              aria-busy="true"
-              :aria-label="t('review.amendments.loadingText')"
+              role="status"
             >
-              <USkeleton class="h-4 w-full" />
-              <USkeleton class="h-4 w-3/4" />
+              <span class="sr-only">{{
+                t("review.amendments.loadingText")
+              }}</span>
+              <USkeleton aria-hidden="true" class="h-4 w-full" />
+              <USkeleton aria-hidden="true" class="h-4 w-3/4" />
             </div>
             <p v-else-if="base === null" class="text-muted text-sm">
               {{ t("review.amendments.textUnavailable") }}
@@ -480,6 +494,7 @@ const moreBusy = computed(
         <UButton
           icon="i-lucide-check-check"
           :label="t('review.amendments.validatePublish')"
+          :aria-describedby="titleId"
           :loading="busy === 'validate_publish'"
           :disabled="disabled && busy !== 'validate_publish'"
           @click="emit('action', 'validate_publish')"
@@ -489,6 +504,7 @@ const moreBusy = computed(
           variant="outline"
           icon="i-lucide-undo-2"
           :label="t('review.askCorrection')"
+          :aria-describedby="titleId"
           :loading="busy === 'correction'"
           :disabled="disabled && busy !== 'correction'"
           @click="emit('action', 'correction')"
@@ -498,6 +514,7 @@ const moreBusy = computed(
         v-else-if="stage === 'publish'"
         icon="i-lucide-megaphone"
         :label="t('review.amendments.publish')"
+        :aria-describedby="titleId"
         :loading="busy === 'publish'"
         :disabled="disabled && busy !== 'publish'"
         @click="emit('action', 'publish')"
@@ -506,6 +523,7 @@ const moreBusy = computed(
         <UButton
           icon="i-lucide-check"
           :label="t('review.late.treat')"
+          :aria-describedby="titleId"
           :loading="busy === 'admit'"
           :disabled="disabled && busy !== 'admit'"
           @click="emit('action', 'admit')"
@@ -515,6 +533,7 @@ const moreBusy = computed(
           variant="outline"
           icon="i-lucide-x"
           :label="t('review.late.notTreat')"
+          :aria-describedby="titleId"
           :loading="busy === 'inadmit'"
           :disabled="disabled && busy !== 'inadmit'"
           @click="emit('action', 'inadmit')"
@@ -530,6 +549,7 @@ const moreBusy = computed(
           variant="ghost"
           icon="i-lucide-ellipsis"
           :label="t('review.more')"
+          :aria-describedby="titleId"
           :loading="moreBusy"
           :disabled="disabled && !moreBusy"
         />

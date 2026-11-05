@@ -4,6 +4,7 @@ import type { AssemblyDto, CalendarBody } from "~~/shared/types/api";
 import {
   checkCalendar,
   defaultMilestones,
+  wholeDaysBeforeStart,
   type Milestones,
 } from "~~/shared/utils/calendar";
 import { MILESTONE_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/assembly";
@@ -130,6 +131,25 @@ const defaults = computed<Milestones>(() =>
     : {},
 );
 
+/**
+ * Milestones in date order: the saved date, else the default one, else last
+ * (ties keep the usual order). Sorted by what is saved, so a row does not jump
+ * while someone types; it moves after saving.
+ */
+const orderedKeys = computed<MilestoneKey[]>(() => {
+  const rank = (key: MilestoneKey) => {
+    const at = saved.value.milestones[key].at;
+    if (at) return new Date(at).getTime();
+    return defaults.value[key]?.getTime() ?? Number.POSITIVE_INFINITY;
+  };
+  // Two undated keys give Infinity - Infinity = NaN, which falls through.
+  return [...MILESTONE_KEYS].sort(
+    (a, b) =>
+      rank(a) - rank(b) ||
+      MILESTONE_KEYS.indexOf(a) - MILESTONE_KEYS.indexOf(b),
+  );
+});
+
 const defaultsConfirmOpen = ref(false);
 
 /** Whether applying the defaults would overwrite a date already set. */
@@ -173,10 +193,15 @@ function clearMilestone(key: MilestoneKey) {
 function offsetLabel(key: MilestoneKey): string {
   const at = form.milestones[key].at;
   if (!at || !assembly.value) return "";
-  const diff =
-    new Date(assembly.value.startDate).getTime() - new Date(at).getTime();
-  const hours = Math.round(diff / 3_600_000);
+  const start = new Date(assembly.value.startDate);
+  const date = new Date(at);
+  const hours = Math.round((start.getTime() - date.getTime()) / 3_600_000);
   if (hours < 0) return t("calendar.afterStart");
+  // Same time of day as the start: whole days, even across a clock change.
+  const wholeDays = wholeDaysBeforeStart(start, date);
+  if (wholeDays !== null) {
+    return t("calendar.daysBeforeStart", { count: wholeDays }, wholeDays);
+  }
   if (hours < 72 && hours % 24 !== 0) {
     return t("calendar.hoursBeforeStart", { count: hours }, hours);
   }
@@ -246,7 +271,7 @@ onBeforeRouteLeave(() => {
   return true;
 });
 
-const fieldId = (key: MilestoneKey, field: "at" | "note") =>
+const fieldId = (key: MilestoneKey, field: "at" | "note" | "label") =>
   `milestone-${key}-${field}`;
 </script>
 
@@ -324,7 +349,7 @@ const fieldId = (key: MilestoneKey, field: "at" | "note") =>
 
         <ul class="divide-default divide-y">
           <li
-            v-for="key in MILESTONE_KEYS"
+            v-for="key in orderedKeys"
             :key="key"
             class="grid gap-3 p-4 sm:p-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,22rem)]"
             :class="{ 'bg-warning/5': warnedKeys.has(key) }"
@@ -332,6 +357,7 @@ const fieldId = (key: MilestoneKey, field: "at" | "note") =>
             <div class="min-w-0 space-y-1">
               <div class="flex flex-wrap items-center gap-2">
                 <label
+                  :id="fieldId(key, 'label')"
                   :for="fieldId(key, 'at')"
                   class="text-highlighted font-medium"
                 >
@@ -364,6 +390,7 @@ const fieldId = (key: MilestoneKey, field: "at" | "note") =>
                 <CalendarDateTimeInput
                   :id="fieldId(key, 'at')"
                   v-model="form.milestones[key].at"
+                  :aria-labelledby="fieldId(key, 'label')"
                   :invalid="warnedKeys.has(key)"
                   :disabled="saving"
                   class="min-w-0 flex-1"

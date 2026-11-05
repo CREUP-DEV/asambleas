@@ -8,11 +8,13 @@ import {
 
 /**
  * The tracking panel's counts: "En total", "Fuera de plazo" when something
- * is late, and one tile per state that has documents. Empty states are left
- * out so the row stays short on a phone, except the one being filtered, so
- * the pressed tile never disappears under a live update. Each tile is also a
- * filter: pressing it shows only those documents, pressing it again shows
- * them all.
+ * is late, and one tile per state that has documents. Each document counts
+ * under one tile only (`trackingBucket`), so the tiles add up to the total:
+ * an overdue draft is under "Fuera de plazo", not under "Por entregar" too.
+ * Empty states are left out so the row stays short on a phone, except the one
+ * being filtered, so the pressed tile never disappears under a live update.
+ * Each tile is also a filter: pressing it shows only those documents,
+ * pressing it again shows them all.
  */
 const props = defineProps<{ summary: TrackingSummary }>();
 

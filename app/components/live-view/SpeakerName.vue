@@ -31,14 +31,17 @@ const speaker = computed(() => props.turn.speaker?.trim() || null);
       :variant="strong ? 'solid' : 'subtle'"
     />
     <span v-if="speaker" class="min-w-0 break-words">{{ speaker }}</span>
-    <!-- The badge already gives screen readers the member's name. -->
-    <span
-      v-else-if="turn.member"
-      class="min-w-0 break-words"
-      aria-hidden="true"
-    >
-      {{ turn.member.name }}
-    </span>
+    <!-- The badge already gives screen readers the member's name; a name
+         that only repeats the acronym is not shown twice. -->
+    <template v-else-if="turn.member">
+      <span
+        v-if="!memberNameRepeatsAcronym(turn.member)"
+        class="min-w-0 break-words"
+        aria-hidden="true"
+      >
+        {{ turn.member.name }}
+      </span>
+    </template>
     <span v-else class="text-muted font-medium">
       {{ t("liveView.speakers.unnamed") }}
     </span>

@@ -521,7 +521,7 @@ const ownPresenter = computed(() =>
 const memberItems = computed(() => {
   const list = (members.value ?? []).map((member) => ({
     label: member.acronym,
-    description: member.name,
+    description: memberNameRepeatsAcronym(member) ? undefined : member.name,
     value: member.id,
   }));
   // Current presenters stay pickable even if inactive: one may become
@@ -530,7 +530,7 @@ const memberItems = computed(() => {
     .filter((current) => !list.some((item) => item.value === current.id))
     .map((current) => ({
       label: current.acronym,
-      description: current.name,
+      description: memberNameRepeatsAcronym(current) ? undefined : current.name,
       value: current.id,
     }));
   return [...missing, ...list];
@@ -831,6 +831,7 @@ defineExpose({ reset: resetForm, check, save });
             >
               <USkeleton
                 v-if="agendaStatus === 'pending' && !agenda"
+                aria-hidden="true"
                 class="h-8 w-full"
               />
               <USelect
@@ -858,6 +859,7 @@ defineExpose({ reset: resetForm, check, save });
       >
         <USkeleton
           v-if="agendaStatus === 'pending' && !agenda"
+          aria-hidden="true"
           class="h-8 w-full"
         />
         <USelect
@@ -883,7 +885,15 @@ defineExpose({ reset: resetForm, check, save });
           :filter-fields="['label', 'description']"
           :loading="membersStatus === 'pending'"
           :placeholder="t('document.metadata.proponentPlaceholder')"
-          :search-input="{ placeholder: t('document.metadata.searchMember') }"
+          :aria-label="
+            selectMenuLabel(
+              t('document.metadata.proponent'),
+              memberItems,
+              state.proponentMemberId,
+              t('document.metadata.proponentPlaceholder'),
+            )
+          "
+          :search-input="labelledSearch(t('document.metadata.searchMember'))"
           clear
           class="w-full"
         />
@@ -911,7 +921,11 @@ defineExpose({ reset: resetForm, check, save });
         :hint="t('document.metadata.optional')"
         :description="t('document.metadata.dueAtDescription')"
       >
-        <DocumentDateTimeInput v-model="state.dueAt" name="dueAt" />
+        <DocumentDateTimeInput
+          v-model="state.dueAt"
+          name="dueAt"
+          :aria-label="t('document.metadata.dueAt')"
+        />
       </UFormField>
 
       <UCollapsible v-model:open="advancedOpen">
@@ -1014,7 +1028,10 @@ defineExpose({ reset: resetForm, check, save });
                   :description="calendarHint(calendarOpensAt)"
                   :hint="t('document.metadata.timeZone')"
                 >
-                  <DocumentDateTimeInput v-model="state.opensAt" />
+                  <DocumentDateTimeInput
+                    v-model="state.opensAt"
+                    :aria-label="t('document.metadata.opensAt')"
+                  />
                 </UFormField>
                 <UFormField
                   name="closesAt"
@@ -1024,6 +1041,7 @@ defineExpose({ reset: resetForm, check, save });
                 >
                   <DocumentDateTimeInput
                     v-model="state.closesAt"
+                    :aria-label="t('document.metadata.closesAt')"
                     :min="state.opensAt"
                   />
                 </UFormField>

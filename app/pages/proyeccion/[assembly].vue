@@ -16,7 +16,10 @@ import {
 } from "~/composables/fetch/lastGoodData";
 import { useAssemblyLive } from "~/composables/live/useAssemblyLive";
 import { useAppNow } from "~/composables/time/useAppNow";
-import { buildSessionAgendaRows } from "~/composables/session/sessionModel";
+import {
+  buildSessionAgendaRows,
+  sessionConnectionState,
+} from "~/composables/session/sessionModel";
 import { formatTime } from "~/utils/format";
 import {
   affectsAgenda,
@@ -227,6 +230,38 @@ function onLive(events: LiveEventDto[]): void {
 
 const { connected, polling } = useAssemblyLive(() => assemblyId, onLive);
 
+// Until the first connection is ready the screen is connecting, not
+// offline: the room must not see an alarm while the page opens.
+const everConnected = ref(false);
+watch(
+  connected,
+  (isConnected) => {
+    if (isConnected) everConnected.value = true;
+  },
+  { immediate: true },
+);
+const connection = computed(() =>
+  sessionConnectionState(connected.value, polling.value, everConnected.value),
+);
+const CONNECTION_DOT = {
+  live: "bg-success motion-safe:animate-pulse",
+  polling: "bg-warning",
+  connecting: "bg-(--ui-text-dimmed)",
+  offline: "bg-error",
+} as const;
+const connectionLabel = computed(() => {
+  switch (connection.value) {
+    case "live":
+      return t("projection.live");
+    case "polling":
+      return t("projection.polling");
+    case "connecting":
+      return t("projection.connecting");
+    default:
+      return t("projection.offline");
+  }
+});
+
 // Live events only refresh what they touch, and polls only run while the
 // stream is down: a refresh that fails while the stream stays up (a 502
 // under the refetch herd of a vote) is retried here, with backoff, until it
@@ -372,6 +407,7 @@ useHead(() => ({
         </p>
       </div>
       <div class="flex items-center gap-3">
+        <!-- Fullscreen support is only known in the browser. -->
         <ClientOnly>
           <span
             class="text-[clamp(1.25rem,2vw,2.25rem)] font-semibold tabular-nums"
@@ -379,20 +415,20 @@ useHead(() => ({
           >
             {{ clock }}
           </span>
+          <UButton
+            v-if="fullscreenSupported"
+            color="neutral"
+            variant="ghost"
+            size="lg"
+            :icon="isFullscreen ? 'i-lucide-minimize' : 'i-lucide-maximize'"
+            :aria-label="
+              isFullscreen
+                ? t('projection.exitFullscreen')
+                : t('projection.fullscreen')
+            "
+            @click="toggleFullscreen()"
+          />
         </ClientOnly>
-        <UButton
-          v-if="fullscreenSupported"
-          color="neutral"
-          variant="ghost"
-          size="lg"
-          :icon="isFullscreen ? 'i-lucide-minimize' : 'i-lucide-maximize'"
-          :aria-label="
-            isFullscreen
-              ? t('projection.exitFullscreen')
-              : t('projection.fullscreen')
-          "
-          @click="toggleFullscreen()"
-        />
       </div>
     </header>
 
@@ -632,22 +668,10 @@ useHead(() => ({
       <span class="inline-flex items-center gap-2" role="status">
         <span
           class="size-2.5 rounded-full"
-          :class="
-            connected
-              ? 'bg-success motion-safe:animate-pulse'
-              : polling
-                ? 'bg-warning'
-                : 'bg-error'
-          "
+          :class="CONNECTION_DOT[connection]"
           aria-hidden="true"
         />
-        {{
-          connected
-            ? t("projection.live")
-            : polling
-              ? t("projection.polling")
-              : t("projection.offline")
-        }}
+        {{ connectionLabel }}
       </span>
       <ClientOnly>
         <span class="inline-flex flex-wrap items-center gap-x-3">
@@ -681,12 +705,15 @@ useHead(() => ({
   margin-top: 0.9em;
 }
 
-.projection-text :deep(.rich-text h2) {
+.projection-text :deep(.rich-text h2),
+.projection-text :deep(.rich-text .cx-heading-2) {
   font-size: 1.3em;
 }
 
 .projection-text :deep(.rich-text h3),
-.projection-text :deep(.rich-text h4) {
+.projection-text :deep(.rich-text h4),
+.projection-text :deep(.rich-text .cx-heading-3),
+.projection-text :deep(.rich-text .cx-heading-4) {
   font-size: 1.15em;
 }
 

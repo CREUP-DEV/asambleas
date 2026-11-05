@@ -215,7 +215,15 @@ async function remove(view: AmendmentRelationView): Promise<void> {
           value-key="value"
           class="w-full"
           :placeholder="t('amendment.relations.targetPlaceholder')"
-          :search-input="{ placeholder: t('amendment.relations.targetSearch') }"
+          :aria-label="
+            selectMenuLabel(
+              t('amendment.relations.target'),
+              targetItems,
+              targetId,
+              t('amendment.relations.targetPlaceholder'),
+            )
+          "
+          :search-input="labelledSearch(t('amendment.relations.targetSearch'))"
         />
       </UFormField>
       <UFormField :label="t('amendment.relations.note')">

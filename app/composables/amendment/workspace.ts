@@ -618,15 +618,55 @@ export interface AmendmentOverlap {
   kind: OverlapKind;
 }
 
-/** For each amendment, the others it overlaps with and how. */
+type LineageLike = AmendmentLike & Partial<Pick<AmendmentDto, "sourceIds">>;
+
+/**
+ * The amendments a transactional combines, and the ones those combine in
+ * turn (a transactional built on another absorbs its sources too). Ids not
+ * in the list are kept; empty for anything but a transactional.
+ */
+function lineageOf(
+  amendment: LineageLike,
+  byId: ReadonlyMap<string, LineageLike>,
+): Set<string> {
+  const seen = new Set<string>();
+  const queue = [...(amendment.sourceIds ?? [])];
+  while (queue.length > 0) {
+    const id = queue.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    queue.push(...(byId.get(id)?.sourceIds ?? []));
+  }
+  return seen;
+}
+
+/**
+ * For each amendment, the others it overlaps with and how. A transactional
+ * and the amendments it combines rewrite the same passage by design: they
+ * are not listed as overlapping each other.
+ */
 export function amendmentOverlapIndex(
-  list: AmendmentLike[],
+  list: LineageLike[],
 ): Map<string, AmendmentOverlap[]> {
   const index = new Map<string, AmendmentOverlap[]>();
+  const byId = new Map(list.map((amendment) => [amendment.id, amendment]));
+  const lineage = new Map<string, Set<string>>();
+  const lineageFor = (id: string): Set<string> => {
+    let ids = lineage.get(id);
+    if (!ids) {
+      const amendment = byId.get(id);
+      ids = amendment ? lineageOf(amendment, byId) : new Set();
+      lineage.set(id, ids);
+    }
+    return ids;
+  };
   const { pairs } = findOverlaps(
     passageAmendments(list).map(({ id, ops }) => ({ id, ops })),
   );
   for (const pair of pairs) {
+    if (lineageFor(pair.a).has(pair.b) || lineageFor(pair.b).has(pair.a)) {
+      continue;
+    }
     const a = index.get(pair.a) ?? [];
     a.push({ id: pair.b, kind: pair.kind });
     index.set(pair.a, a);

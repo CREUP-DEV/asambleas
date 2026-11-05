@@ -457,6 +457,11 @@ export interface AcceptanceDto {
   role: AcceptanceRole;
   decision: AcceptanceDecision;
   decidedAt: IsoDate | null;
+  /**
+   * The party answered, or the Mesa recorded its answer in the room, as it
+   * was then (the latest acceptance_recorded event).
+   */
+  recordedBy: "party" | "mesa";
 }
 
 export interface PositionDto {

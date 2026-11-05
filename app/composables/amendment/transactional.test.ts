@@ -17,6 +17,7 @@ import {
   transactionalAuthorsToAsk,
   transactionalComposerSeed,
   transactionalGroupSources,
+  transactionalLinksOf,
   transactionalMemberList,
   transactionalNextSteps,
   transactionalPartySources,
@@ -69,6 +70,7 @@ const party = (
   role,
   decision,
   decidedAt: decision === "pending" ? null : "2026-11-02T10:00:00.000Z",
+  recordedBy: "party",
 });
 
 function amendment(
@@ -1216,5 +1218,115 @@ describe("the main presenter's review", () => {
     expect(
       proponentReviewBacklog(list, "incorporate", { finalVoted: true }).total,
     ).toBe(0);
+  });
+});
+
+describe("transactional links of an amendment", () => {
+  const source = (id: string, extra: Partial<AmendmentDto> = {}) =>
+    amendment(id, [replace("b2", 3, 10, "x")], extra);
+  const transactional = (id: string, extra: Partial<AmendmentDto> = {}) =>
+    amendment(id, [replace("b2", 3, 10, "y")], {
+      kind: "transactional",
+      code: id.toUpperCase(),
+      ...extra,
+    });
+  const byIdOf = (...items: AmendmentDto[]) =>
+    new Map(items.map((item) => [item.id, item]));
+
+  it("calls a pending transactional over a presented source a proposal", () => {
+    const t2 = transactional("t2", {
+      reviewState: "pending_authors",
+      sourceIds: ["a", "b"],
+      acceptances: [party("a", "author", "accepted"), party("b", "author")],
+    });
+    const a = source("a", { transactionalIds: ["t2"] });
+    expect(transactionalLinksOf(a, byIdOf(a, t2))).toEqual({
+      replacedBy: [],
+      proposed: ["t2"],
+    });
+  });
+
+  it("leaves out a transactional a main author rejected, still presented", () => {
+    const t2 = transactional("t2", {
+      sourceIds: ["a", "b"],
+      acceptances: [
+        party("a", "author", "accepted"),
+        party("b", "author", "rejected"),
+      ],
+    });
+    const a = source("a", { transactionalIds: ["t2"] });
+    expect(transactionalLinksOf(a, byIdOf(a, t2)).proposed).toEqual([]);
+  });
+
+  it("leaves out drafts and transactionals the viewer does not see", () => {
+    const draft = transactional("t3", { status: "draft", sourceIds: ["a"] });
+    const a = source("a", { transactionalIds: ["t3", "hidden"] });
+    expect(transactionalLinksOf(a, byIdOf(a, draft))).toEqual({
+      replacedBy: [],
+      proposed: [],
+    });
+  });
+
+  it("names the one that replaced it, also once withdrawn, not a lapsed rival", () => {
+    const t1 = transactional("t1", {
+      status: "withdrawn",
+      validatedAt: "2026-11-02T10:00:00.000Z",
+      decidedAt: "2026-11-03T10:00:00.000Z",
+      sourceIds: ["a"],
+      acceptances: [party("a", "author", "accepted")],
+    });
+    const rival = transactional("t2", {
+      status: "lapsed",
+      decidedAt: "2026-11-02T10:00:00.000Z",
+      sourceIds: ["a"],
+      acceptances: [party("a", "author")],
+    });
+    const a = source("a", {
+      status: "transacted",
+      decidedAt: "2026-11-02T10:00:00.000Z",
+      transactionalIds: ["t1", "t2"],
+    });
+    expect(transactionalLinksOf(a, byIdOf(a, t1, rival))).toEqual({
+      replacedBy: ["t1"],
+      proposed: [],
+    });
+  });
+
+  it("follows a chain: a replaced transactional names the one over it", () => {
+    const t1 = transactional("t1", {
+      status: "transacted",
+      validatedAt: "2026-11-02T10:00:00.000Z",
+      sourceIds: ["a"],
+      transactionalIds: ["t3"],
+      acceptances: [party("a", "author", "accepted")],
+    });
+    const t3 = transactional("t3", {
+      validatedAt: "2026-11-03T10:00:00.000Z",
+      sourceIds: ["t1"],
+      acceptances: [party("a", "author", "accepted")],
+    });
+    const a = source("a", { status: "transacted", transactionalIds: ["t1"] });
+    const byId = byIdOf(a, t1, t3);
+    expect(transactionalLinksOf(a, byId).replacedBy).toEqual(["t1"]);
+    expect(transactionalLinksOf(t1, byId).replacedBy).toEqual(["t3"]);
+  });
+
+  it("drops a replacing transactional the viewer does not see", () => {
+    const a = source("a", {
+      status: "transacted",
+      transactionalIds: ["hidden"],
+    });
+    expect(transactionalLinksOf(a, byIdOf(a)).replacedBy).toEqual([]);
+  });
+
+  it("has nothing for a decided or draft amendment", () => {
+    const t2 = transactional("t2", { sourceIds: ["a"] });
+    for (const status of ["approved", "draft", "withdrawn"] as const) {
+      const a = source("a", { status, transactionalIds: ["t2"] });
+      expect(transactionalLinksOf(a, byIdOf(a, t2))).toEqual({
+        replacedBy: [],
+        proposed: [],
+      });
+    }
   });
 });

@@ -245,8 +245,14 @@ function documentEditPath(document: DocumentSummaryDto): string | null {
       />
     </div>
 
-    <div v-if="pending && !agenda" class="space-y-3">
-      <USkeleton v-for="n in 3" :key="n" class="h-16 w-full" />
+    <div v-if="pending && !agenda" class="space-y-3" role="status">
+      <span class="sr-only">{{ t("common.loading") }}</span>
+      <USkeleton
+        v-for="n in 3"
+        :key="n"
+        aria-hidden="true"
+        class="h-16 w-full"
+      />
     </div>
 
     <UAlert

@@ -332,9 +332,9 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
   <div class="space-y-4">
     <!-- Who and what, in large type. -->
     <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
-      <p class="text-highlighted text-3xl font-bold tabular-nums sm:text-4xl">
+      <h3 class="text-highlighted text-3xl font-bold tabular-nums sm:text-4xl">
         {{ t("session.card.label", { code }) }}
-      </p>
+      </h3>
       <span class="inline-flex flex-wrap items-center gap-1.5">
         <CommonMemberBadge
           v-for="author in amendment.authors"
