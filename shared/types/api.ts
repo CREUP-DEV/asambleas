@@ -117,6 +117,8 @@ export interface MeWorkNewsDto {
   assembly: MeWorkAssemblyRef;
   document: { id: string; slug: string; title: string };
   amendment: { id: string; code: string | null } | null;
+  /** The amendment is one the user's member authored ("tu enmienda"). */
+  ownAmendment: boolean;
   /** The event type (position_changed, acceptance_recorded, amendment_validated...). */
   type: string;
   /** Who decided: the member acting, when there is one. */
@@ -460,6 +462,8 @@ export interface AcceptanceDto {
 export interface PositionDto {
   position: ProponentPosition;
   comment: string | null;
+  /** The main presenter answered, or the Mesa recorded it on its behalf. */
+  recordedBy: "presenter" | "mesa";
   updatedAt: IsoDate;
 }
 
