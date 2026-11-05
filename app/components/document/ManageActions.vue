@@ -6,7 +6,10 @@ import type { DocumentDto, DocumentUpdateBody } from "~~/shared/types/api";
  * Secretaría actions on a document (`document.can.manage`) at any stage:
  * withdraw, postpone, recover a withdrawn submission and delete a document
  * that was never published. Each one asks for confirmation first. Publishing
- * (and publishing again) stays with the page's publish dialog.
+ * (and publishing again) stays with the page's publish dialog; with
+ * `publishable` the menu also offers "Publicar ahora", which only emits
+ * `publish` (for a draft still in a presenter's hands, where publishing is
+ * not the screen's main action).
  *
  * Status changes PUT `{ status, updatedAt }` and emit `updated` with the
  * returned DocumentDto (store it); a conflict emits `stale` (refetch).
@@ -29,14 +32,17 @@ const props = withDefaults(
     /** "/api/assemblies/{assembly}/documents/{document}" (slugs or ids). */
     documentApi: string;
     disabled?: boolean;
+    /** Offer "Publicar ahora" (the parent opens its publish dialog). */
+    publishable?: boolean;
   }>(),
-  { disabled: false },
+  { disabled: false, publishable: false },
 );
 
 const emit = defineEmits<{
   updated: [document: DocumentDto];
   deleted: [];
   stale: [];
+  publish: [];
 }>();
 
 /** True while a request runs. */
@@ -138,7 +144,18 @@ const items = computed<DropdownMenuItem[][]>(() => {
         },
       ]
     : [];
-  return [statusItems, dangerItems].filter((group) => group.length > 0);
+  const publishItems: DropdownMenuItem[] = props.publishable
+    ? [
+        {
+          label: t("document.manage.publishNow"),
+          icon: "i-lucide-megaphone",
+          onSelect: () => emit("publish"),
+        },
+      ]
+    : [];
+  return [publishItems, statusItems, dangerItems].filter(
+    (group) => group.length > 0,
+  );
 });
 
 const copy = computed(() => {

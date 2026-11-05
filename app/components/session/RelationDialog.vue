@@ -149,7 +149,15 @@ async function submit(): Promise<void> {
               :items="targetItems"
               value-key="value"
               :placeholder="t('session.relation.targetPlaceholder')"
-              :search-input="{ placeholder: t('common.search') }"
+              :aria-label="
+                selectMenuLabel(
+                  t('session.relation.target'),
+                  targetItems,
+                  targetId,
+                  t('session.relation.targetPlaceholder'),
+                )
+              "
+              :search-input="labelledSearch(t('common.search'))"
               class="w-full"
             />
           </UFormField>

@@ -14,7 +14,9 @@ export type EntityType =
   | "amendment"
   | "vote"
   | "decision"
-  | "live";
+  | "live"
+  /** Speaking turns: entityId is the turn, or the assembly for visibility. */
+  | "speakers";
 
 export interface LiveMessage {
   assemblyId: string;
@@ -30,6 +32,11 @@ export interface LiveMessage {
  * transaction the notification is delivered on commit, so clients never see
  * a change that was rolled back. Notifications carry ids only: clients refetch
  * through the normal, permission-checked endpoints.
+ *
+ * The time is the insert's own (`clock_timestamp()`), not the transaction's
+ * start (`now()`, the column default): events recorded in one transaction
+ * then keep the order the code records them in, cause before effect, since
+ * histories sort by time and the random id only breaks exact ties.
  */
 export async function recordEvent(
   executor: Executor,
@@ -46,6 +53,7 @@ export async function recordEvent(
     payload: input.payload ?? {},
     actorUserId: input.actor?.user.id ?? null,
     actorMemberId: input.actor?.memberId ?? null,
+    createdAt: sql`clock_timestamp()`,
   });
 
   const message: LiveMessage = {

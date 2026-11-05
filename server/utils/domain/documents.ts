@@ -11,6 +11,8 @@ import {
   count,
   eq,
   inArray,
+  isNotNull,
+  isNull,
   like,
   ne,
   or,
@@ -40,25 +42,37 @@ import { getUploadDir } from "../core/uploadPaths";
 import { logError } from "../core/logger";
 import { assertOptimisticLock } from "../optimisticLock";
 import {
-  actsFor,
   canManageDocuments,
   canModerate,
   requireActor,
   type Actor,
 } from "./actor";
+import { applyAcceptedAmendmentsRule } from "./acceptedRule";
 import { recordEvent } from "./events";
+import {
+  loadCoProponentIds,
+  loadCoProponents,
+  loadSourceAuthorIds,
+  planPresenters,
+  presentersChanged,
+  PRESENTERS_MESSAGES,
+  saveCoProponents,
+  withCoProponentIds,
+} from "./presenters";
 import { resolveAssembly, resolveDocument } from "./resolvers";
 import {
-  amendmentsPublic,
   canSeeAmendment,
   canSeeDocument,
   canSeePositions,
   decisionAmendmentIds,
   filterDecisionsByAmendment,
+  isAmendmentInsider,
+  isDocumentPresenter,
   isDocumentProponent,
+  redactCorrectionNote,
   seesAllPresentedAmendments,
   type AmendmentVisibilityContext,
-  type AmendmentVisibilityOptions,
+  type DocumentPresenters,
 } from "./visibility";
 import {
   DEFAULT_ASSEMBLY_SETTINGS,
@@ -72,6 +86,7 @@ import {
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type {
   AmendmentWindowDto,
+  CorrectionBody,
   DecisionDto,
   DocumentCapabilities,
   DocumentContentBody,
@@ -106,6 +121,10 @@ import { computeVoteOutcome } from "~~/shared/utils/votes";
 
 type AssemblyRow = typeof assemblies.$inferSelect;
 export type DocumentRow = typeof documents.$inferSelect;
+/** A document row with its co-presenters, as resolveDocument returns it. */
+export type PresentedDocumentRow = DocumentRow & {
+  coProponentMemberIds: string[];
+};
 type VersionRow = typeof documentVersions.$inferSelect;
 type VoteRow = typeof votes.$inferSelect;
 type MemberRow = typeof members.$inferSelect;
@@ -115,7 +134,7 @@ type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 export interface DocumentRouteContext {
   actor: Actor;
   assembly: AssemblyRow;
-  document: DocumentRow;
+  document: PresentedDocumentRow;
 }
 
 /** Statuses from which a never-published document can be published. */
@@ -137,14 +156,23 @@ function fail(statusCode: number, message: string, data?: unknown): never {
   });
 }
 
-/** Stored settings merged over the defaults, as every reader must do. */
+/**
+ * Stored settings merged over the defaults, as every reader must do. Only the
+ * known keys are read: settings stored before a policy was removed (such as
+ * `amendmentVisibility`) neither reach clients nor survive the next update,
+ * which writes this result back.
+ */
 export function assemblySettings(
   assembly: Pick<AssemblyRow, "settings">,
 ): AssemblySettings {
-  return {
-    ...DEFAULT_ASSEMBLY_SETTINGS,
-    ...((assembly.settings ?? {}) as Partial<AssemblySettings>),
-  };
+  const stored = (assembly.settings ?? {}) as Partial<AssemblySettings>;
+  const settings: AssemblySettings = { ...DEFAULT_ASSEMBLY_SETTINGS };
+  for (const key of Object.keys(settings) as (keyof AssemblySettings)[]) {
+    if (Object.hasOwn(stored, key) && stored[key] !== undefined) {
+      Object.assign(settings, { [key]: stored[key] });
+    }
+  }
+  return settings;
 }
 
 /**
@@ -223,15 +251,61 @@ export function documentsDeadlinePassed(
   return Boolean(close && now > close);
 }
 
+/**
+ * Whether the Secretaría expects this document from its member rather than
+ * the member choosing to present it: it has an internal deadline (`dueAt`),
+ * or it hangs from an agenda item that does not accept submissions, where
+ * only a manager could have created it (a CEA report, say).
+ */
+export function isExpectedDocument(
+  document: Pick<DocumentRow, "dueAt">,
+  item: { acceptsSubmissions: boolean },
+): boolean {
+  return document.dueAt !== null || !item.acceptsSubmissions;
+}
+
+/**
+ * Whether a presenter (not a manager) can no longer present this document.
+ * The documents_close milestone applies, except to the documents the
+ * Secretaría expects (isExpectedDocument): their internal deadline, if any,
+ * governs, and an overdue one can still be presented (the tracking panel
+ * flags it).
+ */
+export function presentationClosed(
+  document: Pick<DocumentRow, "dueAt" | "correctionRequestedAt">,
+  item: { acceptsSubmissions: boolean },
+  milestones: Milestones,
+  now = new Date(),
+): boolean {
+  // A correction the Secretaría asked for reopens presentation for that
+  // document, whatever the deadline: it was presented in time once.
+  if (document.correctionRequestedAt !== null) return false;
+  return (
+    !isExpectedDocument(document, item) &&
+    documentsDeadlinePassed(milestones, now)
+  );
+}
+
+/** Presenters and managers read the correction the Secretaría asked for. */
+export function canSeeDocumentCorrection(
+  actor: Actor,
+  document: DocumentPresenters & Pick<DocumentRow, "submittedByUserId">,
+): boolean {
+  return canManageDocuments(actor) || isProponentSide(actor, document);
+}
+
 // Capabilities --------------------------------------------------------------
 
-/** The actor presents the document: acts for its proponent or created it. */
+/**
+ * The actor presents the document: acts for its main presenter or a
+ * co-presenter, or created it.
+ */
 export function isProponentSide(
   actor: Actor,
-  document: Pick<DocumentRow, "proponentMemberId" | "submittedByUserId">,
+  document: DocumentPresenters & Pick<DocumentRow, "submittedByUserId">,
 ): boolean {
   return (
-    actsFor(actor, [document.proponentMemberId]) ||
+    isDocumentPresenter(actor, document) ||
     (document.submittedByUserId !== null &&
       document.submittedByUserId === actor.user.id)
   );
@@ -244,10 +318,8 @@ export function isProponentSide(
  */
 export function canEditDocument(
   actor: Actor,
-  document: Pick<
-    DocumentRow,
-    "status" | "proponentMemberId" | "submittedByUserId"
-  >,
+  document: DocumentPresenters &
+    Pick<DocumentRow, "status" | "submittedByUserId">,
 ): boolean {
   if (canManageDocuments(actor)) return true;
   return document.status === "draft" && isProponentSide(actor, document);
@@ -255,10 +327,8 @@ export function canEditDocument(
 
 export function requireDocumentEditor(
   actor: Actor,
-  document: Pick<
-    DocumentRow,
-    "status" | "proponentMemberId" | "submittedByUserId"
-  >,
+  document: DocumentPresenters &
+    Pick<DocumentRow, "status" | "submittedByUserId">,
 ): void {
   if (!canEditDocument(actor, document)) {
     fail(403, "No tienes permiso para editar este documento");
@@ -322,7 +392,7 @@ export function canAmendDocument(
 export function documentCapabilities(
   actor: Actor,
   assembly: Pick<AssemblyRow, "status">,
-  document: DocumentRow,
+  document: PresentedDocumentRow,
   window: AmendmentWindow,
   now = new Date(),
 ): DocumentCapabilities {
@@ -331,6 +401,7 @@ export function documentCapabilities(
     manage: canManageDocuments(actor),
     publish: canManageDocuments(actor) && isPublishable(document),
     amend: canAmendDocument(actor, assembly, document, window, now),
+    // Only the main presenter answers the amendments (or the Mesa for it).
     position:
       document.status === "published" &&
       (isDocumentProponent(actor, document) || canModerate(actor)),
@@ -387,8 +458,12 @@ export function toDocumentSummaryDto(
   document: DocumentRow,
   extra: {
     proponent: MemberRef | null;
+    coProponents: MemberRef[];
     amendmentCount: number;
     window: AmendmentWindowDto;
+    hasContent: boolean;
+    /** The actor may read the correction note (canSeeDocumentCorrection). */
+    showCorrection: boolean;
   },
 ): DocumentSummaryDto {
   return {
@@ -401,12 +476,21 @@ export function toDocumentSummaryDto(
     reference: document.reference,
     status: document.status,
     proponent: extra.proponent,
+    coProponents: extra.coProponents,
     amendable: document.amendable,
+    acceptedAmendments: document.acceptedAmendments,
     voted: document.voted,
     majority: document.majority,
     amendmentCount: extra.amendmentCount,
     window: extra.window,
     publishedAt: toIso(document.publishedAt),
+    submittedAt: toIso(document.submittedAt),
+    dueAt: toIso(document.dueAt),
+    hasContent: extra.hasContent,
+    correctionNote: extra.showCorrection ? document.correctionNote : null,
+    correctionRequestedAt: extra.showCorrection
+      ? toIso(document.correctionRequestedAt)
+      : null,
     consolidated: document.consolidatedVersionId !== null,
     updatedAt: document.updatedAt.toISOString(),
   };
@@ -415,10 +499,12 @@ export function toDocumentSummaryDto(
 export interface DocumentDtoInput {
   actor: Actor;
   assembly: AssemblyRow;
-  document: DocumentRow;
+  document: PresentedDocumentRow;
   milestones: Milestones;
   proponent: MemberRef | null;
+  coProponents: MemberRef[];
   amendmentCount: number;
+  hasContent: boolean;
   workingVersion: VersionRow | null;
   baseVersion: VersionRow | null;
   consolidatedVersion: VersionRow | null;
@@ -435,13 +521,15 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
   return {
     ...toDocumentSummaryDto(document, {
       proponent: input.proponent,
+      coProponents: input.coProponents,
       amendmentCount: input.amendmentCount,
       window: documentWindow(document, milestones, now),
+      hasContent: input.hasContent,
+      showCorrection: canSeeDocumentCorrection(actor, document),
     }),
     summary: document.summary,
     fileUrl: document.fileUrl,
     fileName: document.fileName,
-    submittedAt: toIso(document.submittedAt),
     amendmentsOpenAt: toIso(document.amendmentsOpenAt),
     amendmentsCloseAt: toIso(document.amendmentsCloseAt),
     // Everyone who can see an unpublished document (its presenters, managers
@@ -458,7 +546,7 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
     positionsVisible: canSeePositions(actor, {
       settings: assemblySettings(assembly),
       assemblyStatus: assembly.status,
-      isProponent: isDocumentProponent(actor, document),
+      isPresenter: isDocumentPresenter(actor, document),
     }),
     can: documentCapabilities(actor, assembly, document, window, now),
   };
@@ -482,7 +570,7 @@ async function loadAmendmentVisibilityRows(
       id: amendments.id,
       documentId: amendments.documentId,
       status: amendments.status,
-      late: amendments.late,
+      publishedAt: amendments.publishedAt,
       createdByUserId: amendments.createdByUserId,
     })
     .from(amendments)
@@ -490,7 +578,7 @@ async function loadAmendmentVisibilityRows(
   if (rows.length === 0) return [];
 
   const ids = rows.map((row) => row.id);
-  const [authorRows, partyRows] = await Promise.all([
+  const [authorRows, partyRows, sourceAuthors] = await Promise.all([
     executor
       .select({
         amendmentId: amendmentAuthors.amendmentId,
@@ -505,6 +593,7 @@ async function loadAmendmentVisibilityRows(
       })
       .from(amendmentAcceptances)
       .where(inArray(amendmentAcceptances.amendmentId, ids)),
+    loadSourceAuthorIds(ids, executor),
   ]);
   const group = (list: { amendmentId: string; memberId: string }[]) => {
     const map = new Map<string, string[]>();
@@ -520,87 +609,153 @@ async function loadAmendmentVisibilityRows(
   return rows.map((row) => ({
     ...row,
     authorMemberIds: authors.get(row.id) ?? [],
-    partyMemberIds: parties.get(row.id) ?? [],
+    partyMemberIds: [
+      ...(parties.get(row.id) ?? []),
+      ...(sourceAuthors.get(row.id) ?? []),
+    ],
   }));
 }
 
-/** `canSeeAmendment` options for one document's amendments. */
-function amendmentVisibilityOptions(
-  assembly: AssemblyRow,
-  document: Pick<DocumentRow, "amendmentsOpenAt" | "amendmentsCloseAt">,
-  milestones: Milestones,
-  now: Date,
-): AmendmentVisibilityOptions {
-  return {
-    settings: assemblySettings(assembly),
-    windowClosed: amendmentsPublic(
-      amendmentWindow(document, milestones),
-      assembly.status,
-      now,
-    ),
-  };
-}
-
 /**
- * Amendments past draft that the actor can see, per document. Documents whose
- * presented amendments the actor sees in full are counted in SQL; the others
- * (`after_close` before the amendments are public) count only the ones the
- * actor authored, created or is a party to, as `canSeeAmendment` decides.
+ * Amendments past draft that the actor can see, per document. The Secretaría
+ * and the Mesa see all of them, counted in SQL. Everyone else sees the
+ * published ones, also counted in SQL, plus the unpublished ones they wrote,
+ * created or are a party to, as `canSeeAmendment` decides.
  */
 async function countVisibleAmendments(
   actor: Actor,
-  assembly: AssemblyRow,
-  rows: Pick<DocumentRow, "id" | "amendmentsOpenAt" | "amendmentsCloseAt">[],
-  milestones: Milestones,
-  now: Date,
+  documentIds: string[],
   executor: Executor = db,
 ): Promise<Map<string, number>> {
-  const allIds: string[] = [];
-  const restricted = new Map<string, AmendmentVisibilityOptions>();
-  for (const row of rows) {
-    const options = amendmentVisibilityOptions(assembly, row, milestones, now);
-    if (seesAllPresentedAmendments(actor, options)) allIds.push(row.id);
-    else restricted.set(row.id, options);
-  }
-
   const counts = new Map<string, number>();
-  const [totals, hidden] = await Promise.all([
-    allIds.length > 0
-      ? executor
-          .select({ documentId: amendments.documentId, total: count() })
-          .from(amendments)
-          .where(
-            and(
-              inArray(amendments.documentId, allIds),
-              ne(amendments.status, "draft"),
-            ),
-          )
-          .groupBy(amendments.documentId)
-      : Promise.resolve([]),
-    restricted.size > 0
-      ? loadAmendmentVisibilityRows(
+  if (documentIds.length === 0) return counts;
+  const seesAll = seesAllPresentedAmendments(actor);
+  const presented = and(
+    inArray(amendments.documentId, documentIds),
+    ne(amendments.status, "draft"),
+  );
+  const [totals, unpublished] = await Promise.all([
+    executor
+      .select({ documentId: amendments.documentId, total: count() })
+      .from(amendments)
+      .where(
+        and(presented, seesAll ? undefined : isNotNull(amendments.publishedAt)),
+      )
+      .groupBy(amendments.documentId),
+    seesAll
+      ? Promise.resolve([])
+      : loadAmendmentVisibilityRows(
           executor,
-          and(
-            inArray(amendments.documentId, [...restricted.keys()]),
-            ne(amendments.status, "draft"),
-          ),
-        )
-      : Promise.resolve([]),
+          and(presented, isNull(amendments.publishedAt)),
+        ),
   ]);
   for (const row of totals) counts.set(row.documentId, Number(row.total));
-  for (const row of hidden) {
-    const options = restricted.get(row.documentId);
-    if (!options || !canSeeAmendment(actor, row, options)) continue;
+  for (const row of unpublished) {
+    if (!canSeeAmendment(actor, row)) continue;
     counts.set(row.documentId, (counts.get(row.documentId) ?? 0) + 1);
   }
   return counts;
 }
 
 /**
- * Summaries of the documents of an assembly that the actor can see, in
- * creation order. `amendmentCount` counts the amendments past draft that the
- * actor can see (see countVisibleAmendments).
+ * Documents with text or a PDF (`hasContent`): a placeholder the Secretaría
+ * created for an expected document has neither. One query reads the size of
+ * the working versions of the structured ones.
  */
+async function loadContentFlags(
+  executor: Executor,
+  rows: Pick<DocumentRow, "id" | "format" | "fileUrl" | "workingVersionId">[],
+): Promise<Set<string>> {
+  const withContent = new Set<string>();
+  const versionIds: string[] = [];
+  for (const row of rows) {
+    if (row.format === "file") {
+      if (row.fileUrl) withContent.add(row.id);
+    } else if (row.workingVersionId) {
+      versionIds.push(row.workingVersionId);
+    }
+  }
+  if (versionIds.length === 0) return withContent;
+  const versions = await executor
+    .select({
+      documentId: documentVersions.documentId,
+      size: sql<number>`jsonb_array_length(${documentVersions.blocks})`,
+    })
+    .from(documentVersions)
+    .where(inArray(documentVersions.id, versionIds));
+  for (const version of versions) {
+    if (Number(version.size) > 0) withContent.add(version.documentId);
+  }
+  return withContent;
+}
+
+/** The calendar of several assemblies in one query. */
+export async function loadMilestonesByAssembly(
+  assemblyIds: string[],
+  executor: Executor = db,
+): Promise<Map<string, Milestones>> {
+  const result = new Map<string, Milestones>(assemblyIds.map((id) => [id, {}]));
+  if (assemblyIds.length === 0) return result;
+  const rows = await executor
+    .select({
+      assemblyId: assemblyMilestones.assemblyId,
+      key: assemblyMilestones.key,
+      at: assemblyMilestones.at,
+    })
+    .from(assemblyMilestones)
+    .where(inArray(assemblyMilestones.assemblyId, assemblyIds));
+  for (const row of rows) {
+    const milestones = result.get(row.assemblyId) ?? {};
+    milestones[row.key] = row.at;
+    result.set(row.assemblyId, milestones);
+  }
+  return result;
+}
+
+export type DocumentWithProponent = DocumentRow & {
+  proponent: MemberRow | null;
+};
+
+/**
+ * Summaries of document rows the caller already checked with canSeeDocument,
+ * from any assembly: `milestones` holds the calendar of each one.
+ * `amendmentCount` counts the amendments past draft that the actor can see
+ * (see countVisibleAmendments).
+ */
+export async function buildDocumentSummaries(
+  actor: Actor,
+  rows: DocumentWithProponent[],
+  milestones: Map<string, Milestones>,
+  now = new Date(),
+  executor: Executor = db,
+): Promise<DocumentSummaryDto[]> {
+  const ids = rows.map((row) => row.id);
+  const [counts, content, coProponents] = await Promise.all([
+    countVisibleAmendments(actor, ids, executor),
+    loadContentFlags(executor, rows),
+    loadCoProponents(ids, executor),
+  ]);
+  return rows.map(({ proponent, ...document }) => {
+    const co = coProponents.get(document.id) ?? [];
+    return toDocumentSummaryDto(document, {
+      proponent: memberRefOrNull(proponent),
+      coProponents: co,
+      amendmentCount: counts.get(document.id) ?? 0,
+      window: documentWindow(
+        document,
+        milestones.get(document.assemblyId) ?? {},
+        now,
+      ),
+      hasContent: content.has(document.id),
+      showCorrection: canSeeDocumentCorrection(actor, {
+        ...document,
+        coProponentMemberIds: co.map((member) => member.id),
+      }),
+    });
+  });
+}
+
+/** Summaries of the documents of an assembly that the actor can see, in creation order. */
 export async function loadDocumentSummaries(
   assembly: typeof assemblies.$inferSelect,
   actor: Actor,
@@ -616,21 +771,12 @@ export async function loadDocumentSummaries(
     }),
     loadMilestones(assembly.id),
   ]);
-  const visible = rows.filter((row) => canSeeDocument(actor, row));
-  const now = new Date();
-  const counts = await countVisibleAmendments(
+  return buildDocumentSummaries(
     actor,
-    assembly,
-    visible,
-    milestones,
-    now,
-  );
-  return visible.map(({ proponent, ...document }) =>
-    toDocumentSummaryDto(document, {
-      proponent: memberRefOrNull(proponent),
-      amendmentCount: counts.get(document.id) ?? 0,
-      window: documentWindow(document, milestones, now),
-    }),
+    (await withCoProponentIds(rows)).filter((row) =>
+      canSeeDocument(actor, row),
+    ),
+    new Map([[assembly.id, milestones]]),
   );
 }
 
@@ -650,12 +796,18 @@ export async function loadDocumentDto(
   actor: Actor,
   executor: Executor = db,
 ): Promise<DocumentDto> {
-  const [document] = await executor
+  const [row] = await executor
     .select()
     .from(documents)
     .where(eq(documents.id, documentId));
-  if (!document) fail(404, "Documento no encontrado");
+  if (!row) fail(404, "Documento no encontrado");
   const now = new Date();
+  const coProponents =
+    (await loadCoProponents([row.id], executor)).get(row.id) ?? [];
+  const document: PresentedDocumentRow = {
+    ...row,
+    coProponentMemberIds: coProponents.map((member) => member.id),
+  };
   const [
     milestones,
     proponent,
@@ -683,21 +835,19 @@ export async function loadDocumentDto(
           .then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
   ]);
-  const counts = await countVisibleAmendments(
-    actor,
-    assembly,
-    [document],
-    milestones,
-    now,
-    executor,
-  );
+  const [counts, content] = await Promise.all([
+    countVisibleAmendments(actor, [document.id], executor),
+    loadContentFlags(executor, [document]),
+  ]);
   return toDocumentDto({
     actor,
     assembly,
     document,
     milestones,
     proponent: memberRefOrNull(proponent),
+    coProponents,
     amendmentCount: counts.get(document.id) ?? 0,
+    hasContent: content.has(document.id),
     workingVersion,
     baseVersion,
     consolidatedVersion,
@@ -733,8 +883,24 @@ export async function requireMember(memberId: string, executor: Executor = db) {
   return member;
 }
 
+/** Every member of the list must exist (co-presenters). */
+export async function requireMembers(
+  memberIds: readonly string[],
+  executor: Executor = db,
+): Promise<void> {
+  if (memberIds.length === 0) return;
+  const rows = await executor
+    .select({ id: members.id })
+    .from(members)
+    .where(inArray(members.id, [...memberIds]));
+  if (rows.length !== new Set(memberIds).size) {
+    fail(422, "Algún miembro indicado no existe");
+  }
+}
+
 /**
- * Reads and locks the current row until the transaction ends. `no key update`
+ * Reads and locks the current row until the transaction ends, with its
+ * co-presenters (they change only under this lock). `no key update`
  * serializes every change of the document and still lets other transactions
  * insert rows that reference it (see "Row locks" by shareLockAssembly); only
  * a transaction that deletes the row takes `update`.
@@ -743,14 +909,18 @@ async function lockDocument(
   executor: Executor,
   documentId: string,
   strength: "no key update" | "update" = "no key update",
-): Promise<DocumentRow> {
+): Promise<PresentedDocumentRow> {
   const [row] = await executor
     .select()
     .from(documents)
     .where(eq(documents.id, documentId))
     .for(strength);
   if (!row) fail(404, "Documento no encontrado");
-  return row;
+  return {
+    ...row,
+    coProponentMemberIds:
+      (await loadCoProponentIds([row.id], executor)).get(row.id) ?? [],
+  };
 }
 
 /** Whether the document has something to submit or publish. */
@@ -865,14 +1035,19 @@ export async function assignReference(
 
 // Metadata (PUT) ----------------------------------------------------------
 
-/** Fields only managers may change; the presenters get the kind defaults. */
+/**
+ * Fields only managers may change; the presenters get the kind defaults.
+ * The presenters themselves (proponentMemberId, coProponentMemberIds) follow
+ * planPresenters.
+ */
 const MANAGER_FIELDS = [
-  "proponentMemberId",
   "amendable",
   "voted",
   "majority",
+  "acceptedAmendments",
   "amendmentsOpenAt",
   "amendmentsCloseAt",
+  "dueAt",
   "status",
 ] as const satisfies readonly (keyof DocumentUpdateBody)[];
 
@@ -883,7 +1058,7 @@ function sameDate(a: Date | null, b: string | null): boolean {
 
 /** Body fields that differ from the stored row. */
 function changedFields(
-  document: DocumentRow,
+  document: PresentedDocumentRow,
   body: DocumentUpdateBody,
 ): (keyof DocumentUpdateBody)[] {
   const changed: (keyof DocumentUpdateBody)[] = [];
@@ -896,11 +1071,27 @@ function changedFields(
     "amendable",
     "voted",
     "majority",
+    "acceptedAmendments",
     "status",
   ] as const;
   for (const key of plain) {
     if (body[key] !== undefined && body[key] !== document[key])
       changed.push(key);
+  }
+  if (
+    body.coProponentMemberIds !== undefined &&
+    presentersChanged(
+      {
+        proponentMemberId: null,
+        coProponentMemberIds: document.coProponentMemberIds,
+      },
+      {
+        proponentMemberId: null,
+        coProponentMemberIds: body.coProponentMemberIds,
+      },
+    )
+  ) {
+    changed.push("coProponentMemberIds");
   }
   if (
     body.amendmentsOpenAt !== undefined &&
@@ -913,6 +1104,9 @@ function changedFields(
     !sameDate(document.amendmentsCloseAt, body.amendmentsCloseAt)
   ) {
     changed.push("amendmentsCloseAt");
+  }
+  if (body.dueAt !== undefined && !sameDate(document.dueAt, body.dueAt)) {
+    changed.push("dueAt");
   }
   return changed;
 }
@@ -1017,8 +1211,9 @@ async function requireAgendaTarget(
 
 /**
  * Updates the metadata of a document. Presenters may change title, summary,
- * kind and agenda item of their draft; everything else needs document:manage.
- * The slug never changes, since it is part of the URLs already shared.
+ * kind, agenda item and presenters (planPresenters) of their draft;
+ * everything else needs document:manage. The slug never changes, since it is
+ * part of the URLs already shared.
  */
 export async function updateDocument(
   ctx: DocumentRouteContext,
@@ -1041,6 +1236,10 @@ export async function updateDocument(
   ) {
     await requireMember(body.proponentMemberId);
   }
+  const added = (body.coProponentMemberIds ?? []).filter(
+    (id) => !ctx.document.coProponentMemberIds.includes(id),
+  );
+  await requireMembers(added);
 
   await db.transaction(async (tx) => {
     // A move takes the assembly before the document ("Row locks"). The share
@@ -1079,13 +1278,45 @@ export async function updateDocument(
           current.format === "file" ? false : defaults.amendable;
         patch.voted = defaults.voted;
         patch.majority = defaults.majority;
+        patch.acceptedAmendments = defaults.acceptedAmendments;
       }
     }
-    if (manager) {
-      if (changed.includes("proponentMemberId")) {
-        patch.proponentMemberId = body.proponentMemberId ?? null;
+    let presenters: ReturnType<typeof planPresenters> | null = null;
+    if (
+      changed.includes("proponentMemberId") ||
+      changed.includes("coProponentMemberIds")
+    ) {
+      presenters = planPresenters({
+        manager,
+        actorMemberId: actor.memberId,
+        current: {
+          proponentMemberId: current.proponentMemberId,
+          coProponentMemberIds: current.coProponentMemberIds,
+        },
+        proponentMemberId: body.proponentMemberId,
+        coProponentMemberIds: body.coProponentMemberIds,
+      });
+      if (typeof presenters === "string") {
+        // Only the main presenter or the Secretaría choose who it is.
+        if (presenters === "main_only") {
+          fail(403, PRESENTERS_MESSAGES.main_only, { reason: "main_only" });
+        }
+        fail(422, PRESENTERS_MESSAGES[presenters]);
       }
+      patch.proponentMemberId = presenters.proponentMemberId;
+    }
+    if (manager) {
       if (changed.includes("amendable")) patch.amendable = body.amendable;
+      if (changed.includes("acceptedAmendments")) {
+        // The final vote settled what each amendment became.
+        if (current.finalVoteId || current.consolidatedVersionId) {
+          fail(
+            409,
+            "El documento ya se ha votado: ya no se puede cambiar qué pasa con las enmiendas aceptadas",
+          );
+        }
+        patch.acceptedAmendments = body.acceptedAmendments;
+      }
       if (changed.includes("voted")) patch.voted = body.voted;
       if (changed.includes("majority")) patch.majority = body.majority;
       if (changed.includes("amendmentsOpenAt")) {
@@ -1097,6 +1328,9 @@ export async function updateDocument(
         patch.amendmentsCloseAt = body.amendmentsCloseAt
           ? new Date(body.amendmentsCloseAt)
           : null;
+      }
+      if (changed.includes("dueAt")) {
+        patch.dueAt = body.dueAt ? new Date(body.dueAt) : null;
       }
       if (changed.includes("status")) {
         // Restoring keeps the original submittedAt (assertStatusChange).
@@ -1121,6 +1355,27 @@ export async function updateDocument(
     }
 
     await tx.update(documents).set(patch).where(eq(documents.id, current.id));
+    if (presenters) {
+      await saveCoProponents(tx, current.id, presenters.coProponentMemberIds);
+    }
+    // The amendments already answered follow the new rule: accepted ones
+    // are incorporated, or the incorporated ones go back to the vote.
+    if (
+      patch.acceptedAmendments !== undefined &&
+      patch.acceptedAmendments !== current.acceptedAmendments
+    ) {
+      await applyAcceptedAmendmentsRule(tx, {
+        assemblyId: assembly.id,
+        documentId: current.id,
+        rule: patch.acceptedAmendments,
+        mainPresenterId:
+          patch.proponentMemberId !== undefined
+            ? patch.proponentMemberId
+            : current.proponentMemberId,
+        actor,
+        now: new Date(),
+      });
+    }
 
     const fields = changed.filter((key) => key !== "status");
     if (fields.length > 0) {
@@ -1130,7 +1385,15 @@ export async function updateDocument(
         entityId: current.id,
         documentId: current.id,
         type: "document_updated",
-        payload: { fields },
+        payload: {
+          fields,
+          ...(presenters
+            ? {
+                proponentMemberId: presenters.proponentMemberId,
+                coProponentMemberIds: presenters.coProponentMemberIds,
+              }
+            : {}),
+        },
         actor,
       });
     }
@@ -1153,7 +1416,10 @@ export async function updateDocument(
 // Working draft -----------------------------------------------------------
 
 /** The actor may replace the working text: structured, editable, not frozen. */
-export function requireTextEditor(actor: Actor, document: DocumentRow): void {
+export function requireTextEditor(
+  actor: Actor,
+  document: PresentedDocumentRow,
+): void {
   requireDocumentEditor(actor, document);
   if (document.format !== "structured") {
     fail(409, "Este documento es un PDF y no tiene texto editable");
@@ -1221,8 +1487,11 @@ export async function updateDocumentContent(
 // Submission and publication ------------------------------------------------
 
 /**
- * A presenter submits a draft for admission. Members must do it before the
- * documents_close milestone; managers are not bound by it.
+ * A presenter sends a draft to the Secretaría (`submitted`), which then
+ * validates it (publishes it) or asks for a correction. Members must do it
+ * before the documents_close milestone, unless the Secretaría expects the
+ * document (see presentationClosed); managers are not bound by it.
+ * Presenting it again after a correction clears the correction note.
  */
 export async function submitDocument(
   ctx: DocumentRouteContext,
@@ -1234,9 +1503,7 @@ export async function submitDocument(
     fail(403, "Solo quien presenta el documento puede enviarlo");
   }
   if (assembly.status === "closed") fail(409, "La asamblea ya está cerrada");
-  if (!manager && documentsDeadlinePassed(await loadMilestones(assembly.id))) {
-    fail(409, "El plazo de presentación de documentos ha terminado");
-  }
+  const milestones = manager ? {} : await loadMilestones(assembly.id);
 
   await db.transaction(async (tx) => {
     const current = await lockDocument(tx, ctx.document.id);
@@ -1247,12 +1514,26 @@ export async function submitDocument(
     );
     if (current.status !== "draft")
       fail(409, "Solo se pueden presentar borradores");
+    if (!manager) {
+      const [item] = await tx
+        .select({ acceptsSubmissions: agendaItems.acceptsSubmissions })
+        .from(agendaItems)
+        .where(eq(agendaItems.id, current.agendaItemId));
+      if (item && presentationClosed(current, item, milestones)) {
+        fail(409, "El plazo de presentación de documentos ha terminado");
+      }
+    }
     if (!(await hasContent(tx, current))) emptyDocumentError(current);
 
     const submittedAt = new Date();
     await tx
       .update(documents)
-      .set({ status: "submitted", submittedAt })
+      .set({
+        status: "submitted",
+        submittedAt,
+        correctionNote: null,
+        correctionRequestedAt: null,
+      })
       .where(eq(documents.id, current.id));
     await recordEvent(tx, {
       assemblyId: assembly.id,
@@ -1260,7 +1541,64 @@ export async function submitDocument(
       entityId: current.id,
       documentId: current.id,
       type: "document_submitted",
-      payload: { submittedAt: submittedAt.toISOString() },
+      payload: {
+        submittedAt: submittedAt.toISOString(),
+        ...(current.correctionRequestedAt ? { afterCorrection: true } : {}),
+      },
+      actor,
+    });
+  });
+
+  return loadDocumentDto(assembly, ctx.document.id, actor);
+}
+
+/**
+ * The Secretaría (document:manage) sends a presented document back to its
+ * presenters with a note: it returns to draft, loses its submittedAt and
+ * keeps the note (correctionNote, correctionRequestedAt) until it is
+ * presented again. Optimistic lock on the document.
+ */
+export async function requestDocumentCorrection(
+  ctx: DocumentRouteContext,
+  body: CorrectionBody,
+): Promise<DocumentDto> {
+  const { actor, assembly } = ctx;
+  if (!canManageDocuments(actor)) {
+    fail(403, "No tienes permiso para revisar documentos");
+  }
+
+  await db.transaction(async (tx) => {
+    const current = await lockDocument(tx, ctx.document.id);
+    assertOptimisticLock(
+      body.updatedAt,
+      current.updatedAt,
+      STALE_DOCUMENT_MESSAGE,
+    );
+    // A submitted document was never published (assertStatusChange), so it
+    // can go back to an editable draft.
+    if (current.status !== "submitted" || isTextFrozen(current)) {
+      fail(
+        409,
+        "Solo se puede pedir una corrección de un documento enviado y pendiente de revisión",
+      );
+    }
+    const requestedAt = new Date();
+    await tx
+      .update(documents)
+      .set({
+        status: "draft",
+        submittedAt: null,
+        correctionNote: body.note,
+        correctionRequestedAt: requestedAt,
+      })
+      .where(eq(documents.id, current.id));
+    await recordEvent(tx, {
+      assemblyId: assembly.id,
+      entityType: "document",
+      entityId: current.id,
+      documentId: current.id,
+      type: "document_correction_requested",
+      payload: { note: body.note },
       actor,
     });
   });
@@ -1326,6 +1664,9 @@ export async function publishDocument(
         publishedAt: current.publishedAt ?? now,
         baseVersionId,
         reference,
+        // Publishing is the validation: a pending correction is settled.
+        correctionNote: null,
+        correctionRequestedAt: null,
       })
       .where(eq(documents.id, current.id));
 
@@ -1836,33 +2177,29 @@ export async function annulFinalVote(
 
 /**
  * Ids of the document's amendments, split by whether the actor can see them,
- * using the same rules as the amendment endpoints.
+ * using the same rules as the amendment endpoints. `notes` holds the ones
+ * whose correction notes the actor may read: their authors, creator and
+ * parties, the Secretaría and the Mesa.
  */
 export async function loadAmendmentVisibility(
   actor: Actor,
-  assembly: AssemblyRow,
-  document: DocumentRow,
-  milestones: Milestones,
-  now = new Date(),
+  document: Pick<DocumentRow, "id">,
   executor: Executor = db,
-): Promise<{ all: Set<string>; visible: Set<string> }> {
+): Promise<{ all: Set<string>; visible: Set<string>; notes: Set<string> }> {
   const rows = await loadAmendmentVisibilityRows(
     executor,
     eq(amendments.documentId, document.id),
   );
-  const all = new Set(rows.map((row) => row.id));
-  const options = amendmentVisibilityOptions(
-    assembly,
-    document,
-    milestones,
-    now,
-  );
-  const visible = new Set(
-    rows
-      .filter((row) => canSeeAmendment(actor, row, options))
-      .map((row) => row.id),
-  );
-  return { all, visible };
+  const privileged = seesAllPresentedAmendments(actor);
+  const all = new Set<string>();
+  const visible = new Set<string>();
+  const notes = new Set<string>();
+  for (const row of rows) {
+    all.add(row.id);
+    if (canSeeAmendment(actor, row)) visible.add(row.id);
+    if (privileged || isAmendmentInsider(actor, row)) notes.add(row.id);
+  }
+  return { all, visible, notes };
 }
 
 /**
@@ -1881,36 +2218,30 @@ export async function filterVisibleDecisions(
   const subjectIds = decisionAmendmentIds(list);
   if (subjectIds.length === 0) return list;
 
-  const [documentRows, milestones, rows] = await Promise.all([
+  const [documentRows, rows] = await Promise.all([
     executor
       .select({
         id: documents.id,
         status: documents.status,
         proponentMemberId: documents.proponentMemberId,
         submittedByUserId: documents.submittedByUserId,
-        amendmentsOpenAt: documents.amendmentsOpenAt,
-        amendmentsCloseAt: documents.amendmentsCloseAt,
       })
       .from(documents)
-      .where(eq(documents.assemblyId, assembly.id)),
-    loadMilestones(assembly.id, executor),
+      .where(eq(documents.assemblyId, assembly.id))
+      .then((list) => withCoProponentIds(list, executor)),
     loadAmendmentVisibilityRows(executor, inArray(amendments.id, subjectIds)),
   ]);
-  const now = new Date();
-  const documentOptions = new Map<string, AmendmentVisibilityOptions>();
-  for (const row of documentRows) {
-    if (!canSeeDocument(actor, row)) continue;
-    documentOptions.set(
-      row.id,
-      amendmentVisibilityOptions(assembly, row, milestones, now),
-    );
-  }
+  const visibleDocuments = new Set(
+    documentRows
+      .filter((row) => canSeeDocument(actor, row))
+      .map((row) => row.id),
+  );
   const visible = new Set(
     rows
-      .filter((row) => {
-        const options = documentOptions.get(row.documentId);
-        return options !== undefined && canSeeAmendment(actor, row, options);
-      })
+      .filter(
+        (row) =>
+          visibleDocuments.has(row.documentId) && canSeeAmendment(actor, row),
+      )
       .map((row) => row.id),
   );
   return filterDecisionsByAmendment(list, (id) => visible.has(id));
@@ -1921,26 +2252,26 @@ export function documentPositionsVisible(ctx: DocumentRouteContext): boolean {
   return canSeePositions(ctx.actor, {
     settings: assemblySettings(ctx.assembly),
     assemblyStatus: ctx.assembly.status,
-    isProponent: isDocumentProponent(ctx.actor, ctx.document),
+    isPresenter: isDocumentPresenter(ctx.actor, ctx.document),
   });
 }
 
 /**
  * History of the document and of the amendments the actor can see, oldest
- * first. Amendment payloads are returned as stored: the caller redacts
- * positions (see redactAmendmentEventPayload) when they are hidden.
+ * first. Correction notes are removed for those who may not read them
+ * (redactCorrectionNote). Amendment payloads are otherwise returned as
+ * stored: the caller redacts positions (see redactAmendmentEventPayload) when
+ * they are hidden.
  */
 export async function loadDocumentHistory(
   ctx: DocumentRouteContext,
 ): Promise<EventDto[]> {
   const { actor, assembly, document } = ctx;
-  const milestones = await loadMilestones(assembly.id);
-  const { all, visible } = await loadAmendmentVisibility(
+  const { all, visible, notes } = await loadAmendmentVisibility(
     actor,
-    assembly,
     document,
-    milestones,
   );
+  const documentNotes = canSeeDocumentCorrection(actor, document);
 
   const scope = [
     and(eq(events.entityType, "document"), eq(events.entityId, document.id)),
@@ -1986,7 +2317,13 @@ export async function loadDocumentHistory(
       type: row.type,
       entityType: row.entityType,
       entityId: row.entityId,
-      payload: row.payload ?? {},
+      payload: redactCorrectionNote(
+        row.type,
+        row.payload ?? {},
+        row.entityType === "amendment"
+          ? notes.has(row.entityId)
+          : documentNotes,
+      ),
       actorName: row.actorName,
       actorMember:
         row.memberId && row.memberAcronym && row.memberName && row.memberKind

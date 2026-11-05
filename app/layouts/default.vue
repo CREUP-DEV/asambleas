@@ -31,9 +31,13 @@ useHead({
     </a>
 
     <UDashboardGroup class="print:static print:block print:overflow-visible">
+      <!-- The banner landmark holds the brand, the navigation and the user
+           menu (preferences, language, sign out). On phones the drawer is a
+           dialog instead. -->
       <UDashboardSidebar
         id="main"
         v-model:open="sidebarOpen"
+        role="banner"
         collapsible
         resizable
         :default-size="18"

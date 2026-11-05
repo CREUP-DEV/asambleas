@@ -6,7 +6,8 @@ import type { Block } from "~~/shared/types/content";
  * DOCX import for the working draft: pick a .docx, the server converts it
  * (POST .../import, nothing is stored), the user reviews the text and the
  * warnings, and confirming emits `import` with the blocks to use as the new
- * draft. The parent replaces and saves.
+ * draft. The parent replaces and saves. `prominent` turns the button into the
+ * main call to action of an empty draft.
  */
 const props = withDefaults(
   defineProps<{
@@ -17,8 +18,10 @@ const props = withDefaults(
     /** The draft has unsaved changes. */
     unsaved?: boolean;
     disabled?: boolean;
+    /** The main way in: a large primary button ("Subir archivo de Word"). */
+    prominent?: boolean;
   }>(),
-  { currentCount: 0, unsaved: false, disabled: false },
+  { currentCount: 0, unsaved: false, disabled: false, prominent: false },
 );
 
 const emit = defineEmits<{ import: [blocks: Block[]] }>();
@@ -117,6 +120,11 @@ const WARNING_ICONS: Record<DocxImportDto["warnings"][number], string> = {
   images_dropped: "i-lucide-image-off",
 };
 
+/** Nothing to replace: the imported text simply becomes the draft. */
+const replacesNothing = computed(
+  () => props.currentCount === 0 && !props.unsaved,
+);
+
 function confirm(): void {
   if (blocks.value.length === 0) return;
   emit("import", blocks.value);
@@ -132,10 +140,14 @@ watch(open, (isOpen) => {
   <div class="contents">
     <UButton
       icon="i-lucide-file-up"
-      color="neutral"
-      variant="outline"
-      size="sm"
-      :label="t('document.import.button')"
+      :color="prominent ? 'primary' : 'neutral'"
+      :variant="prominent ? 'solid' : 'outline'"
+      :size="prominent ? 'lg' : 'sm'"
+      :label="
+        prominent
+          ? t('document.import.uploadWord')
+          : t('document.import.button')
+      "
       :loading="uploading"
       :disabled="disabled || uploading"
       @click="dialog.open()"
@@ -214,7 +226,11 @@ watch(open, (isOpen) => {
         />
         <UButton
           icon="i-lucide-check"
-          :label="t('document.import.confirm')"
+          :label="
+            replacesNothing
+              ? t('document.import.useText')
+              : t('document.import.confirm')
+          "
           :disabled="blocks.length === 0"
           @click="confirm"
         />

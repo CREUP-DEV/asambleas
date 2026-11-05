@@ -24,7 +24,13 @@ vi.mock("./resolvers", () => ({
   resolveDocument: vi.fn(),
 }));
 
-const { assertStatusChange } = await import("./documents");
+const {
+  assemblySettings,
+  assertStatusChange,
+  isExpectedDocument,
+  presentationClosed,
+  toDocumentSummaryDto,
+} = await import("./documents");
 
 type DocumentRow = Parameters<typeof assertStatusChange>[0];
 type NextStatus = Parameters<typeof assertStatusChange>[1];
@@ -106,5 +112,149 @@ describe("assertStatusChange", () => {
         "published" as NextStatus,
       ),
     ).toBe(422);
+  });
+});
+
+describe("presentationClosed", () => {
+  const milestones = { documents_close: new Date("2026-11-02T10:00:00Z") };
+  const after = new Date("2026-11-03T10:00:00Z");
+  const open = { acceptsSubmissions: true };
+  const reserved = { acceptsSubmissions: false };
+
+  it("reopens presentation after a correction request, past the deadline", () => {
+    expect(
+      presentationClosed(
+        { dueAt: null, correctionRequestedAt: at },
+        open,
+        milestones,
+        after,
+      ),
+    ).toBe(false);
+  });
+
+  it("follows documents_close for documents members chose to present", () => {
+    expect(
+      presentationClosed(
+        { dueAt: null, correctionRequestedAt: null },
+        open,
+        milestones,
+        at,
+      ),
+    ).toBe(false);
+    expect(
+      presentationClosed(
+        { dueAt: null, correctionRequestedAt: null },
+        open,
+        milestones,
+        after,
+      ),
+    ).toBe(true);
+  });
+
+  it("lets an expected document be presented after documents_close", () => {
+    expect(
+      presentationClosed(
+        { dueAt: at, correctionRequestedAt: null },
+        open,
+        milestones,
+        after,
+      ),
+    ).toBe(false);
+  });
+
+  it("treats documents under items closed to members as expected", () => {
+    // Only a manager could have created it, say a CEA report with no
+    // internal deadline: its area must still be able to present it.
+    expect(isExpectedDocument({ dueAt: null }, reserved)).toBe(true);
+    expect(
+      presentationClosed(
+        { dueAt: null, correctionRequestedAt: null },
+        reserved,
+        milestones,
+        after,
+      ),
+    ).toBe(false);
+    expect(isExpectedDocument({ dueAt: null }, open)).toBe(false);
+  });
+});
+
+describe("assemblySettings", () => {
+  it("merges stored values over the defaults", () => {
+    expect(
+      assemblySettings({ settings: { tieRule: "repeat" } as never }),
+    ).toMatchObject({ tieRule: "repeat", positionVisibility: "session" });
+    expect(assemblySettings({ settings: null as never }).tieRule).toBe(
+      "rejected",
+    );
+  });
+
+  it("drops keys of removed policies", () => {
+    const settings = assemblySettings({
+      settings: {
+        amendmentVisibility: "after_close",
+        positionVisibility: "public",
+      } as never,
+    });
+    expect(settings).not.toHaveProperty("amendmentVisibility");
+    expect(settings.positionVisibility).toBe("public");
+  });
+});
+
+describe("toDocumentSummaryDto", () => {
+  const row = {
+    id: "d1",
+    slug: "informe",
+    agendaItemId: "i1",
+    kind: "executive_report",
+    format: "structured",
+    title: "Informe",
+    reference: null,
+    status: "draft",
+    amendable: true,
+    voted: true,
+    majority: "two_thirds",
+    publishedAt: null,
+    submittedAt: null,
+    dueAt: at,
+    correctionNote: "Falta el resumen",
+    correctionRequestedAt: at,
+    consolidatedVersionId: null,
+    updatedAt: at,
+  } as unknown as Parameters<typeof toDocumentSummaryDto>[0];
+  const extra = {
+    proponent: null,
+    coProponents: [],
+    amendmentCount: 0,
+    window: { opensAt: null, closesAt: null, open: false },
+    hasContent: false,
+  };
+
+  it("shows the correction only to presenters and managers", () => {
+    expect(
+      toDocumentSummaryDto(row, { ...extra, showCorrection: true }),
+    ).toMatchObject({
+      dueAt: at.toISOString(),
+      hasContent: false,
+      correctionNote: "Falta el resumen",
+      correctionRequestedAt: at.toISOString(),
+    });
+    expect(
+      toDocumentSummaryDto(row, { ...extra, showCorrection: false }),
+    ).toMatchObject({ correctionNote: null, correctionRequestedAt: null });
+  });
+
+  it("carries the co-presenters and the rule for accepted amendments", () => {
+    const co = {
+      id: "m2",
+      acronym: "CEUM",
+      name: "CEUM",
+      kind: "asociado" as const,
+    };
+    expect(
+      toDocumentSummaryDto(
+        { ...row, acceptedAmendments: "incorporate" },
+        { ...extra, coProponents: [co], showCorrection: false },
+      ),
+    ).toMatchObject({ coProponents: [co], acceptedAmendments: "incorporate" });
   });
 });

@@ -2,6 +2,10 @@
 import type { NavigationMenuItem } from "@nuxt/ui";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { AssemblyDto } from "~~/shared/types/api";
+import {
+  REVIEW_BADGE_STATE_KEY,
+  type ReviewBadgeState,
+} from "~/components/review/-queue";
 
 /**
  * Routes of the assembly sections. Pages under app/pages/asambleas/[assembly]/
@@ -10,8 +14,11 @@ import type { AssemblyDto } from "~~/shared/types/api";
  */
 export const ASSEMBLY_SECTION_SEGMENTS = {
   overview: "",
+  live: "directo",
   agenda: "orden-del-dia",
   documents: "documentos",
+  validation: "validacion",
+  tracking: "seguimiento",
   calendar: "calendario",
   convocation: "convocatoria",
   session: "sesion",
@@ -40,13 +47,19 @@ export function projectionPath(slug: string): string {
 /**
  * Sidebar navigation: main sections, the contextual block of the assembly
  * being viewed and the administration group, each gated by permissions.
+ *
+ * "En directo" (the attendees' live view) is listed for everyone at any
+ * time, right after the overview: the page itself says when the session
+ * has not started or is over, so shared links keep working and the menu
+ * does not shift when the session starts. While it is in session the item
+ * carries a "now" mark.
  */
 const props = defineProps<{ collapsed?: boolean }>();
 
 const { t } = useI18n();
 const localePath = useLocalePath();
 const route = useRoute();
-const { can, isAdmin } = useMe();
+const { can } = useMe();
 
 const currentAssembly = useState<AssemblyDto | null>(
   "current-assembly",
@@ -65,6 +78,12 @@ function isWithin(path: string): boolean {
     currentPath.value === target || currentPath.value.startsWith(`${target}/`)
   );
 }
+
+/** The Secretaría's pending count, kept by the assembly hub. */
+const reviewBadge = useState<ReviewBadgeState | null>(
+  REVIEW_BADGE_STATE_KEY,
+  () => null,
+);
 
 /** The stored assembly, only while the route is inside that assembly. */
 const assembly = computed<AssemblyDto | null>(() => {
@@ -113,6 +132,22 @@ const assemblyItems = computed<NavigationMenuItem[]>(() => {
       active: currentPath.value === normalize(overview),
     },
     {
+      label: t("shell.assembly.live"),
+      icon: "i-lucide-radio",
+      to: path("live"),
+      active: isWithin(path("live")),
+      ...(current.status === "in_session"
+        ? {
+            badge: {
+              label: t("shell.assembly.liveNow"),
+              color: "error" as const,
+              variant: "soft" as const,
+            },
+            "aria-label": t("shell.assembly.liveInSession"),
+          }
+        : {}),
+    },
+    {
       label: t("shell.assembly.agenda"),
       icon: "i-lucide-list-tree",
       to: path("agenda"),
@@ -124,6 +159,45 @@ const assemblyItems = computed<NavigationMenuItem[]>(() => {
       to: path("documents"),
       active: isWithin(path("documents")),
     },
+  ];
+
+  const validateDocuments = can(PERMISSION_KEYS.DOCUMENT_MANAGE);
+  if (validateDocuments || can(PERMISSION_KEYS.AMENDMENT_REVIEW)) {
+    const pending =
+      reviewBadge.value?.assemblyId === current.id
+        ? reviewBadge.value.count
+        : 0;
+    items.push({
+      label: t("shell.assembly.validation"),
+      icon: "i-lucide-inbox",
+      to: path("validation"),
+      active: isWithin(path("validation")),
+      ...(pending > 0
+        ? {
+            badge: {
+              label: String(pending),
+              color: "warning" as const,
+              variant: "solid" as const,
+            },
+            "aria-label": t(
+              "shell.assembly.validationPending",
+              { count: pending },
+              pending,
+            ),
+          }
+        : {}),
+    });
+  }
+  if (validateDocuments) {
+    items.push({
+      label: t("shell.assembly.tracking"),
+      icon: "i-lucide-list-checks",
+      to: path("tracking"),
+      active: isWithin(path("tracking")),
+    });
+  }
+
+  items.push(
     {
       label: t("shell.assembly.calendar"),
       icon: "i-lucide-calendar-days",
@@ -136,7 +210,7 @@ const assemblyItems = computed<NavigationMenuItem[]>(() => {
       to: path("convocation"),
       active: isWithin(path("convocation")),
     },
-  ];
+  );
 
   if (current.can.moderate) {
     items.push({
@@ -169,25 +243,26 @@ const assemblyItems = computed<NavigationMenuItem[]>(() => {
   return items;
 });
 
+/** Each admin page by the permission that opens it (an Admin sees all). */
 const adminItems = computed<NavigationMenuItem[]>(() => {
   const items: NavigationMenuItem[] = [];
-  if (isAdmin.value) {
+  if (can(PERMISSION_KEYS.USER_MANAGE_ROLES)) {
     const users = localePath("/admin/usuarios");
+    items.push({
+      label: t("shell.nav.users"),
+      icon: "i-lucide-users",
+      to: users,
+      active: isWithin(users),
+    });
+  }
+  if (can(PERMISSION_KEYS.ROLE_MANAGE_PERMISSIONS)) {
     const roles = localePath("/admin/roles");
-    items.push(
-      {
-        label: t("shell.nav.users"),
-        icon: "i-lucide-users",
-        to: users,
-        active: isWithin(users),
-      },
-      {
-        label: t("shell.nav.roles"),
-        icon: "i-lucide-shield-check",
-        to: roles,
-        active: isWithin(roles),
-      },
-    );
+    items.push({
+      label: t("shell.nav.roles"),
+      icon: "i-lucide-shield-check",
+      to: roles,
+      active: isWithin(roles),
+    });
   }
   if (can(PERMISSION_KEYS.MEMBER_MANAGE)) {
     const members = localePath("/admin/miembros");
@@ -222,26 +297,22 @@ const menuUi = {
     />
 
     <!--
-      The hub page stores the assembly while it renders, after the layout has
-      already been rendered on the server, so this block exists only on the
-      client. Rendering it during hydration would mismatch and shift every
-      generated id below it.
+      On the server the hub's route middleware stores the assembly before the
+      layout renders, so this block is in the first HTML.
     -->
-    <ClientOnly>
-      <template v-if="assemblyItems.length > 0">
-        <USeparator v-if="props.collapsed" class="px-2" />
-        <UNavigationMenu
-          :items="assemblyItems"
-          orientation="vertical"
-          :collapsed="props.collapsed"
-          tooltip
-          :ui="menuUi"
-          :aria-label="
-            t('shell.assembly.navLabel', { assembly: assembly?.label ?? '' })
-          "
-        />
-      </template>
-    </ClientOnly>
+    <template v-if="assemblyItems.length > 0">
+      <USeparator v-if="props.collapsed" class="px-2" />
+      <UNavigationMenu
+        :items="assemblyItems"
+        orientation="vertical"
+        :collapsed="props.collapsed"
+        tooltip
+        :ui="menuUi"
+        :aria-label="
+          t('shell.assembly.navLabel', { assembly: assembly?.label ?? '' })
+        "
+      />
+    </template>
 
     <template v-if="adminItems.length > 0">
       <USeparator v-if="props.collapsed" class="px-2" />

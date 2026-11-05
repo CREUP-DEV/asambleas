@@ -1,18 +1,42 @@
 <script setup lang="ts">
-import type { AcceptanceDto, AmendmentDto } from "~~/shared/types/api";
+import type {
+  AcceptanceBody,
+  AcceptanceDto,
+  AmendmentDto,
+} from "~~/shared/types/api";
+import { transactionalPartySources } from "~/composables/amendment/transactional";
 
 /**
- * Parties of a transactional (the authors of its sources and the document
- * proponent) and their answers. A pending party answers for itself
- * (`can.accept`); the Mesa records the answer a party gives in the room.
- * The transactional can be voted only once every party accepted.
+ * Who has to accept a transactional: the main author of each amendment it
+ * would replace (design.md, "Transactionals"), with what each answered and
+ * when, so co-authors always see what their main author decided. A pending
+ * main author answers for itself here ("Aceptar" / "Rechazar",
+ * `can.accept`); the Mesa records the answer one gives in the room. Rows
+ * kept from before main authors existed (the document's presenter, role
+ * "proponent") read as such. An answer the Mesa recorded says so ("La Mesa,
+ * en nombre de CEUM, la ha aceptado"). Where the transactional stands as a
+ * whole is said once, by the review panel above, so this list does not
+ * repeat it.
+ *
+ * The Mesa's buttons say what they do ("Registrar que CEUM la acepta").
+ * Two answers cannot be taken back, so they ask first: a rejection closes
+ * it for everyone ("Rechazar", "Registrar que CEUM la rechaza"), and the
+ * acceptance the Mesa records that completes a validated one replaces the
+ * amendments it groups (as in the session console). Only the viewer's own
+ * answer is a primary button; recording someone else's answer is secondary.
  */
-const props = defineProps<{
-  amendment: AmendmentDto;
-  /** URL of the amendment: .../amendments/{id}. */
-  url: string;
-  actorMemberId: string | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    amendment: AmendmentDto;
+    /** URL of the amendment: .../amendments/{id}. */
+    url: string;
+    actorMemberId: string | null;
+    /** The amendments it combines that the viewer sees. */
+    sources?: AmendmentDto[];
+    labelOf?: (id: string) => string;
+  }>(),
+  { sources: () => [], labelOf: undefined },
+);
 
 const emit = defineEmits<{
   updated: [amendment: AmendmentDto];
@@ -24,56 +48,222 @@ const api = useApi();
 const toast = useToast();
 const titleId = useId();
 
-const busy = ref<string | null>(null);
+type Answer = AcceptanceBody["decision"];
 
-const open = computed(
-  () =>
-    props.amendment.status === "draft" ||
-    props.amendment.status === "submitted",
+const busy = ref<string | null>(null);
+/** The answer being confirmed: whose (member id) and which. */
+const confirming = ref<{ memberId: string; decision: Answer } | null>(null);
+const confirmId = useId();
+/**
+ * Each party's answer buttons, by "member:answer", to give focus back to
+ * the one that asked on cancel (not reactive).
+ */
+const answerButtons = new Map<string, HTMLElement>();
+/** The confirming button (inside the list, so a function ref). */
+let confirmButton: HTMLElement | null = null;
+
+watch(
+  () => props.amendment.id,
+  () => {
+    confirming.value = null;
+  },
 );
+
+function elementOf(el: unknown): HTMLElement | null {
+  return (el as { $el?: HTMLElement } | null)?.$el ?? null;
+}
+
+function rememberConfirmButton(el: unknown): void {
+  confirmButton = elementOf(el);
+}
+
+function rememberAnswerButton(id: string, decision: Answer, el: unknown): void {
+  const key = `${id}:${decision}`;
+  const node = elementOf(el);
+  if (node) answerButtons.set(key, node);
+  else answerButtons.delete(key);
+}
+
+async function cancelConfirm(): Promise<void> {
+  const asked = confirming.value;
+  confirming.value = null;
+  await nextTick();
+  if (asked) answerButtons.get(`${asked.memberId}:${asked.decision}`)?.focus();
+}
+
+const open = computed(() => props.amendment.status === "submitted");
 const acceptedCount = computed(
   () =>
     props.amendment.acceptances.filter(
       (acceptance) => acceptance.decision === "accepted",
     ).length,
 );
-const allAccepted = computed(
+/** Nobody said no yet: a rejection would still close it. */
+const showRule = computed(
   () =>
-    props.amendment.acceptances.length > 0 &&
-    acceptedCount.value === props.amendment.acceptances.length,
+    open.value &&
+    props.amendment.acceptances.some((party) => party.decision === "pending") &&
+    !props.amendment.acceptances.some((party) => party.decision === "rejected"),
 );
 
 function isOwn(party: AcceptanceDto): boolean {
   return party.member.id === props.actorMemberId;
 }
 
-function canAnswer(party: AcceptanceDto): boolean {
-  if (!open.value) return false;
-  if (isOwn(party)) return props.amendment.can.accept;
-  return props.amendment.can.moderate && party.decision === "pending";
+/**
+ * Whether this acceptance is the last one a validated transactional waits
+ * for: recording it replaces the amendments it groups.
+ */
+function completes(party: AcceptanceDto): boolean {
+  return (
+    props.amendment.validatedAt !== null &&
+    props.amendment.acceptances.every(
+      (other) =>
+        other.member.id === party.member.id || other.decision === "accepted",
+    )
+  );
 }
 
-async function answer(
-  party: AcceptanceDto,
-  decision: "accepted" | "rejected",
-): Promise<void> {
+/**
+ * Asks first for an answer that cannot be taken back: any rejection, and
+ * the Mesa's acceptance that completes it. A party's own "Aceptar" acts at
+ * once.
+ */
+function asksFirst(party: AcceptanceDto, decision: Answer): boolean {
+  return decision === "rejected" || (!isOwn(party) && completes(party));
+}
+
+async function choose(party: AcceptanceDto, decision: Answer): Promise<void> {
+  if (!asksFirst(party, decision)) {
+    await answer(party, decision);
+    return;
+  }
+  confirming.value = { memberId: party.member.id, decision };
+  await nextTick();
+  confirmButton?.focus();
+}
+
+/** Records the answer the confirmation asked about. */
+async function confirmAnswer(party: AcceptanceDto): Promise<void> {
+  const asked = confirming.value;
+  if (asked?.memberId === party.member.id) await answer(party, asked.decision);
+}
+
+/** The transactional's own label and those of what it groups, as shown. */
+const ownCode = computed(
+  () => props.amendment.code ?? props.labelOf?.(props.amendment.id) ?? "",
+);
+const sourceCodes = computed(() =>
+  props.amendment.sourceIds
+    .map(
+      (id) =>
+        props.labelOf?.(id) ??
+        props.sources.find((source) => source.id === id)?.code ??
+        null,
+    )
+    .filter((code): code is string => Boolean(code))
+    .join(", "),
+);
+
+/** What the confirmation says before the answer is recorded. */
+function confirmText(party: AcceptanceDto, decision: Answer): string {
+  if (decision === "accepted") {
+    return t("session.acceptance.confirmComplete.description", {
+      code: ownCode.value,
+      codes: sourceCodes.value,
+    });
+  }
+  return isOwn(party)
+    ? t("amendment.acceptances.rejectConfirm")
+    : t("amendment.acceptances.recordRejectConfirm", {
+        member: party.member.acronym,
+      });
+}
+
+function confirmLabel(party: AcceptanceDto, decision: Answer): string {
+  if (decision === "accepted") {
+    return t("session.acceptance.confirmComplete.confirm");
+  }
+  return isOwn(party)
+    ? t("amendment.acceptances.reject")
+    : t("session.acceptance.confirmReject.confirm");
+}
+
+/** "autor principal de 12 · CEUM 4", or the role of an older row. */
+function roleLabel(party: AcceptanceDto): string {
+  if (party.role === "proponent") {
+    return t("amendment.acceptances.roles.proponent");
+  }
+  const answersFor = transactionalPartySources(props.sources, party.member.id);
+  if (answersFor.length === 0 || !props.labelOf) {
+    return t("amendment.acceptances.roles.mainAuthor");
+  }
+  return t("amendment.acceptances.roles.mainAuthorOf", {
+    list: answersFor.map((source) => props.labelOf!(source.id)).join(", "),
+  });
+}
+
+const ANSWER_LOOK: Record<
+  AcceptanceDto["decision"],
+  { icon: string; class: string }
+> = {
+  pending: { icon: "i-lucide-hourglass", class: "text-muted" },
+  accepted: { icon: "i-lucide-circle-check", class: "text-success" },
+  rejected: { icon: "i-lucide-circle-x", class: "text-error" },
+};
+
+/**
+ * What the party answered, as a sentence: "CEUM la ha aceptado", or "La
+ * Mesa, en nombre de CEUM, la ha aceptado" when the Mesa recorded it. Once
+ * it is closed, nobody waits for a missing answer any more: "CEUM no llegó
+ * a responder".
+ */
+function answerLabel(party: AcceptanceDto): string {
+  const params = { member: party.member.acronym };
+  if (party.decision === "pending") {
+    return t(
+      `amendment.acceptances.answers.${open.value ? "pending" : "notAnswered"}`,
+      params,
+    );
+  }
+  return party.recordedBy === "mesa"
+    ? t(`amendment.acceptances.answersByMesa.${party.decision}`, params)
+    : t(`amendment.acceptances.answers.${party.decision}`, params);
+}
+
+function canAnswer(party: AcceptanceDto): boolean {
+  if (!open.value || party.decision !== "pending") return false;
+  if (isOwn(party)) return props.amendment.can.accept;
+  return props.amendment.can.moderate;
+}
+
+async function answer(party: AcceptanceDto, decision: Answer): Promise<void> {
   busy.value = `${party.member.id}:${decision}`;
   try {
+    const body: AcceptanceBody = {
+      decision,
+      ...(isOwn(party) ? {} : { memberId: party.member.id }),
+    };
     const updated = await api.send<AmendmentDto>(`${props.url}/acceptance`, {
-      body: {
-        decision,
-        ...(isOwn(party) ? {} : { memberId: party.member.id }),
-      },
+      body,
     });
+    confirming.value = null;
     toast.add({
       title: t("amendment.acceptances.recorded"),
+      description:
+        decision === "rejected"
+          ? t("amendment.acceptances.rejectedDescription")
+          : undefined,
       color: "success",
       icon: "i-lucide-check",
     });
     emit("updated", updated);
   } catch (error) {
     api.notifyError(error, "amendment.acceptances.failed");
-    if (api.isConflict(error)) emit("conflict");
+    if (api.isConflict(error)) {
+      confirming.value = null;
+      emit("conflict");
+    }
   } finally {
     busy.value = null;
   }
@@ -86,7 +276,10 @@ async function answer(
       <h3 :id="titleId" class="text-highlighted text-sm font-semibold">
         {{ t("amendment.acceptances.title") }}
       </h3>
-      <span class="text-muted text-xs tabular-nums">
+      <span
+        v-if="amendment.acceptances.length > 0"
+        class="text-muted text-xs tabular-nums"
+      >
         {{
           t("amendment.acceptances.summary", {
             accepted: acceptedCount,
@@ -96,6 +289,10 @@ async function answer(
       </span>
     </div>
 
+    <p v-if="showRule" class="text-muted text-sm">
+      {{ t("amendment.acceptances.rule") }}
+    </p>
+
     <p v-if="amendment.acceptances.length === 0" class="text-muted text-sm">
       {{ t("amendment.acceptances.none") }}
     </p>
@@ -104,68 +301,96 @@ async function answer(
       <li
         v-for="party in amendment.acceptances"
         :key="party.member.id"
-        class="flex flex-wrap items-center gap-2 py-2"
+        class="flex flex-col gap-2 py-2"
       >
-        <CommonMemberBadge :member="party.member" size="xs" show-name />
-        <span class="text-dimmed text-xs">
-          {{ t(`amendment.acceptances.roles.${party.role}`) }}
-        </span>
-        <span class="ms-auto flex flex-wrap items-center gap-1.5">
-          <CommonStatusBadge
-            kind="acceptance"
-            :value="party.decision"
-            size="xs"
+        <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <CommonMemberBadge :member="party.member" size="xs" show-name />
+          <span class="text-dimmed text-xs">{{ roleLabel(party) }}</span>
+        </div>
+        <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <UIcon
+            :name="ANSWER_LOOK[party.decision].icon"
+            class="size-4 shrink-0"
+            :class="ANSWER_LOOK[party.decision].class"
+            aria-hidden="true"
           />
+          <span class="text-default">{{ answerLabel(party) }}</span>
           <span v-if="party.decidedAt" class="text-dimmed text-xs">
             {{ formatDateTime(party.decidedAt, { locale }) }}
           </span>
-        </span>
-        <div v-if="canAnswer(party)" class="flex w-full flex-wrap gap-2">
+        </p>
+        <!-- An answer that cannot be taken back: confirm first. -->
+        <div
+          v-if="canAnswer(party) && confirming?.memberId === party.member.id"
+          class="flex flex-col gap-2"
+          role="group"
+          :aria-labelledby="confirmId"
+        >
+          <p :id="confirmId" class="text-default text-sm">
+            {{ confirmText(party, confirming.decision) }}
+          </p>
+          <div class="flex flex-wrap gap-2">
+            <UButton
+              :ref="rememberConfirmButton"
+              :icon="
+                confirming.decision === 'accepted'
+                  ? 'i-lucide-check'
+                  : 'i-lucide-x'
+              "
+              :color="confirming.decision === 'accepted' ? 'primary' : 'error'"
+              size="sm"
+              :loading="busy === `${party.member.id}:${confirming.decision}`"
+              :disabled="busy !== null"
+              :label="confirmLabel(party, confirming.decision)"
+              @click="confirmAnswer(party)"
+            />
+            <UButton
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              :disabled="busy !== null"
+              :label="t('amendment.actions.cancel')"
+              @click="cancelConfirm"
+            />
+          </div>
+        </div>
+        <div v-else-if="canAnswer(party)" class="flex flex-wrap gap-2">
+          <!-- The viewer's own answer is the primary action. -->
           <UButton
+            :ref="(el) => rememberAnswerButton(party.member.id, 'accepted', el)"
             icon="i-lucide-check"
-            color="success"
-            variant="soft"
-            size="xs"
+            size="sm"
+            :color="isOwn(party) ? 'primary' : 'neutral'"
+            :variant="isOwn(party) ? 'solid' : 'outline'"
             :loading="busy === `${party.member.id}:accepted`"
-            :disabled="busy !== null"
+            :disabled="busy !== null || confirming !== null"
             :label="
               isOwn(party)
                 ? t('amendment.acceptances.accept')
-                : t('amendment.acceptances.recordAccept', {
+                : t('amendment.acceptances.recordAcceptFor', {
                     member: party.member.acronym,
                   })
             "
-            @click="answer(party, 'accepted')"
+            @click="choose(party, 'accepted')"
           />
           <UButton
+            :ref="(el) => rememberAnswerButton(party.member.id, 'rejected', el)"
             icon="i-lucide-x"
-            color="error"
-            variant="soft"
-            size="xs"
-            :loading="busy === `${party.member.id}:rejected`"
-            :disabled="busy !== null"
+            color="neutral"
+            variant="outline"
+            size="sm"
+            :disabled="busy !== null || confirming !== null"
             :label="
               isOwn(party)
                 ? t('amendment.acceptances.reject')
-                : t('amendment.acceptances.recordReject', {
+                : t('amendment.acceptances.recordRejectFor', {
                     member: party.member.acronym,
                   })
             "
-            @click="answer(party, 'rejected')"
+            @click="choose(party, 'rejected')"
           />
         </div>
       </li>
     </ul>
-
-    <p
-      v-if="open && amendment.acceptances.length > 0"
-      class="text-muted text-xs"
-    >
-      {{
-        allAccepted
-          ? t("amendment.acceptances.ready")
-          : t("amendment.acceptances.waiting")
-      }}
-    </p>
   </section>
 </template>

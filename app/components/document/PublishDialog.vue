@@ -4,10 +4,15 @@ import type { AssemblyDto, DocumentDto } from "~~/shared/types/api";
 import { formatDateTime, toDate } from "~/utils/format";
 
 /**
- * Confirmation of "Presentar" (a member submits the draft for admission) or
- * "Publicar" (Secretaría publishes it and freezes the text), with a
- * checklist of what will happen and what is missing. Blocking items disable
- * the confirm button. The parent performs the request on `confirm`.
+ * Confirmation of "Enviar a Secretaría" (a presenter sends the draft for
+ * validation) or "Publicar" (Secretaría publishes it and freezes the text;
+ * "Validar y publicar" when the document was sent to it), with a checklist
+ * of what will happen and what is missing. Blocking items disable the
+ * confirm button. The parent performs the request on `confirm`.
+ *
+ * Sending again after the Secretaría asked for a correction says so, and the
+ * presentation deadline no longer applies: the correction reopens it (same
+ * rule as the server).
  *
  * Publishing again a withdrawn or postponed document (`publishedAt` set)
  * keeps its base text, reference and amendments; the copy says so and the
@@ -25,13 +30,24 @@ const props = withDefaults(
     blockCount: number;
     /** The text has changes that will be saved first. */
     textDirty?: boolean;
-    /** The metadata form has unsaved changes (blocking). */
+    /** The metadata form has changes that will be saved first. */
     metadataDirty?: boolean;
     /** The actor holds document:manage (not bound by the deadline). */
     manager?: boolean;
+    /**
+     * The calendar's presentation deadline does not apply: a document the
+     * Secretaría expects (its own `dueAt` governs, if any) or a correction.
+     */
+    deadlineExempt?: boolean;
     busy?: boolean;
   }>(),
-  { textDirty: false, metadataDirty: false, manager: false, busy: false },
+  {
+    textDirty: false,
+    metadataDirty: false,
+    manager: false,
+    deadlineExempt: false,
+    busy: false,
+  },
 );
 
 const open = defineModel<boolean>("open", { default: false });
@@ -75,6 +91,20 @@ const isFile = computed(() => props.document.format === "file");
 /** Publishing again a document that was already published. */
 const republish = computed(
   () => props.mode === "publish" && props.document.publishedAt !== null,
+);
+
+/** Sending again a draft the Secretaría sent back for a correction. */
+const resending = computed(
+  () =>
+    props.mode === "submit" && Boolean(props.document.correctionRequestedAt),
+);
+
+/** Publishing a document a presenter sent: the Secretaría validates it. */
+const validating = computed(
+  () =>
+    props.mode === "publish" &&
+    !republish.value &&
+    props.document.status === "submitted",
 );
 
 const textBlocks = computed(() =>
@@ -141,6 +171,28 @@ const deadlineCheck = computed<Check>(() => {
     state: "ok",
     title: t("document.publish.checks.deadlineOpen", { date: date(close) }),
   };
+});
+
+/** The internal deadline the Secretaría set for this document, if any. */
+const dueCheck = computed<Check | null>(() => {
+  const due = toDate(props.document.dueAt ?? null);
+  if (!due) return null;
+  return due.getTime() < Date.now()
+    ? {
+        key: "due",
+        state: "warning",
+        title: t("document.publish.checks.duePassed", {
+          date: date(props.document.dueAt),
+        }),
+        description: t("document.publish.checks.duePassedHint"),
+      }
+    : {
+        key: "due",
+        state: "ok",
+        title: t("document.publish.checks.dueOpen", {
+          date: date(props.document.dueAt),
+        }),
+      };
 });
 
 const windowCheck = computed<Check>(() => {
@@ -236,13 +288,25 @@ const checks = computed<Check[]>(() => {
   if (props.metadataDirty) {
     list.push({
       key: "metadata",
-      state: "error",
-      title: t("document.publish.checks.metadataUnsaved"),
+      state: "info",
+      title: t("document.publish.checks.metadataWillSave"),
     });
   }
 
   if (props.mode === "submit") {
-    list.push(deadlineCheck.value);
+    if (resending.value) {
+      // The correction reopens the presentation, whatever the deadline.
+      list.push({
+        key: "deadline",
+        state: "ok",
+        title: t("document.publish.checks.correctionReopen"),
+      });
+      return list;
+    }
+    // A document the Secretaría expects follows its own deadline, if any,
+    // not the calendar's (same rule as the server).
+    if (dueCheck.value) list.push(dueCheck.value);
+    else if (!props.deadlineExempt) list.push(deadlineCheck.value);
     return list;
   }
 
@@ -278,12 +342,31 @@ const blocked = computed(() =>
 );
 
 const copy = computed(() => {
+  if (resending.value) {
+    return {
+      title: t("document.submit.resend"),
+      description: t("document.submit.resendDescription"),
+      confirm: t("document.submit.resend"),
+      icon: "i-lucide-send",
+    };
+  }
   if (props.mode === "submit") {
     return {
       title: t("document.submit.title"),
       description: t("document.submit.description"),
       confirm: t("document.submit.confirm"),
       icon: "i-lucide-send",
+    };
+  }
+  if (validating.value) {
+    return {
+      title: t("document.validate.title"),
+      description:
+        isFile.value || !props.document.amendable
+          ? t("document.validate.descriptionFile")
+          : t("document.validate.description"),
+      confirm: t("document.validate.confirm"),
+      icon: "i-lucide-badge-check",
     };
   }
   if (republish.value) {

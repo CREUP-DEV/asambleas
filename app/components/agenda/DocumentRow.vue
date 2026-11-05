@@ -1,22 +1,42 @@
 <script setup lang="ts">
 import type { DocumentSummaryDto } from "~~/shared/types/api";
 import { isWindowOpen } from "~~/shared/utils/calendar";
+import { isPendingProgress } from "~/composables/document/documentProgress";
 
 /**
  * One document under an agenda item: title and reference linking to the
- * document, status, kind, proponent, amendment count and the countdown of
- * its amendment window.
+ * document, kind, who presents it ("CEUM con UPV", at most two co-presenters
+ * before "N más"), amendment count and the countdown of its amendment
+ * window.
+ *
+ * Before publication it also says, in a sentence, where the document stands
+ * and what comes next (useDocumentProgress). With `editTo` (the presenter's
+ * own draft) it offers the next step: prepare it, keep working on it or fix
+ * it and send it again.
  */
-const props = defineProps<{
-  document: DocumentSummaryDto;
-  to: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    document: DocumentSummaryDto;
+    to: string;
+    /** The editor of the user's own draft, for the call to action. */
+    editTo?: string | null;
+  }>(),
+  { editTo: null },
+);
 
 const { t } = useI18n();
 
 // The shared clock, so a window that opens or closes while the page is open
 // changes state without waiting for a refetch.
 const now = useAppNow();
+
+const progress = useDocumentProgress(() => props.document);
+const pending = computed(() => isPendingProgress(progress.value.state));
+const callToAction = computed(() =>
+  props.editTo && progress.value.actionLabel
+    ? progress.value.actionLabel
+    : null,
+);
 
 /** Whether the document has an amendment window (as the server computes it). */
 const hasWindow = computed(
@@ -68,6 +88,14 @@ const amendmentsLabel = computed(() =>
 const windowClosed = computed(
   () => hasWindow.value && !openNow.value && !windowCountdown.value,
 );
+
+const SENTENCE_COLORS: Record<string, string> = {
+  neutral: "text-muted",
+  info: "text-info",
+  success: "text-success",
+  warning: "text-warning",
+  error: "text-error",
+};
 </script>
 
 <template>
@@ -91,8 +119,9 @@ const windowClosed = computed(
         <span>{{ document.title }}</span>
         <span
           v-if="document.reference"
-          class="text-muted ms-1.5 text-sm font-normal tabular-nums"
-          >· {{ document.reference }}</span
+          class="text-muted text-sm font-normal tabular-nums"
+        >
+          · {{ document.reference }}</span
         >
       </NuxtLink>
       <div class="text-muted flex flex-wrap items-center gap-1.5 text-xs">
@@ -118,16 +147,34 @@ const windowClosed = computed(
           </span>
         </template>
       </div>
+      <!-- Where it stands and what comes next (before publication) -->
+      <p
+        v-if="pending"
+        class="flex items-start gap-1.5 text-sm"
+        :class="SENTENCE_COLORS[progress.color]"
+        data-testid="document-progress"
+      >
+        <UIcon
+          :name="progress.icon"
+          class="mt-0.5 size-4 shrink-0"
+          aria-hidden="true"
+        />
+        <span class="line-clamp-3 break-words">{{ progress.sentence }}</span>
+      </p>
     </div>
 
     <div
       class="relative z-[1] flex shrink-0 flex-wrap items-center gap-1.5 sm:justify-end"
     >
-      <CommonMemberBadge
-        v-if="document.proponent"
-        :member="document.proponent"
+      <DocumentPresenters :document="document" :max-others="2" />
+      <UBadge
+        v-if="pending"
+        :color="progress.color"
+        variant="subtle"
+        size="sm"
+        :label="progress.label"
       />
-      <CommonStatusBadge kind="document" :value="document.status" />
+      <CommonStatusBadge v-else kind="document" :value="document.status" />
       <UBadge
         v-if="document.consolidated"
         color="success"
@@ -137,7 +184,7 @@ const windowClosed = computed(
         :label="t('agenda.document.consolidated')"
       />
       <UTooltip
-        v-if="document.amendable || document.amendmentCount > 0"
+        v-if="!pending && (document.amendable || document.amendmentCount > 0)"
         :text="amendmentsLabel"
       >
         <UBadge
@@ -150,6 +197,15 @@ const windowClosed = computed(
           <span class="sr-only">{{ amendmentsLabel }}</span>
         </UBadge>
       </UTooltip>
+      <UButton
+        v-if="callToAction && editTo"
+        :to="editTo"
+        size="xs"
+        :color="progress.state === 'correction' ? 'warning' : 'primary'"
+        trailing-icon="i-lucide-arrow-right"
+        :label="callToAction"
+        :aria-label="`${callToAction}: ${document.title}`"
+      />
     </div>
   </div>
 </template>

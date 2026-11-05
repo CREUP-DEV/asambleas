@@ -1,12 +1,9 @@
 import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { users } from "../../db/schema";
-import { getUserPermissions, isAdmin } from "../auth/rbac";
+import { getEffectivePermissions, isAdmin } from "../auth/rbac";
 import type { Actor } from "../domain/actor";
-import {
-  ALL_PERMISSION_KEYS,
-  type PermissionKey,
-} from "~~/shared/constants/permissions";
+import type { PermissionKey } from "~~/shared/constants/permissions";
 
 /**
  * The export worker has no request, so it rebuilds the requester as an
@@ -36,11 +33,8 @@ export async function loadExportActor(userId: string): Promise<Actor | null> {
   if (!user) return null;
 
   const admin = isAdmin(user.role?.name);
-  const permissions: PermissionKey[] = admin
-    ? (ALL_PERMISSION_KEYS as PermissionKey[])
-    : user.role
-      ? await getUserPermissions(user.role.id)
-      : [];
+  // The same union of role and per-user permissions as requireActor.
+  const permissions: PermissionKey[] = await getEffectivePermissions(user);
 
   return {
     user,

@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import type { ConsolidationConflict } from "~~/shared/types/content";
+import { useFinalVoteReasonText } from "~/composables/session/useFinalVoteReasonText";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
+import { assemblyPath } from "~/components/shell/Navigation.vue";
 
 /**
  * The text as it stands: the base with every approved amendment applied in
@@ -8,15 +10,33 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * conflicts that stop amendments from applying together, and the final vote.
  * A wrongly recorded final vote can be annulled while the assembly is open:
  * the vote stays in the record and the text awaits its final vote again.
+ *
+ * While the final vote is blocked, each reason says who has to act: the
+ * Mesa decides the amendments still open; the assembly decides whether to
+ * treat the late ones; the main authors accept (or not) the transactionals
+ * over their amendments; the Secretaría validates (or sends back) those it
+ * has not checked yet.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
+const localePath = useLocalePath();
 
 const document = computed(() => session.document.value);
 const preview = computed(() => session.preview.value);
 const structured = computed(() => document.value?.format === "structured");
 const finalVote = computed(() => document.value?.finalVote ?? null);
-const undecided = computed(() => session.undecided.value.length);
+const blockers = computed(() => session.finalVoteBlockers.value);
+/** Whoever can validate the waiting amendments gets a way to do it. */
+const validationPath = computed(() => {
+  const assembly = session.assembly.value;
+  if (!assembly) return null;
+  const canValidate = blockers.value.awaitingValidation.some(
+    (id) => session.byId.value.get(id)?.can.validate,
+  );
+  return canValidate
+    ? localePath(assemblyPath(assembly.slug, "validation"))
+    : null;
+});
 
 const canAnnul = computed(
   () =>
@@ -69,36 +89,30 @@ function focusAmendment(id: string): void {
   element?.focus({ preventScroll: true });
 }
 
-const finalBlockedReason = computed(() => {
-  if (!document.value) return null;
-  if (!document.value.voted) return t("session.preview.notVoted");
-  if (document.value.status !== "published")
-    return t("session.preview.notPublished");
-  // Until this document's amendments arrive (or after they failed to load),
-  // an empty list would read as "nothing undecided" and unlock the vote.
-  if (!session.amendmentsDto.value)
-    return t("session.preview.amendmentsLoading");
-  // Before the undecided count: with the text returned, the remaining
-  // amendments lapse and there is no final vote at all.
-  if (preview.value.totalityReturn)
-    return t("session.preview.totalityReturnBlocked", {
-      code: session.label(preview.value.totalityReturn.id),
-    });
-  if (undecided.value > 0)
-    return t(
-      "session.preview.undecided",
-      { count: undecided.value },
-      undecided.value,
-    );
-  return null;
-});
+/** Why the final vote cannot be opened yet: one sentence per reason. */
+const reasonText = useFinalVoteReasonText(session.label);
+const finalBlockedReasons = computed<string[]>(() =>
+  session.finalVoteReasons.value.map(reasonText),
+);
+const finalBlocked = computed(() => finalBlockedReasons.value.length > 0);
+/** The reasons describe the disabled button to screen readers. */
+const reasonsId = useId();
+const awaitingValidation = computed(
+  () => blockers.value.awaitingValidation.length,
+);
 </script>
 
 <template>
   <div class="space-y-4">
-    <div v-if="loading" class="space-y-3" aria-busy="true">
-      <USkeleton class="h-6 w-1/2" />
-      <USkeleton v-for="n in 5" :key="n" class="h-16 w-full" />
+    <div v-if="loading" class="space-y-3" role="status">
+      <span class="sr-only">{{ t("workspace.loading") }}</span>
+      <USkeleton aria-hidden="true" class="h-6 w-1/2" />
+      <USkeleton
+        v-for="n in 5"
+        :key="n"
+        aria-hidden="true"
+        class="h-16 w-full"
+      />
     </div>
 
     <CommonEmptyState
@@ -154,12 +168,33 @@ const finalBlockedReason = computed(() => {
             block
             icon="i-lucide-gavel"
             :label="t('session.finalVote.open')"
-            :disabled="Boolean(finalBlockedReason) || !document.can.moderate"
+            :disabled="finalBlocked || !document.can.moderate"
+            :aria-describedby="finalBlocked ? reasonsId : undefined"
             @click="session.finalVoteDialog.open = true"
           />
-          <p v-if="finalBlockedReason" class="text-muted text-xs">
-            {{ finalBlockedReason }}
-          </p>
+          <div aria-live="polite">
+            <ul
+              v-if="finalBlocked"
+              :id="reasonsId"
+              class="text-muted space-y-1 text-xs"
+            >
+              <li v-for="reason in finalBlockedReasons" :key="reason">
+                {{ reason }}
+              </li>
+            </ul>
+          </div>
+          <UButton
+            v-if="finalBlocked && awaitingValidation > 0 && validationPath"
+            :to="validationPath"
+            target="_blank"
+            size="xs"
+            color="neutral"
+            variant="link"
+            class="px-0"
+            trailing-icon="i-lucide-external-link"
+            :label="t('session.queue.openValidation')"
+            :aria-label="t('session.queue.openValidationNewTab')"
+          />
         </template>
       </section>
 

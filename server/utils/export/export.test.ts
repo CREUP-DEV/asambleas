@@ -19,6 +19,7 @@ import {
   buildAgendaTree,
   buildAnnexRows,
   consolidationInput,
+  presentersLabel,
   type AnnexAmendment,
 } from "./mapping";
 import {
@@ -347,6 +348,19 @@ describe("buildAgendaTree", () => {
     expect(tree.numbering.get("c")).toBe("1");
     expect(tree.numbering.get("a")).toBe("2");
     expect(tree.numbering.get("b")).toBe("2.1");
+  });
+});
+
+describe("presentersLabel", () => {
+  it("names the main presenter first, then the co-presenters", () => {
+    expect(presentersLabel("CEUAM", ["CEUM", "UPV"])).toBe("CEUAM, CEUM, UPV");
+    expect(presentersLabel("CEUAM", [])).toBe("CEUAM");
+  });
+
+  it("never repeats a member and says nothing when nobody presents it", () => {
+    expect(presentersLabel("CEUM", ["CEUM"])).toBe("CEUM");
+    expect(presentersLabel(null, [])).toBeNull();
+    expect(presentersLabel(undefined, ["UPV"])).toBe("UPV");
   });
 });
 

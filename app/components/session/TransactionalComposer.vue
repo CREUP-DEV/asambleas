@@ -19,8 +19,12 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * Builds a transactional amendment in the room. The editor starts from the
  * passage its sources touch, with the sources applied in order of
  * presentation (when two collide, the first that applies wins). The diff
- * against the base updates as the Mesa types. Once created (and submitted),
- * the answer of every party is recorded in the acceptance list.
+ * against the base updates as the Mesa types. It is presented by the main
+ * authors of its sources unless the Mesa picks others, and with several
+ * authors one of them is its main author. Once created it is validated and
+ * published at once; the answer the main author of each source gives in
+ * the room is recorded in the acceptance list, and when they all accept it
+ * replaces those amendments.
  *
  * The text typed live is never thrown away silently: closing the panel
  * (Escape, the overlay, the close button) keeps the draft, and reopening it
@@ -50,6 +54,8 @@ const justification = ref("");
 const authorIds = ref<string[]>([]);
 /** The Mesa chose the authors by hand: a reseed keeps its choice. */
 const authorsTouched = ref(false);
+/** Main author among the authors (required when there are several). */
+const mainAuthorId = ref<string | null>(null);
 const createdId = ref<string | null>(null);
 const seed = shallowRef<SessionTransactionalSeed | null>(null);
 const editorKey = ref(0);
@@ -105,17 +111,28 @@ const sources = computed<AmendmentDto[]>(() =>
     ),
 );
 
-const parties = computed(() =>
-  sessionTransactionalParties(
-    sources.value,
-    session.document.value?.proponent ?? null,
-  ),
-);
+/** The main author of each source: who has to accept it. */
+const parties = computed(() => sessionTransactionalParties(sources.value));
 const partyItems = computed(() =>
   parties.value.map((party) => ({
-    label: `${party.member.acronym} · ${party.member.name}`,
+    label: memberLabel(party.member),
     value: party.member.id,
   })),
+);
+/** The authors chosen, as the main author select lists them. */
+const mainAuthorItems = computed(() =>
+  partyItems.value.filter((item) => authorIds.value.includes(item.value)),
+);
+
+// The main author is always one of the authors: the first by default.
+watch(
+  authorIds,
+  (ids) => {
+    if (!mainAuthorId.value || !ids.includes(mainAuthorId.value)) {
+      mainAuthorId.value = ids[0] ?? null;
+    }
+  },
+  { immediate: true },
 );
 
 /** Restarts the text from the current sources (the editor is remounted). */
@@ -136,9 +153,7 @@ function reseed(): void {
   const partyIds = new Set(parties.value.map((party) => party.member.id));
   authorIds.value = authorsTouched.value
     ? authorIds.value.filter((id) => partyIds.has(id))
-    : parties.value
-        .filter((party) => party.role === "author")
-        .map((party) => party.member.id);
+    : parties.value.map((party) => party.member.id);
 }
 
 function startFresh(ids: string[]): void {
@@ -148,6 +163,7 @@ function startFresh(ids: string[]): void {
   createdId.value = null;
   justification.value = "";
   authorsTouched.value = false;
+  mainAuthorId.value = null;
   sourceIds.value = [...ids];
   reseed();
 }
@@ -321,13 +337,17 @@ async function create(): Promise<void> {
     ops: ops.value,
     justification: justification.value.trim(),
     authorMemberIds: authorIds.value,
+    mainAuthorMemberId:
+      mainAuthorId.value && authorIds.value.includes(mainAuthorId.value)
+        ? mainAuthorId.value
+        : (authorIds.value[0] ?? null),
     submit: true,
   });
   if (result) createdId.value = result.id;
 }
 
 function debateCreated(): void {
-  if (created.value) void session.debateAmendment(created.value);
+  if (created.value) void session.requestDebate(created.value);
 }
 
 function voteCreated(): void {
@@ -378,7 +398,15 @@ function voteCreated(): void {
             value-key="value"
             multiple
             :placeholder="t('session.composer.sourcesPlaceholder')"
-            :search-input="{ placeholder: t('common.search') }"
+            :aria-label="
+              selectMenuLabel(
+                t('session.composer.sources'),
+                sourceItems,
+                sourceIds,
+                t('session.composer.sourcesPlaceholder'),
+              )
+            "
+            :search-input="labelledSearch(t('common.search'))"
             class="w-full"
             @update:model-value="onSourcesChange"
           />
@@ -424,7 +452,7 @@ function voteCreated(): void {
                 autofocus
               />
               <template #fallback>
-                <USkeleton class="h-48 w-full" />
+                <USkeleton aria-hidden="true" class="h-48 w-full" />
               </template>
             </ClientOnly>
             <UButton
@@ -476,8 +504,33 @@ function voteCreated(): void {
             value-key="value"
             multiple
             :placeholder="t('session.composer.authorsPlaceholder')"
+            :aria-label="
+              selectMenuLabel(
+                t('session.composer.authors'),
+                partyItems,
+                authorIds,
+                t('session.composer.authorsPlaceholder'),
+              )
+            "
+            :search-input="labelledSearch(t('common.search'))"
             class="w-full"
             @update:model-value="onAuthorsChange"
+          />
+        </UFormField>
+
+        <UFormField
+          v-if="authorIds.length > 1"
+          :label="t('session.composer.mainAuthor')"
+          :hint="t('session.composer.mainAuthorHint')"
+          name="composer-main-author"
+          required
+        >
+          <USelect
+            :model-value="mainAuthorId ?? undefined"
+            :items="mainAuthorItems"
+            value-key="value"
+            class="w-full"
+            @update:model-value="mainAuthorId = $event ?? null"
           />
         </UFormField>
 
@@ -496,7 +549,11 @@ function voteCreated(): void {
             >
               <CommonMemberBadge :member="party.member" size="sm" />
               <span class="text-muted text-xs">
-                {{ t(`session.enums.acceptanceRole.${party.role}`) }}
+                {{
+                  t("session.acceptance.mainAuthorOf", {
+                    codes: party.sourceIds.map(session.label).join(", "),
+                  })
+                }}
               </span>
             </li>
           </ul>

@@ -2,16 +2,17 @@ import type { H3Event } from "h3";
 import { createError } from "h3";
 import { getAuthUserWithRole, requireAuth } from "../auth/requireAuth";
 import type { AuthUserWithRole } from "../auth/requireAuth";
-import { getUserPermissions, isAdmin } from "../auth/rbac";
+import { getEffectivePermissions, isAdmin } from "../auth/rbac";
 import {
-  ALL_PERMISSION_KEYS,
   PERMISSION_KEYS,
   type PermissionKey,
 } from "~~/shared/constants/permissions";
 
 /**
  * The authenticated user, their permissions and the member they act for.
- * Admin passes every check through `can`, as with the RBAC helpers.
+ * `permissions` are the role's plus those granted to the user
+ * (getEffectivePermissions). Admin passes every check through `can`, as with
+ * the RBAC helpers.
  */
 export interface Actor {
   user: AuthUserWithRole;
@@ -32,11 +33,7 @@ export async function requireActor(event: H3Event): Promise<Actor> {
   }
 
   const admin = isAdmin(user.role?.name);
-  const permissions = admin
-    ? (ALL_PERMISSION_KEYS as PermissionKey[])
-    : user.role
-      ? await getUserPermissions(user.role.id)
-      : [];
+  const permissions = await getEffectivePermissions(user);
 
   const actor: Actor = {
     user,
@@ -78,6 +75,14 @@ export function canReviewAmendments(actor: Actor): boolean {
     actor.can(PERMISSION_KEYS.AMENDMENT_MANAGE)
   );
 }
+
+/**
+ * Answer for an account that acts for no member (users.memberId) and tries
+ * to present something: the Secretaría links it (PUT
+ * /api/admin/users/[id]/member through an admin).
+ */
+export const UNLINKED_ACCOUNT_MESSAGE =
+  "Tu cuenta no está vinculada a ningún miembro. Pide a la Secretaría que la vincule a tu consejo o área.";
 
 /** Whether the actor speaks for any of the given members. */
 export function actsFor(

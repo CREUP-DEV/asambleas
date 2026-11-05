@@ -3,9 +3,9 @@ import { LIVE_MESSAGE_MAX_LENGTH } from "~~/shared/utils/schemas/assembly";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 
 /**
- * Top bar of the Mesa console: assembly status, live connection, what is
- * under debate right now, the projection link, the message shown on the
- * projection and the keyboard shortcuts.
+ * Top bar of the Mesa console: assembly status, live connection, the
+ * projection link, the message shown on the projection and the keyboard
+ * shortcuts. What is under debate leads the console itself (NowPanel).
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -20,53 +20,18 @@ const projectionPath = computed(() =>
     : undefined,
 );
 
-const connection = computed(() => {
-  if (session.connected.value) {
-    return {
-      label: t("session.toolbar.live"),
-      color: "success" as const,
-      icon: "i-lucide-wifi",
-    };
-  }
-  if (session.polling.value) {
-    return {
-      label: t("session.toolbar.polling"),
-      color: "warning" as const,
-      icon: "i-lucide-refresh-cw",
-    };
-  }
-  return {
-    label: t("session.toolbar.offline"),
-    color: "error" as const,
-    icon: "i-lucide-wifi-off",
-  };
-});
+const CONNECTION = {
+  live: { color: "success", icon: "i-lucide-wifi" },
+  polling: { color: "warning", icon: "i-lucide-refresh-cw" },
+  connecting: { color: "neutral", icon: "i-lucide-loader-circle" },
+  offline: { color: "error", icon: "i-lucide-wifi-off" },
+} as const;
 
-const itemTitle = computed(() => {
-  const id = live.value?.agendaItemId;
-  if (!id) return null;
-  return (
-    session.agendaRows.value.find((row) => row.item.id === id)?.item.title ??
-    null
-  );
+/** The live badge: "Conectando…" until the first connection is ready. */
+const connection = computed(() => {
+  const state = session.connection.value;
+  return { state, label: t(`session.toolbar.${state}`), ...CONNECTION[state] };
 });
-const documentTitle = computed(() => {
-  const id = live.value?.documentId;
-  if (!id) return null;
-  for (const row of session.agendaRows.value) {
-    const document = row.documents.find((other) => other.id === id);
-    if (document) return document.reference ?? document.title;
-  }
-  return null;
-});
-const amendmentCode = computed(() =>
-  live.value?.amendmentId ? session.label(live.value.amendmentId) : null,
-);
-const focusParts = computed(() =>
-  [itemTitle.value, documentTitle.value, amendmentCode.value].filter(
-    (part): part is string => Boolean(part),
-  ),
-);
 
 const messageOpen = ref(false);
 const message = ref("");
@@ -103,27 +68,15 @@ const SHORTCUTS = [
           variant="subtle"
           :icon="connection.icon"
           :label="connection.label"
+          :ui="{
+            leadingIcon:
+              connection.state === 'connecting'
+                ? 'motion-safe:animate-spin'
+                : '',
+          }"
+          :data-state="connection.state"
           role="status"
         />
-        <p
-          class="text-default flex min-w-0 items-center gap-1 text-sm"
-          aria-live="polite"
-        >
-          <UIcon
-            name="i-lucide-radio"
-            class="text-primary size-4 shrink-0"
-            aria-hidden="true"
-          />
-          <span class="text-muted shrink-0">{{
-            t("session.toolbar.now")
-          }}</span>
-          <span v-if="focusParts.length > 0" class="truncate font-medium">
-            {{ focusParts.join(" › ") }}
-          </span>
-          <span v-else class="text-muted truncate">
-            {{ t("session.toolbar.nothing") }}
-          </span>
-        </p>
       </div>
     </template>
     <template #right>
@@ -225,6 +178,8 @@ const SHORTCUTS = [
           v-if="projectionPath"
           :to="projectionPath"
           target="_blank"
+          color="neutral"
+          variant="outline"
           icon="i-lucide-presentation"
           trailing-icon="i-lucide-external-link"
           size="sm"

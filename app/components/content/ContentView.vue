@@ -20,8 +20,11 @@ export interface BlockMarker {
  * - Clicks are delegated: `block-click` for the nearest `data-block-id`,
  *   `amendment-click` for the nearest `data-amendment-id` (an inserted or
  *   deleted block carries both, so both fire). Links never trigger them.
- * - With `interactive`, blocks and amended fragments are focusable and
- *   Enter/Space act as a click.
+ * - With `interactive`, amended fragments are buttons (focusable, Enter/Space
+ *   act as a click). Blocks are focusable only in `plain` mode, the only one
+ *   where picking a block does something.
+ * - `headings: false` renders headings as styled paragraphs, for excerpts
+ *   whose headings must not join the page outline.
  */
 const props = withDefaults(
   defineProps<{
@@ -37,6 +40,8 @@ const props = withDefaults(
     /** Gutter markers per block id. */
     markers?: Record<string, BlockMarker>;
     interactive?: boolean;
+    /** Headings as real heading elements; false for excerpts. */
+    headings?: boolean;
   }>(),
   {
     blocks: undefined,
@@ -47,6 +52,7 @@ const props = withDefaults(
     selected: () => [],
     markers: undefined,
     interactive: false,
+    headings: true,
   },
 );
 
@@ -57,7 +63,7 @@ const emit = defineEmits<{
   "marker-click": [blockId: string, event: MouseEvent];
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 /** Distinct provenance underline colours (see `.cx-prov-N` in main.css). */
 const PROVENANCE_COLORS = 6;
@@ -68,18 +74,32 @@ const containerEl = useTemplateRef<HTMLElement>("containerEl");
 const contentEl = useTemplateRef<HTMLElement>("contentEl");
 
 const html = computed(() => {
+  const headings = props.headings;
   if (props.annotated && props.mode !== "plain") {
     return renderAnnotated(props.annotated, {
       mode: props.mode,
       label: props.label,
       focus: props.focus,
+      headings,
+      diffLabels:
+        props.mode === "diff"
+          ? {
+              inserted: t("common.content.inserted"),
+              removed: t("common.content.removed"),
+            }
+          : undefined,
     });
   }
-  if (props.blocks) return renderBlocks(props.blocks);
+  if (props.blocks) return renderBlocks(props.blocks, { headings });
   if (props.annotated)
-    return renderAnnotated(props.annotated, { mode: "clean" });
+    return renderAnnotated(props.annotated, { mode: "clean", headings });
   return "";
 });
+
+/** Blocks can be picked (and focused) only in the plain, interactive view. */
+const selectableBlocks = computed(
+  () => props.interactive && props.mode === "plain",
+);
 
 const markerEntries = computed(() =>
   Object.entries(props.markers ?? {}).filter(([, marker]) => marker.count > 0),
@@ -108,7 +128,7 @@ function decorate(): void {
 
   root.querySelectorAll<HTMLElement>("[data-block-id]").forEach((element) => {
     const id = element.dataset.blockId ?? "";
-    if (props.interactive) element.tabIndex = 0;
+    if (selectableBlocks.value) element.tabIndex = 0;
     else element.removeAttribute("tabindex");
     const isSelected = selected.has(id);
     element.classList.toggle("cx-selected", isSelected);
@@ -119,8 +139,32 @@ function decorate(): void {
   root
     .querySelectorAll<HTMLElement>("[data-amendment-id]:not([data-block-id])")
     .forEach((element) => {
-      if (props.interactive) element.tabIndex = 0;
-      else element.removeAttribute("tabindex");
+      const id = element.dataset.amendmentId ?? "";
+      const label =
+        props.interactive &&
+        props.label &&
+        element.classList.contains("cx-prov")
+          ? props.label(id)
+          : "";
+      if (props.interactive) {
+        element.tabIndex = 0;
+        element.setAttribute("role", "button");
+      } else {
+        element.removeAttribute("tabindex");
+        element.removeAttribute("role");
+      }
+      // The visible label sits in an aria-hidden <sup>: say it in the name.
+      if (label) {
+        element.setAttribute(
+          "aria-label",
+          t("common.content.fragmentFrom", {
+            text: element.textContent?.trim() ?? "",
+            label,
+          }),
+        );
+      } else {
+        element.removeAttribute("aria-label");
+      }
     });
 
   const order = new Map<string, number>();
@@ -174,9 +218,17 @@ function scheduleLayout(): void {
 
 useResizeObserver(contentEl, scheduleLayout);
 
-watch([html, () => props.selected, () => props.interactive], () => decorate(), {
-  flush: "post",
-});
+watch(
+  [
+    html,
+    () => props.selected,
+    () => props.interactive,
+    selectableBlocks,
+    locale,
+  ],
+  () => decorate(),
+  { flush: "post" },
+);
 watch([html, markerEntries], scheduleLayout, { flush: "post" });
 
 onMounted(() => {
@@ -282,7 +334,7 @@ function scrollToBlock(blockId: string): void {
     block: "center",
     behavior: reduceMotion ? "auto" : "smooth",
   });
-  if (props.interactive) element.focus({ preventScroll: true });
+  if (selectableBlocks.value) element.focus({ preventScroll: true });
 }
 
 defineExpose({ getSelectedBlockIds, scrollToBlock, root: contentEl });
@@ -292,7 +344,11 @@ defineExpose({ getSelectedBlockIds, scrollToBlock, root: contentEl });
   <div
     ref="containerEl"
     class="cx-view relative min-w-0"
-    :class="{ 'cx-has-gutter': hasMarkers, 'cx-interactive': interactive }"
+    :class="{
+      'cx-has-gutter': hasMarkers,
+      'cx-interactive': interactive,
+      'cx-selectable': selectableBlocks,
+    }"
   >
     <div v-if="hasMarkers && html" class="cx-gutter">
       <template v-for="[id, marker] in markerEntries" :key="id">

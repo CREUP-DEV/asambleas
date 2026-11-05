@@ -92,7 +92,8 @@ export function statusLabelKey(kind: StatusKind, value: string): string {
 /**
  * Coloured badge for a domain status (assembly, document, amendment,
  * admission, proponent position, vote result, transactional acceptance).
- * Unknown values fall back to a neutral badge with the raw value.
+ * Unknown values fall back to a neutral badge with the raw value. `label`
+ * words it otherwise (who answered, say), keeping the status colour.
  */
 const props = withDefaults(
   defineProps<{
@@ -101,8 +102,10 @@ const props = withDefaults(
     size?: "xs" | "sm" | "md" | "lg" | "xl";
     variant?: "solid" | "outline" | "soft" | "subtle";
     icon?: string;
+    /** Overrides the translated status label. */
+    label?: string;
   }>(),
-  { size: "sm", variant: "subtle", icon: undefined },
+  { size: "sm", variant: "subtle", icon: undefined, label: undefined },
 );
 
 const { t, te } = useI18n();
@@ -112,7 +115,8 @@ const color = computed<StatusColor>(() => {
   return colors[props.value] ?? "neutral";
 });
 
-const label = computed(() => {
+const resolvedLabel = computed(() => {
+  if (props.label) return props.label;
   const key = statusLabelKey(props.kind, props.value);
   return te(key) ? t(key) : props.value;
 });
@@ -124,7 +128,7 @@ const label = computed(() => {
     :variant="variant"
     :size="size"
     :icon="icon"
-    :label="label"
+    :label="resolvedLabel"
     :data-status="`${kind}:${value}`"
     class="whitespace-nowrap"
   />

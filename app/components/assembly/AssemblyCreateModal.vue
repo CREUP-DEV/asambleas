@@ -12,6 +12,7 @@ import type {
 } from "~~/shared/types/api";
 import { ASSEMBLY_LOCATION_MAX_LENGTH } from "~~/shared/utils/schemas/assembly";
 import { assemblyPath } from "~/components/shell/Navigation.vue";
+import { intlLocale } from "~/utils/format";
 
 /**
  * Creates an assembly (`assembly:create`). Dates are typed as Madrid wall
@@ -26,7 +27,7 @@ const open = defineModel<boolean>("open", { default: false });
 
 const emit = defineEmits<{ created: [assembly: AssemblyDto] }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const localePath = useLocalePath();
 const toast = useToast();
 const api = useApi();
@@ -272,6 +273,8 @@ async function submit(): Promise<void> {
           >
             <UInputDate
               v-model="start"
+              :aria-label="t('assemblies.create.start')"
+              :locale="intlLocale(locale)"
               granularity="minute"
               :hour-cycle="24"
               class="w-full"
@@ -281,6 +284,8 @@ async function submit(): Promise<void> {
           <UFormField :label="t('assemblies.create.end')" name="end" required>
             <UInputDate
               v-model="end"
+              :aria-label="t('assemblies.create.end')"
+              :locale="intlLocale(locale)"
               granularity="minute"
               :hour-cycle="24"
               class="w-full"

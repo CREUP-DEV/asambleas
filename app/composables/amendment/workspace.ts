@@ -9,10 +9,16 @@
  */
 import {
   AMENDMENT_CLOSED_STATUSES,
+  type AcceptedAmendmentRule,
   type AmendmentKind,
   type AmendmentStatus,
 } from "~~/shared/constants/domain";
-import type { AmendmentDto, RelationDto } from "~~/shared/types/api";
+import type {
+  AmendmentCapabilities,
+  AmendmentDto,
+  AmendmentReviewState,
+  RelationDto,
+} from "~~/shared/types/api";
 import type {
   AmendmentInput,
   AmendmentOp,
@@ -68,6 +74,554 @@ export function amendmentShortLabel(
   return amendment.number !== null ? String(amendment.number) : null;
 }
 
+// Review by the Secretaría -------------------------------------------------------
+
+/**
+ * Not visible to the whole assembly yet: a draft, or a presented amendment
+ * the Secretaría has not published. Amendments without a review state past
+ * draft (recorded before validation existed) count as public.
+ */
+export function isAmendmentPrivate(
+  amendment: Pick<AmendmentDto, "status" | "reviewState">,
+): boolean {
+  if (amendment.status === "draft") return true;
+  return (
+    amendment.reviewState !== null && amendment.reviewState !== "published"
+  );
+}
+
+/**
+ * What the viewer is told about an amendment's review, as an i18n key under
+ * `amendment.review.badges` (and the sentence of amendmentReviewSentenceKey):
+ * - `draft`: never sent to the Secretaría;
+ * - `correction`: sent back to its authors, who can fix it (the viewer can);
+ * - `correction_sent`: sent back, seen by someone who cannot edit it;
+ * - `pending_authors`: a transactional a member proposed, waiting for the
+ *   main author of each amendment it would replace to accept it before the
+ *   Secretaría checks it;
+ * - `to_validate` / `pending`: waiting for the Secretaría, for the
+ *   Secretaría itself and for everyone else;
+ * - `to_publish` / `validated`: validated but private, likewise. A decided
+ *   amendment that was never published is `to_publish` for the Secretaría,
+ *   which can still make it public;
+ * - `published`: visible to everyone.
+ */
+export type AmendmentReviewKey =
+  | "draft"
+  | "correction"
+  | "correction_sent"
+  | "pending_authors"
+  | "to_validate"
+  | "pending"
+  | "to_publish"
+  | "validated"
+  | "published";
+
+export interface AmendmentReviewView {
+  key: AmendmentReviewKey;
+  color: "neutral" | "info" | "warning" | "success" | "primary";
+  icon: string;
+  /** Not visible to the whole assembly yet (see isAmendmentPrivate). */
+  private: boolean;
+  /** Late, validated, and still waiting for the Mesa to admit it. */
+  awaitingAdmission: boolean;
+}
+
+export type AmendmentReviewInput = Pick<
+  AmendmentDto,
+  "status" | "reviewState" | "admission"
+> & { can: Pick<AmendmentCapabilities, "edit" | "validate" | "publish"> };
+
+const REVIEW_LOOK: Record<
+  AmendmentReviewKey,
+  Pick<AmendmentReviewView, "color" | "icon">
+> = {
+  draft: { color: "neutral", icon: "i-lucide-file-pen" },
+  correction: { color: "warning", icon: "i-lucide-message-square-warning" },
+  correction_sent: { color: "neutral", icon: "i-lucide-undo-2" },
+  pending_authors: { color: "info", icon: "i-lucide-users" },
+  to_validate: { color: "warning", icon: "i-lucide-inbox" },
+  pending: { color: "info", icon: "i-lucide-hourglass" },
+  to_publish: { color: "primary", icon: "i-lucide-eye-off" },
+  validated: { color: "info", icon: "i-lucide-eye-off" },
+  published: { color: "success", icon: "i-lucide-eye" },
+};
+
+function reviewKeyOf(
+  amendment: AmendmentReviewInput,
+): AmendmentReviewKey | null {
+  const { status, reviewState, can } = amendment;
+  if (status === "draft") {
+    if (reviewState === "correction_requested") {
+      return can.edit ? "correction" : "correction_sent";
+    }
+    return "draft";
+  }
+  // Decided, withdrawn or inadmissible: the outcome says it all, except to
+  // the Secretaría while it can still publish it (validated, never made
+  // public). Nobody else is told it will be published: a withdrawn or
+  // inadmissible one may well stay private.
+  if (status !== "submitted") return can.publish ? "to_publish" : null;
+  switch (reviewState) {
+    case "pending_authors":
+      return "pending_authors";
+    case "pending_validation":
+      return can.validate ? "to_validate" : "pending";
+    case "validated":
+      return can.publish ? "to_publish" : "validated";
+    case "published":
+    case null:
+      return "published";
+    default:
+      return null;
+  }
+}
+
+/**
+ * Where an amendment stands with the Secretaría, worded for the viewer
+ * (its author, the Secretaría or anyone else). Null once it is decided.
+ */
+export function amendmentReviewView(
+  amendment: AmendmentReviewInput,
+): AmendmentReviewView | null {
+  const key = reviewKeyOf(amendment);
+  if (!key) return null;
+  return {
+    key,
+    ...REVIEW_LOOK[key],
+    private: isAmendmentPrivate(amendment),
+    awaitingAdmission:
+      amendment.status === "submitted" &&
+      amendment.admission === "pending" &&
+      (amendment.reviewState === "validated" ||
+        amendment.reviewState === "published"),
+  };
+}
+
+/**
+ * The sentence for a review key, as an i18n key. Its presenters read about
+ * "you" (who can see it, what they do next); anyone else who sees it before
+ * publication (the Mesa) reads about the rest of the assembly.
+ */
+export function amendmentReviewSentenceKey(
+  key: AmendmentReviewKey,
+  presenter: boolean,
+): string {
+  const others = !presenter && (key === "pending" || key === "validated");
+  return `amendment.review.states.${others ? `${key}_others` : key}`;
+}
+
+/**
+ * The viewer presents the amendment: their member is one of its authors, or
+ * they can edit it (a draft they created).
+ */
+export function isAmendmentPresenter(
+  amendment: Pick<AmendmentDto, "authors"> & {
+    can: Pick<AmendmentCapabilities, "edit">;
+  },
+  memberId: string | null,
+): boolean {
+  return amendment.can.edit || isAmendmentAuthor(amendment, memberId);
+}
+
+/**
+ * The actor's amendments waiting for them: those the Secretaría sent back
+ * for correction, then the drafts never sent. Only drafts they can edit.
+ */
+export function amendmentsAwaitingActor<
+  T extends Pick<AmendmentDto, "status" | "reviewState"> & {
+    can: Pick<AmendmentCapabilities, "edit">;
+  },
+>(list: T[]): { corrections: T[]; drafts: T[] } {
+  const editable = list.filter(
+    (amendment) => amendment.status === "draft" && amendment.can.edit,
+  );
+  return {
+    corrections: editable.filter(
+      (amendment) => amendment.reviewState === "correction_requested",
+    ),
+    drafts: editable.filter(
+      (amendment) => amendment.reviewState !== "correction_requested",
+    ),
+  };
+}
+
+type ReturnedInput = Pick<AmendmentDto, "status" | "reviewState"> & {
+  can: Pick<AmendmentCapabilities, "edit">;
+};
+
+/**
+ * Sent back for correction, seen by someone who cannot edit it (the
+ * Secretaría): a draft again, waiting for its authors to fix it and send it
+ * again. Its authors, who can edit it, find it in "Mis enmiendas" instead.
+ * Drafts never sent (reviewers receive those too) do not count.
+ */
+export function isAmendmentReturnedForCorrection(
+  amendment: ReturnedInput,
+): boolean {
+  return (
+    amendment.status === "draft" &&
+    amendment.reviewState === "correction_requested" &&
+    !amendment.can.edit
+  );
+}
+
+/** The amendments sent back for correction the viewer cannot edit, in order. */
+export function amendmentsReturnedForCorrection<T extends ReturnedInput>(
+  list: T[],
+): T[] {
+  return list.filter(isAmendmentReturnedForCorrection);
+}
+
+/**
+ * What the Secretaría still has to do on the document's amendments (drafts
+ * included): presented ones to validate or publish, and how many it sent
+ * back for correction (counted for reviewers only, `can.review`).
+ */
+export function amendmentReviewQueue(
+  list: (Pick<AmendmentDto, "status" | "reviewState"> & {
+    can: Pick<
+      AmendmentCapabilities,
+      "validate" | "publish" | "edit" | "review"
+    >;
+  })[],
+): { toValidate: number; toPublish: number; returned: number } {
+  const presented = list.filter((amendment) => amendment.status !== "draft");
+  return {
+    toValidate: presented.filter((amendment) => amendment.can.validate).length,
+    toPublish: presented.filter((amendment) => amendment.can.publish).length,
+    returned: list.filter(
+      (amendment) =>
+        amendment.can.review && isAmendmentReturnedForCorrection(amendment),
+    ).length,
+  };
+}
+
+/**
+ * The admission badge only means something once the Secretaría validated
+ * the amendment: before that, admission is settled by the validation.
+ */
+export function showAmendmentAdmission(
+  amendment: Pick<AmendmentDto, "status" | "reviewState" | "admission">,
+): boolean {
+  if (amendment.status === "draft") return false;
+  if (
+    amendment.reviewState === "pending_authors" ||
+    amendment.reviewState === "pending_validation" ||
+    amendment.reviewState === "correction_requested"
+  ) {
+    return false;
+  }
+  return amendment.admission !== "admitted";
+}
+
+/**
+ * How lateness reads on an amendment presented after the window closed:
+ * - `awaiting_decision`: the Secretaría validated it and it waits for the
+ *   assembly to decide whether to treat it ("Pendiente de que la asamblea
+ *   decida tratarla"); until then it is neither debated nor decided;
+ * - `late`: just "Fuera de plazo" (still with the Secretaría, or already
+ *   admitted or decided);
+ * - null: on time.
+ */
+export function amendmentLateState(
+  amendment: Pick<
+    AmendmentDto,
+    "late" | "status" | "reviewState" | "admission"
+  >,
+): "awaiting_decision" | "late" | null {
+  if (!amendment.late) return null;
+  return amendment.status === "submitted" &&
+    amendment.admission === "pending" &&
+    (amendment.reviewState === "validated" ||
+      amendment.reviewState === "published")
+    ? "awaiting_decision"
+    : "late";
+}
+
+/**
+ * What to tell the author right after sending an amendment: it waits for
+ * the Secretaría (`review`, or `review_late` when the Mesa must also admit
+ * it), or it is public at once (a transactional presented by the Mesa).
+ */
+export function amendmentSentNotice(
+  amendment: Pick<AmendmentDto, "late" | "reviewState">,
+): "review" | "review_late" | "public" {
+  if (amendment.reviewState === "published") return "public";
+  return amendment.late ? "review_late" : "review";
+}
+
+/**
+ * Whether sending a draft now makes it late. One the Secretaría sent back
+ * for correction keeps the timing of its first presentation (the server's
+ * submissionLate); any other is late once the window has closed.
+ */
+export function amendmentLateOnSend(
+  draft: Pick<AmendmentDto, "late" | "reviewState"> | null | undefined,
+  windowClosed: boolean,
+): boolean {
+  return draft?.reviewState === "correction_requested"
+    ? draft.late
+    : windowClosed;
+}
+
+// The main presenter's answer ---------------------------------------------------
+
+type PositionInput = Pick<
+  AmendmentDto,
+  | "kind"
+  | "status"
+  | "reviewState"
+  | "admission"
+  | "validatedAt"
+  | "acceptances"
+  | "approvalMethod"
+>;
+
+/**
+ * Why the main presenter cannot answer an undecided amendment yet, by what
+ * has to happen first:
+ * - `authors`: a transactional the main authors of the amendments it would
+ *   replace have not all accepted (only "author" rows count, as on the
+ *   server);
+ * - `validation`: the Secretaría has to validate it;
+ * - `admission`: late, the assembly has to decide whether to treat it;
+ * - `publication`: validated, but the Secretaría keeps it private. Only
+ *   published amendments are answered, whatever the document's rule:
+ *   delegates must be able to read what the presenter answers.
+ * Checked in that order: a late one validated and kept private waits for
+ * the assembly first.
+ */
+export type AmendmentPositionBlocker =
+  "authors" | "validation" | "admission" | "publication";
+
+/**
+ * Anything that settles every answer for good. With `finalVoted` (the
+ * document's final vote is on record, `DocumentDto.finalVote`) nothing can
+ * be answered any more, not even an amendment the presenter's acceptance
+ * incorporated. Optional, so callers that do not know it keep the
+ * amendment-level rule.
+ */
+export interface AmendmentPositionContext {
+  finalVoted?: boolean;
+}
+
+/**
+ * Agrees with the server's positionBlocker (server/utils/domain/reviewState.ts)
+ * on whether an amendment can be answered, as decided for the presenter's
+ * answers (design.md, "Amendment flow"): only published amendments,
+ * validated and, when late, admitted, and nothing after the final vote.
+ * The reason given may differ: a transactional its main authors have not
+ * all accepted waits for them first (`authors`), because the Secretaría
+ * does not check it until they do, while the server reports it as not
+ * validated or not admitted. Shared with positionWaitReason in the review
+ * mode, so the workspace, the review mode and the home page agree. An
+ * amendment recorded before validation existed (no review state) counts as
+ * published.
+ */
+function positionWait(
+  amendment: PositionInput,
+  rule: AcceptedAmendmentRule,
+  context: AmendmentPositionContext = {},
+): AmendmentPositionBlocker | "decided" | null {
+  if (context.finalVoted) return "decided";
+  if (
+    rule === "incorporate" &&
+    amendment.status === "approved" &&
+    amendment.approvalMethod === "proponent"
+  ) {
+    return null;
+  }
+  if (amendment.status !== "submitted") return "decided";
+  if (
+    amendment.kind === "transactional" &&
+    amendment.acceptances.some(
+      (party) => party.role === "author" && party.decision !== "accepted",
+    )
+  ) {
+    return "authors";
+  }
+  const state = amendment.reviewState;
+  const validated = state === "validated" || state === "published";
+  if (!validated && state !== null) return "validation";
+  if (amendment.admission !== "admitted") {
+    return validated || amendment.validatedAt !== null
+      ? "admission"
+      : "validation";
+  }
+  if (state === "validated") return "publication";
+  return null;
+}
+
+/**
+ * The amendment has reached the document's main presenter, who can answer
+ * it (design.md, "Amendment flow"): published by the Secretaría (so
+ * validated), admitted (a late one once the assembly decided to treat it),
+ * and for a transactional, accepted by every main author, so it replaced
+ * the amendments it combines. Still undecided, or approved because the
+ * presenter accepted it under the "incorporate" rule: the presenter can
+ * change that answer until the final vote, and nothing after it
+ * (`context.finalVoted`).
+ */
+export function amendmentAwaitsPosition(
+  amendment: PositionInput,
+  rule: AcceptedAmendmentRule,
+  context: AmendmentPositionContext = {},
+): boolean {
+  return positionWait(amendment, rule, context) === null;
+}
+
+/**
+ * Why the main presenter cannot answer yet, for an undecided amendment that
+ * has not reached it (AmendmentPositionBlocker). Null when it can be
+ * answered, or it is decided (or the document was voted).
+ */
+export function amendmentPositionBlocker(
+  amendment: PositionInput,
+  rule: AcceptedAmendmentRule,
+  context: AmendmentPositionContext = {},
+): AmendmentPositionBlocker | null {
+  const wait = positionWait(amendment, rule, context);
+  return wait === "decided" ? null : wait;
+}
+
+/**
+ * Accepting an undecided amendment the Secretaría validated but keeps
+ * private, under the "incorporate" rule, would put in the text something
+ * delegates cannot read. Such an amendment cannot be answered at all now
+ * (the `publication` blocker of amendmentPositionBlocker), so this never
+ * decides anything on its own. Its only caller left is sessionPositionMenu
+ * (~/composables/session/sessionModel.ts); remove it once that stops using
+ * it.
+ */
+export function amendmentAcceptBlocked(
+  amendment: Pick<AmendmentDto, "status" | "reviewState">,
+  rule: AcceptedAmendmentRule,
+): boolean {
+  return (
+    rule === "incorporate" &&
+    amendment.status === "submitted" &&
+    amendment.reviewState === "validated"
+  );
+}
+
+/**
+ * What happens next with the main presenter's answer, by the document's rule
+ * for accepted amendments (an i18n key under `amendment.position.next`):
+ * - `incorporateIfAccepted`: "incorporate", no answer yet: accepting it puts
+ *   it in the text without a vote, otherwise the assembly votes it;
+ * - `incorporated`: accepted under "incorporate": it is in the text, and
+ *   changing the answer before the final vote reopens it;
+ * - `vote`: the assembly votes it (rule "vote", or not accepted);
+ * - `voteAnyway`: rule "vote" and no answer yet: voted whatever the answer.
+ * Null once it is decided otherwise (voted, withdrawn...), after the final
+ * vote, or while it has not reached the presenter (amendmentPositionBlocker
+ * says why).
+ */
+export type AmendmentPositionNext =
+  "incorporateIfAccepted" | "incorporated" | "vote" | "voteAnyway";
+
+export function amendmentPositionNext(
+  amendment: PositionInput & Pick<AmendmentDto, "position">,
+  rule: AcceptedAmendmentRule,
+  context: AmendmentPositionContext = {},
+): AmendmentPositionNext | null {
+  if (!amendmentAwaitsPosition(amendment, rule, context)) return null;
+  const answer = amendment.position?.position ?? "pending";
+  if (rule === "incorporate") {
+    if (answer === "accept") return "incorporated";
+    return answer === "pending" ? "incorporateIfAccepted" : "vote";
+  }
+  return answer === "pending" ? "voteAnyway" : "vote";
+}
+
+// Authors ------------------------------------------------------------------------
+
+/**
+ * The main author of an amendment: the one named (`mainAuthorId`), or its
+ * first author (the only one, or the order the API gives). It answers the
+ * transactionals proposed over the amendment.
+ */
+export function amendmentMainAuthor<T extends { id: string }>(amendment: {
+  authors: T[];
+  mainAuthorId: string | null;
+}): T | null {
+  return (
+    amendment.authors.find((author) => author.id === amendment.mainAuthorId) ??
+    amendment.authors[0] ??
+    null
+  );
+}
+
+/**
+ * Authors with the main one first, the rest as the API lists them, and
+ * whether to mark the main one (only when there are several).
+ */
+export function amendmentAuthorsInOrder<T extends { id: string }>(amendment: {
+  authors: T[];
+  mainAuthorId: string | null;
+}): { main: T | null; others: T[]; marked: boolean } {
+  const main = amendmentMainAuthor(amendment);
+  return {
+    main,
+    others: amendment.authors.filter((author) => author !== main),
+    marked: amendment.authors.length > 1,
+  };
+}
+
+/** The actor's member presents it (alone or with others). */
+export function isAmendmentAuthor(
+  amendment: Pick<AmendmentDto, "authors">,
+  memberId: string | null,
+): boolean {
+  return (
+    memberId !== null &&
+    amendment.authors.some((author) => author.id === memberId)
+  );
+}
+
+function mineRank(
+  amendment: Pick<AmendmentDto, "status" | "reviewState">,
+): number {
+  if (amendment.status === "draft") {
+    return amendment.reviewState === "correction_requested" ? 0 : 1;
+  }
+  if (amendment.status !== "submitted") return 5;
+  if (
+    amendment.reviewState === "pending_authors" ||
+    amendment.reviewState === "pending_validation"
+  ) {
+    return 2;
+  }
+  if (amendment.reviewState === "validated") return 3;
+  return 4;
+}
+
+/**
+ * "Mis enmiendas": the drafts the actor can edit and every amendment their
+ * member presents, what needs their attention first (corrections asked,
+ * then drafts), then those waiting for the Secretaría, the published ones
+ * and the decided ones. Text order is kept within each group.
+ */
+export function mineAmendments<
+  T extends Pick<AmendmentDto, "status" | "reviewState" | "authors"> & {
+    can: Pick<AmendmentCapabilities, "edit">;
+  },
+>(list: T[], memberId: string | null): T[] {
+  return list
+    .filter(
+      (amendment) =>
+        (amendment.status === "draft" && amendment.can.edit) ||
+        isAmendmentAuthor(amendment, memberId),
+    )
+    .map((amendment, index) => ({ amendment, index }))
+    .sort(
+      (a, b) =>
+        mineRank(a.amendment) - mineRank(b.amendment) || a.index - b.index,
+    )
+    .map(({ amendment }) => amendment);
+}
+
 function timeOf(value: string | null | undefined): number {
   if (!value) return Number.POSITIVE_INFINITY;
   const time = Date.parse(value);
@@ -105,15 +659,55 @@ export interface AmendmentOverlap {
   kind: OverlapKind;
 }
 
-/** For each amendment, the others it overlaps with and how. */
+type LineageLike = AmendmentLike & Partial<Pick<AmendmentDto, "sourceIds">>;
+
+/**
+ * The amendments a transactional combines, and the ones those combine in
+ * turn (a transactional built on another absorbs its sources too). Ids not
+ * in the list are kept; empty for anything but a transactional.
+ */
+function lineageOf(
+  amendment: LineageLike,
+  byId: ReadonlyMap<string, LineageLike>,
+): Set<string> {
+  const seen = new Set<string>();
+  const queue = [...(amendment.sourceIds ?? [])];
+  while (queue.length > 0) {
+    const id = queue.pop()!;
+    if (seen.has(id)) continue;
+    seen.add(id);
+    queue.push(...(byId.get(id)?.sourceIds ?? []));
+  }
+  return seen;
+}
+
+/**
+ * For each amendment, the others it overlaps with and how. A transactional
+ * and the amendments it combines rewrite the same passage by design: they
+ * are not listed as overlapping each other.
+ */
 export function amendmentOverlapIndex(
-  list: AmendmentLike[],
+  list: LineageLike[],
 ): Map<string, AmendmentOverlap[]> {
   const index = new Map<string, AmendmentOverlap[]>();
+  const byId = new Map(list.map((amendment) => [amendment.id, amendment]));
+  const lineage = new Map<string, Set<string>>();
+  const lineageFor = (id: string): Set<string> => {
+    let ids = lineage.get(id);
+    if (!ids) {
+      const amendment = byId.get(id);
+      ids = amendment ? lineageOf(amendment, byId) : new Set();
+      lineage.set(id, ids);
+    }
+    return ids;
+  };
   const { pairs } = findOverlaps(
     passageAmendments(list).map(({ id, ops }) => ({ id, ops })),
   );
   for (const pair of pairs) {
+    if (lineageFor(pair.a).has(pair.b) || lineageFor(pair.b).has(pair.a)) {
+      continue;
+    }
     const a = index.get(pair.a) ?? [];
     a.push({ id: pair.b, kind: pair.kind });
     index.set(pair.a, a);
@@ -233,11 +827,30 @@ export function amendmentBlockMarkers(
 
 export type AmendmentLateFilter = "any" | "late" | "on_time";
 
+/**
+ * Where an amendment stands with the Secretaría. Every value but
+ * `correction_requested` narrows the presented amendments; that one shows
+ * instead the drafts sent back for correction the viewer cannot edit
+ * (isAmendmentReturnedForCorrection), which never mix with the others.
+ */
+export type AmendmentReviewFilter = "any" | AmendmentReviewState;
+
+export const AMENDMENT_REVIEW_FILTERS: readonly AmendmentReviewFilter[] = [
+  "any",
+  "pending_authors",
+  "pending_validation",
+  "correction_requested",
+  "validated",
+  "published",
+];
+
 export interface AmendmentFilters {
   statuses: AmendmentStatus[];
   memberIds: string[];
   kinds: AmendmentKind[];
   late: AmendmentLateFilter;
+  /** Where it stands with the Secretaría (reviewers and authors). */
+  review: AmendmentReviewFilter;
   /** Only amendments presented by the actor's member. */
   mine: boolean;
   /** Only amendments touching this base block (gutter marker). */
@@ -251,6 +864,7 @@ export function emptyAmendmentFilters(): AmendmentFilters {
     memberIds: [],
     kinds: [],
     late: "any",
+    review: "any",
     mine: false,
     blockId: null,
     query: "",
@@ -264,6 +878,7 @@ export function activeAmendmentFilterCount(filters: AmendmentFilters): number {
     (filters.memberIds.length > 0 ? 1 : 0) +
     (filters.kinds.length > 0 ? 1 : 0) +
     (filters.late !== "any" ? 1 : 0) +
+    (filters.review !== "any" ? 1 : 0) +
     (filters.mine ? 1 : 0) +
     (filters.blockId ? 1 : 0) +
     (filters.query.trim() ? 1 : 0)
@@ -277,13 +892,26 @@ function fold(text: string): string {
     .toLowerCase();
 }
 
+/**
+ * The amendments that pass every filter. The `correction_requested` review
+ * filter keeps only the drafts sent back that the viewer cannot edit
+ * (isAmendmentReturnedForCorrection); every other value leaves drafts out.
+ */
 export function filterAmendmentList(
   list: AmendmentDto[],
   filters: AmendmentFilters,
   actorMemberId: string | null,
 ): AmendmentDto[] {
   const query = fold(filters.query.trim());
+  const returnedOnly = filters.review === "correction_requested";
   return list.filter((amendment) => {
+    if (
+      returnedOnly
+        ? !isAmendmentReturnedForCorrection(amendment)
+        : amendment.status === "draft"
+    ) {
+      return false;
+    }
     if (
       filters.statuses.length > 0 &&
       !filters.statuses.includes(amendment.status)
@@ -301,6 +929,13 @@ export function filterAmendmentList(
     }
     if (filters.late === "late" && !amendment.late) return false;
     if (filters.late === "on_time" && amendment.late) return false;
+    // Amendments recorded before validation existed have no state: public.
+    if (
+      filters.review !== "any" &&
+      (amendment.reviewState ?? "published") !== filters.review
+    ) {
+      return false;
+    }
     if (
       filters.mine &&
       !(
@@ -509,6 +1144,39 @@ export function insertedBlocksOf(ops: AmendmentOp[]): Block[] {
 export type AmendmentComposerMode =
   "passage" | "delete" | "global" | "return" | "alternative";
 
+/** Composer modes on the selected passage, then those on the whole text. */
+export const AMENDMENT_PASSAGE_MODES: readonly AmendmentComposerMode[] = [
+  "passage",
+  "delete",
+];
+export const AMENDMENT_TOTALITY_MODES: readonly AmendmentComposerMode[] = [
+  "return",
+  "alternative",
+];
+
+/**
+ * The guided steps of the composer for a mode, in order:
+ * - `what`: what the amendment does (and on which passage);
+ * - `write`: write the change (passage, global term or alternative text);
+ * - `check`: see the change against the text;
+ * - `why`: the justification.
+ * A deletion has nothing to write, and a return changes no text.
+ */
+export type AmendmentComposerStep = "what" | "write" | "check" | "why";
+
+export function amendmentComposerSteps(
+  mode: AmendmentComposerMode,
+): AmendmentComposerStep[] {
+  switch (mode) {
+    case "delete":
+      return ["what", "check", "why"];
+    case "return":
+      return ["what", "why"];
+    default:
+      return ["what", "write", "check", "why"];
+  }
+}
+
 export interface AmendmentComposerSeed {
   mode: AmendmentComposerMode;
   /** Selected base block ids (passage and delete modes). */
@@ -620,46 +1288,47 @@ export function seedComposerFromDraft(
 // Composer authors ---------------------------------------------------------------
 
 export interface ComposerAuthorSeed {
-  /** Member the draft is presented on behalf of (moderators only). */
-  onBehalfOfMemberId: string | undefined;
-  /** Co-authors shown in the picker: never the presenting nor the actor's member. */
-  coAuthorIds: string[];
-  /** The stored presenting member (authors[0]); null for a new amendment. */
-  presentingMemberId: string | null;
   /**
-   * The actor's member when it is a co-author but not the presenting member.
-   * The picker hides it, so it is sent back on every save and the actor never
-   * drops out of a draft they are editing.
+   * Member a new amendment is presented on behalf of (moderators only).
+   * Never seeded from a stored draft: the server keeps its presenting member
+   * unless the moderator picks another one.
+   */
+  onBehalfOfMemberId: string | undefined;
+  /**
+   * Authors shown in the picker: every stored author but the actor's own
+   * member (always kept, see `keptMemberId`). The API lists the main author
+   * first, so the presenting member cannot be told apart: it stays in the
+   * picker, and the server keeps it on every save anyway.
+   */
+  coAuthorIds: string[];
+  /**
+   * The actor's member when it is one of the authors. The picker hides it,
+   * so it is sent back on every save and the actor never drops out of a
+   * draft they are editing.
    */
   keptMemberId: string | null;
+  /** The stored main author, when it is still one of the authors. */
+  mainAuthorId: string | null;
 }
 
 /**
- * Splits a draft's authors (presenting member first, as the API orders them)
- * into what the composer shows. A moderator who is not an author edits it on
- * behalf of the presenting member.
+ * Splits a draft's authors into what the composer shows. Nothing is seeded
+ * for a new amendment.
  */
 export function composerAuthorSeed(
   authorIds: string[],
   ownMemberId: string | null,
-  canActOnBehalf: boolean,
+  mainAuthorId: string | null = null,
 ): ComposerAuthorSeed {
-  const [presenting, ...rest] = authorIds;
-  if (!presenting) {
-    return {
-      onBehalfOfMemberId: undefined,
-      coAuthorIds: [],
-      presentingMemberId: null,
-      keptMemberId: null,
-    };
-  }
   const ownIsAuthor = ownMemberId !== null && authorIds.includes(ownMemberId);
   return {
-    onBehalfOfMemberId: !ownIsAuthor && canActOnBehalf ? presenting : undefined,
-    coAuthorIds: rest.filter((id) => id !== ownMemberId),
-    presentingMemberId: presenting,
-    keptMemberId:
-      ownIsAuthor && ownMemberId !== presenting ? ownMemberId : null,
+    onBehalfOfMemberId: undefined,
+    coAuthorIds: authorIds.filter((id) => id !== ownMemberId),
+    keptMemberId: ownIsAuthor ? ownMemberId : null,
+    mainAuthorId:
+      mainAuthorId !== null && authorIds.includes(mainAuthorId)
+        ? mainAuthorId
+        : null,
   };
 }
 
@@ -671,6 +1340,46 @@ export function composerAuthorMemberIds(
   return keptMemberId && !coAuthorIds.includes(keptMemberId)
     ? [...coAuthorIds, keptMemberId]
     : [...coAuthorIds];
+}
+
+/**
+ * Every member the amendment will be presented by, as the composer has it:
+ * the presenting member of a new amendment (the one picked on behalf, or the
+ * actor's own), the kept own member of a stored draft, then the co-authors.
+ * The choice of main author is made among these.
+ */
+export function composerAuthorSet(input: {
+  presentingMemberId: string | null | undefined;
+  keptMemberId: string | null;
+  coAuthorIds: string[];
+}): string[] {
+  const ids = [
+    input.presentingMemberId ?? null,
+    input.keptMemberId,
+    ...input.coAuthorIds,
+  ].filter((id): id is string => Boolean(id));
+  return [...new Set(ids)];
+}
+
+/**
+ * The main author to send (`mainAuthorMemberId`): a choice is required when
+ * the amendment has several authors (one that left the set, because its
+ * member was removed, no longer counts); with one, it is that one. Sending
+ * the sole author matters on a stored draft whose former main author was
+ * removed: without it the server would anchor on the stored main author and
+ * add it back.
+ */
+export function composerMainAuthor(
+  authorIds: string[],
+  chosen: string | null | undefined,
+): { required: boolean; value: string | null; missing: boolean } {
+  const required = authorIds.length > 1;
+  const value = required
+    ? chosen && authorIds.includes(chosen)
+      ? chosen
+      : null
+    : (authorIds[0] ?? null);
+  return { required, value, missing: required && value === null };
 }
 
 // Composer sync ------------------------------------------------------------------

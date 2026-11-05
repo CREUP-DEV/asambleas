@@ -169,7 +169,7 @@ Tests run with Vitest.
 `assembly_milestones` store dated milestones per assembly: convocatoria, final
 agenda, documents deadline, documents publication, amendment window
 open/close, candidacies. Defaults come from rules per assembly type
-(`shared/constants/calendarRules.ts`, RFAG/RRI 2026). Every value stays
+(`shared/utils/calendar.ts`, RFAG/RRI 2026). Every value stays
 editable. `checkCalendar` warns when the calendar breaks a regulatory minimum
 or is inconsistent, for example when amendments close before documents are
 published. The convocatoria is generated from the assembly data, the agenda and
@@ -179,11 +179,10 @@ the milestones as a print view and a PDF.
 
 - Assembly `status`: `draft`, `convened`, `in_session`, `closed`.
   `agendaFinalizedAt` marks the final agenda.
-- Per-assembly policies, with defaults from the research: who sees presented
-  amendments (default: authors, reviewers and the Mesa until the window
-  closes, then everyone; they are also public when there is no close date and
-  once the session starts), who sees proponent positions, whether accepted
-  amendments need a vote, the tie rule, and the majority denominator. Drafts
+- Per-assembly policies, with defaults from the research: who sees proponent
+  positions, whether accepted amendments need a vote, the tie rule, and the
+  majority denominator. Who sees a presented amendment is not a policy: the
+  Secretaría publishes each one (see "Validation by the Secretaría"). Drafts
   of documents and amendments stay private to their authors and managers.
 - `live_state` (one row per assembly): current agenda item, document and
   amendment under debate, plus the last recorded vote. The server projects
@@ -196,6 +195,155 @@ the milestones as a print view and a PDF.
   Events carry ids only; clients refetch through the normal, permission-checked
   endpoints. If the stream drops, clients fall back to polling. No Redis.
 
+## Validation by the Secretaría and documentation tracking
+
+Every document and every amendment is presented by the user who wrote it,
+acting for their member: a council or sectorial (Asociado accounts), or a CEA
+area (CEA accounts, intranet type `CEA`, linked to an `executive` member by
+their intranet initials). Nothing a member presents is visible to the rest of
+the assembly until the Secretaría has checked it.
+
+**Documents.** A presenter writes or uploads the draft and presents it
+(`submitted`). The Secretaría then either:
+
+- validates it, which publishes it (`published`, reference assigned, base
+  version frozen); or
+- asks for a correction (`POST .../correction` with a note): the document goes
+  back to `draft`, the note is shown to its presenters, and they present it
+  again.
+
+**Expected documentation.** The Secretaría can create a document in advance
+for the member that has to provide it (a CEA report, a resolution) with an
+internal deadline (`dueAt`). It starts as an empty draft that the member fills
+in. The tracking panel lists, per agenda item, every document with who presents
+it, its deadline and where it stands: to do (no content yet), in preparation,
+presented (waiting for validation), correction requested, or published.
+Overdue ones stand out.
+
+**Amendments.** Presenting an amendment no longer admits it. The Secretaría
+reviews each presented amendment and:
+
+- validates it. An on-time amendment is admitted at the same time; a late one
+  still needs the Mesa's admission decision. When validating, the Secretaría
+  chooses per amendment whether it becomes visible to everyone right away or
+  stays private until it publishes it later (`POST .../amendments/publish`);
+- or asks for a correction: the amendment goes back to draft with a note for
+  its authors. On the document page the Secretaría finds the ones it sent back
+  under "N devueltas para corregir", next to what it still has to validate or
+  publish, until the authors send them again.
+
+Until it is published, an amendment is visible only to its authors, its
+creator, the parties of a transactional and the Secretaría and Mesa. A
+transactional created by the Mesa in session is validated and published at
+once. `reviewState` on `AmendmentDto` tells authors where their amendment
+stands. The time-based `amendmentVisibility` setting is gone.
+
+**Where people see their work.** The home page (`GET /api/me/work`) lists what
+each user has to do (expected documents, corrections requested) and where
+their documents and amendments stand. The Secretaría gets a validation inbox
+per assembly (`GET .../review`) and the tracking panel.
+
+## Reviewing amendments, transactionals and the session
+
+**Main presenter and main author.** A document can have co-presenters
+(`document_proponents`); when it has several presenters one of them must be
+the main presenter (`documents.proponentMemberId`), and only that member (or
+the Mesa on its behalf) answers the amendments to the document. Likewise an
+amendment with co-authors must name its main author (`mainAuthorId`), and only
+that member answers the transactionals proposed over it. Co-presenters and
+co-authors always see what the main one decided (who, what, when) on the
+document or amendment and in the "Novedades" of their home page. Only the main
+presenter itself or the Secretaría changes who the main presenter is.
+
+**Amendment flow.**
+
+1. It is presented, on time or late.
+2. The Secretaría validates it (or asks for a correction) and publishes it,
+   now or later.
+3. If it is late, the assembly decides whether to treat it; the Secretaría
+   (or the Mesa) records that decision. Until then it cannot go further.
+4. The document's main presenter accepts or rejects it (its position, with an
+   optional comment), only once it is validated, published and, if late,
+   admitted, and never after the document's final vote. The Mesa can record
+   the answer on its behalf, and everyone sees who recorded it.
+5. The assembly votes it. Each document has a rule for accepted amendments
+   (`documents.acceptedAmendments`, default from its kind): with
+   "incorporate" (regulations by default) an amendment the main presenter
+   accepts is approved at once without a vote (approval method
+   "proponent"); if the presenter changes its answer before the final vote,
+   the amendment goes back to undecided. With "vote" every amendment is
+   voted.
+
+**Proponent review.** The main presenter goes through the amendments it has
+to answer one by one in a review mode: the change in large type, its
+justification, and Aceptar, Rechazar or Transaccionar with an optional
+comment. A progress line shows how many are left.
+
+**Transactionals.** Once amendments are published, any member (CEA or
+assembly), before or during the session, can propose a transactional over one
+or more of them:
+
+1. it is presented ("pending_authors");
+2. the main author of each amendment it would replace accepts or rejects it;
+   if any of them rejects it, it is closed and the originals carry on;
+3. the Secretaría validates it, which always publishes it (it builds on
+   amendments that are already public);
+4. once validated and accepted by every main author, it replaces those
+   amendments (they become `transacted`) and follows the normal amendment
+   flow: the document's main presenter answers it and the assembly votes it
+   (or it is incorporated, per the document's rule).
+
+The Mesa can still draft one live in the console: it is validated and
+published at once, and it replaces the originals as soon as their main
+authors accept it in the room. Transactionals build only on published,
+admitted, undecided amendments.
+
+When a transactional replaces its originals, any other transactional still
+open over any of them lapses. When an original is settled another way
+(withdrawn, lapsed, declared inadmissible, voted, or incorporated by the main
+presenter's acceptance) before the transactional replaces it, the
+transactional closes by itself, and its authors see why in their news.
+
+**Session console.** Several people use it at once (Presidencia moderates,
+Secretaría records results), all live. It leads with what is being debated
+now, in large type, with the actions that fit it; the queue, the agenda and
+the consolidated text are secondary and foldable.
+
+**Speaking turns.** The Mesa writes down who asks to speak (a member and,
+optionally, the person's name), gives and ends the floor, and reorders the
+queue. Attendees see who has the floor and who is next only while the Mesa
+makes it visible (`live_state.speakersVisible`), in the live view and on the
+projection.
+
+**Live view for attendees.** A phone-friendly page that follows the session:
+the item, document and amendment under debate with its change, the last
+result, who has the floor when visible, and the status of every amendment of
+the current document with the provisional consolidated text. Under the
+amendment in debate it says in one line how the document's main presenter
+answered it ("Respuesta de CEUM: la acepta"), or that the Mesa recorded the
+answer on its behalf, without the comment. It shows this only when the
+assembly does not keep answers to the Mesa (`positionVisibility` other than
+"mesa"), since the page shows what the room sees.
+
+**Roles and per-user permissions.** The association's Secretaría and
+Presidencia hold every permission, users and roles included. The Mesa's
+Vocalía and Presidencia use the `Moderador` role (`session:moderate`). The
+admin pages open by permission (`user:manage_roles` for users and their
+grants, `role:manage_permissions` for roles), and only an Admin can give or
+take the Admin role. Only an Admin changes the access of Secretaría and
+Presidencia: giving or taking either role, what either grants, and the
+individual grants of whoever holds one, so neither can change the other's.
+Nobody but an Admin raises their own access or locks themselves out of the
+admin pages, and the last Admin cannot leave the role. Besides role
+permissions, a user can be granted individual permissions
+(`user_permissions`); a user's permissions are the union of both.
+
+**Intranet.** Calls to the intranet API send `Authorization: Bearer
+<NUXT_INTRANET_API_TOKEN>` when the token is configured. The intranet's
+`POST /user/role` is public today and reveals a user's type, name, initials
+and university to anyone who knows an email: it should require that token,
+be rate limited and answer only what this app needs.
+
 ## Permissions
 
 The existing keys stay, plus:
@@ -204,9 +352,25 @@ The existing keys stay, plus:
 - `session:moderate`: Mesa actions such as live state, admissions, votes,
   decisions and transactionals on behalf of parties.
 
-The default `Moderador` role gets `session:moderate`.
+The default `Moderador` role gets `session:moderate`. The `CEA` role (synced
+from the intranet type `CEA`) gets `document:create` and `amendment:create`,
+like `Asociado`. Validating documents needs `document:manage`; validating and
+publishing amendments needs `amendment:review` (both held by the Secretaría).
 
 ## Interface
+
+The people using the platform are not technical. Every screen follows these
+rules:
+
+- plain language, no internal terms (say "Enviar a Secretaría", not
+  "Presentar (submitted)"; "Quién lo presenta", not "Proponente");
+- one primary action per screen, secondary actions in a "Más" menu, advanced
+  options folded away;
+- every status is a sentence that says what happens next ("Secretaría lo está
+  revisando", "Tienes que corregirlo: …");
+- lists stay clean: editing controls appear in an explicit edit mode, not on
+  every row;
+- empty states explain what to do.
 
 One authenticated shell built on Nuxt UI dashboard components
 (`UDashboardGroup`, `UDashboardSidebar`, `UDashboardPanel`) with the CREUP

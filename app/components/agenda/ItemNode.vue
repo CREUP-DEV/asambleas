@@ -7,18 +7,24 @@ import type { AgendaMove, AgendaTreeNode } from "~/utils/agendaTree";
 export interface AgendaTreeContext {
   /** The actor manages the assembly (edit, move, delete items). */
   manage: Readonly<Ref<boolean>>;
+  /**
+   * The page is in "Organizar orden del día" mode: the editing controls
+   * (move, submissions switch, add, edit, delete) show on every item. Off,
+   * the agenda stays a clean list of items and documents.
+   */
+  organizing: Readonly<Ref<boolean>>;
   /** Final agenda: root items cannot be created, moved or deleted. */
   rootsLocked: Readonly<Ref<boolean>>;
   /** The actor creates documents as a manager anywhere. */
   canCreateDocument: Readonly<Ref<boolean>>;
   /** The actor may present a document as a member right now. */
   canSubmitDocument: Readonly<Ref<boolean>>;
-  /** Why a member cannot present documents now (deadline, closed), if so. */
-  submitBlockedReason: Readonly<Ref<string | null>>;
   /** Item with a request in flight. */
   busyId: Readonly<Ref<string | null>>;
   documentsFor: (itemId: string) => DocumentSummaryDto[];
   documentPath: (document: DocumentSummaryDto) => string;
+  /** Where the presenter prepares their own draft, if they can. */
+  documentEditPath: (document: DocumentSummaryDto) => string | null;
   canMove: (itemId: string, move: AgendaMove) => boolean;
   canDelete: (itemId: string) => boolean;
   move: (itemId: string, move: AgendaMove) => void;
@@ -43,9 +49,11 @@ export function agendaItemAnchor(id: string): string {
 
 <script setup lang="ts">
 /**
- * One agenda item with its documents, its manager controls (move, edit,
- * submissions switch, actions menu) and its sub-items, rendered recursively
- * as nested ordered lists.
+ * One agenda item with its documents and its sub-items, rendered recursively
+ * as nested ordered lists. By default it shows only the numbered title, the
+ * description, the documents and, for members, "Presentar documento". The
+ * editing controls (move, submissions switch, add document, actions menu)
+ * appear only while the page is in organize mode.
  */
 defineOptions({ name: "AgendaItemNode" });
 
@@ -81,55 +89,44 @@ const moveLabel = (move: AgendaMove) =>
     title: item.value.title,
   });
 
+const organizing = computed(() => ctx.organizing.value);
+const showItemControls = computed(() => organizing.value && ctx.manage.value);
+const showAddDocument = computed(
+  () => organizing.value && ctx.canCreateDocument.value,
+);
+
+/** A member may present a document here right now. */
 const showMemberSubmit = computed(
   () =>
+    !organizing.value &&
     item.value.acceptsSubmissions &&
     !ctx.canCreateDocument.value &&
     ctx.canSubmitDocument.value,
 );
-const showSubmitBlocked = computed(
-  () =>
-    item.value.acceptsSubmissions &&
-    !ctx.canCreateDocument.value &&
-    !ctx.canSubmitDocument.value &&
-    Boolean(ctx.submitBlockedReason.value),
-);
 
-const menuItems = computed(() => {
-  const groups = [
-    [
-      {
-        label: t("agenda.actions.edit"),
-        icon: "i-lucide-pencil",
-        onSelect: () => ctx.edit(item.value),
-      },
-      {
-        label: t("agenda.actions.addSubItem"),
-        icon: "i-lucide-list-plus",
-        onSelect: () => ctx.addChild(props.node),
-      },
-      ...(ctx.canCreateDocument.value
-        ? [
-            {
-              label: t("agenda.actions.newDocument"),
-              icon: "i-lucide-file-plus",
-              onSelect: () => ctx.newDocument(props.node, "manager"),
-            },
-          ]
-        : []),
-    ],
-    [
-      {
-        label: t("agenda.actions.delete"),
-        icon: "i-lucide-trash-2",
-        color: "error" as const,
-        disabled: !ctx.canDelete(item.value.id),
-        onSelect: () => ctx.remove(props.node),
-      },
-    ],
-  ];
-  return groups;
-});
+const menuItems = computed(() => [
+  [
+    {
+      label: t("agenda.actions.edit"),
+      icon: "i-lucide-pencil",
+      onSelect: () => ctx.edit(item.value),
+    },
+    {
+      label: t("agenda.actions.addSubItem"),
+      icon: "i-lucide-list-plus",
+      onSelect: () => ctx.addChild(props.node),
+    },
+  ],
+  [
+    {
+      label: t("agenda.actions.delete"),
+      icon: "i-lucide-trash-2",
+      color: "error" as const,
+      disabled: !ctx.canDelete(item.value.id),
+      onSelect: () => ctx.remove(props.node),
+    },
+  ],
+]);
 </script>
 
 <template>
@@ -153,26 +150,25 @@ const menuItems = computed(() => {
           <span class="break-words">{{ item.title }}</span>
         </component>
 
-        <div class="flex flex-wrap items-center gap-1.5">
-          <UTooltip v-if="locked" :text="t('agenda.lockedRoot')">
-            <UBadge
-              color="neutral"
-              variant="soft"
-              size="sm"
-              icon="i-lucide-lock"
-            >
-              <span class="sr-only">{{ t("agenda.lockedRoot") }}</span>
-            </UBadge>
-          </UTooltip>
-          <UBadge
-            v-if="item.acceptsSubmissions && !ctx.manage.value"
-            color="secondary"
-            variant="soft"
-            size="sm"
-            icon="i-lucide-inbox"
-            :label="t('agenda.acceptsSubmissionsBadge')"
-          />
-        </div>
+        <UButton
+          v-if="showMemberSubmit"
+          size="sm"
+          icon="i-lucide-file-up"
+          :label="t('agenda.actions.submitDocument')"
+          :aria-label="
+            t('agenda.actions.submitDocumentIn', {
+              number: node.number,
+              title: item.title,
+            })
+          "
+          @click="ctx.newDocument(node, 'member')"
+        />
+
+        <UTooltip v-if="organizing && locked" :text="t('agenda.lockedRoot')">
+          <UBadge color="neutral" variant="soft" size="sm" icon="i-lucide-lock">
+            <span class="sr-only">{{ t("agenda.lockedRoot") }}</span>
+          </UBadge>
+        </UTooltip>
       </div>
 
       <p
@@ -182,12 +178,13 @@ const menuItems = computed(() => {
         {{ item.description }}
       </p>
 
-      <!-- Manager controls -->
+      <!-- Organize mode: editing controls -->
       <div
-        v-if="ctx.manage.value"
+        v-if="showItemControls || showAddDocument"
         class="border-default mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t pt-3"
       >
         <UFieldGroup
+          v-if="showItemControls"
           size="xs"
           :aria-label="t('agenda.move.group')"
           role="group"
@@ -210,6 +207,7 @@ const menuItems = computed(() => {
         </UFieldGroup>
 
         <USwitch
+          v-if="showItemControls"
           :model-value="item.acceptsSubmissions"
           :loading="busy"
           size="sm"
@@ -219,16 +217,25 @@ const menuItems = computed(() => {
 
         <div class="ms-auto flex items-center gap-1">
           <UButton
-            v-if="ctx.canCreateDocument.value"
+            v-if="showAddDocument"
             color="neutral"
-            variant="ghost"
+            variant="outline"
             size="xs"
             icon="i-lucide-file-plus"
             :label="t('agenda.actions.newDocument')"
-            class="hidden sm:inline-flex"
+            :aria-label="
+              t('agenda.actions.newDocumentIn', {
+                number: node.number,
+                title: item.title,
+              })
+            "
             @click="ctx.newDocument(node, 'manager')"
           />
-          <UDropdownMenu :items="menuItems" :content="{ align: 'end' }">
+          <UDropdownMenu
+            v-if="showItemControls"
+            :items="menuItems"
+            :content="{ align: 'end' }"
+          >
             <UButton
               color="neutral"
               variant="ghost"
@@ -245,38 +252,6 @@ const menuItems = computed(() => {
         </div>
       </div>
 
-      <!-- Document managers without assembly management, or members -->
-      <div
-        v-else-if="
-          ctx.canCreateDocument.value || showMemberSubmit || showSubmitBlocked
-        "
-        class="mt-3"
-      >
-        <UButton
-          v-if="ctx.canCreateDocument.value"
-          size="sm"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-file-plus"
-          :label="t('agenda.actions.newDocument')"
-          @click="ctx.newDocument(node, 'manager')"
-        />
-        <UButton
-          v-else-if="showMemberSubmit"
-          size="sm"
-          icon="i-lucide-file-up"
-          :label="t('agenda.actions.submitDocument')"
-          @click="ctx.newDocument(node, 'member')"
-        />
-        <p
-          v-else-if="showSubmitBlocked"
-          class="text-muted flex items-center gap-1.5 text-sm"
-        >
-          <UIcon name="i-lucide-lock" class="size-4" aria-hidden="true" />
-          {{ ctx.submitBlockedReason.value }}
-        </p>
-      </div>
-
       <!-- Documents -->
       <ul
         v-if="documents.length > 0"
@@ -289,6 +264,7 @@ const menuItems = computed(() => {
           <AgendaDocumentRow
             :document="document"
             :to="ctx.documentPath(document)"
+            :edit-to="ctx.documentEditPath(document)"
           />
         </li>
       </ul>

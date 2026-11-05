@@ -170,17 +170,27 @@ function resetBasics() {
 
 type SettingKey = keyof AssemblySettings;
 
+// Whether accepted amendments are voted or incorporated is no longer an
+// assembly policy: each document decides it (its advanced options).
 const SETTING_OPTIONS: { [K in SettingKey]: AssemblySettings[K][] } = {
-  amendmentVisibility: ["after_close", "immediate"],
   positionVisibility: ["mesa", "session", "public"],
-  acceptedAmendments: ["assent", "vote"],
   tieRule: ["rejected", "repeat"],
   denominator: ["valid_votes", "present"],
 };
 const SETTING_KEYS = Object.keys(SETTING_OPTIONS) as SettingKey[];
 
+/**
+ * The stored policies over the defaults, keeping only the ones this page
+ * edits: older assemblies may still store policies that are gone.
+ */
 function settingsFrom(value: AssemblyDto | null): AssemblySettings {
-  return { ...DEFAULT_ASSEMBLY_SETTINGS, ...(value?.settings ?? {}) };
+  const merged: AssemblySettings = {
+    ...DEFAULT_ASSEMBLY_SETTINGS,
+    ...(value?.settings ?? {}),
+  };
+  return Object.fromEntries(
+    SETTING_KEYS.map((key) => [key, merged[key]]),
+  ) as unknown as AssemblySettings;
 }
 
 const settings = reactive<AssemblySettings>(settingsFrom(assembly.value));
@@ -364,6 +374,7 @@ async function confirmDelete() {
           >
             <CalendarDateTimeInput
               v-model="basics.startDate"
+              :aria-label="t('assembly.basics.startDate')"
               :disabled="savingBasics"
               required
             />
@@ -376,6 +387,7 @@ async function confirmDelete() {
           >
             <CalendarDateTimeInput
               v-model="basics.endDate"
+              :aria-label="t('assembly.basics.endDate')"
               :disabled="savingBasics"
               required
             />
@@ -504,6 +516,16 @@ async function confirmDelete() {
             />
           </div>
         </form>
+        <p
+          class="text-muted border-default mt-5 flex items-start gap-1.5 border-t pt-5 text-sm"
+        >
+          <UIcon
+            name="i-lucide-info"
+            class="mt-0.5 size-4 shrink-0"
+            aria-hidden="true"
+          />
+          <span>{{ t("assembly.settings.acceptedPerDocument") }}</span>
+        </p>
         <template #footer>
           <div class="flex flex-wrap justify-end gap-2">
             <UButton

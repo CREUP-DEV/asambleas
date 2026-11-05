@@ -4,7 +4,16 @@
  * and in the active i18n locale unless one is passed explicitly.
  */
 
-export const APP_TIME_ZONE = "Europe/Madrid";
+import {
+  fromDate,
+  toCalendarDateTime,
+  toZoned,
+  type CalendarDateTime,
+  type DateValue,
+} from "@internationalized/date";
+import { ASSEMBLY_TIME_ZONE } from "~~/shared/utils/calendar";
+
+export const APP_TIME_ZONE = ASSEMBLY_TIME_ZONE;
 
 export type DateInput = Date | string | number | null | undefined;
 
@@ -125,12 +134,15 @@ const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
 /**
  * "dentro de 3 días", "hace 2 horas", "mañana". The smallest unit defaults
  * to minutes, so values closer than a minute read as "este minuto".
+ * `maxUnit: "day"` counts days instead of weeks, months or years, so
+ * deadlines a few days apart do not all read "el próximo mes".
  */
 export function formatRelative(
   value: DateInput,
   options: FormatOptions & {
     now?: DateInput;
     minUnit?: "second" | "minute";
+    maxUnit?: "day";
   } = {},
 ): string {
   const date = toDate(value);
@@ -148,6 +160,7 @@ export function formatRelative(
   }
 
   for (const [unit, size] of RELATIVE_UNITS) {
+    if (options.maxUnit === "day" && size > 24 * 3600) continue;
     if (unit === "second" && minUnit === "minute") break;
     if (absolute >= size) {
       // Days and above round to the nearest unit; shorter units truncate so a
@@ -160,4 +173,42 @@ export function formatRelative(
     }
   }
   return formatter.format(0, minUnit);
+}
+
+/**
+ * An instant as wall time in the assemblies' time zone, the value of the
+ * date-time fields (undefined when empty or invalid).
+ */
+export function toAppWallTime(value: DateInput): CalendarDateTime | undefined {
+  const date = toDate(value);
+  return date ? toCalendarDateTime(fromDate(date, APP_TIME_ZONE)) : undefined;
+}
+
+/** Wall time in the assemblies' time zone back to an ISO instant. */
+export function fromAppWallTime(
+  value: DateValue | null | undefined,
+): string | null {
+  return value ? toZoned(value, APP_TIME_ZONE).toAbsoluteString() : null;
+}
+
+interface MemberNames {
+  acronym: string;
+  name: string;
+}
+
+/**
+ * Whether a member's name only repeats its acronym (or is empty). Executive
+ * areas created on a CEA sign-in start named after their acronym, so showing
+ * both would read "VDT · VDT".
+ */
+export function memberNameRepeatsAcronym(member: MemberNames): boolean {
+  const name = member.name.trim().toLowerCase();
+  return name === "" || name === member.acronym.trim().toLowerCase();
+}
+
+/** "PRES · Presidencia", or just "VDT" when the name repeats the acronym. */
+export function memberLabel(member: MemberNames): string {
+  return memberNameRepeatsAcronym(member)
+    ? member.acronym
+    : `${member.acronym} · ${member.name.trim()}`;
 }

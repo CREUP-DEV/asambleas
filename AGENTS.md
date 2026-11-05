@@ -54,6 +54,7 @@ The public website lives in a separate `creup/web` repository. This app may mirr
 - PostgreSQL: `localhost:5432`
 - Adminer: `http://localhost:8080`
 - Intranet API base: `NUXT_INTRANET_API_URL` (role sync falls back to `${base}/user/role`; members from `/usuarios/asociados` and `/usuarios/sectoriales`)
+- Intranet API token: `NUXT_INTRANET_API_TOKEN`, sent as `Authorization: Bearer <token>` on every intranet call when set; never log it
 - Role sync env var: `NUXT_ROLE_API_URL`
 - Export storage env var: `EXPORT_STORAGE_DIR`
 
@@ -101,20 +102,23 @@ server/assets/      server-bundled fonts/assets
 - First interaction is Google authentication.
 - Unauthenticated users go to `/login`.
 - All authenticated Google users may sign in; there is no allowlist.
-- After authentication, call `NUXT_ROLE_API_URL` with `{ "email": "user@creup.es" }`.
+- After authentication, call `NUXT_ROLE_API_URL` with `{ "email": "user@creup.es" }`. Every intranet call (role sync and roster sync) sends `Authorization: Bearer <NUXT_INTRANET_API_TOKEN>` when the token is set (`intranetAuthHeaders` in `server/utils/members/intranet.ts`).
 - Always update `externalRole`, `externalName`, `externalInitials`, `university` and `lastRoleSyncAt` when role sync returns data.
 - If role sync fails, log a warning and do not block sign-in.
 - `INITIAL_ADMIN_EMAIL` receives `Admin` on first sign-in.
 
 Role assignment rules:
 
-| Case                                                | Platform role result       |
-| --------------------------------------------------- | -------------------------- |
-| New user + external `Asociado`                      | `Asociado`                 |
-| New user + anything else or sync failure            | `Invitado`                 |
-| Existing `Asociado` + external no longer `Asociado` | `Invitado`                 |
-| Existing `Invitado` + external becomes `Asociado`   | `Asociado`                 |
-| Existing `Admin`, `Secretaria` or `Moderador`       | Keep current platform role |
+| Case                                                                        | Platform role result                               | Member link (`users.memberId`)                                                                     |
+| --------------------------------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| New user + external `Asociado`                                              | `Asociado` (`Invitado` if its role row is missing) | The council with its intranet initials                                                             |
+| New user + external `CEA`                                                   | `CEA` (`Invitado` if its role row is missing)      | The `executive` area with its initials, created if missing                                         |
+| New user + anything else or sync failure                                    | `Invitado`                                         | A `Sectorial` account: the sectorial with its initials; otherwise none                             |
+| Existing `Invitado`, `Asociado` or `CEA` + external `Asociado`              | `Asociado`                                         | The council with its initials                                                                      |
+| Existing `Invitado`, `Asociado` or `CEA` + external `CEA`                   | `CEA`                                              | Linked again by initials when the role or the initials change; otherwise kept, even if set by hand |
+| Existing `Asociado` or `CEA` + any other external type                      | `Invitado`                                         | Cleared; linked again only if the new type is `Sectorial`                                          |
+| Existing `Invitado` whose type stops being `Asociado`, `Sectorial` or `CEA` | `Invitado`                                         | Cleared                                                                                            |
+| Existing `Admin`, `Secretaria`, `Presidencia` or `Moderador`                | Keep current platform role                         | Never cleared; linked by initials like any account of its intranet type                            |
 
 ## RBAC
 
@@ -122,21 +126,27 @@ System roles:
 
 - `Admin`
 - `Secretaria`
+- `Presidencia`
 - `Moderador`
+- `CEA`
 - `Asociado`
 - `Invitado`
 
-`Admin` bypasses all permission checks through the RBAC helper. Do not reimplement ad hoc admin bypasses.
+`Admin` bypasses all permission checks through the RBAC helper. Do not reimplement ad hoc admin bypasses. `Admin`, `Secretaria`, `Presidencia` and `Moderador` are `PROTECTED_ROLES`: role sync never changes them. The association's Secretaría and Presidencia hold every permission, users and roles included; the Mesa (Vocalía and Presidencia de la Mesa) uses `Moderador`. Only an Admin gives or takes the `Admin` role or touches its permissions. Only an Admin changes the access of Secretaría and Presidencia: giving or taking either role, what either grants, and the grants of an account holding either (`touchesLeadershipRole`), so neither changes the other's.
 
 Default permissions:
 
-| Role       | Permissions                                                                                                                                                                                         |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Admin      | All, via bypass                                                                                                                                                                                     |
-| Secretaria | `assembly:create`, `assembly:manage`, `document:create`, `document:manage`, `amendment:create`, `amendment:manage`, `amendment:review`, `assembly:vote_result`, `session:moderate`, `member:manage` |
-| Asociado   | `document:create`, `amendment:create`                                                                                                                                                               |
-| Moderador  | `session:moderate`                                                                                                                                                                                  |
-| Invitado   | none                                                                                                                                                                                                |
+| Role        | Permissions                                                                                                         |
+| ----------- | ------------------------------------------------------------------------------------------------------------------- |
+| Admin       | All, via bypass                                                                                                     |
+| Secretaria  | All the keys below, `user:manage_roles` and `role:manage_permissions` included (`pnpm db:seed` adds missing grants) |
+| Presidencia | Same as `Secretaria`                                                                                                |
+| CEA         | `document:create`, `amendment:create`                                                                               |
+| Asociado    | `document:create`, `amendment:create`                                                                               |
+| Moderador   | `session:moderate`                                                                                                  |
+| Invitado    | none                                                                                                                |
+
+Per-user permissions: whoever holds `user:manage_roles` can grant single permissions to one user on top of their role (`user_permissions`, `PUT /api/admin/users/[id]/permissions`). A user's permissions are the union of both; never subtract role permissions per user. Read them only through `getEffectivePermissions` (`server/utils/auth/rbac.ts`), which `requireActor`, `requirePermission`, `attachAuthContext`, `/api/auth/permissions` and the export actor use.
 
 Permission keys:
 
@@ -155,7 +165,7 @@ session:moderate
 member:manage
 ```
 
-Use `requirePermission(event, PERMISSION_KEYS.X)`, `hasPermission`, `requireAdmin` and `getAuthUserWithRole` from `server/utils/auth/rbac.ts`. Domain endpoints use `requireActor` and its helpers from `server/utils/domain/actor.ts`.
+Use `requirePermission(event, PERMISSION_KEYS.X)`, `requireAnyPermission`, `hasPermission`, `requireAdmin`, `getEffectivePermissions` and `getAuthUserWithRole` from `server/utils/auth/rbac.ts`. Domain endpoints use `requireActor` and its helpers from `server/utils/domain/actor.ts`.
 
 ## Domain Rules
 
@@ -166,6 +176,7 @@ Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`
 - Documents and amendments are presented by members (`members`): student councils (asociados), sectorials and executive areas.
 - Asociados and sectorials are synced from the intranet roster (`/usuarios/asociados`, `/usuarios/sectoriales`) and keyed by acronym (the intranet's `initials`).
 - `users.memberId` links an account to the member it acts for. In the intranet an Asociado account is the member itself.
+- CEA accounts (intranet type `CEA`) act for an `executive` member keyed by their intranet initials. Whoever holds `user:manage_roles` can link any account by hand (`PUT /api/admin/users/[id]/member`).
 
 ### Assemblies
 
@@ -187,21 +198,27 @@ Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`
 - `format`:
   - `structured`: blocks, amendable when `amendable`;
   - `file`: an uploaded PDF, never amendable.
-- Kind defaults (amendable, voted, majority) come from `DOCUMENT_KIND_DEFAULTS`.
-- The proponent edits the working draft. Publishing freezes it as the immutable `base` version, and amendments anchor to that.
+- Kind defaults (amendable, voted, majority, accepted amendments) come from `DOCUMENT_KIND_DEFAULTS`. `acceptedAmendments` is per document: `incorporate` (regulations) approves an amendment the main presenter accepts at once (approval method `proponent`), and changing that answer before the final vote reopens it; `vote` leaves it to the assembly. Only managers change it, never after the final vote, and the change applies to the amendments already answered (`applyAcceptedAmendmentsRule`).
+- A document has a main presenter (`proponentMemberId`), who alone answers its amendments, and may have co-presenters (`document_proponents`, see `server/utils/domain/presenters.ts`). Co-presenters see and edit the draft like the main one and follow what it decides, but only the main presenter or a manager changes who the main presenter is (403 `main_only`); with co-presenters a main presenter is required. Visibility checks take both (`DocumentPresenters`): load the co-presenters with the row (`resolveDocument`, `withCoProponentIds`).
+- The presenters edit the working draft. Publishing freezes it as the immutable `base` version, and amendments anchor to that.
 - The final vote stores the `consolidated` version produced by `consolidate`.
 - PDF uploads must validate size, MIME and magic bytes.
+- Presenters send documents to the Secretaría (`submitted`). Publishing is the Secretaría's validation; `POST .../correction` sends a document back to draft with a note. Managers can create expected documents for a member, with an internal deadline (`dueAt`), for the tracking panel.
 
 ### Amendments
 
 - Operations: `replace`, `insert` and `delete`, anchored to base block ids. Validate them with `validateOps`. Only `totality_return` may have no operations.
 - Status: `draft -> submitted ->` one of `approved`, `rejected`, `withdrawn`, `lapsed`, `transacted` or `inadmissible`. Each step is recorded in its own record:
   - admission, with `late` computed by the server;
-  - proponent position;
+  - the main presenter's position (only once validated, published and, if late, admitted: `positionBlocker`; never after the final vote), with `PositionDto.recordedBy` saying whether the Mesa recorded it (the `by` of the latest `position_changed` event, so it survives a change of main presenter);
   - votes;
   - decisions;
   - acceptances.
-- Transactionals link 1..N parents through `amendment_sources`. They need every party's acceptance before they can be voted. Approving one marks its parents `transacted`.
+- Presenting never admits. The Secretaría validates each amendment (admitting the on-time ones; late ones still need the Mesa) or sends it back with a correction note, and publishes it when validating or later. Only published amendments are visible beyond their authors, the Secretaría and the Mesa (`publishedAt`). Transactionals the Mesa presents, and late amendments it admits, are published at once.
+- Late amendments (`late`, computed on submission) stay `admission: pending` after the Secretaría validates them; once published they show as out of time until the Secretaría or the Mesa records the assembly's decision (`POST .../amendments/admission`). The validation inbox lists them, published or not, until then (`awaitsAssemblyDecision`). Only admitted amendments can be decided or grouped into a transactional.
+- An amendment with co-authors has a main author (`AmendmentDto.mainAuthorId`, stored as `meta.presentingMemberId`); with several authors the bodies must name it (`mainAuthorMemberId`).
+- Transactionals link 1..N parents through `amendment_sources`. They build only on published, submitted, admitted and undecided amendments. Any account with `amendment:create` acting for a member (or the Mesa) can propose one. Its parties are the main authors of its parents (acceptance rows with the role `author`; `proponent` rows are leftovers of the earlier rule and are ignored). One proposed by a member is `pending_authors` until every party accepts it (any rejection closes it as `withdrawn`), then goes to the Secretaría (`validate` answers 409 before that, and the inbox lists it read only). Validating a transactional always publishes it (`publishOnValidation`). Once validated and accepted, whichever comes last, it replaces its parents (they become `transacted`) and follows the normal flow; one the Mesa presents is validated and published at once and replaces them when the parties accept in the room. Replacing them closes every other submitted transactional over any of them (`lapsed`, reason `sources_transacted`): every path that calls `replaceSources` locks those competitors in the same ordered pass (`findCompetitors`). Settling a parent any other way (withdrawn, lapsed, declared inadmissible, voted, or incorporated by the main presenter's acceptance) closes the pending transactionals over it at once (`withdrawn`, `amendment_withdrawn` with `by: "sources_closed"`): every such path locks them in the same ordered pass and calls `closeTransactionalsOver` (`server/utils/domain/transactionalClosure.ts`). The closed transactional gets the parent's `decidedAt` and no `outcomeNote` (clients word the reason in the viewer's language from its parents), and its authors and parties see it in their news with nobody named (`by` null), also when their own act closed it. Reopening it never restores its parents, and one that never replaced them, or that a main author rejected, cannot be reopened (`transactionalReopenBlocker`).
+- Speaking turns (`speaking_turns`) are written down by the Mesa (`session:moderate`) through `/api/assemblies/[assembly]/speakers`; attendees see who has the floor only while `live_state.speakersVisible` is true. Writes lock the assembly row first. Closing the assembly ends the turn with the floor, cancels the waiting ones and hides the list (`closeSpeakingTurns`), since a closed assembly refuses every speakers write.
 - Overlaps come from `findOverlaps` and are computed from the ranges each amendment really changes. Relations between amendments live in `amendment_relations`.
 - Every state change calls `recordEvent`, which appends to the history and notifies live listeners.
 
@@ -221,7 +238,7 @@ Rules:
 - User-facing API messages should be Spanish unless routed through i18n.
 - Keep handlers small. Extract complex logic to `server/utils/`.
 - Do not expose internal DB fields unless the client needs them.
-- All `/api/admin/**` endpoints require Admin.
+- `/api/admin/**` opens by permission: users, their roles, member links and grants need `user:manage_roles`; roles and the permission catalog need `role:manage_permissions` (reading roles needs either). Each endpoint checks its own with `requireAnyPermission`, and only an Admin gives or takes the `Admin` role. A non-Admin never raises its own access nor locks itself out: not its own role, its own account's grants or member link, not `user:manage_roles` or `role:manage_permissions` taken away from the role it holds, and no key it does not hold itself (`adminGrantViolation`). The last Admin cannot leave the `Admin` role.
 - All mutation endpoints need CSRF header and same-origin protection.
 - Client mutations must include `CSRF_HEADER_NAME` from `shared/constants/security.ts`.
 - That protection comes from the `serverHandlers` middleware in `nuxt.config.ts`:
@@ -330,7 +347,7 @@ pg-boss v12 reminders:
 
 - Auth required for all non-auth routes.
 - Permission checked server-side for every protected operation.
-- Admin APIs are not protected by UI checks alone.
+- Admin APIs are not protected by UI checks alone: each one checks its permission server-side.
 - Route params and body/query data validated before DB access.
 - Mutations include CSRF and same-origin checks.
 - Document content stored as validated blocks and rendered escaped; no raw HTML in `v-html`.
@@ -383,7 +400,7 @@ Also verify manually when relevant:
 
 - unauthenticated users land on `/login`;
 - Google sign-in calls role sync and preserves privileged roles;
-- admin pages reject non-admin users server-side;
+- admin pages reject users without `user:manage_roles` or `role:manage_permissions` server-side, only an Admin gives or takes the Admin role, and only an Admin changes Secretaría's and Presidencia's access;
 - ES and EN UI both render new strings;
 - document content stays block-based and escaped on render;
 - amendment incorporation updates document content and history;

@@ -29,7 +29,9 @@ The usual AGENTS.md handler order applies:
   rows take `updatedAt` and use `buildOptimisticLockCondition`, so the write is
   atomic. A conflict returns 409.
 - **Row locks.** Transactions lock rows in one order: assembly, document,
-  amendments (by id), acceptances, `live_state`. A transaction that moves the
+  amendments (by id), acceptances, `live_state`. A path that settles an
+  amendment locks the transactionals over it in the same amendment pass,
+  since settling it closes them. A transaction that moves the
   live projection from a document or amendment path, or moves a document to
   another agenda item, share-locks the assembly before the document, so the
   move serializes with an agenda delete of its target. Explicit locks are `FOR NO KEY UPDATE` or `FOR SHARE`,
@@ -45,25 +47,155 @@ The usual AGENTS.md handler order applies:
 
 ## Members and me
 
-| Method | Path                | Who             | Notes                                                                            |
-| ------ | ------------------- | --------------- | -------------------------------------------------------------------------------- |
-| GET    | `/api/me`           | any             | `MeDto`                                                                          |
-| GET    | `/api/members`      | any             | `MemberDto[]`, active first, by acronym. `?all=1` also returns inactive members. |
-| POST   | `/api/members`      | `member:manage` | Creates a member manually, typically an executive area.                          |
-| PUT    | `/api/members/[id]` | `member:manage` | Edits name, kind or active, with `updatedAt`.                                    |
-| POST   | `/api/members/sync` | `member:manage` | Syncs the intranet roster. Returns `MemberSyncResult`.                           |
+| Method | Path                                | Who                       | Notes                                                                                       |
+| ------ | ----------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------- |
+| GET    | `/api/me`                           | any                       | `MeDto`. `permissions` are the role's plus the user's own grants (see "Permissions" below). |
+| GET    | `/api/me/work`                      | any                       | `MeWorkDto`, see "Review and work" below.                                                   |
+| GET    | `/api/members`                      | any                       | `MemberDto[]`, active first, by acronym. `?all=1` also returns inactive members.            |
+| POST   | `/api/members`                      | `member:manage`           | Creates a member manually, typically an executive area.                                     |
+| PUT    | `/api/members/[id]`                 | `member:manage`           | Edits name, kind or active, with `updatedAt`.                                               |
+| POST   | `/api/members/sync`                 | `member:manage`           | Syncs the intranet roster. Returns `MemberSyncResult`.                                      |
+| GET    | `/api/admin/users`                  | `user:manage_roles`       | Paginated user rows, each with `member` and `extraPermissions`.                             |
+| PUT    | `/api/admin/users/[id]/role`        | `user:manage_roles`       | Body `{ roleId }`. Only an Admin gives or takes Admin, Secretaría or Presidencia.           |
+| PUT    | `/api/admin/users/[id]/member`      | `user:manage_roles`       | Body `{ memberId: string \| null }`. Links an account to a member, see below.               |
+| PUT    | `/api/admin/users/[id]/permissions` | `user:manage_roles`       | Body `{ permissions: PermissionKey[] }`. Sets the user's own grants, see "Permissions".     |
+| GET    | `/api/admin/roles`                  | see notes                 | The roles. `user:manage_roles` or `role:manage_permissions`.                                |
+| GET    | `/api/admin/roles/[id]/permissions` | see notes                 | What a role grants. `user:manage_roles` or `role:manage_permissions`.                       |
+| PUT    | `/api/admin/roles/[id]/permissions` | `role:manage_permissions` | Body `{ permissionKeys }`. Not on the Admin role, see "Admin section".                      |
+| GET    | `/api/admin/permissions`            | see notes                 | The permission catalog. `user:manage_roles` or `role:manage_permissions`.                   |
+
+**Intranet.** Every call to the intranet API (role sync, `POST /user/role`,
+and the roster sync, `GET /usuarios/asociados` and `/usuarios/sectoriales`)
+sends `Authorization: Bearer <NUXT_INTRANET_API_TOKEN>` when that variable
+is set (a blank value counts as unset). The token is never logged.
+
+**Permissions.** A user's permissions are the union of their role's
+(`role_permissions`) and the ones an admin granted to that user alone
+(`user_permissions`); Admin has every key. The same set backs `requireActor`,
+`requirePermission`, `GET /api/auth/permissions`, `GET /api/me` and the export
+worker, and it is cached per user for a minute (a change through the endpoint
+below takes effect at once). The association's `Secretaría` and `Presidencia`
+hold every permission, users and roles included: `pnpm db:seed` adds the
+missing grants to their existing role rows (it never removes any). Both are
+kept by role sync, like `Admin` and `Moderador`, which the Mesa's Vocalía and
+Presidencia keep (`session:moderate`).
+
+**Admin section.** `/api/admin/**` opens by permission, not by role: the
+`serverHandlers` gate (`server/handlers/auth.ts`) lets in users holding
+`user:manage_roles` or `role:manage_permissions` (Admin holds every key) and
+each endpoint checks its own:
+
+- users, their roles, their member links and their grants need
+  `user:manage_roles`;
+- changing what a role grants needs `role:manage_permissions`;
+- reading the roles, what each grants and the permission catalog needs
+  either, since assigning roles and grants shows them too;
+- only an Admin gives or takes the Admin role: `PUT .../users/[id]/role`
+  answers 403 to anyone else when the new role or the user's current one is
+  Admin. Only an Admin changes its own role (403 for anyone else, "Solo un
+  Admin puede cambiar su propio rol"), and the last Admin cannot leave the
+  role (409): give it to someone else first. The Admin accounts are locked
+  in id order, so two Admins leaving at once cannot both go;
+- only an Admin may touch the Admin role's permissions (403 for anyone
+  else); it holds every permission anyway, so even an Admin gets 400;
+- only an Admin changes the access of the association's Secretaría and
+  Presidencia (403 for anyone else, "Solo un Admin puede cambiar el rol o
+  los permisos de Secretaría y Presidencia"): giving or taking either role
+  (`PUT .../users/[id]/role` when the new role or the user's current one is
+  one of them; saving the role the user already has is fine), what either
+  role grants (`PUT .../roles/[id]/permissions`), and the grants of an
+  account that holds either role (`PUT .../users/[id]/permissions`). So
+  Secretaría and Presidencia cannot change each other's access
+  (`touchesLeadershipRole` in `server/utils/auth/rbac.ts`);
+- holding these permissions never lets anyone raise their own access or
+  lock themselves out. A non-Admin gets 403 when it changes its own role
+  (above), the grants or the member link of its own account (acting for a
+  member is acting with its rights), when it takes `user:manage_roles` or
+  `role:manage_permissions` away from the role it holds (it would lock
+  itself, and everyone with that role, out of this section; giving them is
+  fine, and so are other changes to that role under the next rule), or
+  when it adds or removes a key it does not hold itself: as a user's
+  grant, in a role, or by giving a user a role that holds a key its current
+  one does not (or the other way round). Only the keys that change count,
+  so saving an unchanged list is fine. An Admin passes all of these
+  (`adminGrantViolation` in `server/utils/auth/rbac.ts`). Secretaría and
+  Presidencia hold every key, so in practice this keeps each one away from
+  its own account and role assignment, and keeps their own role able to
+  manage users and roles;
+- an Admin account's grants and member link may be edited by anyone with
+  `user:manage_roles`: they change nothing about what an Admin can do,
+  since Admin holds every key.
+
+`PUT /api/admin/users/[id]/permissions` replaces the user's grants with
+`permissions` (an empty list removes them all): grants left out are revoked
+and kept ones keep who granted them. Role permissions are never subtracted. A
+malformed body returns 400 and keys outside the catalog 422 with
+`data: { unknown }`, never ignored; an unknown user 404. It writes
+`user.permissions_set` to the audit log (`before` and `after` lists) and
+returns the user row as `GET /api/admin/users` lists it, whose rows carry
+`extraPermissions: PermissionKey[]` in catalog order.
+
+**Linking accounts to members.** After each sign-in, role sync links
+`users.memberId` by the intranet `initials` (the member's acronym):
+
+- `Asociado` and `Sectorial` accounts are the member itself. A missing member
+  is created as an intranet member, and the next roster sync fills it in.
+- `CEA` accounts act for their executive area. A missing area is created as a
+  manual `executive` member named after its acronym (the intranet name may be
+  the person's), so the roster sync never deactivates it; an admin renames
+  it. A CEA account is never linked to a council or a sectorial that shares
+  its initials.
+- Other types leave `memberId` alone.
+- A CEA account that already acts for a member keeps it while its intranet
+  initials stay the same, so a link an admin set by hand is not undone at
+  the next sign-in. When the initials change (the cargo moved to another
+  area), it is linked again by them. Asociado and Sectorial accounts always
+  follow their initials.
+- An account stops acting for its member (`memberId` becomes null, in the
+  same transaction as the role change) when it has a synced role (`Invitado`,
+  `Asociado`, `CEA`) and either its role changes with its intranet type (a CEA
+  cargo whose term ended becomes `Invitado`) or its intranet type stops being
+  `Asociado`, `Sectorial` or `CEA`. The new type, if it is one of those,
+  links it again. `Admin`, `Secretaría`, `Presidencia` and `Moderador`
+  accounts keep their role and their link.
+- When the role resolved by the sync has no row (the database was not seeded
+  after a role was added), the sync logs a warning; a new account gets
+  `Invitado` instead, and an existing one keeps its role and its member. Run
+  `pnpm db:seed` after deploying a new role.
+
+Whoever holds `user:manage_roles` links an account by hand with
+`PUT /api/admin/users/[id]/member` (only an Admin its own account, 403
+otherwise, see "Admin section"):
+when its initials are missing, or when a CEA account's initials are the
+person's rather than the area's (the sync then created an `executive` member
+named after them, which the admin can deactivate). The member must exist
+(404) and be active (422); `null` unlinks it. The change is written to the
+audit log (`user.member_link`). It returns the user row as
+`GET /api/admin/users` lists it, which now includes `memberId` and `member`
+(`MemberRef` or null). A manual link on an Asociado or Sectorial account with
+initials is replaced at its next sign-in, and a CEA account's when its
+initials change.
+
+An account with no member that tries to create a document or an amendment
+gets 403 with the next step: ask the Secretaría to link it.
 
 ## Assemblies and calendar
 
-| Method | Path                                  | Who               | Notes                                                                                                     |
-| ------ | ------------------------------------- | ----------------- | --------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/assemblies`                     | any               | `AssemblyListDto`. Drafts are listed only for managers. Takes `?status=&type=&page=`.                     |
-| POST   | `/api/assemblies`                     | `assembly:create` | `AssemblyCreateBody`. Seeds the milestones from `defaultMilestones` unless told not to.                   |
-| GET    | `/api/assemblies/[assembly]`          | visible           | `AssemblyDto`, including the milestones and the warnings from `checkCalendar`.                            |
-| PUT    | `/api/assemblies/[assembly]`          | `assembly:manage` | `AssemblyUpdateBody`. Settings are merged.                                                                |
-| DELETE | `/api/assemblies/[assembly]`          | `assembly:manage` | Only in `draft`.                                                                                          |
-| PUT    | `/api/assemblies/[assembly]/status`   | `assembly:manage` | Follows `ASSEMBLY_STATUS_TRANSITIONS`. Entering `in_session` creates the `live_state` row.                |
-| PUT    | `/api/assemblies/[assembly]/calendar` | `assembly:manage` | `CalendarBody`. Upserts or deletes the milestones and toggles `agendaFinalizedAt`. Returns `AssemblyDto`. |
+| Method | Path                                  | Who               | Notes                                                                                                                                            |
+| ------ | ------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/api/assemblies`                     | any               | `AssemblyListDto`. Drafts are listed only for managers. Takes `?status=&type=&page=`.                                                            |
+| POST   | `/api/assemblies`                     | `assembly:create` | `AssemblyCreateBody`. Seeds the milestones from `defaultMilestones` unless told not to.                                                          |
+| GET    | `/api/assemblies/[assembly]`          | visible           | `AssemblyDto`, including the milestones and the warnings from `checkCalendar`.                                                                   |
+| PUT    | `/api/assemblies/[assembly]`          | `assembly:manage` | `AssemblyUpdateBody`. Settings are merged (see below).                                                                                           |
+| DELETE | `/api/assemblies/[assembly]`          | `assembly:manage` | Only in `draft`.                                                                                                                                 |
+| PUT    | `/api/assemblies/[assembly]/status`   | `assembly:manage` | Follows `ASSEMBLY_STATUS_TRANSITIONS`. Entering `in_session` creates the `live_state` row. Closing ends the speaking turns (see speaking turns). |
+| PUT    | `/api/assemblies/[assembly]/calendar` | `assembly:manage` | `CalendarBody`. Upserts or deletes the milestones and toggles `agendaFinalizedAt`. Returns `AssemblyDto`.                                        |
+| GET    | `/api/assemblies/[assembly]/review`   | see notes         | `ReviewQueueDto`, the Secretaría's validation inbox. `document:manage` or `amendment:review`, otherwise 403. See "Review and work" below.        |
+
+**Settings.** `AssemblyDto.settings` is the stored JSON merged over
+`DEFAULT_ASSEMBLY_SETTINGS`, reading only the keys the defaults have. Keys of
+removed policies, such as the old `amendmentVisibility`, are neither returned
+nor kept: the next `PUT` writes the settings back without them.
 
 ## Agenda
 
@@ -90,25 +222,127 @@ deleted or moved. Sub-items still can.
 | PUT    | `/api/assemblies/[assembly]/documents/[document]/content`    | editor                         | `DocumentContentBody`. Replaces the working draft. Returns 409 if `baseHash` is stale or the document is published.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | POST   | `/api/assemblies/[assembly]/documents/[document]/import`     | editor                         | Multipart DOCX up to 15 MB, with magic bytes checked. Returns `DocxImportDto` and saves nothing. The archive's real inflated size and entry count are bounded, mammoth runs in a child process with its own heap and time limit, and the HTML it returns is bounded in nodes, nesting, block elements and formatting marks before it is parsed. 413 when a size or markup limit is exceeded, 415 for a corrupt or non-DOCX file, 422 when the document exceeds the content limits (blocks, text per paragraph, nesting, formatting) or has no usable text (that one carries `data: { reason: "empty" }`, since splitting the file cannot help), 429 when the user already has an import running or waiting or the conversion queue is full (an import whose client disconnects leaves the queue at once), 500 when the converter cannot start. |
 | POST   | `/api/assemblies/[assembly]/documents/[document]/file`       | `document:manage` or proponent | PDF upload for the `file` format. See PDF replacement below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| POST   | `/api/assemblies/[assembly]/documents/[document]/submit`     | proponent                      | A member submits a draft for admission (`submitted`). Respects the `documents_close` milestone unless the actor is a manager.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| POST   | `/api/assemblies/[assembly]/documents/[document]/publish`    | `document:manage`              | See publishing rules below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| GET    | `/api/assemblies/[assembly]/documents/[document]/history`    | visible                        | `EventDto[]` for the document and its amendments, respecting amendment visibility.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| POST   | `/api/assemblies/[assembly]/documents/[document]/submit`     | proponent                      | A presenter sends a draft to the Secretaría (`submitted`). See validation below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| POST   | `/api/assemblies/[assembly]/documents/[document]/correction` | `document:manage`              | `CorrectionBody`. Sends a submitted document back to draft with a note. Returns `DocumentDto`. See validation below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| POST   | `/api/assemblies/[assembly]/documents/[document]/publish`    | `document:manage`              | Validates (publishes) the document. See publishing rules below.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| GET    | `/api/assemblies/[assembly]/documents/[document]/history`    | visible                        | `EventDto[]` for the document and its amendments, respecting amendment visibility. Correction notes are removed from the payload for those who may not read them.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | POST   | `/api/assemblies/[assembly]/documents/[document]/final-vote` | `session:moderate`             | `FinalVoteBody`. See final vote rules below. Returns `DocumentDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | DELETE | `/api/assemblies/[assembly]/documents/[document]/final-vote` | `session:moderate`             | `FinalVoteAnnulBody`. Annuls the final vote, see below. Returns `DocumentDto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | POST   | `/api/assemblies/[assembly]/documents/[document]/export`     | visible                        | Body `{ variant: "clean" \| "annotated", locale }`. Enqueues a PDF export and returns `{ jobId }`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
-**Who can create.** Managers (`document:manage`) can always create a document.
-Members with `document:create` can create one under an agenda item that has
-`acceptsSubmissions`, until the `documents_close` milestone. The proponent
-then defaults to their member.
+**Who can create.** Managers (`document:manage`) can always create a document,
+for any members (see presenters below) and with no content. Members with
+`document:create` (Asociado and CEA accounts) can create one under an agenda
+item that has `acceptsSubmissions`, until the `documents_close` milestone,
+always as one of its presenters.
 
-**Editor.** An editor holds `document:manage`, or acts for the proponent while
-the document is a `draft`.
+**Presenters.** A document has a main presenter (`proponentMemberId`,
+`DocumentSummaryDto.proponent`), who alone answers its amendments, and may
+have co-presenters (`document_proponents`, `DocumentSummaryDto.coProponents`
+by acronym), who prepare the text with it and see what it decides. Bodies
+carry `proponentMemberId` and `coProponentMemberIds` (never the main
+presenter; up to 20, no repeats). The rules (`planPresenters` in
+`server/utils/domain/presenters.ts`):
+
+- with co-presenters there must be a main presenter: 422 otherwise;
+- managers set any members (they must exist, 422). On create the main
+  presenter defaults to their own member, and an explicit `null` leaves it
+  empty when there are no co-presenters;
+- a member creating its own document is always one of its presenters: its
+  member joins the co-presenters unless it is the main presenter. With
+  co-presenters it names the main presenter (422 when it names none). The
+  main presenter named is a presenter too, so a member may add another member
+  and make it the main one in the same body (`proponentMemberId: b`,
+  `coProponentMemberIds: [own]`);
+- on `PUT`, presenters may change them while the document is a draft (it is
+  the only time they can edit it), with the same rules, and their own member
+  cannot leave (422). Only the main presenter itself or a manager changes
+  who the main presenter is: a co-presenter (or the user who created the
+  document without presenting it) naming another one, itself included, or
+  none gets 403 with `data: { reason: "main_only" }`; it may still change
+  the co-presenters. Managers change them at any time. Fields left out keep
+  their value. Naming a new main presenter without `coProponentMemberIds`
+  keeps the former one as a co-presenter: always for a presenter, and for a
+  manager when the new one was already a presenter (otherwise a manager
+  replaces it);
+- the main presenter listed among the co-presenters is dropped from them.
+
+The change is recorded in `document_created` and `document_updated`
+(`proponentMemberId`, `coProponentMemberIds`).
+
+**Accepted amendments.** `acceptedAmendments` (`DocumentSummaryDto`, create
+and update bodies) says what an amendment the main presenter accepts
+becomes: `incorporate` approves it at once, `vote` leaves it to the assembly
+(see the main presenter's answer below). It defaults from the kind
+(`DOCUMENT_KIND_DEFAULTS`: regulations incorporate). Only managers change it:
+a presenter's value is ignored on create and refused on update (403), and a
+presenter changing the kind gets the kind's default, as with `amendable`,
+`voted` and `majority`.
+
+Changing it on a published document applies the new rule to the amendments
+the main presenter already answered, so the rule always says what an
+accepted amendment is (`acceptedRulePlan`, `applyAcceptedAmendmentsRule`):
+
+- to `incorporate`: every undecided amendment with an `accept` answer that
+  the presenter could answer now (validated, admitted, published, and for a
+  transactional accepted by its main authors) is approved at once
+  (`approvalMethod: "proponent"`, `amendment_approved` with
+  `reason: "rule_changed"` and the main presenter as `memberId`), which
+  closes the pending transactionals over it (see transactionals). A
+  transactional presented under the earlier rule whose sources are still
+  open is left for the Mesa;
+- to `vote`: every amendment approved by the presenter's acceptance goes
+  back to undecided, keeping the answer (`amendment_reopened` with
+  `reason: "rule_changed"`), for the assembly to vote.
+
+After the final vote (or once the consolidated text exists) the rule no
+longer changes: 409.
+
+**Expected documents.** A manager creates a document in advance for the member
+that has to provide it (a CEA report, a resolution) with an internal deadline,
+`dueAt` (`DocumentCreateBody.dueAt`, changed later through `PUT`). It starts
+as an empty draft that the member fills in and presents. Only managers set
+`dueAt`: a presenter that sends one gets 403. A document is expected when it
+has a `dueAt` or hangs from an agenda item that does not accept submissions
+(only a manager could have created it there, such as a CEA report without an
+internal deadline). The `documents_close` milestone does not bind an expected
+document: its `dueAt`, if any, is the deadline, and an overdue one can still
+be presented (the tracking panel flags it).
+
+**Summary fields.** `DocumentSummaryDto` carries what the tracking panel needs:
+`submittedAt` (null while it is a draft), `dueAt`, `hasContent` (blocks in the
+working draft, or a PDF uploaded) and the pending correction,
+`correctionNote` and `correctionRequestedAt`, which are returned only to the
+document's presenters (its main presenter, its co-presenters and the user who
+created it) and to `document:manage`, and null for everyone else.
+
+**Validation by the Secretaría.** Nothing a member presents is visible to the
+rest of the assembly until the Secretaría has checked it.
+
+- `POST .../submit` sends a draft with content (422 otherwise) to the
+  Secretaría (`submitted`, `submittedAt`). Presenting it again after a
+  correction clears `correctionNote` and `correctionRequestedAt`. Members
+  must do it before `documents_close` unless the document is expected (see
+  above); managers are not bound by it.
+- Publishing (`POST .../publish`) is the validation: see the rules below. It
+  also clears a pending correction.
+- `POST .../correction` (`document:manage`, `CorrectionBody`: a note of 1 to
+  2000 characters and the document's `updatedAt` for the optimistic lock)
+  sends a `submitted` document back to `draft`: `submittedAt` becomes null and
+  the note is stored in `correctionNote` with `correctionRequestedAt`. Any
+  other status returns 409. It records `document_correction_requested`
+  (`{ note }`). The presenters fix the draft and present it again.
+
+**Editor.** An editor holds `document:manage`, or acts for one of its
+presenters (main or co-presenter) or created it, while the document is a
+`draft`. Presenting it (`POST .../submit`) and uploading its PDF follow the
+same rule.
 
 **Who sees a document.** Published and postponed documents are public. Drafts
-are private to their proponent, the user who created them and
-`document:manage`. The Mesa (`session:moderate`) also sees every document past
-draft (submitted, withdrawn).
+are private to their presenters (main and co-presenters), the user who
+created them and `document:manage`. The Mesa (`session:moderate`) also sees
+every document past draft (submitted, withdrawn). The same rule backs the
+document list counts, the uploads route, exports and the home page.
 
 **Status changes.** `PUT` with `status` is for managers and follows
 `assertStatusChange`. A forbidden change returns 409.
@@ -135,6 +369,7 @@ the old file is kept for the record, not served.
 
 **Publishing.**
 
+- Validates the document: it is how the Secretaría accepts a presented one.
 - Freezes the working draft as an immutable `base` version.
 - Sets `status=published`, `publishedAt` and `baseVersionId`.
 - Assigns the reference (`RES 012/2026`) for kinds that use one.
@@ -182,31 +417,43 @@ All paths are under `/api/assemblies/[assembly]/documents/[document]/amendments`
 | PUT    | `/[amendment]`            | author while the amendment is a draft                | `AmendmentUpdateBody`                                                                                         |
 | DELETE | `/[amendment]`            | author while the amendment is a draft                |                                                                                                               |
 | POST   | `/[amendment]/submit`     | author                                               | See submission rules below.                                                                                   |
-| POST   | `/[amendment]/withdraw`   | author or moderator                                  | Allowed until the amendment is decided.                                                                       |
+| POST   | `/[amendment]/withdraw`   | author or moderator                                  | Allowed until the amendment is decided. Closes the pending transactionals over it.                            |
+| POST   | `/validate`               | `amendment:review`                                   | `ValidateAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                              |
+| POST   | `/publish`                | `amendment:review`                                   | `PublishAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                               |
+| POST   | `/[amendment]/correction` | `amendment:review`                                   | `CorrectionBody`. See validation below. Returns `AmendmentDto`.                                               |
 | POST   | `/admission`              | `amendment:review` or moderator                      | See admission rules below.                                                                                    |
-| PUT    | `/[amendment]/position`   | proponent or moderator                               | `PositionBody`. Records an event.                                                                             |
+| PUT    | `/[amendment]/position`   | main presenter or moderator                          | `PositionBody`. See the main presenter's answer below.                                                        |
 | POST   | `/[amendment]/outcome`    | moderator                                            | See outcome rules below.                                                                                      |
-| POST   | `/transactional`          | see below                                            | See transactional rules below.                                                                                |
-| POST   | `/[amendment]/acceptance` | pending party, or a moderator for one                | See acceptance rules below.                                                                                   |
+| POST   | `/transactional`          | `amendment:create` acting for a member, or moderator | See transactional rules below.                                                                                |
+| POST   | `/[amendment]/acceptance` | pending party (main author), or a moderator for one  | See acceptance rules below.                                                                                   |
 | POST   | `/relations`              | moderator, reviewer or proponent                     | `RelationBody`. Both amendments must belong to the document, so `same_in_other_document` returns 422.         |
 | DELETE | `/relations/[relation]`   | the same roles                                       |                                                                                                               |
-| GET    | `/[amendment]/history`    | visible                                              | `EventDto[]`                                                                                                  |
+| GET    | `/[amendment]/history`    | visible                                              | `EventDto[]`. Correction notes are removed for those who may not read them.                                   |
 
 **Who sees an amendment** (`canSeeAmendment`).
 
-- Drafts: their authors, the user who created them, the parties of a
-  transactional and reviewers (`amendment:review` or `amendment:manage`). The
-  Mesa alone (`session:moderate`) does not read members' drafts.
-- Under `amendmentVisibility=after_close`, every presented amendment
-  (submitted, withdrawn, inadmissible, lapsed...) is visible only to its
-  authors, the parties of a transactional, reviewers and the Mesa until the
-  amendments are public. They become public (`amendmentsPublic`) once the
-  window closes by date, when the document has no close date at all, or once
-  the assembly is `in_session` or `closed`. This does not change `late`, which
-  still follows `isLateSubmission`.
-  The same rule drives `amendmentCount` in document summaries and the
-  admission decisions returned by `GET .../decisions`.
-- Everything else: everyone who can see the document.
+- Drafts: their authors, the user who created them, the members involved
+  in a transactional (its parties, the main authors of what it replaces, and
+  every other author of those amendments) and reviewers (`amendment:review`
+  or `amendment:manage`). The Mesa alone (`session:moderate`) does not read
+  members' drafts.
+- Presented amendments are visible to everyone who can see the document
+  only once the Secretaría publishes them (`publishedAt`). Until then
+  (waiting for validation, validated but kept private, or decided before
+  publication) only their authors, the user who created them, the members
+  involved in a transactional, reviewers and the Mesa see them. Visibility
+  is per amendment: there is no assembly-wide policy any more.
+- The same rule drives `amendmentCount` in document summaries, the history
+  and the admission decisions returned by `GET .../decisions`.
+- `correctionNote` is returned only to the authors, the creator, the members
+  involved in a transactional, reviewers and the Mesa, and null for everyone
+  else.
+
+**Main author.** An amendment with co-authors has a main author
+(`AmendmentDto.mainAuthorId`, listed first in `authors`), stored as the
+presenting member: it drives the code (`CEUM 4`) and alone answers the
+transactionals proposed over the amendment. With a single author it is that
+author; a transactional the Mesa drafts for nobody has none (null).
 
 **Creating a draft.**
 
@@ -214,34 +461,139 @@ All paths are under `/api/assemblies/[assembly]/documents/[document]/amendments`
   reasons.
 - Authors are the actor's member plus `authorMemberIds`. A moderator may use
   `onBehalfOfMemberId`.
+- `mainAuthorMemberId` names the main author, which must be one of the
+  authors (422). With several authors it is required (422 without it).
 - `positionKey` is computed with `positionKey`.
 
 **Editing a draft.**
 
-- `authorMemberIds` replaces the co-authors; the presenting member stays. The
+- `authorMemberIds` replaces the co-authors; the main author stays. The
   actor's member is always kept: a co-author editing a draft presented by
   another member does not drop out of it.
+- `mainAuthorMemberId` names a new main author, which must already be an
+  author or be listed in `authorMemberIds` (422); it then anchors the
+  authors, and the former main author stays only if it is listed (or is the
+  actor). Left out, the stored main author stays while it is still an
+  author; when it is not and there are several authors, 422.
 - Ordinary drafts may name any active member as co-author. On a transactional
-  draft, a non-moderator may only add its parties (the authors of what it
-  absorbs and the proponent), as when it is created: otherwise 403.
+  draft, a non-moderator may only add the members involved (the authors of
+  what it replaces and the document's main presenter), as when it is
+  created: otherwise 403.
 
 **Submitting.** Submission does several things at once:
 
-- It sets `status=submitted`, `submittedAt` and `submittedByUserId`.
-- It computes `late` from `amendmentWindow` and `isLateSubmission`.
+- It sets `status=submitted`, `submittedAt` and `submittedByUserId`, and
+  clears a pending correction (`correctionNote`, `correctionRequestedAt`).
+- It computes `late` from `amendmentWindow` and `isLateSubmission`. An
+  amendment the Secretaría sent back for correction keeps the timing of its
+  first presentation: fixing it after the window closed does not make it late.
 - It assigns `number` (next free number per document) and `memberSeq` (next per
-  first author within the document).
+  main author within the document). An amendment sent back for correction
+  keeps its `number`, and its `memberSeq` while the same member presents it,
+  so numbering has no gaps. Deleting such a draft leaves its number unused.
 - It sets `code` to `"{ACRONYM} {memberSeq}"`.
-- Amendments submitted on time get `admission=admitted` unless the assembly
-  reviews admissions manually. Late amendments stay `pending`.
+- It never admits: `admission` stays `pending` and `validatedAt` and
+  `publishedAt` stay null until the Secretaría validates it (see below).
 - It creates the `amendment_positions` row as `pending`.
+
+**Validation by the Secretaría.** Every presented amendment needs the
+Secretaría's validation before it can be decided (an outcome needs
+`admission=admitted`), and the Secretaría decides per amendment whether it
+becomes visible to everyone when validating it or later.
+
+- `POST .../validate` (`ValidateAmendmentsBody`: `amendmentIds`, `publish`)
+  validates in bulk. Every amendment must belong to the document (404) and
+  still be `submitted` and not validated (409: someone already reviewed it,
+  reload). A transactional proposed by a member needs every main author's
+  acceptance first (409 while it is `pending_authors`, see transactionals
+  below; the acceptance rows are share-locked after the amendments). It sets
+  `validatedAt` and `validatedByUserId`. An on-time amendment is admitted at
+  the same time (`admission=admitted`); a late one keeps `admission=pending`
+  until the assembly decides whether to treat it (the Secretaría or the Mesa
+  records it, see late amendments). With `publish` it also sets
+  `publishedAt`; a transactional is published whatever `publish` says
+  (`publishOnValidation`), since it replaces published amendments and
+  cannot stay private. Records `amendment_validated` (`{ publish,
+admission }`, `publish` being what happened to that amendment, plus
+  `method: "secretaria"` when it admits) per amendment. Validating a
+  transactional makes it replace what it groups: those amendments must
+  still be open (409, saying which one still needs the Secretaría's
+  validation or the assembly's decision to treat it, or is already
+  decided) and become `transacted` (`amendment_transacted`).
+- `POST .../publish` (`PublishAmendmentsBody`) makes validated amendments
+  visible to everyone: each one must be validated, past draft and not
+  published yet (409). Records `amendment_published`. Publishing only changes
+  who sees an amendment, so it is the one amendment change still allowed
+  after the final vote (`can.publish` is the only capability left then).
+- `POST .../[amendment]/correction` (`CorrectionBody`: a note of 1 to 2000
+  characters and the amendment's `updatedAt` for the optimistic lock) sends a
+  `submitted`, not yet validated amendment back to `draft` with the note in
+  `correctionNote` and `correctionRequestedAt`. `submittedAt` becomes null;
+  number, code and timing are kept (see submitting). Records
+  `amendment_correction_requested` (`{ note }`). A transactional still
+  waiting for its main authors returns 409.
+- `reviewState` on `AmendmentDto` tells where it stands:
+  - `correction_requested`: a draft the Secretaría sent back;
+  - `published`: `publishedAt` is set, whatever its status;
+  - `pending_authors`: a transactional proposed by a member, `submitted`
+    and not validated, that some main author of what it replaces has not
+    accepted yet (only acceptance rows with the role `author` count: rows
+    with the role `proponent` come from the earlier rule and are ignored,
+    also in `acceptances`). A rejection closes it, so it never stays here
+    rejected;
+  - `pending_validation`: `submitted`, not validated and not waiting for
+    its main authors;
+  - `validated`: validated, not published and still relevant to the debate
+    (not withdrawn nor inadmissible). The inbox lists these to publish,
+    except the late ones still waiting for the assembly's decision, which
+    it lists with the late ones;
+  - null otherwise: a draft never presented, or an amendment settled while
+    private that waits for nothing (withdrawn, lapsed or inadmissible before
+    validation, or withdrawn or inadmissible after a private validation).
+
+  `can.validate` holds for reviewers on a submitted, unvalidated amendment
+  that does not wait for its main authors, and `can.publish` on a
+  validated, unpublished one past draft (a withdrawn or inadmissible one can
+  still be published on purpose).
+
+- Row locks follow the usual order: the document (share), then the
+  amendments and, for `validate`, the sources of the transactionals, in id
+  order, then the acceptances.
+
+**Late amendments.** An amendment presented after its window closes gets
+`late: true` (computed, see submitting). Validating it keeps `admission`
+`pending` (with `publish` it becomes visible at once), so `AmendmentDto`
+shows `late: true`, `admission: "pending"` and `reviewState: "published"`:
+the client says it is out of time and waits for the assembly to decide
+whether to treat it. The Secretaría or the Mesa records that decision with
+`POST .../admission` below. Until it is `admitted`, the main presenter cannot
+answer it, an outcome returns 409 and it cannot be the source of a
+transactional; the final vote waits for it to be decided (declared
+inadmissible, for instance).
 
 **Admission.** The body is an `AdmissionBody`, usable one by one or in bulk.
 
 - It creates a `decisions` row (`admit_late` or `inadmission`), with a vote
   when the method is `vote`.
 - It sets `admission`. Inadmissible amendments also get
-  `status=inadmissible`.
+  `status=inadmissible`, which closes the pending transactionals over them
+  (see transactionals); they are locked in the same ordered pass.
+- The Mesa does not skip the Secretaría: admitting an on-time amendment
+  (`late=false`) that is `submitted` and not validated returns 409 (the
+  Secretaría validates it, which admits it). So does a vote on its
+  admission in either direction, since a failed vote to declare it
+  inadmissible would admit it. Declaring it inadmissible directly, deciding
+  on a late or validated one, and re-admitting an inadmissible one are
+  allowed. The check runs before the transaction and again on the locked
+  rows.
+- Deciding on admission checks the amendment: one not validated yet (a late
+  one) gets `validatedAt` and `validatedByUserId`, and its
+  `amendment_admitted` or `amendment_inadmissible` event carries
+  `validated: true`.
+- Admitting is a public act of the Mesa: an amendment that ends up admitted
+  is also published (`publishedAt`, if it was not set), so delegates can read
+  what is debated, and `amendment_published` (`{ decisionId }`) is recorded
+  for each one that was not public yet. An inadmission publishes nothing.
 - Admitting needs amendments still pending or inadmissible; declaring them
   inadmissible needs them still submitted, otherwise 409. The amendments are
   locked in the transaction and must still have the status and admission the
@@ -251,6 +603,49 @@ All paths are under `/api/assemblies/[assembly]/documents/[document]/amendments`
 - A vote is projected live (see the live session below).
 - Returns `AmendmentAdmissionDto`.
 
+**The main presenter's answer.** `PUT .../[amendment]/position` with a
+`PositionBody` records the answer of the document's main presenter (accept,
+reject, transact, or back to pending, with an optional comment). Returns the
+`AmendmentDto`.
+
+- Only the main presenter's member answers, or the Mesa for it (403
+  otherwise); co-presenters see the answer (`positionsVisible` holds for every
+  presenter) but cannot give it. The `position_changed` event names whose
+  answer it is (`memberId`: the main presenter, also when the Mesa records
+  it, with `by: "moderator"`), which the home page's news credit.
+  `PositionDto.recordedBy` says who recorded the answer, as it was then:
+  `"mesa"` when the amendment's latest `position_changed` has
+  `by: "moderator"`, `"presenter"` when it has `by: "proponent"`, so an
+  answer keeps its author when the document later gets another main
+  presenter. Without that event it compares the member of the user stored
+  in `amendment_positions.decidedByUserId` with the document's current main
+  presenter (`"presenter"` for the pending row created on submission, which
+  nobody recorded).
+- Only once the amendment can be answered (`positionBlocker`), 409
+  otherwise: presented and undecided, validated by the Secretaría and, if
+  late, admitted by the assembly (`admission: "admitted"`), for a
+  transactional once every main author accepted it, and published, so the
+  answer is about something every delegate can read (under either rule;
+  a late one is published when the assembly admits it). The message says
+  what is missing. `can.position` follows the same rule, and is false once
+  the document is voted.
+- `positionUpdatedAt` is the `PositionDto.updatedAt` the client saw (null
+  when there was no answer): when it is sent and the stored answer changed
+  since, 409, so two people answering at once do not overwrite each other.
+- Under the document's `incorporate` rule, accepting approves the amendment
+  at once: `status: "approved"`, `approvalMethod: "proponent"`, `decidedAt`,
+  with `amendment_approved` (`{ method: "proponent", byPosition: true,
+memberId }`, the main presenter) after `position_changed`, and closes the
+  pending transactionals over it (see transactionals). Changing the answer
+  of an amendment approved that way to anything but `accept` reopens it
+  (`submitted`, `amendment_reopened` with `reason: "position_changed"`).
+  One the Mesa approved otherwise (by vote, say) is decided: 409. Under the
+  `vote` rule an answer never decides anything.
+- After the final vote nothing changes (409).
+- Locks: the document (share), the amendment (and what a transactional
+  replaces, with the other transactionals over that or over the amendment)
+  in id order, its acceptances, then its position row.
+
 **Outcome.** The body is an `OutcomeBody`; the response is an
 `AmendmentOutcomeDto`.
 
@@ -259,51 +654,286 @@ All paths are under `/api/assemblies/[assembly]/documents/[document]/amendments`
   default) and then approves or rejects. A tie under `tieRule=repeat` stores
   nothing and returns 409. The vote is projected live, pointing the
   projection at the amendment.
-- `withdraw` and `lapse` set `withdrawn` and `lapsed`.
+- `withdraw` and `lapse` set `withdrawn` and `lapsed`, only on amendments in
+  the debate: `admission: "admitted"` (validated and, if late, admitted by
+  the assembly), 409 otherwise. An author can still withdraw its own
+  amendment through `POST .../withdraw`.
+- Every outcome that settles the amendment (`approve`, `vote`, `withdraw`,
+  `lapse`) closes the pending transactionals over it (see transactionals),
+  locked in the same ordered pass as the amendment.
 - `reopen` brings the amendment back to `submitted`. Its vote row stays for
   the record, but the `amendment_reopened` event records it as
   `voidedVoteId` and the projection stops showing it.
-- Requires the amendment to be admitted. A transactional also needs every
-  acceptance to be `accepted`.
-- Approving a transactional absorbs its lineage: its parents and, through
-  nested transactionals (a transactional over another), their parents at any
-  depth. The lineage is locked and re-checked in the transaction: every
-  amendment in it must be submitted, admitted and undecided, otherwise 409,
-  so a parent and its transactional can never both end up approved. A
-  transactional rejected by vote needs no such check. All of the lineage
-  becomes `transacted` (`amendment_transacted`, with `nested: true` below the
-  direct parents).
-- Reopening an approved transactional gives its whole lineage back to
-  `submitted`, except what another approved transactional still absorbs.
+- `approve` and `vote` require the amendment to be admitted and published
+  (`publishedAt`): an amendment the Secretaría validated but kept private
+  returns 409 until it publishes it, so nothing is decided that delegates
+  cannot read. A transactional must have replaced its sources (every main
+  author accepted it, 409 otherwise): the Mesa's own wait for their answer
+  in the room.
+- A transactional replaced its sources when it took over (see
+  transactionals), so approving it does not touch them. One presented under
+  the earlier rule, which replaced its sources only on approval, replaces
+  the ones still open now; a source decided otherwise returns 409, so a
+  source and its transactional never both end up approved.
+- Reopening a transactional does not give its sources back: they stay
+  `transacted`. A transactional that never replaced its sources can only be
+  reopened while they are all still open, and one a main author rejected
+  stays closed (409 for both, `transactionalReopenBlocker`): the way to try
+  again is a new transactional. Reopening locks the transactional and its
+  sources in one pass, then its acceptances.
 - When approving any amendment, the response lists the ids of amendments with
   hard overlaps or an `incompatible` relation, so the client can offer to mark
   them as `lapse`.
 
-**Transactionals.** The body is a `TransactionalBody`.
+**Transactionals.** The body is a `TransactionalBody`. Any member can
+propose one over published amendments, before or during the session
+(docs/design.md, "Transactionals").
 
-- Who: authors of any source (or of what a source transactional absorbs), the
-  proponent, or a moderator.
-- The sources, and everything a source transactional absorbs, must be
-  submitted, admitted and undecided. This is checked again under the document
-  lock, both on creation and on submission of a draft transactional.
+- Who: any account with `amendment:create` that acts for a member (a council,
+  sectorial or CEA area), the document's main presenter, the authors of the
+  amendments it groups, or a moderator. An account without a member gets
+  403 with the next step (ask the Secretaría to link it).
+- The sources must belong to the document (404 otherwise, also for a source
+  the actor cannot see) and be published (`publishedAt`), submitted,
+  admitted and undecided; a source that is itself a transactional must have
+  replaced its own sources (its main authors accepted it). This is checked
+  again under the document lock, both on creation and on submission of a
+  draft transactional. The 409 says what is missing, first what someone can
+  still do: a source still waiting for the Secretaría's validation, then one
+  out of time whose treatment the assembly has not decided yet, then a
+  transactional its main authors have not accepted, then one not published
+  yet, then one already decided.
 - The ops are validated against the same base.
-- It creates `kind=transactional`, numbered `T1`, `T2` and so on per document,
-  and fills `amendment_sources`.
-- It creates `amendment_acceptances` for every author member of every source,
-  and of every amendment a source transactional absorbs (`role=author`), and
-  for the document proponent (`role=proponent`). The creator's own member is
-  accepted at once.
-- With `submit` it is submitted immediately: `late` is ignored and it is
-  admitted.
+- It creates `kind=transactional`, numbered `T1`, `T2` and so on per
+  document, and fills `amendment_sources`.
+- Its parties are the main authors of the amendments it groups: one
+  `amendment_acceptances` row each, with the role `author`. The document's
+  presenter is not a party unless it is one of them. The creator's own
+  member, when it is a party, is accepted at once.
+- Authors: the proposer's member plus `authorMemberIds`; non-moderators may
+  only add members involved (the authors of what it groups and the
+  document's main presenter), 403 otherwise. `mainAuthorMemberId` names the
+  main author among them (422 when it is not one, and required with several).
+- With `submit` (default) it is submitted at once and `late` is ignored.
+  Created by a member, it goes:
+  1. to the main authors of what it groups (`pending_authors`, private to its
+     authors, its creator, the members involved, reviewers and the Mesa). Its
+     `amendment_submitted` event carries `awaitsAuthors: true` while it
+     waits. Each one accepts or rejects it (`POST .../acceptance`); any
+     rejection closes it and the originals carry on. The Secretaría's inbox
+     lists it read only (`can.validate` false) and its counts leave it out;
+  2. once all accepted, to the Secretaría, which validates it
+     (`POST .../validate` answers 409 until then); validating it publishes
+     it;
+  3. validated and accepted, it replaces those amendments: they become
+     `transacted` (`amendment_transacted` with `transactionalId` and `code`)
+     and it follows the normal flow (the main presenter's answer, then the
+     vote or its incorporation, per the document's rule).
+- Created by a moderator (the Mesa in session), it is validated, admitted and
+  published at once (`amendment_validated` with `publish: true` and
+  `method: "mesa"`), and it replaces the originals as soon as their main
+  authors accept it in the room (the Mesa records their answers); at once
+  when there is nobody else to ask.
+- Validated and accepted happen in either order: whichever comes last makes
+  it replace its sources, which must still be open (409 otherwise).
+  Validating a transactional always publishes it, so delegates see what
+  replaced the originals.
+- Two transactionals over the same amendment cannot both replace it. When
+  one does, every other submitted transactional over any of those
+  amendments lapses: `status: "lapsed"`, `decidedAt`, and `amendment_lapsed`
+  with `{ reason: "sources_transacted", transactionalId, code }` (the one
+  that replaced them), which its authors see in their news. Validating, in
+  one request, two transactionals that group the same amendment returns 409:
+  the Secretaría validates one, and the other lapses.
+- A transactional that has not replaced its sources yet (waiting for its
+  main authors, for the Secretaría or, the Mesa's, for the answers in the
+  room) is closed at once when one of those amendments is settled another
+  way: withdrawn (by its authors or the Mesa), lapsed, declared
+  inadmissible, approved or rejected (by vote or as the Mesa records it),
+  or incorporated by the main presenter's acceptance (also when the
+  document's rule changes to `incorporate`). It becomes `withdrawn` with
+  `decidedAt`, and `amendment_withdrawn` records
+  `{ by: "sources_closed", sourceId, sourceCode, sourceStatus }`: the
+  amendment that closed it and where it ended up. Its `decidedAt` is the
+  same instant as that amendment's, so the `AmendmentDto` alone tells
+  which source closed it (`sourceIds`, their `status` and `decidedAt`):
+  clients put that reason into words in the viewer's language, and
+  `outcomeNote` stays empty, for the Mesa's own words (a Spanish note would
+  reach English readers untranslated). Its authors and its parties (every
+  author of what it groups) read it in their news, also when their own act
+  closed it. One left behind because another transactional replaced its
+  sources is not withdrawn but `lapsed`, with the reason
+  `sources_transacted` (above): it lost its object, as the assembly calls
+  it, and clients tell it apart that way. Every path that settles an
+  amendment locks the transactionals over it in the same ordered pass
+  (`closeTransactionalsOver` in `server/utils/domain/transactionalClosure.ts`).
+  An older one left submitted with a source already closed is still never
+  asked for an answer (`can.accept` false, left out of the home page's
+  `acceptances`, and accepting it returns 409); its proposer withdraws it
+  or the Mesa closes it.
+- Every path that replaces sources locks the transactional, its sources and
+  the other transactionals over them in one ordered pass, after the
+  document (share). Presenting a transactional takes the document
+  `NO KEY UPDATE`, so no new one appears in between.
+- Submitting a draft transactional later follows the same rule, by who
+  submits it.
+- While it is submitted, the final vote on the document waits for it, like
+  any undecided amendment.
 
 **After the final vote.** Every amendment change (drafts, submission,
-withdrawal, admission, position, outcome, acceptance, relations) returns 409
-once the document has a final vote. Each one re-reads the document under a row
+validation, correction, withdrawal, admission, position, outcome, acceptance,
+relations) returns 409 once the document has a final vote; only publishing
+is still allowed. The capabilities say so: every `can` flag but `publish`,
+`moderate` and `review` is false. Each one re-reads the document under a row
 lock inside its transaction, so a change racing the final vote either commits
 first (and the final vote sees it) or is refused.
 
-**Acceptance.** The body is an `AcceptanceBody`, and it updates that party's
-row.
+**Acceptance.** The body is an `AcceptanceBody`: a party (the main author
+of an amendment the transactional groups) accepts or rejects a submitted
+transactional (409 for a draft or a decided one). The party is found by
+member: the actor's, or `memberId` when the Mesa records the answer given in
+the room (403 for anyone else; 404 when that member is not a party).
+
+- Each `AcceptanceDto` says who recorded the answer in `recordedBy`:
+  `"mesa"` when the latest `acceptance_recorded` event for that party has
+  `recordedForMemberId` (the Mesa recorded it in the room), `"party"`
+  otherwise, including a pending row and the proposer's own acceptance
+  with no event. It comes from the event, never from current member
+  links, like `PositionDto.recordedBy`.
+- A party answers once (409 afterwards); the Mesa can correct an answer
+  until the transactional replaced its sources, after which the answers are
+  final (409): the originals are gone.
+- Any rejection closes it: `status: "withdrawn"`, `decidedAt` and
+  `amendment_withdrawn` (`{ by: "author_rejection", memberId }`) after
+  `acceptance_recorded`. The home page's news tell it through the
+  rejection only. The originals carry on. Who rejected it is in its
+  `acceptances` (decision `rejected`, member, `decidedAt`) and in that
+  event; `outcomeNote` stays empty, for the Mesa's own words, so clients put
+  it into words in the viewer's language.
+- Accepting needs every amendment it groups still open (409 otherwise, see
+  transactionals); rejecting is always possible.
+- The last acceptance moves a member-proposed transactional to the
+  Secretaría (`pending_validation`), and makes one already validated (the
+  Mesa's) replace its sources at once.
+- Locks: the document (share), the transactional, its sources and the other
+  transactionals over them in id order, then its acceptance rows. The
+  answers are read again under those locks, so two parties answering at
+  once both count.
+
+## Review and work
+
+**Validation inbox.** `GET /api/assemblies/[assembly]/review` returns a
+`ReviewQueueDto` for `document:manage` or `amendment:review` (403 otherwise):
+
+- `documents`: with `document:manage`, the `submitted` documents waiting for
+  validation, as `DocumentSummaryDto`, in creation order;
+- `amendments`: with `amendment:review`, each with its document reference,
+  grouped by document in agenda order (then creation order) and then in
+  text order:
+  - waiting for validation: `submitted`, not validated, and not a
+    transactional still waiting for its main authors;
+  - waiting for publication: validated, not published, and not draft,
+    withdrawn or inadmissible;
+  - late ones waiting for the assembly's decision, published or not:
+    `late`, `admission: "pending"`, `submitted` and validated. The
+    Secretaría (or the Mesa) records that decision with
+    `POST .../amendments/admission`;
+  - read only, member-proposed transactionals still waiting for their main
+    authors (`pending_authors`; `can.validate` is false), so the Secretaría
+    sees what is about to reach it. They are not counted on the home page.
+
+**Home page.** `GET /api/me/work` returns a `MeWorkDto` over the assemblies
+that are not closed and that the actor can see (draft assemblies only for
+managers and the Mesa), soonest first:
+
+- `documents`: the documents the actor's member presents, as main presenter
+  or co-presenter, that are `draft` (expected ones included), `submitted` or
+  `published`;
+- `amendments`: the amendments the actor's member authored that are still
+  `draft` or `submitted`, newest change first, with `reviewState` (a
+  member-proposed transactional shows `pending_authors`), the
+  `correctionNote`, and `late` and `admission`, so a late one can say it
+  waits for the assembly's decision;
+- `review`: for `document:manage` or `amendment:review`, per assembly with
+  something pending, `documentsToValidate` and `documentsOverdue` (expected
+  drafts past `dueAt`), which need `document:manage`, and
+  `amendmentsToValidate` and `amendmentsToPublish` (the inbox's "to
+  validate" and "to publish" sets: transactionals waiting for their main
+  authors and late amendments waiting for the assembly's decision are not
+  counted), which need `amendment:review`;
+- `proponent`: the `published` documents the actor's member presents as main
+  presenter, not voted yet, with something to answer, in assembly order and
+  then creation order. `positionsPending` counts, over the amendments of the
+  document the actor can see, the `submitted` ones without an answer that
+  the main presenter can answer now (`positionBlocker`: validated,
+  published, admitted if late, and for a transactional accepted by its main
+  authors), under either rule. Documents with 0 are left out;
+- `acceptances`: the submitted transactionals the actor's member can
+  still answer, as main author of an amendment they would replace
+  (`awaitsPartyAnswer`: its answer pending, everything it groups still
+  open, the document published and not voted), in assembly and document
+  order, each with `replaces`: the member's amendments it would replace;
+- `news` ("Novedades"): what others decided about the member's work in the
+  last 30 days, newest first, at most 30 (`MeWorkNewsDto`):
+  - for a co-presenter, the main presenter's answers to the document's
+    amendments (`position_changed`);
+  - for the authors of an amendment, the main presenter's answer to it
+    (`position_changed`), when the assembly's `positionVisibility` lets them
+    see positions (`canSeePositions`);
+  - for the authors of an amendment, the main authors' answers to the
+    transactionals over it, and to the transactionals the member proposed
+    (`acceptance_recorded`);
+  - for the authors of an amendment, what was settled about it:
+    `amendment_validated`, `amendment_published`,
+    `amendment_correction_requested`, `amendment_admitted`,
+    `amendment_inadmissible`, `amendment_approved`, `amendment_rejected`,
+    `amendment_withdrawn`, `amendment_lapsed` (with
+    `reason: "sources_transacted"` for a transactional closed because
+    another one replaced what it grouped), `amendment_transacted` and
+    `amendment_reopened`. A transactional a main author's rejection closed
+    is told by that rejection (`acceptance_recorded`): its
+    `amendment_withdrawn` with `by: "author_rejection"` is left out;
+  - for the authors of the amendments a transactional groups (its parties
+    among them), that transactional closing by itself:
+    `amendment_withdrawn` with `by: "sources_closed"` and
+    `amendment_lapsed` with `reason: "sources_transacted"`;
+  - for the presenters of a document (main and co-presenters), what was
+    settled about it, with `amendment: null`: `document_published` (the
+    Secretaría's validation), `document_correction_requested`,
+    `document_voted` and `document_status_changed`.
+
+  `by` is the member that decided: null for a transactional that closed by
+  itself (`amendment_withdrawn` with `by: "sources_closed"`,
+  `amendment_lapsed` with `reason: "sources_transacted"`), which nobody
+  decided; the party, for an answer to a transactional; the main
+  presenter, also when the Mesa recorded it, for an answer to an amendment
+  (`position_changed`), for an amendment its acceptance incorporated
+  (`amendment_approved` with method `proponent`) and for one a new answer
+  took out again (`amendment_reopened` with
+  `reason: "position_changed"`): the event's `memberId`, or the document's
+  current main presenter for older events without it; otherwise the member
+  the actor acted for, or null. `value` is the decision in short: the
+  position (`position_changed`), the answer (`acceptance_recorded`), the
+  admission left by a validation (`amendment_validated`), the approval
+  method (`amendment_approved`, `proponent` when it was incorporated), the
+  code of the transactional that replaced the amendment
+  (`amendment_transacted`) or that replaced first what a lapsed
+  transactional grouped (`amendment_lapsed` with
+  `reason: "sources_transacted"`), the code of the amendment whose fate
+  closed a transactional (`amendment_withdrawn` with
+  `by: "sources_closed"`), the result of the final vote (`document_voted`)
+  or the new status (`document_status_changed`); null otherwise.
+  `ownAmendment` is true when the amendment is one the member wrote (main
+  author or co-author), false for document news and for transactionals it
+  is only a party to. Decisions taken by the user, or for the user's
+  member, are left out (an incorporation the member's own acceptance
+  caused, too), and so is anything the actor cannot see (the document and
+  the amendment, as their endpoints decide). A transactional that closed by
+  itself is not a decision, so it stays, also when the user's own act on
+  what it grouped (withdrawing it, say) closed it.
+
+An account without a member gets empty `documents`, `amendments`,
+`proponent`, `acceptances` and `news`.
 
 ## Votes, decisions and live session
 
@@ -311,7 +941,7 @@ row.
 | ------ | --------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/api/assemblies/[assembly]/decisions`  | visible            | `DecisionDto[]`. An admission decision (`admit_late`, `inadmission`) lists in `subjectIds` only the amendments the actor can see, and is left out when it names none of them, so its note and vote do not reveal private amendments.     |
 | GET    | `/api/assemblies/[assembly]/live-state` | visible            | `LiveStateDto`                                                                                                                                                                                                                           |
-| PUT    | `/api/assemblies/[assembly]/live-state` | `session:moderate` | `LiveStateBody`. Records a `live_changed` event.                                                                                                                                                                                         |
+| PUT    | `/api/assemblies/[assembly]/live-state` | `session:moderate` | `LiveStateBody`. Records a `live_changed` event. An `amendmentId` must be published (409 otherwise): every delegate follows the projection. `speakersVisible` shows attendees who has the floor (see speaking turns).                    |
 | GET    | `/api/assemblies/[assembly]/live`       | visible            | SSE stream. On connect it sends `event: ready`. Each `LiveMessage` from `subscribeToAssembly` goes out as `event: change` with a `LiveEventDto`. A comment heartbeat goes out every 25 s. The stream closes when the client disconnects. |
 
 **Projected votes.** Clients do not manage `voteId` after a vote. When the
@@ -329,6 +959,67 @@ Choosing a new document also selects its agenda item, as with
 final vote is annulled) and the projection still shows it, the server clears
 `voteId`. Each change records `live_changed` (`entityType: "live"`).
 
+**Live state.** `LiveStateDto.speakersVisible` (false before the session
+starts) says whether attendees see who has the floor and who is next.
+`PUT .../live-state` with `speakersVisible` changes it; besides
+`live_changed` it then records `speakers_visibility_changed`
+(`entityType: "speakers"`, `{ visible }`), so clients that follow the
+speakers refetch them.
+
+## Speaking turns
+
+| Method | Path                                         | Who                | Notes                                                    |
+| ------ | -------------------------------------------- | ------------------ | -------------------------------------------------------- |
+| GET    | `/api/assemblies/[assembly]/speakers`        | visible            | `SpeakersDto`. What each actor gets is described below.  |
+| POST   | `/api/assemblies/[assembly]/speakers`        | `session:moderate` | `SpeakingTurnBody`. Adds a turn. 201 with `SpeakersDto`. |
+| PUT    | `/api/assemblies/[assembly]/speakers/[turn]` | `session:moderate` | `SpeakingTurnUpdateBody`. Returns `SpeakersDto`.         |
+
+The Mesa writes down who asks to speak, gives and ends the floor and orders
+the queue (`speaking_turns`). Schemas: `shared/utils/schemas/speakers.ts`.
+
+- **Reading.** The Mesa (`session:moderate`) gets the turns that are
+  `speaking` or `waiting` and every turn of the agenda item in debate
+  (`live_state.agendaItemId`; with none, the turns without an item).
+  Anyone else gets the `speaking` and `waiting` turns only while
+  `live_state.speakersVisible` is true, and `turns: []` otherwise. `visible`
+  is always the current flag. Order: who has the floor, then the queue by
+  `position`, then the finished and cancelled turns in the order they
+  happened.
+- **Adding.** A turn needs a `memberId` (an active member, 422 otherwise),
+  a `speaker` name (one line, up to 120 characters) or both (422 with
+  neither). `agendaItemId` defaults to the item in debate; one given must
+  belong to the assembly (422). It joins the end of the queue (`waiting`),
+  which holds up to 200 turns (409 when full).
+- **Changing.** `updatedAt` is the turn's optimistic lock (409 when stale).
+  `status` follows `waiting -> speaking | cancelled`,
+  `speaking -> done | cancelled` and `cancelled -> waiting` (409 otherwise).
+  Giving the floor (`speaking`) ends the turn that had it (`done`), sets
+  `startedAt`; ending or cancelling sets `endedAt`; a restored turn joins the
+  end of the queue. `position` moves a waiting turn to that place of the
+  queue (0 speaks next, clamped to the queue; 409 for a turn that is not
+  waiting). `speaker` fixes or clears the name. The waiting queue is kept
+  numbered `0..n-1`; turns that only move because of another change keep
+  their `updatedAt`. The answer always includes the turn it changed, even
+  when the Mesa's list would leave it out (a turn of another agenda item
+  that is no longer waiting or speaking).
+- **Route param.** A malformed `[turn]` returns 400 before the body is
+  read; a turn of another assembly, or none, 404.
+- **Closing.** When the assembly moves to `closed` (`PUT .../status`, in the
+  same transaction), the turn with the floor ends (`done`), the waiting ones
+  are cancelled and `live_state.speakersVisible` becomes false, recording
+  `speaking_turn_finished`, `speaking_turn_cancelled` and, when the
+  visibility changes, `live_changed` and `speakers_visibility_changed` (the
+  `speakers` events carry `reason: "assembly_closed"`). Reopening the session keeps
+  them as they were left.
+- **Locks and events.** Every write locks the assembly row first
+  (`lockAssembly`), so the queue changes one at a time. A closed assembly
+  returns 409. Each change records an event with `entityType: "speakers"`
+  and the turn as `entityId`: `speaking_turn_added`, `speaking_turn_started`,
+  `speaking_turn_finished` (also for the turn that loses the floor),
+  `speaking_turn_cancelled`, `speaking_turn_restored`, `speaking_turn_moved`
+  or `speaking_turn_updated`. Payloads carry ids and statuses, never the
+  person's name.
+
 ## Exports
 
 Existing endpoints, now based on structured content:
@@ -340,5 +1031,9 @@ The PDF builder renders blocks:
 
 - headings, lists and emphasis are kept;
 - the annotated variant marks every amended fragment with its amendment code
-  and ends with an annex of all amendments and their outcomes;
+  and ends with an annex of the amendments and their outcomes. Text, codes
+  and annex only use the amendments the requester can see
+  (`canSeeAmendment`), so a private amendment never shows up in a member's
+  export;
+- "Presentado por" names the main presenter, then the co-presenters;
 - labels come from the locale files.

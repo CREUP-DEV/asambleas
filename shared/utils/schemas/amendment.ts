@@ -15,8 +15,10 @@ import type {
   AmendmentUpdateBody,
   OutcomeBody,
   PositionBody,
+  PublishAmendmentsBody,
   RelationBody,
   TransactionalBody,
+  ValidateAmendmentsBody,
   VoteInput,
 } from "../../types/api";
 import { amendmentOpsSchema, normalizeText } from "./content";
@@ -99,6 +101,8 @@ const draftFields = {
   ops: amendmentOpsSchema,
   justification: justificationSchema,
   authorMemberIds: uniqueIds(MAX_AUTHORS).optional(),
+  /** Main author among the authors; required when there are several. */
+  mainAuthorMemberId: entityIdSchema.nullable().optional(),
   globalReplace: globalReplaceSchema,
   onBehalfOfMemberId: entityIdSchema.nullable().optional(),
 };
@@ -110,6 +114,7 @@ export const amendmentUpdateBodySchema = z.object({
   ops: draftFields.ops.optional(),
   justification: draftFields.justification.optional(),
   authorMemberIds: draftFields.authorMemberIds,
+  mainAuthorMemberId: draftFields.mainAuthorMemberId,
   globalReplace: draftFields.globalReplace,
   onBehalfOfMemberId: draftFields.onBehalfOfMemberId,
   updatedAt: updatedAtSchema,
@@ -120,6 +125,7 @@ export const transactionalBodySchema = z.object({
   ops: amendmentOpsSchema,
   justification: justificationSchema,
   authorMemberIds: uniqueIds(MAX_AUTHORS).optional(),
+  mainAuthorMemberId: entityIdSchema.nullable().optional(),
   submit: z.boolean().optional(),
 });
 
@@ -136,9 +142,22 @@ export const admissionBodySchema = z
     path: ["vote"],
   });
 
+/** POST .../amendments/validate (ValidateAmendmentsBody). */
+export const validateAmendmentsBodySchema = z.object({
+  amendmentIds: uniqueIds(MAX_ADMISSION_BATCH, 1),
+  publish: z.boolean(),
+});
+
+/** POST .../amendments/publish (PublishAmendmentsBody). */
+export const publishAmendmentsBodySchema = z.object({
+  amendmentIds: uniqueIds(MAX_ADMISSION_BATCH, 1),
+});
+
 export const positionBodySchema = z.object({
   position: z.enum(PROPONENT_POSITIONS),
   comment: noteSchema,
+  /** PositionDto.updatedAt the client saw, null when there was none. */
+  positionUpdatedAt: updatedAtSchema.nullable().optional(),
 });
 
 export const acceptanceBodySchema = z.object({
@@ -203,6 +222,14 @@ export type _AmendmentSchemaChecks = [
   Assignable<AmendmentUpdateBody, z.output<typeof amendmentUpdateBodySchema>>,
   Assignable<TransactionalBody, z.output<typeof transactionalBodySchema>>,
   Assignable<AdmissionBody, z.output<typeof admissionBodySchema>>,
+  Assignable<
+    ValidateAmendmentsBody,
+    z.output<typeof validateAmendmentsBodySchema>
+  >,
+  Assignable<
+    PublishAmendmentsBody,
+    z.output<typeof publishAmendmentsBodySchema>
+  >,
   Assignable<PositionBody, z.output<typeof positionBodySchema>>,
   Assignable<AcceptanceBody, z.output<typeof acceptanceBodySchema>>,
   Assignable<OutcomeBody, z.output<typeof outcomeBodySchema>>,

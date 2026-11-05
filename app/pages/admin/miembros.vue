@@ -402,7 +402,7 @@ async function submit(event: FormSubmitEvent<MemberFormState>): Promise<void> {
         :loading="status === 'pending' && members.length === 0"
         :aria-label="t('admin.members.title')"
         class="border-default rounded-lg border"
-        :ui="{ td: 'align-middle' }"
+        :ui="{ td: 'align-middle whitespace-normal' }"
       >
         <template #acronym-cell="{ row }">
           <span class="text-highlighted font-semibold tracking-wide">
@@ -411,7 +411,7 @@ async function submit(event: FormSubmitEvent<MemberFormState>): Promise<void> {
         </template>
 
         <template #name-cell="{ row }">
-          <span class="block max-w-xs truncate" :title="row.original.name">
+          <span class="block max-w-xs min-w-48">
             {{ row.original.name }}
           </span>
           <span v-if="row.original.region" class="text-muted text-xs">
