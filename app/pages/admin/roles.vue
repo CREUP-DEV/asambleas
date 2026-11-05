@@ -3,13 +3,23 @@ import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import {
   ALL_PERMISSION_KEYS,
   PERMISSION_DESCRIPTION_I18N_KEYS,
+  PERMISSION_KEYS,
 } from "~~/shared/constants/permissions";
 import type { PermissionKey } from "~~/shared/constants/permissions";
 import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
 
+/**
+ * What each role may do: a matrix of permissions by role, saved together.
+ * Opens with `role:manage_permissions` (Secretaría and Presidencia hold it).
+ * The Administrator role has every permission and is not listed. Someone
+ * who is not an Admin cannot change the role they hold, which would let
+ * them give themselves any permission or lock themselves out; its column is
+ * read-only, with the reason, and the server refuses it too
+ * (PUT /api/admin/roles/[id]/permissions).
+ */
 definePageMeta({
   middleware: ["admin"],
-  adminAccess: ["admin"],
+  adminAccess: ["role:manage_permissions"],
 });
 
 interface RoleRow {
@@ -23,6 +33,10 @@ const { t, te } = useI18n();
 const toast = useToast();
 const api = useApi();
 const localePath = useLocalePath();
+const { me, isAdmin, can } = useMe();
+
+/** The users page has its own permission: link to it only if it opens. */
+const canManageUsers = computed(() => can(PERMISSION_KEYS.USER_MANAGE_ROLES));
 
 useHead({ title: () => t("admin.roles.title") });
 
@@ -129,7 +143,22 @@ function isGranted(roleId: string, key: PermissionKey): boolean {
   return (draft.value[roleId] ?? []).includes(key);
 }
 
+/**
+ * The editable role the signed-in user holds, which they cannot change;
+ * null for an Admin, whose role is not listed.
+ */
+const ownRoleId = computed(() => {
+  if (isAdmin.value) return null;
+  const name = me.value?.role;
+  return editableRoles.value.find((role) => role.name === name)?.id ?? null;
+});
+
+function ownRoleLocked(roleId: string): boolean {
+  return roleId === ownRoleId.value;
+}
+
 function toggle(roleId: string, key: PermissionKey, value: boolean): void {
+  if (ownRoleLocked(roleId)) return;
   const current = draft.value[roleId] ?? [];
   draft.value[roleId] = value
     ? [...new Set([...current, key])]
@@ -224,7 +253,22 @@ onBeforeRouteLeave(() => {
           <UIcon name="i-lucide-lock" class="size-4" aria-hidden="true" />
           {{ t("admin.roles.adminPermissionsLocked") }}
         </p>
-        <p class="text-muted flex flex-wrap items-center gap-1.5 text-sm">
+        <p
+          v-if="ownRoleId"
+          id="roles-own-role-locked"
+          class="text-muted flex items-center gap-1.5 text-sm"
+        >
+          <UIcon
+            name="i-lucide-lock"
+            class="size-4 shrink-0"
+            aria-hidden="true"
+          />
+          {{ t("admin.roles.ownAccessLocked") }}
+        </p>
+        <p
+          v-if="canManageUsers"
+          class="text-muted flex flex-wrap items-center gap-1.5 text-sm"
+        >
           <UIcon
             name="i-lucide-user-plus"
             class="size-4 shrink-0"
@@ -337,6 +381,12 @@ onBeforeRouteLeave(() => {
                 class="p-3 text-center font-semibold whitespace-nowrap"
               >
                 {{ roleName(role.name) }}
+                <UIcon
+                  v-if="ownRoleLocked(role.id)"
+                  name="i-lucide-lock"
+                  class="text-muted ms-1 size-3.5 align-middle"
+                  aria-hidden="true"
+                />
                 <span
                   v-if="changed(role.id)"
                   class="bg-warning ms-1 inline-block size-1.5 rounded-full align-middle"
@@ -368,7 +418,14 @@ onBeforeRouteLeave(() => {
                 <div class="flex justify-center">
                   <UCheckbox
                     :model-value="isGranted(role.id, key)"
-                    :disabled="saving || !saved[role.id]"
+                    :disabled="
+                      saving || !saved[role.id] || ownRoleLocked(role.id)
+                    "
+                    :aria-describedby="
+                      ownRoleLocked(role.id)
+                        ? 'roles-own-role-locked'
+                        : undefined
+                    "
                     :aria-label="
                       t('admin.roles.grant', {
                         permission: permissionLabel(key),

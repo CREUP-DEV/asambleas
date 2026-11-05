@@ -42,13 +42,23 @@ import { getUploadDir } from "../core/uploadPaths";
 import { logError } from "../core/logger";
 import { assertOptimisticLock } from "../optimisticLock";
 import {
-  actsFor,
   canManageDocuments,
   canModerate,
   requireActor,
   type Actor,
 } from "./actor";
+import { applyAcceptedAmendmentsRule } from "./acceptedRule";
 import { recordEvent } from "./events";
+import {
+  loadCoProponentIds,
+  loadCoProponents,
+  loadSourceAuthorIds,
+  planPresenters,
+  presentersChanged,
+  PRESENTERS_MESSAGES,
+  saveCoProponents,
+  withCoProponentIds,
+} from "./presenters";
 import { resolveAssembly, resolveDocument } from "./resolvers";
 import {
   canSeeAmendment,
@@ -57,10 +67,12 @@ import {
   decisionAmendmentIds,
   filterDecisionsByAmendment,
   isAmendmentInsider,
+  isDocumentPresenter,
   isDocumentProponent,
   redactCorrectionNote,
   seesAllPresentedAmendments,
   type AmendmentVisibilityContext,
+  type DocumentPresenters,
 } from "./visibility";
 import {
   DEFAULT_ASSEMBLY_SETTINGS,
@@ -109,6 +121,10 @@ import { computeVoteOutcome } from "~~/shared/utils/votes";
 
 type AssemblyRow = typeof assemblies.$inferSelect;
 export type DocumentRow = typeof documents.$inferSelect;
+/** A document row with its co-presenters, as resolveDocument returns it. */
+export type PresentedDocumentRow = DocumentRow & {
+  coProponentMemberIds: string[];
+};
 type VersionRow = typeof documentVersions.$inferSelect;
 type VoteRow = typeof votes.$inferSelect;
 type MemberRow = typeof members.$inferSelect;
@@ -118,7 +134,7 @@ type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 export interface DocumentRouteContext {
   actor: Actor;
   assembly: AssemblyRow;
-  document: DocumentRow;
+  document: PresentedDocumentRow;
 }
 
 /** Statuses from which a never-published document can be published. */
@@ -273,20 +289,23 @@ export function presentationClosed(
 /** Presenters and managers read the correction the Secretaría asked for. */
 export function canSeeDocumentCorrection(
   actor: Actor,
-  document: Pick<DocumentRow, "proponentMemberId" | "submittedByUserId">,
+  document: DocumentPresenters & Pick<DocumentRow, "submittedByUserId">,
 ): boolean {
   return canManageDocuments(actor) || isProponentSide(actor, document);
 }
 
 // Capabilities --------------------------------------------------------------
 
-/** The actor presents the document: acts for its proponent or created it. */
+/**
+ * The actor presents the document: acts for its main presenter or a
+ * co-presenter, or created it.
+ */
 export function isProponentSide(
   actor: Actor,
-  document: Pick<DocumentRow, "proponentMemberId" | "submittedByUserId">,
+  document: DocumentPresenters & Pick<DocumentRow, "submittedByUserId">,
 ): boolean {
   return (
-    actsFor(actor, [document.proponentMemberId]) ||
+    isDocumentPresenter(actor, document) ||
     (document.submittedByUserId !== null &&
       document.submittedByUserId === actor.user.id)
   );
@@ -299,10 +318,8 @@ export function isProponentSide(
  */
 export function canEditDocument(
   actor: Actor,
-  document: Pick<
-    DocumentRow,
-    "status" | "proponentMemberId" | "submittedByUserId"
-  >,
+  document: DocumentPresenters &
+    Pick<DocumentRow, "status" | "submittedByUserId">,
 ): boolean {
   if (canManageDocuments(actor)) return true;
   return document.status === "draft" && isProponentSide(actor, document);
@@ -310,10 +327,8 @@ export function canEditDocument(
 
 export function requireDocumentEditor(
   actor: Actor,
-  document: Pick<
-    DocumentRow,
-    "status" | "proponentMemberId" | "submittedByUserId"
-  >,
+  document: DocumentPresenters &
+    Pick<DocumentRow, "status" | "submittedByUserId">,
 ): void {
   if (!canEditDocument(actor, document)) {
     fail(403, "No tienes permiso para editar este documento");
@@ -377,7 +392,7 @@ export function canAmendDocument(
 export function documentCapabilities(
   actor: Actor,
   assembly: Pick<AssemblyRow, "status">,
-  document: DocumentRow,
+  document: PresentedDocumentRow,
   window: AmendmentWindow,
   now = new Date(),
 ): DocumentCapabilities {
@@ -386,6 +401,7 @@ export function documentCapabilities(
     manage: canManageDocuments(actor),
     publish: canManageDocuments(actor) && isPublishable(document),
     amend: canAmendDocument(actor, assembly, document, window, now),
+    // Only the main presenter answers the amendments (or the Mesa for it).
     position:
       document.status === "published" &&
       (isDocumentProponent(actor, document) || canModerate(actor)),
@@ -442,6 +458,7 @@ export function toDocumentSummaryDto(
   document: DocumentRow,
   extra: {
     proponent: MemberRef | null;
+    coProponents: MemberRef[];
     amendmentCount: number;
     window: AmendmentWindowDto;
     hasContent: boolean;
@@ -459,7 +476,9 @@ export function toDocumentSummaryDto(
     reference: document.reference,
     status: document.status,
     proponent: extra.proponent,
+    coProponents: extra.coProponents,
     amendable: document.amendable,
+    acceptedAmendments: document.acceptedAmendments,
     voted: document.voted,
     majority: document.majority,
     amendmentCount: extra.amendmentCount,
@@ -480,9 +499,10 @@ export function toDocumentSummaryDto(
 export interface DocumentDtoInput {
   actor: Actor;
   assembly: AssemblyRow;
-  document: DocumentRow;
+  document: PresentedDocumentRow;
   milestones: Milestones;
   proponent: MemberRef | null;
+  coProponents: MemberRef[];
   amendmentCount: number;
   hasContent: boolean;
   workingVersion: VersionRow | null;
@@ -501,6 +521,7 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
   return {
     ...toDocumentSummaryDto(document, {
       proponent: input.proponent,
+      coProponents: input.coProponents,
       amendmentCount: input.amendmentCount,
       window: documentWindow(document, milestones, now),
       hasContent: input.hasContent,
@@ -525,7 +546,7 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
     positionsVisible: canSeePositions(actor, {
       settings: assemblySettings(assembly),
       assemblyStatus: assembly.status,
-      isProponent: isDocumentProponent(actor, document),
+      isPresenter: isDocumentPresenter(actor, document),
     }),
     can: documentCapabilities(actor, assembly, document, window, now),
   };
@@ -557,7 +578,7 @@ async function loadAmendmentVisibilityRows(
   if (rows.length === 0) return [];
 
   const ids = rows.map((row) => row.id);
-  const [authorRows, partyRows] = await Promise.all([
+  const [authorRows, partyRows, sourceAuthors] = await Promise.all([
     executor
       .select({
         amendmentId: amendmentAuthors.amendmentId,
@@ -572,6 +593,7 @@ async function loadAmendmentVisibilityRows(
       })
       .from(amendmentAcceptances)
       .where(inArray(amendmentAcceptances.amendmentId, ids)),
+    loadSourceAuthorIds(ids, executor),
   ]);
   const group = (list: { amendmentId: string; memberId: string }[]) => {
     const map = new Map<string, string[]>();
@@ -587,7 +609,10 @@ async function loadAmendmentVisibilityRows(
   return rows.map((row) => ({
     ...row,
     authorMemberIds: authors.get(row.id) ?? [],
-    partyMemberIds: parties.get(row.id) ?? [],
+    partyMemberIds: [
+      ...(parties.get(row.id) ?? []),
+      ...(sourceAuthors.get(row.id) ?? []),
+    ],
   }));
 }
 
@@ -704,17 +729,17 @@ export async function buildDocumentSummaries(
   now = new Date(),
   executor: Executor = db,
 ): Promise<DocumentSummaryDto[]> {
-  const [counts, content] = await Promise.all([
-    countVisibleAmendments(
-      actor,
-      rows.map((row) => row.id),
-      executor,
-    ),
+  const ids = rows.map((row) => row.id);
+  const [counts, content, coProponents] = await Promise.all([
+    countVisibleAmendments(actor, ids, executor),
     loadContentFlags(executor, rows),
+    loadCoProponents(ids, executor),
   ]);
-  return rows.map(({ proponent, ...document }) =>
-    toDocumentSummaryDto(document, {
+  return rows.map(({ proponent, ...document }) => {
+    const co = coProponents.get(document.id) ?? [];
+    return toDocumentSummaryDto(document, {
       proponent: memberRefOrNull(proponent),
+      coProponents: co,
       amendmentCount: counts.get(document.id) ?? 0,
       window: documentWindow(
         document,
@@ -722,9 +747,12 @@ export async function buildDocumentSummaries(
         now,
       ),
       hasContent: content.has(document.id),
-      showCorrection: canSeeDocumentCorrection(actor, document),
-    }),
-  );
+      showCorrection: canSeeDocumentCorrection(actor, {
+        ...document,
+        coProponentMemberIds: co.map((member) => member.id),
+      }),
+    });
+  });
 }
 
 /** Summaries of the documents of an assembly that the actor can see, in creation order. */
@@ -745,7 +773,9 @@ export async function loadDocumentSummaries(
   ]);
   return buildDocumentSummaries(
     actor,
-    rows.filter((row) => canSeeDocument(actor, row)),
+    (await withCoProponentIds(rows)).filter((row) =>
+      canSeeDocument(actor, row),
+    ),
     new Map([[assembly.id, milestones]]),
   );
 }
@@ -766,12 +796,18 @@ export async function loadDocumentDto(
   actor: Actor,
   executor: Executor = db,
 ): Promise<DocumentDto> {
-  const [document] = await executor
+  const [row] = await executor
     .select()
     .from(documents)
     .where(eq(documents.id, documentId));
-  if (!document) fail(404, "Documento no encontrado");
+  if (!row) fail(404, "Documento no encontrado");
   const now = new Date();
+  const coProponents =
+    (await loadCoProponents([row.id], executor)).get(row.id) ?? [];
+  const document: PresentedDocumentRow = {
+    ...row,
+    coProponentMemberIds: coProponents.map((member) => member.id),
+  };
   const [
     milestones,
     proponent,
@@ -809,6 +845,7 @@ export async function loadDocumentDto(
     document,
     milestones,
     proponent: memberRefOrNull(proponent),
+    coProponents,
     amendmentCount: counts.get(document.id) ?? 0,
     hasContent: content.has(document.id),
     workingVersion,
@@ -846,8 +883,24 @@ export async function requireMember(memberId: string, executor: Executor = db) {
   return member;
 }
 
+/** Every member of the list must exist (co-presenters). */
+export async function requireMembers(
+  memberIds: readonly string[],
+  executor: Executor = db,
+): Promise<void> {
+  if (memberIds.length === 0) return;
+  const rows = await executor
+    .select({ id: members.id })
+    .from(members)
+    .where(inArray(members.id, [...memberIds]));
+  if (rows.length !== new Set(memberIds).size) {
+    fail(422, "Algún miembro indicado no existe");
+  }
+}
+
 /**
- * Reads and locks the current row until the transaction ends. `no key update`
+ * Reads and locks the current row until the transaction ends, with its
+ * co-presenters (they change only under this lock). `no key update`
  * serializes every change of the document and still lets other transactions
  * insert rows that reference it (see "Row locks" by shareLockAssembly); only
  * a transaction that deletes the row takes `update`.
@@ -856,14 +909,18 @@ async function lockDocument(
   executor: Executor,
   documentId: string,
   strength: "no key update" | "update" = "no key update",
-): Promise<DocumentRow> {
+): Promise<PresentedDocumentRow> {
   const [row] = await executor
     .select()
     .from(documents)
     .where(eq(documents.id, documentId))
     .for(strength);
   if (!row) fail(404, "Documento no encontrado");
-  return row;
+  return {
+    ...row,
+    coProponentMemberIds:
+      (await loadCoProponentIds([row.id], executor)).get(row.id) ?? [],
+  };
 }
 
 /** Whether the document has something to submit or publish. */
@@ -978,12 +1035,16 @@ export async function assignReference(
 
 // Metadata (PUT) ----------------------------------------------------------
 
-/** Fields only managers may change; the presenters get the kind defaults. */
+/**
+ * Fields only managers may change; the presenters get the kind defaults.
+ * The presenters themselves (proponentMemberId, coProponentMemberIds) follow
+ * planPresenters.
+ */
 const MANAGER_FIELDS = [
-  "proponentMemberId",
   "amendable",
   "voted",
   "majority",
+  "acceptedAmendments",
   "amendmentsOpenAt",
   "amendmentsCloseAt",
   "dueAt",
@@ -997,7 +1058,7 @@ function sameDate(a: Date | null, b: string | null): boolean {
 
 /** Body fields that differ from the stored row. */
 function changedFields(
-  document: DocumentRow,
+  document: PresentedDocumentRow,
   body: DocumentUpdateBody,
 ): (keyof DocumentUpdateBody)[] {
   const changed: (keyof DocumentUpdateBody)[] = [];
@@ -1010,11 +1071,27 @@ function changedFields(
     "amendable",
     "voted",
     "majority",
+    "acceptedAmendments",
     "status",
   ] as const;
   for (const key of plain) {
     if (body[key] !== undefined && body[key] !== document[key])
       changed.push(key);
+  }
+  if (
+    body.coProponentMemberIds !== undefined &&
+    presentersChanged(
+      {
+        proponentMemberId: null,
+        coProponentMemberIds: document.coProponentMemberIds,
+      },
+      {
+        proponentMemberId: null,
+        coProponentMemberIds: body.coProponentMemberIds,
+      },
+    )
+  ) {
+    changed.push("coProponentMemberIds");
   }
   if (
     body.amendmentsOpenAt !== undefined &&
@@ -1134,8 +1211,9 @@ async function requireAgendaTarget(
 
 /**
  * Updates the metadata of a document. Presenters may change title, summary,
- * kind and agenda item of their draft; everything else needs document:manage.
- * The slug never changes, since it is part of the URLs already shared.
+ * kind, agenda item and presenters (planPresenters) of their draft;
+ * everything else needs document:manage. The slug never changes, since it is
+ * part of the URLs already shared.
  */
 export async function updateDocument(
   ctx: DocumentRouteContext,
@@ -1158,6 +1236,10 @@ export async function updateDocument(
   ) {
     await requireMember(body.proponentMemberId);
   }
+  const added = (body.coProponentMemberIds ?? []).filter(
+    (id) => !ctx.document.coProponentMemberIds.includes(id),
+  );
+  await requireMembers(added);
 
   await db.transaction(async (tx) => {
     // A move takes the assembly before the document ("Row locks"). The share
@@ -1196,13 +1278,41 @@ export async function updateDocument(
           current.format === "file" ? false : defaults.amendable;
         patch.voted = defaults.voted;
         patch.majority = defaults.majority;
+        patch.acceptedAmendments = defaults.acceptedAmendments;
       }
     }
-    if (manager) {
-      if (changed.includes("proponentMemberId")) {
-        patch.proponentMemberId = body.proponentMemberId ?? null;
+    let presenters: ReturnType<typeof planPresenters> | null = null;
+    if (
+      changed.includes("proponentMemberId") ||
+      changed.includes("coProponentMemberIds")
+    ) {
+      presenters = planPresenters({
+        manager,
+        actorMemberId: actor.memberId,
+        current: {
+          proponentMemberId: current.proponentMemberId,
+          coProponentMemberIds: current.coProponentMemberIds,
+        },
+        proponentMemberId: body.proponentMemberId,
+        coProponentMemberIds: body.coProponentMemberIds,
+      });
+      if (typeof presenters === "string") {
+        fail(422, PRESENTERS_MESSAGES[presenters]);
       }
+      patch.proponentMemberId = presenters.proponentMemberId;
+    }
+    if (manager) {
       if (changed.includes("amendable")) patch.amendable = body.amendable;
+      if (changed.includes("acceptedAmendments")) {
+        // The final vote settled what each amendment became.
+        if (current.finalVoteId || current.consolidatedVersionId) {
+          fail(
+            409,
+            "El documento ya se ha votado: ya no se puede cambiar qué pasa con las enmiendas aceptadas",
+          );
+        }
+        patch.acceptedAmendments = body.acceptedAmendments;
+      }
       if (changed.includes("voted")) patch.voted = body.voted;
       if (changed.includes("majority")) patch.majority = body.majority;
       if (changed.includes("amendmentsOpenAt")) {
@@ -1241,6 +1351,23 @@ export async function updateDocument(
     }
 
     await tx.update(documents).set(patch).where(eq(documents.id, current.id));
+    if (presenters) {
+      await saveCoProponents(tx, current.id, presenters.coProponentMemberIds);
+    }
+    // The amendments already answered follow the new rule: accepted ones
+    // are incorporated, or the incorporated ones go back to the vote.
+    if (
+      patch.acceptedAmendments !== undefined &&
+      patch.acceptedAmendments !== current.acceptedAmendments
+    ) {
+      await applyAcceptedAmendmentsRule(tx, {
+        assemblyId: assembly.id,
+        documentId: current.id,
+        rule: patch.acceptedAmendments,
+        actor,
+        now: new Date(),
+      });
+    }
 
     const fields = changed.filter((key) => key !== "status");
     if (fields.length > 0) {
@@ -1250,7 +1377,15 @@ export async function updateDocument(
         entityId: current.id,
         documentId: current.id,
         type: "document_updated",
-        payload: { fields },
+        payload: {
+          fields,
+          ...(presenters
+            ? {
+                proponentMemberId: presenters.proponentMemberId,
+                coProponentMemberIds: presenters.coProponentMemberIds,
+              }
+            : {}),
+        },
         actor,
       });
     }
@@ -1273,7 +1408,10 @@ export async function updateDocument(
 // Working draft -----------------------------------------------------------
 
 /** The actor may replace the working text: structured, editable, not frozen. */
-export function requireTextEditor(actor: Actor, document: DocumentRow): void {
+export function requireTextEditor(
+  actor: Actor,
+  document: PresentedDocumentRow,
+): void {
   requireDocumentEditor(actor, document);
   if (document.format !== "structured") {
     fail(409, "Este documento es un PDF y no tiene texto editable");
@@ -2081,7 +2219,8 @@ export async function filterVisibleDecisions(
         submittedByUserId: documents.submittedByUserId,
       })
       .from(documents)
-      .where(eq(documents.assemblyId, assembly.id)),
+      .where(eq(documents.assemblyId, assembly.id))
+      .then((list) => withCoProponentIds(list, executor)),
     loadAmendmentVisibilityRows(executor, inArray(amendments.id, subjectIds)),
   ]);
   const visibleDocuments = new Set(
@@ -2105,7 +2244,7 @@ export function documentPositionsVisible(ctx: DocumentRouteContext): boolean {
   return canSeePositions(ctx.actor, {
     settings: assemblySettings(ctx.assembly),
     assemblyStatus: ctx.assembly.status,
-    isProponent: isDocumentProponent(ctx.actor, ctx.document),
+    isPresenter: isDocumentPresenter(ctx.actor, ctx.document),
   });
 }
 

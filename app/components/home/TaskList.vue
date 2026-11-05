@@ -9,7 +9,7 @@ import { assemblyPath } from "~/components/shell/Navigation.vue";
 /**
  * Unlocalized path where a task is done: the document editor, the
  * presenter's review of the document's amendments, or the document with the
- * amendment open.
+ * amendment (or the transactional to answer) open.
  */
 export function homeTaskPath(task: HomeWorkTask): string {
   const base = `${assemblyPath(task.assembly.slug, "documents")}/${encodeURIComponent(task.document.slug)}`;
@@ -26,6 +26,7 @@ export function homeTaskPath(task: HomeWorkTask): string {
 const TASK_ICONS: Record<HomeWorkTaskKind, string> = {
   document_correction: "i-lucide-pencil-line",
   amendment_correction: "i-lucide-pencil-line",
+  transactional_answer: "i-lucide-handshake",
   proponent_review: "i-lucide-message-square-reply",
   document_prepare: "i-lucide-file-plus",
   document_send: "i-lucide-send",
@@ -36,11 +37,12 @@ const TASK_ICONS: Record<HomeWorkTaskKind, string> = {
 <script setup lang="ts">
 /**
  * The things a user has to do, one row each: what it is, a sentence that
- * says what to do (for a presenter, how many transactionals and amendments
- * wait for an answer), the Secretaría's note when it asked for a
- * correction, the deadline of an expected document, and one button that
- * goes where it is done. With `primary`, the first row carries the screen's primary
- * action; every other button stays secondary.
+ * says what to do (for a main presenter, how many amendments wait for an
+ * answer; for a transactional, which of the user's amendments it would
+ * replace), the Secretaría's note when it asked for a correction, the
+ * deadline of an expected document, and one button that goes where it is
+ * done. With `primary`, the first row carries the screen's primary action;
+ * every other button stays secondary.
  */
 const props = withDefaults(
   defineProps<{
@@ -60,6 +62,9 @@ const localePath = useLocalePath();
 
 function title(task: HomeWorkTask): string {
   if (!task.amendment) return task.document.title;
+  if (task.kind === "transactional_answer") {
+    return t("home.work.transactional", { code: task.amendment.code ?? "" });
+  }
   return task.amendment.code
     ? t("home.work.amendment", { code: task.amendment.code })
     : t("home.work.amendmentDraft");
@@ -76,30 +81,32 @@ function context(task: HomeWorkTask): string {
 
 /** What the row says has to be done, one sentence per line. */
 function sentences(task: HomeWorkTask): string[] {
+  if (task.kind === "transactional_answer") {
+    const codes = task.replaces
+      .map((amendment) => amendment.code)
+      .filter(Boolean)
+      .join(", ");
+    return [
+      codes
+        ? t(
+            "home.work.tasks.transactional_answer.text",
+            { codes },
+            task.replaces.length,
+          )
+        : t("home.work.tasks.transactional_answer.textNoCode"),
+    ];
+  }
   const counts = task.counts;
-  if (task.kind !== "proponent_review" || !counts) {
-    return [t(`home.work.tasks.${task.kind}.text`)];
-  }
-  const lines: string[] = [];
-  if (counts.transactionals > 0) {
-    lines.push(
-      t(
-        "home.work.tasks.proponent_review.transactionals",
-        { count: counts.transactionals },
-        counts.transactionals,
-      ),
-    );
-  }
-  if (counts.positions > 0) {
-    lines.push(
+  if (task.kind === "proponent_review" && counts) {
+    return [
       t(
         "home.work.tasks.proponent_review.positions",
         { count: counts.positions },
         counts.positions,
       ),
-    );
+    ];
   }
-  return lines;
+  return [t(`home.work.tasks.${task.kind}.text`)];
 }
 
 function dueDate(task: HomeWorkTask): string {

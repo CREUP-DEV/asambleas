@@ -39,6 +39,7 @@ vi.mock("./resolvers", () => ({
 vi.mock("./visibility", () => ({
   canSeeAmendment: vi.fn(),
   canSeePositions: vi.fn(),
+  isDocumentPresenter: vi.fn(),
   isDocumentProponent: vi.fn(),
   redactCorrectionNote: vi.fn(),
 }));
@@ -51,16 +52,18 @@ const {
   buildAcceptanceParties,
   buildSourceMap,
   canProposeTransactional,
-  collectAncestors,
+  competingTransactionalIds,
   computeApprovalWarnings,
   evaluateVoteInput,
   insertedBlockIds,
-  lineageToRestore,
   nextTransactionalCode,
   prepareAmendmentOps,
   reIdInsertedBlocks,
   redactAmendmentEventPayload,
   requestedDraftAuthorIds,
+  sourcesAreOpen,
+  sourcesToReplace,
+  transactionalsShareSources,
   unauthorizedTransactionalAuthors,
 } = await import("./amendments");
 // The visibility rules are pure too; their actor helpers are the stubs above.
@@ -255,24 +258,18 @@ describe("amendmentSortKey", () => {
 });
 
 describe("buildAcceptanceParties", () => {
-  it("adds every distinct source author and the proponent, accepting the creator", () => {
-    expect(buildAcceptanceParties(["m1", "m2", "m1"], "p1", "m2")).toEqual([
+  it("asks every distinct main author, accepting the creator", () => {
+    expect(buildAcceptanceParties(["m1", "m2", "m1"], "m2")).toEqual([
       { memberId: "m1", role: "author", accepted: false },
       { memberId: "m2", role: "author", accepted: true },
-      { memberId: "p1", role: "proponent", accepted: false },
     ]);
   });
 
-  it("keeps a single row when the proponent also authored a source", () => {
-    expect(buildAcceptanceParties(["p1"], "p1", null)).toEqual([
-      { memberId: "p1", role: "author", accepted: false },
+  it("skips sources without a main author", () => {
+    expect(buildAcceptanceParties([null, "m1"], null)).toEqual([
+      { memberId: "m1", role: "author", accepted: false },
     ]);
-  });
-
-  it("works without a proponent", () => {
-    expect(buildAcceptanceParties(["m1"], null, "m1")).toEqual([
-      { memberId: "m1", role: "author", accepted: true },
-    ]);
+    expect(buildAcceptanceParties([null], null)).toEqual([]);
   });
 });
 
@@ -324,6 +321,8 @@ describe("nextTransactionalCode", () => {
 describe("amendmentCapabilities", () => {
   const input = {
     status: "draft" as const,
+    admission: "pending" as const,
+    approvalMethod: null,
     isAuthor: false,
     isProponent: false,
     moderate: false,
@@ -332,8 +331,16 @@ describe("amendmentCapabilities", () => {
     acceptances: [],
     validatedAt: null,
     publishedAt: null,
+    rule: "vote" as const,
   };
   const at = new Date("2026-03-10T12:00:00Z");
+  const admitted = {
+    ...input,
+    status: "submitted" as const,
+    admission: "admitted" as const,
+    validatedAt: at,
+    publishedAt: at,
+  };
 
   it("lets reviewers validate presented amendments not validated yet", () => {
     const pending = { ...input, status: "submitted" as const };
@@ -375,10 +382,9 @@ describe("amendmentCapabilities", () => {
     });
   });
 
-  it("lets authors withdraw and the proponent position submitted amendments", () => {
+  it("lets authors withdraw and the main presenter answer admitted amendments", () => {
     const caps = amendmentCapabilities({
-      ...input,
-      status: "submitted",
+      ...admitted,
       isAuthor: true,
       isProponent: true,
     });
@@ -390,7 +396,35 @@ describe("amendmentCapabilities", () => {
     });
   });
 
-  it("offers acceptance only to a pending party of an open amendment", () => {
+  it("waits for the Secretaría and, when late, the assembly before an answer", () => {
+    const presenter = {
+      ...input,
+      status: "submitted" as const,
+      isProponent: true,
+    };
+    expect(amendmentCapabilities(presenter).position).toBe(false);
+    expect(
+      amendmentCapabilities({ ...presenter, validatedAt: at }).position,
+    ).toBe(false);
+    expect(
+      amendmentCapabilities({ ...admitted, isProponent: true }).position,
+    ).toBe(true);
+  });
+
+  it("lets the main presenter change an answer that incorporated the amendment", () => {
+    const incorporated = {
+      ...admitted,
+      status: "approved" as const,
+      approvalMethod: "proponent" as const,
+      isProponent: true,
+    };
+    expect(
+      amendmentCapabilities({ ...incorporated, rule: "incorporate" }).position,
+    ).toBe(true);
+    expect(amendmentCapabilities(incorporated).position).toBe(false);
+  });
+
+  it("offers acceptance only to a pending party of a presented transactional", () => {
     const acceptances = [
       { memberId: "m1", decision: "pending" as const },
       { memberId: "m2", decision: "accepted" as const },
@@ -411,32 +445,56 @@ describe("amendmentCapabilities", () => {
       amendmentCapabilities({ ...input, status: "approved", acceptances })
         .accept,
     ).toBe(false);
+    expect(amendmentCapabilities({ ...input, acceptances }).accept).toBe(false);
   });
 
-  it("lets reviewers validate a transactional only once the presenter approved it", () => {
+  it("stops asking once what the transactional groups is no longer open", () => {
+    const acceptances = [{ memberId: "m1", decision: "pending" as const }];
+    const pending = { ...input, status: "submitted" as const, acceptances };
+    expect(
+      amendmentCapabilities({ ...pending, sourcesOpen: true }).accept,
+    ).toBe(true);
+    expect(
+      amendmentCapabilities({ ...pending, sourcesOpen: false }).accept,
+    ).toBe(false);
+  });
+
+  it("lets reviewers validate a transactional only once its main authors accepted it", () => {
     const transactional = {
       ...input,
       status: "submitted" as const,
       review: true,
     };
     expect(
-      amendmentCapabilities({ ...transactional, proponentApproval: "pending" })
+      amendmentCapabilities({ ...transactional, authorsApproval: "pending" })
         .validate,
     ).toBe(false);
     expect(
-      amendmentCapabilities({ ...transactional, proponentApproval: "rejected" })
+      amendmentCapabilities({ ...transactional, authorsApproval: "accepted" })
         .validate,
+    ).toBe(true);
+  });
+
+  it("does not ask for the main presenter's answer before the main authors accept", () => {
+    expect(
+      amendmentCapabilities({
+        ...admitted,
+        isProponent: true,
+        authorsApproval: "pending",
+      }).position,
     ).toBe(false);
     expect(
-      amendmentCapabilities({ ...transactional, proponentApproval: "accepted" })
-        .validate,
+      amendmentCapabilities({
+        ...admitted,
+        isProponent: true,
+        authorsApproval: "accepted",
+      }).position,
     ).toBe(true);
   });
 
   it("passes the moderation and review flags through", () => {
     const caps = amendmentCapabilities({
-      ...input,
-      status: "submitted",
+      ...admitted,
       moderate: true,
       review: true,
     });
@@ -550,57 +608,96 @@ describe("redactAmendmentEventPayload", () => {
   });
 });
 
-describe("nested transactional lineage", () => {
-  // T2 over T1 and C; T1 over A and B; T3 over A.
-  const sourceMap = buildSourceMap([
-    { transactionalId: "t1", sourceId: "a" },
-    { transactionalId: "t1", sourceId: "b" },
-    { transactionalId: "t2", sourceId: "t1" },
-    { transactionalId: "t2", sourceId: "c" },
-    { transactionalId: "t3", sourceId: "a" },
-  ]);
-
+describe("transactional sources", () => {
   it("groups the sources of each transactional", () => {
+    const sourceMap = buildSourceMap([
+      { transactionalId: "t1", sourceId: "a" },
+      { transactionalId: "t1", sourceId: "b" },
+      { transactionalId: "t2", sourceId: "t1" },
+    ]);
     expect(sourceMap.get("t1")).toEqual(["a", "b"]);
+    expect(sourceMap.get("t2")).toEqual(["t1"]);
     expect(sourceMap.get("a")).toBeUndefined();
   });
 
-  it("collects every absorbed amendment at any depth", () => {
-    expect(collectAncestors(sourceMap, ["t2"])).toEqual(["t1", "c", "a", "b"]);
-    expect(collectAncestors(sourceMap, ["t1", "c"])).toEqual(["a", "b"]);
-    expect(collectAncestors(sourceMap, ["a"])).toEqual([]);
+  describe("sourcesToReplace", () => {
+    const at = new Date("2026-03-10T12:00:00Z");
+    const open = (id: string) => ({
+      id,
+      status: "submitted" as const,
+      admission: "admitted" as const,
+      validatedAt: at,
+      decidedAt: null,
+    });
+
+    it("replaces sources that are still open", () => {
+      expect(sourcesToReplace([open("a"), open("b")])).toEqual({
+        ids: ["a", "b"],
+      });
+    });
+
+    it("refuses when one is decided or waits for the Secretaría", () => {
+      expect(
+        sourcesToReplace([open("a"), { ...open("b"), status: "approved" }]),
+      ).toHaveProperty("message");
+      expect(
+        sourcesToReplace([
+          { ...open("a"), admission: "pending", validatedAt: null },
+        ]),
+      ).toHaveProperty("message");
+    });
+
+    it("refuses a source already replaced, unless approving under the earlier rule", () => {
+      const transacted = { ...open("b"), status: "transacted" as const };
+      expect(sourcesToReplace([open("a"), transacted])).toHaveProperty(
+        "message",
+      );
+      expect(sourcesToReplace([open("a"), transacted], true)).toEqual({
+        ids: ["a"],
+      });
+    });
+
+    it("tells whether every source is still open", () => {
+      expect(sourcesAreOpen([open("a"), open("b")])).toBe(true);
+      expect(sourcesAreOpen([])).toBe(true);
+      expect(
+        sourcesAreOpen([open("a"), { ...open("b"), status: "transacted" }]),
+      ).toBe(false);
+      expect(
+        sourcesAreOpen([{ ...open("a"), status: "approved", decidedAt: at }]),
+      ).toBe(false);
+    });
   });
 
-  it("survives cycles", () => {
-    const cyclic = buildSourceMap([
-      { transactionalId: "x", sourceId: "y" },
-      { transactionalId: "y", sourceId: "x" },
+  describe("competing transactionals", () => {
+    const sourceMap = buildSourceMap([
+      { transactionalId: "t1", sourceId: "a" },
+      { transactionalId: "t1", sourceId: "b" },
+      { transactionalId: "t2", sourceId: "b" },
+      { transactionalId: "t2", sourceId: "c" },
+      { transactionalId: "t3", sourceId: "d" },
     ]);
-    expect(collectAncestors(cyclic, ["x"])).toEqual(["y", "x"]);
-  });
 
-  it("restores the whole lineage on reopen", () => {
-    expect(lineageToRestore(sourceMap, "t2", []).sort()).toEqual([
-      "a",
-      "b",
-      "c",
-      "t1",
-    ]);
-  });
+    it("finds the other transactionals over the same amendments", () => {
+      expect(competingTransactionalIds(sourceMap, "t1", ["a", "b"])).toEqual([
+        "t2",
+      ]);
+      expect(competingTransactionalIds(sourceMap, "t3", ["d"])).toEqual([]);
+      // A new one, not stored yet, competes with every one over its sources.
+      expect(competingTransactionalIds(sourceMap, null, ["c", "d"])).toEqual([
+        "t2",
+        "t3",
+      ]);
+      expect(competingTransactionalIds(sourceMap, "t1", [])).toEqual([]);
+    });
 
-  it("keeps what another approved transactional still absorbs", () => {
-    expect(lineageToRestore(sourceMap, "t2", ["t3"]).sort()).toEqual([
-      "b",
-      "c",
-      "t1",
-    ]);
-    // The reopened transactional itself never counts as another one.
-    expect(lineageToRestore(sourceMap, "t2", ["t2"]).sort()).toEqual([
-      "a",
-      "b",
-      "c",
-      "t1",
-    ]);
+    it("spots a validation batch with two transactionals over the same amendment", () => {
+      expect(transactionalsShareSources(sourceMap, ["t1", "t2"])).toBe(true);
+      expect(transactionalsShareSources(sourceMap, ["t1", "t3", "x"])).toBe(
+        false,
+      );
+      expect(transactionalsShareSources(sourceMap, ["t1", "t1"])).toBe(false);
+    });
   });
 });
 
@@ -860,6 +957,7 @@ describe("visibility", () => {
     const document = (status: DocumentInput["status"]): DocumentInput => ({
       status,
       proponentMemberId: "proponent",
+      coProponentMemberIds: ["co"],
       submittedByUserId: "user-proponent",
     });
 
@@ -873,6 +971,15 @@ describe("visibility", () => {
         canSeeDocument(actor("member", "proponent"), document("draft")),
       ).toBe(true);
       expect(canSeeDocument(actor("member"), document("published"))).toBe(true);
+    });
+
+    it("shows drafts to co-presenters like to the main presenter", () => {
+      expect(canSeeDocument(actor("member", "co"), document("draft"))).toBe(
+        true,
+      );
+      expect(canSeeDocument(actor("member", "other"), document("draft"))).toBe(
+        false,
+      );
     });
   });
 });

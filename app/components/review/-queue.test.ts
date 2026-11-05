@@ -11,10 +11,11 @@ import {
   canRecordAdmission,
   groupReviewAmendments,
   isAwaitingAssembly,
+  isAwaitingAuthors,
   isAwaitingPublication,
   isInReviewQueue,
+  missingAuthors,
   pendingReviewCount,
-  proponentAcceptance,
   removeReviewAmendments,
   removeReviewDocument,
   reviewGroupSize,
@@ -42,6 +43,7 @@ function amendment(
     positionKey: 0,
     changeKinds: [],
     authors: [],
+    mainAuthorId: null,
     submittedAt: null,
     validatedAt: null,
     publishedAt: null,
@@ -92,6 +94,28 @@ const member = {
   name: "Vicepresidencia",
   kind: "executive" as const,
 };
+const other = { ...member, id: "m2", acronym: "CEUM", name: "CEUM" };
+const third = { ...member, id: "m3", acronym: "CEUCA", name: "CEUCA" };
+
+/** A member's transactional that one main author rejected. */
+function rejectedTransactional(
+  id: string,
+  reviewState: "pending_authors" | null,
+): AmendmentDto {
+  return amendment(id, reviewState, {
+    kind: "transactional",
+    status: reviewState === null ? "rejected" : "submitted",
+    acceptances: [
+      { member, role: "author", decision: "accepted", decidedAt: null },
+      {
+        member: other,
+        role: "author",
+        decision: "rejected",
+        decidedAt: "2026-11-02T10:00:00.000Z",
+      },
+    ],
+  });
+}
 
 const docA = { id: "a", slug: "res-a", title: "A", reference: "RES 1/2026" };
 const docB = { id: "b", slug: "res-b", title: "B", reference: null };
@@ -120,10 +144,18 @@ describe("reviewQueueKey", () => {
 });
 
 describe("isInReviewQueue", () => {
-  it("keeps presented, validated and presenter-pending amendments", () => {
+  it("keeps presented, validated and author-pending amendments", () => {
     expect(isInReviewQueue(amendment("1", "pending_validation"))).toBe(true);
     expect(isInReviewQueue(amendment("2", "validated"))).toBe(true);
-    expect(isInReviewQueue(amendment("3", "pending_proponent"))).toBe(true);
+    expect(isInReviewQueue(amendment("3", "pending_authors"))).toBe(true);
+  });
+
+  it("drops a transactional one of its authors rejected", () => {
+    // Whether the server keeps "pending_authors" or clears the state.
+    expect(
+      isInReviewQueue(rejectedTransactional("t1", "pending_authors")),
+    ).toBe(false);
+    expect(isInReviewQueue(rejectedTransactional("t2", null))).toBe(false);
   });
 
   it("drops published, sent back and settled amendments on time", () => {
@@ -195,24 +227,46 @@ describe("canRecordAdmission", () => {
   });
 });
 
-describe("proponentAcceptance", () => {
-  it("finds the presenter among the parties of a transactional", () => {
-    const value = amendment("t", "pending_proponent", {
+describe("isAwaitingAuthors", () => {
+  it("is a transactional no author has rejected yet", () => {
+    expect(isAwaitingAuthors(amendment("t", "pending_authors"))).toBe(true);
+    expect(isAwaitingAuthors(amendment("v", "pending_validation"))).toBe(false);
+    expect(
+      isAwaitingAuthors(rejectedTransactional("r", "pending_authors")),
+    ).toBe(false);
+  });
+});
+
+describe("missingAuthors", () => {
+  it("lists who has not answered yet, once each, in the server's order", () => {
+    const value = amendment("t", "pending_authors", {
+      kind: "transactional",
       acceptances: [
         {
-          member: { ...member, id: "m2", acronym: "CEUM" },
+          member: other,
           role: "author",
           decision: "accepted",
           decidedAt: null,
         },
-        { member, role: "proponent", decision: "pending", decidedAt: null },
+        { member, role: "author", decision: "pending", decidedAt: null },
+        {
+          member: third,
+          role: "author",
+          decision: "pending",
+          decidedAt: null,
+        },
+        { member, role: "author", decision: "pending", decidedAt: null },
       ],
     });
-    expect(proponentAcceptance(value)?.member.acronym).toBe("VPU");
-    expect(proponentAcceptance(value)?.decision).toBe("pending");
-    expect(
-      proponentAcceptance(amendment("p", "pending_validation")),
-    ).toBeNull();
+    expect(missingAuthors(value).map((item) => item.acronym)).toEqual([
+      "VPU",
+      "CEUCA",
+    ]);
+  });
+
+  it("is empty when everyone answered or there are no parties", () => {
+    expect(missingAuthors(amendment("p", "pending_validation"))).toEqual([]);
+    expect(missingAuthors(rejectedTransactional("r", null))).toEqual([]);
   });
 });
 
@@ -244,9 +298,9 @@ describe("pendingReviewCount", () => {
     ).toBe(2);
   });
 
-  it("leaves out what waits for the presenter or the assembly", () => {
+  it("leaves out what waits for the authors or the assembly", () => {
     const waiting = queue([
-      entry(docA, amendment("t", "pending_proponent")),
+      entry(docA, amendment("t", "pending_authors")),
       entry(docA, late("l")),
       entry(docA, amendment("v", "pending_validation")),
     ]);
@@ -292,12 +346,9 @@ describe("groupReviewAmendments", () => {
     ).toEqual([]);
   });
 
-  it("lists presenter-pending transactionals and late ones apart", () => {
+  it("lists author-pending transactionals and late ones apart", () => {
     const groups = groupReviewAmendments([
-      entry(
-        docA,
-        amendment("t", "pending_proponent", { kind: "transactional" }),
-      ),
+      entry(docA, amendment("t", "pending_authors", { kind: "transactional" })),
       entry(docA, late("l2", "published", { positionKey: 8 })),
       entry(docA, late("l1", "validated", { positionKey: 2 })),
       entry(docA, amendment("v", "pending_validation")),
@@ -305,10 +356,21 @@ describe("groupReviewAmendments", () => {
     expect(groups).toHaveLength(1);
     const group = groups[0]!;
     expect(group.toValidate.map((value) => value.id)).toEqual(["v"]);
-    expect(group.awaitingProponent.map((value) => value.id)).toEqual(["t"]);
+    expect(group.awaitingAuthors.map((value) => value.id)).toEqual(["t"]);
     expect(group.toPublish).toEqual([]);
     expect(group.late.map((value) => value.id)).toEqual(["l1", "l2"]);
     expect(reviewGroupSize(group)).toBe(2);
+  });
+
+  it("leaves out a transactional one of its authors rejected", () => {
+    const groups = groupReviewAmendments([
+      entry(docA, rejectedTransactional("r", "pending_authors")),
+      entry(docB, rejectedTransactional("s", null)),
+      entry(docB, amendment("v", "pending_validation")),
+    ]);
+    expect(groups.map((group) => group.document.id)).toEqual(["b"]);
+    expect(groups[0]!.awaitingAuthors).toEqual([]);
+    expect(groups[0]!.toValidate.map((value) => value.id)).toEqual(["v"]);
   });
 
   it("keeps a document whose only amendments are late", () => {
@@ -335,8 +397,8 @@ describe("splitReviewSelection", () => {
     ).toEqual({ validate: ["v1"], publish: ["p1"] });
   });
 
-  it("never validates a transactional waiting for the presenter", () => {
-    const pending = amendment("t", "pending_proponent", {
+  it("never validates a transactional waiting for its authors", () => {
+    const pending = amendment("t", "pending_authors", {
       can: { ...amendment("t", "pending_validation").can, validate: true },
     });
     expect(
@@ -390,6 +452,17 @@ describe("applyAmendmentResults", () => {
       [late("1", "published")],
     );
     expect(after.amendments.map((value) => value.amendment.id)).toEqual(["1"]);
+  });
+
+  it("drops a transactional once one of its authors rejects it", () => {
+    const after = applyAmendmentResults(
+      queue([
+        entry(docA, amendment("t", "pending_authors")),
+        entry(docA, amendment("u", "pending_authors")),
+      ]),
+      [rejectedTransactional("t", "pending_authors")],
+    );
+    expect(after.amendments.map((value) => value.amendment.id)).toEqual(["u"]);
   });
 
   it("does not mutate the queue it receives", () => {

@@ -3,6 +3,7 @@ import {
   LIVE_STATE_COLORS,
   liveAmendmentCode,
   liveAmendmentCounts,
+  liveAmendmentNote,
   type LiveAmendmentRow,
 } from "~/components/live-view/-model";
 
@@ -27,26 +28,14 @@ const headingId = computed(() => props.headingId ?? "live-amendments-title");
 
 const counts = computed(() => liveAmendmentCounts(props.rows));
 
-/** Code of the approved transactional that absorbed an amendment. */
-function absorbedBy(row: LiveAmendmentRow): string {
-  if (row.state !== "transacted") return "";
-  const ids = new Set(row.amendment.transactionalIds);
-  const winner = props.rows.find(
-    (other) => ids.has(other.amendment.id) && other.state === "approved",
-  );
-  return winner ? liveAmendmentCode(winner.amendment) : "";
-}
-
-/** A sentence for the states a badge alone does not explain. */
+/**
+ * A sentence for the states a badge alone does not explain: late, replaced
+ * by a transactional (naming it), incorporated without a vote, and what a
+ * transactional replaced or still waits for.
+ */
 function note(row: LiveAmendmentRow): string {
-  if (row.state === "late") return t("liveView.state.late.sentence");
-  if (row.state === "transacted") {
-    const code = absorbedBy(row);
-    return code
-      ? t("liveView.state.transacted.by", { code })
-      : t("liveView.state.transacted.sentence");
-  }
-  return "";
+  const found = liveAmendmentNote(row, props.rows);
+  return found ? t(found.key, found.params ?? {}) : "";
 }
 
 function link(row: LiveAmendmentRow): string {

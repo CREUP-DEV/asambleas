@@ -11,9 +11,11 @@ import {
   affectsSpeakers,
   liveAmendmentCode,
   liveAmendmentCounts,
+  liveAmendmentNote,
   liveAmendmentRows,
   liveAmendmentState,
   liveAmendmentStats,
+  liveReplacedBy,
   liveSpeakers,
   liveVoteCounts,
   liveVoteSubject,
@@ -65,6 +67,7 @@ const amendment = (
   positionKey: 0,
   changeKinds: [],
   authors: [],
+  mainAuthorId: null,
   submittedAt: "2026-11-01T00:00:00Z",
   validatedAt: "2026-11-02T00:00:00Z",
   publishedAt: "2026-11-02T00:00:00Z",
@@ -221,6 +224,221 @@ describe("live amendments", () => {
       // Decided: the outcome wins even while the projection still shows it.
       expect(liveAmendmentState(amendment("a", { status }), "a")).toBe(status);
     }
+    // Accepted by the main presenter of a document that incorporates
+    // accepted amendments: in the text without a vote.
+    expect(
+      liveAmendmentState(
+        amendment("a", { status: "approved", approvalMethod: "proponent" }),
+        "a",
+      ),
+    ).toBe("incorporated");
+    expect(
+      liveAmendmentState(
+        amendment("a", { status: "approved", approvalMethod: "vote" }),
+        null,
+      ),
+    ).toBe("approved");
+  });
+
+  it("counts incorporated amendments as part of the text", () => {
+    const rows = liveAmendmentRows(
+      [
+        amendment("voted", { status: "approved", approvalMethod: "vote" }),
+        amendment("in", { status: "approved", approvalMethod: "proponent" }),
+        amendment("open"),
+      ],
+      null,
+    );
+    expect(liveAmendmentStats(rows)).toEqual({
+      approved: 2,
+      undecided: 1,
+      total: 3,
+    });
+    expect(liveAmendmentCounts(rows)).toEqual([
+      { state: "pending", count: 1 },
+      { state: "approved", count: 1 },
+      { state: "incorporated", count: 1 },
+    ]);
+  });
+
+  describe("transactionals", () => {
+    const member = (id: string) => ({
+      id,
+      acronym: id.toUpperCase(),
+      name: id,
+      kind: "asociado" as const,
+    });
+    const party = (
+      id: string,
+      decision: "pending" | "accepted" | "rejected",
+    ) => ({
+      member: member(id),
+      role: "author" as const,
+      decision,
+      decidedAt: null,
+    });
+    // CEUM 1 and UPV 1 replaced by T1 (accepted by both, still debated);
+    // T2 over UPV 1 was turned down by UPV.
+    const ceum = amendment("c1", {
+      code: "CEUM 1",
+      positionKey: 1,
+      status: "transacted",
+      transactionalIds: ["t1"],
+    });
+    const upv = amendment("u1", {
+      code: "UPV 1",
+      positionKey: 2,
+      status: "transacted",
+      transactionalIds: ["t2", "t1"],
+    });
+    const t1 = amendment("t1", {
+      code: "T1",
+      kind: "transactional",
+      positionKey: 1,
+      sourceIds: ["c1", "u1"],
+      acceptances: [party("ceum", "accepted"), party("upv", "accepted")],
+    });
+    const t2 = amendment("t2", {
+      code: "T2",
+      kind: "transactional",
+      positionKey: 2,
+      status: "rejected",
+      sourceIds: ["u1"],
+      acceptances: [party("upv", "rejected")],
+    });
+    const rows = liveAmendmentRows([ceum, upv, t1, t2], "t1");
+    const row = (id: string) => rows.find((x) => x.amendment.id === id)!;
+
+    it("names the transactional that replaced an amendment", () => {
+      expect(liveReplacedBy(row("u1"), rows)?.amendment.id).toBe("t1");
+      expect(liveAmendmentNote(row("u1"), rows)).toEqual({
+        key: "liveView.state.transacted.by",
+        params: { code: "T1" },
+      });
+      // Not listed (private): the general sentence.
+      const alone = liveAmendmentRows([ceum], null);
+      expect(liveAmendmentNote(alone[0]!, alone)).toEqual({
+        key: "liveView.state.transacted.sentence",
+      });
+    });
+
+    it("says what a transactional replaced or why it closed", () => {
+      expect(liveAmendmentNote(row("t1"), rows)).toEqual({
+        key: "liveView.amendments.replaces",
+        params: { codes: "CEUM 1, UPV 1" },
+      });
+      expect(liveAmendmentNote(row("t2"), rows)).toEqual({
+        key: "liveView.amendments.turnedDown",
+        params: { members: "UPV" },
+      });
+      // Drafted in the room, not accepted by every main author yet.
+      const live = amendment("t3", {
+        code: "T3",
+        kind: "transactional",
+        sourceIds: ["o1"],
+        acceptances: [party("ceum", "pending")],
+      });
+      const open = amendment("o1", {
+        code: "CEUM 2",
+        transactionalIds: ["t3"],
+      });
+      const pending = liveAmendmentRows([open, live], null);
+      expect(
+        liveAmendmentNote(
+          pending.find((x) => x.amendment.id === "t3")!,
+          pending,
+        ),
+      ).toEqual({
+        key: "liveView.amendments.awaitingAuthors",
+        params: { codes: "CEUM 2" },
+      });
+      expect(
+        liveAmendmentNote(
+          pending.find((x) => x.amendment.id === "o1")!,
+          pending,
+        ),
+      ).toBe(null);
+    });
+
+    it("shows a transactional a main author turned down as such", () => {
+      // The server closes it as withdrawn, but nobody withdrew it.
+      const closed = { ...t2, status: "withdrawn" as const };
+      expect(liveAmendmentState(closed, null)).toBe("turned_down");
+      expect(liveAmendmentState(t2, "t2")).toBe("turned_down");
+      // Withdrawn by whoever proposed it: still "withdrawn".
+      expect(
+        liveAmendmentState(
+          { ...t2, acceptances: [], status: "withdrawn" },
+          null,
+        ),
+      ).toBe("withdrawn");
+      const list = liveAmendmentRows([ceum, upv, t1, closed], null);
+      expect(liveAmendmentCounts(list)).toEqual([
+        { state: "pending", count: 1 },
+        { state: "transacted", count: 2 },
+        { state: "turned_down", count: 1 },
+      ]);
+      // Neither in the text nor still to decide.
+      expect(liveAmendmentStats(list)).toEqual({
+        approved: 0,
+        undecided: 1,
+        total: 4,
+      });
+      expect(
+        liveAmendmentNote(
+          list.find((x) => x.amendment.id === "t2")!,
+          list,
+        ),
+      ).toEqual({
+        key: "liveView.amendments.turnedDown",
+        params: { members: "UPV" },
+      });
+    });
+
+    it("says when another transactional got ahead of one", () => {
+      // T4 over UPV 1, drafted in the room after T1 already replaced it:
+      // it can never go ahead.
+      const t4 = amendment("t4", {
+        code: "T4",
+        kind: "transactional",
+        positionKey: 2,
+        sourceIds: ["u1"],
+        acceptances: [party("upv", "pending")],
+      });
+      const list = liveAmendmentRows(
+        [ceum, { ...upv, transactionalIds: ["t4", "t1"] }, t1, t4],
+        null,
+      );
+      const find = (id: string) => list.find((x) => x.amendment.id === id)!;
+      expect(liveAmendmentNote(find("t4"), list)).toEqual({
+        key: "liveView.amendments.superseded",
+        params: { codes: "UPV 1" },
+      });
+      // T1 replaced UPV 1, not the stuck T4 listed first.
+      expect(liveReplacedBy(find("u1"), list)?.amendment.id).toBe("t1");
+      // Nor does T4 claim what T1 replaced.
+      expect(liveAmendmentNote(find("t1"), list)?.key).toBe(
+        "liveView.amendments.replaces",
+      );
+    });
+
+    it("explains late and incorporated amendments", () => {
+      const list = liveAmendmentRows(
+        [
+          amendment("l", { late: true, admission: "pending", positionKey: 1 }),
+          amendment("i", {
+            status: "approved",
+            approvalMethod: "proponent",
+            positionKey: 2,
+          }),
+        ],
+        null,
+      );
+      expect(list.map((x) => liveAmendmentNote(x, list)?.key)).toEqual([
+        "liveView.state.late.sentence",
+        "liveView.state.incorporated.sentence",
+      ]);
+    });
   });
 
   it("lists only what the room can read, in text order", () => {
@@ -262,7 +480,7 @@ describe("live amendments", () => {
         // Private ones a Mesa or Secretaría account also receives.
         amendment("presenter", {
           publishedAt: null,
-          reviewState: "pending_proponent",
+          reviewState: "pending_authors",
         }),
         amendment("validated", { publishedAt: null, reviewState: "validated" }),
         amendment("draft", { status: "draft", publishedAt: null }),

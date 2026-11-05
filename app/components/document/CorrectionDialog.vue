@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { CorrectionBody, DocumentDto } from "~~/shared/types/api";
 import { CORRECTION_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/document";
+import {
+  documentPresenterMembers,
+  formatMemberList,
+} from "~/composables/document/documentPresenters";
 
 /**
  * "Pedir corrección" (document:manage): a presented document goes back to
@@ -27,7 +31,7 @@ const emit = defineEmits<{
   stale: [];
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const toast = useToast();
 const { send, notifyError, isConflict } = useApi();
 
@@ -71,7 +75,16 @@ const error = computed(() =>
     : undefined,
 );
 
-const presenter = computed(() => props.document.proponent);
+/**
+ * Every presenter gets the note back (main and co-presenters alike):
+ * "El documento vuelve a CEUM y UPV con tu nota".
+ */
+const presenters = computed(() =>
+  documentPresenterMembers(props.document).map((member) => member.acronym),
+);
+const presenterList = computed(() =>
+  formatMemberList(presenters.value, locale.value),
+);
 
 async function confirm(): Promise<void> {
   touched.value = true;
@@ -89,11 +102,14 @@ async function confirm(): Promise<void> {
     emit("corrected", updated);
     toast.add({
       title: t("document.correction.success"),
-      description: presenter.value
-        ? t("document.correction.successMember", {
-            member: presenter.value.acronym,
-          })
-        : undefined,
+      description:
+        presenters.value.length > 0
+          ? t(
+              "document.correction.successMember",
+              { member: presenterList.value },
+              presenters.value.length,
+            )
+          : undefined,
       color: "success",
       icon: "i-lucide-check",
     });
@@ -118,10 +134,12 @@ async function confirm(): Promise<void> {
     v-model:open="open"
     :title="t('document.correction.title')"
     :description="
-      presenter
-        ? t('document.correction.descriptionMember', {
-            member: presenter.acronym,
-          })
+      presenters.length > 0
+        ? t(
+            'document.correction.descriptionMember',
+            { member: presenterList },
+            presenters.length,
+          )
         : t('document.correction.description')
     "
     :dismissible="!sending"

@@ -12,11 +12,14 @@ import {
   loadExtraPermissions,
 } from "../../../../utils/auth/adminUsers";
 import {
+  ADMIN_GRANT_MESSAGES,
+  adminGrantViolation,
   invalidateUserPermissionCache,
-  requireAdmin,
+  requireAnyPermission,
 } from "../../../../utils/auth/rbac";
 import { logError } from "../../../../utils/core/logger";
 import { validateAuthId } from "../../../../utils/validation";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import {
   normalizePermissionKeys,
   unknownPermissionKeys,
@@ -26,14 +29,36 @@ import {
 /**
  * Sets the permissions granted to one user on top of their role
  * (user_permissions), as the full set: keys left out are revoked, kept ones
- * keep who granted them. Role permissions are never subtracted. Admin only.
+ * keep who granted them. Role permissions are never subtracted. Needs
+ * user:manage_roles. A non-Admin may not change its own account's grants,
+ * nor add or remove a key it does not hold itself (403,
+ * adminGrantViolation).
  * 400 for a malformed body, 422 for keys outside the catalog, 404 for an
  * unknown user. Writes `user.permissions_set` to the audit log and returns
  * the row as GET /api/admin/users lists it.
  */
 export default defineEventHandler(async (event) => {
-  const session = await requireAdmin(event);
+  const caller = await requireAnyPermission(event, [
+    PERMISSION_KEYS.USER_MANAGE_ROLES,
+  ]);
+  const { session } = caller;
   const userId = validateAuthId(getRouterParam(event, "id"));
+  const deny = (input: { before?: string[]; after?: string[] }) => {
+    const violation = adminGrantViolation({
+      admin: caller.admin,
+      callerPermissions: caller.permissions,
+      ownTarget: userId === caller.user.id,
+      target: "account",
+      ...input,
+    });
+    if (violation) {
+      throw createError({
+        statusCode: 403,
+        message: ADMIN_GRANT_MESSAGES[violation],
+      });
+    }
+  };
+  deny({});
 
   const parsed = userPermissionsBodySchema.safeParse(await readBody(event));
   if (!parsed.success) {
@@ -94,6 +119,7 @@ export default defineEventHandler(async (event) => {
       .where(eq(users.id, userId))
       .for("no key update");
     const before = (await loadExtraPermissions([userId], tx)).get(userId) ?? [];
+    deny({ before, after: keys });
 
     await tx
       .delete(userPermissions)

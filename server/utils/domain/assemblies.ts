@@ -38,6 +38,7 @@ import {
   loadDocumentSummaries,
   toVoteDto,
 } from "./documents";
+import { coPresentedBy } from "./presenters";
 import {
   MILESTONE_KEYS,
   type AssemblyStatus,
@@ -205,6 +206,7 @@ export function visibleDocumentsCondition(actor: Actor): SQL | undefined {
     actor.memberId
       ? eq(documents.proponentMemberId, actor.memberId)
       : undefined,
+    actor.memberId ? coPresentedBy(actor.memberId) : undefined,
   );
 }
 

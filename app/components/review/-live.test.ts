@@ -14,8 +14,12 @@ describe("affectsReviewQueue", () => {
     expect(affectsReviewQueue([{ type: "amendment_withdrawn" }])).toBe(true);
   });
 
-  it("reacts to the presenter approving a transactional", () => {
+  it("reacts to the main authors answering a transactional", () => {
     expect(affectsReviewQueue([{ type: "acceptance_recorded" }])).toBe(true);
+  });
+
+  it("reacts to an amendment replaced by a transactional", () => {
+    expect(affectsReviewQueue([{ type: "amendment_transacted" }])).toBe(true);
   });
 
   it("reacts to the polling fallback, when anything may have changed", () => {

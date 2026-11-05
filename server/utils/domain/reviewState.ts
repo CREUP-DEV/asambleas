@@ -1,16 +1,21 @@
 import type {
   AcceptanceDecision,
   AcceptanceRole,
+  AcceptedAmendmentRule,
   AdmissionStatus,
   AmendmentKind,
   AmendmentStatus,
+  ApprovalMethod,
+  ProponentPosition,
 } from "~~/shared/constants/domain";
 import type { AmendmentReviewState } from "~~/shared/types/api";
 
 /**
  * Pure rules of the Secretaría's review (docs/design.md, "Validation by the
- * Secretaría and documentation tracking"), shared by the amendment endpoints,
- * the validation inbox and the home page. No database access here.
+ * Secretaría and documentation tracking") and of the amendment flow
+ * ("Reviewing amendments, transactionals and the session"), shared by the
+ * amendment endpoints, the validation inbox and the home page. No database
+ * access here.
  */
 
 export interface AmendmentReviewFields {
@@ -19,56 +24,86 @@ export interface AmendmentReviewFields {
   publishedAt: Date | null;
   correctionRequestedAt: Date | null;
   /**
-   * For a transactional, the answer of the document's presenter
-   * (proponentApproval). Null or absent when no approval is needed.
+   * For a transactional, the answer of the main authors of the amendments
+   * it would replace (authorsApproval). Null or absent for other kinds.
    */
-  proponentApproval?: AcceptanceDecision | null;
+  authorsApproval?: AcceptanceDecision | null;
 }
 
 /**
- * The answer of the document's presenter to a transactional: the acceptance
- * row of the document's proponent member, whatever its role (when the
- * presenter also wrote a source, buildAcceptanceParties keeps a single row
- * with the role "author"). Null for other kinds, for documents without a
- * presenter and when the presenter is not a party.
+ * The answer of the main authors of the amendments a transactional would
+ * replace, from its acceptance rows: "rejected" as soon as one rejected it,
+ * "accepted" once every one accepted (or when there is nobody to ask), and
+ * "pending" otherwise. Only rows with the role "author" count: rows with the
+ * role "proponent" come from the earlier rule, when the document's presenter
+ * approved transactionals, and are ignored. Null for other kinds.
  */
-export function proponentApproval(
-  amendment: {
-    kind: AmendmentKind;
-    acceptances: { memberId: string; decision: AcceptanceDecision }[];
-  },
-  proponentMemberId: string | null,
-): AcceptanceDecision | null {
-  if (amendment.kind !== "transactional" || !proponentMemberId) return null;
-  return (
-    amendment.acceptances.find(
-      (acceptance) => acceptance.memberId === proponentMemberId,
-    )?.decision ?? null
+export function authorsApproval(amendment: {
+  kind: AmendmentKind;
+  acceptances: { role: AcceptanceRole; decision: AcceptanceDecision }[];
+}): AcceptanceDecision | null {
+  if (amendment.kind !== "transactional") return null;
+  const parties = amendment.acceptances.filter(
+    (acceptance) => acceptance.role === "author",
   );
+  if (parties.some((party) => party.decision === "rejected")) return "rejected";
+  return parties.every((party) => party.decision === "accepted")
+    ? "accepted"
+    : "pending";
 }
 
 /**
- * The role an acceptance row shows in AcceptanceDto: "proponent" for the
- * row of the document's presenter, also when it wrote one of the sources
- * (its single stored row then has the role "author"), so clients find the
- * presenter's answer by role; the stored role otherwise.
+ * The main author of an amendment: the presenting member stored with it
+ * (meta.presentingMemberId) while it is still one of its authors, the only
+ * author otherwise, or the first by id for older rows with several authors
+ * and none stored. Null when it has no authors (a transactional the Mesa
+ * drafted for nobody in particular).
  */
-export function partyRole(
-  acceptance: { memberId: string; role: AcceptanceRole },
-  proponentMemberId: string | null,
-): AcceptanceRole {
-  return proponentMemberId !== null && acceptance.memberId === proponentMemberId
-    ? "proponent"
-    : acceptance.role;
+export function mainAuthorOf(
+  authorIds: readonly string[],
+  presentingMemberId: string | null | undefined,
+): string | null {
+  if (presentingMemberId && authorIds.includes(presentingMemberId)) {
+    return presentingMemberId;
+  }
+  return [...authorIds].sort()[0] ?? null;
 }
+
+/**
+ * The main author chosen for a set of authors:
+ * - the one requested, which must be one of them ("not_author");
+ * - the only author when there is one;
+ * - `current` (the stored main author of a draft being edited) while it is
+ *   still one of them;
+ * - otherwise "required": with several authors someone has to be named.
+ * Null when there are no authors and none was requested.
+ */
+export function pickMainAuthor(
+  authorIds: readonly string[],
+  requested: string | null | undefined,
+  current?: string | null,
+): string | null | "not_author" | "required" {
+  if (requested)
+    return authorIds.includes(requested) ? requested : "not_author";
+  if (authorIds.length === 0) return null;
+  if (authorIds.length === 1) return authorIds[0]!;
+  if (current && authorIds.includes(current)) return current;
+  return "required";
+}
+
+/** Messages for the errors of pickMainAuthor. */
+export const MAIN_AUTHOR_MESSAGES = {
+  not_author: "El autor principal tiene que ser uno de los autores",
+  required: "Indica quién es el autor principal de la enmienda",
+} as const;
 
 /**
  * Where an amendment stands for its authors and the Secretaría
  * (AmendmentReviewState). A draft is "correction_requested" only when the
  * Secretaría sent it back; a draft never presented has no review state.
- * A transactional presented by a member waits for the document's presenter
- * ("pending_proponent") before the Secretaría checks it, and stays there if
- * the presenter rejects it (the rejection shows in its acceptances).
+ * A transactional proposed by a member waits for the main authors of the
+ * amendments it would replace ("pending_authors") before the Secretaría
+ * checks it.
  * An amendment settled before the Secretaría got to it (withdrawn, lapsed or
  * inadmissible without validation, or withdrawn after a private validation)
  * waits for nothing, so it has no review state either.
@@ -80,63 +115,68 @@ export function amendmentReviewState(
     return row.correctionRequestedAt ? "correction_requested" : null;
   }
   if (row.publishedAt) return "published";
-  if (awaitsProponent(row)) return "pending_proponent";
+  if (awaitsAuthors(row)) return "pending_authors";
   if (awaitsValidation(row)) return "pending_validation";
   if (awaitsPublication(row)) return "validated";
   return null;
 }
 
 /**
- * A transactional presented by a member that the document's presenter has
- * not approved (still pending, or rejected): the Secretaría does not check
- * it until the presenter accepts it. One the Mesa presents is validated at
- * once, so it never waits here.
+ * A transactional presented by a member that the main authors of the
+ * amendments it would replace have not all accepted: the Secretaría does not
+ * check it until they do. A rejection closes it (withdrawn), so in practice
+ * it waits for answers still pending. One the Mesa presents is validated at
+ * once, so it never waits here (its authors answer in the room).
  */
-export function awaitsProponent(
+export function awaitsAuthors(
   row: Pick<
     AmendmentReviewFields,
-    "status" | "validatedAt" | "proponentApproval"
+    "status" | "validatedAt" | "authorsApproval"
   >,
 ): boolean {
   return (
     row.status === "submitted" &&
     row.validatedAt === null &&
-    (row.proponentApproval === "pending" ||
-      row.proponentApproval === "rejected")
+    (row.authorsApproval === "pending" || row.authorsApproval === "rejected")
   );
 }
 
 /**
  * Presented and not checked yet: the Secretaría validates it or asks for a
- * correction. A transactional still waiting for the presenter's approval
- * (awaitsProponent) is not its turn yet.
+ * correction. A transactional still waiting for its main authors
+ * (awaitsAuthors) is not its turn yet.
  */
 export function awaitsValidation(
   row: Pick<
     AmendmentReviewFields,
-    "status" | "validatedAt" | "proponentApproval"
+    "status" | "validatedAt" | "authorsApproval"
   >,
 ): boolean {
   return (
     row.status === "submitted" &&
     row.validatedAt === null &&
-    !awaitsProponent(row)
+    !awaitsAuthors(row)
   );
 }
 
 /**
- * A transactional proposed by a member whose presenter has not answered yet
- * (proponentApproval "pending"). The validation inbox lists it, read only,
- * so the Secretaría sees what is about to reach it; one the presenter
- * rejected waits for nobody but its proposer, so it is left out.
+ * Whether a transactional replaces the amendments it groups now: validated
+ * by the Secretaría (or presented by the Mesa) and accepted by every main
+ * author, whichever comes last. From then on those amendments are
+ * `transacted` and it follows the normal flow.
  */
-export function awaitsProponentAnswer(
-  row: Pick<
-    AmendmentReviewFields,
-    "status" | "validatedAt" | "proponentApproval"
-  >,
-): boolean {
-  return awaitsProponent(row) && row.proponentApproval === "pending";
+export function replacesSources(row: {
+  kind: AmendmentKind;
+  status: AmendmentStatus;
+  validatedAt: Date | null;
+  authorsApproval: AcceptanceDecision | null;
+}): boolean {
+  return (
+    row.kind === "transactional" &&
+    row.status === "submitted" &&
+    row.validatedAt !== null &&
+    row.authorsApproval === "accepted"
+  );
 }
 
 /**
@@ -231,12 +271,12 @@ export function admissionNeedsValidation(
 }
 
 /**
- * Why an amendment cannot be grouped into (or absorbed by) a transactional,
- * or null when it can: it must be presented, admitted and undecided. Under
- * the Secretaría's validation the usual reason is an amendment still waiting
- * for it, or a late one still waiting for the assembly to decide whether it
- * is treated (validated with its admission pending: an on-time amendment is
- * admitted by its validation).
+ * Why an amendment cannot be replaced by a transactional, or null when it
+ * can: it must be presented, admitted and undecided. Under the Secretaría's
+ * validation the usual reason is an amendment still waiting for it, or a
+ * late one still waiting for the assembly to decide whether it is treated
+ * (validated with its admission pending: an on-time amendment is admitted by
+ * its validation).
  */
 export function unopenSourceReason(row: {
   status: AmendmentStatus;
@@ -283,8 +323,10 @@ export function unopenSourcesMessage(
 /**
  * Why an amendment cannot be a direct source of a new transactional, or
  * null when it can: on top of being open (unopenSourceReason), it must be
- * published, since a transactional builds on what everyone can read.
- * Publication is never undone, so the check holds once passed.
+ * published, since a transactional builds on what everyone can read
+ * (publication is never undone, so the check holds once passed), and a
+ * transactional must already have replaced what it groups (its main authors
+ * accepted it), or its originals would survive next to the new one.
  */
 export function transactionalSourceReason(row: {
   status: AmendmentStatus;
@@ -292,8 +334,20 @@ export function transactionalSourceReason(row: {
   validatedAt: Date | null;
   decidedAt: Date | null;
   publishedAt: Date | null;
-}): "not_validated" | "not_admitted" | "not_published" | "decided" | null {
-  return unopenSourceReason(row) ?? (row.publishedAt ? null : "not_published");
+  authorsApproval?: AcceptanceDecision | null;
+}):
+  | "not_validated"
+  | "not_admitted"
+  | "awaits_authors"
+  | "not_published"
+  | "decided"
+  | null {
+  const reason = unopenSourceReason(row);
+  if (reason) return reason;
+  if (row.authorsApproval === "pending" || row.authorsApproval === "rejected") {
+    return "awaits_authors";
+  }
+  return row.publishedAt ? null : "not_published";
 }
 
 /** Messages for transactionalSourceReason. */
@@ -302,6 +356,8 @@ export const TRANSACTIONAL_SOURCE_MESSAGES: Record<
   string
 > = {
   ...UNOPEN_SOURCE_MESSAGES,
+  awaits_authors:
+    "Alguna de las enmiendas que agrupa es una transaccional que sus autores principales todavía no han aceptado",
   not_published:
     "Alguna de las enmiendas que agrupa todavía no está publicada por la Secretaría",
 };
@@ -318,6 +374,7 @@ export function transactionalSourcesMessage(
   for (const reason of [
     "not_validated",
     "not_admitted",
+    "awaits_authors",
     "not_published",
     "decided",
   ] as const) {
@@ -327,44 +384,203 @@ export function transactionalSourcesMessage(
 }
 
 /**
- * What the presenter of a published document still has to answer (its
- * review mode, MeWorkProponentDto), over the amendments it can see:
- * - `positionsPending`: presented, undecided amendments without a position
- *   yet, once the Secretaría checked them (validated or published; one
- *   still "pending_validation" is not the presenter's turn yet, as in its
- *   review mode). Transactionals are left out: the presenter answers them
- *   with its acceptance;
- * - `transactionalsToApprove`: presented transactionals whose acceptance by
- *   the presenter (proponentApproval) is still pending.
+ * Why the main presenter (or the Mesa for it) cannot answer an amendment
+ * now, or null when it can (docs/design.md, "Amendment flow"): it must be
+ * presented and undecided, validated by the Secretaría and, when it came
+ * late, admitted by the assembly; a transactional must also be accepted by
+ * every main author of what it replaces. Under the "incorporate" rule an
+ * amendment the presenter's acceptance approved (approval method
+ * "proponent") can still be answered: changing the answer reopens it.
  */
-export function countProponentWork(
-  rows: {
-    kind: AmendmentKind;
+export function positionBlocker(
+  row: {
     status: AmendmentStatus;
+    admission: AdmissionStatus;
+    validatedAt: Date | null;
+    approvalMethod: ApprovalMethod | null;
+    authorsApproval?: AcceptanceDecision | null;
+  },
+  rule: AcceptedAmendmentRule,
+): "decided" | "not_validated" | "not_admitted" | "awaits_authors" | null {
+  if (
+    rule === "incorporate" &&
+    row.status === "approved" &&
+    row.approvalMethod === "proponent"
+  ) {
+    return null;
+  }
+  if (row.status !== "submitted") return "decided";
+  if (row.admission !== "admitted") {
+    return row.validatedAt === null ? "not_validated" : "not_admitted";
+  }
+  if (row.authorsApproval === "pending" || row.authorsApproval === "rejected") {
+    return "awaits_authors";
+  }
+  return null;
+}
+
+/** Messages for positionBlocker. */
+export const POSITION_BLOCKER_MESSAGES: Record<
+  NonNullable<ReturnType<typeof positionBlocker>>,
+  string
+> = {
+  decided: "Esta enmienda ya está decidida",
+  not_validated:
+    "La Secretaría todavía no ha validado esta enmienda: podrás responderla cuando lo haga",
+  not_admitted:
+    "Esta enmienda llegó fuera de plazo y la asamblea todavía no ha decidido si se trata",
+  awaits_authors:
+    "Los autores principales de las enmiendas que sustituye todavía no han aceptado esta transaccional",
+};
+
+/**
+ * What a new answer of the main presenter does to the amendment, beyond
+ * recording it. Under the "incorporate" rule, accepting an undecided
+ * amendment approves it at once (approval method "proponent") and moving an
+ * amendment approved that way away from "accept" reopens it (back to
+ * submitted). Under "vote" an answer never decides anything.
+ */
+export function positionEffect(
+  row: { status: AmendmentStatus; approvalMethod: ApprovalMethod | null },
+  position: ProponentPosition,
+  rule: AcceptedAmendmentRule,
+): "approve" | "reopen" | null {
+  if (rule !== "incorporate") return null;
+  if (row.status === "submitted" && position === "accept") return "approve";
+  if (
+    row.status === "approved" &&
+    row.approvalMethod === "proponent" &&
+    position !== "accept"
+  ) {
+    return "reopen";
+  }
+  return null;
+}
+
+/**
+ * What changing a document's rule for accepted amendments
+ * (documents.acceptedAmendments) does to the amendments already answered,
+ * so the rule always says what an accepted amendment is:
+ * - to "incorporate": every undecided amendment the main presenter already
+ *   accepted and that it could answer now (positionBlocker) is approved at
+ *   once (approval method "proponent"), as if accepted under that rule. It
+ *   must be published, as when the presenter accepts it, and a
+ *   transactional must have replaced its sources (`keepsSources`, only a
+ *   transactional presented under the earlier rule, which the Mesa
+ *   approves);
+ * - to "vote": every amendment the presenter's acceptance approved goes
+ *   back to undecided, keeping the answer, for the assembly to vote.
+ * Ids in input order.
+ */
+export function acceptedRulePlan(
+  rows: {
+    id: string;
+    status: AmendmentStatus;
+    admission: AdmissionStatus;
     validatedAt: Date | null;
     publishedAt: Date | null;
-    /** The presenter's position, null when there is no position row. */
-    position: string | null;
-    acceptances: { memberId: string; decision: AcceptanceDecision }[];
+    approvalMethod: ApprovalMethod | null;
+    authorsApproval: AcceptanceDecision | null;
+    /** The main presenter's answer, null when there is no position row. */
+    position: ProponentPosition | null;
+    keepsSources?: boolean;
   }[],
-  proponentMemberId: string,
-): { positionsPending: number; transactionalsToApprove: number } {
-  let positionsPending = 0;
-  let transactionalsToApprove = 0;
-  for (const row of rows) {
-    if (row.status !== "submitted") continue;
-    if (row.kind === "transactional") {
-      if (proponentApproval(row, proponentMemberId) === "pending") {
-        transactionalsToApprove += 1;
-      }
-    } else if (row.validatedAt === null && row.publishedAt === null) {
-      // Still waiting for the Secretaría ("pending_validation").
-      continue;
-    } else if (row.position === null || row.position === "pending") {
-      positionsPending += 1;
-    }
+  rule: AcceptedAmendmentRule,
+): { approve: string[]; reopen: string[] } {
+  if (rule === "incorporate") {
+    return {
+      approve: rows
+        .filter(
+          (row) =>
+            row.position === "accept" &&
+            positionEffect(row, "accept", rule) === "approve" &&
+            positionBlocker(row, rule) === null &&
+            row.publishedAt !== null &&
+            !row.keepsSources,
+        )
+        .map((row) => row.id),
+      reopen: [],
+    };
   }
-  return { positionsPending, transactionalsToApprove };
+  return {
+    approve: [],
+    reopen: rows
+      .filter(
+        (row) =>
+          row.status === "approved" && row.approvalMethod === "proponent",
+      )
+      .map((row) => row.id),
+  };
+}
+
+/**
+ * Why the Mesa cannot reopen a decided transactional, or null when it can
+ * (POST .../outcome, "reopen"):
+ * - `rejected_by_author`: a main author of what it groups rejected it,
+ *   which closed it for good; the originals carried on, and a new
+ *   transactional is the way to try again;
+ * - `sources_closed`: it never replaced what it groups (not validated, or
+ *   not accepted by every main author) and one of those amendments is no
+ *   longer open (decided, or replaced by another transactional), so it
+ *   could never go through.
+ * A transactional that did replace its sources keeps them `transacted` and
+ * can be reopened. Null for other kinds.
+ */
+export function transactionalReopenBlocker(row: {
+  kind: AmendmentKind;
+  validatedAt: Date | null;
+  authorsApproval: AcceptanceDecision | null;
+  sources: Parameters<typeof unopenSourceReason>[0][];
+}): "rejected_by_author" | "sources_closed" | null {
+  if (row.kind !== "transactional") return null;
+  if (row.authorsApproval === "rejected") return "rejected_by_author";
+  const replaced =
+    row.validatedAt !== null && row.authorsApproval === "accepted";
+  if (replaced) return null;
+  return row.sources.some((source) => unopenSourceReason(source) !== null)
+    ? "sources_closed"
+    : null;
+}
+
+/** Messages for transactionalReopenBlocker. */
+export const TRANSACTIONAL_REOPEN_MESSAGES: Record<
+  NonNullable<ReturnType<typeof transactionalReopenBlocker>>,
+  string
+> = {
+  rejected_by_author:
+    "Un autor principal de las enmiendas que agrupa rechazó esta transaccional: para retomarla, propón una nueva",
+  sources_closed:
+    "Alguna de las enmiendas que agrupa ya está decidida o la sustituye otra transaccional: esta ya no se puede reabrir",
+};
+
+/**
+ * How many amendments the main presenter of a published document still has
+ * to answer (its review mode, MeWorkProponentDto.positionsPending), over the
+ * amendments it can see: presented, undecided, without an answer yet, and
+ * answerable now (positionBlocker). Under the "incorporate" rule an answer
+ * may approve the amendment, which needs it published, so a validated one
+ * the Secretaría keeps private waits until it publishes it.
+ */
+export function countPositionsPending(
+  rows: {
+    status: AmendmentStatus;
+    admission: AdmissionStatus;
+    validatedAt: Date | null;
+    publishedAt: Date | null;
+    approvalMethod: ApprovalMethod | null;
+    authorsApproval: AcceptanceDecision | null;
+    /** The main presenter's answer, null when there is no position row. */
+    position: ProponentPosition | null;
+  }[],
+  rule: AcceptedAmendmentRule,
+): number {
+  return rows.filter(
+    (row) =>
+      row.status === "submitted" &&
+      (row.position === null || row.position === "pending") &&
+      positionBlocker(row, rule) === null &&
+      (rule !== "incorporate" || row.publishedAt !== null),
+  ).length;
 }
 
 /**

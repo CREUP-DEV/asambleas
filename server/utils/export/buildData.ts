@@ -13,6 +13,7 @@ import { consolidate } from "../../../shared/utils/content/consolidate";
 import { formatAssemblyLabel } from "../../../shared/utils/slug";
 import type { Actor } from "../domain/actor";
 import { loadAmendmentVisibility } from "../domain/documents";
+import { loadCoProponents, withCoProponentIds } from "../domain/presenters";
 import { canSeeAssembly, canSeeDocument } from "../domain/visibility";
 import { loadExportActor } from "./actor";
 import {
@@ -20,6 +21,7 @@ import {
   buildAgendaTree,
   buildAnnexRows,
   consolidationInput,
+  presentersLabel,
   type AgendaTree,
   type AnnexAmendment,
 } from "./mapping";
@@ -128,13 +130,17 @@ function documentMeta(
   agenda: AgendaTree,
   agendaTitles: Map<string, string>,
   finalVote: VoteRow | undefined,
+  coProponentAcronyms: readonly string[] = [],
 ): ExportDocumentMeta {
   return {
     title: document.title,
     reference: document.reference,
     kind: document.kind,
     format: document.format,
-    proponent: document.proponent?.acronym ?? null,
+    proponent: presentersLabel(
+      document.proponent?.acronym,
+      coProponentAcronyms,
+    ),
     fileName: document.fileName,
     agendaNumbering: agenda.numbering.get(document.agendaItemId) ?? null,
     agendaTitle: agendaTitles.get(document.agendaItemId) ?? null,
@@ -256,13 +262,15 @@ export async function buildDocumentExportData(
 ): Promise<DocumentExportData> {
   const actor = await requireExportActor(job.requestedBy);
   const assembly = await requireExportAssembly(actor, job.assemblyId);
-  const document = await db.query.documents.findFirst({
+  const row = await db.query.documents.findFirst({
     where: and(
       eq(documents.id, job.documentId),
       eq(documents.assemblyId, assembly.id),
     ),
     with: { proponent: { columns: { acronym: true } } },
   });
+  // Co-presenters see a draft like its main presenter.
+  const document = row ? (await withCoProponentIds([row]))[0] : undefined;
   if (!document || !canSeeDocument(actor, document)) {
     throw new ExportRejectedError(
       "The document is gone or hidden from the requester",
@@ -271,9 +279,10 @@ export async function buildDocumentExportData(
   const refusal = exportRefusal(actor, document, job.variant);
   if (refusal) throw new ExportRejectedError(EXPORT_REFUSAL_MESSAGES[refusal]);
 
-  const [agendaRows, finalVotes, body] = await Promise.all([
+  const [agendaRows, finalVotes, coProponents, body] = await Promise.all([
     loadAgenda(assembly.id),
     loadVotes([document.finalVoteId]),
+    loadCoProponents([document.id]),
     job.variant === "annotated"
       ? annotatedBody(actor, assembly, document)
       : cleanBody(actor, document),
@@ -288,6 +297,7 @@ export async function buildDocumentExportData(
       agenda,
       agendaTitles,
       document.finalVoteId ? finalVotes.get(document.finalVoteId) : undefined,
+      (coProponents.get(document.id) ?? []).map((member) => member.acronym),
     ),
     body,
     generatedAt: new Date(),
@@ -326,11 +336,12 @@ export async function buildAssemblyExportData(
       ? (document.consolidatedVersionId ?? document.baseVersionId)
       : null;
 
-  const [finalVotes, versions] = await Promise.all([
+  const [finalVotes, versions, coProponents] = await Promise.all([
     loadVotes(documentRows.map((document) => document.finalVoteId)),
     loadVersionBlocks(
       documentRows.map(versionOf).filter((id): id is string => Boolean(id)),
     ),
+    loadCoProponents(documentRows.map((document) => document.id)),
   ]);
 
   const byId = new Map(documentRows.map((document) => [document.id, document]));
@@ -343,6 +354,7 @@ export async function buildAssemblyExportData(
         agenda,
         agendaTitles,
         document.finalVoteId ? finalVotes.get(document.finalVoteId) : undefined,
+        (coProponents.get(document.id) ?? []).map((member) => member.acronym),
       ),
       source:
         document.format === "file"

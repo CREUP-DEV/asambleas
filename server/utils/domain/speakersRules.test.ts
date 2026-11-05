@@ -177,6 +177,25 @@ describe("turnsForActor", () => {
     expect(ids(null)).toEqual(["s", "w", "c"]);
   });
 
+  it("gives the Mesa back the turn it just changed, whatever its item", () => {
+    expect(
+      turnsForActor(turns, {
+        moderate: true,
+        visible: false,
+        agendaItemId: "item1",
+        include: ["c"],
+      }).map((item) => item.id),
+    ).toEqual(["s", "w", "d1", "c"]);
+    expect(
+      turnsForActor(turns, {
+        moderate: false,
+        visible: true,
+        agendaItemId: "item1",
+        include: ["c"],
+      }).map((item) => item.id),
+    ).toEqual(["s", "w"]);
+  });
+
   it("shows attendees the floor and the queue only while visible", () => {
     expect(
       turnsForActor(turns, {

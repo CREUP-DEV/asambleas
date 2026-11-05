@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { z } from "zod/v4";
-import type { FormSubmitEvent } from "@nuxt/ui";
+import type { FormError, FormSubmitEvent } from "@nuxt/ui";
 import {
+  ACCEPTED_AMENDMENT_RULES,
   DOCUMENT_FORMATS,
   DOCUMENT_KINDS,
   DOCUMENT_KIND_DEFAULTS,
@@ -19,6 +20,20 @@ import {
   kindSelectItems,
   presenterKindGroups,
 } from "~/composables/document/documentKinds";
+import {
+  choicePresenterIds,
+  coPresentersDroppedWithoutLead,
+  documentPresenterMembers,
+  formatMemberList,
+  formPresenterChoice,
+  isDocumentPresenter,
+  mainPresenterMissing,
+  presenterFields,
+  withDefaultMainPresenter,
+  withMainAsLead,
+  withPresenterLead,
+  type PresenterChoice,
+} from "~/composables/document/documentPresenters";
 
 /**
  * Adds a document under an agenda item.
@@ -32,9 +47,17 @@ import {
  *   the Secretaría).
  * - Managers also choose who presents it and the internal deadline, so the
  *   Secretaría can create in advance the documents it expects; the rules of
- *   the type (format, amendments, vote) stay under "Opciones avanzadas".
+ *   the type (format, amendments, vote, what an accepted amendment becomes)
+ *   stay under "Opciones avanzadas", with the type's defaults preselected.
  *   A document expected from a member stays on the agenda; one with no
  *   presenter, or presented by the manager's own member, opens the editor.
+ * - Both may add co-presenters ("¿Lo presentáis varios miembros?", folded);
+ *   with several presenters, who answers the amendments is a required
+ *   choice, which starts on the member presenting it (or the manager's
+ *   "Quién lo presenta"). A member always stays among the presenters of
+ *   what it presents. For managers "Quién lo presenta" is the main
+ *   presenter: choosing another one to answer swaps it in. Choosing nobody
+ *   there leaves no co-presenters, and the field names the ones removed.
  *
  * Emits `created` with the new document.
  */
@@ -50,7 +73,7 @@ const open = defineModel<boolean>("open", { default: false });
 
 const emit = defineEmits<{ created: [document: DocumentDto] }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const api = useApi();
 const toast = useToast();
 const { member } = useMe();
@@ -77,12 +100,38 @@ const schema = computed(() =>
       .string()
       .max(SUMMARY_MAX, t("agenda.form.tooLong", { max: SUMMARY_MAX })),
     proponent: z.string(),
+    coProponents: z.array(z.string()),
+    mainPresenter: z.string().nullable(),
     dueAt: z.string().nullable(),
     amendable: z.boolean(),
+    acceptedAmendments: z.enum(ACCEPTED_AMENDMENT_RULES),
     voted: z.boolean(),
     majority: z.enum(MAJORITIES),
   }),
 );
+
+/**
+ * Several presenters need the one that answers the amendments. Checked
+ * beside the schema (not as a refinement, which Zod skips while another
+ * field is invalid), so every error shows on the first try.
+ */
+function validatePresenters(current: Partial<DocumentFormState>): FormError[] {
+  const missing = mainPresenterMissing(
+    choiceOf({
+      proponent: current.proponent ?? NO_PROPONENT,
+      coProponents: current.coProponents ?? [],
+      mainPresenter: current.mainPresenter ?? null,
+    }),
+  );
+  return missing
+    ? [
+        {
+          name: "mainPresenter",
+          message: t("document.presenters.mainRequired"),
+        },
+      ]
+    : [];
+}
 
 type DocumentForm = z.output<typeof schema.value>;
 /** The kind starts empty: the user picks it. */
@@ -97,18 +146,44 @@ function initialState(): DocumentFormState {
     title: "",
     summary: "",
     proponent: member.value?.id ?? NO_PROPONENT,
+    coProponents: [],
+    mainPresenter: null,
     dueAt: null,
     amendable: true,
+    acceptedAmendments: "vote",
     voted: true,
     majority: "simple",
   };
+}
+
+/**
+ * The presenters as chosen: the manager's pick (or the member's own member,
+ * which a member cannot remove), the co-presenters and the main one.
+ */
+function choiceOf(data: {
+  proponent: string;
+  coProponents: string[];
+  mainPresenter: string | null;
+}): PresenterChoice {
+  const leadId = isManager.value
+    ? data.proponent === NO_PROPONENT
+      ? null
+      : data.proponent
+    : (member.value?.id ?? null);
+  // Nobody presents it (the Secretaría prepares it): no co-presenters either.
+  return formPresenterChoice({
+    leadId,
+    coIds: data.coProponents,
+    mainId: data.mainPresenter,
+  });
 }
 
 const state = reactive<DocumentFormState>(initialState());
 const saving = ref(false);
 const advancedOpen = ref(false);
 
-// Members for the proponent select (managers only), loaded on first open.
+// Members for the proponent select (managers, on open) and the co-presenters
+// (members, when they unfold that section).
 const members = ref<MemberDto[]>([]);
 const membersLoading = ref(false);
 const membersFailed = ref(false);
@@ -138,7 +213,7 @@ watch(
   { immediate: true },
 );
 
-/** The type's own rules: amendments, vote and majority. */
+/** The type's own rules: amendments, accepted amendments, vote, majority. */
 const kindDefaults = computed(() =>
   state.kind ? DOCUMENT_KIND_DEFAULTS[state.kind] : null,
 );
@@ -156,6 +231,7 @@ watch(
     if (!defaults) return;
     if (!pdfAllowed.value) state.format = "structured";
     state.amendable = state.format === "file" ? false : defaults.amendable;
+    state.acceptedAmendments = defaults.acceptedAmendments;
     state.voted = defaults.voted;
     state.majority = defaults.majority;
   },
@@ -167,6 +243,59 @@ watch(
       format === "file" ? false : (kindDefaults.value?.amendable ?? true);
   },
 );
+
+/** The first presenter: the manager's pick, or the member's own member. */
+const leadId = computed(() => choiceOf(state).leadId);
+
+// Another "Quién lo presenta" leaves the co-presenters (and takes the
+// answer to the amendments if the previous one had it).
+watch(
+  () => state.proponent,
+  (next, previous) => {
+    if (!isManager.value) return;
+    const lead = next === NO_PROPONENT ? null : next;
+    const before = previous === NO_PROPONENT ? null : (previous ?? null);
+    const updated = withPresenterLead(
+      {
+        leadId: before,
+        coIds: state.coProponents,
+        mainId: state.mainPresenter,
+      },
+      lead,
+    );
+    state.coProponents = [...updated.coIds];
+    state.mainPresenter = updated.mainId;
+  },
+);
+
+// Several presenters and none of them answering: the member presenting it
+// (or the manager's pick) answers until another one is chosen.
+watch(
+  () => choicePresenterIds(choiceOf(state)).join(),
+  () => {
+    const next = withDefaultMainPresenter(choiceOf(state));
+    if (next.mainId !== state.mainPresenter) state.mainPresenter = next.mainId;
+  },
+);
+
+/**
+ * Who answers the amendments was chosen. Managers: the chosen presenter
+ * becomes "Quién lo presenta" and the previous one a co-presenter (the
+ * watcher on the lead then keeps both).
+ */
+function onMainPick(id: string | null): void {
+  if (!isManager.value) {
+    state.mainPresenter = id;
+    return;
+  }
+  const next = withMainAsLead(choiceOf(state), id);
+  state.coProponents = [...next.coIds];
+  state.mainPresenter = next.mainId;
+  state.proponent = next.leadId ?? NO_PROPONENT;
+}
+
+/** Members to name in the presenters' choice even before the list loads. */
+const knownMembers = computed(() => (member.value ? [member.value] : []));
 
 const kindItems = computed(() => {
   const label = (kind: DocumentKind) => t(`agenda.documentKinds.${kind}`);
@@ -220,32 +349,70 @@ const steps = computed(() => [
   t("agenda.newDocument.steps.send"),
 ]);
 
-const presenterMember = computed(() => {
-  if (state.proponent === NO_PROPONENT) return null;
-  return members.value.find((candidate) => candidate.id === state.proponent);
+/**
+ * The acronyms of who will present it (the manager's pick first), for the
+ * deadline help: "Hasta cuándo tienen CEUM y UPV para enviarlo".
+ */
+const presenterAcronyms = computed(() =>
+  choicePresenterIds(choiceOf(state))
+    .map(
+      (id) =>
+        members.value.find((candidate) => candidate.id === id)?.acronym ?? null,
+    )
+    .filter((acronym): acronym is string => acronym !== null),
+);
+
+/**
+ * Managers: "Sin proponente" leaves out the co-presenters already chosen;
+ * the field names them (they come back if someone presents it again).
+ */
+const proponentHelp = computed(() => {
+  if (membersFailed.value) return t("agenda.newDocument.membersError");
+  if (!isManager.value || state.proponent !== NO_PROPONENT) return undefined;
+  const dropped = coPresentersDroppedWithoutLead({
+    leadId: null,
+    coIds: state.coProponents,
+    mainId: state.mainPresenter,
+  });
+  if (dropped.length === 0) return undefined;
+  const acronyms = dropped.map(
+    (id) =>
+      members.value.find((candidate) => candidate.id === id)?.acronym ?? id,
+  );
+  return t(
+    "document.presenters.droppedWithoutLead",
+    { members: formatMemberList(acronyms, locale.value) },
+    acronyms.length,
+  );
 });
 
 /** Managers stay on the agenda when someone else has to provide the text. */
 function opensEditor(created: DocumentDto): boolean {
   if (!isManager.value) return true;
-  const proponentId = created.proponent?.id ?? null;
-  return proponentId === null || proponentId === member.value?.id;
+  return (
+    created.proponent === null || isDocumentPresenter(created, member.value?.id)
+  );
 }
 
 async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
   if (!props.item) return;
   const data = event.data;
+  const presenters = presenterFields(choiceOf(data));
+  const amendable = data.format === "file" ? false : data.amendable;
+  // A member presenting alone sends no presenter: the server uses its own.
+  const jointly = presenters.coProponentMemberIds.length > 0;
   const body: DocumentCreateBody = {
     agendaItemId: props.item.id,
     kind: data.kind,
     format: data.format,
     title: data.title,
     summary: data.summary.trim() || null,
+    ...(jointly ? presenters : {}),
     ...(isManager.value
       ? {
-          proponentMemberId:
-            data.proponent === NO_PROPONENT ? null : data.proponent,
-          amendable: data.format === "file" ? false : data.amendable,
+          proponentMemberId: presenters.proponentMemberId,
+          amendable,
+          ...(amendable ? { acceptedAmendments: data.acceptedAmendments } : {}),
           voted: data.voted,
           majority: data.majority,
           dueAt: data.dueAt,
@@ -275,13 +442,19 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
       await navigateTo(editorPath);
       return;
     }
+    const expectedFrom = documentPresenterMembers(created).map(
+      (presenter) => presenter.acronym,
+    );
     toast.add({
       title: t("agenda.newDocument.created"),
-      description: created.proponent
-        ? t("agenda.newDocument.expectedFrom", {
-            member: created.proponent.acronym,
-          })
-        : created.title,
+      description:
+        expectedFrom.length > 0
+          ? t(
+              "agenda.newDocument.expectedFrom",
+              { member: formatMemberList(expectedFrom, locale.value) },
+              expectedFrom.length,
+            )
+          : created.title,
       color: "success",
       icon: "i-lucide-file-plus",
       actions: [
@@ -371,6 +544,7 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
       <UForm
         id="agenda-new-document-form"
         :schema="schema"
+        :validate="validatePresenters"
         :state="state"
         class="space-y-4"
         @submit="onSubmit"
@@ -439,6 +613,20 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
             {{ t("agenda.newDocument.presentingAs") }}
             <CommonMemberBadge :member="member" show-name />
           </p>
+          <DocumentPresentersField
+            v-if="member"
+            v-model:co-ids="state.coProponents"
+            :main-id="state.mainPresenter"
+            voice="presenter"
+            :lead-id="leadId"
+            :members="members"
+            :known="knownMembers"
+            :loading="membersLoading"
+            :own-member-id="member.id"
+            :disabled="saving"
+            @update:main-id="onMainPick"
+            @load="loadMembers"
+          />
         </template>
 
         <!-- Managers: who presents it and by when -->
@@ -446,9 +634,7 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
           <UFormField
             :label="t('agenda.newDocument.proponent')"
             name="proponent"
-            :help="
-              membersFailed ? t('agenda.newDocument.membersError') : undefined
-            "
+            :help="proponentHelp"
           >
             <USelectMenu
               v-model="state.proponent"
@@ -465,10 +651,12 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
             :label="t('agenda.newDocument.dueAt')"
             :hint="t('agenda.newDocument.optional')"
             :help="
-              presenterMember
-                ? t('agenda.newDocument.dueAtHelpMember', {
-                    member: presenterMember.acronym,
-                  })
+              presenterAcronyms.length > 0
+                ? t(
+                    'agenda.newDocument.dueAtHelpMember',
+                    { member: formatMemberList(presenterAcronyms, locale) },
+                    presenterAcronyms.length,
+                  )
                 : t('agenda.newDocument.dueAtHelp')
             "
             name="dueAt"
@@ -476,6 +664,21 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
             <DocumentDateTimeInput v-model="state.dueAt" name="dueAt" />
           </UFormField>
         </div>
+
+        <DocumentPresentersField
+          v-if="isManager && leadId"
+          v-model:co-ids="state.coProponents"
+          :main-id="state.mainPresenter"
+          voice="manager"
+          :lead-id="leadId"
+          :members="members"
+          :known="knownMembers"
+          :loading="membersLoading"
+          :own-member-id="member?.id ?? null"
+          :disabled="saving"
+          @update:main-id="onMainPick"
+          @load="loadMembers"
+        />
 
         <UCollapsible v-if="isManager" v-model:open="advancedOpen">
           <UButton
@@ -512,6 +715,11 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
                     ? t('agenda.newDocument.fileNotAmendable')
                     : undefined
                 "
+              />
+              <DocumentAcceptedRuleField
+                v-if="state.format !== 'file' && state.amendable"
+                v-model="state.acceptedAmendments"
+                :kind="state.kind ?? null"
               />
               <USwitch
                 v-model="state.voted"

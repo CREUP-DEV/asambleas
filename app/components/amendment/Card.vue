@@ -1,10 +1,12 @@
 <script setup lang="ts">
+import type { AmendmentStatus } from "~~/shared/constants/domain";
 import type { AmendmentDto } from "~~/shared/types/api";
 import {
   transactionalProgressMessage,
   transactionalProgressOf,
 } from "~/composables/amendment/transactional";
 import {
+  amendmentAuthorsInOrder,
   amendmentLateState,
   amendmentReviewView,
   isAmendmentPrivate,
@@ -13,17 +15,18 @@ import {
 } from "~/composables/amendment/workspace";
 
 /**
- * One amendment in the workspace list: label, presenting members, one
- * status (where it stands with the Secretaría while it is a draft or waits
- * for it, the outcome otherwise), the Secretaría's note when it asked for a
- * correction, the kind when it is not the usual partial one, change
- * typology, admission and proponent position, the late mark, relations and
+ * One amendment in the workspace list: label, presenting members (the main
+ * author first, marked when there are several), one status (where it
+ * stands with the Secretaría while it is a draft or waits for it, the
+ * outcome otherwise), the Secretaría's note when it asked for a correction,
+ * the kind when it is not the usual partial one, change typology, admission
+ * and the main presenter's answer, the late mark, relations and
  * transactional links. A presented transactional says instead, in one line,
- * what it waits for (the presenter, the parties) or that it is ready; while
- * the Secretaría has it, the usual review badge stays (as in the detail),
- * so the Secretaría still finds it "Por revisar". A late amendment the
- * assembly still has to decide on says so in
- * a line of its own. An amendment that is not public yet has a dashed
+ * what it waits for (the main authors still to answer, or who rejected it)
+ * or which amendments it replaced; while the Secretaría has it, the usual
+ * review badge stays (as in the detail), so the Secretaría still finds it
+ * "Por revisar". A late amendment the assembly still has to decide on says
+ * so in a line of its own. An amendment that is not public yet has a dashed
  * border and says who can see it. The whole card is one button that
  * selects the amendment (`data-amendment-card` lets the page give it focus
  * back).
@@ -38,14 +41,17 @@ const props = withDefaults(
     selected?: boolean;
     /** Also say "Publicada" ("Mis enmiendas"), not only the private states. */
     showPublished?: boolean;
-    /** The document's presenter (document.proponent), for transactionals. */
-    proponentMemberId?: string | null;
+    /**
+     * Status of another amendment of the document (the workspace list), so
+     * a transactional can tell whether it replaced the ones it combines.
+     */
+    statusOf?: (id: string) => AmendmentStatus | undefined;
   }>(),
   {
     relations: () => [],
     selected: false,
     showPublished: false,
-    proponentMemberId: null,
+    statusOf: undefined,
   },
 );
 
@@ -58,14 +64,20 @@ const { member } = useMe();
  * A presented, undecided transactional out of the Secretaría's hands: its
  * progress line replaces the badges (the same rule as the review panel).
  */
-const hasProgress = computed(() => {
-  const view = transactionalProgressOf(
+const progress = computed(() =>
+  transactionalProgressOf(
     props.amendment,
     member.value?.id ?? null,
-    props.proponentMemberId,
-  );
-  return view !== null && transactionalProgressMessage(view, "long") !== null;
-});
+    props.statusOf,
+  ),
+);
+const hasProgress = computed(
+  () =>
+    progress.value !== null &&
+    transactionalProgressMessage(progress.value, "long") !== null,
+);
+/** Main author first; marked only when there are several. */
+const authors = computed(() => amendmentAuthorsInOrder(props.amendment));
 const lateState = computed(() => amendmentLateState(props.amendment));
 /** Late and waiting for the assembly: its own line, no extra badges. */
 const awaitingDecision = computed(
@@ -82,16 +94,16 @@ const isPrivate = computed(() => isAmendmentPrivate(props.amendment));
  * While it is a draft or waits for the Secretaría, the review badge
  * ("Sin enviar", "En revisión") says it better than "Borrador" or
  * "Presentada": show one, not both. A transactional's progress line does
- * the same.
+ * the same, also once a main author rejected it ("Rechazada por CEUM").
  */
 const showStatus = computed(() => {
+  if (hasProgress.value) return false;
   if (
     props.amendment.status !== "draft" &&
     props.amendment.status !== "submitted"
   ) {
     return true;
   }
-  if (hasProgress.value) return false;
   const review = amendmentReviewView(props.amendment);
   const reviewShown =
     review !== null && (props.showPublished || review.key !== "published");
@@ -110,8 +122,11 @@ const showPosition = computed(
     props.amendment.position.position !== "pending",
 );
 
+/** The progress line already names the amendments it replaced. */
 const sources = computed(() =>
-  props.amendment.sourceIds.map((id) => props.labelOf(id)).join(", "),
+  progress.value?.stage === "replaced"
+    ? ""
+    : props.amendment.sourceIds.map((id) => props.labelOf(id)).join(", "),
 );
 const transactedIn = computed(() =>
   props.amendment.transactionalIds.map((id) => props.labelOf(id)).join(", "),
@@ -155,8 +170,14 @@ function relationLabel(view: AmendmentRelationView): string {
       <span class="text-highlighted font-semibold tabular-nums">
         {{ label }}
       </span>
+      <template v-if="authors.main">
+        <CommonMemberBadge :member="authors.main" size="xs" />
+        <span v-if="authors.marked" class="text-dimmed text-xs">
+          {{ t("amendment.card.mainAuthor") }}
+        </span>
+      </template>
       <CommonMemberBadge
-        v-for="author in amendment.authors"
+        v-for="author in authors.others"
         :key="author.id"
         :member="author"
         size="xs"
@@ -173,7 +194,8 @@ function relationLabel(view: AmendmentRelationView): string {
     <TransactionalProgress
       v-if="hasProgress"
       :amendment="amendment"
-      :proponent-member-id="proponentMemberId"
+      :label-of="labelOf"
+      :status-of="statusOf"
       class="mt-2"
     />
     <AmendmentReviewBadge

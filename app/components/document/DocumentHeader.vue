@@ -9,11 +9,16 @@ import {
   documentAudience,
   isPendingProgress,
 } from "~/composables/document/documentProgress";
+import { documentCoPresenters } from "~/composables/document/documentPresenters";
 import { toDate } from "~/utils/format";
 
 /**
  * Title block of a document screen: kind and reference, the title, status,
- * proponent and the amendment window countdown. The default slot holds the
+ * who presents it ("Presenta CEUM con UPV", the main presenter first) and
+ * the amendment window countdown. When several members present a document
+ * that takes amendments, a calm line says which one answers them
+ * (`showAnswerer`; the editor turns it off where its own note already says
+ * so to the presenters). The default slot holds the
  * screen's actions (buttons), aligned to the right on wide screens and
  * wrapped under the title on narrow ones.
  *
@@ -39,8 +44,16 @@ const props = withDefaults(
     progress?: boolean;
     /** The editor of the presenter's draft, for the call to action. */
     editTo?: string | null;
+    /** Say which presenter answers the amendments, with co-presenters. */
+    showAnswerer?: boolean;
   }>(),
-  { showAssembly: false, headingLevel: 2, progress: true, editTo: null },
+  {
+    showAssembly: false,
+    headingLevel: 2,
+    progress: true,
+    editTo: null,
+    showAnswerer: true,
+  },
 );
 
 defineSlots<{
@@ -96,6 +109,24 @@ const SENTENCE_COLORS: Record<string, string> = {
   warning: "text-warning",
   error: "text-error",
 };
+
+/**
+ * The main presenter, named apart when it shares the document with others
+ * and the document takes amendments (only it accepts or rejects them).
+ */
+const answerer = computed(() => {
+  const document = props.document;
+  if (
+    !props.showAnswerer ||
+    !document.proponent ||
+    document.format !== "structured" ||
+    !document.amendable ||
+    documentCoPresenters(document).length === 0
+  ) {
+    return null;
+  }
+  return document.proponent;
+});
 
 const amendableText = computed(
   () =>
@@ -176,15 +207,7 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
           icon="i-lucide-file-text"
           :label="t('document.formats.file')"
         />
-        <span
-          v-if="document.proponent"
-          class="inline-flex min-w-0 items-center gap-1.5"
-        >
-          <span class="text-muted text-sm">
-            {{ t("document.header.proponent") }}
-          </span>
-          <CommonMemberBadge :member="document.proponent" />
-        </span>
+        <DocumentPresenters :document="document" labelled />
 
         <CommonCountdown
           v-if="windowState === 'open' && closesAt"
@@ -213,6 +236,24 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
 
         <slot name="badges" />
       </div>
+
+      <!-- Several presenters: which one answers the amendments -->
+      <i18n-t
+        v-if="answerer"
+        keypath="document.presenters.answers"
+        tag="p"
+        scope="global"
+        class="text-muted text-sm leading-7"
+        data-testid="document-answerer"
+      >
+        <template #member>
+          <CommonMemberBadge
+            :member="answerer"
+            size="sm"
+            class="align-middle"
+          />
+        </template>
+      </i18n-t>
 
       <!-- Where it stands and what comes next (before publication) -->
       <div

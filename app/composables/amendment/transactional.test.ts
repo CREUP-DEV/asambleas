@@ -10,14 +10,18 @@ import { validateOps } from "~~/shared/utils/content/ops";
 import {
   proponentReviewBacklog,
   transactionalAfterSecretaria,
+  transactionalAnswerOf,
+  transactionalAuthorTurn,
+  transactionalAuthorsToAsk,
   transactionalComposerSeed,
   transactionalGroupSources,
   transactionalMemberList,
   transactionalNextSteps,
-  transactionalPresenterParty,
+  transactionalPartySources,
   transactionalProgressMessage,
   transactionalProgressOf,
   type TransactionalProgressView,
+  transactionalRejectedByAuthors,
   transactionalSameBlocks,
   transactionalSameIds,
   transactionalSourceBlockers,
@@ -25,6 +29,8 @@ import {
   transactionalSourceEligible,
   transactionalSourceLimit,
   transactionalSourcesInOrder,
+  transactionalSourcesReplaced,
+  transactionalsOverSource,
 } from "./transactional";
 
 const p = (id: string, text: string): Block => ({
@@ -82,6 +88,7 @@ function amendment(
     positionKey: 0,
     changeKinds: [],
     authors: [],
+    mainAuthorId: null,
     submittedAt: null,
     validatedAt: null,
     publishedAt: null,
@@ -144,7 +151,7 @@ describe("transactional sources", () => {
     expect(no({ status: "draft", reviewState: null })).toBe(false);
     expect(no({ reviewState: "pending_validation" })).toBe(false);
     expect(no({ reviewState: "validated" })).toBe(false);
-    expect(no({ reviewState: "pending_proponent" })).toBe(false);
+    expect(no({ reviewState: "pending_authors" })).toBe(false);
     // Late and still waiting for the assembly's decision.
     expect(no({ late: true, admission: "pending" })).toBe(false);
     expect(no({ status: "approved", decidedAt: "2026-11-02" })).toBe(false);
@@ -152,6 +159,49 @@ describe("transactional sources", () => {
     expect(no({ status: "transacted" })).toBe(false);
     // A "devolución" has no passage to start from.
     expect(no({ kind: "totality_return" }, [])).toBe(false);
+  });
+
+  it("leaves out a transactional its main authors have not all accepted", () => {
+    // The Mesa's live one: validated and published at once, authors pending.
+    const live = (acceptances: AcceptanceDto[]) =>
+      transactionalSourceEligible(
+        amendment("t", change, {
+          kind: "transactional",
+          reviewState: "published",
+          acceptances,
+        }),
+      );
+    expect(
+      live([party("ceum", "author", "accepted"), party("caub", "author")]),
+    ).toBe(false);
+    expect(live([party("ceum", "author", "rejected")])).toBe(false);
+    expect(
+      live([
+        party("ceum", "author", "accepted"),
+        party("caub", "author", "accepted"),
+      ]),
+    ).toBe(true);
+    // A row left by the removed presenter approval does not hold it back.
+    expect(
+      live([party("ceum", "author", "accepted"), party("cea", "proponent")]),
+    ).toBe(true);
+    expect(live([])).toBe(true);
+    // Offered nowhere: not in the candidates, the groups or the composer.
+    const pendingLive = amendment("live", change, {
+      kind: "transactional",
+      acceptances: [party("ceum", "author")],
+    });
+    const open = amendment("open", change);
+    expect(
+      transactionalSourceCandidates([pendingLive, open]).map((a) => a.id),
+    ).toEqual(["open"]);
+    expect(transactionalGroupSources([pendingLive, open])).toEqual(["open"]);
+    expect(
+      transactionalSourceBlockers(
+        ["live", "open"],
+        new Map([pendingLive, open].map((item) => [item.id, item])),
+      ),
+    ).toEqual(["live"]);
   });
 
   it("lists candidates in text order and picks them from a group", () => {
@@ -312,8 +362,13 @@ describe("transactional progress", () => {
     amendment("t", [replace("b2", 3, 10, "Comité")], {
       kind: "transactional",
       code: "T1",
+      sourceIds: ["s1", "s2"],
       ...extra,
     });
+  const statusOf =
+    (status: AmendmentDto["status"]) =>
+    (id: string): AmendmentDto["status"] | undefined =>
+      id === "s1" || id === "s2" ? status : undefined;
 
   it("says nothing for drafts, decided ones and ordinary amendments", () => {
     expect(
@@ -323,142 +378,168 @@ describe("transactional progress", () => {
       ),
     ).toBeNull();
     expect(
-      transactionalProgressOf(transactional({ status: "approved" }), null),
+      transactionalProgressOf(
+        transactional({
+          status: "approved",
+          acceptances: [party("ceum", "author", "accepted")],
+        }),
+        null,
+      ),
     ).toBeNull();
     expect(transactionalProgressOf(amendment("a", []), null)).toBeNull();
   });
 
-  it("waits first for the presenter, who sees it is their turn", () => {
+  it("waits first for the main authors, who see it is their turn", () => {
     const pending = transactional({
-      reviewState: "pending_proponent",
-      acceptances: [party("ceum", "author"), party("cea", "proponent")],
+      reviewState: "pending_authors",
+      acceptances: [
+        party("ceum", "author", "accepted"),
+        party("caub", "author"),
+        party("ceuca", "author"),
+      ],
     });
-    expect(transactionalProgressOf(pending, null)).toMatchObject({
-      stage: "proponent",
-      proponent: { id: "cea" },
-      actorTurn: false,
-    });
-    expect(transactionalProgressOf(pending, "cea")?.actorTurn).toBe(true);
-    // An author waiting does not have to answer yet.
+    const view = transactionalProgressOf(pending, null);
+    expect(view).toMatchObject({ stage: "authors", actorTurn: false });
+    expect(transactionalMemberList(view!.missing)).toBe("CAUB, CEUCA");
+    expect(transactionalProgressOf(pending, "caub")?.actorTurn).toBe(true);
+    // A main author who already answered does not have to again.
     expect(transactionalProgressOf(pending, "ceum")?.actorTurn).toBe(false);
-    expect(
-      transactionalProgressOf(
-        transactional({
-          reviewState: "pending_proponent",
-          acceptances: [party("cea", "proponent", "rejected")],
-        }),
-        null,
-      )?.stage,
-    ).toBe("proponent_rejected");
   });
 
-  it("finds the presenter by member, also when it wrote a source", () => {
-    const parties = [party("ceum", "author"), party("cea", "author")];
-    expect(transactionalPresenterParty(parties, "cea")?.member.id).toBe("cea");
-    // Without the presenter's member, the role is the only hint.
-    expect(transactionalPresenterParty(parties, null)).toBeNull();
+  it("waits for the main authors also when the Mesa published it live", () => {
+    const live = transactional({
+      reviewState: "published",
+      acceptances: [party("ceum", "author"), party("caub", "author")],
+    });
+    expect(transactionalProgressOf(live, "ceum")).toMatchObject({
+      stage: "authors",
+      actorTurn: true,
+    });
+  });
+
+  it("is closed as soon as a main author rejects it", () => {
+    const acceptances = [
+      party("ceum", "author", "rejected"),
+      party("caub", "author"),
+    ];
+    // Kept "submitted" or closed by the server: the rejection is the news.
+    for (const status of ["submitted", "rejected", "withdrawn"] as const) {
+      const view = transactionalProgressOf(
+        transactional({ status, reviewState: "pending_authors", acceptances }),
+        "caub",
+      );
+      expect(view).toMatchObject({ stage: "rejected", actorTurn: false });
+      expect(transactionalMemberList(view!.rejected)).toBe("CEUM");
+    }
     expect(
-      transactionalPresenterParty(
-        [party("ceum", "author"), party("cea", "proponent")],
+      transactionalRejectedByAuthors(
+        transactional({ status: "rejected", acceptances }),
+      ),
+    ).toBe(true);
+  });
+
+  it("leaves a transactional voted down to its outcome", () => {
+    const voted = transactional({
+      status: "rejected",
+      decidedAt: "2026-11-03T10:00:00.000Z",
+      outcomeVote: {
+        id: "v",
+        subjectType: "amendment",
+        subjectId: "t",
+        method: "show_of_hands",
+        inFavor: 1,
+        against: 9,
+        abstentions: 0,
+        blank: 0,
+        invalid: 0,
+        present: null,
+        majority: "simple",
+        result: "rejected",
+        note: null,
+        recordedAt: "2026-11-03T10:00:00.000Z",
+      },
+      acceptances: [party("ceum", "author", "rejected")],
+    });
+    expect(transactionalRejectedByAuthors(voted)).toBe(false);
+    expect(transactionalProgressOf(voted, null)).toBeNull();
+    expect(
+      transactionalProgressOf(
+        transactional({ status: "approved", acceptances: [] }),
         null,
-      )?.member.id,
-    ).toBe("cea");
-    expect(
-      transactionalPresenterParty([party("ceum", "author")], "cea"),
+      ),
     ).toBeNull();
   });
 
-  it("waits for a presenter that also wrote a source", () => {
-    // The presenter proposed T1; T2 builds on it, so the presenter's single
-    // row has the role "author" (buildAcceptanceParties).
-    const pending = transactional({
-      reviewState: "pending_proponent",
-      acceptances: [
-        party("ceum", "author", "accepted"),
-        party("cea", "author"),
-      ],
-    });
-    expect(transactionalProgressOf(pending, null, "cea")).toMatchObject({
-      stage: "proponent",
-      proponent: { id: "cea" },
-      actorTurn: false,
-    });
-    expect(transactionalProgressOf(pending, "cea", "cea")?.actorTurn).toBe(
-      true,
-    );
-    expect(transactionalProgressOf(pending, "ceum", "cea")?.actorTurn).toBe(
-      false,
-    );
+  it("then waits for the Secretaría to check and publish it", () => {
+    const accepted = [party("ceum", "author", "accepted")];
     expect(
       transactionalProgressOf(
         transactional({
-          reviewState: "pending_proponent",
-          acceptances: [
-            party("ceum", "author", "accepted"),
-            party("cea", "author", "rejected"),
-          ],
+          reviewState: "pending_validation",
+          acceptances: accepted,
         }),
         null,
-        "cea",
-      ),
-    ).toMatchObject({ stage: "proponent_rejected", proponent: { id: "cea" } });
-  });
-
-  it("then waits for the Secretaría to check and publish it", () => {
+      )?.stage,
+    ).toBe("validation");
+    // Every main author accepted, the state has not moved on yet.
     expect(
       transactionalProgressOf(
-        transactional({ reviewState: "pending_validation" }),
+        transactional({
+          reviewState: "pending_authors",
+          acceptances: accepted,
+        }),
         null,
       )?.stage,
     ).toBe("validation");
     expect(
-      transactionalProgressOf(transactional({ reviewState: "validated" }), null)
-        ?.stage,
+      transactionalProgressOf(
+        transactional({ reviewState: "validated", acceptances: accepted }),
+        null,
+      )?.stage,
     ).toBe("publication");
   });
 
-  it("then lists who still has to accept it, and who said no", () => {
-    const waiting = transactionalProgressOf(
-      transactional({
-        acceptances: [
-          party("ceum", "author", "accepted"),
-          party("ceuca", "author"),
-          party("ceune", "author"),
-          party("cea", "proponent", "accepted"),
-        ],
-      }),
-      "ceune",
-    );
-    expect(waiting).toMatchObject({ stage: "parties", actorTurn: true });
-    expect(transactionalMemberList(waiting!.missing)).toBe("CEUCA, CEUNE");
-
-    const refused = transactionalProgressOf(
-      transactional({
-        acceptances: [
-          party("ceum", "author", "rejected"),
-          party("ceuca", "author"),
-        ],
-      }),
-      null,
-    );
-    expect(refused?.stage).toBe("rejected");
-    expect(transactionalMemberList(refused!.rejected)).toBe("CEUM");
-  });
-
-  it("is ready once everyone accepted and it is admitted", () => {
-    const accepted = [
-      party("ceum", "author", "accepted"),
-      party("cea", "proponent", "accepted"),
-    ];
+  it("replaces the originals once validated and accepted", () => {
+    const done = transactional({
+      acceptances: [party("ceum", "author", "accepted")],
+    });
     expect(
-      transactionalProgressOf(transactional({ acceptances: accepted }), null),
-    ).toMatchObject({ stage: "ready", color: "success", missing: [] });
+      transactionalProgressOf(done, null, statusOf("transacted")),
+    ).toMatchObject({
+      stage: "replaced",
+      color: "success",
+      sourceIds: ["s1", "s2"],
+    });
+    // The list does not show them replaced: no claim is made about them.
+    expect(
+      transactionalProgressOf(done, null, statusOf("submitted"))?.stage,
+    ).toBe("accepted");
+    expect(transactionalProgressOf(done, null)?.stage).toBe("accepted");
+    // A source the viewer does not see.
+    expect(
+      transactionalProgressOf(done, null, (id) =>
+        id === "s1" ? "transacted" : undefined,
+      )?.stage,
+    ).toBe("accepted");
+    // Late: the assembly decides whether to treat it first.
     expect(
       transactionalProgressOf(
-        transactional({ acceptances: accepted, admission: "pending" }),
+        { ...done, admission: "pending" },
         null,
+        statusOf("transacted"),
       )?.stage,
     ).toBe("admission");
+  });
+
+  it("tells whether the sources are recorded as replaced", () => {
+    expect(transactionalSourcesReplaced(["s1"])).toBeNull();
+    expect(transactionalSourcesReplaced([], statusOf("transacted"))).toBeNull();
+    expect(
+      transactionalSourcesReplaced(["s1", "s2"], statusOf("transacted")),
+    ).toBe(true);
+    expect(
+      transactionalSourcesReplaced(["s1", "s2"], statusOf("submitted")),
+    ).toBe(false);
   });
 });
 
@@ -466,81 +547,43 @@ describe("transactional progress sentences", () => {
   const view = (
     extra: Partial<TransactionalProgressView>,
   ): TransactionalProgressView => ({
-    stage: "parties",
+    stage: "authors",
     color: "warning",
     icon: "i-lucide-users",
-    proponent: member("cea"),
     missing: [],
     rejected: [],
+    sourceIds: ["s1", "s2"],
     actorTurn: false,
     ...extra,
   });
   const message = (
     extra: Partial<TransactionalProgressView>,
     form: "short" | "long",
-  ) => transactionalProgressMessage(view(extra), form);
+    words?: Parameters<typeof transactionalProgressMessage>[2],
+  ) => transactionalProgressMessage(view(extra), form, words);
+  const and = (items: string[]) => items.join(" y ");
 
-  it("names the presenter, or tells the presenter it is their turn", () => {
-    expect(message({ stage: "proponent" }, "short")).toEqual({
-      key: "transactional.progress.short.proponent",
-      params: { member: "CEA" },
-    });
-    expect(message({ stage: "proponent", actorTurn: true }, "long")).toEqual({
-      key: "transactional.progress.long.yourApproval",
-      params: {},
-    });
-    expect(message({ stage: "proponent", proponent: null }, "long")?.key).toBe(
-      "transactional.progress.long.proponentUnknown",
-    );
-    expect(message({ stage: "proponent_rejected" }, "short")).toEqual({
-      key: "transactional.progress.short.proponent_rejected",
-      params: { member: "CEA" },
-    });
-  });
-
-  it("leaves the detail to the Secretaría's sentence while it has it", () => {
-    for (const stage of ["validation", "publication"] as const) {
-      expect(message({ stage }, "long")).toBeNull();
-      expect(message({ stage }, "short")?.key).toBe(
-        `transactional.progress.short.${stage}`,
-      );
-    }
-    // Then who will still have to accept it, only if someone has to.
-    expect(
-      transactionalAfterSecretaria(
-        view({ stage: "validation", missing: [member("ceum")] }),
-      ),
-    ).toEqual({
-      key: "transactional.progress.afterSecretaria",
-      params: { members: "CEUM" },
-    });
-    expect(
-      transactionalAfterSecretaria(view({ stage: "publication" })),
-    ).toBeNull();
-    expect(
-      transactionalAfterSecretaria(
-        view({ stage: "parties", missing: [member("ceum")] }),
-      ),
-    ).toBeNull();
-  });
-
-  it("lists who is missing, and tells a missing party it is their turn", () => {
+  it("names the main authors missing, or tells one it is their turn", () => {
     const missing = [member("ceum"), member("ceuca")];
     expect(message({ missing }, "short")).toEqual({
-      key: "transactional.progress.short.parties",
+      key: "transactional.progress.short.authors",
       params: { members: "CEUM, CEUCA" },
     });
+    expect(message({ missing }, "long", { join: and })).toEqual({
+      key: "transactional.progress.long.authors",
+      params: { members: "CEUM y CEUCA" },
+    });
     expect(message({ missing, actorTurn: true }, "short")).toEqual({
-      key: "transactional.progress.short.yourAcceptance",
+      key: "transactional.progress.short.yourAnswer",
       params: {},
     });
     expect(message({ missing, actorTurn: true }, "long")).toEqual({
-      key: "transactional.progress.long.yourAcceptance",
+      key: "transactional.progress.long.yourAnswer",
       params: { members: "CEUM, CEUCA" },
     });
   });
 
-  it("names those who said no, not those still missing", () => {
+  it("names who rejected it, not who is still missing", () => {
     expect(
       message(
         {
@@ -554,80 +597,251 @@ describe("transactional progress sentences", () => {
       key: "transactional.progress.long.rejected",
       params: { members: "CEUNE" },
     });
-    expect(message({ stage: "ready" }, "long")?.key).toBe(
-      "transactional.progress.long.ready",
+  });
+
+  it("names the amendments it replaced", () => {
+    expect(
+      message({ stage: "replaced" }, "short", {
+        sources: ["CEUM 1", "CAUB 1"],
+        join: and,
+      }),
+    ).toEqual({
+      key: "transactional.progress.short.replaced",
+      params: { list: "CEUM 1 y CAUB 1" },
+    });
+    // Without their labels, it says it was accepted.
+    expect(message({ stage: "replaced" }, "long")?.key).toBe(
+      "transactional.progress.long.accepted",
+    );
+    expect(message({ stage: "accepted" }, "long")?.key).toBe(
+      "transactional.progress.long.accepted",
     );
     expect(message({ stage: "admission" }, "short")?.key).toBe(
       "transactional.progress.short.admission",
     );
   });
+
+  it("leaves the detail to the Secretaría's sentence while it has it", () => {
+    for (const stage of ["validation", "publication"] as const) {
+      expect(message({ stage }, "long")).toBeNull();
+      expect(message({ stage }, "short")?.key).toBe(
+        `transactional.progress.short.${stage}`,
+      );
+    }
+  });
+
+  it("says what checking it will do: replace the originals", () => {
+    const words = { sources: ["CEUM 1", "CAUB 1"], join: and };
+    expect(
+      transactionalAfterSecretaria(view({ stage: "validation" }), words),
+    ).toEqual({
+      key: "transactional.progress.afterSecretaria",
+      params: { list: "CEUM 1 y CAUB 1" },
+    });
+    expect(
+      transactionalAfterSecretaria(view({ stage: "publication" }), words, true),
+    ).toEqual({
+      key: "transactional.progress.alreadyReplaced",
+      params: { list: "CEUM 1 y CAUB 1" },
+    });
+    expect(
+      transactionalAfterSecretaria(view({ stage: "publication" }), words),
+    ).toBeNull();
+    expect(transactionalAfterSecretaria(view({ stage: "validation" }))).toBe(
+      null,
+    );
+    expect(
+      transactionalAfterSecretaria(view({ stage: "authors" }), words),
+    ).toBeNull();
+  });
 });
 
 describe("after sending a transactional", () => {
-  it("goes to the presenter, the Secretaría and the authors", () => {
-    const steps = transactionalNextSteps({
-      reviewState: "pending_proponent",
-      acceptances: [
-        party("prop", "author", "accepted"),
-        party("ceum", "author"),
-        party("cea", "proponent"),
-      ],
-    });
-    expect(steps.map((step) => step.key)).toEqual([
-      "proponent",
-      "secretaria",
-      "parties",
-      "vote",
-    ]);
-    expect(steps[0]!.members.map((item) => item.id)).toEqual(["cea"]);
-    expect(steps[2]!.members.map((item) => item.id)).toEqual(["ceum"]);
-  });
-
-  it("names a presenter that also wrote a source once, in its own step", () => {
+  it("goes to the main authors, the Secretaría, then replaces the originals", () => {
     const steps = transactionalNextSteps(
       {
-        reviewState: "pending_proponent",
+        reviewState: "pending_authors",
+        sourceIds: ["s1", "s2"],
         acceptances: [
           party("prop", "author", "accepted"),
           party("ceum", "author"),
-          party("cea", "author"),
         ],
       },
-      "cea",
+      "incorporate",
     );
-    expect(steps.map((step) => step.key)).toEqual([
-      "proponent",
-      "secretaria",
-      "parties",
-      "vote",
+    expect(steps).toEqual([
+      { key: "authors", members: [member("ceum")] },
+      { key: "secretaria" },
+      { key: "replaces", sourceIds: ["s1", "s2"] },
+      { key: "answer", rule: "incorporate" },
     ]);
-    expect(steps[0]!.members.map((item) => item.id)).toEqual(["cea"]);
-    expect(steps[2]!.members.map((item) => item.id)).toEqual(["ceum"]);
   });
 
-  it("skips the presenter when it proposed the transactional itself", () => {
+  it("goes straight to the Secretaría when the proposer is every main author", () => {
     expect(
       transactionalNextSteps({
         reviewState: "pending_validation",
-        acceptances: [party("cea", "proponent", "accepted")],
+        sourceIds: ["s1"],
+        acceptances: [party("prop", "author", "accepted")],
       }).map((step) => step.key),
-    ).toEqual(["secretaria", "vote"]);
+    ).toEqual(["secretaria", "replaces", "answer"]);
   });
 
   it("is public at once when the Mesa proposes it", () => {
     const steps = transactionalNextSteps({
       reviewState: "published",
-      acceptances: [party("ceum", "author"), party("cea", "proponent")],
+      sourceIds: ["s1"],
+      acceptances: [party("ceum", "author"), party("caub", "author")],
     });
-    expect(steps.map((step) => step.key)).toEqual(["parties", "vote"]);
-    expect(steps[0]!.members.map((item) => item.id)).toEqual(["ceum", "cea"]);
+    expect(steps.map((step) => step.key)).toEqual([
+      "authors",
+      "replaces",
+      "answer",
+    ]);
+    expect(steps[0]).toEqual({
+      key: "authors",
+      members: [member("ceum"), member("caub")],
+    });
+    expect(steps[2]).toEqual({ key: "answer", rule: "vote" });
   });
 });
 
-describe("the presenter's review", () => {
+describe("main authors of a transactional", () => {
+  const source = (id: string, authors: string[], main: string | null = null) =>
+    amendment(id, [], {
+      authors: authors.map(member),
+      mainAuthorId: main,
+    });
+
+  it("asks the main author of each amendment it combines, once", () => {
+    const sources = [
+      source("a", ["ceum", "caub"], "caub"),
+      source("b", ["ceuca"]),
+      source("c", ["caub"]),
+    ];
+    expect(transactionalAuthorsToAsk(sources, null).map((m) => m.id)).toEqual([
+      "caub",
+      "ceuca",
+    ]);
+    // The proposer's own answer is taken as given.
+    expect(transactionalAuthorsToAsk(sources, "caub").map((m) => m.id)).toEqual(
+      ["ceuca"],
+    );
+    // A co-author who is not the main one is never asked.
+    expect(transactionalAuthorsToAsk(sources, "ceum").map((m) => m.id)).toEqual(
+      ["caub", "ceuca"],
+    );
+  });
+
+  it("finds a party's answer and the amendments it answers for", () => {
+    const sources = [
+      source("a", ["ceum", "caub"], "caub"),
+      source("b", ["caub"]),
+      source("c", ["ceuca"]),
+    ];
+    expect(
+      transactionalPartySources(sources, "caub").map((item) => item.id),
+    ).toEqual(["a", "b"]);
+    expect(transactionalPartySources(sources, "ceum")).toEqual([]);
+    const acceptances = [party("caub", "author", "accepted")];
+    expect(transactionalAnswerOf(acceptances, "caub")?.decision).toBe(
+      "accepted",
+    );
+    expect(transactionalAnswerOf(acceptances, "ceum")).toBeNull();
+    expect(transactionalAnswerOf(acceptances, null)).toBeNull();
+  });
+
+  it("lets only the source's main author answer, while it waits", () => {
+    const over = source("a", ["ceum", "caub"], "caub");
+    const can = { ...amendment("x", []).can, accept: true };
+    const transactional = (
+      decision: AcceptanceDto["decision"],
+      extra: Partial<AmendmentDto> = {},
+    ) =>
+      amendment("t", [], {
+        kind: "transactional",
+        reviewState: "pending_authors",
+        acceptances: [party("caub", "author", decision)],
+        can,
+        ...extra,
+      });
+    expect(
+      transactionalAuthorTurn(transactional("pending"), over, "caub"),
+    ).toBe(true);
+    // A co-author reads the answer; it does not give it.
+    expect(
+      transactionalAuthorTurn(transactional("pending"), over, "ceum"),
+    ).toBe(false);
+    expect(transactionalAuthorTurn(transactional("pending"), over, null)).toBe(
+      false,
+    );
+    expect(
+      transactionalAuthorTurn(transactional("accepted"), over, "caub"),
+    ).toBe(false);
+    expect(
+      transactionalAuthorTurn(
+        transactional("pending", { status: "withdrawn" }),
+        over,
+        "caub",
+      ),
+    ).toBe(false);
+    expect(
+      transactionalAuthorTurn(
+        transactional("pending", { can: { ...can, accept: false } }),
+        over,
+        "caub",
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps showing the main author's answer once given", () => {
+    const over = {
+      ...source("a", ["ceum", "caub"], "caub"),
+      transactionalIds: ["open", "answered", "rejected", "silent", "hidden"],
+    };
+    const transactional = (
+      id: string,
+      decision: AcceptanceDto["decision"],
+      extra: Partial<AmendmentDto> = {},
+    ) =>
+      amendment(id, [], {
+        kind: "transactional",
+        acceptances: [party("caub", "author", decision)],
+        ...extra,
+      });
+    const byId = new Map(
+      [
+        transactional("open", "pending"),
+        // Answered, then voted: co-authors still see who accepted it.
+        transactional("answered", "accepted", {
+          status: "approved",
+          decidedAt: "2026-11-03",
+        }),
+        // Closed by another main author's rejection.
+        amendment("rejected", [], {
+          kind: "transactional",
+          status: "withdrawn",
+          acceptances: [
+            party("caub", "author"),
+            party("ceuca", "author", "rejected"),
+          ],
+        }),
+        // Decided without its answer: nothing to show.
+        transactional("silent", "pending", { status: "lapsed" }),
+      ].map((item) => [item.id, item]),
+    );
+    expect(transactionalsOverSource(over, byId).map((t) => t.id)).toEqual([
+      "open",
+      "answered",
+      "rejected",
+    ]);
+  });
+});
+
+describe("the main presenter's review", () => {
   const can = { ...amendment("x", []).can, position: true };
 
-  it("counts positions to take and transactionals to approve", () => {
+  it("counts the amendments that reached it without an answer", () => {
     const list = [
       amendment("open", [], { can }),
       amendment("pendingPosition", [], {
@@ -647,56 +861,53 @@ describe("the presenter's review", () => {
         },
       }),
       amendment("unchecked", [], { can, reviewState: "pending_validation" }),
-      amendment("decided", [], { can, status: "approved" }),
+      amendment("lateWaiting", [], { can, late: true, admission: "pending" }),
+      amendment("decided", [], { can, status: "rejected" }),
+      amendment("incorporated", [], {
+        can,
+        status: "approved",
+        approvalMethod: "proponent",
+        position: {
+          position: "accept",
+          comment: null,
+          updatedAt: "2026-11-01",
+        },
+      }),
       amendment("hidden", []),
-      amendment("toApprove", [], {
+      amendment("waitingAuthors", [], {
+        can,
         kind: "transactional",
-        reviewState: "pending_proponent",
-        acceptances: [party("cea", "proponent")],
+        reviewState: "pending_authors",
+        acceptances: [party("ceum", "author")],
       }),
-      amendment("approved", [], {
+      amendment("replaced", [], {
+        can,
         kind: "transactional",
-        acceptances: [party("cea", "proponent", "accepted")],
+        acceptances: [party("ceum", "author", "accepted")],
       }),
-    ];
-    expect(proponentReviewBacklog(list)).toEqual({
-      positions: 2,
-      transactionals: 1,
-      total: 3,
-    });
-    expect(proponentReviewBacklog(list, "cea")).toEqual({
-      positions: 2,
-      transactionals: 1,
-      total: 3,
-    });
-  });
-
-  it("counts a transactional whose presenter also wrote a source", () => {
-    const list = [
-      amendment("toApprove", [], {
+      // A row left by the removed presenter approval does not hold it back.
+      amendment("olderRow", [], {
+        can,
         kind: "transactional",
-        reviewState: "pending_proponent",
         acceptances: [
           party("ceum", "author", "accepted"),
-          party("cea", "author"),
-        ],
-      }),
-      amendment("approved", [], {
-        kind: "transactional",
-        reviewState: "pending_validation",
-        acceptances: [
-          party("ceum", "author"),
-          party("cea", "author", "accepted"),
+          party("cea", "proponent"),
         ],
       }),
     ];
-    // "approved" waits for CEUM, an author, not for the presenter.
-    expect(proponentReviewBacklog(list, "cea")).toEqual({
-      positions: 0,
-      transactionals: 1,
-      total: 1,
-    });
-    // Without the presenter's member, an "author" row is not the presenter.
-    expect(proponentReviewBacklog(list).transactionals).toBe(0);
+    for (const rule of ["vote", "incorporate"] as const) {
+      expect(proponentReviewBacklog(list, rule)).toEqual({
+        positions: 4,
+        total: 4,
+      });
+    }
+  });
+
+  it("counts one the Secretaría keeps private only when it is voted", () => {
+    // Under "vote" the Mesa can answer it already; under "incorporate"
+    // accepting it would put unpublished text in the document.
+    const list = [amendment("private", [], { can, reviewState: "validated" })];
+    expect(proponentReviewBacklog(list, "vote").total).toBe(1);
+    expect(proponentReviewBacklog(list, "incorporate").total).toBe(0);
   });
 });

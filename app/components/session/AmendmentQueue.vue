@@ -18,7 +18,10 @@ import { assemblyPath } from "~/components/shell/Navigation.vue";
  * Late amendments come first, as "Fuera de plazo": the assembly decides
  * whether to treat them (AdmissionDialog) and only then can they be debated
  * and decided. Amendments that change the same passage are grouped with a
- * one-click transactional. Those the Secretaría has not validated yet sit
+ * one-click transactional. In a document that incorporates accepted
+ * amendments, a line says so: those the main presenter accepts are
+ * already in the text. Those the Secretaría has not validated yet (or a
+ * member's transactional the main authors have not accepted yet) sit
  * apart, folded away, since the Mesa cannot debate them: whoever can
  * validate them does it there (asking first when it is several at once) or
  * opens them in Validación, where they can also be sent back.
@@ -55,24 +58,14 @@ const validatable = computed(() =>
 const validating = computed(() => Boolean(session.busy.value.validate));
 /** Who the folded group waits for, as one short line under its title. */
 const validationDetail = computed(() => {
-  const { toValidate, inCorrection, awaitingProponent, proponentRejected } =
-    sessionValidationBreakdown(
-      awaitingValidation.value,
-      session.presenterId.value,
-    );
+  const { toValidate, inCorrection, awaitingAuthors } =
+    sessionValidationBreakdown(awaitingValidation.value);
   return [
-    proponentRejected > 0
+    awaitingAuthors > 0
       ? t(
-          "session.queue.validationProponentRejected",
-          { count: proponentRejected },
-          proponentRejected,
-        )
-      : null,
-    awaitingProponent > 0
-      ? t(
-          "session.queue.validationAwaitingProponent",
-          { count: awaitingProponent },
-          awaitingProponent,
+          "session.queue.validationAwaitingAuthors",
+          { count: awaitingAuthors },
+          awaitingAuthors,
         )
       : null,
     toValidate > 0
@@ -142,9 +135,12 @@ const hideDecided = computed({
   },
 });
 
-const assentByVote = computed(
-  () => session.settings.value.acceptedAmendments === "vote",
-);
+/**
+ * Admitted amendments the main presenter accepts, ready to be approved
+ * together by assent (a way of voting when nobody opposes). In a document
+ * that incorporates accepted amendments there are none: accepting already
+ * approved them.
+ */
 const readyForAssent = computed(() => session.assentPlan.value.ready.length);
 
 const loading = computed(
@@ -193,6 +189,21 @@ const failed = computed(
         aria-hidden="true"
       />
       {{ t("session.queue.notLive") }}
+    </p>
+
+    <p
+      v-if="
+        document && document.amendable && session.incorporatesAccepted.value
+      "
+      class="text-muted flex items-start gap-1.5 text-sm"
+      role="note"
+    >
+      <UIcon
+        name="i-lucide-file-check-2"
+        class="mt-0.5 size-4 shrink-0"
+        aria-hidden="true"
+      />
+      {{ t("session.queue.incorporateRule") }}
     </p>
 
     <div v-if="loading" class="space-y-2" role="status">
@@ -252,7 +263,7 @@ const failed = computed(
           :label="t('session.queue.hideDecided')"
         />
         <UTooltip
-          v-if="!assentByVote && readyForAssent > 0"
+          v-if="readyForAssent > 0"
           :text="t('session.queue.assentHint')"
         >
           <UButton

@@ -8,7 +8,40 @@ vi.mock("./requireAuth", () => ({
   requireAuth: vi.fn(),
 }));
 
-const { getEffectivePermissions, mergePermissions } = await import("./rbac");
+const {
+  ADMIN_SECTION_PERMISSIONS,
+  adminGrantViolation,
+  getEffectivePermissions,
+  hasAnyPermission,
+  mergePermissions,
+} = await import("./rbac");
+
+describe("hasAnyPermission", () => {
+  it("opens the admin section with either users or roles", () => {
+    expect(
+      hasAnyPermission(
+        [PERMISSION_KEYS.USER_MANAGE_ROLES],
+        ADMIN_SECTION_PERMISSIONS,
+      ),
+    ).toBe(true);
+    expect(
+      hasAnyPermission(
+        [PERMISSION_KEYS.ROLE_MANAGE_PERMISSIONS],
+        ADMIN_SECTION_PERMISSIONS,
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps everyone else out", () => {
+    expect(
+      hasAnyPermission(
+        [PERMISSION_KEYS.DOCUMENT_MANAGE, PERMISSION_KEYS.MEMBER_MANAGE],
+        ADMIN_SECTION_PERMISSIONS,
+      ),
+    ).toBe(false);
+    expect(hasAnyPermission([], ADMIN_SECTION_PERMISSIONS)).toBe(false);
+  });
+});
 
 describe("mergePermissions", () => {
   it("adds the user's grants to the role's, without duplicates", () => {
@@ -42,5 +75,71 @@ describe("getEffectivePermissions", () => {
       role: { id: "r1", name: "Admin" },
     });
     expect(keys).toEqual(Object.values(PERMISSION_KEYS));
+  });
+});
+
+describe("adminGrantViolation", () => {
+  const { USER_MANAGE_ROLES, ROLE_MANAGE_PERMISSIONS, SESSION_MODERATE } =
+    PERMISSION_KEYS;
+  const base = {
+    admin: false,
+    callerPermissions: [USER_MANAGE_ROLES, SESSION_MODERATE],
+    ownTarget: false,
+  };
+
+  it("keeps a non-Admin away from its own account and role", () => {
+    expect(
+      adminGrantViolation({ ...base, ownTarget: true, target: "account" }),
+    ).toBe("own_account");
+    expect(
+      adminGrantViolation({ ...base, ownTarget: true, target: "role" }),
+    ).toBe("own_role");
+  });
+
+  it("lets an Admin change anything, its own account included", () => {
+    expect(
+      adminGrantViolation({
+        ...base,
+        admin: true,
+        callerPermissions: [],
+        ownTarget: true,
+        target: "account",
+        before: [],
+        after: [ROLE_MANAGE_PERMISSIONS],
+      }),
+    ).toBeNull();
+  });
+
+  it("refuses adding or removing a key the caller does not hold", () => {
+    expect(
+      adminGrantViolation({
+        ...base,
+        target: "account",
+        before: [],
+        after: [ROLE_MANAGE_PERMISSIONS],
+      }),
+    ).toBe("not_held");
+    expect(
+      adminGrantViolation({
+        ...base,
+        target: "role",
+        before: [ROLE_MANAGE_PERMISSIONS],
+        after: [],
+      }),
+    ).toBe("not_held");
+  });
+
+  it("only looks at the keys that change", () => {
+    expect(
+      adminGrantViolation({
+        ...base,
+        target: "account",
+        before: [ROLE_MANAGE_PERMISSIONS],
+        after: [ROLE_MANAGE_PERMISSIONS, SESSION_MODERATE],
+      }),
+    ).toBeNull();
+    expect(
+      adminGrantViolation({ ...base, target: "role", before: [], after: [] }),
+    ).toBeNull();
   });
 });

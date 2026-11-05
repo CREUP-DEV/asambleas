@@ -1,19 +1,22 @@
 /**
  * Pure helpers that turn GET /api/me/work into what the home page and the
  * assembly overview show: the things a user has to do (present an expected
- * document, fix what the Secretaría sent back, send a draft, answer the
- * amendments to a document they present), where the rest of their documents
- * and amendments stand, and the Secretaría's pending review per assembly.
- * No Vue or Nuxt here.
+ * document, fix what the Secretaría sent back, send a draft, answer a
+ * transactional over their amendment, answer the amendments to a document
+ * they present), where the rest of their documents and amendments stand,
+ * what others decided about them ("Novedades"), and the Secretaría's
+ * pending review per assembly. No Vue or Nuxt here.
  *
  * The "-" prefix keeps Nuxt from registering this module (and its test) as
  * a component; import it explicitly.
  */
 import type {
+  MeWorkAcceptanceDto,
   MeWorkAmendmentDto,
   MeWorkAssemblyRef,
   MeWorkDocumentDto,
   MeWorkDto,
+  MeWorkNewsDto,
   MeWorkProponentDto,
   MeWorkReviewDto,
 } from "~~/shared/types/api";
@@ -29,8 +32,13 @@ export type HomeWorkTaskKind =
   /** The Secretaría sent the amendment back with a note. */
   | "amendment_correction"
   /**
-   * A published document the user's member presents has amendments with no
-   * position yet, or transactionals waiting for its approval.
+   * A transactional would replace the user's amendment: as its main author,
+   * the user accepts or rejects it.
+   */
+  | "transactional_answer"
+  /**
+   * A published document the user's member presents (as main presenter) has
+   * amendments it has not answered yet.
    */
   | "proponent_review"
   /** An amendment draft never presented. */
@@ -44,7 +52,11 @@ export type HomeWorkTaskKind =
 export type HomeWorkUpdateKind =
   | "document_review"
   | "document_published"
+  /** A transactional the user proposed, waiting for the main authors. */
+  | "amendment_authors"
   | "amendment_review"
+  /** Late: the assembly has not decided whether to treat it yet. */
+  | "amendment_late"
   | "amendment_validated"
   | "amendment_published"
   | "amendment_other";
@@ -60,12 +72,10 @@ export interface HomeWorkAmendmentRef {
   code: string | null;
 }
 
-/** What waits for the presenter of a document (`proponent_review`). */
+/** What waits for the main presenter of a document (`proponent_review`). */
 export interface HomeWorkProponentCounts {
-  /** Undecided amendments with no position from the presenter yet. */
+  /** Undecided amendments with no answer from the main presenter yet. */
   positions: number;
-  /** Transactionals waiting for the presenter's approval. */
-  transactionals: number;
 }
 
 export interface HomeWorkTask {
@@ -74,7 +84,10 @@ export interface HomeWorkTask {
   kind: HomeWorkTaskKind;
   assembly: MeWorkAssemblyRef;
   document: HomeWorkDocumentRef;
+  /** The amendment, or the transactional to answer. */
   amendment: HomeWorkAmendmentRef | null;
+  /** Only for `transactional_answer`: the user's amendments it replaces. */
+  replaces: HomeWorkAmendmentRef[];
   /** Only for `proponent_review`: what is waiting; null otherwise. */
   counts: HomeWorkProponentCounts | null;
   /** The Secretaría's note when it asked for a correction. */
@@ -84,8 +97,8 @@ export interface HomeWorkTask {
   /** The deadline has passed and the document was not presented. */
   overdue: boolean;
   /**
-   * Where it is done: the document editor, the document workspace, or the
-   * presenter's review of the document's amendments.
+   * Where it is done: the document editor, the document workspace (with
+   * the amendment open), or the presenter's review of the amendments.
    */
   target: "edit" | "document" | "review";
 }
@@ -136,30 +149,47 @@ export function homeWorkAmendmentTask(
     : "amendment_draft";
 }
 
-/** What the presenter of a document has to answer, if anything. */
+/** What the main presenter of a document has to answer, if anything. */
 export function homeWorkProponentCounts(
   entry: MeWorkProponentDto,
 ): HomeWorkProponentCounts | null {
   const positions = Math.max(0, entry.positionsPending);
-  const transactionals = Math.max(0, entry.transactionalsToApprove);
-  return positions + transactionals > 0 ? { positions, transactionals } : null;
+  return positions > 0 ? { positions } : null;
 }
 
 const TASK_RANK: Record<HomeWorkTaskKind, number> = {
   document_correction: 0,
   amendment_correction: 0,
-  proponent_review: 1,
-  document_prepare: 2,
-  document_send: 2,
-  amendment_draft: 3,
+  transactional_answer: 1,
+  proponent_review: 2,
+  document_prepare: 3,
+  document_send: 3,
+  amendment_draft: 4,
 };
+
+function acceptanceTask(entry: MeWorkAcceptanceDto): HomeWorkTask {
+  return {
+    key: `acceptance-${entry.transactional.id}`,
+    kind: "transactional_answer",
+    assembly: entry.assembly,
+    document: { ...entry.document },
+    amendment: { ...entry.transactional },
+    replaces: entry.replaces.map((amendment) => ({ ...amendment })),
+    counts: null,
+    note: null,
+    dueAt: null,
+    overdue: false,
+    target: "document",
+  };
+}
 
 /**
  * Everything the user has to do, most urgent first: corrections the
- * Secretaría asked for, then the amendments to answer as the presenter of a
- * document (transactionals waiting for approval hold up the debate), then
- * overdue documents, then the rest by deadline (documents without one after
- * those with one), then amendment drafts.
+ * Secretaría asked for, then the transactionals waiting for the user's
+ * answer (they hold up the amendments they would replace), then the
+ * amendments to answer as the main presenter of a document, then overdue
+ * documents, then the rest by deadline (documents without one after those
+ * with one), then amendment drafts.
  */
 export function homeWorkTasks(work: MeWorkDto, now: number): HomeWorkTask[] {
   const tasks: HomeWorkTask[] = [];
@@ -173,6 +203,7 @@ export function homeWorkTasks(work: MeWorkDto, now: number): HomeWorkTask[] {
       assembly: entry.assembly,
       document: documentRef(entry),
       amendment: null,
+      replaces: [],
       counts: null,
       note:
         kind === "document_correction" ? entry.document.correctionNote : null,
@@ -181,6 +212,7 @@ export function homeWorkTasks(work: MeWorkDto, now: number): HomeWorkTask[] {
       target: "edit",
     });
   }
+  for (const entry of work.acceptances) tasks.push(acceptanceTask(entry));
   for (const entry of work.proponent) {
     const counts = homeWorkProponentCounts(entry);
     if (!counts) continue;
@@ -190,6 +222,7 @@ export function homeWorkTasks(work: MeWorkDto, now: number): HomeWorkTask[] {
       assembly: entry.assembly,
       document: { ...entry.document },
       amendment: null,
+      replaces: [],
       counts,
       note: null,
       dueAt: null,
@@ -206,6 +239,7 @@ export function homeWorkTasks(work: MeWorkDto, now: number): HomeWorkTask[] {
       assembly: entry.assembly,
       document: { ...entry.document },
       amendment: { id: entry.amendment.id, code: entry.amendment.code },
+      replaces: [],
       counts: null,
       note:
         kind === "amendment_correction" ? entry.amendment.correctionNote : null,
@@ -221,10 +255,6 @@ export function homeWorkTasks(work: MeWorkDto, now: number): HomeWorkTask[] {
     const dueA = time(a.dueAt) ?? Number.POSITIVE_INFINITY;
     const dueB = time(b.dueAt) ?? Number.POSITIVE_INFINITY;
     if (dueA !== dueB) return dueA - dueB;
-    // Presenters: transactionals waiting for approval first.
-    const waitingA = a.counts?.transactionals ?? 0;
-    const waitingB = b.counts?.transactionals ?? 0;
-    if (waitingA > 0 !== waitingB > 0) return waitingA > 0 ? -1 : 1;
     return (
       a.assembly.label.localeCompare(b.assembly.label) ||
       a.document.title.localeCompare(b.document.title) ||
@@ -250,12 +280,20 @@ function amendmentUpdate(entry: MeWorkAmendmentDto): HomeWorkUpdateKind | null {
   if (amendment.status === "draft") return null;
   if (amendment.status !== "submitted") return "amendment_other";
   switch (amendment.reviewState) {
+    case "pending_authors":
+      return "amendment_authors";
     case "pending_validation":
       return "amendment_review";
     case "validated":
-      return "amendment_validated";
     case "published":
-      return "amendment_published";
+      // Checked by the Secretaría but late: the assembly decides first
+      // whether to treat it.
+      if (amendment.late && amendment.admission === "pending") {
+        return "amendment_late";
+      }
+      return amendment.reviewState === "validated"
+        ? "amendment_validated"
+        : "amendment_published";
     default:
       return "amendment_other";
   }
@@ -263,7 +301,9 @@ function amendmentUpdate(entry: MeWorkAmendmentDto): HomeWorkUpdateKind | null {
 
 const UPDATE_RANK: Record<HomeWorkUpdateKind, number> = {
   document_review: 0,
+  amendment_authors: 0,
   amendment_review: 0,
+  amendment_late: 1,
   amendment_validated: 1,
   document_published: 2,
   amendment_published: 2,
@@ -272,9 +312,11 @@ const UPDATE_RANK: Record<HomeWorkUpdateKind, number> = {
 
 /**
  * Where the user's documents and amendments stand when there is nothing
- * for them to do: waiting for the Secretaría first, then validated, then
- * published. A published document whose amendments wait for the user's
- * answer is left out: it is already a task.
+ * for them to do: waiting for someone first (the Secretaría, the main
+ * authors of what a transactional replaces), then late ones waiting for
+ * the assembly and validated ones, then published. A published document
+ * whose amendments wait for the user's answer is left out: it is already a
+ * task.
  */
 export function homeWorkUpdates(work: MeWorkDto): HomeWorkUpdate[] {
   const answering = new Set(
@@ -323,6 +365,298 @@ export function homeWorkUpdates(work: MeWorkDto): HomeWorkUpdate[] {
   );
 }
 
+// News -------------------------------------------------------------------------
+
+/** An i18n key and its parameters, still to be translated. */
+export interface HomeWorkPhrase {
+  key: string;
+  params: Record<string, string>;
+}
+
+/**
+ * Who decided, as a sentence names them: a phrase to translate ("UPV,
+ * proponente principal,") or just the member's acronym.
+ */
+export type HomeWorkWho = HomeWorkPhrase | { name: string };
+
+/**
+ * A decision someone else took about the user's work, in words:
+ * `sentence` is translated with `who` and `amendment` translated first and
+ * passed in as the parameters of the same name.
+ */
+export interface HomeWorkNews {
+  key: string;
+  assembly: MeWorkAssemblyRef;
+  document: HomeWorkDocumentRef;
+  amendment: HomeWorkAmendmentRef | null;
+  sentence: HomeWorkPhrase;
+  /** Who decided, when the sentence names it. */
+  who: HomeWorkWho | null;
+  /** The amendment as the sentence names it ("tu enmienda CEUM 2"). */
+  phrase: HomeWorkPhrase | null;
+  /** Tone of its icon: good news, bad news or neutral. */
+  tone: "success" | "error" | "neutral";
+  at: string;
+}
+
+const POSITION_VALUES = new Set(["accept", "reject", "transact", "pending"]);
+
+/**
+ * Event types that settle one of the member's own amendments (the server
+ * sends them only for amendments the member authored, `NEWS_OUTCOME_TYPES`),
+ * so their news always say "tu enmienda", even once it is decided and gone
+ * from the work list.
+ */
+const OWN_OUTCOME_TYPES = new Set([
+  "amendment_validated",
+  "amendment_published",
+  "amendment_correction_requested",
+  "amendment_admitted",
+  "amendment_inadmissible",
+  "amendment_approved",
+  "amendment_rejected",
+  "amendment_withdrawn",
+  "amendment_lapsed",
+  "amendment_transacted",
+  "amendment_reopened",
+]);
+
+/** Transactionals are numbered apart: `T1`, `T2`... (docs/design.md). */
+export function isHomeWorkTransactionalCode(code: string | null): boolean {
+  return code !== null && /^T\d+$/.test(code);
+}
+
+/**
+ * Amendment ids that are the user's member's own: the undecided ones it
+ * authored, those a transactional waiting for its answer would replace, and
+ * those the news settle (the server sends those only for amendments the
+ * member authored), so the main presenter's answer still says "tu enmienda"
+ * once the amendment is decided. An answer about anything else is worded
+ * neutrally ("la enmienda CEUM 2").
+ */
+export function homeWorkOwnAmendmentIds(work: MeWorkDto): Set<string> {
+  const ids = new Set(work.amendments.map((entry) => entry.amendment.id));
+  for (const entry of work.acceptances) {
+    for (const amendment of entry.replaces) ids.add(amendment.id);
+  }
+  for (const news of work.news) {
+    if (news.amendment && OWN_OUTCOME_TYPES.has(news.type)) {
+      ids.add(news.amendment.id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * How a sentence names the amendment: "tu enmienda CEUM 2", "la enmienda
+ * CEUM 2", "tu transaccional T2", "la transaccional T2", or "una enmienda"
+ * before it has a code.
+ */
+function amendmentPhrase(
+  amendment: HomeWorkAmendmentRef | null,
+  own: boolean,
+  transactional = false,
+): HomeWorkPhrase | null {
+  if (!amendment) return null;
+  if (!amendment.code) {
+    return { key: "home.news.phrase.someAmendment", params: {} };
+  }
+  const key = transactional
+    ? own
+      ? "home.news.phrase.yourTransactional"
+      : "home.news.phrase.transactional"
+    : own
+      ? "home.news.phrase.yourAmendment"
+      : "home.news.phrase.amendment";
+  return { key, params: { code: amendment.code } };
+}
+
+/**
+ * Puts one news entry into words: what happened, who did it when the
+ * sentence names someone, and how the amendment is named. Unknown event
+ * types get a general sentence.
+ */
+export function homeWorkNewsItem(
+  news: MeWorkNewsDto,
+  own: ReadonlySet<string> = new Set(),
+): HomeWorkNews {
+  const amendment = news.amendment ? { ...news.amendment } : null;
+  const mine = amendment
+    ? own.has(amendment.id) || OWN_OUTCOME_TYPES.has(news.type)
+    : false;
+  const transactional = isHomeWorkTransactionalCode(amendment?.code ?? null);
+  const by = news.by?.acronym ?? null;
+  const base = {
+    key: news.id,
+    assembly: news.assembly,
+    document: { ...news.document },
+    amendment,
+    at: news.at,
+  };
+  const phrase = amendmentPhrase(amendment, mine, transactional);
+  const make = (
+    key: string,
+    tone: HomeWorkNews["tone"] = "neutral",
+    who: HomeWorkWho | null = null,
+    named: HomeWorkPhrase | null = phrase,
+    params: Record<string, string> = {},
+  ): HomeWorkNews => ({
+    ...base,
+    sentence: { key, params },
+    who,
+    phrase: named,
+    tone,
+  });
+
+  switch (news.type) {
+    case "position_changed": {
+      const value =
+        news.value && POSITION_VALUES.has(news.value) ? news.value : "pending";
+      const who: HomeWorkPhrase = by
+        ? { key: "home.news.who.mainPresenter", params: { member: by } }
+        : { key: "home.news.who.mainPresenterUnknown", params: {} };
+      const tone =
+        value === "accept"
+          ? "success"
+          : value === "reject"
+            ? "error"
+            : "neutral";
+      return make(`home.news.position.${value}`, tone, who);
+    }
+    case "acceptance_recorded": {
+      const who: HomeWorkWho = by
+        ? { name: by }
+        : { key: "home.news.who.mainAuthorUnknown", params: {} };
+      // Always a transactional: one over the member's amendment, or one it
+      // proposed (still open, so in the work list).
+      const named = amendmentPhrase(amendment, mine, true);
+      return news.value === "rejected"
+        ? make("home.news.acceptance.rejected", "error", who, named)
+        : news.value === "accepted"
+          ? make("home.news.acceptance.accepted", "success", who, named)
+          : make("home.news.acceptance.pending", "neutral", who, named);
+    }
+    case "amendment_approved":
+      // Accepted by the document's main presenter, in a document that
+      // incorporates accepted amendments: named when known.
+      if (news.value === "proponent") {
+        return by
+          ? make("home.news.amendment.incorporatedBy", "success", {
+              key: "home.news.who.mainPresenter",
+              params: { member: by },
+            })
+          : make("home.news.amendment.incorporated", "success");
+      }
+      return make("home.news.amendment.approved", "success");
+    case "amendment_rejected":
+      return make("home.news.amendment.rejected", "error");
+    case "amendment_validated":
+      // Validated but late: the assembly still decides whether to treat it.
+      return news.value === "pending"
+        ? make("home.news.amendment.validatedLate")
+        : make("home.news.amendment.validated");
+    case "amendment_published":
+      return make("home.news.amendment.published");
+    case "amendment_correction_requested":
+      return make("home.news.amendment.correction");
+    case "amendment_admitted":
+      return make("home.news.amendment.admitted", "success");
+    case "amendment_inadmissible":
+      return make("home.news.amendment.inadmissible", "error");
+    case "amendment_transacted":
+      // Named after the transactional that replaced it, when known.
+      return news.value
+        ? make("home.news.amendment.transactedBy", "neutral", null, phrase, {
+            code: news.value,
+          })
+        : make("home.news.amendment.transacted");
+    case "amendment_lapsed":
+      // A transactional left behind because another one replaced its
+      // amendments first: the value names that one.
+      return news.value
+        ? make("home.news.amendment.lapsedBy", "neutral", null, phrase, {
+            code: news.value,
+          })
+        : make("home.news.amendment.lapsed");
+    case "amendment_withdrawn":
+      return make("home.news.amendment.withdrawn");
+    case "amendment_reopened":
+      return make("home.news.amendment.reopened");
+    case "document_published":
+      return make("home.news.document.published", "success");
+    case "document_correction_requested":
+      return make("home.news.document.correction");
+    case "document_voted":
+      return news.value === "rejected"
+        ? make("home.news.document.rejected", "error")
+        : make("home.news.document.approved", "success");
+    case "document_status_changed":
+      if (news.value === "withdrawn" || news.value === "postponed") {
+        return make(`home.work.updates.document_${news.value}`);
+      }
+      return make("home.news.document.other");
+    default:
+      return amendment
+        ? make("home.news.amendment.other")
+        : make("home.news.document.other");
+  }
+}
+
+/**
+ * The news without the ones a single decision produced twice. Events
+ * recorded together share their time, so two news about the same amendment
+ * at the same instant come from one decision, and one sentence says it:
+ * - a main author's rejection closes the transactional (it is withdrawn):
+ *   the rejection says so, the withdrawal is dropped;
+ * - the main presenter's acceptance incorporates the amendment: the
+ *   incorporation names who accepted it, the answer is dropped;
+ * - a new answer takes an incorporated amendment out again (it is
+ *   reopened): the answer says so, the reopening is dropped.
+ */
+export function homeWorkNewsDeduped(list: MeWorkNewsDto[]): MeWorkNewsDto[] {
+  const keyOf = (news: MeWorkNewsDto) =>
+    news.amendment ? `${news.amendment.id}@${time(news.at) ?? news.at}` : null;
+  const together = new Map<string, Set<string>>();
+  for (const news of list) {
+    const key = keyOf(news);
+    if (!key) continue;
+    const kinds = together.get(key) ?? new Set<string>();
+    kinds.add(news.type);
+    kinds.add(`${news.type}:${news.value ?? ""}`);
+    together.set(key, kinds);
+  }
+  return list.filter((news) => {
+    const key = keyOf(news);
+    const kinds = key ? together.get(key) : undefined;
+    if (!kinds) return true;
+    switch (news.type) {
+      case "amendment_withdrawn":
+        return !kinds.has("acceptance_recorded:rejected");
+      case "position_changed":
+        return !(
+          news.value === "accept" && kinds.has("amendment_approved:proponent")
+        );
+      case "amendment_reopened":
+        return !kinds.has("position_changed");
+      default:
+        return true;
+    }
+  });
+}
+
+/** The news, latest first, in words (homeWorkNewsItem), without repeats. */
+export function homeWorkNews(work: MeWorkDto): HomeWorkNews[] {
+  const own = homeWorkOwnAmendmentIds(work);
+  return homeWorkNewsDeduped(work.news)
+    .map((news) => homeWorkNewsItem(news, own))
+    .sort(
+      (a, b) =>
+        (time(b.at) ?? 0) - (time(a.at) ?? 0) || a.key.localeCompare(b.key),
+    );
+}
+
+// Review -------------------------------------------------------------------------
+
 /** Everything waiting for the Secretaría in one assembly. */
 export function homeWorkReviewTotal(review: MeWorkReviewDto): number {
   return (
@@ -345,17 +679,15 @@ export function homeWorkForAssembly(
   work: MeWorkDto,
   assemblyId: string,
 ): MeWorkDto {
+  const here = (entry: { assembly: MeWorkAssemblyRef }) =>
+    entry.assembly.id === assemblyId;
   return {
-    documents: work.documents.filter(
-      (entry) => entry.assembly.id === assemblyId,
-    ),
-    amendments: work.amendments.filter(
-      (entry) => entry.assembly.id === assemblyId,
-    ),
-    review: work.review.filter((entry) => entry.assembly.id === assemblyId),
-    proponent: work.proponent.filter(
-      (entry) => entry.assembly.id === assemblyId,
-    ),
+    documents: work.documents.filter(here),
+    amendments: work.amendments.filter(here),
+    review: work.review.filter(here),
+    proponent: work.proponent.filter(here),
+    acceptances: work.acceptances.filter(here),
+    news: work.news.filter(here),
   };
 }
 

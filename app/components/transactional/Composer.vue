@@ -13,8 +13,11 @@ import { blockLabels } from "~~/shared/utils/content/render";
 import {
   amendmentErrorKey,
   amendmentErrorReasons,
+  composerMainAuthor,
 } from "~/composables/amendment/workspace";
+import { useTransactionalProgressText } from "~/composables/amendment/useTransactionalProgressText";
 import {
+  transactionalAuthorsToAsk,
   transactionalComposerSeed,
   transactionalMemberList,
   transactionalNextSteps,
@@ -35,10 +38,13 @@ import {
  * undecided amendments it combines, the text (seeded with the passage they
  * touch and the amendments applied, edited in place), the change against
  * the original, and why. Sending (POST .../amendments/transactional, submit
- * true) explains what happens next from where the server left it: the
- * document's presenter approves it, the Secretaría checks and publishes it,
- * and the parties accept it before it is voted. The Mesa's is public at
- * once.
+ * true) explains what happens next from where the server left it: the main
+ * author of each amendment it combines accepts or rejects it (a rejection
+ * closes it), the Secretaría checks and publishes it, and then it replaces
+ * those amendments and follows the normal flow (the document's main
+ * presenter answers it; it is voted or incorporated). The Mesa's is public
+ * at once and replaces them as soon as their main authors accept it. When
+ * the Mesa names several proposers, one must be the main author.
  *
  * What was typed is never dropped silently: changing the amendments,
  * resetting the text, closing or leaving the page ask first.
@@ -80,6 +86,7 @@ const api = useApi();
 const toast = useToast();
 const { member } = useMe();
 const formId = useId();
+const { join } = useTransactionalProgressText();
 
 const heading = useTemplateRef<HTMLElement>("heading");
 const sentHeading = useTemplateRef<HTMLElement>("sentHeading");
@@ -91,6 +98,7 @@ const justificationInput = useTemplateRef<{
 }>("justificationInput");
 const choices = useTemplateRef<HTMLElement>("choices");
 const authorsBox = useTemplateRef<HTMLElement>("authorsBox");
+const mainAuthorBox = useTemplateRef<HTMLElement>("mainAuthorBox");
 
 // Sources ------------------------------------------------------------------------
 
@@ -262,12 +270,12 @@ function resetText(): void {
 
 /** The Mesa presents it on behalf of the parties; members present it themselves. */
 const isMesa = computed(() => props.document.can.moderate);
-const isPresenter = computed(
-  () =>
-    member.value !== null && props.document.proponent?.id === member.value?.id,
-);
 
-/** Authors of the sources, then the document's presenter. */
+/**
+ * Who the Mesa can name as proposers: the authors of the amendments it
+ * combines, then the document's main presenter (it may well have asked for
+ * the agreement).
+ */
 const parties = computed<MemberRef[]>(() => {
   const seen = new Map<string, MemberRef>();
   for (const source of sources.value) {
@@ -312,6 +320,21 @@ function onAuthorsChange(value: unknown): void {
   authorsTouched.value = true;
 }
 
+/** With several proposers, the Mesa names the main author. */
+const mainAuthorId = ref<string | undefined>(undefined);
+const mainAuthor = computed(() =>
+  composerMainAuthor(isMesa.value ? authorIds.value : [], mainAuthorId.value),
+);
+const mainAuthorItems = computed(() =>
+  authorIds.value.map((id) => {
+    const party = parties.value.find((item) => item.id === id);
+    return {
+      label: party ? `${party.acronym} · ${party.name}` : id,
+      value: id,
+    };
+  }),
+);
+
 // Sending ----------------------------------------------------------------------------
 
 const justification = ref("");
@@ -345,19 +368,30 @@ const canSend = computed(
     blockers.value.length === 0 &&
     ops.value.length > 0 &&
     opReasons.value.length === 0 &&
-    !authorsMissing.value,
+    !authorsMissing.value &&
+    !mainAuthor.value.missing,
 );
 
 /**
- * What the footer says will happen once it is sent. Without a presenter
- * (or when the presenter proposes it) there is no approval step: it goes
- * straight to the Secretaría.
+ * What the footer says will happen once it is sent. The main authors of the
+ * amendments it combines answer first (the proposer's own answer is taken
+ * as given): when the proposer is all of them, it goes straight to the
+ * Secretaría. The Mesa's is public at once.
  */
 const nextNotice = computed(() => {
   if (isMesa.value) return t("transactional.composer.next.mesa");
-  return isPresenter.value || !props.document.proponent
-    ? t("transactional.composer.next.presenter")
-    : t("transactional.composer.next.member");
+  if (sources.value.length === 0) {
+    return t("transactional.composer.next.memberGeneric");
+  }
+  const toAsk = transactionalAuthorsToAsk(
+    sources.value,
+    member.value?.id ?? null,
+  );
+  return toAsk.length === 0
+    ? t("transactional.composer.next.self")
+    : t("transactional.composer.next.member", {
+        members: join(toAsk.map((party) => party.acronym)),
+      });
 });
 
 /** Open the list of amendments and put focus on its first choice. */
@@ -398,6 +432,14 @@ async function send(): Promise<void> {
       ?.focus();
     return;
   }
+  if (mainAuthor.value.missing) {
+    optionsOpen.value = true;
+    await nextTick();
+    mainAuthorBox.value
+      ?.querySelector<HTMLElement>('[role="radio"], input, button')
+      ?.focus();
+    return;
+  }
   if (!canSend.value) return;
   busy.value = true;
   serverReasons.value = [];
@@ -408,7 +450,12 @@ async function send(): Promise<void> {
       justification: justification.value.trim(),
       submit: true,
       // Members present it themselves; the Mesa names the parties.
-      ...(isMesa.value ? { authorMemberIds: authorIds.value } : {}),
+      ...(isMesa.value
+        ? {
+            authorMemberIds: authorIds.value,
+            mainAuthorMemberId: mainAuthor.value.value,
+          }
+        : {}),
     };
     const result = await api.send<AmendmentDto>(
       `${props.amendmentsUrl}/transactional`,
@@ -445,25 +492,25 @@ const nextSteps = computed(() =>
   createdNow.value
     ? transactionalNextSteps(
         createdNow.value,
-        props.document.proponent?.id ?? null,
+        props.document.acceptedAmendments,
       )
     : [],
 );
 
 function stepText(step: TransactionalNextStep): string {
   switch (step.key) {
-    case "proponent":
-      return step.members.length > 0
-        ? t("transactional.nextSteps.proponent", {
-            member: transactionalMemberList(step.members),
-          })
-        : t("transactional.nextSteps.proponentUnknown");
-    case "parties":
-      return t("transactional.nextSteps.parties", {
-        members: transactionalMemberList(step.members),
+    case "authors":
+      return t("transactional.nextSteps.authors", {
+        members: join(step.members.map((party) => party.acronym)),
       });
+    case "replaces":
+      return t("transactional.nextSteps.replaces", {
+        list: join(step.sourceIds.map((id) => props.labelOf(id))),
+      });
+    case "answer":
+      return t(`transactional.nextSteps.answer.${step.rule}`);
     default:
-      return t(`transactional.nextSteps.${step.key}`);
+      return t("transactional.nextSteps.secretaria");
   }
 }
 
@@ -902,6 +949,28 @@ const stepBadge =
                 @update:model-value="onAuthorsChange"
               />
             </UFormField>
+            <div v-if="mainAuthor.required" ref="mainAuthorBox" class="mt-4">
+              <UFormField
+                :label="t('amendment.composer.mainAuthor')"
+                required
+                :help="t('transactional.composer.mainAuthorHint')"
+                :error="
+                  attempted && mainAuthor.missing
+                    ? t('amendment.composer.mainAuthorRequired')
+                    : undefined
+                "
+              >
+                <!-- The visible label is the field's; the legend names the group. -->
+                <URadioGroup
+                  v-model="mainAuthorId"
+                  :items="mainAuthorItems"
+                  :legend="t('amendment.composer.mainAuthor')"
+                  :ui="{ legend: 'sr-only' }"
+                  aria-required="true"
+                  size="sm"
+                />
+              </UFormField>
+            </div>
           </div>
         </template>
       </UCollapsible>

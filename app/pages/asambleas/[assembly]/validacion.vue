@@ -21,11 +21,12 @@ import { affectsReviewQueue } from "~/components/review/-live";
 /**
  * The Secretaría's validation inbox (GET .../review): presented documents
  * and amendments that nobody else sees until they are validated, the
- * transactionals still waiting for the document's presenter, the amendments
- * validated but kept private and, in "Fuera de plazo", the late ones that
- * wait for the assembly to decide whether to treat them. Documents need
- * document:manage, amendments amendment:review; each part shows only to
- * whoever holds it.
+ * transactionals still waiting for the main authors of the amendments they
+ * would replace (with who is missing; one any of them rejected is gone),
+ * the amendments validated but kept private and, in "Fuera de plazo", the
+ * late ones that wait for the assembly to decide whether to treat them.
+ * Documents need document:manage, amendments amendment:review; each part
+ * shows only to whoever holds it.
  *
  * The queue shares its fetch key with the hub, which keeps the "Validación"
  * badge and starts the fetch if the permission arrives after setup; every

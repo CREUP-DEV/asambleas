@@ -2,12 +2,17 @@
  * Pure helpers behind transactionals in the document workspace: which
  * amendments can be combined, the passage the composer starts from, where a
  * transactional stands (as a sentence with its next step), what happens
- * after sending one, and how much waits for the document's presenter in the
- * review mode. No Nuxt or Vue APIs here (transactional.test.ts).
+ * after sending one, who answers it (the main author of each amendment it
+ * would replace), and how much waits for the document's main presenter in
+ * the review mode. No Nuxt or Vue APIs here (transactional.test.ts).
  *
  * Every export is auto-imported app-wide (`imports.dirs: composables/**`),
  * hence the explicit, distinctive names.
  */
+import type {
+  AcceptedAmendmentRule,
+  AmendmentStatus,
+} from "~~/shared/constants/domain";
 import type {
   AcceptanceDto,
   AmendmentDto,
@@ -17,21 +22,51 @@ import type { AmendmentInput, Block } from "~~/shared/types/content";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
 import { MAX_TRANSACTIONAL_SOURCES } from "~~/shared/utils/schemas/amendment";
-import { sortAmendments } from "./workspace";
+import {
+  amendmentAcceptBlocked,
+  amendmentAwaitsPosition,
+  amendmentMainAuthor,
+  sortAmendments,
+} from "./workspace";
 
 // Sources ------------------------------------------------------------------------
 
 type SourceLike = Pick<
   AmendmentDto,
-  "status" | "admission" | "decidedAt" | "reviewState" | "ops"
+  | "kind"
+  | "status"
+  | "admission"
+  | "decidedAt"
+  | "reviewState"
+  | "ops"
+  | "acceptances"
 >;
+
+/**
+ * Every main author of the amendments a transactional would replace has
+ * accepted it (only "author" rows count, as the server's authorsApproval).
+ * Always true for any other amendment.
+ */
+function acceptedByMainAuthors(
+  amendment: Pick<AmendmentDto, "kind" | "acceptances">,
+): boolean {
+  return (
+    amendment.kind !== "transactional" ||
+    amendment.acceptances.every(
+      (party) => party.role !== "author" || party.decision === "accepted",
+    )
+  );
+}
 
 /**
  * Whether an amendment can be combined into a transactional: published (or
  * recorded before validation existed, hence public), admitted and still
  * undecided, and changing some passage of the text (a "devolución" has no
  * text to start from). Late amendments still waiting for the assembly's
- * decision are left out, as the server does.
+ * decision are left out, as the server does, and so is a transactional its
+ * main authors have not all accepted yet, such as the Mesa's live one,
+ * published at once (the server's transactionalSourceReason,
+ * `awaits_authors`).
  */
 export function transactionalSourceEligible(amendment: SourceLike): boolean {
   return (
@@ -39,7 +74,8 @@ export function transactionalSourceEligible(amendment: SourceLike): boolean {
     amendment.decidedAt === null &&
     amendment.admission === "admitted" &&
     (amendment.reviewState === "published" || amendment.reviewState === null) &&
-    amendment.ops.length > 0
+    amendment.ops.length > 0 &&
+    acceptedByMainAuthors(amendment)
   );
 }
 
@@ -217,36 +253,39 @@ export function transactionalSameIds(a: string[], b: string[]): boolean {
 
 /**
  * Where a presented transactional stands, as the next thing that has to
- * happen before it can be voted:
- * - `proponent`: the document's presenter has to approve it;
- * - `proponent_rejected`: the presenter did not approve it;
+ * happen (design.md, "Transactionals"):
+ * - `rejected`: the main author of an amendment it would replace said no, so
+ *   it is closed and the original amendments carry on;
+ * - `authors`: the main authors of the amendments it would replace still
+ *   have to answer (also the Mesa's live one, published at once);
  * - `validation` / `publication`: the Secretaría has to check it, or to
  *   publish it once checked;
- * - `rejected`: a party does not accept it, so it cannot be voted;
- * - `parties`: some parties have not accepted it yet;
- * - `admission`: the assembly still has to decide whether to treat it;
- * - `ready`: everyone accepted it, it can be voted.
+ * - `admission`: late, the assembly still has to decide whether to treat it;
+ * - `replaced`: accepted and validated, it replaced the original amendments
+ *   (they are "transacted") and follows the normal flow;
+ * - `accepted`: accepted and validated, but the list does not show its
+ *   original amendments as replaced (hidden from the viewer, or recorded
+ *   before replacements existed). Same next step, without naming them.
  */
 export type TransactionalStage =
-  | "proponent"
-  | "proponent_rejected"
+  | "rejected"
+  | "authors"
   | "validation"
   | "publication"
-  | "rejected"
-  | "parties"
   | "admission"
-  | "ready";
+  | "replaced"
+  | "accepted";
 
 export interface TransactionalProgressView {
   stage: TransactionalStage;
   color: "info" | "warning" | "error" | "success";
   icon: string;
-  /** The document's presenter, as a party of the transactional. */
-  proponent: MemberRef | null;
-  /** Parties that have not answered yet, in the order the API lists them. */
+  /** Main authors that have not answered yet, in the order the API lists them. */
   missing: MemberRef[];
-  /** Parties that said no. */
+  /** Main authors that said no. */
   rejected: MemberRef[];
+  /** The amendments it would replace (or replaced). */
+  sourceIds: string[];
   /** The viewer's member has to answer now. */
   actorTurn: boolean;
 }
@@ -255,109 +294,125 @@ const STAGE_LOOK: Record<
   TransactionalStage,
   Pick<TransactionalProgressView, "color" | "icon">
 > = {
-  proponent: { color: "info", icon: "i-lucide-user-check" },
-  proponent_rejected: { color: "error", icon: "i-lucide-user-x" },
+  rejected: { color: "error", icon: "i-lucide-circle-x" },
+  authors: { color: "warning", icon: "i-lucide-users" },
   validation: { color: "info", icon: "i-lucide-hourglass" },
   publication: { color: "info", icon: "i-lucide-eye-off" },
-  rejected: { color: "error", icon: "i-lucide-circle-x" },
-  parties: { color: "warning", icon: "i-lucide-users" },
   admission: { color: "warning", icon: "i-lucide-clock-alert" },
-  ready: { color: "success", icon: "i-lucide-circle-check" },
+  replaced: { color: "success", icon: "i-lucide-git-merge" },
+  accepted: { color: "success", icon: "i-lucide-circle-check" },
 };
-
-/**
- * The row of the document's presenter among the parties of a
- * transactional. Matched by member, as the server does (proponentApproval):
- * when the presenter also wrote a source, or an earlier transactional the
- * new one builds on, its single row has the role "author". The role
- * "proponent" is the fallback when the presenter's member is not known.
- */
-export function transactionalPresenterParty<
-  T extends Pick<AcceptanceDto, "member" | "role">,
->(acceptances: T[], proponentMemberId: string | null = null): T | null {
-  return (
-    (proponentMemberId
-      ? acceptances.find((party) => party.member.id === proponentMemberId)
-      : undefined) ??
-    acceptances.find((party) => party.role === "proponent") ??
-    null
-  );
-}
 
 type ProgressInput = Pick<
   AmendmentDto,
-  "kind" | "status" | "reviewState" | "admission" | "acceptances"
+  | "kind"
+  | "status"
+  | "reviewState"
+  | "admission"
+  | "acceptances"
+  | "sourceIds"
+  | "outcomeVote"
 >;
+
+/** Statuses a transactional a main author rejected may be left in. */
+const CLOSED_BY_REJECTION: readonly AmendmentStatus[] = [
+  "submitted",
+  "rejected",
+  "withdrawn",
+  "lapsed",
+];
+
+/**
+ * A main author rejected it, so it is closed and the originals carry on.
+ * Whether the server keeps it "submitted" or closes it, the rejection is the
+ * news, unless the assembly voted it (a vote is an outcome of its own).
+ */
+export function transactionalRejectedByAuthors(
+  amendment: Pick<
+    AmendmentDto,
+    "kind" | "status" | "acceptances" | "outcomeVote"
+  >,
+): boolean {
+  return (
+    amendment.kind === "transactional" &&
+    amendment.outcomeVote === null &&
+    CLOSED_BY_REJECTION.includes(amendment.status) &&
+    amendment.acceptances.some((party) => party.decision === "rejected")
+  );
+}
+
+/**
+ * Whether the sources are recorded as replaced ("transacted"), from the
+ * list the viewer has. Null when it cannot be told: no lookup, or a source
+ * the viewer does not see.
+ */
+export function transactionalSourcesReplaced(
+  sourceIds: string[],
+  statusOf?: (id: string) => AmendmentStatus | undefined,
+): boolean | null {
+  if (!statusOf || sourceIds.length === 0) return null;
+  const statuses = sourceIds.map((id) => statusOf(id));
+  if (statuses.some((status) => status === undefined)) return null;
+  return statuses.every((status) => status === "transacted");
+}
 
 function stageOf(
   amendment: ProgressInput,
-  proponentDecision: string | null,
   missing: number,
-  rejected: number,
+  statusOf?: (id: string) => AmendmentStatus | undefined,
 ): TransactionalStage {
-  switch (amendment.reviewState) {
-    case "pending_proponent":
-      return proponentDecision === "rejected"
-        ? "proponent_rejected"
-        : "proponent";
-    case "pending_validation":
-      return "validation";
-    case "validated":
-      return "publication";
-    default:
-      if (rejected > 0) return "rejected";
-      if (missing > 0) return "parties";
-      return amendment.admission === "admitted" ? "ready" : "admission";
+  if (transactionalRejectedByAuthors(amendment)) return "rejected";
+  if (missing > 0) return "authors";
+  if (
+    amendment.reviewState === "pending_authors" ||
+    amendment.reviewState === "pending_validation"
+  ) {
+    return "validation";
   }
+  if (amendment.reviewState === "validated") return "publication";
+  if (amendment.admission !== "admitted") return "admission";
+  return transactionalSourcesReplaced(amendment.sourceIds, statusOf)
+    ? "replaced"
+    : "accepted";
 }
 
 /**
  * Where a transactional stands, worded around its next step, or null when
  * it is not a presented, undecided transactional (drafts and corrections
- * have their own review state; decided ones, their outcome).
- * `proponentMemberId` is the document's presenter (document.proponent),
- * found among the parties by member (transactionalPresenterParty).
+ * have their own review state; decided ones, their outcome), except one a
+ * main author rejected, which says so. `statusOf` looks up the status of
+ * the amendments it combines (the workspace list), to tell whether it has
+ * replaced them.
  */
 export function transactionalProgressOf(
   amendment: ProgressInput,
   actorMemberId: string | null,
-  proponentMemberId: string | null = null,
+  statusOf?: (id: string) => AmendmentStatus | undefined,
 ): TransactionalProgressView | null {
-  if (amendment.kind !== "transactional" || amendment.status !== "submitted") {
+  if (amendment.kind !== "transactional") return null;
+  if (
+    amendment.status !== "submitted" &&
+    !transactionalRejectedByAuthors(amendment)
+  ) {
     return null;
   }
-  const proponentParty = transactionalPresenterParty(
-    amendment.acceptances,
-    proponentMemberId,
-  );
   const missing = amendment.acceptances
     .filter((party) => party.decision === "pending")
     .map((party) => party.member);
   const rejected = amendment.acceptances
     .filter((party) => party.decision === "rejected")
     .map((party) => party.member);
-  const stage = stageOf(
-    amendment,
-    proponentParty?.decision ?? null,
-    missing.length,
-    rejected.length,
-  );
-  const mine = (member: MemberRef | null | undefined) =>
-    actorMemberId !== null && member?.id === actorMemberId;
+  const stage = stageOf(amendment, missing.length, statusOf);
   const actorTurn =
-    stage === "proponent"
-      ? mine(proponentParty?.member)
-      : (stage === "parties" ||
-          stage === "rejected" ||
-          stage === "validation" ||
-          stage === "publication") &&
-        missing.some((member) => mine(member));
+    stage === "authors" &&
+    actorMemberId !== null &&
+    missing.some((member) => member.id === actorMemberId);
   return {
     stage,
     ...STAGE_LOOK[stage],
-    proponent: proponentParty?.member ?? null,
     missing,
     rejected,
+    sourceIds: [...amendment.sourceIds],
     actorTurn,
   };
 }
@@ -367,54 +422,65 @@ export function transactionalMemberList(members: MemberRef[]): string {
   return members.map((member) => member.acronym).join(", ");
 }
 
+/** Plain ", " join: the text layer passes a locale-aware one (Intl.ListFormat). */
+function joinComma(items: string[]): string {
+  return items.join(", ");
+}
+
 export interface TransactionalProgressMessage {
   /** i18n key under `transactional.progress`. */
   key: string;
   params: Record<string, string>;
 }
 
+export interface TransactionalProgressWords {
+  /** Labels of the amendments it combines, in order ("CEUM 1", "CAUB 1"). */
+  sources?: string[];
+  /** Joins a list for a sentence ("CEUM 1 y CAUB 1"). */
+  join?: (items: string[]) => string;
+}
+
 /**
  * The words for where a transactional stands, as an i18n key and its
- * parameters: `short` for one line on a card ("Falta que la acepten: …"),
+ * parameters: `short` for one line on a card ("Falta que respondan: …"),
  * `long` for the detail, with the next step. While the Secretaría has it
  * (`validation`, `publication`) the detail keeps the Secretaría's own
  * review sentence, so `long` is null there. The viewer is told when it is
- * their turn ("Te toca aprobarla"); those who said no are named when it is
- * stuck on them.
+ * their turn ("Te toca responder"); those who said no are named.
  */
 export function transactionalProgressMessage(
   view: TransactionalProgressView,
   form: "short" | "long",
+  words: TransactionalProgressWords = {},
 ): TransactionalProgressMessage | null {
   const prefix = `transactional.progress.${form}`;
-  const member = view.proponent?.acronym ?? "";
+  const join = words.join ?? joinComma;
   switch (view.stage) {
     case "validation":
     case "publication":
       return form === "long"
         ? null
         : { key: `${prefix}.${view.stage}`, params: {} };
-    case "proponent":
-      if (view.actorTurn) return { key: `${prefix}.yourApproval`, params: {} };
-      return view.proponent
-        ? { key: `${prefix}.proponent`, params: { member } }
-        : { key: `${prefix}.proponentUnknown`, params: {} };
-    case "proponent_rejected":
-      return { key: `${prefix}.proponent_rejected`, params: { member } };
     case "rejected":
       return {
         key: `${prefix}.rejected`,
-        params: { members: transactionalMemberList(view.rejected) },
+        params: { members: join(view.rejected.map((m) => m.acronym)) },
       };
-    case "parties": {
-      const members = transactionalMemberList(view.missing);
+    case "authors": {
+      const members = join(view.missing.map((m) => m.acronym));
       if (view.actorTurn) {
         return {
-          key: `${prefix}.yourAcceptance`,
+          key: `${prefix}.yourAnswer`,
           params: form === "long" ? { members } : {},
         };
       }
-      return { key: `${prefix}.parties`, params: { members } };
+      return { key: `${prefix}.authors`, params: { members } };
+    }
+    case "replaced": {
+      const sources = words.sources ?? [];
+      return sources.length > 0
+        ? { key: `${prefix}.replaced`, params: { list: join(sources) } }
+        : { key: `${prefix}.accepted`, params: {} };
     }
     default:
       return { key: `${prefix}.${view.stage}`, params: {} };
@@ -422,18 +488,26 @@ export function transactionalProgressMessage(
 }
 
 /**
- * While the Secretaría has it, who will still have to accept it before the
- * vote (null when nobody, or past that stage).
+ * While the Secretaría has it, what happens once it is checked: it replaces
+ * the amendments it combines (`validation`), or it already did (`publication`
+ * with the originals recorded as replaced). Null past that stage, or when
+ * main authors still have to answer (that comes first).
  */
 export function transactionalAfterSecretaria(
   view: TransactionalProgressView,
+  words: TransactionalProgressWords = {},
+  replaced: boolean | null = null,
 ): TransactionalProgressMessage | null {
   if (view.stage !== "validation" && view.stage !== "publication") return null;
-  if (view.missing.length === 0) return null;
-  return {
-    key: "transactional.progress.afterSecretaria",
-    params: { members: transactionalMemberList(view.missing) },
-  };
+  const sources = words.sources ?? [];
+  if (sources.length === 0) return null;
+  const list = (words.join ?? joinComma)(sources);
+  if (view.stage === "validation") {
+    return { key: "transactional.progress.afterSecretaria", params: { list } };
+  }
+  return replaced
+    ? { key: "transactional.progress.alreadyReplaced", params: { list } }
+    : null;
 }
 
 // After sending --------------------------------------------------------------------------
@@ -441,90 +515,181 @@ export function transactionalAfterSecretaria(
 /**
  * What happens to a transactional once sent, in order, starting from where
  * the answer of the server left it:
- * - `proponent`: the document's presenter approves it (skipped when the
- *   presenter proposed it, or when the Mesa did, live);
+ * - `authors`: the main authors of the amendments it would replace accept
+ *   or reject it (`members`, those still to answer); a rejection closes it;
  * - `secretaria`: the Secretaría checks and publishes it (skipped when the
  *   Mesa proposed it: it is public at once);
- * - `parties`: the parties still pending accept it (`members`); after the
- *   presenter's step, only the authors of the amendments it combines;
- * - `vote`: then the Mesa can put it to the vote.
- * The presenter is found by member (`proponentMemberId`, the document's
- * presenter), also when it wrote a source and its row has the role "author".
+ * - `replaces`: it replaces the amendments it combines;
+ * - `answer`: the document's main presenter answers it, and the assembly
+ *   votes it, or it is incorporated if accepted (`rule`, the document's).
  */
 export type TransactionalNextStep =
-  | { key: "proponent"; members: MemberRef[] }
-  | { key: "secretaria"; members: [] }
-  | { key: "parties"; members: MemberRef[] }
-  | { key: "vote"; members: [] };
+  | { key: "authors"; members: MemberRef[] }
+  | { key: "secretaria" }
+  | { key: "replaces"; sourceIds: string[] }
+  | { key: "answer"; rule: AcceptedAmendmentRule };
 
 export function transactionalNextSteps(
-  amendment: Pick<AmendmentDto, "reviewState" | "acceptances">,
-  proponentMemberId: string | null = null,
+  amendment: Pick<AmendmentDto, "reviewState" | "acceptances" | "sourceIds">,
+  rule: AcceptedAmendmentRule = "vote",
 ): TransactionalNextStep[] {
   const steps: TransactionalNextStep[] = [];
-  const pending = amendment.acceptances.filter(
-    (party) => party.decision === "pending",
-  );
-  const proponentStep = amendment.reviewState === "pending_proponent";
-  const presenter = proponentStep
-    ? transactionalPresenterParty(pending, proponentMemberId)
-    : null;
-  if (proponentStep) {
-    steps.push({
-      key: "proponent",
-      members: presenter ? [presenter.member] : [],
-    });
-  }
+  const pending = amendment.acceptances
+    .filter((party) => party.decision === "pending")
+    .map((party) => party.member);
+  if (pending.length > 0) steps.push({ key: "authors", members: pending });
   if (
-    proponentStep ||
+    amendment.reviewState === "pending_authors" ||
     amendment.reviewState === "pending_validation" ||
     amendment.reviewState === "validated"
   ) {
-    steps.push({ key: "secretaria", members: [] });
+    steps.push({ key: "secretaria" });
   }
-  const parties = pending
-    .filter((party) => party !== presenter)
-    .map((party) => party.member);
-  if (parties.length > 0) steps.push({ key: "parties", members: parties });
-  steps.push({ key: "vote", members: [] });
+  steps.push({ key: "replaces", sourceIds: [...amendment.sourceIds] });
+  steps.push({ key: "answer", rule });
   return steps;
+}
+
+/**
+ * Main authors who will have to accept a transactional over these
+ * amendments, other than the proposer's own member (its answer is taken as
+ * given), in order and without repeats. Empty: it goes straight to the
+ * Secretaría.
+ */
+export function transactionalAuthorsToAsk(
+  sources: Pick<AmendmentDto, "authors" | "mainAuthorId">[],
+  proposerMemberId: string | null,
+): MemberRef[] {
+  const seen = new Map<string, MemberRef>();
+  for (const source of sources) {
+    const main = amendmentMainAuthor(source);
+    if (main && main.id !== proposerMemberId && !seen.has(main.id)) {
+      seen.set(main.id, main);
+    }
+  }
+  return [...seen.values()];
+}
+
+/**
+ * The acceptance a source's main author gives on a transactional over it:
+ * its row among the parties, found by member (null when it is not a party,
+ * as with transactionals recorded before main authors existed).
+ */
+export function transactionalAnswerOf<T extends Pick<AcceptanceDto, "member">>(
+  acceptances: T[],
+  memberId: string | null,
+): T | null {
+  if (memberId === null) return null;
+  return acceptances.find((party) => party.member.id === memberId) ?? null;
+}
+
+/**
+ * The viewer's member is the main author of `source` and it is its turn to
+ * accept or reject the transactional over it: the transactional is still
+ * open, the main author's row waits, and the server lets the viewer answer
+ * (`can.accept`).
+ */
+export function transactionalAuthorTurn(
+  transactional: Pick<AmendmentDto, "status" | "acceptances" | "can">,
+  source: Pick<AmendmentDto, "authors" | "mainAuthorId">,
+  actorMemberId: string | null,
+): boolean {
+  const mainAuthorId = amendmentMainAuthor(source)?.id ?? null;
+  const party = transactionalAnswerOf(transactional.acceptances, mainAuthorId);
+  return (
+    transactional.status === "submitted" &&
+    party !== null &&
+    party.decision === "pending" &&
+    party.member.id === actorMemberId &&
+    transactional.can.accept
+  );
+}
+
+/**
+ * Transactionals over `source` worth showing on it, with its main author's
+ * answer (who, what, when): open ones, ones a main author's rejection
+ * closed, and any its main author already answered, whatever became of it
+ * since, so its co-authors keep seeing that answer. Transactionals the
+ * viewer does not see are left out; the order is the API's.
+ */
+export function transactionalsOverSource<
+  T extends Pick<
+    AmendmentDto,
+    "id" | "kind" | "status" | "acceptances" | "outcomeVote"
+  >,
+>(
+  source: Pick<AmendmentDto, "authors" | "mainAuthorId" | "transactionalIds">,
+  byId: ReadonlyMap<string, T>,
+): T[] {
+  const mainAuthorId = amendmentMainAuthor(source)?.id ?? null;
+  return source.transactionalIds
+    .map((id) => byId.get(id))
+    .filter(
+      (item): item is T =>
+        item !== undefined &&
+        item.kind === "transactional" &&
+        (item.status === "submitted" ||
+          transactionalRejectedByAuthors(item) ||
+          (transactionalAnswerOf(item.acceptances, mainAuthorId)?.decision ??
+            "pending") !== "pending"),
+    );
+}
+
+/**
+ * The amendments a party answers for: the sources whose main author it is.
+ * Feeds "autor principal de 12 · CEUM 4" next to each party.
+ */
+export function transactionalPartySources<
+  T extends Pick<AmendmentDto, "id" | "authors" | "mainAuthorId">,
+>(sources: T[], memberId: string): T[] {
+  return sources.filter(
+    (source) => amendmentMainAuthor(source)?.id === memberId,
+  );
 }
 
 // The presenter's review ---------------------------------------------------------------
 
 /**
- * What waits for the document's presenter in the review mode (the Mesa can
- * answer for it too): undecided amendments without its position yet, and
- * transactionals waiting for its approval. Mirrors MeWorkProponentDto
- * (countProponentWork), which finds the presenter's answer by member:
- * `proponentMemberId` is the document's presenter, not the viewer.
+ * What waits for the document's main presenter in the review mode (the Mesa
+ * can answer for it too), by the document's rule for accepted amendments:
+ * undecided amendments that reached it (validated, admitted, and for a
+ * transactional, accepted by the main authors: amendmentAwaitsPosition)
+ * without its answer yet, among those the viewer can answer
+ * (`can.position`, held by the main presenter and the Mesa only). It is the
+ * count of the review mode's pending steps (isPositionReviewable) and of the
+ * server's countPositionsPending: under the "incorporate" rule one the
+ * Secretaría keeps private is left out until it is published (it can be
+ * answered, but not accepted: amendmentAcceptBlocked); under "vote" it
+ * counts, though only the Mesa sees it until it is published. Answers
+ * belong to the amendment, not to whoever records them, so the main
+ * presenter and the Mesa count the same answers.
  */
 export function proponentReviewBacklog(
   list: Pick<
     AmendmentDto,
-    "kind" | "status" | "reviewState" | "position" | "acceptances" | "can"
+    | "kind"
+    | "status"
+    | "reviewState"
+    | "admission"
+    | "validatedAt"
+    | "position"
+    | "acceptances"
+    | "approvalMethod"
+    | "can"
   >[],
-  proponentMemberId: string | null = null,
-): { positions: number; transactionals: number; total: number } {
+  rule: AcceptedAmendmentRule,
+): { positions: number; total: number } {
   let positions = 0;
-  let transactionals = 0;
   for (const amendment of list) {
-    if (amendment.status !== "submitted") continue;
-    if (amendment.kind === "transactional") {
-      const presenter = transactionalPresenterParty(
-        amendment.acceptances,
-        proponentMemberId,
-      );
-      if (presenter?.decision === "pending") transactionals += 1;
-      continue;
-    }
     if (
       amendment.can.position &&
-      amendment.reviewState !== "pending_validation" &&
+      amendment.status === "submitted" &&
+      amendmentAwaitsPosition(amendment, rule) &&
+      !amendmentAcceptBlocked(amendment, rule) &&
       (amendment.position === null || amendment.position.position === "pending")
     ) {
       positions += 1;
     }
   }
-  return { positions, transactionals, total: positions + transactionals };
+  return { positions, total: positions };
 }

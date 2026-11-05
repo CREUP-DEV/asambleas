@@ -2,10 +2,12 @@
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 
 /**
- * Approves by assent, in one go, every admitted amendment the proponent
- * accepted. Only offered when the assembly incorporates accepted amendments
- * by assent. Amendments that would collide with an approved one, or with an
- * earlier one of the batch, are left for the Mesa and listed.
+ * Approves by assent (a vote nobody opposes), in one go, every admitted
+ * amendment the document's main presenter accepted. Offered whenever there
+ * are some: in a document that incorporates accepted amendments there are
+ * none, since accepting already approved them. Amendments that would
+ * collide with an approved one, or with an earlier one of the batch, are
+ * left for the Mesa and listed.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();

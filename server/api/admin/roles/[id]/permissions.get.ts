@@ -2,11 +2,19 @@ import { defineEventHandler, createError } from "h3";
 import { eq } from "drizzle-orm";
 import { db } from "../../../../db";
 import { roles, rolePermissions, permissions } from "../../../../db/schema";
-import { requireAdmin } from "../../../../utils/auth/rbac";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import { requireAnyPermission } from "../../../../utils/auth/rbac";
 import { validateCuid } from "../../../../utils/validation";
 
+/**
+ * What a role grants. Read by whoever manages roles and by whoever assigns
+ * them (to show what a user gets on top of its own grants).
+ */
 export default defineEventHandler(async (event) => {
-  await requireAdmin(event);
+  await requireAnyPermission(event, [
+    PERMISSION_KEYS.USER_MANAGE_ROLES,
+    PERMISSION_KEYS.ROLE_MANAGE_PERMISSIONS,
+  ]);
   const roleId = validateCuid(getRouterParam(event, "id"));
 
   const role = await db.query.roles.findFirst({

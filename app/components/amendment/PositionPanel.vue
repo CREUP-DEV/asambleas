@@ -1,19 +1,46 @@
 <script setup lang="ts">
+import type { ProponentPosition } from "~~/shared/constants/domain";
+import type {
+  AmendmentDto,
+  DocumentSummaryDto,
+  PositionBody,
+} from "~~/shared/types/api";
 import {
-  PROPONENT_POSITIONS,
-  type ProponentPosition,
-} from "~~/shared/constants/domain";
-import type { AmendmentDto } from "~~/shared/types/api";
+  amendmentAcceptBlocked,
+  amendmentAwaitsPosition,
+  amendmentPositionBlocker,
+  amendmentPositionNext,
+} from "~/composables/amendment/workspace";
 
 /**
- * The document proponent's position on an amendment (accept, reject,
- * transact). The proponent and the Mesa can change it while the amendment
- * is undecided (`can.position`); everyone who may see positions reads it.
+ * The answer of the document's main presenter to an amendment (accept,
+ * reject, propose a transactional), said as who, what and when, so its
+ * co-presenters always see what it decided. Then what happens next by the
+ * document's rule ("Si la acepta quien presenta el documento, se incorpora
+ * sin votación" / "La votará la asamblea").
+ *
+ * It can be answered (`can.position`: the main presenter, or the Mesa for
+ * it) only once the amendment reached it: validated, admitted if late, and
+ * for a transactional, accepted by the main authors (amendmentAwaitsPosition).
+ * Until then it only says it can be answered later: the review panel above
+ * already says what it waits for. Under the "incorporate" rule one the
+ * Secretaría keeps private (only the Mesa sees it) can be answered, but not
+ * accepted until it is published (amendmentAcceptBlocked), and the answer
+ * can change until the final vote: accepting approves it at once, and
+ * changing it reopens it.
+ *
+ * Answering is the main action for the main presenter while nobody has
+ * answered yet ("Responder", solid); changing an answer, or the Mesa
+ * recording one for it, is a small secondary action. Saving sends the
+ * answer seen when the form opened (`positionUpdatedAt`), so two people
+ * answering at once get a conflict instead of overwriting each other; live
+ * updates never reset a form being filled in.
  */
 const props = defineProps<{
   amendment: AmendmentDto;
   /** URL of the amendment: .../amendments/{id}. */
   url: string;
+  document: Pick<DocumentSummaryDto, "proponent" | "acceptedAmendments">;
 }>();
 
 const emit = defineEmits<{
@@ -24,53 +51,176 @@ const emit = defineEmits<{
 const { t, locale } = useI18n();
 const api = useApi();
 const toast = useToast();
+const { member } = useMe();
 
 const titleId = useId();
 const editing = ref(false);
 const saving = ref(false);
 const position = ref<ProponentPosition>("pending");
 const comment = ref("");
+/** The answer's stamp when the form opened: the one this save replaces. */
+const seen = ref<string | null>(null);
 
 function reset(): void {
   position.value = props.amendment.position?.position ?? "pending";
   comment.value = props.amendment.position?.comment ?? "";
 }
 
-watch(() => props.amendment.position, reset, { immediate: true });
+// A refresh (any live event on the document) brings fresh objects: only
+// follow them while the form is closed, so what is being typed survives.
+watch(
+  () => props.amendment.position,
+  () => {
+    if (!editing.value) reset();
+  },
+  { immediate: true },
+);
+watch(
+  () => props.amendment.id,
+  () => {
+    editing.value = false;
+    reset();
+  },
+);
 
+/** Answers first; "no answer yet" last. */
+const OPTIONS: ProponentPosition[] = [
+  "accept",
+  "reject",
+  "transact",
+  "pending",
+];
+/** Accepting a private one would put unpublished text in the document. */
+const acceptBlocked = computed(() =>
+  amendmentAcceptBlocked(props.amendment, props.document.acceptedAmendments),
+);
 const items = computed(() =>
-  PROPONENT_POSITIONS.map((value) => ({
-    label: t(`amendment.position.options.${value}`),
-    description: t(`amendment.position.descriptions.${value}`),
-    value,
-  })),
+  OPTIONS.map((value) => {
+    const blocked = value === "accept" && acceptBlocked.value;
+    return {
+      label: t(`amendment.position.options.${value}`),
+      description: t(
+        blocked
+          ? "amendment.position.blocked.publication"
+          : value === "accept" &&
+              props.document.acceptedAmendments === "incorporate"
+            ? "amendment.position.descriptions.acceptIncorporate"
+            : `amendment.position.descriptions.${value}`,
+      ),
+      value,
+      disabled: blocked,
+    };
+  }),
+);
+
+/** Who answers: the main presenter, by its acronym. */
+const presenter = computed(
+  () =>
+    props.document.proponent?.acronym ?? t("amendment.position.thePresenter"),
+);
+const isMainPresenter = computed(
+  () =>
+    props.document.proponent !== null &&
+    props.document.proponent.id === member.value?.id,
+);
+const answer = computed(() => props.amendment.position?.position ?? "pending");
+const answeredAt = computed(() =>
+  answer.value !== "pending" && props.amendment.position
+    ? formatDateTime(props.amendment.position.updatedAt, {
+        locale: locale.value,
+      })
+    : null,
+);
+
+const reachable = computed(() =>
+  amendmentAwaitsPosition(props.amendment, props.document.acceptedAmendments),
+);
+const blocker = computed(() =>
+  amendmentPositionBlocker(props.amendment, props.document.acceptedAmendments),
+);
+const next = computed(() =>
+  amendmentPositionNext(props.amendment, props.document.acceptedAmendments),
+);
+/**
+ * What happens next, as a key: while accepting waits for publication, that
+ * is said instead of "if accepted, it goes into the text".
+ */
+const nextKey = computed(() => {
+  if (!next.value) return null;
+  return acceptBlocked.value && next.value === "incorporateIfAccepted"
+    ? "amendment.position.blocked.publication"
+    : `amendment.position.next.${next.value}`;
+});
+const canEdit = computed(
+  () => props.amendment.can.position && reachable.value && !editing.value,
+);
+/** The main presenter's first answer: the main action of the detail. */
+const answerFirst = computed(
+  () => canEdit.value && isMainPresenter.value && answer.value === "pending",
+);
+const editLabel = computed(() => {
+  if (!isMainPresenter.value) {
+    return t("amendment.position.recordFor", { member: presenter.value });
+  }
+  return answer.value === "pending"
+    ? t("amendment.position.answer")
+    : t("amendment.position.edit");
+});
+/** Not answerable yet: who will answer it, later. */
+const laterText = computed(() =>
+  isMainPresenter.value
+    ? t("amendment.position.laterYou")
+    : t("amendment.position.later", { member: presenter.value }),
 );
 
 function startEditing(): void {
   reset();
+  seen.value = props.amendment.position?.updatedAt ?? null;
   editing.value = true;
+}
+
+function cancel(): void {
+  editing.value = false;
+  reset();
 }
 
 async function save(): Promise<void> {
   saving.value = true;
+  const before = answer.value;
   try {
+    const body: PositionBody = {
+      position: position.value,
+      comment: comment.value.trim() || null,
+      positionUpdatedAt: seen.value,
+    };
     const updated = await api.send<AmendmentDto>(`${props.url}/position`, {
       method: "PUT",
-      body: {
-        position: position.value,
-        comment: comment.value.trim() || null,
-      },
+      body,
     });
     editing.value = false;
+    const incorporate = props.document.acceptedAmendments === "incorporate";
     toast.add({
       title: t("amendment.position.saved"),
+      description: incorporate
+        ? position.value === "accept"
+          ? t("amendment.position.savedIncorporated")
+          : before === "accept"
+            ? t("amendment.position.savedReopened")
+            : undefined
+        : undefined,
       color: "success",
       icon: "i-lucide-check",
     });
     emit("updated", updated);
   } catch (error) {
     api.notifyError(error, "amendment.position.saveFailed");
-    if (api.isConflict(error)) emit("conflict");
+    if (api.isConflict(error)) {
+      // Answered meanwhile (or no longer answerable): show what stands now,
+      // which the refresh brings; retrying would only conflict again.
+      editing.value = false;
+      reset();
+      emit("conflict");
+    }
   } finally {
     saving.value = false;
   }
@@ -79,45 +229,78 @@ async function save(): Promise<void> {
 
 <template>
   <section class="flex flex-col gap-3" :aria-labelledby="titleId">
-    <div class="flex items-center justify-between gap-2">
+    <div class="flex flex-wrap items-center justify-between gap-2">
       <h3 :id="titleId" class="text-highlighted text-sm font-semibold">
         {{ t("amendment.position.title") }}
       </h3>
       <UButton
-        v-if="amendment.can.position && !editing"
-        icon="i-lucide-pencil"
+        v-if="canEdit && !answerFirst"
+        icon="i-lucide-reply"
         color="neutral"
-        variant="ghost"
+        variant="outline"
         size="xs"
-        :label="t('amendment.position.edit')"
+        :label="editLabel"
         @click="startEditing"
       />
     </div>
 
     <template v-if="!editing">
-      <div v-if="amendment.position" class="flex flex-col gap-1.5">
-        <div class="flex flex-wrap items-center gap-2">
-          <CommonStatusBadge
-            kind="position"
-            :value="amendment.position.position"
-          />
-          <span
-            v-if="amendment.position.position !== 'pending'"
-            class="text-dimmed text-xs"
-          >
-            {{ formatDateTime(amendment.position.updatedAt, { locale }) }}
+      <!-- Who answered, what and when. -->
+      <div v-if="answer !== 'pending'" class="flex flex-col gap-1.5">
+        <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+          <CommonStatusBadge kind="position" :value="answer" size="xs" />
+          <span class="text-default">
+            {{
+              t(`amendment.position.answers.${answer}`, { member: presenter })
+            }}
           </span>
-        </div>
+          <span v-if="answeredAt" class="text-dimmed text-xs">
+            {{ answeredAt }}
+          </span>
+        </p>
         <p
-          v-if="amendment.position.comment"
-          class="text-default text-sm whitespace-pre-line"
+          v-if="amendment.position?.comment"
+          class="text-default border-default border-s-2 ps-3 text-sm whitespace-pre-line"
         >
           {{ amendment.position.comment }}
         </p>
       </div>
-      <p v-else class="text-muted text-sm">
-        {{ t("amendment.position.none") }}
+      <!-- Not answerable yet: the review panel says what it waits for. -->
+      <p v-else-if="blocker" class="text-muted text-sm">
+        {{ laterText }}
       </p>
+      <p v-else-if="answerFirst" class="text-highlighted text-sm font-medium">
+        {{ t("amendment.position.yourTurn") }}
+      </p>
+      <p v-else-if="reachable" class="text-muted text-sm">
+        {{ t("amendment.position.answers.pending", { member: presenter }) }}
+      </p>
+      <p v-else class="text-muted text-sm">
+        {{ t("amendment.position.answers.none", { member: presenter }) }}
+      </p>
+
+      <!-- What happens next, by the document's rule. -->
+      <p v-if="nextKey" class="text-default flex items-start gap-1.5 text-sm">
+        <UIcon
+          :name="
+            next === 'incorporated'
+              ? 'i-lucide-circle-check'
+              : 'i-lucide-arrow-right'
+          "
+          class="text-muted mt-0.5 size-4 shrink-0"
+          aria-hidden="true"
+        />
+        {{ t(nextKey) }}
+      </p>
+
+      <UButton
+        v-if="answerFirst"
+        class="self-start"
+        icon="i-lucide-reply"
+        size="sm"
+        :label="editLabel"
+        @click="startEditing"
+      />
     </template>
 
     <form v-else class="flex flex-col gap-3" @submit.prevent="save">
@@ -144,7 +327,7 @@ async function save(): Promise<void> {
           variant="ghost"
           :label="t('amendment.actions.cancel')"
           :disabled="saving"
-          @click="editing = false"
+          @click="cancel"
         />
         <UButton
           type="submit"

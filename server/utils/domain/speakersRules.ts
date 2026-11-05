@@ -134,19 +134,27 @@ const OPEN_TURN_STATUSES: readonly SpeakingTurnStatus[] = [
 /**
  * The turns an actor gets from GET .../speakers. The Mesa sees the turns
  * that are speaking or waiting and every turn of the agenda item in debate
- * (`agendaItemId` of the live state; null matches turns without an item).
- * Anyone else sees the speaking and waiting turns only while the Mesa makes
- * them visible, and nothing otherwise.
+ * (`agendaItemId` of the live state; null matches turns without an item),
+ * plus `include`: the turn a PUT just changed, which the Mesa gets back even
+ * when it no longer fits (a cancelled turn of another item). Anyone else
+ * sees the speaking and waiting turns only while the Mesa makes them
+ * visible, and nothing otherwise.
  */
 export function turnsForActor<T extends ListedTurn>(
   turns: T[],
-  input: { moderate: boolean; visible: boolean; agendaItemId: string | null },
+  input: {
+    moderate: boolean;
+    visible: boolean;
+    agendaItemId: string | null;
+    include?: readonly string[];
+  },
 ): T[] {
   if (input.moderate) {
     return turns.filter(
       (turn) =>
         OPEN_TURN_STATUSES.includes(turn.status) ||
-        turn.agendaItemId === input.agendaItemId,
+        turn.agendaItemId === input.agendaItemId ||
+        Boolean(input.include?.includes(turn.id)),
     );
   }
   if (!input.visible) return [];

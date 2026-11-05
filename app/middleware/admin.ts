@@ -6,8 +6,9 @@ export type AdminRequirement = "admin" | PermissionKey;
 declare module "#app" {
   interface PageMeta {
     /**
-     * Access to an admin page: the user needs any one of these. Pages
-     * without it are Admin-only. The server checks again on every request.
+     * Access to an admin page: the user needs any one of these. An Admin
+     * holds every permission. Pages without it are Admin-only. The server
+     * checks again on every request.
      */
     adminAccess?: AdminRequirement[];
   }
@@ -15,9 +16,10 @@ declare module "#app" {
 
 /**
  * Client guard for the admin area, used as `middleware: "admin"`. It runs
- * after auth.global, so the signed-in user is already loaded. Users and
- * roles are Admin-only (their API is /api/admin/**); members need
- * `member:manage`, which Secretaría holds.
+ * after auth.global, so the signed-in user is already loaded. Each page
+ * opens by permission: users and their grants with `user:manage_roles`,
+ * roles with `role:manage_permissions`, members with `member:manage`. The
+ * association's Secretaría and Presidencia hold all of them.
  */
 export default defineNuxtRouteMiddleware(async (to) => {
   const { ensure, isAdmin, can } = useMe();

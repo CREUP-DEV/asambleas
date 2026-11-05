@@ -179,6 +179,21 @@ describe("documentAudience", () => {
       documentAudience({ proponent: null }, { memberId: null, manager: false }),
     ).toBe("other");
   });
+
+  it("treats a co-presenter as a presenter", () => {
+    const joint = {
+      ...document,
+      coProponents: [
+        { id: "m2", acronym: "UPV", name: "UPV", kind: "asociado" as const },
+      ],
+    };
+    expect(documentAudience(joint, { memberId: "m2", manager: false })).toBe(
+      "presenter",
+    );
+    expect(documentAudience(joint, { memberId: "m3", manager: false })).toBe(
+      "other",
+    );
+  });
 });
 
 describe("isPendingProgress", () => {

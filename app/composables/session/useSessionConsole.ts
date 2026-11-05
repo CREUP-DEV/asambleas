@@ -43,9 +43,9 @@ import {
   buildSessionAgendaRows,
   buildSessionQueue,
   isSessionAwaitingValidation,
+  isSessionIncorporated,
   isSessionOpen,
   isSessionPendingAdmission,
-  isSessionProponentRejected,
   isSessionPublishable,
   isSessionTransactable,
   sessionAmendmentStage,
@@ -305,10 +305,12 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   );
   const base = computed(() => document.value?.baseVersion?.blocks ?? []);
   /**
-   * The member that presents the document on screen: its acceptance is the
-   * one that lets a member's transactional through (whatever its role).
+   * What an amendment the main presenter accepts becomes in this document:
+   * "incorporate" puts it in the text at once, without a vote.
    */
-  const presenterId = computed(() => document.value?.proponent?.id ?? null);
+  const incorporatesAccepted = computed(
+    () => document.value?.acceptedAmendments === "incorporate",
+  );
 
   /** Short label of an amendment: its code, or "#n" before it has one. */
   function label(id: string): string {
@@ -317,14 +319,13 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     return amendment.code ?? (amendment.number ? `#${amendment.number}` : "?");
   }
 
-  /** Where an amendment stands in the session (sessionAmendmentStage). */
+  /**
+   * Where an amendment stands in the session (sessionAmendmentStage), with
+   * the document's other amendments, so a transactional another one got
+   * ahead of reads as superseded.
+   */
   function stageOf(amendment: AmendmentDto): SessionAmendmentStage {
-    return sessionAmendmentStage(amendment, presenterId.value);
-  }
-
-  /** A member's transactional the document's presenter turned down. */
-  function isProponentRejected(amendment: AmendmentDto): boolean {
-    return isSessionProponentRejected(amendment, presenterId.value);
+    return sessionAmendmentStage(amendment, byId.value);
   }
 
   // Queue ---------------------------------------------------------------------
@@ -340,10 +341,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   const undecided = computed(() =>
     amendments.value.filter((amendment) => amendment.status === "submitted"),
   );
-  // The same, split by who has to act: the Mesa, the Secretaría, the
-  // document's presenter or whoever proposed a transactional it turned down.
+  // The same, split by who has to act: the Mesa, the assembly (late ones),
+  // the main authors of what a transactional replaces, or the Secretaría.
   const finalVoteBlockers = computed(() =>
-    sessionFinalVoteBlockers(amendments.value, [], presenterId.value),
+    sessionFinalVoteBlockers(amendments.value),
   );
   const preview = computed(() =>
     sessionConsolidatedPreview(base.value, amendments.value),
@@ -989,9 +990,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   /**
    * Withdraws a presented amendment that is not open to a decision yet, on
    * behalf of whoever presented it (POST .../withdraw: its authors or the
-   * Mesa, until it is decided): a member's transactional the document's
-   * presenter has not approved or turned down, or a late amendment the
-   * assembly has not agreed to treat. Undone from the toast by reopening it.
+   * Mesa, until it is decided): a member's transactional the main authors
+   * have not answered yet, or a late amendment the assembly has not agreed
+   * to treat. Undone from the toast by reopening it.
    */
   async function withdrawSubmission(
     amendment: AmendmentDto,
@@ -1108,9 +1109,13 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   // Proponent position ------------------------------------------------------------
 
   /**
-   * Records the position the proponent states in the room (accept, reject,
-   * transact). The comment already stored is kept: the console only changes
-   * the position itself.
+   * Records the answer the document's main presenter gives in the room
+   * (accept, reject, transact). The comment already stored is kept: the
+   * console only changes the position itself. The position it last saw
+   * travels with it, so two people answering at once get a conflict instead
+   * of overwriting each other. In a document that incorporates accepted
+   * amendments, accepting approves it at once and changing the answer
+   * reopens it: the toast says which.
    */
   async function setPosition(
     amendment: AmendmentDto,
@@ -1120,6 +1125,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     const body: PositionBody = {
       position,
       comment: fresh.position?.comment ?? null,
+      positionUpdatedAt: fresh.position?.updatedAt ?? null,
     };
     try {
       const updated = await track(amendment.id, () =>
@@ -1131,12 +1137,24 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         ),
       );
       upsertAmendment(updated);
+      const code = updated.code ?? label(updated.id);
+      const incorporated =
+        isSessionIncorporated(updated) && !isSessionIncorporated(fresh);
+      const reopened =
+        isSessionIncorporated(fresh) && updated.status === "submitted";
       toast.add({
         id: `session-position-${updated.id}`,
-        title: t("amendment.position.saved"),
+        title: incorporated
+          ? t("session.toasts.incorporated", { code })
+          : reopened
+            ? t("session.toasts.unincorporated", { code })
+            : t("amendment.position.saved"),
         color: "success",
         icon: "i-lucide-check",
       });
+      // Incorporated like any approval: offer to lapse what it leaves
+      // without object and flag what collides with it in the text.
+      if (incorporated) offerLapses(updated, null);
       return updated;
     } catch (error) {
       api.notifyError(error, "amendment.position.saveFailed");
@@ -1385,6 +1403,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         ),
       );
       upsertAmendment(updated);
+      // The last acceptance replaces the sources (they become transacted)
+      // and a rejection closes it: the rest of the list changes too.
+      void refreshAmendments();
       return updated;
     } catch (error) {
       api.notifyError(error, "session.errors.acceptance");
@@ -1504,10 +1525,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     relations,
     byId,
     base,
-    presenterId,
+    incorporatesAccepted,
     label,
     stageOf,
-    isProponentRejected,
     // derived
     hideDecided,
     queue,

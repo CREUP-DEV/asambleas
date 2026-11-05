@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import type { AssemblyDto, DocumentDto } from "~~/shared/types/api";
 import { errorStatus } from "~/composables/api/useApi";
+import {
+  formatMemberList,
+  isDocumentPresenter,
+  presenterPartners,
+} from "~/composables/document/documentPresenters";
 import { formatDateTime } from "~/utils/format";
 
 /**
@@ -11,7 +16,9 @@ import { formatDateTime } from "~/utils/format";
  * (upload a Word file, write it, or upload the PDF of a `file` document) and
  * 3) "Enviar a Secretaría" ("Volver a enviar" after a correction). A banner
  * says where the draft stands: expected by a date, or sent back with the
- * Secretaría's correction note. Sending saves the data of step 1 and the
+ * Secretaría's correction note. Co-presenters edit the draft like the main
+ * presenter; the page tells each of them who they prepare it with and who
+ * answers the amendments. Sending saves the data of step 1 and the
  * text first, so the presenter never has to press "Guardar" before it; while
  * the text is still missing the send button stays secondary, so the Word
  * upload is the one main action.
@@ -225,8 +232,33 @@ const publishPrimary = computed(() => {
   const current = document.value;
   if (!current || !canPublish.value) return false;
   if (validating.value || republish.value) return true;
-  const proponentId = current.proponent?.id ?? null;
-  return proponentId === null || proponentId === me.member.value?.id;
+  return (
+    current.proponent === null ||
+    isDocumentPresenter(current, me.member.value?.id)
+  );
+});
+
+/**
+ * A presenter sharing the document with other members: who they are and
+ * who answers the amendments (null when presenting it alone).
+ */
+const partners = computed(() =>
+  document.value
+    ? presenterPartners(document.value, me.member.value?.id)
+    : null,
+);
+const partnerList = computed(() =>
+  formatMemberList(
+    partners.value?.others.map((member) => member.acronym) ?? [],
+    locale.value,
+  ),
+);
+const partnersAnswer = computed(() => {
+  const current = partners.value;
+  if (!current?.main) return "";
+  return current.mainIsMine
+    ? t("document.presenters.mainIsYours", { member: current.main.acronym })
+    : t("document.presenters.mainIsOther", { member: current.main.acronym });
 });
 
 /** The Secretaría asked for a correction: sending again. */
@@ -466,6 +498,7 @@ async function onDeleted(): Promise<void> {
         :document="document"
         :assembly="assembly"
         :progress="false"
+        :show-answerer="!(guided && partners)"
       >
         <UButton
           :to="workspacePath"
@@ -560,6 +593,23 @@ async function onDeleted(): Promise<void> {
           canPublish ? t('document.republish.description') : undefined
         "
       />
+
+      <!-- Co-presenters: who they prepare it with, who answers -->
+      <p
+        v-if="guided && partners"
+        class="text-default flex max-w-4xl items-start gap-2 text-sm"
+        data-testid="document-partners"
+      >
+        <UIcon
+          name="i-lucide-users"
+          class="text-muted mt-0.5 size-4 shrink-0"
+          aria-hidden="true"
+        />
+        <span>
+          {{ t("document.presenters.workingWith", { members: partnerList }) }}
+          {{ partnersAnswer }}
+        </span>
+      </p>
 
       <!-- Presenters: three numbered steps -->
       <div v-if="guided" class="max-w-4xl space-y-8">

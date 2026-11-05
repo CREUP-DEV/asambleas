@@ -10,9 +10,20 @@ import {
 } from "~~/shared/constants/permissions";
 import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
 
+/**
+ * People who have signed in: their role, the member they act for and the
+ * permissions given to them on top of their role. Opens with
+ * `user:manage_roles` (Secretaría and Presidencia hold it). Only an Admin
+ * gives or takes the Administrator role: for anyone else that option and
+ * the role of an Admin are locked, with the reason next to them. Nobody
+ * changes their own role, and only an Admin changes the member their own
+ * account acts for or their own extra permissions: otherwise managing users
+ * would let anyone give themselves every permission. The server refuses all
+ * of these too (PUT /api/admin/users/[id]/role, /member and /permissions).
+ */
 definePageMeta({
   middleware: ["admin"],
-  adminAccess: ["admin"],
+  adminAccess: ["user:manage_roles"],
 });
 
 interface UserRow {
@@ -61,7 +72,7 @@ const PAGE_SIZE = 50;
 const { t, te, locale } = useI18n();
 const toast = useToast();
 const api = useApi();
-const { me } = useMe();
+const { me, isAdmin } = useMe();
 
 useHead({ title: () => t("admin.users.title") });
 
@@ -104,12 +115,50 @@ function roleName(name: string): string {
   return key ? t(key) : name;
 }
 
+function isAdminRoleName(name: string | null | undefined): boolean {
+  return name === SYSTEM_ROLES.ADMIN;
+}
+
+/**
+ * The roles to choose from. Only an Admin gives the Administrator role:
+ * anyone else sees it disabled, with the reason.
+ */
 const roleOptions = computed(() =>
-  (rolesData.value?.data ?? []).map((role) => ({
-    label: roleName(role.name),
-    value: role.id,
-  })),
+  (rolesData.value?.data ?? []).map((role) => {
+    const locked = !isAdmin.value && isAdminRoleName(role.name);
+    return {
+      label: roleName(role.name),
+      value: role.id,
+      disabled: locked,
+      description: locked ? t("admin.users.adminRoleOnlyAdmins") : undefined,
+    };
+  }),
 );
+
+/** Only an Admin takes the Administrator role away from someone. */
+function roleLocked(user: UserRow): boolean {
+  return !isAdmin.value && isAdminRoleName(user.role?.name);
+}
+
+function isSelf(user: UserRow): boolean {
+  return user.id === currentUserId.value;
+}
+
+/**
+ * Only an Admin changes their own member link or extra permissions; nobody
+ * changes their own role.
+ */
+function ownAccountLocked(user: UserRow): boolean {
+  return isSelf(user) && !isAdmin.value;
+}
+
+/** Why the controls of a row are locked, if they are. */
+function rowLockReason(user: UserRow): string | null {
+  if (ownAccountLocked(user)) return t("admin.users.selfLocked");
+  if (isSelf(user)) return t("admin.users.cannotChangeSelf");
+  if (roleLocked(user)) return t("admin.users.adminRoleLocked");
+  return null;
+}
 
 function formatDay(value: string | null): string {
   return value
@@ -194,6 +243,11 @@ function selectRole(user: UserRow, roleId: unknown): void {
   }
   const option = roleOptions.value.find((role) => role.value === roleId);
   if (!option) return;
+  if (option.disabled || roleLocked(user)) {
+    toast.add({ title: t("admin.users.adminRoleLocked"), color: "warning" });
+    selectResetKey.value += 1;
+    return;
+  }
   pendingChange.value = {
     userId: user.id,
     userName: user.name || user.email,
@@ -248,7 +302,7 @@ const linkConfirmOpen = computed({
 });
 
 function selectMember(user: UserRow, value: unknown): void {
-  if (typeof value !== "string") return;
+  if (typeof value !== "string" || ownAccountLocked(user)) return;
   const memberId = value === NO_MEMBER ? null : value;
   if (memberId === (user.memberId ?? null)) return;
   const member = memberId ? membersById.value.get(memberId) : null;
@@ -295,17 +349,18 @@ function permissionLabel(key: PermissionKey): string {
 }
 
 /**
- * Managing users, roles and permissions belongs to the Administrator role:
- * /api/admin/** checks the role, never these keys, so granting them to one
- * person would change nothing. They are not offered as extras.
+ * Managing users or roles opens the administration and lets the person
+ * give any permission but Administrator: said next to those two switches.
  */
-const ADMIN_ONLY_PERMISSIONS: readonly PermissionKey[] = [
+const POWERFUL_PERMISSIONS: ReadonlySet<PermissionKey> = new Set([
   PERMISSION_KEYS.USER_MANAGE_ROLES,
   PERMISSION_KEYS.ROLE_MANAGE_PERMISSIONS,
-];
+]);
 
-function isAdminOnly(key: PermissionKey): boolean {
-  return ADMIN_ONLY_PERMISSIONS.includes(key);
+function permissionHelp(key: PermissionKey): string | undefined {
+  return POWERFUL_PERMISSIONS.has(key)
+    ? t("admin.users.permissions.powerfulHelp")
+    : undefined;
 }
 
 /** Permissions each role gives, by role id. */
@@ -361,10 +416,10 @@ function permissionsOfRole(
 
 /**
  * Whether a stored grant adds something the role does not give. Until the
- * role's permissions load, every grant counts (except the admin-only ones).
+ * role's permissions load, every grant counts.
  */
 function addsToRole(key: PermissionKey, fromRole: PermissionKey[] | null) {
-  return !isAdminOnly(key) && !(fromRole?.includes(key) ?? false);
+  return !(fromRole?.includes(key) ?? false);
 }
 
 /** Grants that add to the person's role: the "+N" badge on the row. */
@@ -387,6 +442,7 @@ const permissionsOpen = computed({
 });
 
 function openPermissions(user: UserRow): void {
+  if (ownAccountLocked(user)) return;
   permissionsTarget.value = user;
   permissionsDraft.value = new Set(user.extraPermissions ?? []);
   const role = user.role;
@@ -422,32 +478,25 @@ const includedByRole = computed(() =>
   ),
 );
 
-/** What can be switched on as an extra: outside the role, not admin-only. */
+/**
+ * What can be switched on as an extra: whatever the role does not give,
+ * managing users and roles included (those open the admin pages too).
+ */
 const grantable = computed(() =>
-  ALL_PERMISSION_KEYS.filter(
-    (key) => !includedByRole.value.includes(key) && !isAdminOnly(key),
-  ),
+  ALL_PERMISSION_KEYS.filter((key) => !includedByRole.value.includes(key)),
 );
 
 /**
- * Grants stored for the person that add nothing now: their role already
- * gives them, or only the Administrator role uses them. They are listed so
- * they can be removed; saving keeps the ones left on.
+ * Grants stored for the person that add nothing now, because their role
+ * already gives them. They are listed so they can be removed; saving keeps
+ * the ones left on.
  */
 const redundantGrants = computed(() => {
   const stored = permissionsTarget.value?.extraPermissions ?? [];
   return ALL_PERMISSION_KEYS.filter(
-    (key) =>
-      stored.includes(key) &&
-      (includedByRole.value.includes(key) || isAdminOnly(key)),
+    (key) => stored.includes(key) && includedByRole.value.includes(key),
   );
 });
-
-function redundantReason(key: PermissionKey): string {
-  return includedByRole.value.includes(key)
-    ? t("admin.users.permissions.coveredByRole")
-    : t("admin.users.permissions.adminOnly");
-}
 
 /** The server did not say which extras the person has: saving would guess. */
 const extrasUnknown = computed(
@@ -479,11 +528,11 @@ function toggleExtra(key: PermissionKey, value: boolean): void {
 async function savePermissions(): Promise<void> {
   const user = permissionsTarget.value;
   if (!user || permissionsSaving.value || extrasUnknown.value) return;
+  if (ownAccountLocked(user)) return;
   permissionsSaving.value = true;
   try {
-    // Grants that add nothing now (the role gives them, or only the
-    // Administrator uses them) are kept unless switched off: the role may
-    // change.
+    // Grants that add nothing now (the role gives them) are kept unless
+    // switched off: the role may change.
     const permissions = ALL_PERMISSION_KEYS.filter((key) =>
       permissionsDraft.value.has(key),
     );
@@ -650,7 +699,9 @@ function goToPage(next: number): void {
               :items="roleOptions"
               :loading="changingUserId === row.original.id"
               :disabled="
-                row.original.id === currentUserId || changingUserId !== null
+                row.original.id === currentUserId ||
+                roleLocked(row.original) ||
+                changingUserId !== null
               "
               :placeholder="t('admin.users.noRole')"
               :aria-label="
@@ -658,12 +709,31 @@ function goToPage(next: number): void {
                   user: row.original.name || row.original.email,
                 })
               "
+              :aria-describedby="
+                rowLockReason(row.original)
+                  ? `row-locked-${row.original.id}`
+                  : undefined
+              "
               class="w-44"
               @update:model-value="
                 (value: unknown) => selectRole(row.original, value)
               "
             />
+            <p
+              v-if="rowLockReason(row.original)"
+              :id="`row-locked-${row.original.id}`"
+              class="text-muted flex max-w-44 items-start gap-1 text-xs"
+            >
+              <UIcon
+                name="i-lucide-lock"
+                class="mt-px size-3.5 shrink-0"
+                aria-hidden="true"
+              />
+              <span>{{ rowLockReason(row.original) }}</span>
+            </p>
+            <!-- Hidden, not disabled, on one's own row: the note says why. -->
             <UButton
+              v-if="!ownAccountLocked(row.original)"
               color="neutral"
               variant="link"
               size="xs"
@@ -719,13 +789,20 @@ function goToPage(next: number): void {
               :items="memberOptionsFor(row.original)"
               value-key="value"
               :loading="linkingUserId === row.original.id"
-              :disabled="linkingUserId !== null"
+              :disabled="
+                linkingUserId !== null || ownAccountLocked(row.original)
+              "
               :placeholder="t('admin.users.chooseMember')"
               :search-input="{ placeholder: t('admin.users.searchMember') }"
               :aria-label="
                 t('admin.users.memberFor', {
                   user: row.original.name || row.original.email,
                 })
+              "
+              :aria-describedby="
+                ownAccountLocked(row.original)
+                  ? `row-locked-${row.original.id}`
+                  : undefined
               "
               class="w-full"
               @update:model-value="
@@ -960,6 +1037,7 @@ function goToPage(next: number): void {
                     <USwitch
                       :model-value="permissionsDraft.has(key)"
                       :label="permissionLabel(key)"
+                      :description="permissionHelp(key)"
                       :disabled="permissionsSaving || extrasUnknown"
                       @update:model-value="
                         (value: boolean) => toggleExtra(key, value)
@@ -967,14 +1045,6 @@ function goToPage(next: number): void {
                     />
                   </li>
                 </ul>
-                <p class="text-muted flex items-start gap-1.5 text-sm">
-                  <UIcon
-                    name="i-lucide-lock"
-                    class="mt-0.5 size-4 shrink-0"
-                    aria-hidden="true"
-                  />
-                  <span>{{ t("admin.users.permissions.adminOnlyNote") }}</span>
-                </p>
               </section>
             </template>
 
@@ -1006,7 +1076,7 @@ function goToPage(next: number): void {
                   <USwitch
                     :model-value="permissionsDraft.has(key)"
                     :label="permissionLabel(key)"
-                    :description="redundantReason(key)"
+                    :description="t('admin.users.permissions.coveredByRole')"
                     :disabled="permissionsSaving || extrasUnknown"
                     @update:model-value="
                       (value: boolean) => toggleExtra(key, value)
