@@ -943,7 +943,7 @@ const filteredBlockLabel = computed(() =>
              section toolbar and padding), like the session console. -->
         <div
           ref="workspaceBox"
-          class="border-default flex flex-col overflow-hidden rounded-lg border lg:h-[calc(100dvh-var(--ui-header-height)-6.25rem)] lg:min-h-[32rem] lg:flex-row"
+          class="border-default flex flex-col overflow-hidden rounded-lg border lg:h-[calc(100dvh-var(--ui-header-height)-3rem)] lg:min-h-[32rem] lg:flex-row"
         >
           <!-- Text -->
           <UDashboardPanel

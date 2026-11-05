@@ -25,8 +25,22 @@ const { t, locale } = useI18n();
 const now = useAppNow();
 
 const progress = useDocumentProgress(() => props.document, "manager");
-const pending = computed(() => isPendingProgress(progress.value.state));
 const isDraft = computed(() => props.document.status === "draft");
+/**
+ * The status sentence, unless it would only repeat the deadline line above
+ * ("Esperando el texto. Fecha límite: …"): for a draft with a deadline the
+ * chip and that line already say it all.
+ */
+const showSentence = computed(
+  () =>
+    isPendingProgress(progress.value.state) &&
+    !(
+      isDraft.value &&
+      progress.value.dueAt &&
+      (progress.value.state === "expected" ||
+        progress.value.state === "preparing")
+    ),
+);
 
 /** Correction notes longer than this start folded to three lines. */
 const LONG_NOTE = 160;
@@ -153,7 +167,7 @@ const when = computed<{ label: string; at: string } | null>(() => {
         </template>
       </p>
 
-      <div v-if="pending" class="space-y-0.5">
+      <div v-if="showSentence" class="space-y-0.5">
         <p
           class="flex items-start gap-1.5 text-sm"
           :class="SENTENCE_COLORS[progress.color]"
