@@ -3103,7 +3103,8 @@
       "announceAmendment": "En debate: {code}, de {who}. {status}.",
       "backToDocument": "Volver al documento",
       "replaces": "Sustituye a {codes}.",
-      "undebateDocument": "Quitar el documento del debate"
+      "undebateDocument": "Quitar el documento del debate",
+      "undebateItem": "Quitar el punto del debate"
     },
     "stage": {
       "awaiting_validation": "Espera a Secretaría",

@@ -152,6 +152,17 @@ const documentMoreItems = computed<DropdownMenuItem[][]>(() => [
   ],
 ]);
 
+/** "Más" of an agenda item: end the debate altogether. */
+const itemMoreItems = computed<DropdownMenuItem[][]>(() => [
+  [
+    {
+      label: t("session.now.undebateItem"),
+      icon: "i-lucide-radio-tower",
+      onSelect: () => void session.clearDebate(),
+    },
+  ],
+]);
+
 const itemDocuments = computed(() =>
   (liveRow.value?.documents ?? []).filter(
     (document) => document.status === "published",
@@ -444,16 +455,27 @@ const announcement = computed(() => {
           />
         </li>
       </ul>
-      <UButton
-        v-if="nextAgenda"
-        :size="itemDocuments.length === 0 ? 'lg' : 'md'"
-        :color="itemDocuments.length === 0 ? 'primary' : 'neutral'"
-        :variant="itemDocuments.length === 0 ? 'solid' : 'ghost'"
-        trailing-icon="i-lucide-arrow-right"
-        :label="t('session.now.nextItem', { title: nextAgendaLabel })"
-        :loading="liveBusy"
-        @click="session.debateAgendaTarget(nextAgenda)"
-      />
+      <div class="flex flex-wrap items-center gap-2">
+        <UButton
+          v-if="nextAgenda"
+          :size="itemDocuments.length === 0 ? 'lg' : 'md'"
+          :color="itemDocuments.length === 0 ? 'primary' : 'neutral'"
+          :variant="itemDocuments.length === 0 ? 'solid' : 'ghost'"
+          trailing-icon="i-lucide-arrow-right"
+          :label="t('session.now.nextItem', { title: nextAgendaLabel })"
+          :loading="liveBusy"
+          @click="session.debateAgendaTarget(nextAgenda)"
+        />
+        <UDropdownMenu :items="itemMoreItems" :content="{ align: 'end' }">
+          <UButton
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-ellipsis"
+            :label="t('session.now.more')"
+            :disabled="liveBusy"
+          />
+        </UDropdownMenu>
+      </div>
     </template>
 
     <p v-else class="text-muted">{{ t("session.now.idle") }}</p>
