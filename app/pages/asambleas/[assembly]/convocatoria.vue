@@ -314,13 +314,14 @@ function printPage() {
           >
             {{ t("convocation.agendaTitle") }}
           </h2>
-          <div
-            v-if="agendaPending && !agenda"
-            class="space-y-2"
-            aria-busy="true"
-            :aria-label="t('agenda.loading')"
-          >
-            <USkeleton v-for="index in 5" :key="index" class="h-5 w-full" />
+          <div v-if="agendaPending && !agenda" class="space-y-2" role="status">
+            <span class="sr-only">{{ t("agenda.loading") }}</span>
+            <USkeleton
+              v-for="index in 5"
+              :key="index"
+              aria-hidden="true"
+              class="h-5 w-full"
+            />
           </div>
           <UAlert
             v-else-if="agendaError && !agenda"

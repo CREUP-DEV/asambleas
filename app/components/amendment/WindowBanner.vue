@@ -4,7 +4,8 @@ import type { DocumentDto } from "~~/shared/types/api";
 /**
  * State of a document's amendment window: open (with the countdown to its
  * close), not open yet, or closed. When it is closed but the actor can still
- * present amendments, it warns that they will be late and need admission.
+ * present amendments, the same title comes in warning colours and the
+ * description warns that they will be late and need admission.
  */
 const props = defineProps<{
   document: Pick<
@@ -76,7 +77,7 @@ const alert = computed(() => {
         ? {
             color: "warning" as const,
             icon: "i-lucide-clock-alert",
-            title: t("workspace.window.closedLateTitle"),
+            title: t("workspace.window.closed"),
           }
         : {
             color: "neutral" as const,

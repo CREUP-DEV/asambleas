@@ -8,7 +8,8 @@ import { consolidationInputs } from "~/composables/amendment/workspace";
  * every approved amendment applied, each amended fragment marked with its
  * amendment code. Clicking a fragment shows that amendment, its outcome and
  * its vote. Below come the final vote (when held) and an annex of every
- * amendment by outcome. Clean and annotated PDFs are exported from here.
+ * decided amendment by outcome (outcomes no amendment had are left out).
+ * Clean and annotated PDFs are exported from here.
  */
 
 type Outcome = Extract<
@@ -88,7 +89,7 @@ const annex = computed(() =>
     amendments: list.amendments.value.filter(
       (amendment) => amendment.status === status,
     ),
-  })),
+  })).filter((group) => group.amendments.length > 0),
 );
 const decidedCount = computed(() =>
   annex.value.reduce((sum, group) => sum + group.amendments.length, 0),
@@ -139,15 +140,11 @@ watch(popoverOpen, (open) => {
 <template>
   <div class="flex flex-col gap-6">
     <!-- Loading -->
-    <div
-      v-if="pending"
-      class="flex flex-col gap-4"
-      aria-busy="true"
-      :aria-label="t('workspace.loading')"
-    >
-      <USkeleton class="h-4 w-32" />
-      <USkeleton class="h-8 w-3/4 max-w-xl" />
-      <USkeleton class="h-96 w-full" />
+    <div v-if="pending" class="flex flex-col gap-4" role="status">
+      <span class="sr-only">{{ t("workspace.loading") }}</span>
+      <USkeleton aria-hidden="true" class="h-4 w-32" />
+      <USkeleton aria-hidden="true" class="h-8 w-3/4 max-w-xl" />
+      <USkeleton aria-hidden="true" class="h-96 w-full" />
     </div>
 
     <!-- Error -->
@@ -359,6 +356,7 @@ watch(popoverOpen, (open) => {
                 :amendment="popoverAmendment"
                 :label="list.labelOf(popoverAmendment.id)"
                 :label-of="list.labelOf"
+                :by-id="list.byId.value"
                 show-justification
               />
               <UButton
@@ -400,9 +398,15 @@ watch(popoverOpen, (open) => {
           <div
             v-if="list.pending.value && list.amendments.value.length === 0"
             class="flex flex-col gap-3"
-            aria-busy="true"
+            role="status"
           >
-            <USkeleton v-for="i in 3" :key="i" class="h-20 w-full" />
+            <span class="sr-only">{{ t("amendment.list.loading") }}</span>
+            <USkeleton
+              v-for="i in 3"
+              :key="i"
+              aria-hidden="true"
+              class="h-20 w-full"
+            />
           </div>
 
           <UAlert
@@ -444,13 +448,7 @@ watch(popoverOpen, (open) => {
                   :label="String(group.amendments.length)"
                 />
               </h3>
-              <p
-                v-if="group.amendments.length === 0"
-                class="text-muted text-sm"
-              >
-                {{ t("workspace.consolidatedView.none") }}
-              </p>
-              <ul v-else class="flex flex-col gap-2">
+              <ul class="flex flex-col gap-2">
                 <li
                   v-for="amendment in group.amendments"
                   :key="amendment.id"
@@ -460,6 +458,7 @@ watch(popoverOpen, (open) => {
                     :amendment="amendment"
                     :label="list.labelOf(amendment.id)"
                     :label-of="list.labelOf"
+                    :by-id="list.byId.value"
                     :heading-level="4"
                   >
                     <UButton

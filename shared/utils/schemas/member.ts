@@ -68,3 +68,14 @@ export const memberListQuerySchema = z.object({
 
 export type MemberCreateBody = z.input<typeof memberCreateBodySchema>;
 export type MemberUpdateBody = z.input<typeof memberUpdateBodySchema>;
+
+/**
+ * PUT /api/admin/users/[id]/member: links an account to the member it acts
+ * for, or unlinks it with null, when role sync cannot (missing initials).
+ */
+export const userMemberLinkBodySchema = z.object({
+  memberId: z
+    .string()
+    .regex(/^[a-z0-9]{20,32}$/)
+    .nullable(),
+});

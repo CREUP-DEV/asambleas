@@ -22,22 +22,23 @@ const localePath = useLocalePath();
       height="32"
     />
     <template v-else>
+      <!-- In a narrow sidebar the logo gives way, never the product name. -->
       <img
         src="/creup-site-header-logo-light.svg"
         alt=""
-        class="h-7 w-auto shrink-0 dark:hidden"
+        class="h-7 w-auto min-w-0 shrink object-contain object-left dark:hidden"
         width="126"
         height="28"
       />
       <img
         src="/creup-site-header-logo-dark.svg"
         alt=""
-        class="hidden h-7 w-auto shrink-0 dark:block"
+        class="hidden h-7 w-auto min-w-0 shrink object-contain object-left dark:block"
         width="126"
         height="28"
       />
       <span
-        class="border-default text-muted truncate border-s ps-2.5 text-xs font-semibold tracking-wide uppercase"
+        class="border-default text-muted shrink-0 border-s ps-2.5 text-xs font-semibold tracking-wide whitespace-nowrap uppercase"
       >
         {{ t("shell.brand.product") }}
       </span>

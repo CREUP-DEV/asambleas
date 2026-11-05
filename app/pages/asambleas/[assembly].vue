@@ -5,8 +5,16 @@ import {
   ASSEMBLY_STATUS_TRANSITIONS,
   type AssemblyStatus,
 } from "~~/shared/constants/domain";
-import type { AssemblyDto } from "~~/shared/types/api";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import type { AssemblyDto, ReviewQueueDto } from "~~/shared/types/api";
 import { errorStatus } from "~/composables/api/useApi";
+import {
+  REVIEW_BADGE_STATE_KEY,
+  pendingReviewCount,
+  reviewQueueKey,
+  type ReviewBadgeState,
+} from "~/components/review/-queue";
+import { affectsReviewQueue } from "~/components/review/-live";
 
 /**
  * Assembly hub: loads the assembly by slug (or id), shares it with the
@@ -19,6 +27,34 @@ import { errorStatus } from "~/composables/api/useApi";
  * set `layout: false` to leave the app shell.
  */
 
+definePageMeta({
+  middleware: [
+    // On a full load the layout's sidebar renders on the server before this
+    // page, so the assembly is stored first for it to list the sections.
+    // Client navigations need nothing: the fetch below stores it before the
+    // new page shows. Errors are left to that fetch (404, load error).
+    async (to) => {
+      if (import.meta.client) return;
+      const param = to.params.assembly;
+      if (typeof param !== "string" || !param) return;
+      // CURRENT_ASSEMBLY_STATE_KEY, written out so that module stays out of
+      // the routes chunk.
+      const stored = useState<AssemblyDto | null>(
+        "current-assembly",
+        () => null,
+      );
+      if (stored.value?.slug === param || stored.value?.id === param) return;
+      try {
+        stored.value = await useRequestFetch()<AssemblyDto>(
+          `/api/assemblies/${encodeURIComponent(param)}`,
+        );
+      } catch {
+        // The page fetches it again and shows what went wrong.
+      }
+    },
+  ],
+});
+
 const route = useRoute();
 const router = useRouter();
 const { t, locale } = useI18n();
@@ -28,9 +64,29 @@ const api = useApi();
 
 const routeParam = () => String(route.params.assembly ?? "");
 
+const sharedAssembly = useState<AssemblyDto | null>(
+  CURRENT_ASSEMBLY_STATE_KEY,
+  () => null,
+);
+
 const { data, error, status, pending, refresh } = await useFetch<AssemblyDto>(
   () => `/api/assemblies/${encodeURIComponent(routeParam())}`,
-  { key: computed(() => `assembly-${routeParam()}`) },
+  {
+    key: computed(() => `assembly-${routeParam()}`),
+    // The first load on the server reuses what the route middleware stored.
+    // Refreshes (live events, retry, conflicts) always ask the server again.
+    getCachedData: (key, nuxtApp, ctx) => {
+      if (nuxtApp.isHydrating) return nuxtApp.payload.data[key];
+      if (import.meta.server && ctx.cause === "initial") {
+        const stored = sharedAssembly.value;
+        const param = routeParam();
+        if (stored && (stored.slug === param || stored.id === param)) {
+          return stored;
+        }
+      }
+      return undefined;
+    },
+  },
 );
 
 function notFound() {
@@ -85,6 +141,87 @@ async function retryRefresh() {
 
 const isPrintView = computed(() => Boolean(route.meta.print));
 
+// Validation inbox --------------------------------------------------------------
+//
+// The Secretaría's pending count for the "Validación" section and the
+// sidebar. The queue is fetched under the key the inbox page uses too, so
+// both share one request and one state; it follows the live stream here,
+// for every section. Client only: the count is not worth delaying the page.
+//
+// The count shows only once mounted. The inbox page fetches the same key
+// during SSR, after this toolbar has rendered without it; the client finds
+// that data in the payload, so showing it during hydration would mismatch.
+
+const { can } = useMe();
+const canValidateDocuments = computed(() =>
+  can(PERMISSION_KEYS.DOCUMENT_MANAGE),
+);
+const canReviewAmendments = computed(() =>
+  can(PERMISSION_KEYS.AMENDMENT_REVIEW),
+);
+const canReview = computed(
+  () => canValidateDocuments.value || canReviewAmendments.value,
+);
+
+const reviewFetch = useFetch<ReviewQueueDto>(
+  () => `${current.apiBase.value}/review`,
+  {
+    key: computed(() => reviewQueueKey(assembly.value?.id ?? "none")),
+    server: false,
+    lazy: true,
+    immediate: canReview.value && Boolean(assembly.value),
+    dedupe: "defer",
+  },
+);
+const { data: reviewQueue } = keepLastGoodData(reviewFetch, {
+  resetOn: () => assembly.value?.id,
+});
+
+// `immediate` is read once: start the fetch when the assembly or the
+// permission arrive later (a first load that failed, then a retry).
+watch([() => assembly.value?.id, canReview], ([id, allowed]) => {
+  if (id && allowed && reviewFetch.status.value === "idle") {
+    void reviewFetch.execute();
+  }
+});
+
+const mounted = ref(false);
+onMounted(() => {
+  mounted.value = true;
+});
+
+const reviewCount = computed(() =>
+  mounted.value && canReview.value
+    ? pendingReviewCount(reviewQueue.value, {
+        documents: canValidateDocuments.value,
+        amendments: canReviewAmendments.value,
+      })
+    : 0,
+);
+
+current.onLive((events) => {
+  if (canReview.value && affectsReviewQueue(events)) {
+    void reviewFetch.refresh({ dedupe: "defer" });
+  }
+});
+
+const reviewBadge = useState<ReviewBadgeState | null>(
+  REVIEW_BADGE_STATE_KEY,
+  () => null,
+);
+watch(
+  [() => assembly.value?.id, reviewCount, canReview],
+  ([id, count, allowed]) => {
+    reviewBadge.value = id && allowed ? { assemblyId: id, count } : null;
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  if (reviewBadge.value?.assemblyId === assembly.value?.id) {
+    reviewBadge.value = null;
+  }
+});
+
 useHead({
   title: () => assembly.value?.label ?? t("assembly.hub.loading"),
 });
@@ -126,6 +263,17 @@ const transitions = computed<TransitionAction[]>(() => {
 const forwardTransitions = computed(() =>
   transitions.value.filter((transition) => transition.forward),
 );
+
+/**
+ * Tinted, not solid, so they never compete with the section's own main
+ * action; closing the assembly is never the most prominent button.
+ */
+function transitionButtonStyle(transition: TransitionAction) {
+  return transition.key === "in_session_closed"
+    ? { color: "neutral" as const, variant: "outline" as const }
+    : { color: "primary" as const, variant: "soft" as const };
+}
+
 const backwardItems = computed(() =>
   transitions.value
     .filter((transition) => !transition.forward)
@@ -187,11 +335,21 @@ interface Section {
   visible: (value: AssemblyDto) => boolean;
 }
 
+// Settings must stay last: the projection link is inserted before it.
+
 const SECTIONS: Section[] = [
   {
     key: "overview",
     path: "",
     icon: "i-lucide-layout-dashboard",
+    visible: () => true,
+  },
+  // The attendees' live view, for everyone at any time: before and after
+  // the session it says so (see the page), so links to it never break.
+  {
+    key: "live",
+    path: "directo",
+    icon: "i-lucide-radio",
     visible: () => true,
   },
   {
@@ -205,6 +363,18 @@ const SECTIONS: Section[] = [
     path: "documentos",
     icon: "i-lucide-files",
     visible: () => true,
+  },
+  {
+    key: "validation",
+    path: "validacion",
+    icon: "i-lucide-inbox",
+    visible: () => canReview.value,
+  },
+  {
+    key: "tracking",
+    path: "seguimiento",
+    icon: "i-lucide-list-checks",
+    visible: () => canValidateDocuments.value,
   },
   {
     key: "calendar",
@@ -260,10 +430,39 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
         childPaths.value.has(section.path)),
   ).map((section) => {
     const to = sectionPath(section.path);
+    const pendingCount =
+      section.key === "validation" && reviewCount.value > 0
+        ? reviewCount.value
+        : 0;
+    const liveNow = section.key === "live" && value.status === "in_session";
     return {
       label: t(`assembly.sections.${section.key}`),
       icon: section.icon,
       to,
+      ...(liveNow
+        ? {
+            badge: {
+              label: t("assembly.sections.liveNow"),
+              color: "error" as const,
+              variant: "soft" as const,
+            },
+            "aria-label": t("assembly.sections.liveInSession"),
+          }
+        : {}),
+      ...(pendingCount > 0
+        ? {
+            badge: {
+              label: String(pendingCount),
+              color: "warning" as const,
+              variant: "solid" as const,
+            },
+            "aria-label": t(
+              "assembly.sections.validationPending",
+              { count: pendingCount },
+              pendingCount,
+            ),
+          }
+        : {}),
       exact: section.path === "",
       // A document (documentos/<slug>/...) is a sibling route of the list,
       // not a child, so the router alone would not mark Documents active.
@@ -281,11 +480,28 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
       to: localePath(`/proyeccion/${encodeURIComponent(value.slug)}`),
       target: "_blank",
       trailingIcon: "i-lucide-external-link",
-      "aria-label": t("assembly.sections.projectionNewWindow"),
+      "aria-label": t("shell.assembly.projectionNewTab"),
     });
   }
   return items;
 });
+
+/**
+ * On phones the section bar scrolls: keep the open section in view. The ref
+ * is on the toolbar, since the menu has several root nodes and so no $el.
+ */
+const sectionToolbar = useTemplateRef<{ $el?: unknown }>("sectionToolbar");
+function revealActiveSection() {
+  void nextTick(() => {
+    const root = sectionToolbar.value?.$el;
+    if (!(root instanceof Element)) return;
+    root
+      .querySelector('[aria-current="page"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
+}
+onMounted(revealActiveSection);
+watch(() => route.path, revealActiveSection);
 </script>
 
 <template>
@@ -372,10 +588,13 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
 
         <template #right>
           <div v-if="transitions.length > 0" class="flex items-center gap-1.5">
+            <!-- Phones show these with their text in the body instead. -->
             <UButton
               v-for="transition in forwardTransitions"
               :key="transition.key"
+              v-bind="transitionButtonStyle(transition)"
               icon="i-lucide-arrow-right-circle"
+              class="hidden sm:inline-flex"
               :aria-label="t(`assembly.transitions.${transition.key}.label`)"
               @click="askTransition(transition)"
             >
@@ -399,12 +618,16 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
         </template>
       </UDashboardNavbar>
 
-      <UDashboardToolbar v-if="assembly">
+      <!-- On large screens the sidebar lists these same sections; repeating
+           them here only crowded the header. Phones keep them, since the
+           sidebar is a drawer there. Child pages that size themselves to the
+           viewport (session console, document workspace) assume this. -->
+      <UDashboardToolbar v-if="assembly" ref="sectionToolbar" class="lg:hidden">
         <UNavigationMenu
           :items="sectionItems"
           orientation="horizontal"
           highlight
-          class="-mx-1 w-max min-w-full"
+          class="-mx-1 w-max min-w-full shrink-0"
           :aria-label="t('assembly.sections.label')"
         />
       </UDashboardToolbar>
@@ -412,17 +635,18 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
 
     <template #body>
       <!-- Loading -->
-      <div
-        v-if="!assembly && pending"
-        class="space-y-4"
-        aria-busy="true"
-        :aria-label="t('assembly.hub.loading')"
-      >
-        <USkeleton class="h-5 w-72 max-w-full" />
+      <div v-if="!assembly && pending" class="space-y-4" role="status">
+        <span class="sr-only">{{ t("assembly.hub.loading") }}</span>
+        <USkeleton aria-hidden="true" class="h-5 w-72 max-w-full" />
         <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <USkeleton v-for="index in 4" :key="index" class="h-20" />
+          <USkeleton
+            v-for="index in 4"
+            :key="index"
+            aria-hidden="true"
+            class="h-20"
+          />
         </div>
-        <USkeleton class="h-72 w-full" />
+        <USkeleton aria-hidden="true" class="h-72 w-full" />
       </div>
 
       <!-- Error (only when it never loaded: later failures keep the data) -->
@@ -495,6 +719,21 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
             </dd>
           </div>
         </dl>
+
+        <!-- The status actions on phones, where the header has no room for their text. -->
+        <div
+          v-if="forwardTransitions.length > 0"
+          class="flex flex-wrap gap-2 sm:hidden"
+        >
+          <UButton
+            v-for="transition in forwardTransitions"
+            :key="transition.key"
+            v-bind="transitionButtonStyle(transition)"
+            icon="i-lucide-arrow-right-circle"
+            :label="t(`assembly.transitions.${transition.key}.label`)"
+            @click="askTransition(transition)"
+          />
+        </div>
 
         <p class="sr-only" aria-live="polite" role="status">
           {{ statusMessage }}

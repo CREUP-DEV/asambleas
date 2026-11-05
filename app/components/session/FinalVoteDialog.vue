@@ -6,6 +6,7 @@ import {
   isSessionFinalVoteReady,
   sessionCleanVote,
   sessionEmptyVote,
+  sessionFinalVoteBlockers,
   sessionFinalVoteResult,
   sessionVoteOutcome,
 } from "~/composables/session/sessionModel";
@@ -18,7 +19,10 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * before confirming it. When approved, the server consolidates the approved
  * amendments; if they cannot be applied together it answers 409 and the
  * conflicts are listed. An approved totality return blocks the vote: the
- * text goes back to its proponent.
+ * text goes back to its proponent. Amendments still open block it too,
+ * listed by who has to act: the Mesa (undecided), the assembly (late ones
+ * it has not agreed to treat), the main authors (transactionals they have
+ * not accepted) and the Secretaría (not validated yet).
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -63,6 +67,40 @@ watch(
 );
 
 const undecided = computed(() => session.undecided.value);
+/** Every amendment still open, split by who has to act (server ids too). */
+const blockers = computed(() =>
+  sessionFinalVoteBlockers(session.amendments.value, serverUndecided.value),
+);
+/**
+ * What the Mesa cannot settle by deciding: transactionals that can no
+ * longer go ahead (to withdraw), late amendments the assembly has not
+ * agreed to treat, transactionals the main authors have not accepted and
+ * amendments the Secretaría has not validated.
+ */
+const otherBlockers = computed(() =>
+  [
+    {
+      key: "session.preview.superseded",
+      icon: "i-lucide-git-pull-request-closed",
+      ids: blockers.value.superseded,
+    },
+    {
+      key: "session.preview.late",
+      icon: "i-lucide-clock-alert",
+      ids: blockers.value.late,
+    },
+    {
+      key: "session.preview.awaitingAuthors",
+      icon: "i-lucide-user-round-check",
+      ids: blockers.value.awaitingAuthors,
+    },
+    {
+      key: "session.preview.awaitingValidation",
+      icon: "i-lucide-hourglass",
+      ids: blockers.value.awaitingValidation,
+    },
+  ].filter((group) => group.ids.length > 0),
+);
 const conflicts = computed(() =>
   serverConflicts.value.length > 0
     ? serverConflicts.value
@@ -158,25 +196,27 @@ async function record(): Promise<void> {
           "
         />
         <UAlert
-          v-if="undecided.length > 0 || serverUndecided.length > 0"
+          v-if="blockers.undecided.length > 0"
           color="warning"
           variant="subtle"
           icon="i-lucide-list-todo"
           :title="
             t(
               'session.finalVote.undecided',
-              { count: Math.max(undecided.length, serverUndecided.length) },
-              Math.max(undecided.length, serverUndecided.length),
+              { count: blockers.undecided.length },
+              blockers.undecided.length,
             )
           "
-          :description="
-            (serverUndecided.length > 0
-              ? serverUndecided
-              : undecided.map((a) => a.id)
-            )
-              .map(session.label)
-              .join(', ')
-          "
+          :description="blockers.undecided.map(session.label).join(', ')"
+        />
+        <UAlert
+          v-for="group in otherBlockers"
+          :key="group.key"
+          color="warning"
+          variant="subtle"
+          :icon="group.icon"
+          :title="t(group.key, { count: group.ids.length }, group.ids.length)"
+          :description="group.ids.map(session.label).join(', ')"
         />
         <UAlert
           v-if="conflicts.length > 0"

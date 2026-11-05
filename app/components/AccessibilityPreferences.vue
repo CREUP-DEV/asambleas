@@ -44,11 +44,8 @@ const fontModel = computed({
 </script>
 
 <template>
+  <!-- The dialog that holds it carries the title. -->
   <div class="space-y-6">
-    <h3 class="text-lg font-semibold">
-      {{ t("accessibility.preferences") }}
-    </h3>
-
     <div class="space-y-3">
       <URadioGroup
         v-model="diffModeModel"

@@ -7,7 +7,8 @@ import { resolveAssembly } from "../../../utils/domain/resolvers";
 
 /**
  * Procedural decisions of the assembly, oldest first. Admission decisions
- * only name the amendments the actor may see (amendmentVisibility).
+ * only name the amendments the actor may see (an amendment is public once
+ * the Secretaría publishes it).
  */
 export default defineEventHandler(async (event): Promise<DecisionDto[]> => {
   const actor = await requireActor(event);

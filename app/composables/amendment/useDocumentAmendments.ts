@@ -15,9 +15,11 @@ import {
   amendmentOverlapIndex,
   amendmentRelationsOf,
   amendmentShortLabel,
+  amendmentsReturnedForCorrection,
   emptyAmendmentFilters,
   filterAmendmentList,
   groupAmendmentsByOverlap,
+  mineAmendments,
   sortAmendments,
   type AmendmentFilters,
 } from "./workspace";
@@ -42,7 +44,11 @@ export interface UseDocumentAmendmentsOptions {
  * derives from them: text order, overlap clusters, gutter markers, filters
  * and the actor's drafts. Refreshes itself on live events for the document.
  *
- * The main list leaves drafts out; `drafts` holds the actor's own.
+ * The main list leaves drafts out; `mine` holds the actor's drafts and
+ * every amendment their member presents, whatever its review state.
+ * `returned` holds the drafts sent back for correction the actor cannot edit
+ * (what the Secretaría returned): the list shows them, and only them, while
+ * the review filter is `correction_requested`.
  */
 export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
   const { t } = useI18n();
@@ -85,10 +91,12 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
   const listed = computed(() =>
     amendments.value.filter((amendment) => amendment.status !== "draft"),
   );
-  const drafts = computed(() =>
-    amendments.value.filter(
-      (amendment) => amendment.status === "draft" && amendment.can.edit,
-    ),
+  const mine = computed(() =>
+    mineAmendments(amendments.value, member.value?.id ?? null),
+  );
+  /** Sent back for correction, seen by someone who cannot edit them. */
+  const returned = computed(() =>
+    amendmentsReturnedForCorrection(amendments.value),
   );
 
   const overlaps = computed(() => amendmentOverlapIndex(amendments.value));
@@ -96,19 +104,40 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
   const markers = computed(() => amendmentBlockMarkers(listed.value));
 
   const filters = ref<AmendmentFilters>(emptyAmendmentFilters());
+  /**
+   * What the list draws from: the listed amendments, or the returned drafts
+   * while the review filter asks for them. Markers, counts and the overlap
+   * index keep to the listed ones.
+   */
+  const source = computed(() =>
+    filters.value.review === "correction_requested"
+      ? returned.value
+      : listed.value,
+  );
   const filtered = computed(() =>
-    filterAmendmentList(listed.value, filters.value, member.value?.id ?? null),
+    filterAmendmentList(source.value, filters.value, member.value?.id ?? null),
   );
   const groups = computed(() => groupAmendmentsByOverlap(filtered.value));
+
+  // Nothing left sent back (fixed and sent again, or another document): show
+  // the whole list again rather than an empty filtered one.
+  watch(
+    () => returned.value.length === 0,
+    (none) => {
+      if (none && filters.value.review === "correction_requested") {
+        filters.value = { ...filters.value, review: "any" };
+      }
+    },
+  );
 
   function resetFilters(): void {
     filters.value = emptyAmendmentFilters();
   }
 
-  /** Every member presenting at least one listed amendment, by acronym. */
+  /** Every member presenting at least one amendment of the list, by acronym. */
   const authorOptions = computed<MemberRef[]>(() => {
     const seen = new Map<string, MemberRef>();
-    for (const amendment of listed.value) {
+    for (const amendment of source.value) {
       for (const author of amendment.authors) seen.set(author.id, author);
     }
     return [...seen.values()].sort((a, b) =>
@@ -141,6 +170,17 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     const list = current.amendments.filter((item) => item.id !== amendment.id);
     list.push(amendment);
     data.value = { ...current, amendments: list };
+  }
+
+  /**
+   * Takes a full answer of the amendments API (validation and publication
+   * return the whole list), keeping the current one when it is for another
+   * document.
+   */
+  function replace(dto: DocumentAmendmentsDto): void {
+    const current = data.value;
+    if (current && current.baseVersionId !== dto.baseVersionId) return;
+    data.value = dto;
   }
 
   function remove(id: string): void {
@@ -179,7 +219,9 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     refresh,
     amendments,
     listed,
-    drafts,
+    mine,
+    returned,
+    source,
     relations,
     byId,
     overlaps,
@@ -193,6 +235,7 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     shortLabelOf,
     relationsOf,
     upsert,
+    replace,
     remove,
     live,
   };

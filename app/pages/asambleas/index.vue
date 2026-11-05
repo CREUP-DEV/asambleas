@@ -229,12 +229,12 @@ const createOpen = ref(false);
           class="ring-default space-y-3 rounded-lg p-5 ring"
         >
           <div class="flex justify-between gap-3">
-            <USkeleton class="h-6 w-28" />
-            <USkeleton class="h-5 w-20" />
+            <USkeleton aria-hidden="true" class="h-6 w-28" />
+            <USkeleton aria-hidden="true" class="h-5 w-20" />
           </div>
-          <USkeleton class="h-4 w-48" />
-          <USkeleton class="h-4 w-40" />
-          <USkeleton class="h-4 w-32" />
+          <USkeleton aria-hidden="true" class="h-4 w-48" />
+          <USkeleton aria-hidden="true" class="h-4 w-40" />
+          <USkeleton aria-hidden="true" class="h-4 w-32" />
         </li>
       </ul>
 

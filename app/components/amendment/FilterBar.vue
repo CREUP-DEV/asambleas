@@ -7,25 +7,39 @@ import {
 import type { MemberRef } from "~~/shared/types/api";
 import {
   activeAmendmentFilterCount,
+  AMENDMENT_REVIEW_FILTERS,
   emptyAmendmentFilters,
   type AmendmentFilters,
   type AmendmentLateFilter,
+  type AmendmentReviewFilter,
 } from "~/composables/amendment/workspace";
 
 /**
- * Search box plus a popover with the amendment filters: status, kind,
- * presenting member, late or on time, and "only mine". A block filter set
- * from the text gutter shows as a removable chip.
+ * Search box plus a popover with the amendment filters: where it stands,
+ * where it stands with the Secretaría (when the actor sees amendments that
+ * are not public; "Devueltas para corregir" only when some were sent back
+ * and the actor cannot edit them), kind, who presents it, on time or late,
+ * and "only mine". A block filter set from the text gutter shows as a
+ * removable chip.
  */
 const props = withDefaults(
   defineProps<{
     authorOptions: MemberRef[];
     /** Offer "only mine" (the actor acts for a member). */
     canFilterMine?: boolean;
+    /** Offer the review filter (some listed amendments are not public). */
+    showReviewFilter?: boolean;
+    /** Offer "Devueltas para corregir" (the actor sees some it cannot edit). */
+    showReturnedFilter?: boolean;
     /** Human reference of the filtered block ("¶ 3"). */
     blockLabel?: string | null;
   }>(),
-  { canFilterMine: false, blockLabel: null },
+  {
+    canFilterMine: false,
+    showReviewFilter: false,
+    showReturnedFilter: false,
+    blockLabel: null,
+  },
 );
 
 const filters = defineModel<AmendmentFilters>({ required: true });
@@ -52,8 +66,19 @@ const kindItems = computed(() =>
 );
 const memberItems = computed(() =>
   props.authorOptions.map((member) => ({
-    label: `${member.acronym} · ${member.name}`,
+    label: memberLabel(member),
     value: member.id,
+  })),
+);
+const reviewItems = computed(() =>
+  AMENDMENT_REVIEW_FILTERS.filter((value) => {
+    if (filters.value.review === value || value === "any") return true;
+    if (value === "correction_requested") return props.showReturnedFilter;
+    // Only the returned ones to show: the other states would list nothing.
+    return props.showReviewFilter;
+  }).map((value) => ({
+    label: t(`amendment.filters.reviewOptions.${value}`),
+    value,
   })),
 );
 const lateItems = computed(() =>
@@ -119,7 +144,32 @@ function clearAll(): void {
                 :search-input="false"
                 class="w-full"
                 :placeholder="t('amendment.filters.any')"
+                :aria-label="
+                  selectMenuLabel(
+                    t('amendment.filters.status'),
+                    statusItems,
+                    filters.statuses,
+                    t('amendment.filters.any'),
+                  )
+                "
                 @update:model-value="patch({ statuses: $event })"
+              />
+            </UFormField>
+            <UFormField
+              v-if="
+                showReviewFilter ||
+                showReturnedFilter ||
+                filters.review !== 'any'
+              "
+              :label="t('amendment.filters.review')"
+            >
+              <USelect
+                :model-value="filters.review"
+                :items="reviewItems"
+                class="w-full"
+                @update:model-value="
+                  patch({ review: $event as AmendmentReviewFilter })
+                "
               />
             </UFormField>
             <UFormField :label="t('amendment.filters.kind')">
@@ -131,6 +181,14 @@ function clearAll(): void {
                 :search-input="false"
                 class="w-full"
                 :placeholder="t('amendment.filters.any')"
+                :aria-label="
+                  selectMenuLabel(
+                    t('amendment.filters.kind'),
+                    kindItems,
+                    filters.kinds,
+                    t('amendment.filters.any'),
+                  )
+                "
                 @update:model-value="patch({ kinds: $event })"
               />
             </UFormField>
@@ -142,9 +200,17 @@ function clearAll(): void {
                 multiple
                 class="w-full"
                 :placeholder="t('amendment.filters.any')"
-                :search-input="{
-                  placeholder: t('amendment.filters.memberSearch'),
-                }"
+                :aria-label="
+                  selectMenuLabel(
+                    t('amendment.filters.member'),
+                    memberItems,
+                    filters.memberIds,
+                    t('amendment.filters.any'),
+                  )
+                "
+                :search-input="
+                  labelledSearch(t('amendment.filters.memberSearch'))
+                "
                 @update:model-value="patch({ memberIds: $event })"
               />
             </UFormField>

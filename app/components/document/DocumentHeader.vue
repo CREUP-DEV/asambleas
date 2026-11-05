@@ -1,16 +1,35 @@
 <script setup lang="ts">
-import type { AssemblyDto, DocumentSummaryDto } from "~~/shared/types/api";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import type {
+  AssemblyDto,
+  DocumentCapabilities,
+  DocumentSummaryDto,
+} from "~~/shared/types/api";
+import {
+  documentAudience,
+  isPendingProgress,
+} from "~/composables/document/documentProgress";
+import { documentCoPresenters } from "~/composables/document/documentPresenters";
 import { toDate } from "~/utils/format";
 
 /**
  * Title block of a document screen: kind and reference, the title, status,
- * proponent and the amendment window countdown. The default slot holds the
+ * who presents it ("Presenta CEUM con UPV", the main presenter first) and
+ * the amendment window countdown. When several members present a document
+ * that takes amendments, a calm line says which one answers them
+ * (`showAnswerer`; the editor turns it off where its own note already says
+ * so to the presenters). The default slot holds the
  * screen's actions (buttons), aligned to the right on wide screens and
  * wrapped under the title on narrow ones.
  *
  * Inside the assembly hub the page h1 is the assembly, so the title is an h2
  * and the assembly label is hidden by default; screens outside the hub
  * (projection, print) pass `:heading-level="1"` and `show-assembly`.
+ *
+ * Before publication it says where the document stands and what comes next
+ * (useDocumentProgress), with the short status as the badge. Screens that
+ * explain the status themselves pass `:progress="false"`. With `editTo` the
+ * presenter of a draft gets a link to its next step.
  *
  * Accepts a DocumentDto or any DocumentSummaryDto.
  */
@@ -21,8 +40,20 @@ const props = withDefaults(
     /** Show the assembly label (linked to its page) before the kind. */
     showAssembly?: boolean;
     headingLevel?: 1 | 2;
+    /** Show the status sentence before publication. */
+    progress?: boolean;
+    /** The editor of the presenter's draft, for the call to action. */
+    editTo?: string | null;
+    /** Say which presenter answers the amendments, with co-presenters. */
+    showAnswerer?: boolean;
   }>(),
-  { showAssembly: false, headingLevel: 2 },
+  {
+    showAssembly: false,
+    headingLevel: 2,
+    progress: true,
+    editTo: null,
+    showAnswerer: true,
+  },
 );
 
 defineSlots<{
@@ -42,6 +73,60 @@ const assemblyPath = computed(() =>
 );
 
 const kindLabel = computed(() => t(`document.kinds.${props.document.kind}`));
+
+// Status --------------------------------------------------------------------
+
+const me = useMe();
+
+/** A full DocumentDto says what the actor can do; a summary does not. */
+function capabilities(
+  document: DocumentSummaryDto,
+): DocumentCapabilities | null {
+  return "can" in document
+    ? (document as DocumentSummaryDto & { can: DocumentCapabilities }).can
+    : null;
+}
+
+const audience = computed(() =>
+  documentAudience(props.document, {
+    memberId: me.member.value?.id,
+    manager:
+      capabilities(props.document)?.manage ??
+      me.can(PERMISSION_KEYS.DOCUMENT_MANAGE),
+  }),
+);
+const status = useDocumentProgress(() => props.document, audience);
+const pending = computed(() => isPendingProgress(status.value.state));
+const showSentence = computed(() => props.progress && pending.value);
+const callToAction = computed(() =>
+  props.editTo && status.value.actionLabel ? status.value.actionLabel : null,
+);
+
+const SENTENCE_COLORS: Record<string, string> = {
+  neutral: "text-muted",
+  info: "text-info",
+  success: "text-success",
+  warning: "text-warning",
+  error: "text-error",
+};
+
+/**
+ * The main presenter, named apart when it shares the document with others
+ * and the document takes amendments (only it accepts or rejects them).
+ */
+const answerer = computed(() => {
+  const document = props.document;
+  if (
+    !props.showAnswerer ||
+    !document.proponent ||
+    document.format !== "structured" ||
+    !document.amendable ||
+    documentCoPresenters(document).length === 0
+  ) {
+    return null;
+  }
+  return document.proponent;
+});
 
 const amendableText = computed(
   () =>
@@ -106,7 +191,14 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
       </component>
 
       <div class="flex flex-wrap items-center gap-2">
-        <CommonStatusBadge kind="document" :value="document.status" />
+        <UBadge
+          v-if="pending"
+          :color="status.color"
+          variant="subtle"
+          size="sm"
+          :label="status.label"
+        />
+        <CommonStatusBadge v-else kind="document" :value="document.status" />
         <UBadge
           v-if="document.format === 'file'"
           color="neutral"
@@ -115,15 +207,7 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
           icon="i-lucide-file-text"
           :label="t('document.formats.file')"
         />
-        <span
-          v-if="document.proponent"
-          class="inline-flex min-w-0 items-center gap-1.5"
-        >
-          <span class="text-muted text-sm">
-            {{ t("document.header.proponent") }}
-          </span>
-          <CommonMemberBadge :member="document.proponent" />
-        </span>
+        <DocumentPresenters :document="document" labelled />
 
         <CommonCountdown
           v-if="windowState === 'open' && closesAt"
@@ -151,6 +235,55 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
         />
 
         <slot name="badges" />
+      </div>
+
+      <!-- Several presenters: which one answers the amendments -->
+      <i18n-t
+        v-if="answerer"
+        keypath="document.presenters.answers"
+        tag="p"
+        scope="global"
+        class="text-muted text-sm leading-7"
+        data-testid="document-answerer"
+      >
+        <template #member>
+          <CommonMemberBadge
+            :member="answerer"
+            size="sm"
+            class="align-middle"
+          />
+        </template>
+      </i18n-t>
+
+      <!-- Where it stands and what comes next (before publication) -->
+      <div
+        v-if="showSentence"
+        class="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-0.5"
+      >
+        <p
+          class="flex min-w-0 items-start gap-1.5 text-sm"
+          :class="SENTENCE_COLORS[status.color]"
+          role="status"
+          aria-live="polite"
+          data-testid="document-progress"
+        >
+          <UIcon
+            :name="status.icon"
+            class="mt-0.5 size-4 shrink-0"
+            aria-hidden="true"
+          />
+          <span class="break-words whitespace-pre-line">
+            {{ status.sentence }}
+          </span>
+        </p>
+        <UButton
+          v-if="callToAction && editTo"
+          :to="editTo"
+          size="sm"
+          :color="status.state === 'correction' ? 'warning' : 'primary'"
+          trailing-icon="i-lucide-arrow-right"
+          :label="callToAction"
+        />
       </div>
     </div>
 

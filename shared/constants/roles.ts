@@ -2,6 +2,10 @@ export const SYSTEM_ROLES = {
   ADMIN: "Admin",
   SECRETARIA: "Secretaría",
   MODERADOR: "Moderador",
+  /** Presidency of CREUP: same default permissions as the Secretaría. */
+  PRESIDENCIA: "Presidencia",
+  /** Members of the Comisión Ejecutiva (intranet type "CEA"). */
+  CEA: "CEA",
   ASOCIADO: "Asociado",
   INVITADO: "Invitado",
 } as const;
@@ -13,5 +17,6 @@ export const SYSTEM_ROLE_NAMES = Object.values(SYSTEM_ROLES);
 export const PROTECTED_ROLES: readonly SystemRoleName[] = [
   SYSTEM_ROLES.ADMIN,
   SYSTEM_ROLES.SECRETARIA,
+  SYSTEM_ROLES.PRESIDENCIA,
   SYSTEM_ROLES.MODERADOR,
 ];

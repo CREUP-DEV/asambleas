@@ -11,6 +11,7 @@ import { documents, documentVersions } from "../../../../db/schema";
 import {
   canManageDocuments,
   requireActor,
+  UNLINKED_ACCOUNT_MESSAGE,
 } from "../../../../utils/domain/actor";
 import {
   resolveAgendaItem,
@@ -24,17 +25,27 @@ import {
   loadMilestones,
   parseDocumentBody,
   requireMember,
+  requireMembers,
   uniqueDocumentSlug,
 } from "../../../../utils/domain/documents";
+import {
+  planPresenters,
+  PRESENTERS_MESSAGES,
+  saveCoProponents,
+} from "../../../../utils/domain/presenters";
 import { DOCUMENT_KIND_DEFAULTS } from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { DocumentDto } from "~~/shared/types/api";
 import { documentCreateSchema } from "~~/shared/utils/schemas/document";
 
 /**
- * Managers create documents anywhere. Members with document:create present
+ * Managers create documents anywhere, for any members, and may set an
+ * internal deadline (`dueAt`): an expected document starts as an empty draft
+ * that its member fills in and presents. Members with document:create present
  * them under agenda items that accept submissions, until documents_close,
- * always as their own member and with the kind defaults.
+ * with the kind defaults, always among its presenters: they may add
+ * co-presenters and name the main presenter, their own member or another
+ * one (planPresenters).
  */
 export default defineEventHandler(async (event): Promise<DocumentDto> => {
   const actor = await requireActor(event);
@@ -47,6 +58,12 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
   const manager = canManageDocuments(actor);
 
   if (!manager) {
+    if (body.dueAt) {
+      throw createError({
+        statusCode: 403,
+        message: "Solo la Secretaría puede fijar la fecha límite interna",
+      });
+    }
     if (!actor.can(PERMISSION_KEYS.DOCUMENT_CREATE)) {
       throw createError({
         statusCode: 403,
@@ -56,7 +73,7 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
     if (!actor.memberId) {
       throw createError({
         statusCode: 403,
-        message: "Tu cuenta no está vinculada a ningún miembro",
+        message: UNLINKED_ACCOUNT_MESSAGE,
       });
     }
     if (!item.acceptsSubmissions) {
@@ -89,13 +106,29 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
     });
   }
 
-  // Members always present as themselves. Managers pick the proponent, which
-  // defaults to their own member; an explicit null leaves it empty.
-  let proponentMemberId: string | null = actor.memberId;
-  if (manager && body.proponentMemberId !== undefined) {
-    proponentMemberId = body.proponentMemberId;
-    if (proponentMemberId) await requireMember(proponentMemberId);
+  // Members always present it, alone or with co-presenters. Managers pick
+  // the presenters; the main one defaults to their own member and an
+  // explicit null leaves it empty (with no co-presenters).
+  const presenters = planPresenters({
+    manager,
+    actorMemberId: actor.memberId,
+    current: null,
+    proponentMemberId: body.proponentMemberId,
+    coProponentMemberIds: body.coProponentMemberIds,
+  });
+  if (typeof presenters === "string") {
+    throw createError({
+      statusCode: 422,
+      message: PRESENTERS_MESSAGES[presenters],
+    });
   }
+  const { proponentMemberId, coProponentMemberIds } = presenters;
+  if (proponentMemberId && proponentMemberId !== actor.memberId) {
+    await requireMember(proponentMemberId);
+  }
+  await requireMembers(
+    coProponentMemberIds.filter((id) => id !== actor.memberId),
+  );
   const amendable = isFile
     ? false
     : manager
@@ -105,6 +138,9 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
   const majority = manager
     ? (body.majority ?? defaults.majority)
     : defaults.majority;
+  const acceptedAmendments = manager
+    ? (body.acceptedAmendments ?? defaults.acceptedAmendments)
+    : defaults.acceptedAmendments;
   const blocks = isFile ? [] : (body.blocks ?? []);
   const contentHash = await hashBlocks(blocks);
 
@@ -124,8 +160,10 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
         proponentMemberId,
         submittedByUserId: actor.user.id,
         amendable,
+        acceptedAmendments,
         voted,
         majority,
+        dueAt: manager && body.dueAt ? new Date(body.dueAt) : null,
       })
       .returning({ id: documents.id });
     if (!created) {
@@ -134,6 +172,8 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
         message: "No se pudo crear el documento",
       });
     }
+
+    await saveCoProponents(tx, created.id, coProponentMemberIds);
 
     if (!isFile) {
       const [version] = await tx
@@ -166,6 +206,9 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
         format: body.format,
         agendaItemId: item.id,
         proponentMemberId,
+        ...(coProponentMemberIds.length > 0 ? { coProponentMemberIds } : {}),
+        acceptedAmendments,
+        ...(manager && body.dueAt ? { dueAt: body.dueAt } : {}),
       },
       actor,
     });

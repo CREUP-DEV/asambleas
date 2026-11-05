@@ -3,6 +3,7 @@ import type { AgendaDto, AssemblyDto, LiveEventDto } from "~~/shared/types/api";
 import { APP_TIME_ZONE, intlLocale, toDate } from "~/utils/format";
 import type { DateInput } from "~/utils/format";
 import { keepLastGoodData, useStaleDataNotice } from "../fetch/lastGoodData";
+import { shouldRefetchAgenda, shouldRefetchAssembly } from "./-liveFilters";
 
 /**
  * The assembly shown by the hub page (app/pages/asambleas/[assembly].vue)
@@ -59,19 +60,6 @@ export const CURRENT_ASSEMBLY_KEY: InjectionKey<CurrentAssemblyContext> =
 
 /** useState key holding the current assembly for the layout and others. */
 export const CURRENT_ASSEMBLY_STATE_KEY = "current-assembly";
-
-/** Event types that do not change anything a hub section shows. */
-const IGNORED_LIVE_TYPES = new Set(["live_changed"]);
-
-/** Live events that may change the AssemblyDto itself. */
-function touchesAssembly(event: LiveEventDto): boolean {
-  return (
-    event.type === "poll" ||
-    event.entityType === "assembly" ||
-    // documentCount and nextMilestone depend on documents.
-    event.entityType === "document"
-  );
-}
 
 export interface ProvideCurrentAssemblyOptions {
   /** The fetched DTO (the `data` ref of useFetch). */
@@ -149,10 +137,8 @@ export function provideCurrentAssembly(
         options.onDeleted?.();
         return;
       }
-      const relevant = events.filter(
-        (event) => !IGNORED_LIVE_TYPES.has(event.type),
-      );
-      if (relevant.some(touchesAssembly)) void options.refresh();
+      // Speaking turns and the live state leave the DTO as it is.
+      if (shouldRefetchAssembly(events)) void options.refresh();
       for (const handler of handlers) {
         try {
           handler(events);
@@ -250,9 +236,7 @@ export function useAssemblyAgenda() {
   });
   useStaleDataNotice(stale);
   onLive((events) => {
-    if (events.some((event) => !IGNORED_LIVE_TYPES.has(event.type))) {
-      void result.refresh();
-    }
+    if (shouldRefetchAgenda(events)) void result.refresh();
   });
   const agenda = {
     data,

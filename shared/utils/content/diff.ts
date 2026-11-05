@@ -15,15 +15,29 @@ function tokenize(text: string): string[] {
   return text.match(TOKEN_PATTERN) ?? [];
 }
 
+/** Length of the text a diff inserts or removes. */
+function changedLength(diffs: [number, string][]): number {
+  return diffs.reduce(
+    (sum, [kind, text]) =>
+      kind === DiffMatchPatch.DIFF_EQUAL ? sum : sum + text.length,
+    0,
+  );
+}
+
 /**
  * Word-level diff: tokens are mapped to single characters so diff-match-patch
  * compares words instead of letters, then mapped back.
+ *
+ * Every word costs the same, so when a phrase is added next to a repeated one
+ * two scripts can tie, and the forward one may strike and re-add the same
+ * words. The diff is also run over the reversed words and the result that
+ * changes less text is kept (the forward one on a tie).
  */
 function diffWords(a: string, b: string): [number, string][] {
   const dictionary = new Map<string, string>();
   const tokens: string[] = [];
-  const encode = (text: string) =>
-    tokenize(text)
+  const encode = (words: string[]) =>
+    words
       .map((token) => {
         let code = dictionary.get(token);
         if (code === undefined) {
@@ -34,13 +48,25 @@ function diffWords(a: string, b: string): [number, string][] {
         return code;
       })
       .join("");
+  const decode = (encoded: string[]) =>
+    encoded.map((char) => tokens[char.charCodeAt(0) - 0x100]).join("");
 
-  const diffs = dmp.diff_main(encode(a), encode(b), false);
-  dmp.diff_cleanupSemantic(diffs);
-  return diffs.map(([kind, encoded]) => [
-    kind,
-    Array.from(encoded, (char) => tokens[char.charCodeAt(0) - 0x100]).join(""),
-  ]);
+  const run = (left: string[], right: string[], reversed: boolean) => {
+    const diffs = dmp.diff_main(encode(left), encode(right), false);
+    dmp.diff_cleanupSemantic(diffs);
+    const decoded = diffs.map(([kind, encoded]): [number, string] => {
+      // One character per word: reversing the characters restores word order.
+      const chars = Array.from(encoded);
+      return [kind, decode(reversed ? chars.reverse() : chars)];
+    });
+    return reversed ? decoded.reverse() : decoded;
+  };
+
+  const wordsA = tokenize(a);
+  const wordsB = tokenize(b);
+  const forward = run(wordsA, wordsB, false);
+  const backward = run([...wordsA].reverse(), [...wordsB].reverse(), true);
+  return changedLength(backward) < changedLength(forward) ? backward : forward;
 }
 
 /**

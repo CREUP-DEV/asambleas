@@ -6,6 +6,8 @@ import type { AssemblyType } from "../constants/assemblyTypes";
 import type {
   AcceptanceDecision,
   AcceptanceRole,
+  AcceptedAmendmentRule,
+  SpeakingTurnStatus,
   AdmissionStatus,
   AmendmentKind,
   AmendmentStatus,
@@ -67,6 +69,122 @@ export interface MeDto {
   permissions: PermissionKey[];
   isAdmin: boolean;
   member: MemberRef | null;
+}
+
+/**
+ * GET /api/me/work: what the signed-in user has to do or is waiting for,
+ * across assemblies that are not closed. Drives the home page.
+ */
+export interface MeWorkDto {
+  /** Documents the user's member presents: drafts, expected, presented, published. */
+  documents: MeWorkDocumentDto[];
+  /** Amendments the user's member authored that are not decided yet. */
+  amendments: MeWorkAmendmentDto[];
+  /** For the Secretaría (document:manage / amendment:review): items waiting for it. */
+  review: MeWorkReviewDto[];
+  /** Published documents the user's member presents with amendments to answer. */
+  proponent: MeWorkProponentDto[];
+  /** Transactionals waiting for the user's member's answer. */
+  acceptances: MeWorkAcceptanceDto[];
+  /** Recent decisions others took on the member's documents and amendments. */
+  news: MeWorkNewsDto[];
+}
+
+export interface MeWorkProponentDto {
+  assembly: MeWorkAssemblyRef;
+  document: { id: string; slug: string; title: string };
+  /** Undecided amendments with no position from the main presenter yet. */
+  positionsPending: number;
+}
+
+/** A transactional waiting for the user's member to accept or reject it. */
+export interface MeWorkAcceptanceDto {
+  assembly: MeWorkAssemblyRef;
+  document: { id: string; slug: string; title: string };
+  transactional: { id: string; code: string | null };
+  /** The user's amendments it would replace. */
+  replaces: { id: string; code: string | null }[];
+}
+
+/**
+ * Something decided about the user's member's work by someone else: the
+ * main presenter answering an amendment to a document the member co-presents,
+ * a main author answering a transactional over an amendment the member
+ * co-authored, and the Secretaría or the assembly settling them.
+ */
+export interface MeWorkNewsDto {
+  id: string;
+  assembly: MeWorkAssemblyRef;
+  document: { id: string; slug: string; title: string };
+  amendment: { id: string; code: string | null } | null;
+  /** The amendment is one the user's member authored ("tu enmienda"). */
+  ownAmendment: boolean;
+  /** The event type (position_changed, acceptance_recorded, amendment_validated...). */
+  type: string;
+  /** Who decided: the member acting, when there is one. */
+  by: MemberRef | null;
+  /** The decision in short: the position, the acceptance decision, the status. */
+  value: string | null;
+  at: IsoDate;
+}
+
+export interface MeWorkAssemblyRef {
+  id: string;
+  slug: string;
+  label: string;
+}
+
+export interface MeWorkDocumentDto {
+  assembly: MeWorkAssemblyRef;
+  document: DocumentSummaryDto;
+}
+
+export interface MeWorkAmendmentDto {
+  assembly: MeWorkAssemblyRef;
+  document: { id: string; slug: string; title: string };
+  amendment: {
+    id: string;
+    code: string | null;
+    status: AmendmentStatus;
+    reviewState: AmendmentReviewState | null;
+    correctionNote: string | null;
+    late: boolean;
+    admission: AdmissionStatus;
+    updatedAt: IsoDate;
+  };
+}
+
+export interface MeWorkReviewDto {
+  assembly: MeWorkAssemblyRef;
+  /** Documents presented and waiting for validation (publication). */
+  documentsToValidate: number;
+  /** Amendments presented and waiting for validation. */
+  amendmentsToValidate: number;
+  /** Amendments validated but not published yet. */
+  amendmentsToPublish: number;
+  /** Expected documents past their internal deadline and not presented. */
+  documentsOverdue: number;
+}
+
+/**
+ * GET /api/assemblies/[assembly]/review (document:manage or
+ * amendment:review): the Secretaría's validation inbox.
+ */
+export interface ReviewQueueDto {
+  /** Presented documents waiting for validation (publication). */
+  documents: DocumentSummaryDto[];
+  /** Amendments waiting for validation or publication, by document. */
+  amendments: ReviewQueueAmendmentDto[];
+}
+
+export interface ReviewQueueAmendmentDto {
+  document: {
+    id: string;
+    slug: string;
+    title: string;
+    reference: string | null;
+  };
+  amendment: AmendmentDto;
 }
 
 // Assemblies -------------------------------------------------------------
@@ -194,13 +312,30 @@ export interface DocumentSummaryDto {
   title: string;
   reference: string | null;
   status: DocumentStatus;
+  /** The main presenter: it answers the amendments to the document. */
   proponent: MemberRef | null;
+  /** Members presenting it jointly with the main presenter. */
+  coProponents: MemberRef[];
   amendable: boolean;
+  /** What an amendment the main presenter accepts becomes. */
+  acceptedAmendments: AcceptedAmendmentRule;
   voted: boolean;
   majority: Majority;
   amendmentCount: number;
   window: AmendmentWindowDto;
   publishedAt: IsoDate | null;
+  /** Presented to the Secretaría (null while it is a draft). */
+  submittedAt: IsoDate | null;
+  /** Internal deadline set by the Secretaría for expected documents. */
+  dueAt: IsoDate | null;
+  /** Text or PDF is present (a placeholder created by the Secretaría has none). */
+  hasContent: boolean;
+  /**
+   * The Secretaría asked for a correction and the document went back to
+   * draft. Only returned to its presenters and managers; null otherwise.
+   */
+  correctionNote: string | null;
+  correctionRequestedAt: IsoDate | null;
   /** Final text approved and stored. */
   consolidated: boolean;
   updatedAt: IsoDate;
@@ -236,7 +371,6 @@ export interface DocumentDto extends DocumentSummaryDto {
   summary: string | null;
   fileUrl: string | null;
   fileName: string | null;
-  submittedAt: IsoDate | null;
   /**
    * Stored per-document amendment window override; null means the assembly
    * calendar applies. `window` is the effective one.
@@ -262,12 +396,18 @@ export interface DocumentCreateBody {
   format: DocumentFormat;
   title: string;
   summary?: string | null;
+  /** Main presenter. Required when there are co-presenters. */
   proponentMemberId?: string | null;
+  /** Members presenting it jointly (never the main presenter). */
+  coProponentMemberIds?: string[];
   /** Defaults come from the kind. */
   amendable?: boolean;
+  acceptedAmendments?: AcceptedAmendmentRule;
   voted?: boolean;
   majority?: Majority;
   blocks?: Block[];
+  /** Managers only: internal deadline for an expected document. */
+  dueAt?: IsoDate | null;
 }
 
 export interface DocumentUpdateBody {
@@ -276,12 +416,26 @@ export interface DocumentUpdateBody {
   kind?: DocumentKind;
   agendaItemId?: string;
   proponentMemberId?: string | null;
+  coProponentMemberIds?: string[];
   amendable?: boolean;
   voted?: boolean;
   majority?: Majority;
+  acceptedAmendments?: AcceptedAmendmentRule;
   amendmentsOpenAt?: IsoDate | null;
   amendmentsCloseAt?: IsoDate | null;
+  /** Managers only. */
+  dueAt?: IsoDate | null;
   status?: "withdrawn" | "postponed" | "submitted";
+  updatedAt: IsoDate;
+}
+
+/**
+ * POST .../documents/[document]/correction (document:manage): a submitted
+ * document goes back to draft with a note for its presenters, who fix it
+ * and present it again. Returns DocumentDto.
+ */
+export interface CorrectionBody {
+  note: string;
   updatedAt: IsoDate;
 }
 
@@ -303,11 +457,18 @@ export interface AcceptanceDto {
   role: AcceptanceRole;
   decision: AcceptanceDecision;
   decidedAt: IsoDate | null;
+  /**
+   * The party answered, or the Mesa recorded its answer in the room, as it
+   * was then (the latest acceptance_recorded event).
+   */
+  recordedBy: "party" | "mesa";
 }
 
 export interface PositionDto {
   position: ProponentPosition;
   comment: string | null;
+  /** The main presenter answered, or the Mesa recorded it on its behalf. */
+  recordedBy: "presenter" | "mesa";
   updatedAt: IsoDate;
 }
 
@@ -320,7 +481,30 @@ export interface AmendmentCapabilities {
   position: boolean;
   moderate: boolean;
   review: boolean;
+  /** Validate it or ask for a correction (submitted, not validated yet). */
+  validate: boolean;
+  /** Make it visible to everyone (validated, not published yet). */
+  publish: boolean;
 }
+
+/**
+ * Where an amendment stands for its authors and the Secretaría:
+ * - "pending_authors": a transactional waiting for the main author of each
+ *   amendment it would replace to accept it, before the Secretaría checks it;
+ * - "pending_validation": presented, the Secretaría has not checked it;
+ * - "correction_requested": back to draft with a note to fix;
+ * - "validated": checked but not visible to everyone yet, and still relevant
+ *   to the debate (not withdrawn nor inadmissible);
+ * - "published": visible to everyone who can see the document.
+ * Null for drafts that were never presented, and for amendments settled
+ * while private (withdrawn, lapsed or inadmissible before being published).
+ */
+export type AmendmentReviewState =
+  | "pending_authors"
+  | "pending_validation"
+  | "correction_requested"
+  | "validated"
+  | "published";
 
 export interface AmendmentDto {
   id: string;
@@ -336,8 +520,19 @@ export interface AmendmentDto {
   justification: string;
   positionKey: number;
   changeKinds: ChangeKind[];
+  /** Presenting members, the main author first. */
   authors: MemberRef[];
+  /**
+   * The main author: it answers the transactionals proposed over this
+   * amendment. Required when there are co-authors.
+   */
+  mainAuthorId: string | null;
   submittedAt: IsoDate | null;
+  validatedAt: IsoDate | null;
+  publishedAt: IsoDate | null;
+  reviewState: AmendmentReviewState | null;
+  /** Only returned to its authors and the Secretaría/Mesa; null otherwise. */
+  correctionNote: string | null;
   decidedAt: IsoDate | null;
   approvalMethod: ApprovalMethod | null;
   outcomeNote: string | null;
@@ -374,6 +569,8 @@ export interface AmendmentDraftBody {
   justification: string;
   /** Co-presenting members. The actor's member is always included. */
   authorMemberIds?: string[];
+  /** Main author among the authors; required when there are several. */
+  mainAuthorMemberId?: string | null;
   globalReplace?: { find: string; replace: string } | null;
   /** Moderators may present on behalf of a member (e.g. dictated in session). */
   onBehalfOfMemberId?: string | null;
@@ -389,6 +586,8 @@ export interface TransactionalBody {
   justification: string;
   /** Proposed by these members; defaults to the actor's member. */
   authorMemberIds?: string[];
+  /** Main author among the proposers; required when there are several. */
+  mainAuthorMemberId?: string | null;
   /** Submit right away (typical in session). Default true. */
   submit?: boolean;
 }
@@ -404,6 +603,11 @@ export interface AdmissionBody {
 export interface PositionBody {
   position: ProponentPosition;
   comment?: string | null;
+  /**
+   * PositionDto.updatedAt the client saw (null when there was none), so two
+   * people answering at once get a 409 instead of overwriting each other.
+   */
+  positionUpdatedAt?: IsoDate | null;
 }
 
 export interface AcceptanceBody {
@@ -436,6 +640,33 @@ export type OutcomeAction =
   | { action: "reopen"; note?: string | null };
 
 export type OutcomeBody = OutcomeAction & { updatedAt: IsoDate };
+
+/**
+ * POST .../documents/[document]/amendments/validate (amendment:review):
+ * validates submitted amendments in bulk. On-time ones are admitted at the
+ * same time (method "secretaria"); late ones keep admission "pending" for the
+ * Mesa. With `publish` they become visible to everyone at once.
+ * Returns DocumentAmendmentsDto.
+ */
+export interface ValidateAmendmentsBody {
+  amendmentIds: string[];
+  publish: boolean;
+}
+
+/**
+ * POST .../documents/[document]/amendments/publish (amendment:review):
+ * makes validated amendments visible to everyone. Returns
+ * DocumentAmendmentsDto.
+ */
+export interface PublishAmendmentsBody {
+  amendmentIds: string[];
+}
+
+/**
+ * POST .../amendments/[amendment]/correction (amendment:review): a submitted,
+ * not yet validated amendment goes back to draft with a note for its authors
+ * (CorrectionBody). Returns AmendmentDto.
+ */
 
 export interface RelationBody {
   fromId: string;
@@ -520,6 +751,8 @@ export interface LiveStateDto {
   amendmentId: string | null;
   vote: VoteDto | null;
   message: string | null;
+  /** Attendees see who has the floor and who is next. */
+  speakersVisible: boolean;
   updatedAt: IsoDate | null;
 }
 
@@ -529,6 +762,56 @@ export interface LiveStateBody {
   amendmentId?: string | null;
   voteId?: string | null;
   message?: string | null;
+  speakersVisible?: boolean;
+}
+
+// Speaking turns -----------------------------------------------------------
+
+/** A request to speak written down by the Mesa. */
+export interface SpeakingTurnDto {
+  id: string;
+  /** Who speaks for: a council, sectorial or CEA area. */
+  member: MemberRef | null;
+  /** The person's name, when the Mesa wrote it. */
+  speaker: string | null;
+  agendaItemId: string | null;
+  status: SpeakingTurnStatus;
+  position: number;
+  startedAt: IsoDate | null;
+  endedAt: IsoDate | null;
+  createdAt: IsoDate;
+  updatedAt: IsoDate;
+}
+
+/**
+ * GET /api/assemblies/[assembly]/speakers. The Mesa (session:moderate) gets
+ * every turn of the current agenda item and the waiting ones; anyone else
+ * gets the speaking and waiting turns only while `visible` is true, and an
+ * empty list otherwise.
+ */
+export interface SpeakersDto {
+  visible: boolean;
+  turns: SpeakingTurnDto[];
+}
+
+/** POST /api/assemblies/[assembly]/speakers (session:moderate): add to the queue. */
+export interface SpeakingTurnBody {
+  memberId?: string | null;
+  speaker?: string | null;
+  /** Defaults to the agenda item in debate (live state). */
+  agendaItemId?: string | null;
+}
+
+/**
+ * PUT /api/assemblies/[assembly]/speakers/[turn] (session:moderate).
+ * Setting status "speaking" ends the turn that was speaking ("done").
+ * `position` reorders the waiting queue. Returns SpeakersDto.
+ */
+export interface SpeakingTurnUpdateBody {
+  status?: SpeakingTurnStatus;
+  position?: number;
+  speaker?: string | null;
+  updatedAt: IsoDate;
 }
 
 export interface EventDto {

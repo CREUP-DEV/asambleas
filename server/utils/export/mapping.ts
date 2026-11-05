@@ -256,3 +256,21 @@ export function buildAnnexRows(input: {
       };
     });
 }
+
+/**
+ * Who presents the document, as the PDF names it: the main presenter, then
+ * its co-presenters (already in acronym order). Null when nobody does.
+ */
+export function presentersLabel(
+  mainAcronym: string | null | undefined,
+  coAcronyms: readonly string[],
+): string | null {
+  const acronyms = [
+    ...new Set(
+      [mainAcronym, ...coAcronyms].filter((acronym): acronym is string =>
+        Boolean(acronym),
+      ),
+    ),
+  ];
+  return acronyms.length > 0 ? acronyms.join(", ") : null;
+}

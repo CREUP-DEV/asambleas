@@ -10,12 +10,15 @@ import {
   agendaItemAnchor,
   type AgendaTreeContext,
 } from "~/components/agenda/ItemNode.vue";
+import { isDocumentPresenter } from "~/composables/document/documentPresenters";
 import type { AgendaMove, AgendaTreeNode } from "~/utils/agendaTree";
 
 /**
- * Agenda (orden del día): the item tree with its documents. Managers add,
- * edit, move (buttons, keyboard accessible), switch submissions and delete
- * items; members present documents under items that accept them.
+ * Agenda (orden del día): the item tree with its documents. By default it is
+ * a clean list: numbered items, their documents and, for members,
+ * "Presentar documento" under the items that accept submissions. Managers
+ * switch to "Organizar orden del día" to add, edit, move (buttons, keyboard
+ * accessible), switch submissions, delete items and add documents.
  */
 
 const { t } = useI18n();
@@ -82,6 +85,35 @@ const canSubmitDocument = computed(
     Boolean(me.member.value) &&
     submitBlockedReason.value === null,
 );
+/**
+ * Said once above the agenda (not on every item) when a member could
+ * present documents here but no longer can.
+ */
+const showSubmitBlocked = computed(
+  () =>
+    submitBlockedReason.value !== null &&
+    !canCreateDocument.value &&
+    items.value.some((item) => item.acceptsSubmissions),
+);
+
+// Organize mode -----------------------------------------------------------------
+
+/** Who gets the organize mode: item managers and document managers. */
+const canOrganize = computed(() => manage.value || canCreateDocument.value);
+const organizing = ref(false);
+
+watch(canOrganize, (allowed) => {
+  if (!allowed) organizing.value = false;
+});
+
+function toggleOrganizing() {
+  organizing.value = !organizing.value;
+  announce(
+    organizing.value
+      ? t("agenda.organize.enabled")
+      : t("agenda.organize.disabled"),
+  );
+}
 
 /**
  * Documents that keep an item from being deleted (server rule): presented
@@ -253,6 +285,9 @@ const formParent = ref<{ id: string; title: string; number: string } | null>(
 );
 
 function openCreate(parent: AgendaTreeNode<AgendaItemDto> | null) {
+  // Adding items is organizing: the first item (from the empty state) keeps
+  // the controls on, ready for the next one.
+  organizing.value = true;
   formItem.value = null;
   formParent.value = parent
     ? { id: parent.item.id, title: parent.item.title, number: parent.number }
@@ -354,18 +389,43 @@ function openNewDocument(
   documentOpen.value = true;
 }
 
+async function onDocumentCreated(document: DocumentSummaryDto) {
+  await refresh();
+  announce(t("agenda.newDocument.createdFor", { title: document.title }));
+}
+
 // Context for the item nodes ----------------------------------------------------
+
+function documentPath(document: DocumentSummaryDto): string {
+  return sectionPath(`documentos/${encodeURIComponent(document.slug)}`);
+}
+
+/**
+ * The editor of a draft the user's member presents, as the main presenter
+ * or a co-presenter (the server lets every presenter edit a draft);
+ * managers open documents in the workspace like everyone else.
+ */
+function documentEditPath(document: DocumentSummaryDto): string | null {
+  if (
+    document.status !== "draft" ||
+    !isDocumentPresenter(document, me.member.value?.id) ||
+    canCreateDocument.value
+  ) {
+    return null;
+  }
+  return `${documentPath(document)}/editar`;
+}
 
 const context: AgendaTreeContext = {
   manage,
+  organizing,
   rootsLocked,
   canCreateDocument,
   canSubmitDocument,
-  submitBlockedReason,
   busyId,
   documentsFor: (itemId) => documentsByItem.value.get(itemId) ?? [],
-  documentPath: (document) =>
-    sectionPath(`documentos/${encodeURIComponent(document.slug)}`),
+  documentPath,
+  documentEditPath,
   canMove,
   canDelete,
   move: (itemId, move) => {
@@ -406,6 +466,7 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
       </div>
       <div class="flex flex-wrap items-center gap-2">
         <UButton
+          v-if="!organizing"
           color="neutral"
           variant="outline"
           icon="i-lucide-scroll-text"
@@ -413,7 +474,7 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
           :to="sectionPath('convocatoria')"
         />
         <UTooltip
-          v-if="manage"
+          v-if="manage && organizing"
           :text="
             rootsLocked ? t('agenda.rootsLockedShort') : t('agenda.addItem')
           "
@@ -425,11 +486,48 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
             @click="openCreate(null)"
           />
         </UTooltip>
+        <UButton
+          v-if="canOrganize && tree.length > 0"
+          :color="organizing ? 'primary' : 'neutral'"
+          :variant="organizing ? 'soft' : 'outline'"
+          :icon="organizing ? 'i-lucide-check' : 'i-lucide-pencil-ruler'"
+          :label="
+            organizing ? t('agenda.organize.done') : t('agenda.organize.start')
+          "
+          @click="toggleOrganizing"
+        />
       </div>
     </div>
 
+    <p
+      v-if="organizing"
+      class="text-muted flex items-start gap-2 text-sm"
+      data-testid="agenda-organize-hint"
+    >
+      <UIcon
+        name="i-lucide-info"
+        class="mt-0.5 size-4 shrink-0"
+        aria-hidden="true"
+      />
+      <span>
+        {{
+          manage
+            ? t("agenda.organize.hint")
+            : t("agenda.organize.hintDocuments")
+        }}
+      </span>
+    </p>
+
     <UAlert
-      v-if="manage && rootsLocked"
+      v-if="showSubmitBlocked && !organizing"
+      color="neutral"
+      variant="subtle"
+      icon="i-lucide-lock"
+      :title="submitBlockedReason ?? ''"
+    />
+
+    <UAlert
+      v-if="manage && rootsLocked && organizing"
       color="info"
       variant="subtle"
       icon="i-lucide-lock"
@@ -447,13 +545,14 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
     />
 
     <!-- Loading -->
-    <div
-      v-if="pending && !agenda"
-      class="space-y-3"
-      aria-busy="true"
-      :aria-label="t('agenda.loading')"
-    >
-      <USkeleton v-for="index in 4" :key="index" class="h-24 w-full" />
+    <div v-if="pending && !agenda" class="space-y-3" role="status">
+      <span class="sr-only">{{ t("agenda.loading") }}</span>
+      <USkeleton
+        v-for="index in 4"
+        :key="index"
+        aria-hidden="true"
+        class="h-24 w-full"
+      />
     </div>
 
     <!-- Error -->
@@ -520,6 +619,7 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
       :base-path="sectionPath()"
       :item="documentItem"
       :mode="documentMode"
+      @created="onDocumentCreated"
     />
 
     <UModal

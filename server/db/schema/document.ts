@@ -19,6 +19,7 @@ import { members } from "./member";
 import { amendments } from "./amendment";
 import type { Block } from "../../../shared/types/content";
 import {
+  ACCEPTED_AMENDMENT_RULES,
   DOCUMENT_FORMATS,
   DOCUMENT_KINDS,
   DOCUMENT_STATUSES,
@@ -29,6 +30,10 @@ export const documentKindEnum = pgEnum("document_kind", DOCUMENT_KINDS);
 export const documentFormatEnum = pgEnum("document_format", DOCUMENT_FORMATS);
 export const documentStatusEnum = pgEnum("document_status", DOCUMENT_STATUSES);
 export const majorityEnum = pgEnum("majority", MAJORITIES);
+export const acceptedAmendmentRuleEnum = pgEnum(
+  "accepted_amendment_rule",
+  ACCEPTED_AMENDMENT_RULES,
+);
 export const versionKindEnum = pgEnum("document_version_kind", [
   "draft",
   "base",
@@ -65,6 +70,13 @@ export const documents = pgTable(
     amendable: boolean("amendable").notNull().default(false),
     voted: boolean("voted").notNull().default(true),
     majority: majorityEnum("majority").notNull().default("simple"),
+    /**
+     * What an amendment the presenter accepts becomes: incorporated without
+     * a vote, or voted by the assembly. Defaults from the kind.
+     */
+    acceptedAmendments: acceptedAmendmentRuleEnum("accepted_amendments")
+      .notNull()
+      .default("vote"),
     /** Override of the assembly amendment window for this document. */
     amendmentsOpenAt: timestamp("amendments_open_at", {
       withTimezone: true,
@@ -100,6 +112,17 @@ export const documents = pgTable(
       withTimezone: true,
       mode: "date",
     }),
+    /**
+     * Internal deadline the Secretaría sets for documents it expects (CEA
+     * reports, resolutions...). Drives the documentation tracking panel.
+     */
+    dueAt: timestamp("due_at", { withTimezone: true, mode: "date" }),
+    /** Last correction the Secretaría asked for (the document went back to draft). */
+    correctionNote: text("correction_note"),
+    correctionRequestedAt: timestamp("correction_requested_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     publishedAt: timestamp("published_at", {
       withTimezone: true,
       mode: "date",
@@ -124,6 +147,30 @@ export const documents = pgTable(
 );
 
 /** Immutable snapshots of structured content (the draft is updated in place). */
+/**
+ * Members presenting a document jointly with its main presenter
+ * (`documents.proponentMemberId`). They prepare the text with it and see what
+ * it decides; only the main presenter answers the amendments.
+ */
+export const documentProponents = pgTable(
+  "document_proponents",
+  {
+    documentId: text("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    memberId: text("member_id")
+      .notNull()
+      .references(() => members.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    uniqueIndex("document_proponents_unique").on(
+      table.documentId,
+      table.memberId,
+    ),
+    index("idx_document_proponents_member").on(table.memberId),
+  ],
+);
+
 export const documentVersions = pgTable(
   "document_versions",
   {

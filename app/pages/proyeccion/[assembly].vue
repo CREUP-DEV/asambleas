@@ -6,6 +6,7 @@ import type {
   DocumentDto,
   LiveEventDto,
   LiveStateDto,
+  SpeakersDto,
   VoteDto,
 } from "~~/shared/types/api";
 import { errorStatus, useApi } from "~/composables/api/useApi";
@@ -15,15 +16,30 @@ import {
 } from "~/composables/fetch/lastGoodData";
 import { useAssemblyLive } from "~/composables/live/useAssemblyLive";
 import { useAppNow } from "~/composables/time/useAppNow";
-import { buildSessionAgendaRows } from "~/composables/session/sessionModel";
+import {
+  buildSessionAgendaRows,
+  sessionConnectionState,
+} from "~/composables/session/sessionModel";
 import { formatTime } from "~/utils/format";
+import {
+  affectsAgenda,
+  affectsSpeakers,
+  liveAmendmentRows,
+  liveAmendmentStats,
+  liveSpeakers,
+  liveVoteCounts,
+  liveVoteSubject,
+  liveVoteSubjectText,
+} from "~/components/live-view/-model";
 
 /**
  * Projection screen for the room: chrome-free, large type, high contrast.
  * It shows what the Mesa puts in debate (agenda item, document, amendment
  * with its diff and one block of context), the result of the last vote and
- * the Mesa's message; when nothing is in debate, the agenda. It follows the
- * live state and is open to every signed-in user.
+ * the Mesa's message; when nothing is in debate, the agenda. While the Mesa
+ * makes the speaking turns visible, a band at the bottom shows who has the
+ * floor and who is next. It follows the live state and is open to every
+ * signed-in user.
  *
  * Nobody watches the projector to reload it, so a failed refresh never
  * wipes the screen: every source keeps its last good data (and the footer
@@ -103,6 +119,18 @@ const {
 });
 const refreshAgenda = agendaFetch.refresh;
 
+// Speaking turns. A 404 (no such endpoint, or hidden) shows nothing.
+const speakersFetch = await useAsyncData(
+  () => `projection-speakers-${param.value}`,
+  () => api.get<SpeakersDto>(`${assemblyUrl.value}/speakers`).catch(nullIfGone),
+);
+const {
+  data: speakersDto,
+  stale: speakersStale,
+  failed: speakersFailed,
+} = keepLastGoodData(speakersFetch, { isGone });
+const refreshSpeakers = speakersFetch.refresh;
+
 // From the kept live state, so a failed live-state refresh does not switch
 // the document fetches to "none".
 const documentId = computed(() => live.value?.documentId ?? null);
@@ -150,7 +178,8 @@ const stale = computed(
     liveStale.value ||
     agendaStale.value ||
     documentStale.value ||
-    amendmentsStale.value,
+    amendmentsStale.value ||
+    speakersStale.value,
 );
 
 /**
@@ -163,7 +192,8 @@ const failed = computed(
     liveFailed.value ||
     agendaFailed.value ||
     documentFailed.value ||
-    amendmentsFailed.value,
+    amendmentsFailed.value ||
+    speakersFailed.value,
 );
 
 // Live updates -------------------------------------------------------------------
@@ -185,10 +215,9 @@ function onLive(events: LiveEventDto[]): void {
   );
 
   if (poll || touches(["live"])) refreshes.push(refreshLive());
+  if (affectsSpeakers(events)) refreshes.push(refreshSpeakers());
   if (poll || touches(["assembly"])) refreshes.push(refreshAssembly());
-  if (poll || touches(["assembly", "agenda_item", "document"])) {
-    refreshes.push(refreshAgenda());
-  }
+  if (affectsAgenda(events)) refreshes.push(refreshAgenda());
   if (poll || touchesDocument) {
     refreshes.push(refreshDocument(), refreshAmendments());
   }
@@ -200,6 +229,38 @@ function onLive(events: LiveEventDto[]): void {
 }
 
 const { connected, polling } = useAssemblyLive(() => assemblyId, onLive);
+
+// Until the first connection is ready the screen is connecting, not
+// offline: the room must not see an alarm while the page opens.
+const everConnected = ref(false);
+watch(
+  connected,
+  (isConnected) => {
+    if (isConnected) everConnected.value = true;
+  },
+  { immediate: true },
+);
+const connection = computed(() =>
+  sessionConnectionState(connected.value, polling.value, everConnected.value),
+);
+const CONNECTION_DOT = {
+  live: "bg-success motion-safe:animate-pulse",
+  polling: "bg-warning",
+  connecting: "bg-(--ui-text-dimmed)",
+  offline: "bg-error",
+} as const;
+const connectionLabel = computed(() => {
+  switch (connection.value) {
+    case "live":
+      return t("projection.live");
+    case "polling":
+      return t("projection.polling");
+    case "connecting":
+      return t("projection.connecting");
+    default:
+      return t("projection.offline");
+  }
+});
 
 // Live events only refresh what they touch, and polls only run while the
 // stream is down: a refresh that fails while the stream stays up (a 502
@@ -228,6 +289,11 @@ useRetryFailed(
       failed: amendmentsFailed,
       status: amendmentsFetch.status,
       refresh: refreshAmendments,
+    },
+    {
+      failed: speakersFailed,
+      status: speakersFetch.status,
+      refresh: refreshSpeakers,
     },
   ],
   {
@@ -266,55 +332,34 @@ const mode = computed<"amendment" | "document" | "idle">(() => {
   return "idle";
 });
 
-function amendmentLabel(id: string): string {
-  const amendment = amendments.value.find((item) => item.id === id);
-  return amendment?.code ?? (amendment?.number ? `#${amendment.number}` : "");
-}
+const voteSubject = computed(() =>
+  vote.value
+    ? liveVoteSubjectText(
+        liveVoteSubject(vote.value, {
+          amendments: amendments.value,
+          document: document.value ?? null,
+        }),
+        t,
+      )
+    : "",
+);
 
-const voteSubject = computed(() => {
-  const current = vote.value;
-  if (!current) return "";
-  if (current.subjectType === "amendment") {
-    const code = amendmentLabel(current.subjectId);
-    return code
-      ? t("projection.vote.amendment", { code })
-      : t("projection.vote.amendmentUnknown");
-  }
-  if (current.subjectType === "document") {
-    return t("projection.vote.document", {
-      title:
-        document.value?.id === current.subjectId
-          ? (document.value.reference ?? document.value.title)
-          : t("projection.vote.documentUnknown"),
-    });
-  }
-  if (current.subjectType === "decision") return t("projection.vote.decision");
-  return t("projection.vote.other");
-});
+const voteCounts = computed(() =>
+  vote.value ? liveVoteCounts(vote.value) : [],
+);
 
-const voteCounts = computed(() => {
-  const current = vote.value;
-  if (!current) return [];
-  const counts = [
-    { key: "inFavor", value: current.inFavor },
-    { key: "against", value: current.against },
-    { key: "abstentions", value: current.abstentions },
-  ];
-  if (current.blank > 0) counts.push({ key: "blank", value: current.blank });
-  if (current.invalid > 0) {
-    counts.push({ key: "invalid", value: current.invalid });
-  }
-  return counts;
-});
+/** Who has the floor and who is next, only while the Mesa shows it. */
+const speakers = computed(() =>
+  liveSpeakers(speakersDto.value, live.value?.speakersVisible ?? false),
+);
 
-const amendmentStats = computed(() => {
-  const list = amendments.value.filter((item) => item.status !== "draft");
-  return {
-    approved: list.filter((item) => item.status === "approved").length,
-    undecided: list.filter((item) => item.status === "submitted").length,
-    total: list.length,
-  };
-});
+// Only what the room can read: the projector is usually opened on a Mesa or
+// Secretaría account, whose list also holds amendments pending validation,
+// validated but unpublished, or waiting for the presenter. Counting those
+// would show the room that private amendments exist, and how many.
+const amendmentStats = computed(() =>
+  liveAmendmentStats(liveAmendmentRows(amendments.value, null)),
+);
 
 // Clock and fullscreen -----------------------------------------------------------
 
@@ -362,6 +407,7 @@ useHead(() => ({
         </p>
       </div>
       <div class="flex items-center gap-3">
+        <!-- Fullscreen support is only known in the browser. -->
         <ClientOnly>
           <span
             class="text-[clamp(1.25rem,2vw,2.25rem)] font-semibold tabular-nums"
@@ -369,20 +415,20 @@ useHead(() => ({
           >
             {{ clock }}
           </span>
+          <UButton
+            v-if="fullscreenSupported"
+            color="neutral"
+            variant="ghost"
+            size="lg"
+            :icon="isFullscreen ? 'i-lucide-minimize' : 'i-lucide-maximize'"
+            :aria-label="
+              isFullscreen
+                ? t('projection.exitFullscreen')
+                : t('projection.fullscreen')
+            "
+            @click="toggleFullscreen()"
+          />
         </ClientOnly>
-        <UButton
-          v-if="fullscreenSupported"
-          color="neutral"
-          variant="ghost"
-          size="lg"
-          :icon="isFullscreen ? 'i-lucide-minimize' : 'i-lucide-maximize'"
-          :aria-label="
-            isFullscreen
-              ? t('projection.exitFullscreen')
-              : t('projection.fullscreen')
-          "
-          @click="toggleFullscreen()"
-        />
       </div>
     </header>
 
@@ -599,6 +645,21 @@ useHead(() => ({
           :current-id="live?.agendaItemId ?? null"
         />
       </section>
+      <!--
+        Nobody scrolls a projector: the band sticks to the bottom of the
+        screen when a long diff or agenda overflows it. The opaque wrapper
+        hides the text scrolling behind the translucent band.
+      -->
+      <div
+        v-if="speakers"
+        class="bg-default sticky bottom-0 z-10 mt-auto pt-2 pb-[clamp(0.25rem,0.5vw,0.5rem)]"
+      >
+        <LiveViewSpeakers
+          :speakers="speakers"
+          size="projection"
+          heading-id="projection-speakers-title"
+        />
+      </div>
     </main>
 
     <footer
@@ -607,22 +668,10 @@ useHead(() => ({
       <span class="inline-flex items-center gap-2" role="status">
         <span
           class="size-2.5 rounded-full"
-          :class="
-            connected
-              ? 'bg-success motion-safe:animate-pulse'
-              : polling
-                ? 'bg-warning'
-                : 'bg-error'
-          "
+          :class="CONNECTION_DOT[connection]"
           aria-hidden="true"
         />
-        {{
-          connected
-            ? t("projection.live")
-            : polling
-              ? t("projection.polling")
-              : t("projection.offline")
-        }}
+        {{ connectionLabel }}
       </span>
       <ClientOnly>
         <span class="inline-flex flex-wrap items-center gap-x-3">
@@ -656,12 +705,15 @@ useHead(() => ({
   margin-top: 0.9em;
 }
 
-.projection-text :deep(.rich-text h2) {
+.projection-text :deep(.rich-text h2),
+.projection-text :deep(.rich-text .cx-heading-2) {
   font-size: 1.3em;
 }
 
 .projection-text :deep(.rich-text h3),
-.projection-text :deep(.rich-text h4) {
+.projection-text :deep(.rich-text h4),
+.projection-text :deep(.rich-text .cx-heading-3),
+.projection-text :deep(.rich-text .cx-heading-4) {
   font-size: 1.15em;
 }
 

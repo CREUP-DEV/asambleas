@@ -184,7 +184,8 @@ html {
 
   .rich-text h2,
   .rich-text h3,
-  .rich-text h4 {
+  .rich-text h4,
+  .rich-text .cx-heading {
     font-family: var(--font-sans);
     font-weight: 700;
     line-height: 1.25;
@@ -203,6 +204,36 @@ html {
   .rich-text h4 {
     margin-top: 1.5rem;
     font-size: 1.125rem;
+  }
+
+  /*
+   * Headings of excerpts (`cx-heading-N`): they look like h2-h4 but stay out
+   * of the page outline. Sizes follow the text (1.0625rem by default, where
+   * they match the headings above), so views that enlarge it enlarge them.
+   */
+  .rich-text .cx-heading-2 {
+    margin-top: 2rem;
+    font-size: calc(1em * 1.75 / 1.0625);
+  }
+
+  .rich-text .cx-heading-3 {
+    margin-top: 1.75rem;
+    font-size: calc(1em * 1.375 / 1.0625);
+  }
+
+  .rich-text .cx-heading-4 {
+    margin-top: 1.5rem;
+    font-size: calc(1em * 1.125 / 1.0625);
+  }
+
+  /* What follows keeps the spacing it has after a real heading. */
+  .rich-text .cx-heading + p {
+    margin-top: 0;
+  }
+
+  .rich-text .cx-heading + ul,
+  .rich-text .cx-heading + ol {
+    margin-top: 1.5rem;
   }
 
   .rich-text ul,
@@ -262,10 +293,13 @@ html {
     -webkit-print-color-adjust: exact;
   }
 
+  /* Underlined too, so insertions never rely on colour alone. */
   .cx-ins {
     color: var(--cx-ins-fg);
     background-color: var(--cx-ins-bg);
-    text-decoration: none;
+    text-decoration-line: underline;
+    text-decoration-thickness: 0.1em;
+    text-underline-offset: 0.2em;
   }
 
   .cx-del {
@@ -384,18 +418,21 @@ html {
       -0.625rem 0 0 0 var(--ui-primary);
   }
 
-  /* Interactive views: blocks and amended fragments act as buttons. */
-  .cx-interactive [data-block-id],
+  /*
+   * Interactive views: amended fragments act as buttons, and so do blocks
+   * where they can be picked (`cx-selectable`).
+   */
+  .cx-selectable [data-block-id],
   .cx-interactive [data-amendment-id] {
     cursor: pointer;
     border-radius: 0.25rem;
   }
 
-  .cx-interactive [data-block-id]:hover:not(.cx-selected) {
+  .cx-selectable [data-block-id]:hover:not(.cx-selected) {
     background-color: var(--cx-hover-bg);
   }
 
-  .cx-interactive [data-block-id]:focus-visible,
+  .cx-selectable [data-block-id]:focus-visible,
   .cx-interactive [data-amendment-id]:focus-visible {
     outline: 2px solid var(--ui-primary);
     outline-offset: 2px;
@@ -611,7 +648,8 @@ html {
 
   .rich-text h2,
   .rich-text h3,
-  .rich-text h4 {
+  .rich-text h4,
+  .rich-text .cx-heading {
     break-after: avoid;
   }
 
@@ -631,7 +669,7 @@ html {
   }
 
   .cx-selected,
-  .cx-interactive [data-block-id]:hover {
+  .cx-selectable [data-block-id]:hover {
     background-color: transparent !important;
     box-shadow: none !important;
   }
