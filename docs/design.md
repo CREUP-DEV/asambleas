@@ -243,30 +243,54 @@ per assembly (`GET .../review`) and the tracking panel.
 
 ## Reviewing amendments, transactionals and the session
 
-**Proponent review.** Whoever presents a document (usually a CEA area) goes
-through its amendments one by one in a review mode: the change in large
-type, its justification, and Aceptar, Rechazar or Transaccionar with an
-optional comment. A progress line shows how many are left. Transactionals
-waiting for the proponent's approval appear first.
+**Main presenter and main author.** A document can have co-presenters
+(`document_proponents`); when it has several presenters one of them must be
+the main presenter (`documents.proponentMemberId`), and only that member (or
+the Mesa on its behalf) answers the amendments to the document. Likewise an
+amendment with co-authors must name its main author (`mainAuthorId`), and only
+that member answers the transactionals proposed over it. Co-presenters and
+co-authors always see what the main one decided (who, what, when) on the
+document or amendment and in the "Novedades" of their home page.
 
-**Transactionals from anyone.** Once amendments are published, any member
-(CEA or assembly), before or during the session, can propose a transactional
-over one or more of them. It goes:
+**Amendment flow.**
 
-1. to the document's presenter, who approves it (its "proponent" acceptance);
-2. then to the Secretaría, which validates and publishes it as any other
-   amendment;
-3. before it can be voted, the authors of the amendments it replaces accept
-   it, since their amendments are absorbed (`transacted`) when it passes.
+1. It is presented, on time or late.
+2. The Secretaría validates it (or asks for a correction) and publishes it,
+   now or later.
+3. If it is late, the assembly decides whether to treat it; the Secretaría
+   (or the Mesa) records that decision. Until then it cannot go further.
+4. The document's main presenter accepts or rejects it (its position, with an
+   optional comment), only once it is validated and, if late, admitted.
+5. The assembly votes it. Each document has a rule for accepted amendments
+   (`documents.acceptedAmendments`, default from its kind): with
+   "incorporate" (regulations by default) an amendment the main presenter
+   accepts is approved at once without a vote (approval method
+   "proponent"); if the presenter changes its answer before the final vote,
+   the amendment goes back to undecided. With "vote" every amendment is
+   voted.
 
-The Mesa can still draft one live in the console; it is validated and
-published at once and the parties answer in the room. Transactionals build
-only on published, undecided amendments.
+**Proponent review.** The main presenter goes through the amendments it has
+to answer one by one in a review mode: the change in large type, its
+justification, and Aceptar, Rechazar or Transaccionar with an optional
+comment. A progress line shows how many are left.
 
-**Late amendments.** They can be presented after the window closes. Once the
-Secretaría validates them they appear as "fuera de plazo" and wait for the
-assembly to decide whether to treat them; the Secretaría (or the Mesa)
-records that decision, and only then can they be debated and decided.
+**Transactionals.** Once amendments are published, any member (CEA or
+assembly), before or during the session, can propose a transactional over one
+or more of them:
+
+1. it is presented ("pending_authors");
+2. the main author of each amendment it would replace accepts or rejects it;
+   if any of them rejects it, it is closed and the originals carry on;
+3. the Secretaría validates it (and publishes it, now or later);
+4. once validated and accepted by every main author, it replaces those
+   amendments (they become `transacted`) and follows the normal amendment
+   flow: the document's main presenter answers it and the assembly votes it
+   (or it is incorporated, per the document's rule).
+
+The Mesa can still draft one live in the console: it is validated and
+published at once, and it replaces the originals as soon as their main
+authors accept it in the room. Transactionals build only on published,
+undecided amendments.
 
 **Session console.** Several people use it at once (Presidencia moderates,
 Secretaría records results), all live. It leads with what is being debated
