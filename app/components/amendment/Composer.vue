@@ -11,8 +11,12 @@ import type { AmendmentOp, Block } from "~~/shared/types/content";
 import { globalReplaceOps, validateOps } from "~~/shared/utils/content/ops";
 import { blockLabels } from "~~/shared/utils/content/render";
 import {
+  AMENDMENT_TOTALITY_MODES,
+  amendmentComposerSteps,
   amendmentErrorKey,
   amendmentErrorReasons,
+  amendmentLateOnSend,
+  amendmentSentNotice,
   composerAuthorMemberIds,
   composerAuthorSeed,
   composerSyncState,
@@ -23,10 +27,18 @@ import {
   seedComposerFromDraft,
   totalityAlternativeOps,
   type AmendmentComposerMode,
+  type AmendmentComposerStep,
 } from "~/composables/amendment/workspace";
 
 /**
- * Writes an amendment as an edit of the base text and turns it into
+ * Guided form to present an amendment, in plain steps: what it does (the
+ * choice made on the text, which can be changed here), write the change,
+ * see it against the text, and explain why. Co-authors, the "formal"
+ * nature and presenting on behalf of a member stay folded unless needed.
+ * Sending goes to the Secretaría, which checks it before anyone else sees
+ * it. A draft sent back for correction shows the Secretaría's note on top.
+ *
+ * It writes an amendment as an edit of the base text and turns it into
  * operations anchored to the base:
  * - passage: edit the selected blocks in place (diffPassage);
  * - delete: suppress the selected blocks;
@@ -113,6 +125,8 @@ const kind = ref<"partial" | "formal">(
   props.draft?.kind === "formal" ? "formal" : "partial",
 );
 const justification = ref(props.draft?.justification ?? "");
+/** Opened with "Añadir un párrafo después": the passage ends in a new one. */
+const adding = !props.draft && props.appendParagraph;
 
 const draftId = ref<string | null>(props.draft?.id ?? null);
 const updatedAt = ref<string | null>(props.draft?.updatedAt ?? null);
@@ -221,16 +235,76 @@ const justificationRef = useTemplateRef<{ textareaRef?: HTMLTextAreaElement }>(
 
 const hasSelection = computed(() => selection.value.length > 0);
 
-const modeItems = computed(() =>
-  (["passage", "delete", "global", "return", "alternative"] as const).map(
-    (value) => ({
-      label: t(`amendment.composer.modes.${value}`),
-      value,
-      disabled:
-        (value === "passage" || value === "delete") && !hasSelection.value,
-    }),
-  ),
+/** Ways to amend shown first; totality amendments are folded away. */
+const MAIN_MODES = ["passage", "delete", "global"] as const;
+const mainModeItems = computed(() =>
+  MAIN_MODES.map((value) => ({
+    label: t(`amendment.composer.modes.${value}`),
+    description: t(`amendment.composer.modeDescriptions.${value}`),
+    value,
+    disabled:
+      (value === "passage" || value === "delete") && !hasSelection.value,
+  })),
 );
+const totalityModeItems = computed(() =>
+  AMENDMENT_TOTALITY_MODES.map((value) => ({
+    label: t(`amendment.composer.modes.${value}`),
+    description: t(`amendment.composer.modeDescriptions.${value}`),
+    value,
+  })),
+);
+
+/** The choice list is open when there is nothing sensible chosen yet. */
+const choosing = ref(
+  !hasSelection.value && (mode.value === "passage" || mode.value === "delete"),
+);
+const advancedOpen = ref(AMENDMENT_TOTALITY_MODES.includes(mode.value));
+
+/** The chosen main mode, or none while a totality mode is chosen. */
+const mainChoice = computed(() =>
+  MAIN_MODES.find((value) => value === mode.value),
+);
+
+function setMode(value: unknown): void {
+  if (typeof value === "string") mode.value = value as AmendmentComposerMode;
+}
+
+const choiceLabel = computed(() =>
+  adding && mode.value === "passage"
+    ? t("amendment.composer.modes.add")
+    : t(`amendment.composer.modes.${mode.value}`),
+);
+
+const steps = computed(() => amendmentComposerSteps(mode.value));
+function stepNumber(step: AmendmentComposerStep): number {
+  return steps.value.indexOf(step) + 1;
+}
+const stepBadge =
+  "bg-primary/10 text-primary inline-flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums";
+
+const writeTitle = computed(() => {
+  if (mode.value === "global") return t("amendment.composer.steps.writeGlobal");
+  if (mode.value === "alternative") {
+    return t("amendment.composer.steps.writeAlternative");
+  }
+  return adding
+    ? t("amendment.composer.steps.writeAdd")
+    : t("amendment.composer.steps.write");
+});
+
+/** The note of a draft the Secretaría sent back for correction. */
+const correctionNote = computed(() =>
+  props.draft?.reviewState === "correction_requested"
+    ? props.draft.correctionNote
+    : null,
+);
+
+const title = computed(() => {
+  if (correctionNote.value) return t("amendment.composer.titleCorrection");
+  return props.draft
+    ? t("amendment.composer.titleEdit")
+    : t("amendment.composer.titleNew");
+});
 
 watch(mode, (value) => {
   serverReasons.value = [];
@@ -245,12 +319,12 @@ const amendmentKind = computed<AmendmentDraftBody["kind"]>(() => {
   return kind.value;
 });
 
-const kindItems = computed(() =>
-  (["partial", "formal"] as const).map((value) => ({
-    label: t(`amendment.kinds.${value}`),
-    description: t(`amendment.composer.kindDescriptions.${value}`),
-    value,
-  })),
+/** Only text changes can be formal (typos, style, numbering). */
+const canBeFormal = computed(
+  () =>
+    mode.value === "passage" ||
+    mode.value === "delete" ||
+    mode.value === "global",
 );
 
 const passageLabel = computed(() => {
@@ -344,6 +418,14 @@ const needsMember = computed(
 const cannotPresent = computed(() => !member.value && !canActOnBehalf.value);
 const syncBlocked = computed(() => syncState.value !== "in_sync");
 
+/** Folded options start open when the draft already uses them. */
+const optionsOpen = ref(
+  coAuthorIds.value.length > 0 ||
+    kind.value === "formal" ||
+    (canActOnBehalf.value &&
+      !onBehalfRequired.value &&
+      Boolean(onBehalfOfMemberId.value)),
+);
 const blocked = computed(
   () =>
     localIssues.value.length > 0 ||
@@ -361,6 +443,22 @@ const windowClosed = computed(() => {
   const closesAt = toDate(props.document.window.closesAt);
   return Boolean(closesAt && closesAt.getTime() <= now.value);
 });
+/**
+ * Sending now makes it late. A correction keeps the timing of its first
+ * presentation (as the server does), whatever the window says today.
+ */
+const lateOnSend = computed(() =>
+  amendmentLateOnSend(props.draft, windowClosed.value),
+);
+const isCorrection = computed(
+  () => props.draft?.reviewState === "correction_requested",
+);
+/** A correction that arrived late the first time and is still late. */
+const lateKept = computed(() => isCorrection.value && lateOnSend.value);
+/** A correction that arrived on time stays on time, deadline or not. */
+const onTimeKept = computed(
+  () => isCorrection.value && windowClosed.value && !lateOnSend.value,
+);
 
 // Members ------------------------------------------------------------------------
 
@@ -481,12 +579,20 @@ async function present(): Promise<void> {
     const submitted = await api.send<AmendmentDto>(
       `${props.amendmentsUrl}/${saved.id}/submit`,
     );
+    const notice = amendmentSentNotice(submitted);
     toast.add({
-      title: t("amendment.composer.submitted"),
-      description: submitted.late
-        ? t("amendment.composer.submittedLate")
-        : undefined,
-      color: submitted.late ? "warning" : "success",
+      title:
+        notice === "public"
+          ? t("amendment.detail.presented")
+          : t("amendment.composer.submitted"),
+      description: t(
+        notice === "public"
+          ? "amendment.detail.presentedDescription"
+          : notice === "review_late"
+            ? "amendment.composer.submittedLate"
+            : "amendment.composer.submittedDescription",
+      ),
+      color: notice === "review_late" ? "warning" : "success",
       icon: "i-lucide-send",
     });
     emit("submitted", submitted);
@@ -514,24 +620,14 @@ onMounted(() => {
 <template>
   <form
     :id="formId"
-    class="flex flex-col gap-5"
+    class="flex flex-col gap-6"
     novalidate
-    :aria-label="
-      draft
-        ? t('amendment.composer.titleEdit')
-        : t('amendment.composer.titleNew')
-    "
+    :aria-label="title"
     @submit.prevent="present"
   >
     <header class="flex items-start gap-2">
       <div class="min-w-0 flex-1">
-        <h2 class="text-highlighted text-lg font-semibold">
-          {{
-            draft
-              ? t("amendment.composer.titleEdit")
-              : t("amendment.composer.titleNew")
-          }}
-        </h2>
+        <h2 class="text-highlighted text-lg font-semibold">{{ title }}</h2>
         <p class="text-muted text-sm">{{ document.title }}</p>
       </div>
       <UButton
@@ -544,14 +640,46 @@ onMounted(() => {
       />
     </header>
 
+    <!-- What the Secretaría asked to fix. -->
     <UAlert
-      v-if="windowClosed"
+      v-if="correctionNote"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-message-square-warning"
+      :title="t('amendment.composer.correctionTitle')"
+    >
+      <template #description>
+        <span class="block whitespace-pre-line">{{ correctionNote }}</span>
+      </template>
+    </UAlert>
+
+    <UAlert
+      v-if="lateKept"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-clock-alert"
+      :title="t('amendment.composer.lateKeptTitle')"
+      :description="t('amendment.composer.lateKeptWarning')"
+    />
+    <UAlert
+      v-else-if="lateOnSend"
       color="warning"
       variant="subtle"
       icon="i-lucide-clock-alert"
       :title="t('amendment.composer.lateTitle')"
       :description="t('amendment.composer.lateWarning')"
     />
+    <p
+      v-else-if="onTimeKept"
+      class="text-muted flex items-start gap-1.5 text-sm"
+    >
+      <UIcon
+        name="i-lucide-clock-check"
+        class="mt-0.5 size-4 shrink-0"
+        aria-hidden="true"
+      />
+      {{ t("amendment.composer.correctionOnTime") }}
+    </p>
     <UAlert
       v-if="cannotPresent"
       color="error"
@@ -561,118 +689,120 @@ onMounted(() => {
       :description="t('amendment.composer.noMemberDescription')"
     />
 
-    <UFormField :label="t('amendment.composer.mode')">
-      <USelect v-model="mode" :items="modeItems" class="w-full" />
-      <template #help>
-        {{ t(`amendment.composer.modeDescriptions.${mode}`) }}
-      </template>
-    </UFormField>
-
-    <!-- Passage: edit in place -->
-    <section v-if="mode === 'passage'" class="flex flex-col gap-2">
-      <p class="text-muted flex flex-wrap items-center gap-1.5 text-sm">
-        <UIcon name="i-lucide-pilcrow" class="size-4" aria-hidden="true" />
-        {{
-          t(
-            "amendment.composer.passageCount",
-            { count: selection.length },
-            selection.length,
-          )
-        }}
-        <span v-if="passageLabel" class="text-default"
-          >· {{ passageLabel }}</span
-        >
-      </p>
-      <ClientOnly>
-        <ContentBlockEditor
-          ref="editor"
-          v-model="passageBlocks"
-          compact
-          :label="t('amendment.composer.editorLabel')"
-          :placeholder="t('amendment.composer.editorPlaceholder')"
-        />
-        <template #fallback>
-          <USkeleton class="h-32 w-full" />
-        </template>
-      </ClientOnly>
-      <p class="text-dimmed text-xs">
-        {{ t("amendment.composer.editorHint") }}
-      </p>
-    </section>
-
-    <!-- Delete -->
-    <section v-else-if="mode === 'delete'" class="flex flex-col gap-2">
-      <p class="text-muted flex flex-wrap items-center gap-1.5 text-sm">
-        <UIcon name="i-lucide-pilcrow" class="size-4" aria-hidden="true" />
-        {{
-          t(
-            "amendment.composer.passageCount",
-            { count: selection.length },
-            selection.length,
-          )
-        }}
-        <span v-if="passageLabel" class="text-default"
-          >· {{ passageLabel }}</span
-        >
-      </p>
-      <p class="text-sm">{{ t("amendment.composer.deleteHint") }}</p>
-    </section>
-
-    <!-- Global replacement -->
-    <section v-else-if="mode === 'global'" class="flex flex-col gap-3">
-      <div class="grid gap-3 sm:grid-cols-2">
-        <UFormField :label="t('amendment.composer.find')" required>
-          <UInput
-            v-model="find"
-            class="w-full"
-            :maxlength="500"
-            autocomplete="off"
-            :placeholder="t('amendment.composer.findPlaceholder')"
-          />
-        </UFormField>
-        <UFormField :label="t('amendment.composer.replace')">
-          <UInput
-            v-model="replacement"
-            class="w-full"
-            :maxlength="500"
-            autocomplete="off"
-            :placeholder="t('amendment.composer.replacePlaceholder')"
-          />
-        </UFormField>
-      </div>
-      <p class="text-sm" aria-live="polite">
-        <template v-if="find.trim()">
-          {{
-            t(
-              "amendment.composer.occurrences",
-              { count: occurrences.count, blocks: occurrences.blocks },
-              occurrences.count,
-            )
-          }}
-        </template>
-        <span v-else class="text-muted">
-          {{ t("amendment.composer.globalHint") }}
+    <!-- Step: what the amendment does -->
+    <section class="flex flex-col gap-2" :aria-labelledby="`${formId}-what`">
+      <h3
+        :id="`${formId}-what`"
+        class="text-highlighted flex items-center gap-2 text-sm font-semibold"
+      >
+        <span :class="stepBadge" aria-hidden="true">
+          {{ stepNumber("what") }}
         </span>
-      </p>
-    </section>
-
-    <!-- Totality: return -->
-    <UAlert
-      v-else-if="mode === 'return'"
-      color="neutral"
-      variant="subtle"
-      icon="i-lucide-file-x"
-      :title="t('amendment.kinds.totality_return')"
-      :description="t('amendment.composer.returnNote')"
-    />
-
-    <!-- Totality: alternative text -->
-    <section v-else class="flex flex-col gap-2">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <p class="text-muted text-sm">
-          {{ t("amendment.composer.alternativeHint") }}
+        <span class="sr-only">
+          {{ t("amendment.composer.step", { n: stepNumber("what") }) }}
+        </span>
+        {{ t("amendment.composer.steps.what") }}
+      </h3>
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+        <p class="text-default text-sm font-medium">
+          {{ choiceLabel }}
+          <span
+            v-if="passageLabel && (mode === 'passage' || mode === 'delete')"
+            class="text-muted font-normal"
+          >
+            · {{ passageLabel }}
+          </span>
         </p>
         <UButton
+          color="primary"
+          variant="link"
+          size="sm"
+          class="px-0"
+          :aria-expanded="choosing"
+          :aria-controls="`${formId}-choices`"
+          :label="
+            choosing
+              ? t('amendment.composer.hideChoices')
+              : t('amendment.composer.changeChoice')
+          "
+          @click="choosing = !choosing"
+        />
+      </div>
+      <p class="text-muted text-sm">
+        {{ t(`amendment.composer.modeDescriptions.${mode}`) }}
+      </p>
+
+      <div
+        v-if="choosing"
+        :id="`${formId}-choices`"
+        class="flex flex-col gap-3 pt-1"
+      >
+        <URadioGroup
+          :model-value="mainChoice"
+          :items="mainModeItems"
+          variant="card"
+          size="sm"
+          :aria-labelledby="`${formId}-what`"
+          @update:model-value="setMode"
+        />
+        <p v-if="!hasSelection" class="text-muted text-xs">
+          {{ t("amendment.composer.selectFirst") }}
+        </p>
+        <UCollapsible v-model:open="advancedOpen">
+          <UButton
+            color="neutral"
+            variant="link"
+            size="sm"
+            class="px-0"
+            :icon="
+              advancedOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
+            "
+            :label="t('amendment.composer.advanced')"
+          />
+          <template #content>
+            <URadioGroup
+              class="mt-2"
+              :model-value="mode"
+              :items="totalityModeItems"
+              :legend="t('amendment.composer.totalityLegend')"
+              variant="card"
+              size="sm"
+              @update:model-value="setMode"
+            />
+          </template>
+        </UCollapsible>
+      </div>
+
+      <UAlert
+        v-if="mode === 'return'"
+        color="neutral"
+        variant="subtle"
+        icon="i-lucide-file-x"
+        :description="t('amendment.composer.returnNote')"
+      />
+    </section>
+
+    <!-- Step: write the change -->
+    <section
+      v-if="steps.includes('write')"
+      class="flex flex-col gap-2"
+      :aria-labelledby="`${formId}-write`"
+    >
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <h3
+          :id="`${formId}-write`"
+          class="text-highlighted flex items-center gap-2 text-sm font-semibold"
+        >
+          <span :class="stepBadge" aria-hidden="true">
+            {{ stepNumber("write") }}
+          </span>
+          <span class="sr-only">
+            {{ t("amendment.composer.step", { n: stepNumber("write") }) }}
+          </span>
+          {{ writeTitle }}
+        </h3>
+        <UButton
+          v-if="mode === 'alternative'"
           icon="i-lucide-copy"
           color="neutral"
           variant="outline"
@@ -681,32 +811,113 @@ onMounted(() => {
           @click="copyOriginal"
         />
       </div>
-      <ClientOnly>
-        <ContentBlockEditor
-          ref="editor"
-          v-model="alternativeBlocks"
-          :label="t('amendment.composer.alternativeLabel')"
-          :placeholder="t('amendment.composer.alternativePlaceholder')"
-        />
-        <template #fallback>
-          <USkeleton class="h-48 w-full" />
-        </template>
-      </ClientOnly>
+
+      <!-- Passage: edit in place -->
+      <template v-if="mode === 'passage'">
+        <ClientOnly>
+          <ContentBlockEditor
+            ref="editor"
+            v-model="passageBlocks"
+            compact
+            :label="t('amendment.composer.editorLabel')"
+            :placeholder="t('amendment.composer.editorPlaceholder')"
+          />
+          <template #fallback>
+            <USkeleton class="h-32 w-full" />
+          </template>
+        </ClientOnly>
+        <p class="text-dimmed text-xs">
+          {{
+            adding
+              ? t("amendment.composer.addHint")
+              : t("amendment.composer.editorHint")
+          }}
+        </p>
+      </template>
+
+      <!-- Global replacement -->
+      <template v-else-if="mode === 'global'">
+        <div class="grid gap-3 sm:grid-cols-2">
+          <UFormField :label="t('amendment.composer.find')" required>
+            <UInput
+              v-model="find"
+              class="w-full"
+              :maxlength="500"
+              autocomplete="off"
+              :placeholder="t('amendment.composer.findPlaceholder')"
+            />
+          </UFormField>
+          <UFormField :label="t('amendment.composer.replace')">
+            <UInput
+              v-model="replacement"
+              class="w-full"
+              :maxlength="500"
+              autocomplete="off"
+              :placeholder="t('amendment.composer.replacePlaceholder')"
+            />
+          </UFormField>
+        </div>
+        <p class="text-sm" aria-live="polite">
+          <template v-if="find.trim()">
+            {{
+              t(
+                "amendment.composer.occurrences",
+                { count: occurrences.count, blocks: occurrences.blocks },
+                occurrences.count,
+              )
+            }}
+          </template>
+          <span v-else class="text-muted">
+            {{ t("amendment.composer.globalHint") }}
+          </span>
+        </p>
+      </template>
+
+      <!-- Totality: alternative text -->
+      <template v-else-if="mode === 'alternative'">
+        <p class="text-muted text-sm">
+          {{ t("amendment.composer.alternativeHint") }}
+        </p>
+        <ClientOnly>
+          <ContentBlockEditor
+            ref="editor"
+            v-model="alternativeBlocks"
+            :label="t('amendment.composer.alternativeLabel')"
+            :placeholder="t('amendment.composer.alternativePlaceholder')"
+          />
+          <template #fallback>
+            <USkeleton class="h-48 w-full" />
+          </template>
+        </ClientOnly>
+      </template>
     </section>
 
-    <!-- Preview -->
+    <!-- Step: see the change -->
     <section
-      v-if="mode !== 'return'"
+      v-if="steps.includes('check')"
       class="flex flex-col gap-2"
+      :aria-labelledby="`${formId}-check`"
       aria-live="polite"
     >
-      <h3 class="text-highlighted text-sm font-semibold">
-        {{ t("amendment.composer.preview") }}
+      <h3
+        :id="`${formId}-check`"
+        class="text-highlighted flex items-center gap-2 text-sm font-semibold"
+      >
+        <span :class="stepBadge" aria-hidden="true">
+          {{ stepNumber("check") }}
+        </span>
+        <span class="sr-only">
+          {{ t("amendment.composer.step", { n: stepNumber("check") }) }}
+        </span>
+        {{ t("amendment.composer.steps.check") }}
       </h3>
+      <p v-if="mode === 'delete'" class="text-muted text-sm">
+        {{ t("amendment.composer.deleteHint") }}
+      </p>
       <div class="border-default rounded-md border p-3 sm:p-4">
         <ContentAmendmentDiff
           v-if="localIssues.length === 0 && ops.length > 0"
-          id="composer-preview"
+          :id="`${formId}-preview`"
           :base="base"
           :ops="ops"
           :context="1"
@@ -737,41 +948,13 @@ onMounted(() => {
       </template>
     </UAlert>
 
-    <URadioGroup
-      v-if="mode === 'passage' || mode === 'delete' || mode === 'global'"
-      v-model="kind"
-      :items="kindItems"
-      :legend="t('amendment.composer.kind')"
-      size="sm"
-    />
-
+    <!-- A moderator's account that presents nothing of its own must pick the member. -->
     <UFormField
-      :label="t('amendment.composer.justification')"
-      required
-      :error="
-        presentAttempted && justificationMissing
-          ? t('amendment.composer.justificationRequired')
-          : undefined
-      "
-    >
-      <UTextarea
-        ref="justificationInput"
-        v-model="justification"
-        :rows="4"
-        autoresize
-        :maxrows="14"
-        class="w-full"
-        :maxlength="20000"
-        :placeholder="t('amendment.composer.justificationPlaceholder')"
-      />
-    </UFormField>
-
-    <UFormField
-      v-if="canActOnBehalf"
+      v-if="canActOnBehalf && onBehalfRequired"
       :label="t('amendment.composer.onBehalf')"
-      :required="onBehalfRequired"
+      required
       :help="
-        onBehalfRequired && member
+        member
           ? t('amendment.composer.onBehalfOnlyHint')
           : t('amendment.composer.onBehalfHint')
       "
@@ -793,30 +976,115 @@ onMounted(() => {
       />
     </UFormField>
 
+    <!-- Step: why -->
     <UFormField
-      :label="t('amendment.composer.coAuthors')"
-      :help="t('amendment.composer.coAuthorsHint')"
+      required
+      :error="
+        presentAttempted && justificationMissing
+          ? t('amendment.composer.justificationRequired')
+          : undefined
+      "
+      :help="t('amendment.composer.justificationHelp')"
     >
-      <div
-        v-if="showPresenting && presentingMember"
-        class="mb-2 flex flex-wrap items-center gap-2"
-      >
-        <CommonMemberBadge :member="presentingMember" size="xs" show-name />
-        <span class="text-dimmed text-xs">
-          {{ t("amendment.detail.presenting") }}
+      <template #label>
+        <span
+          class="text-highlighted flex items-center gap-2 text-sm font-semibold"
+        >
+          <span :class="stepBadge" aria-hidden="true">
+            {{ stepNumber("why") }}
+          </span>
+          <span class="sr-only">
+            {{ t("amendment.composer.step", { n: stepNumber("why") }) }}
+          </span>
+          {{ t("amendment.composer.steps.why") }}
         </span>
-      </div>
-      <USelectMenu
-        v-model="coAuthorIds"
-        :items="coAuthorItems"
-        value-key="value"
-        multiple
+      </template>
+      <UTextarea
+        ref="justificationInput"
+        v-model="justification"
+        :rows="4"
+        autoresize
+        :maxrows="14"
         class="w-full"
-        :loading="membersStatus === 'pending'"
-        :placeholder="t('amendment.composer.coAuthorsPlaceholder')"
-        :search-input="{ placeholder: t('amendment.composer.memberSearch') }"
+        :maxlength="20000"
+        :placeholder="t('amendment.composer.justificationPlaceholder')"
       />
     </UFormField>
+
+    <!-- Only if needed: co-authors, formal amendment, on behalf of a member. -->
+    <UCollapsible v-model:open="optionsOpen">
+      <UButton
+        color="neutral"
+        variant="link"
+        size="sm"
+        class="px-0"
+        :icon="optionsOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+        :label="t('amendment.composer.moreOptions')"
+      />
+      <template #content>
+        <div
+          class="border-default mt-2 flex flex-col gap-4 rounded-md border p-3 sm:p-4"
+        >
+          <UFormField
+            :label="t('amendment.composer.coAuthors')"
+            :help="t('amendment.composer.coAuthorsHint')"
+          >
+            <div
+              v-if="showPresenting && presentingMember"
+              class="mb-2 flex flex-wrap items-center gap-2"
+            >
+              <CommonMemberBadge
+                :member="presentingMember"
+                size="xs"
+                show-name
+              />
+              <span class="text-dimmed text-xs">
+                {{ t("amendment.detail.presenting") }}
+              </span>
+            </div>
+            <USelectMenu
+              v-model="coAuthorIds"
+              :items="coAuthorItems"
+              value-key="value"
+              multiple
+              class="w-full"
+              :loading="membersStatus === 'pending'"
+              :placeholder="t('amendment.composer.coAuthorsPlaceholder')"
+              :search-input="{
+                placeholder: t('amendment.composer.memberSearch'),
+              }"
+            />
+          </UFormField>
+
+          <UCheckbox
+            v-if="canBeFormal"
+            :model-value="kind === 'formal'"
+            :label="t('amendment.composer.formal')"
+            :description="t('amendment.composer.formalDescription')"
+            @update:model-value="kind = $event === true ? 'formal' : 'partial'"
+          />
+
+          <UFormField
+            v-if="canActOnBehalf && !onBehalfRequired"
+            :label="t('amendment.composer.onBehalf')"
+            :help="t('amendment.composer.onBehalfHint')"
+          >
+            <USelectMenu
+              v-model="onBehalfOfMemberId"
+              :items="memberItems"
+              value-key="value"
+              class="w-full"
+              :loading="membersStatus === 'pending'"
+              :placeholder="t('amendment.composer.onBehalfPlaceholder')"
+              :search-input="{
+                placeholder: t('amendment.composer.memberSearch'),
+              }"
+              clear
+            />
+          </UFormField>
+        </div>
+      </template>
+    </UCollapsible>
 
     <footer
       class="border-default bg-default sticky bottom-0 -mx-1 flex flex-col gap-2 border-t px-1 pt-3 pb-1"
@@ -891,6 +1159,15 @@ onMounted(() => {
           </div>
         </template>
       </UAlert>
+
+      <p class="text-muted flex items-start gap-1.5 text-xs">
+        <UIcon
+          name="i-lucide-shield-check"
+          class="mt-px size-3.5 shrink-0"
+          aria-hidden="true"
+        />
+        {{ t("amendment.composer.reviewNotice") }}
+      </p>
 
       <div class="flex flex-wrap items-center gap-2">
         <UButton

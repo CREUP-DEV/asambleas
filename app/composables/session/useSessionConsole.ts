@@ -16,9 +16,11 @@ import type {
   LiveStateDto,
   OutcomeAction,
   PositionBody,
+  PublishAmendmentsBody,
   RelationBody,
   RelationDto,
   TransactionalBody,
+  ValidateAmendmentsBody,
   VoteInput,
 } from "~~/shared/types/api";
 import type { ConsolidationConflict } from "~~/shared/types/content";
@@ -35,18 +37,37 @@ import {
   useStaleDataNotice,
 } from "../fetch/lastGoodData";
 import { useAssemblyLive } from "../live/useAssemblyLive";
+import SessionConfirmDialog from "~/components/session/ConfirmDialog.vue";
 import {
   buildSessionAgendaRows,
   buildSessionQueue,
+  isSessionAwaitingValidation,
   isSessionOpen,
+  isSessionPendingAdmission,
+  isSessionPublishable,
+  isSessionUndecided,
+  isSessionUnpublished,
   sessionAssentPlan,
   sessionConsolidatedPreview,
   sessionErrorData,
   sessionErrorIds,
+  sessionFinalVoteBlockers,
   sessionLapseOffer,
+  sessionQueueCounts,
   sessionQueueOrder,
+  sessionValidationIds,
   type SessionAdmissionDecision,
 } from "./sessionModel";
+
+/** What the console's `confirm` shows (SessionConfirmDialog's props). */
+export interface SessionConfirmProps {
+  title: string;
+  description: string;
+  items?: string[];
+  confirmLabel: string;
+  confirmIcon?: string;
+  confirmColor?: "primary" | "warning" | "error";
+}
 
 export type SessionFinalVoteResult =
   | { ok: true; document: DocumentDto }
@@ -283,19 +304,42 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   const isVisible = (amendment: AmendmentDto) =>
     !hideDecided.value || amendment.status === "submitted";
   const queueOrder = computed(() => sessionQueueOrder(queue.value, isVisible));
+  const queueCounts = computed(() => sessionQueueCounts(amendments.value));
+  // Every submitted amendment, validated or not: it mirrors what the final
+  // vote still waits for.
   const undecided = computed(() =>
     amendments.value.filter((amendment) => amendment.status === "submitted"),
+  );
+  // The same, split by who has to act: the Mesa or the Secretaría.
+  const finalVoteBlockers = computed(() =>
+    sessionFinalVoteBlockers(amendments.value),
   );
   const preview = computed(() =>
     sessionConsolidatedPreview(base.value, amendments.value),
   );
   const assentPlan = computed(() => sessionAssentPlan(amendments.value));
 
-  /** The amendment the keyboard shortcuts act on. */
+  /**
+   * The amendment the keyboard shortcuts act on. One the Secretaría has not
+   * validated yet is never a target: the Mesa cannot decide it.
+   */
   const focusedId = ref<string | null>(null);
-  const focused = computed(() =>
-    focusedId.value ? (byId.value.get(focusedId.value) ?? null) : null,
-  );
+  const focused = computed(() => {
+    const amendment = focusedId.value
+      ? (byId.value.get(focusedId.value) ?? null)
+      : null;
+    return amendment && !isSessionAwaitingValidation(amendment)
+      ? amendment
+      : null;
+  });
+
+  /** Moves the page focus to an amendment's card, wherever it now sits. */
+  function focusCard(id: string): void {
+    if (!import.meta.client) return;
+    void nextTick(() => {
+      window.document.getElementById(`session-amendment-${id}`)?.focus();
+    });
+  }
 
   watch(documentId, () => {
     focusedId.value = null;
@@ -490,6 +534,29 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     });
   }
 
+  /**
+   * Puts an amendment under debate from its card. Debating shows it on the
+   * projection, so one that is validated but not public yet asks first:
+   * whoever can publish it makes it public and debates it in one go; the
+   * rest of the Mesa is warned that the room will see it.
+   */
+  async function requestDebate(amendment: AmendmentDto): Promise<boolean> {
+    if (!isSessionUnpublished(amendment)) return debateAmendment(amendment);
+    const publish = isSessionPublishable(amendment);
+    const confirmed = await confirm({
+      title: t("session.debateConfirm.title", { code: label(amendment.id) }),
+      description: t("session.debateConfirm.description"),
+      confirmLabel: publish
+        ? t("session.debateConfirm.publishAndDebate")
+        : t("session.debateConfirm.debateAnyway"),
+      confirmIcon: publish ? "i-lucide-eye" : "i-lucide-radio",
+      confirmColor: publish ? "primary" : "warning",
+    });
+    if (!confirmed) return false;
+    if (publish && !(await publishAmendments([amendment.id]))) return false;
+    return debateAmendment(byId.value.get(amendment.id) ?? amendment);
+  }
+
   function clearDebatedAmendment(): Promise<boolean> {
     return setLive({ amendmentId: null, voteId: null });
   }
@@ -539,8 +606,30 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     finalVoteAnnulDialog.open = false;
   });
 
+  /** A confirmation (SessionConfirmDialog) is on screen. */
+  const confirmOpen = ref(false);
+  const overlay = useOverlay();
+
+  /**
+   * Asks a yes-or-no question in a modal and resolves with the answer. One
+   * at a time: a second request while one is open answers no.
+   */
+  async function confirm(props: SessionConfirmProps): Promise<boolean> {
+    if (confirmOpen.value) return false;
+    confirmOpen.value = true;
+    try {
+      const modal = overlay.create(SessionConfirmDialog, {
+        destroyOnClose: true,
+      });
+      return (await modal.open(props)) === true;
+    } finally {
+      confirmOpen.value = false;
+    }
+  }
+
   const anyDialogOpen = computed(
     () =>
+      confirmOpen.value ||
       voteDialog.open ||
       relationDialog.open ||
       admissionDialog.open ||
@@ -695,11 +784,17 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     return runOutcome(amendment, { action: "vote", vote: input });
   }
 
+  // Withdrawing or lapsing an amendment the Secretaría has not validated
+  // yet is not the Mesa's call: the Secretaría validates it or sends it back.
   function withdraw(amendment: AmendmentDto) {
+    const fresh = byId.value.get(amendment.id) ?? amendment;
+    if (isSessionAwaitingValidation(fresh)) return Promise.resolve(null);
     return runOutcome(amendment, { action: "withdraw" });
   }
 
   function lapse(amendment: AmendmentDto) {
+    const fresh = byId.value.get(amendment.id) ?? amendment;
+    if (isSessionAwaitingValidation(fresh)) return Promise.resolve(null);
     return runOutcome(amendment, { action: "lapse" });
   }
 
@@ -713,7 +808,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     await track("lapse-many", async () => {
       for (const id of ids) {
         const amendment = byId.value.get(id);
-        if (!amendment || amendment.status !== "submitted") continue;
+        if (!amendment || !isSessionUndecided(amendment)) continue;
         const result = await runOutcome(
           amendment,
           { action: "lapse" },
@@ -864,6 +959,97 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         return false;
       }
       api.notifyError(error, "session.errors.admission");
+      onConflict(error);
+      return false;
+    }
+  }
+
+  // Validation by the Secretaría ----------------------------------------------------
+
+  /** Stores the list a validation returned, if the console still shows it. */
+  function storeAmendments(dto: DocumentAmendmentsDto, forDocument: string) {
+    if (documentId.value === forDocument) {
+      amendmentsDto.value = { ...dto, documentId: forDocument };
+    }
+  }
+
+  /**
+   * Validates presented amendments and makes them public at once (the Mesa
+   * is in session: there is no reason to keep them private). On-time ones
+   * are admitted with it; late ones move to the admission group. The page
+   * focus follows the first of them to its new place in the queue, since
+   * the button that was pressed leaves with its card.
+   */
+  async function validateAmendments(ids: string[]): Promise<boolean> {
+    const forDocument = documentId.value;
+    const targets = sessionValidationIds(amendments.value, ids);
+    if (!forDocument || targets.length === 0) return false;
+    const body: ValidateAmendmentsBody = {
+      amendmentIds: targets,
+      publish: true,
+    };
+    try {
+      const dto = await track(
+        targets.length === 1 ? targets[0]! : "validate",
+        () =>
+          api.send<DocumentAmendmentsDto>(documentApi("/amendments/validate"), {
+            body,
+          }),
+      );
+      storeAmendments(dto, forDocument);
+      focusCard(targets[0]!);
+      const count = targets.length;
+      const late = dto.amendments.filter(
+        (amendment) =>
+          targets.includes(amendment.id) &&
+          isSessionPendingAdmission(amendment),
+      ).length;
+      toast.add({
+        id: `session-validated-${targets.join("-")}`,
+        title: t("session.toasts.validated", { count }, count),
+        description:
+          late > 0
+            ? t("session.toasts.validatedLate", { count: late }, late)
+            : undefined,
+        color: "success",
+        icon: "i-lucide-badge-check",
+      });
+      return true;
+    } catch (error) {
+      api.notifyError(error, "session.errors.validate");
+      onConflict(error);
+      return false;
+    }
+  }
+
+  /** Makes validated amendments visible to the whole assembly. */
+  async function publishAmendments(ids: string[]): Promise<boolean> {
+    const forDocument = documentId.value;
+    const targets = ids.filter((id) => {
+      const amendment = byId.value.get(id);
+      return amendment ? isSessionPublishable(amendment) : false;
+    });
+    if (!forDocument || targets.length === 0) return false;
+    const body: PublishAmendmentsBody = { amendmentIds: targets };
+    try {
+      const dto = await track(
+        targets.length === 1 ? targets[0]! : "publish",
+        () =>
+          api.send<DocumentAmendmentsDto>(documentApi("/amendments/publish"), {
+            body,
+          }),
+      );
+      storeAmendments(dto, forDocument);
+      const count = targets.length;
+      toast.add({
+        id: `session-published-${targets.join("-")}`,
+        title: t("session.toasts.published", { count }, count),
+        color: "success",
+        icon: "i-lucide-eye",
+      });
+      return true;
+    } catch (error) {
+      api.notifyError(error, "session.errors.publish");
       onConflict(error);
       return false;
     }
@@ -1090,8 +1276,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     hideDecided,
     queue,
     queueOrder,
+    queueCounts,
     isVisible,
     undecided,
+    finalVoteBlockers,
     preview,
     assentPlan,
     focusedId,
@@ -1109,6 +1297,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     debateAgendaItem,
     debateDocument,
     debateAmendment,
+    requestDebate,
     clearDebatedAmendment,
     setMessage,
     // dialogs
@@ -1121,6 +1310,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     assentDialog,
     lapseDialog,
     anyDialogOpen,
+    confirm,
     openVote,
     openRelation,
     openAdmission,
@@ -1134,6 +1324,8 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     lapseMany,
     bulkAssent,
     decideAdmission,
+    validateAmendments,
+    publishAmendments,
     createRelation,
     deleteRelation,
     createTransactional,

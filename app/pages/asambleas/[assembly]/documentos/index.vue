@@ -1,14 +1,28 @@
 <script setup lang="ts">
-import { DOCUMENT_KINDS, DOCUMENT_STATUSES } from "~~/shared/constants/domain";
+import { DOCUMENT_KINDS } from "~~/shared/constants/domain";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { DocumentSummaryDto } from "~~/shared/types/api";
+import {
+  documentProgress,
+  PROGRESS_LABEL_ORDER,
+} from "~/composables/document/documentProgress";
 
 /**
  * Every document of the assembly in agenda order, with search and filters.
  * The agenda page shows the same documents inside the item tree; this list
  * is the quick way to find one and see where its amendments stand.
+ *
+ * Before publication each row says where the document stands and, for the
+ * user's own drafts, what to do next (with the internal deadline of the
+ * documents the Secretaría expects). "Solo los míos" narrows the list to the
+ * documents the user's member presents. The status filter offers the same
+ * names as the badges ("Enviado a Secretaría", "Corrección pedida", "Fuera
+ * de plazo"...), only those that some document has.
  */
 
 const { t } = useI18n();
+const me = useMe();
+const now = useAppNow();
 const current = useCurrentAssembly();
 const { assembly, sectionPath } = current;
 
@@ -35,14 +49,42 @@ const itemTitles = computed(
 const search = ref("");
 const status = ref<string>("all");
 const kind = ref<string>("all");
+const onlyMine = ref(false);
 
-const statusItems = computed(() => [
-  { label: t("documents.allStatuses"), value: "all" },
-  ...DOCUMENT_STATUSES.map((value) => ({
-    label: t(`common.status.document.${value}`),
-    value,
-  })),
-]);
+const memberId = computed(() => me.member.value?.id ?? null);
+const isMine = (document: DocumentSummaryDto) =>
+  memberId.value !== null && document.proponent?.id === memberId.value;
+const mineCount = computed(
+  () => (agenda.value?.documents ?? []).filter(isMine).length,
+);
+
+/**
+ * The badge each document shows (its progress label key), which is also
+ * what the status filter matches: one name per status everywhere. The
+ * label does not depend on who is looking.
+ */
+const statusKeys = computed(
+  () =>
+    new Map(
+      (agenda.value?.documents ?? []).map((document) => [
+        document.id,
+        documentProgress(document, "other", now.value).labelKey,
+      ]),
+    ),
+);
+
+const statusItems = computed(() => {
+  const present = new Set(statusKeys.value.values());
+  // Keep the chosen one even if a refresh emptied it.
+  if (status.value !== "all") present.add(status.value);
+  return [
+    { label: t("documents.allStatuses"), value: "all" },
+    ...PROGRESS_LABEL_ORDER.filter((key) => present.has(key)).map((key) => ({
+      label: t(key),
+      value: key,
+    })),
+  ];
+});
 const kindItems = computed(() => [
   { label: t("documents.allKinds"), value: "all" },
   ...DOCUMENT_KINDS.map((value) => ({
@@ -61,7 +103,11 @@ function normalized(value: string): string {
 const filtered = computed<DocumentSummaryDto[]>(() => {
   const query = normalized(search.value.trim());
   return (agenda.value?.documents ?? []).filter((document) => {
-    if (status.value !== "all" && document.status !== status.value) {
+    if (onlyMine.value && !isMine(document)) return false;
+    if (
+      status.value !== "all" &&
+      statusKeys.value.get(document.id) !== status.value
+    ) {
       return false;
     }
     if (kind.value !== "all" && document.kind !== kind.value) return false;
@@ -99,17 +145,34 @@ const filtering = computed(
   () =>
     search.value.trim() !== "" ||
     status.value !== "all" ||
-    kind.value !== "all",
+    kind.value !== "all" ||
+    onlyMine.value,
 );
 
 function resetFilters() {
   search.value = "";
   status.value = "all";
   kind.value = "all";
+  onlyMine.value = false;
 }
 
 function documentPath(document: DocumentSummaryDto): string {
   return sectionPath(`documentos/${encodeURIComponent(document.slug)}`);
+}
+
+/**
+ * The editor of the user's own draft (its presenters may edit it); managers
+ * open documents in the workspace like everyone else.
+ */
+function documentEditPath(document: DocumentSummaryDto): string | null {
+  if (
+    document.status !== "draft" ||
+    !isMine(document) ||
+    me.can(PERMISSION_KEYS.DOCUMENT_MANAGE)
+  ) {
+    return null;
+  }
+  return `${documentPath(document)}/editar`;
 }
 </script>
 
@@ -149,13 +212,21 @@ function documentPath(document: DocumentSummaryDto): string {
         v-model="status"
         :items="statusItems"
         :aria-label="t('documents.statusFilter')"
-        class="sm:w-48"
+        class="sm:w-56"
       />
       <USelect
         v-model="kind"
         :items="kindItems"
         :aria-label="t('documents.kindFilter')"
         class="sm:w-56"
+      />
+      <USwitch
+        v-if="mineCount > 0"
+        v-model="onlyMine"
+        size="sm"
+        :label="
+          t('documents.onlyMine', { member: me.member.value?.acronym ?? '' })
+        "
       />
       <UButton
         v-if="filtering"
@@ -241,6 +312,7 @@ function documentPath(document: DocumentSummaryDto): string {
           :key="document.id"
           :document="document"
           :to="documentPath(document)"
+          :edit-to="documentEditPath(document)"
         />
       </section>
     </div>

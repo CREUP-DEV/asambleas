@@ -1,14 +1,25 @@
 <script setup lang="ts">
-import type { DocumentSummaryDto } from "~~/shared/types/api";
+import type { DocumentSummaryDto, MeWorkDto } from "~~/shared/types/api";
 import { agendaItemAnchor } from "~/components/agenda/ItemNode.vue";
+import {
+  homeWorkForAssembly,
+  homeWorkReviewPending,
+  homeWorkTasks,
+  homeWorkUpdates,
+} from "~/components/home/-work";
 
 /**
- * Assembly overview: key figures, the calendar timeline with the countdown
- * to the next milestone and the calendar warnings, an agenda summary with
- * documents and amendment counts, and quick links to every section.
+ * Assembly overview: what the signed-in user has to do here and, for the
+ * Secretaría, what waits for its review; then a line of key figures, an
+ * agenda summary with documents and amendment counts, and the calendar
+ * timeline with the countdown to the next milestone and its warnings.
+ * Anyone acting for a member always sees their tasks card, even with
+ * nothing in it, so they know where requests will show up.
  */
 
 const { t } = useI18n();
+const localePath = useLocalePath();
+const { member } = useMe();
 const current = useCurrentAssembly();
 const { assembly, sectionPath } = current;
 
@@ -25,6 +36,60 @@ const {
   error: agendaError,
   refresh: refreshAgenda,
 } = await useAssemblyAgenda();
+
+// Your work here ----------------------------------------------------------
+
+// Shared with the home page; not awaited, so the overview never waits for
+// it, and a failure only leaves these summaries out.
+const { data: work, refresh: refreshWork } = useFetch<MeWorkDto>(
+  "/api/me/work",
+  { key: "me-work", lazy: true },
+);
+
+current.onLive((events) => {
+  if (
+    events.some(
+      (event) =>
+        event.type === "poll" ||
+        event.entityType === "document" ||
+        event.entityType === "amendment",
+    )
+  ) {
+    void refreshWork();
+  }
+});
+
+const now = useAppNow();
+
+const assemblyWork = computed(() =>
+  work.value && assembly.value
+    ? homeWorkForAssembly(work.value, assembly.value.id)
+    : null,
+);
+const myTasks = computed(() =>
+  assemblyWork.value ? homeWorkTasks(assemblyWork.value, now.value) : [],
+);
+const myUpdates = computed(() =>
+  assemblyWork.value ? homeWorkUpdates(assemblyWork.value) : [],
+);
+const pendingReview = computed(
+  () =>
+    (assemblyWork.value
+      ? homeWorkReviewPending(assemblyWork.value.review)
+      : [])[0] ?? null,
+);
+
+/** Tasks shown here; the rest are on the home page. */
+const TASK_LIMIT = 3;
+const shownTasks = computed(() => myTasks.value.slice(0, TASK_LIMIT));
+/** Something presented here, whether or not there is anything to do. */
+const hasWork = computed(
+  () => myTasks.value.length > 0 || myUpdates.value.length > 0,
+);
+// Once the work list is in: always for a member, otherwise only with work.
+const showMine = computed(
+  () => Boolean(assemblyWork.value) && (Boolean(member.value) || hasWork.value),
+);
 
 const tree = computed(() => buildAgendaTree(agenda.value?.items ?? []));
 const rows = computed(() => flattenAgendaTree(tree.value));
@@ -80,72 +145,46 @@ const stats = computed(() => {
   };
 });
 
-const statCards = computed(() => [
-  {
-    key: "items",
-    icon: "i-lucide-list-tree",
-    value: stats.value.items,
-    label: t("assembly.overview.stats.items", stats.value.items),
-  },
-  {
-    key: "documents",
-    icon: "i-lucide-files",
-    value: stats.value.documents,
-    label: t("assembly.overview.stats.documents", stats.value.documents),
-    hint: t(
-      "assembly.overview.stats.published",
-      { count: stats.value.published },
-      stats.value.published,
-    ),
-  },
-  {
-    key: "amendments",
-    icon: "i-lucide-message-square-diff",
-    value: stats.value.amendments,
-    label: t("assembly.overview.stats.amendments", stats.value.amendments),
-  },
-  {
-    key: "windows",
-    icon: "i-lucide-pencil-line",
-    value: stats.value.openWindows,
-    label: t("assembly.overview.stats.openWindows", stats.value.openWindows),
-  },
-]);
+/** One quiet line of figures; open amendment windows only when there are some. */
+const figures = computed(() =>
+  [
+    {
+      key: "items",
+      value: stats.value.items,
+      label: t("assembly.overview.stats.items", stats.value.items),
+      hint: null as string | null,
+    },
+    {
+      key: "documents",
+      value: stats.value.documents,
+      label: t("assembly.overview.stats.documents", stats.value.documents),
+      hint:
+        stats.value.documents > 0
+          ? t(
+              "assembly.overview.stats.published",
+              { count: stats.value.published },
+              stats.value.published,
+            )
+          : null,
+    },
+    {
+      key: "amendments",
+      value: stats.value.amendments,
+      label: t("assembly.overview.stats.amendments", stats.value.amendments),
+      hint: null,
+    },
+    {
+      key: "windows",
+      value: stats.value.openWindows,
+      label: t("assembly.overview.stats.openWindows", stats.value.openWindows),
+      hint: null,
+    },
+  ].filter((figure) => figure.key !== "windows" || figure.value > 0),
+);
 
 const warnedKeys = computed(() =>
   (assembly.value?.calendarWarnings ?? []).flatMap((warning) => warning.keys),
 );
-
-const quickLinks = computed(() => {
-  const value = assembly.value;
-  if (!value) return [];
-  return [
-    {
-      key: "agenda",
-      icon: "i-lucide-list-tree",
-      to: sectionPath("orden-del-dia"),
-      show: true,
-    },
-    {
-      key: "convocation",
-      icon: "i-lucide-scroll-text",
-      to: sectionPath("convocatoria"),
-      show: true,
-    },
-    {
-      key: "calendar",
-      icon: "i-lucide-calendar-clock",
-      to: sectionPath("calendario"),
-      show: value.can.manage,
-    },
-    {
-      key: "settings",
-      icon: "i-lucide-settings",
-      to: sectionPath("ajustes"),
-      show: value.can.manage,
-    },
-  ].filter((link) => link.show);
-});
 </script>
 
 <template>
@@ -158,36 +197,117 @@ const quickLinks = computed(() => {
       :edit-to="sectionPath('calendario')"
     />
 
-    <!-- Key figures -->
+    <!-- Your part in this assembly -->
+    <div
+      v-if="pendingReview || showMine"
+      class="grid gap-4"
+      :class="pendingReview && showMine ? 'lg:grid-cols-2' : ''"
+    >
+      <HomeReviewCard
+        v-if="pendingReview"
+        :review="pendingReview"
+        :title="t('assembly.overview.review.title')"
+        :heading-level="3"
+      />
+
+      <UCard
+        v-if="showMine"
+        as="section"
+        aria-labelledby="overview-tasks-title"
+        :ui="{
+          body: 'p-4 sm:p-5',
+          header: 'p-4 sm:px-5',
+          footer: 'p-4 sm:px-5',
+        }"
+      >
+        <template #header>
+          <h3
+            id="overview-tasks-title"
+            class="text-highlighted flex items-center gap-2 font-semibold"
+          >
+            <UIcon
+              name="i-lucide-list-todo"
+              class="text-primary size-5 shrink-0"
+              aria-hidden="true"
+            />
+            {{ t("assembly.overview.tasks.title") }}
+          </h3>
+        </template>
+
+        <HomeTaskList
+          v-if="shownTasks.length > 0"
+          :tasks="shownTasks"
+          :show-assembly="false"
+          compact
+          :primary="!pendingReview"
+        />
+        <p
+          v-else-if="hasWork"
+          class="text-default flex items-start gap-2 text-sm"
+        >
+          <UIcon
+            name="i-lucide-circle-check-big"
+            class="text-success mt-0.5 size-4 shrink-0"
+            aria-hidden="true"
+          />
+          {{ t("assembly.overview.tasks.upToDate") }}
+        </p>
+        <p v-else class="text-muted flex items-start gap-2 text-sm">
+          <UIcon
+            name="i-lucide-inbox"
+            class="mt-0.5 size-4 shrink-0"
+            aria-hidden="true"
+          />
+          {{ t("assembly.overview.tasks.empty") }}
+        </p>
+
+        <template v-if="hasWork" #footer>
+          <UButton
+            variant="link"
+            color="neutral"
+            trailing-icon="i-lucide-arrow-right"
+            class="px-0"
+            :to="localePath('/')"
+            :label="
+              myTasks.length > shownTasks.length
+                ? t(
+                    'assembly.overview.tasks.more',
+                    { count: myTasks.length - shownTasks.length },
+                    myTasks.length - shownTasks.length,
+                  )
+                : t('assembly.overview.tasks.all')
+            "
+          />
+        </template>
+      </UCard>
+    </div>
+
+    <!-- Key figures: one quiet line -->
     <section :aria-label="t('assembly.overview.statsLabel')">
-      <ul class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <li v-for="card in statCards" :key="card.key">
-          <UCard :ui="{ body: 'p-3 sm:p-4' }" class="h-full">
-            <div class="flex items-start gap-3">
-              <span
-                class="bg-primary/10 text-primary flex size-9 shrink-0 items-center justify-center rounded-md"
-                aria-hidden="true"
-              >
-                <UIcon :name="card.icon" class="size-5" />
-              </span>
-              <div class="min-w-0">
-                <USkeleton
-                  v-if="agendaPending && !agenda"
-                  class="mb-1 h-7 w-10"
-                />
-                <p
-                  v-else
-                  class="text-highlighted text-2xl leading-7 font-bold tabular-nums"
-                >
-                  {{ card.value }}
-                </p>
-                <p class="text-muted text-sm">{{ card.label }}</p>
-                <p v-if="card.hint" class="text-dimmed text-xs">
-                  {{ card.hint }}
-                </p>
-              </div>
-            </div>
-          </UCard>
+      <div
+        v-if="agendaPending && !agenda"
+        class="flex flex-wrap gap-x-6 gap-y-2"
+        role="status"
+      >
+        <span class="sr-only">{{ t("assembly.overview.loading") }}</span>
+        <USkeleton v-for="index in 3" :key="index" class="h-6 w-36" />
+      </div>
+      <ul
+        v-else
+        class="text-muted flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm"
+      >
+        <li
+          v-for="figure in figures"
+          :key="figure.key"
+          class="flex items-baseline gap-1.5"
+        >
+          <span class="text-highlighted text-lg font-semibold tabular-nums">
+            {{ figure.value }}
+          </span>
+          <span>{{ figure.label }}</span>
+          <span v-if="figure.hint" class="text-dimmed"
+            >({{ figure.hint }})</span
+          >
         </li>
       </ul>
     </section>
@@ -216,12 +336,8 @@ const quickLinks = computed(() => {
           </div>
         </template>
 
-        <div
-          v-if="agendaPending && !agenda"
-          class="space-y-2"
-          aria-busy="true"
-          :aria-label="t('agenda.loading')"
-        >
+        <div v-if="agendaPending && !agenda" class="space-y-2" role="status">
+          <span class="sr-only">{{ t("agenda.loading") }}</span>
           <USkeleton v-for="index in 5" :key="index" class="h-8 w-full" />
         </div>
         <UAlert
@@ -354,21 +470,5 @@ const quickLinks = computed(() => {
         </template>
       </UCard>
     </div>
-
-    <!-- Quick links -->
-    <nav :aria-label="t('assembly.overview.quickLinks')">
-      <ul class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <li v-for="link in quickLinks" :key="link.key">
-          <UPageCard
-            :to="link.to"
-            :icon="link.icon"
-            :title="t(`assembly.overview.links.${link.key}.title`)"
-            :description="t(`assembly.overview.links.${link.key}.description`)"
-            variant="subtle"
-            class="h-full"
-          />
-        </li>
-      </ul>
-    </nav>
   </div>
 </template>

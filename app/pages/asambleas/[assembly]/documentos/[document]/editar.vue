@@ -6,13 +6,25 @@ import { formatDateTime } from "~/utils/format";
 /**
  * Authoring and management of a document (inside the assembly hub).
  *
- * Presenters use it while their draft is editable (`can.edit`): metadata,
- * the working draft (or the PDF of a `file` document), DOCX import and
- * "Presentar". Secretaría (`can.manage`) keeps it at every stage: before
- * publication it also publishes; once the text is frozen the editor is
- * hidden and the metadata form (window override, majority, voted...) and the
- * status actions (withdraw, postpone, publish again, delete before
- * publication) remain. Anyone else is sent to the document workspace.
+ * Presenters use it while their draft is editable (`can.edit`), as a short
+ * guided page in three numbered steps: 1) what it is (metadata), 2) the text
+ * (upload a Word file, write it, or upload the PDF of a `file` document) and
+ * 3) "Enviar a Secretaría" ("Volver a enviar" after a correction). A banner
+ * says where the draft stands: expected by a date, or sent back with the
+ * Secretaría's correction note. Sending saves the data of step 1 and the
+ * text first, so the presenter never has to press "Guardar" before it; while
+ * the text is still missing the send button stays secondary, so the Word
+ * upload is the one main action.
+ *
+ * Secretaría (`can.manage`) keeps it at every stage: before publication it
+ * validates and publishes a presented document or asks for a correction
+ * (with a note, back to draft). Publishing is the header's main action only
+ * when there is something to validate or publish again, or the Secretaría
+ * prepares the text itself; a draft still in a member's hands keeps its
+ * "Publicar ahora" in the "Más" menu. Once the text is frozen the editor is hidden
+ * and the metadata form (advanced options folded) and the status actions
+ * (withdraw, postpone, publish again, delete before publication) remain.
+ * Anyone else is sent to the document workspace.
  *
  * A failed refresh never unmounts the editor: useDocument keeps the last
  * document loaded and the page keeps the last assembly, and the failure is
@@ -24,6 +36,8 @@ const { t, locale } = useI18n();
 const toast = useToast();
 const { send, notifyError, isConflict } = useApi();
 const { assembly: hubAssembly, sectionPath } = useCurrentAssembly();
+const me = useMe();
+const now = useAppNow();
 
 // Last assembly loaded: a failed hub refresh must not unmount the editor.
 const lastAssembly = shallowRef<AssemblyDto | null>(hubAssembly.value);
@@ -42,6 +56,10 @@ const { document, pending, error, stale, refresh } = await useDocument(
 
 /** Secretaría-level management (document:manage) at any stage. */
 const manager = computed(() => Boolean(document.value?.can.manage));
+/** A presenter preparing their draft: the guided, numbered layout. */
+const guided = computed(
+  () => Boolean(document.value?.can.edit) && !manager.value,
+);
 /** The working text (or the draft's PDF) can still change. */
 const textEditable = computed(() => Boolean(document.value?.can.edit));
 /** Who may stay on this page; undefined until the document loads. */
@@ -125,6 +143,12 @@ interface DraftEditorHandle {
 }
 const draftEditor = useTemplateRef<DraftEditorHandle>("draftEditor");
 
+interface MetadataFormHandle {
+  check: () => Promise<boolean>;
+  save: () => Promise<boolean>;
+}
+const metadataForm = useTemplateRef<MetadataFormHandle>("metadataForm");
+
 const textDirty = ref(false);
 const metadataDirty = ref(false);
 const draftBlockCount = ref(0);
@@ -183,6 +207,38 @@ const canPublish = computed(() => Boolean(document.value?.can.publish));
 /** Publishing again a withdrawn or postponed document. */
 const republish = computed(() => document.value?.publishedAt != null);
 
+/** Publishing a document a presenter sent: the Secretaría validates it. */
+const validating = computed(
+  () => document.value?.status === "submitted" && !republish.value,
+);
+const canAskCorrection = computed(
+  () => manager.value && document.value?.status === "submitted",
+);
+
+/**
+ * Publishing as the header's primary action: validating what a presenter
+ * sent, publishing again, or a text with no presenter (or the manager's own
+ * member). Otherwise the draft is still with a member, and "Publicar ahora"
+ * waits in the "Más" menu.
+ */
+const publishPrimary = computed(() => {
+  const current = document.value;
+  if (!current || !canPublish.value) return false;
+  if (validating.value || republish.value) return true;
+  const proponentId = current.proponent?.id ?? null;
+  return proponentId === null || proponentId === me.member.value?.id;
+});
+
+/** The Secretaría asked for a correction: sending again. */
+const resending = computed(() =>
+  Boolean(document.value?.correctionRequestedAt),
+);
+
+/** Step 2 is still empty: no text (structured) or no PDF (file). */
+const contentMissing = computed(() =>
+  isStructured.value ? draftBlockCount.value === 0 : !document.value?.fileUrl,
+);
+
 const dialogMode = ref<"submit" | "publish">("publish");
 const dialogOpen = ref(false);
 const acting = ref(false);
@@ -191,13 +247,22 @@ const managing = ref(false);
 const busy = computed(() => acting.value || managing.value);
 const actionStatus = ref("");
 
-/** i18n namespace of the dialog action ("submit", "publish", "republish"). */
+/**
+ * i18n namespace of the dialog action ("submit", "publish", "validate",
+ * "republish").
+ */
 function actionKey(mode: "submit" | "publish"): string {
-  return mode === "publish" && republish.value ? "republish" : mode;
+  if (mode === "submit") return mode;
+  if (republish.value) return "republish";
+  return validating.value ? "validate" : "publish";
 }
 
-function openDialog(mode: "submit" | "publish"): void {
+async function openDialog(mode: "submit" | "publish"): Promise<void> {
   draftEditor.value?.flush();
+  // Invalid data: point at the field instead of opening the dialog (they
+  // are saved on confirm, and a modal would keep the focus away from it).
+  const form = metadataForm.value;
+  if (metadataDirty.value && form && !(await form.check())) return;
   dialogMode.value = mode;
   dialogOpen.value = true;
 }
@@ -210,6 +275,17 @@ async function confirmAction(): Promise<void> {
   acting.value = true;
   actionStatus.value = t(`document.${key}.working`);
   try {
+    // The data first: its PUT locks on updatedAt, the text on its hash.
+    if (metadataDirty.value && metadataForm.value) {
+      const saved = await metadataForm.value.save();
+      if (!saved) {
+        // The form shows why (field errors or a conflict notice).
+        actionStatus.value = "";
+        dialogOpen.value = false;
+        return;
+      }
+      await nextTick();
+    }
     if (isStructured.value && draftEditor.value) {
       const saved = await draftEditor.value.save();
       // Never freeze or submit an older copy than the one on screen.
@@ -249,13 +325,46 @@ async function confirmAction(): Promise<void> {
   }
 }
 
-// Deadline for members --------------------------------------------------------
+// Correction --------------------------------------------------------------
 
-const documentsClose = computed(
-  () =>
-    assembly.value?.milestones.find((m) => m.key === "documents_close")?.at ??
-    null,
+const correctionOpen = ref(false);
+
+// Deadlines for presenters ----------------------------------------------------
+
+// Shared with the hub's agenda pages and the metadata form (same key).
+const { data: agenda } = useAssemblyAgenda();
+
+/**
+ * Not bound by the calendar's deadline for presenting documents (same rule
+ * as the server): a document the Secretaría expects, because it set an
+ * internal deadline (`dueAt`, which governs instead) or put it under an
+ * item that takes no submissions, and a draft sent back for a correction,
+ * which reopens the presentation.
+ */
+const deadlineExempt = computed(() => {
+  const current = document.value;
+  if (!current) return false;
+  if (current.dueAt || resending.value) return true;
+  const item = agenda.value?.items.find(
+    (candidate) => candidate.id === current.agendaItemId,
+  );
+  return item?.acceptsSubmissions === false;
+});
+
+/** The calendar's deadline for presenting documents, when it applies. */
+const documentsClose = computed(() =>
+  deadlineExempt.value
+    ? null
+    : (assembly.value?.milestones.find((m) => m.key === "documents_close")
+        ?.at ?? null),
 );
+
+/** The internal deadline, unless a correction made a passed one moot. */
+const shownDueAt = computed(() => {
+  const due = document.value?.dueAt ?? null;
+  if (!due || !resending.value) return due;
+  return new Date(due).getTime() > now.value ? due : null;
+});
 
 const loadErrorStatus = computed(() => errorStatus(error.value));
 
@@ -353,7 +462,11 @@ async function onDeleted(): Promise<void> {
     </div>
 
     <template v-else>
-      <DocumentHeader :document="document" :assembly="assembly">
+      <DocumentHeader
+        :document="document"
+        :assembly="assembly"
+        :progress="false"
+      >
         <UButton
           :to="workspacePath"
           color="neutral"
@@ -361,23 +474,34 @@ async function onDeleted(): Promise<void> {
           icon="i-lucide-arrow-left"
           :label="t('document.authoring.backToWorkspace')"
         />
+        <!-- Presenters send from step 3; managers decide here -->
         <UButton
-          v-if="canSubmit"
-          icon="i-lucide-send"
-          :label="t('document.submit.button')"
-          :disabled="busy"
-          @click="openDialog('submit')"
-        />
-        <UButton
-          v-if="canPublish"
-          :icon="republish ? 'i-lucide-rotate-ccw' : 'i-lucide-megaphone'"
+          v-if="publishPrimary"
+          :icon="
+            republish
+              ? 'i-lucide-rotate-ccw'
+              : validating
+                ? 'i-lucide-badge-check'
+                : 'i-lucide-megaphone'
+          "
           :label="
             republish
               ? t('document.republish.button')
-              : t('document.publish.button')
+              : validating
+                ? t('document.validate.button')
+                : t('document.publish.button')
           "
           :disabled="busy"
           @click="openDialog('publish')"
+        />
+        <UButton
+          v-if="canAskCorrection"
+          color="warning"
+          variant="outline"
+          icon="i-lucide-undo-2"
+          :label="t('document.correction.button')"
+          :disabled="busy"
+          @click="correctionOpen = true"
         />
         <DocumentManageActions
           v-if="manager"
@@ -385,9 +509,11 @@ async function onDeleted(): Promise<void> {
           :document="document"
           :document-api="documentApi"
           :disabled="acting"
+          :publishable="canPublish && !publishPrimary"
           @updated="storeDocument"
           @stale="refetch"
           @deleted="onDeleted"
+          @publish="openDialog('publish')"
         />
       </DocumentHeader>
 
@@ -417,22 +543,13 @@ async function onDeleted(): Promise<void> {
         role="alert"
       />
 
-      <UAlert
-        v-if="document.status === 'submitted'"
-        color="info"
-        variant="subtle"
-        icon="i-lucide-inbox"
-        :title="t('document.authoring.submittedTitle')"
-        :description="
-          document.submittedAt
-            ? t('document.authoring.submittedDescription', {
-                date: formatDateTime(document.submittedAt, { locale }),
-              })
-            : t('document.authoring.submittedNoDate')
-        "
+      <!-- Where it stands and what comes next (draft, sent, correction) -->
+      <DocumentProgressBanner
+        :document="document"
+        :audience="guided ? 'presenter' : 'manager'"
       />
       <UAlert
-        v-else-if="
+        v-if="
           document.status === 'withdrawn' || document.status === 'postponed'
         "
         color="neutral"
@@ -444,7 +561,167 @@ async function onDeleted(): Promise<void> {
         "
       />
 
+      <!-- Presenters: three numbered steps -->
+      <div v-if="guided" class="max-w-4xl space-y-8">
+        <section class="space-y-3" aria-labelledby="document-step-what">
+          <h3
+            id="document-step-what"
+            class="text-highlighted flex items-center gap-2 text-base font-semibold"
+          >
+            <span
+              class="bg-primary text-inverted inline-flex size-6 items-center justify-center rounded-full text-xs tabular-nums"
+              aria-hidden="true"
+              >1</span
+            >
+            {{ t("document.authoring.steps.what") }}
+          </h3>
+          <UCard :ui="{ body: 'p-4 sm:p-5' }">
+            <DocumentMetadataForm
+              ref="metadataForm"
+              v-model:dirty="metadataDirty"
+              :document="document"
+              :assembly="assembly"
+              secondary-save
+              @saved="storeDocument"
+              @stale="refetch"
+            />
+          </UCard>
+        </section>
+
+        <section class="space-y-3" aria-labelledby="document-step-text">
+          <h3
+            id="document-step-text"
+            class="text-highlighted flex items-center gap-2 text-base font-semibold"
+          >
+            <span
+              class="bg-primary text-inverted inline-flex size-6 items-center justify-center rounded-full text-xs tabular-nums"
+              aria-hidden="true"
+              >2</span
+            >
+            {{
+              isStructured
+                ? t("document.authoring.steps.text")
+                : t("document.authoring.steps.pdf")
+            }}
+          </h3>
+          <DocumentDraftEditor
+            v-if="isStructured"
+            ref="draftEditor"
+            v-model:dirty="textDirty"
+            v-model:block-count="draftBlockCount"
+            :document="document"
+            :document-api="documentApi"
+            :disabled="busy"
+            labelledby="document-step-text"
+            @saved="storeDocument"
+            @stale="refetch"
+          />
+          <DocumentFileUpload
+            v-else
+            :document="document"
+            :document-api="documentApi"
+            :disabled="busy"
+            :replaceable="fileReplaceable"
+            @uploaded="storeDocument"
+            @stale="refetch"
+          />
+        </section>
+
+        <section class="space-y-3" aria-labelledby="document-step-send">
+          <h3
+            id="document-step-send"
+            class="text-highlighted flex items-center gap-2 text-base font-semibold"
+          >
+            <span
+              class="bg-primary text-inverted inline-flex size-6 items-center justify-center rounded-full text-xs tabular-nums"
+              aria-hidden="true"
+              >3</span
+            >
+            {{ t("document.authoring.steps.send") }}
+          </h3>
+          <UCard :ui="{ body: 'p-4 sm:p-5 space-y-4' }">
+            <p class="text-default text-sm">
+              {{ t("document.authoring.sendHelp") }}
+            </p>
+            <dl
+              v-if="shownDueAt || documentsClose"
+              class="grid gap-3 text-sm sm:grid-cols-2"
+            >
+              <div v-if="shownDueAt">
+                <dt class="text-muted text-xs font-medium">
+                  {{ t("document.authoring.dueAt") }}
+                </dt>
+                <dd class="text-highlighted font-medium">
+                  {{ formatDateTime(shownDueAt, { style: "long", locale }) }}
+                </dd>
+                <dd>
+                  <CommonCountdown
+                    :to="shownDueAt"
+                    :urgent-hours="48"
+                    icon="i-lucide-hourglass"
+                  />
+                </dd>
+              </div>
+              <div v-if="documentsClose">
+                <dt class="text-muted text-xs font-medium">
+                  {{ t("document.submit.deadline") }}
+                </dt>
+                <dd class="text-highlighted font-medium">
+                  {{
+                    formatDateTime(documentsClose, { style: "long", locale })
+                  }}
+                </dd>
+                <dd>
+                  <CommonCountdown
+                    :to="documentsClose"
+                    :urgent-hours="48"
+                    icon="i-lucide-hourglass"
+                  />
+                </dd>
+              </div>
+            </dl>
+            <template v-if="canSubmit">
+              <!-- Until step 2 has text, the Word upload is the main action -->
+              <p
+                v-if="contentMissing"
+                id="document-send-hint"
+                class="text-muted flex items-start gap-2 text-sm"
+              >
+                <UIcon
+                  name="i-lucide-arrow-up"
+                  class="mt-0.5 size-4 shrink-0"
+                  aria-hidden="true"
+                />
+                {{
+                  isStructured
+                    ? t("document.authoring.sendNeedsText")
+                    : t("document.authoring.sendNeedsPdf")
+                }}
+              </p>
+              <UButton
+                size="lg"
+                icon="i-lucide-send"
+                :color="contentMissing ? 'neutral' : 'primary'"
+                :variant="contentMissing ? 'outline' : 'solid'"
+                :label="
+                  resending
+                    ? t('document.submit.resend')
+                    : t('document.submit.button')
+                "
+                :disabled="busy"
+                :aria-describedby="
+                  contentMissing ? 'document-send-hint' : undefined
+                "
+                @click="openDialog('submit')"
+              />
+            </template>
+          </UCard>
+        </section>
+      </div>
+
+      <!-- Secretaría: text and data side by side -->
       <div
+        v-else
         class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]"
       >
         <div class="min-w-0">
@@ -526,34 +803,19 @@ async function onDeleted(): Promise<void> {
         </div>
 
         <aside class="min-w-0 space-y-4">
-          <UCard
-            v-if="canSubmit && documentsClose"
-            :ui="{ body: 'p-4 sm:p-4' }"
-          >
-            <p class="text-muted text-xs font-medium tracking-wide uppercase">
-              {{ t("document.submit.deadline") }}
-            </p>
-            <p class="text-highlighted text-sm font-medium">
-              {{ formatDateTime(documentsClose, { style: "long", locale }) }}
-            </p>
-            <CommonCountdown
-              :to="documentsClose"
-              :urgent-hours="48"
-              icon="i-lucide-hourglass"
-              class="text-sm"
-            />
-          </UCard>
-
           <UCard :ui="{ body: 'p-4 sm:p-5' }">
             <template #header>
               <h3 class="text-highlighted text-base font-semibold">
                 {{ t("document.metadata.heading") }}
               </h3>
             </template>
+            <!-- Publishing saves the data first: then it is the main action -->
             <DocumentMetadataForm
+              ref="metadataForm"
               v-model:dirty="metadataDirty"
               :document="document"
               :assembly="assembly"
+              :secondary-save="publishPrimary"
               @saved="storeDocument"
               @stale="refetch"
             />
@@ -570,8 +832,18 @@ async function onDeleted(): Promise<void> {
         :text-dirty="textDirty"
         :metadata-dirty="metadataDirty"
         :manager="manager"
+        :deadline-exempt="deadlineExempt"
         :busy="acting"
         @confirm="confirmAction"
+      />
+
+      <DocumentCorrectionDialog
+        v-if="manager"
+        v-model:open="correctionOpen"
+        :document="document"
+        :document-api="documentApi"
+        @corrected="storeDocument"
+        @stale="refetch"
       />
     </template>
   </div>

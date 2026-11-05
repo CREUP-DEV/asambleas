@@ -1,5 +1,16 @@
 import { createError, getRouterParam, readBody, type H3Event } from "h3";
-import { and, asc, eq, inArray, ne, or, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import type { z } from "zod/v4";
 import { db } from "../../db";
 import {
@@ -19,16 +30,15 @@ import {
   type AmendmentMeta,
 } from "../../db/schema";
 import { cuid } from "../../db/schema/common";
-import {
-  DEFAULT_ASSEMBLY_SETTINGS,
-  type AcceptanceDecision,
-  type AcceptanceRole,
-  type AdmissionStatus,
-  type AmendmentKind,
-  type AmendmentStatus,
-  type AssemblySettings,
-  type Majority,
-  type RelationKind,
+import type {
+  AcceptanceDecision,
+  AcceptanceRole,
+  AdmissionStatus,
+  AmendmentKind,
+  AmendmentStatus,
+  AssemblySettings,
+  Majority,
+  RelationKind,
 } from "../../../shared/constants/domain";
 import { PERMISSION_KEYS } from "../../../shared/constants/permissions";
 import type {
@@ -41,14 +51,17 @@ import type {
   AmendmentAdmissionDto,
   AmendmentOutcomeDto,
   ApprovalWarnings,
+  CorrectionBody,
   DocumentAmendmentsDto,
   EventDto,
   MemberRef,
   OutcomeBody,
   PositionBody,
+  PublishAmendmentsBody,
   RelationBody,
   RelationDto,
   TransactionalBody,
+  ValidateAmendmentsBody,
   VoteDto,
   VoteInput,
 } from "../../../shared/types/api";
@@ -57,6 +70,7 @@ import {
   amendmentWindow,
   isLateSubmission,
   type AmendmentWindow,
+  type Milestones,
 } from "../../../shared/utils/calendar";
 import {
   changeKinds,
@@ -80,9 +94,11 @@ import {
   canModerate,
   canReviewAmendments,
   requireActor,
+  UNLINKED_ACCOUNT_MESSAGE,
   type Actor,
 } from "./actor";
 import {
+  assemblySettings,
   clearLiveVote,
   loadMilestones,
   pointLiveVote,
@@ -95,10 +111,22 @@ import {
   resolveDocument,
 } from "./resolvers";
 import {
-  amendmentsPublic,
+  UNOPEN_SOURCE_MESSAGES,
+  admissionNeedsValidation,
+  admissionOnValidation,
+  amendmentReviewState,
+  awaitsPublication,
+  awaitsValidation,
+  isAmendmentPublishable,
+  numberingToKeep,
+  submissionLate,
+  unopenSourcesMessage,
+} from "./reviewState";
+import {
   canSeeAmendment,
   canSeePositions,
   isDocumentProponent,
+  redactCorrectionNote,
 } from "./visibility";
 
 /**
@@ -389,6 +417,8 @@ export interface CapabilityInput {
   review: boolean;
   actorMemberId: string | null;
   acceptances: { memberId: string; decision: AcceptanceDecision }[];
+  validatedAt: Date | null;
+  publishedAt: Date | null;
 }
 
 export function amendmentCapabilities(
@@ -397,6 +427,8 @@ export function amendmentCapabilities(
   const draft = input.status === "draft";
   const submitted = input.status === "submitted";
   return {
+    validate: input.review && awaitsValidation(input),
+    publish: input.review && isAmendmentPublishable(input),
     edit: input.isAuthor && draft,
     submit: input.isAuthor && draft,
     withdraw: input.isAuthor && submitted,
@@ -592,13 +624,8 @@ export interface DocumentAmendmentContext {
   assembly: AssemblyRow;
   document: DocumentRow;
   settings: AssemblySettings;
+  /** Effective amendment window; `late` is computed with `isLateSubmission`. */
   window: AmendmentWindow;
-  /**
-   * Presented amendments are public under `after_close` (amendmentsPublic):
-   * the window closed, has no close date, or the session started. The `late`
-   * flag is computed separately with `isLateSubmission`.
-   */
-  windowClosed: boolean;
   isProponent: boolean;
   positionsVisible: boolean;
   now: Date;
@@ -607,6 +634,32 @@ export interface DocumentAmendmentContext {
 export interface AmendmentContext extends DocumentAmendmentContext {
   amendment: LoadedAmendment;
   isAuthor: boolean;
+}
+
+/** The amendment context of a document the caller already resolved. */
+export function buildDocumentAmendmentContext(
+  actor: Actor,
+  assembly: AssemblyRow,
+  document: DocumentRow,
+  milestones: Milestones,
+  now = new Date(),
+): DocumentAmendmentContext {
+  const settings = assemblySettings(assembly);
+  const isProponent = isDocumentProponent(actor, document);
+  return {
+    actor,
+    assembly,
+    document,
+    settings,
+    window: amendmentWindow(document, milestones),
+    isProponent,
+    positionsVisible: canSeePositions(actor, {
+      settings,
+      assemblyStatus: assembly.status,
+      isProponent,
+    }),
+    now,
+  };
 }
 
 export async function loadAmendmentDocumentContext(
@@ -622,29 +675,12 @@ export async function loadAmendmentDocumentContext(
     assembly.id,
     getRouterParam(event, "document"),
   );
-  const settings: AssemblySettings = {
-    ...DEFAULT_ASSEMBLY_SETTINGS,
-    ...(assembly.settings ?? {}),
-  };
-  const milestones = await loadMilestones(assembly.id);
-  const window = amendmentWindow(document, milestones);
-  const now = new Date();
-  const isProponent = isDocumentProponent(actor, document);
-  return {
+  return buildDocumentAmendmentContext(
     actor,
     assembly,
     document,
-    settings,
-    window,
-    windowClosed: amendmentsPublic(window, assembly.status, now),
-    isProponent,
-    positionsVisible: canSeePositions(actor, {
-      settings,
-      assemblyStatus: assembly.status,
-      isProponent,
-    }),
-    now,
-  };
+    await loadMilestones(assembly.id),
+  );
 }
 
 function isAmendmentAuthor(actor: Actor, row: LoadedAmendment): boolean {
@@ -657,21 +693,33 @@ function isAmendmentAuthor(actor: Actor, row: LoadedAmendment): boolean {
   );
 }
 
+/**
+ * Correction notes are for the authors, the creator, the parties of a
+ * transactional, the Secretaría and the Mesa (AmendmentDto.correctionNote).
+ */
+function canReadCorrection(actor: Actor, row: LoadedAmendment): boolean {
+  return (
+    canReviewAmendments(actor) ||
+    canModerate(actor) ||
+    isAmendmentAuthor(actor, row) ||
+    actsFor(
+      actor,
+      row.acceptances.map((acceptance) => acceptance.memberId),
+    )
+  );
+}
+
 function isVisible(
   ctx: DocumentAmendmentContext,
   row: LoadedAmendment,
 ): boolean {
-  return canSeeAmendment(
-    ctx.actor,
-    {
-      status: row.status,
-      late: row.late,
-      createdByUserId: row.createdByUserId,
-      authorMemberIds: row.authors.map((author) => author.memberId),
-      partyMemberIds: row.acceptances.map((acceptance) => acceptance.memberId),
-    },
-    { settings: ctx.settings, windowClosed: ctx.windowClosed },
-  );
+  return canSeeAmendment(ctx.actor, {
+    status: row.status,
+    publishedAt: row.publishedAt,
+    createdByUserId: row.createdByUserId,
+    authorMemberIds: row.authors.map((author) => author.memberId),
+    partyMemberIds: row.acceptances.map((acceptance) => acceptance.memberId),
+  });
 }
 
 /** Loads the `[amendment]` route param. Hidden amendments answer 404. */
@@ -756,6 +804,9 @@ function lockAmendments(tx: Tx, documentId: string, ids: string[]) {
       id: amendments.id,
       status: amendments.status,
       admission: amendments.admission,
+      late: amendments.late,
+      validatedAt: amendments.validatedAt,
+      publishedAt: amendments.publishedAt,
       decidedAt: amendments.decidedAt,
       outcomeVoteId: amendments.outcomeVoteId,
     })
@@ -770,7 +821,9 @@ function lockAmendments(tx: Tx, documentId: string, ids: string[]) {
 /**
  * Locks `sourceIds` and every amendment they absorb through nested
  * transactionals (plus `alsoLock`, in the same ordered pass) and fails 409
- * unless that lineage is still open (submitted, admitted, undecided).
+ * unless that lineage is still open (submitted, admitted, undecided). The
+ * message says what is missing: the Secretaría's validation, the Mesa's
+ * admission, or nothing to do because one is decided (unopenSourcesMessage).
  * Returns the lineage.
  */
 async function lockOpenLineage(
@@ -790,14 +843,14 @@ async function lockOpenLineage(
   if (ids.length === 0) return [];
   const rows = await lockAmendments(tx, documentId, ids);
   const byId = new Map(rows.map((row) => [row.id, row]));
-  if (
-    lineage.some((id) => {
-      const row = byId.get(id);
-      return !row || !isOpenSource(row);
-    })
-  ) {
-    fail(409, "Alguna de las enmiendas de origen ya está decidida");
+  const lineageRows = lineage.map((id) => byId.get(id));
+  if (lineageRows.some((row) => row === undefined)) {
+    fail(409, UNOPEN_SOURCE_MESSAGES.decided);
   }
+  const message = unopenSourcesMessage(
+    lineageRows.filter((row) => row !== undefined),
+  );
+  if (message) fail(409, message);
   return lineage;
 }
 
@@ -916,7 +969,7 @@ async function resolveDraftAuthors(
     actor.memberId ??
     (moderate ? extra[0] : undefined);
   if (!presentingMemberId) {
-    if (!moderate) fail(403, "Tu cuenta no está vinculada a ningún miembro");
+    if (!moderate) fail(403, UNLINKED_ACCOUNT_MESSAGE);
     fail(422, "Indica el miembro que presenta la enmienda");
   }
   const memberIds = unique([presentingMemberId, ...extra]);
@@ -966,6 +1019,12 @@ export async function buildAmendmentDtos(
         meta.presentingMemberId,
       ),
       submittedAt: iso(row.submittedAt),
+      validatedAt: iso(row.validatedAt),
+      publishedAt: iso(row.publishedAt),
+      reviewState: amendmentReviewState(row),
+      correctionNote: canReadCorrection(ctx.actor, row)
+        ? row.correctionNote
+        : null,
       decidedAt: iso(row.decidedAt),
       approvalMethod: row.approvalMethod,
       outcomeNote: row.outcomeNote,
@@ -999,6 +1058,8 @@ export async function buildAmendmentDtos(
         review,
         actorMemberId: ctx.actor.memberId,
         acceptances: row.acceptances,
+        validatedAt: row.validatedAt,
+        publishedAt: row.publishedAt,
       }),
     };
   });
@@ -1050,6 +1111,25 @@ export async function listDocumentAmendments(
       .map(toRelationDto),
     baseVersionId: ctx.document.baseVersionId,
   };
+}
+
+/**
+ * Amendments of these documents waiting for the Secretaría, in text order:
+ * to validate (awaitsValidation) or to publish (awaitsPublication).
+ */
+export async function findAmendmentsAwaitingReview(
+  documentIds: string[],
+): Promise<LoadedAmendment[]> {
+  if (documentIds.length === 0) return [];
+  const rows = await findAmendments(
+    db,
+    and(
+      inArray(amendments.documentId, documentIds),
+      ne(amendments.status, "draft"),
+      isNull(amendments.publishedAt),
+    ),
+  );
+  return rows.filter((row) => awaitsValidation(row) || awaitsPublication(row));
 }
 
 // Drafts -------------------------------------------------------------------
@@ -1298,16 +1378,6 @@ export async function deleteAmendmentDraft(
 
 // Submission and withdrawal ----------------------------------------------------
 
-function isOpenSource(row: {
-  status: AmendmentStatus;
-  admission: AdmissionStatus;
-  decidedAt: Date | null;
-}): boolean {
-  return (
-    row.status === "submitted" && row.admission === "admitted" && !row.decidedAt
-  );
-}
-
 async function nextNumber(tx: Tx, documentId: string): Promise<number> {
   const [row] = await tx
     .select({ value: sql<number>`coalesce(max(${amendments.number}), 0)` })
@@ -1371,10 +1441,21 @@ export async function submitAmendment(
   if (!transactional && !presenting)
     fail(422, "Indica el miembro que presenta la enmienda");
 
+  const afterCorrection = amendment.correctionRequestedAt !== null;
   await db.transaction(async (tx) => {
     await lockDocument(tx, document.id);
     let payload: Record<string, unknown>;
     let updated: { id: string }[];
+    // A transactional the Mesa presents in session needs no check: it is
+    // validated, admitted and published at once.
+    let instant = false;
+    // Presenting again clears the correction the Secretaría asked for.
+    const review = {
+      submittedAt: now,
+      submittedByUserId: actor.user.id,
+      correctionNote: null,
+      correctionRequestedAt: null,
+    };
 
     if (transactional) {
       await lockOpenLineage(
@@ -1382,41 +1463,49 @@ export async function submitAmendment(
         document.id,
         amendment.sources.map((source) => source.sourceId),
       );
+      instant = canModerate(actor);
       updated = await tx
         .update(amendments)
         .set({
+          ...review,
           status: "submitted",
-          submittedAt: now,
-          submittedByUserId: actor.user.id,
           late: false,
-          admission: "admitted",
+          ...instantReview(instant, actor, now),
         })
         .where(
           and(eq(amendments.id, amendment.id), eq(amendments.status, "draft")),
         )
         .returning({ id: amendments.id });
-      payload = { code: amendment.code, late: false, admission: "admitted" };
+      payload = {
+        code: amendment.code,
+        late: false,
+        admission: instant ? "admitted" : "pending",
+      };
     } else {
-      const number = await nextNumber(tx, document.id);
-      const memberSeq = await nextMemberSeq(
-        tx,
-        document.id,
-        presenting!.memberId,
-      );
+      // Sent back for correction: it keeps its number and, while the same
+      // member presents it, its code (numbering without gaps).
+      const kept = numberingToKeep(amendment, presenting!.member.acronym);
+      const number = kept.number ?? (await nextNumber(tx, document.id));
+      const memberSeq =
+        kept.memberSeq ??
+        (await nextMemberSeq(tx, document.id, presenting!.memberId));
       const code = `${presenting!.member.acronym} ${memberSeq}`;
-      const late = isLateSubmission(ctx.window, now);
-      const admission: AdmissionStatus = late ? "pending" : "admitted";
+      const late = submissionLate(amendment, isLateSubmission(ctx.window, now));
+      // Never admitted here: the Secretaría validates it first (and admits
+      // it if on time); a late one also waits for the Mesa.
       updated = await tx
         .update(amendments)
         .set({
+          ...review,
           status: "submitted",
-          submittedAt: now,
-          submittedByUserId: actor.user.id,
           number,
           memberSeq,
           code,
           late,
-          admission,
+          admission: "pending",
+          validatedAt: null,
+          validatedByUserId: null,
+          publishedAt: null,
           meta: {
             ...meta,
             presentingMemberId: presenting!.memberId,
@@ -1426,9 +1515,10 @@ export async function submitAmendment(
           and(eq(amendments.id, amendment.id), eq(amendments.status, "draft")),
         )
         .returning({ id: amendments.id });
-      payload = { number, code, late, admission };
+      payload = { number, code, late, admission: "pending" };
     }
     if (updated.length === 0) fail(409, "La enmienda ya se ha presentado");
+    if (afterCorrection) payload.afterCorrection = true;
 
     await tx
       .insert(amendmentPositions)
@@ -1443,9 +1533,34 @@ export async function submitAmendment(
       payload,
       actor,
     });
+    if (instant) {
+      await recordEvent(tx, {
+        assemblyId: ctx.assembly.id,
+        documentId: document.id,
+        entityType: "amendment",
+        entityId: amendment.id,
+        type: "amendment_validated",
+        payload: { publish: true, admission: "admitted", method: "mesa" },
+        actor,
+      });
+    }
   });
 
   return amendmentDto(ctx, amendment.id);
+}
+
+/**
+ * Review fields of a transactional presented by the Mesa (`instant`):
+ * validated, admitted and published at once. Otherwise it waits for the
+ * Secretaría like any other amendment.
+ */
+function instantReview(instant: boolean, actor: Actor, now: Date) {
+  return {
+    admission: (instant ? "admitted" : "pending") as AdmissionStatus,
+    validatedAt: instant ? now : null,
+    validatedByUserId: instant ? actor.user.id : null,
+    publishedAt: instant ? now : null,
+  };
 }
 
 export async function withdrawAmendment(
@@ -1506,6 +1621,29 @@ export function admissionEligible(
     : row.status === "submitted";
 }
 
+/**
+ * Refuses an admission decision that would skip the Secretaría
+ * (admissionNeedsValidation): admitting an on-time amendment it has not
+ * validated, or voting on one, since a failed vote to declare it
+ * inadmissible would admit it.
+ */
+function assertValidatedForAdmission(
+  rows: { status: string; late: boolean; validatedAt: Date | null }[],
+  body: AdmissionBody,
+): void {
+  const byVote = body.method === "vote";
+  if (
+    rows.some((row) => admissionNeedsValidation(row, body.decision, byVote))
+  ) {
+    fail(
+      409,
+      body.decision === "admitted"
+        ? "La Secretaría tiene que validar esta enmienda antes de admitirla"
+        : "La Secretaría tiene que validar esta enmienda antes de votar si se admite",
+    );
+  }
+}
+
 export async function decideAmendmentAdmission(
   ctx: DocumentAmendmentContext,
   body: AdmissionBody,
@@ -1521,6 +1659,8 @@ export async function decideAmendmentAdmission(
       id: amendments.id,
       status: amendments.status,
       admission: amendments.admission,
+      late: amendments.late,
+      validatedAt: amendments.validatedAt,
     })
     .from(amendments)
     .where(
@@ -1540,6 +1680,7 @@ export async function decideAmendmentAdmission(
         : "Alguna enmienda ya está decidida",
     );
   }
+  assertValidatedForAdmission(rows, body);
 
   const evaluated =
     body.method === "vote" && body.vote
@@ -1578,6 +1719,24 @@ export async function decideAmendmentAdmission(
     ) {
       fail(409, "Las enmiendas han cambiado. Recarga la página");
     }
+    assertValidatedForAdmission(locked, body);
+    // Deciding on admission checks the amendment: one the Secretaría had not
+    // validated yet (a late one) counts as validated from now on.
+    const unvalidated = new Set(
+      locked.filter((row) => row.validatedAt === null).map((row) => row.id),
+    );
+    // Admitting is a public act of the Mesa, like the transactional it
+    // presents in session: an admitted amendment becomes visible to everyone,
+    // so it can be debated and decided. The Mesa cannot publish otherwise.
+    const unpublished =
+      admission === "admitted"
+        ? locked.filter((row) => row.publishedAt === null).map((row) => row.id)
+        : [];
+    const nowSql = sql`${now.toISOString()}::timestamptz`;
+    const validation = {
+      validatedAt: sql`coalesce(${amendments.validatedAt}, ${nowSql})`,
+      validatedByUserId: sql`case when ${amendments.validatedAt} is null then ${actor.user.id} else ${amendments.validatedByUserId} end`,
+    };
     const decisionId = cuid();
     let voteRow: VoteRow | undefined;
     if (evaluated && body.vote) {
@@ -1616,6 +1775,8 @@ export async function decideAmendmentAdmission(
         ? await tx
             .update(amendments)
             .set({
+              ...validation,
+              publishedAt: sql`coalesce(${amendments.publishedAt}, ${nowSql})`,
               admission: "admitted",
               status: "submitted",
               decidedAt: null,
@@ -1630,6 +1791,7 @@ export async function decideAmendmentAdmission(
         : await tx
             .update(amendments)
             .set({
+              ...validation,
               admission: "inadmissible",
               status: "inadmissible",
               decidedAt: now,
@@ -1690,7 +1852,19 @@ export async function decideAmendmentAdmission(
           ...(voteRow
             ? { voteId: voteRow.id, voteResult: voteRow.result }
             : {}),
+          ...(unvalidated.has(id) ? { validated: true } : {}),
         },
+        actor,
+      });
+    }
+    for (const id of unpublished) {
+      await recordEvent(tx, {
+        assemblyId: ctx.assembly.id,
+        documentId: document.id,
+        entityType: "amendment",
+        entityId: id,
+        type: "amendment_published",
+        payload: { decisionId },
         actor,
       });
     }
@@ -1718,6 +1892,238 @@ export async function decideAmendmentAdmission(
     admission,
     amendmentIds: body.amendmentIds,
   };
+}
+
+// Validation by the Secretaría -------------------------------------------------
+
+function assertReviewer(actor: Actor): void {
+  if (!canReviewAmendments(actor)) {
+    fail(403, "No tienes permiso para revisar enmiendas");
+  }
+}
+
+/** Every requested id must name an amendment of this document. */
+async function assertDocumentAmendments(
+  documentId: string,
+  ids: string[],
+): Promise<void> {
+  const rows = await db
+    .select({ id: amendments.id })
+    .from(amendments)
+    .where(
+      and(eq(amendments.documentId, documentId), inArray(amendments.id, ids)),
+    );
+  if (rows.length !== ids.length) fail(404, "Enmienda no encontrada");
+}
+
+/**
+ * The Secretaría validates presented amendments in bulk (amendment:review):
+ * each one must still be submitted and not validated. An on-time amendment is
+ * admitted at the same time; a late one keeps admission "pending" for the
+ * Mesa. With `publish` they become visible to everyone at once; otherwise
+ * they stay private until POST .../publish. A transactional is admitted only
+ * while everything it absorbs is still open, as on its creation. Locks the
+ * document (share), then the amendments and that lineage in id order.
+ */
+export async function validateAmendments(
+  ctx: DocumentAmendmentContext,
+  body: ValidateAmendmentsBody,
+): Promise<DocumentAmendmentsDto> {
+  const { actor, document, now } = ctx;
+  assertReviewer(actor);
+  assertNotFinal(ctx);
+  await assertDocumentAmendments(document.id, body.amendmentIds);
+
+  await db.transaction(async (tx) => {
+    await lockDocument(tx, document.id, "share");
+    const sourceMap = await loadSourceMap(tx, document.id);
+    const sourceIds = unique(
+      body.amendmentIds.flatMap((id) => sourceMap.get(id) ?? []),
+    );
+    await lockOpenLineage(tx, document.id, sourceIds, body.amendmentIds);
+    // Already locked by this transaction: the values are current.
+    const rows = await tx
+      .select({
+        id: amendments.id,
+        status: amendments.status,
+        admission: amendments.admission,
+        late: amendments.late,
+        validatedAt: amendments.validatedAt,
+      })
+      .from(amendments)
+      .where(
+        and(
+          eq(amendments.documentId, document.id),
+          inArray(amendments.id, body.amendmentIds),
+        ),
+      );
+    if (
+      rows.length !== body.amendmentIds.length ||
+      !rows.every(awaitsValidation)
+    ) {
+      fail(
+        409,
+        "Alguien ya ha revisado alguna de estas enmiendas. Recarga la página para ver cómo está",
+      );
+    }
+
+    const byAdmission = new Map<AdmissionStatus, string[]>();
+    for (const row of rows) {
+      const admission = admissionOnValidation(row);
+      byAdmission.set(admission, [
+        ...(byAdmission.get(admission) ?? []),
+        row.id,
+      ]);
+    }
+    for (const [admission, ids] of byAdmission) {
+      const updated = await tx
+        .update(amendments)
+        .set({
+          admission,
+          validatedAt: now,
+          validatedByUserId: actor.user.id,
+          publishedAt: body.publish ? now : null,
+        })
+        .where(
+          and(
+            inArray(amendments.id, ids),
+            eq(amendments.status, "submitted"),
+            isNull(amendments.validatedAt),
+          ),
+        )
+        .returning({ id: amendments.id });
+      if (updated.length !== ids.length) {
+        fail(409, "Las enmiendas han cambiado. Recarga la página");
+      }
+      for (const id of ids) {
+        await recordEvent(tx, {
+          assemblyId: ctx.assembly.id,
+          documentId: document.id,
+          entityType: "amendment",
+          entityId: id,
+          type: "amendment_validated",
+          payload: {
+            publish: body.publish,
+            admission,
+            ...(admission === "admitted" ? { method: "secretaria" } : {}),
+          },
+          actor,
+        });
+      }
+    }
+  });
+
+  return listDocumentAmendments(ctx);
+}
+
+/**
+ * The Secretaría makes validated amendments visible to everyone who can see
+ * the document (amendment:review). Each one must be validated, past draft
+ * and not published yet. Publishing only changes who sees the amendment, so
+ * it is still allowed after the final vote: an amendment decided before it
+ * was published can be shown afterwards.
+ */
+export async function publishAmendments(
+  ctx: DocumentAmendmentContext,
+  body: PublishAmendmentsBody,
+): Promise<DocumentAmendmentsDto> {
+  const { actor, document, now } = ctx;
+  assertReviewer(actor);
+  await assertDocumentAmendments(document.id, body.amendmentIds);
+
+  await db.transaction(async (tx) => {
+    const locked = await lockAmendments(tx, document.id, body.amendmentIds);
+    if (
+      locked.length !== body.amendmentIds.length ||
+      !locked.every(isAmendmentPublishable)
+    ) {
+      fail(409, "Alguna enmienda no está validada o ya está publicada");
+    }
+    const updated = await tx
+      .update(amendments)
+      .set({ publishedAt: now })
+      .where(
+        and(
+          inArray(amendments.id, body.amendmentIds),
+          isNotNull(amendments.validatedAt),
+          isNull(amendments.publishedAt),
+        ),
+      )
+      .returning({ id: amendments.id });
+    if (updated.length !== body.amendmentIds.length) {
+      fail(409, "Las enmiendas han cambiado. Recarga la página");
+    }
+    for (const id of body.amendmentIds) {
+      await recordEvent(tx, {
+        assemblyId: ctx.assembly.id,
+        documentId: document.id,
+        entityType: "amendment",
+        entityId: id,
+        type: "amendment_published",
+        payload: {},
+        actor,
+      });
+    }
+  });
+
+  return listDocumentAmendments(ctx);
+}
+
+/**
+ * The Secretaría sends a presented amendment that it has not validated yet
+ * back to its authors (amendment:review), with a note: it returns to draft,
+ * keeps its number, code and timing (see submitAmendment) and shows the note
+ * to its authors until they present it again. Optimistic lock on the
+ * amendment.
+ */
+export async function requestAmendmentCorrection(
+  ctx: AmendmentContext,
+  body: CorrectionBody,
+): Promise<AmendmentDto> {
+  const { actor, amendment, now } = ctx;
+  assertReviewer(actor);
+  if (!awaitsValidation(amendment)) {
+    fail(
+      409,
+      "Solo se puede pedir una corrección de una enmienda enviada y pendiente de validación",
+    );
+  }
+  assertNotFinal(ctx);
+
+  await db.transaction(async (tx) => {
+    await lockDocument(tx, ctx.document.id, "share");
+    const updated = await tx
+      .update(amendments)
+      .set({
+        status: "draft",
+        submittedAt: null,
+        submittedByUserId: null,
+        correctionNote: body.note,
+        correctionRequestedAt: now,
+      })
+      .where(
+        and(
+          eq(amendments.id, amendment.id),
+          eq(amendments.status, "submitted"),
+          isNull(amendments.validatedAt),
+          buildOptimisticLockCondition(amendments.updatedAt, body.updatedAt),
+        ),
+      )
+      .returning({ id: amendments.id });
+    if (updated.length === 0)
+      fail(409, "La enmienda ha cambiado. Recarga la página");
+    await recordEvent(tx, {
+      assemblyId: ctx.assembly.id,
+      documentId: ctx.document.id,
+      entityType: "amendment",
+      entityId: amendment.id,
+      type: "amendment_correction_requested",
+      payload: { note: body.note },
+      actor,
+    });
+  });
+
+  return amendmentDto(ctx, amendment.id);
 }
 
 // Position -------------------------------------------------------------------
@@ -1848,6 +2254,14 @@ export async function applyAmendmentOutcome(
       fail(409, "La enmienda ya está decidida");
     if (amendment.admission !== "admitted")
       fail(409, "La enmienda no está admitida");
+    // Delegates cannot debate what they cannot read. Publication is never
+    // undone, so this check holds without re-reading the row.
+    if (!amendment.publishedAt) {
+      fail(
+        409,
+        "La Secretaría tiene que publicar la enmienda antes de decidirla",
+      );
+    }
     const evaluated =
       body.action === "vote"
         ? evaluateVoteInput(body.vote, ctx.settings)
@@ -2015,6 +2429,10 @@ export async function applyAmendmentOutcome(
   if (body.action === "withdraw" || body.action === "lapse") {
     if (amendment.status !== "submitted")
       fail(409, "La enmienda ya está decidida");
+    // The Mesa settles only what the Secretaría has validated; an author can
+    // still withdraw their own amendment through POST .../withdraw.
+    if (amendment.validatedAt === null)
+      fail(409, "Secretaría aún no ha validado esta enmienda");
     const status = body.action === "withdraw" ? "withdrawn" : "lapsed";
     await db.transaction(async (tx) => {
       await lockDocument(tx, document.id, "share");
@@ -2183,9 +2601,8 @@ export async function createTransactionalAmendment(
   ) {
     fail(404, "Enmienda no encontrada");
   }
-  if (!sources.every(isOpenSource)) {
-    fail(409, "Solo se pueden transaccionar enmiendas admitidas y sin decidir");
-  }
+  const unopen = unopenSourcesMessage(sources);
+  if (unopen) fail(409, unopen);
 
   // Over another transactional, the authors of what it absorbs are parties
   // too: their amendments become transacted when this one is approved.
@@ -2243,6 +2660,9 @@ export async function createTransactionalAmendment(
     actor.memberId,
   );
   const submit = body.submit ?? true;
+  // Proposed by the Mesa in session: validated, admitted and published at
+  // once. Proposed by a party: presented, it waits for the Secretaría.
+  const instant = submit && moderate;
   const base = await loadBaseBlocks(document);
 
   const id = await db.transaction(async (tx) => {
@@ -2279,7 +2699,7 @@ export async function createTransactionalAmendment(
         code,
         kind: "transactional",
         status: submit ? "submitted" : "draft",
-        admission: submit ? "admitted" : "pending",
+        ...instantReview(instant, actor, now),
         late: false,
         ops,
         meta,
@@ -2345,7 +2765,22 @@ export async function createTransactionalAmendment(
         entityType: "amendment",
         entityId: amendmentId,
         type: "amendment_submitted",
-        payload: { code, late: false, admission: "admitted" },
+        payload: {
+          code,
+          late: false,
+          admission: instant ? "admitted" : "pending",
+        },
+        actor,
+      });
+    }
+    if (instant) {
+      await recordEvent(tx, {
+        assemblyId: ctx.assembly.id,
+        documentId: document.id,
+        entityType: "amendment",
+        entityId: amendmentId,
+        type: "amendment_validated",
+        payload: { publish: true, admission: "admitted", method: "mesa" },
         actor,
       });
     }
@@ -2371,7 +2806,7 @@ export async function recordAmendmentAcceptance(
 
   const moderate = canModerate(actor);
   const memberId = body.memberId ?? actor.memberId;
-  if (!memberId) fail(403, "Tu cuenta no está vinculada a ningún miembro");
+  if (!memberId) fail(403, UNLINKED_ACCOUNT_MESSAGE);
   if (memberId !== actor.memberId && !moderate) {
     fail(403, "Solo la Mesa puede registrar la respuesta de otra parte");
   }
@@ -2593,15 +3028,16 @@ export async function amendmentHistory(
     )
     .orderBy(asc(events.createdAt), asc(events.id));
 
+  const notesVisible = canReadCorrection(ctx.actor, ctx.amendment);
   return rows.map((row) => ({
     id: row.id,
     type: row.type,
     entityType: row.entityType,
     entityId: row.entityId,
-    payload: redactAmendmentEventPayload(
+    payload: redactCorrectionNote(
       row.type,
-      row.payload,
-      ctx.positionsVisible,
+      redactAmendmentEventPayload(row.type, row.payload, ctx.positionsVisible),
+      notesVisible,
     ),
     actorName: row.actorName,
     actorMember:

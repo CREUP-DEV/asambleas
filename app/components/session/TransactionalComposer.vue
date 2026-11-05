@@ -327,7 +327,7 @@ async function create(): Promise<void> {
 }
 
 function debateCreated(): void {
-  if (created.value) void session.debateAmendment(created.value);
+  if (created.value) void session.requestDebate(created.value);
 }
 
 function voteCreated(): void {

@@ -15,12 +15,28 @@ import type {
   DocumentDto,
   MemberDto,
 } from "~~/shared/types/api";
+import {
+  kindSelectItems,
+  presenterKindGroups,
+} from "~/composables/document/documentKinds";
 
 /**
- * "Nuevo documento" (managers) and "Presentar documento" (members) under an
- * agenda item. Managers choose the proponent and may override the kind
- * defaults; members always present as their own member with the defaults.
- * On success it opens the document editor.
+ * Adds a document under an agenda item.
+ *
+ * - Members ("Presentar documento") go through the first step of a short
+ *   guided flow: what it is (type, title, short summary) and, for types that
+ *   take no amendments, whether the text comes as a PDF. The types their
+ *   member usually presents come first (a CEA area's reports and plans, a
+ *   council's positionings and resolutions), the rest under "Otros tipos". The draft is
+ *   created and the editor opens on step 2 (the text) and step 3 (send it to
+ *   the Secretaría).
+ * - Managers also choose who presents it and the internal deadline, so the
+ *   Secretaría can create in advance the documents it expects; the rules of
+ *   the type (format, amendments, vote) stay under "Opciones avanzadas".
+ *   A document expected from a member stays on the agenda; one with no
+ *   presenter, or presented by the manager's own member, opens the editor.
+ *
+ * Emits `created` with the new document.
  */
 const props = defineProps<{
   apiBase: string;
@@ -31,6 +47,8 @@ const props = defineProps<{
 }>();
 
 const open = defineModel<boolean>("open", { default: false });
+
+const emit = defineEmits<{ created: [document: DocumentDto] }>();
 
 const { t } = useI18n();
 const api = useApi();
@@ -46,7 +64,9 @@ const isManager = computed(() => props.mode === "manager");
 
 const schema = computed(() =>
   z.object({
-    kind: z.enum(DOCUMENT_KINDS),
+    kind: z.enum(DOCUMENT_KINDS, {
+      error: () => t("agenda.newDocument.kindRequired"),
+    }),
     format: z.enum(DOCUMENT_FORMATS),
     title: z
       .string()
@@ -57,6 +77,7 @@ const schema = computed(() =>
       .string()
       .max(SUMMARY_MAX, t("agenda.form.tooLong", { max: SUMMARY_MAX })),
     proponent: z.string(),
+    dueAt: z.string().nullable(),
     amendable: z.boolean(),
     voted: z.boolean(),
     majority: z.enum(MAJORITIES),
@@ -64,24 +85,28 @@ const schema = computed(() =>
 );
 
 type DocumentForm = z.output<typeof schema.value>;
+/** The kind starts empty: the user picks it. */
+type DocumentFormState = Omit<DocumentForm, "kind"> & {
+  kind: DocumentKind | undefined;
+};
 
-function initialState(): DocumentForm {
-  const kind: DocumentKind = "resolution";
-  const defaults = DOCUMENT_KIND_DEFAULTS[kind];
+function initialState(): DocumentFormState {
   return {
-    kind,
+    kind: undefined,
     format: "structured",
     title: "",
     summary: "",
     proponent: member.value?.id ?? NO_PROPONENT,
-    amendable: defaults.amendable,
-    voted: defaults.voted,
-    majority: defaults.majority,
+    dueAt: null,
+    amendable: true,
+    voted: true,
+    majority: "simple",
   };
 }
 
-const state = reactive<DocumentForm>(initialState());
+const state = reactive<DocumentFormState>(initialState());
 const saving = ref(false);
+const advancedOpen = ref(false);
 
 // Members for the proponent select (managers only), loaded on first open.
 const members = ref<MemberDto[]>([]);
@@ -107,16 +132,29 @@ watch(
   (isOpen) => {
     if (!isOpen) return;
     Object.assign(state, initialState());
+    advancedOpen.value = false;
     if (isManager.value) void loadMembers();
   },
   { immediate: true },
 );
 
-// Kind defaults: a new kind resets amendable, voted and majority.
+/** The type's own rules: amendments, vote and majority. */
+const kindDefaults = computed(() =>
+  state.kind ? DOCUMENT_KIND_DEFAULTS[state.kind] : null,
+);
+
+/** A PDF can only be offered for types that take no amendments. */
+const pdfAllowed = computed(
+  () => isManager.value || kindDefaults.value?.amendable === false,
+);
+
+// A new kind resets the rules to its defaults (and a PDF it cannot take).
 watch(
   () => state.kind,
-  (kind) => {
-    const defaults = DOCUMENT_KIND_DEFAULTS[kind];
+  () => {
+    const defaults = kindDefaults.value;
+    if (!defaults) return;
+    if (!pdfAllowed.value) state.format = "structured";
     state.amendable = state.format === "file" ? false : defaults.amendable;
     state.voted = defaults.voted;
     state.majority = defaults.majority;
@@ -126,20 +164,36 @@ watch(
   () => state.format,
   (format) => {
     state.amendable =
-      format === "file" ? false : DOCUMENT_KIND_DEFAULTS[state.kind].amendable;
+      format === "file" ? false : (kindDefaults.value?.amendable ?? true);
   },
 );
 
-const kindItems = computed(() =>
-  DOCUMENT_KINDS.map((kind) => ({
-    label: t(`agenda.documentKinds.${kind}`),
-    value: kind,
-  })),
-);
+const kindItems = computed(() => {
+  const label = (kind: DocumentKind) => t(`agenda.documentKinds.${kind}`);
+  if (isManager.value) {
+    return DOCUMENT_KINDS.map((kind) => ({ label: label(kind), value: kind }));
+  }
+  return kindSelectItems(
+    presenterKindGroups({ memberKind: member.value?.kind }),
+    label,
+    {
+      common: t("document.kindGroups.common"),
+      others: t("document.kindGroups.others"),
+    },
+  );
+});
 const formatItems = computed(() =>
   DOCUMENT_FORMATS.map((format: DocumentFormat) => ({
     label: t(`agenda.formats.${format}`),
     description: t(`agenda.formatDescriptions.${format}`),
+    value: format,
+  })),
+);
+/** The presenter's choice, in their words. */
+const sourceItems = computed(() =>
+  DOCUMENT_FORMATS.map((format: DocumentFormat) => ({
+    label: t(`agenda.newDocument.source.${format}`),
+    description: t(`agenda.newDocument.source.${format}Description`),
     value: format,
   })),
 );
@@ -159,19 +213,24 @@ const memberItems = computed(() => [
     })),
 ]);
 
-const kindDefaults = computed(() => DOCUMENT_KIND_DEFAULTS[state.kind]);
-const defaultsSummary = computed(() =>
-  [
-    kindDefaults.value.amendable && state.format !== "file"
-      ? t("agenda.newDocument.amendableYes")
-      : t("agenda.newDocument.amendableNo"),
-    kindDefaults.value.voted
-      ? t("agenda.newDocument.votedWith", {
-          majority: t(`agenda.majorities.${kindDefaults.value.majority}`),
-        })
-      : t("agenda.newDocument.notVoted"),
-  ].join(" · "),
-);
+/** The presenter's three steps; this modal is the first one. */
+const steps = computed(() => [
+  t("agenda.newDocument.steps.what"),
+  t("agenda.newDocument.steps.text"),
+  t("agenda.newDocument.steps.send"),
+]);
+
+const presenterMember = computed(() => {
+  if (state.proponent === NO_PROPONENT) return null;
+  return members.value.find((candidate) => candidate.id === state.proponent);
+});
+
+/** Managers stay on the agenda when someone else has to provide the text. */
+function opensEditor(created: DocumentDto): boolean {
+  if (!isManager.value) return true;
+  const proponentId = created.proponent?.id ?? null;
+  return proponentId === null || proponentId === member.value?.id;
+}
 
 async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
   if (!props.item) return;
@@ -189,6 +248,7 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
           amendable: data.format === "file" ? false : data.amendable,
           voted: data.voted,
           majority: data.majority,
+          dueAt: data.dueAt,
         }
       : {}),
   };
@@ -198,16 +258,43 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
       method: "POST",
       body,
     });
+    emit("created", created);
+    open.value = false;
+    const editorPath = `${props.basePath}/documentos/${encodeURIComponent(created.slug)}/editar`;
+    if (opensEditor(created)) {
+      toast.add({
+        title: isManager.value
+          ? t("agenda.newDocument.created")
+          : t("agenda.newDocument.draftCreated"),
+        description: isManager.value
+          ? created.title
+          : t("agenda.newDocument.draftCreatedDescription"),
+        color: "success",
+        icon: "i-lucide-file-plus",
+      });
+      await navigateTo(editorPath);
+      return;
+    }
     toast.add({
       title: t("agenda.newDocument.created"),
-      description: created.title,
+      description: created.proponent
+        ? t("agenda.newDocument.expectedFrom", {
+            member: created.proponent.acronym,
+          })
+        : created.title,
       color: "success",
       icon: "i-lucide-file-plus",
+      actions: [
+        {
+          label: t("agenda.newDocument.openDocument"),
+          color: "neutral",
+          variant: "outline",
+          onClick: () => {
+            void navigateTo(editorPath);
+          },
+        },
+      ],
     });
-    open.value = false;
-    await navigateTo(
-      `${props.basePath}/documentos/${encodeURIComponent(created.slug)}/editar`,
-    );
   } catch (error) {
     api.notifyError(error, "agenda.newDocument.error");
   } finally {
@@ -236,6 +323,51 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
     :ui="{ content: 'sm:max-w-2xl' }"
   >
     <template #body>
+      <!-- The presenter's guided flow: this is step 1 of 3 -->
+      <ol
+        v-if="!isManager"
+        class="mb-5 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm"
+        :aria-label="t('agenda.newDocument.steps.label')"
+      >
+        <li
+          v-for="(step, index) in steps"
+          :key="step"
+          class="flex items-center gap-2"
+          :aria-current="index === 0 ? 'step' : undefined"
+        >
+          <span
+            class="inline-flex size-6 items-center justify-center rounded-full text-xs font-semibold tabular-nums"
+            :class="
+              index === 0
+                ? 'bg-primary text-inverted'
+                : 'bg-elevated text-muted'
+            "
+            aria-hidden="true"
+          >
+            {{ index + 1 }}
+          </span>
+          <span
+            :class="index === 0 ? 'text-highlighted font-medium' : 'text-muted'"
+          >
+            <span class="sr-only">
+              {{
+                t("agenda.newDocument.steps.position", {
+                  step: index + 1,
+                  total: steps.length,
+                })
+              }}
+            </span>
+            {{ step }}
+          </span>
+          <UIcon
+            v-if="index < steps.length - 1"
+            name="i-lucide-chevron-right"
+            class="text-dimmed size-4"
+            aria-hidden="true"
+          />
+        </li>
+      </ol>
+
       <UForm
         id="agenda-new-document-form"
         :schema="schema"
@@ -243,53 +375,12 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
         class="space-y-4"
         @submit="onSubmit"
       >
-        <div class="grid gap-4 sm:grid-cols-2">
-          <UFormField
-            :label="t('agenda.newDocument.kind')"
-            name="kind"
-            required
-          >
-            <USelect
-              v-model="state.kind"
-              :items="kindItems"
-              value-key="value"
-              class="w-full"
-            />
-          </UFormField>
-          <UFormField
-            v-if="isManager"
-            :label="t('agenda.newDocument.proponent')"
-            name="proponent"
-            :help="
-              membersFailed ? t('agenda.newDocument.membersError') : undefined
-            "
-          >
-            <USelectMenu
-              v-model="state.proponent"
-              :items="memberItems"
-              value-key="value"
-              :loading="membersLoading"
-              :search-input="{
-                placeholder: t('agenda.newDocument.searchMember'),
-              }"
-              class="w-full"
-            />
-          </UFormField>
-          <UFormField v-else :label="t('agenda.newDocument.proponent')">
-            <div class="flex h-8 items-center">
-              <CommonMemberBadge v-if="member" :member="member" show-name />
-            </div>
-          </UFormField>
-        </div>
-
-        <UFormField :label="t('agenda.newDocument.format')" name="format">
-          <URadioGroup
-            v-model="state.format"
-            :items="formatItems"
-            value-key="value"
-            orientation="vertical"
-            variant="card"
-            class="w-full"
+        <UFormField :label="t('agenda.newDocument.kind')" name="kind" required>
+          <USelect
+            v-model="state.kind"
+            :items="kindItems"
+            :placeholder="t('agenda.newDocument.kindPlaceholder')"
+            class="w-full sm:w-80"
           />
         </UFormField>
 
@@ -308,7 +399,7 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
         >
           <UTextarea
             v-model="state.summary"
-            :rows="3"
+            :rows="2"
             autoresize
             :maxrows="8"
             :maxlength="SUMMARY_MAX"
@@ -316,50 +407,131 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
           />
         </UFormField>
 
-        <fieldset
-          v-if="isManager"
-          class="border-default space-y-3 rounded-md border p-3"
-        >
-          <legend class="text-highlighted px-1 text-sm font-medium">
-            {{ t("agenda.newDocument.rules") }}
-          </legend>
-          <p class="text-muted text-xs">
-            {{ t("agenda.newDocument.rulesHelp") }}
-          </p>
-          <USwitch
-            v-model="state.amendable"
-            :disabled="state.format === 'file'"
-            :label="t('agenda.newDocument.amendable')"
-            :description="
-              state.format === 'file'
-                ? t('agenda.newDocument.fileNotAmendable')
-                : undefined
-            "
-          />
-          <USwitch
-            v-model="state.voted"
-            :label="t('agenda.newDocument.voted')"
-          />
+        <!-- Members: how the text will come, only when a PDF is possible -->
+        <template v-if="!isManager">
           <UFormField
-            v-if="state.voted"
-            :label="t('agenda.newDocument.majority')"
-            name="majority"
+            v-if="pdfAllowed"
+            :label="t('agenda.newDocument.source.label')"
+            name="format"
           >
-            <USelect
-              v-model="state.majority"
-              :items="majorityItems"
+            <URadioGroup
+              v-model="state.format"
+              :items="sourceItems"
               value-key="value"
-              class="w-full sm:w-64"
+              orientation="vertical"
+              variant="card"
+              class="w-full"
             />
           </UFormField>
-        </fieldset>
-        <p v-else class="text-muted text-sm">
-          <UIcon
-            name="i-lucide-info"
-            class="me-1 inline size-4 align-[-2px]"
-            aria-hidden="true"
-          />{{ defaultsSummary }}
-        </p>
+          <p
+            v-else-if="state.kind"
+            class="text-muted flex items-start gap-2 text-sm"
+          >
+            <UIcon
+              name="i-lucide-file-text"
+              class="mt-0.5 size-4 shrink-0"
+              aria-hidden="true"
+            />
+            {{ t("agenda.newDocument.source.wordHint") }}
+          </p>
+
+          <p v-if="member" class="text-muted flex items-center gap-2 text-sm">
+            {{ t("agenda.newDocument.presentingAs") }}
+            <CommonMemberBadge :member="member" show-name />
+          </p>
+        </template>
+
+        <!-- Managers: who presents it and by when -->
+        <div v-else class="grid gap-4 sm:grid-cols-2">
+          <UFormField
+            :label="t('agenda.newDocument.proponent')"
+            name="proponent"
+            :help="
+              membersFailed ? t('agenda.newDocument.membersError') : undefined
+            "
+          >
+            <USelectMenu
+              v-model="state.proponent"
+              :items="memberItems"
+              value-key="value"
+              :loading="membersLoading"
+              :search-input="{
+                placeholder: t('agenda.newDocument.searchMember'),
+              }"
+              class="w-full"
+            />
+          </UFormField>
+          <UFormField
+            :label="t('agenda.newDocument.dueAt')"
+            :hint="t('agenda.newDocument.optional')"
+            :help="
+              presenterMember
+                ? t('agenda.newDocument.dueAtHelpMember', {
+                    member: presenterMember.acronym,
+                  })
+                : t('agenda.newDocument.dueAtHelp')
+            "
+            name="dueAt"
+          >
+            <DocumentDateTimeInput v-model="state.dueAt" name="dueAt" />
+          </UFormField>
+        </div>
+
+        <UCollapsible v-if="isManager" v-model:open="advancedOpen">
+          <UButton
+            color="neutral"
+            variant="link"
+            size="sm"
+            class="px-0"
+            :icon="
+              advancedOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
+            "
+            :label="t('agenda.newDocument.advanced')"
+          />
+          <template #content>
+            <div class="border-default mt-2 space-y-4 rounded-md border p-3">
+              <p class="text-muted text-xs">
+                {{ t("agenda.newDocument.rulesHelp") }}
+              </p>
+              <UFormField :label="t('agenda.newDocument.format')" name="format">
+                <URadioGroup
+                  v-model="state.format"
+                  :items="formatItems"
+                  value-key="value"
+                  orientation="vertical"
+                  variant="card"
+                  class="w-full"
+                />
+              </UFormField>
+              <USwitch
+                v-model="state.amendable"
+                :disabled="state.format === 'file'"
+                :label="t('agenda.newDocument.amendable')"
+                :description="
+                  state.format === 'file'
+                    ? t('agenda.newDocument.fileNotAmendable')
+                    : undefined
+                "
+              />
+              <USwitch
+                v-model="state.voted"
+                :label="t('agenda.newDocument.voted')"
+              />
+              <UFormField
+                v-if="state.voted"
+                :label="t('agenda.newDocument.majority')"
+                name="majority"
+              >
+                <USelect
+                  v-model="state.majority"
+                  :items="majorityItems"
+                  value-key="value"
+                  class="w-full sm:w-64"
+                />
+              </UFormField>
+            </div>
+          </template>
+        </UCollapsible>
       </UForm>
     </template>
     <template #footer>
@@ -372,14 +544,19 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
           @click="open = false"
         />
         <UButton
+          v-if="isManager"
           type="submit"
           form="agenda-new-document-form"
           icon="i-lucide-file-plus"
-          :label="
-            isManager
-              ? t('agenda.newDocument.create')
-              : t('agenda.newDocument.submit')
-          "
+          :label="t('agenda.newDocument.create')"
+          :loading="saving"
+        />
+        <UButton
+          v-else
+          type="submit"
+          form="agenda-new-document-form"
+          trailing-icon="i-lucide-arrow-right"
+          :label="t('agenda.newDocument.continue')"
           :loading="saving"
         />
       </div>

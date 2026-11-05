@@ -5,8 +5,16 @@ import {
   ASSEMBLY_STATUS_TRANSITIONS,
   type AssemblyStatus,
 } from "~~/shared/constants/domain";
-import type { AssemblyDto } from "~~/shared/types/api";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import type { AssemblyDto, ReviewQueueDto } from "~~/shared/types/api";
 import { errorStatus } from "~/composables/api/useApi";
+import {
+  REVIEW_BADGE_STATE_KEY,
+  pendingReviewCount,
+  reviewQueueKey,
+  type ReviewBadgeState,
+} from "~/components/review/-queue";
+import { affectsReviewQueue } from "~/components/review/-live";
 
 /**
  * Assembly hub: loads the assembly by slug (or id), shares it with the
@@ -84,6 +92,87 @@ async function retryRefresh() {
 }
 
 const isPrintView = computed(() => Boolean(route.meta.print));
+
+// Validation inbox --------------------------------------------------------------
+//
+// The Secretaría's pending count for the "Validación" section and the
+// sidebar. The queue is fetched under the key the inbox page uses too, so
+// both share one request and one state; it follows the live stream here,
+// for every section. Client only: the count is not worth delaying the page.
+//
+// The count shows only once mounted. The inbox page fetches the same key
+// during SSR, after this toolbar has rendered without it; the client finds
+// that data in the payload, so showing it during hydration would mismatch.
+
+const { can } = useMe();
+const canValidateDocuments = computed(() =>
+  can(PERMISSION_KEYS.DOCUMENT_MANAGE),
+);
+const canReviewAmendments = computed(() =>
+  can(PERMISSION_KEYS.AMENDMENT_REVIEW),
+);
+const canReview = computed(
+  () => canValidateDocuments.value || canReviewAmendments.value,
+);
+
+const reviewFetch = useFetch<ReviewQueueDto>(
+  () => `${current.apiBase.value}/review`,
+  {
+    key: computed(() => reviewQueueKey(assembly.value?.id ?? "none")),
+    server: false,
+    lazy: true,
+    immediate: canReview.value && Boolean(assembly.value),
+    dedupe: "defer",
+  },
+);
+const { data: reviewQueue } = keepLastGoodData(reviewFetch, {
+  resetOn: () => assembly.value?.id,
+});
+
+// `immediate` is read once: start the fetch when the assembly or the
+// permission arrive later (a first load that failed, then a retry).
+watch([() => assembly.value?.id, canReview], ([id, allowed]) => {
+  if (id && allowed && reviewFetch.status.value === "idle") {
+    void reviewFetch.execute();
+  }
+});
+
+const mounted = ref(false);
+onMounted(() => {
+  mounted.value = true;
+});
+
+const reviewCount = computed(() =>
+  mounted.value && canReview.value
+    ? pendingReviewCount(reviewQueue.value, {
+        documents: canValidateDocuments.value,
+        amendments: canReviewAmendments.value,
+      })
+    : 0,
+);
+
+current.onLive((events) => {
+  if (canReview.value && affectsReviewQueue(events)) {
+    void reviewFetch.refresh({ dedupe: "defer" });
+  }
+});
+
+const reviewBadge = useState<ReviewBadgeState | null>(
+  REVIEW_BADGE_STATE_KEY,
+  () => null,
+);
+watch(
+  [() => assembly.value?.id, reviewCount, canReview],
+  ([id, count, allowed]) => {
+    reviewBadge.value = id && allowed ? { assemblyId: id, count } : null;
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => {
+  if (reviewBadge.value?.assemblyId === assembly.value?.id) {
+    reviewBadge.value = null;
+  }
+});
 
 useHead({
   title: () => assembly.value?.label ?? t("assembly.hub.loading"),
@@ -187,6 +276,8 @@ interface Section {
   visible: (value: AssemblyDto) => boolean;
 }
 
+// Settings must stay last: the projection link is inserted before it.
+
 const SECTIONS: Section[] = [
   {
     key: "overview",
@@ -205,6 +296,18 @@ const SECTIONS: Section[] = [
     path: "documentos",
     icon: "i-lucide-files",
     visible: () => true,
+  },
+  {
+    key: "validation",
+    path: "validacion",
+    icon: "i-lucide-inbox",
+    visible: () => canReview.value,
+  },
+  {
+    key: "tracking",
+    path: "seguimiento",
+    icon: "i-lucide-list-checks",
+    visible: () => canValidateDocuments.value,
   },
   {
     key: "calendar",
@@ -260,10 +363,28 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
         childPaths.value.has(section.path)),
   ).map((section) => {
     const to = sectionPath(section.path);
+    const pendingCount =
+      section.key === "validation" && reviewCount.value > 0
+        ? reviewCount.value
+        : 0;
     return {
       label: t(`assembly.sections.${section.key}`),
       icon: section.icon,
       to,
+      ...(pendingCount > 0
+        ? {
+            badge: {
+              label: String(pendingCount),
+              color: "warning" as const,
+              variant: "solid" as const,
+            },
+            "aria-label": t(
+              "assembly.sections.validationPending",
+              { count: pendingCount },
+              pendingCount,
+            ),
+          }
+        : {}),
       exact: section.path === "",
       // A document (documentos/<slug>/...) is a sibling route of the list,
       // not a child, so the router alone would not mark Documents active.

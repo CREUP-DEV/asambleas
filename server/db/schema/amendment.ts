@@ -106,10 +106,9 @@ export const amendments = pgTable(
       withTimezone: true,
       mode: "date",
     }),
-    validatedByUserId: text("validated_by_user_id").references(
-      () => users.id,
-      { onDelete: "set null" },
-    ),
+    validatedByUserId: text("validated_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
     /**
      * Visible to everyone who can see the document. Until then only its
      * authors, the Secretaría and the Mesa see it. Set by the Secretaría,

@@ -295,7 +295,10 @@
       "session": "Session",
       "projection": "Projection",
       "settings": "Settings",
-      "projectionNewWindow": "Projection (opens in a new window)"
+      "projectionNewWindow": "Projection (opens in a new window)",
+      "validation": "Validation",
+      "tracking": "Tracking",
+      "validationPending": "Validation: {count} pending | Validation: {count} pending"
     },
     "transitions": {
       "draft_convened": {
@@ -369,7 +372,18 @@
           "title": "Settings",
           "description": "Basic data and rules of this assembly."
         }
-      }
+      },
+      "review": {
+        "title": "Waiting for review"
+      },
+      "tasks": {
+        "title": "Your tasks in this assembly",
+        "upToDate": "You are all caught up in this assembly. What you sent is with the Secretariat or already published.",
+        "more": "See 1 more task on Home | See {count} more tasks on Home",
+        "all": "See your documents and amendments on Home",
+        "empty": "You have nothing in this assembly yet. What you present and anything the Secretariat asks of you will show up here."
+      },
+      "loading": "Loading the assembly figures"
     },
     "settingsPage": {
       "title": "Settings",
@@ -627,7 +641,22 @@
         "title": "The document could not be refreshed",
         "description": "You are seeing the last version loaded, and your unsaved changes are still here. Try again once you are back online."
       },
-      "returningToDocuments": "Returning to the document list"
+      "returningToDocuments": "Returning to the document list",
+      "steps": {
+        "what": "What it is",
+        "text": "The text",
+        "pdf": "The PDF",
+        "send": "Send to the Secretariat"
+      },
+      "sendHelp": "When the text is ready, send it to the Secretariat. It will review it before publishing it and, if something needs changing, it will ask you for a correction.",
+      "dueAt": "Secretariat deadline",
+      "wordCard": {
+        "title": "Do you have the document in Word?",
+        "description": "Upload it and its text will appear here. You can review it before it is saved.",
+        "orWrite": "Or write it directly in the box below."
+      },
+      "sendNeedsText": "First add the text in step 2.",
+      "sendNeedsPdf": "First upload the PDF in step 2."
     },
     "recovery": {
       "title": "Your version was not saved",
@@ -663,7 +692,9 @@
         "images_dropped": "Images and other non-text elements were left out."
       },
       "tooComplex": "The document is too long or complex to import. Split it into parts or simplify its formatting.",
-      "busy": "An import is already in progress. Wait a few seconds and try again."
+      "busy": "An import is already in progress. Wait a few seconds and try again.",
+      "uploadWord": "Upload Word file",
+      "useText": "Use this text"
     },
     "file": {
       "title": "PDF document",
@@ -672,7 +703,7 @@
       "view": "View PDF",
       "opensNewTab": "(opens in a new tab)",
       "none": "The PDF has not been uploaded yet",
-      "noneDescription": "Upload it before submitting or publishing the document.",
+      "noneDescription": "Upload it before sending or publishing the document.",
       "dropLabel": "Drop the PDF here or click to choose it",
       "replaceLabel": "Drop another PDF here to replace the current one",
       "dropDescription": "PDF files only, up to 20 MB",
@@ -692,12 +723,12 @@
       "format": "Format",
       "agendaItem": "Agenda item",
       "agendaUnavailable": "The agenda could not be loaded",
-      "proponent": "Proponent",
+      "proponent": "Who presents it",
       "proponentPlaceholder": "Choose who presents it",
       "searchMember": "Search by acronym or name",
       "noProponent": "No proponent",
       "managerOnly": "Only the Secretariat can change who presents it.",
-      "procedure": "Procedure",
+      "procedure": "Amendments and voting",
       "kindDefaultsHint": "Whether it accepts amendments, whether it is voted on and with which majority depend on the document type. The Secretariat can adjust them.",
       "applyDefaults": "Use the type defaults",
       "amendable": "Accepts amendments",
@@ -722,17 +753,26 @@
         "titleTooLong": "The title cannot be longer than {max} characters.",
         "summaryTooLong": "The summary cannot be longer than {max} characters.",
         "closeBeforeOpen": "The closing date must be after the opening date."
-      }
+      },
+      "presentedBy": "Presented by",
+      "more": "More options",
+      "agendaItemHelp": "Change it only if the document belongs under another item.",
+      "dueAt": "Internal deadline",
+      "dueAtDescription": "When the presenter has to send it to the Secretariat by.",
+      "advanced": "Advanced options",
+      "invalid": "Check the document details"
     },
     "submit": {
-      "button": "Submit",
-      "title": "Submit the document",
-      "description": "The Secretariat will review it for publication. Once submitted, you can no longer edit it.",
-      "confirm": "Submit document",
+      "button": "Send to the Secretariat",
+      "title": "Send to the Secretariat",
+      "description": "The Secretariat will review it before publishing it. Meanwhile you cannot edit it; if something needs changing, it will ask you for a correction.",
+      "confirm": "Send to the Secretariat",
       "deadline": "Submission deadline",
-      "working": "Submitting the document...",
-      "success": "Document submitted",
-      "error": "The document could not be submitted"
+      "working": "Sending the document to the Secretariat...",
+      "success": "Sent to the Secretariat",
+      "error": "The document could not be sent",
+      "resend": "Send to the Secretariat again",
+      "resendDescription": "The Secretariat will review the corrected document again. Meanwhile you cannot edit it."
     },
     "publish": {
       "button": "Publish",
@@ -776,7 +816,12 @@
         "referenceAssign": "Will receive the next {prefix} reference of {year}",
         "referenceNone": "This type of document has no reference",
         "scheduled": "Publication planned in the calendar: {date}",
-        "assemblyDraft": "The assembly is still a draft: only its managers will see the document until it is convened"
+        "assemblyDraft": "The assembly is still a draft: only its managers will see the document until it is convened",
+        "dueOpen": "Secretariat deadline: {date}",
+        "duePassed": "The Secretariat deadline was {date}",
+        "duePassedHint": "You can still send it.",
+        "metadataWillSave": "The changes to the document details will be saved before continuing",
+        "correctionReopen": "The Secretariat asked for this correction: you can send it again."
       }
     },
     "republish": {
@@ -816,7 +861,92 @@
       },
       "delete": {
         "description": "“{title}” will be deleted with its text and details. This action cannot be undone."
+      },
+      "publishNow": "Publish now"
+    },
+    "progress": {
+      "label": {
+        "expected": "To hand in",
+        "preparing": "In preparation",
+        "correction": "Correction requested",
+        "submitted": "Sent to the Secretariat",
+        "overdue": "Overdue"
+      },
+      "presenter": {
+        "expected": "It has no text yet. Add it and send it to the Secretariat.",
+        "expectedDue": "The Secretariat expects this document by {date}.",
+        "expectedOverdue": "The Secretariat expected this document by {date}. Send it as soon as you can.",
+        "preparing": "Draft: when it is ready, send it to the Secretariat.",
+        "preparingDue": "Draft: when it is ready, send it to the Secretariat by {date}.",
+        "preparingOverdue": "Draft: the Secretariat expected it by {date}. Send it as soon as you can.",
+        "correction": "The Secretariat asks for a correction: {note}",
+        "correctionNoNote": "The Secretariat asks for a correction. Fix it and send it again.",
+        "submitted": "Sent to the Secretariat: it will review it before publishing it."
+      },
+      "manager": {
+        "expected": "It has no text yet.",
+        "expectedDue": "Waiting for the text. Deadline: {date}.",
+        "expectedOverdue": "Waiting for the text. The deadline ({date}) has passed.",
+        "preparing": "In preparation: not sent to the Secretariat yet.",
+        "preparingDue": "In preparation. Deadline: {date}.",
+        "preparingOverdue": "In preparation. The deadline ({date}) has passed.",
+        "correction": "A correction was requested: {note}",
+        "correctionNoNote": "A correction was requested. Waiting for it to be sent again.",
+        "submitted": "Sent to the Secretariat: validate and publish it, or ask for a correction."
+      },
+      "other": {
+        "submitted": "Sent to the Secretariat: waiting for validation."
+      },
+      "all": {
+        "published": "Published: everyone in the assembly can see it.",
+        "withdrawn": "Withdrawn: it will not be dealt with at the assembly.",
+        "postponed": "Postponed: it will not be dealt with at this assembly."
+      },
+      "action": {
+        "prepare": "Prepare the document",
+        "continue": "Keep working on it",
+        "fix": "Fix and send again"
+      },
+      "banner": {
+        "correctionTitle": {
+          "presenter": "The Secretariat asks for a correction",
+          "manager": "A correction was requested"
+        },
+        "correctionHint": {
+          "presenter": "Fix it and send it to the Secretariat again.",
+          "manager": "The presenter will fix it and send it again."
+        },
+        "submittedOn": "Sent on {date}.",
+        "dueCountdown": "Deadline"
       }
+    },
+    "correction": {
+      "button": "Ask for a correction",
+      "title": "Request a correction",
+      "description": "The document goes back to its presenter with your note. Once it is fixed, they will send it to the Secretariat again.",
+      "descriptionMember": "The document goes back to {member} with your note. Once it is fixed, they will send it to the Secretariat again.",
+      "note": "What needs fixing",
+      "noteHelp": "Be clear: this is what the presenter will read.",
+      "noteRequired": "Write what needs fixing.",
+      "confirm": "Send the request",
+      "success": "Correction requested",
+      "successMember": "{member} will see your note and can fix it.",
+      "error": "The correction could not be requested",
+      "conflict": "The document has changed. Check it and ask for the correction again.",
+      "noLongerSubmitted": "The document is no longer waiting for review"
+    },
+    "validate": {
+      "button": "Validate and publish",
+      "title": "Validate and publish the document",
+      "description": "Validating it publishes it: everyone in the assembly will be able to see it. The text is fixed and changes will be proposed as amendments.",
+      "descriptionFile": "Validating it publishes it: everyone in the assembly will be able to see it.",
+      "confirm": "Validate and publish",
+      "working": "Validating and publishing the document...",
+      "success": "Document validated and published"
+    },
+    "kindGroups": {
+      "common": "Most common",
+      "others": "Other types"
     }
   },
   "amendment": {
@@ -834,7 +964,62 @@
     "submitted": "Amendment submitted successfully",
     "created": "Amendment created successfully",
     "updated": "Amendment updated successfully",
-    "review": "Review amendment",
+    "review": {
+      "label": "Secretariat review",
+      "badges": {
+        "draft": "Not sent",
+        "correction": "Correction requested",
+        "correction_sent": "Correction requested",
+        "to_validate": "To review",
+        "pending": "Being reviewed",
+        "to_publish": "Validated, not published",
+        "validated": "Validated, not published",
+        "published": "Published"
+      },
+      "states": {
+        "draft": "You have not sent it yet. Once you send it, the Secretariat will check it before anyone else can see it.",
+        "correction": "The Secretariat asks you to fix it. Once it is ready, send it again.",
+        "correction_sent": "It was sent back to its presenters to fix it.",
+        "to_validate": "Review it: validate it or ask its presenters to fix it.",
+        "pending": "The Secretariat is checking it. Until then, only its presenters, the Secretariat and the Mesa can see it.",
+        "to_publish": "It is validated, but the rest of the assembly cannot see it yet. Publish it whenever you want.",
+        "validated": "The Secretariat validated it. Everyone will see it once it is published; until then, only its presenters, the Secretariat and the Mesa can see it.",
+        "published": "The whole assembly can see it.",
+        "pending_others": "The Secretariat has not checked it yet. The rest of the assembly cannot see it yet.",
+        "validated_others": "The Secretariat validated it but has not published it yet: the rest of the assembly cannot see it yet."
+      },
+      "awaitingAdmission": "It arrived late: the Mesa will decide whether to admit it.",
+      "lateHint": "It arrived late: even if you validate it, the Mesa will have to decide whether to admit it.",
+      "noteFromSecretaria": "Note from the Secretariat",
+      "audience": {
+        "author": "Only its presenters, the Secretariat and the Mesa can see it.",
+        "others": "The rest of the assembly cannot see it."
+      },
+      "actions": {
+        "fix": "Fix and send again",
+        "validatePublish": "Validate and publish",
+        "validateOnly": "Validate without publishing",
+        "askCorrection": "Ask for a correction",
+        "sendCorrection": "Send the request",
+        "publish": "Publish"
+      },
+      "validateOnlyHint": "If you validate it without publishing it, only its presenters, the Secretariat and the Mesa will see it until you publish it.",
+      "correctionNote": "What they need to fix",
+      "correctionHelp": "Its presenters will see this. The amendment becomes a draft again until they send it again.",
+      "correctionPlaceholder": "For example: the change affects another article; say which one.",
+      "correctionRequired": "Write what they need to fix.",
+      "toasts": {
+        "validatedPublished": "Amendment validated and published",
+        "validated": "Amendment validated",
+        "validatedDescription": "Publish it when you want the whole assembly to see it.",
+        "published": "Amendment published: the whole assembly can see it now",
+        "correctionSent": "Correction requested",
+        "correctionSentDescription": "The amendment went back to its presenters with your note.",
+        "validateFailed": "The amendment could not be validated",
+        "publishFailed": "The amendment could not be published",
+        "correctionFailed": "The correction could not be requested"
+      }
+    },
     "reviewAction": {
       "accept": "Validate",
       "reject": "Reject",
@@ -912,8 +1097,9 @@
       "delete": "Delete draft",
       "edit": "Edit",
       "retry": "Try again",
-      "submit": "Submit",
-      "withdraw": "Withdraw"
+      "submit": "Send to the Secretariat",
+      "withdraw": "Withdraw",
+      "more": "More"
     },
     "card": {
       "global": "Whole text",
@@ -928,8 +1114,8 @@
       "loading": "Loading amendments",
       "error": "The amendments could not be loaded",
       "empty": "No amendments yet",
-      "emptyDescription": "Amendments to this document will appear here, in text order, once they are submitted.",
-      "emptyCanAmend": "Select one or more paragraphs in the text and press “Amend” to submit the first one.",
+      "emptyDescription": "Published amendments will appear here, in text order.",
+      "emptyCanAmend": "Press “Present an amendment” and choose the paragraph you want to change.",
       "emptyFiltered": "No amendment matches the filters"
     },
     "filters": {
@@ -937,9 +1123,9 @@
       "searchPlaceholder": "Code, member or justification",
       "button": "Filters",
       "buttonActive": "Active filters: {count}",
-      "status": "Status",
-      "kind": "Type",
-      "member": "Presenting member",
+      "status": "Where it stands",
+      "kind": "Kind of amendment",
+      "member": "Who presents it",
       "memberSearch": "Search member",
       "late": "Deadline",
       "lateOptions": {
@@ -952,7 +1138,14 @@
       "clear": "Clear filters",
       "block": "Only the chosen paragraph",
       "blockNamed": "Only those touching {block}",
-      "removeBlock": "Remove the paragraph filter"
+      "removeBlock": "Remove the paragraph filter",
+      "review": "Secretariat review",
+      "reviewOptions": {
+        "any": "Any",
+        "pending_validation": "To review",
+        "validated": "Validated, not published",
+        "published": "Published"
+      }
     },
     "detail": {
       "close": "Close the amendment",
@@ -963,7 +1156,7 @@
       "returnNote": "Proposes returning the document to its proponent: it does not change the text and only carries a justification.",
       "justification": "Justification",
       "noJustification": "No justification yet.",
-      "authors": "Presented by",
+      "authors": "Who presents it",
       "presenting": "presenting",
       "submittedAt": "Submitted on {date}",
       "outcome": "Outcome",
@@ -978,15 +1171,20 @@
       "transactional": "Transactional links",
       "sources": "Source amendments:",
       "transactedIn": "Included in:",
-      "submitted": "Amendment submitted",
-      "submittedLate": "It was submitted late and awaits admission.",
+      "submitted": "Amendment sent to the Secretariat",
+      "submittedLate": "It arrived late: the Secretariat will check it and the Mesa will decide whether to admit it.",
       "submitFailed": "The amendment could not be submitted",
       "withdrawConfirm": "Withdraw this amendment? It will not be debated.",
       "withdrawn": "Amendment withdrawn",
       "withdrawFailed": "The amendment could not be withdrawn",
       "deleteConfirm": "Delete this draft? This cannot be undone.",
       "deleted": "Draft deleted",
-      "deleteFailed": "The draft could not be deleted"
+      "deleteFailed": "The draft could not be deleted",
+      "submittedDescription": "It will be checked before anyone else can see it.",
+      "showHistory": "Show the history",
+      "hideHistory": "Hide the history",
+      "presented": "Amendment presented",
+      "presentedDescription": "The whole assembly can see it now."
     },
     "position": {
       "title": "Proponent's position",
@@ -1083,7 +1281,10 @@
         "acceptance_recorded": "A party answered",
         "relation_created": "Relation added",
         "relation_deleted": "Relation removed",
-        "other": "Change recorded"
+        "other": "Change recorded",
+        "amendment_validated": "Validated by the Secretariat",
+        "amendment_published": "Published",
+        "amendment_correction_requested": "The Secretariat asked for a correction"
       },
       "admissionMethods": {
         "mesa": "By decision of the presiding board",
@@ -1120,36 +1321,37 @@
       }
     },
     "composer": {
-      "titleNew": "New amendment",
-      "titleEdit": "Edit draft",
+      "titleNew": "Present an amendment",
+      "titleEdit": "Continue the draft",
       "close": "Close the amendment editor",
       "mode": "What to amend",
       "modes": {
-        "passage": "Change the selected passage",
-        "delete": "Delete the selected passage",
-        "global": "Replace a term throughout the text",
-        "return": "Whole text: return",
-        "alternative": "Whole text: alternative text"
+        "passage": "Change this text",
+        "delete": "Remove this text",
+        "global": "Change a word throughout the document",
+        "return": "Send the document back",
+        "alternative": "Propose an alternative text",
+        "add": "Add a paragraph after it"
       },
       "modeDescriptions": {
-        "passage": "Edit the text as you want it to read: the change is worked out for you.",
-        "delete": "Proposes removing the selected paragraphs.",
-        "global": "Changes a word or phrase everywhere in the document.",
-        "return": "Proposes returning the document unchanged. It only carries a justification.",
-        "alternative": "Proposes replacing the whole document with a new text."
+        "passage": "Write the text as you want it to read. The change is marked for you.",
+        "delete": "You propose removing the paragraphs you chose.",
+        "global": "The word or phrase changes throughout the document.",
+        "return": "You propose sending the document back to whoever presented it, without changing the text. You only explain why.",
+        "alternative": "You propose replacing the whole document with a new text."
       },
       "passageCount": "No paragraphs selected | One paragraph selected | {count} paragraphs selected",
       "editorLabel": "Amended text of the passage",
       "editorPlaceholder": "Write the text you propose",
-      "editorHint": "You can change words, delete or add paragraphs. Whatever you leave untouched stays as it is.",
-      "deleteHint": "The selected paragraphs will be removed. Check the preview.",
+      "editorHint": "Change, delete or add whatever you want. Whatever you leave untouched stays as it is.",
+      "deleteHint": "This is what would be removed from the text.",
       "find": "Current term",
       "findPlaceholder": "e.g. Executive Committee",
       "replace": "New term",
       "replacePlaceholder": "Leave it empty to remove it",
       "globalHint": "Type the term to see how often it appears.",
       "occurrences": "No occurrences | One occurrence (paragraphs affected: {blocks}) | {count} occurrences (paragraphs affected: {blocks})",
-      "returnNote": "A return amendment does not change the text. Explain in the justification why it should be returned.",
+      "returnNote": "This amendment does not change the text: explain below why the document should be sent back.",
       "alternativeHint": "Write the full text you propose instead of the current one.",
       "alternativeLabel": "Full alternative text",
       "alternativePlaceholder": "Write the alternative text here",
@@ -1171,25 +1373,25 @@
       },
       "justification": "Justification",
       "justificationPlaceholder": "Explain why you propose this change",
-      "justificationRequired": "A justification is required to submit the amendment.",
+      "justificationRequired": "Explain why you propose it before sending it.",
       "onBehalf": "Submit on behalf of",
       "onBehalfPlaceholder": "Choose the presenting member",
       "onBehalfHint": "For amendments dictated in session. Who recorded it is kept on record.",
       "onBehalfRequired": "Choose the member presenting the amendment.",
-      "coAuthors": "Co-authors",
-      "coAuthorsHint": "Other members presenting the amendment jointly.",
+      "coAuthors": "Are you presenting it with other members?",
+      "coAuthorsHint": "Add them only if the amendment is a joint one.",
       "coAuthorsPlaceholder": "Add members (optional)",
       "memberSearch": "Search member",
       "lateTitle": "Amendment window closed",
-      "lateWarning": "It will be submitted late and will need to be admitted.",
+      "lateWarning": "It will arrive late: the Mesa will decide whether to admit it.",
       "noMember": "Your account is not linked to any member",
       "noMemberDescription": "Only members can submit amendments. Contact the Secretariat if you think this is a mistake.",
       "saveDraft": "Save draft",
-      "submit": "Submit",
+      "submit": "Send to the Secretariat",
       "saved": "Draft saved",
       "saveFailed": "The amendment could not be saved",
-      "submitted": "Amendment submitted",
-      "submittedLate": "It was submitted late and awaits admission.",
+      "submitted": "Amendment sent to the Secretariat",
+      "submittedLate": "It arrived late: the Secretariat will check it and the Mesa will decide whether to admit it.",
       "submitFailed": "The amendment could not be submitted",
       "onBehalfOnlyHint": "Your account does not present amendments of its own: choose the member you are recording it for.",
       "sync": {
@@ -1209,7 +1411,34 @@
         "keepMine": "Keep mine",
         "overwrite": "Overwrite",
         "overwriteConfirm": "Overwrite the saved version with yours? The other person's changes will be lost."
-      }
+      },
+      "titleCorrection": "Fix the amendment",
+      "correctionTitle": "The Secretariat asks you to fix it",
+      "step": "Step {n}:",
+      "steps": {
+        "what": "What you want to do",
+        "write": "Write how you want it to read",
+        "writeAdd": "Write the new paragraph",
+        "writeGlobal": "Which word you want to change",
+        "writeAlternative": "Write the text you propose",
+        "check": "Check the change",
+        "why": "Explain why (justification)"
+      },
+      "changeChoice": "Change",
+      "hideChoices": "Hide options",
+      "selectFirst": "To change or remove a text, first choose the paragraph in the document.",
+      "advanced": "Amendment to the whole text (advanced)",
+      "totalityLegend": "Amendment to the whole text",
+      "addHint": "Write the new paragraph below the current text. Whatever you leave untouched stays as it is.",
+      "justificationHelp": "It is required to send it and helps everyone understand your proposal.",
+      "moreOptions": "More options: co-authors and formal amendments",
+      "formal": "It only fixes typos, style or numbering",
+      "formalDescription": "It is a formal amendment: it does not change the meaning of the text.",
+      "reviewNotice": "The Secretariat will check it before anyone else can see it.",
+      "submittedDescription": "It will be checked before anyone else can see it. You can follow it under “My amendments”.",
+      "lateKeptTitle": "It arrived late",
+      "lateKeptWarning": "Even after you fix it, the Mesa will have to decide whether to admit it.",
+      "correctionOnTime": "You sent it on time: even though the deadline has passed, it still counts as on time once you fix it."
     },
     "errors": {
       "empty": "The amendment proposes no change.",
@@ -1246,7 +1475,7 @@
       "lastSync": "Last sync",
       "registeredAt": "Joined",
       "user": "User",
-      "description": "Accounts that have signed in and their platform role. The Associate and Guest roles are synced from the intranet on every sign-in.",
+      "description": "Accounts that have signed in, their platform role and the member they act for. The Associate, CEA and Guest roles are synced from the intranet on every sign-in, and accounts with intranet initials are linked to their member automatically. Link the rest by hand so they can present documents and amendments on that member's behalf.",
       "noRole": "No role",
       "confirmRoleChange": "Confirm role change",
       "confirmRoleChangeMessage": "Change the role of {user} to {role}?",
@@ -1256,7 +1485,25 @@
       "roleFor": "Role of {user}",
       "intranetRole": "Intranet role: {role}",
       "neverSynced": "Never",
-      "roleChangeFailed": "The role could not be changed"
+      "roleChangeFailed": "The role could not be changed",
+      "actsFor": "Acts for",
+      "chooseMember": "Choose a member",
+      "searchMember": "Search by acronym or name",
+      "noMember": "Not linked",
+      "inactiveMember": "{member} (inactive)",
+      "memberFor": "Member {user} acts for",
+      "intranetInfo": "In the intranet: {initials} · {role}",
+      "confirmMemberLink": "Confirm link",
+      "confirmMemberLinkMessage": "Link {user} to {member}? They will present documents and amendments on its behalf.",
+      "confirmMemberUnlinkMessage": "Unlink {user}? They will no longer present documents and amendments for any member.",
+      "memberLinked": "{user} now acts for {member}",
+      "memberUnlinked": "{user} is no longer linked to any member",
+      "memberLinkFailed": "Could not change the link",
+      "edit": "Edit roles and links",
+      "editDone": "Done",
+      "editingHelp": "Choose each account's role and member. Every change is confirmed before it is saved.",
+      "editingOn": "You can change roles and links now.",
+      "editingOff": "You have finished editing."
     },
     "roles": {
       "title": "Roles and permissions",
@@ -1530,7 +1777,10 @@
       "session": "Session",
       "projection": "Projection",
       "projectionNewTab": "Projection (opens in a new tab)",
-      "settings": "Settings"
+      "settings": "Settings",
+      "validation": "Validation",
+      "tracking": "Tracking",
+      "validationPending": "Validation: {count} pending | Validation: {count} pending"
     },
     "live": {
       "region": "Assembly in session",
@@ -1560,7 +1810,8 @@
       "moderador": "Moderator",
       "asociado": "Associate",
       "invitado": "Guest",
-      "none": "No role"
+      "none": "No role",
+      "cea": "Executive Committee (CEA)"
     },
     "memberKinds": {
       "asociado": "Member council",
@@ -1606,6 +1857,72 @@
       "users": "Users",
       "roles": "Roles and permissions",
       "members": "Members"
+    },
+    "todo": {
+      "title": "What you need to do",
+      "count": "1 task to do | {count} tasks to do",
+      "loading": "Loading your tasks",
+      "loadFailed": "Your tasks could not be loaded",
+      "emptyTitle": "You are all caught up",
+      "emptyDescription": "Nothing is waiting for you. If the Secretariat asks you for a document or a correction, you will see it here.",
+      "emptyNoMember": "Nothing is waiting for you. To present documents or amendments, your account has to be linked to a member."
+    },
+    "mine": {
+      "title": "Your documents and amendments",
+      "showMore": "Show 1 more | Show {count} more",
+      "showLess": "Show less"
+    },
+    "review": {
+      "title": "Waiting for review in the {assembly}",
+      "lines": {
+        "documentsToValidate": "document to validate | documents to validate",
+        "amendmentsToValidate": "amendment to validate | amendments to validate",
+        "amendmentsToPublish": "validated amendment not public yet | validated amendments not public yet",
+        "documentsOverdue": "document not delivered on time | documents not delivered on time"
+      },
+      "open": "Review",
+      "tracking": "See tracking"
+    },
+    "work": {
+      "amendment": "Amendment {code}",
+      "amendmentDraft": "Unsent amendment",
+      "amendmentTo": "Document: {document}",
+      "note": "Note from the Secretariat:",
+      "due": "Deadline: {date}",
+      "overdue": "The deadline was {date}. Please hand it in as soon as you can.",
+      "actionFor": "{action} “{item}”",
+      "tasks": {
+        "document_correction": {
+          "text": "The Secretariat asked you to correct it. When it is ready, send it again.",
+          "action": "Correct"
+        },
+        "document_prepare": {
+          "text": "You need to prepare it and send it to the Secretariat.",
+          "action": "Prepare"
+        },
+        "document_send": {
+          "text": "It is still a draft. When it is ready, send it to the Secretariat.",
+          "action": "Review and send"
+        },
+        "amendment_correction": {
+          "text": "The Secretariat asked you to correct it. When it is ready, send it again.",
+          "action": "Correct"
+        },
+        "amendment_draft": {
+          "text": "It is still a draft. When it is ready, send it to the Secretariat.",
+          "action": "Open"
+        }
+      },
+      "updates": {
+        "document_review": "The Secretariat is checking it. If anything needs changing, you will be asked here.",
+        "document_published": "Published. The whole assembly can read it now.",
+        "document_withdrawn": "Withdrawn. It will not be discussed at the assembly.",
+        "document_postponed": "Postponed. It will be discussed at another assembly.",
+        "amendment_review": "The Secretariat is checking it. If anything needs changing, you will be asked here.",
+        "amendment_validated": "Validated. Everyone will see it once the Secretariat publishes it.",
+        "amendment_published": "Published. It will be debated at the assembly.",
+        "amendment_other": "Status: {status}."
+      }
     }
   },
   "assemblies": {
@@ -1708,7 +2025,7 @@
     "lockedRoot": "Main item locked: the agenda is final",
     "documentsOf": "Documents of item {number}: {title}",
     "submissionsClosedAssembly": "The assembly is closed: documents can no longer be submitted.",
-    "submissionsDeadlinePassed": "The deadline for submitting documents has passed.",
+    "submissionsDeadlinePassed": "The deadline for submitting new documents has passed.",
     "submissionsOpened": "The item “{title}” now accepts documents from members",
     "submissionsClosed": "The item “{title}” no longer accepts documents from members",
     "moved": "“{title}” is now item {number}",
@@ -1740,10 +2057,12 @@
     "actions": {
       "edit": "Edit item",
       "addSubItem": "Add sub-item",
-      "newDocument": "New document",
+      "newDocument": "Add document",
       "delete": "Delete item",
       "menu": "Actions for item {number}: {title}",
-      "submitDocument": "Submit a document"
+      "submitDocument": "Submit a document",
+      "newDocumentIn": "Add document to item {number}: {title}",
+      "submitDocumentIn": "Submit a document under item {number}: {title}"
     },
     "form": {
       "title": "Title",
@@ -1797,21 +2116,21 @@
       "two_thirds": "Two-thirds majority"
     },
     "newDocument": {
-      "title": "New document",
+      "title": "Add document",
       "submitTitle": "Submit a document",
       "under": "Under item {number}: {title}",
       "kind": "Document type",
-      "proponent": "Proponent",
-      "noProponent": "No proponent",
+      "proponent": "Who presents it",
+      "noProponent": "Nobody (the Secretariat prepares it)",
       "searchMember": "Search members",
       "membersError": "The member list could not be loaded",
-      "format": "Format",
+      "format": "How the text is provided",
       "documentTitle": "Document title",
       "titleRequired": "Enter the document title",
-      "summary": "Summary",
-      "summaryHelp": "Optional. One or two sentences about what the document contains.",
+      "summary": "Short summary",
+      "summaryHelp": "Optional. One or two sentences about what it is about.",
       "rules": "Amendments and voting",
-      "rulesHelp": "Defaults for this document type. You can change them.",
+      "rulesHelp": "The rules of the document type apply. Change them only if this document is different.",
       "amendable": "Accepts amendments",
       "fileNotAmendable": "PDF documents cannot be amended.",
       "voted": "Put to a vote",
@@ -1820,10 +2139,47 @@
       "amendableNo": "Does not accept amendments",
       "votedWith": "Voted by {majority}",
       "notVoted": "Not voted",
-      "create": "Create document",
+      "create": "Add document",
       "submit": "Submit",
       "created": "Document created",
-      "error": "The document could not be created"
+      "error": "The document could not be created",
+      "createdFor": "Document added: {title}",
+      "kindRequired": "Choose the document type",
+      "kindPlaceholder": "Choose the type",
+      "continue": "Continue",
+      "draftCreated": "Draft saved",
+      "draftCreatedDescription": "Now add the text. It will not be published until the Secretariat validates it.",
+      "dueAt": "Internal deadline",
+      "optional": "Optional",
+      "dueAtHelp": "When the presenter has to send it to the Secretariat by.",
+      "dueAtHelpMember": "When {member} has to send it by. They will see it on their home page.",
+      "advanced": "Advanced options",
+      "expectedFrom": "{member} will see it on their home page to prepare it.",
+      "openDocument": "Open",
+      "presentingAs": "You present it on behalf of",
+      "source": {
+        "label": "What form is the text in?",
+        "structured": "In Word, or I will write it here (recommended)",
+        "structuredDescription": "In the next step you upload the Word file or write it on the platform.",
+        "file": "As a PDF",
+        "fileDescription": "In the next step you upload the PDF. It is published as it is.",
+        "wordHint": "In the next step you can upload your Word document or write it here."
+      },
+      "steps": {
+        "label": "Steps to submit a document",
+        "what": "What it is",
+        "text": "The text",
+        "send": "Send to the Secretariat",
+        "position": "Step {step} of {total}:"
+      }
+    },
+    "organize": {
+      "start": "Organise agenda",
+      "done": "Finish organising",
+      "hint": "You are organising the agenda: move, edit or delete items, choose which ones accept documents and add the documents you expect.",
+      "hintDocuments": "You are organising the documents: add the documents you expect under each item.",
+      "enabled": "Organising on: every item shows its controls to move, edit or delete it.",
+      "disabled": "Organising finished: the agenda is back to the normal view."
     }
   },
   "calendar": {
@@ -1947,12 +2303,14 @@
     "consolidatedPage": "Consolidated text",
     "detailDescription": "Amendment details",
     "newAmendment": "New amendment",
-    "includeAccepted": "Include those accepted by the proponent",
+    "includeAccepted": "Include those the proponent accepts",
     "newMenu": {
       "selection": "Amend the selection",
-      "global": "Replace a term throughout the text",
-      "return": "Whole text: return",
-      "alternative": "Whole text: alternative text"
+      "global": "Change a word throughout the document",
+      "return": "Send the document back",
+      "alternative": "Propose an alternative text",
+      "label": "Other amendments",
+      "totality": "Amendment to the whole text"
     },
     "panes": {
       "label": "View",
@@ -1962,27 +2320,29 @@
     "modes": {
       "label": "How to view the text",
       "original": "Original text",
-      "amended": "With amendment",
-      "consolidated": "Consolidated",
-      "compare": "Compare"
+      "amended": "One amendment on the text",
+      "consolidated": "Text with what was approved",
+      "compare": "Original and result",
+      "button": "View: {mode}"
     },
     "tabs": {
       "label": "Amendment lists",
-      "all": "Amendments",
-      "mine": "My drafts"
+      "all": "All",
+      "mine": "My amendments"
     },
     "mine": {
-      "empty": "You have no drafts",
-      "emptyDescription": "Drafts you save without submitting will appear here."
+      "empty": "You have not presented any amendments yet",
+      "emptyDescription": "Here you will see your drafts and where each amendment you send stands."
     },
     "selection": {
       "label": "Paragraph selection",
-      "hint": "Click a paragraph to select it (Shift + click for a range) or select text to amend it.",
+      "hint": "Click the paragraph you want to change.",
       "count": "One paragraph selected | {count} paragraphs selected",
-      "amend": "Amend",
-      "addAfter": "Add paragraph after",
-      "delete": "Delete",
-      "clear": "Clear the selection"
+      "amend": "Change this text",
+      "addAfter": "Add a paragraph after it",
+      "delete": "Remove this paragraph | Remove these paragraphs",
+      "clear": "Clear the selection",
+      "rangeHint": "Hold Shift to pick several."
     },
     "amended": {
       "empty": "Choose an amendment",
@@ -2021,7 +2381,7 @@
       "opens": "Opens",
       "closed": "Amendment window closed",
       "closedLateTitle": "Amendment window closed: late submissions",
-      "closedLate": "If you submit an amendment now, it will be late and will need to be admitted.",
+      "closedLate": "If you present a new amendment now, it will be late and the Mesa will decide whether to admit it.",
       "closedSince": "Closed",
       "voted": "The text has been voted: it takes no more amendments."
     },
@@ -2058,7 +2418,27 @@
       "again": "Generate again",
       "timeout": "The export is taking too long. Try again later."
     },
-    "editRecord": "Edit document record"
+    "editRecord": "Edit document record",
+    "cta": {
+      "present": "Present an amendment",
+      "hint": "Select the paragraph you want to change."
+    },
+    "more": {
+      "label": "More",
+      "consolidated": "Consolidated text and PDF"
+    },
+    "includeAcceptedOn": "With those the proponent accepts",
+    "corrections": {
+      "title": "The Secretariat asks you to fix one amendment | The Secretariat asks you to fix {count} amendments",
+      "description": "Read its note, fix it and send it again. | Read their notes, fix them and send them again.",
+      "action": "See what to fix"
+    },
+    "reviewQueue": {
+      "label": "Waiting for the Secretariat",
+      "toValidate": "{count} to review",
+      "toPublish": "{count} validated, not published"
+    },
+    "reviewAndValidate": "Review and validate"
   },
   "session": {
     "title": "Session console",
@@ -2133,7 +2513,16 @@
       "clusterLabel": "Group of {count} amendments on the same passage",
       "clusterTitle": "{codes} change the same passage",
       "clusterHint": "They cannot all be approved as written: transact them, withdraw some or vote on one.",
-      "transactCluster": "Transact these {count}"
+      "transactCluster": "Transact these {count}",
+      "validationTitle": "Not validated yet ({count})",
+      "validationHint": "The Secretariat has to validate them before the Mesa can debate them. Until then, only their authors, the Secretariat and the Mesa can see them.",
+      "validationHintCanValidate": "The Secretariat has not validated them yet, so they cannot be debated. Validate them here so they join the list and everyone can see them, or open them in Validation if they need to go back to their authors.",
+      "validateAll": "Validate and publish all ({count})",
+      "loading": "Loading the amendments",
+      "validationToValidate": "1 waiting for the Secretariat | {count} waiting for the Secretariat",
+      "validationInCorrection": "1 being corrected by its authors | {count} being corrected by their authors",
+      "openValidation": "Review in Validation",
+      "openValidationNewTab": "Review in Validation (opens in a new tab)"
     },
     "card": {
       "label": "Amendment {code}",
@@ -2145,7 +2534,15 @@
       "needsAcceptances": "Every party must accept the transactional before it is decided",
       "voteCounts": "In favour {inFavor} · Against {against} · Abstentions {abstentions}",
       "show": "Show changes",
-      "hide": "Hide changes"
+      "hide": "Hide changes",
+      "awaitingBadge": "Not validated",
+      "correctionBadge": "Being corrected",
+      "awaiting": "The Secretariat has not validated it yet. It cannot be debated until then.",
+      "awaitingCanValidate": "It is not validated yet. Check it and validate it so it can be debated.",
+      "correctionRequested": "The Secretariat asked its authors to correct it. It will come back here when they send it again.",
+      "correctionNote": "Note:",
+      "notPublic": "Not public yet",
+      "notPublicHint": "Only its authors, the Secretariat and the Mesa can see it."
     },
     "actions": {
       "debate": "Debate",
@@ -2166,7 +2563,10 @@
       "more": "More actions for {code}",
       "undo": "Undo",
       "retry": "Retry",
-      "readmit": "Re-admit"
+      "readmit": "Re-admit",
+      "validate": "Validate and publish",
+      "validateHint": "It becomes validated and visible to the whole assembly.",
+      "publish": "Make public"
     },
     "toasts": {
       "approved": "{code} approved",
@@ -2185,7 +2585,10 @@
       "transactionalCreated": "Transactional {code} created",
       "finalApproved": "Final text approved",
       "finalRejected": "Final text rejected",
-      "finalAnnulled": "Final vote annulled"
+      "finalAnnulled": "Final vote annulled",
+      "validated": "Amendment validated and published | {count} amendments validated and published",
+      "validatedLate": "It arrived late: the Mesa has to decide whether to admit it. | {count} arrived late: the Mesa has to decide whether to admit them.",
+      "published": "Amendment published | {count} amendments published"
     },
     "errors": {
       "live": "The debate could not be updated",
@@ -2195,7 +2598,9 @@
       "transactional": "The transactional could not be created",
       "acceptance": "The answer could not be recorded",
       "finalVote": "The final vote could not be recorded",
-      "annulFinalVote": "The final vote could not be annulled"
+      "annulFinalVote": "The final vote could not be annulled",
+      "validate": "The amendment could not be validated",
+      "publish": "The amendment could not be published"
     },
     "vote": {
       "title": "Vote on {code}",
@@ -2342,7 +2747,8 @@
       "notPublished": "The document is not published",
       "undecided": "1 amendment is still undecided | {count} amendments are still undecided",
       "totalityReturnBlocked": "{code}, a totality amendment returning the text, is approved: the text goes back and there is no final vote. Reopen it if it was approved by mistake.",
-      "amendmentsLoading": "Loading the document's amendments…"
+      "amendmentsLoading": "Loading the document's amendments…",
+      "awaitingValidation": "1 amendment is waiting for the Secretariat: it has to validate it or send it back to its authors before the final vote. | {count} amendments are waiting for the Secretariat: it has to validate them or send them back to their authors before the final vote."
     },
     "finalVote": {
       "title": "Final vote on the text",
@@ -2409,6 +2815,19 @@
         "author": "Author",
         "proponent": "Proponent"
       }
+    },
+    "confirm": {
+      "items": "Amendments affected"
+    },
+    "debateConfirm": {
+      "title": "{code} is not public yet",
+      "description": "Only its authors, the Secretariat and the Mesa can see it. If you put it under debate, it will show on the projection and the whole room will see it.",
+      "publishAndDebate": "Make it public and debate it",
+      "debateAnyway": "Debate it anyway"
+    },
+    "validateConfirm": {
+      "title": "Validate and publish 1 amendment? | Validate and publish {count} amendments?",
+      "description": "It becomes validated and the whole assembly can read it. This cannot be undone. | They become validated and the whole assembly can read them. This cannot be undone."
     }
   },
   "projection": {
@@ -2462,6 +2881,191 @@
     "emptyTitle": "No documents yet",
     "emptyDescription": "Documents are submitted from the agenda items that accept proposals.",
     "noMatchesTitle": "No document matches",
-    "noMatchesDescription": "Try another search or clear the filters."
+    "noMatchesDescription": "Try another search or clear the filters.",
+    "onlyMine": "Only those of {member}"
+  },
+  "review": {
+    "title": "Validation",
+    "intro": "Nothing presented is visible to anyone else until you validate it. Validating means approving it; publishing makes it visible to the whole assembly.",
+    "loading": "Loading what is waiting for validation",
+    "loadError": "Could not load what is waiting for validation",
+    "retry": "Try again",
+    "emptyTitle": "All caught up",
+    "emptyDescription": "Nothing is waiting for your validation. When someone sends a document or an amendment, it will show up here.",
+    "forbiddenTitle": "You do not have access to validation",
+    "forbiddenDescription": "Only the Secretariat validates the documents and amendments that are presented.",
+    "backToOverview": "Back to the overview",
+    "toTracking": "See tracking",
+    "presentedBy": "Presented by",
+    "noPresenter": "Not assigned",
+    "askCorrection": "Ask for a correction",
+    "more": "More",
+    "documents": {
+      "title": "Documents to validate",
+      "none": "No documents are waiting for your validation.",
+      "sent": "Sent",
+      "waiting": "Waiting for your validation. Until then only its presenters, the Secretariat and the Mesa can see it.",
+      "publish": "Validate and publish",
+      "open": "Read the document",
+      "confirmTitle": "Validate and publish this document?",
+      "confirmVisible": "The whole assembly will be able to read it.",
+      "confirmFrozen": "The text is fixed: it can no longer be edited, and it gets its reference if its type has one.",
+      "confirmAmendments": "Amendments can be presented within the window set by the calendar.",
+      "published": "“{title}” is published",
+      "publishedReference": "Reference: {reference}",
+      "publishError": "Could not publish the document",
+      "correctionSent": "A correction of “{title}” was requested",
+      "correctionHint": "It goes back to its presenters as a draft, with your note. Once they fix it, they will send it again.",
+      "correctionError": "Could not ask for the correction"
+    },
+    "amendments": {
+      "title": "Amendments",
+      "help": "When you validate an amendment you can publish it right away, or keep it validated and publish it later.",
+      "none": "No amendments are waiting for your validation.",
+      "noCode": "No number",
+      "sent": "Presented",
+      "waiting": "Waiting for your validation. Until then only its authors, the Secretariat and the Mesa can see it.",
+      "validatedHidden": "Validated, but the whole assembly cannot see it yet. Publish it whenever you want.",
+      "lateNote": "It arrived late: after you validate it, the Mesa decides whether to admit it.",
+      "lateHint": "Those that arrived late now wait for the Mesa's decision.",
+      "loadingText": "Loading the document text",
+      "textUnavailable": "The document text could not be loaded to show the changes.",
+      "validatePublish": "Validate and publish",
+      "validateOnly": "Validate without publishing",
+      "validateOnlyHelp": "It stays validated, but only its authors, the Secretariat and the Mesa see it until you publish it.",
+      "publish": "Publish",
+      "select": "Select {label}",
+      "selectAll": "Select all",
+      "selected": "{count} selected | {count} selected",
+      "bulkLabel": "Actions for the selected amendments of “{title}”",
+      "bulkValidatePublish": "Validate and publish ({count})",
+      "bulkValidateOnly": "Validate without publishing ({count})",
+      "bulkPublish": "Publish ({count})",
+      "clearSelection": "Clear selection",
+      "countToValidate": "{count} to validate | {count} to validate",
+      "countToPublish": "{count} validated, not published | {count} validated, not published",
+      "toPublishTitle": "Validated, not published yet",
+      "toPublishHelp": "Only their authors, the Secretariat and the Mesa see them. Publish them when you want the whole assembly to see them.",
+      "actionError": "Could not complete the action on the amendment",
+      "correctionHint": "It goes back to its authors as a draft, with your note.",
+      "done": {
+        "validate_publish": {
+          "one": "{label} validated and published",
+          "many": "{count} amendments validated and published"
+        },
+        "validate_only": {
+          "one": "{label} validated. It is not public yet.",
+          "many": "{count} amendments validated. They are not public yet."
+        },
+        "publish": {
+          "one": "{label} published",
+          "many": "{count} amendments published"
+        },
+        "correction": "A correction of {label} was requested"
+      },
+      "presentedBy": "Presented by"
+    },
+    "correction": {
+      "title": "Ask for a correction",
+      "descriptionDocument": "“{subject}” goes back to its presenters so they can fix it and send it again.",
+      "descriptionAmendment": "{subject} goes back to its authors so they can fix it and send it again.",
+      "noteLabel": "What do they need to fix?",
+      "noteHelp": "They will read it as written. Explain what needs to change.",
+      "noteRequired": "Write what needs fixing.",
+      "noteTooLong": "At most {max} characters.",
+      "send": "Send the request"
+    }
+  },
+  "tracking": {
+    "title": "Documentation tracking",
+    "intro": "The documents expected under each agenda item: who presents them, their internal deadline and how they are going.",
+    "loading": "Loading tracking",
+    "loadError": "Could not load tracking",
+    "add": "Add expected document",
+    "editDeadlines": "Edit deadlines",
+    "editDone": "Done",
+    "editingHelp": "Press “Change deadline” or “Set deadline” on the document you want. Only documents not sent yet can be changed.",
+    "editingOn": "You can change the deadlines now.",
+    "editingOff": "You have finished editing the deadlines.",
+    "emptyTitle": "No documents yet",
+    "emptyDescription": "Add the documents you expect from each member, such as each CEA area's report, with their internal deadline. They will find them on their home page to prepare them.",
+    "noAgendaTitle": "There is no agenda yet",
+    "noAgendaDescription": "Every document goes under an agenda item. Create the items first.",
+    "toAgenda": "Go to the agenda",
+    "noMatchesTitle": "No documents in “{filter}”",
+    "noMatchesDescription": "Try another status or show every document.",
+    "filtered": "Showing only: {filter}.",
+    "showAll": "Show all",
+    "unknownItem": "No agenda item",
+    "waitingValidation": "{count} document is waiting for your validation | {count} documents are waiting for your validation",
+    "toValidation": "Go to validation",
+    "forbiddenTitle": "You do not have access to tracking",
+    "forbiddenDescription": "Only the Secretariat tracks the assembly's documentation.",
+    "summary": {
+      "label": "Summary by status. Press one to see only those documents.",
+      "all": "In total",
+      "overdue": "Overdue",
+      "expected": "Not started | Not started",
+      "preparing": "In preparation | In preparation",
+      "correction": "Correction requested | Corrections requested",
+      "submitted": "Sent to the Secretariat | Sent to the Secretariat",
+      "published": "Published | Published",
+      "withdrawn": "Withdrawn | Withdrawn",
+      "postponed": "Postponed | Postponed"
+    },
+    "row": {
+      "presenter": "Presented by",
+      "noPresenter": "Not assigned",
+      "sent": "Sent",
+      "publishedOn": "Published",
+      "overdue": "Overdue",
+      "changeDeadline": "Change deadline",
+      "changeDeadlineFor": "Change the deadline of “{title}”",
+      "deadline": "Internal deadline",
+      "showMore": "Show more",
+      "showLess": "Show less",
+      "setDeadline": "Set deadline",
+      "setDeadlineFor": "Set a deadline for “{title}”"
+    },
+    "expected": {
+      "title": "Add expected document",
+      "description": "Create the empty document for whoever has to present it. They will find it on their home page and prepare it from there.",
+      "item": "Agenda item",
+      "itemPlaceholder": "Choose the item",
+      "itemRequired": "Choose the agenda item.",
+      "kind": "Document type",
+      "kindPlaceholder": "Choose the type",
+      "kindRequired": "Choose the document type.",
+      "titleRequired": "Write the title.",
+      "presenter": "Who presents it",
+      "presenterPlaceholder": "Choose the member",
+      "presenterRequired": "Choose who presents it.",
+      "searchMember": "Search by acronym or name",
+      "membersError": "Could not load the list of members",
+      "documentTitle": "Title",
+      "documentTitleHelp": "The presenter can change it.",
+      "deadline": "Internal deadline",
+      "deadlineHelp": "By when they have to send it to the Secretariat. Spanish peninsular time.",
+      "more": "More options",
+      "format": "How it will be delivered",
+      "create": "Add document",
+      "created": "Expected document added",
+      "createdFor": "“{title}” is now assigned to {member}",
+      "error": "Could not add the document"
+    },
+    "deadline": {
+      "title": "Change deadline",
+      "label": "Internal deadline",
+      "help": "Spanish peninsular time. The presenter will see the new deadline.",
+      "save": "Save deadline",
+      "clear": "Remove deadline",
+      "saved": "Deadline of “{title}” updated",
+      "savedShort": "Deadline updated",
+      "cleared": "“{title}” no longer has a deadline",
+      "error": "Could not change the deadline",
+      "titleNew": "Set deadline",
+      "saveNew": "Set deadline",
+      "pastWarning": "That date has already passed: the document will show as overdue as soon as you save it."
+    }
   }
 }

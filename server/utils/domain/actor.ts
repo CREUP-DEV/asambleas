@@ -79,6 +79,14 @@ export function canReviewAmendments(actor: Actor): boolean {
   );
 }
 
+/**
+ * Answer for an account that acts for no member (users.memberId) and tries
+ * to present something: the Secretaría links it (PUT
+ * /api/admin/users/[id]/member through an admin).
+ */
+export const UNLINKED_ACCOUNT_MESSAGE =
+  "Tu cuenta no está vinculada a ningún miembro. Pide a la Secretaría que la vincule a tu consejo o área.";
+
 /** Whether the actor speaks for any of the given members. */
 export function actsFor(
   actor: Actor,

@@ -179,11 +179,10 @@ the milestones as a print view and a PDF.
 
 - Assembly `status`: `draft`, `convened`, `in_session`, `closed`.
   `agendaFinalizedAt` marks the final agenda.
-- Per-assembly policies, with defaults from the research: who sees presented
-  amendments (default: authors, reviewers and the Mesa until the window
-  closes, then everyone; they are also public when there is no close date and
-  once the session starts), who sees proponent positions, whether accepted
-  amendments need a vote, the tie rule, and the majority denominator. Drafts
+- Per-assembly policies, with defaults from the research: who sees proponent
+  positions, whether accepted amendments need a vote, the tie rule, and the
+  majority denominator. Who sees a presented amendment is not a policy: the
+  Secretaría publishes each one (see "Validation by the Secretaría"). Drafts
   of documents and amendments stay private to their authors and managers.
 - `live_state` (one row per assembly): current agenda item, document and
   amendment under debate, plus the last recorded vote. The server projects

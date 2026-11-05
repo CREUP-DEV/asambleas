@@ -6,6 +6,10 @@
  * members, an 80.ª AGO convened with its amendment window open, a structured
  * positioning with amendments (overlapping, transactional, related), a
  * resolution with a late amendment pending admission, and a 35.ª AGE draft.
+ * The Secretaría's review shows too: most amendments validated and
+ * published, one validated and kept private, one waiting for validation, one
+ * sent back for correction, a resolution waiting for validation, and two
+ * expected CEA reports (one due soon, one overdue).
  * The demo is skipped when the 80.ª AGO already exists.
  *
  * Runs under tsx, outside Nuxt: import only from `shared/**` and
@@ -69,6 +73,8 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
     "Gestiona asambleas, documentos, miembros y revisión de enmiendas",
   [SYSTEM_ROLES.MODERADOR]:
     "Modera el desarrollo de las sesiones (Mesa de Moderación)",
+  [SYSTEM_ROLES.CEA]:
+    "Presenta la documentación de su área de la Comisión Ejecutiva y enmiendas",
   [SYSTEM_ROLES.ASOCIADO]: "Presenta documentos y enmiendas",
   [SYSTEM_ROLES.INVITADO]: "Solo lectura de contenido publicado",
 };
@@ -218,6 +224,14 @@ const DEMO_MEMBERS: DemoMember[] = [
     acronym: "VPU",
     kind: "executive",
     name: "Vicepresidencia de Política Universitaria",
+    university: null,
+    region: null,
+    source: "manual",
+  },
+  {
+    acronym: "PRES",
+    kind: "executive",
+    name: "Presidencia",
     university: null,
     region: null,
     source: "manual",
@@ -422,6 +436,13 @@ export interface DemoAmendment {
   submittedAt: Date;
   late: boolean;
   admission: "admitted" | "pending";
+  /**
+   * The Secretaría's review: validated (and published, when it was shown to
+   * everyone) at these times, or sent back to draft with a note.
+   */
+  validatedAt: Date | null;
+  publishedAt: Date | null;
+  correction: { note: string; at: Date } | null;
   position: {
     position: ProponentPosition;
     comment: string | null;
@@ -455,6 +476,14 @@ export interface DemoContent {
   amendments: DemoAmendment[];
   transactional: DemoTransactional;
   relation: { fromId: string; toId: string; note: string; at: Date };
+  /** Reports the Secretaría expects from CEA areas: empty drafts with an internal deadline. */
+  expectedReports: {
+    acronym: string;
+    title: string;
+    summary: string;
+    format: "structured" | "file";
+    dueAt: Date;
+  }[];
 }
 
 function atUtcHour(base: Date, days: number, hour: number): Date {
@@ -514,6 +543,8 @@ export function buildDemoContent(
   const transport = transportBlocks(newId);
   const ago = (hoursAgo: number) => new Date(now.getTime() - hoursAgo * HOUR);
 
+  // By default the Secretaría validated and published an amendment six hours
+  // after it was presented.
   const amendment = (
     input: Omit<
       DemoAmendment,
@@ -524,14 +555,26 @@ export function buildDemoContent(
       | "positionKey"
       | "late"
       | "admission"
+      | "validatedAt"
+      | "publishedAt"
+      | "correction"
     > &
-      Partial<Pick<DemoAmendment, "late" | "admission">>,
+      Partial<
+        Pick<
+          DemoAmendment,
+          "late" | "admission" | "validatedAt" | "publishedAt" | "correction"
+        >
+      >,
   ): DemoAmendment => {
     const base = input.document === "positioning" ? positioning : mentalHealth;
+    const validatedAt = new Date(input.submittedAt.getTime() + 6 * HOUR);
     const built: DemoAmendment = {
       id: newId(),
       late: false,
       admission: "admitted",
+      validatedAt,
+      publishedAt: validatedAt,
+      correction: null,
       number: null,
       memberSeq: null,
       code: null,
@@ -633,6 +676,14 @@ export function buildDemoContent(
     justification:
       "Con tres meses de plazo, muchas resoluciones llegan en pleno segundo cuatrimestre. Dos meses permiten cobrar antes de las vacaciones de invierno.",
     submittedAt: ago(60),
+    // Sent back by the Secretaría: CEEM has to fix it and present it again.
+    admission: "pending",
+    validatedAt: null,
+    publishedAt: null,
+    correction: {
+      note: "Indica en la justificación de dónde sale el plazo de dos meses (norma o estudio) para que la Mesa pueda valorarlo.",
+      at: ago(55),
+    },
     position: null,
   });
   const paymentDate = amendment({
@@ -663,6 +714,8 @@ export function buildDemoContent(
     justification:
       "Las universidades gestionan las becas propias y las exenciones de precios públicos: también deben ser destinatarias del posicionamiento.",
     submittedAt: ago(40),
+    // Validated (and admitted) but kept private: the Secretaría publishes it later.
+    publishedAt: null,
     position: null,
   });
   const decade = amendment({
@@ -673,6 +726,10 @@ export function buildDemoContent(
     justification:
       "Los umbrales no se actualizan con el IPC desde el curso 2010-2011.",
     submittedAt: ago(30),
+    // Waiting for the Secretaría to validate it.
+    admission: "pending",
+    validatedAt: null,
+    publishedAt: null,
     position: null,
   });
   const mastersReference = amendment({
@@ -730,7 +787,10 @@ export function buildDemoContent(
       "Sin confidencialidad ni horarios compatibles, muchos estudiantes no acuden al servicio aunque exista.",
     submittedAt: ago(3),
     late: true,
+    // Validated by the Secretaría; the Mesa still has to admit it.
     admission: "pending",
+    validatedAt: ago(1),
+    publishedAt: null,
     position: null,
   });
   if (confidentiality.submittedAt <= mentalHealthWindow.closesAt) {
@@ -772,6 +832,10 @@ export function buildDemoContent(
     submittedAt: ago(18),
     late: false,
     admission: "admitted",
+    // Proposed by CEUM, a party: it went through the Secretaría's validation.
+    validatedAt: ago(16),
+    publishedAt: ago(16),
+    correction: null,
     position: null,
     number: null,
     memberSeq: null,
@@ -830,6 +894,25 @@ export function buildDemoContent(
       note: "Si se suprime el párrafo sobre los másteres habilitantes, la remisión que introduce CEUAM 2 queda sin contenido.",
       at: ago(12),
     },
+    expectedReports: [
+      {
+        acronym: "VPU",
+        title:
+          "Informe de gestión de la Vicepresidencia de Política Universitaria",
+        summary:
+          "Actividad de la Vicepresidencia desde la última Asamblea General.",
+        format: "structured",
+        dueAt: atUtcHour(now, 3, 21),
+      },
+      {
+        acronym: "PRES",
+        title: "Informe de gestión de la Presidencia",
+        summary:
+          "Actividad de la Presidencia desde la última Asamblea General.",
+        format: "file",
+        dueAt: atUtcHour(now, -1, 21),
+      },
+    ],
   };
 }
 
@@ -1043,6 +1126,62 @@ async function insertStructuredDocument(
   return { id, baseVersionId, reference };
 }
 
+/**
+ * A document the Secretaría expects from a member: an empty draft with an
+ * internal deadline (`dueAt`) that the member fills in and presents.
+ */
+async function insertExpectedDocument(
+  tx: Tx,
+  input: {
+    assemblyId: string;
+    agendaItemId: string;
+    proponentMemberId: string;
+    title: string;
+    summary: string;
+    format: "structured" | "file";
+    dueAt: Date;
+    createdAt: Date;
+  },
+): Promise<string> {
+  const id = createId();
+  const defaults = DOCUMENT_KIND_DEFAULTS.executive_report;
+  const structured = input.format === "structured";
+  await tx.insert(schema.documents).values({
+    id,
+    assemblyId: input.assemblyId,
+    agendaItemId: input.agendaItemId,
+    slug: slugify(input.title) || id,
+    kind: "executive_report",
+    format: input.format,
+    title: input.title,
+    summary: input.summary,
+    status: "draft",
+    proponentMemberId: input.proponentMemberId,
+    amendable: structured && defaults.amendable,
+    voted: defaults.voted,
+    majority: defaults.majority,
+    dueAt: input.dueAt,
+    createdAt: input.createdAt,
+  });
+  if (structured) {
+    const workingVersionId = createId();
+    await tx.insert(schema.documentVersions).values({
+      id: workingVersionId,
+      documentId: id,
+      number: 1,
+      kind: "draft",
+      blocks: [],
+      contentHash: await hashContent(JSON.stringify([])),
+      createdAt: input.createdAt,
+    });
+    await tx
+      .update(schema.documents)
+      .set({ workingVersionId })
+      .where(eq(schema.documents.id, id));
+  }
+  return id;
+}
+
 async function seedDemo(db: Db, content: DemoContent): Promise<void> {
   const existing = await db.query.assemblies.findFirst({
     where: and(
@@ -1220,6 +1359,40 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
       }
     }
 
+    // Expected CEA reports: empty drafts the Secretaría created with a deadline.
+    const reportsItem = items.get(
+      "Informes de la Comisión Ejecutiva y de los comités",
+    )!;
+    for (const report of content.expectedReports) {
+      const createdAt = new Date(agendaFinal.getTime() + HOUR);
+      const id = await insertExpectedDocument(tx, {
+        assemblyId: agoId,
+        agendaItemId: reportsItem,
+        proponentMemberId: member(report.acronym),
+        title: report.title,
+        summary: report.summary,
+        format: report.format,
+        dueAt: report.dueAt,
+        createdAt,
+      });
+      events.push({
+        assemblyId: agoId,
+        entityType: "document",
+        entityId: id,
+        type: "document_created",
+        payload: {
+          documentId: id,
+          title: report.title,
+          kind: "executive_report",
+          format: report.format,
+          agendaItemId: reportsItem,
+          proponentMemberId: member(report.acronym),
+          dueAt: report.dueAt.toISOString(),
+        },
+        createdAt,
+      });
+    }
+
     // Amendments ---------------------------------------------------------------
     const documentOf = { positioning, mentalHealth } as const;
     const proponentOf = { positioning: "VPU", mentalHealth: "CEUAM" } as const;
@@ -1233,6 +1406,8 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
         presentingMemberId: authorIds[0],
         ...(item.globalReplace ? { globalReplace: item.globalReplace } : {}),
       };
+      // Sent back for correction: a draft again, keeping its number and code.
+      const { correction } = item;
       await tx.insert(schema.amendments).values({
         id: item.id,
         documentId: document.id,
@@ -1241,14 +1416,18 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
         memberSeq: item.memberSeq,
         code: item.code,
         kind: item.kind,
-        status: "submitted",
+        status: correction ? "draft" : "submitted",
         admission: item.admission,
         late: item.late,
         ops: item.ops,
         meta,
         justification: item.justification,
         positionKey: item.positionKey,
-        submittedAt: item.submittedAt,
+        submittedAt: correction ? null : item.submittedAt,
+        validatedAt: item.validatedAt,
+        publishedAt: item.publishedAt,
+        correctionNote: correction?.note ?? null,
+        correctionRequestedAt: correction?.at ?? null,
         createdAt,
       });
       await tx
@@ -1284,15 +1463,46 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
       events.push({
         ...base,
         type: "amendment_submitted",
+        // Presenting never admits: the Secretaría's validation does.
         payload: {
           ...(item.number !== null ? { number: item.number } : {}),
           code: item.code,
           late: item.late,
-          admission: item.admission,
+          admission: "pending",
         },
         actorMemberId: authorIds[0],
         createdAt: item.submittedAt,
       });
+      if (correction) {
+        events.push({
+          ...base,
+          type: "amendment_correction_requested",
+          payload: { note: correction.note },
+          createdAt: correction.at,
+        });
+      }
+      if (item.validatedAt) {
+        const publishedAtOnce =
+          item.publishedAt?.getTime() === item.validatedAt.getTime();
+        events.push({
+          ...base,
+          type: "amendment_validated",
+          payload: {
+            publish: publishedAtOnce,
+            admission: item.admission,
+            ...(item.admission === "admitted" ? { method: "secretaria" } : {}),
+          },
+          createdAt: item.validatedAt,
+        });
+        if (item.publishedAt && !publishedAtOnce) {
+          events.push({
+            ...base,
+            type: "amendment_published",
+            payload: {},
+            createdAt: item.publishedAt,
+          });
+        }
+      }
       if (item.position) {
         events.push({
           ...base,
@@ -1402,7 +1612,7 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
 
     await tx.insert(schema.events).values(events);
     console.log(
-      `  Demo: ${DEMO_MEMBERS.length} members, 80.ª AGO with ${content.amendments.length + 1} amendments, 35.ª AGE draft`,
+      `  Demo: ${DEMO_MEMBERS.length} members, 80.ª AGO with ${content.amendments.length + 1} amendments and ${content.expectedReports.length} expected reports, 35.ª AGE draft`,
     );
   });
 }

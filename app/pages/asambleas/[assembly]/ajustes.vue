@@ -171,7 +171,6 @@ function resetBasics() {
 type SettingKey = keyof AssemblySettings;
 
 const SETTING_OPTIONS: { [K in SettingKey]: AssemblySettings[K][] } = {
-  amendmentVisibility: ["after_close", "immediate"],
   positionVisibility: ["mesa", "session", "public"],
   acceptedAmendments: ["assent", "vote"],
   tieRule: ["rejected", "repeat"],

@@ -4,7 +4,9 @@ import type { AmendmentOp, Block } from "~~/shared/types/content";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { validateOps } from "~~/shared/utils/content/ops";
 import {
+  activeAmendmentFilterCount,
   amendmentBlockMarkers,
+  amendmentComposerSteps,
   amendmentHistoryVersion,
   amendmentDisplayLabel,
   amendmentErrorKey,
@@ -20,11 +22,21 @@ import {
   extendBlockSelection,
   filterAmendmentList,
   groupAmendmentsByOverlap,
+  isAmendmentPrivate,
   isNewerAmendmentVersion,
+  mineAmendments,
   passageAmendmentOps,
   passageSeed,
   seedComposerFromDraft,
+  showAmendmentAdmission,
   totalityAlternativeOps,
+  amendmentLateOnSend,
+  amendmentReviewQueue,
+  amendmentReviewSentenceKey,
+  amendmentReviewView,
+  amendmentSentNotice,
+  amendmentsAwaitingActor,
+  isAmendmentPresenter,
 } from "./workspace";
 
 const p = (id: string, text: string): Block => ({
@@ -65,6 +77,10 @@ function amendment(
     changeKinds: [],
     authors: [],
     submittedAt: null,
+    validatedAt: null,
+    publishedAt: null,
+    reviewState: "published",
+    correctionNote: null,
     decidedAt: null,
     approvalMethod: null,
     outcomeNote: null,
@@ -82,6 +98,8 @@ function amendment(
       position: false,
       moderate: false,
       review: false,
+      validate: false,
+      publish: false,
     },
     ...extra,
   };
@@ -551,6 +569,383 @@ describe("history version", () => {
     expect(amendmentHistoryVersion(plain, ["r1"])).not.toBe(v0);
     expect(amendmentHistoryVersion(plain, ["r2", "r1"])).toBe(
       amendmentHistoryVersion(plain, ["r1", "r2"]),
+    );
+  });
+});
+
+describe("review by the Secretaría", () => {
+  const can = (
+    extra: Partial<AmendmentDto["can"]> = {},
+  ): AmendmentDto["can"] => ({
+    ...amendment("x", []).can,
+    ...extra,
+  });
+
+  it("says where it stands, worded for the viewer", () => {
+    const view = (extra: Partial<AmendmentDto>) =>
+      amendmentReviewView(amendment("a", [], extra))?.key ?? null;
+    expect(view({ status: "draft", reviewState: null })).toBe("draft");
+    expect(
+      view({
+        status: "draft",
+        reviewState: "correction_requested",
+        can: can({ edit: true }),
+      }),
+    ).toBe("correction");
+    expect(view({ status: "draft", reviewState: "correction_requested" })).toBe(
+      "correction_sent",
+    );
+    expect(view({ reviewState: "pending_validation" })).toBe("pending");
+    expect(
+      view({ reviewState: "pending_validation", can: can({ validate: true }) }),
+    ).toBe("to_validate");
+    expect(view({ reviewState: "validated" })).toBe("validated");
+    expect(
+      view({ reviewState: "validated", can: can({ publish: true }) }),
+    ).toBe("to_publish");
+    expect(view({ reviewState: "published" })).toBe("published");
+    // Recorded before validation existed: public.
+    expect(view({ reviewState: null })).toBe("published");
+    // Decided: the outcome says it all.
+    expect(view({ status: "approved" })).toBeNull();
+    expect(
+      view({ status: "withdrawn", reviewState: "pending_validation" }),
+    ).toBe(null);
+  });
+
+  it("lets the Secretaría publish a decided amendment it kept private", () => {
+    const view = (extra: Partial<AmendmentDto>) =>
+      amendmentReviewView(amendment("a", [], extra));
+    const approved = view({
+      status: "approved",
+      reviewState: "validated",
+      can: can({ publish: true }),
+    });
+    expect(approved).toMatchObject({ key: "to_publish", private: true });
+    expect(approved?.awaitingAdmission).toBe(false);
+    // Its authors and the Mesa are not promised a publication.
+    expect(
+      view({ status: "approved", reviewState: "validated" })?.key ?? null,
+    ).toBeNull();
+    expect(
+      view({
+        status: "withdrawn",
+        reviewState: "validated",
+        can: can({ publish: true }),
+      })?.key,
+    ).toBe("to_publish");
+    expect(
+      view({ status: "rejected", reviewState: "published" })?.key ?? null,
+    ).toBeNull();
+  });
+
+  it("words the sentence for presenters and for everyone else", () => {
+    expect(amendmentReviewSentenceKey("pending", true)).toBe(
+      "amendment.review.states.pending",
+    );
+    expect(amendmentReviewSentenceKey("pending", false)).toBe(
+      "amendment.review.states.pending_others",
+    );
+    expect(amendmentReviewSentenceKey("validated", true)).toBe(
+      "amendment.review.states.validated",
+    );
+    expect(amendmentReviewSentenceKey("validated", false)).toBe(
+      "amendment.review.states.validated_others",
+    );
+    // The Secretaría's own keys and the rest read the same for everyone.
+    expect(amendmentReviewSentenceKey("to_publish", false)).toBe(
+      "amendment.review.states.to_publish",
+    );
+    expect(amendmentReviewSentenceKey("correction_sent", false)).toBe(
+      "amendment.review.states.correction_sent",
+    );
+  });
+
+  it("knows who presents it", () => {
+    const me = {
+      id: "m1",
+      acronym: "CEUM",
+      name: "CEUM",
+      kind: "asociado" as const,
+    };
+    expect(
+      isAmendmentPresenter(amendment("a", [], { authors: [me] }), "m1"),
+    ).toBe(true);
+    expect(
+      isAmendmentPresenter(amendment("a", [], { authors: [me] }), "m2"),
+    ).toBe(false);
+    expect(
+      isAmendmentPresenter(amendment("a", [], { authors: [me] }), null),
+    ).toBe(false);
+    // A draft created on behalf of a member: its creator can edit it.
+    expect(
+      isAmendmentPresenter(
+        amendment("a", [], { status: "draft", can: can({ edit: true }) }),
+        null,
+      ),
+    ).toBe(true);
+  });
+
+  it("counts what waits for the author and for the Secretaría", () => {
+    const correction = amendment("fix", [], {
+      status: "draft",
+      reviewState: "correction_requested",
+      can: can({ edit: true }),
+    });
+    const draft = amendment("draft", [], {
+      status: "draft",
+      reviewState: null,
+      can: can({ edit: true }),
+    });
+    // Seen by the Secretaría, which cannot edit it.
+    const sentBack = amendment("sent", [], {
+      status: "draft",
+      reviewState: "correction_requested",
+    });
+    const pending = amendment("p", [], { reviewState: "pending_validation" });
+    const awaiting = amendmentsAwaitingActor([
+      draft,
+      pending,
+      correction,
+      sentBack,
+    ]);
+    expect(awaiting.corrections.map((a) => a.id)).toEqual(["fix"]);
+    expect(awaiting.drafts.map((a) => a.id)).toEqual(["draft"]);
+
+    expect(
+      amendmentReviewQueue([
+        amendment("a", [], { can: can({ validate: true }) }),
+        amendment("b", [], { can: can({ validate: true }) }),
+        amendment("c", [], { can: can({ publish: true }) }),
+        amendment("d", []),
+      ]),
+    ).toEqual({ toValidate: 2, toPublish: 1 });
+  });
+
+  it("keeps the original timing when a correction is sent again", () => {
+    expect(amendmentLateOnSend(null, true)).toBe(true);
+    expect(amendmentLateOnSend(null, false)).toBe(false);
+    expect(amendmentLateOnSend({ late: false, reviewState: null }, true)).toBe(
+      true,
+    );
+    // On time at first: fixing it after the window closed is still on time.
+    expect(
+      amendmentLateOnSend(
+        { late: false, reviewState: "correction_requested" },
+        true,
+      ),
+    ).toBe(false);
+    // Late at first: still late, even if the window is open again.
+    expect(
+      amendmentLateOnSend(
+        { late: true, reviewState: "correction_requested" },
+        false,
+      ),
+    ).toBe(true);
+  });
+
+  it("marks what is not public yet and late ones waiting for the Mesa", () => {
+    const validatedLate = amendmentReviewView(
+      amendment("a", [], {
+        reviewState: "validated",
+        late: true,
+        admission: "pending",
+      }),
+    );
+    expect(validatedLate).toMatchObject({
+      private: true,
+      awaitingAdmission: true,
+    });
+    const pending = amendmentReviewView(
+      amendment("b", [], {
+        reviewState: "pending_validation",
+        admission: "pending",
+      }),
+    );
+    expect(pending).toMatchObject({ private: true, awaitingAdmission: false });
+    expect(
+      amendmentReviewView(amendment("c", [], { reviewState: "published" })),
+    ).toMatchObject({ private: false, awaitingAdmission: false });
+
+    expect(isAmendmentPrivate({ status: "draft", reviewState: null })).toBe(
+      true,
+    );
+    expect(isAmendmentPrivate({ status: "submitted", reviewState: null })).toBe(
+      false,
+    );
+    expect(
+      isAmendmentPrivate({ status: "withdrawn", reviewState: "validated" }),
+    ).toBe(true);
+  });
+
+  it("shows admission only once the Secretaría validated it", () => {
+    expect(
+      showAmendmentAdmission({
+        status: "submitted",
+        reviewState: "pending_validation",
+        admission: "pending",
+      }),
+    ).toBe(false);
+    expect(
+      showAmendmentAdmission({
+        status: "submitted",
+        reviewState: "validated",
+        admission: "pending",
+      }),
+    ).toBe(true);
+    expect(
+      showAmendmentAdmission({
+        status: "submitted",
+        reviewState: "published",
+        admission: "admitted",
+      }),
+    ).toBe(false);
+    expect(
+      showAmendmentAdmission({
+        status: "draft",
+        reviewState: null,
+        admission: "pending",
+      }),
+    ).toBe(false);
+  });
+
+  it("lists my amendments, what needs me first", () => {
+    const me = {
+      id: "m1",
+      acronym: "CEUM",
+      name: "CEUM",
+      kind: "asociado" as const,
+    };
+    const other = {
+      id: "m2",
+      acronym: "CEUV",
+      name: "CEUV",
+      kind: "asociado" as const,
+    };
+    const published = amendment("pub", [], { authors: [me] });
+    const pending = amendment("pend", [], {
+      authors: [me],
+      reviewState: "pending_validation",
+    });
+    const validated = amendment("val", [], {
+      authors: [other, me],
+      reviewState: "validated",
+    });
+    const draft = amendment("draft", [], {
+      status: "draft",
+      reviewState: null,
+      authors: [me],
+      can: can({ edit: true }),
+    });
+    const correction = amendment("fix", [], {
+      status: "draft",
+      reviewState: "correction_requested",
+      authors: [me],
+      can: can({ edit: true }),
+    });
+    const decided = amendment("done", [], {
+      authors: [me],
+      status: "approved",
+    });
+    const othersDraft = amendment("od", [], {
+      status: "draft",
+      reviewState: null,
+      authors: [other],
+    });
+    const othersPublished = amendment("op", [], { authors: [other] });
+    // On behalf of a member: editable by its creator, not authored by them.
+    const onBehalf = amendment("ob", [], {
+      status: "draft",
+      reviewState: null,
+      authors: [other],
+      can: can({ edit: true }),
+    });
+
+    expect(
+      mineAmendments(
+        [
+          published,
+          decided,
+          pending,
+          othersDraft,
+          validated,
+          draft,
+          othersPublished,
+          correction,
+          onBehalf,
+        ],
+        "m1",
+      ).map((a) => a.id),
+    ).toEqual(["fix", "draft", "ob", "pend", "val", "pub", "done"]);
+    expect(
+      mineAmendments([published, onBehalf], null).map((a) => a.id),
+    ).toEqual(["ob"]);
+  });
+
+  it("filters by review state", () => {
+    const pending = amendment("p", [], { reviewState: "pending_validation" });
+    const validated = amendment("v", [], { reviewState: "validated" });
+    const published = amendment("x", [], { reviewState: "published" });
+    const legacy = amendment("l", [], { reviewState: null });
+    const list = [pending, validated, published, legacy];
+    const filters = emptyAmendmentFilters();
+    expect(filterAmendmentList(list, filters, null)).toEqual(list);
+    expect(
+      filterAmendmentList(
+        list,
+        { ...filters, review: "pending_validation" },
+        null,
+      ),
+    ).toEqual([pending]);
+    expect(
+      filterAmendmentList(list, { ...filters, review: "validated" }, null),
+    ).toEqual([validated]);
+    expect(
+      filterAmendmentList(list, { ...filters, review: "published" }, null),
+    ).toEqual([published, legacy]);
+    expect(activeAmendmentFilterCount(filters)).toBe(0);
+    expect(
+      activeAmendmentFilterCount({ ...filters, review: "validated" }),
+    ).toBe(1);
+  });
+});
+
+describe("composer steps", () => {
+  it("skips what a mode does not need", () => {
+    expect(amendmentComposerSteps("passage")).toEqual([
+      "what",
+      "write",
+      "check",
+      "why",
+    ]);
+    expect(amendmentComposerSteps("global")).toEqual([
+      "what",
+      "write",
+      "check",
+      "why",
+    ]);
+    expect(amendmentComposerSteps("alternative")).toEqual([
+      "what",
+      "write",
+      "check",
+      "why",
+    ]);
+    expect(amendmentComposerSteps("delete")).toEqual(["what", "check", "why"]);
+    expect(amendmentComposerSteps("return")).toEqual(["what", "why"]);
+  });
+});
+
+describe("sent notice", () => {
+  it("says whether it waits for the Secretaría or is public at once", () => {
+    expect(
+      amendmentSentNotice({ late: false, reviewState: "pending_validation" }),
+    ).toBe("review");
+    expect(
+      amendmentSentNotice({ late: true, reviewState: "pending_validation" }),
+    ).toBe("review_late");
+    // A transactional presented by the Mesa is validated and published at once.
+    expect(amendmentSentNotice({ late: false, reviewState: "published" })).toBe(
+      "public",
     );
   });
 });

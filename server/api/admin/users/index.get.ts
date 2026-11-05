@@ -1,6 +1,10 @@
 import { createError, defineEventHandler, getQuery } from "h3";
 import { z } from "zod/v4";
 import { db } from "../../../db";
+import {
+  ADMIN_USER_COLUMNS,
+  ADMIN_USER_RELATIONS,
+} from "../../../utils/auth/adminUsers";
 import { requireAdmin } from "../../../utils/auth/rbac";
 
 const querySchema = z.object({
@@ -20,22 +24,8 @@ export default defineEventHandler(async (event) => {
   const offset = (page - 1) * pageSize;
 
   const users = await db.query.users.findMany({
-    columns: {
-      id: true,
-      name: true,
-      email: true,
-      image: true,
-      roleId: true,
-      externalRole: true,
-      externalName: true,
-      externalInitials: true,
-      university: true,
-      lastRoleSyncAt: true,
-      createdAt: true,
-    },
-    with: {
-      role: { columns: { id: true, name: true } },
-    },
+    columns: ADMIN_USER_COLUMNS,
+    with: ADMIN_USER_RELATIONS,
     orderBy: (u, { asc }) => [asc(u.name)],
     limit: pageSize + 1,
     offset,

@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import type { AmendmentDto, DocumentDto } from "~~/shared/types/api";
+import type {
+  AmendmentDto,
+  DocumentAmendmentsDto,
+  DocumentDto,
+} from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
 import { blockLabels } from "~~/shared/utils/content/render";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
@@ -7,15 +11,23 @@ import {
   amendmentErrorKey,
   amendmentErrorReasons,
   amendmentHistoryVersion,
+  amendmentLateOnSend,
+  amendmentReviewView,
+  amendmentSentNotice,
+  showAmendmentAdmission,
   type AmendmentOverlap,
   type AmendmentRelationView,
 } from "~/composables/amendment/workspace";
 
 /**
- * Everything about one amendment: its changes over the base (with context),
- * justification, authors, outcome, overlaps, the proponent's position,
- * transactional parties, relations, history, and the author actions
- * (edit, submit, delete a draft; withdraw while undecided).
+ * Everything about one amendment: where it stands with the Secretaría (and
+ * the Secretaría's validation actions), its changes over the base (with
+ * context), justification, authors, outcome, overlaps, the proponent's
+ * position, transactional parties, relations, the history (folded), and the
+ * author actions (edit, send to the Secretaría, delete a draft; withdraw
+ * while undecided). A draft sent back for correction has one way forward,
+ * "Corregir y volver a enviar" in the review panel: the composer shows the
+ * note and sends it, so the footer offers no direct send.
  */
 const props = withDefaults(
   defineProps<{
@@ -42,6 +54,8 @@ const emit = defineEmits<{
   select: [id: string];
   edit: [amendment: AmendmentDto];
   updated: [amendment: AmendmentDto];
+  /** The whole list, after the Secretaría validated or published it. */
+  replaced: [dto: DocumentAmendmentsDto];
   removed: [id: string];
   /** Something changed elsewhere (relations, a conflict): refetch. */
   changed: [];
@@ -51,12 +65,14 @@ const { t, locale } = useI18n();
 const api = useApi();
 const toast = useToast();
 const headingId = useId();
+const heading = useTemplateRef<HTMLElement>("heading");
 const { member } = useMe();
 
 const url = computed(() => `${props.amendmentsUrl}/${props.amendment.id}`);
 const label = computed(() => props.labelOf(props.amendment.id));
 
 const busy = ref<"submit" | "withdraw" | "delete" | null>(null);
+const historyOpen = ref(false);
 const confirming = ref<"withdraw" | "delete" | null>(null);
 const reasons = ref<string[]>([]);
 
@@ -65,6 +81,7 @@ watch(
   () => {
     confirming.value = null;
     reasons.value = [];
+    historyOpen.value = false;
   },
 );
 
@@ -89,6 +106,37 @@ const canManageRelations = computed(
 );
 const showPosition = computed(
   () => props.amendment.position !== null || props.amendment.can.position,
+);
+const showRelations = computed(
+  () =>
+    props.amendment.status !== "draft" &&
+    (props.relations.length > 0 || canManageRelations.value),
+);
+const review = computed(() => amendmentReviewView(props.amendment));
+/** "Corregir y volver a enviar" already opens the composer, which sends it. */
+const fixing = computed(() => review.value?.key === "correction");
+const showEdit = computed(() => props.amendment.can.edit && !fixing.value);
+const showSubmit = computed(() => props.amendment.can.submit && !fixing.value);
+/** Same timing rule as the server: a corrected one keeps its first timing. */
+const lateOnSend = computed(() =>
+  amendmentLateOnSend(props.amendment, windowClosed.value),
+);
+/** "Parcial" is the usual kind: only the others are worth a badge. */
+const showKind = computed(() => props.amendment.kind !== "partial");
+
+const moreItems = computed(() =>
+  props.amendment.can.edit
+    ? [
+        {
+          label: t("amendment.actions.delete"),
+          icon: "i-lucide-trash-2",
+          color: "error" as const,
+          onSelect: () => {
+            confirming.value = "delete";
+          },
+        },
+      ]
+    : [],
 );
 
 const where = computed(() => {
@@ -126,12 +174,20 @@ async function submit(): Promise<void> {
   reasons.value = [];
   try {
     const updated = await api.send<AmendmentDto>(`${url.value}/submit`);
+    const notice = amendmentSentNotice(updated);
     toast.add({
-      title: t("amendment.detail.submitted"),
-      description: updated.late
-        ? t("amendment.detail.submittedLate")
-        : undefined,
-      color: updated.late ? "warning" : "success",
+      title:
+        notice === "public"
+          ? t("amendment.detail.presented")
+          : t("amendment.detail.submitted"),
+      description: t(
+        notice === "public"
+          ? "amendment.detail.presentedDescription"
+          : notice === "review_late"
+            ? "amendment.detail.submittedLate"
+            : "amendment.detail.submittedDescription",
+      ),
+      color: notice === "review_late" ? "warning" : "success",
       icon: "i-lucide-send",
     });
     emit("updated", updated);
@@ -160,6 +216,20 @@ async function withdraw(): Promise<void> {
   }
 }
 
+/**
+ * Sent back to its authors: it is a draft again and leaves the list, so the
+ * detail closes (the page gives focus back to the list).
+ */
+function onCorrected(updated: AmendmentDto): void {
+  emit("updated", updated);
+  emit("close");
+}
+
+/** The review panel has nothing left to show: keep focus in the detail. */
+function onReviewSettled(): void {
+  heading.value?.focus();
+}
+
 async function remove(): Promise<void> {
   busy.value = "delete";
   try {
@@ -186,7 +256,9 @@ async function remove(): Promise<void> {
         <div class="min-w-0 flex-1">
           <h2
             :id="headingId"
-            class="text-highlighted text-lg font-semibold tabular-nums"
+            ref="heading"
+            tabindex="-1"
+            class="text-highlighted text-lg font-semibold tabular-nums outline-none"
           >
             {{ label }}
           </h2>
@@ -205,7 +277,7 @@ async function remove(): Promise<void> {
       <div class="flex flex-wrap items-center gap-1.5">
         <CommonStatusBadge kind="amendment" :value="amendment.status" />
         <CommonStatusBadge
-          v-if="amendment.status !== 'draft'"
+          v-if="showAmendmentAdmission(amendment)"
           kind="admission"
           :value="amendment.admission"
         />
@@ -217,6 +289,7 @@ async function remove(): Promise<void> {
           :label="t('amendment.late')"
         />
         <UBadge
+          v-if="showKind"
           color="neutral"
           variant="outline"
           :label="t(`amendment.kinds.${amendment.kind}`)"
@@ -230,6 +303,16 @@ async function remove(): Promise<void> {
         />
       </div>
     </header>
+
+    <AmendmentReviewPanel
+      :amendment="amendment"
+      :amendments-url="amendmentsUrl"
+      @edit="emit('edit', $event)"
+      @replaced="emit('replaced', $event)"
+      @corrected="onCorrected"
+      @changed="emit('changed')"
+      @settled="onReviewSettled"
+    />
 
     <UAlert
       v-if="reasons.length > 0"
@@ -455,6 +538,7 @@ async function remove(): Promise<void> {
     />
 
     <AmendmentRelations
+      v-if="showRelations"
       :amendment="amendment"
       :relations="relations"
       :candidates="candidates"
@@ -465,11 +549,28 @@ async function remove(): Promise<void> {
       @select="emit('select', $event)"
     />
 
-    <AmendmentHistory
-      :url="url"
-      :version="historyVersion"
-      :decisions-url="decisionsUrl"
-    />
+    <UCollapsible v-model:open="historyOpen">
+      <UButton
+        color="neutral"
+        variant="link"
+        size="sm"
+        class="px-0"
+        :icon="historyOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+        :label="
+          historyOpen
+            ? t('amendment.detail.hideHistory')
+            : t('amendment.detail.showHistory')
+        "
+      />
+      <template #content>
+        <AmendmentHistory
+          class="mt-2"
+          :url="url"
+          :version="historyVersion"
+          :decisions-url="decisionsUrl"
+        />
+      </template>
+    </UCollapsible>
 
     <footer
       v-if="
@@ -478,7 +579,7 @@ async function remove(): Promise<void> {
       class="border-default bg-default sticky bottom-0 -mx-1 flex flex-col gap-2 border-t px-1 pt-3 pb-1"
     >
       <UAlert
-        v-if="amendment.can.submit && windowClosed"
+        v-if="showSubmit && lateOnSend"
         color="warning"
         variant="subtle"
         icon="i-lucide-clock-alert"
@@ -520,8 +621,22 @@ async function remove(): Promise<void> {
       </div>
 
       <div v-else class="flex flex-wrap items-center gap-2">
+        <UDropdownMenu
+          v-if="moreItems.length > 0"
+          :items="moreItems"
+          :content="{ align: 'start', side: 'top' }"
+        >
+          <UButton
+            icon="i-lucide-ellipsis"
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            :label="t('amendment.actions.more')"
+            :disabled="busy !== null"
+          />
+        </UDropdownMenu>
         <UButton
-          v-if="amendment.can.edit"
+          v-if="showEdit"
           icon="i-lucide-pencil"
           color="neutral"
           variant="outline"
@@ -529,16 +644,6 @@ async function remove(): Promise<void> {
           :label="t('amendment.actions.edit')"
           :disabled="busy !== null"
           @click="emit('edit', amendment)"
-        />
-        <UButton
-          v-if="amendment.can.edit"
-          icon="i-lucide-trash-2"
-          color="error"
-          variant="ghost"
-          size="sm"
-          :label="t('amendment.actions.delete')"
-          :disabled="busy !== null"
-          @click="confirming = 'delete'"
         />
         <UButton
           v-if="amendment.can.withdraw"
@@ -551,7 +656,7 @@ async function remove(): Promise<void> {
           @click="confirming = 'withdraw'"
         />
         <UButton
-          v-if="amendment.can.submit"
+          v-if="showSubmit"
           icon="i-lucide-send"
           size="sm"
           class="ms-auto"

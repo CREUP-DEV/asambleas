@@ -15,8 +15,10 @@ import type {
   AmendmentUpdateBody,
   OutcomeBody,
   PositionBody,
+  PublishAmendmentsBody,
   RelationBody,
   TransactionalBody,
+  ValidateAmendmentsBody,
   VoteInput,
 } from "../../types/api";
 import { amendmentOpsSchema, normalizeText } from "./content";
@@ -136,6 +138,17 @@ export const admissionBodySchema = z
     path: ["vote"],
   });
 
+/** POST .../amendments/validate (ValidateAmendmentsBody). */
+export const validateAmendmentsBodySchema = z.object({
+  amendmentIds: uniqueIds(MAX_ADMISSION_BATCH, 1),
+  publish: z.boolean(),
+});
+
+/** POST .../amendments/publish (PublishAmendmentsBody). */
+export const publishAmendmentsBodySchema = z.object({
+  amendmentIds: uniqueIds(MAX_ADMISSION_BATCH, 1),
+});
+
 export const positionBodySchema = z.object({
   position: z.enum(PROPONENT_POSITIONS),
   comment: noteSchema,
@@ -203,6 +216,14 @@ export type _AmendmentSchemaChecks = [
   Assignable<AmendmentUpdateBody, z.output<typeof amendmentUpdateBodySchema>>,
   Assignable<TransactionalBody, z.output<typeof transactionalBodySchema>>,
   Assignable<AdmissionBody, z.output<typeof admissionBodySchema>>,
+  Assignable<
+    ValidateAmendmentsBody,
+    z.output<typeof validateAmendmentsBodySchema>
+  >,
+  Assignable<
+    PublishAmendmentsBody,
+    z.output<typeof publishAmendmentsBodySchema>
+  >,
   Assignable<PositionBody, z.output<typeof positionBodySchema>>,
   Assignable<AcceptanceBody, z.output<typeof acceptanceBodySchema>>,
   Assignable<OutcomeBody, z.output<typeof outcomeBodySchema>>,
