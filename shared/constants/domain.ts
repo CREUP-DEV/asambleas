@@ -192,6 +192,15 @@ export const ACCEPTANCE_DECISIONS = [
 export type AcceptanceDecision = (typeof ACCEPTANCE_DECISIONS)[number];
 
 export const ACCEPTANCE_ROLES = ["author", "proponent"] as const;
+
+/** A request to speak, from asking for the floor until it ends. */
+export const SPEAKING_TURN_STATUSES = [
+  "waiting",
+  "speaking",
+  "done",
+  "cancelled",
+] as const;
+export type SpeakingTurnStatus = (typeof SPEAKING_TURN_STATUSES)[number];
 export type AcceptanceRole = (typeof ACCEPTANCE_ROLES)[number];
 
 export const RELATION_KINDS = [

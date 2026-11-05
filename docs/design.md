@@ -241,6 +241,60 @@ each user has to do (expected documents, corrections requested) and where
 their documents and amendments stand. The Secretaría gets a validation inbox
 per assembly (`GET .../review`) and the tracking panel.
 
+## Reviewing amendments, transactionals and the session
+
+**Proponent review.** Whoever presents a document (usually a CEA area) goes
+through its amendments one by one in a review mode: the change in large
+type, its justification, and Aceptar, Rechazar or Transaccionar with an
+optional comment. A progress line shows how many are left. Transactionals
+waiting for the proponent's approval appear first.
+
+**Transactionals from anyone.** Once amendments are published, any member
+(CEA or assembly), before or during the session, can propose a transactional
+over one or more of them. It goes:
+
+1. to the document's presenter, who approves it (its "proponent" acceptance);
+2. then to the Secretaría, which validates and publishes it as any other
+   amendment;
+3. before it can be voted, the authors of the amendments it replaces accept
+   it, since their amendments are absorbed (`transacted`) when it passes.
+
+The Mesa can still draft one live in the console; it is validated and
+published at once and the parties answer in the room. Transactionals build
+only on published, undecided amendments.
+
+**Late amendments.** They can be presented after the window closes. Once the
+Secretaría validates them they appear as "fuera de plazo" and wait for the
+assembly to decide whether to treat them; the Secretaría (or the Mesa)
+records that decision, and only then can they be debated and decided.
+
+**Session console.** Several people use it at once (Presidencia moderates,
+Secretaría records results), all live. It leads with what is being debated
+now, in large type, with the actions that fit it; the queue, the agenda and
+the consolidated text are secondary and foldable.
+
+**Speaking turns.** The Mesa writes down who asks to speak (a member and,
+optionally, the person's name), gives and ends the floor, and reorders the
+queue. Attendees see who has the floor and who is next only while the Mesa
+makes it visible (`live_state.speakersVisible`), in the live view and on the
+projection.
+
+**Live view for attendees.** A phone-friendly page that follows the session:
+the item, document and amendment under debate with its change, the last
+result, who has the floor when visible, and the status of every amendment of
+the current document with the provisional consolidated text.
+
+**Roles and per-user permissions.** `Presidencia` is a system role with the
+Secretaría's permissions. Besides role permissions, an admin can grant
+individual permissions to a single user (`user_permissions`); a user's
+permissions are the union of both.
+
+**Intranet.** Calls to the intranet API send `Authorization: Bearer
+<NUXT_INTRANET_API_TOKEN>` when the token is configured. The intranet's
+`POST /user/role` is public today and reveals a user's type, name, initials
+and university to anyone who knows an email: it should require that token,
+be rate limited and answer only what this app needs.
+
 ## Permissions
 
 The existing keys stay, plus:
