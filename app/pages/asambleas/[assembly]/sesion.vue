@@ -198,7 +198,7 @@ defineShortcuts({
 
     <ClientOnly v-else>
       <section
-        class="border-default bg-default flex flex-col overflow-hidden rounded-xl border lg:h-[calc(100dvh-var(--ui-header-height)-6.25rem)] lg:min-h-[36rem]"
+        class="border-default bg-default flex flex-col overflow-hidden rounded-xl border lg:h-[calc(100dvh-var(--ui-header-height)-3rem)] lg:min-h-[36rem]"
         :aria-label="t('session.title')"
       >
         <SessionConsoleToolbar />

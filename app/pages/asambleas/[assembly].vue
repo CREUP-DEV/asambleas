@@ -520,7 +520,11 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
         </template>
       </UDashboardNavbar>
 
-      <UDashboardToolbar v-if="assembly">
+      <!-- On large screens the sidebar lists these same sections; repeating
+           them here only crowded the header. Phones keep them, since the
+           sidebar is a drawer there. Child pages that size themselves to the
+           viewport (session console, document workspace) assume this. -->
+      <UDashboardToolbar v-if="assembly" class="lg:hidden">
         <UNavigationMenu
           :items="sectionItems"
           orientation="horizontal"
