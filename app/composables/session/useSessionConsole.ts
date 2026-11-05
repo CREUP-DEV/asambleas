@@ -715,6 +715,19 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   }
 
   /**
+   * Ends the debate: nothing stays under debate, so the console offers the
+   * first agenda item again and attendees see that nothing is debated.
+   */
+  function clearDebate(): Promise<boolean> {
+    return setLive({
+      agendaItemId: null,
+      documentId: null,
+      amendmentId: null,
+      voteId: null,
+    });
+  }
+
+  /**
    * "Siguiente": debates the next amendment the Mesa can decide and makes
    * it the target of the keyboard shortcuts.
    */
@@ -1573,6 +1586,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     requestDebate,
     clearDebatedAmendment,
     clearDebatedDocument,
+    clearDebate,
     debateNext,
     debateAgendaTarget,
     setMessage,
