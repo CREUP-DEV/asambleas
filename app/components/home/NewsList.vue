@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import {
-  homeWorkAmendmentQuery,
+  homeWorkNewsLink,
   type HomeWorkNews,
   type HomeWorkPhrase,
   type HomeWorkWho,
@@ -10,9 +10,11 @@ import { assemblyPath } from "~/components/shell/Navigation.vue";
 /**
  * "Novedades": what others decided about the user's documents and
  * amendments, one plain sentence each ("UPV, proponente principal, aceptó
- * tu enmienda CEUM 2"), with the document, the assembly and when. Each
- * sentence opens the document with the amendment. Long lists show the
- * latest few and fold the rest away.
+ * tu enmienda CEUM 2", "CAUB rechazó la transaccional T2: sigue tu
+ * enmienda"), with the document, the assembly and when. Each sentence opens
+ * the document with the amendment, or, for a co-presenter, the read-only
+ * review of the main presenter's answers on it. Long lists show the latest
+ * few and fold the rest away.
  */
 const props = withDefaults(
   defineProps<{
@@ -54,7 +56,11 @@ function sentence(item: HomeWorkNews): string {
 }
 
 function context(item: HomeWorkNews): string {
-  const parts = [t("home.work.amendmentTo", { document: item.document.title })];
+  const parts = [
+    item.amendment
+      ? t("home.work.amendmentTo", { document: item.document.title })
+      : item.document.title,
+  ];
   if (props.showAssembly) parts.push(item.assembly.label);
   return parts.join(" · ");
 }
@@ -67,10 +73,13 @@ function exact(item: HomeWorkNews): string {
   return formatDateTime(item.at, { locale: locale.value });
 }
 
-/** The document, with the amendment open when the news is about one. */
+/**
+ * The document, with the amendment open when the news is about one, or the
+ * read-only review of the main presenter's answers (homeWorkNewsLink).
+ */
 function path(item: HomeWorkNews): string {
   return localePath(
-    `${assemblyPath(item.assembly.slug, "documents")}/${encodeURIComponent(item.document.slug)}${homeWorkAmendmentQuery(item.amendment)}`,
+    `${assemblyPath(item.assembly.slug, "documents")}/${encodeURIComponent(item.document.slug)}${homeWorkNewsLink(item)}`,
   );
 }
 </script>

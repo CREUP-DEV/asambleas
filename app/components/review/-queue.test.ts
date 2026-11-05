@@ -9,7 +9,9 @@ import type {
 import {
   applyAmendmentResults,
   canRecordAdmission,
+  canSelectSeveral,
   groupReviewAmendments,
+  isSelectionFull,
   isAwaitingAssembly,
   isAwaitingAuthors,
   isAwaitingPublication,
@@ -20,7 +22,12 @@ import {
   removeReviewDocument,
   reviewGroupSize,
   reviewQueueKey,
+  selectAllReviewIds,
+  selectableReviewIds,
+  shareSources,
   splitReviewSelection,
+  withoutSharedSources,
+  blockedBySelection,
 } from "./-queue";
 
 function amendment(
@@ -71,6 +78,14 @@ function amendment(
     },
     ...overrides,
   };
+}
+
+/** A transactional its authors accepted, waiting for validation. */
+function transactional(id: string, sourceIds: string[]): AmendmentDto {
+  return amendment(id, "pending_validation", {
+    kind: "transactional",
+    sourceIds,
+  });
 }
 
 /** A late amendment the Secretaría validated, waiting for the assembly. */
@@ -394,7 +409,7 @@ describe("splitReviewSelection", () => {
   it("keeps only the selected amendments each action may apply to", () => {
     expect(
       splitReviewSelection(group, new Set(["v1", "v2", "p1", "other"])),
-    ).toEqual({ validate: ["v1"], publish: ["p1"] });
+    ).toEqual({ validate: ["v1"], validateOnly: ["v1"], publish: ["p1"] });
   });
 
   it("never validates a transactional waiting for its authors", () => {
@@ -406,14 +421,178 @@ describe("splitReviewSelection", () => {
         { toValidate: [pending], toPublish: [] },
         new Set(["t"]),
       ),
-    ).toEqual({ validate: [], publish: [] });
+    ).toEqual({ validate: [], validateOnly: [], publish: [] });
   });
 
   it("is empty without a selection", () => {
     expect(splitReviewSelection(group, new Set())).toEqual({
       validate: [],
+      validateOnly: [],
       publish: [],
     });
+  });
+
+  it("never keeps a transactional private when validating", () => {
+    const t1 = transactional("t1", ["a"]);
+    expect(
+      splitReviewSelection(
+        {
+          toValidate: [amendment("v1", "pending_validation"), t1],
+          toPublish: [],
+        },
+        new Set(["v1", "t1"]),
+      ),
+    ).toEqual({ validate: ["v1", "t1"], validateOnly: ["v1"], publish: [] });
+  });
+
+  it("validates only the first of two transactionals that share an amendment", () => {
+    const t1 = transactional("t1", ["a", "b"]);
+    const t2 = transactional("t2", ["b", "c"]);
+    const t3 = transactional("t3", ["d"]);
+    expect(
+      splitReviewSelection(
+        { toValidate: [t1, t2, t3], toPublish: [] },
+        new Set(["t1", "t2", "t3"]),
+      ),
+    ).toEqual({ validate: ["t1", "t3"], validateOnly: [], publish: [] });
+  });
+});
+
+describe("shareSources", () => {
+  it("is true for two transactionals that group the same amendment", () => {
+    expect(
+      shareSources(transactional("t1", ["a", "b"]), transactional("t2", ["b"])),
+    ).toBe(true);
+  });
+
+  it("is false for disjoint ones, the same one or a plain amendment", () => {
+    const t1 = transactional("t1", ["a"]);
+    expect(shareSources(t1, transactional("t2", ["b"]))).toBe(false);
+    expect(shareSources(t1, t1)).toBe(false);
+    expect(
+      shareSources(
+        t1,
+        amendment("p", "pending_validation", { sourceIds: ["a"] }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("withoutSharedSources", () => {
+  it("keeps the first transactional over an amendment, in order", () => {
+    const list = [
+      transactional("t2", ["b", "c"]),
+      amendment("v1", "pending_validation"),
+      transactional("t1", ["a", "b"]),
+      transactional("t3", ["c"]),
+      transactional("t4", ["d"]),
+    ];
+    expect(withoutSharedSources(list).map((value) => value.id)).toEqual([
+      "t2",
+      "v1",
+      "t4",
+    ]);
+  });
+});
+
+describe("blockedBySelection", () => {
+  const t1 = transactional("t1", ["a", "b"]);
+  const t2 = transactional("t2", ["b"]);
+  const t3 = transactional("t3", ["c"]);
+  const plain = amendment("v1", "pending_validation");
+
+  it("blocks unselected transactionals that share with a selected one", () => {
+    expect(
+      blockedBySelection([plain, t1, t2, t3], new Set(["t2", "v1"])),
+    ).toEqual(new Map([["t1", "t2"]]));
+  });
+
+  it("never blocks a selected one, so it can be unselected", () => {
+    expect(blockedBySelection([t1, t2], new Set(["t1", "t2"]))).toEqual(
+      new Map(),
+    );
+  });
+
+  it("blocks nothing without a selection", () => {
+    expect(blockedBySelection([t1, t2, t3], new Set())).toEqual(new Map());
+  });
+});
+
+describe("selectableReviewIds and selectAllReviewIds", () => {
+  const t1 = transactional("t1", ["a", "b"]);
+  const t2 = transactional("t2", ["b"]);
+  const cannot = amendment("v2", "pending_validation", {
+    can: { ...amendment("v2", "pending_validation").can, validate: false },
+  });
+  const group = {
+    toValidate: [amendment("v1", "pending_validation"), t1, t2, cannot],
+    toPublish: [amendment("p1", "validated")],
+  };
+
+  it("lists everything the actor may validate or publish now", () => {
+    expect(selectableReviewIds(group)).toEqual(["v1", "t1", "t2", "p1"]);
+  });
+
+  it("selects all but a transactional that shares with an earlier one", () => {
+    expect(selectAllReviewIds(group)).toEqual(["v1", "t1", "p1"]);
+  });
+
+  it("keeps the transactional already chosen and adds what still fits", () => {
+    expect(selectAllReviewIds(group, new Set(["t2"]))).toEqual([
+      "v1",
+      "t2",
+      "p1",
+    ]);
+  });
+});
+
+describe("canSelectSeveral and isSelectionFull", () => {
+  // T1 groups an amendment with T2 and another with T3; T2 and T3 share
+  // nothing, so they can go together although "select all" picks only T1.
+  const t1 = transactional("t1", ["a", "b"]);
+  const t2 = transactional("t2", ["a"]);
+  const t3 = transactional("t3", ["b"]);
+  const triangle = { toValidate: [t1, t2, t3], toPublish: [] };
+
+  it("offers checkboxes when some pair can be validated together", () => {
+    expect(selectAllReviewIds(triangle)).toEqual(["t1"]);
+    expect(canSelectSeveral(triangle)).toBe(true);
+    expect(selectAllReviewIds(triangle, new Set(["t2"])).sort()).toEqual([
+      "t2",
+      "t3",
+    ]);
+  });
+
+  it("offers none when every pair shares an amendment", () => {
+    expect(
+      canSelectSeveral({
+        toValidate: [t1, transactional("t4", ["a", "b"])],
+        toPublish: [],
+      }),
+    ).toBe(false);
+    expect(canSelectSeveral({ toValidate: [t1], toPublish: [] })).toBe(false);
+  });
+
+  it("counts something to publish next to something to validate", () => {
+    expect(
+      canSelectSeveral({
+        toValidate: [t1],
+        toPublish: [amendment("p1", "validated")],
+      }),
+    ).toBe(true);
+    expect(
+      canSelectSeveral({
+        toValidate: [],
+        toPublish: [amendment("p1", "validated")],
+      }),
+    ).toBe(false);
+  });
+
+  it("is full once everything left is selected or kept out", () => {
+    expect(isSelectionFull(triangle, new Set(["t1"]))).toBe(true);
+    expect(isSelectionFull(triangle, new Set(["t2"]))).toBe(false);
+    expect(isSelectionFull(triangle, new Set(["t2", "t3"]))).toBe(true);
+    expect(isSelectionFull(triangle, new Set())).toBe(false);
   });
 });
 

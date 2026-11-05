@@ -1297,6 +1297,10 @@ export async function updateDocument(
         coProponentMemberIds: body.coProponentMemberIds,
       });
       if (typeof presenters === "string") {
+        // Only the main presenter or the Secretaría choose who it is.
+        if (presenters === "main_only") {
+          fail(403, PRESENTERS_MESSAGES.main_only, { reason: "main_only" });
+        }
         fail(422, PRESENTERS_MESSAGES[presenters]);
       }
       patch.proponentMemberId = presenters.proponentMemberId;
@@ -1364,6 +1368,10 @@ export async function updateDocument(
         assemblyId: assembly.id,
         documentId: current.id,
         rule: patch.acceptedAmendments,
+        mainPresenterId:
+          patch.proponentMemberId !== undefined
+            ? patch.proponentMemberId
+            : current.proponentMemberId,
         actor,
         now: new Date(),
       });

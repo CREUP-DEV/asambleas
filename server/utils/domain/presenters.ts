@@ -153,13 +153,20 @@ export interface Presenters {
   coProponentMemberIds: string[];
 }
 
-export type PresentersError = "main_required" | "own_member_required";
+export type PresentersError =
+  "main_required" | "own_member_required" | "main_only";
 
+/**
+ * Messages for the errors of planPresenters. `main_only` is a 403 (who may
+ * do it), the others a 422 (what the body says).
+ */
 export const PRESENTERS_MESSAGES: Record<PresentersError, string> = {
   main_required:
     "Indica quién presenta principalmente el documento: es quien responde a las enmiendas",
   own_member_required:
     "Tu consejo o área tiene que seguir entre quienes presentan el documento",
+  main_only:
+    "Solo quien presenta principalmente el documento o la Secretaría pueden cambiar quién lo presenta principalmente",
 };
 
 function unique(values: (string | null | undefined)[]): string[] {
@@ -186,6 +193,9 @@ function unique(values: (string | null | undefined)[]): string[] {
  *   co-presenter: always for a member, and for a manager when the new one
  *   was already a presenter (a swap within the group; otherwise a manager
  *   replaces it);
+ * - on an update, only the main presenter itself or a manager changes who
+ *   the main presenter is (`main_only`): a co-presenter may change the
+ *   co-presenters, never the main one;
  * - the main presenter is never listed among the co-presenters.
  * `current` is null on a create.
  */
@@ -227,6 +237,15 @@ export function planPresenters(input: {
     }
   }
 
+  if (
+    current !== null &&
+    !manager &&
+    current.proponentMemberId !== null &&
+    main !== current.proponentMemberId &&
+    actorMemberId !== current.proponentMemberId
+  ) {
+    return "main_only";
+  }
   co = unique(co).filter((id) => id !== main);
   if (co.length > 0 && !main) return "main_required";
   if (own && main !== own && !co.includes(own)) return "own_member_required";

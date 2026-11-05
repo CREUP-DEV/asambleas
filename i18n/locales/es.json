@@ -357,25 +357,6 @@
       "editCalendar": "Editar el calendario",
       "documentsShort": "Documentos:",
       "amendmentsShort": "Enmiendas:",
-      "quickLinks": "Accesos rápidos",
-      "links": {
-        "agenda": {
-          "title": "Orden del día",
-          "description": "Puntos, documentos y enmiendas de cada punto."
-        },
-        "convocation": {
-          "title": "Convocatoria",
-          "description": "Documento listo para imprimir con el orden del día y los plazos."
-        },
-        "calendar": {
-          "title": "Calendario",
-          "description": "Plazos de la asamblea y avisos reglamentarios."
-        },
-        "settings": {
-          "title": "Ajustes",
-          "description": "Datos básicos y normas de esta asamblea."
-        }
-      },
       "review": {
         "title": "Pendiente de revisar"
       },
@@ -421,20 +402,6 @@
       "changed": "Sin guardar",
       "saved": "Normas guardadas",
       "saveError": "No se han podido guardar las normas",
-      "amendmentVisibility": {
-        "label": "Visibilidad de las enmiendas presentadas",
-        "help": "Quién ve las enmiendas mientras el plazo sigue abierto. Sus autores, la Secretaría y la Mesa las ven siempre.",
-        "options": {
-          "after_close": {
-            "label": "Al cerrar el plazo",
-            "description": "Hasta el cierre del plazo solo las ven sus autores y quienes gestionan la asamblea. Después, todo el mundo."
-          },
-          "immediate": {
-            "label": "En cuanto se presentan",
-            "description": "Todos los participantes ven cada enmienda desde que se presenta."
-          }
-        }
-      },
       "positionVisibility": {
         "label": "Quién ve la respuesta de quien presenta",
         "help": "Lo que quien presenta cada documento responde a cada enmienda: aceptarla, rechazarla o proponer una transaccional.",
@@ -450,20 +417,6 @@
           "public": {
             "label": "Siempre pública",
             "description": "Todos la ven en cuanto se registra."
-          }
-        }
-      },
-      "acceptedAmendments": {
-        "label": "Enmiendas aceptadas por el proponente",
-        "help": "Qué ocurre con una enmienda que el proponente acepta.",
-        "options": {
-          "assent": {
-            "label": "Se incorporan por asentimiento",
-            "description": "Pasan al texto salvo que alguien pida votarlas."
-          },
-          "vote": {
-            "label": "Se votan igualmente",
-            "description": "Cada enmienda aceptada se somete a votación como las demás."
           }
         }
       },
@@ -959,8 +912,8 @@
       },
       "coLabel": "Otros miembros que lo presentan",
       "coHelp": {
-        "presenter": "Podrán preparar el texto contigo y verán siempre lo que se decida sobre las enmiendas.",
-        "manager": "Prepararán el texto juntos y verán siempre lo que se decida sobre las enmiendas."
+        "presenter": "Podrán preparar el texto contigo y verán siempre lo que se decida sobre las enmiendas. Solo quien responde a las enmiendas o Secretaría pueden cambiar quién responde.",
+        "manager": "Prepararán el texto juntos y verán siempre lo que se decida sobre las enmiendas. Solo quien responde a las enmiendas o Secretaría pueden cambiar quién responde."
       },
       "coPlaceholder": "Elige los miembros",
       "main": "Quién responde a las enmiendas (proponente principal)",
@@ -991,7 +944,14 @@
         "incorporate": "Queda aprobada en cuanto la acepta. Si cambia su respuesta antes de la votación final, vuelve a quedar pendiente.",
         "vote": "La asamblea vota todas las enmiendas, también las que acepta."
       },
-      "publishedNote": "El cambio vale para las respuestas que se den desde ahora; las enmiendas ya aceptadas no cambian."
+      "publishedNote": "Si lo cambias, también cambian las enmiendas ya aceptadas.",
+      "locked": "Ya no se puede cambiar: el texto final del documento ya está cerrado.",
+      "change": {
+        "title": "Al guardar, también cambian las enmiendas ya aceptadas",
+        "incorporate": "Las enmiendas ya aceptadas por {member} quedarán aprobadas y entrarán en el texto sin votación.",
+        "vote": "Las enmiendas que entraron en el texto porque {member} las aceptó volverán a quedar pendientes, para que las vote la asamblea.",
+        "presenterFallback": "quien presenta el documento"
+      }
     }
   },
   "amendment": {
@@ -1020,7 +980,6 @@
         "to_publish": "Validada, sin publicar",
         "validated": "Validada, sin publicar",
         "published": "Publicada",
-        "pending_proponent": "Por aprobar",
         "pending_authors": "Esperando a los autores principales"
       },
       "states": {
@@ -1034,7 +993,6 @@
         "published": "La puede ver toda la asamblea.",
         "pending_others": "Secretaría aún no la ha revisado. El resto de la asamblea todavía no la ve.",
         "validated_others": "Secretaría la ha validado, pero aún no la ha publicado: el resto de la asamblea todavía no la ve.",
-        "pending_proponent": "Quien presenta el documento tiene que aprobarla. Después la revisará Secretaría; hasta entonces solo la ven las partes, Secretaría y la Mesa.",
         "pending_authors": "Tienen que aceptarla los autores principales de las enmiendas que sustituiría. Después la revisará Secretaría; hasta entonces solo la ven las partes, Secretaría y la Mesa."
       },
       "awaitingAdmission": "Llegó fuera de plazo: está pendiente de que la asamblea decida tratarla.",
@@ -1067,7 +1025,8 @@
         "validateFailed": "No se ha podido validar la enmienda",
         "publishFailed": "No se ha podido publicar la enmienda",
         "correctionFailed": "No se ha podido pedir la corrección"
-      }
+      },
+      "transactionalPublishHint": "Una transaccional se publica al validarla, porque sustituye a enmiendas que ya ve toda la asamblea."
     },
     "reviewAction": {
       "accept": "Validar",
@@ -1136,7 +1095,7 @@
       "modification": "Modificación"
     },
     "approvalMethods": {
-      "proponent": "aceptación de quien presenta el documento",
+      "proponent": "aceptada por quien presenta el documento",
       "assent": "asentimiento",
       "vote": "votación",
       "formal": "corrección de forma"
@@ -1196,7 +1155,6 @@
         "pending_validation": "Por revisar",
         "validated": "Validadas, sin publicar",
         "published": "Publicadas",
-        "pending_proponent": "Esperan a quien presenta el documento",
         "pending_authors": "Esperan a los autores principales"
       }
     },
@@ -1210,7 +1168,6 @@
       "justification": "Justificación",
       "noJustification": "Sin justificación todavía.",
       "authors": "Quién la presenta",
-      "presenting": "presenta",
       "submittedAt": "Presentada el {date}",
       "outcome": "Resultado",
       "approvedBy": "Aprobada por {method}",
@@ -1242,12 +1199,16 @@
       "transactOverlaps": "Combinarlas en una transaccional",
       "mainAuthor": "autor principal",
       "approvedByPresenter": "Aprobada sin votación: la aceptó quien presenta el documento",
-      "transactionalsOver": "Transaccionales propuestas sobre esta enmienda:"
+      "transactionalsOver": "Transaccionales propuestas sobre esta enmienda:",
+      "rejectedByAuthors": "Cerrada porque la rechazó {members}",
+      "closedOnItsOwn": {
+        "source_replaced": "Cerrada porque otra transaccional sustituyó a {source}",
+        "source_decided": "Cerrada porque {source} ya está resuelta"
+      }
     },
     "position": {
       "title": "Respuesta de quien presenta el documento",
       "edit": "Cambiar la respuesta",
-      "none": "El proponente aún no ha fijado su posición.",
       "label": "Respuesta",
       "options": {
         "pending": "Sin responder",
@@ -1278,10 +1239,7 @@
         "none": "No hubo respuesta de {member}."
       },
       "blocked": {
-        "validation": "Se podrá responder cuando Secretaría la valide.",
-        "admission": "Llegó fuera de plazo: se podrá responder cuando la asamblea decida tratarla.",
-        "authors": "Se podrá responder cuando la acepten los autores principales de las enmiendas que sustituiría.",
-        "publication": "Se podrá aceptar cuando Secretaría la publique, porque al aceptarla se incorpora al texto."
+        "publication": "Se podrá responder cuando Secretaría la publique."
       },
       "next": {
         "incorporateIfAccepted": "Si la acepta quien presenta el documento, se incorpora sin votación. Si no, la votará la asamblea.",
@@ -1293,14 +1251,19 @@
       "savedReopened": "Ya no está incorporada: vuelve a estar pendiente de decisión.",
       "later": "Podrá responderla {member} más adelante.",
       "laterYou": "Podrás responderla después.",
-      "yourTurn": "Te toca responderla."
+      "yourTurn": "Te toca responderla.",
+      "answersByMesa": {
+        "accept": "La Mesa, en nombre de {member}, la aceptó",
+        "reject": "La Mesa, en nombre de {member}, la rechazó",
+        "transact": "La Mesa, en nombre de {member}, propuso una transaccional",
+        "pending": "La Mesa, en nombre de {member}, la dejó sin respuesta"
+      }
     },
     "acceptances": {
       "title": "Quién tiene que aceptarla",
       "summary": "{accepted} de {total} la han aceptado",
       "none": "Nadie tiene que aceptarla.",
       "roles": {
-        "author": "presentó una enmienda que combina",
         "proponent": "presenta el documento",
         "mainAuthor": "autor principal de una enmienda que sustituiría",
         "mainAuthorOf": "autor principal de {list}"
@@ -1311,15 +1274,13 @@
       "recordReject": "Rechaza {member}",
       "recorded": "Respuesta registrada",
       "failed": "No se ha podido registrar la respuesta",
-      "waiting": "Se podrá votar cuando todas las partes la acepten.",
-      "ready": "Todas las partes la han aceptado: ya se puede votar.",
-      "approve": "Aprobar",
       "rule": "Si alguno la rechaza, se cierra y siguen adelante las enmiendas originales.",
       "rejectedDescription": "La transaccional se cierra y las enmiendas originales siguen adelante.",
       "answers": {
         "pending": "{member} todavía no ha respondido",
         "accepted": "{member} la ha aceptado",
-        "rejected": "{member} la ha rechazado"
+        "rejected": "{member} la ha rechazado",
+        "notAnswered": "{member} no llegó a responder"
       },
       "rejectConfirm": "Si la rechazas, se cierra para todos y las enmiendas originales siguen adelante. No se puede deshacer.",
       "recordRejectConfirm": "Si registras que {member} la rechaza, se cierra para todos y las enmiendas originales siguen adelante. No se puede deshacer."
@@ -1395,7 +1356,11 @@
         "inadmission": "Votación para declararla inadmisible"
       },
       "byPresenter": "Sin votación: la aceptó quien presenta el documento",
-      "closedByRejection": "Cerrada: la rechazó un autor principal"
+      "closedByRejection": "Cerrada: la rechazó un autor principal",
+      "closedBySources": "Cerrada: una de las enmiendas que agrupa ya está resuelta",
+      "closedBySourcesDetail": "Enmienda resuelta: {source}",
+      "lapsedBySources": "La transaccional {label} ya sustituyó a las mismas enmiendas",
+      "lapsedBySourcesUnknown": "Otra transaccional ya sustituyó a las mismas enmiendas"
     },
     "vote": {
       "counts": "Recuento",
@@ -1424,7 +1389,6 @@
       "titleNew": "Presentar una enmienda",
       "titleEdit": "Seguir con el borrador",
       "close": "Cerrar el editor de enmiendas",
-      "mode": "Qué quieres enmendar",
       "modes": {
         "passage": "Cambiar este texto",
         "delete": "Quitar este texto",
@@ -1440,7 +1404,6 @@
         "return": "Propones devolver el documento a quien lo presentó, sin cambiar el texto. Solo explicas por qué.",
         "alternative": "Propones cambiar el documento entero por un texto nuevo."
       },
-      "passageCount": "Ningún párrafo seleccionado | Un párrafo seleccionado | {count} párrafos seleccionados",
       "editorLabel": "Texto enmendado del pasaje",
       "editorPlaceholder": "Escribe el texto que propones",
       "editorHint": "Cambia, borra o añade lo que quieras. Lo que no toques se queda como está.",
@@ -1456,7 +1419,6 @@
       "alternativeLabel": "Texto alternativo completo",
       "alternativePlaceholder": "Escribe aquí el texto alternativo",
       "copyOriginal": "Partir del texto actual",
-      "preview": "Vista previa de los cambios",
       "issues": {
         "no_selection": "Selecciona antes uno o varios párrafos del texto.",
         "no_changes": "Todavía no has cambiado nada.",
@@ -1466,12 +1428,6 @@
         "alternative_empty": "Escribe el texto alternativo."
       },
       "errorsTitle": "La enmienda no se puede guardar así",
-      "kind": "Naturaleza",
-      "kindDescriptions": {
-        "partial": "Cambia el contenido del texto.",
-        "formal": "Corrige erratas, estilo o numeración sin cambiar el sentido."
-      },
-      "justification": "Justificación",
       "justificationPlaceholder": "Explica por qué propones este cambio",
       "justificationRequired": "Explica por qué la propones antes de enviarla.",
       "onBehalf": "Presentar en nombre de",
@@ -1574,7 +1530,6 @@
       "title": "Usuarios",
       "changeRole": "Cambiar rol",
       "roleChanged": "{user} tiene ahora el rol {role}",
-      "cannotChangeSelf": "No puedes cambiar tu propio rol",
       "noUsers": "No hay usuarios registrados",
       "email": "Correo electrónico",
       "role": "Rol",
@@ -1587,10 +1542,8 @@
       "confirmRoleChange": "Confirmar cambio de rol",
       "confirmRoleChangeMessage": "¿Cambiar el rol de {user} a {role}?",
       "page": "Página {page}",
-      "member": "Siglas en la intranet",
       "you": "Tú",
       "roleFor": "Rol de {user}",
-      "intranetRole": "Rol en la intranet: {role}",
       "neverSynced": "Nunca",
       "roleChangeFailed": "No se ha podido cambiar el rol",
       "actsFor": "Actúa en nombre de",
@@ -1631,16 +1584,19 @@
         "summary": "Ningún permiso extra | 1 permiso extra | {count} permisos extra",
         "saved": "Permisos de {user} guardados",
         "saveFailed": "No se han podido guardar los permisos",
-        "adminOnlyNote": "Gestionar usuarios, roles y permisos es solo del rol Administrador: no se puede dar aparte.",
         "redundantTitle": "Dados aparte que ahora no hacen falta",
         "redundantHelp": "Ahora no le dan nada nuevo. Desactívalos si no los necesita y guarda.",
         "coveredByRole": "Ya lo incluye su rol. Si cambia de rol, lo conservará.",
-        "adminOnly": "Solo tiene efecto con el rol Administrador.",
         "powerfulHelp": "Da acceso a la administración y permite dar cualquier permiso salvo el de Administrador."
       },
       "adminRoleOnlyAdmins": "Solo lo puede dar un Administrador",
       "adminRoleLocked": "Solo un Administrador puede dar o quitar el rol Administrador.",
-      "selfLocked": "No puedes cambiar tu propio rol, el miembro por el que actúas ni tus permisos extra. Pídeselo a otra persona que gestione usuarios."
+      "selfLocked": "Tu rol, tu miembro y tus permisos extra solo puede cambiarlos otra persona que gestione usuarios.",
+      "lastAdmin": "Eres el único Administrador. Antes de dejar el rol, dáselo a otra persona.",
+      "ownAdminRoleWarningTitle": "Vas a dejar de ser Administrador",
+      "ownAdminRoleWarning": "Solo tendrás los permisos del rol {role}. Para volver a ser Administrador, tendrá que dártelo otro Administrador.",
+      "leadershipRoleOnlyAdmins": "Solo lo puede dar un Administrador",
+      "leadershipLocked": "El rol y los permisos de Secretaría y Presidencia solo los cambia un Administrador."
     },
     "roles": {
       "title": "Roles y permisos",
@@ -1663,7 +1619,11 @@
       "toUsers": "Ir a Usuarios",
       "presidenciaMissingTitle": "Falta el rol Presidencia",
       "presidenciaMissing": "Se crea al actualizar los datos de la plataforma, con los mismos permisos que la Secretaría. Pide a quien la mantiene que ejecute pnpm db:seed.",
-      "ownAccessLocked": "No puedes cambiar los permisos de tu propio rol. Pídeselo a otra persona que gestione roles."
+      "ownAccessLocked": "En tu propio rol no puedes quitar los permisos de gestionar usuarios y roles: te quedarías sin acceso. Solo puede hacerlo un Administrador.",
+      "yourRole": "Tu rol",
+      "ownRoleLosesWarning": "Vas a quitar permisos a tu propio rol. Tú también los perderás y, para recuperarlos, normalmente tendrá que devolvérselos otra persona que gestione roles.",
+      "notHeldLocked": "Las filas con candado son permisos que tú no tienes: solo puedes dar o quitar los permisos que tú también tienes.",
+      "leadershipLocked": "Los permisos de Secretaría y Presidencia solo los cambia un Administrador."
     },
     "intro": "Gestiona quién accede a la plataforma, qué puede hacer cada rol y qué miembros presentan documentos y enmiendas.",
     "sections": "Secciones de administración",
@@ -2106,7 +2066,9 @@
       "acceptance": {
         "accepted": "{who} aceptó {amendment}: sustituirá a las enmiendas originales cuando la acepten todos y esté validada.",
         "rejected": "{who} rechazó {amendment}: se cierra y siguen las enmiendas originales.",
-        "pending": "{who} todavía no ha respondido a {amendment}."
+        "pending": "{who} todavía no ha respondido a {amendment}.",
+        "rejectedOverYours": "{who} rechazó {amendment}: sigue tu enmienda.",
+        "acceptedOverYours": "{who} aceptó {amendment}: sustituirá a tu enmienda cuando la acepten todos y esté validada."
       },
       "amendment": {
         "validated": "Se ha validado {amendment}: ya se puede debatir.",
@@ -2125,7 +2087,8 @@
         "validatedLate": "Se ha validado {amendment}, pero llegó fuera de plazo: falta que la asamblea decida tratarla.",
         "incorporatedBy": "{who} aceptó {amendment}: ya está en el texto sin votación.",
         "transactedBy": "La transaccional {code} sustituye a {amendment} y se debate en su lugar.",
-        "lapsedBy": "Ha decaído {amendment}: la transaccional {code} ya sustituye a esas enmiendas."
+        "lapsedBy": "Ha decaído {amendment}: la transaccional {code} ya sustituye a esas enmiendas.",
+        "closedBy": "Se ha cerrado {amendment}: la enmienda {code}, que agrupaba, ya se decidió o se retiró, así que no puede seguir adelante."
       },
       "document": {
         "published": "Se ha publicado el documento: ya lo puede leer toda la asamblea.",
@@ -2232,7 +2195,6 @@
     "emptyManagerDescription": "Añade los puntos del orden del día. Después podrás crear subpuntos y documentos en cada uno.",
     "acceptsSubmissions": "Admite documentos de los miembros",
     "acceptsSubmissionsHelp": "Los miembros podrán presentar documentos en este punto hasta el cierre del plazo de documentos.",
-    "acceptsSubmissionsBadge": "Admite documentos",
     "lockedRoot": "Punto principal bloqueado: el orden del día es definitivo",
     "documentsOf": "Documentos del punto {number}: {title}",
     "submissionsClosedAssembly": "La asamblea está cerrada: ya no se pueden presentar documentos.",
@@ -2340,18 +2302,12 @@
       "titleRequired": "Escribe el título del documento",
       "summary": "Resumen breve",
       "summaryHelp": "Opcional. Una o dos frases sobre de qué trata.",
-      "rules": "Enmiendas y votación",
       "rulesHelp": "Se aplican las reglas del tipo de documento. Cámbialas solo si este documento es distinto.",
       "amendable": "Admite enmiendas",
       "fileNotAmendable": "Los documentos en PDF no admiten enmiendas.",
       "voted": "Se vota",
       "majority": "Mayoría necesaria",
-      "amendableYes": "Admite enmiendas",
-      "amendableNo": "No admite enmiendas",
-      "votedWith": "Se vota por {majority}",
-      "notVoted": "No se vota",
       "create": "Añadir documento",
-      "submit": "Presentar",
       "created": "Documento creado",
       "error": "No se ha podido crear el documento",
       "createdFor": "Documento añadido: {title}",
@@ -2513,10 +2469,8 @@
     "editDraft": "Editar borrador",
     "consolidatedPage": "Texto consolidado",
     "detailDescription": "Detalle de la enmienda",
-    "newAmendment": "Nueva enmienda",
     "includeAccepted": "Incluir las que acepta el proponente",
     "newMenu": {
-      "selection": "Enmendar la selección",
       "global": "Cambiar una palabra en todo el documento",
       "return": "Devolver el documento",
       "alternative": "Proponer un texto alternativo",
@@ -2637,7 +2591,8 @@
     "more": {
       "label": "Más",
       "consolidated": "Texto consolidado y PDF",
-      "transactional": "Proponer una transaccional"
+      "transactional": "Proponer una transaccional",
+      "answers": "Ver las respuestas"
     },
     "includeAcceptedOn": "Con las que acepta el proponente",
     "corrections": {
@@ -2716,16 +2671,11 @@
       "hideDecided": "Ocultar decididas",
       "assentAccepted": "Aprobar aceptadas por asentimiento ({count})",
       "assentHint": "Aprueba de una vez las enmiendas que acepta quien presenta el documento, si nadie se opone.",
-      "assentDisabled": "En esta asamblea también se votan las enmiendas que acepta el proponente.",
       "notAmendable": "Este documento no admite enmiendas",
       "notAmendableHint": "Puedes pasar directamente a la votación final.",
       "empty": "No se han presentado enmiendas",
       "emptyHint": "Si el documento se vota, puedes pasar a la votación final.",
       "late": "Fuera de plazo",
-      "pendingTitle": "Pendiente de admisión ({count}) | Pendientes de admisión ({count})",
-      "pendingHint": "Enmiendas presentadas fuera de plazo: la Mesa decide si se admiten antes de debatirlas.",
-      "admitAll": "Admitir…",
-      "inadmitAll": "Inadmitir…",
       "listLabel": "Enmiendas en el orden del texto",
       "clusterLabel": "Grupo de {count} enmiendas sobre el mismo pasaje",
       "clusterTitle": "{codes} modifican el mismo pasaje",
@@ -2746,17 +2696,14 @@
       "lateTitle": "Fuera de plazo ({count})",
       "lateDecide": "Decidir si se trata | Decidir si se tratan",
       "lateHint": "Se presentaron después del plazo. La asamblea decide si las trata; hasta entonces no se pueden debatir ni decidir.",
-      "validationAwaitingProponent": "1 espera a quien presenta el documento | {count} esperan a quien presenta el documento",
       "titleFor": "Enmiendas a {document}",
       "notLive": "No es el documento que se debate ahora. Si pones una de sus enmiendas en debate, la sala pasará a este documento.",
-      "validationProponentRejected": "1 rechazada por quien presenta el documento | {count} rechazadas por quien presenta el documento",
       "incorporateRule": "En este documento, las enmiendas que acepta quien lo presenta pasan al texto sin votación.",
       "validationAwaitingAuthors": "1 espera a los autores principales | {count} esperan a los autores principales"
     },
     "card": {
       "label": "Enmienda {code}",
       "inDebate": "En debate",
-      "position": "Quien presenta el documento:",
       "sources": "Combina {codes}",
       "transactionals": "Transaccional propuesta: {codes}",
       "missingAcceptances": "Falta la respuesta de 1 autor principal | Faltan las respuestas de {count} autores principales",
@@ -2772,10 +2719,6 @@
       "correctionNote": "Nota:",
       "notPublic": "Aún no es pública",
       "notPublicHint": "Solo la ven sus autores, Secretaría y la Mesa.",
-      "proponentBadge": "Espera a quien presenta",
-      "awaitingProponent": "Transaccional propuesta por un miembro: primero la aprueba quien presenta el documento y después la valida Secretaría. Hasta entonces no se puede debatir.",
-      "proponentRejectedBadge": "Rechazada por quien presenta",
-      "proponentRejected": "Quien presenta el documento la ha rechazado. Quien la propuso o la Mesa puede retirarla; mientras siga presentada, la votación final del documento la espera.",
       "publishFirst": "Secretaría tiene que hacerla pública antes de decidirla.",
       "authorsBadge": "Espera a los autores",
       "awaitingAuthors": "Transaccional propuesta por un miembro: primero tienen que aceptarla los autores principales de {codes} y después la valida Secretaría. Hasta entonces no se puede debatir.",
@@ -2790,14 +2733,12 @@
       "assentHint": "Aprobar por asentimiento",
       "vote": "Votar",
       "voteHint": "Registrar la votación",
-      "proponent": "Aceptada por el proponente",
       "formal": "De forma",
       "withdraw": "Retirada",
       "lapse": "Decae",
       "reopen": "Reabrir",
       "relate": "Relacionar",
       "transact": "Transaccionar",
-      "admit": "Admitir",
       "inadmit": "Inadmitir",
       "more": "Más acciones para {code}",
       "undo": "Deshacer",
@@ -2940,7 +2881,6 @@
       "none": "Esta transaccional no tiene autores principales que deban aceptarla.",
       "answerFor": "Respuesta de {member}",
       "mainAuthorOf": "autor principal de {codes}",
-      "replaced": "Todos los autores principales la aceptaron: sustituye a {codes}.",
       "willReplace": "Si todos la aceptan, sustituirá a {codes}. Si alguno la rechaza, se cierra y siguen las originales.",
       "acceptedBy": "La aceptaron sus autores principales: {members}.",
       "confirmReject": {
@@ -3087,7 +3027,6 @@
       "title": "{code} aún no es pública",
       "description": "Solo la ven sus autores, Secretaría y la Mesa. Si la pones en debate, aparecerá en la proyección y la verá toda la sala.",
       "publishAndDebate": "Hacer pública y poner en debate",
-      "debateAnyway": "Poner en debate igualmente",
       "needsPublish": "{code} aún no es pública: Secretaría tiene que hacerla pública antes de debatirla.",
       "otherDocumentTitle": "¿Pasar el debate a {code}?",
       "otherDocument": "La sala está debatiendo otro documento: la proyección y los asistentes pasarán a este.",
@@ -3114,8 +3053,6 @@
       "more": "Más",
       "assent": "Aprobar por asentimiento",
       "assentHint": "Si nadie se opone, queda aprobada sin votación",
-      "position": "Quien presenta el documento:",
-      "notPublic": "Aún no es pública: solo la ven sus autores, Secretaría y la Mesa.",
       "showJustification": "Ver justificación",
       "hideJustification": "Ocultar justificación",
       "stage": {
@@ -3123,7 +3060,6 @@
         "openAccepted": "Quien presenta el documento la acepta. Si nadie se opone, apruébala por asentimiento; si no, votadla.",
         "acceptances": "Falta la respuesta de 1 autor principal. Si todos la aceptan, sustituirá a {codes}; si alguno la rechaza, se cierra. | Faltan las respuestas de {count} autores principales. Si todos la aceptan, sustituirá a {codes}; si alguno la rechaza, se cierra.",
         "late": "Se presentó fuera de plazo. La asamblea tiene que decidir si la trata antes de debatirla.",
-        "awaiting_proponent": "Espera a que quien presenta el documento la apruebe; después la revisará Secretaría.",
         "awaiting_validation": "Secretaría aún no la ha validado: todavía no se puede debatir.",
         "correction_requested": "Está con sus autores para que la corrijan.",
         "approved": "Aprobada.",
@@ -3133,11 +3069,12 @@
         "transacted": "La sustituye la transaccional {codes}, que se debate en su lugar.",
         "inadmissible": "Inadmitida: no se debate.",
         "draft": "Es un borrador: aún no se ha presentado.",
-        "proponent_rejected": "Quien presenta el documento la ha rechazado: quien la propuso o la Mesa puede retirarla.",
         "turned_down": "{members} la rechazó como autor principal: la transaccional se cierra y siguen las enmiendas originales.",
         "awaiting_authors": "Espera a que la acepten los autores principales de las enmiendas que sustituiría; después la validará Secretaría.",
         "incorporated": "Ya está en el texto sin votación: quien presenta el documento la aceptó. Si cambia su respuesta antes de la votación final, vuelve a quedar pendiente.",
-        "superseded": "Ya no puede seguir adelante: otra transaccional se adelantó o ya se decidió sobre {codes}. Retírala para cerrarla."
+        "superseded": "Ya no puede seguir adelante: otra transaccional se adelantó o ya se decidió sobre {codes}. Retírala para cerrarla.",
+        "closed": "Se cerró automáticamente: {codes} ya se decidió o se retiró, así que esta transaccional no podía seguir adelante.",
+        "lapsedBy": "Ha decaído: la transaccional {codes} se adelantó y ya sustituye a las enmiendas que esta agrupaba, así que no puede seguir adelante."
       },
       "document": {
         "notAmendable": "Este documento no admite enmiendas: solo queda la votación final del texto.",
@@ -3156,17 +3093,16 @@
       "replaces": "Sustituye a {codes}."
     },
     "stage": {
-      "awaiting_proponent": "Espera a quien presenta",
       "awaiting_validation": "Espera a Secretaría",
       "correction_requested": "En corrección",
       "late": "Fuera de plazo",
       "acceptances": "Faltan aceptaciones",
       "open": "Por decidir",
-      "proponent_rejected": "Rechazada por quien presenta",
-      "turned_down": "Rechazada por un autor principal",
+      "turned_down": "Rechazada por {members}",
       "awaiting_authors": "Espera a los autores principales",
       "incorporated": "En el texto sin votación",
-      "superseded": "Ya no puede seguir adelante"
+      "superseded": "Ya no puede seguir adelante",
+      "closed": "Cerrada automáticamente"
     },
     "speakers": {
       "title": "Turnos de palabra",
@@ -3213,6 +3149,12 @@
       "rename": "Corregir nombre",
       "renameTitle": "Corregir el nombre de la persona",
       "renameHint": "Turno de {who}"
+    },
+    "position": {
+      "by": "Respuesta de {member}:",
+      "byMesa": "La Mesa, en nombre de {member}:",
+      "waitsPublication": "Espera a que Secretaría la publique",
+      "waitsPublicationFor": "Respuesta de {member}: se podrá dar cuando Secretaría la publique."
     }
   },
   "projection": {
@@ -3349,21 +3291,16 @@
         "correction": "Se ha pedido corregir {label}"
       },
       "presentedBy": "Presentada por",
-      "awaitingProponent": "Es una transaccional propuesta por un miembro. Espera la aprobación de quien presenta el documento; después podrás validarla.",
-      "awaitingProponentNamed": "Espera la aprobación de {member}, que presenta el documento. Después podrás validarla.",
-      "rejectedByProponent": "{member}, que presenta el documento, no la ha aceptado. No se puede validar mientras no la acepte.",
-      "awaitingProponentTitle": "Esperando a quien presenta el documento",
-      "awaitingProponentHelp": "Transaccionales propuestas por miembros. Primero las aprueba quien presenta el documento; después podrás validarlas.",
-      "countAwaitingProponent": "{count} esperando a quien presenta el documento | {count} esperando a quien presenta el documento",
       "groupsAmendments": "Agrupa {count} enmienda | Agrupa {count} enmiendas",
       "awaitingAuthors": "Espera a que la acepten los autores principales de las enmiendas que agrupa. Después podrás validarla.",
       "missingAuthors": "Falta que responda | Falta que respondan",
-      "replacesOnValidate": "Los autores ya la han aceptado. Al validarla, sustituye a las enmiendas que agrupa.",
+      "replacesOnValidate": "Los autores ya la han aceptado. Al validarla se publica y sustituye a las enmiendas que agrupa.",
       "awaitingAuthorsTitle": "Transaccionales que esperan a sus autores",
-      "awaitingAuthorsHelp": "Primero tiene que aceptarlas el autor principal de cada enmienda que agrupan; después podrás validarlas. Si alguno la rechaza, se cierra, sale de esta lista y sus enmiendas siguen como estaban.",
+      "awaitingAuthorsHelp": "Primero tiene que aceptarlas el autor principal de cada enmienda que agrupan; después podrás validarlas, y al hacerlo se publican. Si alguno la rechaza, o si alguna de esas enmiendas se resuelve antes (se decide, se retira o la sustituye otra transaccional), se cierra sola y sale de esta lista.",
       "countAwaitingAuthors": "{count} transaccional espera a sus autores | {count} transaccionales esperan a sus autores",
-      "validateOnlyTransactionalHelp": "Queda validada y sustituye ya a las enmiendas que agrupa, pero solo la ven sus autores, la Secretaría y la Mesa hasta que la publiques.",
-      "bulkValidateOnlyTransactionalHelp": "Quedan validadas sin publicar. Las transaccionales sustituyen ya a las enmiendas que agrupan."
+      "sharesSourcesWith": "Comparte enmiendas con {label}, que ya has seleccionado. Solo una de las dos puede sustituirlas: al validar una, la otra se cierra.",
+      "bulkValidateOnlySkipsTransactionals": "Las transaccionales seleccionadas no se incluyen: al validarlas siempre se publican.",
+      "transactionalsPublished": "Las transaccionales se publican siempre al validarlas, porque sustituyen a enmiendas que ya son públicas."
     },
     "correction": {
       "title": "Pedir corrección",
@@ -3679,11 +3616,10 @@
       "authorsHint": "Por defecto, quienes presentaron las enmiendas que combina.",
       "authorsPlaceholder": "Elige quién la presenta",
       "next": {
-        "member": "Primero tienen que aceptarla {members}, como autores principales de las enmiendas que combina; si alguno la rechaza, se cierra. Después la revisará Secretaría y, cuando la valide, sustituirá a esas enmiendas.",
-        "presenter": "Secretaría la revisará antes de que la vea toda la asamblea. Antes de votarla, tendrán que aceptarla quienes presentaron las enmiendas que combina.",
+        "member": "Primero tienen que aceptarla {members}, como autores principales de las enmiendas que combina; si alguno la rechaza, se cierra. Después la revisará Secretaría y, cuando la valide, se publicará y sustituirá a esas enmiendas.",
         "mesa": "Se publicará al momento y sustituirá a las enmiendas que combina en cuanto sus autores principales la acepten.",
-        "memberGeneric": "Primero tienen que aceptarla los autores principales de las enmiendas que combina; si alguno la rechaza, se cierra. Después la revisará Secretaría y, cuando la valide, sustituirá a esas enmiendas.",
-        "self": "Eres autor principal de todas las enmiendas que combina, así que pasa directamente a Secretaría. Cuando la valide, sustituirá a esas enmiendas."
+        "memberGeneric": "Primero tienen que aceptarla los autores principales de las enmiendas que combina; si alguno la rechaza, se cierra. Después la revisará Secretaría y, cuando la valide, se publicará y sustituirá a esas enmiendas.",
+        "self": "Eres autor principal de todas las enmiendas que combina, así que pasa directamente a Secretaría. Cuando la valide, se publicará y sustituirá a esas enmiendas."
       },
       "send": "Enviar la transaccional",
       "sendFailed": "No se ha podido enviar la transaccional",
@@ -3704,11 +3640,7 @@
       "mainAuthorHint": "Si se propone una transaccional sobre esta, solo responde el autor principal."
     },
     "nextSteps": {
-      "proponent": "{member} la aprueba, porque presenta el documento.",
-      "proponentUnknown": "Quien presenta el documento la aprueba.",
       "secretaria": "Secretaría la revisa y la publica para toda la asamblea.",
-      "parties": "La aceptan quienes aún no lo han hecho: {members}.",
-      "vote": "Después, la Mesa la somete a votación.",
       "authors": "La aceptan o la rechazan los autores principales que faltan: {members}. Si alguno la rechaza, se cierra y siguen las enmiendas originales.",
       "replaces": "Sustituye a {list}.",
       "answer": {
@@ -3749,19 +3681,24 @@
         "replaced": "Ha sustituido a {list}. Ahora sigue como cualquier otra enmienda.",
         "accepted": "La han aceptado los autores principales y sustituye a las enmiendas que combina. Ahora sigue como cualquier otra enmienda."
       },
-      "afterSecretaria": "Cuando Secretaría la valide, sustituirá a {list}.",
+      "afterSecretaria": "Cuando Secretaría la valide, se publicará y sustituirá a {list}.",
       "alreadyReplaced": "Ya ha sustituido a {list}."
     },
     "answer": {
       "open": "Abrir la transaccional {label}",
       "question": "¿Aceptas la transaccional {label}?",
-      "hint": "Si la rechazas, se cierra y esta enmienda sigue adelante. Si la aceptas, sustituirá a esta enmienda cuando la acepten todos los autores principales y Secretaría la haya validado.",
+      "hint": "Si la rechazas, se cierra y esta enmienda sigue adelante. Si la aceptas, sustituirá a esta enmienda cuando la acepten todos los autores principales y Secretaría la valide y la publique.",
       "state": {
         "pending": "{member} todavía no ha respondido",
         "accepted": "{member} la ha aceptado",
         "rejected": "{member} la ha rechazado"
       },
-      "rejectConfirm": "Si la rechazas, se cierra para todos y esta enmienda sigue adelante. No se puede deshacer."
+      "rejectConfirm": "Si la rechazas, se cierra para todos y esta enmienda sigue adelante. No se puede deshacer.",
+      "notNeeded": {
+        "source_replaced": "Ya no hace falta responder: otra transaccional sustituyó a {source}, así que esta se ha cerrado.",
+        "source_decided": "Ya no hace falta responder: {source} ya está resuelta, así que esta transaccional se ha cerrado.",
+        "closed": "Ya no hace falta responder: esta transaccional se ha cerrado."
+      }
     }
   },
   "proponentReview": {
@@ -3782,23 +3719,17 @@
     },
     "progress": {
       "answered": "{answered} de {total} respondida | {answered} de {total} respondidas",
-      "transactionals": "{count} transaccional espera aprobación | {count} transaccionales esperan aprobación",
       "awaitingAdmission": "{count} enmienda fuera de plazo espera a que la asamblea decida si la trata. Podrás responderla después. | {count} enmiendas fuera de plazo esperan a que la asamblea decida si las trata. Podrás responderlas después."
     },
     "nav": {
       "label": "Moverse entre enmiendas",
-      "position": "{current} de {total}",
       "finish": "Ver el resumen",
-      "amendment": "Enmienda {current} de {total}",
-      "transactional": "Transaccional {current} de {total}"
+      "amendment": "Enmienda {current} de {total}"
     },
     "list": {
       "open": "Ver la lista",
       "title": "Todas las enmiendas",
       "description": "Elige una para ir a ella.",
-      "transactionals": "Transaccionales por aprobar",
-      "amendments": "Enmiendas",
-      "toApprove": "Por aprobar",
       "unsaved": "Sin guardar"
     },
     "answers": {
@@ -3814,14 +3745,23 @@
       "accept": "La has aceptado. Puedes cambiar la respuesta hasta que se decida.",
       "reject": "La has rechazado: se debatirá y votará. Puedes cambiar la respuesta hasta que se decida.",
       "transact": "Has propuesto transaccionarla. Cuando acordéis otro texto con quien la presenta, proponedlo como transaccional desde el documento.",
-      "late": "Llegó fuera de plazo: la asamblea decidirá si se debate.",
       "acceptVote": "La has aceptado. La votará la asamblea y puedes cambiar la respuesta hasta entonces.",
       "incorporated": "La has aceptado y ya está incorporada al texto. Si cambias la respuesta antes de la votación final, saldrá del texto.",
       "acceptFor": "{member} la ha aceptado. Puedes cambiar la respuesta hasta que se decida.",
       "acceptVoteFor": "{member} la ha aceptado. La votará la asamblea y puedes cambiar la respuesta hasta entonces.",
       "incorporatedFor": "{member} la ha aceptado y ya está incorporada al texto. Si cambias la respuesta antes de la votación final, saldrá del texto.",
       "rejectFor": "{member} la ha rechazado: se debatirá y votará. Puedes cambiar la respuesta hasta que se decida.",
-      "transactFor": "{member} ha propuesto transaccionarla. Cuando se acuerde otro texto con quien la presenta, se puede proponer como transaccional desde el documento."
+      "transactFor": "{member} ha propuesto transaccionarla. Cuando se acuerde otro texto con quien la presenta, se puede proponer como transaccional desde el documento.",
+      "acceptByMesa": "La Mesa, en tu nombre, la ha aceptado. Puedes cambiar la respuesta hasta que se decida.",
+      "acceptVoteByMesa": "La Mesa, en tu nombre, la ha aceptado. La votará la asamblea y puedes cambiar la respuesta hasta entonces.",
+      "incorporatedByMesa": "La Mesa, en tu nombre, la ha aceptado y ya está incorporada al texto. Si cambias la respuesta antes de la votación final, saldrá del texto.",
+      "rejectByMesa": "La Mesa, en tu nombre, la ha rechazado: se debatirá y votará. Puedes cambiar la respuesta hasta que se decida.",
+      "transactByMesa": "La Mesa, en tu nombre, ha propuesto transaccionarla. Cuando acordéis otro texto con quien la presenta, proponedlo como transaccional desde el documento.",
+      "acceptByMesaFor": "La Mesa, en nombre de {member}, la ha aceptado. Puedes cambiar la respuesta hasta que se decida.",
+      "acceptVoteByMesaFor": "La Mesa, en nombre de {member}, la ha aceptado. La votará la asamblea y puedes cambiar la respuesta hasta entonces.",
+      "incorporatedByMesaFor": "La Mesa, en nombre de {member}, la ha aceptado y ya está incorporada al texto. Si cambias la respuesta antes de la votación final, saldrá del texto.",
+      "rejectByMesaFor": "La Mesa, en nombre de {member}, la ha rechazado: se debatirá y votará. Puedes cambiar la respuesta hasta que se decida.",
+      "transactByMesaFor": "La Mesa, en nombre de {member}, ha propuesto transaccionarla. Cuando se acuerde otro texto con quien la presenta, se puede proponer como transaccional desde el documento."
     },
     "change": {
       "where": "Dónde: {place}",
@@ -3833,7 +3773,6 @@
       "comment": "Comentario (opcional)",
       "commentPlaceholder": "Por ejemplo: por qué la aceptas o qué texto propondrías.",
       "accept": "Aceptar",
-      "acceptHelp": "Estás de acuerdo con el cambio.",
       "reject": "Rechazar",
       "rejectHelp": "No estás de acuerdo: se debatirá y votará.",
       "transact": "Transaccionar",
@@ -3855,30 +3794,8 @@
       "reopened": "Ya no está incorporada al texto."
     },
     "transactional": {
-      "proposedBy": "Quién la propone",
-      "groups": "Agrupa estas enmiendas",
       "showSources": "Ver los cambios de esas enmiendas",
       "hideSources": "Ocultar los cambios de esas enmiendas",
-      "proposal": "Texto que propone",
-      "waiting": {
-        "toSecretaria": "Espera tu aprobación. Si la apruebas, Secretaría la revisará y después la tendrán que aceptar quienes presentan las enmiendas que agrupa.",
-        "toParties": "Espera tu aprobación. Se podrá votar cuando todas las partes la acepten."
-      },
-      "waitingFor": {
-        "toSecretaria": "Espera la aprobación de {member}, que presenta el documento. Después, Secretaría la revisará y la tendrán que aceptar quienes presentan las enmiendas que agrupa.",
-        "toParties": "Espera la aprobación de {member}, que presenta el documento. Se podrá votar cuando todas las partes la acepten."
-      },
-      "final": "Cuando respondas, no podrás cambiar tu respuesta.",
-      "approve": "Aprobar",
-      "reject": "Rechazar",
-      "approveFor": "Registrar que {member} la aprueba",
-      "rejectFor": "Registrar que {member} la rechaza",
-      "rejectTitle": "¿Rechazar la transaccional {label}?",
-      "rejectDescription": "Las enmiendas que agrupa seguirán como estaban. No podrás cambiar tu respuesta.",
-      "rejectDescriptionFor": "Quedará registrado que {member} la rechaza. Las enmiendas que agrupa seguirán como estaban.",
-      "rejectConfirm": "Sí, rechazarla",
-      "approved": "{label}: aprobada",
-      "rejected": "{label}: rechazada",
       "replaces": "Sustituye a estas enmiendas"
     },
     "summary": {
@@ -3893,10 +3810,7 @@
         "accept": "Aceptadas",
         "reject": "Rechazadas",
         "transact": "A transaccionar",
-        "pending": "Sin responder",
-        "transactionalsApproved": "Transaccionales aprobadas",
-        "transactionalsRejected": "Transaccionales rechazadas",
-        "transactionalsLeft": "Transaccionales por aprobar"
+        "pending": "Sin responder"
       },
       "descriptionIncorporate": "Las que aceptas se incorporan al texto sin votación. Puedes cambiar cualquier respuesta hasta la votación final del documento."
     },
@@ -3907,8 +3821,7 @@
       "transact": "Transaccionar la enmienda",
       "next": "Siguiente",
       "previous": "Anterior",
-      "hint": "Actúan sobre la enmienda que tienes delante y no funcionan mientras escribes un comentario.",
-      "notHere": "En las transaccionales, usa los botones Aprobar o Rechazar."
+      "hint": "Actúan sobre la enmienda que tienes delante y no funcionan mientras escribes un comentario."
     },
     "empty": {
       "title": "No hay enmiendas que responder",
@@ -3951,7 +3864,9 @@
       "admission": "{label}: todavía no se puede responder",
       "admissionDescription": "Llegó fuera de plazo y la asamblea todavía no ha decidido si la trata. Podrás responderla cuando lo decida.",
       "publication": "{label}: todavía no se puede responder",
-      "publicationDescription": "Secretaría todavía no la ha publicado, y aceptarla la incorporaría al texto. Podrás responderla cuando la publique."
+      "publicationDescription": "Secretaría todavía no la ha publicado. Podrás responderla cuando la publique.",
+      "voted": "{label}: no se ha guardado la respuesta",
+      "votedDescription": "El documento se ha votado mientras tanto, así que las respuestas ya no se pueden cambiar."
     },
     "coPresenter": {
       "pageTitle": "Respuestas a las enmiendas: {title}",
@@ -3987,7 +3902,12 @@
       },
       "pending": "{member} todavía no la ha respondido.",
       "awaitingPublication": "{count} enmienda validada espera a que Secretaría la publique. Después se podrá responder. | {count} enmiendas validadas esperan a que Secretaría las publique. Después se podrán responder.",
-      "entry": "Ver las respuestas a las enmiendas"
+      "answeredByMesa": {
+        "accept": "La Mesa, en nombre de {member}, la aceptó el {date}.",
+        "incorporated": "La Mesa, en nombre de {member}, la aceptó el {date} y se incorporó al texto sin votación.",
+        "reject": "La Mesa, en nombre de {member}, la rechazó el {date}.",
+        "transact": "La Mesa, en nombre de {member}, propuso transaccionarla el {date}."
+      }
     },
     "waiting": {
       "authors": "{count} transaccional espera a que la acepten los autores principales de las enmiendas que sustituye. | {count} transaccionales esperan a que las acepten los autores principales de las enmiendas que sustituyen.",

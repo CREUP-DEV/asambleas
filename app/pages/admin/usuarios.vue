@@ -15,11 +15,14 @@ import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
  * permissions given to them on top of their role. Opens with
  * `user:manage_roles` (Secretaría and Presidencia hold it). Only an Admin
  * gives or takes the Administrator role: for anyone else that option and
- * the role of an Admin are locked, with the reason next to them. Nobody
- * changes their own role, and only an Admin changes the member their own
- * account acts for or their own extra permissions: otherwise managing users
- * would let anyone give themselves every permission. The server refuses all
- * of these too (PUT /api/admin/users/[id]/role, /member and /permissions).
+ * the role of an Admin are locked, with the reason next to them. Only an
+ * Admin changes their own role, the member their own account acts for or
+ * their own extra permissions: otherwise managing users would let anyone
+ * give themselves every permission. For anyone else those controls of
+ * their own row stay visible but disabled, with the reason under the role.
+ * An Admin who gives up the Administrator role is warned first, and the
+ * last Admin cannot (409). The server refuses all of these too
+ * (PUT /api/admin/users/[id]/role, /member and /permissions).
  */
 definePageMeta({
   middleware: ["admin"],
@@ -72,7 +75,8 @@ const PAGE_SIZE = 50;
 const { t, te, locale } = useI18n();
 const toast = useToast();
 const api = useApi();
-const { me, isAdmin } = useMe();
+const { me, isAdmin, can, refresh: refreshMe } = useMe();
+const localePath = useLocalePath();
 
 useHead({ title: () => t("admin.users.title") });
 
@@ -119,25 +123,42 @@ function isAdminRoleName(name: string | null | undefined): boolean {
   return name === SYSTEM_ROLES.ADMIN;
 }
 
+/** Secretaría and Presidencia: only an Admin gives, takes or changes them. */
+function isLeadershipRoleName(name: string | null | undefined): boolean {
+  return name === SYSTEM_ROLES.SECRETARIA || name === SYSTEM_ROLES.PRESIDENCIA;
+}
+
 /**
  * The roles to choose from. Only an Admin gives the Administrator role:
  * anyone else sees it disabled, with the reason.
  */
 const roleOptions = computed(() =>
   (rolesData.value?.data ?? []).map((role) => {
-    const locked = !isAdmin.value && isAdminRoleName(role.name);
+    const adminOnly = !isAdmin.value && isAdminRoleName(role.name);
+    const leadership = !isAdmin.value && isLeadershipRoleName(role.name);
     return {
       label: roleName(role.name),
       value: role.id,
-      disabled: locked,
-      description: locked ? t("admin.users.adminRoleOnlyAdmins") : undefined,
+      disabled: adminOnly || leadership,
+      description: adminOnly
+        ? t("admin.users.adminRoleOnlyAdmins")
+        : leadership
+          ? t("admin.users.leadershipRoleOnlyAdmins")
+          : undefined,
     };
   }),
 );
 
-/** Only an Admin takes the Administrator role away from someone. */
+/**
+ * Only an Admin takes the Administrator role away from someone, and only an
+ * Admin changes the role or extra permissions of the Secretaría and the
+ * Presidencia.
+ */
 function roleLocked(user: UserRow): boolean {
-  return !isAdmin.value && isAdminRoleName(user.role?.name);
+  return (
+    !isAdmin.value &&
+    (isAdminRoleName(user.role?.name) || isLeadershipRoleName(user.role?.name))
+  );
 }
 
 function isSelf(user: UserRow): boolean {
@@ -145,8 +166,7 @@ function isSelf(user: UserRow): boolean {
 }
 
 /**
- * Only an Admin changes their own member link or extra permissions; nobody
- * changes their own role.
+ * Only an Admin changes their own role, member link or extra permissions.
  */
 function ownAccountLocked(user: UserRow): boolean {
   return isSelf(user) && !isAdmin.value;
@@ -155,7 +175,9 @@ function ownAccountLocked(user: UserRow): boolean {
 /** Why the controls of a row are locked, if they are. */
 function rowLockReason(user: UserRow): string | null {
   if (ownAccountLocked(user)) return t("admin.users.selfLocked");
-  if (isSelf(user)) return t("admin.users.cannotChangeSelf");
+  if (!isAdmin.value && isLeadershipRoleName(user.role?.name)) {
+    return t("admin.users.leadershipLocked");
+  }
   if (roleLocked(user)) return t("admin.users.adminRoleLocked");
   return null;
 }
@@ -218,6 +240,8 @@ const pendingChange = ref<{
   userName: string;
   roleId: string;
   roleName: string;
+  /** An Admin changing their own role: they give up the Admin role. */
+  self: boolean;
 } | null>(null);
 const statusMessage = ref("");
 
@@ -237,8 +261,9 @@ const confirmOpen = computed({
 
 function selectRole(user: UserRow, roleId: unknown): void {
   if (typeof roleId !== "string" || roleId === user.roleId) return;
-  if (user.id === currentUserId.value) {
-    toast.add({ title: t("admin.users.cannotChangeSelf"), color: "warning" });
+  if (ownAccountLocked(user)) {
+    toast.add({ title: t("admin.users.selfLocked"), color: "warning" });
+    selectResetKey.value += 1;
     return;
   }
   const option = roleOptions.value.find((role) => role.value === roleId);
@@ -253,7 +278,21 @@ function selectRole(user: UserRow, roleId: unknown): void {
     userName: user.name || user.email,
     roleId,
     roleName: option.label,
+    self: isSelf(user),
   };
+}
+
+/**
+ * After an Admin changes their own role: reload what they may do and, if
+ * this page no longer opens for them, leave it (every request would fail).
+ */
+async function afterOwnRoleChange(): Promise<void> {
+  await refreshMe();
+  if (!can(PERMISSION_KEYS.USER_MANAGE_ROLES)) {
+    await navigateTo(localePath("/"));
+    return;
+  }
+  await refreshUsers();
 }
 
 async function confirmRoleChange(): Promise<void> {
@@ -272,9 +311,20 @@ async function confirmRoleChange(): Promise<void> {
     });
     statusMessage.value = message;
     toast.add({ title: message, color: "success", icon: "i-lucide-check" });
-    await refreshUsers();
+    if (change.self) await afterOwnRoleChange();
+    else await refreshUsers();
   } catch (error) {
-    api.notifyError(error, "admin.users.roleChangeFailed");
+    // The only conflict here: the last Admin giving up the role.
+    if (change.self && api.errorStatus(error) === 409) {
+      toast.add({
+        title: t("admin.users.roleChangeFailed"),
+        description: t("admin.users.lastAdmin"),
+        color: "warning",
+        icon: "i-lucide-shield-alert",
+      });
+    } else {
+      api.notifyError(error, "admin.users.roleChangeFailed");
+    }
   } finally {
     changingUserId.value = null;
   }
@@ -699,7 +749,7 @@ function goToPage(next: number): void {
               :items="roleOptions"
               :loading="changingUserId === row.original.id"
               :disabled="
-                row.original.id === currentUserId ||
+                ownAccountLocked(row.original) ||
                 roleLocked(row.original) ||
                 changingUserId !== null
               "
@@ -731,9 +781,8 @@ function goToPage(next: number): void {
               />
               <span>{{ rowLockReason(row.original) }}</span>
             </p>
-            <!-- Hidden, not disabled, on one's own row: the note says why. -->
+            <!-- Disabled on one's own row: the note above says why. -->
             <UButton
-              v-if="!ownAccountLocked(row.original)"
               color="neutral"
               variant="link"
               size="xs"
@@ -753,7 +802,17 @@ function goToPage(next: number): void {
                   user: row.original.name || row.original.email,
                 })
               "
-              :disabled="changingUserId !== null || linkingUserId !== null"
+              :aria-describedby="
+                rowLockReason(row.original)
+                  ? `row-locked-${row.original.id}`
+                  : undefined
+              "
+              :disabled="
+                ownAccountLocked(row.original) ||
+                roleLocked(row.original) ||
+                changingUserId !== null ||
+                linkingUserId !== null
+              "
               @click="openPermissions(row.original)"
             />
           </div>
@@ -890,14 +949,28 @@ function goToPage(next: number): void {
         :title="t('admin.users.confirmRoleChange')"
       >
         <template #body>
-          <p v-if="pendingChange" class="text-sm">
-            {{
-              t("admin.users.confirmRoleChangeMessage", {
-                user: pendingChange.userName,
-                role: pendingChange.roleName,
-              })
-            }}
-          </p>
+          <div v-if="pendingChange" class="space-y-3">
+            <p class="text-sm">
+              {{
+                t("admin.users.confirmRoleChangeMessage", {
+                  user: pendingChange.userName,
+                  role: pendingChange.roleName,
+                })
+              }}
+            </p>
+            <UAlert
+              v-if="pendingChange.self"
+              color="warning"
+              variant="subtle"
+              icon="i-lucide-shield-alert"
+              :title="t('admin.users.ownAdminRoleWarningTitle')"
+              :description="
+                t('admin.users.ownAdminRoleWarning', {
+                  role: pendingChange.roleName,
+                })
+              "
+            />
+          </div>
         </template>
         <template #footer>
           <div class="flex w-full justify-end gap-2">
@@ -908,7 +981,10 @@ function goToPage(next: number): void {
             >
               {{ t("admin.cancel") }}
             </UButton>
-            <UButton color="primary" @click="confirmRoleChange">
+            <UButton
+              :color="pendingChange?.self ? 'warning' : 'primary'"
+              @click="confirmRoleChange"
+            >
               {{ t("admin.confirm") }}
             </UButton>
           </div>

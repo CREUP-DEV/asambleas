@@ -5,19 +5,22 @@
  * moves through them and the body each answer sends. No Nuxt or Vue APIs
  * here, so they are unit-tested on their own (-review.test.ts).
  *
- * Only the document's main presenter (or the Mesa for it) answers. A
- * transactional is answered like any amendment once its main authors
- * accepted it and the Secretaría validated it: approving it before that is
- * their job, not the presenter's.
+ * Only the document's main presenter (or the Mesa for it) answers, and
+ * only published amendments: validated by the Secretaría, made visible to
+ * everyone and, when late, admitted by the assembly. A transactional is
+ * answered like any amendment once its main authors accepted it and the
+ * Secretaría published it: approving it before that is their job, not the
+ * presenter's. Nothing is answered once the document is voted (the page
+ * shows the answers on record instead).
  *
  * Which amendments can be answered follows the server's rule
  * (positionBlocker and countPositionsPending in
  * server/utils/domain/reviewState.ts) through one implementation, the
- * workspace's (amendmentAwaitsPosition, amendmentPositionBlocker and
- * amendmentAcceptBlocked in ~/composables/amendment/workspace), read here
- * as positionWaitReason, so the review, its waiting lines, its conflict
- * notices, the document page's backlog (proponentReviewBacklog) and the
- * home page's count never disagree.
+ * workspace's (amendmentAwaitsPosition and amendmentPositionBlocker in
+ * ~/composables/amendment/workspace), read here as positionWaitReason, so
+ * the review, its waiting lines, its conflict notices, the document page's
+ * backlog (proponentReviewBacklog) and the home page's count never
+ * disagree. The final vote is the page's to know (`PositionContext`).
  *
  * The leading dash keeps Nuxt from registering this file as a component
  * (`ignorePrefix`); import it explicitly.
@@ -28,10 +31,10 @@ import type {
 } from "~~/shared/constants/domain";
 import type { AmendmentDto, PositionBody } from "~~/shared/types/api";
 import {
-  amendmentAcceptBlocked,
   amendmentAwaitsPosition,
   amendmentPositionBlocker,
   sortAmendments,
+  type AmendmentPositionContext,
 } from "~/composables/amendment/workspace";
 
 /** The answers the main presenter can give to an amendment. */
@@ -60,6 +63,15 @@ type AnswerableInput = Pick<
   | "approvalMethod"
   | "acceptances"
 >;
+
+/**
+ * What the review knows about the document beyond each amendment: with
+ * `finalVoted` (its final vote is on record, `DocumentDto.finalVote`)
+ * nothing can be answered any more, not even an amendment the presenter's
+ * acceptance incorporated. The workspace's own context, so the rule has one
+ * implementation.
+ */
+export type PositionContext = AmendmentPositionContext;
 
 // Positions --------------------------------------------------------------------
 
@@ -119,21 +131,18 @@ export const ANSWER_STATUS_ICONS: Record<
  * Why the main presenter (or the Mesa for it) cannot answer an amendment
  * here now, or null when it can: the workspace's rule
  * (amendmentAwaitsPosition and amendmentPositionBlocker), which mirrors the
- * server's positionBlocker, plus the publication rule of its
- * countPositionsPending (amendmentAcceptBlocked):
- * - `decided`: no longer undecided. One the presenter's acceptance
- *   incorporated stays answerable under the "incorporate" rule: changing
- *   the answer reopens it;
+ * server's positionBlocker:
+ * - `decided`: no longer undecided, or the document's final vote is on
+ *   record (`context.finalVoted`). One the presenter's acceptance
+ *   incorporated stays answerable under the "incorporate" rule until that
+ *   final vote: changing the answer reopens it;
  * - `authors`: a transactional its main authors have not all accepted yet
  *   (only their answers count);
  * - `validation`: still with the Secretaría;
  * - `admission`: late, and the assembly has not decided to treat it yet;
- * - `publication`: validated but kept private, under the "incorporate"
- *   rule: accepting it would put in the text something delegates cannot
- *   read, so the review (like the document page's backlog and the home
- *   page) waits for the Secretaría to publish it. Under "vote" a validated
- *   one can be answered, though only the Mesa and the Secretaría see it
- *   until it is published.
+ * - `publication`: validated but kept private: only the Mesa and the
+ *   Secretaría see it, so the presenter answers it once the Secretaría
+ *   publishes it, whatever the document's rule.
  */
 export type PositionWaitReason =
   "decided" | "authors" | "validation" | "admission" | "publication";
@@ -141,19 +150,19 @@ export type PositionWaitReason =
 export function positionWaitReason(
   amendment: AnswerableInput,
   rule: AcceptedAmendmentRule,
+  context: PositionContext = {},
 ): PositionWaitReason | null {
-  if (!amendmentAwaitsPosition(amendment, rule)) {
-    return amendmentPositionBlocker(amendment, rule) ?? "decided";
-  }
-  return amendmentAcceptBlocked(amendment, rule) ? "publication" : null;
+  if (amendmentAwaitsPosition(amendment, rule, context)) return null;
+  return amendmentPositionBlocker(amendment, rule, context) ?? "decided";
 }
 
 /** An amendment whose answer belongs to the main presenter right now, whoever looks. */
 export function isPositionAnswerable(
   amendment: AnswerableInput,
   rule: AcceptedAmendmentRule,
+  context: PositionContext = {},
 ): boolean {
-  return positionWaitReason(amendment, rule) === null;
+  return positionWaitReason(amendment, rule, context) === null;
 }
 
 /** An amendment the actor (the main presenter or the Mesa) answers here. */
@@ -162,8 +171,11 @@ export function isPositionReviewable(
     can: Pick<AmendmentDto["can"], "position">;
   },
   rule: AcceptedAmendmentRule,
+  context: PositionContext = {},
 ): boolean {
-  return amendment.can.position && isPositionAnswerable(amendment, rule);
+  return (
+    amendment.can.position && isPositionAnswerable(amendment, rule, context)
+  );
 }
 
 /** Amendments still on their way to the main presenter, by what they wait for. */
@@ -176,11 +188,13 @@ export type PositionWaitCounts = Record<
  * How many undecided amendments, among those the viewer sees, wait for
  * something before the main presenter can answer them: the lines under the
  * progress ("2 enmiendas fuera de plazo esperan a que la asamblea decida si
- * las trata").
+ * las trata"). None once the document is voted: nothing is on its way any
+ * more.
  */
 export function positionWaitCounts(
   amendments: readonly AnswerableInput[],
   rule: AcceptedAmendmentRule,
+  context: PositionContext = {},
 ): PositionWaitCounts {
   const counts: PositionWaitCounts = {
     authors: 0,
@@ -189,7 +203,7 @@ export function positionWaitCounts(
     publication: 0,
   };
   for (const amendment of amendments) {
-    const reason = positionWaitReason(amendment, rule);
+    const reason = positionWaitReason(amendment, rule, context);
     if (reason && reason !== "decided") counts[reason] += 1;
   }
   return counts;
@@ -284,23 +298,31 @@ export function positionBody(
  * Why an answer was refused with 409, once the list is fresh again, so the
  * notice says what happens next in the user's language (the server's own
  * message is never shown: see useApi's notifyError):
+ * - `voted`: the document's final vote was recorded meanwhile, so no
+ *   answer changes any more (`context.finalVoted`);
  * - `answered`: still in the review, and someone else answered it meanwhile;
  * - `changed`: still in the review with the same answer, or out of it with
- *   nothing to wait for (the document was voted or closed meanwhile);
+ *   nothing to wait for (the document was closed meanwhile);
  * - `gone`: decided meanwhile (voted, withdrawn, replaced by a
  *   transactional), or no longer listed;
  * - a wait reason: it now waits for its main authors, the Secretaría or the
  *   assembly before it can be answered.
  */
 export type PositionConflict =
-  "answered" | "changed" | "gone" | Exclude<PositionWaitReason, "decided">;
+  | "voted"
+  | "answered"
+  | "changed"
+  | "gone"
+  | Exclude<PositionWaitReason, "decided">;
 
 export function positionConflict(
   sentPositionAt: string | null,
   fresh: (AnswerableInput & Pick<AmendmentDto, "position">) | null | undefined,
   stillInReview: boolean,
   rule: AcceptedAmendmentRule,
+  context: PositionContext = {},
 ): PositionConflict {
+  if (context.finalVoted) return "voted";
   if (!fresh) return "gone";
   if (stillInReview) {
     return seenPositionAt(fresh) !== sentPositionAt ? "answered" : "changed";
@@ -356,10 +378,26 @@ export function wasReopened(
 }
 
 /**
+ * The answer on record was given by the Mesa on the main presenter's behalf
+ * (in the session, say), not by the member itself. Only for an answer: a
+ * pending or hidden position says nothing about who will answer.
+ */
+export function answeredByMesa(
+  amendment: Pick<AmendmentDto, "position">,
+): boolean {
+  return (
+    positionAnswer(amendment) !== null &&
+    amendment.position?.recordedBy === "mesa"
+  );
+}
+
+/**
  * Where the state sentence of a step comes from, as the key under
  * `proponentReview.state`: what the answer leaves behind under the
  * document's rule. With `forMember` (the Mesa answering for the main
- * presenter) the sentence names the member instead of "you".
+ * presenter) the sentence names the member instead of "you". An answer the
+ * Mesa recorded says so (`ByMesa`): "La Mesa, en tu nombre, la ha
+ * aceptado", or for the Mesa "La Mesa, en nombre de CEUM, la ha aceptado".
  */
 export function stateKey(
   amendment: Pick<AmendmentDto, "position" | "status" | "approvalMethod">,
@@ -372,7 +410,33 @@ export function stateKey(
     if (isIncorporated(amendment)) key = "incorporated";
     else if (rule === "vote") key = "acceptVote";
   }
+  if (answeredByMesa(amendment)) key = `${key}ByMesa`;
   return forMember ? `${key}For` : key;
+}
+
+/**
+ * The sentence a co-presenter reads for the main presenter's answer, as the
+ * key under `proponentReview.coPresenter` (with `member` and, for an answer,
+ * `date`):
+ * - `hidden`: the viewer cannot see the answer yet (an incorporated one
+ *   still says so, by its status);
+ * - `pending`: not answered yet;
+ * - `answered.<status>`: the main presenter answered ("CEA-AC la aceptó el
+ *   5 nov");
+ * - `answeredByMesa.<status>`: the Mesa answered on its behalf ("La Mesa,
+ *   en nombre de CEA-AC, la aceptó el 5 nov").
+ */
+export function presenterAnswerKey(
+  amendment: Pick<AmendmentDto, "position" | "status" | "approvalMethod">,
+): string {
+  if (isPositionHidden(amendment) && !isIncorporated(amendment)) {
+    return "hidden";
+  }
+  const status = answerStatus(amendment);
+  if (status === "pending") return "pending";
+  return answeredByMesa(amendment)
+    ? `answeredByMesa.${status}`
+    : `answered.${status}`;
 }
 
 // Queue -------------------------------------------------------------------------
@@ -385,11 +449,16 @@ function toItem(amendment: AmendmentDto): ProponentReviewItem {
   };
 }
 
-/** Everything the actor answers here, in text order. */
+/**
+ * Everything the actor answers here, in text order: nothing once the
+ * document is voted (`context.finalVoted`).
+ */
 export function proponentReviewItems(
   amendments: readonly AmendmentDto[],
   rule: AcceptedAmendmentRule,
+  context: PositionContext = {},
 ): ProponentReviewItem[] {
+  if (context.finalVoted) return [];
   return sortAmendments([...amendments])
     .filter((amendment) => isPositionReviewable(amendment, rule))
     .map(toItem);

@@ -13,10 +13,13 @@
  * An acceptance counts: the main authors accepting a transactional is what
  * makes it ready for validation, and one of them rejecting it closes it.
  * So does an amendment being transacted: a transactional that replaces it
- * takes it out of the inbox. "poll" is the synthetic event sent while
- * the live stream is down, when anything may have changed. Votes, outcomes,
- * positions and draft edits are left out: they never touch what waits for
- * validation.
+ * takes it out of the inbox. Outcomes count too: a transactional still
+ * waiting is closed when any amendment it groups is decided, withdrawn,
+ * lapsed, incorporated or replaced, and nothing is validated after the
+ * document's final vote (annulling it opens the document again). "poll" is
+ * the synthetic event sent while the live stream is down, when anything
+ * may have changed. Vote tallies, positions and draft edits are left out:
+ * they never touch what waits for validation.
  */
 export const REVIEW_LIVE_TYPES: ReadonlySet<string> = new Set([
   "poll",
@@ -40,7 +43,12 @@ export const REVIEW_LIVE_TYPES: ReadonlySet<string> = new Set([
   "amendment_admitted",
   "amendment_inadmissible",
   "amendment_transacted",
+  // Deciding an amendment closes the transactionals still waiting over it.
+  "amendment_approved",
+  "amendment_rejected",
   "acceptance_recorded",
+  "document_voted",
+  "final_vote_annulled",
 ]);
 
 /** Whether a batch of live events may have changed the review queue. */

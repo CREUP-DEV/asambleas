@@ -3,7 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 // Only the pure rule is tested here: the loaders need the database.
 vi.mock("../../db", () => ({ db: {} }));
 
-const { planPresenters, presentersChanged } = await import("./presenters");
+const { planPresenters, presentersChanged, PRESENTERS_MESSAGES } =
+  await import("./presenters");
 
 const create = (
   input: Partial<Parameters<typeof planPresenters>[0]> = {},
@@ -148,12 +149,28 @@ describe("planPresenters on update", () => {
       proponentMemberId: "z",
       coProponentMemberIds: ["b", "own"],
     });
+  });
+
+  it("lets only the main presenter or a manager change who the main one is", () => {
+    const coPresented = {
+      proponentMemberId: "a",
+      coProponentMemberIds: ["own"],
+    };
+    expect(update(coPresented, { proponentMemberId: "z" })).toBe("main_only");
+    expect(update(coPresented, { proponentMemberId: "own" })).toBe("main_only");
+    expect(update(coPresented, { proponentMemberId: null })).toBe("main_only");
+    // A co-presenter still changes the other co-presenters.
+    expect(update(coPresented, { coProponentMemberIds: ["own", "c"] })).toEqual(
+      { proponentMemberId: "a", coProponentMemberIds: ["own", "c"] },
+    );
+    // Naming the same main presenter changes nothing.
+    expect(update(coPresented, { proponentMemberId: "a" })).toEqual(
+      coPresented,
+    );
     expect(
-      update(
-        { proponentMemberId: "a", coProponentMemberIds: ["own"] },
-        { proponentMemberId: "z" },
-      ),
-    ).toEqual({ proponentMemberId: "z", coProponentMemberIds: ["own", "a"] });
+      update(coPresented, { manager: true, proponentMemberId: "z" }),
+    ).toEqual({ proponentMemberId: "z", coProponentMemberIds: ["own"] });
+    expect(PRESENTERS_MESSAGES.main_only).toMatch(/Secretaría/);
   });
 
   it("lets managers replace the main presenter", () => {

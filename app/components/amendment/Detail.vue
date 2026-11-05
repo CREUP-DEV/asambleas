@@ -9,11 +9,14 @@ import { blockLabels } from "~~/shared/utils/content/render";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
 import {
   transactionalAuthorTurn,
+  transactionalClosure,
   transactionalGroupSources,
+  transactionalRejectedBy,
   transactionalRejectedByAuthors,
   transactionalSourceEligible,
   transactionalsOverSource,
 } from "~/composables/amendment/transactional";
+import { useTransactionalProgressText } from "~/composables/amendment/useTransactionalProgressText";
 import {
   amendmentAuthorsInOrder,
   amendmentErrorKey,
@@ -42,7 +45,10 @@ import {
  * Only the first one waiting for the viewer's answer gets the primary
  * button. On a transactional, the main authors of the amendments it would
  * replace answer in its list of parties, and its history names who
- * answered. A draft sent back for correction has one way forward,
+ * answered. Once closed, its outcome says why: who rejected it (from its
+ * acceptances, as its outcome note is left for the Mesa's own words), or
+ * which amendment it groups was settled or replaced meanwhile, when no
+ * note says it. A draft sent back for correction has one way forward,
  * "Corregir y volver a enviar" in the review panel: the composer shows the
  * note and sends it, so the footer offers no direct send.
  *
@@ -221,6 +227,13 @@ const authors = computed(() => amendmentAuthorsInOrder(props.amendment));
 const rejectedByAuthors = computed(() =>
   transactionalRejectedByAuthors(props.amendment),
 );
+const { join } = useTransactionalProgressText();
+/** "CEUM y CAUB": who closed it by rejecting it, for its outcome. */
+const rejectedBy = computed(() =>
+  join(
+    transactionalRejectedBy(props.amendment).map((member) => member.acronym),
+  ),
+);
 
 const byId = computed(
   () =>
@@ -230,6 +243,26 @@ const byId = computed(
 );
 function statusOf(id: string) {
   return byId.value.get(id)?.status;
+}
+/** The whole row, so a closure is matched to when its sources were settled. */
+function amendmentOf(id: string): AmendmentDto | undefined {
+  return byId.value.get(id);
+}
+/**
+ * Closed on its own (an amendment it groups was settled or replaced at that
+ * same moment) with no note saying so: its outcome names that amendment.
+ */
+const closedBecause = computed(() => {
+  if (props.amendment.outcomeNote) return null;
+  const closure = transactionalClosure(props.amendment, amendmentOf);
+  if (!closure?.sourceId) return null;
+  return t(`amendment.detail.closedOnItsOwn.${closure.reason}`, {
+    source: props.labelOf(closure.sourceId),
+  });
+});
+/** History labels: only the amendments the viewer sees (else the event's code). */
+function historyLabelOf(id: string): string | null {
+  return byId.value.has(id) ? props.labelOf(id) : null;
 }
 /** The amendments a transactional combines, as far as the viewer sees them. */
 const sources = computed(() =>
@@ -257,10 +290,15 @@ const transactedInIds = computed(() => {
   const shown = new Set(transactionalsOver.value.map((item) => item.id));
   return props.amendment.transactionalIds.filter((id) => !shown.has(id));
 });
-/** Who the history may name by id: the parties and the authors. */
+/**
+ * Who the history may name by id: the parties, the authors and the
+ * document's presenters (the Mesa answers for the main one).
+ */
 const historyMembers = computed(() => [
   ...props.amendment.acceptances.map((party) => party.member),
   ...props.amendment.authors,
+  ...(props.document.proponent ? [props.document.proponent] : []),
+  ...props.document.coProponents,
 ]);
 
 /** Positions, acceptances and relations do not move updatedAt: fold them in. */
@@ -561,6 +599,13 @@ async function remove(): Promise<void> {
           })
         }}
       </p>
+      <!-- Closed by a main author's rejection: who said no. -->
+      <p v-if="rejectedByAuthors && rejectedBy" class="text-sm">
+        {{ t("amendment.detail.rejectedByAuthors", { members: rejectedBy }) }}
+      </p>
+      <p v-else-if="closedBecause" class="text-sm">
+        {{ closedBecause }}
+      </p>
       <p v-if="amendment.decidedAt" class="text-muted text-xs">
         {{
           t("amendment.detail.decidedAt", {
@@ -670,6 +715,7 @@ async function remove(): Promise<void> {
           :actor-member-id="member?.id ?? null"
           :label-of="labelOf"
           :status-of="statusOf"
+          :amendment-of="amendmentOf"
           @updated="emit('updated', $event)"
           @conflict="emit('changed')"
           @select="emit('select', $event)"
@@ -729,6 +775,7 @@ async function remove(): Promise<void> {
           :version="historyVersion"
           :decisions-url="decisionsUrl"
           :members="historyMembers"
+          :label-of="historyLabelOf"
         />
       </template>
     </UCollapsible>

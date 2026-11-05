@@ -2,6 +2,7 @@ import { createError, getRouterParam, readBody, type H3Event } from "h3";
 import {
   and,
   asc,
+  desc,
   eq,
   exists,
   inArray,
@@ -126,6 +127,7 @@ import {
   authorsApproval,
   awaitsAssemblyDecision,
   awaitsAuthors,
+  awaitsPartyAnswer,
   awaitsPublication,
   awaitsValidation,
   isAmendmentPublishable,
@@ -133,13 +135,20 @@ import {
   numberingToKeep,
   pickMainAuthor,
   positionBlocker,
+  publishOnValidation,
   positionEffect,
+  positionRecordedBy,
   submissionLate,
   transactionalReopenBlocker,
   transactionalSourcesMessage,
   unopenSourceReason,
   unopenSourcesMessage,
 } from "./reviewState";
+import {
+  closeTransactionalsOver,
+  competingTransactionalIds,
+  loadSourceMap,
+} from "./transactionalClosure";
 import {
   canSeeAmendment,
   canSeePositions,
@@ -352,19 +361,6 @@ export function nextTransactionalCode(
   return `T${n}`;
 }
 
-/** transactional id -> its source ids, from `amendment_sources` rows. */
-export function buildSourceMap(
-  rows: { transactionalId: string; sourceId: string }[],
-): Map<string, string[]> {
-  const map = new Map<string, string[]>();
-  for (const row of rows) {
-    const entry = map.get(row.transactionalId) ?? [];
-    entry.push(row.sourceId);
-    map.set(row.transactionalId, entry);
-  }
-  return map;
-}
-
 /**
  * Which sources a transactional that replaces them now turns `transacted`,
  * or why it cannot: every source must still be open (presented, admitted,
@@ -390,26 +386,6 @@ export function sourcesToReplace(
       .filter((source) => !skipped(source))
       .map((source) => source.id),
   };
-}
-
-/**
- * The other transactionals of a document that group one of `sourceIds`
- * (from buildSourceMap). When a transactional replaces those amendments,
- * the others over them can no longer go through: replaceSources closes
- * them.
- */
-export function competingTransactionalIds(
-  sourceMap: ReadonlyMap<string, readonly string[]>,
-  transactionalId: string | null,
-  sourceIds: readonly string[],
-): string[] {
-  const wanted = new Set(sourceIds);
-  const result: string[] = [];
-  for (const [id, sources] of sourceMap) {
-    if (id === transactionalId) continue;
-    if (sources.some((sourceId) => wanted.has(sourceId))) result.push(id);
-  }
-  return result;
 }
 
 /**
@@ -506,31 +482,39 @@ export interface CapabilityInput {
    * transactional, nobody is asked to accept it any more.
    */
   sourcesOpen?: boolean;
+  /**
+   * The document's final vote is recorded (documentVoted): nothing about
+   * its amendments changes any more, except publishing them.
+   */
+  voted?: boolean;
 }
 
+/**
+ * What the actor may do with an amendment. Once the document is voted only
+ * publishing is left (docs/api.md, "After the final vote").
+ */
 export function amendmentCapabilities(
   input: CapabilityInput,
 ): AmendmentCapabilities {
-  const draft = input.status === "draft";
-  const submitted = input.status === "submitted";
+  const open = !input.voted;
+  const draft = open && input.status === "draft";
+  const submitted = open && input.status === "submitted";
   return {
-    validate: input.review && awaitsValidation(input),
+    validate: open && input.review && awaitsValidation(input),
     publish: input.review && isAmendmentPublishable(input),
     edit: input.isAuthor && draft,
     submit: input.isAuthor && draft,
     withdraw: input.isAuthor && submitted,
-    accept:
-      submitted &&
-      input.sourcesOpen !== false &&
-      input.actorMemberId !== null &&
-      input.acceptances.some(
-        (acceptance) =>
-          acceptance.memberId === input.actorMemberId &&
-          acceptance.decision === "pending",
-      ),
+    accept: awaitsPartyAnswer({
+      status: input.status,
+      memberId: input.actorMemberId,
+      parties: input.acceptances,
+      sourcesOpen: input.sourcesOpen !== false,
+      voted: Boolean(input.voted),
+    }),
     position:
       (input.isProponent || input.moderate) &&
-      positionBlocker(input, input.rule) === null,
+      positionBlocker(input, input.rule, input.voted) === null,
     moderate: input.moderate,
     review: input.review,
   };
@@ -932,6 +916,7 @@ function lockAmendments(tx: Tx, documentId: string, ids: string[]) {
   return tx
     .select({
       id: amendments.id,
+      code: amendments.code,
       status: amendments.status,
       admission: amendments.admission,
       late: amendments.late,
@@ -1047,6 +1032,30 @@ function lockedCompetitors(
 }
 
 /**
+ * Closes the pending transactionals over amendments this path just settled
+ * (closeTransactionalsOver): `dependents` are the transactionals over them
+ * (findCompetitors), locked in the same ordered pass as those amendments.
+ */
+function closeDependents(
+  tx: Tx,
+  ctx: DocumentAmendmentContext,
+  dependents: Competitors,
+  locked: Iterable<LockedAmendment>,
+  closed: { id: string; code: string | null; status: AmendmentStatus }[],
+): Promise<string[]> {
+  const { sourceMap, rows } = lockedCompetitors(dependents, locked);
+  return closeTransactionalsOver(tx, {
+    assemblyId: ctx.assembly.id,
+    documentId: ctx.document.id,
+    actor: ctx.actor,
+    now: ctx.now,
+    sourceMap,
+    closed,
+    candidates: rows,
+  });
+}
+
+/**
  * A transactional replaces the amendments it groups (docs/design.md,
  * "Transactionals"): once the Secretaría validated it (or the Mesa presented
  * it) and every main author accepted it, whichever comes last, its sources
@@ -1138,22 +1147,6 @@ async function replaceSources(
   }
 }
 
-/** Every transactional -> sources edge of the document. */
-async function loadSourceMap(
-  executor: Executor,
-  documentId: string,
-): Promise<Map<string, string[]>> {
-  const rows = await executor
-    .select({
-      transactionalId: amendmentSources.transactionalId,
-      sourceId: amendmentSources.sourceId,
-    })
-    .from(amendmentSources)
-    .innerJoin(amendments, eq(amendments.id, amendmentSources.transactionalId))
-    .where(eq(amendments.documentId, documentId));
-  return buildSourceMap(rows);
-}
-
 async function otherInsertedIds(
   tx: Tx,
   documentId: string,
@@ -1173,12 +1166,20 @@ async function otherInsertedIds(
 
 // Guards ---------------------------------------------------------------------
 
+/** The document's final vote is recorded, or its consolidated text exists. */
+export function documentVoted(document: {
+  finalVoteId: string | null;
+  consolidatedVersionId: string | null;
+}): boolean {
+  return Boolean(document.finalVoteId || document.consolidatedVersionId);
+}
+
 /** The final vote fixes the text: nothing about its amendments changes afterwards. */
 function assertNotVoted(document: {
   finalVoteId: string | null;
   consolidatedVersionId: string | null;
 }): void {
-  if (document.finalVoteId || document.consolidatedVersionId) {
+  if (documentVoted(document)) {
     fail(409, "El documento ya se ha votado");
   }
 }
@@ -1279,8 +1280,12 @@ export async function buildAmendmentDtos(
       : [];
   const voteById = new Map(voteRows.map((row) => [row.id, toVoteDto(row)]));
   const sourceStates = await loadSourceStates(rows);
+  const recorders = await loadPositionRecorders(
+    ctx.positionsVisible ? rows : [],
+  );
   const moderate = canModerate(ctx.actor);
   const review = canReviewAmendments(ctx.actor);
+  const voted = documentVoted(ctx.document);
   const keep = (id: string) => !visibleIds || visibleIds.has(id);
 
   return rows.map((row) => {
@@ -1328,6 +1333,14 @@ export async function buildAmendmentDtos(
           ? {
               position: row.position.position,
               comment: row.position.comment,
+              recordedBy: positionRecordedBy({
+                decidedByUserId: row.position.decidedByUserId,
+                recordedAs: recorders.recordedAs.get(row.id),
+                recorderMemberId: row.position.decidedByUserId
+                  ? recorders.memberOf.get(row.position.decidedByUserId)
+                  : null,
+                mainPresenterId: ctx.document.proponentMemberId,
+              }),
               updatedAt: row.position.updatedAt.toISOString(),
             }
           : null,
@@ -1357,9 +1370,64 @@ export async function buildAmendmentDtos(
         authorsApproval: approval,
         rule: ctx.rule,
         sourcesOpen: transactionalSourcesOpen(row, sourceStates),
+        voted,
       }),
     };
   });
+}
+
+/**
+ * What PositionDto.recordedBy (positionRecordedBy) needs:
+ * - `recordedAs`, by amendment id: `by` of the amendment's latest
+ *   position_changed event, which says whether the Mesa recorded the
+ *   answer, as it was then (every answer is recorded with one);
+ * - `memberOf`, by user id: the member the user who recorded an answer acts
+ *   for (null when none), only for answers with no such event, compared
+ *   with the document's current main presenter.
+ */
+async function loadPositionRecorders(rows: LoadedAmendment[]): Promise<{
+  recordedAs: Map<string, string | null>;
+  memberOf: Map<string, string | null>;
+}> {
+  const answered = rows.filter((row) => row.position);
+  const recordedAs = new Map<string, string | null>();
+  if (answered.length > 0) {
+    const latest = await db
+      .selectDistinctOn([events.entityId], {
+        amendmentId: events.entityId,
+        by: sql<string | null>`${events.payload}->>'by'`,
+      })
+      .from(events)
+      .where(
+        and(
+          eq(events.entityType, "amendment"),
+          eq(events.type, "position_changed"),
+          inArray(
+            events.entityId,
+            answered.map((row) => row.id),
+          ),
+        ),
+      )
+      .orderBy(events.entityId, desc(events.createdAt), desc(events.id));
+    for (const row of latest) recordedAs.set(row.amendmentId, row.by);
+  }
+  const userIds = unique(
+    answered
+      .filter((row) => !recordedAs.has(row.id))
+      .map((row) => row.position?.decidedByUserId ?? null)
+      .filter((id): id is string => id !== null),
+  );
+  const recorders =
+    userIds.length > 0
+      ? await db
+          .select({ id: users.id, memberId: users.memberId })
+          .from(users)
+          .where(inArray(users.id, userIds))
+      : [];
+  return {
+    recordedAs,
+    memberOf: new Map(recorders.map((row) => [row.id, row.memberId])),
+  };
 }
 
 type SourceState = Parameters<typeof unopenSourceReason>[0] & { id: string };
@@ -1413,7 +1481,8 @@ function transactionalSourcesOpen(
  * Reloads one amendment after a mutation and maps it for the actor. As in
  * the document's list, it names only the related amendments the actor can
  * see (sourceIds, transactionalIds): a source replaced by a transactional
- * the Secretaría keeps private does not point to it.
+ * the actor cannot see (one validated privately before validation always
+ * published transactionals) does not point to it.
  */
 export async function amendmentDto(
   ctx: DocumentAmendmentContext,
@@ -1520,11 +1589,12 @@ export async function findAmendmentsAwaitingReview(
 }
 
 /**
- * Submitted transactionals of these documents in which the member is a
- * party still to answer (its acceptance is pending), for the home page.
- * Those that can no longer go through (one of the amendments they group is
- * decided or replaced by another transactional: transactionalSourcesOpen)
- * are left out: there is nothing left to answer.
+ * Submitted transactionals of these documents (published, not voted) in
+ * which the member is a party still to answer, for the home page: only the
+ * ones it can still answer (awaitsPartyAnswer). Those that can no longer go
+ * through (one of the amendments they group is decided or replaced by
+ * another transactional: transactionalSourcesOpen) are left out, as the
+ * ones already closed are.
  */
 export async function findTransactionalsAwaitingMember(
   documentIds: string[],
@@ -1553,7 +1623,15 @@ export async function findTransactionalsAwaitingMember(
     ),
   );
   const states = await loadSourceStates(rows);
-  return rows.filter((row) => transactionalSourcesOpen(row, states));
+  return rows.filter((row) =>
+    awaitsPartyAnswer({
+      status: row.status,
+      memberId,
+      parties: partiesOf(row),
+      sourcesOpen: transactionalSourcesOpen(row, states),
+      voted: false,
+    }),
+  );
 }
 
 /**
@@ -2135,6 +2213,11 @@ function instantReview(instant: boolean, actor: Actor, now: Date) {
   };
 }
 
+/**
+ * An author withdraws its presented, undecided amendment, or the Mesa does
+ * it for them. The pending transactionals over it are closed
+ * (closeTransactionalsOver).
+ */
 export async function withdrawAmendment(
   ctx: AmendmentContext,
 ): Promise<AmendmentDto> {
@@ -2149,6 +2232,15 @@ export async function withdrawAmendment(
 
   await db.transaction(async (tx) => {
     await lockDocument(tx, ctx.document.id, "share");
+    // The amendment and the transactionals over it, in one ordered pass:
+    // withdrawing it closes them.
+    const dependents = await findCompetitors(tx, ctx.document.id, null, [
+      amendment.id,
+    ]);
+    const locked = await lockAmendments(tx, ctx.document.id, [
+      amendment.id,
+      ...dependents.ids,
+    ]);
     const updated = await tx
       .update(amendments)
       .set({ status: "withdrawn", decidedAt: now })
@@ -2169,6 +2261,9 @@ export async function withdrawAmendment(
       payload: { by: ctx.isAuthor ? "author" : "moderator" },
       actor,
     });
+    await closeDependents(tx, ctx, dependents, locked, [
+      { id: amendment.id, code: amendment.code, status: "withdrawn" },
+    ]);
   });
 
   return amendmentDto(ctx, amendment.id);
@@ -2274,8 +2369,19 @@ export async function decideAmendmentAdmission(
     // before the lock, so a concurrent decision may have committed since.
     // Eligibility alone is not enough (both directions can be eligible, so
     // an opposite decision would be overturned): the locked rows must still
-    // be exactly what the operator decided on.
-    const locked = await lockAmendments(tx, document.id, body.amendmentIds);
+    // be exactly what the operator decided on. Declaring them inadmissible
+    // closes the transactionals over them, locked in the same pass.
+    const dependents =
+      admission === "inadmissible"
+        ? await findCompetitors(tx, document.id, null, body.amendmentIds)
+        : { sourceMap: new Map<string, string[]>(), ids: [] };
+    const requested = new Set(body.amendmentIds);
+    const lockedAll = await lockAmendments(
+      tx,
+      document.id,
+      unique([...body.amendmentIds, ...dependents.ids]),
+    );
+    const locked = lockedAll.filter((row) => requested.has(row.id));
     const seen = new Map(rows.map((row) => [row.id, row]));
     if (
       locked.length !== body.amendmentIds.length ||
@@ -2440,6 +2546,21 @@ export async function decideAmendmentAdmission(
         actor,
       });
     }
+    if (admission === "inadmissible") {
+      await closeDependents(
+        tx,
+        ctx,
+        dependents,
+        lockedAll,
+        locked
+          .filter((row) => row.status === "submitted")
+          .map((row) => ({
+            id: row.id,
+            code: row.code,
+            status: "inadmissible" as const,
+          })),
+      );
+    }
     if (voteRow) {
       await pointLiveVote(tx, {
         assemblyId: ctx.assembly.id,
@@ -2494,12 +2615,13 @@ async function assertDocumentAmendments(
  * admitted at the same time; a late one keeps admission "pending" for the
  * Mesa. With `publish` they become visible to everyone at once; otherwise
  * they stay private until POST .../publish. A transactional is validated only
- * once its main authors accepted it, and then replaces what it groups, which
- * must still be open (replaceSources), published or not; the other
- * transactionals over those amendments lapse. Two transactionals over the
- * same amendment in one batch are refused (409). Locks the document
- * (share), then the amendments, those sources and the other transactionals
- * over them in id order, then the acceptances.
+ * once its main authors accepted it, and is always published then
+ * (publishOnValidation): it replaces what it groups, which must still be
+ * open (replaceSources), and the other transactionals over those amendments
+ * lapse. Two transactionals over the same amendment in one batch are
+ * refused (409). Locks the document (share), then the amendments, those
+ * sources and the other transactionals over them in id order, then the
+ * acceptances.
  */
 export async function validateAmendments(
   ctx: DocumentAmendmentContext,
@@ -2600,22 +2722,28 @@ export async function validateAmendments(
       if ("message" in plan) fail(409, plan.message);
     }
 
-    const byAdmission = new Map<AdmissionStatus, string[]>();
+    // Grouped by what validation leaves: the admission (on time or late)
+    // and the publication (a transactional is always published).
+    const groups = new Map<
+      string,
+      { admission: AdmissionStatus; publish: boolean; ids: string[] }
+    >();
     for (const row of rows) {
       const admission = admissionOnValidation(row);
-      byAdmission.set(admission, [
-        ...(byAdmission.get(admission) ?? []),
-        row.id,
-      ]);
+      const publish = publishOnValidation(row, body.publish);
+      const key = `${admission}:${publish}`;
+      const group = groups.get(key) ?? { admission, publish, ids: [] };
+      group.ids.push(row.id);
+      groups.set(key, group);
     }
-    for (const [admission, ids] of byAdmission) {
+    for (const { admission, publish, ids } of groups.values()) {
       const updated = await tx
         .update(amendments)
         .set({
           admission,
           validatedAt: now,
           validatedByUserId: actor.user.id,
-          publishedAt: body.publish ? now : null,
+          publishedAt: publish ? now : null,
         })
         .where(
           and(
@@ -2636,7 +2764,7 @@ export async function validateAmendments(
           entityId: id,
           type: "amendment_validated",
           payload: {
-            publish: body.publish,
+            publish,
             admission,
             ...(admission === "admitted" ? { method: "secretaria" } : {}),
           },
@@ -2778,12 +2906,13 @@ export async function requestAmendmentCorrection(
 
 /**
  * The main presenter's answer to an amendment (or the Mesa's, for it):
- * only once it is validated and, if late, admitted, and for a transactional
- * once its main authors accepted it (positionBlocker). `positionUpdatedAt`
- * is the optimistic lock on the stored answer. Under the document's
- * "incorporate" rule accepting approves the amendment at once (approval
- * method "proponent") and moving away from "accept" reopens it
- * (positionEffect); after the final vote nothing changes.
+ * only once it is validated, published and, if late, admitted, and for a
+ * transactional once its main authors accepted it (positionBlocker).
+ * `positionUpdatedAt` is the optimistic lock on the stored answer. Under the
+ * document's "incorporate" rule accepting approves the amendment at once
+ * (approval method "proponent"), which closes the pending transactionals
+ * over it, and moving away from "accept" reopens it (positionEffect); after
+ * the final vote nothing changes.
  */
 export async function setAmendmentPosition(
   ctx: AmendmentContext,
@@ -2810,14 +2939,13 @@ export async function setAmendmentPosition(
   await db.transaction(async (tx) => {
     await lockDocument(tx, document.id, "share");
     // The amendment (and what a transactional replaces, with the other
-    // transactionals over that) in one ordered pass, then its parties and
-    // its answer: the checks above, again under lock.
-    const competitors = await findCompetitors(
-      tx,
-      document.id,
+    // transactionals over that or over the amendment itself, which its
+    // incorporation closes) in one ordered pass, then its parties and its
+    // answer: the checks above, again under lock.
+    const competitors = await findCompetitors(tx, document.id, amendment.id, [
       amendment.id,
-      sourceIds,
-    );
+      ...sourceIds,
+    ]);
     const locked = await lockAmendments(tx, document.id, [
       amendment.id,
       ...sourceIds,
@@ -2839,13 +2967,6 @@ export async function setAmendmentPosition(
     const lockedBlocker = positionBlocker(fields, ctx.rule);
     if (lockedBlocker) fail(409, POSITION_BLOCKER_MESSAGES[lockedBlocker]);
     const effect = positionEffect(fields, body.position, ctx.rule);
-    // Incorporating it decides it: delegates must be able to read it first.
-    if (effect === "approve" && !current.publishedAt) {
-      fail(
-        409,
-        "La Secretaría tiene que publicar la enmienda antes de que se incorpore al texto",
-      );
-    }
 
     const [stored] = await tx
       .select({ updatedAt: amendmentPositions.updatedAt })
@@ -2918,7 +3039,13 @@ export async function setAmendmentPosition(
       await recordEvent(tx, {
         ...base,
         type: "amendment_approved",
-        payload: { method: "proponent", byPosition: true },
+        // The main presenter's acceptance incorporated it, also when the
+        // Mesa recorded it (the news credit it).
+        payload: {
+          method: "proponent",
+          byPosition: true,
+          memberId: document.proponentMemberId,
+        },
       });
       if (sourceIds.length > 0) {
         await replaceSources(tx, {
@@ -2932,6 +3059,9 @@ export async function setAmendmentPosition(
           allowTransacted: true,
         });
       }
+      await closeDependents(tx, ctx, competitors, locked, [
+        { id: amendment.id, code: amendment.code, status: "approved" },
+      ]);
     } else if (effect === "reopen") {
       const updated = await tx
         .update(amendments)
@@ -3065,13 +3195,12 @@ export async function applyAmendmentOutcome(
       // lock holds off a move, but one may have committed since the resolve.
       const { agendaItemId } = await lockDocument(tx, document.id, "share");
       // The amendment and what a transactional replaces (with the other
-      // transactionals over that), in one ordered pass.
-      const competitors = await findCompetitors(
-        tx,
-        document.id,
+      // transactionals over that or over the amendment itself, which the
+      // decision closes), in one ordered pass.
+      const competitors = await findCompetitors(tx, document.id, amendment.id, [
         amendment.id,
-        sourceIds,
-      );
+        ...sourceIds,
+      ]);
       const locked = await lockAmendments(tx, document.id, [
         amendment.id,
         ...sourceIds,
@@ -3184,6 +3313,13 @@ export async function applyAmendmentOutcome(
           allowTransacted: true,
         });
       }
+      await closeDependents(tx, ctx, competitors, locked, [
+        {
+          id: amendment.id,
+          code: amendment.code,
+          status: approved ? "approved" : "rejected",
+        },
+      ]);
 
       const warnings = approved
         ? await approvalWarnings(tx, document.id, amendment)
@@ -3227,6 +3363,15 @@ export async function applyAmendmentOutcome(
     const status = body.action === "withdraw" ? "withdrawn" : "lapsed";
     await db.transaction(async (tx) => {
       await lockDocument(tx, document.id, "share");
+      // The amendment and the transactionals over it, in one ordered pass:
+      // settling it closes them.
+      const dependents = await findCompetitors(tx, document.id, amendment.id, [
+        amendment.id,
+      ]);
+      const locked = await lockAmendments(tx, document.id, [
+        amendment.id,
+        ...dependents.ids,
+      ]);
       const updated = await tx
         .update(amendments)
         .set({ status, decidedAt: now, outcomeNote: body.note ?? null })
@@ -3250,6 +3395,9 @@ export async function applyAmendmentOutcome(
             : "amendment_lapsed",
         payload: { by: "moderator" },
       });
+      await closeDependents(tx, ctx, dependents, locked, [
+        { id: amendment.id, code: amendment.code, status },
+      ]);
     });
     return {
       amendment: await amendmentDto(ctx, amendment.id),

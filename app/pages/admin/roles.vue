@@ -12,10 +12,15 @@ import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
  * What each role may do: a matrix of permissions by role, saved together.
  * Opens with `role:manage_permissions` (Secretaría and Presidencia hold it).
  * The Administrator role has every permission and is not listed. Someone
- * who is not an Admin cannot change the role they hold, which would let
- * them give themselves any permission or lock themselves out; its column is
- * read-only, with the reason, and the server refuses it too
- * (PUT /api/admin/roles/[id]/permissions).
+ * who is not an Admin cannot take away from the role they hold the
+ * permissions to manage users and roles, which would lock them (and
+ * everyone with that role) out of this section: those two checkboxes of
+ * their column are disabled, with the reason, and the server refuses it
+ * too (PUT /api/admin/roles/[id]/permissions, adminGrantViolation
+ * `own_role`). Other changes to their own role are allowed; taking a
+ * permission away from it is warned about first, since they lose it too.
+ * Nor can a non-Admin give or take a permission they do not hold
+ * (`not_held`): that whole row is locked, with the reason.
  */
 definePageMeta({
   middleware: ["admin"],
@@ -33,7 +38,7 @@ const { t, te } = useI18n();
 const toast = useToast();
 const api = useApi();
 const localePath = useLocalePath();
-const { me, isAdmin, can } = useMe();
+const { me, isAdmin, can, refresh: refreshMe } = useMe();
 
 /** The users page has its own permission: link to it only if it opens. */
 const canManageUsers = computed(() => can(PERMISSION_KEYS.USER_MANAGE_ROLES));
@@ -144,8 +149,8 @@ function isGranted(roleId: string, key: PermissionKey): boolean {
 }
 
 /**
- * The editable role the signed-in user holds, which they cannot change;
- * null for an Admin, whose role is not listed.
+ * The editable role the signed-in user holds; null for an Admin, whose
+ * role is not listed and who may change any role.
  */
 const ownRoleId = computed(() => {
   if (isAdmin.value) return null;
@@ -153,12 +158,83 @@ const ownRoleId = computed(() => {
   return editableRoles.value.find((role) => role.name === name)?.id ?? null;
 });
 
-function ownRoleLocked(roleId: string): boolean {
-  return roleId === ownRoleId.value;
+/** The permissions that open the administration of users and roles. */
+const ADMIN_ACCESS_KEYS: readonly PermissionKey[] = [
+  PERMISSION_KEYS.USER_MANAGE_ROLES,
+  PERMISSION_KEYS.ROLE_MANAGE_PERMISSIONS,
+];
+
+/**
+ * Secretaría and Presidencia hold every permission, and only an Admin
+ * changes them, so neither can strip the other.
+ */
+function leadershipLocked(roleId: string): boolean {
+  if (isAdmin.value) return false;
+  const name = editableRoles.value.find((role) => role.id === roleId)?.name;
+  return name === SYSTEM_ROLES.SECRETARIA || name === SYSTEM_ROLES.PRESIDENCIA;
+}
+
+const someLeadershipLocked = computed(() =>
+  editableRoles.value.some((role) => leadershipLocked(role.id)),
+);
+
+/**
+ * Whether this checkbox is locked: a permission to manage users or roles
+ * that the role the user holds has now (giving it is fine; taking it away
+ * is not), or any permission of the Secretaría and the Presidencia for
+ * someone who is not an Admin.
+ */
+function cellLocked(roleId: string, key: PermissionKey): boolean {
+  if (leadershipLocked(roleId)) return true;
+  return (
+    roleId === ownRoleId.value &&
+    ADMIN_ACCESS_KEYS.includes(key) &&
+    (saved.value[roleId] ?? []).includes(key)
+  );
+}
+
+/** Some checkbox of the user's own role is locked: say why. */
+const ownRoleHasLock = computed(() => {
+  const roleId = ownRoleId.value;
+  return (
+    roleId !== null &&
+    !leadershipLocked(roleId) &&
+    ADMIN_ACCESS_KEYS.some((key) => cellLocked(roleId, key))
+  );
+});
+
+/**
+ * The unsaved draft takes some permission away from the user's own role:
+ * they would lose it too, and could not give it back themselves.
+ */
+const ownRoleLoses = computed(() => {
+  const roleId = ownRoleId.value;
+  if (roleId === null) return false;
+  const after = draft.value[roleId] ?? [];
+  return (saved.value[roleId] ?? []).some((key) => !after.includes(key));
+});
+
+/**
+ * A permission the user does not hold: they can neither give it to a role
+ * nor take it away (the server refuses it, adminGrantViolation
+ * `not_held`). Its whole row is locked.
+ */
+function notHeld(key: PermissionKey): boolean {
+  return !isAdmin.value && !can(key);
+}
+
+const someNotHeld = computed(() => ALL_PERMISSION_KEYS.some(notHeld));
+
+/** The id of the note that says why this checkbox is locked, if it is. */
+function lockReasonId(roleId: string, key: PermissionKey): string | undefined {
+  if (leadershipLocked(roleId)) return "roles-leadership-locked";
+  if (cellLocked(roleId, key)) return "roles-own-role-locked";
+  if (notHeld(key)) return "roles-not-held-locked";
+  return undefined;
 }
 
 function toggle(roleId: string, key: PermissionKey, value: boolean): void {
-  if (ownRoleLocked(roleId)) return;
+  if (lockReasonId(roleId, key)) return;
   const current = draft.value[roleId] ?? [];
   draft.value[roleId] = value
     ? [...new Set([...current, key])]
@@ -188,6 +264,8 @@ async function save(): Promise<void> {
     for (const role of roles) {
       saved.value[role.id] = [...(draft.value[role.id] ?? [])];
     }
+    // What the user may do follows their role: reload it.
+    if (roles.some((role) => role.id === ownRoleId.value)) await refreshMe();
     statusMessage.value = t("admin.roles.permissionsUpdated");
     toast.add({
       title: t("admin.roles.permissionsUpdated"),
@@ -199,6 +277,7 @@ async function save(): Promise<void> {
     // Some roles may have been saved: reload what the server holds.
     saved.value = {};
     await loadPermissions();
+    if (roles.some((role) => role.id === ownRoleId.value)) await refreshMe();
   } finally {
     saving.value = false;
   }
@@ -254,16 +333,40 @@ onBeforeRouteLeave(() => {
           {{ t("admin.roles.adminPermissionsLocked") }}
         </p>
         <p
-          v-if="ownRoleId"
+          v-if="ownRoleHasLock"
           id="roles-own-role-locked"
-          class="text-muted flex items-center gap-1.5 text-sm"
+          class="text-muted flex items-start gap-1.5 text-sm"
         >
           <UIcon
             name="i-lucide-lock"
-            class="size-4 shrink-0"
+            class="mt-0.5 size-4 shrink-0"
             aria-hidden="true"
           />
           {{ t("admin.roles.ownAccessLocked") }}
+        </p>
+        <p
+          v-if="someLeadershipLocked"
+          id="roles-leadership-locked"
+          class="text-muted flex items-start gap-1.5 text-sm"
+        >
+          <UIcon
+            name="i-lucide-lock"
+            class="mt-0.5 size-4 shrink-0"
+            aria-hidden="true"
+          />
+          {{ t("admin.roles.leadershipLocked") }}
+        </p>
+        <p
+          v-if="someNotHeld"
+          id="roles-not-held-locked"
+          class="text-muted flex items-start gap-1.5 text-sm"
+        >
+          <UIcon
+            name="i-lucide-lock"
+            class="mt-0.5 size-4 shrink-0"
+            aria-hidden="true"
+          />
+          {{ t("admin.roles.notHeldLocked") }}
         </p>
         <p
           v-if="canManageUsers"
@@ -308,6 +411,9 @@ onBeforeRouteLeave(() => {
             { count: changedRoles.length },
             changedRoles.length,
           )
+        "
+        :description="
+          ownRoleLoses ? t('admin.roles.ownRoleLosesWarning') : undefined
         "
         :actions="[
           {
@@ -381,12 +487,6 @@ onBeforeRouteLeave(() => {
                 class="p-3 text-center font-semibold whitespace-nowrap"
               >
                 {{ roleName(role.name) }}
-                <UIcon
-                  v-if="ownRoleLocked(role.id)"
-                  name="i-lucide-lock"
-                  class="text-muted ms-1 size-3.5 align-middle"
-                  aria-hidden="true"
-                />
                 <span
                   v-if="changed(role.id)"
                   class="bg-warning ms-1 inline-block size-1.5 rounded-full align-middle"
@@ -394,6 +494,12 @@ onBeforeRouteLeave(() => {
                 />
                 <span v-if="changed(role.id)" class="sr-only">
                   {{ t("admin.roles.roleChanged") }}
+                </span>
+                <span
+                  v-if="role.id === ownRoleId"
+                  class="text-muted block text-xs font-normal"
+                >
+                  {{ t("admin.roles.yourRole") }}
                 </span>
               </th>
             </tr>
@@ -405,8 +511,15 @@ onBeforeRouteLeave(() => {
               class="border-default hover:bg-elevated/40 border-b last:border-b-0"
             >
               <th scope="row" class="p-3 text-start font-normal">
-                <span class="text-highlighted block">
-                  {{ permissionLabel(key) }}
+                <span class="text-highlighted flex items-start gap-1.5">
+                  <span>{{ permissionLabel(key) }}</span>
+                  <!-- One lock for the whole row: the note above says why. -->
+                  <UIcon
+                    v-if="notHeld(key)"
+                    name="i-lucide-lock"
+                    class="text-muted mt-0.5 size-3.5 shrink-0"
+                    aria-hidden="true"
+                  />
                 </span>
                 <code class="text-dimmed text-xs">{{ key }}</code>
               </th>
@@ -415,17 +528,16 @@ onBeforeRouteLeave(() => {
                 :key="role.id"
                 class="p-3 text-center align-middle"
               >
-                <div class="flex justify-center">
+                <!-- The lock hangs to the side so the boxes stay aligned. -->
+                <div class="relative flex items-center justify-center">
                   <UCheckbox
                     :model-value="isGranted(role.id, key)"
                     :disabled="
-                      saving || !saved[role.id] || ownRoleLocked(role.id)
+                      saving ||
+                      !saved[role.id] ||
+                      lockReasonId(role.id, key) !== undefined
                     "
-                    :aria-describedby="
-                      ownRoleLocked(role.id)
-                        ? 'roles-own-role-locked'
-                        : undefined
-                    "
+                    :aria-describedby="lockReasonId(role.id, key)"
                     :aria-label="
                       t('admin.roles.grant', {
                         permission: permissionLabel(key),
@@ -436,6 +548,12 @@ onBeforeRouteLeave(() => {
                       (value: boolean | 'indeterminate') =>
                         toggle(role.id, key, value === true)
                     "
+                  />
+                  <UIcon
+                    v-if="cellLocked(role.id, key)"
+                    name="i-lucide-lock"
+                    class="text-muted absolute start-1/2 ms-3 size-3.5"
+                    aria-hidden="true"
                   />
                 </div>
               </td>

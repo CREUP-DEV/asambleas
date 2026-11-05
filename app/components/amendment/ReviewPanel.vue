@@ -22,7 +22,10 @@ import {
  *   volver a enviar" (opens the composer on the draft);
  * - the Secretaría, while it is waiting (can.validate): validate and
  *   publish, validate without publishing, or ask for a correction with a
- *   note (POST .../validate, POST .../[amendment]/correction);
+ *   note (POST .../validate, POST .../[amendment]/correction). A
+ *   transactional is always published when validated (it replaces
+ *   amendments everyone can read), so it offers no private validation and
+ *   says why;
  * - the Secretaría, once validated (can.publish), also after the amendment
  *   was decided: publish it (POST .../publish).
  * Validation and publication answer with the whole list (`replaced`); a
@@ -174,6 +177,10 @@ const ICON_CLASSES = {
   error: "text-error",
 } as const;
 const canValidate = computed(() => props.amendment.can.validate);
+/** Validating a transactional always publishes it. */
+const publishesOnValidation = computed(
+  () => props.amendment.kind === "transactional",
+);
 const canPublish = computed(() => props.amendment.can.publish);
 const noteMissing = computed(() => !note.value.trim());
 
@@ -191,7 +198,8 @@ async function focusStatus(): Promise<void> {
   else emit("settled");
 }
 
-async function validate(publish: boolean): Promise<void> {
+async function validate(requested: boolean): Promise<void> {
+  const publish = requested || publishesOnValidation.value;
   busy.value = publish ? "validate_publish" : "validate";
   try {
     const body: ValidateAmendmentsBody = {
@@ -422,6 +430,7 @@ async function askCorrection(): Promise<void> {
             @click="validate(true)"
           />
           <UButton
+            v-if="!publishesOnValidation"
             color="neutral"
             variant="outline"
             icon="i-lucide-eye-off"
@@ -441,7 +450,11 @@ async function askCorrection(): Promise<void> {
           />
         </div>
         <p class="text-muted text-xs">
-          {{ t("amendment.review.validateOnlyHint") }}
+          {{
+            publishesOnValidation
+              ? t("amendment.review.transactionalPublishHint")
+              : t("amendment.review.validateOnlyHint")
+          }}
         </p>
       </div>
     </template>

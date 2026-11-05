@@ -128,9 +128,17 @@ const ANSWER_LOOK: Record<
   rejected: { icon: "i-lucide-circle-x", class: "text-error" },
 };
 
-/** What the party answered, as a sentence: "CEUM la ha aceptado". */
+/**
+ * What the party answered, as a sentence: "CEUM la ha aceptado". Once it is
+ * closed, nobody waits for a missing answer any more: "CEUM no llegó a
+ * responder".
+ */
 function answerLabel(party: AcceptanceDto): string {
-  return t(`amendment.acceptances.answers.${party.decision}`, {
+  const key =
+    party.decision === "pending" && !open.value
+      ? "notAnswered"
+      : party.decision;
+  return t(`amendment.acceptances.answers.${key}`, {
     member: party.member.acronym,
   });
 }

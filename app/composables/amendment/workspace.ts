@@ -344,22 +344,46 @@ type PositionInput = Pick<
  *   replace have not all accepted (only "author" rows count, as on the
  *   server);
  * - `validation`: the Secretaría has to validate it;
- * - `admission`: late, the assembly has to decide whether to treat it.
- * Publication is not one of them: one the Secretaría keeps private can be
- * answered, only not accepted under the "incorporate" rule
- * (amendmentAcceptBlocked).
+ * - `admission`: late, the assembly has to decide whether to treat it;
+ * - `publication`: validated, but the Secretaría keeps it private. Only
+ *   published amendments are answered, whatever the document's rule:
+ *   delegates must be able to read what the presenter answers.
+ * Checked in that order: a late one validated and kept private waits for
+ * the assembly first.
  */
-export type AmendmentPositionBlocker = "authors" | "validation" | "admission";
+export type AmendmentPositionBlocker =
+  "authors" | "validation" | "admission" | "publication";
 
 /**
- * Mirrors the server's positionBlocker (server/utils/domain/reviewState.ts),
- * like positionWaitReason in the review mode, so the workspace, the review
- * mode and the home page agree.
+ * Anything that settles every answer for good. With `finalVoted` (the
+ * document's final vote is on record, `DocumentDto.finalVote`) nothing can
+ * be answered any more, not even an amendment the presenter's acceptance
+ * incorporated. Optional, so callers that do not know it keep the
+ * amendment-level rule.
+ */
+export interface AmendmentPositionContext {
+  finalVoted?: boolean;
+}
+
+/**
+ * Agrees with the server's positionBlocker (server/utils/domain/reviewState.ts)
+ * on whether an amendment can be answered, as decided for the presenter's
+ * answers (design.md, "Amendment flow"): only published amendments,
+ * validated and, when late, admitted, and nothing after the final vote.
+ * The reason given may differ: a transactional its main authors have not
+ * all accepted waits for them first (`authors`), because the Secretaría
+ * does not check it until they do, while the server reports it as not
+ * validated or not admitted. Shared with positionWaitReason in the review
+ * mode, so the workspace, the review mode and the home page agree. An
+ * amendment recorded before validation existed (no review state) counts as
+ * published.
  */
 function positionWait(
   amendment: PositionInput,
   rule: AcceptedAmendmentRule,
+  context: AmendmentPositionContext = {},
 ): AmendmentPositionBlocker | "decided" | null {
+  if (context.finalVoted) return "decided";
   if (
     rule === "incorporate" &&
     amendment.status === "approved" &&
@@ -384,46 +408,50 @@ function positionWait(
       ? "admission"
       : "validation";
   }
+  if (state === "validated") return "publication";
   return null;
 }
 
 /**
  * The amendment has reached the document's main presenter, who can answer
- * it (design.md, "Amendment flow"): validated by the Secretaría (published,
- * or still private, which only the Mesa sees), admitted (a late one once
- * the assembly decided to treat it), and for a transactional, accepted by
- * every main author, so it replaced the amendments it combines. Still
- * undecided, or approved because the presenter accepted it under the
- * "incorporate" rule: the presenter can change that answer until the final
- * vote. Accepting a private one may still be refused
- * (amendmentAcceptBlocked).
+ * it (design.md, "Amendment flow"): published by the Secretaría (so
+ * validated), admitted (a late one once the assembly decided to treat it),
+ * and for a transactional, accepted by every main author, so it replaced
+ * the amendments it combines. Still undecided, or approved because the
+ * presenter accepted it under the "incorporate" rule: the presenter can
+ * change that answer until the final vote, and nothing after it
+ * (`context.finalVoted`).
  */
 export function amendmentAwaitsPosition(
   amendment: PositionInput,
   rule: AcceptedAmendmentRule,
+  context: AmendmentPositionContext = {},
 ): boolean {
-  return positionWait(amendment, rule) === null;
+  return positionWait(amendment, rule, context) === null;
 }
 
 /**
  * Why the main presenter cannot answer yet, for an undecided amendment that
  * has not reached it (AmendmentPositionBlocker). Null when it can be
- * answered, or it is decided.
+ * answered, or it is decided (or the document was voted).
  */
 export function amendmentPositionBlocker(
   amendment: PositionInput,
   rule: AcceptedAmendmentRule,
+  context: AmendmentPositionContext = {},
 ): AmendmentPositionBlocker | null {
-  const wait = positionWait(amendment, rule);
+  const wait = positionWait(amendment, rule, context);
   return wait === "decided" ? null : wait;
 }
 
 /**
- * The one answer that waits for publication: under the "incorporate" rule,
- * accepting an undecided amendment the Secretaría validated but keeps
- * private would put in the text something delegates cannot read, so the
- * server refuses it until it is published (setAmendmentPosition). Rejecting
- * it, proposing a transactional or leaving it pending stay open.
+ * Accepting an undecided amendment the Secretaría validated but keeps
+ * private, under the "incorporate" rule, would put in the text something
+ * delegates cannot read. Such an amendment cannot be answered at all now
+ * (the `publication` blocker of amendmentPositionBlocker), so this never
+ * decides anything on its own. Its only caller left is sessionPositionMenu
+ * (~/composables/session/sessionModel.ts); remove it once that stops using
+ * it.
  */
 export function amendmentAcceptBlocked(
   amendment: Pick<AmendmentDto, "status" | "reviewState">,
@@ -445,8 +473,9 @@ export function amendmentAcceptBlocked(
  *   changing the answer before the final vote reopens it;
  * - `vote`: the assembly votes it (rule "vote", or not accepted);
  * - `voteAnyway`: rule "vote" and no answer yet: voted whatever the answer.
- * Null once it is decided otherwise (voted, withdrawn...) or while it has
- * not reached the presenter (amendmentPositionBlocker says why).
+ * Null once it is decided otherwise (voted, withdrawn...), after the final
+ * vote, or while it has not reached the presenter (amendmentPositionBlocker
+ * says why).
  */
 export type AmendmentPositionNext =
   "incorporateIfAccepted" | "incorporated" | "vote" | "voteAnyway";
@@ -454,8 +483,9 @@ export type AmendmentPositionNext =
 export function amendmentPositionNext(
   amendment: PositionInput & Pick<AmendmentDto, "position">,
   rule: AcceptedAmendmentRule,
+  context: AmendmentPositionContext = {},
 ): AmendmentPositionNext | null {
-  if (!amendmentAwaitsPosition(amendment, rule)) return null;
+  if (!amendmentAwaitsPosition(amendment, rule, context)) return null;
   const answer = amendment.position?.position ?? "pending";
   if (rule === "incorporate") {
     if (answer === "accept") return "incorporated";

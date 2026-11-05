@@ -8,6 +8,11 @@ import type {
   CorrectionBody,
 } from "~~/shared/types/api";
 import {
+  blockedBySelection,
+  canSelectSeveral,
+  isSelectionFull,
+  selectAllReviewIds,
+  selectableReviewIds,
   splitReviewSelection,
   type ReviewAmendmentAction,
   type ReviewDocumentGroup,
@@ -25,7 +30,12 @@ import {
  *
  * A transactional names the amendments it groups: they are published, so
  * not in the queue, and the document's amendment list is loaded for their
- * codes only while the group has a transactional.
+ * codes only while the group has a transactional. Validating one always
+ * publishes it, since it replaces public amendments: "Validar sin
+ * publicar" leaves transactionals out. Two transactionals that group the
+ * same amendment cannot be selected together (only one can replace it, and
+ * validating it closes the other): while one is selected, the other's
+ * checkbox is disabled with the reason.
  *
  * It runs the requests itself and tells the inbox what changed, so the
  * inbox patches its queue right away and refetches in the background.
@@ -105,22 +115,18 @@ function labelOf(amendment: AmendmentDto): string {
 
 const selected = ref<Set<string>>(new Set());
 
-const selectableIds = computed(() => [
-  ...props.group.toValidate
-    .filter((amendment) => amendment.can.validate)
-    .map((amendment) => amendment.id),
-  ...props.group.toPublish
-    .filter((amendment) => amendment.can.publish)
-    .map((amendment) => amendment.id),
-]);
+const selectableIds = computed(() => selectableReviewIds(props.group));
 
-/** Selecting makes sense only with more than one amendment to act on. */
-const multiSelect = computed(() => selectableIds.value.length > 1);
+/**
+ * Selecting makes sense only when more than one amendment can be acted on
+ * at once (two transactionals over the same amendment cannot).
+ */
+const multiSelect = computed(() => canSelectSeveral(props.group));
 
 // Drop ids that left the group (validated elsewhere, published...), and the
-// whole selection once a single amendment is left: its card has no checkbox.
-watch(selectableIds, (ids) => {
-  if (ids.length <= 1) {
+// whole selection once nothing can be acted on together: no checkboxes.
+watch([selectableIds, multiSelect], ([ids, several]) => {
+  if (!several) {
     if (selected.value.size > 0) selected.value = new Set();
     return;
   }
@@ -129,6 +135,21 @@ watch(selectableIds, (ids) => {
   if (kept.length !== selected.value.size) selected.value = new Set(kept);
 });
 
+/** Transactionals a selected one keeps out, with the one that does. */
+const blocked = computed(() =>
+  blockedBySelection(props.group.toValidate, selected.value),
+);
+
+/** Code of the selected transactional that keeps this one out, if any. */
+function blockedByLabel(id: string): string | null {
+  const blockerId = blocked.value.get(id);
+  if (!blockerId) return null;
+  const blocker = props.group.toValidate.find(
+    (amendment) => amendment.id === blockerId,
+  );
+  return blocker ? labelOf(blocker) : null;
+}
+
 const selection = computed(() =>
   splitReviewSelection(props.group, selected.value),
 );
@@ -136,15 +157,18 @@ const selectedCount = computed(
   () => selection.value.validate.length + selection.value.publish.length,
 );
 
+/** Checked once nothing else fits (no two transactionals over one amendment). */
 const allSelected = computed<boolean | "indeterminate">(() => {
   if (selectedCount.value === 0) return false;
-  return selectedCount.value === selectableIds.value.length
-    ? true
-    : "indeterminate";
+  return isSelectionFull(props.group, selected.value) ? true : "indeterminate";
 });
 
+/** Selects everything that still fits, keeping what is already selected. */
 function toggleAll(value: boolean | "indeterminate") {
-  selected.value = value === true ? new Set(selectableIds.value) : new Set();
+  selected.value =
+    value === true
+      ? new Set(selectAllReviewIds(props.group, selected.value))
+      : new Set();
 }
 
 /** Read out when the selection changes; empty while nothing is selected. */
@@ -163,6 +187,7 @@ function isSelected(id: string): boolean {
 }
 
 function setSelected(id: string, value: boolean) {
+  if (value && blocked.value.has(id)) return;
   const next = new Set(selected.value);
   if (value) next.add(id);
   else next.delete(id);
@@ -312,7 +337,10 @@ function onAction(amendment: AmendmentDto, action: ReviewAmendmentAction) {
       void runValidate([amendment.id], true, amendment.id);
       break;
     case "validate_only":
-      void runValidate([amendment.id], false, amendment.id);
+      // A transactional replaces public amendments: never kept private.
+      if (amendment.kind !== "transactional") {
+        void runValidate([amendment.id], false, amendment.id);
+      }
       break;
     case "publish":
       void runPublish([amendment.id], amendment.id);
@@ -323,27 +351,23 @@ function onAction(amendment: AmendmentDto, action: ReviewAmendmentAction) {
   }
 }
 
-/** Selected transactionals: validating them replaces what they group. */
-const selectionHasTransactional = computed(() => {
-  const ids = new Set(selection.value.validate);
-  return props.group.toValidate.some(
-    (amendment) => ids.has(amendment.id) && amendment.kind === "transactional",
-  );
-});
-
-/** Secondary bulk action, under "Más" as on each card. */
+/**
+ * Secondary bulk action, under "Más" as on each card. It leaves the
+ * selected transactionals out: they are always published when validated.
+ */
 const bulkMoreItems = computed<DropdownMenuItem[]>(() => [
   {
     label: t("review.amendments.bulkValidateOnly", {
-      count: selection.value.validate.length,
+      count: selection.value.validateOnly.length,
     }),
-    description: selectionHasTransactional.value
-      ? t("review.amendments.bulkValidateOnlyTransactionalHelp")
-      : t("review.amendments.validateOnlyHelp"),
+    description:
+      selection.value.validateOnly.length < selection.value.validate.length
+        ? t("review.amendments.bulkValidateOnlySkipsTransactionals")
+        : t("review.amendments.validateOnlyHelp"),
     icon: "i-lucide-check",
     disabled: busy.value !== null,
     onSelect: () => {
-      void runValidate(selection.value.validate, false, BULK);
+      void runValidate(selection.value.validateOnly, false, BULK);
     },
   },
 ]);
@@ -449,7 +473,7 @@ const summary = computed(() =>
         @click="runPublish(selection.publish, BULK)"
       />
       <UDropdownMenu
-        v-if="selection.validate.length > 0"
+        v-if="selection.validateOnly.length > 0"
         :items="bulkMoreItems"
         :content="{ align: 'start' }"
       >
@@ -485,6 +509,7 @@ const summary = computed(() =>
           :disabled="busy !== null"
           :multi-select="multiSelect"
           :selected="isSelected(amendment.id)"
+          :select-blocked-by="blockedByLabel(amendment.id)"
           @update:selected="
             (value: boolean) => setSelected(amendment.id, value)
           "

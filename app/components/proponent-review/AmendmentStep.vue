@@ -17,11 +17,13 @@ import {
 /**
  * One amendment of the main presenter's review: its code, who presents it
  * (with co-authors, the main author is marked: it is the one who accepts a
- * transactional), where it stands as a sentence with the next step, the change in large type, its
- * justification, and the answer: an optional comment and three choices
- * (Aceptar, Rechazar, Transaccionar). Pressing a choice saves it with the
- * comment; the page then moves on. The saved choice shows as pressed and
- * can be changed until the amendment is decided.
+ * transactional), where it stands as a sentence with the next step (and who
+ * answered, when the Mesa did it for the main presenter), the change in
+ * large type, its justification, and the answer: an optional comment and
+ * three choices (Aceptar, Rechazar, Transaccionar). Pressing a choice saves
+ * it with the comment; the page then moves on. The saved choice shows as
+ * pressed and can be changed until the amendment is decided (never after
+ * the document's final vote, when the page stops showing steps).
  *
  * "Aceptar" says what accepting means under the document's rule: put in
  * the text without a vote ("incorporate") or voted by the assembly. An
@@ -103,7 +105,9 @@ const onBehalfName = computed(() => props.onBehalfOf?.acronym ?? "");
 
 /**
  * Where it stands, and what happens next under the document's rule; for the
- * Mesa answering for the main presenter, naming that member.
+ * Mesa answering for the main presenter, naming that member. An answer the
+ * Mesa recorded on the member's behalf says so ("La Mesa, en tu nombre, la
+ * ha aceptado", or "La Mesa, en nombre de CEUM, ..." for the Mesa).
  */
 const stateSentence = computed(() =>
   t(

@@ -37,6 +37,10 @@ import {
   withPresenterLead,
   type PresenterChoice,
 } from "~/composables/document/documentPresenters";
+import {
+  acceptedRuleChange,
+  acceptedRuleLocked,
+} from "~/composables/document/acceptedRule";
 
 /**
  * Metadata of a document: title, summary, kind, agenda item, presenters,
@@ -64,6 +68,12 @@ import {
  * Presenters choose among the types their member usually presents first
  * (the rest under "Otros tipos"); a PDF only offers the types that take no
  * amendments, as when it was created.
+ *
+ * On a published document, changing what an accepted amendment becomes also
+ * changes the amendments already answered, so the form says what saving
+ * will do (DocumentAcceptedRuleWarning), by the choice and, while
+ * "Opciones avanzadas" is folded, by the save button. Once the text is
+ * settled (final vote, consolidated text) the rule is shown but never sent.
  *
  * Emits `saved` with the updated DocumentDto (store it), and `stale` after an
  * optimistic-lock conflict (refetch the document; the form then reloads).
@@ -100,6 +110,9 @@ const SUMMARY_MAX = 5_000;
 
 const manager = computed(() => props.document.can.manage);
 const isFile = computed(() => props.document.format === "file");
+const isPublished = computed(() => props.document.publishedAt !== null);
+/** The text is settled: the rule for accepted amendments no longer changes. */
+const ruleLocked = computed(() => acceptedRuleLocked(props.document));
 
 interface FormState {
   title: string;
@@ -245,7 +258,12 @@ function buildBody(): DocumentUpdateBody {
 
   const amendable = isFile.value ? false : state.amendable;
   if (amendable !== before.amendable) body.amendable = amendable;
-  if (amendable && state.acceptedAmendments !== before.acceptedAmendments)
+  // A settled document keeps its rule (the server would refuse it).
+  if (
+    amendable &&
+    !ruleLocked.value &&
+    state.acceptedAmendments !== before.acceptedAmendments
+  )
     body.acceptedAmendments = state.acceptedAmendments;
   if (state.voted !== before.voted) body.voted = state.voted;
   if (state.majority !== before.majority) body.majority = state.majority;
@@ -351,6 +369,7 @@ const differsFromDefaults = computed(
     manager.value &&
     ((!isFile.value && state.amendable !== kindDefaults.value.amendable) ||
       (effective.value.amendable &&
+        !ruleLocked.value &&
         state.acceptedAmendments !== kindDefaults.value.acceptedAmendments) ||
       state.voted !== kindDefaults.value.voted ||
       state.majority !== kindDefaults.value.majority),
@@ -358,10 +377,29 @@ const differsFromDefaults = computed(
 
 function applyKindDefaults(): void {
   if (!isFile.value) state.amendable = kindDefaults.value.amendable;
-  state.acceptedAmendments = kindDefaults.value.acceptedAmendments;
+  if (!ruleLocked.value)
+    state.acceptedAmendments = kindDefaults.value.acceptedAmendments;
   state.voted = kindDefaults.value.voted;
   state.majority = kindDefaults.value.majority;
 }
+
+/**
+ * The rule saving would switch a published document to, when that changes
+ * amendments already answered (only sent while the document is amendable).
+ */
+const ruleChange = computed(() =>
+  manager.value && effective.value.amendable
+    ? acceptedRuleChange({
+        published: isPublished.value,
+        locked: ruleLocked.value,
+        stored: initial.value.acceptedAmendments,
+        next: state.acceptedAmendments,
+      })
+    : null,
+);
+const mainPresenterAcronym = computed(
+  () => props.document.proponent?.acronym ?? null,
+);
 
 // Options -----------------------------------------------------------------
 
@@ -931,7 +969,10 @@ defineExpose({ reset: resetForm, check, save });
                 v-if="effective.amendable"
                 v-model="state.acceptedAmendments"
                 :kind="state.kind"
-                :published="document.publishedAt !== null"
+                :published="isPublished"
+                :stored="initial.acceptedAmendments"
+                :locked="ruleLocked"
+                :presenter="mainPresenterAcronym"
               />
 
               <UFormField name="voted">
@@ -992,6 +1033,13 @@ defineExpose({ reset: resetForm, check, save });
         </template>
       </UCollapsible>
     </template>
+
+    <!-- The rule change, still in view when its section is folded -->
+    <DocumentAcceptedRuleWarning
+      v-if="ruleChange && !advancedOpen"
+      :change="ruleChange"
+      :member="mainPresenterAcronym"
+    />
 
     <div class="flex flex-wrap items-center justify-end gap-2 pt-1">
       <UButton

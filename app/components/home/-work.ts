@@ -396,55 +396,20 @@ export interface HomeWorkNews {
   phrase: HomeWorkPhrase | null;
   /** Tone of its icon: good news, bad news or neutral. */
   tone: "success" | "error" | "neutral";
+  /**
+   * Where the sentence leads: the document with the amendment open, or,
+   * for a co-presenter reading the main presenter's answer to an amendment
+   * of someone else, the read-only review of those answers.
+   */
+  target: "document" | "review";
   at: string;
 }
 
 const POSITION_VALUES = new Set(["accept", "reject", "transact", "pending"]);
 
-/**
- * Event types that settle one of the member's own amendments (the server
- * sends them only for amendments the member authored, `NEWS_OUTCOME_TYPES`),
- * so their news always say "tu enmienda", even once it is decided and gone
- * from the work list.
- */
-const OWN_OUTCOME_TYPES = new Set([
-  "amendment_validated",
-  "amendment_published",
-  "amendment_correction_requested",
-  "amendment_admitted",
-  "amendment_inadmissible",
-  "amendment_approved",
-  "amendment_rejected",
-  "amendment_withdrawn",
-  "amendment_lapsed",
-  "amendment_transacted",
-  "amendment_reopened",
-]);
-
 /** Transactionals are numbered apart: `T1`, `T2`... (docs/design.md). */
 export function isHomeWorkTransactionalCode(code: string | null): boolean {
   return code !== null && /^T\d+$/.test(code);
-}
-
-/**
- * Amendment ids that are the user's member's own: the undecided ones it
- * authored, those a transactional waiting for its answer would replace, and
- * those the news settle (the server sends those only for amendments the
- * member authored), so the main presenter's answer still says "tu enmienda"
- * once the amendment is decided. An answer about anything else is worded
- * neutrally ("la enmienda CEUM 2").
- */
-export function homeWorkOwnAmendmentIds(work: MeWorkDto): Set<string> {
-  const ids = new Set(work.amendments.map((entry) => entry.amendment.id));
-  for (const entry of work.acceptances) {
-    for (const amendment of entry.replaces) ids.add(amendment.id);
-  }
-  for (const news of work.news) {
-    if (news.amendment && OWN_OUTCOME_TYPES.has(news.type)) {
-      ids.add(news.amendment.id);
-    }
-  }
-  return ids;
 }
 
 /**
@@ -473,17 +438,13 @@ function amendmentPhrase(
 
 /**
  * Puts one news entry into words: what happened, who did it when the
- * sentence names someone, and how the amendment is named. Unknown event
- * types get a general sentence.
+ * sentence names someone, how the amendment is named ("tu enmienda" when
+ * the server says the user's member authored it, `ownAmendment`) and where
+ * the sentence leads. Unknown event types get a general sentence.
  */
-export function homeWorkNewsItem(
-  news: MeWorkNewsDto,
-  own: ReadonlySet<string> = new Set(),
-): HomeWorkNews {
+export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
   const amendment = news.amendment ? { ...news.amendment } : null;
-  const mine = amendment
-    ? own.has(amendment.id) || OWN_OUTCOME_TYPES.has(news.type)
-    : false;
+  const mine = amendment !== null && news.ownAmendment === true;
   const transactional = isHomeWorkTransactionalCode(amendment?.code ?? null);
   const by = news.by?.acronym ?? null;
   const base = {
@@ -500,12 +461,14 @@ export function homeWorkNewsItem(
     who: HomeWorkWho | null = null,
     named: HomeWorkPhrase | null = phrase,
     params: Record<string, string> = {},
+    target: HomeWorkNews["target"] = "document",
   ): HomeWorkNews => ({
     ...base,
     sentence: { key, params },
     who,
     phrase: named,
     tone,
+    target,
   });
 
   switch (news.type) {
@@ -521,20 +484,46 @@ export function homeWorkNewsItem(
           : value === "reject"
             ? "error"
             : "neutral";
-      return make(`home.news.position.${value}`, tone, who);
+      // Not the member's amendment: it co-presents the document, and reads
+      // the main presenter's answers in the review, without answering.
+      return make(
+        `home.news.position.${value}`,
+        tone,
+        who,
+        phrase,
+        {},
+        mine ? "document" : "review",
+      );
     }
     case "acceptance_recorded": {
       const who: HomeWorkWho = by
         ? { name: by }
         : { key: "home.news.who.mainAuthorUnknown", params: {} };
-      // Always a transactional: one over the member's amendment, or one it
-      // proposed (still open, so in the work list).
+      // Always a transactional: one the member proposed ("tu
+      // transaccional"), or one over an amendment of the member, which the
+      // sentence says what it means for ("sigue tu enmienda").
       const named = amendmentPhrase(amendment, mine, true);
-      return news.value === "rejected"
-        ? make("home.news.acceptance.rejected", "error", who, named)
-        : news.value === "accepted"
+      if (news.value === "rejected") {
+        return mine
+          ? make("home.news.acceptance.rejected", "error", who, named)
+          : make(
+              "home.news.acceptance.rejectedOverYours",
+              "neutral",
+              who,
+              named,
+            );
+      }
+      if (news.value === "accepted") {
+        return mine
           ? make("home.news.acceptance.accepted", "success", who, named)
-          : make("home.news.acceptance.pending", "neutral", who, named);
+          : make(
+              "home.news.acceptance.acceptedOverYours",
+              "neutral",
+              who,
+              named,
+            );
+      }
+      return make("home.news.acceptance.pending", "neutral", who, named);
     }
     case "amendment_approved":
       // Accepted by the document's main presenter, in a document that
@@ -579,7 +568,15 @@ export function homeWorkNewsItem(
           })
         : make("home.news.amendment.lapsed");
     case "amendment_withdrawn":
-      return make("home.news.amendment.withdrawn");
+      // A transactional closed on its own, not withdrawn by anyone: an
+      // amendment it groups was settled first, and the value names it. Its
+      // proposer and its parties read it ("tu transaccional", "la
+      // transaccional").
+      return news.value
+        ? make("home.news.amendment.closedBy", "neutral", null, phrase, {
+            code: news.value,
+          })
+        : make("home.news.amendment.withdrawn");
     case "amendment_reopened":
       return make("home.news.amendment.reopened");
     case "document_published":
@@ -646,9 +643,8 @@ export function homeWorkNewsDeduped(list: MeWorkNewsDto[]): MeWorkNewsDto[] {
 
 /** The news, latest first, in words (homeWorkNewsItem), without repeats. */
 export function homeWorkNews(work: MeWorkDto): HomeWorkNews[] {
-  const own = homeWorkOwnAmendmentIds(work);
   return homeWorkNewsDeduped(work.news)
-    .map((news) => homeWorkNewsItem(news, own))
+    .map((news) => homeWorkNewsItem(news))
     .sort(
       (a, b) =>
         (time(b.at) ?? 0) - (time(a.at) ?? 0) || a.key.localeCompare(b.key),
@@ -700,4 +696,17 @@ export function homeWorkAmendmentQuery(
   amendment: { id: string } | null,
 ): string {
   return amendment ? `?enmienda=${encodeURIComponent(amendment.id)}` : "";
+}
+
+/**
+ * What follows the document's path where a news item leads: the read-only
+ * review of the main presenter's answers on that amendment
+ * (`/revisar?enmienda=<id>`), or the document with the amendment open
+ * (`?enmienda=<id>`, empty for a document's news).
+ */
+export function homeWorkNewsLink(
+  item: Pick<HomeWorkNews, "target" | "amendment">,
+): string {
+  const query = homeWorkAmendmentQuery(item.amendment);
+  return item.target === "review" ? `/revisar${query}` : query;
 }

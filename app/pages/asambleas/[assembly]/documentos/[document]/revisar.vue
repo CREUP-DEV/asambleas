@@ -9,6 +9,7 @@ import {
   firstPendingId,
   goneKey,
   initialStep,
+  isPositionAnswerable,
   isPositionReviewable,
   positionAnswer,
   positionBody,
@@ -26,6 +27,7 @@ import {
   stepCounter,
   stepIndex,
   wasReopened,
+  type PositionContext,
   type ProponentAnswer,
   type ProponentReviewItem,
 } from "~/components/proponent-review/-review";
@@ -36,12 +38,17 @@ import {
  * answering for it: one amendment at a time, with the change in large
  * type, its justification and three choices (Aceptar, Rechazar,
  * Transaccionar) with an optional comment. Pressing a choice saves it and
- * moves on. Only amendments the Secretaría validated and, when late, the
- * assembly admitted are answered (positionWaitReason: under the
- * "incorporate" rule they must be published too); a transactional joins
- * them once it has replaced the amendments it groups (its main authors
- * accepted it, which is their job, not the presenter's). What is still on
- * its way shows under the progress line, one sentence per reason.
+ * moves on. Only published amendments are answered: validated and made
+ * visible by the Secretaría and, when late, admitted by the assembly
+ * (positionWaitReason); a transactional joins them once it has replaced the
+ * amendments it groups (its main authors accepted it, which is their job,
+ * not the presenter's). What is still on its way shows under the progress
+ * line, one sentence per reason. Once the document is voted nothing can be
+ * answered: the page shows the answers on record.
+ *
+ * An answer the Mesa recorded on the main presenter's behalf says so, in
+ * the step and in the co-presenters' list ("La Mesa, en nombre de CEUM,
+ * ...").
  *
  * "Aceptar" says what it means under the document's rule: incorporated
  * into the text without a vote, or voted by the assembly. An incorporated
@@ -102,6 +109,10 @@ const isPublished = computed(
 );
 /** Voted: answers can no longer change (the server refuses them). */
 const readOnly = computed(() => Boolean(document.value?.finalVote));
+/** What the answering rule needs to know about the document. */
+const positionContext = computed<PositionContext>(() => ({
+  finalVoted: readOnly.value,
+}));
 /** Withdrawn or postponed: nothing to answer any more. */
 const closed = computed(() => document.value?.status !== "published");
 
@@ -191,19 +202,27 @@ function amendmentLink(id: string): RouteLocationRaw {
 
 // Steps -------------------------------------------------------------------------
 
+/** What is answered here: nothing once the document is voted. */
 const items = computed<ProponentReviewItem[]>(() =>
-  readOnly.value
-    ? []
-    : proponentReviewItems(list.amendments.value, acceptedRule.value),
+  proponentReviewItems(
+    list.amendments.value,
+    acceptedRule.value,
+    positionContext.value,
+  ),
 );
 const progress = computed(() => proponentReviewProgress(items.value));
 /**
  * Amendments still on their way to the main presenter: late ones the
  * assembly has not decided to treat, transactionals their main authors have
- * not accepted and, for the Mesa, those still with the Secretaría.
+ * not accepted and, for the Mesa, those still with the Secretaría (to
+ * validate or to publish).
  */
 const waiting = computed(() =>
-  positionWaitCounts(list.amendments.value, acceptedRule.value),
+  positionWaitCounts(
+    list.amendments.value,
+    acceptedRule.value,
+    positionContext.value,
+  ),
 );
 /**
  * The sentence under "No hay enmiendas que responder": some on their way
@@ -315,7 +334,11 @@ function notifyGone(id: string, previous: ProponentReviewItem | null): void {
  * Where the step on screen sat, to land on its neighbour when it leaves (an
  * amendment decided, withdrawn or replaced by a transactional meanwhile).
  * Steps this visit answered out of the review leave on purpose: no notice
- * for those.
+ * for those. Nor when the whole document left the debate (voted, withdrawn
+ * or postponed): the page itself then says so. Nor when the amendment is
+ * still answerable by its own rule: it then left because of the document
+ * (its vote may reach the list before the document does) or the actor's
+ * rights, not because someone decided it.
  */
 let lastIndex = 0;
 const handled = new Set<string>();
@@ -329,7 +352,15 @@ watch(sequence, (steps, previous) => {
     lastIndex = index;
     return;
   }
-  if (!handled.has(id) && !showSummary.value) {
+  // No context on purpose: the document may not be refreshed yet.
+  const fresh = list.byId.value.get(id);
+  if (
+    !handled.has(id) &&
+    !showSummary.value &&
+    !readOnly.value &&
+    !closed.value &&
+    !(fresh && isPositionAnswerable(fresh, acceptedRule.value))
+  ) {
     notifyGone(id, previous?.find((item) => item.id === id) ?? null);
   }
   chosenId.value = fallbackStep(steps, lastIndex);
@@ -525,6 +556,7 @@ async function onConflict(
     list.byId.value.get(item.id),
     stillInReview,
     acceptedRule.value,
+    positionContext.value,
   );
   if (kind === "gone") {
     notifyGone(item.id, item);
@@ -561,7 +593,9 @@ async function answerPosition(
     // Where to go next, found before the answer may take the step out of
     // the review (it should not: incorporated ones stay to be changed).
     const next = stepAfter(sequence.value, item.id);
-    if (!isPositionReviewable(updated, acceptedRule.value)) {
+    if (
+      !isPositionReviewable(updated, acceptedRule.value, positionContext.value)
+    ) {
       handled.add(item.id);
     }
     list.upsert(updated);

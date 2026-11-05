@@ -10,6 +10,7 @@ import {
   agendaItemAnchor,
   type AgendaTreeContext,
 } from "~/components/agenda/ItemNode.vue";
+import { isDocumentPresenter } from "~/composables/document/documentPresenters";
 import type { AgendaMove, AgendaTreeNode } from "~/utils/agendaTree";
 
 /**
@@ -400,15 +401,14 @@ function documentPath(document: DocumentSummaryDto): string {
 }
 
 /**
- * The editor of the user's own draft (the server lets its presenters edit a
- * draft); managers open documents in the workspace like everyone else.
+ * The editor of a draft the user's member presents, as the main presenter
+ * or a co-presenter (the server lets every presenter edit a draft);
+ * managers open documents in the workspace like everyone else.
  */
 function documentEditPath(document: DocumentSummaryDto): string | null {
-  const memberId = me.member.value?.id;
   if (
     document.status !== "draft" ||
-    !memberId ||
-    document.proponent?.id !== memberId ||
+    !isDocumentPresenter(document, me.member.value?.id) ||
     canCreateDocument.value
   ) {
     return null;

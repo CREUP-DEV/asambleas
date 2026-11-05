@@ -50,9 +50,7 @@ const {
   amendmentCapabilities,
   amendmentSortKey,
   buildAcceptanceParties,
-  buildSourceMap,
   canProposeTransactional,
-  competingTransactionalIds,
   computeApprovalWarnings,
   evaluateVoteInput,
   insertedBlockIds,
@@ -66,6 +64,8 @@ const {
   transactionalsShareSources,
   unauthorizedTransactionalAuthors,
 } = await import("./amendments");
+const { buildSourceMap, competingTransactionalIds } =
+  await import("./transactionalClosure");
 // The visibility rules are pure too; their actor helpers are the stubs above.
 const visibility =
   await vi.importActual<typeof import("./visibility")>("./visibility");
@@ -408,6 +408,57 @@ describe("amendmentCapabilities", () => {
     ).toBe(false);
     expect(
       amendmentCapabilities({ ...admitted, isProponent: true }).position,
+    ).toBe(true);
+  });
+
+  it("asks for an answer only once the Secretaría published the amendment", () => {
+    const kept = { ...admitted, publishedAt: null, isProponent: true };
+    expect(amendmentCapabilities(kept).position).toBe(false);
+    expect(
+      amendmentCapabilities({ ...kept, rule: "incorporate" }).position,
+    ).toBe(false);
+    expect(
+      amendmentCapabilities({ ...kept, isProponent: false, moderate: true })
+        .position,
+    ).toBe(false);
+  });
+
+  it("leaves only publishing once the document is voted", () => {
+    const incorporated = {
+      ...admitted,
+      status: "approved" as const,
+      approvalMethod: "proponent" as const,
+      isProponent: true,
+      rule: "incorporate" as const,
+      voted: true,
+    };
+    expect(amendmentCapabilities(incorporated).position).toBe(false);
+    expect(
+      amendmentCapabilities({
+        ...input,
+        status: "submitted",
+        isAuthor: true,
+        review: true,
+        acceptances: [{ memberId: "m1", decision: "pending" as const }],
+        voted: true,
+      }),
+    ).toMatchObject({
+      withdraw: false,
+      accept: false,
+      validate: false,
+      position: false,
+    });
+    expect(
+      amendmentCapabilities({ ...input, isAuthor: true, voted: true }),
+    ).toMatchObject({ edit: false, submit: false });
+    expect(
+      amendmentCapabilities({
+        ...input,
+        status: "approved",
+        review: true,
+        validatedAt: at,
+        voted: true,
+      }).publish,
     ).toBe(true);
   });
 

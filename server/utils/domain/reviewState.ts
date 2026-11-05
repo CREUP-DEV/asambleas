@@ -238,6 +238,48 @@ export function isAmendmentPublishable(
 }
 
 /**
+ * Whether a member still has to answer a transactional as one of its
+ * parties (the main author of an amendment it groups): it is presented and
+ * undecided, that member's answer is pending, everything it groups is still
+ * open (`sourcesOpen`: once one is settled or replaced by another
+ * transactional it is closed, or can no longer go through) and the
+ * document is not voted. Drives `can.accept` and the home page's
+ * acceptances (MeWorkDto.acceptances).
+ */
+export function awaitsPartyAnswer(input: {
+  status: AmendmentStatus;
+  memberId: string | null;
+  /** Rows with the role "author" (the parties). */
+  parties: readonly { memberId: string; decision: AcceptanceDecision }[];
+  sourcesOpen: boolean;
+  voted: boolean;
+}): boolean {
+  return (
+    input.status === "submitted" &&
+    !input.voted &&
+    input.sourcesOpen &&
+    input.memberId !== null &&
+    input.parties.some(
+      (party) =>
+        party.memberId === input.memberId && party.decision === "pending",
+    )
+  );
+}
+
+/**
+ * Whether the Secretaría's validation publishes an amendment: as it chose
+ * (`requested`), except a transactional, which always is. Validating a
+ * transactional makes it replace published amendments, so it cannot stay
+ * private: delegates would see the originals replaced by nothing.
+ */
+export function publishOnValidation(
+  row: { kind: AmendmentKind },
+  requested: boolean,
+): boolean {
+  return requested || row.kind === "transactional";
+}
+
+/**
  * Admission set by the Secretaría's validation: an on-time amendment is
  * admitted at once, a late one keeps waiting for the Mesa's decision.
  */
@@ -388,20 +430,33 @@ export function transactionalSourcesMessage(
  * now, or null when it can (docs/design.md, "Amendment flow"): it must be
  * presented and undecided, validated by the Secretaría and, when it came
  * late, admitted by the assembly; a transactional must also be accepted by
- * every main author of what it replaces. Under the "incorporate" rule an
- * amendment the presenter's acceptance approved (approval method
- * "proponent") can still be answered: changing the answer reopens it.
+ * every main author of what it replaces; and it must be published, so the
+ * answer is about something every delegate can read. Under the
+ * "incorporate" rule an amendment the presenter's acceptance approved
+ * (approval method "proponent") can still be answered: changing the answer
+ * reopens it. Once the document's final vote is recorded (`voted`) no
+ * answer changes any more.
  */
 export function positionBlocker(
   row: {
     status: AmendmentStatus;
     admission: AdmissionStatus;
     validatedAt: Date | null;
+    publishedAt: Date | null;
     approvalMethod: ApprovalMethod | null;
     authorsApproval?: AcceptanceDecision | null;
   },
   rule: AcceptedAmendmentRule,
-): "decided" | "not_validated" | "not_admitted" | "awaits_authors" | null {
+  voted = false,
+):
+  | "voted"
+  | "decided"
+  | "not_validated"
+  | "not_admitted"
+  | "awaits_authors"
+  | "not_published"
+  | null {
+  if (voted) return "voted";
   if (
     rule === "incorporate" &&
     row.status === "approved" &&
@@ -416,7 +471,7 @@ export function positionBlocker(
   if (row.authorsApproval === "pending" || row.authorsApproval === "rejected") {
     return "awaits_authors";
   }
-  return null;
+  return row.publishedAt === null ? "not_published" : null;
 }
 
 /** Messages for positionBlocker. */
@@ -424,6 +479,7 @@ export const POSITION_BLOCKER_MESSAGES: Record<
   NonNullable<ReturnType<typeof positionBlocker>>,
   string
 > = {
+  voted: "El documento ya se ha votado: las respuestas ya no se pueden cambiar",
   decided: "Esta enmienda ya está decidida",
   not_validated:
     "La Secretaría todavía no ha validado esta enmienda: podrás responderla cuando lo haga",
@@ -431,7 +487,38 @@ export const POSITION_BLOCKER_MESSAGES: Record<
     "Esta enmienda llegó fuera de plazo y la asamblea todavía no ha decidido si se trata",
   awaits_authors:
     "Los autores principales de las enmiendas que sustituye todavía no han aceptado esta transaccional",
+  not_published:
+    "La Secretaría todavía no ha publicado esta enmienda: podrás responderla cuando lo haga",
 };
+
+/**
+ * Who recorded the main presenter's answer (PositionDto.recordedBy): the
+ * main presenter itself, or the Mesa on its behalf. The amendment's latest
+ * `position_changed` event says it as it was when recorded (`by`:
+ * "moderator" is the Mesa), so an answer keeps its author when the document
+ * later gets another main presenter. With no such event, it falls back to
+ * comparing the member of the user who recorded it
+ * (amendment_positions.decidedByUserId) with the document's current main
+ * presenter. The row created as pending on submission has nobody behind it,
+ * and neither has one whose user was deleted: both count as the
+ * presenter's unless the event says otherwise.
+ */
+export function positionRecordedBy(input: {
+  decidedByUserId: string | null;
+  /** `by` of the amendment's latest position_changed event, if any. */
+  recordedAs?: unknown;
+  /** The member the recording user acts for, null or unknown when none. */
+  recorderMemberId: string | null | undefined;
+  mainPresenterId: string | null;
+}): "presenter" | "mesa" {
+  if (input.recordedAs === "moderator") return "mesa";
+  if (input.recordedAs === "proponent") return "presenter";
+  if (!input.decidedByUserId) return "presenter";
+  return input.recorderMemberId &&
+    input.recorderMemberId === input.mainPresenterId
+    ? "presenter"
+    : "mesa";
+}
 
 /**
  * What a new answer of the main presenter does to the amendment, beyond
@@ -462,12 +549,11 @@ export function positionEffect(
  * (documents.acceptedAmendments) does to the amendments already answered,
  * so the rule always says what an accepted amendment is:
  * - to "incorporate": every undecided amendment the main presenter already
- *   accepted and that it could answer now (positionBlocker) is approved at
- *   once (approval method "proponent"), as if accepted under that rule. It
- *   must be published, as when the presenter accepts it, and a
- *   transactional must have replaced its sources (`keepsSources`, only a
- *   transactional presented under the earlier rule, which the Mesa
- *   approves);
+ *   accepted and that it could answer now (positionBlocker: published
+ *   among the rest) is approved at once (approval method "proponent"), as
+ *   if accepted under that rule. A transactional must have replaced its
+ *   sources (`keepsSources`, only a transactional presented under the
+ *   earlier rule, which the Mesa approves);
  * - to "vote": every amendment the presenter's acceptance approved goes
  *   back to undecided, keeping the answer, for the assembly to vote.
  * Ids in input order.
@@ -495,7 +581,6 @@ export function acceptedRulePlan(
             row.position === "accept" &&
             positionEffect(row, "accept", rule) === "approve" &&
             positionBlocker(row, rule) === null &&
-            row.publishedAt !== null &&
             !row.keepsSources,
         )
         .map((row) => row.id),
@@ -557,9 +642,9 @@ export const TRANSACTIONAL_REOPEN_MESSAGES: Record<
  * How many amendments the main presenter of a published document still has
  * to answer (its review mode, MeWorkProponentDto.positionsPending), over the
  * amendments it can see: presented, undecided, without an answer yet, and
- * answerable now (positionBlocker). Under the "incorporate" rule an answer
- * may approve the amendment, which needs it published, so a validated one
- * the Secretaría keeps private waits until it publishes it.
+ * answerable now (positionBlocker), which needs them published: a validated
+ * one the Secretaría keeps private waits until it publishes it, under
+ * either rule.
  */
 export function countPositionsPending(
   rows: {
@@ -578,8 +663,7 @@ export function countPositionsPending(
     (row) =>
       row.status === "submitted" &&
       (row.position === null || row.position === "pending") &&
-      positionBlocker(row, rule) === null &&
-      (rule !== "incorporate" || row.publishedAt !== null),
+      positionBlocker(row, rule) === null,
   ).length;
 }
 

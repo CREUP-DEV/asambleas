@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AmendmentDto } from "~~/shared/types/api";
-import { PROPONENT_POSITIONS } from "~~/shared/constants/domain";
 import {
   isSessionPublishable,
   isSessionReopenable,
   isSessionTransactable,
+  sessionClosingSourceIds,
+  sessionLapsingTransactionalIds,
   sessionMissingAcceptances,
   sessionReplacedIds,
   sessionReplacingIds,
@@ -14,14 +15,15 @@ import {
 } from "~/composables/session/sessionModel";
 import { useFinalVoteReasonText } from "~/composables/session/useFinalVoteReasonText";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
+import { useSessionPosition } from "~/composables/session/useSessionPosition";
 
 /**
  * The amendment under debate, in large type: who presents it, where it
  * stands as a sentence that says what comes next, its change over the base
- * text, the answer of the document's main presenter and, for a
- * transactional, the answer of the main author of each amendment it
- * replaces and which ones it already replaced. Below, the actions that fit
- * where it stands, the one that matters most first:
+ * text, the answer of the document's main presenter (or of the Mesa on its
+ * behalf, said so) and, for a transactional, the answer of the main author
+ * of each amendment it replaces and which ones it already replaced. Below,
+ * the actions that fit where it stands, the one that matters most first:
  *
  * - open: approve by assent or vote (assent leads when the main presenter
  *   accepts it), plus transactional, withdrawal and lapse; the rest in
@@ -30,7 +32,10 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * - a transactional waiting for its main authors: recording their answers
  *   is the next step, so their list comes right under the status and no
  *   decision is offered; its withdrawal stays in "Más";
- * - a transactional another one got ahead of: only its withdrawal;
+ * - a transactional another one got ahead of: only its withdrawal; one
+ *   the server closed on its own says which amendment settled first, and
+ *   one that lapsed because another replaced its amendments first names
+ *   that one;
  * - incorporated (the main presenter accepted it in a document that
  *   incorporates accepted amendments): already in the text, no vote; until
  *   the final vote the presenter's answer can still be changed from "Más",
@@ -47,6 +52,7 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
 const props = defineProps<{ amendment: AmendmentDto }>();
 
 const session = useSessionConsoleContext();
+const answer = useSessionPosition(session);
 const { t } = useI18n();
 
 const id = computed(() => props.amendment.id);
@@ -109,6 +115,23 @@ const statusText = computed(() => {
           sessionSupersededSourceIds(props.amendment, session.byId.value),
         ),
       });
+    case "closed":
+      return t("session.now.stage.closed", {
+        codes: codes(
+          sessionClosingSourceIds(props.amendment, session.byId.value),
+        ),
+      });
+    case "lapsed": {
+      // Left behind because another transactional replaced its sources
+      // first: name that one.
+      const ahead = sessionLapsingTransactionalIds(
+        props.amendment,
+        session.byId.value,
+      );
+      return ahead.length > 0
+        ? t("session.now.stage.lapsedBy", { codes: codes(ahead) })
+        : t("session.now.stage.lapsed");
+    }
     default:
       return t(`session.now.stage.${value}`);
   }
@@ -134,9 +157,14 @@ const outcomeDetail = computed(() => {
   }
   return parts.join(" · ");
 });
-/** Turned down: the status sentence already says who and what follows. */
+/**
+ * Turned down or closed by the server: the status sentence already says
+ * who or why, and what follows.
+ */
 const outcomeNote = computed(() =>
-  stage.value === "turned_down" ? null : props.amendment.outcomeNote,
+  stage.value === "turned_down" || stage.value === "closed"
+    ? null
+    : props.amendment.outcomeNote,
 );
 
 const STAGE_TONE: Record<string, string> = {
@@ -155,13 +183,6 @@ watch(id, () => {
 });
 
 // Actions ------------------------------------------------------------------------
-
-const POSITION_ICONS = {
-  pending: "i-lucide-circle-dashed",
-  accept: "i-lucide-thumbs-up",
-  reject: "i-lucide-thumbs-down",
-  transact: "i-lucide-git-merge",
-} as const;
 
 const finalVoteReady = computed(
   () =>
@@ -193,29 +214,15 @@ const lateIds = computed(() =>
 );
 
 /**
- * The main presenter's answer, recorded in the room on its behalf. Not
- * after the final vote: the text is fixed and the server refuses it.
+ * The main presenter's answer, recorded in the room on its behalf. Only
+ * published amendments are answered, and not after the final vote: the
+ * text is fixed and the server refuses it.
  */
-const positionItem = computed<DropdownMenuItem | null>(() => {
-  const amendment = props.amendment;
-  if (!amendment.can.position || voted.value) return null;
-  const current = amendment.position?.position ?? "pending";
-  return {
-    label: t("amendment.position.title"),
-    icon: "i-lucide-user-round-check",
-    children: PROPONENT_POSITIONS.map((position) => ({
-      type: "checkbox" as const,
-      label: t(`amendment.position.options.${position}`),
-      icon: POSITION_ICONS[position],
-      checked: current === position,
-      onSelect: () => {
-        if (current !== position) {
-          void session.setPosition(amendment, position);
-        }
-      },
-    })),
-  };
-});
+const positionItem = computed(() => answer.menuItem(props.amendment));
+/** Who gave the answer shown: the main presenter, or the Mesa for it. */
+const positionLabel = computed(() => answer.label(props.amendment));
+/** Still private: nobody can answer it yet (the "Más" entry is disabled). */
+const positionWait = computed(() => answer.waitHint(props.amendment));
 
 const relateItem = computed<DropdownMenuItem>(() => ({
   label: t("session.actions.relate"),
@@ -365,7 +372,7 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
       v-if="amendment.position && !decided"
       class="text-default flex flex-wrap items-center gap-1.5 text-sm"
     >
-      <span class="text-muted">{{ t("session.now.position") }}</span>
+      <span class="text-muted">{{ positionLabel }}</span>
       <CommonStatusBadge
         kind="position"
         :value="amendment.position.position"
@@ -375,6 +382,7 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
         {{ amendment.position.comment }}
       </span>
     </p>
+    <p v-if="positionWait" class="text-muted text-sm">{{ positionWait }}</p>
 
     <ContentAmendmentDiff
       :id="amendment.id"
