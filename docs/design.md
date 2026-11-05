@@ -308,10 +308,14 @@ the item, document and amendment under debate with its change, the last
 result, who has the floor when visible, and the status of every amendment of
 the current document with the provisional consolidated text.
 
-**Roles and per-user permissions.** `Presidencia` is a system role with the
-Secretaría's permissions. Besides role permissions, an admin can grant
-individual permissions to a single user (`user_permissions`); a user's
-permissions are the union of both.
+**Roles and per-user permissions.** The association's Secretaría and
+Presidencia hold every permission, users and roles included. The Mesa's
+Vocalía and Presidencia use the `Moderador` role (`session:moderate`). The
+admin pages open by permission (`user:manage_roles` for users and their
+grants, `role:manage_permissions` for roles), and only an Admin can give or
+take the Admin role. Besides role permissions, a user can be granted
+individual permissions (`user_permissions`); a user's permissions are the
+union of both.
 
 **Intranet.** Calls to the intranet API send `Authorization: Bearer
 <NUXT_INTRANET_API_TOKEN>` when the token is configured. The intranet's
