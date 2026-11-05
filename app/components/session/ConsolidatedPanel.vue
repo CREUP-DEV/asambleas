@@ -12,9 +12,10 @@ import { assemblyPath } from "~/components/shell/Navigation.vue";
  * the vote stays in the record and the text awaits its final vote again.
  *
  * While the final vote is blocked, each reason says who has to act: the
- * Mesa decides the amendments still open; the Secretaría validates (or
- * sends back) those it has not checked yet; whoever presents the document
- * approves the transactionals proposed to it.
+ * Mesa decides the amendments still open; the assembly decides whether to
+ * treat the late ones; the main authors accept (or not) the transactionals
+ * over their amendments; the Secretaría validates (or sends back) those it
+ * has not checked yet.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();

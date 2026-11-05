@@ -5,10 +5,10 @@ import type { Block } from "~~/shared/types/content";
 import {
   canRecordAdmission,
   isAwaitingAssembly,
-  isAwaitingProponent,
+  isAwaitingAuthors,
   isAwaitingPublication,
   isAwaitingValidation,
-  proponentAcceptance,
+  missingAuthors,
   type ReviewAmendmentAction,
 } from "./-queue";
 
@@ -17,12 +17,16 @@ import {
  * where it stands, its changes over the published text and its
  * justification. The actions depend on where it stands:
  * - waiting for validation: "Validar y publicar" (main), "Pedir corrección"
- *   and, under "Más", "Validar sin publicar";
+ *   and, under "Más", "Validar sin publicar" (for a transactional, with a
+ *   warning: validating it takes the amendments it groups out of the debate
+ *   even while it stays private);
  * - validated but kept private: "Publicar";
- * - a transactional waiting for the document's presenter: none, it says who
- *   has to approve it first;
+ * - a transactional waiting for the main authors of the amendments it would
+ *   replace: none, its status line names who still has to answer;
  * - late and waiting for the assembly: "La asamblea decide tratarla" (main),
  *   "No la trata" and, under "Más", "Publicar ya" while it is private.
+ * The main author is named first, then the co-authors. A transactional
+ * lists the amendments it groups once the parent has loaded their codes.
  * The parent runs every action. The selection checkbox shows only when the
  * list has several amendments to act on.
  */
@@ -38,8 +42,19 @@ const props = withDefaults(
     disabled?: boolean;
     /** Several amendments of the list can be acted on at once. */
     multiSelect?: boolean;
+    /**
+     * Codes of the amendments a transactional groups ("CEUM 4"), in its
+     * order; null until the parent has them.
+     */
+    sourceLabels?: string[] | null;
   }>(),
-  { baseLoading: false, busy: null, disabled: false, multiSelect: false },
+  {
+    baseLoading: false,
+    busy: null,
+    disabled: false,
+    multiSelect: false,
+    sourceLabels: null,
+  },
 );
 
 const selected = defineModel<boolean>("selected", { default: false });
@@ -54,12 +69,12 @@ const label = computed(
   () => amendmentDisplayLabel(props.amendment) ?? t("review.amendments.noCode"),
 );
 
-type Stage = "validate" | "proponent" | "publish" | "late" | null;
+type Stage = "validate" | "authors" | "publish" | "late" | null;
 
 const stage = computed<Stage>(() => {
   if (isAwaitingAssembly(props.amendment)) return "late";
   if (isAwaitingValidation(props.amendment)) return "validate";
-  if (isAwaitingProponent(props.amendment)) return "proponent";
+  if (isAwaitingAuthors(props.amendment)) return "authors";
   if (isAwaitingPublication(props.amendment)) return "publish";
   return null;
 });
@@ -78,22 +93,45 @@ const canAct = computed(() => {
 });
 
 const isPublic = computed(() => props.amendment.publishedAt !== null);
-const presenter = computed(() => proponentAcceptance(props.amendment));
+const isTransactional = computed(
+  () => props.amendment.kind === "transactional",
+);
+
+/** Main authors who still have to answer, while it waits for them. */
+const missing = computed(() =>
+  stage.value === "authors" ? missingAuthors(props.amendment) : [],
+);
+
+/**
+ * The main author, who answers transactionals over this amendment, named
+ * first; the server lists it first too, which covers a missing id.
+ */
+const mainAuthor = computed(
+  () =>
+    props.amendment.authors.find(
+      (author) => author.id === props.amendment.mainAuthorId,
+    ) ??
+    props.amendment.authors[0] ??
+    null,
+);
+const coAuthors = computed(() =>
+  props.amendment.authors.filter(
+    (author) => author.id !== mainAuthor.value?.id,
+  ),
+);
+
+/** The codes of what a transactional groups, once they are known. */
+const sources = computed(() =>
+  isTransactional.value ? (props.sourceLabels ?? []) : [],
+);
 
 /** What happens next, in one sentence. */
 const stateSentence = computed(() => {
   switch (stage.value) {
     case "publish":
       return t("review.amendments.validatedHidden");
-    case "proponent":
-      if (!presenter.value) return t("review.amendments.awaitingProponent");
-      return presenter.value.decision === "rejected"
-        ? t("review.amendments.rejectedByProponent", {
-            member: presenter.value.member.acronym,
-          })
-        : t("review.amendments.awaitingProponentNamed", {
-            member: presenter.value.member.acronym,
-          });
+    case "authors":
+      return t("review.amendments.awaitingAuthors");
     case "late":
       return isPublic.value
         ? t("review.late.waitingPublic")
@@ -107,10 +145,8 @@ const stateIcon = computed(() => {
   switch (stage.value) {
     case "publish":
       return "i-lucide-lock";
-    case "proponent":
-      return presenter.value?.decision === "rejected"
-        ? "i-lucide-circle-x"
-        : "i-lucide-hourglass";
+    case "authors":
+      return "i-lucide-hourglass";
     case "late":
       return "i-lucide-scale";
     default:
@@ -124,6 +160,14 @@ const lateNote = computed(
     props.amendment.late &&
     props.amendment.admission === "pending" &&
     stage.value === "validate",
+);
+
+/**
+ * Its authors already accepted a transactional that reaches validation:
+ * validating it is what makes it replace the amendments it groups.
+ */
+const replacesNote = computed(
+  () => isTransactional.value && stage.value === "validate",
 );
 
 const sentRelative = computed(() =>
@@ -149,7 +193,11 @@ const moreItems = computed<DropdownMenuItem[]>(() => {
     return [
       {
         label: t("review.amendments.validateOnly"),
-        description: t("review.amendments.validateOnlyHelp"),
+        // Validating a transactional is what makes it replace the
+        // amendments it groups, published or not.
+        description: isTransactional.value
+          ? t("review.amendments.validateOnlyTransactionalHelp")
+          : t("review.amendments.validateOnlyHelp"),
         icon: "i-lucide-check",
         disabled: props.disabled,
         onSelect: () => emit("action", "validate_only"),
@@ -227,30 +275,40 @@ const moreBusy = computed(
           <span class="text-muted">{{
             t("review.amendments.presentedBy")
           }}</span>
-          <template v-if="amendment.authors.length > 0">
-            <CommonMemberBadge
-              v-for="author in amendment.authors"
-              :key="author.id"
-              :member="author"
-              :show-name="amendment.authors.length === 1"
-            />
+          <template v-if="mainAuthor">
+            <CommonMemberBadge :member="mainAuthor" show-name />
+            <template v-if="coAuthors.length > 0">
+              <span class="text-muted">{{ t("review.togetherWith") }}</span>
+              <CommonMemberBadge
+                v-for="author in coAuthors"
+                :key="author.id"
+                :member="author"
+              />
+            </template>
           </template>
           <span v-else class="text-dimmed">{{ t("review.noPresenter") }}</span>
         </div>
-        <p
-          v-if="
-            amendment.kind === 'transactional' && amendment.sourceIds.length
-          "
-          class="text-muted text-sm"
+        <div
+          v-if="isTransactional && amendment.sourceIds.length > 0"
+          class="flex flex-wrap items-center gap-1.5 text-sm"
         >
-          {{
+          <span class="text-muted">{{
             t(
               "review.amendments.groupsAmendments",
               { count: amendment.sourceIds.length },
               amendment.sourceIds.length,
             )
-          }}
-        </p>
+          }}</span>
+          <UBadge
+            v-for="(source, index) in sources"
+            :key="`${index}-${source}`"
+            color="neutral"
+            variant="outline"
+            size="sm"
+            class="tabular-nums"
+            :label="source"
+          />
+        </div>
         <p v-if="amendment.submittedAt" class="text-muted text-sm">
           {{ t("review.amendments.sent") }}
           <time :datetime="amendment.submittedAt" :title="sentAbsolute">{{
@@ -260,7 +318,28 @@ const moreBusy = computed(
       </div>
     </div>
 
+    <!-- Waiting for its authors: who is missing is the whole status. -->
+    <div
+      v-if="missing.length > 0"
+      class="flex flex-wrap items-center gap-1.5 text-sm"
+    >
+      <UIcon
+        :name="stateIcon"
+        class="text-muted size-4 shrink-0"
+        aria-hidden="true"
+      />
+      <span class="text-muted">{{
+        t("review.amendments.missingAuthors", missing.length)
+      }}</span>
+      <CommonMemberBadge
+        v-for="author in missing"
+        :key="author.id"
+        :member="author"
+        :show-name="missing.length <= 3"
+      />
+    </div>
     <p
+      v-else
       class="flex items-start gap-1.5 text-sm"
       :class="stage === 'late' ? 'text-highlighted font-medium' : 'text-muted'"
     >
@@ -282,6 +361,14 @@ const moreBusy = computed(
         aria-hidden="true"
       />
       <span>{{ t("review.amendments.lateNote") }}</span>
+    </p>
+    <p v-if="replacesNote" class="text-muted flex items-start gap-1.5 text-sm">
+      <UIcon
+        name="i-lucide-git-merge"
+        class="mt-0.5 size-4 shrink-0"
+        aria-hidden="true"
+      />
+      <span>{{ t("review.amendments.replacesOnValidate") }}</span>
     </p>
 
     <UCollapsible v-model:open="changesOpen" class="space-y-2">

@@ -1,16 +1,20 @@
 <script setup lang="ts">
-import type { ProponentPosition } from "~~/shared/constants/domain";
+import type {
+  AcceptedAmendmentRule,
+  ProponentPosition,
+} from "~~/shared/constants/domain";
 
 /**
- * End of the review: how many amendments got each answer, the
- * transactionals the presenter approved or rejected (from the data, so a
- * reload keeps them) and those still waiting, and the next step. With answers left, "Responder las que
- * faltan" is the one primary action; with none, going back to the document.
+ * End of the review: how many amendments got each answer (from the data,
+ * so a reload keeps them), what accepting meant under the document's rule,
+ * and the next step. With answers left, "Responder las que faltan" is the
+ * one primary action; with none, going back to the document.
  */
 const props = withDefaults(
   defineProps<{
     counts: Record<ProponentPosition, number>;
-    transactionals: { approved: number; rejected: number; left: number };
+    /** What an accepted amendment becomes under the document's rule. */
+    acceptedAmendments: AcceptedAmendmentRule;
     /** Where "Volver al documento" goes. */
     documentTo: string;
     /** The document was voted: answers can no longer change. */
@@ -25,7 +29,7 @@ const { t } = useI18n();
 const titleId = useId();
 const heading = useTemplateRef<HTMLElement>("heading");
 
-const left = computed(() => props.counts.pending + props.transactionals.left);
+const left = computed(() => props.counts.pending);
 const answeredTotal = computed(
   () => props.counts.accept + props.counts.reject + props.counts.transact,
 );
@@ -36,27 +40,19 @@ const title = computed(() => {
   return t("proponentReview.summary.left", { count: left.value }, left.value);
 });
 
+const description = computed(() => {
+  if (props.readOnly) return t("proponentReview.summary.readOnlyDescription");
+  return props.acceptedAmendments === "incorporate"
+    ? t("proponentReview.summary.descriptionIncorporate")
+    : t("proponentReview.summary.description");
+});
+
 const rows = computed(() =>
   [
     { key: "accept", value: props.counts.accept, always: true },
     { key: "reject", value: props.counts.reject, always: true },
     { key: "transact", value: props.counts.transact, always: true },
     { key: "pending", value: props.counts.pending, always: false },
-    {
-      key: "transactionalsApproved",
-      value: props.transactionals.approved,
-      always: false,
-    },
-    {
-      key: "transactionalsRejected",
-      value: props.transactionals.rejected,
-      always: false,
-    },
-    {
-      key: "transactionalsLeft",
-      value: props.transactionals.left,
-      always: false,
-    },
   ].filter((row) => row.always || row.value > 0),
 );
 
@@ -93,11 +89,7 @@ defineExpose({
           {{ title }}
         </h3>
         <p class="text-muted text-sm">
-          {{
-            readOnly
-              ? t("proponentReview.summary.readOnlyDescription")
-              : t("proponentReview.summary.description")
-          }}
+          {{ description }}
         </p>
       </div>
     </div>

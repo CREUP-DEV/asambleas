@@ -14,7 +14,12 @@ import type {
   SpeakingTurnDto,
   VoteDto,
 } from "~~/shared/types/api";
-import { sortSessionAmendments } from "~/composables/session/sessionModel";
+import {
+  isSessionReplacing,
+  sessionSupersededSourceIds,
+  sessionTransactionalRejectors,
+  sortSessionAmendments,
+} from "~/composables/session/sessionModel";
 
 // Speaking turns --------------------------------------------------------------
 
@@ -110,6 +115,12 @@ export function affectsAgenda(events: readonly LiveEventDto[]): boolean {
  * - "pending": undecided, waiting for its turn;
  * - "late": presented after the deadline, waiting for the assembly to decide
  *   whether to treat it;
+ * - "incorporated": in the text without a vote, because the document's main
+ *   presenter accepted it (documents that incorporate accepted amendments);
+ * - "transacted": replaced by a transactional, debated in its place;
+ * - "turned_down": a transactional some main author did not accept: it is
+ *   closed and the amendments it would have replaced carry on (the server
+ *   records it as withdrawn, but nobody who presented it withdrew it);
  * - the rest mirror the decided statuses.
  */
 export type LiveAmendmentState =
@@ -117,8 +128,10 @@ export type LiveAmendmentState =
   | "pending"
   | "late"
   | "approved"
+  | "incorporated"
   | "rejected"
   | "transacted"
+  | "turned_down"
   | "withdrawn"
   | "lapsed"
   | "inadmissible";
@@ -129,8 +142,10 @@ export const LIVE_AMENDMENT_STATES: readonly LiveAmendmentState[] = [
   "pending",
   "late",
   "approved",
+  "incorporated",
   "rejected",
   "transacted",
+  "turned_down",
   "withdrawn",
   "lapsed",
   "inadmissible",
@@ -145,8 +160,10 @@ export const LIVE_STATE_COLORS: Record<
   pending: "info",
   late: "warning",
   approved: "success",
+  incorporated: "success",
   rejected: "error",
   transacted: "secondary",
+  turned_down: "neutral",
   withdrawn: "neutral",
   lapsed: "warning",
   inadmissible: "error",
@@ -164,8 +181,17 @@ export function liveAmendmentState(
   amendment: AmendmentDto,
   debatedId: string | null,
 ): LiveAmendmentState {
+  if (
+    amendment.status !== "approved" &&
+    sessionTransactionalRejectors(amendment).length > 0
+  ) {
+    return "turned_down";
+  }
   switch (amendment.status) {
     case "approved":
+      return amendment.approvalMethod === "proponent"
+        ? "incorporated"
+        : "approved";
     case "rejected":
     case "transacted":
     case "withdrawn":
@@ -214,6 +240,7 @@ export function liveAmendmentCounts(
 
 /** The projection's one-line summary of the amendments of a document. */
 export interface LiveAmendmentStats {
+  /** In the text: approved, by vote or incorporated without one. */
   approved: number;
   /** Still to be decided: in debate, waiting for its turn, or late. */
   undecided: number;
@@ -231,8 +258,9 @@ export function liveAmendmentStats(
   let approved = 0;
   let undecided = 0;
   for (const row of rows) {
-    if (row.state === "approved") approved += 1;
-    else if (
+    if (row.state === "approved" || row.state === "incorporated") {
+      approved += 1;
+    } else if (
       row.state === "debating" ||
       row.state === "pending" ||
       row.state === "late"
@@ -249,6 +277,123 @@ export function liveAmendmentCode(
 ): string {
   if (!amendment) return "";
   return amendment.code ?? (amendment.number ? `#${amendment.number}` : "");
+}
+
+/** A sentence under a row, as an i18n key and its parameters. */
+export interface LiveAmendmentNote {
+  key: string;
+  params?: Record<string, string>;
+}
+
+function codesOf(
+  ids: readonly string[],
+  rows: readonly LiveAmendmentRow[],
+): string {
+  return ids
+    .map((id) =>
+      liveAmendmentCode(rows.find((row) => row.amendment.id === id)?.amendment),
+    )
+    .filter(Boolean)
+    .join(", ");
+}
+
+/**
+ * The transactional that replaced an amendment, among the rows the room can
+ * read: one built on it that no main author turned down, the one that
+ * actually replaced it first (isSessionReplacing), then an approved one,
+ * then one still being debated. Null when none is listed.
+ */
+export function liveReplacedBy(
+  row: LiveAmendmentRow,
+  rows: readonly LiveAmendmentRow[],
+): LiveAmendmentRow | null {
+  const ids = new Set(row.amendment.transactionalIds);
+  const candidates = rows.filter(
+    (other) =>
+      ids.has(other.amendment.id) &&
+      other.state !== "turned_down" &&
+      sessionTransactionalRejectors(other.amendment).length === 0,
+  );
+  const rank = (other: LiveAmendmentRow) =>
+    isSessionReplacing(other.amendment)
+      ? 0
+      : other.state === "approved" || other.state === "incorporated"
+        ? 1
+        : other.state === "debating" || other.state === "pending"
+          ? 2
+          : 3;
+  return [...candidates].sort((a, b) => rank(a) - rank(b))[0] ?? null;
+}
+
+/**
+ * A sentence for the rows a badge alone does not explain: a late amendment
+ * waiting for the assembly, one replaced by a transactional (naming it), one
+ * incorporated without a vote and, for a transactional, whether a main
+ * author turned it down, which amendments it already replaced, whether
+ * another transactional got ahead of it, or whether it still waits for its
+ * main authors. Null otherwise.
+ */
+export function liveAmendmentNote(
+  row: LiveAmendmentRow,
+  rows: readonly LiveAmendmentRow[],
+): LiveAmendmentNote | null {
+  const amendment = row.amendment;
+  if (row.state === "late") return { key: "liveView.state.late.sentence" };
+  if (row.state === "transacted") {
+    const code = liveAmendmentCode(liveReplacedBy(row, rows)?.amendment);
+    return code
+      ? { key: "liveView.state.transacted.by", params: { code } }
+      : { key: "liveView.state.transacted.sentence" };
+  }
+  if (row.state === "incorporated") {
+    return { key: "liveView.state.incorporated.sentence" };
+  }
+  if (amendment.kind !== "transactional") return null;
+  const rejectors = sessionTransactionalRejectors(amendment);
+  if (rejectors.length > 0) {
+    return {
+      key: "liveView.amendments.turnedDown",
+      params: { members: rejectors.map((member) => member.acronym).join(", ") },
+    };
+  }
+  const replaced = isSessionReplacing(amendment)
+    ? rows
+        .filter(
+          (other) =>
+            amendment.sourceIds.includes(other.amendment.id) &&
+            other.state === "transacted",
+        )
+        .map((other) => other.amendment.id)
+    : [];
+  if (replaced.length > 0) {
+    return {
+      key: "liveView.amendments.replaces",
+      params: { codes: codesOf(replaced, rows) },
+    };
+  }
+  // Another transactional replaced (or a decision settled) one of its
+  // sources first: it will not go ahead.
+  const byId = new Map(
+    rows.map((other) => [other.amendment.id, other.amendment]),
+  );
+  const gone = sessionSupersededSourceIds(amendment, byId);
+  if (gone.length > 0) {
+    return {
+      key: "liveView.amendments.superseded",
+      params: { codes: codesOf(gone, rows) },
+    };
+  }
+  const waiting =
+    amendment.status === "submitted" &&
+    amendment.acceptances.some((party) => party.decision !== "accepted");
+  const sources = codesOf(amendment.sourceIds, rows);
+  if (waiting && sources) {
+    return {
+      key: "liveView.amendments.awaitingAuthors",
+      params: { codes: sources },
+    };
+  }
+  return null;
 }
 
 // Votes -----------------------------------------------------------------------

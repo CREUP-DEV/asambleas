@@ -21,26 +21,12 @@ export function useFinalVoteReasonText(label: (id: string) => string) {
           code: label(reason.id),
         });
       case "undecided":
-        return t(
-          "session.preview.undecided",
-          { count: reason.count },
-          reason.count,
-        );
+      case "superseded":
+      case "late":
+      case "awaitingAuthors":
       case "awaitingValidation":
         return t(
-          "session.preview.awaitingValidation",
-          { count: reason.count },
-          reason.count,
-        );
-      case "awaitingProponent":
-        return t(
-          "session.preview.awaitingProponent",
-          { count: reason.count },
-          reason.count,
-        );
-      case "proponentRejected":
-        return t(
-          "session.preview.proponentRejected",
+          `session.preview.${reason.key}`,
           { count: reason.count },
           reason.count,
         );

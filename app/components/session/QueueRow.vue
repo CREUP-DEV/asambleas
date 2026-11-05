@@ -34,20 +34,25 @@ const busy = computed(
 /**
  * "Debatir" only where it can work: open to a decision, and public or
  * publishable by this actor (the projection shows only public amendments).
+ * A transactional that can no longer go ahead is only withdrawn.
  */
-const debatable = computed(() => isSessionDebatable(props.amendment));
+const debatable = computed(
+  () => isSessionDebatable(props.amendment) && stage.value !== "superseded",
+);
 
 const open = ref(false);
 const detailsId = computed(() => `session-row-${id.value}-details`);
 
 const STAGE_DOT: Record<SessionAmendmentStage, string> = {
-  awaiting_proponent: "bg-(--ui-text-dimmed)",
-  proponent_rejected: "bg-error",
+  turned_down: "bg-(--ui-text-dimmed)",
+  superseded: "bg-warning",
+  awaiting_authors: "bg-(--ui-text-dimmed)",
   awaiting_validation: "bg-(--ui-text-dimmed)",
   correction_requested: "bg-(--ui-text-dimmed)",
   late: "bg-warning",
   acceptances: "bg-warning",
   open: "bg-info",
+  incorporated: "bg-success",
   approved: "bg-success",
   rejected: "bg-error",
   inadmissible: "bg-error",

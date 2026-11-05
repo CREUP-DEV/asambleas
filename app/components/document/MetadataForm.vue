@@ -4,6 +4,7 @@ import {
   DOCUMENT_KIND_DEFAULTS,
   DOCUMENT_KINDS,
   MAJORITIES,
+  type AcceptedAmendmentRule,
   type DocumentKind,
   type Majority,
 } from "~~/shared/constants/domain";
@@ -13,25 +14,52 @@ import type {
   DocumentDto,
   DocumentUpdateBody,
   MemberDto,
+  MemberRef,
 } from "~~/shared/types/api";
 import { formatDateTime, toDate } from "~/utils/format";
 import {
   kindSelectItems,
   presenterKindGroups,
 } from "~/composables/document/documentKinds";
+import {
+  choicePresenterIds,
+  coPresentersDroppedWithoutLead,
+  documentPresenterMembers,
+  formatMemberList,
+  formPresenterChoice,
+  isDocumentPresenter,
+  mainPresenterMissing,
+  presenterChoiceFromDocument,
+  presenterFields,
+  samePresenterFields,
+  withDefaultMainPresenter,
+  withMainAsLead,
+  withPresenterLead,
+  type PresenterChoice,
+} from "~/composables/document/documentPresenters";
 
 /**
- * Metadata of a document: title, summary, kind, agenda item, proponent,
- * internal deadline, amendable / voted / majority and the amendment window
- * override. Sends only the fields that changed, with `updatedAt`.
+ * Metadata of a document: title, summary, kind, agenda item, presenters,
+ * internal deadline, amendable / accepted amendments / voted / majority and
+ * the amendment window override. Sends only the fields that changed, with
+ * `updatedAt`.
  *
- * Presenters see only what is theirs to fill in: title, type and summary
- * (the agenda item folded under "Más opciones"); the server gives them the
- * defaults of the kind. Everything else needs document:manage
- * (`document.can.manage`): who presents it and the internal deadline stay in
- * view, and the rules (format, amendments, vote, window) are folded under
- * "Opciones avanzadas". Managers keep this form after publication, when the
- * text is frozen.
+ * Presenters see only what is theirs to fill in: title, type, summary and
+ * who presents it with them ("¿Lo presentáis varios miembros?", folded; their
+ * own member stays among the presenters), with the agenda item folded under
+ * "Más opciones"; the server gives them the defaults of the kind. Everything
+ * else needs document:manage (`document.can.manage`): who presents it, with
+ * whom and the internal deadline stay in view, and the rules (format,
+ * amendments, what an accepted amendment becomes, vote, window) are folded
+ * under "Opciones avanzadas". Managers keep this form after publication,
+ * when the text is frozen.
+ *
+ * With several presenters, who answers the amendments (the main presenter)
+ * is a required choice; it starts on the lead (the presenter's own member,
+ * or the manager's "Quién lo presenta"). For managers "Quién lo presenta"
+ * is the main presenter: choosing another one to answer swaps it in, so the
+ * form shows what will be stored. Leaving it empty leaves no co-presenters,
+ * and the field names the ones that saving would remove.
  *
  * Presenters choose among the types their member usually presents first
  * (the rest under "Otros tipos"); a PDF only offers the types that take no
@@ -78,8 +106,17 @@ interface FormState {
   summary: string;
   kind: DocumentKind;
   agendaItemId: string;
+  /**
+   * The first presenter: the one managers pick under "Quién lo presenta", or
+   * the presenter's own member, fixed (see presenterChoiceFromDocument).
+   */
   proponentMemberId: string | null;
+  /** The other presenting members. */
+  coIds: string[];
+  /** Who answers the amendments, among several presenters. */
+  mainId: string | null;
   amendable: boolean;
+  acceptedAmendments: AcceptedAmendmentRule;
   voted: boolean;
   majority: Majority;
   windowOverride: boolean;
@@ -87,6 +124,17 @@ interface FormState {
   closesAt: string | null;
   dueAt: string | null;
 }
+
+const { member: myMember } = useMe();
+
+/**
+ * The presenter's own member, which leads (and stays) among the presenters
+ * of a document it presents. Managers pick the presenters freely.
+ */
+const ownPresenterId = computed(() => {
+  const id = myMember.value?.id ?? null;
+  return !manager.value && isDocumentPresenter(props.document, id) ? id : null;
+});
 
 function milestoneAt(key: "amendments_open" | "amendments_close") {
   return props.assembly.milestones.find((m) => m.key === key)?.at ?? null;
@@ -106,13 +154,23 @@ const calendarClosesAt = computed(() => milestoneAt("amendments_close"));
 function snapshot(document: DocumentDto): FormState {
   const opensAt = document.amendmentsOpenAt;
   const closesAt = document.amendmentsCloseAt;
+  const presenters = presenterChoiceFromDocument(
+    document,
+    ownPresenterId.value,
+  );
   return {
     title: document.title,
     summary: document.summary ?? "",
     kind: document.kind,
     agendaItemId: document.agendaItemId,
-    proponentMemberId: document.proponent?.id ?? null,
+    proponentMemberId: presenters.leadId,
+    coIds: [...presenters.coIds],
+    mainId: presenters.mainId,
     amendable: document.amendable,
+    // Older servers omit it: the kind's rule.
+    acceptedAmendments:
+      document.acceptedAmendments ??
+      DOCUMENT_KIND_DEFAULTS[document.kind].acceptedAmendments,
     voted: document.voted,
     majority: document.majority,
     windowOverride: opensAt !== null || closesAt !== null,
@@ -124,15 +182,33 @@ function snapshot(document: DocumentDto): FormState {
 }
 
 const initial = shallowRef<FormState>(snapshot(props.document));
-const state = reactive<FormState>({ ...initial.value });
+// Own copy of the co-presenters: the snapshot stays as stored.
+const state = reactive<FormState>({
+  ...initial.value,
+  coIds: [...initial.value.coIds],
+});
 const saving = ref(false);
 const conflictNotice = ref(false);
 let resyncNext = false;
 
 function resetForm(): void {
   initial.value = snapshot(props.document);
-  Object.assign(state, initial.value);
+  Object.assign(state, initial.value, { coIds: [...initial.value.coIds] });
 }
+
+/**
+ * The presenters as the form will send them: nobody under "Quién lo
+ * presenta" leaves no co-presenters (as when creating one).
+ */
+function choiceOf(form: FormState): PresenterChoice {
+  return formPresenterChoice({
+    leadId: form.proponentMemberId,
+    coIds: form.coIds,
+    mainId: form.mainId,
+  });
+}
+
+const choice = computed(() => choiceOf(state));
 
 /** The window values that would be stored (null = follow the calendar). */
 const desiredWindow = computed(() => ({
@@ -150,12 +226,27 @@ function buildBody(): DocumentUpdateBody {
   if (state.kind !== before.kind) body.kind = state.kind;
   if (state.agendaItemId !== before.agendaItemId)
     body.agendaItemId = state.agendaItemId;
+
+  // Presenters choose the members presenting it with them, managers anyone.
+  const presenters = presenterFields(choice.value);
+  const stored = presenterFields(choiceOf(before));
+  if (!samePresenterFields(presenters, stored)) {
+    if (presenters.proponentMemberId !== stored.proponentMemberId)
+      body.proponentMemberId = presenters.proponentMemberId;
+    if (
+      !samePresenterFields(
+        { ...presenters, proponentMemberId: null },
+        { ...stored, proponentMemberId: null },
+      )
+    )
+      body.coProponentMemberIds = presenters.coProponentMemberIds;
+  }
   if (!manager.value) return body;
 
-  if (state.proponentMemberId !== before.proponentMemberId)
-    body.proponentMemberId = state.proponentMemberId;
   const amendable = isFile.value ? false : state.amendable;
   if (amendable !== before.amendable) body.amendable = amendable;
+  if (amendable && state.acceptedAmendments !== before.acceptedAmendments)
+    body.acceptedAmendments = state.acceptedAmendments;
   if (state.voted !== before.voted) body.voted = state.voted;
   if (state.majority !== before.majority) body.majority = state.majority;
   if (!sameInstant(desiredWindow.value.opensAt, before.opensAt))
@@ -190,6 +281,48 @@ watch(
   },
 );
 
+// Managers: another "Quién lo presenta" leaves the co-presenters, and answers
+// the amendments if the previous one did. A reload sets lead and main alike,
+// so it comes through unchanged.
+watch(
+  () => state.proponentMemberId,
+  (next, previous) => {
+    if (!manager.value) return;
+    const updated = withPresenterLead(
+      { leadId: previous, coIds: state.coIds, mainId: state.mainId },
+      next,
+    );
+    state.coIds = [...updated.coIds];
+    state.mainId = updated.mainId;
+  },
+);
+
+// Several presenters and none of them answering: the lead answers until
+// another one is chosen (a stored document already has its main one).
+watch(
+  () => choicePresenterIds(choice.value).join(),
+  () => {
+    const next = withDefaultMainPresenter(choice.value);
+    if (next.mainId !== state.mainId) state.mainId = next.mainId;
+  },
+);
+
+/**
+ * Who answers the amendments was chosen. Managers: the chosen presenter
+ * becomes "Quién lo presenta" and the previous one a co-presenter (the
+ * watcher on the lead then keeps both).
+ */
+function onMainPick(id: string | null): void {
+  if (!manager.value) {
+    state.mainId = id;
+    return;
+  }
+  const next = withMainAsLead(choice.value, id);
+  state.coIds = [...next.coIds];
+  state.mainId = next.mainId;
+  state.proponentMemberId = next.leadId;
+}
+
 // Kind defaults ---------------------------------------------------------------
 
 const kindDefaults = computed(() => DOCUMENT_KIND_DEFAULTS[state.kind]);
@@ -200,12 +333,14 @@ const effective = computed(() => {
   if (manager.value || !kindChanged.value) {
     return {
       amendable: isFile.value ? false : state.amendable,
+      acceptedAmendments: state.acceptedAmendments,
       voted: state.voted,
       majority: state.majority,
     };
   }
   return {
     amendable: isFile.value ? false : kindDefaults.value.amendable,
+    acceptedAmendments: kindDefaults.value.acceptedAmendments,
     voted: kindDefaults.value.voted,
     majority: kindDefaults.value.majority,
   };
@@ -215,19 +350,20 @@ const differsFromDefaults = computed(
   () =>
     manager.value &&
     ((!isFile.value && state.amendable !== kindDefaults.value.amendable) ||
+      (effective.value.amendable &&
+        state.acceptedAmendments !== kindDefaults.value.acceptedAmendments) ||
       state.voted !== kindDefaults.value.voted ||
       state.majority !== kindDefaults.value.majority),
 );
 
 function applyKindDefaults(): void {
   if (!isFile.value) state.amendable = kindDefaults.value.amendable;
+  state.acceptedAmendments = kindDefaults.value.acceptedAmendments;
   state.voted = kindDefaults.value.voted;
   state.majority = kindDefaults.value.majority;
 }
 
 // Options -----------------------------------------------------------------
-
-const { member: myMember } = useMe();
 
 /**
  * Managers get every type. Presenters get the usual ones of their member
@@ -298,14 +434,50 @@ const currentAgendaTitle = computed(
     null,
 );
 
-const { data: members, status: membersStatus } = useFetch<MemberDto[]>(
-  "/api/members",
-  {
-    key: "members:active",
-    lazy: true,
-    default: () => [],
-    immediate: manager.value,
-  },
+const {
+  data: members,
+  status: membersStatus,
+  execute: fetchMembers,
+} = useFetch<MemberDto[]>("/api/members", {
+  key: "members:active",
+  lazy: true,
+  default: () => [],
+  immediate: manager.value,
+});
+
+/** Presenters load the members when they unfold "varios miembros". */
+function loadMembers(): void {
+  if (membersStatus.value === "idle") void fetchMembers();
+}
+
+/** Members to name among the presenters, even if inactive or not loaded. */
+const knownMembers = computed<MemberRef[]>(() => [
+  ...documentPresenterMembers(props.document),
+  ...(myMember.value ? [myMember.value] : []),
+]);
+
+/**
+ * A co-presenter keeps the main presenter: only that member, or the
+ * Secretaría, hands over answering the amendments.
+ */
+const mainLocked = computed(
+  () =>
+    ownPresenterId.value !== null &&
+    props.document.proponent !== null &&
+    props.document.proponent.id !== ownPresenterId.value,
+);
+const fixedPresenterIds = computed(() =>
+  mainLocked.value && props.document.proponent
+    ? [props.document.proponent.id]
+    : [],
+);
+
+/** The presenter's own member, shown as theirs. */
+const ownPresenter = computed(() =>
+  ownPresenterId.value
+    ? (knownMembers.value.find((item) => item.id === ownPresenterId.value) ??
+      null)
+    : null,
 );
 
 const memberItems = computed(() => {
@@ -314,15 +486,41 @@ const memberItems = computed(() => {
     description: member.name,
     value: member.id,
   }));
-  const current = props.document.proponent;
-  if (current && !list.some((item) => item.value === current.id)) {
-    list.unshift({
+  // Current presenters stay pickable even if inactive: one may become
+  // "Quién lo presenta" by being chosen to answer the amendments.
+  const missing = documentPresenterMembers(props.document)
+    .filter((current) => !list.some((item) => item.value === current.id))
+    .map((current) => ({
       label: current.acronym,
       description: current.name,
       value: current.id,
-    });
-  }
-  return list;
+    }));
+  return [...missing, ...list];
+});
+
+/**
+ * Managers: nobody under "Quién lo presenta" removes the co-presenters the
+ * form still holds when saving; name them under the field.
+ */
+const droppedHelp = computed(() => {
+  if (!manager.value) return undefined;
+  const dropped = coPresentersDroppedWithoutLead({
+    leadId: state.proponentMemberId,
+    coIds: state.coIds,
+    mainId: state.mainId,
+  });
+  if (dropped.length === 0) return undefined;
+  const acronyms = dropped.map(
+    (id) =>
+      knownMembers.value.find((item) => item.id === id)?.acronym ??
+      members.value?.find((item) => item.id === id)?.acronym ??
+      id,
+  );
+  return t(
+    "document.presenters.droppedWithoutLead",
+    { members: formatMemberList(acronyms, locale.value) },
+    acronyms.length,
+  );
 });
 
 // Window hints ------------------------------------------------------------
@@ -390,6 +588,11 @@ function validate(current: Partial<FormState>): FormError[] {
       message: t("document.metadata.errors.summaryTooLong", {
         max: SUMMARY_MAX,
       }),
+    });
+  if (mainPresenterMissing(choice.value))
+    errors.push({
+      name: "mainPresenter",
+      message: t("document.presenters.mainRequired"),
     });
   if (current.windowOverride && showWindow.value) {
     const opens = toDate(current.opensAt ?? null);
@@ -542,14 +745,34 @@ defineExpose({ reset: resetForm, check, save });
       />
     </UFormField>
 
-    <!-- Presenters: who presents it (read only) and the agenda item, folded -->
+    <!-- Presenters: their member, who presents it with them, the agenda item -->
     <template v-if="!manager">
+      <template v-if="ownPresenter">
+        <p class="text-muted flex flex-wrap items-center gap-2 text-sm">
+          {{ t("agenda.newDocument.presentingAs") }}
+          <CommonMemberBadge :member="ownPresenter" show-name />
+        </p>
+        <DocumentPresentersField
+          v-model:co-ids="state.coIds"
+          v-model:main-id="state.mainId"
+          voice="presenter"
+          :lead-id="state.proponentMemberId"
+          :members="members ?? []"
+          :known="knownMembers"
+          :loading="membersStatus === 'pending'"
+          :own-member-id="ownPresenter.id"
+          :fixed-ids="fixedPresenterIds"
+          :main-locked="mainLocked"
+          :disabled="saving"
+          @load="loadMembers"
+        />
+      </template>
       <p
-        v-if="document.proponent"
+        v-else-if="document.proponent"
         class="text-muted flex flex-wrap items-center gap-2 text-sm"
       >
         {{ t("document.metadata.presentedBy") }}
-        <CommonMemberBadge :member="document.proponent" show-name />
+        <DocumentPresenters :document="document" />
       </p>
 
       <UCollapsible v-model:open="moreOpen">
@@ -613,6 +836,7 @@ defineExpose({ reset: resetForm, check, save });
       <UFormField
         name="proponentMemberId"
         :label="t('document.metadata.proponent')"
+        :help="droppedHelp"
       >
         <USelectMenu
           v-model="state.proponentMemberId"
@@ -626,6 +850,21 @@ defineExpose({ reset: resetForm, check, save });
           class="w-full"
         />
       </UFormField>
+
+      <DocumentPresentersField
+        v-if="state.proponentMemberId"
+        v-model:co-ids="state.coIds"
+        :main-id="state.mainId"
+        voice="manager"
+        :lead-id="state.proponentMemberId"
+        :members="members ?? []"
+        :known="knownMembers"
+        :loading="membersStatus === 'pending'"
+        :own-member-id="myMember?.id ?? null"
+        :disabled="saving"
+        @update:main-id="onMainPick"
+        @load="loadMembers"
+      />
 
       <UFormField
         v-if="showDueAt"
@@ -687,6 +926,13 @@ defineExpose({ reset: resetForm, check, save });
                   :label="t('document.metadata.amendable')"
                 />
               </UFormField>
+
+              <DocumentAcceptedRuleField
+                v-if="effective.amendable"
+                v-model="state.acceptedAmendments"
+                :kind="state.kind"
+                :published="document.publishedAt !== null"
+              />
 
               <UFormField name="voted">
                 <USwitch

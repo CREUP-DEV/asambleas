@@ -34,14 +34,17 @@ import {
  * composer then opens in place of the list. Once a paragraph is picked, the
  * selection bar's "Cambiar este texto" is the one primary button.
  *
- * The document's presenter (and the Mesa) get "Revisar enmiendas", with how
- * many wait for them, which leads to the guided review (.../revisar). For
- * the presenter with something pending it is the primary button instead of
- * "Presentar una enmienda".
+ * The document's main presenter (and the Mesa, which can answer for it) get
+ * "Revisar enmiendas", with how many amendments wait for the main
+ * presenter's answer (validated, admitted if late, and for a transactional,
+ * accepted by the main authors), which leads to the guided review
+ * (.../revisar). For the main presenter with something pending it is the
+ * primary button instead of "Presentar una enmienda".
  *
  * "Proponer una transaccional" (any member who can amend, the document's
- * presenter, and the Mesa) is a secondary action: in the header's "Más" menu, on a group of amendments
- * on the same passage, and in an amendment's detail. Its composer opens in
+ * presenter, and the Mesa) is a secondary action: in the header's "Más"
+ * menu, on a group of amendments on the same passage, and in an
+ * amendment's detail. Its composer opens in
  * place of the list like the amendment composer, with the passage it
  * rewrites marked in the text.
  *
@@ -166,14 +169,14 @@ const decisionsUrl = computed(() =>
 );
 const labels = computed(() => blockLabels(base.value));
 
-/** The member that presents the document, if any. */
+/** The document's main presenter: it answers the amendments to it. */
 const proponentMemberId = computed(() => document.value?.proponent?.id ?? null);
 
 /**
- * Any member who can amend, the document's presenter (a party of every
- * transactional on it) and the Mesa may propose a transactional over
- * published, undecided amendments while the text is open. The server also
- * lets the authors of the chosen amendments do it; it checks the rest.
+ * Any member who can amend, the document's main presenter and the Mesa may
+ * propose a transactional over published, undecided amendments while the
+ * text is open. The server also lets the authors of the chosen amendments
+ * do it; it checks the rest.
  */
 const canTransact = computed(() => {
   const doc = document.value;
@@ -195,19 +198,28 @@ const transactionalCandidates = computed(() =>
   canTransact.value ? transactionalSourceCandidates(list.listed.value) : [],
 );
 
-/** The document's presenter: its member presents the document. */
+/** The viewer's member is the document's main presenter. */
 const isDocumentPresenter = computed(
   () =>
     proponentMemberId.value !== null &&
     proponentMemberId.value === member.value?.id,
 );
 /**
- * What waits for the presenter (or the Mesa) in the review mode: its
- * answers are found by the presenter's member, not the viewer's.
+ * What waits for the main presenter's answer (document.proponent) in the
+ * review mode, by the document's rule: the review mode's pending steps.
+ * Answers belong to the amendment, so the main presenter and the Mesa,
+ * which answers for it, count the same ones.
  */
 const reviewBacklog = computed(() =>
-  proponentReviewBacklog(list.listed.value, proponentMemberId.value),
+  proponentReviewBacklog(
+    list.listed.value,
+    document.value?.acceptedAmendments ?? "vote",
+  ),
 );
+/** Status of any amendment, so a transactional tells whether it replaced its sources. */
+function amendmentStatusOf(id: string) {
+  return list.byId.value.get(id)?.status;
+}
 const showReviewEntry = computed(
   () =>
     Boolean(document.value?.can.position) &&
@@ -859,7 +871,7 @@ const consolidation = computed(() =>
         base.value,
         consolidationInputs(
           list.amendments.value,
-          includeAccepted.value && !finalText.value,
+          includeAccepted.value && showAcceptedToggle.value,
         ),
       )
     : null,
@@ -867,8 +879,16 @@ const consolidation = computed(() =>
 const compareBlocks = computed(
   () => finalText.value ?? consolidation.value?.blocks ?? [],
 );
+/**
+ * "Incluir las aceptadas" previews the amendments the main presenter accepted
+ * as if approved. Under the "incorporate" rule accepting already approves
+ * them, so there is nothing to add.
+ */
 const showAcceptedToggle = computed(
-  () => !finalText.value && Boolean(document.value?.positionsVisible),
+  () =>
+    !finalText.value &&
+    Boolean(document.value?.positionsVisible) &&
+    document.value?.acceptedAmendments !== "incorporate",
 );
 
 const originalSelected = computed(() => {
@@ -1597,7 +1617,7 @@ const filteredBlockLabel = computed(() =>
                       :label-of="list.labelOf"
                       :relations="list.relationsOf(item.id)"
                       :selected="selectedId === item.id"
-                      :proponent-member-id="proponentMemberId"
+                      :status-of="amendmentStatusOf"
                       show-published
                       @select="selectAmendment"
                     />
@@ -1712,7 +1732,7 @@ const filteredBlockLabel = computed(() =>
                   :label-of="list.labelOf"
                   :relations-of="list.relationsOf"
                   :can-transact="canTransact"
-                  :proponent-member-id="proponentMemberId"
+                  :status-of="amendmentStatusOf"
                   @select="selectAmendment"
                   @transact="startTransactional"
                 />

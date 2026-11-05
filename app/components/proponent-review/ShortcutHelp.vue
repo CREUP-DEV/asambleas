@@ -1,9 +1,8 @@
 <script setup lang="ts">
 /**
  * The review's keyboard shortcuts, in a popover. They act on the amendment
- * on screen and do nothing while a comment is being typed. A, R and T
- * answer amendments only: a transactional is approved or rejected with its
- * buttons (the hint says so, and pressing them there shows a notice).
+ * on screen (a transactional included) and do nothing while a comment is
+ * being typed.
  */
 const { t } = useI18n();
 

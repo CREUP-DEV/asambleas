@@ -1,14 +1,22 @@
 <script setup lang="ts">
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 
+/**
+ * Administration home: one card per section the user may open. Each one
+ * opens by permission (users, roles, members); an Admin sees them all.
+ */
 definePageMeta({
   middleware: ["admin"],
-  adminAccess: ["admin", "member:manage"],
+  adminAccess: [
+    "user:manage_roles",
+    "role:manage_permissions",
+    "member:manage",
+  ],
 });
 
 const { t } = useI18n();
 const localePath = useLocalePath();
-const { isAdmin, can } = useMe();
+const { can } = useMe();
 
 useHead({ title: () => t("admin.title") });
 
@@ -16,7 +24,7 @@ const sections = computed(() =>
   [
     {
       key: "users",
-      visible: isAdmin.value,
+      visible: can(PERMISSION_KEYS.USER_MANAGE_ROLES),
       label: t("admin.users.title"),
       description: t("admin.users.description"),
       icon: "i-lucide-users",
@@ -24,7 +32,7 @@ const sections = computed(() =>
     },
     {
       key: "roles",
-      visible: isAdmin.value,
+      visible: can(PERMISSION_KEYS.ROLE_MANAGE_PERMISSIONS),
       label: t("admin.roles.title"),
       description: t("admin.roles.description"),
       icon: "i-lucide-shield-check",

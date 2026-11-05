@@ -6,6 +6,7 @@ import type {
   MeWorkDto,
 } from "~~/shared/types/api";
 import {
+  homeWorkNews,
   homeWorkReviewPending,
   homeWorkTasks,
   homeWorkUpdates,
@@ -18,16 +19,20 @@ import {
 
 /**
  * Home: what the signed-in user has to do (GET /api/me/work: expected
- * documents, corrections, drafts and, for presenters, the amendments and
- * transactionals to answer), where their documents and amendments stand,
+ * documents, corrections, drafts, the transactionals over their amendments
+ * waiting for their answer and, for main presenters, the amendments to
+ * answer), what others decided about their work ("Novedades": a main
+ * presenter's answer, a main author's answer to a transactional, the
+ * Secretaría or the assembly), where their documents and amendments stand,
  * the Secretaría's pending review per assembly, a live-session banner that
  * leads to the live view and the upcoming assemblies. It leads with the
- * work and stays calm: few cards, one sentence per item.
+ * work and stays calm: few cards, one sentence per item. The admin
+ * shortcuts open by permission, as the admin pages do.
  */
 
 const { t, locale } = useI18n();
 const localePath = useLocalePath();
-const { me, member, isAdmin, can } = useMe();
+const { me, member, can } = useMe();
 
 useHead({ title: () => t("home.title") });
 
@@ -87,6 +92,7 @@ const tasks = computed(() =>
   work.value ? homeWorkTasks(work.value, now.value) : [],
 );
 const updates = computed(() => (work.value ? homeWorkUpdates(work.value) : []));
+const news = computed(() => (work.value ? homeWorkNews(work.value) : []));
 const review = computed(() =>
   work.value ? homeWorkReviewPending(work.value.review) : [],
 );
@@ -140,14 +146,14 @@ const adminLinks = computed(() =>
   [
     {
       key: "users",
-      visible: isAdmin.value,
+      visible: can(PERMISSION_KEYS.USER_MANAGE_ROLES),
       label: t("home.admin.users"),
       icon: "i-lucide-users",
       to: localePath("/admin/usuarios"),
     },
     {
       key: "roles",
-      visible: isAdmin.value,
+      visible: can(PERMISSION_KEYS.ROLE_MANAGE_PERMISSIONS),
       label: t("home.admin.roles"),
       icon: "i-lucide-shield-check",
       to: localePath("/admin/roles"),
@@ -326,6 +332,23 @@ const adminLinks = computed(() =>
                   variant="outline"
                 />
               </template>
+            </section>
+
+            <!-- What others decided about the user's work -->
+            <section
+              v-if="news.length > 0"
+              aria-labelledby="home-news-title"
+              class="flex flex-col gap-3"
+            >
+              <h2
+                id="home-news-title"
+                class="text-highlighted text-lg font-semibold"
+              >
+                {{ t("home.news.title") }}
+              </h2>
+              <UCard>
+                <HomeNewsList :news="news" />
+              </UCard>
             </section>
 
             <!-- Where the rest stands -->

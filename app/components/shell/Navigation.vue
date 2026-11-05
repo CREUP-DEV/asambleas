@@ -59,7 +59,7 @@ const props = defineProps<{ collapsed?: boolean }>();
 const { t } = useI18n();
 const localePath = useLocalePath();
 const route = useRoute();
-const { can, isAdmin } = useMe();
+const { can } = useMe();
 
 const currentAssembly = useState<AssemblyDto | null>(
   "current-assembly",
@@ -243,25 +243,26 @@ const assemblyItems = computed<NavigationMenuItem[]>(() => {
   return items;
 });
 
+/** Each admin page by the permission that opens it (an Admin sees all). */
 const adminItems = computed<NavigationMenuItem[]>(() => {
   const items: NavigationMenuItem[] = [];
-  if (isAdmin.value) {
+  if (can(PERMISSION_KEYS.USER_MANAGE_ROLES)) {
     const users = localePath("/admin/usuarios");
+    items.push({
+      label: t("shell.nav.users"),
+      icon: "i-lucide-users",
+      to: users,
+      active: isWithin(users),
+    });
+  }
+  if (can(PERMISSION_KEYS.ROLE_MANAGE_PERMISSIONS)) {
     const roles = localePath("/admin/roles");
-    items.push(
-      {
-        label: t("shell.nav.users"),
-        icon: "i-lucide-users",
-        to: users,
-        active: isWithin(users),
-      },
-      {
-        label: t("shell.nav.roles"),
-        icon: "i-lucide-shield-check",
-        to: roles,
-        active: isWithin(roles),
-      },
-    );
+    items.push({
+      label: t("shell.nav.roles"),
+      icon: "i-lucide-shield-check",
+      to: roles,
+      active: isWithin(roles),
+    });
   }
   if (can(PERMISSION_KEYS.MEMBER_MANAGE)) {
     const members = localePath("/admin/miembros");

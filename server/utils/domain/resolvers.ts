@@ -9,6 +9,7 @@ import {
 } from "../../db/schema";
 import { parseAssemblySlug } from "~~/shared/utils/slug";
 import type { Actor } from "./actor";
+import { loadCoProponentIds } from "./presenters";
 import { canSeeAssembly, canSeeDocument } from "./visibility";
 
 const CUID_PATTERN = /^[a-z0-9]{20,32}$/;
@@ -36,7 +37,11 @@ export async function resolveAssembly(actor: Actor, param: string | undefined) {
   return assembly;
 }
 
-/** Resolves a document by slug or id within an assembly. */
+/**
+ * Resolves a document by slug or id within an assembly, with its
+ * co-presenters (`coProponentMemberIds`), which see and edit it like its
+ * main presenter.
+ */
 export async function resolveDocument(
   actor: Actor,
   assemblyId: string,
@@ -52,7 +57,7 @@ export async function resolveDocument(
         ),
       })
     : undefined;
-  const document =
+  const row =
     byId ??
     (await db.query.documents.findFirst({
       where: and(
@@ -60,8 +65,13 @@ export async function resolveDocument(
         eq(documents.slug, param),
       ),
     }));
-  if (!document || !canSeeDocument(actor, document))
-    notFound("Documento no encontrado");
+  if (!row) notFound("Documento no encontrado");
+  const document = {
+    ...row,
+    coProponentMemberIds:
+      (await loadCoProponentIds([row.id])).get(row.id) ?? [],
+  };
+  if (!canSeeDocument(actor, document)) notFound("Documento no encontrado");
   return document;
 }
 

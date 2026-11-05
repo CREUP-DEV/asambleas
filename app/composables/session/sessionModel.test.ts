@@ -31,12 +31,21 @@ import {
   sessionValidationIds,
   sessionValidationBreakdown,
   sessionFinalVoteBlockers,
-  isSessionAwaitingProponent,
+  isSessionAwaitingAuthors,
+  isSessionIncorporated,
+  isSessionReopenable,
+  isSessionReplacing,
+  isSessionSuperseded,
+  sessionSupersededSourceIds,
+  sessionMainAuthor,
+  sessionPartySourceIds,
+  sessionReplacedIds,
+  sessionReplacingIds,
+  sessionTransactionalRejectors,
   isSessionAwaitingValidation,
   isSessionDebatable,
   isSessionDecidable,
   isSessionOpen,
-  isSessionProponentRejected,
   isSessionTransactable,
   isSessionSpeakersEvent,
   sessionAmendmentStage,
@@ -84,6 +93,7 @@ const am = (id: string, over: Partial<AmendmentDto>): AmendmentDto => ({
   positionKey: 0,
   changeKinds: [],
   authors: [],
+  mainAuthorId: null,
   // Validated and published by the Secretaría unless a test says otherwise.
   submittedAt: "2026-01-01T00:00:00Z",
   validatedAt: "2026-01-01T00:00:00Z",
@@ -262,14 +272,12 @@ describe("session model", () => {
       expect(sessionValidationBreakdown([a1, a5, v1, v2, v3, hidden])).toEqual({
         toValidate: 2,
         inCorrection: 1,
-        awaitingProponent: 0,
-        proponentRejected: 0,
+        awaitingAuthors: 0,
       });
       expect(sessionValidationBreakdown([a1, hidden])).toEqual({
         toValidate: 0,
         inCorrection: 0,
-        awaitingProponent: 0,
-        proponentRejected: 0,
+        awaitingAuthors: 0,
       });
     });
 
@@ -279,16 +287,19 @@ describe("session model", () => {
       expect(
         sessionFinalVoteBlockers([a1, decided, a4, a5, v1, v2, v3, hidden]),
       ).toEqual({
-        undecided: ["a1", "a4", "h1"],
+        undecided: ["a1", "h1"],
+        superseded: [],
+        // Late: the assembly has not decided to treat it yet.
+        late: ["a4"],
+        awaitingAuthors: [],
         awaitingValidation: ["v2", "v1"],
-        awaitingProponent: [],
-        proponentRejected: [],
       });
       expect(sessionFinalVoteBlockers([decided, a5])).toEqual({
         undecided: [],
+        superseded: [],
+        late: [],
+        awaitingAuthors: [],
         awaitingValidation: [],
-        awaitingProponent: [],
-        proponentRejected: [],
       });
     });
 
@@ -299,9 +310,10 @@ describe("session model", () => {
         sessionFinalVoteBlockers([a1, decided, v1], ["v1", "a2", "x9", "a1"]),
       ).toEqual({
         undecided: ["a1", "x9"],
+        superseded: [],
+        late: [],
+        awaitingAuthors: [],
         awaitingValidation: ["v1"],
-        awaitingProponent: [],
-        proponentRejected: [],
       });
     });
 
@@ -444,27 +456,6 @@ describe("session model", () => {
     );
     expect(validateOps(base, ops4)).toEqual([]);
     expect(ops4.some((o) => o.op === "delete")).toBe(true);
-  });
-
-  it("lists parties", () => {
-    const m = (id: string) => ({
-      id,
-      acronym: id,
-      name: id,
-      kind: "asociado" as const,
-    });
-    const parties = sessionTransactionalParties(
-      [
-        am("x", { authors: [m("A"), m("B")] }),
-        am("y", { authors: [m("B"), m("C")] }),
-      ],
-      m("A"),
-    );
-    expect(parties.map((p) => [p.member.id, p.role])).toEqual([
-      ["A", "author"],
-      ["B", "author"],
-      ["C", "author"],
-    ]);
   });
 
   it("flattens agenda", () => {
@@ -612,28 +603,46 @@ describe("session model", () => {
     ).toBe(false);
   });
 
-  describe("transactionals waiting for the document's presenter", () => {
-    // Proposed by a member over a1 and a2: submitted, admission pending.
+  describe("transactionals and their main authors", () => {
+    const m = (id: string) => ({
+      id,
+      acronym: id.toUpperCase(),
+      name: id,
+      kind: "asociado" as const,
+    });
+    const party = (
+      id: string,
+      decision: "pending" | "accepted" | "rejected",
+    ) => ({
+      member: m(id),
+      role: "author" as const,
+      decision,
+      decidedAt: null,
+    });
+    // Proposed by a member over a1 and a2: submitted, admission pending,
+    // waiting for the main authors before the Secretaría.
     const tp = am("tp", {
       kind: "transactional",
       positionKey: 1.1,
       admission: "pending",
       validatedAt: null,
       publishedAt: null,
-      reviewState: "pending_proponent",
+      reviewState: "pending_authors",
       sourceIds: ["a1", "a2"],
+      acceptances: [party("ceum", "accepted"), party("upv", "pending")],
     });
     const tpDraft = { ...tp, id: "tpd", status: "draft" as const };
 
     it("keeps them out of the debate and of the late group", () => {
-      expect(isSessionAwaitingProponent(tp)).toBe(true);
-      expect(isSessionAwaitingProponent(tpDraft)).toBe(true);
+      expect(isSessionAwaitingAuthors(tp)).toBe(true);
+      expect(isSessionAwaitingAuthors(tpDraft)).toBe(true);
       expect(isSessionAwaitingValidation(tp)).toBe(true);
       expect(isSessionPendingAdmission(tp)).toBe(false);
       expect(isSessionOpen(tp)).toBe(false);
       expect(isSessionAdmissionEligible(tp, "admitted")).toBe(false);
-      // Withdrawn before the presenter answered: closed.
-      expect(isSessionAwaitingProponent({ ...tp, status: "withdrawn" })).toBe(
+      expect(sessionAmendmentStage(tp)).toBe("awaiting_authors");
+      // Withdrawn before the main authors answered: closed.
+      expect(isSessionAwaitingAuthors({ ...tp, status: "withdrawn" })).toBe(
         false,
       );
 
@@ -648,107 +657,387 @@ describe("session model", () => {
       expect(sessionValidationBreakdown([tp, tpDraft, v1])).toEqual({
         toValidate: 1,
         inCorrection: 0,
-        awaitingProponent: 2,
-        proponentRejected: 0,
+        awaitingAuthors: 2,
       });
       expect(sessionFinalVoteBlockers([a1, tp, v1])).toEqual({
         undecided: ["a1"],
+        superseded: [],
+        late: [],
+        awaitingAuthors: ["tp"],
         awaitingValidation: ["v1"],
-        awaitingProponent: ["tp"],
-        proponentRejected: [],
       });
     });
 
-    describe("turned down by the presenter", () => {
-      const party = (
-        id: string,
-        role: "author" | "proponent",
-        decision: "pending" | "accepted" | "rejected",
-      ) => ({
-        member: { id, acronym: id.toUpperCase(), name: id, kind: "asociado" },
-        role,
-        decision,
-        decidedAt: null,
+    it("waits for the answers given in the room to the Mesa transactional", () => {
+      // Drafted live by the Mesa: validated and published at once.
+      const live = am("tl", {
+        kind: "transactional",
+        positionKey: 1.1,
+        sourceIds: ["a1", "a2"],
+        acceptances: [party("ceum", "accepted"), party("upv", "pending")],
       });
-      // The presenter (cea) answered no with its proponent row.
+      expect(sessionAmendmentStage(live)).toBe("acceptances");
+      expect(isSessionDecidable(live)).toBe(false);
+      const blockers = sessionFinalVoteBlockers([a1, live]);
+      expect(blockers.awaitingAuthors).toEqual(["tl"]);
+      expect(
+        sessionFinalVoteReasons({
+          document: { voted: true, status: "published" },
+          amendmentsLoaded: true,
+          totalityReturnId: null,
+          blockers,
+        }),
+      ).toEqual([
+        { key: "undecided", count: 1 },
+        { key: "awaitingAuthors", count: 1 },
+      ]);
+      const accepted = {
+        ...live,
+        acceptances: [party("ceum", "accepted"), party("upv", "accepted")],
+      };
+      expect(sessionAmendmentStage(accepted)).toBe("open");
+      expect(isSessionDecidable(accepted)).toBe(true);
+    });
+
+    it("closes one a main author turns down, whatever its status", () => {
       const rejected = {
         ...tp,
         id: "tr",
-        acceptances: [
-          party("ceum", "author", "accepted"),
-          party("cea", "proponent", "rejected"),
-        ],
-      } as AmendmentDto;
-      // The presenter also wrote a source: its one row says "author".
-      const rejectedAsAuthor = {
-        ...tp,
-        id: "ta",
-        acceptances: [
-          party("ceum", "author", "accepted"),
-          party("cea", "author", "rejected"),
-        ],
-      } as AmendmentDto;
-      // Only a source author said no: still the presenter's turn.
-      const authorSaidNo = {
-        ...tp,
-        id: "tn",
-        acceptances: [
-          party("ceum", "author", "rejected"),
-          party("cea", "proponent", "pending"),
-        ],
-      } as AmendmentDto;
-
-      it("tells them from those still waiting", () => {
-        expect(isSessionProponentRejected(rejected)).toBe(true);
-        expect(isSessionProponentRejected(rejected, "cea")).toBe(true);
-        expect(isSessionProponentRejected(rejectedAsAuthor)).toBe(false);
-        expect(isSessionProponentRejected(rejectedAsAuthor, "cea")).toBe(true);
-        expect(isSessionProponentRejected(authorSaidNo, "cea")).toBe(false);
-        expect(isSessionProponentRejected(tp, "cea")).toBe(false);
-        // Withdrawn since: nothing waits any more.
-        expect(
-          isSessionProponentRejected(
-            { ...rejected, status: "withdrawn", reviewState: null },
-            "cea",
-          ),
-        ).toBe(false);
-        expect(sessionAmendmentStage(rejected)).toBe("proponent_rejected");
-        expect(sessionAmendmentStage(rejectedAsAuthor, "cea")).toBe(
-          "proponent_rejected",
-        );
-        expect(sessionAmendmentStage(authorSaidNo, "cea")).toBe(
-          "awaiting_proponent",
-        );
+        acceptances: [party("ceum", "accepted"), party("upv", "rejected")],
+      };
+      expect(sessionTransactionalRejectors(rejected).map((x) => x.id)).toEqual([
+        "upv",
+      ]);
+      expect(sessionAmendmentStage(rejected)).toBe("turned_down");
+      expect(
+        sessionAmendmentStage({
+          ...rejected,
+          status: "rejected",
+          reviewState: null,
+        }),
+      ).toBe("turned_down");
+      expect(sessionTransactionalRejectors(tp)).toEqual([]);
+      // Only transactionals have parties to turn them down.
+      expect(
+        sessionTransactionalRejectors({
+          ...a1,
+          acceptances: [party("upv", "rejected")],
+        }),
+      ).toEqual([]);
+      // Still presented: it blocks the final vote, but waits for neither
+      // the main authors nor the Secretaría: the Mesa settles it.
+      expect(sessionFinalVoteBlockers([rejected])).toEqual({
+        undecided: ["tr"],
+        superseded: [],
+        late: [],
+        awaitingAuthors: [],
+        awaitingValidation: [],
       });
+      // Closed: nothing waits for it any more.
+      expect(
+        sessionFinalVoteBlockers([
+          { ...rejected, status: "withdrawn", reviewState: null },
+        ]).undecided,
+      ).toEqual([]);
+    });
 
-      it("says the final vote waits for its withdrawal", () => {
-        const list = [a1, tp, rejectedAsAuthor];
-        expect(sessionValidationBreakdown(list, "cea")).toEqual({
-          toValidate: 0,
-          inCorrection: 0,
-          awaitingProponent: 1,
-          proponentRejected: 1,
-        });
-        const blockers = sessionFinalVoteBlockers(list, [], "cea");
-        expect(blockers).toEqual({
-          undecided: ["a1"],
-          awaitingValidation: [],
-          awaitingProponent: ["tp"],
-          proponentRejected: ["ta"],
-        });
-        expect(
-          sessionFinalVoteReasons({
-            document: { voted: true, status: "published" },
-            amendmentsLoaded: true,
-            totalityReturnId: null,
-            blockers,
-          }),
-        ).toEqual([
-          { key: "undecided", count: 1 },
-          { key: "awaitingProponent", count: 1 },
-          { key: "proponentRejected", count: 1 },
-        ]);
+    it("never transacts one its main authors have not all accepted", () => {
+      // Drafted live over a1 and a2: validated, admitted and published at
+      // once, so open, but UPV has not answered. The server refuses it as
+      // the source of another transactional.
+      const live = am("tl", {
+        kind: "transactional",
+        positionKey: 1.1,
+        ops: [rep("b2", 3, 7, "cabaña")],
+        sourceIds: ["a1", "a2"],
+        acceptances: [party("ceum", "accepted"), party("upv", "pending")],
       });
+      expect(isSessionOpen(live)).toBe(true);
+      expect(isSessionTransactable(live)).toBe(false);
+      // It clusters with its own sources, but "Transaccionar N" leaves it
+      // out.
+      const cluster = buildSessionQueue([a1, a2, live]).entries[0];
+      expect(cluster?.type === "cluster" ? cluster.amendments.length : 0).toBe(
+        3,
+      );
+      expect(cluster?.type === "cluster" ? cluster.openIds : null).toEqual([
+        "a1",
+        "a2",
+      ]);
+      const accepted = {
+        ...live,
+        acceptances: [party("ceum", "accepted"), party("upv", "accepted")],
+      };
+      expect(isSessionTransactable(accepted)).toBe(true);
+    });
+
+    it("knows when a transactional replaced what it groups", () => {
+      const live = am("tl", {
+        kind: "transactional",
+        sourceIds: ["a1"],
+        acceptances: [party("ceum", "accepted"), party("upv", "pending")],
+      });
+      // Validated (the Mesa's at once) and accepted by every main author.
+      expect(isSessionReplacing(live)).toBe(false);
+      const all = {
+        ...live,
+        acceptances: [party("ceum", "accepted"), party("upv", "accepted")],
+      };
+      expect(isSessionReplacing(all)).toBe(true);
+      // A member's, accepted but not validated yet: nothing replaced.
+      expect(
+        isSessionReplacing({
+          ...all,
+          validatedAt: null,
+          reviewState: "pending_validation",
+        }),
+      ).toBe(false);
+      expect(isSessionReplacing({ ...all, status: "approved" })).toBe(true);
+      // Decided afterwards: what it replaced stays replaced.
+      for (const status of [
+        "rejected",
+        "withdrawn",
+        "lapsed",
+        "transacted",
+      ] as const) {
+        expect(isSessionReplacing({ ...all, status })).toBe(true);
+      }
+      // Withdrawn before the Secretaría validated it: it replaced nothing.
+      expect(
+        isSessionReplacing({
+          ...all,
+          status: "withdrawn",
+          validatedAt: null,
+          reviewState: null,
+        }),
+      ).toBe(false);
+      expect(isSessionReplacing({ ...all, status: "draft" })).toBe(false);
+      expect(isSessionReplacing(a1)).toBe(false);
+    });
+
+    it("keeps naming what a decided transactional replaced", () => {
+      // T1 replaced s1 in the room, then the assembly voted it down: s1
+      // stays replaced by T1.
+      const s1 = am("s1", { status: "transacted", transactionalIds: ["t1"] });
+      const t1 = am("t1", {
+        kind: "transactional",
+        status: "rejected",
+        sourceIds: ["s1"],
+        acceptances: [party("ceum", "accepted")],
+      });
+      const byId = new Map([s1, t1].map((x) => [x.id, x]));
+      expect(sessionReplacedIds(t1, byId)).toEqual(["s1"]);
+      expect(sessionReplacingIds(s1, byId)).toEqual(["t1"]);
+      // Replaced in turn by T3, which groups T1 and s2.
+      const s2 = am("s2", { status: "transacted", transactionalIds: ["t3"] });
+      const t1Over = {
+        ...t1,
+        status: "transacted" as const,
+        transactionalIds: ["t3"],
+      };
+      const t3 = am("t3", {
+        kind: "transactional",
+        sourceIds: ["t1", "s2"],
+        acceptances: [party("ceum", "accepted"), party("upv", "accepted")],
+      });
+      const chain = new Map([s1, s2, t1Over, t3].map((x) => [x.id, x]));
+      expect(sessionReplacingIds(s1, chain)).toEqual(["t1"]);
+      expect(sessionReplacedIds(t1Over, chain)).toEqual(["s1"]);
+      expect(sessionReplacingIds(t1Over, chain)).toEqual(["t3"]);
+      expect(sessionReplacedIds(t3, chain)).toEqual(["t1", "s2"]);
+      // An open amendment lists only the transactionals still proposed.
+      const open = am("o1", { transactionalIds: ["t1", "t4"] });
+      const t4 = am("t4", {
+        kind: "transactional",
+        sourceIds: ["o1"],
+        acceptances: [party("ceum", "pending")],
+      });
+      expect(
+        sessionReplacingIds(open, new Map([t1, t4].map((x) => [x.id, x]))),
+      ).toEqual(["t4"]);
+    });
+
+    it("reopens only what the server would reopen", () => {
+      const s1 = am("s1", { status: "transacted", transactionalIds: ["t1"] });
+      const s2 = am("s2", { transactionalIds: ["t2"] });
+      // T2 lapsed when T1 replaced s1 first: reopening it brings it back
+      // stuck.
+      const t2 = am("t2", {
+        kind: "transactional",
+        status: "lapsed",
+        sourceIds: ["s1", "s2"],
+        acceptances: [party("ceum", "pending")],
+      });
+      const byId = new Map([s1, s2, t2].map((x) => [x.id, x]));
+      expect(isSessionReopenable(t2, byId)).toBe(false);
+      // Its sources still open: it can come back.
+      expect(
+        isSessionReopenable(
+          { ...t2, sourceIds: ["s2"] },
+          new Map([s2].map((x) => [x.id, x])),
+        ),
+      ).toBe(true);
+      // One that replaced them keeps them replaced.
+      const voted = am("t1", {
+        kind: "transactional",
+        status: "rejected",
+        sourceIds: ["s1"],
+        acceptances: [party("ceum", "accepted")],
+      });
+      expect(isSessionReopenable(voted, byId)).toBe(true);
+      // Turned down by a main author: closed for good.
+      expect(
+        isSessionReopenable(
+          { ...t2, sourceIds: ["s2"], acceptances: [party("upv", "rejected")] },
+          byId,
+        ),
+      ).toBe(false);
+      expect(isSessionReopenable({ ...a1, status: "lapsed" }, byId)).toBe(true);
+      expect(isSessionReopenable(a1, byId)).toBe(false);
+    });
+
+    it("leaves behind a transactional another one got ahead of", () => {
+      // T2 replaced s1 first; T1 over s1 and s2 still waits for UPV and
+      // can never replace s1 now (the server answers 409).
+      const s1 = am("s1", {
+        status: "transacted",
+        positionKey: 1,
+        transactionalIds: ["t1", "t2"],
+      });
+      const s2 = am("s2", { positionKey: 2, transactionalIds: ["t1"] });
+      const t1 = am("t1", {
+        kind: "transactional",
+        positionKey: 1,
+        sourceIds: ["s1", "s2"],
+        acceptances: [party("ceum", "accepted"), party("upv", "pending")],
+      });
+      const t2 = am("t2", {
+        kind: "transactional",
+        positionKey: 1,
+        sourceIds: ["s1"],
+        acceptances: [party("ceum", "accepted")],
+      });
+      const list = [s1, s2, t1, t2];
+      const byId = new Map(list.map((x) => [x.id, x]));
+      expect(sessionSupersededSourceIds(t1, byId)).toEqual(["s1"]);
+      expect(isSessionSuperseded(t1, byId)).toBe(true);
+      expect(isSessionSuperseded(t2, byId)).toBe(false);
+      expect(sessionAmendmentStage(t1, byId)).toBe("superseded");
+      // Without the other amendments, the stage cannot tell.
+      expect(sessionAmendmentStage(t1)).toBe("acceptances");
+      // It does not claim s1, and s1 names T2 only.
+      expect(sessionReplacedIds(t1, byId)).toEqual([]);
+      expect(sessionReplacedIds(t2, byId)).toEqual(["s1"]);
+      expect(sessionReplacingIds(s1, byId)).toEqual(["t2"]);
+      // s2 still has T1 proposed over it.
+      expect(sessionReplacingIds(s2, byId)).toEqual(["t1"]);
+      // Only withdrawing it settles it: not the main authors' to wait for.
+      expect(sessionFinalVoteBlockers(list)).toEqual({
+        undecided: ["t2", "s2"],
+        superseded: ["t1"],
+        late: [],
+        awaitingAuthors: [],
+        awaitingValidation: [],
+      });
+      expect(
+        sessionFinalVoteReasons({
+          document: { voted: true, status: "published" },
+          amendmentsLoaded: true,
+          totalityReturnId: null,
+          blockers: sessionFinalVoteBlockers(list),
+        }).map((reason) => reason.key),
+      ).toEqual(["undecided", "superseded"]);
+      // "Siguiente" never offers it.
+      expect(
+        sessionNextAmendmentId(buildSessionQueue([s1, t1, t2]), "t2"),
+      ).toBe(null);
+      // A member's one, still waiting for the Secretaría: the same.
+      const proposed = {
+        ...t1,
+        admission: "pending" as const,
+        validatedAt: null,
+        publishedAt: null,
+        reviewState: "pending_validation" as const,
+        acceptances: [party("ceum", "accepted"), party("upv", "accepted")],
+      };
+      const withProposed = new Map(byId).set("t1", proposed);
+      expect(sessionAmendmentStage(proposed, withProposed)).toBe("superseded");
+      // Withdrawn or turned down: closed, nothing to settle.
+      expect(isSessionSuperseded({ ...t1, status: "withdrawn" }, byId)).toBe(
+        false,
+      );
+      expect(
+        isSessionSuperseded(
+          { ...t1, acceptances: [party("upv", "rejected")] },
+          byId,
+        ),
+      ).toBe(false);
+    });
+
+    it("tells what a transactional replaced and what replaced an amendment", () => {
+      const s1 = am("s1", { status: "transacted", transactionalIds: ["t2"] });
+      const s2 = am("s2", { transactionalIds: ["tx", "t2"] });
+      const t2 = am("t2", {
+        kind: "transactional",
+        sourceIds: ["s1", "s2", "gone"],
+        acceptances: [party("ceum", "accepted")],
+      });
+      const tx = am("tx", {
+        kind: "transactional",
+        status: "rejected",
+        sourceIds: ["s2"],
+        acceptances: [party("upv", "rejected")],
+      });
+      const byId = new Map([s1, s2, t2, tx].map((x) => [x.id, x]));
+      expect(sessionReplacedIds(t2, byId)).toEqual(["s1"]);
+      // The one turned down never replaces anything.
+      expect(sessionReplacingIds(s2, byId)).toEqual(["t2"]);
+      expect(sessionReplacingIds(s1, byId)).toEqual(["t2"]);
+      // Not loaded: kept, it may be the one.
+      expect(
+        sessionReplacingIds({ ...s1, transactionalIds: ["zz"] }, byId),
+      ).toEqual(["zz"]);
+    });
+  });
+
+  describe("main authors", () => {
+    const m = (id: string) => ({
+      id,
+      acronym: id,
+      name: id,
+      kind: "asociado" as const,
+    });
+
+    it("names the main author", () => {
+      expect(sessionMainAuthor(am("x", {}))).toBe(null);
+      expect(
+        sessionMainAuthor(am("x", { authors: [m("A"), m("B")] }))?.id,
+      ).toBe("A");
+      expect(
+        sessionMainAuthor(
+          am("x", { authors: [m("A"), m("B")], mainAuthorId: "B" }),
+        )?.id,
+      ).toBe("B");
+      // A stale id falls back to the first author.
+      expect(
+        sessionMainAuthor(am("x", { authors: [m("A")], mainAuthorId: "Z" }))
+          ?.id,
+      ).toBe("A");
+    });
+
+    it("lists the main author of each source as a party", () => {
+      const x = am("x", { authors: [m("A"), m("B")] });
+      const y = am("y", { authors: [m("B"), m("C")], mainAuthorId: "C" });
+      const z = am("z", { authors: [m("A")] });
+      const parties = sessionTransactionalParties([x, y, z]);
+      expect(parties.map((p) => [p.member.id, p.sourceIds])).toEqual([
+        ["A", ["x", "z"]],
+        ["C", ["y"]],
+      ]);
+      const t = am("t", { kind: "transactional", sourceIds: ["x", "y", "z"] });
+      const byId = new Map([x, y, z].map((a) => [a.id, a]));
+      expect(sessionPartySourceIds(t, "A", byId)).toEqual(["x", "z"]);
+      expect(sessionPartySourceIds(t, "B", byId)).toEqual([]);
     });
   });
 
@@ -773,9 +1062,25 @@ describe("session model", () => {
       ).toBe("acceptances");
       expect(stage({ status: "approved" })).toBe("approved");
       expect(stage({ status: "transacted" })).toBe("transacted");
-      expect(stage({ reviewState: "pending_proponent" })).toBe(
-        "awaiting_proponent",
+      expect(stage({ reviewState: "pending_authors" })).toBe(
+        "awaiting_authors",
       );
+      // Accepted by the main presenter of a document that incorporates
+      // accepted amendments: in the text without a vote.
+      expect(stage({ status: "approved", approvalMethod: "proponent" })).toBe(
+        "incorporated",
+      );
+      expect(stage({ status: "approved", approvalMethod: "vote" })).toBe(
+        "approved",
+      );
+      expect(
+        isSessionIncorporated(
+          am("i", { status: "approved", approvalMethod: "proponent" }),
+        ),
+      ).toBe(true);
+      expect(
+        isSessionIncorporated(am("i", { approvalMethod: "proponent" })),
+      ).toBe(false);
       expect(
         stage({ admission: "pending", reviewState: "pending_validation" }),
       ).toBe("awaiting_validation");

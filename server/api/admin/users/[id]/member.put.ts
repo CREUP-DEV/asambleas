@@ -3,7 +3,12 @@ import { eq } from "drizzle-orm";
 import { db } from "../../../../db";
 import { auditLog, members, users } from "../../../../db/schema";
 import { loadAdminUser } from "../../../../utils/auth/adminUsers";
-import { requireAdmin } from "../../../../utils/auth/rbac";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import {
+  ADMIN_GRANT_MESSAGES,
+  adminGrantViolation,
+  requireAnyPermission,
+} from "../../../../utils/auth/rbac";
 import { validateAuthId } from "../../../../utils/validation";
 import { userMemberLinkBodySchema } from "~~/shared/utils/schemas/member";
 
@@ -14,12 +19,28 @@ import { userMemberLinkBodySchema } from "~~/shared/utils/schemas/member";
  * whose initials are the person's rather than the area's. A CEA account
  * keeps a manual link until its intranet initials change; an Asociado or
  * Sectorial account with initials is linked by them again at its next
- * sign-in (docs/api.md, "Linking accounts to members"). Admin only.
+ * sign-in (docs/api.md, "Linking accounts to members"). Needs
+ * user:manage_roles; only an Admin changes the member of its own account
+ * (403 otherwise), since acting for a member is acting with its rights.
  * Returns the row as the admin users list shows it.
  */
 export default defineEventHandler(async (event) => {
-  const session = await requireAdmin(event);
+  const { session, admin, user } = await requireAnyPermission(event, [
+    PERMISSION_KEYS.USER_MANAGE_ROLES,
+  ]);
   const userId = validateAuthId(getRouterParam(event, "id"));
+  const violation = adminGrantViolation({
+    admin,
+    callerPermissions: [],
+    ownTarget: userId === user.id,
+    target: "account",
+  });
+  if (violation) {
+    throw createError({
+      statusCode: 403,
+      message: ADMIN_GRANT_MESSAGES[violation],
+    });
+  }
 
   const parsed = userMemberLinkBodySchema.safeParse(await readBody(event));
   if (!parsed.success) {

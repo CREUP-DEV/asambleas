@@ -1,22 +1,27 @@
 import { describe, expect, it } from "vitest";
 import {
+  acceptedRulePlan,
   admissionNeedsValidation,
   agendaPositions,
   admissionOnValidation,
   amendmentReviewState,
+  authorsApproval,
   awaitsAssemblyDecision,
-  awaitsProponent,
-  awaitsProponentAnswer,
+  awaitsAuthors,
   awaitsPublication,
   awaitsValidation,
-  countProponentWork,
+  countPositionsPending,
   hasPendingReview,
   isAmendmentPublishable,
   isDocumentOverdue,
+  mainAuthorOf,
   numberingToKeep,
-  partyRole,
-  proponentApproval,
+  pickMainAuthor,
+  positionBlocker,
+  positionEffect,
+  replacesSources,
   submissionLate,
+  transactionalReopenBlocker,
   transactionalSourceReason,
   transactionalSourcesMessage,
   unopenSourceReason,
@@ -174,112 +179,138 @@ describe("awaitsValidation", () => {
     expect(awaitsValidation(row({ status: "withdrawn" }))).toBe(false);
   });
 
-  it("waits for the presenter's approval of a transactional", () => {
-    expect(awaitsValidation(row({ proponentApproval: "pending" }))).toBe(false);
-    expect(awaitsValidation(row({ proponentApproval: "rejected" }))).toBe(
-      false,
-    );
-    expect(awaitsValidation(row({ proponentApproval: "accepted" }))).toBe(true);
-    expect(awaitsValidation(row({ proponentApproval: null }))).toBe(true);
+  it("waits for the main authors of a transactional", () => {
+    expect(awaitsValidation(row({ authorsApproval: "pending" }))).toBe(false);
+    expect(awaitsValidation(row({ authorsApproval: "rejected" }))).toBe(false);
+    expect(awaitsValidation(row({ authorsApproval: "accepted" }))).toBe(true);
+    expect(awaitsValidation(row({ authorsApproval: null }))).toBe(true);
   });
 });
 
-describe("transactionals proposed by a member", () => {
-  const acceptances = [
-    { memberId: "author", decision: "accepted" as const },
-    { memberId: "presenter", decision: "pending" as const },
-  ];
+describe("transactionals and their main authors", () => {
+  const party = (
+    decision: "pending" | "accepted" | "rejected",
+    role: "author" | "proponent" = "author",
+  ) => ({ role, decision });
 
-  it("reads the presenter's answer from its acceptance row", () => {
+  it("waits until every main author accepted", () => {
     expect(
-      proponentApproval({ kind: "transactional", acceptances }, "presenter"),
+      authorsApproval({
+        kind: "transactional",
+        acceptances: [party("accepted"), party("pending")],
+      }),
     ).toBe("pending");
     expect(
-      proponentApproval({ kind: "transactional", acceptances }, "author"),
+      authorsApproval({
+        kind: "transactional",
+        acceptances: [party("accepted"), party("accepted")],
+      }),
     ).toBe("accepted");
   });
 
-  it("needs no approval for other kinds, without a presenter or a party row", () => {
+  it("is rejected as soon as one main author rejects it", () => {
     expect(
-      proponentApproval({ kind: "partial", acceptances }, "presenter"),
-    ).toBeNull();
+      authorsApproval({
+        kind: "transactional",
+        acceptances: [party("pending"), party("rejected")],
+      }),
+    ).toBe("rejected");
+  });
+
+  it("ignores the presenter rows of the earlier rule", () => {
     expect(
-      proponentApproval({ kind: "transactional", acceptances }, null),
-    ).toBeNull();
+      authorsApproval({
+        kind: "transactional",
+        acceptances: [party("accepted"), party("pending", "proponent")],
+      }),
+    ).toBe("accepted");
+  });
+
+  it("needs nobody's answer without parties, and none for other kinds", () => {
+    expect(authorsApproval({ kind: "transactional", acceptances: [] })).toBe(
+      "accepted",
+    );
     expect(
-      proponentApproval({ kind: "transactional", acceptances }, "other"),
+      authorsApproval({ kind: "partial", acceptances: [party("pending")] }),
     ).toBeNull();
   });
 
-  it("waits for the presenter before the Secretaría", () => {
-    expect(awaitsProponent(row({ proponentApproval: "pending" }))).toBe(true);
-    expect(amendmentReviewState(row({ proponentApproval: "pending" }))).toBe(
-      "pending_proponent",
+  it("waits for the main authors before the Secretaría", () => {
+    expect(awaitsAuthors(row({ authorsApproval: "pending" }))).toBe(true);
+    expect(amendmentReviewState(row({ authorsApproval: "pending" }))).toBe(
+      "pending_authors",
     );
-    expect(amendmentReviewState(row({ proponentApproval: "accepted" }))).toBe(
+    expect(amendmentReviewState(row({ authorsApproval: "accepted" }))).toBe(
       "pending_validation",
-    );
-  });
-
-  it("stays waiting for the presenter when it was rejected", () => {
-    expect(amendmentReviewState(row({ proponentApproval: "rejected" }))).toBe(
-      "pending_proponent",
     );
   });
 
   it("is past the gate once validated (the Mesa presents it validated)", () => {
     expect(
-      awaitsProponent(row({ validatedAt: at, proponentApproval: "pending" })),
+      awaitsAuthors(row({ validatedAt: at, authorsApproval: "pending" })),
     ).toBe(false);
     expect(
       amendmentReviewState(
-        row({
-          validatedAt: at,
-          publishedAt: at,
-          proponentApproval: "pending",
-        }),
+        row({ validatedAt: at, publishedAt: at, authorsApproval: "pending" }),
       ),
     ).toBe("published");
   });
 
-  it("does not wait once withdrawn", () => {
+  it("waits for nothing once a rejection closed it", () => {
     expect(
       amendmentReviewState(
-        row({ status: "withdrawn", proponentApproval: "rejected" }),
+        row({ status: "withdrawn", authorsApproval: "rejected" }),
       ),
     ).toBeNull();
   });
 
-  it("shows the Secretaría only the ones the presenter has not answered", () => {
-    expect(awaitsProponentAnswer(row({ proponentApproval: "pending" }))).toBe(
-      true,
-    );
-    expect(awaitsProponentAnswer(row({ proponentApproval: "rejected" }))).toBe(
-      false,
-    );
-    expect(awaitsProponentAnswer(row({ proponentApproval: "accepted" }))).toBe(
+  it("replaces its sources once validated and accepted, whichever comes last", () => {
+    const transactional = {
+      kind: "transactional" as const,
+      status: "submitted" as const,
+      validatedAt: at,
+      authorsApproval: "accepted" as const,
+    };
+    expect(replacesSources(transactional)).toBe(true);
+    expect(replacesSources({ ...transactional, validatedAt: null })).toBe(
       false,
     );
     expect(
-      awaitsProponentAnswer(
-        row({ status: "withdrawn", proponentApproval: "pending" }),
-      ),
+      replacesSources({ ...transactional, authorsApproval: "pending" }),
+    ).toBe(false);
+    expect(replacesSources({ ...transactional, status: "withdrawn" })).toBe(
+      false,
+    );
+    expect(
+      replacesSources({
+        ...transactional,
+        kind: "partial",
+        authorsApproval: null,
+      }),
     ).toBe(false);
   });
+});
 
-  it("names the presenter's row as the proponent, also when it wrote a source", () => {
-    expect(
-      partyRole({ memberId: "presenter", role: "author" }, "presenter"),
-    ).toBe("proponent");
-    expect(
-      partyRole({ memberId: "presenter", role: "proponent" }, "presenter"),
-    ).toBe("proponent");
-    expect(partyRole({ memberId: "author", role: "author" }, "presenter")).toBe(
-      "author",
-    );
-    expect(partyRole({ memberId: "author", role: "author" }, null)).toBe(
-      "author",
-    );
+describe("main author", () => {
+  it("is the presenting member while it is still an author", () => {
+    expect(mainAuthorOf(["a", "b"], "b")).toBe("b");
+    expect(mainAuthorOf(["a"], "gone")).toBe("a");
+    expect(mainAuthorOf(["c", "b"], undefined)).toBe("b");
+    expect(mainAuthorOf([], "a")).toBeNull();
+  });
+
+  it("must be one of the authors when named", () => {
+    expect(pickMainAuthor(["a", "b"], "b")).toBe("b");
+    expect(pickMainAuthor(["a", "b"], "c")).toBe("not_author");
+    expect(pickMainAuthor([], "c")).toBe("not_author");
+  });
+
+  it("is required with several authors, unless the stored one stays", () => {
+    expect(pickMainAuthor(["a"], undefined)).toBe("a");
+    expect(pickMainAuthor(["a", "b"], null)).toBe("required");
+    expect(pickMainAuthor(["a", "b"], undefined, "a")).toBe("a");
+    expect(pickMainAuthor(["a", "b"], undefined, "gone")).toBe("required");
+    expect(pickMainAuthor([], undefined)).toBeNull();
   });
 });
 
@@ -356,88 +387,274 @@ describe("sources of a new transactional", () => {
       UNOPEN_SOURCE_MESSAGES.decided,
     );
   });
+
+  it("refuses a transactional that has not replaced what it groups", () => {
+    expect(
+      transactionalSourceReason(source({ authorsApproval: "pending" })),
+    ).toBe("awaits_authors");
+    expect(
+      transactionalSourceReason(source({ authorsApproval: "accepted" })),
+    ).toBeNull();
+    expect(
+      transactionalSourcesMessage([
+        source({ publishedAt: null }),
+        source({ authorsApproval: "pending" }),
+      ]),
+    ).toBe(TRANSACTIONAL_SOURCE_MESSAGES.awaits_authors);
+  });
 });
 
-describe("countProponentWork", () => {
+describe("position of the main presenter", () => {
+  const answerable = {
+    status: "submitted" as const,
+    admission: "admitted" as const,
+    validatedAt: at,
+    approvalMethod: null,
+  };
+
+  it("waits for the Secretaría and, when late, for the assembly", () => {
+    expect(positionBlocker(answerable, "vote")).toBeNull();
+    expect(
+      positionBlocker(
+        { ...answerable, admission: "pending", validatedAt: null },
+        "vote",
+      ),
+    ).toBe("not_validated");
+    expect(
+      positionBlocker({ ...answerable, admission: "pending" }, "vote"),
+    ).toBe("not_admitted");
+  });
+
+  it("waits for the main authors of a transactional", () => {
+    expect(
+      positionBlocker({ ...answerable, authorsApproval: "pending" }, "vote"),
+    ).toBe("awaits_authors");
+    expect(
+      positionBlocker({ ...answerable, authorsApproval: "accepted" }, "vote"),
+    ).toBeNull();
+  });
+
+  it("refuses decided amendments, except one its acceptance incorporated", () => {
+    const incorporated = {
+      ...answerable,
+      status: "approved" as const,
+      approvalMethod: "proponent" as const,
+    };
+    expect(positionBlocker(incorporated, "incorporate")).toBeNull();
+    expect(positionBlocker(incorporated, "vote")).toBe("decided");
+    expect(
+      positionBlocker(
+        { ...incorporated, approvalMethod: "vote" as const },
+        "incorporate",
+      ),
+    ).toBe("decided");
+  });
+
+  it("incorporates an accepted amendment and reopens it when the answer changes", () => {
+    const submitted = { status: "submitted" as const, approvalMethod: null };
+    const incorporated = {
+      status: "approved" as const,
+      approvalMethod: "proponent" as const,
+    };
+    expect(positionEffect(submitted, "accept", "incorporate")).toBe("approve");
+    expect(positionEffect(submitted, "reject", "incorporate")).toBeNull();
+    expect(positionEffect(incorporated, "reject", "incorporate")).toBe(
+      "reopen",
+    );
+    expect(positionEffect(incorporated, "pending", "incorporate")).toBe(
+      "reopen",
+    );
+    expect(positionEffect(incorporated, "accept", "incorporate")).toBeNull();
+  });
+
+  it("decides nothing when accepted amendments are voted", () => {
+    expect(
+      positionEffect(
+        { status: "submitted", approvalMethod: null },
+        "accept",
+        "vote",
+      ),
+    ).toBeNull();
+  });
+});
+
+describe("countPositionsPending", () => {
   const amendment = (
-    overrides: Partial<Parameters<typeof countProponentWork>[0][number]> = {},
-  ): Parameters<typeof countProponentWork>[0][number] => ({
-    kind: "partial",
+    overrides: Partial<
+      Parameters<typeof countPositionsPending>[0][number]
+    > = {},
+  ): Parameters<typeof countPositionsPending>[0][number] => ({
     status: "submitted",
+    admission: "admitted",
     validatedAt: at,
     publishedAt: at,
+    approvalMethod: null,
+    authorsApproval: null,
     position: "pending",
-    acceptances: [],
     ...overrides,
   });
 
-  it("counts undecided amendments without a position", () => {
+  it("counts undecided amendments without an answer", () => {
     expect(
-      countProponentWork(
+      countPositionsPending(
         [
           amendment(),
           amendment({ position: null }),
           amendment({ position: "accept" }),
           amendment({ status: "approved" }),
         ],
-        "presenter",
+        "vote",
       ),
-    ).toEqual({ positionsPending: 2, transactionalsToApprove: 0 });
+    ).toBe(2);
   });
 
-  it("waits for the Secretaría before asking the presenter", () => {
+  it("counts only what the main presenter can answer now", () => {
     expect(
-      countProponentWork(
+      countPositionsPending(
         [
           // pending_validation: not the presenter's turn yet.
-          amendment({ validatedAt: null, publishedAt: null }),
-          // Validated and kept private: the presenter can answer it.
-          amendment({ publishedAt: null }),
-          // Admitted late by the Mesa, published without a validation.
-          amendment({ validatedAt: null }),
-        ],
-        "presenter",
-      ),
-    ).toEqual({ positionsPending: 2, transactionalsToApprove: 0 });
-  });
-
-  it("asks the presenter about transactionals before the Secretaría", () => {
-    expect(
-      countProponentWork(
-        [
           amendment({
-            kind: "transactional",
+            admission: "pending",
             validatedAt: null,
             publishedAt: null,
-            acceptances: [{ memberId: "presenter", decision: "pending" }],
           }),
+          // Late, waiting for the assembly's decision.
+          amendment({ admission: "pending" }),
+          // A transactional its main authors have not accepted yet.
+          amendment({ authorsApproval: "pending" }),
+          // A transactional that replaced its sources.
+          amendment({ authorsApproval: "accepted" }),
+          // Validated and kept private.
+          amendment({ publishedAt: null }),
         ],
-        "presenter",
+        "vote",
       ),
-    ).toEqual({ positionsPending: 0, transactionalsToApprove: 1 });
+    ).toBe(2);
   });
 
-  it("counts transactionals the presenter has not answered", () => {
-    const transactional = (decision: "pending" | "accepted" | "rejected") =>
-      amendment({
-        kind: "transactional",
-        acceptances: [{ memberId: "presenter", decision }],
-      });
+  it("waits for publication when an answer can incorporate the amendment", () => {
     expect(
-      countProponentWork(
-        [
-          transactional("pending"),
-          transactional("accepted"),
-          transactional("rejected"),
-          amendment({
-            kind: "transactional",
-            status: "draft",
-            acceptances: [{ memberId: "presenter", decision: "pending" }],
-          }),
-        ],
-        "presenter",
+      countPositionsPending(
+        [amendment(), amendment({ publishedAt: null })],
+        "incorporate",
       ),
-    ).toEqual({ positionsPending: 0, transactionalsToApprove: 1 });
+    ).toBe(1);
+  });
+});
+
+describe("acceptedRulePlan", () => {
+  const answered = {
+    status: "submitted" as const,
+    admission: "admitted" as const,
+    validatedAt: at,
+    publishedAt: at,
+    approvalMethod: null,
+    authorsApproval: null,
+    position: "accept" as const,
+  };
+
+  it("incorporates what the main presenter already accepted", () => {
+    expect(
+      acceptedRulePlan(
+        [
+          { ...answered, id: "a" },
+          { ...answered, id: "b", position: "reject" },
+          { ...answered, id: "c", position: null },
+          { ...answered, id: "d", publishedAt: null },
+          { ...answered, id: "e", admission: "pending" },
+          { ...answered, id: "f", authorsApproval: "pending" },
+          { ...answered, id: "g", authorsApproval: "accepted" },
+          { ...answered, id: "h", keepsSources: true },
+          { ...answered, id: "i", status: "rejected" },
+        ],
+        "incorporate",
+      ),
+    ).toEqual({ approve: ["a", "g"], reopen: [] });
+  });
+
+  it("sends what the answer incorporated back to the vote", () => {
+    const incorporated = {
+      ...answered,
+      status: "approved" as const,
+      approvalMethod: "proponent" as const,
+    };
+    expect(
+      acceptedRulePlan(
+        [
+          { ...incorporated, id: "a" },
+          { ...incorporated, id: "b", approvalMethod: "vote" },
+          { ...answered, id: "c" },
+        ],
+        "vote",
+      ),
+    ).toEqual({ approve: [], reopen: ["a"] });
+  });
+});
+
+describe("transactionalReopenBlocker", () => {
+  const open = {
+    status: "submitted" as const,
+    admission: "admitted" as const,
+    validatedAt: at,
+    decidedAt: null,
+  };
+  const transacted = { ...open, status: "transacted" as const, decidedAt: at };
+  const transactional = {
+    kind: "transactional" as const,
+    validatedAt: at,
+    authorsApproval: "accepted" as const,
+    sources: [transacted],
+  };
+
+  it("reopens one that replaced what it groups", () => {
+    expect(transactionalReopenBlocker(transactional)).toBeNull();
+  });
+
+  it("keeps closed one a main author rejected", () => {
+    expect(
+      transactionalReopenBlocker({
+        ...transactional,
+        authorsApproval: "rejected",
+        sources: [open],
+      }),
+    ).toBe("rejected_by_author");
+  });
+
+  it("keeps closed one that never replaced sources no longer open", () => {
+    // The Mesa's, validated at once, closed when another one replaced them.
+    expect(
+      transactionalReopenBlocker({
+        ...transactional,
+        authorsApproval: "pending",
+        sources: [open, transacted],
+      }),
+    ).toBe("sources_closed");
+    // A member's, still with the Secretaría.
+    expect(
+      transactionalReopenBlocker({
+        ...transactional,
+        validatedAt: null,
+        sources: [transacted],
+      }),
+    ).toBe("sources_closed");
+    expect(
+      transactionalReopenBlocker({
+        ...transactional,
+        authorsApproval: "pending",
+        sources: [open],
+      }),
+    ).toBeNull();
+  });
+
+  it("does not apply to other kinds", () => {
+    expect(
+      transactionalReopenBlocker({
+        kind: "partial",
+        validatedAt: null,
+        authorsApproval: null,
+        sources: [],
+      }),
+    ).toBeNull();
   });
 });
 

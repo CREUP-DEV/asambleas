@@ -1,36 +1,55 @@
 <script setup lang="ts">
 import type { RouteLocationRaw } from "vue-router";
-import type { AcceptanceDecision } from "~~/shared/constants/domain";
 import type { AmendmentDto } from "~~/shared/types/api";
 import { transactionalSourceEligible } from "~/composables/amendment/transactional";
 import {
-  acceptanceTarget,
   commentUnsaved,
+  emptyReviewReason,
   fallbackStep,
   firstPendingId,
+  goneKey,
   initialStep,
+  isPositionReviewable,
   positionAnswer,
+  positionBody,
+  positionConflict,
   positionCounts,
+  positionWaitCounts,
+  presenterAnswerItems,
   proponentReviewItems,
   proponentReviewProgress,
   recordedPositionCounts,
   reviewSequence,
+  savedKey,
   stepAfter,
   stepBefore,
   stepCounter,
   stepIndex,
-  transactionalAnswerCounts,
+  wasReopened,
   type ProponentAnswer,
   type ProponentReviewItem,
 } from "~/components/proponent-review/-review";
 
 /**
- * The presenter's review mode (inside the assembly hub), for the member
- * that presents the document and for the Mesa answering for it: one
- * amendment at a time, with the change in large type, its justification and
- * three choices (Aceptar, Rechazar, Transaccionar) with an optional comment.
- * Pressing a choice saves it and moves on. Transactionals waiting for the
- * presenter's approval come first, with "Aprobar" and "Rechazar".
+ * The main presenter's review mode (inside the assembly hub), for the
+ * member that presents the document as main presenter and for the Mesa
+ * answering for it: one amendment at a time, with the change in large
+ * type, its justification and three choices (Aceptar, Rechazar,
+ * Transaccionar) with an optional comment. Pressing a choice saves it and
+ * moves on. Only amendments the Secretaría validated and, when late, the
+ * assembly admitted are answered (positionWaitReason: under the
+ * "incorporate" rule they must be published too); a transactional joins
+ * them once it has replaced the amendments it groups (its main authors
+ * accepted it, which is their job, not the presenter's). What is still on
+ * its way shows under the progress line, one sentence per reason.
+ *
+ * "Aceptar" says what it means under the document's rule: incorporated
+ * into the text without a vote, or voted by the assembly. An incorporated
+ * amendment stays in the review, and changing its answer before the final
+ * vote takes it out of the text again.
+ *
+ * Co-presenters do not answer: they get a read-only list of the main
+ * presenter's answers (who, what, when), as the Mesa's answers for it.
  *
  * A progress line counts the answered amendments; "Solo las que faltan"
  * hides the answered ones (the one on screen stays until the user moves
@@ -43,16 +62,14 @@ import {
  * asks first. After "Transaccionar", a link opens the transactional
  * composer of the workspace on that amendment (`?transaccional=<id>`).
  *
- * The presenter's answer to a transactional is found by member
- * (`document.proponent`), as the server does: when the presenter also
- * wrote one of the amendments it groups, its row has the role "author".
+ * Each answer sends the position it saw (`positionUpdatedAt`): when someone
+ * else answered meanwhile, the server refuses it, the list is refreshed and
+ * the step says so, keeping the comment typed.
  *
  * Everything stays fresh through the hub's live stream (useDocument and
  * useDocumentAmendments subscribe to it). `?enmienda=<id>` opens on that
  * amendment.
  */
-
-type Decision = Exclude<AcceptanceDecision, "pending">;
 
 interface Focusable {
   focus: () => void;
@@ -76,16 +93,7 @@ const {
   refreshAll,
 } = workspace;
 
-useHead({
-  title: () =>
-    document.value
-      ? t("proponentReview.pageTitle", { title: document.value.title })
-      : t("proponentReview.title"),
-});
-
 const actorMemberId = computed(() => member.value?.id ?? null);
-/** The document's presenter: whose answers these are. */
-const proponentMemberId = computed(() => document.value?.proponent?.id ?? null);
 
 // Access ------------------------------------------------------------------------
 
@@ -94,33 +102,59 @@ const isPublished = computed(
 );
 /** Voted: answers can no longer change (the server refuses them). */
 const readOnly = computed(() => Boolean(document.value?.finalVote));
-/** Its presenter's member, or the Mesa: whoever answers its amendments. */
+/** Withdrawn or postponed: nothing to answer any more. */
+const closed = computed(() => document.value?.status !== "published");
+
+/** The actor's member presents the document as main presenter. */
+const isMainPresenter = computed(
+  () =>
+    actorMemberId.value !== null &&
+    document.value?.proponent?.id === actorMemberId.value,
+);
+
+/**
+ * Whoever answers the amendments: the main presenter's member, or the Mesa.
+ * The main presenter keeps the page when the document is withdrawn (it is
+ * then told so), hence the member check besides `can.position`.
+ */
 const mayReview = computed(() => {
   const doc = document.value;
   if (!doc) return false;
-  if (doc.can.moderate || doc.can.position) return true;
-  return (
-    actorMemberId.value !== null && doc.proponent?.id === actorMemberId.value
-  );
+  return doc.can.position || doc.can.moderate || isMainPresenter.value;
 });
 
-/** The Mesa answers for the presenter's member when it is not that member. */
+/** Presents the document with the main presenter, who answers for both. */
+const readsAnswers = computed(() => {
+  const doc = document.value;
+  const id = actorMemberId.value;
+  if (!doc || id === null || mayReview.value) return false;
+  return doc.coProponents.some((coProponent) => coProponent.id === id);
+});
+
+/** The Mesa answers for the main presenter's member when it is not that member. */
 const onBehalfOf = computed(() => {
   const proponent = document.value?.proponent ?? null;
   if (!proponent || proponent.id === actorMemberId.value) return null;
   return proponent;
 });
 
-/** Who reads the presenter's answers, from the assembly's policy. */
+/** Who reads the answers, from the assembly's policy. */
 const visibilityNote = computed(() =>
   t(
     `proponentReview.visibility.${assembly.value?.settings.positionVisibility ?? "session"}`,
   ),
 );
 
+/** What an amendment the main presenter accepts becomes. */
+const acceptedRule = computed(
+  () => document.value?.acceptedAmendments ?? "vote",
+);
+
 /**
  * The actor may propose a transactional from the workspace: the same rule
- * as its "Proponer una transaccional" (canTransact in the document page).
+ * as its "Proponer una transaccional" (canTransact in the document page),
+ * where the Mesa, a member that may amend and the main presenter's member
+ * (a party to what it negotiates, as on the server) qualify.
  */
 const canProposeTransactional = computed(() => {
   const doc = document.value;
@@ -133,13 +167,16 @@ const canProposeTransactional = computed(() => {
   ) {
     return false;
   }
-  return doc.can.moderate || (doc.can.amend && Boolean(member.value));
+  return (
+    doc.can.moderate ||
+    (Boolean(member.value) && (doc.can.amend || isMainPresenter.value))
+  );
 });
 
 /**
  * Where "Proponer la transaccional" goes for an amendment: the workspace's
- * composer on it. Null when it cannot be combined (the composer would drop
- * it) or the actor cannot propose one.
+ * composer with it preselected (`?transaccional=<id>`). Null when it cannot
+ * be combined (the composer would drop it) or the actor cannot propose one.
  */
 function transactLink(amendment: AmendmentDto): RouteLocationRaw | null {
   if (!canProposeTransactional.value) return null;
@@ -147,23 +184,58 @@ function transactLink(amendment: AmendmentDto): RouteLocationRaw | null {
   return { path: documentPath(), query: { transaccional: amendment.id } };
 }
 
+/** An amendment in the document workspace. */
+function amendmentLink(id: string): RouteLocationRaw {
+  return { path: documentPath(), query: { enmienda: id } };
+}
+
 // Steps -------------------------------------------------------------------------
 
 const items = computed<ProponentReviewItem[]>(() =>
   readOnly.value
     ? []
-    : proponentReviewItems(
-        list.amendments.value,
-        actorMemberId.value,
-        proponentMemberId.value,
-      ),
+    : proponentReviewItems(list.amendments.value, acceptedRule.value),
 );
 const progress = computed(() => proponentReviewProgress(items.value));
+/**
+ * Amendments still on their way to the main presenter: late ones the
+ * assembly has not decided to treat, transactionals their main authors have
+ * not accepted and, for the Mesa, those still with the Secretaría.
+ */
+const waiting = computed(() =>
+  positionWaitCounts(list.amendments.value, acceptedRule.value),
+);
+/**
+ * The sentence under "No hay enmiendas que responder": some on their way
+ * (listed under it), all decided, or none presented yet.
+ */
+const emptyDescription = computed(() => {
+  switch (emptyReviewReason(list.amendments.value, acceptedRule.value)) {
+    case "waiting":
+      return t("proponentReview.empty.waitingDescription");
+    case "allDecided":
+      return t("proponentReview.empty.allDecided");
+    default:
+      return t("proponentReview.empty.description");
+  }
+});
+/**
+ * The main presenter's answers, as a co-presenter reads them; once the
+ * document is voted, withdrawn or postponed, only the answers given.
+ */
+const presenterItems = computed(() =>
+  readsAnswers.value
+    ? presenterAnswerItems(list.amendments.value, acceptedRule.value, {
+        answeredOnly: readOnly.value || closed.value,
+      })
+    : [],
+);
 
 /** The review screen is on (not a guard, loading or empty state). */
 const reviewing = computed(
   () =>
     Boolean(document.value?.can.position) &&
+    !closed.value &&
     isPublished.value &&
     !readOnly.value &&
     items.value.length > 0,
@@ -189,7 +261,7 @@ const listOpen = ref(false);
 /** The request running: an answer, or a comment saved on its own. */
 const busy = ref<{
   id: string;
-  value: ProponentAnswer | Decision;
+  value: ProponentAnswer;
   commentOnly?: boolean;
 } | null>(null);
 
@@ -205,19 +277,13 @@ const current = computed(
 const currentIndex = computed(() => stepIndex(sequence.value, currentId.value));
 const hasPrevious = computed(() => currentIndex.value > 0);
 /**
- * "Enmienda 5 de 12" or "Transaccional 1 de 2": where the step sits among
- * those of its kind in the whole review. The total is the progress line's,
- * and hiding the answered ones does not turn it into a countdown.
+ * "Enmienda 5 de 12": where the step sits in the whole review. The total is
+ * the progress line's, and hiding the answered ones does not turn it into
+ * a countdown.
  */
 const counterLabel = computed(() => {
   const counter = stepCounter(items.value, currentId.value);
-  if (!counter) return "";
-  return t(
-    counter.kind === "transactional"
-      ? "proponentReview.nav.transactional"
-      : "proponentReview.nav.amendment",
-    { current: counter.current, total: counter.total },
-  );
+  return counter ? t("proponentReview.nav.amendment", counter) : "";
 });
 const hasNext = computed(
   () => stepAfter(sequence.value, currentId.value) !== null,
@@ -228,9 +294,28 @@ function labelOf(item: Pick<ProponentReviewItem, "amendment">): string {
 }
 
 /**
+ * The step on screen left the review without this visit answering it: says
+ * why, from the amendment as it is now (`previous` is the list before the
+ * change, which still shows it undecided).
+ */
+function notifyGone(id: string, previous: ProponentReviewItem | null): void {
+  const fresh = list.byId.value.get(id) ?? null;
+  const source = fresh ? { amendment: fresh } : previous;
+  toast.add({
+    id: `proponent-review-gone-${id}`,
+    title: t(`proponentReview.${goneKey(fresh)}`, {
+      label: source ? labelOf(source) : "",
+    }),
+    color: "info",
+    icon: "i-lucide-info",
+  });
+}
+
+/**
  * Where the step on screen sat, to land on its neighbour when it leaves (an
- * amendment decided or withdrawn meanwhile, a transactional answered by the
- * Mesa). Steps this visit answered leave on purpose: no notice for those.
+ * amendment decided, withdrawn or replaced by a transactional meanwhile).
+ * Steps this visit answered out of the review leave on purpose: no notice
+ * for those.
  */
 let lastIndex = 0;
 const handled = new Set<string>();
@@ -245,15 +330,7 @@ watch(sequence, (steps, previous) => {
     return;
   }
   if (!handled.has(id) && !showSummary.value) {
-    const gone = previous?.find((item) => item.id === id);
-    toast.add({
-      id: `proponent-review-gone-${id}`,
-      title: t("proponentReview.gone", {
-        label: gone ? labelOf(gone) : "",
-      }),
-      color: "info",
-      icon: "i-lucide-info",
-    });
+    notifyGone(id, previous?.find((item) => item.id === id) ?? null);
   }
   chosenId.value = fallbackStep(steps, lastIndex);
 });
@@ -345,13 +422,11 @@ const unsavedIds = computed(
   () =>
     new Set(
       items.value
-        .filter(
-          (item) =>
-            item.kind === "position" &&
-            commentUnsaved(
-              commentDrafts.get(item.id),
-              item.amendment.position?.comment,
-            ),
+        .filter((item) =>
+          commentUnsaved(
+            commentDrafts.get(item.id),
+            item.amendment.position?.comment,
+          ),
         )
         .map((item) => item.id),
     ),
@@ -380,7 +455,7 @@ function warnIfUnsaved(toId: string | null): void {
         variant: "outline",
         onClick: () => {
           // Decided meanwhile: nothing to go back to.
-          if (items.value.some((step) => step.id === item.id)) {
+          if (items.value.some((candidate) => candidate.id === item.id)) {
             goTo(item.id, { focus: true });
           }
         },
@@ -427,6 +502,44 @@ function amendmentUrl(id: string): string {
 }
 
 /**
+ * Someone else answered (or changed) the amendment since the actor loaded
+ * it, so the server refused the answer: the list is refreshed and one
+ * notice says what happened and what comes next. The comment typed stays,
+ * to answer again if needed. The sequence watcher stays quiet about this
+ * step, whose notice is this one.
+ */
+async function onConflict(
+  item: ProponentReviewItem,
+  sentPositionAt: string | null,
+): Promise<void> {
+  handled.add(item.id);
+  // The document too: a final vote meanwhile also refuses the answer.
+  await refreshAll();
+  const stillInReview = items.value.some(
+    (candidate) => candidate.id === item.id,
+  );
+  // Still here: should it leave later, the watcher says so as usual.
+  if (stillInReview) handled.delete(item.id);
+  const kind = positionConflict(
+    sentPositionAt,
+    list.byId.value.get(item.id),
+    stillInReview,
+    acceptedRule.value,
+  );
+  if (kind === "gone") {
+    notifyGone(item.id, item);
+    return;
+  }
+  toast.add({
+    id: `proponent-review-conflict-${item.id}`,
+    title: t(`proponentReview.conflict.${kind}`, { label: labelOf(item) }),
+    description: t(`proponentReview.conflict.${kind}Description`),
+    color: "warning",
+    icon: "i-lucide-refresh-ccw",
+  });
+}
+
+/**
  * Saves the answer with the comment and moves on; with `commentOnly` (the
  * comment changed on an answered amendment) it keeps the answer and stays.
  */
@@ -435,20 +548,22 @@ async function answerPosition(
   options: { commentOnly?: boolean } = {},
 ): Promise<void> {
   const item = current.value;
-  if (!item || item.kind !== "position" || busy.value) return;
+  if (!item || busy.value) return;
   chosenId.value = item.id;
   busy.value = { id: item.id, value: answer, commentOnly: options.commentOnly };
+  const before = item.amendment;
+  const body = positionBody(answer, comment.value, before);
   try {
     const updated = await api.send<AmendmentDto>(
       `${amendmentUrl(item.id)}/position`,
-      {
-        method: "PUT",
-        body: {
-          position: answer,
-          comment: comment.value.trim() || null,
-        },
-      },
+      { method: "PUT", body },
     );
+    // Where to go next, found before the answer may take the step out of
+    // the review (it should not: incorporated ones stay to be changed).
+    const next = stepAfter(sequence.value, item.id);
+    if (!isPositionReviewable(updated, acceptedRule.value)) {
+      handled.add(item.id);
+    }
     list.upsert(updated);
     commentDrafts.delete(item.id);
     // "Transaccionar" moves on at once: the way to write the transactional
@@ -457,11 +572,15 @@ async function answerPosition(
       answer === "transact" && !options.commentOnly
         ? transactLink(updated)
         : null;
+    const reopened = !options.commentOnly && wasReopened(before, updated);
     toast.add({
       id: "proponent-review-saved",
       title: options.commentOnly
         ? t("proponentReview.commentSaved", { label: labelOf(item) })
-        : t(`proponentReview.saved.${answer}`, { label: labelOf(item) }),
+        : t(`proponentReview.saved.${savedKey(answer, updated)}`, {
+            label: labelOf(item),
+          }),
+      description: reopened ? t("proponentReview.saved.reopened") : undefined,
       color: "success",
       icon: "i-lucide-check",
       ...(transactTo
@@ -482,78 +601,26 @@ async function answerPosition(
     });
     // The answered step stays pinned until now, so its neighbour is known.
     if (!options.commentOnly && currentId.value === item.id) {
-      goTo(stepAfter(sequence.value, item.id), { focus: true });
+      goTo(next, { focus: true });
     }
   } catch (error) {
-    api.notifyError(error, "proponentReview.saveFailed");
-    if (api.isConflict(error)) void list.refresh();
+    if (api.isConflict(error)) {
+      await onConflict(item, body.positionUpdatedAt);
+    } else {
+      api.notifyError(error, "proponentReview.saveFailed");
+    }
   } finally {
     busy.value = null;
   }
 }
 
-async function answerTransactional(decision: Decision): Promise<void> {
-  const item = current.value;
-  if (!item || item.kind !== "transactional" || busy.value) return;
-  const target = acceptanceTarget(
-    item.amendment,
-    actorMemberId.value,
-    proponentMemberId.value,
-  );
-  if (!target) return;
-  chosenId.value = item.id;
-  busy.value = { id: item.id, value: decision };
-  try {
-    const updated = await api.send<AmendmentDto>(
-      `${amendmentUrl(item.id)}/acceptance`,
-      {
-        body: {
-          decision,
-          ...(target.memberId ? { memberId: target.memberId } : {}),
-        },
-      },
-    );
-    // Answered, it leaves the review: find where to go before it does.
-    const next = stepAfter(sequence.value, item.id);
-    handled.add(item.id);
-    list.upsert(updated);
-    toast.add({
-      id: "proponent-review-saved",
-      title: t(
-        decision === "accepted"
-          ? "proponentReview.transactional.approved"
-          : "proponentReview.transactional.rejected",
-        { label: labelOf(item) },
-      ),
-      color: "success",
-      icon: "i-lucide-check",
-    });
-    if (currentId.value === item.id) goTo(next, { focus: true });
-  } catch (error) {
-    api.notifyError(error, "amendment.acceptances.failed");
-    if (api.isConflict(error)) void list.refresh();
-  } finally {
-    busy.value = null;
-  }
-}
-
-const currentTarget = computed(() =>
-  current.value?.kind === "transactional"
-    ? acceptanceTarget(
-        current.value.amendment,
-        actorMemberId.value,
-        proponentMemberId.value,
-      )
-    : null,
-);
 /** "Proponer la transaccional" on the amendment on screen, when it fits. */
 const currentTransactTo = computed(() =>
-  current.value?.kind === "position"
-    ? transactLink(current.value.amendment)
-    : null,
+  current.value ? transactLink(current.value.amendment) : null,
 );
+/** For a transactional: the amendments it replaced, as the actor sees them. */
 const currentSources = computed(() =>
-  current.value?.kind === "transactional"
+  current.value?.amendment.kind === "transactional"
     ? current.value.amendment.sourceIds
         .map((id) => list.byId.value.get(id))
         .filter((source): source is AmendmentDto => Boolean(source))
@@ -571,7 +638,7 @@ const commentBusy = computed(
 /** Answered, and the comment typed is not the one saved. */
 const commentChanged = computed(() => {
   const item = current.value;
-  if (!item || item.kind !== "position" || !item.answered) return false;
+  if (!item || !item.answered) return false;
   return unsavedIds.value.has(item.id);
 });
 
@@ -588,11 +655,6 @@ const summaryCounts = computed(() =>
     ? recordedPositionCounts(list.amendments.value)
     : positionCounts(items.value),
 );
-/** The presenter's answers to transactionals, from the data (a reload keeps them). */
-const summaryTransactionals = computed(() => ({
-  ...transactionalAnswerCounts(list.amendments.value, proponentMemberId.value),
-  left: progress.value.transactionals,
-}));
 
 // Shortcuts -----------------------------------------------------------------------
 
@@ -616,20 +678,8 @@ function shortcutAnswer(
   event: KeyboardEvent | undefined,
   answer: ProponentAnswer,
 ): void {
-  if (shortcutsBlocked(event) || showSummary.value) return;
-  if (current.value?.kind === "position") {
-    void answerPosition(answer);
-    return;
-  }
-  // A, R and T answer amendments: say so instead of doing nothing.
-  if (current.value?.kind === "transactional") {
-    toast.add({
-      id: "proponent-review-shortcut-transactional",
-      title: t("proponentReview.shortcuts.notHere"),
-      color: "info",
-      icon: "i-lucide-keyboard",
-    });
-  }
+  if (shortcutsBlocked(event) || showSummary.value || !current.value) return;
+  void answerPosition(answer);
 }
 
 defineShortcuts({
@@ -642,6 +692,18 @@ defineShortcuts({
   k: (event?: KeyboardEvent) => {
     if (!shortcutsBlocked(event)) goPrevious();
   },
+});
+
+useHead({
+  title: () =>
+    document.value
+      ? t(
+          readsAnswers.value
+            ? "proponentReview.coPresenter.pageTitle"
+            : "proponentReview.pageTitle",
+          { title: document.value.title },
+        )
+      : t("proponentReview.title"),
 });
 </script>
 
@@ -722,7 +784,11 @@ defineShortcuts({
           </div>
         </div>
         <h2 class="text-highlighted text-xl font-bold sm:text-2xl">
-          {{ t("proponentReview.title") }}
+          {{
+            readsAnswers
+              ? t("proponentReview.coPresenter.heading")
+              : t("proponentReview.title")
+          }}
         </h2>
         <p class="text-muted text-sm">
           <span v-if="document.reference" class="tabular-nums">
@@ -750,9 +816,9 @@ defineShortcuts({
         variant="outline"
       />
 
-      <!-- Neither its presenter nor the Mesa -->
+      <!-- Neither its main presenter, a co-presenter nor the Mesa -->
       <CommonEmptyState
-        v-else-if="!mayReview"
+        v-else-if="!mayReview && !readsAnswers"
         icon="i-lucide-lock"
         :title="t('proponentReview.noAccess.title')"
         :description="t('proponentReview.noAccess.description')"
@@ -798,11 +864,28 @@ defineShortcuts({
         ]"
       />
 
+      <!--
+        Co-presenter: the main presenter's answers, read only (in the past
+        tense once the document is voted, withdrawn or postponed)
+      -->
+      <ProponentReviewPresenterAnswers
+        v-else-if="readsAnswers"
+        :items="presenterItems"
+        :presenter="document.proponent"
+        :accepted-amendments="acceptedRule"
+        :waiting="waiting"
+        :amendment-to="amendmentLink"
+        :document-to="documentPath()"
+        :read-only="readOnly"
+        :closed="closed"
+        class="max-w-4xl"
+      />
+
       <!-- Voted: what was answered, nothing to change -->
       <ProponentReviewSummary
         v-else-if="readOnly"
         :counts="summaryCounts"
-        :transactionals="summaryTransactionals"
+        :accepted-amendments="acceptedRule"
         :document-to="documentPath()"
         read-only
         class="max-w-4xl"
@@ -810,7 +893,7 @@ defineShortcuts({
 
       <!-- Withdrawn or postponed: nothing to answer any more -->
       <CommonEmptyState
-        v-else-if="!document.can.position"
+        v-else-if="closed"
         icon="i-lucide-archive"
         :title="t('proponentReview.closed.title')"
         :description="t('proponentReview.closed.description')"
@@ -830,9 +913,10 @@ defineShortcuts({
         v-else-if="items.length === 0"
         icon="i-lucide-message-square-dashed"
         :title="t('proponentReview.empty.title')"
-        :description="t('proponentReview.empty.description')"
+        :description="emptyDescription"
         variant="outline"
       >
+        <ProponentReviewWaiting :counts="waiting" class="text-start" />
         <template #action>
           <UButton
             :to="documentPath()"
@@ -878,25 +962,7 @@ defineShortcuts({
             "
             aria-hidden="true"
           />
-          <div aria-live="polite" aria-atomic="true">
-            <p
-              v-if="progress.transactionals > 0"
-              class="text-warning flex items-center gap-1.5 text-sm font-medium"
-            >
-              <UIcon
-                name="i-lucide-hourglass"
-                class="size-4 shrink-0"
-                aria-hidden="true"
-              />
-              {{
-                t(
-                  "proponentReview.progress.transactionals",
-                  { count: progress.transactionals },
-                  progress.transactionals,
-                )
-              }}
-            </p>
-          </div>
+          <ProponentReviewWaiting :counts="waiting" />
         </div>
 
         <div
@@ -907,44 +973,23 @@ defineShortcuts({
               v-if="showSummary || !current"
               ref="summary"
               :counts="summaryCounts"
-              :transactionals="summaryTransactionals"
+              :accepted-amendments="acceptedRule"
               :document-to="documentPath()"
               @answer-left="answerLeft"
               @review-all="reviewAll"
             />
 
             <template v-else>
-              <ProponentReviewTransactionalStep
-                v-if="current.kind === 'transactional' && currentTarget"
-                :key="current.id"
-                ref="step"
-                :amendment="current.amendment"
-                :base="base"
-                :sources="currentSources"
-                :label-of="list.labelOf"
-                :target="currentTarget"
-                :busy="
-                  busyAnswer === 'accepted' || busyAnswer === 'rejected'
-                    ? busyAnswer
-                    : null
-                "
-                :disabled="busy !== null"
-                @answer="answerTransactional"
-              />
               <ProponentReviewAmendmentStep
-                v-else
                 :key="current.id"
                 ref="step"
                 v-model:comment="comment"
                 :amendment="current.amendment"
                 :base="base"
-                :busy="
-                  busyAnswer === 'accept' ||
-                  busyAnswer === 'reject' ||
-                  busyAnswer === 'transact'
-                    ? busyAnswer
-                    : null
-                "
+                :accepted-amendments="acceptedRule"
+                :sources="currentSources"
+                :label-of="list.labelOf"
+                :busy="busyAnswer"
                 :disabled="busy !== null && busy.id !== current.id"
                 :on-behalf-of="onBehalfOf"
                 :visibility-note="visibilityNote"

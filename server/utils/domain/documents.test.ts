@@ -223,6 +223,7 @@ describe("toDocumentSummaryDto", () => {
   } as unknown as Parameters<typeof toDocumentSummaryDto>[0];
   const extra = {
     proponent: null,
+    coProponents: [],
     amendmentCount: 0,
     window: { opensAt: null, closesAt: null, open: false },
     hasContent: false,
@@ -240,5 +241,20 @@ describe("toDocumentSummaryDto", () => {
     expect(
       toDocumentSummaryDto(row, { ...extra, showCorrection: false }),
     ).toMatchObject({ correctionNote: null, correctionRequestedAt: null });
+  });
+
+  it("carries the co-presenters and the rule for accepted amendments", () => {
+    const co = {
+      id: "m2",
+      acronym: "CEUM",
+      name: "CEUM",
+      kind: "asociado" as const,
+    };
+    expect(
+      toDocumentSummaryDto(
+        { ...row, acceptedAmendments: "incorporate" },
+        { ...extra, coProponents: [co], showCorrection: false },
+      ),
+    ).toMatchObject({ coProponents: [co], acceptedAmendments: "incorporate" });
   });
 });

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AmendmentStatus } from "~~/shared/constants/domain";
 import type { AmendmentDto } from "~~/shared/types/api";
 import { transactionalGroupSources } from "~/composables/amendment/transactional";
 import type {
@@ -21,10 +22,10 @@ const props = withDefaults(
     relationsOf: (id: string) => AmendmentRelationView[];
     /** The viewer may propose a transactional on this document. */
     canTransact?: boolean;
-    /** The document's presenter (document.proponent), for transactionals. */
-    proponentMemberId?: string | null;
+    /** Status of any amendment of the document, for transactionals. */
+    statusOf?: (id: string) => AmendmentStatus | undefined;
   }>(),
-  { selectedId: null, canTransact: false, proponentMemberId: null },
+  { selectedId: null, canTransact: false, statusOf: undefined },
 );
 
 const emit = defineEmits<{
@@ -106,7 +107,7 @@ function groupLabel(group: AmendmentGroup<AmendmentDto>): string {
               :label-of="labelOf"
               :relations="relationsOf(amendment.id)"
               :selected="selectedId === amendment.id"
-              :proponent-member-id="proponentMemberId"
+              :status-of="statusOf"
               @select="emit('select', $event)"
             />
           </li>
@@ -119,7 +120,7 @@ function groupLabel(group: AmendmentGroup<AmendmentDto>): string {
         :label-of="labelOf"
         :relations="relationsOf(group.amendments[0]!.id)"
         :selected="selectedId === group.amendments[0]!.id"
-        :proponent-member-id="proponentMemberId"
+        :status-of="statusOf"
         @select="emit('select', $event)"
       />
     </li>

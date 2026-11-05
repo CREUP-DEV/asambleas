@@ -1,9 +1,12 @@
 <script setup lang="ts">
 import type { AmendmentDto } from "~~/shared/types/api";
+import { amendmentAuthorsInOrder } from "~/composables/amendment/workspace";
 
 /**
- * Compact amendment card with its outcome: label, presenting members, kind,
- * status, how it was approved and the vote counts. Used in the consolidated
+ * Compact amendment card with its outcome: label, presenting members (the
+ * main author first), kind, status, how it was approved (an amendment the
+ * main presenter accepted under the "incorporate" rule says so in plain
+ * words) and the vote counts. Used in the consolidated
  * text popover and its annex. The default slot adds actions.
  */
 const props = withDefaults(
@@ -21,6 +24,17 @@ const props = withDefaults(
 const { t, locale } = useI18n();
 
 const heading = computed(() => `h${props.headingLevel}`);
+const authors = computed(() => amendmentAuthorsInOrder(props.amendment));
+/** "Aprobada sin votación…" or "Aprobada por votación". */
+const approvedText = computed(() => {
+  const method = props.amendment.approvalMethod;
+  if (props.amendment.status !== "approved" || !method) return null;
+  return method === "proponent"
+    ? t("amendment.detail.approvedByPresenter")
+    : t("amendment.detail.approvedBy", {
+        method: t(`amendment.approvalMethods.${method}`),
+      });
+});
 
 const transactedIn = computed(() =>
   props.labelOf
@@ -45,8 +59,14 @@ const sources = computed(() =>
       >
         {{ label }}
       </component>
+      <template v-if="authors.main">
+        <CommonMemberBadge :member="authors.main" size="xs" />
+        <span v-if="authors.marked" class="text-dimmed text-xs">
+          {{ t("amendment.card.mainAuthor") }}
+        </span>
+      </template>
       <CommonMemberBadge
-        v-for="author in amendment.authors"
+        v-for="author in authors.others"
         :key="author.id"
         :member="author"
         size="xs"
@@ -83,15 +103,8 @@ const sources = computed(() =>
       />
     </div>
 
-    <p
-      v-if="amendment.status === 'approved' && amendment.approvalMethod"
-      class="text-muted text-sm"
-    >
-      {{
-        t("amendment.detail.approvedBy", {
-          method: t(`amendment.approvalMethods.${amendment.approvalMethod}`),
-        })
-      }}
+    <p v-if="approvedText" class="text-muted text-sm">
+      {{ approvedText }}
       <template v-if="amendment.decidedAt">
         · {{ formatDateTime(amendment.decidedAt, { locale }) }}
       </template>

@@ -94,10 +94,12 @@ async function readLiveSpeakers(
  * waiting turns and every turn of the agenda item in debate; anyone else
  * gets the speaking and waiting turns only while the Mesa makes them
  * visible (live_state.speakersVisible), and an empty list otherwise.
+ * `include` adds turns the Mesa gets back anyway (the one a PUT changed).
  */
 export async function loadSpeakers(
   actor: Actor,
   assemblyId: string,
+  include: readonly string[] = [],
 ): Promise<SpeakersDto> {
   const live = await readLiveSpeakers(db, assemblyId);
   const moderate = canModerate(actor);
@@ -125,6 +127,9 @@ export async function loadSpeakers(
               live.agendaItemId
                 ? eq(speakingTurns.agendaItemId, live.agendaItemId)
                 : isNull(speakingTurns.agendaItemId),
+              include.length > 0
+                ? inArray(speakingTurns.id, [...include])
+                : undefined,
             )
           : open,
       ),
@@ -134,7 +139,12 @@ export async function loadSpeakers(
   const turns = sortTurns(
     turnsForActor(
       rows.map((row) => row.turn),
-      { moderate, visible: live.visible, agendaItemId: live.agendaItemId },
+      {
+        moderate,
+        visible: live.visible,
+        agendaItemId: live.agendaItemId,
+        include,
+      },
     ),
   );
   return {
@@ -268,7 +278,9 @@ export async function addSpeakingTurn(
  * cancels or restores a turn, moves it in the queue or fixes the name
  * (planTurnUpdate). Giving the floor ends the turn that was speaking.
  * Optimistic lock on the turn's `updatedAt` (409 when stale). `turnId` is
- * the route param, already validated by the handler (validateCuid).
+ * the route param, already validated by the handler (validateCuid). The
+ * answer includes the changed turn even when the Mesa's list would leave it
+ * out (cancelled on an item other than the one in debate).
  */
 export async function updateSpeakingTurn(
   actor: Actor,
@@ -372,7 +384,7 @@ export async function updateSpeakingTurn(
     });
   });
 
-  return loadSpeakers(actor, assembly.id);
+  return loadSpeakers(actor, assembly.id, [turnId]);
 }
 
 /**

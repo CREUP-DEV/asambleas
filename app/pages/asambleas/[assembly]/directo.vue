@@ -18,6 +18,7 @@ import {
   affectsAgenda,
   affectsSpeakers,
   liveAmendmentCode,
+  liveAmendmentNote,
   liveAmendmentRows,
   liveSpeakers,
   liveVoteSubject,
@@ -320,6 +321,17 @@ const amendmentRows = computed(() =>
 const debated = computed(
   () => amendmentRows.value.find((row) => row.current) ?? null,
 );
+/**
+ * What the badge of the debated amendment does not explain: who replaced
+ * it, that it is in the text without a vote, or what a transactional
+ * replaced or still waits for.
+ */
+const debatedNote = computed(() => {
+  const note = debated.value
+    ? liveAmendmentNote(debated.value, amendmentRows.value)
+    : null;
+  return note ? t(note.key, note.params ?? {}) : null;
+});
 /** The Mesa debates an amendment this view cannot list (not public yet). */
 const amendmentHidden = computed(
   () => Boolean(debatedId.value) && amendmentsLoaded.value && !debated.value,
@@ -584,6 +596,7 @@ watch(
         :document="document"
         :amendment="debated?.amendment ?? null"
         :state="debated?.state ?? null"
+        :note="debatedNote"
         :amendment-hidden="amendmentHidden"
         :document-path="documentPath"
       />

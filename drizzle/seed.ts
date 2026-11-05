@@ -11,9 +11,16 @@
  * published, one validated and kept private, one waiting for validation, one
  * sent back for correction, a resolution waiting for validation, and two
  * expected CEA reports (one due soon, one overdue).
- * The presenter's review shows a transactional proposed by a member that is
- * not a party (T2), waiting for the presenter's approval, and the Mesa's
- * list of speaking turns has a finished turn, one speaking and two waiting.
+ * Main presenters and main authors: the mental health resolution has a
+ * co-presenter (CEUM) besides its main presenter (CEUAM), who already
+ * answered one amendment; CAUB 2 has a co-author (CEUAM) and a main author
+ * (CAUB); T1, accepted by the main authors of what it groups and validated,
+ * has replaced them (transacted) and waits for the presenter's answer; T2,
+ * proposed by a member that wrote neither source, waits for their main
+ * authors (pending_authors); and a regulation incorporates the amendments its
+ * presenter accepts ("incorporate"): one already incorporated, one to answer.
+ * The Mesa's list of speaking turns has a finished turn, one speaking and two
+ * waiting.
  * The demo is skipped when the 80.ª AGO already exists: a database seeded
  * before these were added keeps its demo as it was (reset it to get them).
  *
@@ -75,11 +82,11 @@ const DAY = 24 * HOUR;
 const ROLE_DESCRIPTIONS: Record<string, string> = {
   [SYSTEM_ROLES.ADMIN]: "Acceso completo a todas las funciones del sistema",
   [SYSTEM_ROLES.SECRETARIA]:
-    "Gestiona asambleas, documentos, miembros y revisión de enmiendas",
+    "Gestiona todo: asambleas, documentos, enmiendas, miembros, usuarios y roles",
   [SYSTEM_ROLES.MODERADOR]:
-    "Modera el desarrollo de las sesiones (Mesa de Moderación)",
+    "Modera el desarrollo de las sesiones (Vocalía y Presidencia de la Mesa)",
   [SYSTEM_ROLES.PRESIDENCIA]:
-    "Preside la asamblea y modera las sesiones, con los mismos permisos que la Secretaría",
+    "Gestiona todo, como la Secretaría: asambleas, documentos, enmiendas, miembros, usuarios y roles",
   [SYSTEM_ROLES.CEA]:
     "Presenta la documentación de su área de la Comisión Ejecutiva y enmiendas",
   [SYSTEM_ROLES.ASOCIADO]: "Presenta documentos y enmiendas",
@@ -412,6 +419,30 @@ function transportBlocks(newId: () => string): Block[] {
   );
 }
 
+function regulationBlocks(newId: () => string): Block[] {
+  return buildBlocks(
+    [
+      heading(1, "Reglamento de Régimen Interno de la Asamblea General"),
+      heading(2, "Artículo 1. Convocatoria"),
+      paragraph(
+        "La Asamblea General se convocará con una antelación mínima de treinta días naturales, mediante comunicación a todos los miembros.",
+      ),
+      heading(2, "Artículo 2. Documentación"),
+      paragraph(
+        "La documentación de cada punto del orden del día se publicará en la plataforma de asambleas al menos quince días antes de la sesión.",
+      ),
+      heading(2, "Artículo 3. Enmiendas"),
+      paragraph(
+        "Los miembros podrán presentar enmiendas a los documentos publicados dentro del plazo fijado en el calendario de la asamblea.",
+      ),
+      paragraph(
+        "Las enmiendas que acepte quien presenta el reglamento se incorporarán al texto sin necesidad de votación.",
+      ),
+    ],
+    newId,
+  );
+}
+
 /** Replace operations for one textual edit of a base block, through the engine. */
 function editOps(
   base: Block[],
@@ -429,13 +460,13 @@ function editOps(
   return ops;
 }
 
-export type DemoDocumentKey = "positioning" | "mentalHealth";
+export type DemoDocumentKey = "positioning" | "mentalHealth" | "regulation";
 
 export interface DemoAmendment {
   id: string;
   document: DemoDocumentKey;
   kind: AmendmentKind;
-  /** Acronyms; the first one presents the amendment. */
+  /** Acronyms; the first one is the main author and presents the amendment. */
   authors: string[];
   ops: AmendmentOp[];
   justification: string;
@@ -455,6 +486,13 @@ export interface DemoAmendment {
     comment: string | null;
     at: Date;
   } | null;
+  /**
+   * Decided already: replaced by a transactional (transacted), or approved
+   * by the presenter's acceptance under the "incorporate" rule.
+   */
+  outcome?:
+    | { status: "transacted"; at: Date; transactionalId: string }
+    | { status: "approved"; at: Date; approvalMethod: "proponent" };
   /** Filled by numberAmendments for regular amendments. */
   number: number | null;
   memberSeq: number | null;
@@ -464,9 +502,9 @@ export interface DemoAmendment {
 
 export interface DemoTransactional extends DemoAmendment {
   sourceIds: string[];
+  /** Its parties: the main authors of the amendments it replaces. */
   acceptances: {
     acronym: string;
-    role: "author" | "proponent";
     decidedAt: Date | null;
   }[];
 }
@@ -490,14 +528,19 @@ export interface DemoContent {
   positioning: Block[];
   mentalHealth: Block[];
   transport: Block[];
+  /** A regulation: what its presenter accepts is incorporated without a vote. */
+  regulation: Block[];
   /** Per-document amendment window of the resolution, already closed. */
   mentalHealthWindow: { opensAt: Date; closesAt: Date };
   amendments: DemoAmendment[];
-  /** T1: proposed by a party, accepted by the authors, validated and published. */
+  /**
+   * T1: proposed by a party, accepted by the main authors, validated and
+   * published: it replaced CEUM 1 and CAUB 1 (transacted).
+   */
   transactional: DemoTransactional;
   /**
-   * T2: proposed by a member that is not a party, presented and waiting for
-   * the document's presenter to approve it (reviewState pending_proponent).
+   * T2: proposed by a member that wrote neither source, presented and
+   * waiting for their main authors (reviewState pending_authors).
    */
   memberTransactional: DemoTransactional;
   relation: { fromId: string; toId: string; note: string; at: Date };
@@ -568,6 +611,12 @@ export function buildDemoContent(
   const positioning = positioningBlocks(newId);
   const mentalHealth = mentalHealthBlocks(newId);
   const transport = transportBlocks(newId);
+  const regulation = regulationBlocks(newId);
+  const baseOf: Record<DemoDocumentKey, Block[]> = {
+    positioning,
+    mentalHealth,
+    regulation,
+  };
   const ago = (hoursAgo: number) => new Date(now.getTime() - hoursAgo * HOUR);
 
   // By default the Secretaría validated and published an amendment six hours
@@ -593,7 +642,7 @@ export function buildDemoContent(
         >
       >,
   ): DemoAmendment => {
-    const base = input.document === "positioning" ? positioning : mentalHealth;
+    const base = baseOf[input.document];
     const validatedAt = new Date(input.submittedAt.getTime() + 6 * HOUR);
     const built: DemoAmendment = {
       id: newId(),
@@ -789,7 +838,13 @@ export function buildDemoContent(
     justification:
       "La ratio de 3.000 estudiantes por profesional sigue muy por encima de las recomendaciones internacionales.",
     submittedAt: ago(48),
-    position: null,
+    // CEUAM, the main presenter, answered it; CEUM, its co-presenter, sees
+    // it in its news.
+    position: {
+      position: "accept",
+      comment: "Asumimos la ratio de 1.500 estudiantes.",
+      at: ago(20),
+    },
   });
   const confidentiality = amendment({
     document: "mentalHealth",
@@ -827,6 +882,34 @@ export function buildDemoContent(
     );
   }
 
+  // The regulation incorporates what its presenter (PRES) accepts.
+  const notice = amendment({
+    document: "regulation",
+    kind: "partial",
+    authors: ["CEULE"],
+    ops: editOps(
+      regulation,
+      2,
+      "treinta días naturales",
+      "cuarenta y cinco días naturales",
+    ),
+    justification:
+      "Treinta días no bastan para que los consejos organicen el viaje y consulten a sus plenos.",
+    submittedAt: ago(70),
+    position: { position: "accept", comment: null, at: ago(22) },
+    outcome: { status: "approved", at: ago(22), approvalMethod: "proponent" },
+  });
+  const publicationTerm = amendment({
+    document: "regulation",
+    kind: "partial",
+    authors: ["UPV"],
+    ops: editOps(regulation, 4, "quince días", "veinte días"),
+    justification:
+      "Veinte días permiten leer la documentación y preparar enmiendas con calma.",
+    submittedAt: ago(44),
+    position: null,
+  });
+
   const amendments = [
     residenceFull,
     residenceReference,
@@ -840,6 +923,8 @@ export function buildDemoContent(
     mastersReference,
     ratio,
     confidentiality,
+    notice,
+    publicationTerm,
   ];
   numberAmendments(amendments);
 
@@ -849,6 +934,9 @@ export function buildDemoContent(
     "el coste medio",
     "íntegramente el precio de referencia",
   );
+  // T1: CEUM proposes it with CAUB (CEUM is its main author). CEUM accepts
+  // it on creation as main author of CEUM 1, CAUB accepts it, the Secretaría
+  // validates it and it replaces both: from then on it waits for VPU's answer.
   const transactional: DemoTransactional = {
     id: newId(),
     document: "positioning",
@@ -860,7 +948,6 @@ export function buildDemoContent(
     submittedAt: ago(18),
     late: false,
     admission: "admitted",
-    // Proposed by CEUM, a party: it went through the Secretaría's validation.
     validatedAt: ago(16),
     publishedAt: ago(16),
     correction: null,
@@ -871,16 +958,22 @@ export function buildDemoContent(
     positionKey: positionKey(transactionalOps, positioning),
     sourceIds: [residenceFull.id, residenceReference.id],
     acceptances: [
-      { acronym: "CEUM", role: "author", decidedAt: ago(18) },
-      { acronym: "CAUB", role: "author", decidedAt: ago(10) },
-      { acronym: "VPU", role: "proponent", decidedAt: null },
+      { acronym: "CEUM", decidedAt: ago(18) },
+      { acronym: "CAUB", decidedAt: ago(17) },
     ],
   };
   assertValid(positioning, transactional);
+  for (const source of [residenceFull, residenceReference]) {
+    source.outcome = {
+      status: "transacted",
+      at: transactional.validatedAt!,
+      transactionalId: transactional.id,
+    };
+  }
 
   // T2: CEULE, which wrote neither source, proposes merging the masters
   // paragraph into the general rule instead of UGR 1 (delete it) and CEUAM 2
-  // (refer to it). Presented, it waits for VPU, the presenter.
+  // (refer to it). Presented, it waits for UGR and CEUAM, their main authors.
   const memberTransactionalOps: AmendmentOp[] = [
     ...editOps(
       positioning,
@@ -911,9 +1004,8 @@ export function buildDemoContent(
     positionKey: positionKey(memberTransactionalOps, positioning),
     sourceIds: [removeMasters.id, mastersReference.id],
     acceptances: [
-      { acronym: "UGR", role: "author", decidedAt: null },
-      { acronym: "CEUAM", role: "author", decidedAt: null },
-      { acronym: "VPU", role: "proponent", decidedAt: null },
+      { acronym: "UGR", decidedAt: null },
+      { acronym: "CEUAM", decidedAt: null },
     ],
   };
   assertValid(positioning, memberTransactional);
@@ -999,6 +1091,7 @@ export function buildDemoContent(
     positioning,
     mentalHealth,
     transport,
+    regulation,
     mentalHealthWindow,
     amendments,
     transactional,
@@ -1172,6 +1265,8 @@ async function insertStructuredDocument(
     title: string;
     summary: string;
     proponentMemberId: string;
+    /** Members presenting it with the main presenter. */
+    coProponentMemberIds?: string[];
     blocks: Block[];
     submittedAt: Date;
     publishedAt: Date | null;
@@ -1201,6 +1296,7 @@ async function insertStructuredDocument(
     status: published ? "published" : "submitted",
     proponentMemberId: input.proponentMemberId,
     amendable: defaults.amendable,
+    acceptedAmendments: defaults.acceptedAmendments,
     voted: defaults.voted,
     majority: defaults.majority,
     amendmentsOpenAt: input.window?.opensAt ?? null,
@@ -1209,6 +1305,14 @@ async function insertStructuredDocument(
     publishedAt: input.publishedAt,
     createdAt: new Date(input.submittedAt.getTime() - DAY),
   });
+  if (input.coProponentMemberIds?.length) {
+    await tx.insert(schema.documentProponents).values(
+      input.coProponentMemberIds.map((memberId) => ({
+        documentId: id,
+        memberId,
+      })),
+    );
+  }
 
   const contentHash = await hashContent(JSON.stringify(input.blocks));
   const workingVersionId = createId();
@@ -1274,6 +1378,7 @@ async function insertExpectedDocument(
     status: "draft",
     proponentMemberId: input.proponentMemberId,
     amendable: structured && defaults.amendable,
+    acceptedAmendments: defaults.acceptedAmendments,
     voted: defaults.voted,
     majority: defaults.majority,
     dueAt: input.dueAt,
@@ -1372,6 +1477,10 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
         ],
       },
       {
+        title: "Reglamentos",
+        children: [{ title: "Reforma del Reglamento de Régimen Interno" }],
+      },
+      {
         title: "Resoluciones",
         description:
           "Resoluciones presentadas por los miembros dentro de plazo.",
@@ -1411,10 +1520,24 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
       summary:
         "Medidas para reforzar los servicios de atención psicológica de las universidades.",
       proponentMemberId: member("CEUAM"),
+      // CEUM presents it too; CEUAM is the main presenter and answers.
+      coProponentMemberIds: [member("CEUM")],
       blocks: content.mentalHealth,
       submittedAt: new Date(publication.getTime() - 4 * DAY),
       publishedAt: publication,
       window: content.mentalHealthWindow,
+    });
+    const regulation = await insertStructuredDocument(tx, {
+      assemblyId: agoId,
+      agendaItemId: items.get("Reforma del Reglamento de Régimen Interno")!,
+      kind: "regulation",
+      title: "Reforma del Reglamento de Régimen Interno",
+      summary:
+        "Propuesta de la Presidencia para actualizar los plazos de convocatoria, documentación y enmiendas.",
+      proponentMemberId: member("PRES"),
+      blocks: content.regulation,
+      submittedAt: new Date(publication.getTime() - 5 * DAY),
+      publishedAt: publication,
     });
     const transport = await insertStructuredDocument(tx, {
       assemblyId: agoId,
@@ -1433,6 +1556,7 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
     for (const [inserted, proponent] of [
       [positioning, "VPU"],
       [mentalHealth, "CEUAM"],
+      [regulation, "PRES"],
       [transport, "UPV"],
     ] as const) {
       const row = await tx.query.documents.findFirst({
@@ -1451,6 +1575,11 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
           title: row!.title,
           kind: row!.kind,
           format: "structured",
+          proponentMemberId: member(proponent),
+          ...(inserted === mentalHealth
+            ? { coProponentMemberIds: [member("CEUM")] }
+            : {}),
+          acceptedAmendments: row!.acceptedAmendments,
         },
         actorMemberId: member(proponent),
         createdAt: row!.createdAt,
@@ -1510,15 +1639,19 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
     }
 
     // Amendments ---------------------------------------------------------------
-    const documentOf = { positioning, mentalHealth } as const;
-    const proponentOf = { positioning: "VPU", mentalHealth: "CEUAM" } as const;
+    const documentOf = { positioning, mentalHealth, regulation } as const;
+    const proponentOf = {
+      positioning: "VPU",
+      mentalHealth: "CEUAM",
+      regulation: "PRES",
+    } as const;
 
     const transactionals = [content.transactional, content.memberTransactional];
     for (const item of [...content.amendments, ...transactionals]) {
       const document = documentOf[item.document];
       const sourceIds = "sourceIds" in item ? item.sourceIds : null;
-      // T2 waits for the presenter's approval before the Secretaría.
-      const awaitsProponent =
+      // T2 waits for the main authors of what it replaces before the Secretaría.
+      const awaitsAuthors =
         sourceIds !== null && item.validatedAt === null && !item.correction;
       const authorIds = item.authors.map(member);
       const createdAt = new Date(item.submittedAt.getTime() - HOUR);
@@ -1528,7 +1661,7 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
         ...(item.globalReplace ? { globalReplace: item.globalReplace } : {}),
       };
       // Sent back for correction: a draft again, keeping its number and code.
-      const { correction } = item;
+      const { correction, outcome } = item;
       await tx.insert(schema.amendments).values({
         id: item.id,
         documentId: document.id,
@@ -1537,7 +1670,10 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
         memberSeq: item.memberSeq,
         code: item.code,
         kind: item.kind,
-        status: correction ? "draft" : "submitted",
+        status: correction ? "draft" : (outcome?.status ?? "submitted"),
+        approvalMethod:
+          outcome?.status === "approved" ? outcome.approvalMethod : null,
+        decidedAt: outcome?.at ?? null,
         admission: item.admission,
         late: item.late,
         ops: item.ops,
@@ -1588,7 +1724,7 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
           code: item.code,
           late: item.late,
           admission: "pending",
-          ...(awaitsProponent ? { awaitsProponent: true } : {}),
+          ...(awaitsAuthors ? { awaitsAuthors: true } : {}),
         },
         actorMemberId: authorIds[0],
         createdAt: item.submittedAt,
@@ -1627,9 +1763,34 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
         events.push({
           ...base,
           type: "position_changed",
-          payload: { position: item.position.position, by: "proponent" },
+          payload: {
+            position: item.position.position,
+            by: "proponent",
+            memberId: member(proponentOf[item.document]),
+          },
           actorMemberId: member(proponentOf[item.document]),
           createdAt: item.position.at,
+        });
+      }
+      if (outcome?.status === "approved") {
+        // Accepted by the presenter of a regulation: incorporated at once.
+        events.push({
+          ...base,
+          type: "amendment_approved",
+          payload: { method: outcome.approvalMethod, byPosition: true },
+          actorMemberId: member(proponentOf[item.document]),
+          createdAt: outcome.at,
+        });
+      }
+      if (outcome?.status === "transacted") {
+        const by = transactionals.find(
+          (candidate) => candidate.id === outcome.transactionalId,
+        )!;
+        events.push({
+          ...base,
+          type: "amendment_transacted",
+          payload: { transactionalId: by.id, code: by.code },
+          createdAt: outcome.at,
         });
       }
     }
@@ -1645,7 +1806,7 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
         transactional.acceptances.map((party) => ({
           amendmentId: transactional.id,
           memberId: member(party.acronym),
-          role: party.role,
+          role: "author" as const,
           decision: party.decidedAt
             ? ("accepted" as const)
             : ("pending" as const),
@@ -1663,7 +1824,7 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
           type: "acceptance_recorded",
           payload: {
             memberId: member(party.acronym),
-            role: party.role,
+            role: "author",
             decision: "accepted",
           },
           actorMemberId: member(party.acronym),

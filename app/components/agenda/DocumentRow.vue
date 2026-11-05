@@ -5,8 +5,9 @@ import { isPendingProgress } from "~/composables/document/documentProgress";
 
 /**
  * One document under an agenda item: title and reference linking to the
- * document, kind, proponent, amendment count and the countdown of its
- * amendment window.
+ * document, kind, who presents it ("CEUM con UPV", at most two co-presenters
+ * before "N más"), amendment count and the countdown of its amendment
+ * window.
  *
  * Before publication it also says, in a sentence, where the document stands
  * and what comes next (useDocumentProgress). With `editTo` (the presenter's
@@ -164,10 +165,7 @@ const SENTENCE_COLORS: Record<string, string> = {
     <div
       class="relative z-[1] flex shrink-0 flex-wrap items-center gap-1.5 sm:justify-end"
     >
-      <CommonMemberBadge
-        v-if="document.proponent"
-        :member="document.proponent"
-      />
+      <DocumentPresenters :document="document" :max-others="2" />
       <UBadge
         v-if="pending"
         :color="progress.color"

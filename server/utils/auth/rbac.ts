@@ -6,6 +6,7 @@ import { rolePermissions, permissions, userPermissions } from "../../db/schema";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import {
   ALL_PERMISSION_KEYS,
+  PERMISSION_KEYS,
   type PermissionKey,
 } from "~~/shared/constants/permissions";
 import {
@@ -207,6 +208,120 @@ export async function hasPermission(
   } catch {
     return false;
   }
+}
+
+/**
+ * Permissions that open the admin section (/api/admin): users, their roles,
+ * member links and grants need user:manage_roles; roles and the permission
+ * catalog need role:manage_permissions. The association's Secretaría and
+ * Presidencia hold both; Admin has every key.
+ */
+export const ADMIN_SECTION_PERMISSIONS: readonly PermissionKey[] = [
+  PERMISSION_KEYS.USER_MANAGE_ROLES,
+  PERMISSION_KEYS.ROLE_MANAGE_PERMISSIONS,
+];
+
+/** Whether `permissions` include at least one of `keys`. */
+export function hasAnyPermission(
+  permissions: readonly string[],
+  keys: readonly PermissionKey[],
+): boolean {
+  return keys.some((key) => permissions.includes(key));
+}
+
+/** What requireAnyPermission returns: who is acting and what they hold. */
+export interface AdminCaller {
+  session: AuthSession;
+  /** The caller is an Admin: the only one who may touch the Admin role. */
+  admin: boolean;
+  user: { id: string; role: { id: string; name: string } | null };
+  /** The caller's effective permissions (every key for an Admin). */
+  permissions: PermissionKey[];
+}
+
+/**
+ * Requires at least one of these permissions (Admin passes through the
+ * bypass). Returns the session, whether the user is an Admin (for the
+ * changes only an Admin may make: giving or taking the Admin role, its own
+ * account and role) and the caller's permissions (adminGrantViolation).
+ */
+export async function requireAnyPermission(
+  event: H3Event,
+  keys: readonly PermissionKey[],
+): Promise<AdminCaller> {
+  const { session, user } = await resolveSessionWithRole(event);
+
+  if (!user) {
+    throw createError({
+      statusCode: 403,
+      message: "Sin rol asignado",
+    });
+  }
+
+  const caller = { id: user.id, role: user.role ?? null };
+  if (isAdmin(user.role?.name)) {
+    return {
+      session,
+      admin: true,
+      user: caller,
+      permissions: [...ALL_PERMISSION_KEYS],
+    };
+  }
+
+  const permissions = await getEffectivePermissions(user);
+  if (!hasAnyPermission(permissions, keys)) {
+    throw createError({
+      statusCode: 403,
+      message: "No tienes permiso para realizar esta acción",
+    });
+  }
+
+  return { session, admin: false, user: caller, permissions };
+}
+
+/** Messages for adminGrantViolation. */
+export const ADMIN_GRANT_MESSAGES = {
+  own_account:
+    "Solo un Admin puede cambiar los permisos o el miembro de su propia cuenta",
+  own_role: "No puedes cambiar los permisos de tu propio rol",
+  not_held: "Solo puedes dar o quitar permisos que tú también tienes",
+} as const;
+
+/**
+ * Why a non-Admin may not make this change in the admin section, or null
+ * when it may (docs/api.md, "Admin section"). Holding user:manage_roles or
+ * role:manage_permissions must not let anyone raise their own access:
+ * - `own_account`: the grants and member link of one's own account;
+ * - `own_role`: the permissions of the role one holds;
+ * - `not_held`: adding or removing a key the caller does not hold itself
+ *   (only the keys that change count, so saving an unchanged list that
+ *   contains such a key is fine).
+ * An Admin passes every check: it holds every key anyway.
+ */
+export function adminGrantViolation(input: {
+  admin: boolean;
+  callerPermissions: readonly string[];
+  ownTarget: boolean;
+  target: "account" | "role";
+  before?: readonly string[];
+  after?: readonly string[];
+}): keyof typeof ADMIN_GRANT_MESSAGES | null {
+  if (input.admin) return null;
+  if (input.ownTarget) {
+    return input.target === "account" ? "own_account" : "own_role";
+  }
+  if (input.before && input.after) {
+    const before = new Set(input.before);
+    const after = new Set(input.after);
+    const changed = [
+      ...input.after.filter((key) => !before.has(key)),
+      ...input.before.filter((key) => !after.has(key)),
+    ];
+    if (changed.some((key) => !input.callerPermissions.includes(key))) {
+      return "not_held";
+    }
+  }
+  return null;
 }
 
 export async function requireAdmin(event: H3Event): Promise<AuthSession> {

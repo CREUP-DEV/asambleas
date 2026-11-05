@@ -28,16 +28,38 @@ export function canSeeAssembly(
 }
 
 /**
+ * Who presents a document: its main presenter (`documents.proponentMemberId`),
+ * who answers the amendments, and its co-presenters (document_proponents),
+ * who prepare the text with it and follow what it decides.
+ */
+export interface DocumentPresenters {
+  proponentMemberId: string | null;
+  /** Co-presenters, never the main presenter. Always loaded: see presenters.ts. */
+  coProponentMemberIds: readonly string[];
+}
+
+/** The actor acts for the main presenter or for a co-presenter. */
+export function isDocumentPresenter(
+  actor: Actor,
+  document: DocumentPresenters,
+): boolean {
+  return actsFor(actor, [
+    document.proponentMemberId,
+    ...document.coProponentMemberIds,
+  ]);
+}
+
+/**
  * Published documents are public. Submissions under review and withdrawn
- * documents are visible to their proponent, the user who submitted them,
- * managers and the Mesa. Drafts are private: only their proponent, the user
- * who created them and managers (document:manage) see them.
+ * documents are visible to their presenters (main or co-presenters), the
+ * user who submitted them, managers and the Mesa. Drafts are private: only
+ * their presenters, the user who created them and managers
+ * (document:manage) see them.
  */
 export function canSeeDocument(
   actor: Actor,
-  document: {
+  document: DocumentPresenters & {
     status: DocumentStatus;
-    proponentMemberId: string | null;
     submittedByUserId: string | null;
   },
 ): boolean {
@@ -46,9 +68,13 @@ export function canSeeDocument(
   if (canManageDocuments(actor)) return true;
   if (document.status !== "draft" && canModerate(actor)) return true;
   if (document.submittedByUserId === actor.user.id) return true;
-  return actsFor(actor, [document.proponentMemberId]);
+  return isDocumentPresenter(actor, document);
 }
 
+/**
+ * The actor acts for the main presenter, the only one who answers the
+ * amendments to the document (its position) and appears as its proponent.
+ */
 export function isDocumentProponent(
   actor: Actor,
   document: { proponentMemberId: string | null },
@@ -62,7 +88,10 @@ export interface AmendmentVisibilityContext {
   publishedAt: Date | null;
   createdByUserId: string | null;
   authorMemberIds: string[];
-  /** For transactionals: authors of the parents and the proponent. */
+  /**
+   * For transactionals: its parties (the main authors of the amendments it
+   * would replace) and the other authors of those amendments.
+   */
   partyMemberIds: string[];
 }
 
@@ -182,16 +211,20 @@ export function filterDecisionsByAmendment(
   return result;
 }
 
-/** Who sees the proponent's position on amendments. */
+/**
+ * Who sees the main presenter's position on amendments: its presenters
+ * (main and co-presenters, who follow what the main one decides), the Mesa
+ * and the Secretaría always; everyone else per the assembly's policy.
+ */
 export function canSeePositions(
   actor: Actor,
   options: {
     settings: AssemblySettings;
     assemblyStatus: AssemblyStatus;
-    isProponent: boolean;
+    isPresenter: boolean;
   },
 ): boolean {
-  if (options.isProponent || canModerate(actor) || canReviewAmendments(actor))
+  if (options.isPresenter || canModerate(actor) || canReviewAmendments(actor))
     return true;
   if (options.settings.positionVisibility === "public") return true;
   return (

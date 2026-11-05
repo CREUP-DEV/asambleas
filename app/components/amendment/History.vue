@@ -1,21 +1,32 @@
 <script setup lang="ts">
 import type { TimelineItem } from "@nuxt/ui";
 import type { DecisionKind } from "~~/shared/constants/domain";
-import type { DecisionDto, EventDto } from "~~/shared/types/api";
+import type { DecisionDto, EventDto, MemberRef } from "~~/shared/types/api";
 
 /**
  * Immutable history of one amendment (GET .../amendments/{id}/history) as a
  * timeline. It reloads when `version` changes (see amendmentHistoryVersion).
  * Admission decisions show how they were taken; with `decisionsUrl`, a vote's
  * counts and the decision note are looked up in the assembly's decisions.
+ *
+ * On a transactional, each answer of a main author names who answered,
+ * also when the Mesa recorded it in the room (the event's actor is then the
+ * Mesa), and a transactional closed by a main author's rejection says so
+ * instead of "Retirada". Events carry only the member's id: `members` (the
+ * transactional's parties and authors) names it.
  */
-const props = defineProps<{
-  /** URL of the amendment: .../amendments/{id}. */
-  url: string;
-  version?: string;
-  /** GET /api/assemblies/{assembly}/decisions, for admission vote counts. */
-  decisionsUrl?: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    /** URL of the amendment: .../amendments/{id}. */
+    url: string;
+    version?: string;
+    /** GET /api/assemblies/{assembly}/decisions, for admission vote counts. */
+    decisionsUrl?: string;
+    /** Members the events may name by id (parties, authors). */
+    members?: MemberRef[];
+  }>(),
+  { version: undefined, decisionsUrl: undefined, members: () => [] },
+);
 
 const { t, te, locale } = useI18n();
 const api = useApi();
@@ -107,6 +118,21 @@ function text(value: unknown): string | null {
   return typeof value === "string" && value ? value : null;
 }
 
+/** The acronym of a member an event names by id, when it can be told. */
+function memberAcronym(event: EventDto, id: string | null): string | null {
+  if (!id) return null;
+  if (event.actorMember?.id === id) return event.actorMember.acronym;
+  return props.members.find((member) => member.id === id)?.acronym ?? null;
+}
+
+/** A transactional closed because a main author rejected it. */
+function closedByRejection(event: EventDto): boolean {
+  return (
+    event.type === "amendment_withdrawn" &&
+    event.payload?.by === "author_rejection"
+  );
+}
+
 type AdmissionMotion = Extract<DecisionKind, "admit_late" | "inadmission">;
 
 /**
@@ -175,10 +201,24 @@ function detailOf(event: EventDto): string | null {
     }
     case "acceptance_recorded": {
       const decision = text(payload.decision);
-      return decision ? t(`common.status.acceptance.${decision}`) : null;
+      if (!decision) return null;
+      // Recorded by the Mesa for a main author: name who answered.
+      const party = memberAcronym(event, text(payload.recordedForMemberId));
+      return party
+        ? t(`amendment.acceptances.answers.${decision}`, { member: party })
+        : t(`common.status.acceptance.${decision}`);
+    }
+    case "amendment_withdrawn": {
+      if (!closedByRejection(event)) return null;
+      const party = memberAcronym(event, text(payload.memberId));
+      return party
+        ? t("amendment.acceptances.answers.rejected", { member: party })
+        : null;
     }
     case "amendment_approved": {
       const method = text(payload.method);
+      // Accepted by the main presenter under the "incorporate" rule.
+      if (method === "proponent") return t("amendment.history.byPresenter");
       return method ? t(`amendment.approvalMethods.${method}`) : null;
     }
     case "amendment_submitted":
@@ -205,7 +245,9 @@ function actorOf(event: EventDto): string | null {
 
 const items = computed<TimelineItem[]>(() =>
   events.value.map((event) => {
-    const key = `amendment.history.events.${event.type}`;
+    const key = closedByRejection(event)
+      ? "amendment.history.closedByRejection"
+      : `amendment.history.events.${event.type}`;
     const detail = detailOf(event);
     const actor = actorOf(event);
     return {

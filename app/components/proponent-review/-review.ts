@@ -1,24 +1,40 @@
 /**
- * Pure helpers behind the presenter's review mode
+ * Pure helpers behind the main presenter's review mode
  * (/asambleas/<slug>/documentos/<doc>/revisar): which amendments wait for an
- * answer, the order they are shown in, the progress line and the cursor that
- * moves through them. No Nuxt or Vue APIs here, so they are unit-tested on
- * their own (-review.test.ts).
+ * answer, the order they are shown in, the progress line, the cursor that
+ * moves through them and the body each answer sends. No Nuxt or Vue APIs
+ * here, so they are unit-tested on their own (-review.test.ts).
+ *
+ * Only the document's main presenter (or the Mesa for it) answers. A
+ * transactional is answered like any amendment once its main authors
+ * accepted it and the Secretaría validated it: approving it before that is
+ * their job, not the presenter's.
+ *
+ * Which amendments can be answered follows the server's rule
+ * (positionBlocker and countPositionsPending in
+ * server/utils/domain/reviewState.ts) through one implementation, the
+ * workspace's (amendmentAwaitsPosition, amendmentPositionBlocker and
+ * amendmentAcceptBlocked in ~/composables/amendment/workspace), read here
+ * as positionWaitReason, so the review, its waiting lines, its conflict
+ * notices, the document page's backlog (proponentReviewBacklog) and the
+ * home page's count never disagree.
  *
  * The leading dash keeps Nuxt from registering this file as a component
  * (`ignorePrefix`); import it explicitly.
  */
-import type { ProponentPosition } from "~~/shared/constants/domain";
-import type { AcceptanceDto, AmendmentDto } from "~~/shared/types/api";
+import type {
+  AcceptedAmendmentRule,
+  ProponentPosition,
+} from "~~/shared/constants/domain";
+import type { AmendmentDto, PositionBody } from "~~/shared/types/api";
 import {
-  isAmendmentOpen,
+  amendmentAcceptBlocked,
+  amendmentAwaitsPosition,
+  amendmentPositionBlocker,
   sortAmendments,
 } from "~/composables/amendment/workspace";
 
-/** What the step asks: approve a transactional, or answer an amendment. */
-export type ProponentReviewKind = "transactional" | "position";
-
-/** The answers the presenter can give to an amendment. */
+/** The answers the main presenter can give to an amendment. */
 export type ProponentAnswer = Exclude<ProponentPosition, "pending">;
 
 export const PROPONENT_ANSWERS: readonly ProponentAnswer[] = [
@@ -29,30 +45,25 @@ export const PROPONENT_ANSWERS: readonly ProponentAnswer[] = [
 
 export interface ProponentReviewItem {
   id: string;
-  kind: ProponentReviewKind;
   amendment: AmendmentDto;
-  /**
-   * The presenter already answered (a position other than pending). A
-   * transactional is listed only while its approval is pending.
-   */
+  /** The main presenter already answered (a position other than pending). */
   answered: boolean;
 }
 
-/** Who answers a transactional's approval, and for whom. */
-export interface AcceptanceTarget {
-  /** The document presenter's row among the transactional's parties. */
-  party: AcceptanceDto;
-  /**
-   * The member to name in AcceptanceBody.memberId: null when the actor
-   * answers for their own member, the presenter's member when the Mesa
-   * records the answer for it.
-   */
-  memberId: string | null;
-}
+type AnswerableInput = Pick<
+  AmendmentDto,
+  | "status"
+  | "kind"
+  | "reviewState"
+  | "admission"
+  | "validatedAt"
+  | "approvalMethod"
+  | "acceptances"
+>;
 
 // Positions --------------------------------------------------------------------
 
-/** The presenter has given a position (a null position counts as pending). */
+/** The main presenter has given a position (a null position counts as pending). */
 export function isPositionAnswered(
   amendment: Pick<AmendmentDto, "position">,
 ): boolean {
@@ -70,24 +81,165 @@ export function positionAnswer(
 }
 
 /**
- * An amendment the presenter (or the Mesa for it) answers here: presented,
- * not decided, published by the Secretaría, and not a transactional (those
- * are approved through their acceptance instead). Only published ones: an
- * amendment validated but kept private is hidden from the presenter
- * (canSeeAmendment), so the Mesa does not answer for it on a text it has
- * never read, and both see the same count.
+ * Accepted by the main presenter and put in the text without a vote (the
+ * document's rule is "incorporate"). For display only: whether its answer
+ * can still change depends on the rule (positionWaitReason).
  */
-export function isPositionReviewable(
-  amendment: Pick<AmendmentDto, "status" | "kind" | "reviewState"> & {
-    can: Pick<AmendmentDto["can"], "position">;
-  },
+export function isIncorporated(
+  amendment: Pick<AmendmentDto, "status" | "approvalMethod">,
 ): boolean {
   return (
-    amendment.status === "submitted" &&
-    amendment.kind !== "transactional" &&
-    amendment.can.position &&
-    amendment.reviewState === "published"
+    amendment.status === "approved" && amendment.approvalMethod === "proponent"
   );
+}
+
+/** Where the main presenter's answer leaves the amendment, for lists. */
+export type AnswerStatus = ProponentAnswer | "pending" | "incorporated";
+
+export function answerStatus(
+  amendment: Pick<AmendmentDto, "position" | "status" | "approvalMethod">,
+): AnswerStatus {
+  if (isIncorporated(amendment)) return "incorporated";
+  return positionAnswer(amendment) ?? "pending";
+}
+
+/** Icon and color of each answer status in the lists. */
+export const ANSWER_STATUS_ICONS: Record<
+  AnswerStatus,
+  { name: string; color: string }
+> = {
+  pending: { name: "i-lucide-circle-dashed", color: "text-dimmed" },
+  accept: { name: "i-lucide-check", color: "text-success" },
+  incorporated: { name: "i-lucide-check-check", color: "text-success" },
+  reject: { name: "i-lucide-x", color: "text-error" },
+  transact: { name: "i-lucide-handshake", color: "text-info" },
+};
+
+/**
+ * Why the main presenter (or the Mesa for it) cannot answer an amendment
+ * here now, or null when it can: the workspace's rule
+ * (amendmentAwaitsPosition and amendmentPositionBlocker), which mirrors the
+ * server's positionBlocker, plus the publication rule of its
+ * countPositionsPending (amendmentAcceptBlocked):
+ * - `decided`: no longer undecided. One the presenter's acceptance
+ *   incorporated stays answerable under the "incorporate" rule: changing
+ *   the answer reopens it;
+ * - `authors`: a transactional its main authors have not all accepted yet
+ *   (only their answers count);
+ * - `validation`: still with the Secretaría;
+ * - `admission`: late, and the assembly has not decided to treat it yet;
+ * - `publication`: validated but kept private, under the "incorporate"
+ *   rule: accepting it would put in the text something delegates cannot
+ *   read, so the review (like the document page's backlog and the home
+ *   page) waits for the Secretaría to publish it. Under "vote" a validated
+ *   one can be answered, though only the Mesa and the Secretaría see it
+ *   until it is published.
+ */
+export type PositionWaitReason =
+  "decided" | "authors" | "validation" | "admission" | "publication";
+
+export function positionWaitReason(
+  amendment: AnswerableInput,
+  rule: AcceptedAmendmentRule,
+): PositionWaitReason | null {
+  if (!amendmentAwaitsPosition(amendment, rule)) {
+    return amendmentPositionBlocker(amendment, rule) ?? "decided";
+  }
+  return amendmentAcceptBlocked(amendment, rule) ? "publication" : null;
+}
+
+/** An amendment whose answer belongs to the main presenter right now, whoever looks. */
+export function isPositionAnswerable(
+  amendment: AnswerableInput,
+  rule: AcceptedAmendmentRule,
+): boolean {
+  return positionWaitReason(amendment, rule) === null;
+}
+
+/** An amendment the actor (the main presenter or the Mesa) answers here. */
+export function isPositionReviewable(
+  amendment: AnswerableInput & {
+    can: Pick<AmendmentDto["can"], "position">;
+  },
+  rule: AcceptedAmendmentRule,
+): boolean {
+  return amendment.can.position && isPositionAnswerable(amendment, rule);
+}
+
+/** Amendments still on their way to the main presenter, by what they wait for. */
+export type PositionWaitCounts = Record<
+  Exclude<PositionWaitReason, "decided">,
+  number
+>;
+
+/**
+ * How many undecided amendments, among those the viewer sees, wait for
+ * something before the main presenter can answer them: the lines under the
+ * progress ("2 enmiendas fuera de plazo esperan a que la asamblea decida si
+ * las trata").
+ */
+export function positionWaitCounts(
+  amendments: readonly AnswerableInput[],
+  rule: AcceptedAmendmentRule,
+): PositionWaitCounts {
+  const counts: PositionWaitCounts = {
+    authors: 0,
+    validation: 0,
+    admission: 0,
+    publication: 0,
+  };
+  for (const amendment of amendments) {
+    const reason = positionWaitReason(amendment, rule);
+    if (reason && reason !== "decided") counts[reason] += 1;
+  }
+  return counts;
+}
+
+/**
+ * Why the review has nothing to answer, for the sentence under its empty
+ * state:
+ * - `waiting`: amendments are on their way (positionWaitCounts lists them);
+ * - `allDecided`: every presented amendment the viewer sees is decided
+ *   (drafts do not count: nobody presented them);
+ * - `none`: nothing presented yet.
+ */
+export type EmptyReviewReason = "waiting" | "allDecided" | "none";
+
+export function emptyReviewReason(
+  amendments: readonly AnswerableInput[],
+  rule: AcceptedAmendmentRule,
+): EmptyReviewReason {
+  const counts = positionWaitCounts(amendments, rule);
+  if (Object.values(counts).some((count) => count > 0)) return "waiting";
+  return amendments.some((amendment) => amendment.status !== "draft")
+    ? "allDecided"
+    : "none";
+}
+
+/**
+ * How a decided amendment ended, for a co-presenter reading the answers.
+ * Null while it is undecided, and for one the presenter's acceptance
+ * incorporated (its answer already says so).
+ */
+export type AmendmentOutcome =
+  "approved" | "approvedFormal" | "rejected" | "withdrawn" | "lapsed";
+
+export function amendmentOutcome(
+  amendment: Pick<AmendmentDto, "status" | "approvalMethod">,
+): AmendmentOutcome | null {
+  switch (amendment.status) {
+    case "approved":
+      if (amendment.approvalMethod === "proponent") return null;
+      return amendment.approvalMethod === "formal"
+        ? "approvedFormal"
+        : "approved";
+    case "rejected":
+    case "withdrawn":
+    case "lapsed":
+      return amendment.status;
+    default:
+      return null;
+  }
 }
 
 /**
@@ -102,145 +254,176 @@ export function commentUnsaved(
   return draft.trim() !== (saved ?? "").trim();
 }
 
-// Transactionals ------------------------------------------------------------------
+// Saving -------------------------------------------------------------------------
 
-/**
- * The document presenter's row among a transactional's parties, if any.
- * Found by member, as the server does (proponentApproval): when the
- * presenter also wrote one of the amendments it groups, its single row has
- * the role "author". The role "proponent" is a fallback only when the
- * presenter is unknown.
- */
-export function proponentAcceptance(
-  amendment: Pick<AmendmentDto, "acceptances">,
-  proponentMemberId: string | null,
-): AcceptanceDto | null {
-  if (proponentMemberId === null) {
-    return (
-      amendment.acceptances.find(
-        (acceptance) => acceptance.role === "proponent",
-      ) ?? null
-    );
-  }
-  return (
-    amendment.acceptances.find(
-      (acceptance) => acceptance.member.id === proponentMemberId,
-    ) ?? null
-  );
+/** The position as the client last saw it: the optimistic-lock token. */
+export function seenPositionAt(
+  amendment: Pick<AmendmentDto, "position">,
+): string | null {
+  return amendment.position?.updatedAt || null;
 }
 
 /**
- * A transactional waiting for the document's presenter: proposed by a member
- * and not passed to the Secretaría yet ("pending_proponent"), or presented
- * (by the Mesa, in session) with the presenter's answer still pending.
+ * The body of PUT .../position: the answer, the comment (trimmed, null when
+ * empty) and the position the client saw, so two people answering at once
+ * get a 409 instead of overwriting each other.
  */
-export function awaitsProponentApproval(
-  amendment: Pick<
-    AmendmentDto,
-    "kind" | "status" | "reviewState" | "acceptances"
-  >,
-  proponentMemberId: string | null,
+export function positionBody(
+  answer: ProponentAnswer,
+  comment: string,
+  amendment: Pick<AmendmentDto, "position">,
+): Required<PositionBody> {
+  return {
+    position: answer,
+    comment: comment.trim() || null,
+    positionUpdatedAt: seenPositionAt(amendment),
+  };
+}
+
+/**
+ * Why an answer was refused with 409, once the list is fresh again, so the
+ * notice says what happens next in the user's language (the server's own
+ * message is never shown: see useApi's notifyError):
+ * - `answered`: still in the review, and someone else answered it meanwhile;
+ * - `changed`: still in the review with the same answer, or out of it with
+ *   nothing to wait for (the document was voted or closed meanwhile);
+ * - `gone`: decided meanwhile (voted, withdrawn, replaced by a
+ *   transactional), or no longer listed;
+ * - a wait reason: it now waits for its main authors, the Secretaría or the
+ *   assembly before it can be answered.
+ */
+export type PositionConflict =
+  "answered" | "changed" | "gone" | Exclude<PositionWaitReason, "decided">;
+
+export function positionConflict(
+  sentPositionAt: string | null,
+  fresh: (AnswerableInput & Pick<AmendmentDto, "position">) | null | undefined,
+  stillInReview: boolean,
+  rule: AcceptedAmendmentRule,
+): PositionConflict {
+  if (!fresh) return "gone";
+  if (stillInReview) {
+    return seenPositionAt(fresh) !== sentPositionAt ? "answered" : "changed";
+  }
+  const reason = positionWaitReason(fresh, rule);
+  if (reason === "decided") return "gone";
+  return reason ?? "changed";
+}
+
+/**
+ * The notice when an amendment leaves the review on its own, as the key
+ * under `proponentReview`, read from the fresh amendment: one a
+ * transactional replaced says so (the transactional is answered in its
+ * place); anything else was decided or answered meanwhile.
+ */
+export function goneKey(
+  fresh: Pick<AmendmentDto, "status"> | null | undefined,
+): "gone" | "goneTransacted" {
+  return fresh?.status === "transacted" ? "goneTransacted" : "gone";
+}
+
+/**
+ * What the answer means under the document's rule, as the key under
+ * `proponentReview.answer` that explains "Aceptar": incorporated into the
+ * text without a vote, or voted by the assembly.
+ */
+export function acceptHelpKey(rule: AcceptedAmendmentRule): string {
+  return rule === "incorporate" ? "acceptHelpIncorporate" : "acceptHelpVote";
+}
+
+/**
+ * The toast after saving, as the key under `proponentReview.saved`: an
+ * accepted amendment the server incorporated says so.
+ */
+export function savedKey(
+  answer: ProponentAnswer,
+  updated: Pick<AmendmentDto, "status" | "approvalMethod">,
+): string {
+  return answer === "accept" && isIncorporated(updated)
+    ? "incorporated"
+    : answer;
+}
+
+/**
+ * The answer took an incorporated amendment out of the text: it was
+ * incorporated before and is not any more.
+ */
+export function wasReopened(
+  before: Pick<AmendmentDto, "status" | "approvalMethod">,
+  after: Pick<AmendmentDto, "status" | "approvalMethod">,
 ): boolean {
-  if (amendment.kind !== "transactional" || !isAmendmentOpen(amendment)) {
-    return false;
-  }
-  const party = proponentAcceptance(amendment, proponentMemberId);
-  if (party?.decision !== "pending") return false;
-  return (
-    amendment.reviewState === "pending_proponent" ||
-    amendment.status === "submitted"
-  );
+  return isIncorporated(before) && !isIncorporated(after);
 }
 
 /**
- * Whether the actor can answer the presenter's approval, and how: the
- * presenter answers for itself (`can.accept`), the Mesa records the answer
- * for the presenter's member (`can.moderate`). Null when the actor cannot.
+ * Where the state sentence of a step comes from, as the key under
+ * `proponentReview.state`: what the answer leaves behind under the
+ * document's rule. With `forMember` (the Mesa answering for the main
+ * presenter) the sentence names the member instead of "you".
  */
-export function acceptanceTarget(
-  amendment: Pick<AmendmentDto, "acceptances"> & {
-    can: Pick<AmendmentDto["can"], "accept" | "moderate">;
-  },
-  actorMemberId: string | null,
-  proponentMemberId: string | null,
-): AcceptanceTarget | null {
-  const party = proponentAcceptance(amendment, proponentMemberId);
-  if (!party || party.decision !== "pending") return null;
-  if (actorMemberId !== null && party.member.id === actorMemberId) {
-    return amendment.can.accept ? { party, memberId: null } : null;
+export function stateKey(
+  amendment: Pick<AmendmentDto, "position" | "status" | "approvalMethod">,
+  rule: AcceptedAmendmentRule,
+  forMember: boolean,
+): string {
+  const answer = positionAnswer(amendment);
+  let key: string = answer ?? "pending";
+  if (answer === "accept") {
+    if (isIncorporated(amendment)) key = "incorporated";
+    else if (rule === "vote") key = "acceptVote";
   }
-  return amendment.can.moderate ? { party, memberId: party.member.id } : null;
-}
-
-/**
- * The presenter's answers to transactionals on record, from the data (so a
- * reload keeps them): approved or rejected, whoever recorded it. Drafts and
- * the transactionals the presenter proposed itself (its row is accepted on
- * creation) are left out.
- */
-export function transactionalAnswerCounts(
-  amendments: readonly Pick<
-    AmendmentDto,
-    "kind" | "status" | "authors" | "acceptances"
-  >[],
-  proponentMemberId: string | null,
-): { approved: number; rejected: number } {
-  const counts = { approved: 0, rejected: 0 };
-  for (const amendment of amendments) {
-    if (amendment.kind !== "transactional" || amendment.status === "draft") {
-      continue;
-    }
-    if (
-      proponentMemberId !== null &&
-      amendment.authors.some((author) => author.id === proponentMemberId)
-    ) {
-      continue;
-    }
-    const decision = proponentAcceptance(
-      amendment,
-      proponentMemberId,
-    )?.decision;
-    if (decision === "accepted") counts.approved += 1;
-    else if (decision === "rejected") counts.rejected += 1;
-  }
-  return counts;
+  return forMember ? `${key}For` : key;
 }
 
 // Queue -------------------------------------------------------------------------
 
-/**
- * Everything the review goes through, in order: the transactionals waiting
- * for the presenter's approval first, then the amendments to answer, both
- * in text order. `proponentMemberId` is the document's presenter (not the
- * viewer, who may be the Mesa answering for it).
- */
+function toItem(amendment: AmendmentDto): ProponentReviewItem {
+  return {
+    id: amendment.id,
+    amendment,
+    answered: isPositionAnswered(amendment),
+  };
+}
+
+/** Everything the actor answers here, in text order. */
 export function proponentReviewItems(
   amendments: readonly AmendmentDto[],
-  actorMemberId: string | null,
-  proponentMemberId: string | null,
+  rule: AcceptedAmendmentRule,
 ): ProponentReviewItem[] {
-  const sorted = sortAmendments([...amendments]);
-  const transactionals: ProponentReviewItem[] = sorted
-    .filter(
-      (amendment) =>
-        awaitsProponentApproval(amendment, proponentMemberId) &&
-        acceptanceTarget(amendment, actorMemberId, proponentMemberId) !== null,
-    )
-    .map((amendment) => ({
-      id: amendment.id,
-      kind: "transactional",
-      amendment,
-      answered: false,
-    }));
-  const positions: ProponentReviewItem[] = sorted
-    .filter(isPositionReviewable)
-    .map((amendment) => ({
-      id: amendment.id,
-      kind: "position",
-      amendment,
-      answered: isPositionAnswered(amendment),
-    }));
-  return [...transactionals, ...positions];
+  return sortAmendments([...amendments])
+    .filter((amendment) => isPositionReviewable(amendment, rule))
+    .map(toItem);
+}
+
+/**
+ * The main presenter's answers as a co-presenter reads them, in text order,
+ * whoever looks (nothing depends on the viewer's capabilities, which a
+ * co-presenter lacks): every presented, admitted amendment the main
+ * presenter answered, settled or not, and every one it can answer now.
+ * Amendments a transactional replaced are left out (the transactional
+ * carries the answer that counts), as are the inadmissible ones. With
+ * `answeredOnly` (the document was voted or closed) only the answers stay.
+ */
+export function presenterAnswerItems(
+  amendments: readonly AmendmentDto[],
+  rule: AcceptedAmendmentRule,
+  options: { answeredOnly?: boolean } = {},
+): ProponentReviewItem[] {
+  return sortAmendments([...amendments])
+    .filter((amendment) => {
+      if (
+        amendment.status === "draft" ||
+        amendment.status === "transacted" ||
+        amendment.admission !== "admitted"
+      ) {
+        return false;
+      }
+      if (isPositionAnswered(amendment) || isIncorporated(amendment)) {
+        return true;
+      }
+      return !options.answeredOnly && isPositionAnswerable(amendment, rule);
+    })
+    .map(toItem);
 }
 
 export interface ProponentReviewProgress {
@@ -248,35 +431,50 @@ export interface ProponentReviewProgress {
   answered: number;
   /** Amendments to answer, answered or not. */
   total: number;
-  /** Transactionals waiting for the presenter's approval. */
-  transactionals: number;
 }
 
-/** The progress line: "3 de 12 respondidas", plus the transactionals left. */
+/** The progress line: "3 de 12 respondidas". */
 export function proponentReviewProgress(
   items: readonly ProponentReviewItem[],
 ): ProponentReviewProgress {
-  const positions = items.filter((item) => item.kind === "position");
   return {
-    answered: positions.filter((item) => item.answered).length,
-    total: positions.length,
-    transactionals: items.filter((item) => item.kind === "transactional")
-      .length,
+    answered: items.filter((item) => item.answered).length,
+    total: items.length,
   };
+}
+
+/**
+ * The answer cannot be seen by the viewer (positions hidden from it): not
+ * the same as unanswered.
+ */
+export function isPositionHidden(
+  amendment: Pick<AmendmentDto, "position">,
+): boolean {
+  return amendment.position === null;
+}
+
+/**
+ * A co-presenter's progress line, over the answers it can see: one hidden
+ * from it is neither answered nor waiting as far as it can tell.
+ */
+export function visibleAnswerProgress(
+  items: readonly ProponentReviewItem[],
+): ProponentReviewProgress {
+  return proponentReviewProgress(
+    items.filter((item) => !isPositionHidden(item.amendment)),
+  );
+}
+
+function emptyCounts(): Record<ProponentPosition, number> {
+  return { pending: 0, accept: 0, reject: 0, transact: 0 };
 }
 
 /** How many amendments got each answer, and how many are still pending. */
 export function positionCounts(
   items: readonly ProponentReviewItem[],
 ): Record<ProponentPosition, number> {
-  const counts: Record<ProponentPosition, number> = {
-    pending: 0,
-    accept: 0,
-    reject: 0,
-    transact: 0,
-  };
+  const counts = emptyCounts();
   for (const item of items) {
-    if (item.kind !== "position") continue;
     counts[positionAnswer(item.amendment) ?? "pending"] += 1;
   }
   return counts;
@@ -285,18 +483,15 @@ export function positionCounts(
 /**
  * The answers on record over every presented amendment, decided or not
  * (for the summary once the document is voted and nothing can change).
+ * Amendments a transactional replaced are left out: the transactional
+ * carries the answer that counted.
  */
 export function recordedPositionCounts(
-  amendments: readonly Pick<AmendmentDto, "kind" | "status" | "position">[],
+  amendments: readonly Pick<AmendmentDto, "status" | "position">[],
 ): Record<ProponentPosition, number> {
-  const counts: Record<ProponentPosition, number> = {
-    pending: 0,
-    accept: 0,
-    reject: 0,
-    transact: 0,
-  };
+  const counts = emptyCounts();
   for (const amendment of amendments) {
-    if (amendment.kind === "transactional" || amendment.status === "draft") {
+    if (amendment.status === "draft" || amendment.status === "transacted") {
       continue;
     }
     const answer = positionAnswer(amendment);
@@ -307,9 +502,9 @@ export function recordedPositionCounts(
 
 // Cursor ------------------------------------------------------------------------
 
-/** Still waiting for the actor: an approval, or an amendment not answered. */
+/** Still waiting for the actor: not answered yet. */
 export function isItemPending(item: ProponentReviewItem): boolean {
-  return item.kind === "transactional" || !item.answered;
+  return !item.answered;
 }
 
 /**
@@ -328,23 +523,18 @@ export function reviewSequence(
 }
 
 /**
- * "Enmienda 5 de 12" or "Transaccional 1 de 2": where the step sits among
- * the steps of its kind in the whole review, so the total matches the
- * progress line ("3 de 12 respondidas") and hiding the answered ones does
- * not turn it into a countdown. Null when the step is not in the review.
+ * "Enmienda 5 de 12": where the step sits in the whole review, so the total
+ * matches the progress line ("3 de 12 respondidas") and hiding the answered
+ * ones does not turn it into a countdown. Null when the step is not in the
+ * review.
  */
 export function stepCounter(
   items: readonly ProponentReviewItem[],
   id: string | null,
-): { kind: ProponentReviewKind; current: number; total: number } | null {
-  const item = items.find((candidate) => candidate.id === id);
-  if (!item) return null;
-  const sameKind = items.filter((candidate) => candidate.kind === item.kind);
-  return {
-    kind: item.kind,
-    current: sameKind.indexOf(item) + 1,
-    total: sameKind.length,
-  };
+): { current: number; total: number } | null {
+  const index = items.findIndex((candidate) => candidate.id === id);
+  if (index < 0) return null;
+  return { current: index + 1, total: items.length };
 }
 
 export function stepIndex(

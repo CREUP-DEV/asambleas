@@ -15,12 +15,17 @@ import {
 
 /**
  * The amendments of one document in the validation inbox: those waiting for
- * validation, the transactionals still waiting for the document's presenter
- * (shown, not actionable) and those validated but kept private, with their
+ * validation, the transactionals still waiting for the main authors of the
+ * amendments they would replace (shown with who is missing, not
+ * actionable) and those validated but kept private, with their
  * changes over the published text (fetched once per document). When there
  * are several, they can be selected to validate or publish them at once:
  * the endpoints work per document. Late ones waiting for the assembly are
  * listed apart (LateGroup).
+ *
+ * A transactional names the amendments it groups: they are published, so
+ * not in the queue, and the document's amendment list is loaded for their
+ * codes only while the group has a transactional.
  *
  * It runs the requests itself and tells the inbox what changed, so the
  * inbox patches its queue right away and refetches in the background.
@@ -61,6 +66,31 @@ const { document: fullDocument, pending: documentPending } = useDocument(
   { live: false },
 );
 const base = computed(() => fullDocument.value?.baseVersion?.blocks ?? null);
+
+// The amendments transactionals group, for their codes. Without a
+// transactional the url is null and nothing is fetched.
+const hasTransactional = computed(() =>
+  [...props.group.toValidate, ...props.group.awaitingAuthors].some(
+    (amendment) => amendment.kind === "transactional",
+  ),
+);
+const documentAmendments = useDocumentAmendments({
+  assembly: () => props.assemblyId,
+  document: () =>
+    hasTransactional.value ? props.group.document.id : undefined,
+  assemblyId: () => props.assemblyId,
+  documentId: () => props.group.document.id,
+});
+
+/** Codes of what a transactional groups; null until they are loaded. */
+function sourceLabelsOf(amendment: AmendmentDto): string[] | null {
+  if (amendment.kind !== "transactional") return null;
+  if (!documentAmendments.data.value) return null;
+  const known = documentAmendments.byId.value;
+  return amendment.sourceIds
+    .filter((id) => known.has(id))
+    .map((id) => documentAmendments.shortLabelOf(id));
+}
 
 const documentUrl = computed(
   () =>
@@ -201,6 +231,7 @@ async function runValidate(ids: string[], publish: boolean, owner: string) {
       { method: "POST", body },
     );
     unselect(ids);
+    documentAmendments.replace(result);
     emit("updated", result.amendments);
     notify(
       doneMessage(action, ids, result.amendments),
@@ -224,6 +255,7 @@ async function runPublish(ids: string[], owner: string) {
       { method: "POST", body },
     );
     unselect(ids);
+    documentAmendments.replace(result);
     emit("updated", result.amendments);
     notify(doneMessage("publish", ids, result.amendments));
   } catch (error) {
@@ -291,13 +323,23 @@ function onAction(amendment: AmendmentDto, action: ReviewAmendmentAction) {
   }
 }
 
+/** Selected transactionals: validating them replaces what they group. */
+const selectionHasTransactional = computed(() => {
+  const ids = new Set(selection.value.validate);
+  return props.group.toValidate.some(
+    (amendment) => ids.has(amendment.id) && amendment.kind === "transactional",
+  );
+});
+
 /** Secondary bulk action, under "Más" as on each card. */
 const bulkMoreItems = computed<DropdownMenuItem[]>(() => [
   {
     label: t("review.amendments.bulkValidateOnly", {
       count: selection.value.validate.length,
     }),
-    description: t("review.amendments.validateOnlyHelp"),
+    description: selectionHasTransactional.value
+      ? t("review.amendments.bulkValidateOnlyTransactionalHelp")
+      : t("review.amendments.validateOnlyHelp"),
     icon: "i-lucide-check",
     disabled: busy.value !== null,
     onSelect: () => {
@@ -315,11 +357,11 @@ const summary = computed(() =>
           props.group.toValidate.length,
         )
       : null,
-    props.group.awaitingProponent.length > 0
+    props.group.awaitingAuthors.length > 0
       ? t(
-          "review.amendments.countAwaitingProponent",
-          { count: props.group.awaitingProponent.length },
-          props.group.awaitingProponent.length,
+          "review.amendments.countAwaitingAuthors",
+          { count: props.group.awaitingAuthors.length },
+          props.group.awaitingAuthors.length,
         )
       : null,
     props.group.toPublish.length > 0
@@ -438,6 +480,7 @@ const summary = computed(() =>
           :amendment="amendment"
           :base="base"
           :base-loading="documentPending"
+          :source-labels="sourceLabelsOf(amendment)"
           :busy="busyFor(amendment.id)"
           :disabled="busy !== null"
           :multi-select="multiSelect"
@@ -450,21 +493,22 @@ const summary = computed(() =>
       </li>
     </ul>
 
-    <div v-if="group.awaitingProponent.length > 0" class="space-y-2">
+    <div v-if="group.awaitingAuthors.length > 0" class="space-y-2">
       <div>
         <h5 class="text-highlighted text-sm font-semibold">
-          {{ t("review.amendments.awaitingProponentTitle") }}
+          {{ t("review.amendments.awaitingAuthorsTitle") }}
         </h5>
         <p class="text-muted text-sm">
-          {{ t("review.amendments.awaitingProponentHelp") }}
+          {{ t("review.amendments.awaitingAuthorsHelp") }}
         </p>
       </div>
       <ul class="space-y-3">
-        <li v-for="amendment in group.awaitingProponent" :key="amendment.id">
+        <li v-for="amendment in group.awaitingAuthors" :key="amendment.id">
           <ReviewAmendmentCard
             :amendment="amendment"
             :base="base"
             :base-loading="documentPending"
+            :source-labels="sourceLabelsOf(amendment)"
           />
         </li>
       </ul>

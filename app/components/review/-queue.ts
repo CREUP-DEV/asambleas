@@ -8,9 +8,9 @@
  * (`ignorePrefix`); import it explicitly.
  */
 import type {
-  AcceptanceDto,
   AdmissionBody,
   AmendmentDto,
+  MemberRef,
   ReviewQueueAmendmentDto,
   ReviewQueueDto,
 } from "~~/shared/types/api";
@@ -46,23 +46,57 @@ export type ReviewAmendmentAction =
 export type AdmissionChoice = Omit<AdmissionBody, "amendmentIds">;
 
 type ReviewStateLike = Pick<AmendmentDto, "reviewState">;
+type AuthorsLike = ReviewStateLike & Pick<AmendmentDto, "acceptances">;
 type LateLike = Pick<
   AmendmentDto,
   "late" | "admission" | "status" | "validatedAt"
 >;
-type QueueLike = ReviewStateLike & LateLike;
+type QueueLike = AuthorsLike & LateLike;
 
 /** Presented and not checked by the Secretaría yet. */
 export function isAwaitingValidation(amendment: ReviewStateLike): boolean {
   return amendment.reviewState === "pending_validation";
 }
 
+/** Some party already rejected this transactional. */
+function rejectedByAnAuthor(
+  amendment: Pick<AmendmentDto, "acceptances">,
+): boolean {
+  return amendment.acceptances.some(
+    (acceptance) => acceptance.decision === "rejected",
+  );
+}
+
 /**
- * A transactional proposed by a member, waiting for whoever presents the
- * document to approve it. The Secretaría cannot validate it until then.
+ * A transactional waiting for the main author of each amendment it would
+ * replace to accept it. The Secretaría cannot validate it until they all
+ * do. One that any of them rejected is closed (the originals carry on), so
+ * it waits for nothing, whatever state the server still reports.
  */
-export function isAwaitingProponent(amendment: ReviewStateLike): boolean {
-  return amendment.reviewState === "pending_proponent";
+export function isAwaitingAuthors(amendment: AuthorsLike): boolean {
+  return (
+    amendment.reviewState === "pending_authors" &&
+    !rejectedByAnAuthor(amendment)
+  );
+}
+
+/**
+ * The main authors who still have to answer a transactional, once each and
+ * in the order the server lists them. The DTO's acceptances hold the main
+ * authors only, so whoever it lists as pending is missing.
+ */
+export function missingAuthors(
+  amendment: Pick<AmendmentDto, "acceptances">,
+): MemberRef[] {
+  const seen = new Set<string>();
+  const missing: MemberRef[] = [];
+  for (const acceptance of amendment.acceptances) {
+    if (acceptance.decision !== "pending") continue;
+    if (seen.has(acceptance.member.id)) continue;
+    seen.add(acceptance.member.id);
+    missing.push(acceptance.member);
+  }
+  return missing;
 }
 
 /**
@@ -94,25 +128,9 @@ export function isAwaitingPublication(amendment: QueueLike): boolean {
 export function isInReviewQueue(amendment: QueueLike): boolean {
   return (
     isAwaitingValidation(amendment) ||
-    isAwaitingProponent(amendment) ||
+    isAwaitingAuthors(amendment) ||
     isAwaitingPublication(amendment) ||
     isAwaitingAssembly(amendment)
-  );
-}
-
-/**
- * The answer of the document's presenter to a transactional, when it is a
- * party of its own (role "proponent"). Null when the presenter also wrote
- * one of the amendments it groups (a single "author" row then) or is not a
- * party: the card then names nobody.
- */
-export function proponentAcceptance(
-  amendment: Pick<AmendmentDto, "acceptances">,
-): AcceptanceDto | null {
-  return (
-    amendment.acceptances.find(
-      (acceptance) => acceptance.role === "proponent",
-    ) ?? null
   );
 }
 
@@ -126,9 +144,9 @@ export interface ReviewScope {
 /**
  * Items waiting for the Secretaría's validation: presented documents and
  * presented amendments. Validated amendments kept unpublished on purpose,
- * transactionals still waiting for the document's presenter and late ones
- * waiting for the assembly are not counted: they wait for someone else, or
- * the badge would never go away.
+ * transactionals still waiting for their authors and late ones waiting for
+ * the assembly are not counted: they wait for someone else, or the badge
+ * would never go away.
  */
 export function pendingReviewCount(
   queue: ReviewQueueDto | null | undefined,
@@ -147,8 +165,8 @@ export interface ReviewDocumentGroup {
   document: ReviewQueueAmendmentDto["document"];
   /** Presented, waiting for validation, in text order. */
   toValidate: AmendmentDto[];
-  /** Transactionals waiting for the document's presenter, in text order. */
-  awaitingProponent: AmendmentDto[];
+  /** Transactionals waiting for their authors' answer, in text order. */
+  awaitingAuthors: AmendmentDto[];
   /** Validated, waiting for publication, in text order. */
   toPublish: AmendmentDto[];
   /** Late and validated, waiting for the assembly's decision, in text order. */
@@ -168,12 +186,12 @@ function compareInText(a: AmendmentDto, b: AmendmentDto): number {
 export function reviewGroupSize(
   group: Pick<
     ReviewDocumentGroup,
-    "toValidate" | "awaitingProponent" | "toPublish"
+    "toValidate" | "awaitingAuthors" | "toPublish"
   >,
 ): number {
   return (
     group.toValidate.length +
-    group.awaitingProponent.length +
+    group.awaitingAuthors.length +
     group.toPublish.length
   );
 }
@@ -194,7 +212,7 @@ export function groupReviewAmendments(
       group = {
         document,
         toValidate: [],
-        awaitingProponent: [],
+        awaitingAuthors: [],
         toPublish: [],
         late: [],
       };
@@ -202,8 +220,8 @@ export function groupReviewAmendments(
     }
     if (isAwaitingAssembly(amendment)) group.late.push(amendment);
     else if (isAwaitingValidation(amendment)) group.toValidate.push(amendment);
-    else if (isAwaitingProponent(amendment)) {
-      group.awaitingProponent.push(amendment);
+    else if (isAwaitingAuthors(amendment)) {
+      group.awaitingAuthors.push(amendment);
     } else if (isAwaitingPublication(amendment)) {
       group.toPublish.push(amendment);
     }
@@ -212,7 +230,7 @@ export function groupReviewAmendments(
     .map((group) => ({
       ...group,
       toValidate: [...group.toValidate].sort(compareInText),
-      awaitingProponent: [...group.awaitingProponent].sort(compareInText),
+      awaitingAuthors: [...group.awaitingAuthors].sort(compareInText),
       toPublish: [...group.toPublish].sort(compareInText),
       late: [...group.late].sort(compareInText),
     }))
@@ -229,7 +247,7 @@ export interface ReviewSelection {
 /**
  * Splits a selection of one group into what each bulk action applies to.
  * Only amendments in the right state count: a transactional waiting for
- * the document's presenter is never validated, whatever `can` says.
+ * its authors is never validated, whatever `can` says.
  */
 export function splitReviewSelection(
   group: Pick<ReviewDocumentGroup, "toValidate" | "toPublish">,

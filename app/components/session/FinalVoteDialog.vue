@@ -20,8 +20,9 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * amendments; if they cannot be applied together it answers 409 and the
  * conflicts are listed. An approved totality return blocks the vote: the
  * text goes back to its proponent. Amendments still open block it too,
- * listed apart when the Secretaría has not validated them yet, since the
- * Mesa cannot decide those.
+ * listed by who has to act: the Mesa (undecided), the assembly (late ones
+ * it has not agreed to treat), the main authors (transactionals they have
+ * not accepted) and the Secretaría (not validated yet).
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -68,25 +69,35 @@ watch(
 const undecided = computed(() => session.undecided.value);
 /** Every amendment still open, split by who has to act (server ids too). */
 const blockers = computed(() =>
-  sessionFinalVoteBlockers(
-    session.amendments.value,
-    serverUndecided.value,
-    session.presenterId.value,
-  ),
+  sessionFinalVoteBlockers(session.amendments.value, serverUndecided.value),
 );
 /**
- * Members' transactionals the document's presenter has not approved yet,
- * or turned down (to be withdrawn): the final vote waits for them too.
+ * What the Mesa cannot settle by deciding: transactionals that can no
+ * longer go ahead (to withdraw), late amendments the assembly has not
+ * agreed to treat, transactionals the main authors have not accepted and
+ * amendments the Secretaría has not validated.
  */
-const proponentBlockers = computed(() =>
+const otherBlockers = computed(() =>
   [
     {
-      key: "session.preview.awaitingProponent",
-      ids: blockers.value.awaitingProponent,
+      key: "session.preview.superseded",
+      icon: "i-lucide-git-pull-request-closed",
+      ids: blockers.value.superseded,
     },
     {
-      key: "session.preview.proponentRejected",
-      ids: blockers.value.proponentRejected,
+      key: "session.preview.late",
+      icon: "i-lucide-clock-alert",
+      ids: blockers.value.late,
+    },
+    {
+      key: "session.preview.awaitingAuthors",
+      icon: "i-lucide-user-round-check",
+      ids: blockers.value.awaitingAuthors,
+    },
+    {
+      key: "session.preview.awaitingValidation",
+      icon: "i-lucide-hourglass",
+      ids: blockers.value.awaitingValidation,
     },
   ].filter((group) => group.ids.length > 0),
 );
@@ -199,27 +210,11 @@ async function record(): Promise<void> {
           :description="blockers.undecided.map(session.label).join(', ')"
         />
         <UAlert
-          v-if="blockers.awaitingValidation.length > 0"
-          color="warning"
-          variant="subtle"
-          icon="i-lucide-hourglass"
-          :title="
-            t(
-              'session.preview.awaitingValidation',
-              { count: blockers.awaitingValidation.length },
-              blockers.awaitingValidation.length,
-            )
-          "
-          :description="
-            blockers.awaitingValidation.map(session.label).join(', ')
-          "
-        />
-        <UAlert
-          v-for="group in proponentBlockers"
+          v-for="group in otherBlockers"
           :key="group.key"
           color="warning"
           variant="subtle"
-          icon="i-lucide-user-round-check"
+          :icon="group.icon"
           :title="t(group.key, { count: group.ids.length }, group.ids.length)"
           :description="group.ids.map(session.label).join(', ')"
         />

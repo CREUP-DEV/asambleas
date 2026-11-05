@@ -13,6 +13,7 @@ import { db } from "../../../db";
 import { assemblies, documents } from "../../../db/schema";
 import { getUploadDir } from "../../../utils/core/uploadPaths";
 import { requireActor } from "../../../utils/domain/actor";
+import { withCoProponentIds } from "../../../utils/domain/presenters";
 import {
   canSeeAssembly,
   canSeeDocument,
@@ -51,6 +52,7 @@ export default defineEventHandler(async (event) => {
 
   const [row] = await db
     .select({
+      id: documents.id,
       status: documents.status,
       format: documents.format,
       proponentMemberId: documents.proponentMemberId,
@@ -67,7 +69,8 @@ export default defineEventHandler(async (event) => {
     !row ||
     row.format !== "file" ||
     !canSeeAssembly(actor, { status: row.assemblyStatus }) ||
-    !canSeeDocument(actor, row)
+    // Co-presenters see a draft like its main presenter.
+    !canSeeDocument(actor, (await withCoProponentIds([row]))[0]!)
   ) {
     notFound();
   }

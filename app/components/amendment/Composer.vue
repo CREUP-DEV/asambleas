@@ -6,6 +6,7 @@ import type {
   AmendmentDto,
   DocumentDto,
   MemberDto,
+  MemberRef,
 } from "~~/shared/types/api";
 import type { AmendmentOp, Block } from "~~/shared/types/content";
 import { globalReplaceOps, validateOps } from "~~/shared/utils/content/ops";
@@ -19,6 +20,8 @@ import {
   amendmentSentNotice,
   composerAuthorMemberIds,
   composerAuthorSeed,
+  composerAuthorSet,
+  composerMainAuthor,
   composerSyncState,
   contiguousBlockRange,
   deletePassageOps,
@@ -35,6 +38,9 @@ import {
  * choice made on the text, which can be changed here), write the change,
  * see it against the text, and explain why. Co-authors, the "formal"
  * nature and presenting on behalf of a member stay folded unless needed.
+ * With co-authors, one of the members presenting it must be named main
+ * author ("Autor principal"): only that one answers the transactionals
+ * proposed over it, and the others see its answer.
  * Sending goes to the Secretaría, which checks it before anyone else sees
  * it. A draft sent back for correction shows the Secretaría's note on top.
  *
@@ -132,26 +138,30 @@ const draftId = ref<string | null>(props.draft?.id ?? null);
 const updatedAt = ref<string | null>(props.draft?.updatedAt ?? null);
 
 const canActOnBehalf = computed(() => props.document.can.moderate);
+/** A new amendment: no stored draft when the composer opened. */
+const isNew = !props.draft;
 const seedAuthors = props.draft?.authors ?? [];
 const authorSeed = composerAuthorSeed(
   seedAuthors.map((author) => author.id),
   member.value?.id ?? null,
-  canActOnBehalf.value,
+  props.draft?.mainAuthorId ?? null,
 );
+/**
+ * Picked by a moderator only. A stored draft keeps its presenting member
+ * unless the moderator picks another one: nothing is sent on its behalf.
+ */
 const onBehalfOfMemberId = ref<string | undefined>(
   authorSeed.onBehalfOfMemberId,
 );
 const coAuthorIds = ref<string[]>(authorSeed.coAuthorIds);
-/** The stored presenting member, shown when nobody is picked on behalf. */
-const presentingMember =
-  seedAuthors.find((author) => author.id === authorSeed.presentingMemberId) ??
-  null;
-const showPresenting = computed(
-  () =>
-    presentingMember !== null &&
-    presentingMember.id !== member.value?.id &&
-    !onBehalfOfMemberId.value,
+const mainAuthorId = ref<string | undefined>(
+  authorSeed.mainAuthorId ?? undefined,
 );
+/**
+ * Editing a draft the actor's member does not present (a moderator): the
+ * picker holds every member presenting it, not "the others".
+ */
+const editingOthers = !isNew && authorSeed.keptMemberId === null;
 
 // Sync with the stored draft ---------------------------------------------------
 
@@ -409,8 +419,8 @@ const opReasons = computed<string[]>(() => {
 const onBehalfRequired = computed(
   () =>
     canActOnBehalf.value &&
-    (!member.value ||
-      (!draftId.value && !can(PERMISSION_KEYS.AMENDMENT_CREATE))),
+    isNew &&
+    (!member.value || !can(PERMISSION_KEYS.AMENDMENT_CREATE)),
 );
 const needsMember = computed(
   () => onBehalfRequired.value && !onBehalfOfMemberId.value,
@@ -426,11 +436,32 @@ const optionsOpen = ref(
       !onBehalfRequired.value &&
       Boolean(onBehalfOfMemberId.value)),
 );
+
+/**
+ * Everyone presenting it: the presenting member of a new amendment (picked
+ * on behalf, or the actor's own), the kept own member of a stored draft,
+ * and the co-authors. With several, one must be the main author.
+ */
+const authorSet = computed(() =>
+  composerAuthorSet({
+    presentingMemberId: isNew
+      ? (onBehalfOfMemberId.value ?? member.value?.id ?? null)
+      : (onBehalfOfMemberId.value ?? null),
+    keptMemberId: authorSeed.keptMemberId,
+    coAuthorIds: coAuthorIds.value,
+  }),
+);
+const mainAuthor = computed(() =>
+  composerMainAuthor(authorSet.value, mainAuthorId.value),
+);
+const mainAuthorBox = useTemplateRef<HTMLElement>("mainAuthorBox");
+
 const blocked = computed(
   () =>
     localIssues.value.length > 0 ||
     opReasons.value.length > 0 ||
     needsMember.value ||
+    mainAuthor.value.missing ||
     cannotPresent.value ||
     syncBlocked.value,
 );
@@ -479,13 +510,43 @@ const memberItems = computed(() =>
       value: item.id,
     })),
 );
-/** Everyone but the actor's member and the presenting one (always included). */
+/**
+ * Everyone but the actor's member (always kept) and, on a new amendment,
+ * the presenting one (always included).
+ */
 const coAuthorItems = computed(() => {
-  const presenting = onBehalfOfMemberId.value ?? authorSeed.presentingMemberId;
+  const presenting = isNew ? onBehalfOfMemberId.value : undefined;
   return memberItems.value.filter(
     (item) => item.value !== member.value?.id && item.value !== presenting,
   );
 });
+
+/** Members by id, to name the main author choices. */
+const memberRefs = computed(() => {
+  const refs = new Map<string, Pick<MemberRef, "acronym" | "name">>();
+  for (const item of members.value ?? []) refs.set(item.id, item);
+  for (const author of seedAuthors) refs.set(author.id, author);
+  if (member.value) refs.set(member.value.id, member.value);
+  return refs;
+});
+const mainAuthorItems = computed(() =>
+  authorSet.value.map((id) => {
+    const ref = memberRefs.value.get(id);
+    return {
+      label: ref ? `${ref.acronym} · ${ref.name}` : id,
+      value: id,
+    };
+  }),
+);
+
+/** Opens the folded options and takes focus to the main author choice. */
+async function focusMainAuthor(): Promise<void> {
+  optionsOpen.value = true;
+  await nextTick();
+  mainAuthorBox.value
+    ?.querySelector<HTMLElement>('[role="radio"], input, button')
+    ?.focus();
+}
 
 // Saving ---------------------------------------------------------------------
 
@@ -499,6 +560,7 @@ async function persist(): Promise<AmendmentDto | null> {
   editorRef.value?.flush();
   attempted.value = true;
   serverReasons.value = [];
+  if (mainAuthor.value.missing) void focusMainAuthor();
   if (blocked.value) return null;
 
   const body: AmendmentDraftBody = {
@@ -510,6 +572,7 @@ async function persist(): Promise<AmendmentDto | null> {
       coAuthorIds.value,
       authorSeed.keptMemberId,
     ),
+    mainAuthorMemberId: mainAuthor.value.value,
     globalReplace:
       mode.value === "global"
         ? { find: find.value.trim(), replace: replacement.value }
@@ -1026,22 +1089,13 @@ onMounted(() => {
           class="border-default mt-2 flex flex-col gap-4 rounded-md border p-3 sm:p-4"
         >
           <UFormField
-            :label="t('amendment.composer.coAuthors')"
+            :label="
+              editingOthers
+                ? t('amendment.detail.authors')
+                : t('amendment.composer.coAuthors')
+            "
             :help="t('amendment.composer.coAuthorsHint')"
           >
-            <div
-              v-if="showPresenting && presentingMember"
-              class="mb-2 flex flex-wrap items-center gap-2"
-            >
-              <CommonMemberBadge
-                :member="presentingMember"
-                size="xs"
-                show-name
-              />
-              <span class="text-dimmed text-xs">
-                {{ t("amendment.detail.presenting") }}
-              </span>
-            </div>
             <USelectMenu
               v-model="coAuthorIds"
               :items="coAuthorItems"
@@ -1055,6 +1109,30 @@ onMounted(() => {
               }"
             />
           </UFormField>
+
+          <!-- Several members present it: one answers the transactionals. -->
+          <div v-if="mainAuthor.required" ref="mainAuthorBox">
+            <UFormField
+              :label="t('amendment.composer.mainAuthor')"
+              required
+              :help="t('amendment.composer.mainAuthorHint')"
+              :error="
+                attempted && mainAuthor.missing
+                  ? t('amendment.composer.mainAuthorRequired')
+                  : undefined
+              "
+            >
+              <!-- The visible label is the field's; the legend names the group. -->
+              <URadioGroup
+                v-model="mainAuthorId"
+                :items="mainAuthorItems"
+                :legend="t('amendment.composer.mainAuthor')"
+                :ui="{ legend: 'sr-only' }"
+                aria-required="true"
+                size="sm"
+              />
+            </UFormField>
+          </div>
 
           <UCheckbox
             v-if="canBeFormal"

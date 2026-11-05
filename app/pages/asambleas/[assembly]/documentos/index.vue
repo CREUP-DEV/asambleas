@@ -6,6 +6,10 @@ import {
   documentProgress,
   PROGRESS_LABEL_ORDER,
 } from "~/composables/document/documentProgress";
+import {
+  documentPresenterMembers,
+  isDocumentPresenter,
+} from "~/composables/document/documentPresenters";
 
 /**
  * Every document of the assembly in agenda order, with search and filters.
@@ -15,7 +19,8 @@ import {
  * Before publication each row says where the document stands and, for the
  * user's own drafts, what to do next (with the internal deadline of the
  * documents the Secretaría expects). "Solo los míos" narrows the list to the
- * documents the user's member presents. The status filter offers the same
+ * documents the user's member presents, alone or with others; the search
+ * also finds a document by any of its presenters. The status filter offers the same
  * names as the badges ("Enviado a Secretaría", "Corrección pedida", "Fuera
  * de plazo"...), only those that some document has.
  */
@@ -53,7 +58,7 @@ const onlyMine = ref(false);
 
 const memberId = computed(() => me.member.value?.id ?? null);
 const isMine = (document: DocumentSummaryDto) =>
-  memberId.value !== null && document.proponent?.id === memberId.value;
+  isDocumentPresenter(document, memberId.value);
 const mineCount = computed(
   () => (agenda.value?.documents ?? []).filter(isMine).length,
 );
@@ -115,8 +120,10 @@ const filtered = computed<DocumentSummaryDto[]>(() => {
     return [
       document.title,
       document.reference ?? "",
-      document.proponent?.acronym ?? "",
-      document.proponent?.name ?? "",
+      ...documentPresenterMembers(document).flatMap((member) => [
+        member.acronym,
+        member.name,
+      ]),
     ].some((field) => normalized(field).includes(query));
   });
 });
@@ -161,8 +168,8 @@ function documentPath(document: DocumentSummaryDto): string {
 }
 
 /**
- * The editor of the user's own draft (its presenters may edit it); managers
- * open documents in the workspace like everyone else.
+ * The editor of the user's own draft (its presenters, main or co-presenters,
+ * may edit it); managers open documents in the workspace like everyone else.
  */
 function documentEditPath(document: DocumentSummaryDto): string | null {
   if (

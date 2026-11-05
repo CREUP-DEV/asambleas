@@ -1,4 +1,8 @@
 import type { DocumentSummaryDto } from "~~/shared/types/api";
+import {
+  isDocumentPresenter,
+  type PresentedDocument,
+} from "./documentPresenters";
 
 /**
  * Where a document stands, told as a short label and a sentence that says
@@ -24,8 +28,9 @@ export type DocumentProgressState =
   | "postponed";
 
 /**
- * Who is looking: the member presenting it, the Secretaría
- * (document:manage) or anyone else who can see it (the Mesa, delegates).
+ * Who is looking: a member presenting it (the main presenter or a
+ * co-presenter, who edit the draft alike), the Secretaría (document:manage)
+ * or anyone else who can see it (the Mesa, delegates).
  */
 export type DocumentAudience = "presenter" | "manager" | "other";
 
@@ -103,16 +108,15 @@ function draftState(document: ProgressInput): DocumentProgressState {
 
 /**
  * The audience for a viewer: the Secretaría first (it validates, it does not
- * send to itself), then the presenting member, then anyone else.
+ * send to itself), then a presenting member (main or co-presenter), then
+ * anyone else.
  */
 export function documentAudience(
-  document: Pick<DocumentSummaryDto, "proponent">,
+  document: PresentedDocument,
   viewer: { memberId: string | null | undefined; manager: boolean },
 ): DocumentAudience {
   if (viewer.manager) return "manager";
-  if (viewer.memberId && document.proponent?.id === viewer.memberId) {
-    return "presenter";
-  }
+  if (isDocumentPresenter(document, viewer.memberId)) return "presenter";
   return "other";
 }
 

@@ -1,5 +1,6 @@
 import { z } from "zod/v4";
 import {
+  ACCEPTED_AMENDMENT_RULES,
   DOCUMENT_FORMATS,
   DOCUMENT_KINDS,
   MAJORITIES,
@@ -26,6 +27,17 @@ export const entityIdSchema = z.string().regex(ENTITY_ID_PATTERN);
 
 export const isoDateSchema = z.iso.datetime({ offset: true });
 
+/** More co-presenters than this is surely a mistake. */
+export const MAX_CO_PROPONENTS = 20;
+
+/** Members presenting a document jointly with its main presenter. */
+const coProponentIdsSchema = z
+  .array(entityIdSchema)
+  .max(MAX_CO_PROPONENTS)
+  .refine((ids) => new Set(ids).size === ids.length, {
+    message: "duplicate_member_id",
+  });
+
 const titleSchema = z.string().trim().min(1).max(300);
 /** An empty summary is stored as null. */
 const summarySchema = z
@@ -41,7 +53,9 @@ export const documentCreateSchema = z.object({
   title: titleSchema,
   summary: summarySchema.nullable().optional(),
   proponentMemberId: entityIdSchema.nullable().optional(),
+  coProponentMemberIds: coProponentIdsSchema.optional(),
   amendable: z.boolean().optional(),
+  acceptedAmendments: z.enum(ACCEPTED_AMENDMENT_RULES).optional(),
   voted: z.boolean().optional(),
   majority: z.enum(MAJORITIES).optional(),
   blocks: blocksSchema.optional(),
@@ -54,9 +68,11 @@ export const documentUpdateSchema = z.object({
   kind: z.enum(DOCUMENT_KINDS).optional(),
   agendaItemId: entityIdSchema.optional(),
   proponentMemberId: entityIdSchema.nullable().optional(),
+  coProponentMemberIds: coProponentIdsSchema.optional(),
   amendable: z.boolean().optional(),
   voted: z.boolean().optional(),
   majority: z.enum(MAJORITIES).optional(),
+  acceptedAmendments: z.enum(ACCEPTED_AMENDMENT_RULES).optional(),
   amendmentsOpenAt: isoDateSchema.nullable().optional(),
   amendmentsCloseAt: isoDateSchema.nullable().optional(),
   dueAt: isoDateSchema.nullable().optional(),

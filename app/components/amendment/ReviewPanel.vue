@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AmendmentStatus } from "~~/shared/constants/domain";
 import type {
   AmendmentDto,
   CorrectionBody,
@@ -31,9 +32,10 @@ import {
  * to treat it (a late one).
  *
  * A presented transactional says what it waits for, to everyone who sees
- * it: the document's presenter's approval, then the parties' acceptance,
- * or that it is ready to be voted. While the Secretaría has it, the usual
- * review sentence stays, plus who will still have to accept it.
+ * it: the main authors of the amendments it would replace (naming who is
+ * missing), or that one rejected it (closed, the originals carry on), or
+ * which amendments it replaced. While the Secretaría has it, the usual
+ * review sentence stays, plus what checking it will do (replace them).
  *
  * Focus: after an action the status sentence takes it (it is also announced),
  * or, when the panel is gone (published, nothing left to say), `settled`
@@ -45,13 +47,12 @@ const props = withDefaults(
     amendment: AmendmentDto;
     /** Base URL of the document's amendments: .../amendments. */
     amendmentsUrl: string;
-    /**
-     * The document's presenter (document.proponent): a transactional waits
-     * for its approval, found by member even when it also wrote a source.
-     */
-    proponentMemberId?: string | null;
+    /** Names the amendments a transactional combines. */
+    labelOf?: (id: string) => string;
+    /** Status of another amendment, to tell whether a transactional replaced them. */
+    statusOf?: (id: string) => AmendmentStatus | undefined;
   }>(),
-  { proponentMemberId: null },
+  { labelOf: undefined, statusOf: undefined },
 );
 
 const emit = defineEmits<{
@@ -100,15 +101,21 @@ const progress = computed(() =>
   transactionalProgressOf(
     props.amendment,
     member.value?.id ?? null,
-    props.proponentMemberId,
+    props.statusOf,
   ),
 );
 /** The transactional's own sentence, outside the Secretaría's stages. */
 const progressSentence = computed(() =>
-  progress.value ? progressText.sentence(progress.value) : null,
+  progress.value ? progressText.sentence(progress.value, props.labelOf) : null,
 );
 const afterSecretaria = computed(() =>
-  progress.value ? progressText.afterSecretaria(progress.value) : null,
+  progress.value
+    ? progressText.afterSecretaria(
+        progress.value,
+        props.labelOf,
+        props.statusOf,
+      )
+    : null,
 );
 const view = computed(() => {
   const current = amendmentReviewView(props.amendment);
@@ -131,7 +138,7 @@ const status = computed(() => {
     return {
       icon: progress.value.icon,
       color: progress.value.color,
-      title: progressText.summary(progress.value),
+      title: progressText.summary(progress.value, props.labelOf),
       sentence: progressSentence.value,
       private: view.value?.private ?? false,
     };

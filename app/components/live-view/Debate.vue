@@ -21,6 +21,12 @@ const props = defineProps<{
   amendment: AmendmentDto | null;
   /** Where the amendment stands (see liveAmendmentState). */
   state: LiveAmendmentState | null;
+  /**
+   * What the badge alone does not explain (liveAmendmentNote), already
+   * translated: who replaced it, that it is in the text without a vote, or
+   * what a transactional replaced or still waits for.
+   */
+  note?: string | null;
   /** The Mesa debates an amendment the viewer cannot read yet. */
   amendmentHidden: boolean;
   /** Localized path of the document workspace. */
@@ -48,6 +54,28 @@ watch(
     justificationOpen.value = false;
   },
 );
+
+/** States whose note says it better than the state sentence. */
+const NOTE_REPLACES: ReadonlySet<LiveAmendmentState> = new Set([
+  "late",
+  "transacted",
+  "incorporated",
+  "turned_down",
+]);
+
+/**
+ * Where it stands, one sentence per line. A late, replaced, incorporated
+ * or turned-down amendment has its own sentence (the note names who or
+ * what); anything else keeps the state sentence and adds the note under it.
+ */
+const stateLines = computed(() => {
+  const state = props.state;
+  if (!state) return [];
+  const note = props.note?.trim() || null;
+  if (note && NOTE_REPLACES.has(state)) return [note];
+  const sentence = t(`liveView.state.${state}.sentence`);
+  return note ? [sentence, note] : [sentence];
+});
 
 const amendmentLink = computed(() =>
   props.amendment && props.documentPath
@@ -130,8 +158,8 @@ const amendmentLink = computed(() =>
             :show-name="amendment.authors.length === 1"
           />
         </div>
-        <p v-if="state" class="text-default">
-          {{ t(`liveView.state.${state}.sentence`) }}
+        <p v-for="line in stateLines" :key="line" class="text-default">
+          {{ line }}
         </p>
 
         <div class="live-text border-default rounded-lg border p-3 sm:p-4">

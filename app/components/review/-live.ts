@@ -10,8 +10,10 @@
 /**
  * Live event types that can change the inbox: documents and amendments
  * entering or leaving it, or changing what a card shows (title, admission).
- * An acceptance counts: the presenter approving a transactional is what
- * makes it ready for validation. "poll" is the synthetic event sent while
+ * An acceptance counts: the main authors accepting a transactional is what
+ * makes it ready for validation, and one of them rejecting it closes it.
+ * So does an amendment being transacted: a transactional that replaces it
+ * takes it out of the inbox. "poll" is the synthetic event sent while
  * the live stream is down, when anything may have changed. Votes, outcomes,
  * positions and draft edits are left out: they never touch what waits for
  * validation.
@@ -37,6 +39,7 @@ export const REVIEW_LIVE_TYPES: ReadonlySet<string> = new Set([
   "amendment_reopened",
   "amendment_admitted",
   "amendment_inadmissible",
+  "amendment_transacted",
   "acceptance_recorded",
 ]);
 

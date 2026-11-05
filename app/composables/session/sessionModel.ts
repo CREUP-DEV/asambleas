@@ -20,7 +20,6 @@ import type {
   ConsolidationResult,
 } from "~~/shared/types/content";
 import type {
-  AcceptanceRole,
   AmendmentStatus,
   AssemblySettings,
   Majority,
@@ -71,51 +70,202 @@ export const SESSION_REOPENABLE: AmendmentStatus[] = [
   "lapsed",
 ];
 
+/**
+ * Whether the outcome endpoint would reopen it: a status it reopens from
+ * and, for a transactional, not turned down by a main author and either
+ * one that replaced its sources (they stay replaced) or one whose loaded
+ * sources are all still open. One that another transactional got ahead of
+ * (it lapsed when the other replaced them) would come back stuck.
+ */
+export function isSessionReopenable(
+  amendment: AmendmentDto,
+  byId: ReadonlyMap<string, AmendmentDto>,
+): boolean {
+  if (!SESSION_REOPENABLE.includes(amendment.status)) return false;
+  if (amendment.kind !== "transactional") return true;
+  if (sessionTransactionalRejectors(amendment).length > 0) return false;
+  if (isSessionReplacing(amendment)) return true;
+  return amendment.sourceIds.every((id) => {
+    const source = byId.get(id);
+    return source === undefined || source.status === "submitted";
+  });
+}
+
 // Validation by the Secretaría ------------------------------------------------
 
 /**
- * A transactional proposed by a member, waiting for whoever presents the
- * document to approve it before the Secretaría checks it. Draft or
- * presented, it is not the Mesa's yet.
+ * A transactional proposed by a member, waiting for the main author of each
+ * amendment it would replace to accept it before the Secretaría checks it.
+ * Draft or presented, it is not the Mesa's yet.
  */
-export function isSessionAwaitingProponent(amendment: AmendmentDto): boolean {
+export function isSessionAwaitingAuthors(amendment: AmendmentDto): boolean {
   return (
-    amendment.reviewState === "pending_proponent" &&
+    amendment.reviewState === "pending_authors" &&
     (amendment.status === "submitted" || amendment.status === "draft")
   );
 }
 
 /**
- * A transactional proposed by a member that whoever presents the document
- * turned down. It stays presented and private, and the final vote waits for
- * it, until whoever proposed it (or the Mesa) withdraws it. The presenter's
- * answer is the acceptance of the document's proponent member, whatever its
- * role (it may also have written a source): `presenterId` names it, and
- * without it the row with the `proponent` role is taken.
+ * The main author of an amendment: the one that answers the transactionals
+ * proposed over it. `mainAuthorId` names it; without it the first author
+ * (authors come main author first) is taken.
  */
-export function isSessionProponentRejected(
+export function sessionMainAuthor(amendment: AmendmentDto): MemberRef | null {
+  if (amendment.mainAuthorId) {
+    const named = amendment.authors.find(
+      (author) => author.id === amendment.mainAuthorId,
+    );
+    if (named) return named;
+  }
+  return amendment.authors[0] ?? null;
+}
+
+/**
+ * The parties that turned a transactional down. Any main author saying no
+ * closes it and the amendments it would have replaced carry on, whatever
+ * status the server records for it. Empty for anything else.
+ */
+export function sessionTransactionalRejectors(
   amendment: AmendmentDto,
-  presenterId: string | null = null,
+): MemberRef[] {
+  if (amendment.kind !== "transactional") return [];
+  return amendment.acceptances
+    .filter((party) => party.decision === "rejected")
+    .map((party) => party.member);
+}
+
+/**
+ * Approved because the document's main presenter accepted it, without a
+ * vote: the document incorporates accepted amendments (regulations by
+ * default). If the presenter changes its answer before the final vote, it
+ * goes back to undecided.
+ */
+export function isSessionIncorporated(amendment: AmendmentDto): boolean {
+  return (
+    amendment.status === "approved" && amendment.approvalMethod === "proponent"
+  );
+}
+
+/**
+ * A transactional that replaced the amendments it groups at some point:
+ * validated by the Secretaría (the Mesa's are at once) and accepted by every
+ * main author, the moment the server turns its sources `transacted`, or
+ * approved (one presented under the earlier rule replaced them then). From
+ * then on the answers of its main authors are final, and its sources stay
+ * replaced whatever happens to it later (voted down, withdrawn, lapsed or
+ * replaced in turn).
+ */
+export function isSessionReplacing(amendment: AmendmentDto): boolean {
+  if (amendment.kind !== "transactional" || amendment.status === "draft") {
+    return false;
+  }
+  if (amendment.status === "approved") return true;
+  return (
+    amendment.validatedAt !== null &&
+    amendment.acceptances.every((party) => party.decision === "accepted")
+  );
+}
+
+/**
+ * The sources a presented transactional can no longer replace: loaded ones
+ * that are not open any more because another transactional replaced them
+ * first or they were decided. Empty for anything else, and for one that
+ * already replaced its sources or that a main author turned down.
+ */
+export function sessionSupersededSourceIds(
+  amendment: AmendmentDto,
+  byId: ReadonlyMap<string, AmendmentDto>,
+): string[] {
+  if (
+    amendment.kind !== "transactional" ||
+    amendment.status !== "submitted" ||
+    isSessionReplacing(amendment) ||
+    sessionTransactionalRejectors(amendment).length > 0
+  ) {
+    return [];
+  }
+  return amendment.sourceIds.filter((id) => {
+    const source = byId.get(id);
+    return source !== undefined && source.status !== "submitted";
+  });
+}
+
+/**
+ * A presented transactional that can never go ahead: some amendment it
+ * would replace is no longer open (sessionSupersededSourceIds). The server
+ * refuses to validate it or to record the answer that would complete it,
+ * so only withdrawing it settles it.
+ */
+export function isSessionSuperseded(
+  amendment: AmendmentDto,
+  byId: ReadonlyMap<string, AmendmentDto>,
 ): boolean {
-  if (!isSessionAwaitingProponent(amendment)) return false;
-  return amendment.acceptances.some(
-    (party) =>
-      party.decision === "rejected" &&
-      (presenterId
-        ? party.member.id === presenterId
-        : party.role === "proponent"),
+  return sessionSupersededSourceIds(amendment, byId).length > 0;
+}
+
+/**
+ * The transactionals that replaced an amendment (it is `transacted`), or
+ * that are proposed over it. For a replaced amendment, the loaded one that
+ * did it (isSessionReplacing) wins over others built on it; without one,
+ * any that no main author turned down. Otherwise, those still open
+ * (presented or in draft) that no main author turned down. Unknown ids (not
+ * loaded) are kept: they may be the one.
+ */
+export function sessionReplacingIds(
+  amendment: AmendmentDto,
+  byId: ReadonlyMap<string, AmendmentDto>,
+): string[] {
+  const notTurnedDown = (id: string) => {
+    const transactional = byId.get(id);
+    return (
+      !transactional ||
+      sessionTransactionalRejectors(transactional).length === 0
+    );
+  };
+  if (amendment.status === "transacted") {
+    const replacing = amendment.transactionalIds.filter((id) => {
+      const transactional = byId.get(id);
+      return transactional !== undefined && isSessionReplacing(transactional);
+    });
+    return replacing.length > 0
+      ? replacing
+      : amendment.transactionalIds.filter(notTurnedDown);
+  }
+  return amendment.transactionalIds.filter((id) => {
+    const transactional = byId.get(id);
+    if (!transactional) return true;
+    return (
+      notTurnedDown(id) &&
+      (transactional.status === "submitted" || transactional.status === "draft")
+    );
+  });
+}
+
+/**
+ * The amendments a transactional replaced: its sources once it did
+ * (isSessionReplacing, also after it was decided) and they are
+ * `transacted`. Empty while it still waits for its main authors or the
+ * Secretaría, and for one that another transactional got ahead of.
+ */
+export function sessionReplacedIds(
+  amendment: AmendmentDto,
+  byId: ReadonlyMap<string, AmendmentDto>,
+): string[] {
+  if (!isSessionReplacing(amendment)) return [];
+  return amendment.sourceIds.filter(
+    (id) => byId.get(id)?.status === "transacted",
   );
 }
 
 /**
  * Not checked by the Secretaría yet: a transactional still waiting for the
- * document's presenter, presented and waiting for validation, or sent back
- * to its authors for a correction (a draft again). The Mesa cannot debate,
- * admit or decide it until the Secretaría validates it.
+ * main authors of what it replaces, presented and waiting for validation,
+ * or sent back to its authors for a correction (a draft again). The Mesa
+ * cannot debate, admit or decide it until the Secretaría validates it.
  */
 export function isSessionAwaitingValidation(amendment: AmendmentDto): boolean {
   return (
-    isSessionAwaitingProponent(amendment) ||
+    isSessionAwaitingAuthors(amendment) ||
     (amendment.status === "submitted" &&
       amendment.reviewState === "pending_validation") ||
     (amendment.status === "draft" &&
@@ -257,10 +407,16 @@ export function isSessionDecidable(amendment: AmendmentDto): boolean {
 
 /**
  * Whether it can be a source of a transactional now: open and public (the
- * server refuses private sources: delegates could not read what is merged).
+ * server refuses private sources: delegates could not read what is merged)
+ * and, for a transactional, accepted by every main author (until then its
+ * originals are still there, and the server refuses it as a source).
  */
 export function isSessionTransactable(amendment: AmendmentDto): boolean {
-  return isSessionOpen(amendment) && amendment.publishedAt !== null;
+  return (
+    isSessionOpen(amendment) &&
+    amendment.publishedAt !== null &&
+    sessionMissingAcceptances(amendment) === 0
+  );
 }
 
 /**
@@ -409,57 +565,67 @@ export function sessionQueueCounts(list: AmendmentDto[]): {
 /**
  * Who the amendments outside the debate are waiting for: the Secretaría
  * (presented, not validated yet), their authors (sent back for a
- * correction), whoever presents the document (a transactional proposed by a
- * member, not approved by the presenter yet) or whoever proposed it (one
- * the presenter turned down, to be withdrawn).
+ * correction) or the main authors of the amendments a member's
+ * transactional would replace (they have to accept it first).
  */
-export function sessionValidationBreakdown(
-  list: AmendmentDto[],
-  presenterId: string | null = null,
-): {
+export function sessionValidationBreakdown(list: AmendmentDto[]): {
   toValidate: number;
   inCorrection: number;
-  awaitingProponent: number;
-  proponentRejected: number;
+  awaitingAuthors: number;
 } {
   const awaiting = list.filter(isSessionAwaitingValidation);
   const inCorrection = awaiting.filter(
     (amendment) => amendment.reviewState === "correction_requested",
   ).length;
-  const withPresenter = awaiting.filter(isSessionAwaitingProponent);
-  const proponentRejected = withPresenter.filter((amendment) =>
-    isSessionProponentRejected(amendment, presenterId),
-  ).length;
+  const awaitingAuthors = awaiting.filter(isSessionAwaitingAuthors).length;
   return {
-    toValidate: awaiting.length - inCorrection - withPresenter.length,
+    toValidate: awaiting.length - inCorrection - awaitingAuthors,
     inCorrection,
-    awaitingProponent: withPresenter.length - proponentRejected,
-    proponentRejected,
+    awaitingAuthors,
   };
+}
+
+/**
+ * A transactional that still waits for the answer of some main author:
+ * proposed by a member and not passed to the Secretaría yet, or drafted by
+ * the Mesa in the room and not accepted by everyone yet. One a main author
+ * turned down waits for nobody.
+ */
+function waitsForAuthors(amendment: AmendmentDto): boolean {
+  if (sessionTransactionalRejectors(amendment).length > 0) return false;
+  return (
+    isSessionAwaitingAuthors(amendment) ||
+    (isSessionOpen(amendment) && sessionMissingAcceptances(amendment) > 0)
+  );
 }
 
 /**
  * What still stops the final vote, split by who has to act, in text order.
  * The server blocks it while any amendment is submitted, validated or not:
- * the Mesa decides the validated ones (`undecided`); the Secretaría has to
- * validate the rest or send them back to their authors
- * (`awaitingValidation`), except the transactionals the document's
- * presenter has not approved yet (`awaitingProponent`) and those it turned
- * down, which whoever proposed them or the Mesa has to withdraw
- * (`proponentRejected`). `serverIds` are the ids a refused final vote
- * reported (409 `{ undecided }`): they count too, unless the console
- * already knows they are decided. Ids the console has not loaded count as
- * undecided. `presenterId` is the document's proponent member.
+ * - `undecided`: the Mesa decides them (or the main presenter's answer
+ *   incorporates them);
+ * - `superseded`: transactionals that can never go ahead because another
+ *   one replaced, or a decision settled, an amendment they would replace
+ *   (isSessionSuperseded): the Mesa or whoever proposed them withdraws them;
+ * - `late`: presented after the deadline, the assembly has not decided
+ *   whether to treat them;
+ * - `awaitingAuthors`: transactionals the main authors of what they replace
+ *   have not accepted yet, before the Secretaría or in the room;
+ * - `awaitingValidation`: the Secretaría has to validate them or send them
+ *   back to their authors.
+ * `serverIds` are the ids a refused final vote reported (409
+ * `{ undecided }`): they count too, unless the console already knows they
+ * are decided. Ids the console has not loaded count as undecided.
  */
 export function sessionFinalVoteBlockers(
   list: AmendmentDto[],
   serverIds: string[] = [],
-  presenterId: string | null = null,
 ): {
   undecided: string[];
+  superseded: string[];
+  late: string[];
+  awaitingAuthors: string[];
   awaitingValidation: string[];
-  awaitingProponent: string[];
-  proponentRejected: string[];
 } {
   const byId = new Map(list.map((amendment) => [amendment.id, amendment]));
   const ids = sortSessionAmendments(
@@ -474,27 +640,24 @@ export function sessionFinalVoteBlockers(
     ids.push(id);
   }
   const undecided: string[] = [];
+  const superseded: string[] = [];
+  const late: string[] = [];
+  const awaitingAuthors: string[] = [];
   const awaitingValidation: string[] = [];
-  const awaitingProponent: string[] = [];
-  const proponentRejected: string[] = [];
   for (const id of ids) {
     const amendment = byId.get(id);
-    if (amendment && isSessionProponentRejected(amendment, presenterId)) {
-      proponentRejected.push(id);
-    } else if (amendment && isSessionAwaitingProponent(amendment)) {
-      awaitingProponent.push(id);
-    } else if (amendment && isSessionAwaitingValidation(amendment)) {
-      awaitingValidation.push(id);
-    } else {
+    // Unknown, or turned down by a main author yet still presented (the
+    // server normally closes it): nobody but the Mesa can settle it.
+    if (!amendment || sessionTransactionalRejectors(amendment).length > 0) {
       undecided.push(id);
-    }
+    } else if (isSessionSuperseded(amendment, byId)) superseded.push(id);
+    else if (waitsForAuthors(amendment)) awaitingAuthors.push(id);
+    else if (isSessionAwaitingValidation(amendment)) {
+      awaitingValidation.push(id);
+    } else if (isSessionPendingAdmission(amendment)) late.push(id);
+    else undecided.push(id);
   }
-  return {
-    undecided,
-    awaitingValidation,
-    awaitingProponent,
-    proponentRejected,
-  };
+  return { undecided, superseded, late, awaitingAuthors, awaitingValidation };
 }
 
 export type SessionFinalVoteReason =
@@ -503,9 +666,10 @@ export type SessionFinalVoteReason =
   | { key: "amendmentsLoading" }
   | { key: "totalityReturn"; id: string }
   | { key: "undecided"; count: number }
-  | { key: "awaitingValidation"; count: number }
-  | { key: "awaitingProponent"; count: number }
-  | { key: "proponentRejected"; count: number };
+  | { key: "superseded"; count: number }
+  | { key: "late"; count: number }
+  | { key: "awaitingAuthors"; count: number }
+  | { key: "awaitingValidation"; count: number };
 
 /**
  * Why the final vote on a document cannot be recorded yet, one reason per
@@ -529,26 +693,15 @@ export function sessionFinalVoteReasons(input: {
     return [{ key: "totalityReturn", id: input.totalityReturnId }];
   }
   const reasons: SessionFinalVoteReason[] = [];
-  if (blockers.undecided.length > 0) {
-    reasons.push({ key: "undecided", count: blockers.undecided.length });
-  }
-  if (blockers.awaitingValidation.length > 0) {
-    reasons.push({
-      key: "awaitingValidation",
-      count: blockers.awaitingValidation.length,
-    });
-  }
-  if (blockers.awaitingProponent.length > 0) {
-    reasons.push({
-      key: "awaitingProponent",
-      count: blockers.awaitingProponent.length,
-    });
-  }
-  if (blockers.proponentRejected.length > 0) {
-    reasons.push({
-      key: "proponentRejected",
-      count: blockers.proponentRejected.length,
-    });
+  for (const key of [
+    "undecided",
+    "superseded",
+    "late",
+    "awaitingAuthors",
+    "awaitingValidation",
+  ] as const) {
+    const count = blockers[key].length;
+    if (count > 0) reasons.push({ key, count });
   }
   return reasons;
 }
@@ -558,42 +711,51 @@ export function sessionFinalVoteReasons(input: {
 /**
  * Where an amendment stands in the session, as one status the console and
  * the queue show with what happens next:
- * - `awaiting_proponent`: a transactional the document's presenter has not
- *   approved yet;
- * - `proponent_rejected`: one the presenter turned down, waiting to be
- *   withdrawn by whoever proposed it or the Mesa;
+ * - `turned_down`: a transactional some main author did not accept: it is
+ *   closed and the amendments it would have replaced carry on;
+ * - `superseded`: a presented transactional that can never go ahead,
+ *   since an amendment it would replace is no longer open
+ *   (isSessionSuperseded, only known with `byId`): it has to be withdrawn;
+ * - `awaiting_authors`: a member's transactional the main authors of what
+ *   it replaces have not accepted yet (before the Secretaría checks it);
  * - `awaiting_validation`: the Secretaría has not checked it;
  * - `correction_requested`: back with its authors for a correction;
  * - `late`: validated but presented after the deadline, waiting for the
  *   assembly's decision to treat it;
- * - `acceptances`: a transactional some party has not accepted yet;
+ * - `acceptances`: a transactional drafted in the room whose main authors
+ *   have not all accepted it yet;
  * - `open`: the Mesa can decide it now;
+ * - `incorporated`: approved without a vote because the document's main
+ *   presenter accepted it;
  * - otherwise its final status.
  */
 export type SessionAmendmentStage =
-  | "awaiting_proponent"
-  | "proponent_rejected"
+  | "turned_down"
+  | "superseded"
+  | "awaiting_authors"
   | "awaiting_validation"
   | "correction_requested"
   | "late"
   | "acceptances"
   | "open"
+  | "incorporated"
   | Exclude<AmendmentStatus, "submitted">;
 
-/** `presenterId`: the document's proponent member (isSessionProponentRejected). */
 export function sessionAmendmentStage(
   amendment: AmendmentDto,
-  presenterId: string | null = null,
+  byId?: ReadonlyMap<string, AmendmentDto>,
 ): SessionAmendmentStage {
-  if (isSessionProponentRejected(amendment, presenterId)) {
-    return "proponent_rejected";
+  if (sessionTransactionalRejectors(amendment).length > 0) {
+    return "turned_down";
   }
-  if (isSessionAwaitingProponent(amendment)) return "awaiting_proponent";
+  if (byId && isSessionSuperseded(amendment, byId)) return "superseded";
+  if (isSessionAwaitingAuthors(amendment)) return "awaiting_authors";
   if (isSessionAwaitingValidation(amendment)) {
     return amendment.reviewState === "correction_requested"
       ? "correction_requested"
       : "awaiting_validation";
   }
+  if (isSessionIncorporated(amendment)) return "incorporated";
   if (amendment.status !== "submitted") return amendment.status;
   if (amendment.admission !== "admitted") return "late";
   if (sessionMissingAcceptances(amendment) > 0) return "acceptances";
@@ -606,8 +768,9 @@ export function sessionAmendmentStage(
  * isSessionDebatable) after `currentId` in the order of the queue, wrapping
  * around to those skipped before it. Late amendments still waiting for the
  * assembly's decision, those not validated yet, private ones the actor
- * cannot publish and decided ones are never offered. Null when nothing else
- * is left.
+ * cannot publish, decided ones and transactionals that can no longer go
+ * ahead (isSessionSuperseded) are never offered. Null when nothing else is
+ * left.
  */
 export function sessionNextAmendmentId(
   queue: SessionQueue,
@@ -622,7 +785,11 @@ export function sessionNextAmendmentId(
   }
   const order = sessionQueueOrder(queue).filter((id) => {
     const amendment = byId.get(id);
-    return amendment !== undefined && debatable(amendment);
+    return (
+      amendment !== undefined &&
+      debatable(amendment) &&
+      !isSessionSuperseded(amendment, byId)
+    );
   });
   const index = currentId ? order.indexOf(currentId) : -1;
   const after = index === -1 ? order : order.slice(index + 1);
@@ -936,8 +1103,8 @@ export interface SessionAssentPlan {
 }
 
 /**
- * Admitted, undecided, public amendments the proponent accepted, ready to be
- * approved together by assent. Those that would collide with an approved amendment,
+ * Admitted, undecided, public amendments the document's main presenter
+ * accepted, ready to be approved together by assent. Those that would collide with an approved amendment,
  * or with an earlier candidate, are skipped and reported, as are
  * transactionals still missing an acceptance.
  */
@@ -1151,29 +1318,43 @@ export function sessionSameBlocks(a: Block[], b: Block[]): boolean {
 
 export interface SessionParty {
   member: MemberRef;
-  role: AcceptanceRole;
+  /** The sources it is the main author of, in the order given. */
+  sourceIds: string[];
 }
 
 /**
- * Parties that must accept a transactional: every author of every source,
- * then the document proponent (mirrors the server's acceptance rows).
+ * Parties that must accept a transactional before it replaces its sources:
+ * the main author of each source (sessionMainAuthor), once each, in the
+ * order of the sources. A preview for the composer: once the transactional
+ * exists, its `acceptances` are what counts.
  */
 export function sessionTransactionalParties(
   sources: AmendmentDto[],
-  proponent: MemberRef | null,
 ): SessionParty[] {
   const parties = new Map<string, SessionParty>();
   for (const source of sources) {
-    for (const author of source.authors) {
-      if (!parties.has(author.id)) {
-        parties.set(author.id, { member: author, role: "author" });
-      }
-    }
-  }
-  if (proponent && !parties.has(proponent.id)) {
-    parties.set(proponent.id, { member: proponent, role: "proponent" });
+    const main = sessionMainAuthor(source);
+    if (!main) continue;
+    const party = parties.get(main.id);
+    if (party) party.sourceIds.push(source.id);
+    else parties.set(main.id, { member: main, sourceIds: [source.id] });
   }
   return [...parties.values()];
+}
+
+/**
+ * The sources of a transactional a party answers for: those whose main
+ * author it is. Sources not loaded are left out.
+ */
+export function sessionPartySourceIds(
+  transactional: AmendmentDto,
+  memberId: string,
+  byId: ReadonlyMap<string, AmendmentDto>,
+): string[] {
+  return transactional.sourceIds.filter((id) => {
+    const source = byId.get(id);
+    return source !== undefined && sessionMainAuthor(source)?.id === memberId;
+  });
 }
 
 // Votes ----------------------------------------------------------------------

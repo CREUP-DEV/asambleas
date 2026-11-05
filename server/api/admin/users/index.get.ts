@@ -6,15 +6,17 @@ import {
   ADMIN_USER_RELATIONS,
   withExtraPermissions,
 } from "../../../utils/auth/adminUsers";
-import { requireAdmin } from "../../../utils/auth/rbac";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import { requireAnyPermission } from "../../../utils/auth/rbac";
 
 const querySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
 });
 
+/** The users, with their role, member and grants (user:manage_roles). */
 export default defineEventHandler(async (event) => {
-  await requireAdmin(event);
+  await requireAnyPermission(event, [PERMISSION_KEYS.USER_MANAGE_ROLES]);
 
   const parsed = querySchema.safeParse(getQuery(event));
   if (!parsed.success) {

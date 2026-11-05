@@ -1,23 +1,41 @@
 import { describe, expect, it } from "vitest";
 import type { AcceptanceDto, AmendmentDto } from "~~/shared/types/api";
 import {
-  acceptanceTarget,
-  awaitsProponentApproval,
+  amendmentAcceptBlocked,
+  amendmentPositionBlocker,
+} from "~/composables/amendment/workspace";
+import {
+  acceptHelpKey,
+  amendmentOutcome,
+  answerStatus,
   commentUnsaved,
+  emptyReviewReason,
   fallbackStep,
   firstPendingId,
+  goneKey,
   initialStep,
+  isIncorporated,
+  isPositionAnswerable,
   isPositionAnswered,
   isPositionReviewable,
+  positionBody,
+  positionConflict,
   positionCounts,
+  positionWaitCounts,
+  positionWaitReason,
+  presenterAnswerItems,
   proponentReviewItems,
   proponentReviewProgress,
   recordedPositionCounts,
   reviewSequence,
+  savedKey,
+  seenPositionAt,
+  stateKey,
   stepAfter,
   stepBefore,
   stepCounter,
-  transactionalAnswerCounts,
+  visibleAnswerProgress,
+  wasReopened,
 } from "./-review";
 
 const CEA = {
@@ -54,6 +72,7 @@ function amendment(id: string, overrides: Overrides = {}): AmendmentDto {
     positionKey: 0,
     changeKinds: [],
     authors: [CEUM],
+    mainAuthorId: CEUM.id,
     submittedAt: "2026-11-01T10:00:00.000Z",
     validatedAt: "2026-11-01T11:00:00.000Z",
     publishedAt: "2026-11-01T11:00:00.000Z",
@@ -86,26 +105,48 @@ function amendment(id: string, overrides: Overrides = {}): AmendmentDto {
 
 function party(
   member: AcceptanceDto["member"],
-  role: AcceptanceDto["role"],
   decision: AcceptanceDto["decision"] = "pending",
+  role: AcceptanceDto["role"] = "author",
 ): AcceptanceDto {
   return { member, role, decision, decidedAt: null };
 }
 
+/** A transactional its main authors accepted and the Secretaría published. */
 function transactional(id: string, overrides: Overrides = {}): AmendmentDto {
   return amendment(id, {
     kind: "transactional",
     code: `T${id}`,
-    reviewState: "pending_proponent",
-    validatedAt: null,
-    publishedAt: null,
-    acceptances: [party(CEUM, "author", "accepted"), party(CEA, "proponent")],
+    number: null,
+    authors: [CEA],
+    mainAuthorId: CEA.id,
+    sourceIds: ["s1", "s2"],
+    acceptances: [party(CEUM, "accepted"), party(CEA, "accepted")],
     ...overrides,
   });
 }
 
 function answered(position: "accept" | "reject" | "transact") {
   return { position, comment: null, updatedAt: "2026-11-02T10:00:00.000Z" };
+}
+
+/** Accepted under the "incorporate" rule: approved at once. */
+function incorporated(id: string, overrides: Overrides = {}): AmendmentDto {
+  return amendment(id, {
+    status: "approved",
+    approvalMethod: "proponent",
+    decidedAt: "2026-11-02T10:00:00.000Z",
+    position: answered("accept"),
+    ...overrides,
+  });
+}
+
+/** Validated by the Secretaría and kept private. */
+function privateOne(id: string, overrides: Overrides = {}): AmendmentDto {
+  return amendment(id, {
+    reviewState: "validated",
+    publishedAt: null,
+    ...overrides,
+  });
 }
 
 describe("positions", () => {
@@ -117,169 +158,246 @@ describe("positions", () => {
     ).toBe(true);
   });
 
-  it("answers presented, published and undecided amendments only", () => {
-    expect(isPositionReviewable(amendment("a"))).toBe(true);
-    // Validated but kept private: the presenter cannot read it, so the
-    // Mesa does not answer it for the presenter either.
+  it("answers validated, admitted and undecided amendments", () => {
+    for (const rule of ["vote", "incorporate"] as const) {
+      expect(isPositionReviewable(amendment("a"), rule)).toBe(true);
+      // Recorded before validation existed: public.
+      expect(
+        isPositionReviewable(amendment("a", { reviewState: null }), rule),
+      ).toBe(true);
+      expect(
+        isPositionReviewable(
+          amendment("a", {
+            reviewState: "pending_validation",
+            validatedAt: null,
+            admission: "pending",
+          }),
+          rule,
+        ),
+      ).toBe(false);
+      expect(
+        isPositionReviewable(amendment("a", { status: "rejected" }), rule),
+      ).toBe(false);
+      expect(
+        isPositionReviewable(
+          amendment("a", { can: { position: false } }),
+          rule,
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it("answers a validated private one only when accepting would not put it in the text", () => {
+    // As the server's countPositionsPending: under "vote" an answer decides
+    // nothing, so validated is enough (only the Mesa sees it until then).
+    expect(isPositionReviewable(privateOne("a"), "vote")).toBe(true);
+    // Under "incorporate" accepting approves it: it waits for publication.
+    expect(isPositionReviewable(privateOne("a"), "incorporate")).toBe(false);
+    expect(positionWaitReason(privateOne("a"), "incorporate")).toBe(
+      "publication",
+    );
+  });
+
+  it("waits for the assembly to admit a late amendment", () => {
+    const late = amendment("a", { late: true, admission: "pending" });
+    expect(isPositionReviewable(late, "vote")).toBe(false);
+    expect(positionWaitReason(late, "vote")).toBe("admission");
+    expect(
+      isPositionReviewable(
+        amendment("a", { late: true, admission: "admitted" }),
+        "vote",
+      ),
+    ).toBe(true);
+    expect(
+      positionWaitCounts(
+        [
+          late,
+          amendment("b"),
+          // Still with the Secretaría: not the assembly's call yet.
+          amendment("c", {
+            late: true,
+            admission: "pending",
+            reviewState: "pending_validation",
+            validatedAt: null,
+          }),
+          amendment("d", {
+            late: true,
+            admission: "inadmissible",
+            status: "inadmissible",
+          }),
+        ],
+        "vote",
+      ),
+    ).toEqual({ admission: 1, validation: 1, authors: 0, publication: 0 });
+  });
+
+  it("keeps an incorporated amendment while its answer can still change", () => {
+    expect(isIncorporated(incorporated("a"))).toBe(true);
+    expect(isPositionReviewable(incorporated("a"), "incorporate")).toBe(true);
+    // The rule changed to "vote" afterwards: as the server, it is decided.
+    expect(isPositionReviewable(incorporated("a"), "vote")).toBe(false);
+    expect(positionWaitReason(incorporated("a"), "vote")).toBe("decided");
+    // Approved by the assembly: decided for good.
     expect(
       isPositionReviewable(
         amendment("a", {
-          reviewState: "validated",
-          publishedAt: null,
-          can: { position: true, moderate: true },
+          status: "approved",
+          approvalMethod: "vote",
+          position: answered("accept"),
         }),
+        "incorporate",
       ),
     ).toBe(false);
     expect(
-      isPositionReviewable(
-        amendment("a", { reviewState: "pending_validation" }),
-      ),
+      isPositionReviewable(amendment("a", { status: "transacted" }), "vote"),
     ).toBe(false);
-    expect(isPositionReviewable(amendment("a", { status: "approved" }))).toBe(
-      false,
-    );
+  });
+
+  it("does not depend on who looks", () => {
     expect(
-      isPositionReviewable(amendment("a", { can: { position: false } })),
-    ).toBe(false);
-    expect(isPositionReviewable(transactional("t"))).toBe(false);
+      isPositionAnswerable(
+        amendment("a", { can: { position: false } }),
+        "vote",
+      ),
+    ).toBe(true);
+  });
+
+  it("gives the document page's reason for every amendment still on its way", () => {
+    const onTheirWay = [
+      amendment("late", { late: true, admission: "pending" }),
+      amendment("new", {
+        reviewState: "pending_validation",
+        validatedAt: null,
+        publishedAt: null,
+        admission: "pending",
+      }),
+      // Admitted by the Mesa before the Secretaría validated it: still
+      // with the Secretaría.
+      amendment("early", {
+        late: true,
+        reviewState: "pending_validation",
+        validatedAt: null,
+        publishedAt: null,
+      }),
+      transactional("t", {
+        acceptances: [party(CEUM, "accepted"), party(CEA)],
+      }),
+    ];
+    for (const rule of ["vote", "incorporate"] as const) {
+      for (const one of onTheirWay) {
+        expect(positionWaitReason(one, rule)).toBe(
+          amendmentPositionBlocker(one, rule),
+        );
+      }
+      // A private one waits exactly when the document page holds back its
+      // acceptance (and leaves it out of its backlog).
+      expect(positionWaitReason(privateOne("private"), rule) !== null).toBe(
+        amendmentAcceptBlocked(privateOne("private"), rule),
+      );
+    }
+    expect(positionWaitReason(onTheirWay[2]!, "vote")).toBe("validation");
   });
 });
 
 describe("transactionals", () => {
-  it("waits for the presenter while its approval is pending", () => {
-    expect(awaitsProponentApproval(transactional("1"), "cea")).toBe(true);
-    // Created by the Mesa in session: public, presenter still to answer.
+  it("is answered once its main authors accepted it and it was validated", () => {
+    expect(positionWaitReason(transactional("1"), "vote")).toBeNull();
+    expect(isPositionReviewable(transactional("1"), "vote")).toBe(true);
+  });
+
+  it("waits while a main author has not accepted it", () => {
+    // Drafted live by the Mesa: published at once, authors still to answer.
+    const live = transactional("1", {
+      acceptances: [party(CEUM, "accepted"), party(CEA)],
+    });
+    expect(isPositionReviewable(live, "vote")).toBe(false);
+    expect(positionWaitReason(live, "vote")).toBe("authors");
+    // Proposed by a member: with the main authors, not yet validated. The
+    // authors are the next step, so that is the reason given.
     expect(
-      awaitsProponentApproval(
-        transactional("1", { reviewState: "published" }),
-        "cea",
+      positionWaitReason(
+        transactional("2", {
+          reviewState: "pending_authors",
+          admission: "pending",
+          validatedAt: null,
+          publishedAt: null,
+          acceptances: [party(CEUM)],
+        }),
+        "vote",
       ),
-    ).toBe(true);
+    ).toBe("authors");
+    // Accepted by the authors, still with the Secretaría.
     expect(
-      awaitsProponentApproval(
-        transactional("1", {
+      positionWaitReason(
+        transactional("3", {
           reviewState: "pending_validation",
-          acceptances: [party(CEA, "proponent", "accepted")],
+          admission: "pending",
+          validatedAt: null,
+          publishedAt: null,
         }),
-        "cea",
+        "vote",
       ),
-    ).toBe(false);
-    // A draft never presented is not the presenter's business yet.
+    ).toBe("validation");
+    // A main author rejected it: the server closes it (withdrawn) and the
+    // originals carry on.
     expect(
-      awaitsProponentApproval(
-        transactional("1", { status: "draft", reviewState: null }),
-        "cea",
-      ),
-    ).toBe(false);
-    expect(
-      awaitsProponentApproval(
-        transactional("1", { status: "withdrawn" }),
-        "cea",
-      ),
-    ).toBe(false);
-  });
-
-  it("finds the presenter by member when it also wrote a source", () => {
-    // CEA-AC presents the document and wrote one of the sources: the
-    // server keeps a single row for it, with the role "author".
-    const both = transactional("1", {
-      acceptances: [party(CEUM, "author", "accepted"), party(CEA, "author")],
-      can: { accept: true },
-    });
-    expect(awaitsProponentApproval(both, "cea")).toBe(true);
-    expect(acceptanceTarget(both, "cea", "cea")).toEqual({
-      party: party(CEA, "author"),
-      memberId: null,
-    });
-    expect(
-      acceptanceTarget(
-        { ...both, can: { ...both.can, accept: false, moderate: true } },
-        "mesa",
-        "cea",
-      )?.memberId,
-    ).toBe("cea");
-    expect(
-      proponentReviewItems([both], "cea", "cea").map((item) => item.kind),
-    ).toEqual(["transactional"]);
-  });
-
-  it("does not take another party's row for the presenter's", () => {
-    const decided = transactional("1", {
-      acceptances: [party(CEUM, "author"), party(CEA, "proponent", "accepted")],
-      can: { moderate: true },
-    });
-    expect(awaitsProponentApproval(decided, "cea")).toBe(false);
-    expect(acceptanceTarget(decided, "mesa", "cea")).toBeNull();
-    // The presenter is not a party: nothing to approve.
-    expect(awaitsProponentApproval(decided, "other")).toBe(false);
-    // Unknown presenter: the role "proponent" is the fallback.
-    expect(acceptanceTarget(decided, "mesa", null)).toBeNull();
-    expect(awaitsProponentApproval(transactional("2"), null)).toBe(true);
-  });
-
-  it("lets the presenter answer for itself", () => {
-    const target = acceptanceTarget(
-      transactional("1", { can: { accept: true } }),
-      "cea",
-      "cea",
-    );
-    expect(target?.memberId).toBeNull();
-    expect(target?.party.member.id).toBe("cea");
-  });
-
-  it("lets the Mesa record the presenter's answer", () => {
-    const target = acceptanceTarget(
-      transactional("1", { can: { moderate: true } }),
-      "other",
-      "cea",
-    );
-    expect(target?.memberId).toBe("cea");
-  });
-
-  it("offers nothing to anyone else", () => {
-    expect(acceptanceTarget(transactional("1"), "ceum", "cea")).toBeNull();
-    expect(acceptanceTarget(transactional("1"), null, "cea")).toBeNull();
-    expect(
-      acceptanceTarget(
-        transactional("1", {
-          acceptances: [party(CEA, "proponent", "accepted")],
-          can: { accept: true, moderate: true },
+      positionWaitReason(
+        transactional("4", {
+          status: "withdrawn",
+          acceptances: [party(CEUM, "rejected"), party(CEA, "accepted")],
         }),
-        "cea",
-        "cea",
+        "vote",
+      ),
+    ).toBe("decided");
+  });
+
+  it("only counts the main authors' answers", () => {
+    // A row left by the removed step where the presenter approved
+    // transactionals does not hold it back, as on the server.
+    const legacy = transactional("1", {
+      acceptances: [
+        party(CEUM, "accepted"),
+        party(CEA, "accepted"),
+        party(CEA, "pending", "proponent"),
+      ],
+    });
+    expect(positionWaitReason(legacy, "vote")).toBeNull();
+    expect(isPositionReviewable(legacy, "vote")).toBe(true);
+  });
+
+  it("treats every other amendment as having nobody to wait for", () => {
+    expect(
+      positionWaitReason(
+        amendment("a", { acceptances: [party(CEUM, "pending")] }),
+        "vote",
       ),
     ).toBeNull();
   });
-});
 
-describe("transactionalAnswerCounts", () => {
-  it("counts the presenter's answers on record", () => {
+  it("lists a transactional in place of the amendments it replaced", () => {
+    const items = proponentReviewItems(
+      [
+        amendment("s1", { status: "transacted", positionKey: 1 }),
+        amendment("s2", { status: "transacted", positionKey: 2 }),
+        transactional("1", { positionKey: 3 }),
+        transactional("2", {
+          positionKey: 4,
+          acceptances: [party(CEUM, "accepted"), party(CEA)],
+        }),
+      ],
+      "vote",
+    );
+    expect(items.map((item) => item.id)).toEqual(["1"]);
     expect(
-      transactionalAnswerCounts(
+      positionWaitCounts(
         [
-          transactional("1", {
-            acceptances: [party(CEA, "proponent", "accepted")],
-          }),
-          // The presenter's row has the role "author" here.
           transactional("2", {
-            status: "approved",
-            acceptances: [party(CEA, "author", "rejected")],
+            acceptances: [party(CEUM, "accepted"), party(CEA)],
           }),
-          transactional("3"),
-          // Proposed by the presenter itself: accepted on creation.
-          transactional("4", {
-            authors: [CEA],
-            acceptances: [party(CEA, "proponent", "accepted")],
-          }),
-          transactional("5", {
-            status: "draft",
-            acceptances: [party(CEA, "proponent", "accepted")],
-          }),
-          amendment("a", { position: answered("accept") }),
         ],
-        "cea",
-      ),
-    ).toEqual({ approved: 1, rejected: 1 });
+        "vote",
+      ).authors,
+    ).toBe(1);
   });
 });
 
@@ -293,57 +411,395 @@ describe("commentUnsaved", () => {
   });
 });
 
+describe("saving", () => {
+  it("sends the answer, the trimmed comment and the position it saw", () => {
+    expect(
+      positionBody(
+        "accept",
+        "  De acuerdo ",
+        amendment("a", { position: answered("reject") }),
+      ),
+    ).toEqual({
+      position: "accept",
+      comment: "De acuerdo",
+      positionUpdatedAt: "2026-11-02T10:00:00.000Z",
+    });
+    // Nothing answered yet, or positions hidden: null, never "".
+    expect(positionBody("reject", "   ", amendment("a"))).toEqual({
+      position: "reject",
+      comment: null,
+      positionUpdatedAt: null,
+    });
+    expect(
+      positionBody("transact", "", amendment("a", { position: null }))
+        .positionUpdatedAt,
+    ).toBeNull();
+    expect(seenPositionAt(amendment("a"))).toBeNull();
+  });
+
+  it("tells why an answer was refused", () => {
+    const sent = seenPositionAt(amendment("a"));
+    expect(
+      positionConflict(
+        sent,
+        amendment("a", { position: answered("reject") }),
+        true,
+        "vote",
+      ),
+    ).toBe("answered");
+    expect(positionConflict(sent, amendment("a"), true, "vote")).toBe(
+      "changed",
+    );
+    expect(
+      positionConflict(
+        sent,
+        amendment("a", { status: "withdrawn" }),
+        false,
+        "vote",
+      ),
+    ).toBe("gone");
+    expect(positionConflict(sent, undefined, true, "vote")).toBe("gone");
+    // Out of the review and waiting for someone: says for whom.
+    expect(
+      positionConflict(
+        sent,
+        amendment("a", { late: true, admission: "pending" }),
+        false,
+        "vote",
+      ),
+    ).toBe("admission");
+    expect(
+      positionConflict(
+        sent,
+        transactional("t", {
+          acceptances: [party(CEUM, "accepted"), party(CEA)],
+        }),
+        false,
+        "vote",
+      ),
+    ).toBe("authors");
+    expect(positionConflict(sent, privateOne("a"), false, "incorporate")).toBe(
+      "publication",
+    );
+    // Out of the review with nothing to wait for: the document changed.
+    expect(positionConflict(sent, amendment("a"), false, "vote")).toBe(
+      "changed",
+    );
+  });
+
+  it("treats an amendment a transactional replaced meanwhile as gone", () => {
+    const sent = seenPositionAt(amendment("a"));
+    expect(
+      positionConflict(
+        sent,
+        amendment("a", { status: "transacted" }),
+        false,
+        "vote",
+      ),
+    ).toBe("gone");
+    // Incorporated meanwhile by someone else's answer: still in the review
+    // under "incorporate", with an answer the actor did not see.
+    expect(positionConflict(sent, incorporated("a"), true, "incorporate")).toBe(
+      "answered",
+    );
+  });
+
+  it("says when a transactional took the place of the amendment that left", () => {
+    expect(goneKey(amendment("a", { status: "transacted" }))).toBe(
+      "goneTransacted",
+    );
+    expect(goneKey(amendment("a", { status: "withdrawn" }))).toBe("gone");
+    expect(goneKey(amendment("a", { status: "approved" }))).toBe("gone");
+    expect(goneKey(null)).toBe("gone");
+    expect(goneKey(undefined)).toBe("gone");
+  });
+
+  it("explains Aceptar by the document's rule", () => {
+    expect(acceptHelpKey("incorporate")).toBe("acceptHelpIncorporate");
+    expect(acceptHelpKey("vote")).toBe("acceptHelpVote");
+  });
+
+  it("says when an answer incorporated the amendment or took it out", () => {
+    expect(savedKey("accept", incorporated("a"))).toBe("incorporated");
+    expect(savedKey("accept", amendment("a"))).toBe("accept");
+    expect(savedKey("reject", amendment("a"))).toBe("reject");
+    expect(wasReopened(incorporated("a"), amendment("a"))).toBe(true);
+    expect(wasReopened(amendment("a"), amendment("a"))).toBe(false);
+    expect(wasReopened(incorporated("a"), incorporated("a"))).toBe(false);
+  });
+});
+
+describe("stateKey", () => {
+  it("reads where the answer leaves the amendment under the rule", () => {
+    expect(stateKey(amendment("a"), "vote", false)).toBe("pending");
+    expect(
+      stateKey(amendment("a", { position: answered("accept") }), "vote", false),
+    ).toBe("acceptVote");
+    expect(stateKey(incorporated("a"), "incorporate", false)).toBe(
+      "incorporated",
+    );
+    expect(
+      stateKey(
+        amendment("a", { position: answered("accept") }),
+        "incorporate",
+        false,
+      ),
+    ).toBe("accept");
+    expect(
+      stateKey(
+        amendment("a", { position: answered("reject") }),
+        "incorporate",
+        false,
+      ),
+    ).toBe("reject");
+  });
+
+  it("names the member when the Mesa answers for it", () => {
+    expect(stateKey(amendment("a"), "vote", true)).toBe("pendingFor");
+    expect(
+      stateKey(amendment("a", { position: answered("accept") }), "vote", true),
+    ).toBe("acceptVoteFor");
+    expect(stateKey(incorporated("a"), "incorporate", true)).toBe(
+      "incorporatedFor",
+    );
+    expect(
+      stateKey(
+        amendment("a", { position: answered("transact") }),
+        "vote",
+        true,
+      ),
+    ).toBe("transactFor");
+  });
+});
+
 describe("proponentReviewItems", () => {
   const list = [
     amendment("late", { positionKey: 30 }),
     amendment("first", { positionKey: 10, position: answered("accept") }),
-    transactional("2", {
-      positionKey: 20,
-      can: { accept: true },
+    transactional("2", { positionKey: 20 }),
+    incorporated("in", { positionKey: 25 }),
+    amendment("hidden", {
+      positionKey: 5,
+      reviewState: "pending_validation",
+      validatedAt: null,
+      admission: "pending",
     }),
-    amendment("hidden", { positionKey: 5, reviewState: "pending_validation" }),
-    amendment("private", { positionKey: 6, reviewState: "validated" }),
-    transactional("3", { positionKey: 1 }),
+    privateOne("private", { positionKey: 6 }),
+    amendment("waiting", { positionKey: 7, late: true, admission: "pending" }),
+    transactional("3", {
+      positionKey: 1,
+      acceptances: [party(CEUM)],
+    }),
   ];
 
-  it("puts the transactionals the actor approves first, then text order", () => {
-    const items = proponentReviewItems(list, "cea", "cea");
-    expect(items.map((item) => [item.id, item.kind, item.answered])).toEqual([
-      ["2", "transactional", false],
-      ["first", "position", true],
-      ["late", "position", false],
+  it("lists what the actor answers in text order", () => {
+    expect(
+      proponentReviewItems(list, "incorporate").map((item) => [
+        item.id,
+        item.answered,
+      ]),
+    ).toEqual([
+      ["first", true],
+      ["2", false],
+      ["in", true],
+      ["late", false],
+    ]);
+    // Under "vote", the private one joins and the incorporated one is settled.
+    expect(
+      proponentReviewItems(list, "vote").map((item) => [
+        item.id,
+        item.answered,
+      ]),
+    ).toEqual([
+      ["private", false],
+      ["first", true],
+      ["2", false],
+      ["late", false],
     ]);
   });
 
+  it("gives a co-presenter the answers without the right to answer", () => {
+    const readOnly = list.map((item) => ({
+      ...item,
+      can: { ...item.can, position: false },
+    }));
+    expect(proponentReviewItems(readOnly, "incorporate")).toEqual([]);
+    expect(
+      presenterAnswerItems(readOnly, "incorporate").map((item) => item.id),
+    ).toEqual(["first", "2", "in", "late"]);
+  });
+
   it("counts the progress over the amendments to answer", () => {
-    const items = proponentReviewItems(list, "cea", "cea");
-    expect(proponentReviewProgress(items)).toEqual({
-      answered: 1,
-      total: 2,
-      transactionals: 1,
-    });
+    const items = proponentReviewItems(list, "incorporate");
+    expect(proponentReviewProgress(items)).toEqual({ answered: 2, total: 4 });
     expect(positionCounts(items)).toEqual({
-      pending: 1,
-      accept: 1,
+      pending: 2,
+      accept: 2,
       reject: 0,
       transact: 0,
     });
   });
 
-  it("numbers each step among the steps of its kind", () => {
-    const items = proponentReviewItems(list, "cea", "cea");
-    expect(stepCounter(items, "2")).toEqual({
-      kind: "transactional",
-      current: 1,
-      total: 1,
-    });
-    expect(stepCounter(items, "late")).toEqual({
-      kind: "position",
-      current: 2,
-      total: 2,
-    });
+  it("numbers each step in the whole review", () => {
+    const items = proponentReviewItems(list, "incorporate");
+    expect(stepCounter(items, "2")).toEqual({ current: 2, total: 4 });
+    expect(stepCounter(items, "late")).toEqual({ current: 4, total: 4 });
     expect(stepCounter(items, "hidden")).toBeNull();
     expect(stepCounter(items, null)).toBeNull();
+  });
+
+  it("counts what is still on its way to the presenter", () => {
+    expect(positionWaitCounts(list, "incorporate")).toEqual({
+      authors: 1,
+      validation: 1,
+      admission: 1,
+      publication: 1,
+    });
+    expect(positionWaitCounts(list, "vote")).toEqual({
+      authors: 1,
+      validation: 1,
+      admission: 1,
+      publication: 0,
+    });
+  });
+});
+
+describe("presenterAnswerItems", () => {
+  it("keeps the main presenter's answers once the amendments are settled", () => {
+    const items = presenterAnswerItems(
+      [
+        // Answered "reject", then voted down by the assembly.
+        amendment("voted", {
+          positionKey: 1,
+          status: "rejected",
+          decidedAt: "2026-11-03T10:00:00.000Z",
+          position: answered("reject"),
+        }),
+        amendment("approved", {
+          positionKey: 2,
+          status: "approved",
+          approvalMethod: "vote",
+          position: answered("accept"),
+        }),
+        amendment("withdrawn", {
+          positionKey: 3,
+          status: "withdrawn",
+          position: answered("transact"),
+        }),
+        // Settled without an answer: nothing the presenter decided.
+        amendment("lapsed", { positionKey: 4, status: "lapsed" }),
+        // Replaced by a transactional, or never admitted: left out.
+        amendment("replaced", {
+          positionKey: 5,
+          status: "transacted",
+          position: answered("transact"),
+        }),
+        amendment("inadmissible", {
+          positionKey: 6,
+          status: "inadmissible",
+          admission: "inadmissible",
+          position: answered("reject"),
+        }),
+        amendment("draft", { positionKey: 7, status: "draft" }),
+        amendment("open", { positionKey: 8 }),
+      ],
+      "vote",
+    );
+    expect(items.map((item) => item.id)).toEqual([
+      "voted",
+      "approved",
+      "withdrawn",
+      "open",
+    ]);
+  });
+
+  it("keeps only the answers once the document is voted or closed", () => {
+    expect(
+      presenterAnswerItems(
+        [
+          amendment("a", { positionKey: 1, position: answered("accept") }),
+          amendment("b", { positionKey: 2 }),
+          incorporated("c", { positionKey: 3, position: null }),
+        ],
+        "incorporate",
+        { answeredOnly: true },
+      ).map((item) => item.id),
+    ).toEqual(["a", "c"]);
+  });
+
+  it("does not list what the presenter cannot answer yet", () => {
+    expect(
+      presenterAnswerItems(
+        [
+          amendment("late", { late: true, admission: "pending" }),
+          transactional("t", {
+            acceptances: [party(CEUM, "accepted"), party(CEA)],
+          }),
+        ],
+        "vote",
+      ),
+    ).toEqual([]);
+  });
+
+  it("shows a transactional's answer in place of the amendments it replaced", () => {
+    const list = [
+      amendment("s1", {
+        positionKey: 1,
+        status: "transacted",
+        position: answered("transact"),
+      }),
+      amendment("s2", { positionKey: 2, status: "transacted" }),
+      transactional("1", { positionKey: 3, position: answered("accept") }),
+    ];
+    expect(
+      presenterAnswerItems(list, "vote").map((item) => [
+        item.id,
+        item.answered,
+      ]),
+    ).toEqual([["1", true]]);
+    // Accepted under "incorporate": approved at once, and still listed once
+    // the document is voted, its answer hidden or not.
+    expect(
+      presenterAnswerItems(
+        [incorporated("t", { kind: "transactional", position: null })],
+        "incorporate",
+        { answeredOnly: true },
+      ).map((item) => item.id),
+    ).toEqual(["t"]);
+  });
+});
+
+describe("amendmentOutcome", () => {
+  it("says how a decided amendment ended", () => {
+    expect(amendmentOutcome(amendment("a"))).toBeNull();
+    expect(amendmentOutcome(incorporated("a"))).toBeNull();
+    expect(
+      amendmentOutcome(
+        amendment("a", { status: "approved", approvalMethod: "vote" }),
+      ),
+    ).toBe("approved");
+    expect(
+      amendmentOutcome(
+        amendment("a", { status: "approved", approvalMethod: "assent" }),
+      ),
+    ).toBe("approved");
+    expect(
+      amendmentOutcome(
+        amendment("a", { status: "approved", approvalMethod: "formal" }),
+      ),
+    ).toBe("approvedFormal");
+    expect(amendmentOutcome(amendment("a", { status: "rejected" }))).toBe(
+      "rejected",
+    );
+    expect(amendmentOutcome(amendment("a", { status: "withdrawn" }))).toBe(
+      "withdrawn",
+    );
+    expect(amendmentOutcome(amendment("a", { status: "lapsed" }))).toBe(
+      "lapsed",
+    );
+    expect(amendmentOutcome(amendment("a", { status: "transacted" }))).toBe(
+      null,
+    );
   });
 });
 
@@ -356,9 +812,17 @@ describe("recordedPositionCounts", () => {
         amendment("c", { position: answered("reject") }),
         amendment("d", { status: "draft", position: answered("accept") }),
         amendment("e", { position: null }),
-        transactional("t", { position: answered("accept") }),
+        // Replaced by a transactional: the transactional's answer counts.
+        amendment("f", {
+          status: "transacted",
+          position: answered("transact"),
+        }),
+        transactional("t", {
+          status: "approved",
+          position: answered("accept"),
+        }),
       ]),
-    ).toEqual({ pending: 0, accept: 1, reject: 2, transact: 0 });
+    ).toEqual({ pending: 0, accept: 2, reject: 2, transact: 0 });
   });
 });
 
@@ -370,8 +834,7 @@ describe("cursor", () => {
       amendment("c", { positionKey: 3, position: answered("reject") }),
       amendment("d", { positionKey: 4 }),
     ],
-    "cea",
-    "cea",
+    "vote",
   );
 
   it("hides answered steps on request, except the one on screen", () => {
@@ -422,5 +885,74 @@ describe("cursor", () => {
         null,
       ),
     ).toBeNull();
+  });
+});
+
+describe("answerStatus", () => {
+  it("reads the answer, and says when it is already in the text", () => {
+    expect(answerStatus(amendment("a"))).toBe("pending");
+    expect(answerStatus(amendment("a", { position: null }))).toBe("pending");
+    expect(
+      answerStatus(amendment("a", { position: answered("transact") })),
+    ).toBe("transact");
+    expect(answerStatus(amendment("a", { position: answered("accept") }))).toBe(
+      "accept",
+    );
+    expect(answerStatus(incorporated("a"))).toBe("incorporated");
+  });
+});
+
+describe("visibleAnswerProgress", () => {
+  it("leaves answers hidden from the viewer out of the count", () => {
+    const items = presenterAnswerItems(
+      [
+        amendment("a", { positionKey: 1, position: answered("accept") }),
+        amendment("b", { positionKey: 2 }),
+        amendment("c", { positionKey: 3, position: null }),
+      ],
+      "vote",
+    );
+    expect(items).toHaveLength(3);
+    expect(visibleAnswerProgress(items)).toEqual({ answered: 1, total: 2 });
+  });
+});
+
+describe("emptyReviewReason", () => {
+  it("says some are on their way when anything waits", () => {
+    expect(
+      emptyReviewReason(
+        [
+          amendment("a", { status: "rejected" }),
+          amendment("b", { late: true, admission: "pending" }),
+        ],
+        "vote",
+      ),
+    ).toBe("waiting");
+    // Validated and private: on its way only under "incorporate".
+    expect(emptyReviewReason([privateOne("a")], "incorporate")).toBe("waiting");
+  });
+
+  it("says everything is decided when nothing presented waits", () => {
+    expect(
+      emptyReviewReason(
+        [
+          amendment("a", { status: "rejected" }),
+          amendment("b", { status: "transacted" }),
+          transactional("t", { status: "approved", approvalMethod: "vote" }),
+          amendment("d", { status: "draft" }),
+        ],
+        "vote",
+      ),
+    ).toBe("allDecided");
+  });
+
+  it("says nothing was presented when there are only drafts or nothing", () => {
+    expect(emptyReviewReason([], "vote")).toBe("none");
+    expect(
+      emptyReviewReason(
+        [amendment("d", { status: "draft", reviewState: null })],
+        "incorporate",
+      ),
+    ).toBe("none");
   });
 });

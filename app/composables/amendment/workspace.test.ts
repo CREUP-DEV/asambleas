@@ -38,6 +38,14 @@ import {
   amendmentsAwaitingActor,
   amendmentLateState,
   isAmendmentPresenter,
+  amendmentAuthorsInOrder,
+  amendmentAcceptBlocked,
+  amendmentAwaitsPosition,
+  amendmentMainAuthor,
+  amendmentPositionBlocker,
+  amendmentPositionNext,
+  composerAuthorSet,
+  composerMainAuthor,
 } from "./workspace";
 
 const p = (id: string, text: string): Block => ({
@@ -77,6 +85,7 @@ function amendment(
     positionKey: 0,
     changeKinds: [],
     authors: [],
+    mainAuthorId: null,
     submittedAt: null,
     validatedAt: null,
     publishedAt: null,
@@ -399,53 +408,357 @@ describe("api errors", () => {
 });
 
 describe("composer authors", () => {
-  it("keeps the presenting member out of the picker", () => {
-    const seed = composerAuthorSeed(["P", "B", "C"], "P", false);
+  it("keeps the actor's own member out of the picker and sends it back", () => {
+    const seed = composerAuthorSeed(["P", "B", "C"], "P");
     expect(seed).toEqual({
       onBehalfOfMemberId: undefined,
       coAuthorIds: ["B", "C"],
-      presentingMemberId: "P",
-      keptMemberId: null,
+      keptMemberId: "P",
+      mainAuthorId: null,
     });
     expect(
       composerAuthorMemberIds(seed.coAuthorIds, seed.keptMemberId),
-    ).toEqual(["B", "C"]);
+    ).toEqual(["B", "C", "P"]);
   });
 
   it("keeps a co-author who edits someone else's draft", () => {
-    const seed = composerAuthorSeed(["P", "B", "C"], "B", false);
-    expect(seed.coAuthorIds).toEqual(["C"]);
-    expect(seed.presentingMemberId).toBe("P");
+    // The main author comes first: it is not taken for the presenting one.
+    const seed = composerAuthorSeed(["C", "P", "B"], "B", "C");
+    expect(seed.coAuthorIds).toEqual(["C", "P"]);
     expect(seed.keptMemberId).toBe("B");
+    expect(seed.mainAuthorId).toBe("C");
     expect(
       composerAuthorMemberIds(seed.coAuthorIds, seed.keptMemberId),
-    ).toEqual(["C", "B"]);
+    ).toEqual(["C", "P", "B"]);
     // Removing every visible co-author still sends the editor's own member.
     expect(composerAuthorMemberIds([], seed.keptMemberId)).toEqual(["B"]);
   });
 
-  it("edits on behalf of the presenting member when not an author", () => {
-    const moderator = composerAuthorSeed(["P", "B"], "M", true);
-    expect(moderator.onBehalfOfMemberId).toBe("P");
-    expect(moderator.coAuthorIds).toEqual(["B"]);
+  it("never seeds a presenting member on behalf from a stored draft", () => {
+    // A moderator who is not an author: authors[0] is the main author, not
+    // necessarily the presenting member, so nothing is sent on its behalf.
+    const moderator = composerAuthorSeed(["B", "P"], "M", "B");
+    expect(moderator.onBehalfOfMemberId).toBeUndefined();
+    expect(moderator.coAuthorIds).toEqual(["B", "P"]);
     expect(moderator.keptMemberId).toBeNull();
     expect(
       composerAuthorMemberIds(moderator.coAuthorIds, moderator.keptMemberId),
-    ).toEqual(["B"]);
+    ).toEqual(["B", "P"]);
 
-    const other = composerAuthorSeed(["P", "B"], null, false);
-    expect(other.onBehalfOfMemberId).toBeUndefined();
-    expect(other.coAuthorIds).toEqual(["B"]);
+    const other = composerAuthorSeed(["P", "B"], null);
+    expect(other.coAuthorIds).toEqual(["P", "B"]);
     expect(other.keptMemberId).toBeNull();
   });
 
+  it("drops a stored main author that is no longer an author", () => {
+    expect(composerAuthorSeed(["P", "B"], "P", "X").mainAuthorId).toBeNull();
+  });
+
   it("starts empty for a new amendment", () => {
-    expect(composerAuthorSeed([], "P", true)).toEqual({
+    expect(composerAuthorSeed([], "P")).toEqual({
       onBehalfOfMemberId: undefined,
       coAuthorIds: [],
-      presentingMemberId: null,
       keptMemberId: null,
+      mainAuthorId: null,
     });
+  });
+
+  it("lists everyone who will present it, without repeats", () => {
+    expect(
+      composerAuthorSet({
+        presentingMemberId: "P",
+        keptMemberId: null,
+        coAuthorIds: ["B", "P"],
+      }),
+    ).toEqual(["P", "B"]);
+    expect(
+      composerAuthorSet({
+        presentingMemberId: undefined,
+        keptMemberId: "B",
+        coAuthorIds: ["C"],
+      }),
+    ).toEqual(["B", "C"]);
+    expect(
+      composerAuthorSet({
+        presentingMemberId: null,
+        keptMemberId: null,
+        coAuthorIds: [],
+      }),
+    ).toEqual([]);
+  });
+
+  it("requires a main author only when there are several", () => {
+    // One author: it is the main one, and it is sent as such.
+    expect(composerMainAuthor(["P"], null)).toEqual({
+      required: false,
+      value: "P",
+      missing: false,
+    });
+    expect(composerMainAuthor(["P"], "P").value).toBe("P");
+    // A stored choice that left the set does not override the sole author.
+    expect(composerMainAuthor(["P"], "B").value).toBe("P");
+    expect(composerMainAuthor([], null)).toEqual({
+      required: false,
+      value: null,
+      missing: false,
+    });
+    expect(composerMainAuthor(["P", "B"], null)).toEqual({
+      required: true,
+      value: null,
+      missing: true,
+    });
+    expect(composerMainAuthor(["P", "B"], "B")).toEqual({
+      required: true,
+      value: "B",
+      missing: false,
+    });
+    // The chosen one was removed from the authors.
+    expect(composerMainAuthor(["P", "B"], "C").missing).toBe(true);
+  });
+});
+
+describe("main author", () => {
+  const ceum = { id: "ceum", acronym: "CEUM" };
+  const caub = { id: "caub", acronym: "CAUB" };
+
+  it("is the one named, or the first author", () => {
+    expect(
+      amendmentMainAuthor({ authors: [ceum, caub], mainAuthorId: "caub" }),
+    ).toBe(caub);
+    expect(
+      amendmentMainAuthor({ authors: [ceum, caub], mainAuthorId: null }),
+    ).toBe(ceum);
+    // Named but not among the authors (stale): the first one.
+    expect(amendmentMainAuthor({ authors: [ceum], mainAuthorId: "caub" })).toBe(
+      ceum,
+    );
+    expect(amendmentMainAuthor({ authors: [], mainAuthorId: null })).toBeNull();
+  });
+
+  it("goes first, and is marked only among several", () => {
+    expect(
+      amendmentAuthorsInOrder({ authors: [ceum, caub], mainAuthorId: "caub" }),
+    ).toEqual({ main: caub, others: [ceum], marked: true });
+    expect(
+      amendmentAuthorsInOrder({ authors: [ceum], mainAuthorId: null }),
+    ).toEqual({ main: ceum, others: [], marked: false });
+  });
+});
+
+describe("the main presenter's answer", () => {
+  const accepted = {
+    member: { id: "ceum", acronym: "CEUM", name: "CEUM", kind: "asociado" },
+    role: "author",
+    decision: "accepted",
+    decidedAt: "2026-11-02T10:00:00.000Z",
+  } as const;
+  const pending = {
+    ...accepted,
+    decision: "pending",
+    decidedAt: null,
+  } as const;
+  const rules = ["vote", "incorporate"] as const;
+
+  it("is offered once validated and admitted", () => {
+    for (const rule of rules) {
+      expect(amendmentAwaitsPosition(amendment("a", []), rule)).toBe(true);
+      // Recorded before validation existed.
+      expect(
+        amendmentAwaitsPosition(
+          amendment("a", [], { reviewState: null }),
+          rule,
+        ),
+      ).toBe(true);
+      expect(
+        amendmentAwaitsPosition(
+          amendment("a", [], {
+            reviewState: "pending_validation",
+            admission: "pending",
+          }),
+          rule,
+        ),
+      ).toBe(false);
+      // Late and the assembly has not decided to treat it.
+      expect(
+        amendmentAwaitsPosition(
+          amendment("a", [], { late: true, admission: "pending" }),
+          rule,
+        ),
+      ).toBe(false);
+      expect(
+        amendmentAwaitsPosition(
+          amendment("a", [], { status: "withdrawn" }),
+          rule,
+        ),
+      ).toBe(false);
+    }
+  });
+
+  it("waits for publication only to accept it when that incorporates it", () => {
+    const private_ = amendment("a", [], { reviewState: "validated" });
+    // The Mesa can answer for the presenter already, under either rule.
+    for (const rule of rules) {
+      expect(amendmentAwaitsPosition(private_, rule)).toBe(true);
+      expect(amendmentPositionBlocker(private_, rule)).toBeNull();
+    }
+    expect(amendmentPositionNext(private_, "incorporate")).toBe(
+      "incorporateIfAccepted",
+    );
+    // Under "incorporate" the server refuses to put unpublished text in:
+    // only accepting waits.
+    expect(amendmentAcceptBlocked(private_, "incorporate")).toBe(true);
+    expect(amendmentAcceptBlocked(private_, "vote")).toBe(false);
+    expect(amendmentAcceptBlocked(amendment("a", []), "incorporate")).toBe(
+      false,
+    );
+    // Decided ones are not answered with an acceptance that approves them.
+    expect(
+      amendmentAcceptBlocked(
+        { ...private_, status: "withdrawn" },
+        "incorporate",
+      ),
+    ).toBe(false);
+  });
+
+  it("keeps an amendment incorporated by the presenter open to a change", () => {
+    const incorporated = amendment("a", [], {
+      status: "approved",
+      approvalMethod: "proponent",
+      decidedAt: "2026-11-02T10:00:00.000Z",
+    });
+    expect(amendmentAwaitsPosition(incorporated, "incorporate")).toBe(true);
+    // Approved that way under "vote" (by the Mesa): it is decided.
+    expect(amendmentAwaitsPosition(incorporated, "vote")).toBe(false);
+    expect(
+      amendmentAwaitsPosition(
+        { ...incorporated, approvalMethod: "vote" },
+        "incorporate",
+      ),
+    ).toBe(false);
+  });
+
+  it("waits for a transactional's main authors first", () => {
+    const transactional = (extra: Partial<AmendmentDto>) =>
+      amendment("t", [], { kind: "transactional", ...extra });
+    expect(
+      amendmentAwaitsPosition(
+        transactional({ acceptances: [accepted] }),
+        "vote",
+      ),
+    ).toBe(true);
+    expect(
+      amendmentAwaitsPosition(
+        transactional({ acceptances: [accepted, pending] }),
+        "vote",
+      ),
+    ).toBe(false);
+    expect(
+      amendmentPositionBlocker(
+        transactional({
+          reviewState: "pending_authors",
+          acceptances: [pending],
+        }),
+        "vote",
+      ),
+    ).toBe("authors");
+    // The Mesa's live one is public at once: still the authors first.
+    expect(
+      amendmentPositionBlocker(
+        transactional({ acceptances: [accepted, pending] }),
+        "incorporate",
+      ),
+    ).toBe("authors");
+    // Only the main authors' rows count, not an older presenter row.
+    expect(
+      amendmentAwaitsPosition(
+        transactional({
+          acceptances: [accepted, { ...pending, role: "proponent" }],
+        }),
+        "vote",
+      ),
+    ).toBe(true);
+  });
+
+  it("says why it cannot be answered yet", () => {
+    expect(amendmentPositionBlocker(amendment("a", []), "vote")).toBeNull();
+    expect(
+      amendmentPositionBlocker(
+        amendment("a", [], { reviewState: "pending_validation" }),
+        "vote",
+      ),
+    ).toBe("validation");
+    expect(
+      amendmentPositionBlocker(
+        amendment("a", [], { late: true, admission: "pending" }),
+        "vote",
+      ),
+    ).toBe("admission");
+    // Older rows: no review state, and not validated yet.
+    expect(
+      amendmentPositionBlocker(
+        amendment("a", [], { reviewState: null, admission: "pending" }),
+        "vote",
+      ),
+    ).toBe("validation");
+    expect(
+      amendmentPositionBlocker(
+        amendment("a", [], {
+          reviewState: null,
+          admission: "pending",
+          validatedAt: "2026-11-01T10:00:00.000Z",
+        }),
+        "vote",
+      ),
+    ).toBe("admission");
+    expect(
+      amendmentPositionBlocker(
+        amendment("a", [], { status: "rejected" }),
+        "vote",
+      ),
+    ).toBeNull();
+  });
+
+  it("says what happens next with the document's rule", () => {
+    const answered = (position: "pending" | "accept" | "reject") =>
+      amendment("a", [], {
+        position: { position, comment: null, updatedAt: "2026-11-02" },
+      });
+    expect(amendmentPositionNext(amendment("a", []), "incorporate")).toBe(
+      "incorporateIfAccepted",
+    );
+    expect(amendmentPositionNext(answered("pending"), "incorporate")).toBe(
+      "incorporateIfAccepted",
+    );
+    expect(
+      amendmentPositionNext(
+        {
+          ...answered("accept"),
+          status: "approved",
+          approvalMethod: "proponent",
+        },
+        "incorporate",
+      ),
+    ).toBe("incorporated");
+    expect(amendmentPositionNext(answered("reject"), "incorporate")).toBe(
+      "vote",
+    );
+    expect(amendmentPositionNext(amendment("a", []), "vote")).toBe(
+      "voteAnyway",
+    );
+    expect(amendmentPositionNext(answered("accept"), "vote")).toBe("vote");
+    // Not reached the presenter yet, or decided otherwise.
+    expect(
+      amendmentPositionNext(
+        amendment("a", [], { reviewState: "pending_validation" }),
+        "vote",
+      ),
+    ).toBeNull();
+    expect(
+      amendmentPositionNext(
+        amendment("a", [], { status: "rejected", decidedAt: "2026-11-02" }),
+        "incorporate",
+      ),
+    ).toBeNull();
   });
 });
 
@@ -811,22 +1124,22 @@ describe("review by the Secretaría", () => {
     expect(
       showAmendmentAdmission({
         status: "submitted",
-        reviewState: "pending_proponent",
+        reviewState: "pending_authors",
         admission: "pending",
       }),
     ).toBe(false);
   });
 
-  it("says a transactional waits for the document's presenter", () => {
+  it("says a transactional waits for the main authors", () => {
     const view = amendmentReviewView(
       amendment("t", [], {
         kind: "transactional",
-        reviewState: "pending_proponent",
+        reviewState: "pending_authors",
         admission: "pending",
       }),
     );
     expect(view).toMatchObject({
-      key: "pending_proponent",
+      key: "pending_authors",
       private: true,
       awaitingAdmission: false,
     });

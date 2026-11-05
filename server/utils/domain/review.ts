@@ -24,6 +24,7 @@ import {
 } from "../../db/schema";
 import type { DocumentStatus } from "~~/shared/constants/domain";
 import type {
+  MeWorkAcceptanceDto,
   MeWorkAmendmentDto,
   MeWorkAssemblyRef,
   MeWorkDocumentDto,
@@ -41,20 +42,29 @@ import {
   canSeeLoadedAmendment,
   findAmendmentsAwaitingReview,
   findSubmittedAmendments,
+  findTransactionalsAwaitingMember,
+  membersSourcesOf,
 } from "./amendments";
 import { loadAgendaItems, visibleDocumentsCondition } from "./assemblies";
 import {
+  assemblySettings,
   buildDocumentSummaries,
   loadMilestones,
   loadMilestonesByAssembly,
 } from "./documents";
+import { loadWorkNews } from "./news";
+import {
+  coPresentedBy,
+  loadCoProponentIds,
+  withCoProponentIds,
+} from "./presenters";
 import {
   SETTLED_PRIVATE_STATUSES,
   agendaPositions,
   amendmentReviewState,
-  countProponentWork,
+  authorsApproval,
+  countPositionsPending,
   hasPendingReview,
-  proponentApproval,
   type ReviewCounts,
 } from "./reviewState";
 import { canSeeAssembly, canSeeDocument } from "./visibility";
@@ -95,7 +105,7 @@ function assemblyRef(assembly: AssemblyRow): MeWorkAssemblyRef {
  * amendment:review): presented documents to validate, for document:manage,
  * and, for amendment:review, amendments to validate or publish, late ones
  * waiting for the assembly's decision and, read only, member-proposed
- * transactionals waiting for the document's presenter
+ * transactionals waiting for their main authors
  * (findAmendmentsAwaitingReview), grouped by document in agenda order (then
  * creation order) and then in text order.
  */
@@ -113,14 +123,16 @@ export async function loadReviewQueue(
   }
 
   const [rows, milestones, items] = await Promise.all([
-    db.query.documents.findMany({
-      where: eq(documents.assemblyId, assembly.id),
-      with: { proponent: true },
-      orderBy: (table, { asc: ascending }) => [
-        ascending(table.createdAt),
-        ascending(table.id),
-      ],
-    }),
+    db.query.documents
+      .findMany({
+        where: eq(documents.assemblyId, assembly.id),
+        with: { proponent: true },
+        orderBy: (table, { asc: ascending }) => [
+          ascending(table.createdAt),
+          ascending(table.id),
+        ],
+      })
+      .then((list) => withCoProponentIds(list)),
     loadMilestones(assembly.id),
     loadAgendaItems(assembly.id),
   ]);
@@ -184,7 +196,21 @@ async function loadWorkAssemblies(actor: Actor): Promise<AssemblyRow[]> {
   return rows.filter((row) => canSeeAssembly(actor, row));
 }
 
-/** Documents the actor's member presents, with where each one stands. */
+/** Rows sorted by the order of their assembly in `assemblyRows`. */
+function byAssemblyOrder<T extends { assembly: MeWorkAssemblyRef }>(
+  rows: T[],
+  assemblyRows: AssemblyRow[],
+): T[] {
+  const order = assemblyRows.map((row) => row.id);
+  return rows.sort(
+    (a, b) => order.indexOf(a.assembly.id) - order.indexOf(b.assembly.id),
+  );
+}
+
+/**
+ * Documents the actor's member presents, as main presenter or co-presenter,
+ * with where each one stands.
+ */
 async function loadWorkDocuments(
   actor: Actor,
   assemblyRows: AssemblyRow[],
@@ -194,7 +220,10 @@ async function loadWorkDocuments(
   const rows = await db.query.documents.findMany({
     where: and(
       inArray(documents.assemblyId, [...byId.keys()]),
-      eq(documents.proponentMemberId, actor.memberId),
+      or(
+        eq(documents.proponentMemberId, actor.memberId),
+        coPresentedBy(actor.memberId),
+      ),
       inArray(documents.status, WORK_DOCUMENT_STATUSES),
     ),
     with: { proponent: true },
@@ -203,21 +232,21 @@ async function loadWorkDocuments(
       ascending(table.id),
     ],
   });
-  const visible = rows.filter((row) => canSeeDocument(actor, row));
+  const visible = (await withCoProponentIds(rows)).filter((row) =>
+    canSeeDocument(actor, row),
+  );
   const summaries = await buildDocumentSummaries(
     actor,
     visible,
     await loadMilestonesByAssembly([...byId.keys()]),
   );
-  const order = assemblyRows.map((row) => row.id);
-  return visible
-    .map((row, index) => ({
+  return byAssemblyOrder(
+    visible.map((row, index) => ({
       assembly: assemblyRef(byId.get(row.assemblyId)!),
       document: summaries[index]!,
-    }))
-    .sort(
-      (a, b) => order.indexOf(a.assembly.id) - order.indexOf(b.assembly.id),
-    );
+    })),
+    assemblyRows,
+  );
 }
 
 /** Amendments the actor's member wrote that are not decided yet, newest change first. */
@@ -233,6 +262,8 @@ async function loadWorkAmendments(
       kind: amendments.kind,
       code: amendments.code,
       status: amendments.status,
+      late: amendments.late,
+      admission: amendments.admission,
       validatedAt: amendments.validatedAt,
       publishedAt: amendments.publishedAt,
       correctionNote: amendments.correctionNote,
@@ -261,27 +292,30 @@ async function loadWorkAmendments(
     )
     .orderBy(desc(amendments.updatedAt), asc(amendments.id));
 
-  // A transactional waits for its document's presenter before the Secretaría.
+  // A transactional waits for its main authors before the Secretaría.
   const transactionalIds = rows
     .filter((row) => row.kind === "transactional")
     .map((row) => row.id);
-  const acceptanceRows =
+  const [acceptanceRows, coProponents] = await Promise.all([
     transactionalIds.length > 0
-      ? await db
+      ? db
           .select({
             amendmentId: amendmentAcceptances.amendmentId,
-            memberId: amendmentAcceptances.memberId,
+            role: amendmentAcceptances.role,
             decision: amendmentAcceptances.decision,
           })
           .from(amendmentAcceptances)
           .where(inArray(amendmentAcceptances.amendmentId, transactionalIds))
-      : [];
+      : Promise.resolve([]),
+    loadCoProponentIds([...new Set(rows.map((row) => row.documentId))]),
+  ]);
 
   return rows
     .filter((row) =>
       canSeeDocument(actor, {
         status: row.documentStatus,
         proponentMemberId: row.proponentMemberId,
+        coProponentMemberIds: coProponents.get(row.documentId) ?? [],
         submittedByUserId: row.submittedByUserId,
       }),
     )
@@ -298,18 +332,17 @@ async function loadWorkAmendments(
         status: row.status,
         reviewState: amendmentReviewState({
           ...row,
-          proponentApproval: proponentApproval(
-            {
-              kind: row.kind,
-              acceptances: acceptanceRows.filter(
-                (acceptance) => acceptance.amendmentId === row.id,
-              ),
-            },
-            row.proponentMemberId,
-          ),
+          authorsApproval: authorsApproval({
+            kind: row.kind,
+            acceptances: acceptanceRows.filter(
+              (acceptance) => acceptance.amendmentId === row.id,
+            ),
+          }),
         }),
         // The actor's member wrote it: the note is for them.
         correctionNote: row.correctionNote,
+        late: row.late,
+        admission: row.admission,
         updatedAt: row.updatedAt.toISOString(),
       },
     }));
@@ -327,8 +360,8 @@ function countsByAssembly(
  * document:manage and amendment counts need amendment:review; only
  * assemblies with something pending are listed. The amendment counts match
  * the inbox's "to validate" and "to publish" sections: transactionals
- * waiting for the presenter and late amendments waiting for the assembly
- * wait for someone else, so they are not counted.
+ * waiting for their main authors and late amendments waiting for the
+ * assembly wait for someone else, so they are not counted.
  */
 async function loadWorkReview(
   actor: Actor,
@@ -376,8 +409,8 @@ async function loadWorkReview(
             and(
               eq(amendments.status, "submitted"),
               isNull(amendments.validatedAt),
-              // Not a transactional still waiting for the document's
-              // presenter (awaitsProponent): the presenter answers first.
+              // Not a transactional still waiting for its main authors
+              // (awaitsAuthors): they answer first.
               notExists(
                 db
                   .select({ id: amendmentAcceptances.id })
@@ -385,10 +418,7 @@ async function loadWorkReview(
                   .where(
                     and(
                       eq(amendmentAcceptances.amendmentId, amendments.id),
-                      eq(
-                        amendmentAcceptances.memberId,
-                        documents.proponentMemberId,
-                      ),
+                      eq(amendmentAcceptances.role, "author"),
                       ne(amendmentAcceptances.decision, "accepted"),
                     ),
                   ),
@@ -437,17 +467,27 @@ async function loadWorkReview(
   return result;
 }
 
+/** Published documents of these assemblies with no final vote yet. */
+function openPublishedDocuments(assemblyIds: string[]) {
+  return and(
+    inArray(documents.assemblyId, assemblyIds),
+    eq(documents.status, "published"),
+    isNull(documents.finalVoteId),
+    isNull(documents.consolidatedVersionId),
+  );
+}
+
 /**
- * For the presenter: published documents its member presents, not voted yet,
- * with amendments to answer (countProponentWork over the amendments the
- * actor can see). Documents with nothing to answer are left out.
+ * For the main presenter: published documents its member presents as main
+ * presenter, not voted yet, with amendments it can answer now
+ * (countPositionsPending over the amendments the actor can see). Documents
+ * with nothing to answer are left out.
  */
 async function loadWorkProponent(
   actor: Actor,
   assemblyRows: AssemblyRow[],
 ): Promise<MeWorkProponentDto[]> {
   if (!actor.memberId || assemblyRows.length === 0) return [];
-  const memberId = actor.memberId;
   const byId = new Map(assemblyRows.map((row) => [row.id, row]));
   const rows = await db
     .select({
@@ -455,15 +495,13 @@ async function loadWorkProponent(
       slug: documents.slug,
       title: documents.title,
       assemblyId: documents.assemblyId,
+      acceptedAmendments: documents.acceptedAmendments,
     })
     .from(documents)
     .where(
       and(
-        inArray(documents.assemblyId, [...byId.keys()]),
-        eq(documents.proponentMemberId, memberId),
-        eq(documents.status, "published"),
-        isNull(documents.finalVoteId),
-        isNull(documents.consolidatedVersionId),
+        openPublishedDocuments([...byId.keys()]),
+        eq(documents.proponentMemberId, actor.memberId),
       ),
     )
     .orderBy(asc(documents.createdAt), asc(documents.id));
@@ -472,55 +510,114 @@ async function loadWorkProponent(
   const submitted = (
     await findSubmittedAmendments(rows.map((row) => row.id))
   ).filter((row) => canSeeLoadedAmendment(actor, row));
-  const order = assemblyRows.map((row) => row.id);
   const result: MeWorkProponentDto[] = [];
   for (const row of rows) {
-    const counts = countProponentWork(
+    const positionsPending = countPositionsPending(
       submitted
         .filter((amendment) => amendment.documentId === row.id)
         .map((amendment) => ({
-          kind: amendment.kind,
           status: amendment.status,
+          admission: amendment.admission,
           validatedAt: amendment.validatedAt,
           publishedAt: amendment.publishedAt,
+          approvalMethod: amendment.approvalMethod,
+          authorsApproval: authorsApproval(amendment),
           position: amendment.position?.position ?? null,
-          acceptances: amendment.acceptances,
         })),
-      memberId,
+      row.acceptedAmendments,
     );
-    if (counts.positionsPending + counts.transactionalsToApprove === 0) {
-      continue;
-    }
+    if (positionsPending === 0) continue;
     result.push({
       assembly: assemblyRef(byId.get(row.assemblyId)!),
       document: { id: row.id, slug: row.slug, title: row.title },
-      ...counts,
+      positionsPending,
     });
   }
-  return result.sort(
-    (a, b) => order.indexOf(a.assembly.id) - order.indexOf(b.assembly.id),
-  );
+  return byAssemblyOrder(result, assemblyRows);
+}
+
+/**
+ * Transactionals waiting for the actor's member to accept or reject them:
+ * it is the main author of an amendment they would replace and has not
+ * answered yet. With the amendments of the member each one replaces.
+ */
+async function loadWorkAcceptances(
+  actor: Actor,
+  assemblyRows: AssemblyRow[],
+): Promise<MeWorkAcceptanceDto[]> {
+  if (!actor.memberId || assemblyRows.length === 0) return [];
+  const byId = new Map(assemblyRows.map((row) => [row.id, row]));
+  const documentRows = await db
+    .select({
+      id: documents.id,
+      slug: documents.slug,
+      title: documents.title,
+      assemblyId: documents.assemblyId,
+    })
+    .from(documents)
+    .where(openPublishedDocuments([...byId.keys()]))
+    .orderBy(asc(documents.createdAt), asc(documents.id));
+  const transactionals = (
+    await findTransactionalsAwaitingMember(
+      documentRows.map((row) => row.id),
+      actor.memberId,
+    )
+  ).filter((row) => canSeeLoadedAmendment(actor, row));
+  if (transactionals.length === 0) return [];
+  const replaces = await membersSourcesOf(transactionals, actor.memberId);
+
+  const result: MeWorkAcceptanceDto[] = [];
+  for (const document of documentRows) {
+    for (const transactional of transactionals) {
+      if (transactional.documentId !== document.id) continue;
+      result.push({
+        assembly: assemblyRef(byId.get(document.assemblyId)!),
+        document: {
+          id: document.id,
+          slug: document.slug,
+          title: document.title,
+        },
+        transactional: { id: transactional.id, code: transactional.code },
+        replaces: replaces.get(transactional.id) ?? [],
+      });
+    }
+  }
+  return byAssemblyOrder(result, assemblyRows);
 }
 
 /**
  * GET /api/me/work: across the assemblies that are not closed and that the
  * actor can see, the documents their member presents, the amendments it
- * wrote that are not decided yet, what it has to answer as a presenter and,
- * for the Secretaría, what waits for it.
+ * wrote that are not decided yet, what it has to answer as main presenter
+ * and as main author, what others decided about its work and, for the
+ * Secretaría, what waits for it.
  */
 export async function loadMeWork(actor: Actor): Promise<MeWorkDto> {
   const assemblyRows = await loadWorkAssemblies(actor);
   const now = new Date();
-  const [workDocuments, workAmendments, review, proponent] = await Promise.all([
-    loadWorkDocuments(actor, assemblyRows),
-    loadWorkAmendments(actor, assemblyRows),
-    loadWorkReview(actor, assemblyRows, now),
-    loadWorkProponent(actor, assemblyRows),
-  ]);
+  const [workDocuments, workAmendments, review, proponent, acceptances, news] =
+    await Promise.all([
+      loadWorkDocuments(actor, assemblyRows),
+      loadWorkAmendments(actor, assemblyRows),
+      loadWorkReview(actor, assemblyRows, now),
+      loadWorkProponent(actor, assemblyRows),
+      loadWorkAcceptances(actor, assemblyRows),
+      loadWorkNews(
+        actor,
+        assemblyRows.map((row) => ({
+          ref: assemblyRef(row),
+          settings: assemblySettings(row),
+          status: row.status,
+        })),
+        now,
+      ),
+    ]);
   return {
     documents: workDocuments,
     amendments: workAmendments,
     review,
     proponent,
+    acceptances,
+    news,
   };
 }

@@ -8,8 +8,11 @@ import { assemblyPath } from "~/components/shell/Navigation.vue";
 
 /**
  * Where the user's documents and amendments stand when there is nothing for
- * them to do: one line each, with a sentence that says what happens next.
- * Long lists show the first few and fold the rest away.
+ * them to do: one line each, with a sentence that says what happens next
+ * (a late amendment says the assembly still has to decide whether to treat
+ * it; a transactional the user proposed, that it waits for the main authors
+ * of what it replaces). Long lists show the first few and fold the rest
+ * away.
  */
 const props = withDefaults(
   defineProps<{
@@ -27,7 +30,9 @@ const localePath = useLocalePath();
 const UPDATE_ICONS: Record<HomeWorkUpdateKind, { icon: string; tone: string }> =
   {
     document_review: { icon: "i-lucide-hourglass", tone: "text-info" },
+    amendment_authors: { icon: "i-lucide-handshake", tone: "text-info" },
     amendment_review: { icon: "i-lucide-hourglass", tone: "text-info" },
+    amendment_late: { icon: "i-lucide-clock-alert", tone: "text-warning" },
     amendment_validated: { icon: "i-lucide-eye-off", tone: "text-muted" },
     document_published: { icon: "i-lucide-circle-check", tone: "text-success" },
     amendment_published: {
