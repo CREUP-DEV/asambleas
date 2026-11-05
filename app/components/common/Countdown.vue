@@ -18,8 +18,10 @@ const props = withDefaults(
     /** Optional prefix, e.g. "Cierra". */
     label?: string;
     icon?: string;
+    /** "day" counts days instead of weeks or months ("dentro de 35 días"). */
+    maxUnit?: "day";
   }>(),
-  { urgentHours: 24, label: undefined, icon: undefined },
+  { urgentHours: 24, label: undefined, icon: undefined, maxUnit: undefined },
 );
 
 const emit = defineEmits<{ expired: [] }>();
@@ -36,7 +38,11 @@ const absolute = computed(() =>
   formatDateTime(target.value, { locale: locale.value, style: "long" }),
 );
 const relative = computed(() =>
-  formatRelative(target.value, { locale: locale.value, now: now.value }),
+  formatRelative(target.value, {
+    locale: locale.value,
+    now: now.value,
+    maxUnit: props.maxUnit,
+  }),
 );
 const remainingMs = computed(() =>
   target.value ? target.value.getTime() - now.value : 0,

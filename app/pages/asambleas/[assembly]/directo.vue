@@ -390,8 +390,15 @@ const consolidatedPath = computed(() =>
     : null,
 );
 
+const now = useAppNow();
+
+/**
+ * When the assembly starts, only while that is still ahead: the page also
+ * shows the "not open" state after the Mesa suspends the session, when the
+ * start has passed.
+ */
 const startDate = computed(() =>
-  assembly.value
+  assembly.value && new Date(assembly.value.startDate).getTime() > now.value
     ? formatDate(assembly.value.startDate, {
         locale: locale.value,
         style: "long",
@@ -405,6 +412,12 @@ const startDate = computed(() =>
 // over the content: a refresh would otherwise read the whole passage aloud.
 
 const announcement = ref("");
+
+// The session ends or is suspended: nothing said about it still holds
+// (the debate, the floor or the last result).
+watch(inSession, (open) => {
+  if (!open) announcement.value = "";
+});
 
 watch(
   () => debated.value?.amendment.id ?? document.value?.id ?? null,
@@ -424,17 +437,39 @@ watch(
   },
 );
 
+// The Mesa leaves the document (the debated id above goes null for a moment
+// on every switch, so it cannot tell): say so when the page shows that
+// nothing is in debate, and otherwise drop the line that no longer holds,
+// as when it moves to an item without a document.
+watch(documentId, (id, previous) => {
+  if (id || !previous) return;
+  announcement.value =
+    inSession.value && live.value && nothingInDebate.value
+      ? t("liveView.idle.title")
+      : "";
+});
+
+/** The last "now speaking" line, dropped when that turn ends. */
+let speakerLine = "";
+
 watch(
   () => speakers.value?.current?.id ?? null,
   (id, previous) => {
+    if (id === previous) return;
     const turn = speakers.value?.current;
-    if (!id || id === previous || !turn) return;
-    announcement.value = t("liveView.announce.speaker", {
+    if (!id || !turn) {
+      if (previous && announcement.value === speakerLine) {
+        announcement.value = "";
+      }
+      return;
+    }
+    speakerLine = t("liveView.announce.speaker", {
       name:
         turn.speaker?.trim() ||
         turn.member?.name ||
         t("liveView.speakers.unnamed"),
     });
+    announcement.value = speakerLine;
   },
 );
 
@@ -458,7 +493,7 @@ watch(
       {{ announcement }}
     </p>
 
-    <!-- Before the session -->
+    <!-- The session is not open: before it, or suspended by the Mesa -->
     <CommonEmptyState
       v-if="status === 'draft' || status === 'convened'"
       icon="i-lucide-radio"

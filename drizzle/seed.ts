@@ -1047,20 +1047,21 @@ export function buildDemoContent(
       startedAt: minutesAgo(25),
       endedAt: minutesAgo(15),
     },
+    // Not in session yet, so nobody has the floor: the Mesa prepares the list.
     {
       acronym: "CEUM",
       speaker: "Marta Gil",
-      status: "speaking",
+      status: "waiting",
       position: 0,
       createdAt: minutesAgo(20),
-      startedAt: minutesAgo(15),
+      startedAt: null,
       endedAt: null,
     },
     {
       acronym: "CAUB",
       speaker: null,
       status: "waiting",
-      position: 0,
+      position: 1,
       createdAt: minutesAgo(12),
       startedAt: null,
       endedAt: null,
@@ -1069,7 +1070,7 @@ export function buildDemoContent(
       acronym: "CEEM",
       speaker: "Javier Ruiz",
       status: "waiting",
-      position: 1,
+      position: 2,
       createdAt: minutesAgo(8),
       startedAt: null,
       endedAt: null,
@@ -1858,6 +1859,8 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
         entityId,
         type: "relation_created",
         payload: { relationId, kind: "incompatible", otherId, direction },
+        // Noted by the document's presenter, so the history says by whom.
+        actorMemberId: member(proponentOf.positioning),
         createdAt: relation.at,
       });
     }

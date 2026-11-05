@@ -506,7 +506,7 @@ const memberItems = computed(() =>
   (members.value ?? [])
     .filter((item) => item.active)
     .map((item) => ({
-      label: `${item.acronym} · ${item.name}`,
+      label: memberLabel(item),
       value: item.id,
     })),
 );
@@ -533,7 +533,7 @@ const mainAuthorItems = computed(() =>
   authorSet.value.map((id) => {
     const ref = memberRefs.value.get(id);
     return {
-      label: ref ? `${ref.acronym} · ${ref.name}` : id,
+      label: ref ? memberLabel(ref) : id,
       value: id,
     };
   }),
@@ -886,7 +886,7 @@ onMounted(() => {
             :placeholder="t('amendment.composer.editorPlaceholder')"
           />
           <template #fallback>
-            <USkeleton class="h-32 w-full" />
+            <USkeleton aria-hidden="true" class="h-32 w-full" />
           </template>
         </ClientOnly>
         <p class="text-dimmed text-xs">
@@ -949,7 +949,7 @@ onMounted(() => {
             :placeholder="t('amendment.composer.alternativePlaceholder')"
           />
           <template #fallback>
-            <USkeleton class="h-48 w-full" />
+            <USkeleton aria-hidden="true" class="h-48 w-full" />
           </template>
         </ClientOnly>
       </template>
@@ -1034,7 +1034,15 @@ onMounted(() => {
         class="w-full"
         :loading="membersStatus === 'pending'"
         :placeholder="t('amendment.composer.onBehalfPlaceholder')"
-        :search-input="{ placeholder: t('amendment.composer.memberSearch') }"
+        :aria-label="
+          selectMenuLabel(
+            t('amendment.composer.onBehalf'),
+            memberItems,
+            onBehalfOfMemberId,
+            t('amendment.composer.onBehalfPlaceholder'),
+          )
+        "
+        :search-input="labelledSearch(t('amendment.composer.memberSearch'))"
         clear
       />
     </UFormField>
@@ -1104,9 +1112,19 @@ onMounted(() => {
               class="w-full"
               :loading="membersStatus === 'pending'"
               :placeholder="t('amendment.composer.coAuthorsPlaceholder')"
-              :search-input="{
-                placeholder: t('amendment.composer.memberSearch'),
-              }"
+              :aria-label="
+                selectMenuLabel(
+                  editingOthers
+                    ? t('amendment.detail.authors')
+                    : t('amendment.composer.coAuthors'),
+                  coAuthorItems,
+                  coAuthorIds,
+                  t('amendment.composer.coAuthorsPlaceholder'),
+                )
+              "
+              :search-input="
+                labelledSearch(t('amendment.composer.memberSearch'))
+              "
             />
           </UFormField>
 
@@ -1154,9 +1172,17 @@ onMounted(() => {
               class="w-full"
               :loading="membersStatus === 'pending'"
               :placeholder="t('amendment.composer.onBehalfPlaceholder')"
-              :search-input="{
-                placeholder: t('amendment.composer.memberSearch'),
-              }"
+              :aria-label="
+                selectMenuLabel(
+                  t('amendment.composer.onBehalf'),
+                  memberItems,
+                  onBehalfOfMemberId,
+                  t('amendment.composer.onBehalfPlaceholder'),
+                )
+              "
+              :search-input="
+                labelledSearch(t('amendment.composer.memberSearch'))
+              "
               clear
             />
           </UFormField>

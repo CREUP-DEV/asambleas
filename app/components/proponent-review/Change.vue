@@ -131,12 +131,15 @@ const place = computed(() => {
   margin-top: 1em;
 }
 
-.review-text :deep(.rich-text h2) {
+.review-text :deep(.rich-text h2),
+.review-text :deep(.rich-text .cx-heading-2) {
   font-size: 1.3em;
 }
 
 .review-text :deep(.rich-text h3),
-.review-text :deep(.rich-text h4) {
+.review-text :deep(.rich-text h4),
+.review-text :deep(.rich-text .cx-heading-3),
+.review-text :deep(.rich-text .cx-heading-4) {
   font-size: 1.15em;
 }
 </style>

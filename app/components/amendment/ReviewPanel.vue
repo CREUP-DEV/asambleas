@@ -1,6 +1,11 @@
 <script setup lang="ts">
-import type { AmendmentStatus } from "~~/shared/constants/domain";
+import {
+  DEFAULT_ASSEMBLY_SETTINGS,
+  type AmendmentStatus,
+} from "~~/shared/constants/domain";
 import type {
+  AdmissionBody,
+  AmendmentAdmissionDto,
   AmendmentDto,
   CorrectionBody,
   DocumentAmendmentsDto,
@@ -10,10 +15,15 @@ import type {
 import { transactionalProgressOf } from "~/composables/amendment/transactional";
 import { useTransactionalProgressText } from "~/composables/amendment/useTransactionalProgressText";
 import {
+  amendmentDisplayLabel,
   amendmentReviewSentenceKey,
   amendmentReviewView,
   isAmendmentPresenter,
 } from "~/composables/amendment/workspace";
+import {
+  canRecordAdmission,
+  type AdmissionChoice,
+} from "~/components/review/-queue";
 
 /**
  * Where an amendment stands with the Secretaría, as a sentence that says
@@ -27,7 +37,11 @@ import {
  *   amendments everyone can read), so it offers no private validation and
  *   says why;
  * - the Secretaría, once validated (can.publish), also after the amendment
- *   was decided: publish it (POST .../publish).
+ *   was decided: publish it (POST .../publish);
+ * - the Secretaría or the Mesa, on a late one validated and waiting for the
+ *   assembly: "Anotar la decisión de la asamblea", the same dialog as the
+ *   inbox (POST .../amendments/admission). It sits next to "Publicar" while
+ *   the amendment is private, and is the main action once it is public.
  * Validation and publication answer with the whole list (`replaced`); a
  * correction answers with the amendment, now a draft again (`corrected`).
  * A published amendment needs no note, except for its authors (so they know
@@ -75,8 +89,10 @@ const { t } = useI18n();
 const api = useApi();
 const toast = useToast();
 const { member } = useMe();
+const { assembly } = useCurrentAssembly();
 
-type Busy = "validate_publish" | "validate" | "publish" | "correction";
+type Busy =
+  "validate_publish" | "validate" | "publish" | "correction" | "admission";
 const busy = ref<Busy | null>(null);
 const asking = ref(false);
 const note = ref("");
@@ -93,6 +109,8 @@ watch(
     asking.value = false;
     note.value = "";
     noteAttempted.value = false;
+    admissionOpen.value = false;
+    admissionSaved.value = false;
   },
 );
 
@@ -184,6 +202,25 @@ const publishesOnValidation = computed(
 const canPublish = computed(() => props.amendment.can.publish);
 const noteMissing = computed(() => !note.value.trim());
 
+/** Late, validated and waiting for the assembly; the actor may record it. */
+const canAdmit = computed(() => canRecordAdmission(props.amendment));
+const admissionOpen = ref(false);
+/** Saved: focus moves once the refetched amendment no longer waits. */
+const admissionSaved = ref(false);
+const label = computed(
+  () => amendmentDisplayLabel(props.amendment) ?? t("review.amendments.noCode"),
+);
+const settings = computed(() => ({
+  ...DEFAULT_ASSEMBLY_SETTINGS,
+  ...assembly.value?.settings,
+}));
+
+watch(canAdmit, (value) => {
+  if (value || !admissionSaved.value) return;
+  admissionSaved.value = false;
+  void focusStatus();
+});
+
 function fail(error: unknown, key: string): void {
   api.notifyError(error, key);
   if (api.isConflict(error) || api.errorStatus(error) === 404) {
@@ -246,6 +283,36 @@ async function publish(): Promise<void> {
     void focusStatus();
   } catch (error) {
     fail(error, "amendment.review.toasts.publishFailed");
+  } finally {
+    busy.value = null;
+  }
+}
+
+async function recordAdmission(choice: AdmissionChoice): Promise<void> {
+  busy.value = "admission";
+  try {
+    const body: AdmissionBody = {
+      amendmentIds: [props.amendment.id],
+      ...choice,
+    };
+    const result = await api.send<AmendmentAdmissionDto>(
+      `${props.amendmentsUrl}/admission`,
+      { body },
+    );
+    admissionOpen.value = false;
+    // A failed vote leaves it out even if the dialog opened to treat it.
+    const key = result.admission === "admitted" ? "treat" : "notTreat";
+    toast.add({
+      title: t(`review.late.done.${key}.one`, { label: label.value }),
+      description: t(`review.late.done.${key}Hint`, 1),
+      color: "success",
+      icon: "i-lucide-check",
+    });
+    admissionSaved.value = true;
+    emit("changed");
+  } catch (error) {
+    if (api.isConflict(error)) admissionOpen.value = false;
+    fail(error, "review.late.decisionError");
   } finally {
     busy.value = null;
   }
@@ -459,15 +526,44 @@ async function askCorrection(): Promise<void> {
       </div>
     </template>
 
-    <!-- Secretaría: make a validated amendment public. -->
-    <div v-else-if="canPublish" class="flex flex-wrap items-center gap-2">
+    <!--
+      Secretaría: make a validated amendment public. Secretaría or Mesa:
+      record the assembly's decision on a late one.
+    -->
+    <div
+      v-else-if="canPublish || canAdmit"
+      class="flex flex-wrap items-center gap-2"
+    >
       <UButton
+        v-if="canPublish"
         icon="i-lucide-eye"
         :loading="busy === 'publish'"
         :disabled="busy !== null"
         :label="t('amendment.review.actions.publish')"
         @click="publish"
       />
+      <UButton
+        v-if="canAdmit"
+        :color="canPublish ? 'neutral' : 'primary'"
+        :variant="canPublish ? 'outline' : 'solid'"
+        icon="i-lucide-scale"
+        :loading="busy === 'admission'"
+        :disabled="busy !== null"
+        :label="t('review.late.dialog.title')"
+        @click="admissionOpen = true"
+      />
     </div>
+
+    <ReviewAdmissionModal
+      v-if="canAdmit"
+      v-model:open="admissionOpen"
+      :subject="label"
+      :count="1"
+      document-title=""
+      :all-public="amendment.publishedAt !== null"
+      :settings="settings"
+      :busy="busy === 'admission'"
+      @confirm="recordAdmission"
+    />
   </section>
 </template>

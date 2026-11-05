@@ -69,6 +69,35 @@ describe("diffText", () => {
   it("returns nothing when the text is unchanged", () => {
     expect(diffText(base[1]!, base[1]!.text)).toEqual([]);
   });
+
+  it("does not strike and re-add a repeated phrase", () => {
+    const block = p(
+      "c001",
+      "Por todo lo anterior, CREUP insta al Ministerio de Ciencia, Innovación y Universidades y a las comunidades autónomas a abordar de forma urgente una reforma del sistema de becas y ayudas al estudio que garantice la equidad, la suficiencia y la previsibilidad.",
+    );
+    const edited = block.text.replace(
+      " y a las comunidades autónomas",
+      ", a las comunidades autónomas y a las universidades públicas",
+    );
+    const ops = diffText(block, edited);
+    const comma = block.text.indexOf(" y a las comunidades");
+    const end = block.text.indexOf(" a abordar");
+    expect(ops).toHaveLength(2);
+    expect(ops[0]).toMatchObject({
+      from: comma,
+      to: comma + 2,
+      baseText: " y",
+      text: ",",
+    });
+    expect(ops[1]).toMatchObject({
+      from: end,
+      to: end,
+      baseText: "",
+      text: " y a las universidades públicas",
+    });
+    expect(validateOps([block], ops)).toEqual([]);
+    expect(apply(block.text, ops)).toBe(edited);
+  });
 });
 
 describe("diffPassage", () => {
@@ -399,6 +428,55 @@ describe("render", () => {
     );
     expect(html).toContain(
       '<ins class="cx-ins" data-amendment-id="A">crearán</ins>',
+    );
+  });
+
+  it("reads diff labels before insertions and removals", () => {
+    const ops = diffText(
+      base[2]!,
+      "Las universidades crearán un procedimiento de alegaciones.",
+    );
+    const { annotated } = consolidate(base, [{ id: "A", ops }]);
+    const html = renderAnnotated([annotated[2]!], {
+      mode: "diff",
+      diffLabels: { inserted: "Se añade:", removed: "<Se quita:>" },
+    });
+    expect(html).toContain(
+      '<del class="cx-del" data-amendment-id="A"><span class="sr-only">&lt;Se quita:&gt; </span>habilitarán</del>',
+    );
+    expect(html).toContain(
+      '<ins class="cx-ins" data-amendment-id="A"><span class="sr-only">Se añade: </span>crearán</ins>',
+    );
+  });
+
+  it("renders headings as styled paragraphs when asked", () => {
+    expect(renderBlocks([base[0]!], { headings: false })).toBe(
+      '<p data-block-id="h001" class="cx-heading cx-heading-2">3. Devolución de la beca</p>',
+    );
+    expect(renderBlocks([base[0]!])).toBe(
+      '<h2 data-block-id="h001">3. Devolución de la beca</h2>',
+    );
+
+    const heading: Block = {
+      id: "h002",
+      type: "heading",
+      level: 2,
+      text: "4. Plazos",
+      marks: [],
+    };
+    const { annotated } = consolidate(base, [
+      {
+        id: "A",
+        ops: [{ op: "insert", afterBlockId: "b001", blocks: [heading] }],
+      },
+    ]);
+    const inserted = annotated.find((block) => block.id === "h002")!;
+    const html = renderAnnotated([inserted], { mode: "diff", headings: false });
+    expect(html).toBe(
+      '<p data-block-id="h002" data-amendment-id="A" class="cx-heading cx-heading-3 cx-block-inserted"><ins class="cx-ins" data-amendment-id="A">4. Plazos</ins></p>',
+    );
+    expect(renderAnnotated([inserted], { mode: "diff" })).toBe(
+      '<h3 data-block-id="h002" data-amendment-id="A" class="cx-block-inserted"><ins class="cx-ins" data-amendment-id="A">4. Plazos</ins></h3>',
     );
   });
 });

@@ -45,8 +45,14 @@ function itemDone(documents: DocumentSummaryDto[]): boolean {
 
 <template>
   <div class="space-y-3">
-    <div v-if="loading" class="space-y-2" aria-busy="true">
-      <USkeleton v-for="n in 6" :key="n" class="h-10 w-full" />
+    <div v-if="loading" class="space-y-2" role="status">
+      <span class="sr-only">{{ t("agenda.loading") }}</span>
+      <USkeleton
+        v-for="n in 6"
+        :key="n"
+        aria-hidden="true"
+        class="h-10 w-full"
+      />
     </div>
     <UAlert
       v-else-if="failed"
@@ -116,12 +122,14 @@ function itemDone(documents: DocumentSummaryDto[]): boolean {
               <span class="text-muted tabular-nums">{{ row.number }}.</span>
               {{ row.item.title }}
             </span>
-            <UTooltip :text="t('session.agenda.debateDocument')">
+            <!-- Its own tooltip and icon: it must not pass for the button
+                 of a document with the same title. -->
+            <UTooltip :text="t('session.agenda.debateItemShort')">
               <UButton
                 size="xs"
                 color="neutral"
                 variant="ghost"
-                icon="i-lucide-radio"
+                icon="i-lucide-list-tree"
                 :aria-label="
                   t('session.agenda.debateItem', { title: row.item.title })
                 "

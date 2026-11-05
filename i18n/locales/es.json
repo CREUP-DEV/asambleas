@@ -91,7 +91,10 @@
       "totalityTitle": "Enmienda a la totalidad",
       "totalityNote": "Esta enmienda no propone cambios concretos sobre el texto: pide su devolución en conjunto.",
       "previewUnavailable": "No se pueden mostrar los cambios",
-      "previewUnavailableDescription": "Las operaciones de esta enmienda ya no encajan con el texto base del documento."
+      "previewUnavailableDescription": "Las operaciones de esta enmienda ya no encajan con el texto base del documento.",
+      "inserted": "Se añade:",
+      "removed": "Se quita:",
+      "fragmentFrom": "{text} (de la enmienda {label})"
     },
     "editor": {
       "bold": "Negrita",
@@ -142,8 +145,7 @@
     "closeSidebar": "Cerrar menú lateral",
     "userAvatar": "Avatar de {user}",
     "userMenu": "Abrir menú de usuario",
-    "preferences": "Preferencias de accesibilidad",
-    "diffModeLabel": "Modo de visualización de cambios",
+    "diffModeLabel": "Cómo se marcan los cambios",
     "diffMode": {
       "color": "Color (verde/rojo)",
       "marks": "Marcas (negrita/tachado)"
@@ -160,11 +162,7 @@
   },
   "language": {
     "toggle": "Cambiar idioma",
-    "openMenu": "Abrir selector de idioma",
-    "locales": {
-      "es": "Español",
-      "en": "Inglés"
-    }
+    "openMenu": "Abrir selector de idioma"
   },
   "roles": {
     "admin": "Administrador",
@@ -295,10 +293,9 @@
       "session": "Sesión",
       "projection": "Proyección",
       "settings": "Ajustes",
-      "projectionNewWindow": "Proyección (se abre en una ventana nueva)",
       "validation": "Validación",
       "tracking": "Seguimiento",
-      "validationPending": "Validación: {count} pendiente | Validación: {count} pendientes",
+      "validationPending": "Validación: {count} por validar | Validación: {count} por validar",
       "live": "En directo",
       "liveNow": "Ahora",
       "liveInSession": "En directo: la sesión está en marcha"
@@ -317,10 +314,10 @@
         "done": "La asamblea vuelve a ser un borrador"
       },
       "convened_in_session": {
-        "label": "Abrir sesión",
-        "title": "¿Abrir la sesión?",
+        "label": "Abrir la sesión de la asamblea",
+        "title": "¿Abrir la sesión de la asamblea?",
         "description": "La {label} pasará a estar en sesión: se activan la consola de la Mesa y la proyección en directo.",
-        "done": "Sesión abierta"
+        "done": "Sesión de la asamblea abierta"
       },
       "in_session_convened": {
         "label": "Suspender sesión",
@@ -335,10 +332,10 @@
         "done": "Asamblea cerrada"
       },
       "closed_in_session": {
-        "label": "Reabrir sesión",
-        "title": "¿Reabrir la sesión?",
+        "label": "Reabrir la sesión de la asamblea",
+        "title": "¿Reabrir la sesión de la asamblea?",
         "description": "La {label} volverá a estar en sesión.",
-        "done": "Sesión reabierta"
+        "done": "Sesión de la asamblea reabierta"
       }
     },
     "overview": {
@@ -355,8 +352,6 @@
       "calendarTitle": "Calendario",
       "openAgenda": "Ver el orden del día completo",
       "editCalendar": "Editar el calendario",
-      "documentsShort": "Documentos:",
-      "amendmentsShort": "Enmiendas:",
       "review": {
         "title": "Pendiente de revisar"
       },
@@ -367,7 +362,9 @@
         "all": "Ver tus documentos y enmiendas en Inicio",
         "empty": "Aún no tienes nada en esta asamblea. Aquí verás lo que presentes y lo que Secretaría te pida."
       },
-      "loading": "Cargando las cifras de la asamblea"
+      "loading": "Cargando las cifras de la asamblea",
+      "documentCount": "Sin documentos | 1 documento | {count} documentos",
+      "amendmentCount": "Sin enmiendas | 1 enmienda | {count} enmiendas"
     },
     "settingsPage": {
       "title": "Ajustes",
@@ -575,10 +572,10 @@
       "save": "Guardar texto",
       "saveShortcut": "Guardar el texto",
       "saving": "Guardando...",
-      "savedAt": "Guardado a las {time}",
+      "savedAt": "Texto guardado a las {time}",
       "unsaved": "Cambios sin guardar",
       "notSaved": "No se han guardado los cambios",
-      "upToDate": "Todo guardado",
+      "upToDate": "Texto guardado",
       "saveError": "No se ha podido guardar el texto",
       "conflictTitle": "Otra persona ha guardado el texto antes",
       "conflictDescription": "Se ha cargado la versión guardada. Tu versión queda a mano para recuperarla.",
@@ -838,7 +835,10 @@
         "preparingOverdue": "Borrador: Secretaría lo esperaba antes del {date}. Envíalo cuanto antes.",
         "correction": "Secretaría pide una corrección: {note}",
         "correctionNoNote": "Secretaría pide una corrección. Corrígelo y vuelve a enviarlo.",
-        "submitted": "Enviado a Secretaría: lo revisará antes de publicarlo."
+        "submitted": "Enviado a Secretaría: lo revisará antes de publicarlo.",
+        "expectedFile": "Todavía no se ha subido el PDF. Súbelo y envíalo a Secretaría.",
+        "expectedFileDue": "Secretaría espera el PDF antes del {date}.",
+        "expectedFileOverdue": "Secretaría esperaba el PDF antes del {date}. Súbelo y envíalo cuanto antes."
       },
       "manager": {
         "expected": "Todavía no tiene texto.",
@@ -847,9 +847,12 @@
         "preparing": "En preparación: aún no se ha enviado a Secretaría.",
         "preparingDue": "En preparación. Fecha límite: {date}.",
         "preparingOverdue": "En preparación. La fecha límite ({date}) ya ha pasado.",
-        "correction": "Se ha pedido una corrección: {note}",
-        "correctionNoNote": "Se ha pedido una corrección. Falta que lo vuelvan a enviar.",
-        "submitted": "Enviado a Secretaría: falta validarlo y publicarlo, o pedir una corrección."
+        "correction": "Le toca a quien lo presenta: corregirlo y volver a enviarlo. Nota: {note}",
+        "correctionNoNote": "Le toca a quien lo presenta: corregirlo y volver a enviarlo.",
+        "submitted": "Enviado a Secretaría: falta validarlo y publicarlo, o pedir una corrección.",
+        "expectedFile": "Todavía no se ha subido el PDF.",
+        "expectedFileDue": "Esperando el PDF. Fecha límite: {date}.",
+        "expectedFileOverdue": "Esperando el PDF. La fecha límite ({date}) ya ha pasado."
       },
       "other": {
         "submitted": "Enviado a Secretaría: pendiente de validación."
@@ -862,7 +865,8 @@
       "action": {
         "prepare": "Preparar el documento",
         "continue": "Seguir con el documento",
-        "fix": "Corregir y volver a enviar"
+        "fix": "Corregir y volver a enviar",
+        "upload": "Subir el PDF"
       },
       "banner": {
         "correctionTitle": {
@@ -1113,7 +1117,13 @@
       "global": "En todo el texto",
       "sources": "Transacciona {list}",
       "transactedIn": "Transaccionada en {list}",
-      "mainAuthor": "principal"
+      "mainAuthor": "principal",
+      "proposedIn": "En la transaccional propuesta {list} | En las transaccionales propuestas {list}",
+      "position": {
+        "accept": "{member} la acepta",
+        "reject": "{member} la rechaza",
+        "transact": "{member} propone transaccional"
+      }
     },
     "list": {
       "label": "Enmiendas en orden del texto",
@@ -1199,12 +1209,15 @@
       "transactOverlaps": "Combinarlas en una transaccional",
       "mainAuthor": "autor principal",
       "approvedByPresenter": "Aprobada sin votación: la aceptó quien presenta el documento",
-      "transactionalsOver": "Transaccionales propuestas sobre esta enmienda:",
+      "transactionalsOver": "Transaccionales sobre esta enmienda:",
       "rejectedByAuthors": "Cerrada porque la rechazó {members}",
       "closedOnItsOwn": {
         "source_replaced": "Cerrada porque otra transaccional sustituyó a {source}",
         "source_decided": "Cerrada porque {source} ya está resuelta"
-      }
+      },
+      "replacedBy": "La sustituye la transaccional {list}. | La sustituyen las transaccionales {list}.",
+      "replacedByUnknown": "La sustituye una enmienda transaccional.",
+      "approvedByMesa": "Aprobada sin votación: la aceptó la Mesa en nombre de quien presenta el documento"
     },
     "position": {
       "title": "Respuesta de quien presenta el documento",
@@ -1283,7 +1296,13 @@
         "notAnswered": "{member} no llegó a responder"
       },
       "rejectConfirm": "Si la rechazas, se cierra para todos y las enmiendas originales siguen adelante. No se puede deshacer.",
-      "recordRejectConfirm": "Si registras que {member} la rechaza, se cierra para todos y las enmiendas originales siguen adelante. No se puede deshacer."
+      "recordRejectConfirm": "Si registras que {member} la rechaza, se cierra para todos y las enmiendas originales siguen adelante. No se puede deshacer.",
+      "recordAcceptFor": "Registrar que {member} la acepta",
+      "recordRejectFor": "Registrar que {member} la rechaza",
+      "answersByMesa": {
+        "accepted": "La Mesa, en nombre de {member}, la ha aceptado",
+        "rejected": "La Mesa, en nombre de {member}, la ha rechazado"
+      }
     },
     "relations": {
       "title": "Relaciones con otras enmiendas",
@@ -1360,7 +1379,9 @@
       "closedBySources": "Cerrada: una de las enmiendas que agrupa ya está resuelta",
       "closedBySourcesDetail": "Enmienda resuelta: {source}",
       "lapsedBySources": "La transaccional {label} ya sustituyó a las mismas enmiendas",
-      "lapsedBySourcesUnknown": "Otra transaccional ya sustituyó a las mismas enmiendas"
+      "lapsedBySourcesUnknown": "Otra transaccional ya sustituyó a las mismas enmiendas",
+      "replacedBy": "La sustituye {label}",
+      "validatedPublished": "Publicada a la vez: ya la ve toda la asamblea"
     },
     "vote": {
       "counts": "Recuento",
@@ -1520,7 +1541,8 @@
     "lateState": {
       "awaiting": "Pendiente de que la asamblea decida tratarla",
       "awaitingSentence": "Está pendiente de que la asamblea decida tratarla. Hasta entonces no se debate ni se vota."
-    }
+    },
+    "lateAdmitted": "Fuera de plazo · admitida"
   },
   "admin": {
     "title": "Administración",
@@ -1537,7 +1559,7 @@
       "lastSync": "Última sincronización",
       "registeredAt": "Alta",
       "user": "Usuario",
-      "description": "Cuentas que han iniciado sesión, su rol en la plataforma y el miembro en cuyo nombre actúan. Los roles Asociado, CEA e Invitado se sincronizan con la intranet en cada inicio de sesión, y las cuentas con siglas en la intranet se vinculan solas a su miembro. Vincula a mano las demás para que puedan presentar documentos y enmiendas en nombre de ese miembro. Si alguien necesita algo que su rol no le da, puedes darle permisos extra solo a esa persona.",
+      "description": "Cuentas que han iniciado sesión, con su rol y el miembro en cuyo nombre actúan. Casi todo llega solo desde la intranet al iniciar sesión.",
       "noRole": "Sin rol",
       "confirmRoleChange": "Confirmar cambio de rol",
       "confirmRoleChangeMessage": "¿Cambiar el rol de {user} a {role}?",
@@ -1561,7 +1583,7 @@
       "memberLinkFailed": "No se ha podido cambiar la vinculación",
       "edit": "Editar roles, vínculos y permisos",
       "editDone": "Terminar",
-      "editingHelp": "Elige el rol y el miembro de cada cuenta y, si hace falta, sus permisos extra. Cada cambio se confirma antes de guardarse.",
+      "editingHelp": "Los roles Asociado, CEA e Invitado se vuelven a leer de la intranet en cada inicio de sesión; los demás roles se quedan como los dejes. Cada cambio se confirma antes de guardarse.",
       "editingOn": "Ya puedes cambiar los roles, los vínculos y los permisos extra.",
       "editingOff": "Has terminado de editar.",
       "permissions": {
@@ -1882,7 +1904,7 @@
       "settings": "Ajustes",
       "validation": "Validación",
       "tracking": "Seguimiento",
-      "validationPending": "Validación: {count} pendiente | Validación: {count} pendientes",
+      "validationPending": "Validación: {count} por validar | Validación: {count} por validar",
       "live": "En directo",
       "liveNow": "Ahora",
       "liveInSession": "En directo: la sesión está en marcha"
@@ -1924,7 +1946,8 @@
       "sectorial": "Sectorial",
       "executive": "Área ejecutiva",
       "other": "Otro"
-    }
+    },
+    "toastRegion": "Notificaciones (F8)"
   },
   "home": {
     "title": "Inicio",
@@ -2130,23 +2153,13 @@
       "in_session": "En sesión",
       "closed": "Cerrada"
     },
-    "milestones": {
-      "convocation": "Convocatoria",
-      "agenda_requests_close": "Cierre de propuestas al orden del día",
-      "agenda_final": "Orden del día definitivo",
-      "documents_close": "Cierre de presentación de documentos",
-      "documents_publish": "Publicación de documentos",
-      "amendments_open": "Apertura de enmiendas",
-      "amendments_close": "Cierre de enmiendas",
-      "candidacies_close": "Cierre de candidaturas"
-    },
     "card": {
       "dates": "Fechas",
       "location": "Lugar",
       "documentsLabel": "Documentos",
       "documents": "Sin documentos | {count} documento | {count} documentos",
       "agendaFinal": "ODD definitivo",
-      "nextMilestone": "Próximo hito"
+      "nextMilestone": "Próximo plazo"
     },
     "create": {
       "title": "Nueva asamblea",
@@ -2156,7 +2169,7 @@
       "suggesting": "Buscando el siguiente número…",
       "start": "Inicio",
       "end": "Fin",
-      "timeZoneHelp": "Horas en horario peninsular (Europe/Madrid).",
+      "timeZoneHelp": "Horas en horario peninsular español.",
       "location": "Lugar",
       "locationPlaceholder": "Ciudad y sede",
       "defaultCalendar": "Rellenar el calendario reglamentario",
@@ -2354,7 +2367,7 @@
     "intro": "Fechas límite de la asamblea. Todas las horas son de la España peninsular.",
     "applyDefaults": "Aplicar plazos por defecto",
     "milestonesTitle": "Plazos",
-    "timeZoneHint": "Hora peninsular (Europe/Madrid)",
+    "timeZoneHint": "Hora peninsular española",
     "clear": "Quitar fecha",
     "clearMilestone": "Quitar la fecha de {milestone}",
     "noteLabel": "Nota para {milestone}",
@@ -2370,7 +2383,7 @@
     "defaultsApplied": "No hay plazos por defecto para este tipo de asamblea | Se ha aplicado 1 plazo por defecto. Guarda para confirmarlo. | Se han aplicado {count} plazos por defecto. Guarda para confirmarlos.",
     "defaultsConfirmTitle": "¿Aplicar los plazos por defecto?",
     "defaultsConfirmDescription": "Se sustituirán las fechas que ya has fijado por las que marca el reglamento para este tipo de asamblea. No se guardará nada hasta que pulses Guardar.",
-    "agendaFinal": "Orden del día definitivo",
+    "agendaFinal": "Marcar el orden del día como definitivo",
     "agendaFinalOn": "Los puntos principales quedan bloqueados: no se pueden crear, mover ni eliminar.",
     "agendaFinalOff": "El orden del día es provisional y se puede reorganizar por completo.",
     "agendaFinalizedAt": "Definitivo desde el {date}",
@@ -2404,7 +2417,7 @@
       "agenda_requests_close": "Último momento para pedir que se incluya un punto en el orden del día.",
       "agenda_final": "Fecha en que el orden del día pasa a ser definitivo.",
       "documents_close": "Último momento para que los miembros presenten resoluciones, mociones internas y otros documentos.",
-      "documents_publish": "Fecha en que se publican los documentos que se debatirán.",
+      "documents_publish": "Fecha en que se publican los documentos ya listos. Los que se presenten después se publican cuando la Secretaría los valida.",
       "amendments_open": "Desde aquí se pueden presentar enmiendas a los documentos publicados.",
       "amendments_close": "Las enmiendas presentadas después llegan fuera de plazo y necesitan una decisión de admisión.",
       "candidacies_close": "Último momento para presentar candidaturas a los cargos que se eligen."
@@ -2440,7 +2453,7 @@
     "defaultIntroNotice": "Se muestra el texto por defecto. Puedes personalizarlo con Editar introducción.",
     "agendaTitle": "Orden del día",
     "agendaEmpty": "El orden del día todavía no tiene puntos.",
-    "signedAt": "En {location}, a {date}.",
+    "signedAt": "{location}, a {date}.",
     "signature": "La Secretaría Ejecutiva de CREUP",
     "annexTitle": "Anexo: plazos y procedimientos",
     "annexIntro": "Fechas límite de esta asamblea y cómo actuar en cada una.",
@@ -2451,7 +2464,7 @@
       "agenda_requests_close": "Los miembros pueden pedir la inclusión de puntos en el orden del día hasta esta fecha, a través de la Secretaría.",
       "agenda_final": "La Secretaría publica el orden del día definitivo. A partir de entonces solo la asamblea puede alterar sus puntos.",
       "documents_close": "Los miembros presentan sus resoluciones, mociones internas y demás documentos en la plataforma, en el punto correspondiente del orden del día.",
-      "documents_publish": "Se publican en la plataforma todos los documentos que se debatirán.",
+      "documents_publish": "Se publican en la plataforma los documentos que ya están listos para debatirse. Los que se presenten después se publican cuando la Secretaría los valida.",
       "amendments_open": "Se abre el plazo de enmiendas. Se presentan en la plataforma, editando directamente el texto del documento, con una justificación.",
       "amendments_close": "Se cierra el plazo de enmiendas. Las que lleguen después quedan fuera de plazo y la Mesa decide si las admite.",
       "candidacies_close": "Último día para presentar candidaturas a los cargos que se eligen en esta asamblea."
@@ -2469,7 +2482,7 @@
     "editDraft": "Editar borrador",
     "consolidatedPage": "Texto consolidado",
     "detailDescription": "Detalle de la enmienda",
-    "includeAccepted": "Incluir las que acepta el proponente",
+    "includeAccepted": "Incluir las que acepta quien presenta el documento",
     "newMenu": {
       "global": "Cambiar una palabra en todo el documento",
       "return": "Devolver el documento",
@@ -2535,7 +2548,8 @@
       "openPdf": "Ver el PDF",
       "unpublished": "Documento sin publicar",
       "unpublishedDescription": "Se podrán presentar enmiendas cuando Secretaría lo publique.",
-      "empty": "El documento todavía no tiene texto"
+      "empty": "El documento todavía no tiene texto",
+      "filePending": "Este documento se entregará en PDF y no admite enmiendas en la plataforma. Aún no se ha subido el PDF."
     },
     "window": {
       "open": "Plazo de enmiendas abierto",
@@ -2545,7 +2559,6 @@
       "upcoming": "El plazo de enmiendas aún no se ha abierto",
       "opens": "Se abre",
       "closed": "Plazo de enmiendas cerrado",
-      "closedLateTitle": "Plazo de enmiendas cerrado: fuera de plazo",
       "closedLate": "Si presentas una enmienda nueva ahora, llegará fuera de plazo y la Mesa decidirá si la admite.",
       "closedSince": "Cerró",
       "voted": "El texto ya se ha votado: no admite más enmiendas."
@@ -2564,7 +2577,6 @@
       "openWorkspace": "Ver en el espacio de trabajo",
       "annex": "Anexo de enmiendas",
       "annexDescription": "Todavía no se ha decidido ninguna enmienda. | Una enmienda decidida, agrupada por resultado. | {count} enmiendas decididas, agrupadas por resultado.",
-      "none": "Ninguna.",
       "showChanges": "Ver cambios",
       "hideChanges": "Ocultar cambios",
       "outcomes": {
@@ -2585,8 +2597,7 @@
     },
     "editRecord": "Editar la ficha del documento",
     "cta": {
-      "present": "Presentar una enmienda",
-      "hint": "Selecciona el párrafo que quieres cambiar."
+      "present": "Presentar una enmienda"
     },
     "more": {
       "label": "Más",
@@ -2594,7 +2605,7 @@
       "transactional": "Proponer una transaccional",
       "answers": "Ver las respuestas"
     },
-    "includeAcceptedOn": "Con las que acepta el proponente",
+    "includeAcceptedOn": "Con las que acepta quien presenta el documento",
     "corrections": {
       "title": "Secretaría te pide que corrijas una enmienda | Secretaría te pide que corrijas {count} enmiendas",
       "description": "Lee su nota, corrígela y vuelve a enviarla. | Lee sus notas, corrígelas y vuelve a enviarlas.",
@@ -2621,7 +2632,7 @@
     "notInSession": "La asamblea no está en sesión",
     "notInSessionHint": "Puedes preparar el debate. Abre la sesión desde la cabecera de la asamblea antes de votar.",
     "toolbar": {
-      "live": "En directo",
+      "live": "Conectado",
       "polling": "Se actualiza cada pocos segundos",
       "offline": "Sin conexión",
       "now": "En debate:",
@@ -2634,7 +2645,7 @@
       "shortcuts": "Atajos",
       "refresh": "Recargar datos",
       "projection": "Abrir proyección",
-      "projectionNewTab": "Abrir proyección (pestaña nueva)",
+      "projectionNewTab": "Abrir la proyección (se abre en una pestaña nueva)",
       "connecting": "Conectando…"
     },
     "shortcuts": {
@@ -2660,7 +2671,8 @@
       "debateDocumentNamed": "Poner en debate {title}",
       "amendments": "Sin enmiendas | 1 enmienda | {count} enmiendas",
       "final": "Texto final aprobado",
-      "inDebate": "En debate"
+      "inDebate": "En debate",
+      "debateItemShort": "Poner en debate el punto"
     },
     "queue": {
       "title": "Enmiendas",
@@ -2669,7 +2681,7 @@
       "error": "No se han podido cargar las enmiendas",
       "counts": "{total} enmiendas · {undecided} por decidir · {approved} aprobadas",
       "hideDecided": "Ocultar decididas",
-      "assentAccepted": "Aprobar aceptadas por asentimiento ({count})",
+      "assentAccepted": "Aprobar por asentimiento las aceptadas ({count})",
       "assentHint": "Aprueba de una vez las enmiendas que acepta quien presenta el documento, si nadie se opone.",
       "notAmendable": "Este documento no admite enmiendas",
       "notAmendableHint": "Puedes pasar directamente a la votación final.",
@@ -2727,15 +2739,15 @@
       "replaces": "Sustituye a {codes}"
     },
     "actions": {
-      "debate": "En debate",
+      "debate": "Poner en debate",
       "undebate": "Quitar del debate",
       "assent": "Asentimiento",
       "assentHint": "Aprobar por asentimiento",
       "vote": "Votar",
       "voteHint": "Registrar la votación",
       "formal": "De forma",
-      "withdraw": "Retirada",
-      "lapse": "Decae",
+      "withdraw": "Marcar como retirada",
+      "lapse": "Marcar como decaída",
       "reopen": "Reabrir",
       "relate": "Relacionar",
       "transact": "Transaccionar",
@@ -3090,7 +3102,8 @@
       "announce": "En debate: {what}",
       "announceAmendment": "En debate: {code}, de {who}. {status}.",
       "backToDocument": "Volver al documento",
-      "replaces": "Sustituye a {codes}."
+      "replaces": "Sustituye a {codes}.",
+      "undebateDocument": "Quitar el documento del debate"
     },
     "stage": {
       "awaiting_validation": "Espera a Secretaría",
@@ -3148,7 +3161,8 @@
       "backToQueue": "Devolver a la lista",
       "rename": "Corregir nombre",
       "renameTitle": "Corregir el nombre de la persona",
-      "renameHint": "Turno de {who}"
+      "renameHint": "Turno de {who}",
+      "interrupted": "Ha terminado el turno de {who}"
     },
     "position": {
       "by": "Respuesta de {member}:",
@@ -3172,7 +3186,7 @@
     "amendmentStats": "{approved} enmiendas aprobadas · {undecided} por decidir · {total} en total",
     "finalApproved": "Texto final aprobado",
     "finalRejected": "Texto final rechazado",
-    "live": "En directo",
+    "live": "Conectado",
     "polling": "Reconectando",
     "offline": "Sin conexión",
     "updated": "Actualizado a las {time}",
@@ -3193,7 +3207,8 @@
       "majority": "Mayoría"
     },
     "stale": "Mostrando los últimos datos recibidos",
-    "loadFailed": "No se han podido cargar los datos"
+    "loadFailed": "No se han podido cargar los datos",
+    "connecting": "Conectando…"
   },
   "documents": {
     "title": "Documentos",
@@ -3319,13 +3334,13 @@
       "waitingPublic": "Llegó fuera de plazo. Toda la asamblea puede leerla; falta que decida si la trata.",
       "waitingPrivate": "Llegó fuera de plazo y aún no la ve toda la asamblea. Falta que la asamblea decida si la trata.",
       "public": "Ya es pública",
-      "treat": "La asamblea decide tratarla",
-      "notTreat": "No la trata",
+      "treat": "Tratarla",
+      "notTreat": "No tratarla",
       "publishNow": "Publicar ya",
       "publishNowHelp": "Toda la asamblea podrá leerla antes de decidir si la trata.",
       "bulkLabel": "Decisión sobre las enmiendas fuera de plazo seleccionadas de «{title}»",
-      "bulkTreat": "Decide tratarlas ({count})",
-      "bulkNotTreat": "No las trata ({count})",
+      "bulkTreat": "Tratarlas ({count})",
+      "bulkNotTreat": "No tratarlas ({count})",
       "amendmentCount": "{count} enmienda | {count} enmiendas",
       "decisionError": "No se ha podido guardar la decisión",
       "done": {
@@ -3365,7 +3380,12 @@
         "summaryTie": "Hay empate y hay que repetir la votación. Anota el nuevo recuento.",
         "summaryNoVotes": "Escribe el recuento para ver qué se anotará.",
         "save": "Guardar la decisión",
-        "summaryInconsistent": "Hay más votos emitidos que miembros presentes. Corrige el recuento para ver qué se anotará."
+        "summaryInconsistent": "Hay más votos emitidos que miembros presentes. Corrige el recuento para ver qué se anotará.",
+        "summaryNoMethod": "Elige cómo se ha decidido para ver qué se anotará.",
+        "summaryTreatMesa": "Se anotará que la Mesa decide tratar {subject}. Será pública y se podrá debatir. | Se anotará que la Mesa decide tratar {subject}. Serán públicas y se podrán debatir.",
+        "summaryNotTreatMesa": "Se anotará que la Mesa decide no tratar {subject}. Quedará fuera del debate. | Se anotará que la Mesa decide no tratar {subject}. Quedarán fuera del debate.",
+        "summaryTreatPublic": "Se anotará que la asamblea decide tratar {subject}. Se podrá debatir. | Se anotará que la asamblea decide tratar {subject}. Se podrán debatir.",
+        "summaryTreatMesaPublic": "Se anotará que la Mesa decide tratar {subject}. Se podrá debatir. | Se anotará que la Mesa decide tratar {subject}. Se podrán debatir."
       },
       "alreadyRecorded": "Ya se ha anotado la decisión sobre esta enmienda. | Ya se ha anotado la decisión sobre estas enmiendas."
     },
@@ -3400,7 +3420,7 @@
       "label": "Resumen por estado. Pulsa uno para ver solo esos documentos.",
       "all": "En total",
       "overdue": "Fuera de plazo",
-      "expected": "Pendiente | Pendientes",
+      "expected": "Por entregar | Por entregar",
       "preparing": "En preparación | En preparación",
       "correction": "Corrección pedida | Correcciones pedidas",
       "submitted": "Enviado a Secretaría | Enviados a Secretaría",
@@ -3420,7 +3440,8 @@
       "showMore": "Ver más",
       "showLess": "Ver menos",
       "setDeadline": "Poner plazo",
-      "setDeadlineFor": "Poner plazo a «{title}»"
+      "setDeadlineFor": "Poner plazo a «{title}»",
+      "sentBack": "Devuelto"
     },
     "expected": {
       "title": "Añadir documento esperado",
@@ -3467,8 +3488,8 @@
     "title": "En directo",
     "message": "Aviso de la Mesa",
     "notStarted": {
-      "title": "La sesión todavía no ha empezado",
-      "description": "Cuando la Mesa abra la sesión, aquí verás qué se debate en cada momento, quién tiene la palabra y cómo queda cada enmienda.",
+      "title": "La sesión no está abierta ahora",
+      "description": "Cuando la Mesa abra o reanude la sesión, aquí verás qué se debate en cada momento, quién tiene la palabra y cómo queda cada enmienda.",
       "starts": "Empieza el {date}.",
       "agenda": "Ver el orden del día"
     },
@@ -3678,7 +3699,7 @@
         "ready": "Todas las partes la han aceptado: la Mesa ya puede someterla a votación.",
         "authors": "Tienen que aceptarla los autores principales de las enmiendas que sustituiría. Falta que respondan: {members}. Si alguno la rechaza, se cierra.",
         "yourAnswer": "Eres autor principal de una de las enmiendas que sustituiría: acéptala o recházala. Si la rechazas, se cierra. Falta que respondan: {members}.",
-        "replaced": "Ha sustituido a {list}. Ahora sigue como cualquier otra enmienda.",
+        "replaced": "Ya ha sustituido a las enmiendas que combina. Ahora sigue como cualquier otra enmienda.",
         "accepted": "La han aceptado los autores principales y sustituye a las enmiendas que combina. Ahora sigue como cualquier otra enmienda."
       },
       "afterSecretaria": "Cuando Secretaría la valide, se publicará y sustituirá a {list}.",
@@ -3708,7 +3729,7 @@
     "noCode": "Sin número",
     "loading": "Cargando las enmiendas",
     "gone": "{label} ya no está pendiente: alguien la ha decidido o respondido.",
-    "onBehalf": "Respondes en nombre de {member}, que presenta principalmente el documento.",
+    "onBehalf": "Respondes en nombre de {member}, que presenta el documento.",
     "onlyPending": "Solo las que faltan",
     "saveFailed": "No se ha podido guardar la respuesta",
     "commentSaved": "{label}: comentario guardado",
@@ -3734,9 +3755,9 @@
     },
     "answers": {
       "pending": "Sin responder",
-      "accept": "Aceptada",
-      "reject": "Rechazada",
-      "transact": "A transaccionar",
+      "accept": "Acepta",
+      "reject": "Rechaza",
+      "transact": "Propone transaccional",
       "incorporated": "Incorporada"
     },
     "state": {
@@ -3774,7 +3795,7 @@
       "commentPlaceholder": "Por ejemplo: por qué la aceptas o qué texto propondrías.",
       "accept": "Aceptar",
       "reject": "Rechazar",
-      "rejectHelp": "No estás de acuerdo: se debatirá y votará.",
+      "rejectHelp": "Te opones: se debatirá y luego la votará la asamblea.",
       "transact": "Transaccionar",
       "transactHelp": "Quieres acordar otro texto con quien la presenta y proponerlo como transaccional.",
       "saveComment": "Guardar comentario",
@@ -3782,7 +3803,7 @@
       "commentHelpPending": "Se guarda al elegir una respuesta.",
       "commentHelpAnswered": "Si lo cambias, guárdalo con «Guardar comentario».",
       "acceptHelpIncorporate": "Al aceptarla se incorpora al texto sin votación.",
-      "acceptHelpVote": "La votará la asamblea.",
+      "acceptHelpVote": "La apoyas: en la sesión la Mesa propondrá aprobarla por asentimiento; si alguien se opone, la votará la asamblea.",
       "reopenHelp": "Como ya está incorporada, saldrá del texto.",
       "transactHelpMain": "Quieres acordar otro texto con {member}, su autor principal, y proponerlo como transaccional."
     },
@@ -3915,6 +3936,9 @@
       "validation": "{count} enmienda espera a que Secretaría la valide. | {count} enmiendas esperan a que Secretaría las valide."
     },
     "goneTransacted": "{label} ya no está pendiente: la ha sustituido una transaccional, que se responde en su lugar.",
-    "mainAuthor": "principal"
+    "mainAuthor": "principal",
+    "context": {
+      "pendingTransactional": "Hay una transaccional pendiente que la incluye: {list}. Si sale adelante, sustituirá a esta enmienda. | Hay transaccionales pendientes que la incluyen: {list}. Si alguna sale adelante, sustituirá a esta enmienda."
+    }
   }
 }

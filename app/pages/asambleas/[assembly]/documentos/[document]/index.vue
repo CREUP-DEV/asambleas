@@ -54,10 +54,12 @@ import {
  *
  * The text is on the left, with four views in a compact "Ver" menu
  * (original with gutter markers, one amendment over the full text, live
- * consolidation with provenance, side by side); the amendments are on the
- * right, grouped by the passage they act on, with "Mis enmiendas" showing
- * where the actor's own stand with the Secretaría (its badge counts what
- * waits for them). Corrections the Secretaría asked for get a notice above
+ * consolidation with provenance, side by side: on wide screens it takes the
+ * whole workspace until an amendment or a composer is opened); the
+ * amendments are on the right, grouped by the passage they act on, with
+ * "Mis enmiendas" showing where the actor's own stand with the Secretaría
+ * (its badge counts what waits for them). Corrections the Secretaría asked
+ * for get a notice above
  * the workspace; the Secretaría gets a quiet line with what it still has to
  * review or publish. Secondary links live in the header's "Más" menu. On
  * narrow screens the two panels stack behind a toggle and the amendment
@@ -65,7 +67,13 @@ import {
  *
  * `?enmienda=<id>` opens that amendment (links from the home page), and
  * `?transaccional=<id>,<id>` opens the transactional composer on those
- * amendments (from the presenter's review, "Transaccionar").
+ * amendments (from the presenter's review, "Transaccionar"). The open
+ * amendment is kept in the address, so its link can be shared.
+ *
+ * A PDF document shows its file, or says it is still to be uploaded. An
+ * unpublished one says amendments open once the Secretaría publishes it,
+ * unless it takes none or is back with its presenters for a correction (the
+ * header then says who acts next).
  */
 
 interface TextViewHandle {
@@ -93,6 +101,7 @@ interface TransactionalState {
 
 const { t } = useI18n();
 const route = useRoute();
+const router = useRouter();
 const { member } = useMe();
 const workspace = useDocumentWorkspace();
 const {
@@ -364,6 +373,8 @@ const viewItems = computed(() => {
       checked: textMode.value === mode,
       onSelect: () => {
         textMode.value = mode;
+        // Side by side takes the whole width: the detail would hide it.
+        if (mode === "compare") detailOpen.value = false;
       },
     })),
   ];
@@ -857,6 +868,51 @@ const mobileDetailOpen = computed({
   },
 });
 
+/**
+ * "Original y resultado" on a wide screen, with no amendment or composer
+ * open: the text takes the whole workspace so the two columns fit side by
+ * side. Opening an amendment or a composer brings the list back.
+ */
+const wideCompare = computed(
+  () =>
+    isDesktop.value &&
+    textMode.value === "compare" &&
+    !composing.value &&
+    !detailOpen.value,
+);
+const textPanelClass = computed(() =>
+  [
+    mobilePane.value === "text" ? "flex" : "hidden lg:flex",
+    wideCompare.value ? "lg:w-full lg:not-last:border-e-0" : "",
+  ].join(" "),
+);
+const amendmentsPanelClass = computed(() =>
+  [
+    mobilePane.value === "amendments" ? "flex" : "hidden lg:flex",
+    wideCompare.value ? "lg:hidden" : "",
+  ].join(" "),
+);
+
+/**
+ * The open amendment in the address (`?enmienda=<id>`), so its link can be
+ * shared. Replaced, not pushed: Back leaves the page instead of walking
+ * through every card opened. Not run on arrival, so the query that opens
+ * an amendment is read first.
+ */
+watch(
+  () => (detailOpen.value ? selectedId.value : null),
+  (id) => {
+    if ((route.query.enmienda ?? null) === id) return;
+    void router.replace({
+      query: {
+        ...route.query,
+        transaccional: undefined,
+        enmienda: id ?? undefined,
+      },
+    });
+  },
+);
+
 const relationCandidates = computed(() =>
   list.listed.value.filter((amendment) => amendment.id !== selectedId.value),
 );
@@ -957,18 +1013,17 @@ const filteredBlockLabel = computed(() =>
 <template>
   <div class="flex flex-col gap-4">
     <!-- Loading -->
-    <div
-      v-if="pending"
-      class="flex flex-col gap-4"
-      aria-busy="true"
-      :aria-label="t('workspace.loading')"
-    >
-      <USkeleton class="h-4 w-32" />
-      <USkeleton class="h-8 w-3/4 max-w-xl" />
-      <USkeleton class="h-12 w-full" />
+    <div v-if="pending" class="flex flex-col gap-4" role="status">
+      <span class="sr-only">{{ t("workspace.loading") }}</span>
+      <USkeleton aria-hidden="true" class="h-4 w-32" />
+      <USkeleton aria-hidden="true" class="h-8 w-3/4 max-w-xl" />
+      <USkeleton aria-hidden="true" class="h-12 w-full" />
       <div class="grid gap-4 lg:grid-cols-[3fr_2fr]">
-        <USkeleton class="h-[28rem] w-full" />
-        <USkeleton class="hidden h-[28rem] w-full lg:block" />
+        <USkeleton aria-hidden="true" class="h-[28rem] w-full" />
+        <USkeleton
+          aria-hidden="true"
+          class="hidden h-[28rem] w-full lg:block"
+        />
       </div>
     </div>
 
@@ -1086,27 +1141,6 @@ const filteredBlockLabel = computed(() =>
               />
             </UDropdownMenu>
           </div>
-          <!-- Only where the selection bar, which says the same, is not on
-               screen: another view of the text, or the list on a phone. -->
-          <p
-            v-if="
-              canAmend &&
-              isStructured &&
-              !composing &&
-              !reviewIsPrimary &&
-              selection.ids.length === 0
-            "
-            class="text-muted text-sm"
-            :class="
-              textMode === 'original'
-                ? mobilePane === 'text'
-                  ? 'hidden'
-                  : 'lg:hidden'
-                : ''
-            "
-          >
-            {{ t("workspace.cta.hint") }}
-          </p>
         </div>
       </DocumentHeader>
 
@@ -1124,7 +1158,11 @@ const filteredBlockLabel = computed(() =>
         v-if="document.format === 'file'"
         icon="i-lucide-file-text"
         :title="t('workspace.text.file')"
-        :description="t('workspace.text.fileDescription')"
+        :description="
+          document.fileUrl
+            ? t('workspace.text.fileDescription')
+            : t('workspace.text.filePending')
+        "
         variant="outline"
       >
         <template v-if="document.fileUrl" #action>
@@ -1140,7 +1178,9 @@ const filteredBlockLabel = computed(() =>
 
       <!-- Not published yet -->
       <template v-else-if="!isPublished">
+        <!-- Not while it is back with its presenters: the header says so. -->
         <UAlert
+          v-if="document.amendable && !document.correctionRequestedAt"
           color="info"
           variant="subtle"
           icon="i-lucide-info"
@@ -1208,11 +1248,11 @@ const filteredBlockLabel = computed(() =>
           <!-- Text -->
           <UDashboardPanel
             id="document-workspace-text"
-            resizable
+            :resizable="!wideCompare"
             :default-size="58"
             :min-size="35"
             :max-size="72"
-            :class="mobilePane === 'text' ? 'flex' : 'hidden lg:flex'"
+            :class="textPanelClass"
             :ui="panelUi"
           >
             <template #header>
@@ -1536,7 +1576,7 @@ const filteredBlockLabel = computed(() =>
           <!-- Amendments -->
           <UDashboardPanel
             id="document-workspace-amendments"
-            :class="mobilePane === 'amendments' ? 'flex' : 'hidden lg:flex'"
+            :class="amendmentsPanelClass"
             :ui="panelUi"
           >
             <template v-if="!composing && !showDesktopDetail" #header>
@@ -1652,6 +1692,8 @@ const filteredBlockLabel = computed(() =>
                       :relations="list.relationsOf(item.id)"
                       :selected="selectedId === item.id"
                       :status-of="amendmentStatusOf"
+                      :by-id="list.byId.value"
+                      :presenter="document.proponent?.acronym ?? null"
                       show-published
                       @select="selectAmendment"
                     />
@@ -1702,10 +1744,15 @@ const filteredBlockLabel = computed(() =>
                     list.pending.value && list.amendments.value.length === 0
                   "
                   class="flex flex-col gap-3"
-                  aria-busy="true"
-                  :aria-label="t('amendment.list.loading')"
+                  role="status"
                 >
-                  <USkeleton v-for="i in 4" :key="i" class="h-24 w-full" />
+                  <span class="sr-only">{{ t("amendment.list.loading") }}</span>
+                  <USkeleton
+                    v-for="i in 4"
+                    :key="i"
+                    aria-hidden="true"
+                    class="h-24 w-full"
+                  />
                 </div>
 
                 <UAlert
@@ -1767,6 +1814,8 @@ const filteredBlockLabel = computed(() =>
                   :relations-of="list.relationsOf"
                   :can-transact="canTransact"
                   :status-of="amendmentStatusOf"
+                  :by-id="list.byId.value"
+                  :presenter="document.proponent?.acronym ?? null"
                   @select="selectAmendment"
                   @transact="startTransactional"
                 />

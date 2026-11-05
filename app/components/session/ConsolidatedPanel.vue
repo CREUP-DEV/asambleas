@@ -95,6 +95,8 @@ const finalBlockedReasons = computed<string[]>(() =>
   session.finalVoteReasons.value.map(reasonText),
 );
 const finalBlocked = computed(() => finalBlockedReasons.value.length > 0);
+/** The reasons describe the disabled button to screen readers. */
+const reasonsId = useId();
 const awaitingValidation = computed(
   () => blockers.value.awaitingValidation.length,
 );
@@ -102,9 +104,15 @@ const awaitingValidation = computed(
 
 <template>
   <div class="space-y-4">
-    <div v-if="loading" class="space-y-3" aria-busy="true">
-      <USkeleton class="h-6 w-1/2" />
-      <USkeleton v-for="n in 5" :key="n" class="h-16 w-full" />
+    <div v-if="loading" class="space-y-3" role="status">
+      <span class="sr-only">{{ t("workspace.loading") }}</span>
+      <USkeleton aria-hidden="true" class="h-6 w-1/2" />
+      <USkeleton
+        v-for="n in 5"
+        :key="n"
+        aria-hidden="true"
+        class="h-16 w-full"
+      />
     </div>
 
     <CommonEmptyState
@@ -161,10 +169,15 @@ const awaitingValidation = computed(
             icon="i-lucide-gavel"
             :label="t('session.finalVote.open')"
             :disabled="finalBlocked || !document.can.moderate"
+            :aria-describedby="finalBlocked ? reasonsId : undefined"
             @click="session.finalVoteDialog.open = true"
           />
           <div aria-live="polite">
-            <ul v-if="finalBlocked" class="text-muted space-y-1 text-xs">
+            <ul
+              v-if="finalBlocked"
+              :id="reasonsId"
+              class="text-muted space-y-1 text-xs"
+            >
               <li v-for="reason in finalBlockedReasons" :key="reason">
                 {{ reason }}
               </li>

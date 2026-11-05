@@ -153,7 +153,7 @@ const memberOptions = computed<MemberOption[][]>(() =>
     const list: MemberOption[] = members.value
       .filter((candidate) => candidate.active && candidate.kind === kind)
       .map((candidate) => ({
-        label: `${candidate.acronym} · ${candidate.name}`,
+        label: memberLabel(candidate),
         value: candidate.id,
       }));
     if (list.length === 0) return [];
@@ -272,9 +272,9 @@ async function onSubmit(event: FormSubmitEvent<ExpectedForm>) {
               value-key="value"
               :loading="membersLoading"
               :placeholder="t('tracking.expected.presenterPlaceholder')"
-              :search-input="{
-                placeholder: t('tracking.expected.searchMember'),
-              }"
+              :search-input="
+                labelledSearch(t('tracking.expected.searchMember'))
+              "
               :aria-label="t('tracking.expected.presenter')"
               class="w-full"
             />
@@ -298,6 +298,7 @@ async function onSubmit(event: FormSubmitEvent<ExpectedForm>) {
           <DocumentDateTimeInput
             v-model="state.dueAt"
             name="dueAt"
+            :aria-label="t('tracking.expected.deadline')"
             :min="minDue"
           />
           <p

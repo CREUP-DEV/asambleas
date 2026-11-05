@@ -374,6 +374,7 @@ async function confirmDelete() {
           >
             <CalendarDateTimeInput
               v-model="basics.startDate"
+              :aria-label="t('assembly.basics.startDate')"
               :disabled="savingBasics"
               required
             />
@@ -386,6 +387,7 @@ async function confirmDelete() {
           >
             <CalendarDateTimeInput
               v-model="basics.endDate"
+              :aria-label="t('assembly.basics.endDate')"
               :disabled="savingBasics"
               required
             />

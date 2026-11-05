@@ -1,9 +1,20 @@
+import { fromDate, toCalendarDateTime } from "@internationalized/date";
 import type { AssemblyType } from "../constants/assemblyTypes";
 import type { MilestoneKey } from "../constants/domain";
 import { MILESTONE_KEYS } from "../constants/domain";
 
+/** The assemblies' time zone: every date is set and shown in it. */
+export const ASSEMBLY_TIME_ZONE = "Europe/Madrid";
+
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
+
+/**
+ * How long before the assembly start a milestone falls: whole days in the
+ * assemblies' time zone (same wall-clock time, also across a clock change)
+ * or exact hours (the regulation's "96 horas").
+ */
+export type MilestoneOffset = { days: number } | { hours: number };
 
 /**
  * Default offsets before the assembly start (RFAG and RRI 2026, see
@@ -11,41 +22,77 @@ const DAY = 24 * HOUR;
  */
 export const DEFAULT_MILESTONE_OFFSETS: Record<
   AssemblyType,
-  Partial<Record<MilestoneKey, number>>
+  Partial<Record<MilestoneKey, MilestoneOffset>>
 > = {
   AGO: {
-    convocation: 30 * DAY,
-    agenda_requests_close: 21 * DAY,
-    agenda_final: 14 * DAY,
-    documents_publish: 12 * DAY,
-    amendments_open: 12 * DAY,
-    documents_close: 8 * DAY,
-    amendments_close: 4 * DAY,
-    candidacies_close: 96 * HOUR,
+    convocation: { days: 30 },
+    agenda_requests_close: { days: 21 },
+    agenda_final: { days: 14 },
+    documents_publish: { days: 12 },
+    amendments_open: { days: 12 },
+    documents_close: { days: 8 },
+    amendments_close: { days: 4 },
+    candidacies_close: { hours: 96 },
   },
   AGE: {
-    convocation: 15 * DAY,
-    agenda_final: 7 * DAY,
-    documents_publish: 5 * DAY,
-    amendments_open: 5 * DAY,
-    amendments_close: 2 * DAY,
-    candidacies_close: 48 * HOUR,
+    convocation: { days: 15 },
+    agenda_final: { days: 7 },
+    documents_publish: { days: 5 },
+    amendments_open: { days: 5 },
+    amendments_close: { days: 2 },
+    candidacies_close: { hours: 48 },
   },
   AGET: {
-    convocation: 7 * DAY,
-    agenda_final: 7 * DAY,
-    documents_publish: 5 * DAY,
-    amendments_open: 5 * DAY,
-    amendments_close: 2 * DAY,
+    convocation: { days: 7 },
+    agenda_final: { days: 7 },
+    documents_publish: { days: 5 },
+    amendments_open: { days: 5 },
+    amendments_close: { days: 2 },
   },
 };
 
-/** Regulatory minimum notice of the convocation, by type. */
-export const MINIMUM_NOTICE: Record<AssemblyType, number> = {
-  AGO: 30 * DAY,
-  AGE: 15 * DAY,
-  AGET: 5 * DAY,
+/** Regulatory minimum notice of the convocation, in days, by type. */
+export const MINIMUM_NOTICE_DAYS: Record<AssemblyType, number> = {
+  AGO: 30,
+  AGE: 15,
+  AGET: 5,
 };
+
+/** The instant `offset` before `start`. */
+export function milestoneOffsetBefore(
+  start: Date,
+  offset: MilestoneOffset,
+): Date {
+  if ("hours" in offset) return new Date(start.getTime() - offset.hours * HOUR);
+  if (Number.isNaN(start.getTime())) return new Date(Number.NaN);
+  return fromDate(start, ASSEMBLY_TIME_ZONE)
+    .subtract({ days: offset.days })
+    .toDate();
+}
+
+/**
+ * Whole days from `at` to `start` when both fall at the same wall-clock time
+ * in the assemblies' time zone, or null. A 2-day deadline across a clock
+ * change lasts 47 or 49 hours, and still reads as 2 days.
+ */
+export function wholeDaysBeforeStart(start: Date, at: Date): number | null {
+  if (Number.isNaN(start.getTime()) || Number.isNaN(at.getTime())) return null;
+  const from = toCalendarDateTime(fromDate(at, ASSEMBLY_TIME_ZONE));
+  const to = toCalendarDateTime(fromDate(start, ASSEMBLY_TIME_ZONE));
+  if (
+    from.hour !== to.hour ||
+    from.minute !== to.minute ||
+    from.second !== to.second ||
+    from.millisecond !== to.millisecond
+  ) {
+    return null;
+  }
+  return Math.round(
+    (Date.UTC(to.year, to.month - 1, to.day) -
+      Date.UTC(from.year, from.month - 1, from.day)) /
+      DAY,
+  );
+}
 
 export type Milestones = Partial<Record<MilestoneKey, Date>>;
 
@@ -53,7 +100,9 @@ export function defaultMilestones(type: AssemblyType, start: Date): Milestones {
   const result: Milestones = {};
   for (const key of MILESTONE_KEYS) {
     const offset = DEFAULT_MILESTONE_OFFSETS[type][key];
-    if (offset !== undefined) result[key] = new Date(start.getTime() - offset);
+    if (offset !== undefined) {
+      result[key] = milestoneOffsetBefore(start, offset);
+    }
   }
   return result;
 }
@@ -80,10 +129,15 @@ export function checkCalendar(
   const warnings: CalendarWarning[] = [];
   const at = (key: MilestoneKey) => milestones[key]?.getTime();
 
+  // Counted in days in the assemblies' time zone, like the defaults, so a
+  // clock change in between neither adds nor removes an hour of notice.
   const convocation = at("convocation");
   if (
     convocation !== undefined &&
-    start.getTime() - convocation < MINIMUM_NOTICE[type]
+    convocation >
+      milestoneOffsetBefore(start, {
+        days: MINIMUM_NOTICE_DAYS[type],
+      }).getTime()
   ) {
     warnings.push({ code: "short_notice", keys: ["convocation"] });
   }

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from "@nuxt/ui";
 import type { DocumentSummaryDto } from "~~/shared/types/api";
 import { isSessionOpen } from "~/composables/session/sessionModel";
 import { useFinalVoteReasonText } from "~/composables/session/useFinalVoteReasonText";
@@ -13,7 +14,8 @@ import { useSessionStageLabel } from "~/composables/session/useSessionStageLabel
  * - nothing yet: start with the first agenda item;
  * - an agenda item: its documents, or the next item;
  * - a document: start with (or go on to) the next amendment the Mesa can
- *   decide, then the final vote, then the next item;
+ *   decide, then the final vote, then the next item; "Más" takes it out of
+ *   the debate and back to its item;
  * - an amendment: its change and the actions that fit (NowAmendment).
  *
  * When this device is looking at another document than the one in debate,
@@ -139,6 +141,17 @@ const documentStatus = computed(() => {
   return t("session.now.document.waiting");
 });
 
+/** "Más" of a document: back to its agenda item, out of the debate. */
+const documentMoreItems = computed<DropdownMenuItem[][]>(() => [
+  [
+    {
+      label: t("session.now.undebateDocument"),
+      icon: "i-lucide-radio-tower",
+      onSelect: () => void session.clearDebatedDocument(),
+    },
+  ],
+]);
+
 const itemDocuments = computed(() =>
   (liveRow.value?.documents ?? []).filter(
     (document) => document.status === "published",
@@ -161,10 +174,9 @@ const announcement = computed(() => {
       });
     case "amendment": {
       const amendment = session.debatedAmendment.value;
+      // Silent while the amendments load: its code is not known yet.
       if (!amendment) {
-        return t("session.now.announce", {
-          what: session.label(live.value?.amendmentId ?? ""),
-        });
+        return amendmentsLoaded.value ? t("session.now.amendmentMissing") : "";
       }
       return t("session.now.announceAmendment", {
         code: session.label(amendment.id),
@@ -214,16 +226,17 @@ const announcement = computed(() => {
       </p>
     </div>
 
-    <div v-if="mode === 'loading'" class="space-y-3" aria-busy="true">
-      <USkeleton class="h-10 w-2/3" />
-      <USkeleton class="h-6 w-full" />
+    <div v-if="mode === 'loading'" class="space-y-3" role="status">
+      <span class="sr-only">{{ t("common.loading") }}</span>
+      <USkeleton aria-hidden="true" class="h-10 w-2/3" />
+      <USkeleton aria-hidden="true" class="h-6 w-full" />
     </div>
 
     <!-- Nothing under debate yet. -->
     <template v-else-if="mode === 'idle'">
-      <p class="text-highlighted text-2xl font-bold">
+      <h3 class="text-highlighted text-2xl font-bold">
         {{ t("session.now.idle") }}
-      </p>
+      </h3>
       <p class="text-default">
         {{ nextAgenda ? t("session.now.idleHint") : t("session.agenda.empty") }}
       </p>
@@ -239,9 +252,9 @@ const announcement = computed(() => {
 
     <!-- This device is looking at another document. -->
     <template v-else-if="mode === 'elsewhere'">
-      <p class="text-highlighted text-2xl font-bold">
+      <h3 class="text-highlighted text-2xl font-bold">
         {{ liveDocumentSummary?.title ?? t("session.now.otherDocument") }}
-      </p>
+      </h3>
       <UAlert
         color="info"
         variant="subtle"
@@ -263,18 +276,19 @@ const announcement = computed(() => {
         v-if="session.debatedAmendment.value"
         :amendment="session.debatedAmendment.value"
       />
-      <div v-else-if="!amendmentsLoaded" class="space-y-3" aria-busy="true">
-        <USkeleton class="h-10 w-1/3" />
-        <USkeleton class="h-24 w-full" />
+      <div v-else-if="!amendmentsLoaded" class="space-y-3" role="status">
+        <span class="sr-only">{{ t("common.loading") }}</span>
+        <USkeleton aria-hidden="true" class="h-10 w-1/3" />
+        <USkeleton aria-hidden="true" class="h-24 w-full" />
       </div>
       <template v-else>
-        <p class="text-highlighted text-2xl font-bold">
+        <h3 class="text-highlighted text-2xl font-bold">
           {{
             t("session.card.label", {
               code: session.label(live?.amendmentId ?? ""),
             })
           }}
-        </p>
+        </h3>
         <p class="text-default">{{ t("session.now.amendmentMissing") }}</p>
         <UButton
           color="neutral"
@@ -290,9 +304,9 @@ const announcement = computed(() => {
     <!-- A document, between amendments. -->
     <template v-else-if="mode === 'document'">
       <div class="space-y-1">
-        <p class="text-highlighted text-2xl font-bold sm:text-3xl">
+        <h3 class="text-highlighted text-2xl font-bold sm:text-3xl">
           {{ document?.title ?? liveDocumentSummary?.title ?? "" }}
-        </p>
+        </h3>
         <p
           v-if="document?.reference ?? liveDocumentSummary?.reference"
           class="text-muted text-sm"
@@ -304,9 +318,10 @@ const announcement = computed(() => {
       <div
         v-if="!document || (!amendmentsLoaded && document.amendable)"
         class="space-y-2"
-        aria-busy="true"
+        role="status"
       >
-        <USkeleton class="h-6 w-2/3" />
+        <span class="sr-only">{{ t("common.loading") }}</span>
+        <USkeleton aria-hidden="true" class="h-6 w-2/3" />
       </div>
       <template v-else>
         <p class="text-default text-base font-medium">{{ documentStatus }}</p>
@@ -373,15 +388,24 @@ const announcement = computed(() => {
             :loading="liveBusy && !next"
             @click="session.debateAgendaTarget(nextAgenda)"
           />
+          <UDropdownMenu :items="documentMoreItems" :content="{ align: 'end' }">
+            <UButton
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-ellipsis"
+              :label="t('session.now.more')"
+              :disabled="liveBusy"
+            />
+          </UDropdownMenu>
         </div>
       </template>
     </template>
 
     <!-- An agenda item without a document in debate. -->
     <template v-else-if="mode === 'item' && liveRow">
-      <p class="text-highlighted text-2xl font-bold sm:text-3xl">
+      <h3 class="text-highlighted text-2xl font-bold sm:text-3xl">
         {{ `${liveRow.number}. ${liveRow.item.title}` }}
-      </p>
+      </h3>
       <p class="text-default">
         {{
           itemDocuments.length > 0

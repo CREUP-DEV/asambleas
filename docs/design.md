@@ -169,7 +169,7 @@ Tests run with Vitest.
 `assembly_milestones` store dated milestones per assembly: convocatoria, final
 agenda, documents deadline, documents publication, amendment window
 open/close, candidacies. Defaults come from rules per assembly type
-(`shared/constants/calendarRules.ts`, RFAG/RRI 2026). Every value stays
+(`shared/utils/calendar.ts`, RFAG/RRI 2026). Every value stays
 editable. `checkCalendar` warns when the calendar breaks a regulatory minimum
 or is inconsistent, for example when amendments close before documents are
 published. The convocatoria is generated from the assembly data, the agenda and

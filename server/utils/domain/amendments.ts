@@ -46,6 +46,7 @@ import type {
 import { PERMISSION_KEYS } from "../../../shared/constants/permissions";
 import type {
   AcceptanceBody,
+  AcceptanceDto,
   AdmissionBody,
   AmendmentCapabilities,
   AmendmentDraftBody,
@@ -1283,6 +1284,7 @@ export async function buildAmendmentDtos(
   const recorders = await loadPositionRecorders(
     ctx.positionsVisible ? rows : [],
   );
+  const acceptanceRecorders = await loadAcceptanceRecorders(rows);
   const moderate = canModerate(ctx.actor);
   const review = canReviewAmendments(ctx.actor);
   const voted = documentVoted(ctx.document);
@@ -1353,6 +1355,9 @@ export async function buildAmendmentDtos(
         role: acceptance.role,
         decision: acceptance.decision,
         decidedAt: iso(acceptance.decidedAt),
+        recordedBy: acceptanceRecordedBy(
+          acceptanceRecorders.get(acceptanceKey(row.id, acceptance.memberId)),
+        ),
       })),
       updatedAt: row.updatedAt.toISOString(),
       can: amendmentCapabilities({
@@ -1428,6 +1433,71 @@ async function loadPositionRecorders(rows: LoadedAmendment[]): Promise<{
     recordedAs,
     memberOf: new Map(recorders.map((row) => [row.id, row.memberId])),
   };
+}
+
+/** Key of one party's answer to one transactional. */
+function acceptanceKey(amendmentId: string, memberId: string): string {
+  return `${amendmentId}:${memberId}`;
+}
+
+/**
+ * AcceptanceDto.recordedBy, from the latest acceptance_recorded event of
+ * that party: the Mesa recorded the answer when the event names the party
+ * it answered for (`recordedForMemberId`), as it was then. An answer with no
+ * such event (the creator's own, accepted when it presented it) is the
+ * party's.
+ */
+export function acceptanceRecordedBy(
+  recordedForMemberId: string | null | undefined,
+): AcceptanceDto["recordedBy"] {
+  return recordedForMemberId ? "mesa" : "party";
+}
+
+/**
+ * What acceptanceRecordedBy needs, by acceptanceKey: `recordedForMemberId`
+ * of the latest acceptance_recorded event of each party that answered a
+ * transactional among `rows` (the Mesa can correct an answer, so only the
+ * latest one counts).
+ */
+async function loadAcceptanceRecorders(
+  rows: LoadedAmendment[],
+): Promise<Map<string, string | null>> {
+  const recordedFor = new Map<string, string | null>();
+  const answered = rows.filter(
+    (row) =>
+      row.kind === "transactional" &&
+      partiesOf(row).some((party) => party.decision !== "pending"),
+  );
+  if (answered.length === 0) return recordedFor;
+  const partyOf = sql<string | null>`${events.payload}->>'memberId'`;
+  const latest = await db
+    .selectDistinctOn([events.entityId, partyOf], {
+      amendmentId: events.entityId,
+      memberId: partyOf,
+      recordedFor: sql<
+        string | null
+      >`${events.payload}->>'recordedForMemberId'`,
+    })
+    .from(events)
+    .where(
+      and(
+        eq(events.entityType, "amendment"),
+        eq(events.type, "acceptance_recorded"),
+        inArray(
+          events.entityId,
+          answered.map((row) => row.id),
+        ),
+      ),
+    )
+    .orderBy(events.entityId, partyOf, desc(events.createdAt), desc(events.id));
+  for (const row of latest) {
+    if (!row.memberId) continue;
+    recordedFor.set(
+      acceptanceKey(row.amendmentId, row.memberId),
+      row.recordedFor,
+    );
+  }
+  return recordedFor;
 }
 
 type SourceState = Parameters<typeof unopenSourceReason>[0] & { id: string };
@@ -4074,7 +4144,12 @@ export async function deleteAmendmentRelation(
         entityType: "amendment",
         entityId,
         type: "relation_deleted",
-        payload: { relationId: relation.id, kind: relation.kind, otherId },
+        payload: {
+          relationId: relation.id,
+          kind: relation.kind,
+          otherId,
+          direction: entityId === relation.fromId ? "from" : "to",
+        },
         actor,
       });
     }

@@ -11,6 +11,7 @@ import { validateOps } from "~~/shared/utils/content/ops";
  * Totality amendments without operations have no text to compare: the `note`
  * slot is shown instead (with a generic note by default). Operations that no
  * longer apply to `base` show a warning instead of a broken preview.
+ * Headings in the excerpt are styled text, not page headings.
  */
 const props = withDefaults(
   defineProps<{
@@ -76,6 +77,7 @@ const annotated = computed(() =>
       mode="diff"
       :focus="focus"
       :interactive="interactive"
+      :headings="false"
       @block-click="(blockId, event) => emit('block-click', blockId, event)"
       @amendment-click="(amendmentId) => emit('amendment-click', amendmentId)"
     />

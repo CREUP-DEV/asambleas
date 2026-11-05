@@ -149,12 +149,20 @@ const onBehalfOf = computed(() => {
   return proponent;
 });
 
-/** Who reads the answers, from the assembly's policy. */
-const visibilityNote = computed(() =>
-  t(
-    `proponentReview.visibility.${assembly.value?.settings.positionVisibility ?? "session"}`,
-  ),
-);
+/**
+ * Who reads the answers, from the assembly's policy and, as on the server
+ * (canSeePositions), its status: under the "session" policy everyone sees
+ * them once the assembly is in session or closed.
+ */
+const visibilityNote = computed(() => {
+  const policy = assembly.value?.settings.positionVisibility ?? "session";
+  const started =
+    assembly.value?.status === "in_session" ||
+    assembly.value?.status === "closed";
+  return t(
+    `proponentReview.visibility.${policy === "session" && started ? "public" : policy}`,
+  );
+});
 
 /** What an amendment the main presenter accepts becomes. */
 const acceptedRule = computed(
@@ -660,6 +668,25 @@ const currentSources = computed(() =>
         .filter((source): source is AmendmentDto => Boolean(source))
     : [],
 );
+/**
+ * Transactionals over the amendment on screen still on their way (presented,
+ * not yet replacing it), as the actor sees them: the same context the
+ * document page shows.
+ */
+const currentPendingTransactionals = computed(() =>
+  current.value
+    ? current.value.amendment.transactionalIds
+        .map((id) => list.byId.value.get(id))
+        .filter(
+          (transactional): transactional is AmendmentDto =>
+            transactional?.status === "submitted",
+        )
+    : [],
+);
+/** How the amendment on screen relates to others ("Incompatible con ..."). */
+const currentRelations = computed(() =>
+  current.value ? list.relationsOf(current.value.id) : [],
+);
 const busyAnswer = computed(() =>
   busy.value && busy.value.id === currentId.value && !busy.value.commentOnly
     ? busy.value.value
@@ -744,16 +771,12 @@ useHead({
 <template>
   <div class="flex flex-col gap-5">
     <!-- Loading -->
-    <div
-      v-if="pending"
-      class="flex flex-col gap-4"
-      aria-busy="true"
-      :aria-label="t('workspace.loading')"
-    >
-      <USkeleton class="h-4 w-32" />
-      <USkeleton class="h-8 w-2/3 max-w-xl" />
-      <USkeleton class="h-3 w-full max-w-4xl" />
-      <USkeleton class="h-80 w-full max-w-4xl" />
+    <div v-if="pending" class="flex flex-col gap-4" role="status">
+      <span class="sr-only">{{ t("workspace.loading") }}</span>
+      <USkeleton aria-hidden="true" class="h-4 w-32" />
+      <USkeleton aria-hidden="true" class="h-8 w-2/3 max-w-xl" />
+      <USkeleton aria-hidden="true" class="h-3 w-full max-w-4xl" />
+      <USkeleton aria-hidden="true" class="h-80 w-full max-w-4xl" />
     </div>
 
     <!-- Error -->
@@ -871,11 +894,11 @@ useHead({
       <div
         v-else-if="list.pending.value && !list.data.value"
         class="flex max-w-4xl flex-col gap-4"
-        aria-busy="true"
-        :aria-label="t('proponentReview.loading')"
+        role="status"
       >
-        <USkeleton class="h-3 w-full" />
-        <USkeleton class="h-80 w-full" />
+        <span class="sr-only">{{ t("proponentReview.loading") }}</span>
+        <USkeleton aria-hidden="true" class="h-3 w-full" />
+        <USkeleton aria-hidden="true" class="h-80 w-full" />
       </div>
 
       <UAlert
@@ -1022,6 +1045,8 @@ useHead({
                 :base="base"
                 :accepted-amendments="acceptedRule"
                 :sources="currentSources"
+                :pending-transactionals="currentPendingTransactionals"
+                :relations="currentRelations"
                 :label-of="list.labelOf"
                 :busy="busyAnswer"
                 :disabled="busy !== null && busy.id !== current.id"

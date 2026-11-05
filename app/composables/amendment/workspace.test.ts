@@ -11,6 +11,7 @@ import {
   amendmentDisplayLabel,
   amendmentErrorKey,
   amendmentErrorReasons,
+  amendmentOverlapIndex,
   composerAuthorMemberIds,
   composerAuthorSeed,
   composerSyncState,
@@ -330,6 +331,39 @@ describe("markers and groups", () => {
     ]);
   });
 
+  it("does not list a transactional and what it combines as overlaps", () => {
+    const s1 = amendment("s1", [replace("b2", 0, 2, "Un")], {
+      status: "transacted",
+    });
+    const s2 = amendment("s2", [replace("b2", 1, 5, "X")], {
+      status: "transacted",
+    });
+    const t1 = amendment("t1", [replace("b2", 0, 5, "Uno X")], {
+      kind: "transactional",
+      status: "transacted",
+      sourceIds: ["s1", "s2"],
+    });
+    // Built on t1: it absorbs t1's sources too.
+    const t3 = amendment("t3", [replace("b2", 0, 6, "Unos X")], {
+      kind: "transactional",
+      sourceIds: ["t1"],
+    });
+    const other = amendment("o", [replace("b2", 1, 3, "zz")]);
+    const index = amendmentOverlapIndex([s1, s2, t1, t3, other]);
+    const ids = (id: string) => (index.get(id) ?? []).map((x) => x.id).sort();
+    expect(ids("t3")).toEqual(["o"]);
+    expect(ids("t1")).toEqual(["o"]);
+    expect(ids("s1")).toEqual(["o", "s2"]);
+    expect(ids("o")).toEqual(["s1", "s2", "t1", "t3"]);
+  });
+
+  it("still pairs unrelated amendments on the same passage", () => {
+    const index = amendmentOverlapIndex([a, b, c]);
+    expect(index.get("a")?.map((x) => x.id)).toEqual(["b"]);
+    expect(index.get("b")?.map((x) => x.id)).toEqual(["a"]);
+    expect(index.has("c")).toBe(false);
+  });
+
   it("filters by status, member, late, mine and block", () => {
     const member = {
       id: "m1",
@@ -556,11 +590,13 @@ describe("the main presenter's answer", () => {
     role: "author",
     decision: "accepted",
     decidedAt: "2026-11-02T10:00:00.000Z",
+    recordedBy: "party",
   } as const;
   const pending = {
     ...accepted,
     decision: "pending",
     decidedAt: null,
+    recordedBy: "party" as const,
   } as const;
   const rules = ["vote", "incorporate"] as const;
 
@@ -915,6 +951,7 @@ describe("history version", () => {
           role: "author",
           decision: "pending",
           decidedAt: null,
+          recordedBy: "party" as const,
         },
       ],
     });
@@ -925,6 +962,7 @@ describe("history version", () => {
           role: "author",
           decision: "accepted",
           decidedAt: "2026-11-01T12:00:00.000Z",
+          recordedBy: "party" as const,
         },
       ],
     });

@@ -163,14 +163,16 @@ const failed = computed(
       >
         {{ title }}
       </h2>
+      <!-- Every presented one, as the agenda counts them; those not
+           validated yet are listed apart below. -->
       <p
-        v-if="document && session.amendmentsDto.value && counts.total > 0"
+        v-if="document && session.amendmentsDto.value && counts.presented > 0"
         class="text-muted text-sm"
         aria-live="polite"
       >
         {{
           t("session.queue.counts", {
-            total: counts.total,
+            total: counts.presented,
             undecided: counts.undecided,
             approved: counts.approved,
           })
@@ -208,7 +210,12 @@ const failed = computed(
 
     <div v-if="loading" class="space-y-2" role="status">
       <span class="sr-only">{{ t("session.queue.loading") }}</span>
-      <USkeleton v-for="n in 5" :key="n" class="h-11 w-full" />
+      <USkeleton
+        v-for="n in 5"
+        :key="n"
+        aria-hidden="true"
+        class="h-11 w-full"
+      />
     </div>
 
     <CommonEmptyState

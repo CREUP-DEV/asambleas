@@ -3,6 +3,7 @@ import type { AmendmentDto } from "~~/shared/types/api";
 import {
   isSessionAwaitingValidation,
   isSessionDebatable,
+  isSessionUnpublished,
   type SessionAmendmentStage,
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
@@ -10,10 +11,11 @@ import { useSessionStageLabel } from "~/composables/session/useSessionStageLabel
 
 /**
  * One amendment of the queue, kept to a single line: its code, who presents
- * it and one status. The amendment the Mesa can decide gets one action,
- * "Debatir"; everything else (its changes, the proponent's position, every
- * other action) opens under the row. The row is the anchor the keyboard
- * shortcuts (j/k) and the consolidated text move the focus to.
+ * it and one status (which says when the assembly cannot read it yet). The
+ * amendment the Mesa can decide gets one action, "Debatir"; everything else
+ * (its changes, the proponent's position, every other action) opens under
+ * the row. The row is the anchor the keyboard shortcuts (j/k) and the
+ * consolidated text move the focus to.
  */
 const props = defineProps<{ amendment: AmendmentDto }>();
 
@@ -65,6 +67,13 @@ const STAGE_DOT: Record<SessionAmendmentStage, string> = {
 
 const stageText = useSessionStageLabel();
 const stageLabel = computed(() => stageText(stage.value, props.amendment));
+/** Validated but private: the row says so without opening it. */
+const unpublished = computed(() => isSessionUnpublished(props.amendment));
+const rowStatus = computed(() =>
+  unpublished.value
+    ? `${stageLabel.value} · ${t("session.card.notPublic")}`
+    : stageLabel.value,
+);
 
 const authors = computed(() =>
   props.amendment.authors.map((author) => author.acronym).join(", "),
@@ -108,7 +117,7 @@ function focusRow(): void {
           t('session.queue.rowLabel', {
             code,
             who: authorNames || '-',
-            status: stageLabel,
+            status: rowStatus,
           })
         "
         @click="open = !open"
@@ -136,11 +145,18 @@ function focusRow(): void {
           class="text-muted flex min-w-0 items-center gap-1.5 text-xs"
           aria-hidden="true"
         >
+          <UIcon
+            v-if="unpublished"
+            name="i-lucide-eye-off"
+            class="size-3.5 shrink-0"
+            aria-hidden="true"
+          />
           <span
+            v-else
             class="size-2 shrink-0 rounded-full"
             :class="STAGE_DOT[stage]"
           />
-          <span class="truncate">{{ stageLabel }}</span>
+          <span class="truncate">{{ rowStatus }}</span>
         </span>
       </button>
 

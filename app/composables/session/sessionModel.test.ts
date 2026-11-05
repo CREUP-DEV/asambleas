@@ -219,7 +219,10 @@ describe("session model", () => {
     it("leaves plain drafts out and counts the group apart", () => {
       const q = buildSessionQueue([a5, v3]);
       expect(q.validation.map((x) => x.id)).toEqual(["v3"]);
+      // Presented, validated or not (the agenda's figure): not the drafts
+      // a5 and v3.
       expect(sessionQueueCounts([a1, a4, a5, v1, v2, v3, hidden])).toEqual({
+        presented: 5,
         total: 3,
         undecided: 3,
         approved: 0,
@@ -624,6 +627,7 @@ describe("session model", () => {
       role: "author" as const,
       decision,
       decidedAt: null,
+      recordedBy: "party" as const,
     });
     // Proposed by a member over a1 and a2: submitted, admission pending,
     // waiting for the main authors before the Secretaría.
@@ -1242,6 +1246,7 @@ describe("session model", () => {
                 role: "author",
                 decision: "pending",
                 decidedAt: null,
+                recordedBy: "party" as const,
               },
             ],
           },
@@ -1322,6 +1327,7 @@ describe("session model", () => {
               role: "author",
               decision: "pending",
               decidedAt: null,
+              recordedBy: "party" as const,
             },
           ],
         }),
@@ -1377,6 +1383,30 @@ describe("session model", () => {
       expect(sessionNextAmendmentId(buildSessionQueue([a3, d1]), "a3")).toBe(
         null,
       );
+    });
+
+    it("goes from a transacted amendment to the transactional replacing it", () => {
+      // s1 (1) was transacted into t1, which edits an earlier passage (0.5);
+      // a3 (0.1) comes first in the text.
+      const s1 = am("s1", {
+        status: "transacted",
+        positionKey: 1,
+        transactionalIds: ["t1"],
+      });
+      const t1 = am("t1", {
+        kind: "transactional",
+        positionKey: 0.5,
+        sourceIds: ["s1"],
+      });
+      const q = buildSessionQueue([a3, t1, s1]);
+      expect(sessionNextAmendmentId(q, "s1")).toBe("t1");
+      // From the transactional on, the usual order.
+      expect(sessionNextAmendmentId(q, "t1")).toBe("a3");
+      // Once the transactional is decided, back to the usual order.
+      const decided = { ...t1, status: "approved" as const };
+      expect(
+        sessionNextAmendmentId(buildSessionQueue([a3, decided, s1]), "s1"),
+      ).toBe("a3");
     });
 
     it("skips private amendments the actor cannot publish", () => {

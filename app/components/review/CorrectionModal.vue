@@ -6,7 +6,8 @@ import { CORRECTION_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/document";
 /**
  * "Pedir corrección": a required note for whoever presented a document or an
  * amendment. The parent sends it (POST .../correction) on `confirm` and
- * closes the modal when it succeeds.
+ * closes the modal when it succeeds. It keeps the last subject it named, so
+ * its text does not read "«»" while it closes after the parent clears it.
  */
 const props = withDefaults(
   defineProps<{
@@ -24,6 +25,14 @@ const emit = defineEmits<{ confirm: [note: string] }>();
 const { t } = useI18n();
 
 const formId = useId();
+
+const shownSubject = ref(props.subject);
+watch(
+  () => props.subject,
+  (value) => {
+    if (value) shownSubject.value = value;
+  },
+);
 
 const schema = computed(() =>
   z.object({
@@ -62,7 +71,7 @@ function onSubmit(event: FormSubmitEvent<CorrectionForm>) {
         props.kind === 'document'
           ? 'review.correction.descriptionDocument'
           : 'review.correction.descriptionAmendment',
-        { subject: props.subject },
+        { subject: shownSubject },
       )
     "
     :dismissible="!props.busy"

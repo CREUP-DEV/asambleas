@@ -13,12 +13,17 @@ import { transactionalPartySources } from "~/composables/amendment/transactional
  * main author answers for itself here ("Aceptar" / "Rechazar",
  * `can.accept`); the Mesa records the answer one gives in the room. Rows
  * kept from before main authors existed (the document's presenter, role
- * "proponent") read as such. Where the transactional stands as a whole is
- * said once, by the review panel above, so this list does not repeat it.
+ * "proponent") read as such. An answer the Mesa recorded says so ("La Mesa,
+ * en nombre de CEUM, la ha aceptado"). Where the transactional stands as a
+ * whole is said once, by the review panel above, so this list does not
+ * repeat it.
  *
- * A rejection closes it for everyone and cannot be undone, so "Rechazar"
- * (and the Mesa's "Rechaza X") asks first. Only the viewer's own answer is
- * a primary button; recording someone else's answer is secondary.
+ * The Mesa's buttons say what they do ("Registrar que CEUM la acepta").
+ * Two answers cannot be taken back, so they ask first: a rejection closes
+ * it for everyone ("Rechazar", "Registrar que CEUM la rechaza"), and the
+ * acceptance the Mesa records that completes a validated one replaces the
+ * amendments it groups (as in the session console). Only the viewer's own
+ * answer is a primary button; recording someone else's answer is secondary.
  */
 const props = withDefaults(
   defineProps<{
@@ -43,13 +48,18 @@ const api = useApi();
 const toast = useToast();
 const titleId = useId();
 
+type Answer = AcceptanceBody["decision"];
+
 const busy = ref<string | null>(null);
-/** The party whose rejection is being confirmed (its member id). */
-const confirming = ref<string | null>(null);
+/** The answer being confirmed: whose (member id) and which. */
+const confirming = ref<{ memberId: string; decision: Answer } | null>(null);
 const confirmId = useId();
-/** Each party's "Rechazar", to give focus back on cancel (not reactive). */
-const rejectButtons = new Map<string, HTMLElement>();
-/** The confirming "Rechazar" (inside the list, so a function ref). */
+/**
+ * Each party's answer buttons, by "member:answer", to give focus back to
+ * the one that asked on cancel (not reactive).
+ */
+const answerButtons = new Map<string, HTMLElement>();
+/** The confirming button (inside the list, so a function ref). */
 let confirmButton: HTMLElement | null = null;
 
 watch(
@@ -67,23 +77,18 @@ function rememberConfirmButton(el: unknown): void {
   confirmButton = elementOf(el);
 }
 
-function rememberRejectButton(id: string, el: unknown): void {
+function rememberAnswerButton(id: string, decision: Answer, el: unknown): void {
+  const key = `${id}:${decision}`;
   const node = elementOf(el);
-  if (node) rejectButtons.set(id, node);
-  else rejectButtons.delete(id);
+  if (node) answerButtons.set(key, node);
+  else answerButtons.delete(key);
 }
 
-async function askReject(party: AcceptanceDto): Promise<void> {
-  confirming.value = party.member.id;
-  await nextTick();
-  confirmButton?.focus();
-}
-
-async function cancelReject(): Promise<void> {
-  const id = confirming.value;
+async function cancelConfirm(): Promise<void> {
+  const asked = confirming.value;
   confirming.value = null;
   await nextTick();
-  if (id) rejectButtons.get(id)?.focus();
+  if (asked) answerButtons.get(`${asked.memberId}:${asked.decision}`)?.focus();
 }
 
 const open = computed(() => props.amendment.status === "submitted");
@@ -103,6 +108,85 @@ const showRule = computed(
 
 function isOwn(party: AcceptanceDto): boolean {
   return party.member.id === props.actorMemberId;
+}
+
+/**
+ * Whether this acceptance is the last one a validated transactional waits
+ * for: recording it replaces the amendments it groups.
+ */
+function completes(party: AcceptanceDto): boolean {
+  return (
+    props.amendment.validatedAt !== null &&
+    props.amendment.acceptances.every(
+      (other) =>
+        other.member.id === party.member.id || other.decision === "accepted",
+    )
+  );
+}
+
+/**
+ * Asks first for an answer that cannot be taken back: any rejection, and
+ * the Mesa's acceptance that completes it. A party's own "Aceptar" acts at
+ * once.
+ */
+function asksFirst(party: AcceptanceDto, decision: Answer): boolean {
+  return decision === "rejected" || (!isOwn(party) && completes(party));
+}
+
+async function choose(party: AcceptanceDto, decision: Answer): Promise<void> {
+  if (!asksFirst(party, decision)) {
+    await answer(party, decision);
+    return;
+  }
+  confirming.value = { memberId: party.member.id, decision };
+  await nextTick();
+  confirmButton?.focus();
+}
+
+/** Records the answer the confirmation asked about. */
+async function confirmAnswer(party: AcceptanceDto): Promise<void> {
+  const asked = confirming.value;
+  if (asked?.memberId === party.member.id) await answer(party, asked.decision);
+}
+
+/** The transactional's own label and those of what it groups, as shown. */
+const ownCode = computed(
+  () => props.amendment.code ?? props.labelOf?.(props.amendment.id) ?? "",
+);
+const sourceCodes = computed(() =>
+  props.amendment.sourceIds
+    .map(
+      (id) =>
+        props.labelOf?.(id) ??
+        props.sources.find((source) => source.id === id)?.code ??
+        null,
+    )
+    .filter((code): code is string => Boolean(code))
+    .join(", "),
+);
+
+/** What the confirmation says before the answer is recorded. */
+function confirmText(party: AcceptanceDto, decision: Answer): string {
+  if (decision === "accepted") {
+    return t("session.acceptance.confirmComplete.description", {
+      code: ownCode.value,
+      codes: sourceCodes.value,
+    });
+  }
+  return isOwn(party)
+    ? t("amendment.acceptances.rejectConfirm")
+    : t("amendment.acceptances.recordRejectConfirm", {
+        member: party.member.acronym,
+      });
+}
+
+function confirmLabel(party: AcceptanceDto, decision: Answer): string {
+  if (decision === "accepted") {
+    return t("session.acceptance.confirmComplete.confirm");
+  }
+  return isOwn(party)
+    ? t("amendment.acceptances.reject")
+    : t("session.acceptance.confirmReject.confirm");
 }
 
 /** "autor principal de 12 · CEUM 4", or the role of an older row. */
@@ -129,18 +213,22 @@ const ANSWER_LOOK: Record<
 };
 
 /**
- * What the party answered, as a sentence: "CEUM la ha aceptado". Once it is
- * closed, nobody waits for a missing answer any more: "CEUM no llegó a
- * responder".
+ * What the party answered, as a sentence: "CEUM la ha aceptado", or "La
+ * Mesa, en nombre de CEUM, la ha aceptado" when the Mesa recorded it. Once
+ * it is closed, nobody waits for a missing answer any more: "CEUM no llegó
+ * a responder".
  */
 function answerLabel(party: AcceptanceDto): string {
-  const key =
-    party.decision === "pending" && !open.value
-      ? "notAnswered"
-      : party.decision;
-  return t(`amendment.acceptances.answers.${key}`, {
-    member: party.member.acronym,
-  });
+  const params = { member: party.member.acronym };
+  if (party.decision === "pending") {
+    return t(
+      `amendment.acceptances.answers.${open.value ? "pending" : "notAnswered"}`,
+      params,
+    );
+  }
+  return party.recordedBy === "mesa"
+    ? t(`amendment.acceptances.answersByMesa.${party.decision}`, params)
+    : t(`amendment.acceptances.answers.${party.decision}`, params);
 }
 
 function canAnswer(party: AcceptanceDto): boolean {
@@ -149,10 +237,7 @@ function canAnswer(party: AcceptanceDto): boolean {
   return props.amendment.can.moderate;
 }
 
-async function answer(
-  party: AcceptanceDto,
-  decision: AcceptanceBody["decision"],
-): Promise<void> {
+async function answer(party: AcceptanceDto, decision: Answer): Promise<void> {
   busy.value = `${party.member.id}:${decision}`;
   try {
     const body: AcceptanceBody = {
@@ -234,38 +319,30 @@ async function answer(
             {{ formatDateTime(party.decidedAt, { locale }) }}
           </span>
         </p>
-        <!-- Rejecting closes it for everyone: confirm first. -->
+        <!-- An answer that cannot be taken back: confirm first. -->
         <div
-          v-if="canAnswer(party) && confirming === party.member.id"
+          v-if="canAnswer(party) && confirming?.memberId === party.member.id"
           class="flex flex-col gap-2"
           role="group"
           :aria-labelledby="confirmId"
         >
           <p :id="confirmId" class="text-default text-sm">
-            {{
-              isOwn(party)
-                ? t("amendment.acceptances.rejectConfirm")
-                : t("amendment.acceptances.recordRejectConfirm", {
-                    member: party.member.acronym,
-                  })
-            }}
+            {{ confirmText(party, confirming.decision) }}
           </p>
           <div class="flex flex-wrap gap-2">
             <UButton
               :ref="rememberConfirmButton"
-              icon="i-lucide-x"
-              color="error"
-              size="sm"
-              :loading="busy === `${party.member.id}:rejected`"
-              :disabled="busy !== null"
-              :label="
-                isOwn(party)
-                  ? t('amendment.acceptances.reject')
-                  : t('amendment.acceptances.recordReject', {
-                      member: party.member.acronym,
-                    })
+              :icon="
+                confirming.decision === 'accepted'
+                  ? 'i-lucide-check'
+                  : 'i-lucide-x'
               "
-              @click="answer(party, 'rejected')"
+              :color="confirming.decision === 'accepted' ? 'primary' : 'error'"
+              size="sm"
+              :loading="busy === `${party.member.id}:${confirming.decision}`"
+              :disabled="busy !== null"
+              :label="confirmLabel(party, confirming.decision)"
+              @click="confirmAnswer(party)"
             />
             <UButton
               color="neutral"
@@ -273,13 +350,14 @@ async function answer(
               size="sm"
               :disabled="busy !== null"
               :label="t('amendment.actions.cancel')"
-              @click="cancelReject"
+              @click="cancelConfirm"
             />
           </div>
         </div>
         <div v-else-if="canAnswer(party)" class="flex flex-wrap gap-2">
           <!-- The viewer's own answer is the primary action. -->
           <UButton
+            :ref="(el) => rememberAnswerButton(party.member.id, 'accepted', el)"
             icon="i-lucide-check"
             size="sm"
             :color="isOwn(party) ? 'primary' : 'neutral'"
@@ -289,14 +367,14 @@ async function answer(
             :label="
               isOwn(party)
                 ? t('amendment.acceptances.accept')
-                : t('amendment.acceptances.recordAccept', {
+                : t('amendment.acceptances.recordAcceptFor', {
                     member: party.member.acronym,
                   })
             "
-            @click="answer(party, 'accepted')"
+            @click="choose(party, 'accepted')"
           />
           <UButton
-            :ref="(el) => rememberRejectButton(party.member.id, el)"
+            :ref="(el) => rememberAnswerButton(party.member.id, 'rejected', el)"
             icon="i-lucide-x"
             color="neutral"
             variant="outline"
@@ -305,11 +383,11 @@ async function answer(
             :label="
               isOwn(party)
                 ? t('amendment.acceptances.reject')
-                : t('amendment.acceptances.recordReject', {
+                : t('amendment.acceptances.recordRejectFor', {
                     member: party.member.acronym,
                   })
             "
-            @click="askReject(party)"
+            @click="choose(party, 'rejected')"
           />
         </div>
       </li>

@@ -197,6 +197,18 @@ export function reviewGroupSize(
 }
 
 /**
+ * Amendments of a group the Secretaría can act on now: those to validate
+ * and those validated but not published. Transactionals waiting for their
+ * authors are listed but not counted, as on the home page: nothing can be
+ * done with them yet.
+ */
+export function reviewGroupActionable(
+  group: Pick<ReviewDocumentGroup, "toValidate" | "toPublish">,
+): number {
+  return group.toValidate.length + group.toPublish.length;
+}
+
+/**
  * The queue's amendments by document, keeping the order in which documents
  * first appear in the server's response (the order the assembly will debate
  * them). Amendments that left the review states are dropped, and so are

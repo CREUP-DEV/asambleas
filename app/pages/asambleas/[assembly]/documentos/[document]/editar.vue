@@ -417,32 +417,24 @@ async function onDeleted(): Promise<void> {
       Leaving after a delete, publish or submit: a live refresh may already
       have dropped the document (404), so never flash the not-found state.
     -->
-    <div
-      v-if="leaving"
-      class="space-y-3"
-      aria-busy="true"
-      :aria-label="t(leavingLabel)"
-    >
-      <USkeleton class="h-8 w-2/3" />
-      <USkeleton class="h-64 w-full" />
+    <div v-if="leaving" class="space-y-3" role="status">
+      <span class="sr-only">{{ t(leavingLabel) }}</span>
+      <USkeleton aria-hidden="true" class="h-8 w-2/3" />
+      <USkeleton aria-hidden="true" class="h-64 w-full" />
     </div>
 
     <!-- Loading -->
-    <div
-      v-else-if="!document && pending"
-      class="space-y-4"
-      aria-busy="true"
-      :aria-label="t('document.authoring.loading')"
-    >
-      <USkeleton class="h-4 w-32" />
-      <USkeleton class="h-8 w-3/4 max-w-xl" />
+    <div v-else-if="!document && pending" class="space-y-4" role="status">
+      <span class="sr-only">{{ t("document.authoring.loading") }}</span>
+      <USkeleton aria-hidden="true" class="h-4 w-32" />
+      <USkeleton aria-hidden="true" class="h-8 w-3/4 max-w-xl" />
       <div class="flex gap-2">
-        <USkeleton class="h-6 w-20" />
-        <USkeleton class="h-6 w-28" />
+        <USkeleton aria-hidden="true" class="h-6 w-20" />
+        <USkeleton aria-hidden="true" class="h-6 w-28" />
       </div>
       <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]">
-        <USkeleton class="h-96 w-full" />
-        <USkeleton class="h-96 w-full" />
+        <USkeleton aria-hidden="true" class="h-96 w-full" />
+        <USkeleton aria-hidden="true" class="h-96 w-full" />
       </div>
     </div>
 
@@ -483,14 +475,10 @@ async function onDeleted(): Promise<void> {
     </CommonEmptyState>
 
     <!-- Redirecting anyone who can neither edit nor manage -->
-    <div
-      v-else-if="!canAccess || !assembly"
-      class="space-y-3"
-      aria-busy="true"
-      :aria-label="t('document.authoring.redirecting')"
-    >
-      <USkeleton class="h-8 w-2/3" />
-      <USkeleton class="h-64 w-full" />
+    <div v-else-if="!canAccess || !assembly" class="space-y-3" role="status">
+      <span class="sr-only">{{ t("document.authoring.redirecting") }}</span>
+      <USkeleton aria-hidden="true" class="h-8 w-2/3" />
+      <USkeleton aria-hidden="true" class="h-64 w-full" />
     </div>
 
     <template v-else>

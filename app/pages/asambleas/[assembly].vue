@@ -27,6 +27,34 @@ import { affectsReviewQueue } from "~/components/review/-live";
  * set `layout: false` to leave the app shell.
  */
 
+definePageMeta({
+  middleware: [
+    // On a full load the layout's sidebar renders on the server before this
+    // page, so the assembly is stored first for it to list the sections.
+    // Client navigations need nothing: the fetch below stores it before the
+    // new page shows. Errors are left to that fetch (404, load error).
+    async (to) => {
+      if (import.meta.client) return;
+      const param = to.params.assembly;
+      if (typeof param !== "string" || !param) return;
+      // CURRENT_ASSEMBLY_STATE_KEY, written out so that module stays out of
+      // the routes chunk.
+      const stored = useState<AssemblyDto | null>(
+        "current-assembly",
+        () => null,
+      );
+      if (stored.value?.slug === param || stored.value?.id === param) return;
+      try {
+        stored.value = await useRequestFetch()<AssemblyDto>(
+          `/api/assemblies/${encodeURIComponent(param)}`,
+        );
+      } catch {
+        // The page fetches it again and shows what went wrong.
+      }
+    },
+  ],
+});
+
 const route = useRoute();
 const router = useRouter();
 const { t, locale } = useI18n();
@@ -36,9 +64,29 @@ const api = useApi();
 
 const routeParam = () => String(route.params.assembly ?? "");
 
+const sharedAssembly = useState<AssemblyDto | null>(
+  CURRENT_ASSEMBLY_STATE_KEY,
+  () => null,
+);
+
 const { data, error, status, pending, refresh } = await useFetch<AssemblyDto>(
   () => `/api/assemblies/${encodeURIComponent(routeParam())}`,
-  { key: computed(() => `assembly-${routeParam()}`) },
+  {
+    key: computed(() => `assembly-${routeParam()}`),
+    // The first load on the server reuses what the route middleware stored.
+    // Refreshes (live events, retry, conflicts) always ask the server again.
+    getCachedData: (key, nuxtApp, ctx) => {
+      if (nuxtApp.isHydrating) return nuxtApp.payload.data[key];
+      if (import.meta.server && ctx.cause === "initial") {
+        const stored = sharedAssembly.value;
+        const param = routeParam();
+        if (stored && (stored.slug === param || stored.id === param)) {
+          return stored;
+        }
+      }
+      return undefined;
+    },
+  },
 );
 
 function notFound() {
@@ -215,6 +263,17 @@ const transitions = computed<TransitionAction[]>(() => {
 const forwardTransitions = computed(() =>
   transitions.value.filter((transition) => transition.forward),
 );
+
+/**
+ * Tinted, not solid, so they never compete with the section's own main
+ * action; closing the assembly is never the most prominent button.
+ */
+function transitionButtonStyle(transition: TransitionAction) {
+  return transition.key === "in_session_closed"
+    ? { color: "neutral" as const, variant: "outline" as const }
+    : { color: "primary" as const, variant: "soft" as const };
+}
+
 const backwardItems = computed(() =>
   transitions.value
     .filter((transition) => !transition.forward)
@@ -421,11 +480,28 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
       to: localePath(`/proyeccion/${encodeURIComponent(value.slug)}`),
       target: "_blank",
       trailingIcon: "i-lucide-external-link",
-      "aria-label": t("assembly.sections.projectionNewWindow"),
+      "aria-label": t("shell.assembly.projectionNewTab"),
     });
   }
   return items;
 });
+
+/**
+ * On phones the section bar scrolls: keep the open section in view. The ref
+ * is on the toolbar, since the menu has several root nodes and so no $el.
+ */
+const sectionToolbar = useTemplateRef<{ $el?: unknown }>("sectionToolbar");
+function revealActiveSection() {
+  void nextTick(() => {
+    const root = sectionToolbar.value?.$el;
+    if (!(root instanceof Element)) return;
+    root
+      .querySelector('[aria-current="page"]')
+      ?.scrollIntoView({ block: "nearest", inline: "nearest" });
+  });
+}
+onMounted(revealActiveSection);
+watch(() => route.path, revealActiveSection);
 </script>
 
 <template>
@@ -512,10 +588,13 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
 
         <template #right>
           <div v-if="transitions.length > 0" class="flex items-center gap-1.5">
+            <!-- Phones show these with their text in the body instead. -->
             <UButton
               v-for="transition in forwardTransitions"
               :key="transition.key"
+              v-bind="transitionButtonStyle(transition)"
               icon="i-lucide-arrow-right-circle"
+              class="hidden sm:inline-flex"
               :aria-label="t(`assembly.transitions.${transition.key}.label`)"
               @click="askTransition(transition)"
             >
@@ -543,12 +622,12 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
            them here only crowded the header. Phones keep them, since the
            sidebar is a drawer there. Child pages that size themselves to the
            viewport (session console, document workspace) assume this. -->
-      <UDashboardToolbar v-if="assembly" class="lg:hidden">
+      <UDashboardToolbar v-if="assembly" ref="sectionToolbar" class="lg:hidden">
         <UNavigationMenu
           :items="sectionItems"
           orientation="horizontal"
           highlight
-          class="-mx-1 w-max min-w-full"
+          class="-mx-1 w-max min-w-full shrink-0"
           :aria-label="t('assembly.sections.label')"
         />
       </UDashboardToolbar>
@@ -556,17 +635,18 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
 
     <template #body>
       <!-- Loading -->
-      <div
-        v-if="!assembly && pending"
-        class="space-y-4"
-        aria-busy="true"
-        :aria-label="t('assembly.hub.loading')"
-      >
-        <USkeleton class="h-5 w-72 max-w-full" />
+      <div v-if="!assembly && pending" class="space-y-4" role="status">
+        <span class="sr-only">{{ t("assembly.hub.loading") }}</span>
+        <USkeleton aria-hidden="true" class="h-5 w-72 max-w-full" />
         <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          <USkeleton v-for="index in 4" :key="index" class="h-20" />
+          <USkeleton
+            v-for="index in 4"
+            :key="index"
+            aria-hidden="true"
+            class="h-20"
+          />
         </div>
-        <USkeleton class="h-72 w-full" />
+        <USkeleton aria-hidden="true" class="h-72 w-full" />
       </div>
 
       <!-- Error (only when it never loaded: later failures keep the data) -->
@@ -639,6 +719,21 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
             </dd>
           </div>
         </dl>
+
+        <!-- The status actions on phones, where the header has no room for their text. -->
+        <div
+          v-if="forwardTransitions.length > 0"
+          class="flex flex-wrap gap-2 sm:hidden"
+        >
+          <UButton
+            v-for="transition in forwardTransitions"
+            :key="transition.key"
+            v-bind="transitionButtonStyle(transition)"
+            icon="i-lucide-arrow-right-circle"
+            :label="t(`assembly.transitions.${transition.key}.label`)"
+            @click="askTransition(transition)"
+          />
+        </div>
 
         <p class="sr-only" aria-live="polite" role="status">
           {{ statusMessage }}

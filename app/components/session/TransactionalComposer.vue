@@ -115,7 +115,7 @@ const sources = computed<AmendmentDto[]>(() =>
 const parties = computed(() => sessionTransactionalParties(sources.value));
 const partyItems = computed(() =>
   parties.value.map((party) => ({
-    label: `${party.member.acronym} · ${party.member.name}`,
+    label: memberLabel(party.member),
     value: party.member.id,
   })),
 );
@@ -398,7 +398,15 @@ function voteCreated(): void {
             value-key="value"
             multiple
             :placeholder="t('session.composer.sourcesPlaceholder')"
-            :search-input="{ placeholder: t('common.search') }"
+            :aria-label="
+              selectMenuLabel(
+                t('session.composer.sources'),
+                sourceItems,
+                sourceIds,
+                t('session.composer.sourcesPlaceholder'),
+              )
+            "
+            :search-input="labelledSearch(t('common.search'))"
             class="w-full"
             @update:model-value="onSourcesChange"
           />
@@ -444,7 +452,7 @@ function voteCreated(): void {
                 autofocus
               />
               <template #fallback>
-                <USkeleton class="h-48 w-full" />
+                <USkeleton aria-hidden="true" class="h-48 w-full" />
               </template>
             </ClientOnly>
             <UButton
@@ -496,6 +504,15 @@ function voteCreated(): void {
             value-key="value"
             multiple
             :placeholder="t('session.composer.authorsPlaceholder')"
+            :aria-label="
+              selectMenuLabel(
+                t('session.composer.authors'),
+                partyItems,
+                authorIds,
+                t('session.composer.authorsPlaceholder'),
+              )
+            "
+            :search-input="labelledSearch(t('common.search'))"
             class="w-full"
             @update:model-value="onAuthorsChange"
           />

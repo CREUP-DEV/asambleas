@@ -20,6 +20,7 @@ import {
   pendingReviewCount,
   removeReviewAmendments,
   removeReviewDocument,
+  reviewGroupActionable,
   reviewGroupSize,
   reviewQueueKey,
   selectAllReviewIds,
@@ -121,12 +122,19 @@ function rejectedTransactional(
     kind: "transactional",
     status: reviewState === null ? "rejected" : "submitted",
     acceptances: [
-      { member, role: "author", decision: "accepted", decidedAt: null },
+      {
+        member,
+        role: "author",
+        decision: "accepted",
+        decidedAt: null,
+        recordedBy: "party" as const,
+      },
       {
         member: other,
         role: "author",
         decision: "rejected",
         decidedAt: "2026-11-02T10:00:00.000Z",
+        recordedBy: "party" as const,
       },
     ],
   });
@@ -262,15 +270,29 @@ describe("missingAuthors", () => {
           role: "author",
           decision: "accepted",
           decidedAt: null,
+          recordedBy: "party" as const,
         },
-        { member, role: "author", decision: "pending", decidedAt: null },
+        {
+          member,
+          role: "author",
+          decision: "pending",
+          decidedAt: null,
+          recordedBy: "party" as const,
+        },
         {
           member: third,
           role: "author",
           decision: "pending",
           decidedAt: null,
+          recordedBy: "party" as const,
         },
-        { member, role: "author", decision: "pending", decidedAt: null },
+        {
+          member,
+          role: "author",
+          decision: "pending",
+          decidedAt: null,
+          recordedBy: "party" as const,
+        },
       ],
     });
     expect(missingAuthors(value).map((item) => item.acronym)).toEqual([
@@ -375,6 +397,22 @@ describe("groupReviewAmendments", () => {
     expect(group.toPublish).toEqual([]);
     expect(group.late.map((value) => value.id)).toEqual(["l1", "l2"]);
     expect(reviewGroupSize(group)).toBe(2);
+    expect(reviewGroupActionable(group)).toBe(1);
+  });
+
+  it("counts as actionable only what can be validated or published now", () => {
+    const groups = groupReviewAmendments([
+      entry(docA, amendment("t", "pending_authors", { kind: "transactional" })),
+    ]);
+    expect(reviewGroupSize(groups[0]!)).toBe(1);
+    expect(reviewGroupActionable(groups[0]!)).toBe(0);
+    const [mixed] = groupReviewAmendments([
+      entry(docB, amendment("v", "pending_validation")),
+      entry(docB, amendment("p", "validated")),
+      entry(docB, amendment("t", "pending_authors", { kind: "transactional" })),
+      entry(docB, late("l")),
+    ]);
+    expect(reviewGroupActionable(mixed!)).toBe(2);
   });
 
   it("leaves out a transactional one of its authors rejected", () => {

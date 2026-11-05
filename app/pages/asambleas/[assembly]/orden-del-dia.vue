@@ -545,13 +545,14 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
     />
 
     <!-- Loading -->
-    <div
-      v-if="pending && !agenda"
-      class="space-y-3"
-      aria-busy="true"
-      :aria-label="t('agenda.loading')"
-    >
-      <USkeleton v-for="index in 4" :key="index" class="h-24 w-full" />
+    <div v-if="pending && !agenda" class="space-y-3" role="status">
+      <span class="sr-only">{{ t("agenda.loading") }}</span>
+      <USkeleton
+        v-for="index in 4"
+        :key="index"
+        aria-hidden="true"
+        class="h-24 w-full"
+      />
     </div>
 
     <!-- Error -->

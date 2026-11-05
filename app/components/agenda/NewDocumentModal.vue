@@ -337,7 +337,7 @@ const memberItems = computed(() => [
   ...members.value
     .filter((candidate) => candidate.active || candidate.id === state.proponent)
     .map((candidate) => ({
-      label: `${candidate.acronym} · ${candidate.name}`,
+      label: memberLabel(candidate),
       value: candidate.id,
     })),
 ]);
@@ -641,9 +641,16 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
               :items="memberItems"
               value-key="value"
               :loading="membersLoading"
-              :search-input="{
-                placeholder: t('agenda.newDocument.searchMember'),
-              }"
+              :aria-label="
+                selectMenuLabel(
+                  t('agenda.newDocument.proponent'),
+                  memberItems,
+                  state.proponent,
+                )
+              "
+              :search-input="
+                labelledSearch(t('agenda.newDocument.searchMember'))
+              "
               class="w-full"
             />
           </UFormField>
@@ -661,7 +668,11 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
             "
             name="dueAt"
           >
-            <DocumentDateTimeInput v-model="state.dueAt" name="dueAt" />
+            <DocumentDateTimeInput
+              v-model="state.dueAt"
+              name="dueAt"
+              :aria-label="t('agenda.newDocument.dueAt')"
+            />
           </UFormField>
         </div>
 

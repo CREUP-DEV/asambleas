@@ -97,8 +97,12 @@ function title(row: LiveAmendmentRow): string {
                 class="text-highlighted flex flex-wrap items-center gap-x-2 font-semibold"
               >
                 <span>{{ title(row) }}</span>
+                <!--
+                  Only while it is undecided: once voted or replaced it stays
+                  highlighted, and its badge says where it stands.
+                -->
                 <span
-                  v-if="row.current"
+                  v-if="row.current && row.state === 'debating'"
                   class="text-primary text-xs font-semibold uppercase"
                 >
                   {{ t("liveView.amendments.inDebate") }}

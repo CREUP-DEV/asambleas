@@ -450,10 +450,15 @@ onBeforeRouteLeave(() => {
           (loadingPermissions && Object.keys(saved).length === 0)
         "
         class="space-y-2"
-        :aria-busy="true"
-        :aria-label="t('admin.loading')"
+        role="status"
       >
-        <USkeleton v-for="n in 8" :key="n" class="h-10 w-full" />
+        <span class="sr-only">{{ t("admin.loading") }}</span>
+        <USkeleton
+          v-for="n in 8"
+          :key="n"
+          aria-hidden="true"
+          class="h-10 w-full"
+        />
       </div>
 
       <CommonEmptyState
@@ -521,7 +526,6 @@ onBeforeRouteLeave(() => {
                     aria-hidden="true"
                   />
                 </span>
-                <code class="text-dimmed text-xs">{{ key }}</code>
               </th>
               <td
                 v-for="role in editableRoles"

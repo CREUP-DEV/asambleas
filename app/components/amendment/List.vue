@@ -10,7 +10,8 @@ import type {
 /**
  * Amendments in text order, grouped by the passage they act on: totality
  * amendments first, then each overlap cluster ("Mismo pasaje · 3 enmiendas")
- * or single amendment where it falls in the text. Whoever can propose a
+ * or single amendment where it falls in the text. A cluster is a named
+ * group, not a landmark: two clusters may share a name. Whoever can propose a
  * transactional gets, on a group with two or more amendments that can be
  * combined, a quiet "Combinar en una transaccional" (`transact`).
  */
@@ -24,8 +25,18 @@ const props = withDefaults(
     canTransact?: boolean;
     /** Status of any amendment of the document, for transactionals. */
     statusOf?: (id: string) => AmendmentStatus | undefined;
+    /** Every amendment of the document, for transactional links. */
+    byId?: ReadonlyMap<string, AmendmentDto>;
+    /** Acronym of the document's main presenter, who answers them. */
+    presenter?: string | null;
   }>(),
-  { selectedId: null, canTransact: false, statusOf: undefined },
+  {
+    selectedId: null,
+    canTransact: false,
+    statusOf: undefined,
+    byId: undefined,
+    presenter: null,
+  },
 );
 
 const emit = defineEmits<{
@@ -62,8 +73,9 @@ function groupLabel(group: AmendmentGroup<AmendmentDto>): string {
 <template>
   <ul class="flex flex-col gap-3" :aria-label="t('amendment.list.label')">
     <li v-for="group in groups" :key="group.key">
-      <section
+      <div
         v-if="group.kind !== 'single'"
+        role="group"
         class="rounded-xl border p-2"
         :class="
           group.kind === 'overlap'
@@ -108,11 +120,13 @@ function groupLabel(group: AmendmentGroup<AmendmentDto>): string {
               :relations="relationsOf(amendment.id)"
               :selected="selectedId === amendment.id"
               :status-of="statusOf"
+              :by-id="byId"
+              :presenter="presenter"
               @select="emit('select', $event)"
             />
           </li>
         </ul>
-      </section>
+      </div>
       <AmendmentCard
         v-else
         :amendment="group.amendments[0]!"
@@ -121,6 +135,8 @@ function groupLabel(group: AmendmentGroup<AmendmentDto>): string {
         :relations="relationsOf(group.amendments[0]!.id)"
         :selected="selectedId === group.amendments[0]!.id"
         :status-of="statusOf"
+        :by-id="byId"
+        :presenter="presenter"
         @select="emit('select', $event)"
       />
     </li>

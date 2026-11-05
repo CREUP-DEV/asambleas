@@ -202,10 +202,8 @@ function memberOptionsFor(user: UserRow) {
       .filter((item) => item.active || item.id === user.memberId)
       .map((item) => ({
         label: item.active
-          ? `${item.acronym} · ${item.name}`
-          : t("admin.users.inactiveMember", {
-              member: `${item.acronym} · ${item.name}`,
-            }),
+          ? memberLabel(item)
+          : t("admin.users.inactiveMember", { member: memberLabel(item) }),
         value: item.id,
       })),
   ];
@@ -361,7 +359,7 @@ function selectMember(user: UserRow, value: unknown): void {
     userId: user.id,
     userName: user.name || user.email,
     memberId,
-    memberName: member ? `${member.acronym} · ${member.name}` : "",
+    memberName: member ? memberLabel(member) : "",
   };
 }
 
@@ -690,7 +688,7 @@ function goToPage(next: number): void {
         :loading="loading"
         :aria-label="t('admin.users.title')"
         class="border-default rounded-lg border"
-        :ui="{ td: 'align-middle' }"
+        :ui="{ td: 'align-middle whitespace-normal' }"
       >
         <template #name-cell="{ row }">
           <div class="flex min-w-48 items-center gap-3">
@@ -781,8 +779,14 @@ function goToPage(next: number): void {
               />
               <span>{{ rowLockReason(row.original) }}</span>
             </p>
-            <!-- Disabled on one's own row: the note above says why. -->
+            <!-- Disabled on one's own row: the note above says why. An Admin
+                 already has every permission, so it shows only to clear
+                 grants stored before they became Admin. -->
             <UButton
+              v-if="
+                !isAdminRoleName(row.original.role?.name) ||
+                (row.original.extraPermissions?.length ?? 0) > 0
+              "
               color="neutral"
               variant="link"
               size="xs"
@@ -819,7 +823,10 @@ function goToPage(next: number): void {
         </template>
 
         <template #member-cell="{ row }">
-          <div class="min-w-40 space-y-1" :class="editing ? 'w-56' : ''">
+          <div
+            class="max-w-64 min-w-40 space-y-1"
+            :class="editing ? 'w-56' : ''"
+          >
             <template v-if="!editing">
               <div
                 v-if="row.original.member"
@@ -852,7 +859,7 @@ function goToPage(next: number): void {
                 linkingUserId !== null || ownAccountLocked(row.original)
               "
               :placeholder="t('admin.users.chooseMember')"
-              :search-input="{ placeholder: t('admin.users.searchMember') }"
+              :search-input="labelledSearch(t('admin.users.searchMember'))"
               :aria-label="
                 t('admin.users.memberFor', {
                   user: row.original.name || row.original.email,
@@ -890,7 +897,10 @@ function goToPage(next: number): void {
         </template>
 
         <template #lastRoleSyncAt-cell="{ row }">
-          <span v-if="row.original.lastRoleSyncAt" class="text-muted text-sm">
+          <span
+            v-if="row.original.lastRoleSyncAt"
+            class="text-muted text-sm whitespace-nowrap"
+          >
             {{ formatDay(row.original.lastRoleSyncAt) }}
           </span>
           <span v-else class="text-dimmed">{{
@@ -899,7 +909,7 @@ function goToPage(next: number): void {
         </template>
 
         <template #createdAt-cell="{ row }">
-          <span class="text-muted text-sm">
+          <span class="text-muted text-sm whitespace-nowrap">
             {{ formatDay(row.original.createdAt) }}
           </span>
         </template>
@@ -1023,10 +1033,17 @@ function goToPage(next: number): void {
             <div
               v-else-if="targetRoleState === 'loading'"
               class="space-y-2"
-              aria-busy="true"
-              :aria-label="t('admin.users.permissions.loading')"
+              role="status"
             >
-              <USkeleton v-for="n in 4" :key="n" class="h-8 w-full" />
+              <span class="sr-only">{{
+                t("admin.users.permissions.loading")
+              }}</span>
+              <USkeleton
+                v-for="n in 4"
+                :key="n"
+                aria-hidden="true"
+                class="h-8 w-full"
+              />
             </div>
 
             <UAlert

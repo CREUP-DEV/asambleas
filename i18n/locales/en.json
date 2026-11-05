@@ -38,7 +38,7 @@
         "submitted": "Submitted",
         "inadmissible": "Not admitted",
         "withdrawn": "Withdrawn",
-        "transacted": "Merged into compromise",
+        "transacted": "Merged into a transactional",
         "lapsed": "Lapsed",
         "approved": "Approved",
         "rejected": "Rejected"
@@ -52,7 +52,7 @@
         "pending": "No position yet",
         "accept": "Accepts",
         "reject": "Rejects",
-        "transact": "Proposes a compromise"
+        "transact": "Proposes a transactional"
       },
       "vote": {
         "approved": "Carried",
@@ -91,7 +91,10 @@
       "totalityTitle": "Amendment to the whole text",
       "totalityNote": "This amendment proposes no specific changes to the text: it asks for the whole text to be sent back.",
       "previewUnavailable": "The changes cannot be shown",
-      "previewUnavailableDescription": "The operations of this amendment no longer match the base text of the document."
+      "previewUnavailableDescription": "The operations of this amendment no longer match the base text of the document.",
+      "inserted": "Added:",
+      "removed": "Removed:",
+      "fragmentFrom": "{text} (from amendment {label})"
     },
     "editor": {
       "bold": "Bold",
@@ -142,8 +145,7 @@
     "closeSidebar": "Close sidebar",
     "userAvatar": "{user}'s avatar",
     "userMenu": "Open user menu",
-    "preferences": "Accessibility preferences",
-    "diffModeLabel": "Diff display mode",
+    "diffModeLabel": "How changes are marked",
     "diffMode": {
       "color": "Color (green/red)",
       "marks": "Marks (bold/strikethrough)"
@@ -160,11 +162,7 @@
   },
   "language": {
     "toggle": "Change language",
-    "openMenu": "Open language selector",
-    "locales": {
-      "es": "Spanish",
-      "en": "English"
-    }
+    "openMenu": "Open language selector"
   },
   "roles": {
     "admin": "Administrator",
@@ -295,10 +293,9 @@
       "session": "Session",
       "projection": "Projection",
       "settings": "Settings",
-      "projectionNewWindow": "Projection (opens in a new window)",
       "validation": "Validation",
       "tracking": "Tracking",
-      "validationPending": "Validation: {count} pending | Validation: {count} pending",
+      "validationPending": "Validation: {count} to validate | Validation: {count} to validate",
       "live": "Live",
       "liveNow": "Now",
       "liveInSession": "Live: the session is under way"
@@ -317,10 +314,10 @@
         "done": "The assembly is a draft again"
       },
       "convened_in_session": {
-        "label": "Open session",
-        "title": "Open the session?",
+        "label": "Open the assembly session",
+        "title": "Open the assembly session?",
         "description": "The {label} will be in session: the Mesa console and the live projection become active.",
-        "done": "Session opened"
+        "done": "Assembly session opened"
       },
       "in_session_convened": {
         "label": "Suspend session",
@@ -335,10 +332,10 @@
         "done": "Assembly closed"
       },
       "closed_in_session": {
-        "label": "Reopen session",
-        "title": "Reopen the session?",
+        "label": "Reopen the assembly session",
+        "title": "Reopen the assembly session?",
         "description": "The {label} will be in session again.",
-        "done": "Session reopened"
+        "done": "Assembly session reopened"
       }
     },
     "overview": {
@@ -355,8 +352,6 @@
       "calendarTitle": "Calendar",
       "openAgenda": "See the full agenda",
       "editCalendar": "Edit the calendar",
-      "documentsShort": "Documents:",
-      "amendmentsShort": "Amendments:",
       "review": {
         "title": "Waiting for review"
       },
@@ -367,7 +362,9 @@
         "all": "See your documents and amendments on Home",
         "empty": "You have nothing in this assembly yet. What you present and anything the Secretariat asks of you will show up here."
       },
-      "loading": "Loading the assembly figures"
+      "loading": "Loading the assembly figures",
+      "documentCount": "No documents | 1 document | {count} documents",
+      "amendmentCount": "No amendments | 1 amendment | {count} amendments"
     },
     "settingsPage": {
       "title": "Settings",
@@ -543,7 +540,7 @@
       "proponent": "Presented by",
       "amendmentsOpen": "Amendments open",
       "amendmentsClose": "Amendments close",
-      "amendmentsClosed": "Amendment period closed"
+      "amendmentsClosed": "Amendment window closed"
     },
     "stats": {
       "words": "no words | {count} word | {count} words",
@@ -575,10 +572,10 @@
       "save": "Save text",
       "saveShortcut": "Save the text",
       "saving": "Saving...",
-      "savedAt": "Saved at {time}",
+      "savedAt": "Text saved at {time}",
       "unsaved": "Unsaved changes",
       "notSaved": "Your changes have not been saved",
-      "upToDate": "All changes saved",
+      "upToDate": "Text saved",
       "saveError": "The text could not be saved",
       "conflictTitle": "Someone else saved the text first",
       "conflictDescription": "The saved version has been loaded. Your version is kept so you can recover it.",
@@ -715,7 +712,7 @@
       "more": "More options",
       "agendaItemHelp": "Change it only if the document belongs under another item.",
       "dueAt": "Internal deadline",
-      "dueAtDescription": "When the presenter has to send it to the Secretariat by.",
+      "dueAtDescription": "The date by which the presenter has to send it to the Secretariat.",
       "advanced": "Advanced options",
       "invalid": "Check the document details"
     },
@@ -838,7 +835,10 @@
         "preparingOverdue": "Draft: the Secretariat expected it by {date}. Send it as soon as you can.",
         "correction": "The Secretariat asks for a correction: {note}",
         "correctionNoNote": "The Secretariat asks for a correction. Fix it and send it again.",
-        "submitted": "Sent to the Secretariat: it will review it before publishing it."
+        "submitted": "Sent to the Secretariat: it will review it before publishing it.",
+        "expectedFile": "The PDF has not been uploaded yet. Upload it and send it to the Secretariat.",
+        "expectedFileDue": "The Secretariat expects the PDF by {date}.",
+        "expectedFileOverdue": "The Secretariat expected the PDF by {date}. Upload it and send it as soon as you can."
       },
       "manager": {
         "expected": "It has no text yet.",
@@ -847,9 +847,12 @@
         "preparing": "In preparation: not sent to the Secretariat yet.",
         "preparingDue": "In preparation. Deadline: {date}.",
         "preparingOverdue": "In preparation. The deadline ({date}) has passed.",
-        "correction": "A correction was requested: {note}",
-        "correctionNoNote": "A correction was requested. Waiting for it to be sent again.",
-        "submitted": "Sent to the Secretariat: validate and publish it, or ask for a correction."
+        "correction": "Now with the presenter: they have to fix it and send it again. Note: {note}",
+        "correctionNoNote": "Now with the presenter: they have to fix it and send it again.",
+        "submitted": "Sent to the Secretariat: validate and publish it, or ask for a correction.",
+        "expectedFile": "The PDF has not been uploaded yet.",
+        "expectedFileDue": "Waiting for the PDF. Deadline: {date}.",
+        "expectedFileOverdue": "Waiting for the PDF. The deadline ({date}) has passed."
       },
       "other": {
         "submitted": "Sent to the Secretariat: waiting for validation."
@@ -862,7 +865,8 @@
       "action": {
         "prepare": "Prepare the document",
         "continue": "Keep working on it",
-        "fix": "Fix and send again"
+        "fix": "Fix and send again",
+        "upload": "Upload the PDF"
       },
       "banner": {
         "correctionTitle": {
@@ -1113,7 +1117,13 @@
       "global": "Whole text",
       "sources": "Combines {list}",
       "transactedIn": "Merged into {list}",
-      "mainAuthor": "main"
+      "mainAuthor": "main",
+      "proposedIn": "In proposed transactional {list} | In proposed transactionals {list}",
+      "position": {
+        "accept": "{member} accepts it",
+        "reject": "{member} rejects it",
+        "transact": "{member} proposes a transactional"
+      }
     },
     "list": {
       "label": "Amendments in text order",
@@ -1199,12 +1209,15 @@
       "transactOverlaps": "Combine them into a transactional amendment",
       "mainAuthor": "main author",
       "approvedByPresenter": "Approved without a vote: the document's presenter accepted it",
-      "transactionalsOver": "Transactionals proposed over this amendment:",
+      "transactionalsOver": "Transactionals over this amendment:",
       "rejectedByAuthors": "Closed because {members} rejected it",
       "closedOnItsOwn": {
         "source_replaced": "Closed because another transactional replaced {source}",
         "source_decided": "Closed because {source} is already settled"
-      }
+      },
+      "replacedBy": "Transactional amendment {list} replaces it. | Transactional amendments {list} replace it.",
+      "replacedByUnknown": "A transactional amendment replaces it.",
+      "approvedByMesa": "Approved without a vote: the Mesa accepted it on behalf of the document's presenter"
     },
     "position": {
       "title": "Answer from the document's presenter",
@@ -1283,7 +1296,13 @@
         "notAnswered": "{member} did not answer before it closed"
       },
       "rejectConfirm": "If you reject it, it is closed for everyone and the original amendments carry on. This cannot be undone.",
-      "recordRejectConfirm": "If you record that {member} rejects it, it is closed for everyone and the original amendments carry on. This cannot be undone."
+      "recordRejectConfirm": "If you record that {member} rejects it, it is closed for everyone and the original amendments carry on. This cannot be undone.",
+      "recordAcceptFor": "Record that {member} accepts it",
+      "recordRejectFor": "Record that {member} rejects it",
+      "answersByMesa": {
+        "accepted": "The Mesa accepted it on behalf of {member}",
+        "rejected": "The Mesa rejected it on behalf of {member}"
+      }
     },
     "relations": {
       "title": "Relations with other amendments",
@@ -1360,7 +1379,9 @@
       "closedBySources": "Closed: one of the amendments it groups is already settled",
       "closedBySourcesDetail": "Settled amendment: {source}",
       "lapsedBySources": "Transactional {label} already replaced the same amendments",
-      "lapsedBySourcesUnknown": "Another transactional already replaced the same amendments"
+      "lapsedBySourcesUnknown": "Another transactional already replaced the same amendments",
+      "replacedBy": "Replaced by {label}",
+      "validatedPublished": "Published at the same time: the whole assembly can see it"
     },
     "vote": {
       "counts": "Count",
@@ -1520,7 +1541,8 @@
     "lateState": {
       "awaiting": "Waiting for the assembly to decide whether to consider it",
       "awaitingSentence": "It is waiting for the assembly to decide whether to consider it. Until then it is neither debated nor voted on."
-    }
+    },
+    "lateAdmitted": "Late · admitted"
   },
   "admin": {
     "title": "Administration",
@@ -1537,7 +1559,7 @@
       "lastSync": "Last sync",
       "registeredAt": "Joined",
       "user": "User",
-      "description": "Accounts that have signed in, their platform role and the member they act for. The Associate, CEA and Guest roles are synced from the intranet on every sign-in, and accounts with intranet initials are linked to their member automatically. Link the rest by hand so they can present documents and amendments on that member's behalf. If someone needs something their role does not give, you can grant extra permissions to that person only.",
+      "description": "Accounts that have signed in, with their role and the member they act for. Most of it comes from the intranet at sign-in.",
       "noRole": "No role",
       "confirmRoleChange": "Confirm role change",
       "confirmRoleChangeMessage": "Change the role of {user} to {role}?",
@@ -1561,7 +1583,7 @@
       "memberLinkFailed": "Could not change the link",
       "edit": "Edit roles, links and permissions",
       "editDone": "Done",
-      "editingHelp": "Choose each account's role and member and, if needed, its extra permissions. Every change is confirmed before it is saved.",
+      "editingHelp": "The Associate, CEA and Guest roles are read again from the intranet at every sign-in; other roles stay as you set them. Every change is confirmed before it is saved.",
       "editingOn": "You can change roles, links and extra permissions now.",
       "editingOff": "You have finished editing.",
       "permissions": {
@@ -1882,7 +1904,7 @@
       "settings": "Settings",
       "validation": "Validation",
       "tracking": "Tracking",
-      "validationPending": "Validation: {count} pending | Validation: {count} pending",
+      "validationPending": "Validation: {count} to validate | Validation: {count} to validate",
       "live": "Live",
       "liveNow": "Now",
       "liveInSession": "Live: the session is under way"
@@ -1924,7 +1946,8 @@
       "sectorial": "Sectoral body",
       "executive": "Executive area",
       "other": "Other"
-    }
+    },
+    "toastRegion": "Notifications (F8)"
   },
   "home": {
     "title": "Home",
@@ -2130,23 +2153,13 @@
       "in_session": "In session",
       "closed": "Closed"
     },
-    "milestones": {
-      "convocation": "Notice of meeting",
-      "agenda_requests_close": "Agenda proposals close",
-      "agenda_final": "Final agenda",
-      "documents_close": "Document submissions close",
-      "documents_publish": "Documents published",
-      "amendments_open": "Amendments open",
-      "amendments_close": "Amendments close",
-      "candidacies_close": "Candidacies close"
-    },
     "card": {
       "dates": "Dates",
       "location": "Venue",
       "documentsLabel": "Documents",
       "documents": "No documents | {count} document | {count} documents",
       "agendaFinal": "Final agenda",
-      "nextMilestone": "Next milestone"
+      "nextMilestone": "Next deadline"
     },
     "create": {
       "title": "New assembly",
@@ -2156,7 +2169,7 @@
       "suggesting": "Looking up the next number…",
       "start": "Start",
       "end": "End",
-      "timeZoneHelp": "Times in Spanish peninsular time (Europe/Madrid).",
+      "timeZoneHelp": "Times in Spanish mainland time.",
       "location": "Venue",
       "locationPlaceholder": "City and venue",
       "defaultCalendar": "Fill in the regulatory calendar",
@@ -2318,8 +2331,8 @@
       "draftCreatedDescription": "Now add the text. It will not be published until the Secretariat validates it.",
       "dueAt": "Internal deadline",
       "optional": "Optional",
-      "dueAtHelp": "When the presenter has to send it to the Secretariat by.",
-      "dueAtHelpMember": "When {member} has to send it by. They will see it on their home page. | When {member} have to send it by. They will see it on their home pages.",
+      "dueAtHelp": "The date by which the presenter has to send it to the Secretariat.",
+      "dueAtHelpMember": "The date by which {member} has to send it. They will see it on their home page. | The date by which {member} have to send it. They will see it on their home pages.",
       "advanced": "Advanced options",
       "expectedFrom": "{member} will see it on their home page to prepare it. | {member} will see it on their home pages to prepare it.",
       "openDocument": "Open",
@@ -2354,7 +2367,7 @@
     "intro": "Deadlines of the assembly. All times are Spanish mainland time.",
     "applyDefaults": "Apply default deadlines",
     "milestonesTitle": "Deadlines",
-    "timeZoneHint": "Spanish mainland time (Europe/Madrid)",
+    "timeZoneHint": "Spanish mainland time",
     "clear": "Remove date",
     "clearMilestone": "Remove the date of {milestone}",
     "noteLabel": "Note for {milestone}",
@@ -2370,7 +2383,7 @@
     "defaultsApplied": "There are no default deadlines for this assembly type | 1 default deadline applied. Save to confirm it. | {count} default deadlines applied. Save to confirm them.",
     "defaultsConfirmTitle": "Apply the default deadlines?",
     "defaultsConfirmDescription": "The dates you have already set will be replaced by the ones the regulations set for this assembly type. Nothing is saved until you press Save.",
-    "agendaFinal": "Final agenda",
+    "agendaFinal": "Mark the agenda as final",
     "agendaFinalOn": "Main items are locked: they cannot be created, moved or deleted.",
     "agendaFinalOff": "The agenda is provisional and can be fully reorganised.",
     "agendaFinalizedAt": "Final since {date}",
@@ -2404,7 +2417,7 @@
       "agenda_requests_close": "Last moment to ask for an item to be added to the agenda.",
       "agenda_final": "Date the agenda becomes final.",
       "documents_close": "Last moment for members to submit resolutions, internal motions and other documents.",
-      "documents_publish": "Date the documents to be debated are published.",
+      "documents_publish": "Date the documents that are ready are published. Those submitted later are published when the Secretariat validates them.",
       "amendments_open": "From here on, amendments to the published documents can be submitted.",
       "amendments_close": "Amendments submitted after this are late and need an admission decision.",
       "candidacies_close": "Last moment to stand for the posts being elected."
@@ -2451,7 +2464,7 @@
       "agenda_requests_close": "Members can ask the Secretariat to add items to the agenda until this date.",
       "agenda_final": "The Secretariat publishes the final agenda. From then on only the assembly can change its items.",
       "documents_close": "Members submit their resolutions, internal motions and other documents on the platform, under the matching agenda item.",
-      "documents_publish": "Every document to be debated is published on the platform.",
+      "documents_publish": "The documents that are ready to be debated are published on the platform. Those submitted later are published when the Secretariat validates them.",
       "amendments_open": "The amendment window opens. Amendments are submitted on the platform by editing the document text directly, with a justification.",
       "amendments_close": "The amendment window closes. Later amendments are late and the Mesa decides whether to admit them.",
       "candidacies_close": "Last day to stand for the posts elected at this assembly."
@@ -2469,7 +2482,7 @@
     "editDraft": "Edit draft",
     "consolidatedPage": "Consolidated text",
     "detailDescription": "Amendment details",
-    "includeAccepted": "Include those the proponent accepts",
+    "includeAccepted": "Include those the document's presenter accepts",
     "newMenu": {
       "global": "Change a word throughout the document",
       "return": "Send the document back",
@@ -2535,7 +2548,8 @@
       "openPdf": "Open the PDF",
       "unpublished": "Unpublished document",
       "unpublishedDescription": "Amendments can be submitted once the Secretariat publishes it.",
-      "empty": "The document has no text yet"
+      "empty": "The document has no text yet",
+      "filePending": "This document will be provided as a PDF and cannot be amended on the platform. The PDF has not been uploaded yet."
     },
     "window": {
       "open": "Amendment window open",
@@ -2545,10 +2559,9 @@
       "upcoming": "The amendment window is not open yet",
       "opens": "Opens",
       "closed": "Amendment window closed",
-      "closedLateTitle": "Amendment window closed: late submissions",
       "closedLate": "If you present a new amendment now, it will be late and the Mesa will decide whether to admit it.",
       "closedSince": "Closed",
-      "voted": "The text has been voted: it takes no more amendments."
+      "voted": "The text has been voted on: it takes no more amendments."
     },
     "consolidatedView": {
       "back": "Back to the workspace",
@@ -2556,7 +2569,7 @@
       "legend": "Click an underlined fragment to see the amendment it comes from.",
       "storedOnly": "The final vote used its own application order: the stored text is shown, without provenance.",
       "finalVote": "Final vote",
-      "provisional": "Provisional text: the document has not been voted yet",
+      "provisional": "Provisional text: the document has not been voted on yet",
       "provisionalDescription": "It includes the amendments approved so far.",
       "pending": "It includes the amendments approved so far. One amendment is still to be decided. | It includes the amendments approved so far. {count} amendments are still to be decided.",
       "unpublished": "No consolidated text yet",
@@ -2564,7 +2577,6 @@
       "openWorkspace": "Open in the workspace",
       "annex": "Annex of amendments",
       "annexDescription": "No amendment has been decided yet. | One decided amendment, grouped by outcome. | {count} decided amendments, grouped by outcome.",
-      "none": "None.",
       "showChanges": "Show changes",
       "hideChanges": "Hide changes",
       "outcomes": {
@@ -2585,8 +2597,7 @@
     },
     "editRecord": "Edit document record",
     "cta": {
-      "present": "Present an amendment",
-      "hint": "Select the paragraph you want to change."
+      "present": "Present an amendment"
     },
     "more": {
       "label": "More",
@@ -2594,7 +2605,7 @@
       "transactional": "Propose a transactional amendment",
       "answers": "See the answers"
     },
-    "includeAcceptedOn": "With those the proponent accepts",
+    "includeAcceptedOn": "With those the document's presenter accepts",
     "corrections": {
       "title": "The Secretariat asks you to fix one amendment | The Secretariat asks you to fix {count} amendments",
       "description": "Read its note, fix it and send it again. | Read their notes, fix them and send them again.",
@@ -2621,7 +2632,7 @@
     "notInSession": "The assembly is not in session",
     "notInSessionHint": "You can prepare the debate. Open the session from the assembly header before voting.",
     "toolbar": {
-      "live": "Live",
+      "live": "Connected",
       "polling": "Updating every few seconds",
       "offline": "Offline",
       "now": "Under debate:",
@@ -2634,7 +2645,7 @@
       "shortcuts": "Shortcuts",
       "refresh": "Reload data",
       "projection": "Open projection",
-      "projectionNewTab": "Open projection (new tab)",
+      "projectionNewTab": "Open the projection (opens in a new tab)",
       "connecting": "Connecting…"
     },
     "shortcuts": {
@@ -2660,7 +2671,8 @@
       "debateDocumentNamed": "Put {title} under debate",
       "amendments": "No amendments | 1 amendment | {count} amendments",
       "final": "Final text approved",
-      "inDebate": "Under debate"
+      "inDebate": "Under debate",
+      "debateItemShort": "Put the item under debate"
     },
     "queue": {
       "title": "Amendments",
@@ -2669,7 +2681,7 @@
       "error": "The amendments could not be loaded",
       "counts": "{total} amendments · {undecided} undecided · {approved} approved",
       "hideDecided": "Hide decided",
-      "assentAccepted": "Approve accepted ones by assent ({count})",
+      "assentAccepted": "Approve presenter-accepted amendments by assent ({count})",
       "assentHint": "Approves at once the amendments the document's presenter accepts, if nobody objects.",
       "notAmendable": "This document does not take amendments",
       "notAmendableHint": "You can go straight to the final vote.",
@@ -2719,7 +2731,7 @@
       "correctionNote": "Note:",
       "notPublic": "Not public yet",
       "notPublicHint": "Only its authors, the Secretariat and the Mesa can see it.",
-      "publishFirst": "The Secretaría has to make it public before it is decided.",
+      "publishFirst": "The Secretariat has to make it public before it is decided.",
       "authorsBadge": "Awaiting authors",
       "awaitingAuthors": "A transactional proposed by a member: the main authors of {codes} accept it first, then the Secretariat validates it. Until then it cannot be debated.",
       "incorporated": "In the text without a vote: the document's presenter accepted it. If they change their answer, it becomes undecided again.",
@@ -2727,15 +2739,15 @@
       "replaces": "Replaces {codes}"
     },
     "actions": {
-      "debate": "Debate",
+      "debate": "Put under debate",
       "undebate": "Stop debating",
       "assent": "Assent",
       "assentHint": "Approve by assent",
       "vote": "Vote",
       "voteHint": "Record the vote",
       "formal": "Formal correction",
-      "withdraw": "Withdrawn",
-      "lapse": "Lapses",
+      "withdraw": "Mark as withdrawn",
+      "lapse": "Mark as lapsed",
       "reopen": "Reopen",
       "relate": "Link",
       "transact": "Transact",
@@ -3027,7 +3039,7 @@
       "title": "{code} is not public yet",
       "description": "Only its authors, the Secretariat and the Mesa can see it. If you put it under debate, it will show on the projection and the whole room will see it.",
       "publishAndDebate": "Make it public and debate it",
-      "needsPublish": "{code} is not public yet: the Secretaría has to make it public before it is debated.",
+      "needsPublish": "{code} is not public yet: the Secretariat has to make it public before it is debated.",
       "otherDocumentTitle": "Move the debate to {code}?",
       "otherDocument": "The room is debating another document: the projection and the attendees will move to this one.",
       "moveDebate": "Move the debate here"
@@ -3060,7 +3072,7 @@
         "openAccepted": "The document's presenter accepts it. If nobody objects, approve it by assent; otherwise, put it to a vote.",
         "acceptances": "1 main author has not answered yet. If all accept it, it will replace {codes}; if any rejects it, it is closed. | {count} main authors have not answered yet. If all accept it, it will replace {codes}; if any rejects it, it is closed.",
         "late": "It was presented after the deadline. The assembly must decide whether to treat it before debating it.",
-        "awaiting_validation": "The Secretaría has not validated it yet: it cannot be debated yet.",
+        "awaiting_validation": "The Secretariat has not validated it yet: it cannot be debated yet.",
         "correction_requested": "It is back with its authors for a correction.",
         "approved": "Approved.",
         "rejected": "Rejected.",
@@ -3090,14 +3102,15 @@
       "announce": "Under debate: {what}",
       "announceAmendment": "Under debate: {code}, by {who}. {status}.",
       "backToDocument": "Back to the document",
-      "replaces": "It replaces {codes}."
+      "replaces": "It replaces {codes}.",
+      "undebateDocument": "Stop debating this document"
     },
     "stage": {
-      "awaiting_validation": "Awaiting Secretaría",
+      "awaiting_validation": "Awaiting the Secretariat",
       "correction_requested": "Being corrected",
       "late": "Late",
       "acceptances": "Acceptances missing",
-      "open": "To decide",
+      "open": "Undecided",
       "turned_down": "Turned down by {members}",
       "awaiting_authors": "Awaiting the main authors",
       "incorporated": "In the text without a vote",
@@ -3148,7 +3161,8 @@
       "backToQueue": "Back to the list",
       "rename": "Correct the name",
       "renameTitle": "Correct the person's name",
-      "renameHint": "{who}'s turn"
+      "renameHint": "{who}'s turn",
+      "interrupted": "{who}'s turn has ended"
     },
     "position": {
       "by": "Answer from {member}:",
@@ -3172,7 +3186,7 @@
     "amendmentStats": "{approved} amendments approved · {undecided} undecided · {total} in total",
     "finalApproved": "Final text approved",
     "finalRejected": "Final text rejected",
-    "live": "Live",
+    "live": "Connected",
     "polling": "Reconnecting",
     "offline": "Offline",
     "updated": "Updated at {time}",
@@ -3193,7 +3207,8 @@
       "majority": "Majority"
     },
     "stale": "Showing the last data received",
-    "loadFailed": "The data could not be loaded"
+    "loadFailed": "The data could not be loaded",
+    "connecting": "Connecting…"
   },
   "documents": {
     "title": "Documents",
@@ -3253,8 +3268,8 @@
       "sent": "Presented",
       "waiting": "Waiting for your validation. Until then only its authors, the Secretariat and the Mesa can see it.",
       "validatedHidden": "Validated, but the whole assembly cannot see it yet. Publish it whenever you want.",
-      "lateNote": "It arrived late: after you validate it, the assembly decides whether to treat it.",
-      "lateHint": "Those that arrived late now wait for the assembly to decide whether to treat them. They are under “Late amendments”.",
+      "lateNote": "It arrived late: after you validate it, the assembly decides whether to consider it.",
+      "lateHint": "Those that arrived late now wait for the assembly to decide whether to consider them. They are under “Late amendments”.",
       "loadingText": "Loading the document text",
       "textUnavailable": "The document text could not be loaded to show the changes.",
       "validatePublish": "Validate and publish",
@@ -3314,28 +3329,28 @@
     },
     "late": {
       "title": "Late amendments",
-      "intro": "They arrived after the deadline. They are validated, but they are not debated until the assembly decides to treat them. When it decides, write it down here.",
+      "intro": "They arrived after the deadline. They are validated, but they are not debated until the assembly decides to consider them. When it decides, write it down here.",
       "countWaiting": "{count} waits for the assembly's decision | {count} wait for the assembly's decision",
-      "waitingPublic": "It arrived late. The whole assembly can read it; the assembly still has to decide whether to treat it.",
-      "waitingPrivate": "It arrived late and the whole assembly cannot see it yet. The assembly still has to decide whether to treat it.",
+      "waitingPublic": "It arrived late. The whole assembly can read it; the assembly still has to decide whether to consider it.",
+      "waitingPrivate": "It arrived late and the whole assembly cannot see it yet. The assembly still has to decide whether to consider it.",
       "public": "Already public",
-      "treat": "The assembly will treat it",
-      "notTreat": "Not treated",
+      "treat": "Consider it",
+      "notTreat": "Don't consider it",
       "publishNow": "Publish now",
-      "publishNowHelp": "The whole assembly can read it before deciding whether to treat it.",
+      "publishNowHelp": "The whole assembly can read it before deciding whether to consider it.",
       "bulkLabel": "Decision on the selected late amendments of “{title}”",
-      "bulkTreat": "Treat them ({count})",
-      "bulkNotTreat": "Not treated ({count})",
+      "bulkTreat": "Consider them ({count})",
+      "bulkNotTreat": "Don't consider them ({count})",
       "amendmentCount": "{count} amendment | {count} amendments",
       "decisionError": "The decision could not be saved",
       "done": {
         "treat": {
-          "one": "The assembly treats {label}",
-          "many": "The assembly treats {count} amendments"
+          "one": "The assembly will consider {label}",
+          "many": "The assembly will consider {count} amendments"
         },
         "notTreat": {
-          "one": "The assembly does not treat {label}",
-          "many": "The assembly does not treat {count} amendments"
+          "one": "The assembly will not consider {label}",
+          "many": "The assembly will not consider {count} amendments"
         },
         "treatHint": "It is public now and can be debated. | They are public now and can be debated.",
         "notTreatHint": "It stays out of the debate. | They stay out of the debate."
@@ -3354,18 +3369,23 @@
           "voteHelp": "It is voted and the count is recorded."
         },
         "decision": "What was decided?",
-        "treat": "Treat it | Treat them",
-        "notTreat": "Do not treat it | Do not treat them",
-        "voteHelp": "The vote is on treating it: votes in favour are for treating it. If it does not pass, it stays out. | The vote is on treating them: votes in favour are for treating them. If it does not pass, they stay out.",
+        "treat": "Consider it | Consider them",
+        "notTreat": "Don't consider it | Don't consider them",
+        "voteHelp": "The vote is on considering it: votes in favour are for considering it. If it does not pass, it stays out. | The vote is on considering them: votes in favour are for considering them. If it does not pass, they stay out.",
         "note": "Note",
         "optional": "Optional",
         "noteHelp": "It stays on the record. For example, who asked for it.",
-        "summaryTreat": "It will be recorded that the assembly treats {subject}. It will be public and can be debated. | It will be recorded that the assembly treats {subject}. They will be public and can be debated.",
-        "summaryNotTreat": "It will be recorded that the assembly does not treat {subject}. It will stay out of the debate. | It will be recorded that the assembly does not treat {subject}. They will stay out of the debate.",
+        "summaryTreat": "It will be recorded that the assembly will consider {subject}. It will be public and can be debated. | It will be recorded that the assembly will consider {subject}. They will be public and can be debated.",
+        "summaryNotTreat": "It will be recorded that the assembly will not consider {subject}. It will stay out of the debate. | It will be recorded that the assembly will not consider {subject}. They will stay out of the debate.",
         "summaryTie": "It is a tie and the vote has to be repeated. Enter the new count.",
         "summaryNoVotes": "Enter the count to see what will be recorded.",
         "save": "Save the decision",
-        "summaryInconsistent": "More ballots were cast than members are present. Correct the count to see what will be recorded."
+        "summaryInconsistent": "More ballots were cast than members are present. Correct the count to see what will be recorded.",
+        "summaryNoMethod": "Choose how it was decided to see what will be recorded.",
+        "summaryTreatMesa": "It will be recorded that the Mesa decides to consider {subject}. It will be public and can be debated. | It will be recorded that the Mesa decides to consider {subject}. They will be public and can be debated.",
+        "summaryNotTreatMesa": "It will be recorded that the Mesa decides not to consider {subject}. It will stay out of the debate. | It will be recorded that the Mesa decides not to consider {subject}. They will stay out of the debate.",
+        "summaryTreatPublic": "It will be recorded that the assembly will consider {subject}. It can then be debated. | It will be recorded that the assembly will consider {subject}. They can then be debated.",
+        "summaryTreatMesaPublic": "It will be recorded that the Mesa decides to consider {subject}. It can then be debated. | It will be recorded that the Mesa decides to consider {subject}. They can then be debated."
       },
       "alreadyRecorded": "The decision on this amendment has already been recorded. | The decision on these amendments has already been recorded."
     },
@@ -3400,7 +3420,7 @@
       "label": "Summary by status. Press one to see only those documents.",
       "all": "In total",
       "overdue": "Overdue",
-      "expected": "Not started | Not started",
+      "expected": "To hand in | To hand in",
       "preparing": "In preparation | In preparation",
       "correction": "Correction requested | Corrections requested",
       "submitted": "Sent to the Secretariat | Sent to the Secretariat",
@@ -3420,7 +3440,8 @@
       "showMore": "Show more",
       "showLess": "Show less",
       "setDeadline": "Set deadline",
-      "setDeadlineFor": "Set a deadline for “{title}”"
+      "setDeadlineFor": "Set a deadline for “{title}”",
+      "sentBack": "Sent back"
     },
     "expected": {
       "title": "Add expected document",
@@ -3467,8 +3488,8 @@
     "title": "Live",
     "message": "Notice from the Mesa",
     "notStarted": {
-      "title": "The session has not started yet",
-      "description": "When the Mesa opens the session, you will see here what is being debated, who has the floor and how each amendment ends up.",
+      "title": "The session is not open right now",
+      "description": "When the Mesa opens or resumes the session, you will see here what is being debated, who has the floor and how each amendment ends up.",
       "starts": "It starts on {date}.",
       "agenda": "See the agenda"
     },
@@ -3541,10 +3562,10 @@
         "count": "1 rejected | {count} rejected"
       },
       "transacted": {
-        "label": "Merged into compromise",
+        "label": "Merged into a transactional",
         "sentence": "A transactional amendment replaces it.",
         "by": "Transactional amendment {code} replaces it.",
-        "count": "1 merged into compromise | {count} merged into compromise"
+        "count": "1 merged into a transactional | {count} merged into transactionals"
       },
       "withdrawn": {
         "label": "Withdrawn",
@@ -3678,7 +3699,7 @@
         "ready": "Every party accepted it: the Mesa can now put it to the vote.",
         "authors": "The main authors of the amendments it would replace have to accept it. Still to answer: {members}. If any of them rejects it, it is closed.",
         "yourAnswer": "You are the main author of one of the amendments it would replace: accept or reject it. If you reject it, it is closed. Still to answer: {members}.",
-        "replaced": "It replaced {list}. It now follows the usual path of any amendment.",
+        "replaced": "It has already replaced the amendments it combines. It now follows the usual path of any amendment.",
         "accepted": "The main authors accepted it and it replaces the amendments it combines. It now follows the usual path of any amendment."
       },
       "afterSecretaria": "Once the Secretariat validates it, it will be published and replace {list}.",
@@ -3708,13 +3729,13 @@
     "noCode": "No number",
     "loading": "Loading the amendments",
     "gone": "{label} no longer needs an answer: someone has decided or answered it.",
-    "onBehalf": "You are answering for {member}, the main presenter of the document.",
+    "onBehalf": "You are answering for {member}, who presents the document.",
     "onlyPending": "Only the ones left",
     "saveFailed": "The answer could not be saved",
     "commentSaved": "{label}: comment saved",
     "visibility": {
-      "mesa": "Only the document's presenters, the Mesa and the Secretaría see your answer and your comment.",
-      "session": "The document's presenters, the Mesa and the Secretaría see your answer and your comment now; the rest of the assembly, once the session starts.",
+      "mesa": "Only the document's presenters, the Mesa and the Secretariat see your answer and your comment.",
+      "session": "The document's presenters, the Mesa and the Secretariat see your answer and your comment now; the rest of the assembly, once the session starts.",
       "public": "The whole assembly sees your answer and your comment."
     },
     "progress": {
@@ -3734,34 +3755,34 @@
     },
     "answers": {
       "pending": "Not answered",
-      "accept": "Accepted",
-      "reject": "Rejected",
-      "transact": "Compromise",
+      "accept": "Accepts",
+      "reject": "Rejects",
+      "transact": "Proposes a transactional",
       "incorporated": "In the text"
     },
     "state": {
-      "pending": "You have not answered it yet: choose Accept, Reject or Compromise.",
-      "pendingFor": "{member} has not answered it yet: choose Accept, Reject or Compromise on its behalf.",
+      "pending": "You have not answered it yet: choose Accept, Reject or Propose a transactional.",
+      "pendingFor": "{member} has not answered it yet: choose Accept, Reject or Propose a transactional on its behalf.",
       "accept": "You accepted it. You can change the answer until it is decided.",
       "reject": "You rejected it: it will be debated and voted on. You can change the answer until it is decided.",
-      "transact": "You proposed a compromise. Once you agree on another text with whoever presents it, propose it as a compromise amendment from the document.",
+      "transact": "You chose to propose a transactional. Once you agree on another text with whoever presents it, propose it from the document.",
       "acceptVote": "You accepted it. The assembly will vote on it, and you can change the answer until then.",
       "incorporated": "You accepted it and it is already in the text. If you change the answer before the final vote, it will come out of the text.",
       "acceptFor": "{member} accepted it. You can change the answer until it is decided.",
       "acceptVoteFor": "{member} accepted it. The assembly will vote on it, and you can change the answer until then.",
       "incorporatedFor": "{member} accepted it and it is already in the text. If you change the answer before the final vote, it will come out of the text.",
       "rejectFor": "{member} rejected it: it will be debated and voted on. You can change the answer until it is decided.",
-      "transactFor": "{member} proposed a compromise. Once another text is agreed with whoever presents it, it can be proposed as a compromise amendment from the document.",
+      "transactFor": "{member} chose to propose a transactional. Once another text is agreed with whoever presents it, it can be proposed from the document.",
       "acceptByMesa": "The Mesa accepted it on your behalf. You can change the answer until it is decided.",
       "acceptVoteByMesa": "The Mesa accepted it on your behalf. The assembly will vote on it, and you can change the answer until then.",
       "incorporatedByMesa": "The Mesa accepted it on your behalf and it is already in the text. If you change the answer before the final vote, it will come out of the text.",
       "rejectByMesa": "The Mesa rejected it on your behalf: it will be debated and voted on. You can change the answer until it is decided.",
-      "transactByMesa": "The Mesa proposed a compromise on your behalf. Once you agree on another text with whoever presents it, propose it as a compromise amendment from the document.",
+      "transactByMesa": "The Mesa, on your behalf, chose to propose a transactional. Once you agree on another text with whoever presents it, propose it from the document.",
       "acceptByMesaFor": "The Mesa, on behalf of {member}, accepted it. You can change the answer until it is decided.",
       "acceptVoteByMesaFor": "The Mesa, on behalf of {member}, accepted it. The assembly will vote on it, and you can change the answer until then.",
       "incorporatedByMesaFor": "The Mesa, on behalf of {member}, accepted it and it is already in the text. If you change the answer before the final vote, it will come out of the text.",
       "rejectByMesaFor": "The Mesa, on behalf of {member}, rejected it: it will be debated and voted on. You can change the answer until it is decided.",
-      "transactByMesaFor": "The Mesa, on behalf of {member}, proposed a compromise. Once another text is agreed with whoever presents it, it can be proposed as a compromise amendment from the document."
+      "transactByMesaFor": "The Mesa, on behalf of {member}, chose to propose a transactional. Once another text is agreed with whoever presents it, it can be proposed from the document."
     },
     "change": {
       "where": "Where: {place}",
@@ -3774,22 +3795,22 @@
       "commentPlaceholder": "For example: why you accept it or what text you would propose.",
       "accept": "Accept",
       "reject": "Reject",
-      "rejectHelp": "You disagree: it will be debated and voted on.",
-      "transact": "Compromise",
-      "transactHelp": "You want to agree on another text with whoever presents it and propose it as a compromise amendment.",
+      "rejectHelp": "You oppose it: it will be debated and then the assembly will vote on it.",
+      "transact": "Propose a transactional",
+      "transactHelp": "You want to agree on another text with whoever presents it and propose it as a transactional amendment.",
       "saveComment": "Save comment",
-      "proposeTransactional": "Propose the compromise amendment",
+      "proposeTransactional": "Propose the transactional amendment",
       "commentHelpPending": "It is saved when you pick an answer.",
       "commentHelpAnswered": "If you change it, save it with “Save comment”.",
       "acceptHelpIncorporate": "Accepting it puts it into the text without a vote.",
-      "acceptHelpVote": "The assembly will vote on it.",
+      "acceptHelpVote": "You support it: in the session the Mesa will propose approving it by assent; if anyone objects, the assembly will vote on it.",
       "reopenHelp": "As it is already in the text, it will come out of it.",
-      "transactHelpMain": "You want to agree on another text with {member}, its main author, and propose it as a compromise amendment."
+      "transactHelpMain": "You want to agree on another text with {member}, its main author, and propose it as a transactional amendment."
     },
     "saved": {
       "accept": "{label}: accepted",
       "reject": "{label}: rejected",
-      "transact": "{label}: compromise proposed",
+      "transact": "{label}: transactional proposed",
       "incorporated": "{label}: accepted and put into the text",
       "reopened": "It is no longer in the text."
     },
@@ -3809,7 +3830,7 @@
       "counts": {
         "accept": "Accepted",
         "reject": "Rejected",
-        "transact": "Compromise proposed",
+        "transact": "Transactional proposed",
         "pending": "Not answered"
       },
       "descriptionIncorporate": "The ones you accept go into the text without a vote. You can change any answer until the final vote on the document."
@@ -3818,14 +3839,14 @@
       "button": "Keyboard shortcuts",
       "accept": "Accept the amendment",
       "reject": "Reject the amendment",
-      "transact": "Propose a compromise",
+      "transact": "Propose a transactional",
       "next": "Next",
       "previous": "Previous",
       "hint": "They act on the amendment in front of you and do not work while you type a comment."
     },
     "empty": {
       "title": "No amendments to answer",
-      "description": "They will appear here once the Secretaría validates and publishes amendments to this document and, for late ones, once the assembly decides to treat them.",
+      "description": "They will appear here once the Secretariat validates and publishes amendments to this document and, for late ones, once the assembly decides to treat them.",
       "waitingDescription": "There are no amendments you can answer yet. These are on their way:",
       "allDecided": "Every amendment to this document has already been decided."
     },
@@ -3839,7 +3860,7 @@
     },
     "unpublished": {
       "title": "The document is not published yet",
-      "description": "Once the Secretaría publishes it, amendments can be presented and you can answer them here."
+      "description": "Once the Secretariat publishes it, amendments can be presented and you can answer them here."
     },
     "file": {
       "title": "This document is a PDF",
@@ -3858,13 +3879,13 @@
       "changed": "{label} changed meanwhile",
       "changedDescription": "You now see how it stands.",
       "authors": "{label}: it cannot be answered yet",
-      "authorsDescription": "It is a compromise amendment that the main authors of the amendments it replaces have not accepted yet. You can answer it once they do.",
+      "authorsDescription": "It is a transactional amendment that the main authors of the amendments it replaces have not accepted yet. You can answer it once they do.",
       "validation": "{label}: it cannot be answered yet",
-      "validationDescription": "The Secretaría has not validated it yet. You can answer it once it does.",
+      "validationDescription": "The Secretariat has not validated it yet. You can answer it once it does.",
       "admission": "{label}: it cannot be answered yet",
       "admissionDescription": "It came in late and the assembly has not decided yet whether to take it up. You can answer it once it decides.",
       "publication": "{label}: it cannot be answered yet",
-      "publicationDescription": "The Secretaría has not published it yet. You can answer it once it is published.",
+      "publicationDescription": "The Secretariat has not published it yet. You can answer it once it is published.",
       "voted": "{label}: the answer was not saved",
       "votedDescription": "The document was voted on meanwhile, so the answers can no longer change."
     },
@@ -3878,14 +3899,14 @@
       "listTitle": "What has been answered",
       "awaitingAdmission": "{count} late amendment is waiting for the assembly to decide whether to take it up. It can be answered afterwards. | {count} late amendments are waiting for the assembly to decide whether to take them up. They can be answered afterwards.",
       "empty": "No amendments to answer yet",
-      "emptyDescription": "When the Secretaría publishes amendments to this document, you will see here what the main presenter answers.",
+      "emptyDescription": "When the Secretariat publishes amendments to this document, you will see here what the main presenter answers.",
       "comment": "Comment",
       "hidden": "You cannot see the answer of {member} yet.",
       "answered": {
         "accept": "{member} accepted it on {date}.",
         "incorporated": "{member} accepted it on {date} and it went into the text without a vote.",
         "reject": "{member} rejected it on {date}.",
-        "transact": "{member} proposed a compromise on {date}."
+        "transact": "{member} chose to propose a transactional on {date}."
       },
       "titleDone": "These were the answers of {member}",
       "descriptionReadOnly": "The document has been voted on: these answers can no longer change.",
@@ -3901,20 +3922,23 @@
         "lapsed": "It lapsed and will not be voted on."
       },
       "pending": "{member} has not answered it yet.",
-      "awaitingPublication": "{count} validated amendment is waiting for the Secretaría to publish it. It can be answered afterwards. | {count} validated amendments are waiting for the Secretaría to publish them. They can be answered afterwards.",
+      "awaitingPublication": "{count} validated amendment is waiting for the Secretariat to publish it. It can be answered afterwards. | {count} validated amendments are waiting for the Secretariat to publish them. They can be answered afterwards.",
       "answeredByMesa": {
         "accept": "The Mesa, on behalf of {member}, accepted it on {date}.",
         "incorporated": "The Mesa, on behalf of {member}, accepted it on {date} and it went into the text without a vote.",
         "reject": "The Mesa, on behalf of {member}, rejected it on {date}.",
-        "transact": "The Mesa, on behalf of {member}, proposed a compromise on {date}."
+        "transact": "The Mesa, on behalf of {member}, chose to propose a transactional on {date}."
       }
     },
     "waiting": {
-      "authors": "{count} compromise amendment is waiting for the main authors of the amendments it replaces to accept it. | {count} compromise amendments are waiting for the main authors of the amendments they replace to accept them.",
-      "publication": "{count} validated amendment is waiting for the Secretaría to publish it before it can be answered. | {count} validated amendments are waiting for the Secretaría to publish them before they can be answered.",
-      "validation": "{count} amendment is waiting for the Secretaría to validate it. | {count} amendments are waiting for the Secretaría to validate them."
+      "authors": "{count} transactional amendment is waiting for the main authors of the amendments it replaces to accept it. | {count} transactional amendments are waiting for the main authors of the amendments they replace to accept them.",
+      "publication": "{count} validated amendment is waiting for the Secretariat to publish it before it can be answered. | {count} validated amendments are waiting for the Secretariat to publish them before they can be answered.",
+      "validation": "{count} amendment is waiting for the Secretariat to validate it. | {count} amendments are waiting for the Secretariat to validate them."
     },
-    "goneTransacted": "{label} no longer needs an answer: a compromise amendment replaced it and is answered in its place.",
-    "mainAuthor": "main"
+    "goneTransacted": "{label} no longer needs an answer: a transactional amendment replaced it and is answered in its place.",
+    "mainAuthor": "main",
+    "context": {
+      "pendingTransactional": "A pending transactional includes it: {list}. If it goes ahead, it will replace this amendment. | Pending transactionals include it: {list}. If one goes ahead, it will replace this amendment."
+    }
   }
 }

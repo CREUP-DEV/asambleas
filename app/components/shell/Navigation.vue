@@ -297,26 +297,22 @@ const menuUi = {
     />
 
     <!--
-      The hub page stores the assembly while it renders, after the layout has
-      already been rendered on the server, so this block exists only on the
-      client. Rendering it during hydration would mismatch and shift every
-      generated id below it.
+      On the server the hub's route middleware stores the assembly before the
+      layout renders, so this block is in the first HTML.
     -->
-    <ClientOnly>
-      <template v-if="assemblyItems.length > 0">
-        <USeparator v-if="props.collapsed" class="px-2" />
-        <UNavigationMenu
-          :items="assemblyItems"
-          orientation="vertical"
-          :collapsed="props.collapsed"
-          tooltip
-          :ui="menuUi"
-          :aria-label="
-            t('shell.assembly.navLabel', { assembly: assembly?.label ?? '' })
-          "
-        />
-      </template>
-    </ClientOnly>
+    <template v-if="assemblyItems.length > 0">
+      <USeparator v-if="props.collapsed" class="px-2" />
+      <UNavigationMenu
+        :items="assemblyItems"
+        orientation="vertical"
+        :collapsed="props.collapsed"
+        tooltip
+        :ui="menuUi"
+        :aria-label="
+          t('shell.assembly.navLabel', { assembly: assembly?.label ?? '' })
+        "
+      />
+    </template>
 
     <template v-if="adminItems.length > 0">
       <USeparator v-if="props.collapsed" class="px-2" />

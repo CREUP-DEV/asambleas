@@ -14,9 +14,12 @@ import {
  * "Anotar la decisión de la asamblea" on one or more late amendments: how it
  * was decided (the Mesa, assent or a vote with its counts) and what (treat
  * them or not). A vote is always on treating them, so its counts decide the
- * result; a failed vote leaves them out. The parent sends the body
- * (POST .../amendments/admission) on `confirm` and closes the dialog when it
- * succeeds.
+ * result; a failed vote leaves them out. The method starts unselected, so
+ * nobody records "Lo decide la Mesa" without choosing it, and the summary
+ * names who decided: the Mesa, or the assembly by assent or vote. When every
+ * amendment is already public (`allPublic`) it does not say they will be.
+ * The parent sends the body (POST .../amendments/admission) on `confirm` and
+ * closes the dialog when it succeeds.
  */
 type AdmissionDecision = AdmissionBody["decision"];
 type AdmissionMethod = "mesa" | "assent" | "vote";
@@ -33,8 +36,10 @@ const props = withDefaults(
     initialDecision?: AdmissionDecision;
     settings: Pick<AssemblySettings, "denominator" | "tieRule">;
     busy?: boolean;
+    /** Every amendment is already published: treating them only opens debate. */
+    allPublic?: boolean;
   }>(),
-  { initialDecision: "admitted", busy: false },
+  { initialDecision: "admitted", busy: false, allPublic: false },
 );
 
 const open = defineModel<boolean>("open", { default: false });
@@ -43,14 +48,14 @@ const emit = defineEmits<{ confirm: [choice: AdmissionChoice] }>();
 const { t } = useI18n();
 const formId = useId();
 
-const method = ref<AdmissionMethod>("mesa");
+const method = ref<AdmissionMethod | undefined>(undefined);
 const decision = ref<AdmissionDecision>(props.initialDecision);
 const vote = ref<VoteInput>(sessionEmptyVote("simple"));
 const note = ref("");
 
 watch(open, (isOpen) => {
   if (!isOpen) return;
-  method.value = "mesa";
+  method.value = undefined;
   decision.value = props.initialDecision;
   vote.value = sessionEmptyVote("simple");
   note.value = "";
@@ -80,22 +85,30 @@ const voteReady = computed(() => isSessionVoteReady(vote.value, outcome.value));
 
 /** What will be recorded, or null while the counts do not settle it. */
 const effective = computed<AdmissionDecision | null>(() => {
+  if (!method.value) return null;
   if (method.value !== "vote") return decision.value;
   if (!voteReady.value) return null;
   return outcome.value.result === "approved" ? "admitted" : "inadmissible";
 });
 
 const summary = computed(() => {
+  if (!method.value) return t("review.late.dialog.summaryNoMethod");
+  const byMesa = method.value === "mesa";
   if (effective.value === "admitted") {
-    return t(
-      "review.late.dialog.summaryTreat",
-      { subject: props.subject },
-      props.count,
-    );
+    const key = byMesa
+      ? props.allPublic
+        ? "review.late.dialog.summaryTreatMesaPublic"
+        : "review.late.dialog.summaryTreatMesa"
+      : props.allPublic
+        ? "review.late.dialog.summaryTreatPublic"
+        : "review.late.dialog.summaryTreat";
+    return t(key, { subject: props.subject }, props.count);
   }
   if (effective.value === "inadmissible") {
     return t(
-      "review.late.dialog.summaryNotTreat",
+      byMesa
+        ? "review.late.dialog.summaryNotTreatMesa"
+        : "review.late.dialog.summaryNotTreat",
       { subject: props.subject },
       props.count,
     );
@@ -122,7 +135,7 @@ const description = computed(() =>
 );
 
 function submit() {
-  if (props.busy || effective.value === null) return;
+  if (props.busy || !method.value || effective.value === null) return;
   const trimmed = note.value.trim() || null;
   if (method.value === "vote") {
     // The vote is on treating them: the server applies its result.

@@ -42,6 +42,20 @@ export function trackingState(
 
 export type TrackingFilter = DocumentProgressState | "overdue" | "all";
 
+/**
+ * The one summary tile a document counts under, so the tiles add up to the
+ * total and match the row badges: a draft past its deadline goes under
+ * "overdue" instead of "expected" or "preparing", and a correction keeps its
+ * own tile (its row says it is late on the deadline line).
+ */
+export function trackingBucket(
+  document: TrackedDocument,
+  now: number,
+): Exclude<TrackingFilter, "all"> {
+  const { state, overdue } = trackingState(document, now);
+  return overdue && state !== "correction" ? "overdue" : state;
+}
+
 export type TrackingSummary = Record<
   DocumentProgressState | "overdue",
   number
@@ -65,9 +79,7 @@ export function summarizeTracking(
     postponed: 0,
   };
   for (const document of documents) {
-    const { state, overdue } = trackingState(document, now);
-    summary[state] += 1;
-    if (overdue) summary.overdue += 1;
+    summary[trackingBucket(document, now)] += 1;
   }
   return summary;
 }
@@ -78,8 +90,7 @@ export function matchesTrackingFilter(
   now: number,
 ): boolean {
   if (filter === "all") return true;
-  const { state, overdue } = trackingState(document, now);
-  return filter === "overdue" ? overdue : state === filter;
+  return trackingBucket(document, now) === filter;
 }
 
 export interface TrackingGroup<T> {

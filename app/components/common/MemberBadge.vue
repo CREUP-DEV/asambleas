@@ -32,9 +32,9 @@ const KIND_COLORS: Record<
 const color = computed(() =>
   props.member.kind ? KIND_COLORS[props.member.kind] : "neutral",
 );
-const tooltipDisabled = computed(
-  () => props.showName || props.member.name === props.member.acronym,
-);
+/** A name that only repeats the acronym is not shown twice. */
+const nameRepeats = computed(() => memberNameRepeatsAcronym(props.member));
+const tooltipDisabled = computed(() => props.showName || nameRepeats.value);
 </script>
 
 <template>
@@ -46,13 +46,18 @@ const tooltipDisabled = computed(
         :size="size"
         class="shrink-0 font-semibold tracking-wide"
       >
-        <span :aria-hidden="showName ? undefined : 'true'">{{
+        <span :aria-hidden="showName || nameRepeats ? undefined : 'true'">{{
           member.acronym
         }}</span>
-        <span v-if="!showName" class="sr-only">{{ member.name }}</span>
+        <span v-if="!showName && !nameRepeats" class="sr-only">{{
+          member.name
+        }}</span>
       </UBadge>
     </UTooltip>
-    <span v-if="showName" class="text-default min-w-0 truncate text-sm">
+    <span
+      v-if="showName && !nameRepeats"
+      class="text-default min-w-0 truncate text-sm"
+    >
       {{ member.name }}
     </span>
   </span>

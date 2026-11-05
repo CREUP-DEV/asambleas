@@ -414,8 +414,9 @@ const summary = computed(() =>
           </NuxtLink>
           <span
             v-if="group.document.reference"
-            class="text-muted ms-1.5 text-sm font-normal tabular-nums"
-            >· {{ group.document.reference }}</span
+            class="text-muted text-sm font-normal tabular-nums"
+          >
+            · {{ group.document.reference }}</span
           >
         </h4>
         <p class="text-muted text-sm">{{ summary }}</p>
@@ -534,6 +535,7 @@ const summary = computed(() =>
             :base="base"
             :base-loading="documentPending"
             :source-labels="sourceLabelsOf(amendment)"
+            :heading-level="6"
           />
         </li>
       </ul>
@@ -558,6 +560,7 @@ const summary = computed(() =>
             :disabled="busy !== null"
             :multi-select="multiSelect"
             :selected="isSelected(amendment.id)"
+            :heading-level="6"
             @update:selected="
               (value: boolean) => setSelected(amendment.id, value)
             "
