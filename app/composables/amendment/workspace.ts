@@ -95,6 +95,8 @@ export function isAmendmentPrivate(
  * - `draft`: never sent to the Secretaría;
  * - `correction`: sent back to its authors, who can fix it (the viewer can);
  * - `correction_sent`: sent back, seen by someone who cannot edit it;
+ * - `pending_proponent`: a transactional a member proposed, waiting for the
+ *   document's presenter to approve it before the Secretaría checks it;
  * - `to_validate` / `pending`: waiting for the Secretaría, for the
  *   Secretaría itself and for everyone else;
  * - `to_publish` / `validated`: validated but private, likewise. A decided
@@ -106,6 +108,7 @@ export type AmendmentReviewKey =
   | "draft"
   | "correction"
   | "correction_sent"
+  | "pending_proponent"
   | "to_validate"
   | "pending"
   | "to_publish"
@@ -134,6 +137,7 @@ const REVIEW_LOOK: Record<
   draft: { color: "neutral", icon: "i-lucide-file-pen" },
   correction: { color: "warning", icon: "i-lucide-message-square-warning" },
   correction_sent: { color: "neutral", icon: "i-lucide-undo-2" },
+  pending_proponent: { color: "info", icon: "i-lucide-user-check" },
   to_validate: { color: "warning", icon: "i-lucide-inbox" },
   pending: { color: "info", icon: "i-lucide-hourglass" },
   to_publish: { color: "primary", icon: "i-lucide-eye-off" },
@@ -157,6 +161,8 @@ function reviewKeyOf(
   // inadmissible one may well stay private.
   if (status !== "submitted") return can.publish ? "to_publish" : null;
   switch (reviewState) {
+    case "pending_proponent":
+      return "pending_proponent";
     case "pending_validation":
       return can.validate ? "to_validate" : "pending";
     case "validated":
@@ -257,12 +263,37 @@ export function showAmendmentAdmission(
 ): boolean {
   if (amendment.status === "draft") return false;
   if (
+    amendment.reviewState === "pending_proponent" ||
     amendment.reviewState === "pending_validation" ||
     amendment.reviewState === "correction_requested"
   ) {
     return false;
   }
   return amendment.admission !== "admitted";
+}
+
+/**
+ * How lateness reads on an amendment presented after the window closed:
+ * - `awaiting_decision`: the Secretaría validated it and it waits for the
+ *   assembly to decide whether to treat it ("Pendiente de que la asamblea
+ *   decida tratarla"); until then it is neither debated nor decided;
+ * - `late`: just "Fuera de plazo" (still with the Secretaría, or already
+ *   admitted or decided);
+ * - null: on time.
+ */
+export function amendmentLateState(
+  amendment: Pick<
+    AmendmentDto,
+    "late" | "status" | "reviewState" | "admission"
+  >,
+): "awaiting_decision" | "late" | null {
+  if (!amendment.late) return null;
+  return amendment.status === "submitted" &&
+    amendment.admission === "pending" &&
+    (amendment.reviewState === "validated" ||
+      amendment.reviewState === "published")
+    ? "awaiting_decision"
+    : "late";
 }
 
 /**
@@ -309,7 +340,12 @@ function mineRank(
     return amendment.reviewState === "correction_requested" ? 0 : 1;
   }
   if (amendment.status !== "submitted") return 5;
-  if (amendment.reviewState === "pending_validation") return 2;
+  if (
+    amendment.reviewState === "pending_proponent" ||
+    amendment.reviewState === "pending_validation"
+  ) {
+    return 2;
+  }
   if (amendment.reviewState === "validated") return 3;
   return 4;
 }
@@ -510,6 +546,7 @@ export type AmendmentReviewFilter =
 
 export const AMENDMENT_REVIEW_FILTERS: readonly AmendmentReviewFilter[] = [
   "any",
+  "pending_proponent",
   "pending_validation",
   "validated",
   "published",

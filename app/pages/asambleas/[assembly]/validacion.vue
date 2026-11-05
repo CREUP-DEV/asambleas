@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
 import type {
   AmendmentDto,
   CorrectionBody,
@@ -12,15 +13,19 @@ import {
   groupReviewAmendments,
   removeReviewAmendments,
   removeReviewDocument,
+  reviewGroupSize,
   reviewQueueKey,
 } from "~/components/review/-queue";
 import { affectsReviewQueue } from "~/components/review/-live";
 
 /**
  * The Secretaría's validation inbox (GET .../review): presented documents
- * and amendments that nobody else sees until they are validated, plus the
- * amendments validated but kept private. Documents need document:manage,
- * amendments amendment:review; each part shows only to whoever holds it.
+ * and amendments that nobody else sees until they are validated, the
+ * transactionals still waiting for the document's presenter, the amendments
+ * validated but kept private and, in "Fuera de plazo", the late ones that
+ * wait for the assembly to decide whether to treat them. Documents need
+ * document:manage, amendments amendment:review; each part shows only to
+ * whoever holds it.
  *
  * The queue shares its fetch key with the hub, which keeps the "Validación"
  * badge and starts the fetch if the permission arrives after setup; every
@@ -72,15 +77,34 @@ const groups = computed(() =>
     ? groupReviewAmendments(queue.value?.amendments ?? [])
     : [],
 );
+/** Documents with amendments to check now (validate, publish, wait). */
+const reviewGroups = computed(() =>
+  groups.value.filter((group) => reviewGroupSize(group) > 0),
+);
+/** Documents with late amendments waiting for the assembly. */
+const lateGroups = computed(() =>
+  groups.value.filter((group) => group.late.length > 0),
+);
 const amendmentCount = computed(() =>
-  groups.value.reduce(
-    (total, group) => total + group.toValidate.length + group.toPublish.length,
+  reviewGroups.value.reduce(
+    (total, group) => total + reviewGroupSize(group),
     0,
   ),
 );
-const empty = computed(
-  () => documents.value.length === 0 && amendmentCount.value === 0,
+const lateCount = computed(() =>
+  lateGroups.value.reduce((total, group) => total + group.late.length, 0),
 );
+const empty = computed(
+  () =>
+    documents.value.length === 0 &&
+    amendmentCount.value === 0 &&
+    lateCount.value === 0,
+);
+
+const settings = computed(() => ({
+  ...DEFAULT_ASSEMBLY_SETTINGS,
+  ...assembly.value?.settings,
+}));
 
 function documentPath(slug: string): string {
   return sectionPath(`documentos/${encodeURIComponent(slug)}`);
@@ -358,12 +382,56 @@ function documentBusyFor(id: string): "publish" | "correction" | null {
           </p>
           <div v-else class="space-y-8">
             <ReviewAmendmentGroup
-              v-for="group in groups"
+              v-for="group in reviewGroups"
               :key="group.document.id"
               :group="group"
               :api-base="apiBase"
               :assembly-id="assembly.id"
               :document-path="documentPath(group.document.slug)"
+              @updated="onAmendmentsUpdated"
+              @removed="onAmendmentsRemoved"
+              @conflict="refresh"
+              @announce="announce"
+            />
+          </div>
+        </section>
+
+        <section
+          v-if="canAmendments && lateCount > 0"
+          class="space-y-4"
+          aria-labelledby="review-late-heading"
+        >
+          <div class="space-y-1">
+            <h3
+              id="review-late-heading"
+              class="text-highlighted flex items-center gap-2 text-lg font-semibold"
+            >
+              <UIcon
+                name="i-lucide-clock-alert"
+                class="text-warning size-5 shrink-0"
+                aria-hidden="true"
+              />
+              {{ t("review.late.title") }}
+              <UBadge
+                color="warning"
+                variant="soft"
+                size="sm"
+                :label="String(lateCount)"
+              />
+            </h3>
+            <p class="text-muted max-w-3xl text-sm">
+              {{ t("review.late.intro") }}
+            </p>
+          </div>
+          <div class="space-y-8">
+            <ReviewLateGroup
+              v-for="group in lateGroups"
+              :key="group.document.id"
+              :group="group"
+              :api-base="apiBase"
+              :assembly-id="assembly.id"
+              :document-path="documentPath(group.document.slug)"
+              :settings="settings"
               @updated="onAmendmentsUpdated"
               @removed="onAmendmentsRemoved"
               @conflict="refresh"

@@ -8,10 +8,15 @@ import type { Block } from "~~/shared/types/content";
 import { blockLabels } from "~~/shared/utils/content/render";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
 import {
+  transactionalGroupSources,
+  transactionalSourceEligible,
+} from "~/composables/amendment/transactional";
+import {
   amendmentErrorKey,
   amendmentErrorReasons,
   amendmentHistoryVersion,
   amendmentLateOnSend,
+  amendmentLateState,
   amendmentReviewView,
   amendmentSentNotice,
   showAmendmentAdmission,
@@ -28,6 +33,10 @@ import {
  * while undecided). A draft sent back for correction has one way forward,
  * "Corregir y volver a enviar" in the review panel: the composer shows the
  * note and sends it, so the footer offers no direct send.
+ *
+ * Whoever can propose a transactional finds it as a secondary action: in
+ * the footer's "Más" menu for this amendment, and next to the amendments
+ * that touch the same passage to combine them (`transact`).
  */
 const props = withDefaults(
   defineProps<{
@@ -45,14 +54,23 @@ const props = withDefaults(
     closable?: boolean;
     /** GET .../decisions of the assembly, for admission votes in the history. */
     decisionsUrl?: string;
+    /** The viewer may propose a transactional on this document. */
+    canTransact?: boolean;
   }>(),
-  { overlaps: () => [], closable: true, decisionsUrl: undefined },
+  {
+    overlaps: () => [],
+    closable: true,
+    decisionsUrl: undefined,
+    canTransact: false,
+  },
 );
 
 const emit = defineEmits<{
   close: [];
   select: [id: string];
   edit: [amendment: AmendmentDto];
+  /** Open the transactional composer on these amendments. */
+  transact: [ids: string[]];
   updated: [amendment: AmendmentDto];
   /** The whole list, after the Secretaría validated or published it. */
   replaced: [dto: DocumentAmendmentsDto];
@@ -124,19 +142,49 @@ const lateOnSend = computed(() =>
 /** "Parcial" is the usual kind: only the others are worth a badge. */
 const showKind = computed(() => props.amendment.kind !== "partial");
 
-const moreItems = computed(() =>
-  props.amendment.can.edit
-    ? [
-        {
-          label: t("amendment.actions.delete"),
-          icon: "i-lucide-trash-2",
-          color: "error" as const,
-          onSelect: () => {
-            confirming.value = "delete";
-          },
-        },
-      ]
-    : [],
+/** This amendment can be combined into a transactional by the viewer. */
+const transactable = computed(
+  () => props.canTransact && transactionalSourceEligible(props.amendment),
+);
+/** This one and the amendments on the same passage that can be combined. */
+const overlapSources = computed(() => {
+  if (!transactable.value) return [];
+  const others = new Set(props.overlaps.map((overlap) => overlap.id));
+  return transactionalGroupSources([
+    props.amendment,
+    ...props.candidates.filter((candidate) => others.has(candidate.id)),
+  ]);
+});
+
+const moreItems = computed(() => {
+  const items: {
+    label: string;
+    icon: string;
+    color?: "error";
+    onSelect: () => void;
+  }[] = [];
+  if (transactable.value) {
+    items.push({
+      label: t("amendment.detail.transact"),
+      icon: "i-lucide-git-merge",
+      onSelect: () => emit("transact", [props.amendment.id]),
+    });
+  }
+  if (props.amendment.can.edit) {
+    items.push({
+      label: t("amendment.actions.delete"),
+      icon: "i-lucide-trash-2",
+      color: "error",
+      onSelect: () => {
+        confirming.value = "delete";
+      },
+    });
+  }
+  return items;
+});
+/** Late and validated: the review panel says the assembly has to decide. */
+const awaitingDecision = computed(
+  () => amendmentLateState(props.amendment) === "awaiting_decision",
 );
 
 const where = computed(() => {
@@ -277,12 +325,13 @@ async function remove(): Promise<void> {
       <div class="flex flex-wrap items-center gap-1.5">
         <CommonStatusBadge kind="amendment" :value="amendment.status" />
         <CommonStatusBadge
-          v-if="showAmendmentAdmission(amendment)"
+          v-if="!awaitingDecision && showAmendmentAdmission(amendment)"
           kind="admission"
           :value="amendment.admission"
         />
+        <!-- Waiting for the assembly, the review panel says it is late. -->
         <UBadge
-          v-if="amendment.late"
+          v-if="amendment.late && !awaitingDecision"
           color="warning"
           variant="subtle"
           icon="i-lucide-clock-alert"
@@ -307,6 +356,7 @@ async function remove(): Promise<void> {
     <AmendmentReviewPanel
       :amendment="amendment"
       :amendments-url="amendmentsUrl"
+      :proponent-member-id="document.proponent?.id ?? null"
       @edit="emit('edit', $event)"
       @replaced="emit('replaced', $event)"
       @corrected="onCorrected"
@@ -471,6 +521,16 @@ async function remove(): Promise<void> {
           />
         </li>
       </ul>
+      <UButton
+        v-if="overlapSources.length >= 2"
+        class="self-start"
+        icon="i-lucide-git-merge"
+        color="neutral"
+        variant="outline"
+        size="xs"
+        :label="t('amendment.detail.transactOverlaps')"
+        @click="emit('transact', overlapSources)"
+      />
     </section>
 
     <section
@@ -525,6 +585,7 @@ async function remove(): Promise<void> {
       :amendment="amendment"
       :url="url"
       :actor-member-id="member?.id ?? null"
+      :proponent-member-id="document.proponent?.id ?? null"
       @updated="emit('updated', $event)"
       @conflict="emit('changed')"
     />
@@ -574,7 +635,10 @@ async function remove(): Promise<void> {
 
     <footer
       v-if="
-        amendment.can.edit || amendment.can.submit || amendment.can.withdraw
+        amendment.can.edit ||
+        amendment.can.submit ||
+        amendment.can.withdraw ||
+        moreItems.length > 0
       "
       class="border-default bg-default sticky bottom-0 -mx-1 flex flex-col gap-2 border-t px-1 pt-3 pb-1"
     >

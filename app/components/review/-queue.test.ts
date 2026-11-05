@@ -8,11 +8,16 @@ import type {
 } from "~~/shared/types/api";
 import {
   applyAmendmentResults,
+  canRecordAdmission,
   groupReviewAmendments,
+  isAwaitingAssembly,
+  isAwaitingPublication,
   isInReviewQueue,
   pendingReviewCount,
+  proponentAcceptance,
   removeReviewAmendments,
   removeReviewDocument,
+  reviewGroupSize,
   reviewQueueKey,
   splitReviewSelection,
 } from "./-queue";
@@ -66,6 +71,28 @@ function amendment(
   };
 }
 
+/** A late amendment the Secretaría validated, waiting for the assembly. */
+function late(
+  id: string,
+  reviewState: "published" | "validated" = "published",
+  overrides: Partial<AmendmentDto> = {},
+): AmendmentDto {
+  return amendment(id, reviewState, {
+    late: true,
+    validatedAt: "2026-11-02T10:00:00.000Z",
+    publishedAt:
+      reviewState === "published" ? "2026-11-02T10:00:00.000Z" : null,
+    ...overrides,
+  });
+}
+
+const member = {
+  id: "m1",
+  acronym: "VPU",
+  name: "Vicepresidencia",
+  kind: "executive" as const,
+};
+
 const docA = { id: "a", slug: "res-a", title: "A", reference: "RES 1/2026" };
 const docB = { id: "b", slug: "res-b", title: "B", reference: null };
 
@@ -93,14 +120,99 @@ describe("reviewQueueKey", () => {
 });
 
 describe("isInReviewQueue", () => {
-  it("keeps presented and validated amendments only", () => {
-    expect(isInReviewQueue({ reviewState: "pending_validation" })).toBe(true);
-    expect(isInReviewQueue({ reviewState: "validated" })).toBe(true);
-    expect(isInReviewQueue({ reviewState: "published" })).toBe(false);
-    expect(isInReviewQueue({ reviewState: "correction_requested" })).toBe(
+  it("keeps presented, validated and presenter-pending amendments", () => {
+    expect(isInReviewQueue(amendment("1", "pending_validation"))).toBe(true);
+    expect(isInReviewQueue(amendment("2", "validated"))).toBe(true);
+    expect(isInReviewQueue(amendment("3", "pending_proponent"))).toBe(true);
+  });
+
+  it("drops published, sent back and settled amendments on time", () => {
+    expect(isInReviewQueue(amendment("1", "published"))).toBe(false);
+    expect(isInReviewQueue(amendment("2", "correction_requested"))).toBe(false);
+    expect(isInReviewQueue(amendment("3", null))).toBe(false);
+  });
+
+  it("keeps late ones waiting for the assembly, published or not", () => {
+    expect(isInReviewQueue(late("1", "published"))).toBe(true);
+    expect(isInReviewQueue(late("2", "validated"))).toBe(true);
+  });
+
+  it("drops late ones once the assembly decided", () => {
+    expect(
+      isInReviewQueue(late("1", "published", { admission: "admitted" })),
+    ).toBe(false);
+    expect(
+      isInReviewQueue(
+        late("2", "published", {
+          admission: "inadmissible",
+          status: "inadmissible",
+        }),
+      ),
+    ).toBe(false);
+  });
+});
+
+describe("isAwaitingAssembly", () => {
+  it("needs a late, validated, submitted amendment pending admission", () => {
+    expect(isAwaitingAssembly(late("1"))).toBe(true);
+    expect(isAwaitingAssembly(late("2", "published", { late: false }))).toBe(
       false,
     );
-    expect(isInReviewQueue({ reviewState: null })).toBe(false);
+    expect(
+      isAwaitingAssembly(late("3", "published", { validatedAt: null })),
+    ).toBe(false);
+    expect(
+      isAwaitingAssembly(late("4", "published", { status: "withdrawn" })),
+    ).toBe(false);
+  });
+
+  it("takes a late validated private amendment out of the publication list", () => {
+    expect(isAwaitingPublication(late("1", "validated"))).toBe(false);
+    expect(isAwaitingPublication(amendment("2", "validated"))).toBe(true);
+  });
+});
+
+describe("canRecordAdmission", () => {
+  const can = amendment("x", "published").can;
+
+  it("needs a late amendment waiting and a reviewer or the Mesa", () => {
+    expect(canRecordAdmission(late("1"))).toBe(true);
+    expect(
+      canRecordAdmission(
+        late("2", "published", {
+          can: { ...can, review: false, moderate: true },
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      canRecordAdmission(
+        late("3", "published", {
+          can: { ...can, review: false, moderate: false },
+        }),
+      ),
+    ).toBe(false);
+    expect(canRecordAdmission(amendment("4", "published"))).toBe(false);
+  });
+});
+
+describe("proponentAcceptance", () => {
+  it("finds the presenter among the parties of a transactional", () => {
+    const value = amendment("t", "pending_proponent", {
+      acceptances: [
+        {
+          member: { ...member, id: "m2", acronym: "CEUM" },
+          role: "author",
+          decision: "accepted",
+          decidedAt: null,
+        },
+        { member, role: "proponent", decision: "pending", decidedAt: null },
+      ],
+    });
+    expect(proponentAcceptance(value)?.member.acronym).toBe("VPU");
+    expect(proponentAcceptance(value)?.decision).toBe("pending");
+    expect(
+      proponentAcceptance(amendment("p", "pending_validation")),
+    ).toBeNull();
   });
 });
 
@@ -130,6 +242,17 @@ describe("pendingReviewCount", () => {
     expect(
       pendingReviewCount(value, { documents: true, amendments: false }),
     ).toBe(2);
+  });
+
+  it("leaves out what waits for the presenter or the assembly", () => {
+    const waiting = queue([
+      entry(docA, amendment("t", "pending_proponent")),
+      entry(docA, late("l")),
+      entry(docA, amendment("v", "pending_validation")),
+    ]);
+    expect(
+      pendingReviewCount(waiting, { documents: true, amendments: true }),
+    ).toBe(1);
   });
 
   it("is zero without a queue", () => {
@@ -168,6 +291,31 @@ describe("groupReviewAmendments", () => {
       groupReviewAmendments([entry(docA, amendment("p", "published"))]),
     ).toEqual([]);
   });
+
+  it("lists presenter-pending transactionals and late ones apart", () => {
+    const groups = groupReviewAmendments([
+      entry(
+        docA,
+        amendment("t", "pending_proponent", { kind: "transactional" }),
+      ),
+      entry(docA, late("l2", "published", { positionKey: 8 })),
+      entry(docA, late("l1", "validated", { positionKey: 2 })),
+      entry(docA, amendment("v", "pending_validation")),
+    ]);
+    expect(groups).toHaveLength(1);
+    const group = groups[0]!;
+    expect(group.toValidate.map((value) => value.id)).toEqual(["v"]);
+    expect(group.awaitingProponent.map((value) => value.id)).toEqual(["t"]);
+    expect(group.toPublish).toEqual([]);
+    expect(group.late.map((value) => value.id)).toEqual(["l1", "l2"]);
+    expect(reviewGroupSize(group)).toBe(2);
+  });
+
+  it("keeps a document whose only amendments are late", () => {
+    const groups = groupReviewAmendments([entry(docB, late("l"))]);
+    expect(groups.map((group) => group.document.id)).toEqual(["b"]);
+    expect(reviewGroupSize(groups[0]!)).toBe(0);
+  });
 });
 
 describe("splitReviewSelection", () => {
@@ -185,6 +333,18 @@ describe("splitReviewSelection", () => {
     expect(
       splitReviewSelection(group, new Set(["v1", "v2", "p1", "other"])),
     ).toEqual({ validate: ["v1"], publish: ["p1"] });
+  });
+
+  it("never validates a transactional waiting for the presenter", () => {
+    const pending = amendment("t", "pending_proponent", {
+      can: { ...amendment("t", "pending_validation").can, validate: true },
+    });
+    expect(
+      splitReviewSelection(
+        { toValidate: [pending], toPublish: [] },
+        new Set(["t"]),
+      ),
+    ).toEqual({ validate: [], publish: [] });
   });
 
   it("is empty without a selection", () => {
@@ -220,6 +380,16 @@ describe("applyAmendmentResults", () => {
       ["4", "validated"],
     ]);
     expect(after.amendments[0]!.document).toBe(docA);
+  });
+
+  it("keeps a late one the Secretaría validated and published", () => {
+    const after = applyAmendmentResults(
+      queue([
+        entry(docA, amendment("1", "pending_validation", { late: true })),
+      ]),
+      [late("1", "published")],
+    );
+    expect(after.amendments.map((value) => value.amendment.id)).toEqual(["1"]);
   });
 
   it("does not mutate the queue it receives", () => {

@@ -4,11 +4,17 @@ import { consolidate } from "~~/shared/utils/content/consolidate";
 import { touchedBlockIds, validateOps } from "~~/shared/utils/content/ops";
 import { blockLabels } from "~~/shared/utils/content/render";
 import {
+  proponentReviewBacklog,
+  transactionalSourceCandidates,
+  transactionalSourceEligible,
+} from "~/composables/amendment/transactional";
+import {
   amendmentReviewQueue,
   amendmentsAwaitingActor,
   consolidationInputs,
   contiguousBlockRange,
   extendBlockSelection,
+  isAmendmentAuthor,
   isAmendmentPrivate,
   type AmendmentComposerMode,
   type AmendmentReviewFilter,
@@ -28,6 +34,17 @@ import {
  * composer then opens in place of the list. Once a paragraph is picked, the
  * selection bar's "Cambiar este texto" is the one primary button.
  *
+ * The document's presenter (and the Mesa) get "Revisar enmiendas", with how
+ * many wait for them, which leads to the guided review (.../revisar). For
+ * the presenter with something pending it is the primary button instead of
+ * "Presentar una enmienda".
+ *
+ * "Proponer una transaccional" (any member who can amend, the document's
+ * presenter, and the Mesa) is a secondary action: in the header's "Más" menu, on a group of amendments
+ * on the same passage, and in an amendment's detail. Its composer opens in
+ * place of the list like the amendment composer, with the passage it
+ * rewrites marked in the text.
+ *
  * The text is on the left, with four views in a compact "Ver" menu
  * (original with gutter markers, one amendment over the full text, live
  * consolidation with provenance, side by side); the amendments are on the
@@ -39,7 +56,9 @@ import {
  * narrow screens the two panels stack behind a toggle and the amendment
  * detail opens in a slideover.
  *
- * `?enmienda=<id>` opens that amendment (links from the home page).
+ * `?enmienda=<id>` opens that amendment (links from the home page), and
+ * `?transaccional=<id>,<id>` opens the transactional composer on those
+ * amendments (from the presenter's review, "Transaccionar").
  */
 
 interface TextViewHandle {
@@ -57,6 +76,12 @@ interface ComposerState {
   selection: string[];
   appendParagraph: boolean;
   draftId: string | null;
+}
+
+interface TransactionalState {
+  key: number;
+  /** Amendments it starts from (none: the author picks them). */
+  sourceIds: string[];
 }
 
 const { t } = useI18n();
@@ -141,9 +166,88 @@ const decisionsUrl = computed(() =>
 );
 const labels = computed(() => blockLabels(base.value));
 
-/** Secondary links of the header, in its "Más" menu. */
+/** The member that presents the document, if any. */
+const proponentMemberId = computed(() => document.value?.proponent?.id ?? null);
+
+/**
+ * Any member who can amend, the document's presenter (a party of every
+ * transactional on it) and the Mesa may propose a transactional over
+ * published, undecided amendments while the text is open. The server also
+ * lets the authors of the chosen amendments do it; it checks the rest.
+ */
+const canTransact = computed(() => {
+  const doc = document.value;
+  if (
+    !doc ||
+    !isStructured.value ||
+    !isPublished.value ||
+    doc.finalVote ||
+    assembly.value?.status === "closed"
+  ) {
+    return false;
+  }
+  if (doc.can.moderate) return true;
+  const memberId = member.value?.id ?? null;
+  if (!memberId) return false;
+  return doc.can.amend || proponentMemberId.value === memberId;
+});
+const transactionalCandidates = computed(() =>
+  canTransact.value ? transactionalSourceCandidates(list.listed.value) : [],
+);
+
+/** The document's presenter: its member presents the document. */
+const isDocumentPresenter = computed(
+  () =>
+    proponentMemberId.value !== null &&
+    proponentMemberId.value === member.value?.id,
+);
+/**
+ * What waits for the presenter (or the Mesa) in the review mode: its
+ * answers are found by the presenter's member, not the viewer's.
+ */
+const reviewBacklog = computed(() =>
+  proponentReviewBacklog(list.listed.value, proponentMemberId.value),
+);
+const showReviewEntry = computed(
+  () =>
+    Boolean(document.value?.can.position) &&
+    isStructured.value &&
+    isPublished.value &&
+    list.listed.value.length > 0,
+);
+/**
+ * "Revisar enmiendas" leads for the presenter with something pending. A
+ * paragraph picked (the selection bar leads) or a composer open (its send
+ * button leads) keep it secondary.
+ */
+const reviewIsPrimary = computed(
+  () =>
+    showReviewEntry.value &&
+    isDocumentPresenter.value &&
+    reviewBacklog.value.total > 0 &&
+    selection.value.ids.length === 0 &&
+    !composing.value,
+);
+
+/** Secondary actions of the header, in its "Más" menu. */
 const moreItems = computed(() => {
-  const items: { label: string; icon: string; to: string }[] = [];
+  const items: {
+    label: string;
+    icon: string;
+    to?: string;
+    onSelect?: () => void;
+  }[] = [];
+  if (
+    canTransact.value &&
+    !composing.value &&
+    transactionalCandidates.value.length > 0
+  ) {
+    items.push({
+      label: t("workspace.more.transactional"),
+      icon: "i-lucide-git-merge",
+      onSelect: () => startTransactional([]),
+    });
+  }
   if (isPublished.value) {
     items.push({
       label: t("workspace.more.consolidated"),
@@ -341,12 +445,19 @@ watch(
   },
 );
 
+/** The transactional composer, in the same place (one composer at a time). */
+const transactional = ref<TransactionalState | null>(null);
+/** Base blocks the transactional being written rewrites, marked in the text. */
+const transactionalPassage = ref<string[]>([]);
+
 const composerDraft = computed(() =>
   composer.value?.draftId
     ? (list.byId.value.get(composer.value.draftId) ?? null)
     : null,
 );
-const composing = computed(() => composer.value !== null);
+const composing = computed(
+  () => composer.value !== null || transactional.value !== null,
+);
 const canSelect = computed(
   () => canAmend.value && textMode.value === "original" && !composing.value,
 );
@@ -377,15 +488,8 @@ function onTextPointerUp(): void {
   selection.value = { ids: range, anchor: range[0] ?? null };
 }
 
-function openComposer(options: Partial<Omit<ComposerState, "key">>): void {
-  composer.value = {
-    key: (composerSeq += 1),
-    mode: "passage",
-    selection: [],
-    appendParagraph: false,
-    draftId: null,
-    ...options,
-  };
+/** A composer takes the amendments panel, over the original text. */
+function showComposerPanel(): void {
   detailOpen.value = false;
   picking.value = false;
   textMode.value = "original";
@@ -397,6 +501,55 @@ function openComposer(options: Partial<Omit<ComposerState, "key">>): void {
       workspaceBox.value?.scrollIntoView({ block: "nearest" }),
     );
   }
+}
+
+function openComposer(options: Partial<Omit<ComposerState, "key">>): void {
+  transactional.value = null;
+  composer.value = {
+    key: (composerSeq += 1),
+    mode: "passage",
+    selection: [],
+    appendParagraph: false,
+    draftId: null,
+    ...options,
+  };
+  showComposerPanel();
+}
+
+/** "Proponer una transaccional", on these amendments or picking them there. */
+function startTransactional(ids: string[]): void {
+  if (!canTransact.value) return;
+  composer.value = null;
+  transactional.value = { key: (composerSeq += 1), sourceIds: [...ids] };
+  showComposerPanel();
+}
+
+function closeTransactional(): void {
+  transactional.value = null;
+  transactionalPassage.value = [];
+}
+
+function onTransactionalCreated(amendment: AmendmentDto): void {
+  list.upsert(amendment);
+  // Its sources now link to it: take the server's view of them too.
+  void list.refresh();
+}
+
+/** "Ver la transaccional": among the actor's own when their member signs it. */
+function onTransactionalView(id: string): void {
+  closeTransactional();
+  const amendment = list.byId.value.get(id);
+  if (
+    showMineTab.value &&
+    amendment &&
+    isAmendmentAuthor(amendment, member.value?.id ?? null)
+  ) {
+    listTab.value = "mine";
+  } else {
+    listTab.value = "all";
+  }
+  selectAmendment(id);
+  mobilePane.value = "amendments";
 }
 
 function amendSelection(
@@ -601,13 +754,27 @@ function openCorrections(): void {
 
 /**
  * On arrival, `?enmienda=<id>` opens that amendment (a draft among the
- * actor's own). Client only: whether the detail opens in the panel or in a
- * slideover depends on the screen width.
+ * actor's own), and `?transaccional=<id>,<id>` the transactional composer
+ * on those amendments (the ones that can still be combined). Client only:
+ * whether the detail opens in the panel or in a slideover depends on the
+ * screen width.
  */
 let landed = false;
 function landOnAmendment(): void {
-  if (landed || !list.data.value) return;
+  if (landed || !list.data.value || !document.value) return;
   landed = true;
+  const transact = route.query.transaccional;
+  if (typeof transact === "string" && canTransact.value) {
+    startTransactional(
+      transact.split(",").filter((id) => {
+        const amendment = list.byId.value.get(id);
+        return (
+          amendment !== undefined && transactionalSourceEligible(amendment)
+        );
+      }),
+    );
+    return;
+  }
   const wanted = route.query.enmienda;
   const id = typeof wanted === "string" ? wanted : null;
   const target = id ? list.byId.value.get(id) : undefined;
@@ -617,7 +784,9 @@ function landOnAmendment(): void {
   mobilePane.value = "amendments";
 }
 onMounted(() => {
-  watch(() => list.data.value, landOnAmendment, { immediate: true });
+  watch([() => list.data.value, () => document.value], landOnAmendment, {
+    immediate: true,
+  });
 });
 
 function onDetailEdit(amendment: AmendmentDto): void {
@@ -702,12 +871,13 @@ const showAcceptedToggle = computed(
   () => !finalText.value && Boolean(document.value?.positionsVisible),
 );
 
-const originalSelected = computed(() =>
-  composer.value &&
-  (composer.value.mode === "passage" || composer.value.mode === "delete")
+const originalSelected = computed(() => {
+  if (transactional.value) return transactionalPassage.value;
+  return composer.value &&
+    (composer.value.mode === "passage" || composer.value.mode === "delete")
     ? contiguousBlockRange(base.value, composer.value.selection)
-    : selection.value.ids,
-);
+    : selection.value.ids;
+});
 
 const fallbackText = computed(
   () => document.value?.workingVersion?.blocks ?? null,
@@ -792,12 +962,47 @@ const filteredBlockLabel = computed(() =>
       >
         <div class="flex flex-col items-start gap-1.5 sm:items-end">
           <div class="flex flex-wrap items-center gap-2">
+            <!-- The presenter's review: primary while something waits for
+                 the presenter, secondary for the Mesa. -->
+            <UButton
+              v-if="showReviewEntry"
+              :to="documentPath('revisar')"
+              icon="i-lucide-list-checks"
+              :color="reviewIsPrimary ? 'primary' : 'neutral'"
+              :variant="reviewIsPrimary ? 'solid' : 'outline'"
+              :label="t('workspace.proponentReview.action')"
+              :aria-label="
+                reviewBacklog.total > 0
+                  ? t(
+                      'workspace.proponentReview.actionCount',
+                      { count: reviewBacklog.total },
+                      reviewBacklog.total,
+                    )
+                  : undefined
+              "
+            >
+              <template v-if="reviewBacklog.total > 0" #trailing>
+                <UBadge
+                  :label="String(reviewBacklog.total)"
+                  :color="reviewIsPrimary ? 'neutral' : 'primary'"
+                  :variant="reviewIsPrimary ? 'solid' : 'subtle'"
+                  size="sm"
+                  class="tabular-nums"
+                  aria-hidden="true"
+                />
+              </template>
+            </UButton>
             <!-- With a paragraph picked, the selection bar's "Cambiar este
-                 texto" is the primary button. -->
+                 texto" is the primary button; with the presenter's review
+                 pending, that one is. -->
             <UButton
               v-if="canAmend && isStructured && !composing"
               icon="i-lucide-pencil-line"
-              :variant="selection.ids.length > 0 ? 'outline' : 'solid'"
+              :variant="
+                selection.ids.length > 0 || reviewIsPrimary
+                  ? 'outline'
+                  : 'solid'
+              "
               :label="t('workspace.cta.present')"
               @click="startAmendment"
             />
@@ -834,6 +1039,7 @@ const filteredBlockLabel = computed(() =>
               canAmend &&
               isStructured &&
               !composing &&
+              !reviewIsPrimary &&
               selection.ids.length === 0
             "
             class="text-muted text-sm"
@@ -1328,6 +1534,23 @@ const filteredBlockLabel = computed(() =>
                 @reload="reloadComposer"
               />
 
+              <!-- Transactional composer -->
+              <TransactionalComposer
+                v-else-if="transactional"
+                :key="transactional.key"
+                :base="base"
+                :document="document"
+                :amendments-url="amendmentsUrl"
+                :amendments="list.listed.value"
+                :label-of="list.labelOf"
+                :initial-source-ids="transactional.sourceIds"
+                @close="closeTransactional"
+                @created="onTransactionalCreated"
+                @view="onTransactionalView"
+                @conflict="refreshAll()"
+                @passage="transactionalPassage = $event"
+              />
+
               <!-- Detail (wide screens) -->
               <AmendmentDetail
                 v-else-if="showDesktopDetail && selectedAmendment"
@@ -1340,9 +1563,11 @@ const filteredBlockLabel = computed(() =>
                 :candidates="relationCandidates"
                 :overlaps="selectedOverlaps"
                 :decisions-url="decisionsUrl"
+                :can-transact="canTransact"
                 @close="closeDetail"
                 @select="selectAmendment"
                 @edit="onDetailEdit"
+                @transact="startTransactional"
                 @updated="list.upsert"
                 @replaced="list.replace"
                 @removed="onDetailRemoved"
@@ -1372,6 +1597,7 @@ const filteredBlockLabel = computed(() =>
                       :label-of="list.labelOf"
                       :relations="list.relationsOf(item.id)"
                       :selected="selectedId === item.id"
+                      :proponent-member-id="proponentMemberId"
                       show-published
                       @select="selectAmendment"
                     />
@@ -1485,7 +1711,10 @@ const filteredBlockLabel = computed(() =>
                   :selected-id="selectedId"
                   :label-of="list.labelOf"
                   :relations-of="list.relationsOf"
+                  :can-transact="canTransact"
+                  :proponent-member-id="proponentMemberId"
                   @select="selectAmendment"
+                  @transact="startTransactional"
                 />
               </template>
             </template>
@@ -1514,9 +1743,11 @@ const filteredBlockLabel = computed(() =>
               :overlaps="selectedOverlaps"
               :decisions-url="decisionsUrl"
               :closable="false"
+              :can-transact="canTransact"
               @close="closeDetail"
               @select="selectAmendment"
               @edit="onDetailEdit"
+              @transact="startTransactional"
               @updated="list.upsert"
               @replaced="list.replace"
               @removed="onDetailRemoved"

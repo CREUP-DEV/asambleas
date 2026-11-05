@@ -1,17 +1,24 @@
 <script setup lang="ts">
 import type { AcceptanceDto, AmendmentDto } from "~~/shared/types/api";
+import { transactionalPresenterParty } from "~/composables/amendment/transactional";
 
 /**
- * Parties of a transactional (the authors of its sources and the document
- * proponent) and their answers. A pending party answers for itself
- * (`can.accept`); the Mesa records the answer a party gives in the room.
- * The transactional can be voted only once every party accepted.
+ * Parties of a transactional (the authors of its sources and the document's
+ * presenter) and their answers. A pending party answers for itself
+ * (`can.accept`): the presenter approves it, the authors accept it. The
+ * presenter is found by member (`proponentMemberId`): when it also wrote a
+ * source its row has the role "author", but it is still the presenter. The
+ * Mesa records the answer a party gives in the room. Where the
+ * transactional stands as a whole (and whether it can be voted) is said
+ * once, by the review panel above, so this list does not repeat it.
  */
 const props = defineProps<{
   amendment: AmendmentDto;
   /** URL of the amendment: .../amendments/{id}. */
   url: string;
   actorMemberId: string | null;
+  /** The document's presenter (document.proponent). */
+  proponentMemberId?: string | null;
 }>();
 
 const emit = defineEmits<{
@@ -37,14 +44,45 @@ const acceptedCount = computed(
       (acceptance) => acceptance.decision === "accepted",
     ).length,
 );
-const allAccepted = computed(
-  () =>
-    props.amendment.acceptances.length > 0 &&
-    acceptedCount.value === props.amendment.acceptances.length,
-);
 
 function isOwn(party: AcceptanceDto): boolean {
   return party.member.id === props.actorMemberId;
+}
+
+/** The presenter's row, whatever its role. */
+const presenterId = computed(
+  () =>
+    transactionalPresenterParty(
+      props.amendment.acceptances,
+      props.proponentMemberId ?? null,
+    )?.member.id ?? null,
+);
+
+function isPresenter(party: AcceptanceDto): boolean {
+  return party.member.id === presenterId.value;
+}
+
+/** Said of the presenter as such, also when it wrote a source. */
+function roleLabel(party: AcceptanceDto): string {
+  return t(
+    `amendment.acceptances.roles.${isPresenter(party) ? "proponent" : party.role}`,
+  );
+}
+
+/**
+ * The presenter "approves" it while that is the step it waits for (as the
+ * status sentence says); otherwise every party "accepts" it.
+ */
+function acceptLabel(party: AcceptanceDto): string {
+  if (!isOwn(party)) {
+    return t("amendment.acceptances.recordAccept", {
+      member: party.member.acronym,
+    });
+  }
+  return isPresenter(party) &&
+    props.amendment.reviewState === "pending_proponent"
+    ? t("amendment.acceptances.approve")
+    : t("amendment.acceptances.accept");
 }
 
 function canAnswer(party: AcceptanceDto): boolean {
@@ -108,7 +146,7 @@ async function answer(
       >
         <CommonMemberBadge :member="party.member" size="xs" show-name />
         <span class="text-dimmed text-xs">
-          {{ t(`amendment.acceptances.roles.${party.role}`) }}
+          {{ roleLabel(party) }}
         </span>
         <span class="ms-auto flex flex-wrap items-center gap-1.5">
           <CommonStatusBadge
@@ -128,13 +166,7 @@ async function answer(
             size="xs"
             :loading="busy === `${party.member.id}:accepted`"
             :disabled="busy !== null"
-            :label="
-              isOwn(party)
-                ? t('amendment.acceptances.accept')
-                : t('amendment.acceptances.recordAccept', {
-                    member: party.member.acronym,
-                  })
-            "
+            :label="acceptLabel(party)"
             @click="answer(party, 'accepted')"
           />
           <UButton
@@ -156,16 +188,5 @@ async function answer(
         </div>
       </li>
     </ul>
-
-    <p
-      v-if="open && amendment.acceptances.length > 0"
-      class="text-muted text-xs"
-    >
-      {{
-        allAccepted
-          ? t("amendment.acceptances.ready")
-          : t("amendment.acceptances.waiting")
-      }}
-    </p>
   </section>
 </template>

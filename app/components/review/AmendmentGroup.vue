@@ -15,10 +15,12 @@ import {
 
 /**
  * The amendments of one document in the validation inbox: those waiting for
- * validation and those validated but kept private, with their changes over
- * the published text (fetched once per document). When there are several,
- * they can be selected to validate or publish them at once: the endpoints
- * work per document.
+ * validation, the transactionals still waiting for the document's presenter
+ * (shown, not actionable) and those validated but kept private, with their
+ * changes over the published text (fetched once per document). When there
+ * are several, they can be selected to validate or publish them at once:
+ * the endpoints work per document. Late ones waiting for the assembly are
+ * listed apart (LateGroup).
  *
  * It runs the requests itself and tells the inbox what changed, so the
  * inbox patches its queue right away and refetches in the background.
@@ -313,6 +315,13 @@ const summary = computed(() =>
           props.group.toValidate.length,
         )
       : null,
+    props.group.awaitingProponent.length > 0
+      ? t(
+          "review.amendments.countAwaitingProponent",
+          { count: props.group.awaitingProponent.length },
+          props.group.awaitingProponent.length,
+        )
+      : null,
     props.group.toPublish.length > 0
       ? t(
           "review.amendments.countToPublish",
@@ -440,6 +449,26 @@ const summary = computed(() =>
         />
       </li>
     </ul>
+
+    <div v-if="group.awaitingProponent.length > 0" class="space-y-2">
+      <div>
+        <h5 class="text-highlighted text-sm font-semibold">
+          {{ t("review.amendments.awaitingProponentTitle") }}
+        </h5>
+        <p class="text-muted text-sm">
+          {{ t("review.amendments.awaitingProponentHelp") }}
+        </p>
+      </div>
+      <ul class="space-y-3">
+        <li v-for="amendment in group.awaitingProponent" :key="amendment.id">
+          <ReviewAmendmentCard
+            :amendment="amendment"
+            :base="base"
+            :base-loading="documentPending"
+          />
+        </li>
+      </ul>
+    </div>
 
     <div v-if="group.toPublish.length > 0" class="space-y-2">
       <div>

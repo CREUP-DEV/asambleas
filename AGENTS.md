@@ -54,6 +54,7 @@ The public website lives in a separate `creup/web` repository. This app may mirr
 - PostgreSQL: `localhost:5432`
 - Adminer: `http://localhost:8080`
 - Intranet API base: `NUXT_INTRANET_API_URL` (role sync falls back to `${base}/user/role`; members from `/usuarios/asociados` and `/usuarios/sectoriales`)
+- Intranet API token: `NUXT_INTRANET_API_TOKEN`, sent as `Authorization: Bearer <token>` on every intranet call when set; never log it
 - Role sync env var: `NUXT_ROLE_API_URL`
 - Export storage env var: `EXPORT_STORAGE_DIR`
 
@@ -101,7 +102,7 @@ server/assets/      server-bundled fonts/assets
 - First interaction is Google authentication.
 - Unauthenticated users go to `/login`.
 - All authenticated Google users may sign in; there is no allowlist.
-- After authentication, call `NUXT_ROLE_API_URL` with `{ "email": "user@creup.es" }`.
+- After authentication, call `NUXT_ROLE_API_URL` with `{ "email": "user@creup.es" }`. Every intranet call (role sync and roster sync) sends `Authorization: Bearer <NUXT_INTRANET_API_TOKEN>` when the token is set (`intranetAuthHeaders` in `server/utils/members/intranet.ts`).
 - Always update `externalRole`, `externalName`, `externalInitials`, `university` and `lastRoleSyncAt` when role sync returns data.
 - If role sync fails, log a warning and do not block sign-in.
 - `INITIAL_ADMIN_EMAIL` receives `Admin` on first sign-in.
@@ -117,7 +118,7 @@ Role assignment rules:
 | Existing `Invitado`, `Asociado` or `CEA` + external `CEA`                   | `CEA`                                              | Linked again by initials when the role or the initials change; otherwise kept, even if set by hand |
 | Existing `Asociado` or `CEA` + any other external type                      | `Invitado`                                         | Cleared; linked again only if the new type is `Sectorial`                                          |
 | Existing `Invitado` whose type stops being `Asociado`, `Sectorial` or `CEA` | `Invitado`                                         | Cleared                                                                                            |
-| Existing `Admin`, `Secretaria` or `Moderador`                               | Keep current platform role                         | Never cleared; linked by initials like any account of its intranet type                            |
+| Existing `Admin`, `Secretaria`, `Presidencia` or `Moderador`                | Keep current platform role                         | Never cleared; linked by initials like any account of its intranet type                            |
 
 ## RBAC
 
@@ -125,23 +126,27 @@ System roles:
 
 - `Admin`
 - `Secretaria`
+- `Presidencia`
 - `Moderador`
 - `CEA`
 - `Asociado`
 - `Invitado`
 
-`Admin` bypasses all permission checks through the RBAC helper. Do not reimplement ad hoc admin bypasses.
+`Admin` bypasses all permission checks through the RBAC helper. Do not reimplement ad hoc admin bypasses. `Admin`, `Secretaria`, `Presidencia` and `Moderador` are `PROTECTED_ROLES`: role sync never changes them.
 
 Default permissions:
 
-| Role       | Permissions                                                                                                                                                                                         |
-| ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Admin      | All, via bypass                                                                                                                                                                                     |
-| Secretaria | `assembly:create`, `assembly:manage`, `document:create`, `document:manage`, `amendment:create`, `amendment:manage`, `amendment:review`, `assembly:vote_result`, `session:moderate`, `member:manage` |
-| CEA        | `document:create`, `amendment:create`                                                                                                                                                               |
-| Asociado   | `document:create`, `amendment:create`                                                                                                                                                               |
-| Moderador  | `session:moderate`                                                                                                                                                                                  |
-| Invitado   | none                                                                                                                                                                                                |
+| Role        | Permissions                                                                                                                                                                                         |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Admin       | All, via bypass                                                                                                                                                                                     |
+| Secretaria  | `assembly:create`, `assembly:manage`, `document:create`, `document:manage`, `amendment:create`, `amendment:manage`, `amendment:review`, `assembly:vote_result`, `session:moderate`, `member:manage` |
+| Presidencia | Same as `Secretaria`                                                                                                                                                                                |
+| CEA         | `document:create`, `amendment:create`                                                                                                                                                               |
+| Asociado    | `document:create`, `amendment:create`                                                                                                                                                               |
+| Moderador   | `session:moderate`                                                                                                                                                                                  |
+| Invitado    | none                                                                                                                                                                                                |
+
+Per-user permissions: an admin can grant single permissions to one user on top of their role (`user_permissions`, `PUT /api/admin/users/[id]/permissions`). A user's permissions are the union of both; never subtract role permissions per user. Read them only through `getEffectivePermissions` (`server/utils/auth/rbac.ts`), which `requireActor`, `requirePermission`, `attachAuthContext`, `/api/auth/permissions` and the export actor use.
 
 Permission keys:
 
@@ -160,7 +165,7 @@ session:moderate
 member:manage
 ```
 
-Use `requirePermission(event, PERMISSION_KEYS.X)`, `hasPermission`, `requireAdmin` and `getAuthUserWithRole` from `server/utils/auth/rbac.ts`. Domain endpoints use `requireActor` and its helpers from `server/utils/domain/actor.ts`.
+Use `requirePermission(event, PERMISSION_KEYS.X)`, `hasPermission`, `requireAdmin`, `getEffectivePermissions` and `getAuthUserWithRole` from `server/utils/auth/rbac.ts`. Domain endpoints use `requireActor` and its helpers from `server/utils/domain/actor.ts`.
 
 ## Domain Rules
 
@@ -209,7 +214,9 @@ Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`
   - decisions;
   - acceptances.
 - Presenting never admits. The Secretaría validates each amendment (admitting the on-time ones; late ones still need the Mesa) or sends it back with a correction note, and publishes it when validating or later. Only published amendments are visible beyond their authors, the Secretaría and the Mesa (`publishedAt`). Transactionals the Mesa presents, and late amendments it admits, are published at once.
-- Transactionals link 1..N parents through `amendment_sources`. They need every party's acceptance before they can be voted. Approving one marks its parents `transacted`.
+- Late amendments (`late`, computed on submission) stay `admission: pending` after the Secretaría validates them; once published they show as out of time until the Secretaría or the Mesa records the assembly's decision (`POST .../amendments/admission`). The validation inbox lists them, published or not, until then (`awaitsAssemblyDecision`). Only admitted amendments can be decided or grouped into a transactional.
+- Transactionals link 1..N parents through `amendment_sources`. They build only on published, submitted, admitted and undecided amendments. Any account with `amendment:create` acting for a member (or the Mesa) can propose one. One proposed by a member is `pending_proponent` until the document's presenter accepts it (its acceptance row), then goes to the Secretaría like any amendment (`validate` answers 409 before that, and the inbox lists it read only); `AcceptanceDto.role` reports the presenter's row as `proponent` even when it also wrote a source; one the Mesa presents is validated and published at once. They need every party's acceptance before they can be voted. Approving one marks its parents `transacted`.
+- Speaking turns (`speaking_turns`) are written down by the Mesa (`session:moderate`) through `/api/assemblies/[assembly]/speakers`; attendees see who has the floor only while `live_state.speakersVisible` is true. Writes lock the assembly row first. Closing the assembly ends the turn with the floor, cancels the waiting ones and hides the list (`closeSpeakingTurns`), since a closed assembly refuses every speakers write.
 - Overlaps come from `findOverlaps` and are computed from the ranges each amendment really changes. Relations between amendments live in `amendment_relations`.
 - Every state change calls `recordEvent`, which appends to the history and notifies live listeners.
 

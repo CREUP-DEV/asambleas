@@ -1,9 +1,10 @@
 /**
  * Pure helpers that turn GET /api/me/work into what the home page and the
  * assembly overview show: the things a user has to do (present an expected
- * document, fix what the Secretaría sent back, send a draft), where the rest
- * of their documents and amendments stand, and the Secretaría's pending
- * review per assembly. No Vue or Nuxt here.
+ * document, fix what the Secretaría sent back, send a draft, answer the
+ * amendments to a document they present), where the rest of their documents
+ * and amendments stand, and the Secretaría's pending review per assembly.
+ * No Vue or Nuxt here.
  *
  * The "-" prefix keeps Nuxt from registering this module (and its test) as
  * a component; import it explicitly.
@@ -13,6 +14,7 @@ import type {
   MeWorkAssemblyRef,
   MeWorkDocumentDto,
   MeWorkDto,
+  MeWorkProponentDto,
   MeWorkReviewDto,
 } from "~~/shared/types/api";
 
@@ -26,6 +28,11 @@ export type HomeWorkTaskKind =
   | "document_send"
   /** The Secretaría sent the amendment back with a note. */
   | "amendment_correction"
+  /**
+   * A published document the user's member presents has amendments with no
+   * position yet, or transactionals waiting for its approval.
+   */
+  | "proponent_review"
   /** An amendment draft never presented. */
   | "amendment_draft";
 
@@ -53,6 +60,14 @@ export interface HomeWorkAmendmentRef {
   code: string | null;
 }
 
+/** What waits for the presenter of a document (`proponent_review`). */
+export interface HomeWorkProponentCounts {
+  /** Undecided amendments with no position from the presenter yet. */
+  positions: number;
+  /** Transactionals waiting for the presenter's approval. */
+  transactionals: number;
+}
+
 export interface HomeWorkTask {
   /** Unique across documents and amendments. */
   key: string;
@@ -60,14 +75,19 @@ export interface HomeWorkTask {
   assembly: MeWorkAssemblyRef;
   document: HomeWorkDocumentRef;
   amendment: HomeWorkAmendmentRef | null;
+  /** Only for `proponent_review`: what is waiting; null otherwise. */
+  counts: HomeWorkProponentCounts | null;
   /** The Secretaría's note when it asked for a correction. */
   note: string | null;
   /** Internal deadline of an expected document. */
   dueAt: string | null;
   /** The deadline has passed and the document was not presented. */
   overdue: boolean;
-  /** Fix it in the document editor or in the document workspace. */
-  target: "edit" | "document";
+  /**
+   * Where it is done: the document editor, the document workspace, or the
+   * presenter's review of the document's amendments.
+   */
+  target: "edit" | "document" | "review";
 }
 
 export interface HomeWorkUpdate {
@@ -116,18 +136,30 @@ export function homeWorkAmendmentTask(
     : "amendment_draft";
 }
 
+/** What the presenter of a document has to answer, if anything. */
+export function homeWorkProponentCounts(
+  entry: MeWorkProponentDto,
+): HomeWorkProponentCounts | null {
+  const positions = Math.max(0, entry.positionsPending);
+  const transactionals = Math.max(0, entry.transactionalsToApprove);
+  return positions + transactionals > 0 ? { positions, transactionals } : null;
+}
+
 const TASK_RANK: Record<HomeWorkTaskKind, number> = {
   document_correction: 0,
   amendment_correction: 0,
-  document_prepare: 1,
-  document_send: 1,
-  amendment_draft: 2,
+  proponent_review: 1,
+  document_prepare: 2,
+  document_send: 2,
+  amendment_draft: 3,
 };
 
 /**
  * Everything the user has to do, most urgent first: corrections the
- * Secretaría asked for, then overdue documents, then the rest by deadline
- * (documents without one after those with one), then amendment drafts.
+ * Secretaría asked for, then the amendments to answer as the presenter of a
+ * document (transactionals waiting for approval hold up the debate), then
+ * overdue documents, then the rest by deadline (documents without one after
+ * those with one), then amendment drafts.
  */
 export function homeWorkTasks(work: MeWorkDto, now: number): HomeWorkTask[] {
   const tasks: HomeWorkTask[] = [];
@@ -141,11 +173,28 @@ export function homeWorkTasks(work: MeWorkDto, now: number): HomeWorkTask[] {
       assembly: entry.assembly,
       document: documentRef(entry),
       amendment: null,
+      counts: null,
       note:
         kind === "document_correction" ? entry.document.correctionNote : null,
       dueAt: entry.document.dueAt,
       overdue: due !== null && due < now,
       target: "edit",
+    });
+  }
+  for (const entry of work.proponent) {
+    const counts = homeWorkProponentCounts(entry);
+    if (!counts) continue;
+    tasks.push({
+      key: `proponent-${entry.document.id}`,
+      kind: "proponent_review",
+      assembly: entry.assembly,
+      document: { ...entry.document },
+      amendment: null,
+      counts,
+      note: null,
+      dueAt: null,
+      overdue: false,
+      target: "review",
     });
   }
   for (const entry of work.amendments) {
@@ -157,6 +206,7 @@ export function homeWorkTasks(work: MeWorkDto, now: number): HomeWorkTask[] {
       assembly: entry.assembly,
       document: { ...entry.document },
       amendment: { id: entry.amendment.id, code: entry.amendment.code },
+      counts: null,
       note:
         kind === "amendment_correction" ? entry.amendment.correctionNote : null,
       dueAt: null,
@@ -171,6 +221,10 @@ export function homeWorkTasks(work: MeWorkDto, now: number): HomeWorkTask[] {
     const dueA = time(a.dueAt) ?? Number.POSITIVE_INFINITY;
     const dueB = time(b.dueAt) ?? Number.POSITIVE_INFINITY;
     if (dueA !== dueB) return dueA - dueB;
+    // Presenters: transactionals waiting for approval first.
+    const waitingA = a.counts?.transactionals ?? 0;
+    const waitingB = b.counts?.transactionals ?? 0;
+    if (waitingA > 0 !== waitingB > 0) return waitingA > 0 ? -1 : 1;
     return (
       a.assembly.label.localeCompare(b.assembly.label) ||
       a.document.title.localeCompare(b.document.title) ||
@@ -219,13 +273,22 @@ const UPDATE_RANK: Record<HomeWorkUpdateKind, number> = {
 /**
  * Where the user's documents and amendments stand when there is nothing
  * for them to do: waiting for the Secretaría first, then validated, then
- * published.
+ * published. A published document whose amendments wait for the user's
+ * answer is left out: it is already a task.
  */
 export function homeWorkUpdates(work: MeWorkDto): HomeWorkUpdate[] {
+  const answering = new Set(
+    work.proponent
+      .filter((entry) => homeWorkProponentCounts(entry))
+      .map((entry) => entry.document.id),
+  );
   const updates: HomeWorkUpdate[] = [];
   for (const entry of work.documents) {
     const kind = documentUpdate(entry);
     if (!kind) continue;
+    if (kind === "document_published" && answering.has(entry.document.id)) {
+      continue;
+    }
     updates.push({
       key: `document-${entry.document.id}`,
       kind,
@@ -290,6 +353,9 @@ export function homeWorkForAssembly(
       (entry) => entry.assembly.id === assemblyId,
     ),
     review: work.review.filter((entry) => entry.assembly.id === assemblyId),
+    proponent: work.proponent.filter(
+      (entry) => entry.assembly.id === assemblyId,
+    ),
   };
 }
 

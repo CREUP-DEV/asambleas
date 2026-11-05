@@ -6,6 +6,8 @@ import type {
   PublishAmendmentsBody,
   ValidateAmendmentsBody,
 } from "~~/shared/types/api";
+import { transactionalProgressOf } from "~/composables/amendment/transactional";
+import { useTransactionalProgressText } from "~/composables/amendment/useTransactionalProgressText";
 import {
   amendmentReviewSentenceKey,
   amendmentReviewView,
@@ -25,18 +27,32 @@ import {
  * Validation and publication answer with the whole list (`replaced`); a
  * correction answers with the amendment, now a draft again (`corrected`).
  * A published amendment needs no note, except for its authors (so they know
- * everyone sees it now) or while the Mesa still has to admit it.
+ * everyone sees it now) or while the assembly still has to decide whether
+ * to treat it (a late one).
+ *
+ * A presented transactional says what it waits for, to everyone who sees
+ * it: the document's presenter's approval, then the parties' acceptance,
+ * or that it is ready to be voted. While the Secretaría has it, the usual
+ * review sentence stays, plus who will still have to accept it.
  *
  * Focus: after an action the status sentence takes it (it is also announced),
  * or, when the panel is gone (published, nothing left to say), `settled`
  * lets the detail move it. Cancelling the correction form gives it back to
  * "Pedir corrección".
  */
-const props = defineProps<{
-  amendment: AmendmentDto;
-  /** Base URL of the document's amendments: .../amendments. */
-  amendmentsUrl: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    amendment: AmendmentDto;
+    /** Base URL of the document's amendments: .../amendments. */
+    amendmentsUrl: string;
+    /**
+     * The document's presenter (document.proponent): a transactional waits
+     * for its approval, found by member even when it also wrote a source.
+     */
+    proponentMemberId?: string | null;
+  }>(),
+  { proponentMemberId: null },
+);
 
 const emit = defineEmits<{
   /** Open the composer on this draft. */
@@ -79,6 +95,21 @@ watch(
 const presenter = computed(() =>
   isAmendmentPresenter(props.amendment, member.value?.id ?? null),
 );
+const progressText = useTransactionalProgressText();
+const progress = computed(() =>
+  transactionalProgressOf(
+    props.amendment,
+    member.value?.id ?? null,
+    props.proponentMemberId,
+  ),
+);
+/** The transactional's own sentence, outside the Secretaría's stages. */
+const progressSentence = computed(() =>
+  progress.value ? progressText.sentence(progress.value) : null,
+);
+const afterSecretaria = computed(() =>
+  progress.value ? progressText.afterSecretaria(progress.value) : null,
+);
 const view = computed(() => {
   const current = amendmentReviewView(props.amendment);
   if (
@@ -90,10 +121,42 @@ const view = computed(() => {
   }
   return current;
 });
-const sentence = computed(() =>
-  view.value
-    ? t(amendmentReviewSentenceKey(view.value.key, presenter.value))
-    : "",
+/** Late, public, waiting for the assembly: that is the news, not "Publicada". */
+const latePublic = computed(
+  () => view.value?.key === "published" && view.value.awaitingAdmission,
+);
+/** What the status block says: title, sentence, icon and colour. */
+const status = computed(() => {
+  if (progress.value && progressSentence.value) {
+    return {
+      icon: progress.value.icon,
+      color: progress.value.color,
+      title: progressText.summary(progress.value),
+      sentence: progressSentence.value,
+      private: view.value?.private ?? false,
+    };
+  }
+  if (!view.value) return null;
+  if (latePublic.value) {
+    return {
+      icon: "i-lucide-clock-alert",
+      color: "warning" as const,
+      title: t("amendment.late"),
+      sentence: t("amendment.lateState.awaitingSentence"),
+      private: false,
+    };
+  }
+  return {
+    icon: view.value.icon,
+    color: view.value.color,
+    title: t(`amendment.review.badges.${view.value.key}`),
+    sentence: t(amendmentReviewSentenceKey(view.value.key, presenter.value)),
+    private: view.value.private,
+  };
+});
+/** The late line under a private review state (validated, not public yet). */
+const lateLine = computed(
+  () => Boolean(view.value?.awaitingAdmission) && !latePublic.value,
 );
 const ICON_CLASSES = {
   neutral: "text-muted",
@@ -101,6 +164,7 @@ const ICON_CLASSES = {
   warning: "text-warning",
   success: "text-success",
   primary: "text-primary",
+  error: "text-error",
 } as const;
 const canValidate = computed(() => props.amendment.can.validate);
 const canPublish = computed(() => props.amendment.can.publish);
@@ -218,10 +282,10 @@ async function askCorrection(): Promise<void> {
 
 <template>
   <section
-    v-if="view"
+    v-if="status"
     class="flex flex-col gap-3 rounded-lg border p-3 sm:p-4"
     :class="
-      view.private
+      status.private
         ? 'border-default bg-elevated/40 border-dashed'
         : 'border-default'
     "
@@ -234,19 +298,22 @@ async function askCorrection(): Promise<void> {
       aria-live="polite"
     >
       <UIcon
-        :name="view.icon"
+        :name="status.icon"
         class="mt-0.5 size-5 shrink-0"
-        :class="ICON_CLASSES[view.color]"
+        :class="ICON_CLASSES[status.color]"
         aria-hidden="true"
       />
       <div class="min-w-0 flex-1 space-y-1">
         <p class="text-highlighted text-sm font-semibold">
-          {{ t(`amendment.review.badges.${view.key}`) }}
+          {{ status.title }}
         </p>
         <p class="text-default text-sm">
-          {{ sentence }}
+          {{ status.sentence }}
         </p>
-        <p v-if="view.awaitingAdmission" class="text-default text-sm">
+        <p v-if="afterSecretaria" class="text-default text-sm">
+          {{ afterSecretaria }}
+        </p>
+        <p v-if="lateLine" class="text-default text-sm">
           {{ t("amendment.review.awaitingAdmission") }}
         </p>
         <p
@@ -267,7 +334,7 @@ async function askCorrection(): Promise<void> {
     <blockquote
       v-if="
         amendment.correctionNote &&
-        (view.key === 'correction' || view.key === 'correction_sent')
+        (view?.key === 'correction' || view?.key === 'correction_sent')
       "
       class="border-warning bg-default rounded-e-md border-s-4 px-3 py-2"
     >
@@ -281,7 +348,7 @@ async function askCorrection(): Promise<void> {
 
     <!-- Authors: fix the draft and send it again. -->
     <div
-      v-if="view.key === 'correction' && amendment.can.edit"
+      v-if="view?.key === 'correction' && amendment.can.edit"
       class="flex flex-wrap gap-2"
     >
       <UButton

@@ -14,7 +14,9 @@ export type EntityType =
   | "amendment"
   | "vote"
   | "decision"
-  | "live";
+  | "live"
+  /** Speaking turns: entityId is the turn, or the assembly for visibility. */
+  | "speakers";
 
 export interface LiveMessage {
   assemblyId: string;

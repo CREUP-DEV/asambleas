@@ -3,18 +3,28 @@ import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AmendmentDto } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
 import {
+  canRecordAdmission,
+  isAwaitingAssembly,
+  isAwaitingProponent,
   isAwaitingPublication,
   isAwaitingValidation,
+  proponentAcceptance,
   type ReviewAmendmentAction,
 } from "./-queue";
 
 /**
  * One amendment in the validation inbox: who presents it, a sentence saying
  * where it stands, its changes over the published text and its
- * justification. Waiting for validation: "Validar y publicar" (main),
- * "Pedir corrección" and, under "Más", "Validar sin publicar". Validated but
- * kept private: "Publicar". The parent runs every action. The selection
- * checkbox shows only when the document has several amendments to act on.
+ * justification. The actions depend on where it stands:
+ * - waiting for validation: "Validar y publicar" (main), "Pedir corrección"
+ *   and, under "Más", "Validar sin publicar";
+ * - validated but kept private: "Publicar";
+ * - a transactional waiting for the document's presenter: none, it says who
+ *   has to approve it first;
+ * - late and waiting for the assembly: "La asamblea decide tratarla" (main),
+ *   "No la trata" and, under "Más", "Publicar ya" while it is private.
+ * The parent runs every action. The selection checkbox shows only when the
+ * list has several amendments to act on.
  */
 const props = withDefaults(
   defineProps<{
@@ -26,7 +36,7 @@ const props = withDefaults(
     busy?: ReviewAmendmentAction | null;
     /** Another action is running elsewhere: keep the buttons quiet. */
     disabled?: boolean;
-    /** Several amendments of the document can be acted on at once. */
+    /** Several amendments of the list can be acted on at once. */
     multiSelect?: boolean;
   }>(),
   { baseLoading: false, busy: null, disabled: false, multiSelect: false },
@@ -44,26 +54,76 @@ const label = computed(
   () => amendmentDisplayLabel(props.amendment) ?? t("review.amendments.noCode"),
 );
 
-const toValidate = computed(() => isAwaitingValidation(props.amendment));
-const toPublish = computed(() => isAwaitingPublication(props.amendment));
-const selectable = computed(
-  () =>
-    (toValidate.value && props.amendment.can.validate) ||
-    (toPublish.value && props.amendment.can.publish),
-);
+type Stage = "validate" | "proponent" | "publish" | "late" | null;
+
+const stage = computed<Stage>(() => {
+  if (isAwaitingAssembly(props.amendment)) return "late";
+  if (isAwaitingValidation(props.amendment)) return "validate";
+  if (isAwaitingProponent(props.amendment)) return "proponent";
+  if (isAwaitingPublication(props.amendment)) return "publish";
+  return null;
+});
+
+const canAct = computed(() => {
+  switch (stage.value) {
+    case "validate":
+      return props.amendment.can.validate;
+    case "publish":
+      return props.amendment.can.publish;
+    case "late":
+      return canRecordAdmission(props.amendment);
+    default:
+      return false;
+  }
+});
+
+const isPublic = computed(() => props.amendment.publishedAt !== null);
+const presenter = computed(() => proponentAcceptance(props.amendment));
 
 /** What happens next, in one sentence. */
 const stateSentence = computed(() => {
-  if (toPublish.value) return t("review.amendments.validatedHidden");
-  return t("review.amendments.waiting");
+  switch (stage.value) {
+    case "publish":
+      return t("review.amendments.validatedHidden");
+    case "proponent":
+      if (!presenter.value) return t("review.amendments.awaitingProponent");
+      return presenter.value.decision === "rejected"
+        ? t("review.amendments.rejectedByProponent", {
+            member: presenter.value.member.acronym,
+          })
+        : t("review.amendments.awaitingProponentNamed", {
+            member: presenter.value.member.acronym,
+          });
+    case "late":
+      return isPublic.value
+        ? t("review.late.waitingPublic")
+        : t("review.late.waitingPrivate");
+    default:
+      return t("review.amendments.waiting");
+  }
 });
 
-/** Late ones still need the Mesa's admission once validated. */
+const stateIcon = computed(() => {
+  switch (stage.value) {
+    case "publish":
+      return "i-lucide-lock";
+    case "proponent":
+      return presenter.value?.decision === "rejected"
+        ? "i-lucide-circle-x"
+        : "i-lucide-hourglass";
+    case "late":
+      return "i-lucide-scale";
+    default:
+      return "i-lucide-eye-off";
+  }
+});
+
+/** Late ones still need the assembly's decision once validated. */
 const lateNote = computed(
   () =>
     props.amendment.late &&
     props.amendment.admission === "pending" &&
-    (toValidate.value || toPublish.value),
+    stage.value === "validate",
 );
 
 const sentRelative = computed(() =>
@@ -84,15 +144,41 @@ const sentAbsolute = computed(() =>
 // The changes start open, except a whole alternative text, which is long.
 const changesOpen = ref(props.amendment.kind !== "totality_alternative");
 
-const moreItems = computed<DropdownMenuItem[]>(() => [
-  {
-    label: t("review.amendments.validateOnly"),
-    description: t("review.amendments.validateOnlyHelp"),
-    icon: "i-lucide-check",
-    disabled: props.disabled,
-    onSelect: () => emit("action", "validate_only"),
-  },
-]);
+const moreItems = computed<DropdownMenuItem[]>(() => {
+  if (stage.value === "validate") {
+    return [
+      {
+        label: t("review.amendments.validateOnly"),
+        description: t("review.amendments.validateOnlyHelp"),
+        icon: "i-lucide-check",
+        disabled: props.disabled,
+        onSelect: () => emit("action", "validate_only"),
+      },
+    ];
+  }
+  if (
+    stage.value === "late" &&
+    !isPublic.value &&
+    props.amendment.can.publish
+  ) {
+    return [
+      {
+        label: t("review.late.publishNow"),
+        description: t("review.late.publishNowHelp"),
+        icon: "i-lucide-megaphone",
+        disabled: props.disabled,
+        onSelect: () => emit("action", "publish"),
+      },
+    ];
+  }
+  return [];
+});
+
+const moreBusy = computed(
+  () =>
+    props.busy === "validate_only" ||
+    (stage.value === "late" && props.busy === "publish"),
+);
 </script>
 
 <template>
@@ -103,7 +189,7 @@ const moreItems = computed<DropdownMenuItem[]>(() => [
   >
     <div class="flex items-start gap-3">
       <UCheckbox
-        v-if="multiSelect && selectable"
+        v-if="multiSelect && canAct"
         v-model="selected"
         class="mt-0.5"
         :aria-label="t('review.amendments.select', { label })"
@@ -128,6 +214,14 @@ const moreItems = computed<DropdownMenuItem[]>(() => [
             icon="i-lucide-clock-alert"
             :label="t('amendment.late')"
           />
+          <UBadge
+            v-if="stage === 'late' && isPublic"
+            color="neutral"
+            variant="subtle"
+            size="sm"
+            icon="i-lucide-eye"
+            :label="t('review.late.public')"
+          />
         </div>
         <div class="flex flex-wrap items-center gap-1.5 text-sm">
           <span class="text-muted">{{
@@ -143,6 +237,20 @@ const moreItems = computed<DropdownMenuItem[]>(() => [
           </template>
           <span v-else class="text-dimmed">{{ t("review.noPresenter") }}</span>
         </div>
+        <p
+          v-if="
+            amendment.kind === 'transactional' && amendment.sourceIds.length
+          "
+          class="text-muted text-sm"
+        >
+          {{
+            t(
+              "review.amendments.groupsAmendments",
+              { count: amendment.sourceIds.length },
+              amendment.sourceIds.length,
+            )
+          }}
+        </p>
         <p v-if="amendment.submittedAt" class="text-muted text-sm">
           {{ t("review.amendments.sent") }}
           <time :datetime="amendment.submittedAt" :title="sentAbsolute">{{
@@ -152,10 +260,14 @@ const moreItems = computed<DropdownMenuItem[]>(() => [
       </div>
     </div>
 
-    <p class="text-muted flex items-start gap-1.5 text-sm">
+    <p
+      class="flex items-start gap-1.5 text-sm"
+      :class="stage === 'late' ? 'text-highlighted font-medium' : 'text-muted'"
+    >
       <UIcon
-        :name="toPublish ? 'i-lucide-lock' : 'i-lucide-eye-off'"
+        :name="stateIcon"
         class="mt-0.5 size-4 shrink-0"
+        :class="stage === 'late' ? 'text-warning' : ''"
         aria-hidden="true"
       />
       <span>{{ stateSentence }}</span>
@@ -247,14 +359,8 @@ const moreItems = computed<DropdownMenuItem[]>(() => [
       </p>
     </div>
 
-    <div
-      v-if="
-        (toValidate && amendment.can.validate) ||
-        (toPublish && amendment.can.publish)
-      "
-      class="flex flex-wrap gap-2"
-    >
-      <template v-if="toValidate">
+    <div v-if="canAct" class="flex flex-wrap gap-2">
+      <template v-if="stage === 'validate'">
         <UButton
           icon="i-lucide-check-check"
           :label="t('review.amendments.validatePublish')"
@@ -271,25 +377,47 @@ const moreItems = computed<DropdownMenuItem[]>(() => [
           :disabled="disabled && busy !== 'correction'"
           @click="emit('action', 'correction')"
         />
-        <UDropdownMenu :items="moreItems" :content="{ align: 'start' }">
-          <UButton
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-ellipsis"
-            :label="t('review.more')"
-            :loading="busy === 'validate_only'"
-            :disabled="disabled && busy !== 'validate_only'"
-          />
-        </UDropdownMenu>
       </template>
       <UButton
-        v-else
+        v-else-if="stage === 'publish'"
         icon="i-lucide-megaphone"
         :label="t('review.amendments.publish')"
         :loading="busy === 'publish'"
         :disabled="disabled && busy !== 'publish'"
         @click="emit('action', 'publish')"
       />
+      <template v-else-if="stage === 'late'">
+        <UButton
+          icon="i-lucide-check"
+          :label="t('review.late.treat')"
+          :loading="busy === 'admit'"
+          :disabled="disabled && busy !== 'admit'"
+          @click="emit('action', 'admit')"
+        />
+        <UButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-x"
+          :label="t('review.late.notTreat')"
+          :loading="busy === 'inadmit'"
+          :disabled="disabled && busy !== 'inadmit'"
+          @click="emit('action', 'inadmit')"
+        />
+      </template>
+      <UDropdownMenu
+        v-if="moreItems.length > 0"
+        :items="moreItems"
+        :content="{ align: 'start' }"
+      >
+        <UButton
+          color="neutral"
+          variant="ghost"
+          icon="i-lucide-ellipsis"
+          :label="t('review.more')"
+          :loading="moreBusy"
+          :disabled="disabled && !moreBusy"
+        />
+      </UDropdownMenu>
     </div>
   </article>
 </template>

@@ -20,8 +20,10 @@ const props = withDefaults(
     showPublished?: boolean;
     /** Add the "who can see it" line under the badge. */
     showAudience?: boolean;
+    /** Off when something else says where it stands (a transactional's progress). */
+    showBadge?: boolean;
   }>(),
-  { showPublished: false, showAudience: true },
+  { showPublished: false, showAudience: true, showBadge: true },
 );
 
 const { t } = useI18n();
@@ -29,7 +31,9 @@ const { member } = useMe();
 
 const view = computed(() => amendmentReviewView(props.amendment));
 const badge = computed(() =>
-  view.value && (props.showPublished || view.value.key !== "published")
+  props.showBadge &&
+  view.value &&
+  (props.showPublished || view.value.key !== "published")
     ? view.value
     : null,
 );

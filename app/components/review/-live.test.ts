@@ -8,6 +8,16 @@ describe("affectsReviewQueue", () => {
     expect(affectsReviewQueue([{ type: "amendment_admitted" }])).toBe(true);
   });
 
+  it("reacts to the Mesa settling a late one waiting for the assembly", () => {
+    expect(affectsReviewQueue([{ type: "amendment_inadmissible" }])).toBe(true);
+    expect(affectsReviewQueue([{ type: "amendment_lapsed" }])).toBe(true);
+    expect(affectsReviewQueue([{ type: "amendment_withdrawn" }])).toBe(true);
+  });
+
+  it("reacts to the presenter approving a transactional", () => {
+    expect(affectsReviewQueue([{ type: "acceptance_recorded" }])).toBe(true);
+  });
+
   it("reacts to the polling fallback, when anything may have changed", () => {
     expect(affectsReviewQueue([{ type: "poll" }])).toBe(true);
   });

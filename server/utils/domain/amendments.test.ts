@@ -50,6 +50,7 @@ const {
   amendmentSortKey,
   buildAcceptanceParties,
   buildSourceMap,
+  canProposeTransactional,
   collectAncestors,
   computeApprovalWarnings,
   evaluateVoteInput,
@@ -275,6 +276,40 @@ describe("buildAcceptanceParties", () => {
   });
 });
 
+describe("canProposeTransactional", () => {
+  const input = {
+    moderate: false,
+    canCreate: true,
+    actorMemberId: "m1",
+    isParty: false,
+  };
+
+  it("lets any member account that presents amendments propose one", () => {
+    expect(canProposeTransactional(input)).toBe(true);
+  });
+
+  it("lets the parties propose one without amendment:create", () => {
+    expect(
+      canProposeTransactional({ ...input, canCreate: false, isParty: true }),
+    ).toBe(true);
+    expect(canProposeTransactional({ ...input, canCreate: false })).toBe(false);
+  });
+
+  it("needs a member, except for the Mesa", () => {
+    expect(canProposeTransactional({ ...input, actorMemberId: null })).toBe(
+      false,
+    );
+    expect(
+      canProposeTransactional({
+        moderate: true,
+        canCreate: false,
+        actorMemberId: null,
+        isParty: false,
+      }),
+    ).toBe(true);
+  });
+});
+
 describe("nextTransactionalCode", () => {
   it("numbers transactionals per document", () => {
     expect(nextTransactionalCode([])).toBe("T1");
@@ -376,6 +411,26 @@ describe("amendmentCapabilities", () => {
       amendmentCapabilities({ ...input, status: "approved", acceptances })
         .accept,
     ).toBe(false);
+  });
+
+  it("lets reviewers validate a transactional only once the presenter approved it", () => {
+    const transactional = {
+      ...input,
+      status: "submitted" as const,
+      review: true,
+    };
+    expect(
+      amendmentCapabilities({ ...transactional, proponentApproval: "pending" })
+        .validate,
+    ).toBe(false);
+    expect(
+      amendmentCapabilities({ ...transactional, proponentApproval: "rejected" })
+        .validate,
+    ).toBe(false);
+    expect(
+      amendmentCapabilities({ ...transactional, proponentApproval: "accepted" })
+        .validate,
+    ).toBe(true);
   });
 
   it("passes the moderation and review flags through", () => {

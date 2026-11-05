@@ -4,15 +4,24 @@ import {
   agendaPositions,
   admissionOnValidation,
   amendmentReviewState,
+  awaitsAssemblyDecision,
+  awaitsProponent,
+  awaitsProponentAnswer,
   awaitsPublication,
   awaitsValidation,
+  countProponentWork,
   hasPendingReview,
   isAmendmentPublishable,
   isDocumentOverdue,
   numberingToKeep,
+  partyRole,
+  proponentApproval,
   submissionLate,
+  transactionalSourceReason,
+  transactionalSourcesMessage,
   unopenSourceReason,
   unopenSourcesMessage,
+  TRANSACTIONAL_SOURCE_MESSAGES,
   UNOPEN_SOURCE_MESSAGES,
   type AmendmentReviewFields,
 } from "./reviewState";
@@ -163,6 +172,272 @@ describe("awaitsValidation", () => {
     expect(awaitsValidation(row({ validatedAt: at }))).toBe(false);
     expect(awaitsValidation(row({ status: "draft" }))).toBe(false);
     expect(awaitsValidation(row({ status: "withdrawn" }))).toBe(false);
+  });
+
+  it("waits for the presenter's approval of a transactional", () => {
+    expect(awaitsValidation(row({ proponentApproval: "pending" }))).toBe(false);
+    expect(awaitsValidation(row({ proponentApproval: "rejected" }))).toBe(
+      false,
+    );
+    expect(awaitsValidation(row({ proponentApproval: "accepted" }))).toBe(true);
+    expect(awaitsValidation(row({ proponentApproval: null }))).toBe(true);
+  });
+});
+
+describe("transactionals proposed by a member", () => {
+  const acceptances = [
+    { memberId: "author", decision: "accepted" as const },
+    { memberId: "presenter", decision: "pending" as const },
+  ];
+
+  it("reads the presenter's answer from its acceptance row", () => {
+    expect(
+      proponentApproval({ kind: "transactional", acceptances }, "presenter"),
+    ).toBe("pending");
+    expect(
+      proponentApproval({ kind: "transactional", acceptances }, "author"),
+    ).toBe("accepted");
+  });
+
+  it("needs no approval for other kinds, without a presenter or a party row", () => {
+    expect(
+      proponentApproval({ kind: "partial", acceptances }, "presenter"),
+    ).toBeNull();
+    expect(
+      proponentApproval({ kind: "transactional", acceptances }, null),
+    ).toBeNull();
+    expect(
+      proponentApproval({ kind: "transactional", acceptances }, "other"),
+    ).toBeNull();
+  });
+
+  it("waits for the presenter before the Secretaría", () => {
+    expect(awaitsProponent(row({ proponentApproval: "pending" }))).toBe(true);
+    expect(amendmentReviewState(row({ proponentApproval: "pending" }))).toBe(
+      "pending_proponent",
+    );
+    expect(amendmentReviewState(row({ proponentApproval: "accepted" }))).toBe(
+      "pending_validation",
+    );
+  });
+
+  it("stays waiting for the presenter when it was rejected", () => {
+    expect(amendmentReviewState(row({ proponentApproval: "rejected" }))).toBe(
+      "pending_proponent",
+    );
+  });
+
+  it("is past the gate once validated (the Mesa presents it validated)", () => {
+    expect(
+      awaitsProponent(row({ validatedAt: at, proponentApproval: "pending" })),
+    ).toBe(false);
+    expect(
+      amendmentReviewState(
+        row({
+          validatedAt: at,
+          publishedAt: at,
+          proponentApproval: "pending",
+        }),
+      ),
+    ).toBe("published");
+  });
+
+  it("does not wait once withdrawn", () => {
+    expect(
+      amendmentReviewState(
+        row({ status: "withdrawn", proponentApproval: "rejected" }),
+      ),
+    ).toBeNull();
+  });
+
+  it("shows the Secretaría only the ones the presenter has not answered", () => {
+    expect(awaitsProponentAnswer(row({ proponentApproval: "pending" }))).toBe(
+      true,
+    );
+    expect(awaitsProponentAnswer(row({ proponentApproval: "rejected" }))).toBe(
+      false,
+    );
+    expect(awaitsProponentAnswer(row({ proponentApproval: "accepted" }))).toBe(
+      false,
+    );
+    expect(
+      awaitsProponentAnswer(
+        row({ status: "withdrawn", proponentApproval: "pending" }),
+      ),
+    ).toBe(false);
+  });
+
+  it("names the presenter's row as the proponent, also when it wrote a source", () => {
+    expect(
+      partyRole({ memberId: "presenter", role: "author" }, "presenter"),
+    ).toBe("proponent");
+    expect(
+      partyRole({ memberId: "presenter", role: "proponent" }, "presenter"),
+    ).toBe("proponent");
+    expect(partyRole({ memberId: "author", role: "author" }, "presenter")).toBe(
+      "author",
+    );
+    expect(partyRole({ memberId: "author", role: "author" }, null)).toBe(
+      "author",
+    );
+  });
+});
+
+describe("awaitsAssemblyDecision", () => {
+  const late = (
+    overrides: Partial<Parameters<typeof awaitsAssemblyDecision>[0]> = {},
+  ): Parameters<typeof awaitsAssemblyDecision>[0] => ({
+    status: "submitted",
+    late: true,
+    admission: "pending",
+    validatedAt: at,
+    ...overrides,
+  });
+
+  it("waits for the assembly once validated, published or not", () => {
+    expect(awaitsAssemblyDecision(late())).toBe(true);
+  });
+
+  it("does not wait before the Secretaría validates it", () => {
+    expect(awaitsAssemblyDecision(late({ validatedAt: null }))).toBe(false);
+  });
+
+  it("does not wait once decided or when on time", () => {
+    expect(awaitsAssemblyDecision(late({ admission: "admitted" }))).toBe(false);
+    expect(
+      awaitsAssemblyDecision(
+        late({ status: "inadmissible", admission: "inadmissible" }),
+      ),
+    ).toBe(false);
+    expect(awaitsAssemblyDecision(late({ status: "withdrawn" }))).toBe(false);
+    expect(awaitsAssemblyDecision(late({ late: false }))).toBe(false);
+  });
+});
+
+describe("sources of a new transactional", () => {
+  const source = (
+    overrides: Partial<Parameters<typeof transactionalSourceReason>[0]> = {},
+  ) => ({
+    status: "submitted" as const,
+    admission: "admitted" as const,
+    validatedAt: at,
+    decidedAt: null,
+    publishedAt: at,
+    ...overrides,
+  });
+
+  it("must be published as well as open", () => {
+    expect(transactionalSourceReason(source())).toBeNull();
+    expect(transactionalSourceReason(source({ publishedAt: null }))).toBe(
+      "not_published",
+    );
+    expect(
+      transactionalSourceReason(
+        source({ admission: "pending", validatedAt: null, publishedAt: null }),
+      ),
+    ).toBe("not_validated");
+  });
+
+  it("says first what someone can still do", () => {
+    expect(transactionalSourcesMessage([source()])).toBeNull();
+    expect(
+      transactionalSourcesMessage([
+        source({ status: "approved" }),
+        source({ publishedAt: null }),
+      ]),
+    ).toBe(TRANSACTIONAL_SOURCE_MESSAGES.not_published);
+    expect(
+      transactionalSourcesMessage([
+        source({ publishedAt: null }),
+        source({ admission: "pending" }),
+      ]),
+    ).toBe(TRANSACTIONAL_SOURCE_MESSAGES.not_admitted);
+    expect(transactionalSourcesMessage([source({ decidedAt: at })])).toBe(
+      UNOPEN_SOURCE_MESSAGES.decided,
+    );
+  });
+});
+
+describe("countProponentWork", () => {
+  const amendment = (
+    overrides: Partial<Parameters<typeof countProponentWork>[0][number]> = {},
+  ): Parameters<typeof countProponentWork>[0][number] => ({
+    kind: "partial",
+    status: "submitted",
+    validatedAt: at,
+    publishedAt: at,
+    position: "pending",
+    acceptances: [],
+    ...overrides,
+  });
+
+  it("counts undecided amendments without a position", () => {
+    expect(
+      countProponentWork(
+        [
+          amendment(),
+          amendment({ position: null }),
+          amendment({ position: "accept" }),
+          amendment({ status: "approved" }),
+        ],
+        "presenter",
+      ),
+    ).toEqual({ positionsPending: 2, transactionalsToApprove: 0 });
+  });
+
+  it("waits for the Secretaría before asking the presenter", () => {
+    expect(
+      countProponentWork(
+        [
+          // pending_validation: not the presenter's turn yet.
+          amendment({ validatedAt: null, publishedAt: null }),
+          // Validated and kept private: the presenter can answer it.
+          amendment({ publishedAt: null }),
+          // Admitted late by the Mesa, published without a validation.
+          amendment({ validatedAt: null }),
+        ],
+        "presenter",
+      ),
+    ).toEqual({ positionsPending: 2, transactionalsToApprove: 0 });
+  });
+
+  it("asks the presenter about transactionals before the Secretaría", () => {
+    expect(
+      countProponentWork(
+        [
+          amendment({
+            kind: "transactional",
+            validatedAt: null,
+            publishedAt: null,
+            acceptances: [{ memberId: "presenter", decision: "pending" }],
+          }),
+        ],
+        "presenter",
+      ),
+    ).toEqual({ positionsPending: 0, transactionalsToApprove: 1 });
+  });
+
+  it("counts transactionals the presenter has not answered", () => {
+    const transactional = (decision: "pending" | "accepted" | "rejected") =>
+      amendment({
+        kind: "transactional",
+        acceptances: [{ memberId: "presenter", decision }],
+      });
+    expect(
+      countProponentWork(
+        [
+          transactional("pending"),
+          transactional("accepted"),
+          transactional("rejected"),
+          amendment({
+            kind: "transactional",
+            status: "draft",
+            acceptances: [{ memberId: "presenter", decision: "pending" }],
+          }),
+        ],
+        "presenter",
+      ),
+    ).toEqual({ positionsPending: 0, transactionalsToApprove: 1 });
   });
 });
 

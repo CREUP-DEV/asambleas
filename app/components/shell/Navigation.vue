@@ -14,6 +14,7 @@ import {
  */
 export const ASSEMBLY_SECTION_SEGMENTS = {
   overview: "",
+  live: "directo",
   agenda: "orden-del-dia",
   documents: "documentos",
   validation: "validacion",
@@ -46,6 +47,12 @@ export function projectionPath(slug: string): string {
 /**
  * Sidebar navigation: main sections, the contextual block of the assembly
  * being viewed and the administration group, each gated by permissions.
+ *
+ * "En directo" (the attendees' live view) is listed for everyone at any
+ * time, right after the overview: the page itself says when the session
+ * has not started or is over, so shared links keep working and the menu
+ * does not shift when the session starts. While it is in session the item
+ * carries a "now" mark.
  */
 const props = defineProps<{ collapsed?: boolean }>();
 
@@ -123,6 +130,22 @@ const assemblyItems = computed<NavigationMenuItem[]>(() => {
       to: overview,
       exact: true,
       active: currentPath.value === normalize(overview),
+    },
+    {
+      label: t("shell.assembly.live"),
+      icon: "i-lucide-radio",
+      to: path("live"),
+      active: isWithin(path("live")),
+      ...(current.status === "in_session"
+        ? {
+            badge: {
+              label: t("shell.assembly.liveNow"),
+              color: "error" as const,
+              variant: "soft" as const,
+            },
+            "aria-label": t("shell.assembly.liveInSession"),
+          }
+        : {}),
     },
     {
       label: t("shell.assembly.agenda"),

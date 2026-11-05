@@ -636,6 +636,7 @@ const EMPTY_LIVE_STATE: LiveStateDto = {
   amendmentId: null,
   vote: null,
   message: null,
+  speakersVisible: false,
   updatedAt: null,
 };
 
@@ -661,6 +662,7 @@ export async function loadLiveStateDto(
     amendmentId: row.state.amendmentId,
     vote: row.vote ? toVoteDto(row.vote) : null,
     message: row.state.message,
+    speakersVisible: row.state.speakersVisible,
     updatedAt: row.state.updatedAt.toISOString(),
   };
 }
@@ -677,12 +679,11 @@ export async function ensureLiveState(
     .onConflictDoNothing({ target: liveState.assemblyId });
 }
 
-type LiveStateFields = Required<
-  Pick<
-    LiveStateBody,
-    "agendaItemId" | "documentId" | "amendmentId" | "voteId" | "message"
-  >
->;
+type LiveStateFields = {
+  [
+    K in "agendaItemId" | "documentId" | "amendmentId" | "voteId" | "message"
+  ]-?: Exclude<LiveStateBody[K], undefined>;
+} & { speakersVisible: boolean };
 
 /**
  * Applies a partial live-state change: `undefined` keeps a field, `null`
@@ -690,6 +691,9 @@ type LiveStateFields = Required<
  * published (everyone follows the projection). Choosing an amendment also
  * selects its document, choosing a document also selects its agenda item,
  * and switching documents clears an amendment of the previous one.
+ * `speakersVisible` shows attendees who has the floor and who is next; a
+ * change of it also records `speakers_visibility_changed` (entityType
+ * "speakers"), so clients that follow the speakers refetch them.
  */
 export async function updateLiveState(
   actor: Actor,
@@ -708,10 +712,20 @@ export async function updateLiveState(
       amendmentId: current?.amendmentId ?? null,
       voteId: current?.voteId ?? null,
       message: current?.message ?? null,
+      speakersVisible: current?.speakersVisible ?? false,
     };
     const next: LiveStateFields = { ...previous };
-    for (const key of Object.keys(next) as (keyof LiveStateFields)[]) {
+    for (const key of [
+      "agendaItemId",
+      "documentId",
+      "amendmentId",
+      "voteId",
+      "message",
+    ] as const) {
       if (body[key] !== undefined) next[key] = body[key] ?? null;
+    }
+    if (body.speakersVisible !== undefined) {
+      next.speakersVisible = body.speakersVisible;
     }
 
     if (body.amendmentId) {
@@ -811,9 +825,20 @@ export async function updateLiveState(
         documentId: next.documentId,
         amendmentId: next.amendmentId,
         voteId: next.voteId,
+        speakersVisible: next.speakersVisible,
       },
       actor,
     });
+    if (next.speakersVisible !== previous.speakersVisible) {
+      await recordEvent(tx, {
+        assemblyId,
+        entityType: "speakers",
+        entityId: assemblyId,
+        type: "speakers_visibility_changed",
+        payload: { visible: next.speakersVisible },
+        actor,
+      });
+    }
   });
 
   return loadLiveStateDto(assemblyId);

@@ -15,6 +15,7 @@ import {
 } from "../../../utils/domain/assemblies";
 import { recordEvent } from "../../../utils/domain/events";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
+import { closeSpeakingTurns } from "../../../utils/domain/speakers";
 import { buildOptimisticLockCondition } from "../../../utils/optimisticLock";
 
 /** Moves the assembly along ASSEMBLY_STATUS_TRANSITIONS. */
@@ -57,6 +58,11 @@ export default defineEventHandler(async (event): Promise<AssemblyDto> => {
 
       if (body.status === "in_session") {
         await ensureLiveState(tx, assembly.id, actor.user.id);
+      }
+      // Nobody keeps the floor once the assembly closes: the turns could not
+      // be ended afterwards (closed assemblies refuse speakers writes).
+      if (body.status === "closed") {
+        await closeSpeakingTurns(tx, assembly.id, actor);
       }
 
       await recordEvent(tx, {

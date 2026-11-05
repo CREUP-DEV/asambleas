@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import type { AmendmentDto } from "~~/shared/types/api";
 import {
+  transactionalProgressMessage,
+  transactionalProgressOf,
+} from "~/composables/amendment/transactional";
+import {
+  amendmentLateState,
   amendmentReviewView,
   isAmendmentPrivate,
   showAmendmentAdmission,
@@ -13,7 +18,12 @@ import {
  * for it, the outcome otherwise), the Secretaría's note when it asked for a
  * correction, the kind when it is not the usual partial one, change
  * typology, admission and proponent position, the late mark, relations and
- * transactional links. An amendment that is not public yet has a dashed
+ * transactional links. A presented transactional says instead, in one line,
+ * what it waits for (the presenter, the parties) or that it is ready; while
+ * the Secretaría has it, the usual review badge stays (as in the detail),
+ * so the Secretaría still finds it "Por revisar". A late amendment the
+ * assembly still has to decide on says so in
+ * a line of its own. An amendment that is not public yet has a dashed
  * border and says who can see it. The whole card is one button that
  * selects the amendment (`data-amendment-card` lets the page give it focus
  * back).
@@ -28,24 +38,51 @@ const props = withDefaults(
     selected?: boolean;
     /** Also say "Publicada" ("Mis enmiendas"), not only the private states. */
     showPublished?: boolean;
+    /** The document's presenter (document.proponent), for transactionals. */
+    proponentMemberId?: string | null;
   }>(),
-  { relations: () => [], selected: false, showPublished: false },
+  {
+    relations: () => [],
+    selected: false,
+    showPublished: false,
+    proponentMemberId: null,
+  },
 );
 
 const emit = defineEmits<{ select: [id: string] }>();
 
 const { t } = useI18n();
+const { member } = useMe();
 
+/**
+ * A presented, undecided transactional out of the Secretaría's hands: its
+ * progress line replaces the badges (the same rule as the review panel).
+ */
+const hasProgress = computed(() => {
+  const view = transactionalProgressOf(
+    props.amendment,
+    member.value?.id ?? null,
+    props.proponentMemberId,
+  );
+  return view !== null && transactionalProgressMessage(view, "long") !== null;
+});
+const lateState = computed(() => amendmentLateState(props.amendment));
+/** Late and waiting for the assembly: its own line, no extra badges. */
+const awaitingDecision = computed(
+  () => lateState.value === "awaiting_decision",
+);
 const showAdmission = computed(
   () =>
     props.amendment.status === "submitted" &&
+    !awaitingDecision.value &&
     showAmendmentAdmission(props.amendment),
 );
 const isPrivate = computed(() => isAmendmentPrivate(props.amendment));
 /**
  * While it is a draft or waits for the Secretaría, the review badge
  * ("Sin enviar", "En revisión") says it better than "Borrador" or
- * "Presentada": show one, not both.
+ * "Presentada": show one, not both. A transactional's progress line does
+ * the same.
  */
 const showStatus = computed(() => {
   if (
@@ -54,6 +91,7 @@ const showStatus = computed(() => {
   ) {
     return true;
   }
+  if (hasProgress.value) return false;
   const review = amendmentReviewView(props.amendment);
   const reviewShown =
     review !== null && (props.showPublished || review.key !== "published");
@@ -84,7 +122,7 @@ const showTags = computed(
     props.amendment.changeKinds.length > 0 ||
     showAdmission.value ||
     showPosition.value ||
-    props.amendment.late ||
+    lateState.value === "late" ||
     props.amendment.globalReplace !== null,
 );
 
@@ -132,11 +170,31 @@ function relationLabel(view: AmendmentRelationView): string {
       </span>
     </span>
 
+    <TransactionalProgress
+      v-if="hasProgress"
+      :amendment="amendment"
+      :proponent-member-id="proponentMemberId"
+      class="mt-2"
+    />
     <AmendmentReviewBadge
       :amendment="amendment"
       :show-published="showPublished"
+      :show-badge="!hasProgress"
       class="mt-2"
     />
+
+    <!-- Late, validated, and not admitted yet: the assembly decides. -->
+    <span v-if="awaitingDecision" class="mt-2 flex items-start gap-1.5 text-sm">
+      <UIcon
+        name="i-lucide-clock-alert"
+        class="text-warning mt-0.5 size-4 shrink-0"
+        aria-hidden="true"
+      />
+      <span class="text-default">
+        <span class="font-medium">{{ t("amendment.late") }}</span>
+        · {{ t("amendment.lateState.awaiting") }}
+      </span>
+    </span>
 
     <!-- What the Secretaría asked to fix; the detail has the action. -->
     <span v-if="correctionNote" class="mt-2 flex items-start gap-1.5 text-sm">
@@ -182,7 +240,7 @@ function relationLabel(view: AmendmentRelationView): string {
         size="xs"
       />
       <UBadge
-        v-if="amendment.late"
+        v-if="lateState === 'late'"
         color="warning"
         variant="subtle"
         size="xs"

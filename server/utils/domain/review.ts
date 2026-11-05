@@ -10,10 +10,13 @@ import {
   isNull,
   lt,
   ne,
+  notExists,
   notInArray,
+  or,
 } from "drizzle-orm";
 import { db } from "../../db";
 import {
+  amendmentAcceptances,
   amendmentAuthors,
   amendments,
   assemblies,
@@ -25,6 +28,7 @@ import type {
   MeWorkAssemblyRef,
   MeWorkDocumentDto,
   MeWorkDto,
+  MeWorkProponentDto,
   MeWorkReviewDto,
   ReviewQueueAmendmentDto,
   ReviewQueueDto,
@@ -34,10 +38,11 @@ import { canManageDocuments, canReviewAmendments, type Actor } from "./actor";
 import {
   buildAmendmentDtos,
   buildDocumentAmendmentContext,
+  canSeeLoadedAmendment,
   findAmendmentsAwaitingReview,
+  findSubmittedAmendments,
 } from "./amendments";
 import { loadAgendaItems, visibleDocumentsCondition } from "./assemblies";
-import { agendaPositions } from "./reviewState";
 import {
   buildDocumentSummaries,
   loadMilestones,
@@ -45,8 +50,11 @@ import {
 } from "./documents";
 import {
   SETTLED_PRIVATE_STATUSES,
+  agendaPositions,
   amendmentReviewState,
+  countProponentWork,
   hasPendingReview,
+  proponentApproval,
   type ReviewCounts,
 } from "./reviewState";
 import { canSeeAssembly, canSeeDocument } from "./visibility";
@@ -85,8 +93,11 @@ function assemblyRef(assembly: AssemblyRow): MeWorkAssemblyRef {
 /**
  * What waits for the Secretaría in one assembly (document:manage or
  * amendment:review): presented documents to validate, for document:manage,
- * and amendments to validate or publish, for amendment:review, grouped by
- * document in agenda order (then creation order) and then in text order.
+ * and, for amendment:review, amendments to validate or publish, late ones
+ * waiting for the assembly's decision and, read only, member-proposed
+ * transactionals waiting for the document's presenter
+ * (findAmendmentsAwaitingReview), grouped by document in agenda order (then
+ * creation order) and then in text order.
  */
 export async function loadReviewQueue(
   actor: Actor,
@@ -135,9 +146,7 @@ export async function loadReviewQueue(
 
   const amendmentDtos: ReviewQueueAmendmentDto[] = [];
   if (reviewAmendments) {
-    const pending = await findAmendmentsAwaitingReview(
-      visible.map((row) => row.id),
-    );
+    const pending = await findAmendmentsAwaitingReview(visible);
     for (const document of visible) {
       const own = pending.filter((row) => row.documentId === document.id);
       if (own.length === 0) continue;
@@ -221,6 +230,7 @@ async function loadWorkAmendments(
   const rows = await db
     .select({
       id: amendments.id,
+      kind: amendments.kind,
       code: amendments.code,
       status: amendments.status,
       validatedAt: amendments.validatedAt,
@@ -251,6 +261,22 @@ async function loadWorkAmendments(
     )
     .orderBy(desc(amendments.updatedAt), asc(amendments.id));
 
+  // A transactional waits for its document's presenter before the Secretaría.
+  const transactionalIds = rows
+    .filter((row) => row.kind === "transactional")
+    .map((row) => row.id);
+  const acceptanceRows =
+    transactionalIds.length > 0
+      ? await db
+          .select({
+            amendmentId: amendmentAcceptances.amendmentId,
+            memberId: amendmentAcceptances.memberId,
+            decision: amendmentAcceptances.decision,
+          })
+          .from(amendmentAcceptances)
+          .where(inArray(amendmentAcceptances.amendmentId, transactionalIds))
+      : [];
+
   return rows
     .filter((row) =>
       canSeeDocument(actor, {
@@ -270,7 +296,18 @@ async function loadWorkAmendments(
         id: row.id,
         code: row.code,
         status: row.status,
-        reviewState: amendmentReviewState(row),
+        reviewState: amendmentReviewState({
+          ...row,
+          proponentApproval: proponentApproval(
+            {
+              kind: row.kind,
+              acceptances: acceptanceRows.filter(
+                (acceptance) => acceptance.amendmentId === row.id,
+              ),
+            },
+            row.proponentMemberId,
+          ),
+        }),
         // The actor's member wrote it: the note is for them.
         correctionNote: row.correctionNote,
         updatedAt: row.updatedAt.toISOString(),
@@ -288,7 +325,10 @@ function countsByAssembly(
 /**
  * For the Secretaría: per assembly, what waits for it. Document counts need
  * document:manage and amendment counts need amendment:review; only
- * assemblies with something pending are listed.
+ * assemblies with something pending are listed. The amendment counts match
+ * the inbox's "to validate" and "to publish" sections: transactionals
+ * waiting for the presenter and late amendments waiting for the assembly
+ * wait for someone else, so they are not counted.
  */
 async function loadWorkReview(
   actor: Actor,
@@ -336,6 +376,23 @@ async function loadWorkReview(
             and(
               eq(amendments.status, "submitted"),
               isNull(amendments.validatedAt),
+              // Not a transactional still waiting for the document's
+              // presenter (awaitsProponent): the presenter answers first.
+              notExists(
+                db
+                  .select({ id: amendmentAcceptances.id })
+                  .from(amendmentAcceptances)
+                  .where(
+                    and(
+                      eq(amendmentAcceptances.amendmentId, amendments.id),
+                      eq(
+                        amendmentAcceptances.memberId,
+                        documents.proponentMemberId,
+                      ),
+                      ne(amendmentAcceptances.decision, "accepted"),
+                    ),
+                  ),
+              ),
             ),
           )
         : empty,
@@ -345,6 +402,15 @@ async function loadWorkReview(
               isNotNull(amendments.validatedAt),
               isNull(amendments.publishedAt),
               notInArray(amendments.status, [...SETTLED_PRIVATE_STATUSES]),
+              // Not a late one waiting for the assembly's decision
+              // (awaitsAssemblyDecision): the inbox lists it with the late
+              // ones, and treating it publishes it. The three columns are
+              // not null, so this is exactly its negation.
+              or(
+                eq(amendments.late, false),
+                ne(amendments.admission, "pending"),
+                ne(amendments.status, "submitted"),
+              ),
             ),
           )
         : empty,
@@ -372,21 +438,89 @@ async function loadWorkReview(
 }
 
 /**
+ * For the presenter: published documents its member presents, not voted yet,
+ * with amendments to answer (countProponentWork over the amendments the
+ * actor can see). Documents with nothing to answer are left out.
+ */
+async function loadWorkProponent(
+  actor: Actor,
+  assemblyRows: AssemblyRow[],
+): Promise<MeWorkProponentDto[]> {
+  if (!actor.memberId || assemblyRows.length === 0) return [];
+  const memberId = actor.memberId;
+  const byId = new Map(assemblyRows.map((row) => [row.id, row]));
+  const rows = await db
+    .select({
+      id: documents.id,
+      slug: documents.slug,
+      title: documents.title,
+      assemblyId: documents.assemblyId,
+    })
+    .from(documents)
+    .where(
+      and(
+        inArray(documents.assemblyId, [...byId.keys()]),
+        eq(documents.proponentMemberId, memberId),
+        eq(documents.status, "published"),
+        isNull(documents.finalVoteId),
+        isNull(documents.consolidatedVersionId),
+      ),
+    )
+    .orderBy(asc(documents.createdAt), asc(documents.id));
+  if (rows.length === 0) return [];
+
+  const submitted = (
+    await findSubmittedAmendments(rows.map((row) => row.id))
+  ).filter((row) => canSeeLoadedAmendment(actor, row));
+  const order = assemblyRows.map((row) => row.id);
+  const result: MeWorkProponentDto[] = [];
+  for (const row of rows) {
+    const counts = countProponentWork(
+      submitted
+        .filter((amendment) => amendment.documentId === row.id)
+        .map((amendment) => ({
+          kind: amendment.kind,
+          status: amendment.status,
+          validatedAt: amendment.validatedAt,
+          publishedAt: amendment.publishedAt,
+          position: amendment.position?.position ?? null,
+          acceptances: amendment.acceptances,
+        })),
+      memberId,
+    );
+    if (counts.positionsPending + counts.transactionalsToApprove === 0) {
+      continue;
+    }
+    result.push({
+      assembly: assemblyRef(byId.get(row.assemblyId)!),
+      document: { id: row.id, slug: row.slug, title: row.title },
+      ...counts,
+    });
+  }
+  return result.sort(
+    (a, b) => order.indexOf(a.assembly.id) - order.indexOf(b.assembly.id),
+  );
+}
+
+/**
  * GET /api/me/work: across the assemblies that are not closed and that the
  * actor can see, the documents their member presents, the amendments it
- * wrote that are not decided yet and, for the Secretaría, what waits for it.
+ * wrote that are not decided yet, what it has to answer as a presenter and,
+ * for the Secretaría, what waits for it.
  */
 export async function loadMeWork(actor: Actor): Promise<MeWorkDto> {
   const assemblyRows = await loadWorkAssemblies(actor);
   const now = new Date();
-  const [workDocuments, workAmendments, review] = await Promise.all([
+  const [workDocuments, workAmendments, review, proponent] = await Promise.all([
     loadWorkDocuments(actor, assemblyRows),
     loadWorkAmendments(actor, assemblyRows),
     loadWorkReview(actor, assemblyRows, now),
+    loadWorkProponent(actor, assemblyRows),
   ]);
   return {
     documents: workDocuments,
     amendments: workAmendments,
     review,
+    proponent,
   };
 }

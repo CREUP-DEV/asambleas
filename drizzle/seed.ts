@@ -5,12 +5,17 @@
  * With SEED_DEMO=1 it also loads a demo dataset so every screen has data:
  * members, an 80.ª AGO convened with its amendment window open, a structured
  * positioning with amendments (overlapping, transactional, related), a
- * resolution with a late amendment pending admission, and a 35.ª AGE draft.
+ * resolution with a late amendment validated and published that waits for
+ * the assembly's decision to treat it, and a 35.ª AGE draft.
  * The Secretaría's review shows too: most amendments validated and
  * published, one validated and kept private, one waiting for validation, one
  * sent back for correction, a resolution waiting for validation, and two
  * expected CEA reports (one due soon, one overdue).
- * The demo is skipped when the 80.ª AGO already exists.
+ * The presenter's review shows a transactional proposed by a member that is
+ * not a party (T2), waiting for the presenter's approval, and the Mesa's
+ * list of speaking turns has a finished turn, one speaking and two waiting.
+ * The demo is skipped when the 80.ª AGO already exists: a database seeded
+ * before these were added keeps its demo as it was (reset it to get them).
  *
  * Runs under tsx, outside Nuxt: import only from `shared/**` and
  * `server/db/schema`, with relative paths.
@@ -73,6 +78,8 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
     "Gestiona asambleas, documentos, miembros y revisión de enmiendas",
   [SYSTEM_ROLES.MODERADOR]:
     "Modera el desarrollo de las sesiones (Mesa de Moderación)",
+  [SYSTEM_ROLES.PRESIDENCIA]:
+    "Preside la asamblea y modera las sesiones, con los mismos permisos que la Secretaría",
   [SYSTEM_ROLES.CEA]:
     "Presenta la documentación de su área de la Comisión Ejecutiva y enmiendas",
   [SYSTEM_ROLES.ASOCIADO]: "Presenta documentos y enmiendas",
@@ -464,6 +471,18 @@ export interface DemoTransactional extends DemoAmendment {
   }[];
 }
 
+/** A request to speak the Mesa wrote down (speaking_turns). */
+export interface DemoSpeakingTurn {
+  acronym: string;
+  /** The person's name, when the Mesa wrote it. */
+  speaker: string | null;
+  status: "waiting" | "speaking" | "done";
+  position: number;
+  createdAt: Date;
+  startedAt: Date | null;
+  endedAt: Date | null;
+}
+
 export interface DemoContent {
   now: Date;
   ago: { start: Date; end: Date; milestones: Milestones };
@@ -474,8 +493,16 @@ export interface DemoContent {
   /** Per-document amendment window of the resolution, already closed. */
   mentalHealthWindow: { opensAt: Date; closesAt: Date };
   amendments: DemoAmendment[];
+  /** T1: proposed by a party, accepted by the authors, validated and published. */
   transactional: DemoTransactional;
+  /**
+   * T2: proposed by a member that is not a party, presented and waiting for
+   * the document's presenter to approve it (reviewState pending_proponent).
+   */
+  memberTransactional: DemoTransactional;
   relation: { fromId: string; toId: string; note: string; at: Date };
+  /** Turns on the positioning's agenda item. */
+  speakingTurns: DemoSpeakingTurn[];
   /** Reports the Secretaría expects from CEA areas: empty drafts with an internal deadline. */
   expectedReports: {
     acronym: string;
@@ -787,10 +814,11 @@ export function buildDemoContent(
       "Sin confidencialidad ni horarios compatibles, muchos estudiantes no acuden al servicio aunque exista.",
     submittedAt: ago(3),
     late: true,
-    // Validated by the Secretaría; the Mesa still has to admit it.
+    // Validated and published by the Secretaría: everyone sees it "fuera de
+    // plazo" until the assembly decides whether to treat it (admission).
     admission: "pending",
     validatedAt: ago(1),
-    publishedAt: null,
+    publishedAt: ago(1),
     position: null,
   });
   if (confidentiality.submittedAt <= mentalHealthWindow.closesAt) {
@@ -850,25 +878,111 @@ export function buildDemoContent(
   };
   assertValid(positioning, transactional);
 
+  // T2: CEULE, which wrote neither source, proposes merging the masters
+  // paragraph into the general rule instead of UGR 1 (delete it) and CEUAM 2
+  // (refer to it). Presented, it waits for VPU, the presenter.
+  const memberTransactionalOps: AmendmentOp[] = [
+    ...editOps(
+      positioning,
+      12,
+      "con mayor tasa de suspensos.",
+      "con mayor tasa de suspensos, también en los másteres habilitantes.",
+    ),
+    { op: "delete", blockIds: [positioning[13]!.id] },
+  ];
+  const memberTransactional: DemoTransactional = {
+    id: newId(),
+    document: "positioning",
+    kind: "transactional",
+    authors: ["CEULE"],
+    ops: memberTransactionalOps,
+    justification:
+      "Transaccional de UGR 1 y CEUAM 2: los másteres habilitantes siguen la regla general y el párrafo propio desaparece.",
+    submittedAt: ago(4),
+    late: false,
+    admission: "pending",
+    validatedAt: null,
+    publishedAt: null,
+    correction: null,
+    position: null,
+    number: null,
+    memberSeq: null,
+    code: "T2",
+    positionKey: positionKey(memberTransactionalOps, positioning),
+    sourceIds: [removeMasters.id, mastersReference.id],
+    acceptances: [
+      { acronym: "UGR", role: "author", decidedAt: null },
+      { acronym: "CEUAM", role: "author", decidedAt: null },
+      { acronym: "VPU", role: "proponent", decidedAt: null },
+    ],
+  };
+  assertValid(positioning, memberTransactional);
+
   const overlaps = findOverlaps(
     [
       ...amendments.filter((item) => item.document === "positioning"),
       transactional,
+      memberTransactional,
     ].map((item) => ({ id: item.id, ops: item.ops })),
   );
-  const expected = new Set([
-    residenceFull.id,
-    residenceReference.id,
-    transactional.id,
-  ]);
-  const [cluster] = overlaps.clusters;
+  // Two passages in debate: the residence allowance (CEUM 1, CAUB 1, T1)
+  // and the masters paragraph (UGR 1, CEUAM 2, T2).
+  const expected = [
+    new Set([residenceFull.id, residenceReference.id, transactional.id]),
+    new Set([removeMasters.id, mastersReference.id, memberTransactional.id]),
+  ];
+  const matches = (cluster: string[]) =>
+    expected.some(
+      (set) =>
+        cluster.length === set.size && cluster.every((id) => set.has(id)),
+    );
   if (
-    overlaps.clusters.length !== 1 ||
-    cluster!.length !== expected.size ||
-    !cluster!.every((id) => expected.has(id))
+    overlaps.clusters.length !== expected.length ||
+    !overlaps.clusters.every(matches)
   ) {
     throw new Error(`Unexpected demo overlaps: ${JSON.stringify(overlaps)}`);
   }
+
+  const minutesAgo = (minutes: number) =>
+    new Date(now.getTime() - minutes * 60_000);
+  const speakingTurns: DemoSpeakingTurn[] = [
+    {
+      acronym: "VPU",
+      speaker: null,
+      status: "done",
+      position: 0,
+      createdAt: minutesAgo(30),
+      startedAt: minutesAgo(25),
+      endedAt: minutesAgo(15),
+    },
+    {
+      acronym: "CEUM",
+      speaker: "Marta Gil",
+      status: "speaking",
+      position: 0,
+      createdAt: minutesAgo(20),
+      startedAt: minutesAgo(15),
+      endedAt: null,
+    },
+    {
+      acronym: "CAUB",
+      speaker: null,
+      status: "waiting",
+      position: 0,
+      createdAt: minutesAgo(12),
+      startedAt: null,
+      endedAt: null,
+    },
+    {
+      acronym: "CEEM",
+      speaker: "Javier Ruiz",
+      status: "waiting",
+      position: 1,
+      createdAt: minutesAgo(8),
+      startedAt: null,
+      endedAt: null,
+    },
+  ];
 
   return {
     now,
@@ -888,12 +1002,14 @@ export function buildDemoContent(
     mentalHealthWindow,
     amendments,
     transactional,
+    memberTransactional,
     relation: {
       fromId: removeMasters.id,
       toId: mastersReference.id,
       note: "Si se suprime el párrafo sobre los másteres habilitantes, la remisión que introduce CEUAM 2 queda sin contenido.",
       at: ago(12),
     },
+    speakingTurns,
     expectedReports: [
       {
         acronym: "VPU",
@@ -1397,8 +1513,13 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
     const documentOf = { positioning, mentalHealth } as const;
     const proponentOf = { positioning: "VPU", mentalHealth: "CEUAM" } as const;
 
-    for (const item of [...content.amendments, content.transactional]) {
+    const transactionals = [content.transactional, content.memberTransactional];
+    for (const item of [...content.amendments, ...transactionals]) {
       const document = documentOf[item.document];
+      const sourceIds = "sourceIds" in item ? item.sourceIds : null;
+      // T2 waits for the presenter's approval before the Secretaría.
+      const awaitsProponent =
+        sourceIds !== null && item.validatedAt === null && !item.correction;
       const authorIds = item.authors.map(member);
       const createdAt = new Date(item.submittedAt.getTime() - HOUR);
       // Same shape as submitAmendment: the presenting member drives memberSeq and the code.
@@ -1453,9 +1574,7 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
         payload: {
           kind: item.kind,
           authorMemberIds: authorIds,
-          ...(item.code === "T1"
-            ? { code: "T1", sourceIds: content.transactional.sourceIds }
-            : {}),
+          ...(sourceIds ? { code: item.code, sourceIds } : {}),
         },
         actorMemberId: authorIds[0],
         createdAt,
@@ -1469,6 +1588,7 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
           code: item.code,
           late: item.late,
           admission: "pending",
+          ...(awaitsProponent ? { awaitsProponent: true } : {}),
         },
         actorMemberId: authorIds[0],
         createdAt: item.submittedAt,
@@ -1514,41 +1634,42 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
       }
     }
 
-    const { transactional } = content;
-    await tx.insert(schema.amendmentSources).values(
-      transactional.sourceIds.map((sourceId) => ({
-        transactionalId: transactional.id,
-        sourceId,
-      })),
-    );
-    await tx.insert(schema.amendmentAcceptances).values(
-      transactional.acceptances.map((party) => ({
-        amendmentId: transactional.id,
-        memberId: member(party.acronym),
-        role: party.role,
-        decision: party.decidedAt
-          ? ("accepted" as const)
-          : ("pending" as const),
-        decidedAt: party.decidedAt,
-      })),
-    );
-    for (const party of transactional.acceptances) {
-      // The creator's acceptance is implicit; later answers are recorded.
-      if (!party.decidedAt || party.acronym === transactional.authors[0])
-        continue;
-      events.push({
-        assemblyId: agoId,
-        entityType: "amendment",
-        entityId: transactional.id,
-        type: "acceptance_recorded",
-        payload: {
+    for (const transactional of transactionals) {
+      await tx.insert(schema.amendmentSources).values(
+        transactional.sourceIds.map((sourceId) => ({
+          transactionalId: transactional.id,
+          sourceId,
+        })),
+      );
+      await tx.insert(schema.amendmentAcceptances).values(
+        transactional.acceptances.map((party) => ({
+          amendmentId: transactional.id,
           memberId: member(party.acronym),
           role: party.role,
-          decision: "accepted",
-        },
-        actorMemberId: member(party.acronym),
-        createdAt: party.decidedAt,
-      });
+          decision: party.decidedAt
+            ? ("accepted" as const)
+            : ("pending" as const),
+          decidedAt: party.decidedAt,
+        })),
+      );
+      for (const party of transactional.acceptances) {
+        // The creator's acceptance is implicit; later answers are recorded.
+        if (!party.decidedAt || party.acronym === transactional.authors[0])
+          continue;
+        events.push({
+          assemblyId: agoId,
+          entityType: "amendment",
+          entityId: transactional.id,
+          type: "acceptance_recorded",
+          payload: {
+            memberId: member(party.acronym),
+            role: party.role,
+            decision: "accepted",
+          },
+          actorMemberId: member(party.acronym),
+          createdAt: party.decidedAt,
+        });
+      }
     }
 
     const relationId = createId();
@@ -1572,6 +1693,41 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
         type: "relation_created",
         payload: { relationId, kind: "incompatible", otherId, direction },
         createdAt: relation.at,
+      });
+    }
+
+    // Speaking turns on the positioning's item. No live_state row: the
+    // assembly is convened, not in session, so the list stays for the Mesa
+    // (attendees see it only once a session makes it visible).
+    const positioningItem = items.get(
+      "Posicionamiento sobre el sistema de becas y ayudas al estudio",
+    )!;
+    for (const turn of content.speakingTurns) {
+      const id = createId();
+      await tx.insert(schema.speakingTurns).values({
+        id,
+        assemblyId: agoId,
+        agendaItemId: positioningItem,
+        memberId: member(turn.acronym),
+        speaker: turn.speaker,
+        status: turn.status,
+        position: turn.position,
+        startedAt: turn.startedAt,
+        endedAt: turn.endedAt,
+        createdAt: turn.createdAt,
+        updatedAt: turn.endedAt ?? turn.startedAt ?? turn.createdAt,
+      });
+      events.push({
+        assemblyId: agoId,
+        entityType: "speakers",
+        entityId: id,
+        type: "speaking_turn_added",
+        payload: {
+          memberId: member(turn.acronym),
+          agendaItemId: positioningItem,
+          position: turn.position,
+        },
+        createdAt: turn.createdAt,
       });
     }
 
@@ -1612,7 +1768,7 @@ async function seedDemo(db: Db, content: DemoContent): Promise<void> {
 
     await tx.insert(schema.events).values(events);
     console.log(
-      `  Demo: ${DEMO_MEMBERS.length} members, 80.ª AGO with ${content.amendments.length + 1} amendments and ${content.expectedReports.length} expected reports, 35.ª AGE draft`,
+      `  Demo: ${DEMO_MEMBERS.length} members, 80.ª AGO with ${content.amendments.length + transactionals.length} amendments, ${content.expectedReports.length} expected reports and ${content.speakingTurns.length} speaking turns, 35.ª AGE draft`,
     );
   });
 }

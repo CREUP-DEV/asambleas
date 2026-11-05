@@ -8,23 +8,45 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
 import { assemblyPath } from "~/components/shell/Navigation.vue";
 
 /**
- * The amendments of the document on screen, in text order. Late ones
- * waiting for admission come first; amendments that change the same passage
- * are grouped with a conflict callout and a one-click transactional. Those
- * the Secretaría has not validated yet sit apart, folded away, since the
- * Mesa cannot debate them: whoever can validate them does it there (asking
- * first when it is several at once) or opens them in Validación, where they
- * can also be sent back to their authors.
+ * The amendments of the document on screen, in text order, as a compact
+ * list: one line each (code, who, one status) that opens into its details
+ * and actions. What is debated now leads the console (NowPanel); this list
+ * is where the Mesa looks ahead. Its title names the document, and when it
+ * is not the one the room is debating (picked in the agenda) it says so:
+ * debating from here moves the room to it, after asking.
+ *
+ * Late amendments come first, as "Fuera de plazo": the assembly decides
+ * whether to treat them (AdmissionDialog) and only then can they be debated
+ * and decided. Amendments that change the same passage are grouped with a
+ * one-click transactional. Those the Secretaría has not validated yet sit
+ * apart, folded away, since the Mesa cannot debate them: whoever can
+ * validate them does it there (asking first when it is several at once) or
+ * opens them in Validación, where they can also be sent back.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
 const localePath = useLocalePath();
 
 const document = computed(() => session.document.value);
+/** The heading names the document the list belongs to. */
+const title = computed(() => {
+  const current = document.value;
+  const name = current?.reference ?? current?.title ?? null;
+  return name
+    ? t("session.queue.titleFor", { document: name })
+    : t("session.queue.title");
+});
+/** A Mesa member picked another document than the one the room debates. */
+const notLive = computed(
+  () => Boolean(document.value) && !session.showingLiveDocument.value,
+);
 const queue = computed(() => session.queue.value);
 const visible = (amendment: AmendmentDto) => session.isVisible(amendment);
 
 const pending = computed(() => queue.value.pending);
+const pendingIds = computed(() =>
+  pending.value.map((amendment) => amendment.id),
+);
 const awaitingValidation = computed(() => queue.value.validation);
 const validationOpen = ref(false);
 const validatable = computed(() =>
@@ -33,10 +55,26 @@ const validatable = computed(() =>
 const validating = computed(() => Boolean(session.busy.value.validate));
 /** Who the folded group waits for, as one short line under its title. */
 const validationDetail = computed(() => {
-  const { toValidate, inCorrection } = sessionValidationBreakdown(
-    awaitingValidation.value,
-  );
+  const { toValidate, inCorrection, awaitingProponent, proponentRejected } =
+    sessionValidationBreakdown(
+      awaitingValidation.value,
+      session.presenterId.value,
+    );
   return [
+    proponentRejected > 0
+      ? t(
+          "session.queue.validationProponentRejected",
+          { count: proponentRejected },
+          proponentRejected,
+        )
+      : null,
+    awaitingProponent > 0
+      ? t(
+          "session.queue.validationAwaitingProponent",
+          { count: awaitingProponent },
+          awaitingProponent,
+        )
+      : null,
     toValidate > 0
       ? t(
           "session.queue.validationToValidate",
@@ -121,15 +159,51 @@ const failed = computed(
 </script>
 
 <template>
-  <div class="space-y-4">
-    <div v-if="loading" class="space-y-3" role="status">
+  <section class="space-y-3" aria-labelledby="session-queue-title">
+    <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <h2
+        id="session-queue-title"
+        class="text-highlighted min-w-0 text-base font-semibold"
+      >
+        {{ title }}
+      </h2>
+      <p
+        v-if="document && session.amendmentsDto.value && counts.total > 0"
+        class="text-muted text-sm"
+        aria-live="polite"
+      >
+        {{
+          t("session.queue.counts", {
+            total: counts.total,
+            undecided: counts.undecided,
+            approved: counts.approved,
+          })
+        }}
+      </p>
+    </div>
+
+    <p
+      v-if="notLive"
+      class="text-muted flex items-start gap-1.5 text-sm"
+      role="note"
+    >
+      <UIcon
+        name="i-lucide-eye"
+        class="mt-0.5 size-4 shrink-0"
+        aria-hidden="true"
+      />
+      {{ t("session.queue.notLive") }}
+    </p>
+
+    <div v-if="loading" class="space-y-2" role="status">
       <span class="sr-only">{{ t("session.queue.loading") }}</span>
-      <USkeleton v-for="n in 4" :key="n" class="h-24 w-full" />
+      <USkeleton v-for="n in 5" :key="n" class="h-11 w-full" />
     </div>
 
     <CommonEmptyState
       v-else-if="!session.documentId.value"
       icon="i-lucide-file-search"
+      size="sm"
       :title="t('session.queue.noDocument')"
       :description="t('session.queue.noDocumentHint')"
     />
@@ -153,133 +227,160 @@ const failed = computed(
     />
 
     <template v-else-if="document">
-      <header class="space-y-2">
-        <div class="flex flex-wrap items-center gap-2">
-          <h2 class="text-highlighted min-w-0 text-lg font-semibold">
-            {{ document.title }}
-          </h2>
-          <UBadge
-            v-if="document.reference"
-            color="neutral"
-            variant="outline"
-            :label="document.reference"
-          />
-          <CommonStatusBadge kind="document" :value="document.status" />
-        </div>
-        <p class="text-muted text-sm" aria-live="polite">
-          {{
-            t("session.queue.counts", {
-              total: counts.total,
-              undecided: counts.undecided,
-              approved: counts.approved,
-            })
-          }}
-        </p>
-        <div class="flex flex-wrap items-center gap-3">
-          <USwitch
-            v-model="hideDecided"
-            :label="t('session.queue.hideDecided')"
-          />
-          <UTooltip
-            :text="
-              assentByVote
-                ? t('session.queue.assentDisabled')
-                : t('session.queue.assentHint')
-            "
-          >
-            <UButton
-              size="sm"
-              color="success"
-              variant="outline"
-              icon="i-lucide-check-check"
-              :label="
-                t(
-                  'session.queue.assentAccepted',
-                  { count: readyForAssent },
-                  readyForAssent,
-                )
-              "
-              :disabled="assentByVote || readyForAssent === 0"
-              @click="session.assentDialog.open = true"
-            />
-          </UTooltip>
-        </div>
-      </header>
-
       <CommonEmptyState
         v-if="!document.amendable || document.format === 'file'"
         icon="i-lucide-file-lock"
+        size="sm"
         :title="t('session.queue.notAmendable')"
         :description="t('session.queue.notAmendableHint')"
       />
       <CommonEmptyState
         v-else-if="counts.total === 0 && awaitingValidation.length === 0"
         icon="i-lucide-inbox"
+        size="sm"
         :title="t('session.queue.empty')"
         :description="t('session.queue.emptyHint')"
       />
 
+      <div
+        v-if="counts.total > 0"
+        class="flex flex-wrap items-center gap-x-4 gap-y-2"
+      >
+        <USwitch
+          v-model="hideDecided"
+          size="sm"
+          :label="t('session.queue.hideDecided')"
+        />
+        <UTooltip
+          v-if="!assentByVote && readyForAssent > 0"
+          :text="t('session.queue.assentHint')"
+        >
+          <UButton
+            size="xs"
+            color="success"
+            variant="outline"
+            icon="i-lucide-check-check"
+            :label="
+              t(
+                'session.queue.assentAccepted',
+                { count: readyForAssent },
+                readyForAssent,
+              )
+            "
+            @click="session.assentDialog.open = true"
+          />
+        </UTooltip>
+      </div>
+
+      <!-- Late: the assembly decides whether to treat them first. -->
       <section
         v-if="pending.length > 0"
-        class="border-warning/50 bg-warning/5 space-y-3 rounded-xl border p-3"
-        :aria-label="
-          t(
-            'session.queue.pendingTitle',
-            { count: pending.length },
-            pending.length,
-          )
-        "
+        class="border-warning/50 bg-warning/5 space-y-2 rounded-xl border p-3"
+        aria-labelledby="session-queue-late"
       >
         <div class="flex flex-wrap items-center gap-2">
           <UIcon
             name="i-lucide-clock-alert"
-            class="text-warning size-5"
+            class="text-warning size-5 shrink-0"
             aria-hidden="true"
           />
-          <h3 class="text-highlighted font-semibold">
+          <h3 id="session-queue-late" class="text-highlighted font-semibold">
             {{
               t(
-                "session.queue.pendingTitle",
+                "session.queue.lateTitle",
                 { count: pending.length },
                 pending.length,
               )
             }}
           </h3>
-          <span class="ms-auto inline-flex flex-wrap gap-1.5">
-            <UButton
-              size="xs"
-              color="success"
-              icon="i-lucide-check"
-              :label="t('session.queue.admitAll')"
-              @click="
-                session.openAdmission(
-                  pending.map((amendment) => amendment.id),
-                  'admitted',
-                )
-              "
-            />
-            <UButton
-              size="xs"
-              color="error"
-              variant="soft"
-              icon="i-lucide-octagon-x"
-              :label="t('session.queue.inadmitAll')"
-              @click="
-                session.openAdmission(
-                  pending.map((amendment) => amendment.id),
-                  'inadmissible',
-                )
-              "
-            />
-          </span>
+          <UButton
+            class="ms-auto"
+            size="xs"
+            color="warning"
+            variant="soft"
+            icon="i-lucide-gavel"
+            :label="
+              t(
+                'session.queue.lateDecide',
+                { count: pending.length },
+                pending.length,
+              )
+            "
+            :disabled="Boolean(session.busy.value.admission)"
+            @click="session.openAdmission(pendingIds, 'admitted')"
+          />
         </div>
-        <p class="text-muted text-sm">{{ t("session.queue.pendingHint") }}</p>
-        <SessionAmendmentCard
-          v-for="amendment in pending"
-          :key="amendment.id"
-          :amendment="amendment"
-        />
+        <p class="text-muted text-sm">{{ t("session.queue.lateHint") }}</p>
+        <ul class="space-y-1.5">
+          <li v-for="amendment in pending" :key="amendment.id">
+            <SessionQueueRow :amendment="amendment" />
+          </li>
+        </ul>
       </section>
+
+      <ol class="space-y-1.5" :aria-label="t('session.queue.listLabel')">
+        <li
+          v-for="entry in entries"
+          :key="entry.type === 'cluster' ? `c-${entry.id}` : entry.amendment.id"
+        >
+          <SessionQueueRow
+            v-if="entry.type === 'amendment'"
+            :amendment="entry.amendment"
+          />
+          <section
+            v-else
+            class="border-error/30 space-y-1.5 rounded-xl border border-dashed p-2"
+            :aria-label="
+              t(
+                'session.queue.clusterLabel',
+                { count: entry.amendments.length },
+                entry.amendments.length,
+              )
+            "
+          >
+            <div class="flex flex-wrap items-center gap-2 px-1">
+              <UIcon
+                name="i-lucide-git-compare"
+                class="text-error size-4 shrink-0"
+                aria-hidden="true"
+              />
+              <p class="text-highlighted min-w-0 flex-1 text-sm font-medium">
+                {{
+                  t("session.queue.clusterTitle", {
+                    codes: entry.amendments
+                      .map((a) => session.label(a.id))
+                      .join(", "),
+                  })
+                }}
+              </p>
+              <UTooltip
+                v-if="entry.openIds.length >= 2"
+                :text="t('session.queue.clusterHint')"
+              >
+                <UButton
+                  size="xs"
+                  color="secondary"
+                  variant="soft"
+                  icon="i-lucide-git-merge"
+                  :label="
+                    t(
+                      'session.queue.transactCluster',
+                      { count: entry.openIds.length },
+                      entry.openIds.length,
+                    )
+                  "
+                  @click="session.openComposer(entry.openIds)"
+                />
+              </UTooltip>
+            </div>
+            <ul class="space-y-1.5">
+              <li v-for="amendment in entry.amendments" :key="amendment.id">
+                <SessionQueueRow :amendment="amendment" />
+              </li>
+            </ul>
+          </section>
+        </li>
+      </ol>
 
       <!-- Not validated by the Secretaría yet: outside the debate, folded away. -->
       <section
@@ -370,78 +471,14 @@ const failed = computed(
                 :aria-label="t('session.queue.openValidationNewTab')"
               />
             </div>
-            <SessionAmendmentCard
-              v-for="amendment in awaitingValidation"
-              :key="amendment.id"
-              :amendment="amendment"
-            />
+            <ul class="space-y-1.5">
+              <li v-for="amendment in awaitingValidation" :key="amendment.id">
+                <SessionQueueRow :amendment="amendment" />
+              </li>
+            </ul>
           </template>
         </UCollapsible>
       </section>
-
-      <ol class="space-y-3" :aria-label="t('session.queue.listLabel')">
-        <li
-          v-for="entry in entries"
-          :key="entry.type === 'cluster' ? `c-${entry.id}` : entry.amendment.id"
-        >
-          <SessionAmendmentCard
-            v-if="entry.type === 'amendment'"
-            :amendment="entry.amendment"
-          />
-          <section
-            v-else
-            class="border-error/40 bg-error/5 space-y-3 rounded-xl border p-3"
-            :aria-label="
-              t(
-                'session.queue.clusterLabel',
-                { count: entry.amendments.length },
-                entry.amendments.length,
-              )
-            "
-          >
-            <div class="flex flex-wrap items-start gap-2">
-              <UIcon
-                name="i-lucide-git-compare"
-                class="text-error mt-0.5 size-5 shrink-0"
-                aria-hidden="true"
-              />
-              <div class="min-w-0 flex-1">
-                <p class="text-highlighted text-sm font-semibold">
-                  {{
-                    t("session.queue.clusterTitle", {
-                      codes: entry.amendments
-                        .map((a) => session.label(a.id))
-                        .join(", "),
-                    })
-                  }}
-                </p>
-                <p class="text-muted text-xs">
-                  {{ t("session.queue.clusterHint") }}
-                </p>
-              </div>
-              <UButton
-                v-if="entry.openIds.length >= 2"
-                size="xs"
-                color="secondary"
-                icon="i-lucide-git-merge"
-                :label="
-                  t(
-                    'session.queue.transactCluster',
-                    { count: entry.openIds.length },
-                    entry.openIds.length,
-                  )
-                "
-                @click="session.openComposer(entry.openIds)"
-              />
-            </div>
-            <SessionAmendmentCard
-              v-for="amendment in entry.amendments"
-              :key="amendment.id"
-              :amendment="amendment"
-            />
-          </section>
-        </li>
-      </ol>
     </template>
-  </div>
+  </section>
 </template>

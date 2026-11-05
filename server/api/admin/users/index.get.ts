@@ -4,6 +4,7 @@ import { db } from "../../../db";
 import {
   ADMIN_USER_COLUMNS,
   ADMIN_USER_RELATIONS,
+  withExtraPermissions,
 } from "../../../utils/auth/adminUsers";
 import { requireAdmin } from "../../../utils/auth/rbac";
 
@@ -32,7 +33,10 @@ export default defineEventHandler(async (event) => {
   });
 
   const hasNextPage = users.length > pageSize;
-  const data = hasNextPage ? users.slice(0, pageSize) : users;
+  // Each row also carries `extraPermissions`: grants on top of the role.
+  const data = await withExtraPermissions(
+    hasNextPage ? users.slice(0, pageSize) : users,
+  );
 
   return {
     data,
