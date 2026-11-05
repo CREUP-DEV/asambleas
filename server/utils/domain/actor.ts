@@ -1,7 +1,11 @@
 import type { H3Event } from "h3";
 import { createError } from "h3";
 import { getAuthUserWithRole, requireAuth } from "../auth/requireAuth";
-import type { AuthUserWithRole } from "../auth/requireAuth";
+import type {
+  AuthEventContext,
+  AuthUserWithRole,
+  ImpersonationContext,
+} from "../auth/requireAuth";
 import { getEffectivePermissions, isAdmin } from "../auth/rbac";
 import {
   PERMISSION_KEYS,
@@ -13,6 +17,10 @@ import {
  * `permissions` are the role's plus those granted to the user
  * (getEffectivePermissions). Admin passes every check through `can`, as with
  * the RBAC helpers.
+ *
+ * While an Admin acts as another account, `user` is that account (its
+ * permissions, member, visibility and authorship) and `impersonation` names
+ * the real Admin; recordEvent and recordAudit record it with every change.
  */
 export interface Actor {
   user: AuthUserWithRole;
@@ -20,6 +28,12 @@ export interface Actor {
   isAdmin: boolean;
   permissions: PermissionKey[];
   can(key: PermissionKey): boolean;
+  /**
+   * The impersonation the request runs under; null or absent when nobody
+   * is impersonating (actors built outside a request, such as the export
+   * worker's, may leave it out).
+   */
+  impersonation?: ImpersonationContext | null;
 }
 
 export async function requireActor(event: H3Event): Promise<Actor> {
@@ -41,6 +55,7 @@ export async function requireActor(event: H3Event): Promise<Actor> {
     isAdmin: admin,
     permissions,
     can: (key) => admin || permissions.includes(key),
+    impersonation: (event.context as AuthEventContext).impersonation ?? null,
   };
   event.context.actor = actor;
   return actor;

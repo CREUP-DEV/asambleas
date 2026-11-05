@@ -129,7 +129,8 @@
     "signInWithGoogle": "Iniciar sesión con Google",
     "signOut": "Cerrar sesión",
     "unauthorized": "No tienes permisos para acceder a esta página",
-    "sessionExpired": "Tu sesión ha expirado. Inicia sesión de nuevo."
+    "sessionExpired": "Tu sesión ha expirado. Inicia sesión de nuevo.",
+    "identityChanged": "La cuenta con la que actúas ha cambiado, quizá en otra pestaña. Se va a recargar la página."
   },
   "nav": {
     "home": "Inicio",
@@ -1619,7 +1620,25 @@
       "ownAdminRoleWarningTitle": "Vas a dejar de ser Administrador",
       "ownAdminRoleWarning": "Solo tendrás los permisos del rol {role}. Para volver a ser Administrador, tendrá que dártelo otro Administrador.",
       "leadershipRoleOnlyAdmins": "Solo lo puede dar un Administrador",
-      "leadershipLocked": "El rol y los permisos de Secretaría y Presidencia solo los cambia un Administrador."
+      "leadershipLocked": "El rol y los permisos de Secretaría y Presidencia solo los cambia un Administrador.",
+      "actions": "Acciones",
+      "viewActivity": "Ver actividad",
+      "viewActivityFor": "Ver actividad de {user}",
+      "impersonation": {
+        "button": "Acceder como",
+        "buttonFor": "Acceder como {user}",
+        "title": "Acceder como {user}",
+        "description": "Verás la plataforma y actuarás exactamente como {user}: con su rol, sus permisos y en nombre de su miembro.",
+        "timeLimit": "Dura {minutes} minutos como máximo. Para seguir, tendrás que volver a empezar.",
+        "recorded": "Lo que hagas contará como hecho por {user}, pero quedará registrado que fuiste tú, y {user} podrá verlo en su actividad.",
+        "readOnly": "Mientras tanto no podrás cambiar usuarios, roles ni miembros.",
+        "reason": "Motivo",
+        "reasonHelp": "Explica por qué necesitas acceder a su cuenta. {user} lo verá.",
+        "reasonCount": "{count} de {max}",
+        "reasonRequired": "Escribe el motivo.",
+        "confirm": "Acceder como esta cuenta",
+        "failed": "No se ha podido acceder como esa cuenta"
+      }
     },
     "roles": {
       "title": "Roles y permisos",
@@ -1717,7 +1736,8 @@
         "conflict": "Otro miembro usa esas siglas o alguien ha editado este miembro. Revisa la lista actualizada.",
         "saveFailed": "No se ha podido guardar el miembro"
       }
-    }
+    },
+    "impersonationReadOnly": "Mientras actúas como otra cuenta no puedes cambiar usuarios, roles ni miembros. Vuelve a tu cuenta para hacerlo."
   },
   "export": {
     "exportPdf": "Exportar PDF",
@@ -1890,7 +1910,8 @@
       "admin": "Administración",
       "users": "Usuarios",
       "roles": "Roles y permisos",
-      "members": "Miembros"
+      "members": "Miembros",
+      "activity": "Actividad"
     },
     "assembly": {
       "navLabel": "Secciones de la {assembly}",
@@ -1930,7 +1951,8 @@
         "light": "Claro",
         "dark": "Oscuro"
       },
-      "signOut": "Cerrar sesión"
+      "signOut": "Cerrar sesión",
+      "activity": "Mi actividad"
     },
     "roles": {
       "admin": "Administrador",
@@ -1948,7 +1970,14 @@
       "executive": "Área ejecutiva",
       "other": "Otro"
     },
-    "toastRegion": "Notificaciones (F8)"
+    "toastRegion": "Notificaciones (F8)",
+    "impersonation": {
+      "actingAs": "Estás actuando como {name}.",
+      "actingAsMember": "Estás actuando como {name} ({member}).",
+      "details": "Todo lo que hagas queda registrado. Termina a las {time}.",
+      "stop": "Volver a mi cuenta",
+      "stopFailed": "No se ha podido volver a tu cuenta"
+    }
   },
   "home": {
     "title": "Inicio",
@@ -3941,6 +3970,389 @@
     "mainAuthor": "principal",
     "context": {
       "pendingTransactional": "Hay una transaccional pendiente que la incluye: {list}. Si sale adelante, sustituirá a esta enmienda. | Hay transaccionales pendientes que la incluyen: {list}. Si alguna sale adelante, sustituirá a esta enmienda."
+    }
+  },
+  "impersonation": {
+    "errors": {
+      "adminOnly": "Solo quien tiene el rol Administrador puede acceder como otra cuenta.",
+      "nested": "Ya estás actuando como otra cuenta. Vuelve a la tuya antes de acceder como otra.",
+      "notFound": "Esa cuenta ya no existe.",
+      "self": "No puedes acceder como tu propia cuenta.",
+      "targetAdmin": "No se puede acceder como otra cuenta con el rol Administrador.",
+      "notActive": "Ya no estabas actuando como otra cuenta.",
+      "reason": "Escribe el motivo en una sola línea de hasta 200 caracteres."
+    }
+  },
+  "activity": {
+    "me": {
+      "title": "Mi actividad",
+      "description": "Aquí tienes lo que has hecho en la plataforma, los cambios en tu cuenta y tus accesos.",
+      "privacy": "Solo lo ves tú y la administración de la plataforma."
+    },
+    "tabs": {
+      "label": "Qué quieres ver",
+      "by": "Lo que he hecho",
+      "to": "Cambios en mi cuenta",
+      "access": "Accesos",
+      "member": "Mi miembro ({member})",
+      "byDescription": "Todo lo que has hecho tú: documentos, enmiendas, respuestas y cambios en las asambleas.",
+      "toDescription": "Cambios que otras personas, la intranet o la administración han hecho en tu cuenta: tu rol, tus permisos y el miembro en cuyo nombre actúas.",
+      "accessDescription": "Cuándo has entrado y salido, desde qué dispositivo, y cada vez que la administración ha actuado como tú.",
+      "memberDescription": "Lo que otras cuentas han hecho en nombre de tu miembro."
+    },
+    "filters": {
+      "assembly": "Asamblea",
+      "allAssemblies": "Todas las asambleas",
+      "searchAssembly": "Buscar asamblea",
+      "category": "Tipo",
+      "allCategories": "Todo",
+      "from": "Desde",
+      "to": "Hasta",
+      "clear": "Quitar filtros",
+      "clearDay": "Borrar la fecha: {field}"
+    },
+    "categories": {
+      "assembly": "Asambleas",
+      "agenda": "Orden del día",
+      "document": "Documentos",
+      "amendment": "Enmiendas",
+      "session": "Sesión en directo",
+      "account": "Cuenta",
+      "access": "Accesos",
+      "member": "Miembros",
+      "roles": "Roles y permisos",
+      "export": "Descargas en PDF",
+      "other": "Otros"
+    },
+    "sources": {
+      "user": "En la plataforma",
+      "intranet": "Intranet de CREUP",
+      "auth": "Inicio de sesión",
+      "seed": "Configuración inicial",
+      "system": "Automático",
+      "import": "Importación"
+    },
+    "list": {
+      "loading": "Cargando la actividad...",
+      "error": "No se ha podido cargar la actividad",
+      "errorDescription": "Puede ser un fallo momentáneo. Vuelve a intentarlo en unos segundos.",
+      "retry": "Reintentar",
+      "loadMore": "Cargar más",
+      "loadedMore": "No hay nada más que cargar | Se ha cargado 1 más | Se han cargado {count} más",
+      "loadMoreFailed": "No se han podido cargar más",
+      "end": "No hay nada más",
+      "emptyButMore": "No hay nada que mostrar entre lo más reciente. Pulsa «Cargar más» para seguir buscando en lo anterior."
+    },
+    "empty": {
+      "filtered": "No hay nada con estos filtros",
+      "filteredDescription": "Prueba con otras fechas u otro tipo, o quita los filtros.",
+      "by": {
+        "title": "Todavía no has hecho nada",
+        "description": "Aquí aparecerá lo que hagas: los documentos y enmiendas que presentes, tus respuestas y los cambios que hagas en las asambleas."
+      },
+      "to": {
+        "title": "Nadie ha cambiado tu cuenta",
+        "description": "Si alguien cambia tu rol, tus permisos o el miembro en cuyo nombre actúas, o si la administración actúa como tú, lo verás aquí."
+      },
+      "access": {
+        "title": "No hay accesos anotados",
+        "description": "Cada vez que entres o salgas de la plataforma quedará anotado aquí, con el dispositivo que usaste."
+      },
+      "member": {
+        "title": "Nadie más de {member} ha hecho nada todavía",
+        "description": "Aquí verás lo que hagan otras cuentas en nombre de {member}."
+      }
+    },
+    "target": {
+      "unavailable": "Algo que ya no puedes ver",
+      "amendment": "Enmienda {code}",
+      "amendmentNoCode": "Una enmienda sin número",
+      "document": "Un documento",
+      "agendaItem": "Punto del orden del día: {title}",
+      "agendaItemNoTitle": "Un punto del orden del día",
+      "user": "Una cuenta",
+      "you": "Tu cuenta",
+      "role": "Rol {role}",
+      "roleNoName": "Un rol",
+      "member": "Un miembro",
+      "members": "Lista de miembros de la intranet",
+      "session": "Sesión de la asamblea",
+      "assembly": "Una asamblea"
+    },
+    "actor": {
+      "intranet": "La intranet de CREUP",
+      "system": "La plataforma",
+      "anAdmin": "Un administrador"
+    },
+    "access": {
+      "device": "{browser} en {os}",
+      "ip": "desde la IP {ip}"
+    },
+    "timeline": {
+      "by": "Lo hizo {actor}",
+      "byIntranet": "Lo hizo la intranet de CREUP",
+      "bySystem": "Lo hizo la plataforma por sí sola",
+      "actedAsYou": "{admin} actuó como tú"
+    },
+    "impersonatedBy": "Lo hizo {admin}, de la administración, actuando como tú",
+    "impersonatedByFor": "Lo hizo {admin}, de la administración, actuando como {actor}",
+    "approximateRole": "Puede que entonces no tuvieras este rol: se muestra por el rol que tienes ahora.",
+    "notice": {
+      "title": "La administración ha actuado como tú",
+      "activeTitle": "{admin} está actuando como tú ahora mismo, hasta las {time}",
+      "once": "En los últimos {days} días, {admin} ha actuado como tú una vez, el {date}.",
+      "many": "En los últimos {days} días, la administración ha actuado como tú {count} veces. La última, {admin}, el {date}.",
+      "reason": "Motivo: «{reason}».",
+      "recorded": "Todo lo que se hizo como tú queda anotado en esta página.",
+      "show": "Ver los accesos"
+    },
+    "details": {
+      "status": "De «{from}» a «{to}»",
+      "statusTo": "Ahora: «{to}»",
+      "role": "Rol: de {from} a {to}",
+      "roleSet": "Rol: {to}",
+      "roleCleared": "Ya no tiene el rol {from}",
+      "permissionsAdded": "Permisos añadidos: {list}",
+      "permissionsRemoved": "Permisos quitados: {list}",
+      "member": "Miembro: de {from} a {to}",
+      "memberSet": "Ahora actúa en nombre de {to}",
+      "memberCleared": "Ya no actúa en nombre de {from}",
+      "noMember": "ningún miembro",
+      "unknownMember": "un miembro que ya no existe",
+      "someMember": "un miembro",
+      "intranetChange": "{field}: de {from} a {to}",
+      "intranetFields": {
+        "externalRole": "Tipo de cuenta en la intranet",
+        "externalName": "Nombre en la intranet",
+        "externalInitials": "Siglas en la intranet",
+        "university": "Universidad"
+      },
+      "empty": "(vacío)",
+      "note": "Nota: «{note}»",
+      "reason": "Motivo: «{reason}»",
+      "roleSyncFailed": "No se pudo consultar la intranet: el rol no se actualizó",
+      "sync": "{created} nuevos, {updated} cambiados y {deactivated} desactivados",
+      "endedAt": "{reason} el {time}",
+      "ongoing": "Sigue abierta hasta las {time}",
+      "change": "{field}: de {from} a {to}",
+      "changed": "Ha cambiado: {field}",
+      "subItems": "Con sus subpuntos: {list}",
+      "moved": "Se ha movido {count} punto | Se han movido {count} puntos",
+      "quoted": "«{text}»"
+    },
+    "endReasons": {
+      "stopped": "Volvió a su cuenta",
+      "expired": "Se acabó el tiempo",
+      "signed_out": "Cerró la sesión",
+      "revoked": "Se canceló sola"
+    },
+    "admin": {
+      "title": "Registro de actividad",
+      "description": "Todo lo que ha pasado en la plataforma: quién lo hizo, en nombre de quién, sobre qué y desde dónde. Solo lo ve la administración.",
+      "views": {
+        "label": "Vista",
+        "log": "Registro",
+        "impersonations": "Suplantaciones"
+      },
+      "headingFor": "{view} de {user}",
+      "logLabel": "Registro de actividad de la plataforma",
+      "columns": {
+        "at": "Fecha",
+        "actor": "Quién",
+        "action": "Acción",
+        "target": "Sobre qué",
+        "source": "Origen",
+        "ip": "Dirección IP"
+      },
+      "viaImpersonation": "Vía suplantación por {admin}",
+      "showUser": "Ver la actividad de {user}",
+      "technical": "Datos técnicos",
+      "noIp": "Sin IP",
+      "deletedAccount": "Cuenta eliminada",
+      "empty": "Todavía no hay actividad anotada",
+      "emptyDescription": "En cuanto alguien haga algo en la plataforma, aparecerá aquí.",
+      "filters": {
+        "user": "Cuenta",
+        "userHelp": "Lo que hizo o lo que le hicieron.",
+        "target": "Cuenta suplantada",
+        "anyUser": "Cualquier cuenta",
+        "searchUser": "Buscar por nombre, correo o siglas",
+        "unknownUser": "Cuenta que ya no existe",
+        "member": "Miembro",
+        "anyMember": "Cualquier miembro",
+        "searchMember": "Buscar por siglas o nombre",
+        "unknownMember": "Miembro que ya no existe",
+        "source": "Origen",
+        "anySource": "Cualquier origen",
+        "impersonatedOnly": "Solo suplantaciones",
+        "oneImpersonation": "Solo lo hecho en una suplantación",
+        "removeImpersonation": "Quitar el filtro de suplantación",
+        "toggle": "Filtros",
+        "toggleCount": "Filtros ({count})"
+      },
+      "impersonations": {
+        "label": "Lista de suplantaciones",
+        "description": "Cada vez que alguien de la administración ha actuado como otra cuenta: por qué, cuánto duró y qué se hizo.",
+        "state": "Estado",
+        "states": {
+          "all": "Todas",
+          "active": "En curso",
+          "ended": "Terminadas"
+        },
+        "columns": {
+          "started": "Inicio",
+          "admin": "Administrador",
+          "target": "Cuenta",
+          "reason": "Motivo",
+          "state": "Estado",
+          "actions": "Qué se hizo"
+        },
+        "activeUntil": "En curso hasta las {time}",
+        "ended": "Terminada",
+        "duration": "Menos de un minuto | 1 minuto | {minutes} minutos",
+        "showActions": "Ningún cambio | Ver 1 cambio | Ver {count} cambios",
+        "noActions": "Ningún cambio",
+        "empty": "Nadie ha actuado como otra cuenta",
+        "emptyDescription": "Cuando alguien de la administración actúe como otra cuenta desde la página de usuarios, quedará anotado aquí."
+      }
+    },
+    "actions": {
+      "assembly_created": "Asamblea creada",
+      "assembly_updated": "Datos de la asamblea cambiados",
+      "assembly_status_changed": "Estado de la asamblea cambiado",
+      "assembly_deleted": "Asamblea borrada",
+      "calendar_updated": "Calendario de la asamblea cambiado",
+      "agenda_finalized": "Orden del día cerrado como definitivo",
+      "agenda_reopened": "Orden del día reabierto",
+      "agenda_item_created": "Punto añadido al orden del día",
+      "agenda_item_updated": "Punto del orden del día cambiado",
+      "agenda_item_deleted": "Punto quitado del orden del día",
+      "agenda_reordered": "Orden del día reordenado",
+      "live_changed": "Cambio en lo que se está tratando en directo",
+      "speakers_visibility_changed": "Lista de turnos de palabra mostrada u ocultada",
+      "speaking_turn_added": "Turno de palabra añadido",
+      "speaking_turn_started": "Turno de palabra iniciado",
+      "speaking_turn_finished": "Turno de palabra terminado",
+      "speaking_turn_cancelled": "Turno de palabra cancelado",
+      "speaking_turn_restored": "Turno de palabra recuperado",
+      "speaking_turn_moved": "Turno de palabra movido en la lista",
+      "speaking_turn_updated": "Turno de palabra cambiado",
+      "vote_recorded": "Resultado de una votación anotado",
+      "decision_recorded": "Decisión anotada",
+      "document_created": "Documento creado",
+      "document_updated": "Datos del documento cambiados",
+      "document_status_changed": "Estado del documento cambiado",
+      "document_content_updated": "Texto del documento editado",
+      "document_file_uploaded": "PDF del documento subido",
+      "document_submitted": "Documento enviado a Secretaría",
+      "document_correction_requested": "Secretaría pidió corregir el documento",
+      "document_published": "Documento publicado",
+      "document_deleted": "Documento borrado",
+      "document_voted": "Votación final del documento",
+      "final_vote_annulled": "Votación final anulada",
+      "amendment_created": "@:amendment.history.events.amendment_created",
+      "amendment_updated": "Borrador de enmienda editado",
+      "amendment_deleted": "Borrador de enmienda borrado",
+      "amendment_submitted": "Enmienda presentada",
+      "amendment_withdrawn": "Enmienda retirada",
+      "amendment_correction_requested": "@:amendment.history.events.amendment_correction_requested",
+      "amendment_validated": "Enmienda validada por Secretaría",
+      "amendment_published": "Enmienda publicada",
+      "amendment_admitted": "Enmienda admitida",
+      "amendment_inadmissible": "Enmienda inadmitida",
+      "amendment_approved": "Enmienda aprobada",
+      "amendment_rejected": "Enmienda rechazada",
+      "amendment_reopened": "Enmienda reabierta",
+      "amendment_transacted": "Enmienda absorbida por una transaccional",
+      "amendment_lapsed": "Enmienda decaída",
+      "position_changed": "@:amendment.history.events.position_changed",
+      "acceptance_recorded": "@:amendment.history.events.acceptance_recorded",
+      "relation_created": "Relación entre enmiendas añadida",
+      "relation_deleted": "Relación entre enmiendas quitada",
+      "role": {
+        "assign": "Rol cambiado"
+      },
+      "user": {
+        "permissions_set": "Permisos extra de la cuenta cambiados",
+        "member_link": "Miembro vinculado a la cuenta cambiado",
+        "created": "Cuenta creada al entrar por primera vez",
+        "role_sync": "Datos de la cuenta actualizados desde la intranet",
+        "initial_admin": "Rol de administrador inicial asignado"
+      },
+      "permissions": {
+        "set": "Permisos de un rol cambiados"
+      },
+      "member": {
+        "create": "Miembro creado",
+        "update": "Datos del miembro cambiados",
+        "sync_create": "Miembro añadido desde la intranet",
+        "sync_update": "Miembro actualizado desde la intranet",
+        "sync_deactivate": "Miembro desactivado por la intranet"
+      },
+      "members": {
+        "sync": "Miembros sincronizados con la intranet"
+      },
+      "assembly": {
+        "delete": "Asamblea en borrador borrada",
+        "import": "Asamblea importada"
+      },
+      "document": {
+        "import": "Texto importado de un archivo Word"
+      },
+      "auth": {
+        "sign_in": "Inicio de sesión",
+        "sign_out": "Cierre de sesión",
+        "session_ended": "Sesión caducada"
+      },
+      "export": {
+        "request": "PDF pedido",
+        "download": "PDF descargado"
+      },
+      "rbac": {
+        "seed": "Permisos iniciales añadidos a un rol"
+      },
+      "impersonation": {
+        "start": "Empezó a actuar como otra cuenta",
+        "stop": "Dejó de actuar como otra cuenta",
+        "expire": "Se acabó el tiempo para actuar como otra cuenta",
+        "revoke": "Se canceló el acceso como otra cuenta",
+        "request": "Cambio hecho actuando como otra cuenta",
+        "session": "La administración actuó como esta cuenta"
+      },
+      "other": "@:amendment.history.events.other"
+    },
+    "changes": {
+      "milestoneNote": "Nota de «{milestone}»",
+      "fields": {
+        "assembly": {
+          "number": "Número",
+          "type": "Tipo de asamblea",
+          "startDate": "Inicio",
+          "endDate": "Fin",
+          "location": "Lugar",
+          "convocationIntro": "Texto de la convocatoria"
+        },
+        "agenda_item": {
+          "title": "Título",
+          "description": "Descripción",
+          "acceptsSubmissions": "Admite documentos de los miembros",
+          "parentId": "Lugar en el orden del día"
+        },
+        "document": {
+          "title": "Título",
+          "summary": "Resumen",
+          "kind": "Tipo de documento",
+          "amendable": "Admite enmiendas",
+          "voted": "Se vota",
+          "majority": "Mayoría necesaria",
+          "amendmentsOpenAt": "Apertura del plazo de enmiendas",
+          "amendmentsCloseAt": "Cierre del plazo de enmiendas",
+          "agendaItemId": "Punto del orden del día",
+          "proponentMemberId": "Quién lo presenta",
+          "coProponentMemberIds": "Quiénes lo presentan también",
+          "dueAt": "Fecha límite interna"
+        }
+      }
     }
   }
 }

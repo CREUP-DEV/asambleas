@@ -40,6 +40,9 @@ useHead({
   <UApp :locale="currentUiLocale">
     <NuxtLoadingIndicator color="var(--ui-primary)" :height="2" />
     <NuxtRouteAnnouncer />
+    <!-- Here rather than in the layout, so pages without one (projection,
+         print) show it too while an Admin acts as another account. -->
+    <ShellImpersonationBanner />
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>

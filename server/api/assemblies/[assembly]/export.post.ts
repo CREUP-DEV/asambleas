@@ -10,7 +10,7 @@ import { assemblyExportSchema } from "~~/shared/utils/schemas/export";
 /**
  * Queues the assembly dossier: cover, agenda and every published document.
  * It only carries published content, so anyone who can see the assembly
- * may request it.
+ * may request it. The request is recorded as `export.request` (enqueueExport).
  */
 export default defineEventHandler(async (event): Promise<{ jobId: string }> => {
   const actor = await requireActor(event);
@@ -31,5 +31,7 @@ export default defineEventHandler(async (event): Promise<{ jobId: string }> => {
       locale: body.locale,
     },
     filenameParts: [formatAssemblyLabel(assembly)],
+    event,
+    actor,
   });
 });

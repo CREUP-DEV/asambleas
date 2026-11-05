@@ -63,7 +63,11 @@ function collectIdenticalStrings(
   prefix = "",
 ): IdenticalMatch[] {
   if (typeof base === "string" && typeof target === "string") {
-    return base === target ? [{ key: prefix, value: base }] : [];
+    // A vue-i18n linked message ("@:other.key") points at a key that is
+    // audited on its own; the link itself is the same in every locale.
+    return base === target && !base.startsWith("@:")
+      ? [{ key: prefix, value: base }]
+      : [];
   }
 
   if (

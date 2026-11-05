@@ -4,13 +4,17 @@ import { roleLabelKey } from "./RoleBadge.vue";
 
 /**
  * Sidebar footer: who is signed in (avatar, name, member acronym, role) and
- * a menu with accessibility preferences, language, colour mode and sign out.
+ * a menu with the account's activity, accessibility preferences, language,
+ * colour mode and sign out. While an Admin acts as another account it shows
+ * that account, and "Volver a mi cuenta" replaces signing out.
  */
 const props = defineProps<{ collapsed?: boolean }>();
 
 const { t } = useI18n();
-const { me, member } = useMe();
-const { signOut } = useAuth();
+const localePath = useLocalePath();
+const { me, member, impersonation } = useMe();
+const { signOut, stopImpersonating } = useAuth();
+const { notifyError } = useApi();
 const { localeMenuItems } = useLocaleSwitcher();
 const colorMode = useColorMode();
 
@@ -75,6 +79,18 @@ async function handleSignOut(): Promise<void> {
   }
 }
 
+/** Back to the Admin's own account: the page reloads as them. */
+async function handleStopImpersonating(): Promise<void> {
+  if (signingOut.value) return;
+  signingOut.value = true;
+  try {
+    await stopImpersonating();
+  } catch (error) {
+    signingOut.value = false;
+    notifyError(error, "shell.impersonation.stopFailed");
+  }
+}
+
 const items = computed<DropdownMenuItem[][]>(() => [
   [
     {
@@ -82,6 +98,13 @@ const items = computed<DropdownMenuItem[][]>(() => [
       label: name.value,
       description: me.value?.email,
       avatar: avatar.value,
+    },
+  ],
+  [
+    {
+      label: t("shell.user.activity"),
+      icon: "i-lucide-history",
+      to: localePath("/actividad"),
     },
   ],
   [
@@ -113,11 +136,18 @@ const items = computed<DropdownMenuItem[][]>(() => [
     },
   ],
   [
-    {
-      label: t("shell.user.signOut"),
-      icon: "i-lucide-log-out",
-      onSelect: handleSignOut,
-    },
+    impersonation.value
+      ? {
+          label: t("shell.impersonation.stop"),
+          icon: "i-lucide-undo-2",
+          color: "warning" as const,
+          onSelect: handleStopImpersonating,
+        }
+      : {
+          label: t("shell.user.signOut"),
+          icon: "i-lucide-log-out",
+          onSelect: handleSignOut,
+        },
   ],
 ]);
 </script>

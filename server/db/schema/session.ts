@@ -13,6 +13,7 @@ import { users } from "./auth";
 import { members } from "./member";
 import { agendaItems } from "./agendaItem";
 import { assemblies } from "./assembly";
+import { impersonations } from "./impersonation";
 import {
   DECISION_KINDS,
   DECISION_METHODS,
@@ -94,7 +95,8 @@ export const decisions = pgTable(
 
 /**
  * Append-only history. Every state change of documents and amendments is
- * recorded here, which gives traceability and feeds live updates.
+ * recorded here, which gives traceability and feeds live updates. Write it
+ * only through recordEvent (server/utils/domain/events.ts).
  */
 export const events = pgTable(
   "events",
@@ -116,6 +118,15 @@ export const events = pgTable(
     actorMemberId: text("actor_member_id").references(() => members.id, {
       onDelete: "set null",
     }),
+    /**
+     * Set when an Admin did it while acting as the actor's account
+     * (recordEvent takes it from the actor). The actor columns keep the
+     * account acted as, so authorship and visibility stay its own.
+     */
+    impersonationId: text("impersonation_id").references(
+      () => impersonations.id,
+      { onDelete: "set null" },
+    ),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
@@ -123,6 +134,24 @@ export const events = pgTable(
   (table) => [
     index("idx_events_entity").on(table.entityType, table.entityId),
     index("idx_events_assembly_created").on(table.assemblyId, table.createdAt),
+    // Activity lists page by (created_at, id) descending: a backward scan.
+    index("idx_events_actor_created").on(
+      table.actorUserId,
+      table.createdAt,
+      table.id,
+    ),
+    index("idx_events_member_created").on(
+      table.actorMemberId,
+      table.createdAt,
+      table.id,
+    ),
+    index("idx_events_impersonation")
+      .on(table.impersonationId)
+      .where(sql`${table.impersonationId} is not null`),
+    // The Admin log without filters pages the whole table by (created_at, id).
+    index("idx_events_created").on(table.createdAt, table.id),
+    // "Mi miembro" also reads given types by their payload, newest first.
+    index("idx_events_type_created").on(table.type, table.createdAt),
   ],
 );
 

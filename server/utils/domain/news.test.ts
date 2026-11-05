@@ -271,6 +271,25 @@ describe("isOthersDecision", () => {
     ).toBe(false);
   });
 
+  it("keeps what an Admin did while acting as this account", () => {
+    const done = event({
+      actorUserId: "me",
+      actorMemberId: "m",
+      impersonationId: "imp1",
+    });
+    expect(isOthersDecision(done, me)).toBe(true);
+    expect(isOthersDecision({ ...done, impersonationId: null }, me)).toBe(
+      false,
+    );
+    // Done as another account of the member, it is still the member's own.
+    expect(
+      isOthersDecision(
+        { ...done, actorUserId: "colleague", impersonationId: "imp1" },
+        me,
+      ),
+    ).toBe(false);
+  });
+
   it("leaves out what the member's own acceptance incorporated", () => {
     const incorporated = event({
       type: "amendment_approved",

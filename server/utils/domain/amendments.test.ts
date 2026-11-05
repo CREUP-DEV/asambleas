@@ -968,6 +968,29 @@ describe("visibility", () => {
     });
   });
 
+  describe("redactDocumentChanges", () => {
+    const { redactDocumentChanges } = visibility;
+    const payload = {
+      fields: ["title"],
+      changes: { title: { from: "Borrador interno", to: "Presupuesto" } },
+    };
+
+    it("keeps a document edit's values for those who saw the draft", () => {
+      expect(redactDocumentChanges("document_updated", payload, true)).toBe(
+        payload,
+      );
+    });
+
+    it("drops them for everyone else, keeping which fields changed", () => {
+      expect(redactDocumentChanges("document_updated", payload, false)).toEqual(
+        { fields: ["title"] },
+      );
+      expect(redactDocumentChanges("assembly_updated", payload, false)).toBe(
+        payload,
+      );
+    });
+  });
+
   describe("decisions", () => {
     const { decisionAmendmentIds, filterDecisionsByAmendment } = visibility;
     type Decision = Parameters<typeof filterDecisionsByAmendment>[0][number];

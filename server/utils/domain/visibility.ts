@@ -166,6 +166,34 @@ export function redactCorrectionNote(
   return rest;
 }
 
+/** Event types whose payload carries a document's field values (`changes`). */
+const DOCUMENT_CHANGE_EVENT_TYPES: ReadonlySet<string> = new Set([
+  "document_updated",
+]);
+
+/**
+ * `document_updated.changes` holds what the title, summary, presenters and
+ * other fields were and became, also while the document was a draft only
+ * its presenters and the Secretaría could read. Like correction notes, it
+ * is removed for everyone else (`visible`: canSeeDocumentCorrection), even
+ * after publication; `fields` still says which fields changed.
+ */
+export function redactDocumentChanges(
+  type: string,
+  payload: Record<string, unknown>,
+  visible: boolean,
+): Record<string, unknown> {
+  if (
+    visible ||
+    !DOCUMENT_CHANGE_EVENT_TYPES.has(type) ||
+    !("changes" in payload)
+  )
+    return payload;
+  const rest = { ...payload };
+  delete rest.changes;
+  return rest;
+}
+
 /** Decision kinds whose `subjectIds` are amendment ids. */
 const AMENDMENT_DECISION_KINDS: ReadonlySet<DecisionKind> = new Set([
   "admit_late",

@@ -1,11 +1,19 @@
 <script setup lang="ts">
 import type { NuxtError } from "#app";
+import { en, es } from "@nuxt/ui/locale";
 
 const props = defineProps<{
   error: NuxtError;
 }>();
 
-const { t, te } = useI18n();
+const { t, te, locale } = useI18n();
+
+// Nuxt renders this page instead of app.vue, so it needs its own UApp (the
+// banner's toasts and tooltips) with the same locale.
+const uiLocales = { en, es };
+const currentUiLocale = computed(
+  () => uiLocales[locale.value as keyof typeof uiLocales] ?? uiLocales.es,
+);
 const localePath = useLocalePath();
 const router = useRouter();
 
@@ -60,31 +68,36 @@ const goBack = () => {
 </script>
 
 <template>
-  <div class="flex min-h-screen items-center justify-center px-4">
-    <div class="max-w-prose text-center">
-      <p class="text-primary text-6xl font-bold">
-        {{ statusCode }}
-      </p>
-      <h1 class="mt-4 text-2xl font-semibold">
-        {{ title }}
-      </h1>
-      <p class="text-muted mt-2">
-        {{ description }}
-      </p>
-      <div class="mt-8 flex flex-wrap justify-center gap-2">
-        <UButton size="lg" icon="i-tabler-home" @click="goHome">
-          {{ t("nav.home") }}
-        </UButton>
-        <UButton
-          size="lg"
-          variant="soft"
-          color="neutral"
-          icon="i-tabler-arrow-left"
-          @click="goBack"
-        >
-          {{ t("errors.page.goBack") }}
-        </UButton>
+  <UApp :locale="currentUiLocale">
+    <!-- An Admin acting as an account often lands here (a 403 the account
+         gets): "Volver a mi cuenta" must stay at hand. -->
+    <ShellImpersonationBanner />
+    <div class="flex min-h-screen items-center justify-center px-4">
+      <div class="max-w-prose text-center">
+        <p class="text-primary text-6xl font-bold">
+          {{ statusCode }}
+        </p>
+        <h1 class="mt-4 text-2xl font-semibold">
+          {{ title }}
+        </h1>
+        <p class="text-muted mt-2">
+          {{ description }}
+        </p>
+        <div class="mt-8 flex flex-wrap justify-center gap-2">
+          <UButton size="lg" icon="i-tabler-home" @click="goHome">
+            {{ t("nav.home") }}
+          </UButton>
+          <UButton
+            size="lg"
+            variant="soft"
+            color="neutral"
+            icon="i-tabler-arrow-left"
+            @click="goBack"
+          >
+            {{ t("errors.page.goBack") }}
+          </UButton>
+        </div>
       </div>
     </div>
-  </div>
+  </UApp>
 </template>

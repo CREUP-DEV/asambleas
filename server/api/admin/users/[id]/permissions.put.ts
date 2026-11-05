@@ -1,12 +1,7 @@
 import { createError, defineEventHandler, getRouterParam, readBody } from "h3";
 import { and, eq, inArray, notInArray } from "drizzle-orm";
 import { db } from "../../../../db";
-import {
-  auditLog,
-  permissions,
-  userPermissions,
-  users,
-} from "../../../../db/schema";
+import { permissions, userPermissions, users } from "../../../../db/schema";
 import {
   loadAdminUser,
   loadExtraPermissions,
@@ -19,7 +14,9 @@ import {
   touchesLeadershipRole,
 } from "../../../../utils/auth/rbac";
 import { logError } from "../../../../utils/core/logger";
+import { recordAudit } from "../../../../utils/domain/audit";
 import { validateAuthId } from "../../../../utils/validation";
+import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import {
   normalizePermissionKeys,
@@ -35,14 +32,13 @@ import {
  * nor add or remove a key it does not hold itself (403,
  * adminGrantViolation).
  * 400 for a malformed body, 422 for keys outside the catalog, 404 for an
- * unknown user. Writes `user.permissions_set` to the audit log and returns
- * the row as GET /api/admin/users lists it.
+ * unknown user. Writes `user.permissions_set` to the audit log when the set
+ * changes and returns the row as GET /api/admin/users lists it.
  */
 export default defineEventHandler(async (event) => {
   const caller = await requireAnyPermission(event, [
     PERMISSION_KEYS.USER_MANAGE_ROLES,
   ]);
-  const { session } = caller;
   const userId = validateAuthId(getRouterParam(event, "id"));
   const deny = (input: { before?: string[]; after?: string[] }) => {
     const violation = adminGrantViolation({
@@ -117,7 +113,8 @@ export default defineEventHandler(async (event) => {
     });
   }
   const permissionIds = rows.map((row) => row.id);
-  const actorUserId = session?.user.id ?? null;
+  // Identity comes from the caller, never from the session.
+  const actorUserId = caller.user.id;
 
   await db.transaction(async (tx) => {
     // Serializes two admins editing the same user's grants.
@@ -152,12 +149,14 @@ export default defineEventHandler(async (event) => {
         .onConflictDoNothing();
     }
 
-    await tx.insert(auditLog).values({
-      actorUserId,
-      action: "user.permissions_set",
+    // Both sides in catalog order, so an unchanged set writes no row.
+    await recordAudit(tx, {
+      event,
+      actor: caller,
+      action: AUDIT_ACTIONS.USER_PERMISSIONS_SET,
       targetType: "user",
       targetId: userId,
-      before: { permissions: before },
+      before: { permissions: normalizePermissionKeys(before) },
       after: { permissions: keys },
     });
   });

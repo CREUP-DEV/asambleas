@@ -48,7 +48,13 @@ import {
   type Actor,
 } from "./actor";
 import { applyAcceptedAmendmentsRule } from "./acceptedRule";
+import { diffChanges, sortedIds } from "./changes";
 import { recordEvent } from "./events";
+import {
+  impersonatedByFor,
+  loadImpersonators,
+  seesImpersonator,
+} from "./impersonators";
 import {
   loadCoProponentIds,
   loadCoProponents,
@@ -70,6 +76,7 @@ import {
   isDocumentPresenter,
   isDocumentProponent,
   redactCorrectionNote,
+  redactDocumentChanges,
   seesAllPresentedAmendments,
   type AmendmentVisibilityContext,
   type DocumentPresenters,
@@ -1393,6 +1400,25 @@ export async function updateDocument(
                 coProponentMemberIds: presenters.coProponentMemberIds,
               }
             : {}),
+          // What was written, kind defaults included; the status has its own
+          // event below.
+          changes: {
+            ...diffChanges(current, { ...patch, status: undefined }),
+            ...(presenters
+              ? diffChanges(
+                  {
+                    coProponentMemberIds: sortedIds(
+                      current.coProponentMemberIds,
+                    ),
+                  },
+                  {
+                    coProponentMemberIds: sortedIds(
+                      presenters.coProponentMemberIds,
+                    ),
+                  },
+                )
+              : {}),
+          },
         },
         actor,
       });
@@ -1707,10 +1733,18 @@ export async function deleteDocument(
       entityId: current.id,
       documentId: current.id,
       type: "document_deleted",
+      // An explicit allowlist (never the correction note): enough to say
+      // what was deleted and to tell its presenters once the row is gone.
       payload: {
         title: current.title,
         kind: current.kind,
         format: current.format,
+        reference: current.reference,
+        status: current.status,
+        agendaItemId: current.agendaItemId,
+        proponentMemberId: current.proponentMemberId,
+        coProponentMemberIds: current.coProponentMemberIds,
+        submittedByUserId: current.submittedByUserId,
       },
       actor,
     });
@@ -2258,8 +2292,9 @@ export function documentPositionsVisible(ctx: DocumentRouteContext): boolean {
 
 /**
  * History of the document and of the amendments the actor can see, oldest
- * first. Correction notes are removed for those who may not read them
- * (redactCorrectionNote). Amendment payloads are otherwise returned as
+ * first. Correction notes, and the field values of document edits, are
+ * removed for those who may not read them (redactCorrectionNote,
+ * redactDocumentChanges). Amendment payloads are otherwise returned as
  * stored: the caller redacts positions (see redactAmendmentEventPayload) when
  * they are hidden.
  */
@@ -2293,6 +2328,8 @@ export async function loadDocumentHistory(
       entityId: events.entityId,
       payload: events.payload,
       createdAt: events.createdAt,
+      actorUserId: events.actorUserId,
+      impersonationId: events.impersonationId,
       // The intranet's name (role sync), not the Google display name.
       actorName: sql<
         string | null
@@ -2308,34 +2345,39 @@ export async function loadDocumentHistory(
     .where(and(eq(events.assemblyId, assembly.id), or(...scope)))
     .orderBy(asc(events.createdAt), asc(events.id));
 
-  return rows
-    .filter(
-      (row) => row.entityType !== "amendment" || visible.has(row.entityId),
-    )
-    .map((row) => ({
-      id: row.id,
-      type: row.type,
-      entityType: row.entityType,
-      entityId: row.entityId,
-      payload: redactCorrectionNote(
-        row.type,
-        row.payload ?? {},
-        row.entityType === "amendment"
-          ? notes.has(row.entityId)
-          : documentNotes,
-      ),
-      actorName: row.actorName,
-      actorMember:
-        row.memberId && row.memberAcronym && row.memberName && row.memberKind
-          ? {
-              id: row.memberId,
-              acronym: row.memberAcronym,
-              name: row.memberName,
-              kind: row.memberKind,
-            }
-          : null,
-      createdAt: row.createdAt.toISOString(),
-    }));
+  const shown = rows.filter(
+    (row) => row.entityType !== "amendment" || visible.has(row.entityId),
+  );
+  const impersonators = await loadImpersonators(
+    shown
+      .filter((row) => seesImpersonator(actor, row.actorUserId))
+      .map((row) => row.impersonationId),
+  );
+  return shown.map((row) => ({
+    id: row.id,
+    type: row.type,
+    entityType: row.entityType,
+    entityId: row.entityId,
+    payload: redactCorrectionNote(
+      row.type,
+      row.entityType === "amendment"
+        ? (row.payload ?? {})
+        : redactDocumentChanges(row.type, row.payload ?? {}, documentNotes),
+      row.entityType === "amendment" ? notes.has(row.entityId) : documentNotes,
+    ),
+    actorName: row.actorName,
+    actorMember:
+      row.memberId && row.memberAcronym && row.memberName && row.memberKind
+        ? {
+            id: row.memberId,
+            acronym: row.memberAcronym,
+            name: row.memberName,
+            kind: row.memberKind,
+          }
+        : null,
+    impersonatedBy: impersonatedByFor(actor, row, impersonators),
+    createdAt: row.createdAt.toISOString(),
+  }));
 }
 
 // Uploads -------------------------------------------------------------------

@@ -62,6 +62,10 @@ function context(item: HomeWorkNews): string {
       : item.document.title,
   ];
   if (props.showAssembly) parts.push(item.assembly.label);
+  // Done by an Admin while acting as this account: the user did not do it.
+  if (item.impersonatedBy) {
+    parts.push(t("activity.impersonatedBy", { admin: item.impersonatedBy }));
+  }
   return parts.join(" · ");
 }
 

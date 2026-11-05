@@ -129,7 +129,8 @@
     "signInWithGoogle": "Sign in with Google",
     "signOut": "Sign out",
     "unauthorized": "You do not have permission to access this page",
-    "sessionExpired": "Your session has expired. Please sign in again."
+    "sessionExpired": "Your session has expired. Please sign in again.",
+    "identityChanged": "The account you are acting as has changed, maybe in another tab. The page will reload."
   },
   "nav": {
     "home": "Home",
@@ -1619,7 +1620,25 @@
       "ownAdminRoleWarningTitle": "You will stop being an Administrator",
       "ownAdminRoleWarning": "You will only have the permissions of the {role} role. To be an Administrator again, another Administrator has to give it back to you.",
       "leadershipRoleOnlyAdmins": "Only an Administrator can give it",
-      "leadershipLocked": "Only an Administrator changes the role and permissions of the Secretariat and the Presidency."
+      "leadershipLocked": "Only an Administrator changes the role and permissions of the Secretariat and the Presidency.",
+      "actions": "Actions",
+      "viewActivity": "View activity",
+      "viewActivityFor": "View activity of {user}",
+      "impersonation": {
+        "button": "Act as",
+        "buttonFor": "Act as {user}",
+        "title": "Act as {user}",
+        "description": "You will see the platform and act exactly as {user}: with their role, their permissions and on behalf of their member.",
+        "timeLimit": "It lasts {minutes} minutes at most. To continue, you will have to start again.",
+        "recorded": "What you do will count as done by {user}, but it will be recorded that it was you, and {user} will be able to see it in their activity.",
+        "readOnly": "Meanwhile you cannot change users, roles or members.",
+        "reason": "Reason",
+        "reasonHelp": "Explain why you need to act as this account. {user} will see it.",
+        "reasonCount": "{count} of {max}",
+        "reasonRequired": "Write the reason.",
+        "confirm": "Act as this account",
+        "failed": "Could not act as that account"
+      }
     },
     "roles": {
       "title": "Roles and permissions",
@@ -1717,7 +1736,8 @@
         "conflict": "Another member uses that acronym or someone else edited this member. Check the refreshed list.",
         "saveFailed": "The member could not be saved"
       }
-    }
+    },
+    "impersonationReadOnly": "While you act as another account you cannot change users, roles or members. Go back to your account to do it."
   },
   "export": {
     "exportPdf": "Export PDF",
@@ -1890,7 +1910,8 @@
       "admin": "Administration",
       "users": "Users",
       "roles": "Roles and permissions",
-      "members": "Members"
+      "members": "Members",
+      "activity": "Activity"
     },
     "assembly": {
       "navLabel": "{assembly} sections",
@@ -1930,7 +1951,8 @@
         "light": "Light",
         "dark": "Dark"
       },
-      "signOut": "Sign out"
+      "signOut": "Sign out",
+      "activity": "My activity"
     },
     "roles": {
       "admin": "Administrator",
@@ -1948,7 +1970,14 @@
       "executive": "Executive area",
       "other": "Other"
     },
-    "toastRegion": "Notifications (F8)"
+    "toastRegion": "Notifications (F8)",
+    "impersonation": {
+      "actingAs": "You are acting as {name}.",
+      "actingAsMember": "You are acting as {name} ({member}).",
+      "details": "Everything you do is recorded. It ends at {time}.",
+      "stop": "Back to my account",
+      "stopFailed": "Could not go back to your account"
+    }
   },
   "home": {
     "title": "Home",
@@ -3941,6 +3970,389 @@
     "mainAuthor": "main",
     "context": {
       "pendingTransactional": "A pending transactional includes it: {list}. If it goes ahead, it will replace this amendment. | Pending transactionals include it: {list}. If one goes ahead, it will replace this amendment."
+    }
+  },
+  "impersonation": {
+    "errors": {
+      "adminOnly": "Only someone with the Administrator role can act as another account.",
+      "nested": "You are already acting as another account. Go back to yours before acting as another one.",
+      "notFound": "That account no longer exists.",
+      "self": "You cannot act as your own account.",
+      "targetAdmin": "You cannot act as another account with the Administrator role.",
+      "notActive": "You were no longer acting as another account.",
+      "reason": "Write the reason in a single line of up to 200 characters."
+    }
+  },
+  "activity": {
+    "me": {
+      "title": "My activity",
+      "description": "Here is what you have done on the platform, the changes to your account and your sign-ins.",
+      "privacy": "Only you and the platform administrators can see it."
+    },
+    "tabs": {
+      "label": "What to show",
+      "by": "What I did",
+      "to": "Changes to my account",
+      "access": "Sign-ins",
+      "member": "My member ({member})",
+      "byDescription": "Everything you did yourself: documents, amendments, answers and changes to assemblies.",
+      "toDescription": "Changes that other people, the intranet or the administrators made to your account: your role, your permissions and the member you act for.",
+      "accessDescription": "When you signed in and out, from which device, and every time an administrator acted as you.",
+      "memberDescription": "What other accounts did on behalf of your member."
+    },
+    "filters": {
+      "assembly": "Assembly",
+      "allAssemblies": "All assemblies",
+      "searchAssembly": "Search assemblies",
+      "category": "Type",
+      "allCategories": "Everything",
+      "from": "From",
+      "to": "Until",
+      "clear": "Clear filters",
+      "clearDay": "Clear the date: {field}"
+    },
+    "categories": {
+      "assembly": "Assemblies",
+      "agenda": "Agenda",
+      "document": "Documents",
+      "amendment": "Amendments",
+      "session": "Live session",
+      "account": "Account",
+      "access": "Sign-ins",
+      "member": "Members",
+      "roles": "Roles and permissions",
+      "export": "PDF downloads",
+      "other": "Other"
+    },
+    "sources": {
+      "user": "On the platform",
+      "intranet": "CREUP intranet",
+      "auth": "Sign-in",
+      "seed": "Initial setup",
+      "system": "Automatic",
+      "import": "Import"
+    },
+    "list": {
+      "loading": "Loading activity...",
+      "error": "The activity could not be loaded",
+      "errorDescription": "It may be a temporary problem. Try again in a few seconds.",
+      "retry": "Try again",
+      "loadMore": "Load more",
+      "loadedMore": "Nothing more to load | 1 more loaded | {count} more loaded",
+      "loadMoreFailed": "Could not load more",
+      "end": "That is everything",
+      "emptyButMore": "Nothing to show among the latest entries. Press “Load more” to keep looking further back."
+    },
+    "empty": {
+      "filtered": "Nothing matches these filters",
+      "filteredDescription": "Try other dates or another type, or clear the filters.",
+      "by": {
+        "title": "You have not done anything yet",
+        "description": "What you do will appear here: the documents and amendments you present, your answers and the changes you make to assemblies."
+      },
+      "to": {
+        "title": "Nobody has changed your account",
+        "description": "If someone changes your role, your permissions or the member you act for, or an administrator acts as you, you will see it here."
+      },
+      "access": {
+        "title": "No sign-ins recorded",
+        "description": "Every time you sign in or out it will be noted here, with the device you used."
+      },
+      "member": {
+        "title": "Nobody else from {member} has done anything yet",
+        "description": "Here you will see what other accounts do on behalf of {member}."
+      }
+    },
+    "target": {
+      "unavailable": "Something you can no longer see",
+      "amendment": "Amendment {code}",
+      "amendmentNoCode": "An amendment without a number",
+      "document": "A document",
+      "agendaItem": "Agenda item: {title}",
+      "agendaItemNoTitle": "An agenda item",
+      "user": "An account",
+      "you": "Your account",
+      "role": "{role} role",
+      "roleNoName": "A role",
+      "member": "A member",
+      "members": "Intranet member list",
+      "session": "Assembly session",
+      "assembly": "An assembly"
+    },
+    "actor": {
+      "intranet": "The CREUP intranet",
+      "system": "The platform",
+      "anAdmin": "An administrator"
+    },
+    "access": {
+      "device": "{browser} on {os}",
+      "ip": "from IP {ip}"
+    },
+    "timeline": {
+      "by": "Done by {actor}",
+      "byIntranet": "Done by the CREUP intranet",
+      "bySystem": "Done by the platform on its own",
+      "actedAsYou": "{admin} acted as you"
+    },
+    "impersonatedBy": "Done by {admin}, an administrator, acting as you",
+    "impersonatedByFor": "Done by {admin}, an administrator, acting as {actor}",
+    "approximateRole": "You may not have had this role then: it is shown because of the role you have now.",
+    "notice": {
+      "title": "An administrator has acted as you",
+      "activeTitle": "{admin} is acting as you right now, until {time}",
+      "once": "In the last {days} days, {admin} acted as you once, on {date}.",
+      "many": "In the last {days} days, administrators acted as you {count} times. The latest was {admin}, on {date}.",
+      "reason": "Reason: “{reason}”.",
+      "recorded": "Everything done as you is recorded on this page.",
+      "show": "See sign-ins"
+    },
+    "details": {
+      "status": "From “{from}” to “{to}”",
+      "statusTo": "Now: “{to}”",
+      "role": "Role: from {from} to {to}",
+      "roleSet": "Role: {to}",
+      "roleCleared": "No longer has the {from} role",
+      "permissionsAdded": "Permissions added: {list}",
+      "permissionsRemoved": "Permissions removed: {list}",
+      "member": "Member: from {from} to {to}",
+      "memberSet": "Now acts for {to}",
+      "memberCleared": "No longer acts for {from}",
+      "noMember": "no member",
+      "unknownMember": "a member that no longer exists",
+      "someMember": "a member",
+      "intranetChange": "{field}: from {from} to {to}",
+      "intranetFields": {
+        "externalRole": "Intranet account type",
+        "externalName": "Name on the intranet",
+        "externalInitials": "Initials on the intranet",
+        "university": "University"
+      },
+      "empty": "(empty)",
+      "note": "Note: “{note}”",
+      "reason": "Reason: “{reason}”",
+      "roleSyncFailed": "The intranet could not be reached: the role was not updated",
+      "sync": "{created} new, {updated} changed and {deactivated} deactivated",
+      "endedAt": "{reason} on {time}",
+      "ongoing": "Still open until {time}",
+      "change": "{field}: from {from} to {to}",
+      "changed": "Changed: {field}",
+      "subItems": "With its sub-items: {list}",
+      "moved": "{count} item moved | {count} items moved",
+      "quoted": "“{text}”"
+    },
+    "endReasons": {
+      "stopped": "Went back to their account",
+      "expired": "Time ran out",
+      "signed_out": "Signed out",
+      "revoked": "Cancelled automatically"
+    },
+    "admin": {
+      "title": "Activity log",
+      "description": "Everything that happened on the platform: who did it, for whom, on what and from where. Only administrators can see it.",
+      "views": {
+        "label": "View",
+        "log": "Log",
+        "impersonations": "Impersonations"
+      },
+      "headingFor": "{view} for {user}",
+      "logLabel": "Platform activity log",
+      "columns": {
+        "at": "Date",
+        "actor": "Who",
+        "action": "Action",
+        "target": "On what",
+        "source": "Source",
+        "ip": "IP address"
+      },
+      "viaImpersonation": "Via impersonation by {admin}",
+      "showUser": "Show the activity of {user}",
+      "technical": "Technical data",
+      "noIp": "No IP",
+      "deletedAccount": "Deleted account",
+      "empty": "No activity recorded yet",
+      "emptyDescription": "As soon as someone does something on the platform, it will appear here.",
+      "filters": {
+        "user": "Account",
+        "userHelp": "What it did or what was done to it.",
+        "target": "Impersonated account",
+        "anyUser": "Any account",
+        "searchUser": "Search by name, email or acronym",
+        "unknownUser": "Account that no longer exists",
+        "member": "Member",
+        "anyMember": "Any member",
+        "searchMember": "Search by acronym or name",
+        "unknownMember": "Member that no longer exists",
+        "source": "Source",
+        "anySource": "Any source",
+        "impersonatedOnly": "Impersonations only",
+        "oneImpersonation": "Only what was done in one impersonation",
+        "removeImpersonation": "Remove the impersonation filter",
+        "toggle": "Filters",
+        "toggleCount": "Filters ({count})"
+      },
+      "impersonations": {
+        "label": "Impersonation list",
+        "description": "Every time an administrator acted as another account: why, how long it lasted and what was done.",
+        "state": "Status",
+        "states": {
+          "all": "All",
+          "active": "Ongoing",
+          "ended": "Ended"
+        },
+        "columns": {
+          "started": "Started",
+          "admin": "Administrator",
+          "target": "Account",
+          "reason": "Reason",
+          "state": "Status",
+          "actions": "What was done"
+        },
+        "activeUntil": "Ongoing until {time}",
+        "ended": "Ended",
+        "duration": "Under a minute | 1 minute | {minutes} minutes",
+        "showActions": "No changes | See 1 change | See {count} changes",
+        "noActions": "No changes",
+        "empty": "Nobody has acted as another account",
+        "emptyDescription": "When an administrator acts as another account from the users page, it will be noted here."
+      }
+    },
+    "actions": {
+      "assembly_created": "Assembly created",
+      "assembly_updated": "Assembly details changed",
+      "assembly_status_changed": "Assembly status changed",
+      "assembly_deleted": "Assembly deleted",
+      "calendar_updated": "Assembly calendar changed",
+      "agenda_finalized": "Agenda finalized",
+      "agenda_reopened": "Agenda reopened",
+      "agenda_item_created": "Agenda item added",
+      "agenda_item_updated": "Agenda item changed",
+      "agenda_item_deleted": "Agenda item removed",
+      "agenda_reordered": "Agenda reordered",
+      "live_changed": "Change in what is being discussed live",
+      "speakers_visibility_changed": "Speakers list shown or hidden",
+      "speaking_turn_added": "Speaking turn added",
+      "speaking_turn_started": "Speaking turn started",
+      "speaking_turn_finished": "Speaking turn finished",
+      "speaking_turn_cancelled": "Speaking turn cancelled",
+      "speaking_turn_restored": "Speaking turn restored",
+      "speaking_turn_moved": "Speaking turn moved in the list",
+      "speaking_turn_updated": "Speaking turn changed",
+      "vote_recorded": "Vote result recorded",
+      "decision_recorded": "Decision recorded",
+      "document_created": "Document created",
+      "document_updated": "Document details changed",
+      "document_status_changed": "Document status changed",
+      "document_content_updated": "Document text edited",
+      "document_file_uploaded": "Document PDF uploaded",
+      "document_submitted": "Document sent to the Secretariat",
+      "document_correction_requested": "The Secretariat asked for the document to be corrected",
+      "document_published": "Document published",
+      "document_deleted": "Document deleted",
+      "document_voted": "Final vote on the document",
+      "final_vote_annulled": "Final vote annulled",
+      "amendment_created": "@:amendment.history.events.amendment_created",
+      "amendment_updated": "Amendment draft edited",
+      "amendment_deleted": "Amendment draft deleted",
+      "amendment_submitted": "Amendment submitted",
+      "amendment_withdrawn": "Amendment withdrawn",
+      "amendment_correction_requested": "@:amendment.history.events.amendment_correction_requested",
+      "amendment_validated": "Amendment validated by the Secretariat",
+      "amendment_published": "Amendment published",
+      "amendment_admitted": "Amendment admitted",
+      "amendment_inadmissible": "Amendment declared inadmissible",
+      "amendment_approved": "Amendment approved",
+      "amendment_rejected": "Amendment rejected",
+      "amendment_reopened": "Amendment reopened",
+      "amendment_transacted": "Amendment absorbed by a transactional",
+      "amendment_lapsed": "Amendment lapsed",
+      "position_changed": "@:amendment.history.events.position_changed",
+      "acceptance_recorded": "@:amendment.history.events.acceptance_recorded",
+      "relation_created": "Relation between amendments added",
+      "relation_deleted": "Relation between amendments removed",
+      "role": {
+        "assign": "Role changed"
+      },
+      "user": {
+        "permissions_set": "Extra permissions of the account changed",
+        "member_link": "Member linked to the account changed",
+        "created": "Account created on first sign-in",
+        "role_sync": "Account details updated from the intranet",
+        "initial_admin": "Initial administrator role given"
+      },
+      "permissions": {
+        "set": "Permissions of a role changed"
+      },
+      "member": {
+        "create": "Member created",
+        "update": "Member details changed",
+        "sync_create": "Member added from the intranet",
+        "sync_update": "Member updated from the intranet",
+        "sync_deactivate": "Member deactivated by the intranet"
+      },
+      "members": {
+        "sync": "Members synced with the intranet"
+      },
+      "assembly": {
+        "delete": "Draft assembly deleted",
+        "import": "Assembly imported"
+      },
+      "document": {
+        "import": "Text imported from a Word file"
+      },
+      "auth": {
+        "sign_in": "Signed in",
+        "sign_out": "Signed out",
+        "session_ended": "Session expired"
+      },
+      "export": {
+        "request": "PDF requested",
+        "download": "PDF downloaded"
+      },
+      "rbac": {
+        "seed": "Initial permissions added to a role"
+      },
+      "impersonation": {
+        "start": "Started acting as another account",
+        "stop": "Stopped acting as another account",
+        "expire": "Time ran out for acting as another account",
+        "revoke": "Acting as another account was cancelled",
+        "request": "Change made acting as another account",
+        "session": "An administrator acted as this account"
+      },
+      "other": "@:amendment.history.events.other"
+    },
+    "changes": {
+      "milestoneNote": "Note on “{milestone}”",
+      "fields": {
+        "assembly": {
+          "number": "Number",
+          "type": "Assembly type",
+          "startDate": "Start",
+          "endDate": "End",
+          "location": "Venue",
+          "convocationIntro": "Notice text"
+        },
+        "agenda_item": {
+          "title": "Title",
+          "description": "Description",
+          "acceptsSubmissions": "Accepts documents from members",
+          "parentId": "Place in the agenda"
+        },
+        "document": {
+          "title": "Title",
+          "summary": "Summary",
+          "kind": "Document type",
+          "amendable": "Open to amendments",
+          "voted": "Put to a vote",
+          "majority": "Majority required",
+          "amendmentsOpenAt": "Amendment period opens",
+          "amendmentsCloseAt": "Amendment period closes",
+          "agendaItemId": "Agenda item",
+          "proponentMemberId": "Main presenter",
+          "coProponentMemberIds": "Co-presenters",
+          "dueAt": "Internal deadline"
+        }
+      }
     }
   }
 }

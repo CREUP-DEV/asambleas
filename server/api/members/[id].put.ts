@@ -1,17 +1,23 @@
 import { createError, defineEventHandler, getRouterParam, readBody } from "h3";
 import { and, eq, ne, sql } from "drizzle-orm";
 import type { MemberDto } from "~~/shared/types/api";
+import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { memberUpdateBodySchema } from "~~/shared/utils/schemas/member";
 import { db } from "../../db";
-import { auditLog, members } from "../../db/schema";
+import { members } from "../../db/schema";
 import { requireActor, requireCan } from "../../utils/domain/actor";
+import { recordAudit } from "../../utils/domain/audit";
 import { throwMutationError } from "../../utils/errors";
 import { toMemberDto } from "../../utils/members/dto";
+import { memberAuditState } from "../../utils/members/sync";
 import { buildOptimisticLockCondition } from "../../utils/optimisticLock";
 import { validateCuid } from "../../utils/validation";
 
-/** Edits name, kind, active and details, with optimistic locking. */
+/**
+ * Edits name, kind, active and details, with optimistic locking. Writes
+ * `member.update` (before/after) when a field changes.
+ */
 export default defineEventHandler(async (event): Promise<MemberDto> => {
   const actor = await requireActor(event);
   requireCan(actor, PERMISSION_KEYS.MEMBER_MANAGE);
@@ -89,13 +95,14 @@ export default defineEventHandler(async (event): Promise<MemberDto> => {
         });
       }
 
-      await tx.insert(auditLog).values({
-        actorUserId: actor.user.id,
-        action: "member.update",
+      await recordAudit(tx, {
+        event,
+        actor,
+        action: AUDIT_ACTIONS.MEMBER_UPDATE,
         targetType: "member",
         targetId: memberId,
-        before: toMemberDto(current),
-        after: toMemberDto(row),
+        before: memberAuditState(current),
+        after: memberAuditState(row),
       });
       return row;
     });

@@ -342,7 +342,115 @@ permissions, a user can be granted individual permissions
 <NUXT_INTRANET_API_TOKEN>` when the token is configured. The intranet's
 `POST /user/role` is public today and reveals a user's type, name, initials
 and university to anyone who knows an email: it should require that token,
-be rate limited and answer only what this app needs.
+be rate limited and answer only what this app needs. What the Intranet has
+to implement, and how, is in [`intranet.md`](intranet.md).
+
+## Traceability
+
+Every change leaves a record of who did it, acting for which member, when,
+from where and, while an Admin impersonates, who really did it.
+
+**Two tables, two writers.**
+
+- `events` holds the proceedings of an assembly: agenda, documents,
+  amendments, votes, decisions, live state, speakers. Only `recordEvent`
+  (`server/utils/domain/events.ts`) writes it, which also notifies live
+  listeners.
+- `audit_log` holds everything else: accounts, roles, permissions, members,
+  sign-ins, exports, assembly deletion, imports and impersonations. Only
+  `recordAudit` (`server/utils/domain/audit.ts`) writes it. It fills the actor,
+  the impersonation, the IP (`getRequestIP` with X-Forwarded-For, trustworthy
+  only behind a proxy that overwrites that header) and the user agent, keeps
+  `source` (`user`, `intranet`, `auth`, `seed`, `system`, `import`) and
+  `assembly_id` (no FK, so it survives the assembly), and writes nothing when
+  `before` equals `after`.
+- Both carry `impersonation_id`. The actor columns keep the account acted as,
+  so authorship and visibility stay its own.
+- `server/utils/domain/traceability.test.ts` fails when a file other than
+  `audit.ts` inserts into `audit_log`, when a mutation endpoint reaches neither
+  writer (the DOCX import, which writes no state, is the only listed
+  exception), or when server code reads `session.user`.
+
+**What is recorded beyond the domain events.**
+
+- Accounts: `user.created`; `auth.sign_in` (with the role sync outcome),
+  `auth.sign_out` and `auth.session_ended`, with IP and user agent.
+- Role sync, in the transaction of the users update: `user.role_sync` with
+  before and after (role, external fields, member), `user.initial_admin`,
+  and the automatic `user.member_link` and `member.create`, source `intranet`.
+- Admin section: `role.assign`, `user.permissions_set`, `user.member_link`,
+  `permissions.set`, with the caller as actor and no row when nothing changed.
+- Members: `member.create`, `member.update`, and for each roster sync one row
+  per created, updated or deactivated member plus the `members.sync` summary,
+  sharing a `batchId`.
+- Exports: `export.request` (no job without its row) and `export.download`.
+- `rbac.seed` when the seed adds grants; `assembly.import` when data is loaded
+  outside the app (source `import`, no actor).
+- `assembly.delete` keeps a compact copy of the deleted draft's history.
+
+**Event payloads.** Update events carry `payload.changes = { field: { from,
+to } }`, built only with `diffChanges` (`server/utils/domain/changes.ts`) from
+the stored row against what was written: never content blocks or correction
+notes, texts cut to 500 characters. Delete events carry an explicit allowlist
+that names the entity and its insiders (presenters, authors, creator) after
+the row is gone.
+
+**Reading the activity.** `server/utils/domain/activity.ts` is the only
+reader: one `UNION ALL` over `events`, `audit_log` and `impersonations`, keyset
+pagination on `(created_at, id)`, labels loaded per page. Every row is judged
+again with the current actor using the visibility helpers; payloads pass
+through per-action allowlists (`EVENT_PAYLOAD_KEYS`, `AUDIT_PAYLOAD_KEYS`, and
+`CHANGE_FIELDS` for edits), so a new payload key is hidden until it is listed.
+
+- **Mi actividad** (`/actividad`, from the user menu), for every account:
+  what it did, changes to the account (role, permissions, member link, role
+  sync, grants of its role while it held it), its accesses (sign-ins and
+  sign-outs with its own IP) and, when linked, what other accounts did for its
+  member. A notice says when an Admin acted as the account in the last 30
+  days. Rows about something the account can no longer see keep their type and
+  time and say so. Others' IPs and emails are never shown.
+- **Actividad** (`/admin/actividad`), Admin only (the real role, never a
+  permission key): every row unredacted, with IP and user agent, filters in the
+  URL (account, member, assembly, category, source, impersonations, dates,
+  text) and the list of impersonations.
+
+**Personal data.** IP addresses and user agents in `audit_log` and
+`impersonations` are personal data (GDPR, LOPDGDD). There is no retention
+policy yet: plan a job that clears them after a period, and include both
+tables in access and erasure requests and in backups.
+
+## Impersonation
+
+An Admin can act as another account to see and do what it sees and does, for
+support and testing. It is a server-side pointer, not a second session: the
+browser keeps the Admin's own better-auth session, and the table
+`impersonations` (admin, target, Admin session id, reason, start, end, end
+reason, IP, user agent) says that this session acts as another account.
+better-auth's admin plugin is not used.
+
+- **Who.** Only a user whose real role is Admin (never a permission key:
+  Secretaría and Presidencia hold every key). Never as oneself, never as
+  another Admin, never nested. A reason is required.
+- **How long.** Fixed 60 minutes, never renewed, capped by the Admin's own
+  session. Signing out, losing the Admin role or the target becoming Admin
+  ends it (`stopped`, `expired`, `signed_out`, `revoked`), each with an audit
+  row.
+- **Effective identity.** `getAuthUserWithRole` loads the real user and, only
+  for Admins, the open row of the session. While it applies, the request runs
+  entirely as the target: permissions, member, visibility, authorship, exports,
+  news. Role sync never runs for the target, because no session is created for
+  it.
+- **Safeguards.** The admin section and `/api/members` are read-only. Every
+  unsafe request carries `x-acting-user` with the account the page acts as;
+  for a real Admin it is required, and a mismatch (an expiry, or a stop in
+  another tab) answers 409 and the page reloads, so a form opened as the target
+  is never submitted as the Admin. A banner on every page, the error page
+  included, says "Estás actuando como …" with "Volver a mi cuenta", which also
+  replaces "Cerrar sesión" in the user menu.
+- **Visibility.** Every act carries the impersonation. That an act was done by
+  an Admin as the account is shown only to that account (in Mi actividad, its
+  news and histories) and to Admins; everyone else sees the act as the
+  account's.
 
 ## Permissions
 

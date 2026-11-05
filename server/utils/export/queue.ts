@@ -61,7 +61,13 @@ export { EXPORT_VARIANTS, type ExportVariant };
  */
 export const assemblyExportJobSchema = z.object({
   assemblyId: z.string().min(1),
+  /** The effective user (the account acted as, while impersonating): it owns the job. */
   requestedBy: z.string().min(1),
+  /**
+   * The impersonation the request ran under, for the audit trail. Optional,
+   * so jobs queued before it existed still parse.
+   */
+  impersonationId: z.string().min(1).nullish(),
   locale: z.enum(EXPORT_LOCALES),
 });
 

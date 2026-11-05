@@ -16,7 +16,8 @@ import { documentExportSchema } from "~~/shared/utils/schemas/export";
 
 /**
  * Queues a clean or annotated PDF of a visible document. The worker checks
- * visibility again when it renders, with the data as it is then.
+ * visibility again when it renders, with the data as it is then. The
+ * request is recorded as `export.request` (enqueueExport).
  */
 export default defineEventHandler(async (event): Promise<{ jobId: string }> => {
   const { actor, assembly, document } = await resolveDocumentRoute(event);
@@ -48,5 +49,7 @@ export default defineEventHandler(async (event): Promise<{ jobId: string }> => {
       document.reference ?? document.slug,
       body.variant === "annotated" ? t("filename.annotated") : "",
     ],
+    event,
+    actor,
   });
 });

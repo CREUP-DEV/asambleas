@@ -16,6 +16,7 @@ import {
   throwAssemblyMutationError,
   toAgendaItemDto,
 } from "../../../../utils/domain/assemblies";
+import { diffChanges } from "../../../../utils/domain/changes";
 import { recordEvent } from "../../../../utils/domain/events";
 import {
   resolveAgendaItem,
@@ -105,7 +106,13 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
         entityType: "agenda_item",
         entityId: item.id,
         type: "agenda_item_updated",
-        payload: moved ? { from: item.parentId, to: newParentId } : {},
+        payload: {
+          ...(moved ? { from: item.parentId, to: newParentId } : {}),
+          // The optimistic lock guarantees `item` is the row just replaced.
+          changes: diffChanges(item, row, {
+            keys: ["title", "description", "acceptsSubmissions", "parentId"],
+          }),
+        },
         actor,
       });
       return row;

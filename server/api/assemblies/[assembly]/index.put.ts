@@ -13,6 +13,7 @@ import {
   readAssemblyBody,
   throwAssemblyMutationError,
 } from "../../../utils/domain/assemblies";
+import { diffChanges } from "../../../utils/domain/changes";
 import { assemblySettings } from "../../../utils/domain/documents";
 import { recordEvent } from "../../../utils/domain/events";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
@@ -44,6 +45,17 @@ export default defineEventHandler(async (event): Promise<AssemblyDto> => {
       : {}),
   };
   const changed = Object.keys(values);
+  // What really changed, per field and per setting (the stored values are
+  // the ones the optimistic lock below guarantees).
+  const { settings: nextSettings, ...scalars } = values;
+  const changes = {
+    ...diffChanges(assembly, scalars),
+    ...(nextSettings
+      ? diffChanges(assemblySettings(assembly), nextSettings, {
+          prefix: "settings.",
+        })
+      : {}),
+  };
 
   try {
     await db.transaction(async (tx) => {
@@ -83,7 +95,7 @@ export default defineEventHandler(async (event): Promise<AssemblyDto> => {
         entityType: "assembly",
         entityId: assembly.id,
         type: "assembly_updated",
-        payload: { fields: changed },
+        payload: { fields: changed, changes },
         actor,
       });
     });

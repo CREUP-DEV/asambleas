@@ -1,0 +1,110 @@
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
+
+// linkUserToIntranetMember with a stubbed database: which rows it records.
+const selects: unknown[][] = [];
+let inserted: Record<string, unknown>[] = [];
+let updated: { id: string }[] = [];
+const recordAudit = vi.fn(async () => "audit-id");
+
+/** A query result that can also be narrowed with `.limit()`. */
+function result(rows: unknown[]) {
+  return Object.assign(Promise.resolve(rows), { limit: async () => rows });
+}
+
+const tx = {
+  insert: () => ({
+    values: (row: Record<string, unknown>) => ({
+      onConflictDoNothing: () => ({
+        returning: async () =>
+          inserted.length > 0
+            ? inserted.map((extra) => ({ ...row, ...extra }))
+            : [],
+      }),
+    }),
+  }),
+  update: () => ({
+    set: () => ({ where: () => ({ returning: async () => updated }) }),
+  }),
+};
+
+vi.mock("../../db", () => ({
+  db: {
+    select: () => ({
+      from: () => ({ where: () => result(selects.shift() ?? []) }),
+    }),
+    transaction: async (run: (inner: typeof tx) => Promise<unknown>) => run(tx),
+  },
+}));
+vi.mock("../domain/audit", () => ({ recordAudit }));
+vi.mock("../core/logger", () => ({ logInfo: vi.fn(), logWarn: vi.fn() }));
+
+const { linkUserToIntranetMember } = await import("./link");
+
+const asociado = {
+  role: "Asociado",
+  initials: "CEUNEW",
+  name: "Consejo nuevo",
+  university: "Universidad Nueva",
+};
+
+const audits = () =>
+  (
+    recordAudit.mock.calls as unknown as [unknown, Record<string, unknown>][]
+  ).map(([, input]) => input);
+
+beforeEach(() => {
+  selects.length = 0;
+  inserted = [];
+  updated = [];
+  recordAudit.mockClear();
+});
+
+describe("linkUserToIntranetMember traceability", () => {
+  it("records the member it creates and the link it sets", async () => {
+    selects.push([{ memberId: null }], []);
+    inserted = [{ id: "m-new", syncedAt: new Date() }];
+    updated = [{ id: "u1" }];
+
+    expect(await linkUserToIntranetMember("u1", asociado)).toBe("m-new");
+    expect(audits()).toEqual([
+      expect.objectContaining({
+        actor: null,
+        source: "intranet",
+        action: AUDIT_ACTIONS.MEMBER_CREATE,
+        targetType: "member",
+        targetId: "m-new",
+        after: expect.objectContaining({
+          kind: "asociado",
+          acronym: "CEUNEW",
+          source: "intranet",
+          reason: "sign_in_link",
+        }),
+      }),
+      expect.objectContaining({
+        actor: null,
+        source: "intranet",
+        action: AUDIT_ACTIONS.USER_MEMBER_LINK,
+        targetType: "user",
+        targetId: "u1",
+        before: { memberId: null },
+        after: { memberId: "m-new", reason: "role_sync" },
+      }),
+    ]);
+  });
+
+  it("records nothing it did not do: a lost insert race or an unchanged link", async () => {
+    // Another sign-in created the member first; the link was already set
+    // (or an admin's manual link won), so the update touched no row.
+    selects.push(
+      [{ memberId: "m-other" }],
+      [],
+      [{ id: "m-ceunew", kind: "asociado" }],
+    );
+    inserted = [];
+    updated = [];
+
+    expect(await linkUserToIntranetMember("u1", asociado)).toBe("m-ceunew");
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+});

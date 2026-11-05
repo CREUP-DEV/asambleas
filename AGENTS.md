@@ -222,6 +222,19 @@ Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`
 - Overlaps come from `findOverlaps` and are computed from the ranges each amendment really changes. Relations between amendments live in `amendment_relations`.
 - Every state change calls `recordEvent`, which appends to the history and notifies live listeners.
 
+## Traceability And Impersonation
+
+Model in [`docs/design.md`](docs/design.md) ("Traceability", "Impersonation"); endpoints in [`docs/api.md`](docs/api.md) ("Activity and impersonation").
+
+- Every mutation calls `recordEvent` or `recordAudit`, directly or through a server function. Never insert into `audit_log` directly: `recordAudit` (`server/utils/domain/audit.ts`) is the only writer. `server/utils/domain/traceability.test.ts` enforces it; an endpoint that writes no state goes in its commented `NON_RECORDING_MUTATIONS` allowlist.
+- Identity comes only from `getAuthUserWithRole`, `requireActor` or the RBAC callers on the server and from `useMe` on the client, never from `session.user` or `authClient.useSession`: while an Admin impersonates, the session is still the Admin's.
+- Impersonation is Admin-only by the real role through `requireAdmin`, never a permission key. Never as oneself or another Admin, never nested, 60 minutes fixed, with a reason. The admin section and `/api/members` are read-only while it lasts, and every unsafe request sends `x-acting-user`.
+- Events recorded with `actor: null` inside an impersonated request pass `impersonationId` explicitly.
+- Update events put what changed in `payload.changes`, built with `diffChanges` (`server/utils/domain/changes.ts`) from the stored row against what was written, never from the request body; never content blocks or correction notes. Delete events carry an explicit allowlist that names the entity and its insiders; never spread the row into a payload.
+- Read activity only through `server/utils/domain/activity.ts`. A new event type, audit action or payload key goes into `shared/constants/activity.ts` and into `EVENT_PAYLOAD_KEYS` or `AUDIT_PAYLOAD_KEYS` (otherwise non-Admins see nothing of it), with an `activity.actions.<action>` key in both locales and an icon in `ACTIVITY_ACTION_ICONS`. Linked messages (`@:key`) may reuse existing wording.
+- Scripts that write to the database outside Nuxt (seed, one-off loaders) write audit rows with the exact `recordAudit` shape (source `seed` or `import`). The seed may import `audit.ts`, so keep its runtime imports to packages and `../../db/schema`.
+- IP addresses and user agents in `audit_log` and `impersonations` are personal data; there is no retention job yet.
+
 ## API Rules
 
 Typical handler order:
@@ -256,16 +269,18 @@ Rules:
   not enough: during SSR those run as internal `$fetch` calls whose `Set-Cookie`
   never reaches the browser.
 
-Client CSRF pattern:
+Client mutations go through the shared client, which adds the CSRF header and
+`x-acting-user` (`ACTING_USER_HEADER_NAME`, the account the page acts as):
 
 ```ts
-const csrfToken = useCookie(CSRF_COOKIE_NAME).value;
-await $fetch(url, {
-  method: "POST",
-  headers: csrfToken ? { [CSRF_HEADER_NAME]: csrfToken } : undefined,
-  body,
-});
+const api = useApi();
+await api.send(url, { method: "POST", body });
 ```
+
+A raw `$fetch` with only the CSRF header gets 409 `auth.identityChanged` for any
+real Admin. Server section handlers match paths on the full decoded original
+URL, never on `event.path` (h3 slices the prefix, and `/api/me` also matches
+`/api/members`).
 
 ## Error Pages
 
@@ -288,6 +303,10 @@ throw createError({
 - `server/utils/domain/visibility.ts`: who sees assemblies, documents, amendments and positions.
 - `server/utils/domain/resolvers.ts`: slug and CUID route resolution with 404 on hidden targets.
 - `server/utils/domain/events.ts`: `recordEvent` (history plus live notification).
+- `server/utils/domain/audit.ts`: `recordAudit`, the only `audit_log` writer; `server/utils/domain/changes.ts`: `diffChanges`.
+- `server/utils/domain/activity.ts` (activity reader), `server/utils/domain/impersonators.ts` (who sees `impersonatedBy`) and `redactDocumentChanges` next to `redactCorrectionNote` in `visibility.ts`.
+- `server/utils/auth/impersonation.ts`: start, stop, lazy close and the request guards.
+- `app/composables/activity/*`: `useActivityPages`, `useActivityText`, `useActivityOptions`, and the pure `-filters.ts` and `-present.ts`.
 - `server/utils/live/hub.ts`: live updates through Postgres `LISTEN/NOTIFY` and SSE.
 - `server/utils/auth/rbac.ts` and `server/utils/auth/roleSync.ts`: permissions and external role sync.
 - `server/utils/validation.ts`, `server/utils/optimisticLock.ts`, `server/utils/crud.ts` and `server/utils/errors.ts`.
@@ -355,6 +374,9 @@ pg-boss v12 reminders:
 - Optimistic locking applied to shared updates.
 - Unknown permission keys rejected, not silently ignored.
 - Export downloads authorized.
+- Every mutation leaves an event or an audit row (`recordEvent` / `recordAudit`).
+- Impersonation only for the real Admin role; the admin section and `/api/members` read-only while it lasts; `x-acting-user` on unsafe requests.
+- Activity readers re-check visibility with the current actor and never show others' IPs or emails to non-Admins.
 
 ## Formatting
 

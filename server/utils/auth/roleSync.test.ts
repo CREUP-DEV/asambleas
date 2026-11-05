@@ -28,8 +28,66 @@ const {
   computeRoleSyncUpdate,
   fallbackRoleName,
   resolveTargetRole,
+  roleSyncAuditStates,
   stopsActingForMember,
 } = await import("./roleSync");
+
+describe("roleSyncAuditStates", () => {
+  const current = {
+    roleName: SYSTEM_ROLES.CEA,
+    externalRole: "CEA",
+    externalName: "Persona",
+    externalInitials: "VPU",
+    university: null,
+    memberId: "m1",
+  };
+
+  it("is unchanged when the sync only moved lastRoleSyncAt", () => {
+    const { before, after } = roleSyncAuditStates({
+      current,
+      update: {
+        externalRole: "CEA",
+        externalName: "Persona",
+        externalInitials: "VPU",
+        university: null,
+      },
+      writtenRoleName: null,
+    });
+    expect(after).toEqual(before);
+  });
+
+  it("records the role written, the new intranet data and the unlink", () => {
+    const { before, after } = roleSyncAuditStates({
+      current,
+      update: {
+        externalRole: "Alumni",
+        externalName: null,
+        externalInitials: null,
+        university: "Universidad de León",
+        memberId: null,
+      },
+      writtenRoleName: SYSTEM_ROLES.INVITADO,
+    });
+    expect(before).toEqual(current);
+    expect(after).toEqual({
+      roleName: SYSTEM_ROLES.INVITADO,
+      externalRole: "Alumni",
+      externalName: null,
+      externalInitials: null,
+      university: "Universidad de León",
+      memberId: null,
+    });
+  });
+
+  it("keeps what a failed sync did not touch", () => {
+    const { after } = roleSyncAuditStates({
+      current: { ...current, roleName: null },
+      update: {},
+      writtenRoleName: SYSTEM_ROLES.INVITADO,
+    });
+    expect(after).toEqual({ ...current, roleName: SYSTEM_ROLES.INVITADO });
+  });
+});
 
 const external = (role: string) => ({
   role,

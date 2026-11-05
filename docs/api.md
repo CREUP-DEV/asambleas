@@ -1037,3 +1037,80 @@ The PDF builder renders blocks:
   export;
 - "Presentado por" names the main presenter, then the co-presenters;
 - labels come from the locale files.
+
+## Activity and impersonation
+
+Contract in `shared/types/api.ts`, schemas in `shared/utils/schemas/activity.ts`.
+
+| Method | Path                                | Who                 | Notes                                                                              |
+| ------ | ----------------------------------- | ------------------- | ---------------------------------------------------------------------------------- |
+| POST   | `/api/admin/users/[id]/impersonate` | Admin (real role)   | Body `ImpersonationStartBody` `{ reason }`. Returns `ImpersonationDto`. See below. |
+| DELETE | `/api/me/impersonation`             | while impersonating | Back to the Admin's own account. 409 `impersonation.errors.notActive` otherwise.   |
+| GET    | `/api/me/activity`                  | any                 | `MeActivityPageDto`. `tab` = `by`, `to`, `access` or `member`. See below.          |
+| GET    | `/api/admin/activity`               | Admin (real role)   | `ActivityPageDto`, unredacted, with IP and user agent.                             |
+| GET    | `/api/admin/impersonations`         | Admin (real role)   | `AdminImpersonationPageDto`: filters `admin`, `target`, `active`.                  |
+
+**Starting.** `requireAdmin` on the real role, never a permission key. The
+reason is one line of 1 to 200 characters. Errors carry `data.messageKey`:
+403 `impersonation.errors.adminOnly`, 404 `notFound`, 422 `self`, 403
+`targetAdmin`, 409 `nested`, 400 `reason`. The limit is 60 minutes, fixed,
+capped by the Admin's session. Nothing touches cookies; the client reloads.
+
+**While impersonating.** Every request runs as the target. `GET /api/me`
+returns `impersonation: { id, by, startedAt, expiresAt }` (otherwise null), and
+`GET /api/auth/session` returns `impersonating`. Unsafe requests to
+`/api/admin/**` and `/api/members/**` answer 403
+`admin.impersonationReadOnly`.
+
+**`x-acting-user`.** Every unsafe request to `/api/admin`, `/api/assemblies`,
+`/api/exports`, `/api/uploads`, `/api/members` and `/api/me` carries the id of
+the account the page acts as (`ACTING_USER_HEADER_NAME`; `useApi().send` adds
+it). It is required when the signed-in user is Admin and checked when present
+for anyone else; a mismatch answers 409 `auth.identityChanged` and the client
+reloads. Only `DELETE /api/me/impersonation` is exempt.
+
+**`GET /api/me/activity`.** Query: `tab` (default `by`), `assembly` (slug or
+id), `category` (repeated or comma-separated), `from` (inclusive) and `to`
+(exclusive) as ISO date-times with offset, `cursor`, `limit` up to 100
+(default 50). Bad parameters answer 400.
+
+- `by`: the account's events and its own audit rows (sign-ins excluded).
+- `to`: audit rows about the account (creation, role, grants, member link,
+  role sync), grants of the roles it held while it held them (`approximate`
+  when the period is inferred), and impersonations of the account.
+- `access`: its sign-ins and sign-outs (with its own IP and user agent) and
+  impersonations on it or by it.
+- `member`: other accounts' events for its member, and answers the Mesa
+  recorded for it; empty without a member.
+- Privacy: every row is judged again with the current actor; rows about
+  things the account can no longer see keep type, time and assembly with
+  `target.available = false` and an empty payload; others' IPs and emails are
+  never sent; `impersonatedBy` only reaches the account itself and Admins.
+- `recentImpersonations` lists impersonations of the account in the last 30
+  days. A page may hold fewer items than `limit`, even none, with a
+  `nextCursor`: page by `nextCursor` only.
+
+**`GET /api/admin/activity`.** Filters `actor`, `target`, `user` (either),
+`member`, `assembly` (slug or id, so a deleted assembly can still be found),
+`action`, `category`, `kind`, `source`, `impersonated`, `impersonation`, `from`,
+`to`, `q` (name or email), `cursor`, `limit` up to 200. Filters combine with
+AND.
+
+**Cursors** are opaque (base64url of the UTC time with microseconds and the
+id); order is newest first.
+
+**Histories and news.** `EventDto.impersonatedBy` (document and amendment
+histories) and `MeWorkNewsDto.impersonatedBy` name the Admin who acted as the
+actor's account, only for that account and for Admins.
+`document_updated.changes` is removed from the document history for anyone
+who is not a presenter, the submitter or a manager.
+
+**Records written by existing endpoints.** The exports record
+`export.request` (if it cannot be recorded, nothing is queued: 503) and every
+download records `export.download`. `PUT /api/admin/users/[id]/role`,
+`.../permissions`, `PUT /api/admin/roles/[id]/permissions` and
+`PUT /api/members/[id]` write no row when nothing changes; giving or taking
+Admin ends the affected impersonations. `POST /api/members/sync` writes one
+row per changed member plus the summary, linked by `batchId`.
+`DELETE /api/assemblies/[assembly]` keeps a copy of the deleted draft's
+history in its audit row.

@@ -6,15 +6,18 @@ import {
 } from "h3";
 import { sql } from "drizzle-orm";
 import type { MemberDto } from "~~/shared/types/api";
+import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { memberCreateBodySchema } from "~~/shared/utils/schemas/member";
 import { db } from "../../db";
-import { auditLog, members } from "../../db/schema";
+import { members } from "../../db/schema";
 import { requireActor, requireCan } from "../../utils/domain/actor";
+import { recordAudit } from "../../utils/domain/audit";
 import { throwMutationError } from "../../utils/errors";
 import { toMemberDto } from "../../utils/members/dto";
+import { memberAuditState } from "../../utils/members/sync";
 
-/** Creates a member by hand, typically an executive area. */
+/** Creates a member by hand, typically an executive area (audit `member.create`). */
 export default defineEventHandler(async (event): Promise<MemberDto> => {
   const actor = await requireActor(event);
   requireCan(actor, PERMISSION_KEYS.MEMBER_MANAGE);
@@ -61,13 +64,13 @@ export default defineEventHandler(async (event): Promise<MemberDto> => {
         });
       }
 
-      await tx.insert(auditLog).values({
-        actorUserId: actor.user.id,
-        action: "member.create",
+      await recordAudit(tx, {
+        event,
+        actor,
+        action: AUDIT_ACTIONS.MEMBER_CREATE,
         targetType: "member",
         targetId: created.id,
-        before: null,
-        after: toMemberDto(created),
+        after: memberAuditState(created),
       });
       return created;
     });

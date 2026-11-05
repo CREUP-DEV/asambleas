@@ -7,6 +7,7 @@ import {
 import { createReadStream } from "node:fs";
 import { getAuthUserWithRole } from "../../../utils/auth/requireAuth";
 import { hasPermission } from "../../../utils/auth/rbac";
+import { recordExportDownload } from "../../../utils/export/audit";
 import {
   assertExportFileExists,
   getExportPermissionForQueue,
@@ -14,6 +15,11 @@ import {
   validateExportJobId,
 } from "../../../utils/export/storage";
 
+/**
+ * Streams a finished export to its requester or to whoever manages its
+ * queue. Every download is recorded (`export.download`) before the file
+ * goes out, since the PDF may hold drafts.
+ */
 export default defineEventHandler(async (event) => {
   const user = await getAuthUserWithRole(event);
   const jobId = validateExportJobId(event.context.params?.jobId);
@@ -38,6 +44,7 @@ export default defineEventHandler(async (event) => {
   }
 
   await assertExportFileExists(metadata);
+  await recordExportDownload(event, metadata);
 
   setResponseHeaders(event, {
     "Content-Type": "application/pdf",

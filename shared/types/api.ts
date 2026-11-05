@@ -30,6 +30,13 @@ import type {
   VoteSubject,
 } from "../constants/domain";
 import type { PermissionKey } from "../constants/permissions";
+import type {
+  ActivityCategory,
+  ActivityKind,
+  AuditSource,
+  ImpersonationEndReason,
+  MeActivityTab,
+} from "../constants/activity";
 import type { AmendmentOp, Block, ChangeKind } from "./content";
 import type { CalendarWarning } from "../utils/calendar";
 
@@ -69,6 +76,24 @@ export interface MeDto {
   permissions: PermissionKey[];
   isAdmin: boolean;
   member: MemberRef | null;
+  /**
+   * Set while an Admin acts as this account: every field above is then the
+   * account acted as (permissions, member, isAdmin false), and this names
+   * the real Admin for the banner. null otherwise. Identity comes only from
+   * here: better-auth's own get-session keeps reporting the Admin.
+   */
+  impersonation: MeImpersonationDto | null;
+}
+
+/** MeDto.impersonation: the impersonation the current request runs under. */
+export interface MeImpersonationDto {
+  /** impersonations.id. */
+  id: string;
+  /** The real Admin acting as the account. */
+  by: UserRef;
+  startedAt: IsoDate;
+  /** When it ends by itself (fixed, never renewed): the banner counts down and reloads. */
+  expiresAt: IsoDate;
 }
 
 /**
@@ -123,6 +148,11 @@ export interface MeWorkNewsDto {
   type: string;
   /** Who decided: the member acting, when there is one. */
   by: MemberRef | null;
+  /**
+   * The Admin who did it while acting as this very account (so the account
+   * did not decide it). Filled only on that account's own acts.
+   */
+  impersonatedBy?: UserRef | null;
   /** The decision in short: the position, the acceptance decision, the status. */
   value: string | null;
   at: IsoDate;
@@ -822,6 +852,11 @@ export interface EventDto {
   payload: Record<string, unknown>;
   actorName: string | null;
   actorMember: MemberRef | null;
+  /**
+   * The real Admin when it was done while acting as the actor's account.
+   * Filled only for that account and for Admins; absent or null otherwise.
+   */
+  impersonatedBy?: UserRef | null;
   createdAt: IsoDate;
 }
 
@@ -831,4 +866,267 @@ export interface LiveEventDto {
   entityId: string;
   type: string;
   documentId?: string;
+}
+
+// Impersonation ------------------------------------------------------------
+
+/**
+ * A user as the activity and impersonation lists name them: the intranet
+ * name when known, otherwise the Google name (coalesce(external_name, name)).
+ * Never carries the email.
+ */
+export interface UserRef {
+  id: string;
+  name: string;
+}
+
+/**
+ * POST /api/admin/users/[id]/impersonate: the Admin starts acting as the
+ * account `[id]` (better-auth id). Admin only (real role), never as itself
+ * (422) nor as another Admin (403), never nested (409).
+ */
+export interface ImpersonationStartBody {
+  /** Why the Admin needs it: 1..IMPERSONATION_REASON_MAX_LENGTH characters, one line. */
+  reason: string;
+}
+
+/**
+ * One impersonation (an impersonations row). Returned by POST
+ * /api/admin/users/[id]/impersonate, and shown to the account acted as in
+ * "Mi actividad" (MeActivityPageDto.recentImpersonations, items of kind
+ * `impersonation`).
+ */
+export interface ImpersonationDto {
+  id: string;
+  /** The real Admin; null if that account no longer exists. */
+  admin: UserRef | null;
+  /** The account acted as; null if it no longer exists. */
+  target: UserRef | null;
+  /** The reason the Admin gave. */
+  reason: string;
+  startedAt: IsoDate;
+  /** Fixed on start: start + IMPERSONATION_TTL_MINUTES, or the Admin's session end if sooner. */
+  expiresAt: IsoDate;
+  /** When it ended; null while open. An expiry closed lazily ends at expiresAt. */
+  endedAt: IsoDate | null;
+  endReason: ImpersonationEndReason | null;
+  /** Open and not expired at the time of the response. */
+  active: boolean;
+}
+
+/** GET /api/admin/impersonations item (Admin only): adds where it came from and what was done. */
+export interface AdminImpersonationDto extends ImpersonationDto {
+  /** The account acted as, with its member and current role name. */
+  target: (UserRef & { member: MemberRef | null; role: string | null }) | null;
+  /** The Admin's client when it started. */
+  ipAddress: string | null;
+  userAgent: string | null;
+  /**
+   * Events plus audit rows recorded under it (impersonation_id), without
+   * its own impersonation.* rows. Drill down with GET
+   * /api/admin/activity?impersonation=<id>.
+   */
+  actionCount: number;
+}
+
+/**
+ * GET /api/admin/impersonations query, as parsed by
+ * adminImpersonationQuerySchema. Newest first, keyset on (started_at, id).
+ */
+export interface AdminImpersonationQuery {
+  /** Started by this Admin (better-auth user id). */
+  admin?: string;
+  /** On this account (better-auth user id). */
+  target?: string;
+  /** true: only open and not expired; false: only ended or expired. */
+  active?: boolean;
+  /** Opaque on the wire (the previous page's nextCursor); parsed into its position. */
+  cursor?: ActivityCursor;
+  /** 1..ADMIN_ACTIVITY_MAX_LIMIT, default ACTIVITY_PAGE_DEFAULT_LIMIT. */
+  limit: number;
+}
+
+export interface AdminImpersonationPageDto {
+  items: AdminImpersonationDto[];
+  /** Pass as `cursor` for the next page; null on the last one. */
+  nextCursor: string | null;
+}
+
+// Activity -----------------------------------------------------------------
+
+/**
+ * Keyset position of an activity list: the last item's time and id. `at`
+ * is the database timestamp with microseconds (clock_timestamp()), as text:
+ * a JS Date would drop them and skip rows. Travels encoded as an opaque
+ * string (encodeActivityCursor / decodeActivityCursor in
+ * shared/utils/schemas/activity.ts).
+ */
+export interface ActivityCursor {
+  /** ISO 8601 in UTC with up to microseconds, e.g. "2026-11-05T10:15:30.123456Z". */
+  at: string;
+  /** The row id (cuid2), unique across events, audit_log and impersonations. */
+  id: string;
+}
+
+/** Who did something, in an activity item. */
+export interface ActivityActorDto extends UserRef {
+  /** The member the account acted for at the time (events only; null for audit rows). */
+  member: MemberRef | null;
+}
+
+/** What an activity item is about. */
+export interface ActivityTargetDto {
+  /**
+   * events.entity_type (assembly, agenda_item, document, amendment, vote,
+   * decision, live, speakers) or audit_log.target_type (AuditTargetType);
+   * `user` for items of kind impersonation.
+   */
+  type: string;
+  /** events.entity_id or audit_log.target_id. */
+  id: string;
+  /**
+   * Human label: the document title, the amendment code, the agenda item
+   * title, the user's name, the role name, the member acronym. null when
+   * unknown or not available.
+   */
+  label: string | null;
+  /** The assembly it belongs to, for links and filters (label "80.ª AGO"). */
+  assembly: { id: string; slug: string; label: string } | null;
+  /** The document it belongs to (documents and amendments), for links. */
+  document: { id: string; slug: string; title: string } | null;
+  /**
+   * false when the viewer can no longer see it, or it was deleted: the item
+   * keeps its type, time and assembly, with label, document and payload
+   * emptied ("Acción sobre un elemento que ya no puedes ver").
+   */
+  available: boolean;
+}
+
+/** Where an access came from. Only the account's own rows and Admins see it. */
+export interface ActivityAccessDto {
+  ipAddress: string | null;
+  userAgent: string | null;
+}
+
+/**
+ * One row of an activity list: an event (the assembly history), an
+ * audit_log row, or an impersonation window. Lists are newest first and
+ * paged by (at, id).
+ */
+export interface ActivityItemDto {
+  /** The row id (events.id, audit_log.id or impersonations.id). Key lists by `${kind}:${id}`. */
+  id: string;
+  kind: ActivityKind;
+  at: IsoDate;
+  /**
+   * events.type (EVENT_TYPES), audit_log.action (AUDIT_ACTIONS), or
+   * IMPERSONATION_SESSION_ACTION for kind impersonation. UI label:
+   * `activity.actions.<action>`, falling back to `activity.actions.other`.
+   */
+  action: string;
+  /** activityCategory(kind, action). */
+  category: ActivityCategory;
+  /** audit_log.source; "user" for events and impersonations. */
+  source: AuditSource;
+  /** Who did it (the account acted as, when impersonated); null for the system or the intranet. */
+  actor: ActivityActorDto | null;
+  /**
+   * The real Admin when it was done while acting as `actor`. Only filled
+   * for the account acted as and for Admins; everyone else sees null.
+   */
+  impersonatedBy: UserRef | null;
+  /** The impersonation it was recorded under, with the same visibility as impersonatedBy. */
+  impersonationId: string | null;
+  target: ActivityTargetDto;
+  /**
+   * Kind event: the event payload, allowlisted per type and redacted for
+   * the viewer (correction notes, positions). Kind audit: { before, after },
+   * allowlisted per action. Kind impersonation: {}. Empty when the target
+   * is not available.
+   */
+  payload: Record<string, unknown>;
+  /** Kind impersonation: the session window. null otherwise. */
+  impersonation: ImpersonationDto | null;
+  /** IP and user agent: the viewer's own access rows (tab access) and Admins only. */
+  access: ActivityAccessDto | null;
+  /**
+   * The row is attributed to the account by an approximation (a change to
+   * the permissions of a role it is assumed to have held then): show
+   * `activity.approximateRole`.
+   */
+  approximate: boolean;
+}
+
+export interface ActivityPageDto {
+  items: ActivityItemDto[];
+  /** Pass as `cursor` for the next page; null on the last one. */
+  nextCursor: string | null;
+}
+
+/** GET /api/me/activity response. */
+export interface MeActivityPageDto extends ActivityPageDto {
+  /**
+   * Impersonations of this account started in the last
+   * IMPERSONATION_NOTICE_DAYS days, newest first, whatever the tab: drives
+   * the notice at the top of "Mi actividad".
+   */
+  recentImpersonations: ImpersonationDto[];
+}
+
+/**
+ * GET /api/me/activity query, as parsed by meActivityQuerySchema. On the
+ * wire, list filters repeat (`category=a&category=b`) or comma-separate.
+ */
+export interface MeActivityQuery {
+  /** by | to | access | member (ME_ACTIVITY_TABS). `member` needs a linked member. */
+  tab: MeActivityTab;
+  /** Assembly slug ("80-ago") or id. */
+  assembly?: string;
+  category?: ActivityCategory[];
+  /** Inclusive lower bound (ISO datetime with offset). */
+  from?: IsoDate;
+  /** Exclusive upper bound (ISO datetime with offset): the client sends the start of the next day. */
+  to?: IsoDate;
+  /** Opaque on the wire (the previous page's nextCursor); parsed into its position. */
+  cursor?: ActivityCursor;
+  /** 1..ME_ACTIVITY_MAX_LIMIT, default ACTIVITY_PAGE_DEFAULT_LIMIT. */
+  limit: number;
+}
+
+/**
+ * GET /api/admin/activity query (Admin only), as parsed by
+ * adminActivityQuerySchema. Every filter is optional and they combine with
+ * AND. On the wire, list filters repeat or comma-separate and booleans are
+ * "1"/"true"/"0"/"false".
+ */
+export interface AdminActivityQuery {
+  /** Done by this account (better-auth user id). */
+  actor?: string;
+  /** Done to this account: audit rows targeting it and impersonations of it. */
+  target?: string;
+  /** Either actor or target. */
+  user?: string;
+  /** Done while acting for this member (events.actor_member_id), or audit rows targeting it. */
+  member?: string;
+  /** Assembly slug or id. */
+  assembly?: string;
+  /** Exact event types or audit actions. */
+  action?: string[];
+  category?: ActivityCategory[];
+  kind?: ActivityKind[];
+  source?: AuditSource[];
+  /** true: only rows done while impersonating; false: only rows that were not. */
+  impersonated?: boolean;
+  /** Only rows recorded under this impersonation (cuid2), plus its window. */
+  impersonation?: string;
+  /** Inclusive lower bound (ISO datetime with offset). */
+  from?: IsoDate;
+  /** Exclusive upper bound (ISO datetime with offset). */
+  to?: IsoDate;
+  /** Case-insensitive search over the actor's and target's name and email. */
+  q?: string;
+  /** Opaque on the wire (the previous page's nextCursor); parsed into its position. */
+  cursor?: ActivityCursor;
+  /** 1..ADMIN_ACTIVITY_MAX_LIMIT, default ACTIVITY_PAGE_DEFAULT_LIMIT. */
+  limit: number;
 }

@@ -90,7 +90,18 @@ export default defineEventHandler(async (event): Promise<AgendaDto> => {
         entityType: "assembly",
         entityId: assembly.id,
         type: "agenda_reordered",
-        payload: { itemIds: changes.map((change) => change.id) },
+        payload: {
+          itemIds: changes.map((change) => change.id),
+          // Where each listed item was and where it went.
+          moves: changes.map((change) => {
+            const item = byId.get(change.id)!;
+            return {
+              id: change.id,
+              from: { parentId: item.parentId, order: item.order },
+              to: { parentId: change.parentId, order: change.order },
+            };
+          }),
+        },
         actor,
       });
     });

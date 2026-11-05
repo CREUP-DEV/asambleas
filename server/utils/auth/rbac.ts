@@ -14,6 +14,7 @@ import {
   requireAuth,
   type AuthEventContext,
   type AuthSession,
+  type ImpersonationContext,
 } from "./requireAuth";
 
 interface CacheEntry {
@@ -155,8 +156,10 @@ export function isAdmin(roleName: string | null | undefined): boolean {
 async function resolveSessionWithRole(event: H3Event) {
   const session = await requireAuth(event);
   const user = await getAuthUserWithRole(event);
+  const impersonation =
+    (event.context as AuthEventContext).impersonation ?? null;
 
-  return { session, user };
+  return { session, user, impersonation };
 }
 
 export async function attachAuthContext(event: H3Event): Promise<AuthSession> {
@@ -229,14 +232,24 @@ export function hasAnyPermission(
   return keys.some((key) => permissions.includes(key));
 }
 
-/** What requireAnyPermission returns: who is acting and what they hold. */
+/**
+ * What requireAnyPermission and requireAdmin return: who is acting and
+ * what they hold. Take the caller's identity from `user`, never from
+ * `session.user` (the session stays the real Admin's while impersonating).
+ */
 export interface AdminCaller {
   session: AuthSession;
   /** The caller is an Admin: the only one who may touch the Admin role. */
   admin: boolean;
+  /** The effective user (the account acted as, while impersonating). */
   user: { id: string; role: { id: string; name: string } | null };
   /** The caller's effective permissions (every key for an Admin). */
   permissions: PermissionKey[];
+  /**
+   * The impersonation the request runs under, or null. Pass the caller to
+   * recordAudit as `actor` and it records both.
+   */
+  impersonation: ImpersonationContext | null;
 }
 
 /**
@@ -249,7 +262,7 @@ export async function requireAnyPermission(
   event: H3Event,
   keys: readonly PermissionKey[],
 ): Promise<AdminCaller> {
-  const { session, user } = await resolveSessionWithRole(event);
+  const { session, user, impersonation } = await resolveSessionWithRole(event);
 
   if (!user) {
     throw createError({
@@ -265,6 +278,7 @@ export async function requireAnyPermission(
       admin: true,
       user: caller,
       permissions: [...ALL_PERMISSION_KEYS],
+      impersonation,
     };
   }
 
@@ -276,7 +290,7 @@ export async function requireAnyPermission(
     });
   }
 
-  return { session, admin: false, user: caller, permissions };
+  return { session, admin: false, user: caller, permissions, impersonation };
 }
 
 /** Messages for adminGrantViolation. */
@@ -363,15 +377,28 @@ export function adminGrantViolation(input: {
   return null;
 }
 
-export async function requireAdmin(event: H3Event): Promise<AuthSession> {
-  const { session, user } = await resolveSessionWithRole(event);
+/**
+ * Requires the effective user to be an Admin (the role, never a permission
+ * key: Secretaría and Presidencia hold every key). While an Admin acts as
+ * another account the effective user is that account, never an Admin, so
+ * this answers 403 then: Admin-only pages and endpoints are out of reach
+ * until the Admin goes back to their account.
+ */
+export async function requireAdmin(event: H3Event): Promise<AdminCaller> {
+  const { session, user, impersonation } = await resolveSessionWithRole(event);
 
-  if (!isAdmin(user?.role?.name)) {
+  if (!user || !isAdmin(user.role?.name)) {
     throw createError({
       statusCode: 403,
       message: "Acceso restringido a administradores",
     });
   }
 
-  return session;
+  return {
+    session,
+    admin: true,
+    user: { id: user.id, role: user.role ?? null },
+    permissions: [...ALL_PERMISSION_KEYS],
+    impersonation,
+  };
 }

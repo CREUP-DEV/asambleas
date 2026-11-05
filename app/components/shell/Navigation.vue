@@ -59,7 +59,7 @@ const props = defineProps<{ collapsed?: boolean }>();
 const { t } = useI18n();
 const localePath = useLocalePath();
 const route = useRoute();
-const { can } = useMe();
+const { can, isAdmin } = useMe();
 
 const currentAssembly = useState<AssemblyDto | null>(
   "current-assembly",
@@ -243,7 +243,10 @@ const assemblyItems = computed<NavigationMenuItem[]>(() => {
   return items;
 });
 
-/** Each admin page by the permission that opens it (an Admin sees all). */
+/**
+ * Each admin page by the permission that opens it (an Admin sees all), plus
+ * the activity log, which only an Admin opens.
+ */
 const adminItems = computed<NavigationMenuItem[]>(() => {
   const items: NavigationMenuItem[] = [];
   if (can(PERMISSION_KEYS.USER_MANAGE_ROLES)) {
@@ -271,6 +274,18 @@ const adminItems = computed<NavigationMenuItem[]>(() => {
       icon: "i-lucide-building-2",
       to: members,
       active: isWithin(members),
+    });
+  }
+  // The whole activity log: Admins only, by their real role. Secretaría
+  // and Presidencia hold every permission key, so no key opens it; while
+  // an Admin acts as another account, `isAdmin` is that account's.
+  if (isAdmin.value) {
+    const activity = localePath("/admin/actividad");
+    items.push({
+      label: t("shell.nav.activity"),
+      icon: "i-lucide-scroll-text",
+      to: activity,
+      active: isWithin(activity),
     });
   }
   return items.length > 0

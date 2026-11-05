@@ -2,8 +2,10 @@ import { eq, sql } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "../../db";
 import { users, roles } from "../../db/schema";
+import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import { logError, logInfo, logWarn } from "../core/logger";
+import { recordAudit } from "../domain/audit";
 import {
   getIntranetApiBaseUrl,
   intranetAuthHeaders,
@@ -32,6 +34,14 @@ const ExternalRoleResponse = z.object({
 type ExternalPayload = z.infer<typeof ExternalRoleResponse>;
 
 /**
+ * How the intranet call went, recorded on the `auth.sign_in` audit row:
+ * `ok` (the intranet answered), `unconfigured` (no role API URL) or
+ * `failed` (an error, a non-2xx answer or an invalid payload; sign-in goes
+ * on without the intranet data).
+ */
+export type RoleSyncOutcome = "ok" | "failed" | "unconfigured";
+
+/**
  * `NUXT_ROLE_API_URL` when set; otherwise `POST {NUXT_INTRANET_API_URL}/user/role`.
  */
 function getRoleApiUrl(): string | null {
@@ -47,14 +57,18 @@ function getInitialAdminEmail(): string {
     .toLowerCase();
 }
 
-async function fetchExternalRole(email: string) {
+async function fetchExternalRole(email: string): Promise<{
+  outcome: RoleSyncOutcome;
+  external: ExternalPayload | null;
+}> {
   const apiUrl = getRoleApiUrl();
   if (!apiUrl) {
     logWarn("roleSync", {
       reason: "NUXT_ROLE_API_URL and NUXT_INTRANET_API_URL not configured",
     });
-    return null;
+    return { outcome: "unconfigured", external: null };
   }
+  const failed = { outcome: "failed", external: null } as const;
 
   try {
     const response = await fetch(apiUrl, {
@@ -67,7 +81,7 @@ async function fetchExternalRole(email: string) {
 
     if (!response.ok) {
       logWarn("roleSync", { status: response.status, email });
-      return null;
+      return failed;
     }
 
     const data = await response.json();
@@ -75,13 +89,13 @@ async function fetchExternalRole(email: string) {
 
     if (!parsed.success) {
       logWarn("roleSync", { reason: "invalid response", email });
-      return null;
+      return failed;
     }
 
-    return parsed.data;
+    return { outcome: "ok", external: parsed.data };
   } catch (error) {
     logError("roleSync.fetch", error);
-    return null;
+    return failed;
   }
 }
 
@@ -230,6 +244,48 @@ export function computeRoleSyncUpdate(
   return { fields, assignRoleName, clearMember };
 }
 
+/**
+ * What `user.role_sync` records of an account: its role and member link and
+ * the intranet data role sync stores. `lastRoleSyncAt` is left out, so a
+ * sync that changes nothing else writes no row.
+ */
+export interface RoleSyncAuditState {
+  roleName: string | null;
+  externalRole: string | null;
+  externalName: string | null;
+  externalInitials: string | null;
+  university: string | null;
+  memberId: string | null;
+}
+
+/**
+ * The account before and after a role sync update, for its audit row.
+ * `writtenRoleName` is the role really written (after the fallback), or
+ * null when the role stays.
+ */
+export function roleSyncAuditStates(input: {
+  current: RoleSyncAuditState;
+  update: Omit<RoleSyncUpdate, "lastRoleSyncAt" | "roleId">;
+  writtenRoleName: string | null;
+}): { before: RoleSyncAuditState; after: RoleSyncAuditState } {
+  const { current, update } = input;
+  const next = <K extends keyof RoleSyncAuditState>(
+    key: K,
+    value: RoleSyncAuditState[K] | undefined,
+  ): RoleSyncAuditState[K] => (value === undefined ? current[key] : value);
+  return {
+    before: { ...current },
+    after: {
+      roleName: input.writtenRoleName ?? current.roleName,
+      externalRole: next("externalRole", update.externalRole),
+      externalName: next("externalName", update.externalName),
+      externalInitials: next("externalInitials", update.externalInitials),
+      university: next("university", update.university),
+      memberId: next("memberId", update.memberId),
+    },
+  };
+}
+
 type DbTx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 async function getRoleIdByNameTx(
@@ -243,7 +299,16 @@ async function getRoleIdByNameTx(
   return role?.id ?? null;
 }
 
-export async function syncUserRole(userId: string): Promise<void> {
+/**
+ * Syncs the account with the intranet on sign-in: role, member link and the
+ * intranet data. Changes are recorded with source `intranet` and no actor,
+ * in the transaction of the update: `user.role_sync` (before/after,
+ * RoleSyncAuditState) whenever anything but `lastRoleSyncAt` changes, and
+ * `user.initial_admin` when INITIAL_ADMIN_EMAIL receives Admin. The member
+ * link writes its own rows (linkUserToIntranetMember). Returns how the
+ * intranet call went, for the sign-in row.
+ */
+export async function syncUserRole(userId: string): Promise<RoleSyncOutcome> {
   const preview = await db.query.users.findFirst({
     where: eq(users.id, userId),
     columns: { email: true },
@@ -251,10 +316,10 @@ export async function syncUserRole(userId: string): Promise<void> {
 
   if (!preview) {
     logWarn("roleSync", { reason: "user not found", userId });
-    return;
+    return "failed";
   }
 
-  const external = await fetchExternalRole(preview.email);
+  const { outcome, external } = await fetchExternalRole(preview.email);
   // Initials stored by the previous sync: a CEA account keeps the member it
   // is linked to until they change (linkUserToIntranetMember).
   let previousInitials: string | null = null;
@@ -272,7 +337,9 @@ export async function syncUserRole(userId: string): Promise<void> {
         roleId: true,
         memberId: true,
         externalRole: true,
+        externalName: true,
         externalInitials: true,
+        university: true,
       },
       with: { role: { columns: { name: true } } },
     });
@@ -312,17 +379,19 @@ export async function syncUserRole(userId: string): Promise<void> {
       if (targetRoleId) {
         updateFields.roleId = targetRoleId;
         roleWritten = true;
-        if (isInitialAdmin) {
+        // The logger redacts emails: the user id names the account. The
+        // initial admin may have fallen back to Invitado (no Admin row).
+        if (isInitialAdmin && roleName === SYSTEM_ROLES.ADMIN) {
           logInfo("roleSync", {
             action: "initial admin assigned",
-            email: freshUser.email,
+            userId,
           });
         } else {
           logInfo("roleSync", {
             action: "role changed",
             from: freshUser.role?.name ?? null,
             to: roleName,
-            email: freshUser.email,
+            userId,
           });
         }
       }
@@ -339,16 +408,53 @@ export async function syncUserRole(userId: string): Promise<void> {
       logInfo("roleSync", {
         action: "member unlinked",
         memberId: freshUser.memberId,
-        email: freshUser.email,
+        userId,
       });
     }
 
     await tx.update(users).set(updateFields).where(eq(users.id, userId));
+
+    const writtenRoleName = roleWritten ? roleName : null;
+    const { before, after } = roleSyncAuditStates({
+      current: {
+        roleName: freshUser.role?.name ?? null,
+        externalRole: freshUser.externalRole,
+        externalName: freshUser.externalName,
+        externalInitials: freshUser.externalInitials,
+        university: freshUser.university,
+        memberId: freshUser.memberId,
+      },
+      update: updateFields,
+      writtenRoleName,
+    });
+    // Only when Admin was really written, not its Invitado fallback.
+    if (isInitialAdmin && writtenRoleName === SYSTEM_ROLES.ADMIN) {
+      await recordAudit(tx, {
+        actor: null,
+        source: "intranet",
+        action: AUDIT_ACTIONS.USER_INITIAL_ADMIN,
+        targetType: "user",
+        targetId: userId,
+        before: { roleName: before.roleName },
+        after: { roleName: writtenRoleName },
+      });
+    }
+    // No row when only lastRoleSyncAt moved (recordAudit skips the no-op).
+    await recordAudit(tx, {
+      actor: null,
+      source: "intranet",
+      action: AUDIT_ACTIONS.USER_ROLE_SYNC,
+      targetType: "user",
+      targetId: userId,
+      before: { ...before },
+      after: { ...after },
+    });
   });
 
   if (external) {
     await linkMember(userId, external, previousInitials);
   }
+  return outcome;
 }
 
 /**

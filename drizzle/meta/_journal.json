@@ -71,6 +71,20 @@
       "when": 1793875174026,
       "tag": "0009_thin_wiccan",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793907766206,
+      "tag": "0010_new_arclight",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1793912708325,
+      "tag": "0011_fluffy_puck",
+      "breakpoints": true
     }
   ]
 }
