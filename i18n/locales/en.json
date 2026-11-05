@@ -978,7 +978,7 @@
       "badges": {
         "draft": "Not sent",
         "correction": "Correction requested",
-        "correction_sent": "Correction requested",
+        "correction_sent": "Sent back for correction",
         "to_validate": "To review",
         "pending": "Being reviewed",
         "to_publish": "Validated, not published",
@@ -989,7 +989,7 @@
       "states": {
         "draft": "You have not sent it yet. Once you send it, the Secretariat will check it before anyone else can see it.",
         "correction": "The Secretariat asks you to fix it. Once it is ready, send it again.",
-        "correction_sent": "It was sent back to its presenters to fix it.",
+        "correction_sent": "The Secretariat sent it back to be fixed. It is now up to its presenters: once they send it again, the Secretariat will review it again.",
         "to_validate": "Review it: validate it or ask its presenters to fix it.",
         "pending": "The Secretariat is checking it. Until then, only its presenters, the Secretariat and the Mesa can see it.",
         "to_publish": "It is validated, but the rest of the assembly cannot see it yet. Publish it whenever you want.",
@@ -1165,7 +1165,8 @@
         "pending_validation": "To review",
         "validated": "Validated, not published",
         "published": "Published",
-        "pending_authors": "Waiting for their main authors"
+        "pending_authors": "Waiting for their main authors",
+        "correction_requested": "Sent back for correction"
       }
     },
     "detail": {
@@ -2612,9 +2613,9 @@
       "action": "See what to fix"
     },
     "reviewQueue": {
-      "label": "Waiting for the Secretariat",
       "toValidate": "{count} to review",
-      "toPublish": "{count} validated, not published"
+      "toPublish": "{count} validated, not published",
+      "returned": "{count} sent back for correction"
     },
     "reviewAndValidate": "Review and validate",
     "proponentReview": {

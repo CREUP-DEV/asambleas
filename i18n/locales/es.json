@@ -978,7 +978,7 @@
       "badges": {
         "draft": "Sin enviar",
         "correction": "Corrección pedida",
-        "correction_sent": "Corrección pedida",
+        "correction_sent": "Devuelta para corregir",
         "to_validate": "Por revisar",
         "pending": "En revisión",
         "to_publish": "Validada, sin publicar",
@@ -989,7 +989,7 @@
       "states": {
         "draft": "Todavía no la has enviado. Cuando la envíes, Secretaría la revisará antes de que los demás puedan verla.",
         "correction": "Secretaría te pide que la corrijas. Cuando esté lista, vuelve a enviarla.",
-        "correction_sent": "Se ha devuelto a quienes la presentan para que la corrijan.",
+        "correction_sent": "Secretaría la ha devuelto para que la corrijan. Ahora les toca a quienes la presentan: cuando la vuelvan a enviar, Secretaría la revisará de nuevo.",
         "to_validate": "Revísala: valídala o pide a quienes la presentan que la corrijan.",
         "pending": "Secretaría la está revisando. Hasta entonces, solo la veis quienes la presentáis, Secretaría y la Mesa.",
         "to_publish": "Está validada, pero el resto de la asamblea aún no la ve. Publícala cuando quieras.",
@@ -1165,7 +1165,8 @@
         "pending_validation": "Por revisar",
         "validated": "Validadas, sin publicar",
         "published": "Publicadas",
-        "pending_authors": "Esperan a los autores principales"
+        "pending_authors": "Esperan a los autores principales",
+        "correction_requested": "Devueltas para corregir"
       }
     },
     "detail": {
@@ -2612,9 +2613,9 @@
       "action": "Ver qué corregir"
     },
     "reviewQueue": {
-      "label": "Pendiente de Secretaría",
       "toValidate": "{count} por revisar",
-      "toPublish": "{count} validada sin publicar | {count} validadas sin publicar"
+      "toPublish": "{count} validada sin publicar | {count} validadas sin publicar",
+      "returned": "{count} devuelta para corregir | {count} devueltas para corregir"
     },
     "reviewAndValidate": "Revisar y validar",
     "proponentReview": {

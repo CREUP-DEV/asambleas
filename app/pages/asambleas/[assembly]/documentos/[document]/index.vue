@@ -61,9 +61,10 @@ import {
  * (its badge counts what waits for them). Corrections the Secretaría asked
  * for get a notice above
  * the workspace; the Secretaría gets a quiet line with what it still has to
- * review or publish. Secondary links live in the header's "Más" menu. On
- * narrow screens the two panels stack behind a toggle and the amendment
- * detail opens in a slideover.
+ * review or publish, and what it sent back for correction (those drafts are
+ * listed only under that filter). Secondary links live in the header's
+ * "Más" menu. On narrow screens the two panels stack behind a toggle and
+ * the amendment detail opens in a slideover.
  *
  * `?enmienda=<id>` opens that amendment (links from the home page), and
  * `?transaccional=<id>,<id>` opens the transactional composer on those
@@ -437,8 +438,11 @@ const showReviewFilter = computed(() =>
   list.listed.value.some(isAmendmentPrivate),
 );
 
-/** What the Secretaría still has to check or publish in this document. */
-const reviewQueue = computed(() => amendmentReviewQueue(list.listed.value));
+/**
+ * What the Secretaría still has to check or publish in this document, and
+ * what it sent back for correction.
+ */
+const reviewQueue = computed(() => amendmentReviewQueue(list.amendments.value));
 const reviewQueueItems = computed(() =>
   (
     [
@@ -462,6 +466,16 @@ const reviewQueueItems = computed(() =>
           reviewQueue.value.toPublish,
         ),
       },
+      {
+        filter: "correction_requested",
+        count: reviewQueue.value.returned,
+        icon: "i-lucide-undo-2",
+        label: t(
+          "workspace.reviewQueue.returned",
+          { count: reviewQueue.value.returned },
+          reviewQueue.value.returned,
+        ),
+      },
     ] satisfies {
       filter: AmendmentReviewFilter;
       count: number;
@@ -474,9 +488,15 @@ const reviewQueueItems = computed(() =>
 /** Shows only those amendments, or every one again on a second press. */
 function toggleReviewFilter(filter: AmendmentReviewFilter): void {
   const current = list.filters.value.review;
+  const review = current === filter ? "any" : filter;
   list.filters.value = {
     ...list.filters.value,
-    review: current === filter ? "any" : filter,
+    review,
+    // Returned amendments are drafts by other members: a status or member
+    // chosen for the normal list would leave this one empty.
+    ...(review === "correction_requested"
+      ? { statuses: [], memberIds: [] }
+      : {}),
   };
 }
 
@@ -810,8 +830,10 @@ function openCorrections(): void {
 }
 
 /**
- * On arrival, `?enmienda=<id>` opens that amendment (a draft among the
- * actor's own), and `?transaccional=<id>,<id>` the transactional composer
+ * On arrival, `?enmienda=<id>` opens that amendment (a draft of the
+ * actor's own in "Mis enmiendas"; one sent back for correction they cannot
+ * edit in "Todas", under "Devueltas para corregir"), and
+ * `?transaccional=<id>,<id>` the transactional composer
  * on those amendments (the ones that can still be combined). Client only:
  * whether the detail opens in the panel or in a slideover depends on the
  * screen width.
@@ -836,7 +858,17 @@ function landOnAmendment(): void {
   const id = typeof wanted === "string" ? wanted : null;
   const target = id ? list.byId.value.get(id) : undefined;
   if (!target) return;
-  if (target.status === "draft") listTab.value = "mine";
+  const isTarget = (amendment: AmendmentDto) => amendment.id === target.id;
+  if (target.status === "draft" && list.mine.value.some(isTarget)) {
+    listTab.value = "mine";
+  } else if (list.returned.value.some(isTarget)) {
+    // Set before selecting, which reads the list on screen.
+    listTab.value = "all";
+    list.filters.value = {
+      ...list.filters.value,
+      review: "correction_requested",
+    };
+  }
   selectAmendment(target.id);
   mobilePane.value = "amendments";
 }
@@ -917,8 +949,14 @@ const relationCandidates = computed(() =>
   list.listed.value.filter((amendment) => amendment.id !== selectedId.value),
 );
 
+/** Markers count the listed amendments: filter those, not the returned ones. */
 function onMarkerClick(blockId: string): void {
-  list.filters.value = { ...list.filters.value, blockId };
+  const { review } = list.filters.value;
+  list.filters.value = {
+    ...list.filters.value,
+    blockId,
+    review: review === "correction_requested" ? "any" : review,
+  };
   listTab.value = "all";
   detailOpen.value = false;
   mobilePane.value = "amendments";
@@ -1703,15 +1741,16 @@ const filteredBlockLabel = computed(() =>
 
               <!-- All amendments -->
               <template v-else>
-                <!-- Secretaría: what it still has to check or publish. -->
+                <!-- Secretaría: what it still has to check or publish, and
+                     what it sent back for correction. -->
                 <div
                   v-if="reviewQueueItems.length > 0"
                   class="flex flex-wrap items-center gap-x-2 gap-y-1.5"
                   role="group"
-                  :aria-label="t('workspace.reviewQueue.label')"
+                  :aria-label="t('amendment.review.label')"
                 >
                   <span class="text-muted text-sm" aria-hidden="true">
-                    {{ t("workspace.reviewQueue.label") }}:
+                    {{ t("amendment.review.label") }}:
                   </span>
                   <UButton
                     v-for="item in reviewQueueItems"
@@ -1735,6 +1774,7 @@ const filteredBlockLabel = computed(() =>
                   :author-options="list.authorOptions.value"
                   :can-filter-mine="Boolean(member)"
                   :show-review-filter="showReviewFilter"
+                  :show-returned-filter="list.returned.value.length > 0"
                   :block-label="filteredBlockLabel"
                 />
                 <p class="sr-only" aria-live="polite">{{ listAnnouncement }}</p>
@@ -1778,7 +1818,7 @@ const filteredBlockLabel = computed(() =>
                 />
 
                 <CommonEmptyState
-                  v-else-if="list.listed.value.length === 0"
+                  v-else-if="list.source.value.length === 0"
                   icon="i-lucide-message-square-dashed"
                   :title="t('amendment.list.empty')"
                   :description="

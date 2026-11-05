@@ -4,6 +4,7 @@ import type { SessionAgendaRow } from "~/composables/session/sessionModel";
 import {
   LIVE_STATE_COLORS,
   liveAmendmentCode,
+  livePositionLine,
   type LiveAmendmentState,
 } from "~/components/live-view/-model";
 
@@ -11,7 +12,8 @@ import {
  * What the Mesa has in debate, for the live view: the agenda item, the
  * document (with who presents it: the main presenter, then at most two
  * co-presenters before "N más") and, when there is one, the amendment with
- * its change in readable type, a sentence on where it stands and its
+ * its change in readable type, a sentence on where it stands, how the
+ * document's main presenter answered it (when the room may see it) and its
  * justification
  * (folded away, unless the amendment changes no text and the justification
  * is all there is to read). Nothing here is announced by itself: the page keeps one
@@ -31,6 +33,11 @@ const props = defineProps<{
   note?: string | null;
   /** The Mesa debates an amendment the viewer cannot read yet. */
   amendmentHidden: boolean;
+  /**
+   * The room may see the main presenter's answer to each amendment (the
+   * assembly does not keep answers to the Mesa). Off by default.
+   */
+  showPosition?: boolean;
   /** Localized path of the document workspace. */
   documentPath: string | null;
 }>();
@@ -77,6 +84,18 @@ const stateLines = computed(() => {
   if (note && NOTE_REPLACES.has(state)) return [note];
   const sentence = t(`liveView.state.${state}.sentence`);
   return note ? [sentence, note] : [sentence];
+});
+
+/**
+ * How the main presenter answered it, in one plain sentence ("Respuesta de
+ * CEUM: la acepta"), without its comment, to keep the phone view light.
+ */
+const positionLine = computed(() => {
+  if (!props.showPosition || !props.amendment) return null;
+  // Its state sentence already says the presenter accepted it.
+  if (props.state === "incorporated") return null;
+  const line = livePositionLine(props.amendment, props.document?.proponent);
+  return line ? t(line.key, line.params ?? {}) : null;
 });
 
 const amendmentLink = computed(() =>
@@ -162,6 +181,9 @@ const amendmentLink = computed(() =>
         </div>
         <p v-for="line in stateLines" :key="line" class="text-default">
           {{ line }}
+        </p>
+        <p v-if="positionLine" class="text-default">
+          {{ positionLine }}
         </p>
 
         <div class="live-text border-default rounded-lg border p-3 sm:p-4">

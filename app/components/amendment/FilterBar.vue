@@ -17,8 +17,10 @@ import {
 /**
  * Search box plus a popover with the amendment filters: where it stands,
  * where it stands with the Secretaría (when the actor sees amendments that
- * are not public), kind, who presents it, on time or late, and "only mine".
- * A block filter set from the text gutter shows as a removable chip.
+ * are not public; "Devueltas para corregir" only when some were sent back
+ * and the actor cannot edit them), kind, who presents it, on time or late,
+ * and "only mine". A block filter set from the text gutter shows as a
+ * removable chip.
  */
 const props = withDefaults(
   defineProps<{
@@ -27,10 +29,17 @@ const props = withDefaults(
     canFilterMine?: boolean;
     /** Offer the review filter (some listed amendments are not public). */
     showReviewFilter?: boolean;
+    /** Offer "Devueltas para corregir" (the actor sees some it cannot edit). */
+    showReturnedFilter?: boolean;
     /** Human reference of the filtered block ("¶ 3"). */
     blockLabel?: string | null;
   }>(),
-  { canFilterMine: false, showReviewFilter: false, blockLabel: null },
+  {
+    canFilterMine: false,
+    showReviewFilter: false,
+    showReturnedFilter: false,
+    blockLabel: null,
+  },
 );
 
 const filters = defineModel<AmendmentFilters>({ required: true });
@@ -62,7 +71,12 @@ const memberItems = computed(() =>
   })),
 );
 const reviewItems = computed(() =>
-  AMENDMENT_REVIEW_FILTERS.map((value) => ({
+  AMENDMENT_REVIEW_FILTERS.filter((value) => {
+    if (filters.value.review === value || value === "any") return true;
+    if (value === "correction_requested") return props.showReturnedFilter;
+    // Only the returned ones to show: the other states would list nothing.
+    return props.showReviewFilter;
+  }).map((value) => ({
     label: t(`amendment.filters.reviewOptions.${value}`),
     value,
   })),
@@ -142,7 +156,11 @@ function clearAll(): void {
               />
             </UFormField>
             <UFormField
-              v-if="showReviewFilter || filters.review !== 'any'"
+              v-if="
+                showReviewFilter ||
+                showReturnedFilter ||
+                filters.review !== 'any'
+              "
               :label="t('amendment.filters.review')"
             >
               <USelect

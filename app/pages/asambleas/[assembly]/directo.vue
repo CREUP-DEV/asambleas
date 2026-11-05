@@ -7,6 +7,7 @@ import type {
   LiveStateDto,
   SpeakersDto,
 } from "~~/shared/types/api";
+import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
 import { errorStatus } from "~/composables/api/useApi";
 import { isDocumentLiveBatch } from "~/composables/document/useDocument";
 import {
@@ -39,6 +40,9 @@ import {
  * when a refresh fails, like the projection; when the live state never
  * loaded, it says so rather than "nothing is being debated".
  * Only published amendments are listed, so the Mesa sees what the room sees.
+ * For the same reason, the main presenter's answer to the amendment in
+ * debate shows only when the assembly does not keep answers to the Mesa
+ * (the server already leaves them out for whoever may not see them).
  */
 
 const { t, locale } = useI18n();
@@ -332,6 +336,16 @@ const debatedNote = computed(() => {
     : null;
   return note ? t(note.key, note.params ?? {}) : null;
 });
+/**
+ * The room may see the main presenter's answers. The Mesa, the Secretaría
+ * and the presenters always receive them, but this page shows what the room
+ * sees, so it follows the assembly's policy rather than what arrived.
+ */
+const showPosition = computed(
+  () =>
+    ({ ...DEFAULT_ASSEMBLY_SETTINGS, ...assembly.value?.settings })
+      .positionVisibility !== "mesa",
+);
 /** The Mesa debates an amendment this view cannot list (not public yet). */
 const amendmentHidden = computed(
   () => Boolean(debatedId.value) && amendmentsLoaded.value && !debated.value,
@@ -634,6 +648,7 @@ watch(
         :note="debatedNote"
         :amendment-hidden="amendmentHidden"
         :document-path="documentPath"
+        :show-position="showPosition"
       />
 
       <LiveViewSpeakers v-if="speakers" :speakers="speakers" />
