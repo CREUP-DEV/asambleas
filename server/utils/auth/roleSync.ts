@@ -6,6 +6,7 @@ import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import { logError, logInfo, logWarn } from "../core/logger";
 import {
   getIntranetApiBaseUrl,
+  intranetAuthHeaders,
   intranetUrl,
   INTRANET_TIMEOUT_MS,
 } from "../members/intranet";
@@ -58,7 +59,8 @@ async function fetchExternalRole(email: string) {
   try {
     const response = await fetch(apiUrl, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      // The intranet API token, when configured (never logged).
+      headers: { "Content-Type": "application/json", ...intranetAuthHeaders() },
       body: JSON.stringify({ email }),
       signal: AbortSignal.timeout(INTRANET_TIMEOUT_MS),
     });
@@ -91,7 +93,8 @@ const EXTERNAL_ROLES: ReadonlyMap<string, string> = new Map<string, string>([
 
 /**
  * Platform roles that follow the intranet type on every sign-in. Admin,
- * Secretaría, Moderador and custom roles are assigned here and kept.
+ * Secretaría, Presidencia, Moderador and custom roles are assigned here and
+ * kept (PROTECTED_ROLES).
  */
 const SYNCED_ROLES: ReadonlySet<string> = new Set([
   SYSTEM_ROLES.INVITADO,
@@ -141,7 +144,8 @@ interface FreshUserRow {
  * whose role changes with its intranet type (say a CEA cargo whose term
  * ended), or whose intranet type stops being one linked to a member. Role
  * sync then links it again by its new type, if any. Accounts with a role
- * assigned here (Admin, Secretaria, Moderador, custom) keep their link.
+ * assigned here (Admin, Secretaría, Presidencia, Moderador, custom) keep
+ * their link.
  */
 export function stopsActingForMember(input: {
   isNewUser: boolean;

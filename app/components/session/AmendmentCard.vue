@@ -4,9 +4,12 @@ import type { AmendmentDto } from "~~/shared/types/api";
 import { PROPONENT_POSITIONS } from "~~/shared/constants/domain";
 import {
   SESSION_REOPENABLE,
+  isSessionAwaitingProponent,
   isSessionAwaitingValidation,
+  isSessionDebatable,
   isSessionOpen,
   isSessionPendingAdmission,
+  isSessionProjectable,
   isSessionPublishable,
   isSessionUnpublished,
   isSessionValidatable,
@@ -23,10 +26,22 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  *
  * An amendment the Secretaría has not validated yet only says so, offers
  * "Validar y publicar" to whoever can, and shows its changes: the Mesa
- * cannot debate or decide it. A validated one that is not public yet says
- * who can read it.
+ * cannot debate or decide it. A transactional proposed by a member says it
+ * waits for whoever presents the document, and the Mesa can withdraw it
+ * from "Más"; once the presenter turns it down, withdrawing it is its one
+ * action, since the final vote waits for it. A validated one that is not
+ * public yet says who can read it, and nobody decides it until it is. A
+ * late one waiting for the assembly's decision to treat it offers only that
+ * decision (and its withdrawal): it cannot be debated or decided before.
+ *
+ * In the queue it opens under its compact row (`embedded`): the row
+ * already shows the code and who presents it, and carries the anchor the
+ * shortcuts and the consolidated text focus.
  */
-const props = defineProps<{ amendment: AmendmentDto }>();
+const props = withDefaults(
+  defineProps<{ amendment: AmendmentDto; embedded?: boolean }>(),
+  { embedded: false },
+);
 
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -43,6 +58,19 @@ const reviewBusy = computed(
   () => busy.value || Boolean(session.busy.value.validate),
 );
 const awaiting = computed(() => isSessionAwaitingValidation(props.amendment));
+const awaitingProponent = computed(() =>
+  isSessionAwaitingProponent(props.amendment),
+);
+/** The document's presenter turned this member's transactional down. */
+const proponentRejected = computed(() =>
+  session.isProponentRejected(props.amendment),
+);
+/** Its authors or the Mesa may withdraw a presented, undecided amendment. */
+const withdrawable = computed(
+  () =>
+    props.amendment.status === "submitted" &&
+    (props.amendment.can.moderate || props.amendment.can.withdraw),
+);
 const correctionRequested = computed(
   () => props.amendment.reviewState === "correction_requested",
 );
@@ -50,6 +78,9 @@ const validatable = computed(() => isSessionValidatable(props.amendment));
 const unpublished = computed(() => isSessionUnpublished(props.amendment));
 const publishable = computed(() => isSessionPublishable(props.amendment));
 const open = computed(() => isSessionOpen(props.amendment));
+/** This actor can put it on the projection (public, or they can publish it). */
+const debatable = computed(() => isSessionDebatable(props.amendment));
+const projectable = computed(() => isSessionProjectable(props.amendment));
 const pendingAdmission = computed(() =>
   isSessionPendingAdmission(props.amendment),
 );
@@ -61,7 +92,9 @@ const inadmissible = computed(() => props.amendment.status === "inadmissible");
 const decided = computed(() => props.amendment.status !== "submitted");
 
 const expandedByUser = ref<boolean | null>(null);
-const expanded = computed(() => expandedByUser.value ?? debated.value);
+const expanded = computed(
+  () => expandedByUser.value ?? (props.embedded || debated.value),
+);
 
 const sourceCodes = computed(() =>
   props.amendment.sourceIds.map(session.label).join(", "),
@@ -101,6 +134,12 @@ const debateItem = computed<DropdownMenuItem>(() => ({
     : t("session.actions.debate"),
   icon: debated.value ? "i-lucide-radio-tower" : "i-lucide-radio",
   onSelect: toggleDebate,
+}));
+/** Withdrawn on behalf of whoever presented it (POST .../withdraw). */
+const withdrawSubmissionItem = computed<DropdownMenuItem>(() => ({
+  label: t("session.actions.withdrawProposal"),
+  icon: "i-lucide-undo-2",
+  onSelect: () => void session.withdrawSubmission(props.amendment),
 }));
 const relateItem = computed<DropdownMenuItem>(() => ({
   label: t("session.actions.relate"),
@@ -152,6 +191,13 @@ const publishItem = computed<DropdownMenuItem[]>(() =>
 
 const menuItems = computed<DropdownMenuItem[][]>(() => {
   const position = positionItem.value ? [positionItem.value] : [];
+  // Still with the presenter: the Mesa may withdraw it on the proposer's
+  // behalf. Once turned down, withdrawing it is the card's own button.
+  if (awaitingProponent.value) {
+    return withdrawable.value && !proponentRejected.value
+      ? [[withdrawSubmissionItem.value]]
+      : [];
+  }
   if (awaiting.value) return [];
   if (open.value) {
     return [
@@ -159,13 +205,13 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         {
           label: t("session.actions.proponent"),
           icon: "i-lucide-user-check",
-          disabled: missing.value > 0,
+          disabled: missing.value > 0 || unpublished.value,
           onSelect: () => void session.approve(props.amendment, "proponent"),
         },
         {
           label: t("session.actions.formal"),
           icon: "i-lucide-spell-check",
-          disabled: missing.value > 0,
+          disabled: missing.value > 0 || unpublished.value,
           onSelect: () => void session.approve(props.amendment, "formal"),
         },
         ...position,
@@ -195,54 +241,72 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           label: t("session.actions.transact"),
           icon: "i-lucide-git-merge",
           kbds: ["t"],
+          // Delegates must be able to read what a transactional merges.
+          disabled: unpublished.value,
           onSelect: () => session.openComposer([id.value]),
         },
-        ...publishItem.value,
       ],
     ];
   }
   if (pendingAdmission.value) {
+    // Not debated nor decided before the assembly agrees to treat it, but
+    // its authors may still withdraw it (the Mesa records it for them).
     return [
-      [debateItem.value, ...position],
+      ...(position.length > 0 ? [position] : []),
       [
-        {
-          label: t("session.actions.withdraw"),
-          icon: "i-lucide-undo-2",
-          onSelect: () => void session.withdraw(props.amendment),
-        },
+        ...(withdrawable.value
+          ? [
+              {
+                label: t("session.actions.withdraw"),
+                icon: "i-lucide-undo-2",
+                onSelect: () =>
+                  void session.withdrawSubmission(props.amendment),
+              },
+            ]
+          : []),
         relateItem.value,
         ...publishItem.value,
       ],
     ];
   }
-  return [[debateItem.value, relateItem.value, ...publishItem.value]];
+  // Only what the projection can show is put under debate.
+  const debate = debated.value || projectable.value ? [debateItem.value] : [];
+  return [[...debate, relateItem.value, ...publishItem.value]];
 });
 </script>
 
 <template>
   <article
-    :id="`session-amendment-${amendment.id}`"
-    tabindex="-1"
+    :id="embedded ? undefined : `session-amendment-${amendment.id}`"
+    :tabindex="embedded ? undefined : -1"
     :aria-label="t('session.card.label', { code })"
-    :aria-current="debated ? 'true' : undefined"
-    class="bg-default rounded-lg border p-3 outline-none focus-visible:ring-2 focus-visible:ring-primary"
-    :class="[
-      debated ? 'border-primary bg-primary/5' : 'border-default',
-      focused ? 'ring-primary/70 ring-2' : '',
-      decided ? 'opacity-80' : '',
-    ]"
+    :aria-current="debated && !embedded ? 'true' : undefined"
+    class="outline-none"
+    :class="
+      embedded
+        ? ''
+        : [
+            'bg-default focus-visible:ring-primary rounded-lg border p-3 focus-visible:ring-2',
+            debated ? 'border-primary bg-primary/5' : 'border-default',
+            focused ? 'ring-primary/70 ring-2' : '',
+            decided ? 'opacity-80' : '',
+          ]
+    "
     :data-status="amendment.status"
     @click="focusCard"
     @focusin="focusCard"
   >
     <header class="flex flex-wrap items-center gap-x-2 gap-y-1.5">
-      <h3 class="text-highlighted text-base font-bold tabular-nums">
+      <h3
+        v-if="!embedded"
+        class="text-highlighted text-base font-bold tabular-nums"
+      >
         {{ code }}
       </h3>
       <span class="text-muted text-xs">
         {{ t(`session.enums.amendmentKind.${amendment.kind}`) }}
       </span>
-      <span class="inline-flex flex-wrap items-center gap-1">
+      <span v-if="!embedded" class="inline-flex flex-wrap items-center gap-1">
         <CommonMemberBadge
           v-for="author in amendment.authors"
           :key="author.id"
@@ -257,12 +321,22 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           variant="subtle"
           size="sm"
           :icon="
-            correctionRequested ? 'i-lucide-pencil-line' : 'i-lucide-hourglass'
+            correctionRequested
+              ? 'i-lucide-pencil-line'
+              : proponentRejected
+                ? 'i-lucide-user-round-x'
+                : awaitingProponent
+                  ? 'i-lucide-user-round-check'
+                  : 'i-lucide-hourglass'
           "
           :label="
             correctionRequested
               ? t('session.card.correctionBadge')
-              : t('session.card.awaitingBadge')
+              : proponentRejected
+                ? t('session.card.proponentRejectedBadge')
+                : awaitingProponent
+                  ? t('session.card.proponentBadge')
+                  : t('session.card.awaitingBadge')
           "
         />
         <template v-else>
@@ -313,9 +387,13 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         {{
           correctionRequested
             ? t("session.card.correctionRequested")
-            : validatable
-              ? t("session.card.awaitingCanValidate")
-              : t("session.card.awaiting")
+            : proponentRejected
+              ? t("session.card.proponentRejected")
+              : awaitingProponent
+                ? t("session.card.awaitingProponent")
+                : validatable
+                  ? t("session.card.awaitingCanValidate")
+                  : t("session.card.awaiting")
         }}
       </p>
       <p
@@ -409,9 +487,20 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
             @click="session.validateAmendments([amendment.id])"
           />
         </UTooltip>
+        <UButton
+          v-if="proponentRejected && withdrawable"
+          size="xs"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-undo-2"
+          :label="t('session.actions.withdrawProposal')"
+          :loading="busy"
+          @click="session.withdrawSubmission(amendment)"
+        />
       </template>
       <template v-else-if="open">
         <UButton
+          v-if="debated || debatable"
           size="xs"
           :color="debated ? 'primary' : 'neutral'"
           :variant="debated ? 'solid' : 'outline'"
@@ -425,57 +514,65 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           :disabled="busy"
           @click="toggleDebate"
         />
-        <UTooltip
-          :text="
-            missing > 0
-              ? t('session.card.needsAcceptances')
-              : t('session.actions.assentHint')
-          "
-          :kbds="['a']"
-        >
+        <!-- Nothing private is decided: it has to be public first. -->
+        <template v-if="unpublished">
           <UButton
-            size="xs"
-            color="success"
-            variant="soft"
-            icon="i-lucide-check"
-            :label="t('session.actions.assent')"
-            :loading="busy"
-            :disabled="busy || missing > 0"
-            @click="session.approve(amendment, 'assent')"
-          />
-        </UTooltip>
-        <UTooltip :text="t('session.actions.voteHint')" :kbds="['v']">
-          <UButton
+            v-if="publishable"
             size="xs"
             color="primary"
             variant="soft"
-            icon="i-lucide-gavel"
-            :label="t('session.actions.vote')"
-            :disabled="busy || missing > 0"
-            @click="session.openVote(amendment)"
+            icon="i-lucide-eye"
+            :label="t('session.actions.publish')"
+            :loading="busy"
+            @click="session.publishAmendments([amendment.id])"
           />
-        </UTooltip>
+          <span v-else class="text-muted text-xs">
+            {{ t("session.card.publishFirst") }}
+          </span>
+        </template>
+        <template v-else>
+          <UTooltip
+            :text="
+              missing > 0
+                ? t('session.card.needsAcceptances')
+                : t('session.actions.assentHint')
+            "
+            :kbds="['a']"
+          >
+            <UButton
+              size="xs"
+              color="success"
+              variant="soft"
+              icon="i-lucide-check"
+              :label="t('session.actions.assent')"
+              :loading="busy"
+              :disabled="busy || missing > 0"
+              @click="session.approve(amendment, 'assent')"
+            />
+          </UTooltip>
+          <UTooltip :text="t('session.actions.voteHint')" :kbds="['v']">
+            <UButton
+              size="xs"
+              color="primary"
+              variant="soft"
+              icon="i-lucide-gavel"
+              :label="t('session.actions.vote')"
+              :disabled="busy || missing > 0"
+              @click="session.openVote(amendment)"
+            />
+          </UTooltip>
+        </template>
       </template>
-      <template v-else-if="pendingAdmission">
-        <UButton
-          size="xs"
-          color="success"
-          variant="soft"
-          icon="i-lucide-check"
-          :label="t('session.actions.admit')"
-          :disabled="busy"
-          @click="session.openAdmission([amendment.id], 'admitted')"
-        />
-        <UButton
-          size="xs"
-          color="error"
-          variant="soft"
-          icon="i-lucide-octagon-x"
-          :label="t('session.actions.inadmit')"
-          :disabled="busy"
-          @click="session.openAdmission([amendment.id], 'inadmissible')"
-        />
-      </template>
+      <UButton
+        v-else-if="pendingAdmission"
+        size="xs"
+        color="warning"
+        variant="soft"
+        icon="i-lucide-gavel"
+        :label="t('session.actions.decideTreat')"
+        :disabled="busy"
+        @click="session.openAdmission([amendment.id], 'admitted')"
+      />
       <UButton
         v-else-if="inadmissible"
         size="xs"
@@ -513,7 +610,9 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
       </UDropdownMenu>
 
       <UButton
-        v-if="amendment.ops.length > 0 || amendment.justification"
+        v-if="
+          !embedded && (amendment.ops.length > 0 || amendment.justification)
+        "
         size="xs"
         color="neutral"
         variant="link"

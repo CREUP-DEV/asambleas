@@ -22,6 +22,7 @@ interface RoleRow {
 const { t, te } = useI18n();
 const toast = useToast();
 const api = useApi();
+const localePath = useLocalePath();
 
 useHead({ title: () => t("admin.roles.title") });
 
@@ -34,11 +35,45 @@ const {
   key: "admin-roles",
 });
 
+/**
+ * Column order: the Mesa first (Secretaría, Presidencia, Moderador), then
+ * members and guests; custom roles go last, by name.
+ */
+const ROLE_ORDER: readonly string[] = [
+  SYSTEM_ROLES.SECRETARIA,
+  SYSTEM_ROLES.PRESIDENCIA,
+  SYSTEM_ROLES.MODERADOR,
+  SYSTEM_ROLES.CEA,
+  SYSTEM_ROLES.ASOCIADO,
+  SYSTEM_ROLES.INVITADO,
+];
+
+function roleRank(name: string): number {
+  const index = ROLE_ORDER.indexOf(name);
+  return index === -1 ? ROLE_ORDER.length : index;
+}
+
 /** Admin bypasses every check, so its permissions are not editable. */
 const editableRoles = computed(() =>
-  (rolesData.value?.data ?? []).filter(
-    (role) => role.name !== SYSTEM_ROLES.ADMIN,
-  ),
+  (rolesData.value?.data ?? [])
+    .filter((role) => role.name !== SYSTEM_ROLES.ADMIN)
+    .sort(
+      (a, b) =>
+        roleRank(a.name) - roleRank(b.name) || a.name.localeCompare(b.name),
+    ),
+);
+
+/**
+ * Presidencia is created by the seed, not by a migration: on a database not
+ * seeded since it was added, the role is missing until someone re-runs it.
+ */
+const presidenciaMissing = computed(
+  () =>
+    rolesData.value !== null &&
+    rolesData.value !== undefined &&
+    !rolesData.value.data.some(
+      (role) => role.name === SYSTEM_ROLES.PRESIDENCIA,
+    ),
 );
 
 const saved = ref<Record<string, PermissionKey[]>>({});
@@ -189,11 +224,34 @@ onBeforeRouteLeave(() => {
           <UIcon name="i-lucide-lock" class="size-4" aria-hidden="true" />
           {{ t("admin.roles.adminPermissionsLocked") }}
         </p>
+        <p class="text-muted flex flex-wrap items-center gap-1.5 text-sm">
+          <UIcon
+            name="i-lucide-user-plus"
+            class="size-4 shrink-0"
+            aria-hidden="true"
+          />
+          <span>{{ t("admin.roles.userPermissionsHint") }}</span>
+          <ULink
+            :to="localePath('/admin/usuarios')"
+            class="text-primary font-medium hover:underline"
+          >
+            {{ t("admin.roles.toUsers") }}
+          </ULink>
+        </p>
       </div>
 
       <p class="sr-only" aria-live="polite" aria-atomic="true">
         {{ statusMessage }}
       </p>
+
+      <UAlert
+        v-if="presidenciaMissing"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-triangle-alert"
+        :title="t('admin.roles.presidenciaMissingTitle')"
+        :description="t('admin.roles.presidenciaMissing')"
+      />
 
       <UAlert
         v-if="hasChanges"

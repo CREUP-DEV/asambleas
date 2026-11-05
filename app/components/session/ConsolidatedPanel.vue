@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ConsolidationConflict } from "~~/shared/types/content";
+import { useFinalVoteReasonText } from "~/composables/session/useFinalVoteReasonText";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import { assemblyPath } from "~/components/shell/Navigation.vue";
 
@@ -12,7 +13,8 @@ import { assemblyPath } from "~/components/shell/Navigation.vue";
  *
  * While the final vote is blocked, each reason says who has to act: the
  * Mesa decides the amendments still open; the Secretaría validates (or
- * sends back) those it has not checked yet.
+ * sends back) those it has not checked yet; whoever presents the document
+ * approves the transactionals proposed to it.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -87,38 +89,10 @@ function focusAmendment(id: string): void {
 }
 
 /** Why the final vote cannot be opened yet: one sentence per reason. */
-const finalBlockedReasons = computed<string[]>(() => {
-  if (!document.value) return [];
-  if (!document.value.voted) return [t("session.preview.notVoted")];
-  if (document.value.status !== "published")
-    return [t("session.preview.notPublished")];
-  // Until this document's amendments arrive (or after they failed to load),
-  // an empty list would read as "nothing undecided" and unlock the vote.
-  if (!session.amendmentsDto.value)
-    return [t("session.preview.amendmentsLoading")];
-  // Before the undecided count: with the text returned, the remaining
-  // amendments lapse and there is no final vote at all.
-  if (preview.value.totalityReturn)
-    return [
-      t("session.preview.totalityReturnBlocked", {
-        code: session.label(preview.value.totalityReturn.id),
-      }),
-    ];
-  const reasons: string[] = [];
-  const undecided = blockers.value.undecided.length;
-  const awaiting = blockers.value.awaitingValidation.length;
-  if (undecided > 0) {
-    reasons.push(
-      t("session.preview.undecided", { count: undecided }, undecided),
-    );
-  }
-  if (awaiting > 0) {
-    reasons.push(
-      t("session.preview.awaitingValidation", { count: awaiting }, awaiting),
-    );
-  }
-  return reasons;
-});
+const reasonText = useFinalVoteReasonText(session.label);
+const finalBlockedReasons = computed<string[]>(() =>
+  session.finalVoteReasons.value.map(reasonText),
+);
 const finalBlocked = computed(() => finalBlockedReasons.value.length > 0);
 const awaitingValidation = computed(
   () => blockers.value.awaitingValidation.length,

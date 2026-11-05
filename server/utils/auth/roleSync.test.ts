@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { SYSTEM_ROLES } from "~~/shared/constants/roles";
+import { PROTECTED_ROLES, SYSTEM_ROLES } from "~~/shared/constants/roles";
 
 // Only the pure role decision is tested: stub the database, the logger and
 // the intranet helpers.
@@ -11,6 +11,7 @@ vi.mock("../core/logger", () => ({
 }));
 vi.mock("../members/intranet", () => ({
   getIntranetApiBaseUrl: vi.fn(),
+  intranetAuthHeaders: vi.fn(() => ({})),
   intranetUrl: vi.fn(),
   INTRANET_TIMEOUT_MS: 1_000,
 }));
@@ -75,16 +76,37 @@ describe("resolveTargetRole", () => {
     expect(resolveTargetRole("CEA", SYSTEM_ROLES.CEA, false)).toBe(null);
   });
 
-  it("keeps Admin, Secretaría, Moderador and custom roles", () => {
+  it("keeps Admin, Secretaría, Presidencia, Moderador and custom roles", () => {
     for (const role of [
       SYSTEM_ROLES.ADMIN,
       SYSTEM_ROLES.SECRETARIA,
+      SYSTEM_ROLES.PRESIDENCIA,
       SYSTEM_ROLES.MODERADOR,
       "Tesorería",
     ]) {
       expect(resolveTargetRole("CEA", role, false)).toBe(null);
       expect(resolveTargetRole("Asociado", role, false)).toBe(null);
+      expect(resolveTargetRole("Alumni", role, false)).toBe(null);
     }
+  });
+
+  it("keeps every protected role", () => {
+    for (const role of PROTECTED_ROLES) {
+      expect(resolveTargetRole("CEA", role, false)).toBe(null);
+      expect(resolveTargetRole("Asociado", role, false)).toBe(null);
+    }
+  });
+});
+
+describe("Presidencia and role sync", () => {
+  it("keeps the member link of a Presidencia account whose intranet type changes", () => {
+    const { assignRoleName, clearMember } = computeRoleSyncUpdate(
+      user(SYSTEM_ROLES.PRESIDENCIA, "CEA"),
+      external("Alumni"),
+      false,
+    );
+    expect(assignRoleName).toBe(null);
+    expect(clearMember).toBe(false);
   });
 });
 

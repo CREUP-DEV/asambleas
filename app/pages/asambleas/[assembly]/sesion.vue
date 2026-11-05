@@ -3,6 +3,8 @@ import type { AmendmentDto } from "~~/shared/types/api";
 import {
   isSessionDecidable,
   isSessionOpen,
+  isSessionTransactable,
+  sessionTurnWho,
 } from "~/composables/session/sessionModel";
 import {
   provideSessionConsole,
@@ -10,10 +12,14 @@ import {
 } from "~/composables/session/useSessionConsole";
 
 /**
- * Session console of the Mesa de Moderación: agenda progress, the amendment
- * queue of the document under debate and the live consolidated text, in
- * three resizable panels (tabs on narrow screens). Only for those who can
- * moderate the assembly; everyone else is pointed to the projection.
+ * Session console of the Mesa de Moderación, used by several Mesa members
+ * at once (Presidencia moderates, Secretaría records results), all live. It
+ * leads with what is debated now ("Ahora en debate") and its next step;
+ * the amendment queue follows as a compact list. Beside it, foldable: the
+ * speaking turns, the agenda and the consolidated text. On narrow screens
+ * everything stacks in that order, speaking turns right after the debate.
+ * Only for those who can moderate the assembly; everyone else is pointed
+ * to the projection.
  */
 const route = useRoute();
 const { t } = useI18n();
@@ -33,27 +39,41 @@ useHead(() => ({
 }));
 
 const isDesktop = useMediaQuery("(min-width: 1024px)");
-const tab = ref<"agenda" | "queue" | "preview">("queue");
-const tabItems = computed(() => [
-  {
-    label: t("session.agenda.title"),
-    icon: "i-lucide-list-tree",
-    value: "agenda",
-    slot: "agenda" as const,
-  },
-  {
-    label: t("session.queue.title"),
-    icon: "i-lucide-list-checks",
-    value: "queue",
-    slot: "queue" as const,
-  },
-  {
-    label: t("session.preview.title"),
-    icon: "i-lucide-file-check-2",
-    value: "preview",
-    slot: "preview" as const,
-  },
-]);
+
+// One line under each folded section's title, so it is useful folded.
+const speakersSummary = computed(() => {
+  const { speaking, waiting } = session.speakers.view.value;
+  const parts = [
+    speaking
+      ? t("session.speakers.summarySpeaking", {
+          who: sessionTurnWho(speaking) ?? t("session.speakers.unnamed"),
+        })
+      : null,
+    waiting.length > 0
+      ? t(
+          "session.speakers.summaryWaiting",
+          { count: waiting.length },
+          waiting.length,
+        )
+      : null,
+  ].filter((part): part is string => Boolean(part));
+  return parts.length > 0
+    ? parts.join(" · ")
+    : t("session.speakers.summaryEmpty");
+});
+const agendaSummary = computed(() => {
+  const id = session.liveState.value?.agendaItemId;
+  const row = id
+    ? session.agendaRows.value.find((other) => other.item.id === id)
+    : null;
+  return row ? `${row.number}. ${row.item.title}` : null;
+});
+const previewSummary = computed(() => {
+  const current = session.document.value;
+  if (!current || current.format !== "structured") return null;
+  const count = session.preview.value.applied.length;
+  return t("session.preview.applied", { count }, count);
+});
 
 const assemblyLoading = computed(
   () => !assembly.value && session.assemblyPending.value,
@@ -67,7 +87,6 @@ const projectionPath = computed(() =>
 // Keyboard shortcuts ----------------------------------------------------------
 
 function focusCard(id: string): void {
-  if (!isDesktop.value) tab.value = "queue";
   void nextTick(() => {
     const element = document.getElementById(`session-amendment-${id}`);
     if (!element) return;
@@ -100,10 +119,11 @@ function notAvailable(amendment: AmendmentDto): void {
 }
 
 /**
- * Runs an action shortcut on the focused amendment: the card last clicked,
- * tabbed into or reached with j/k. A held key (auto-repeat) acts once, and
- * nothing is sent while a request for that amendment is still in flight, so
- * a double press never records the same decision twice.
+ * Runs an action shortcut on the focused amendment: the row last clicked,
+ * tabbed into or reached with j/k, or else the one under debate. A held key
+ * (auto-repeat) acts once, and nothing is sent while a request for that
+ * amendment is still in flight, so a double press never records the same
+ * decision twice.
  */
 function withFocused(
   event: KeyboardEvent | undefined,
@@ -111,7 +131,7 @@ function withFocused(
 ): void {
   if (event?.repeat) return;
   if (session.anyDialogOpen.value || !session.canModerate.value) return;
-  const amendment = session.focused.value;
+  const amendment = session.focused.value ?? session.debatedAmendment.value;
   if (!amendment) {
     toast.add({
       id: "session-shortcut-nothing",
@@ -142,13 +162,15 @@ defineShortcuts({
     ),
   t: (event?: KeyboardEvent) =>
     withFocused(event, (amendment) =>
-      isSessionOpen(amendment)
+      isSessionTransactable(amendment)
         ? session.openComposer([amendment.id])
         : notAvailable(amendment),
     ),
+  // Lapsing is a decision: not before the assembly agrees to treat a late
+  // amendment, nor before the Secretaría validates it.
   l: (event?: KeyboardEvent) =>
     withFocused(event, (amendment) =>
-      amendment.status === "submitted"
+      isSessionOpen(amendment)
         ? void session.lapse(amendment)
         : notAvailable(amendment),
     ),
@@ -159,8 +181,7 @@ defineShortcuts({
   <div class="space-y-3">
     <div v-if="assemblyLoading" class="space-y-3" aria-busy="true">
       <USkeleton class="h-12 w-full" />
-      <div class="grid gap-3 lg:grid-cols-[1fr_2fr_2fr]">
-        <USkeleton class="h-96" />
+      <div class="grid gap-3 lg:grid-cols-[2fr_1fr]">
         <USkeleton class="h-96" />
         <USkeleton class="h-96" />
       </div>
@@ -215,94 +236,99 @@ defineShortcuts({
           />
         </div>
 
+        <!-- Wide screens: the debate, and beside it the foldable panels. -->
         <UDashboardGroup
           v-if="isDesktop"
-          storage-key="session-console"
+          storage-key="session-console-v2"
           class="relative inset-auto min-h-0 flex-1"
         >
           <UDashboardPanel
-            id="agenda"
+            id="session-debate"
             resizable
-            :default-size="22"
-            :min-size="15"
-            :max-size="35"
+            :default-size="64"
+            :min-size="45"
+            :max-size="78"
             :ui="{
               root: 'min-h-0',
-              body: 'relative gap-3 sm:gap-3 p-3 sm:p-4',
+              body: 'relative gap-4 sm:gap-4 p-3 sm:p-4',
             }"
           >
-            <template #header>
-              <UDashboardNavbar
-                :title="t('session.agenda.title')"
-                icon="i-lucide-list-tree"
-                :toggle="false"
-              />
-            </template>
             <template #body>
-              <SessionAgendaPanel />
-            </template>
-          </UDashboardPanel>
-
-          <UDashboardPanel
-            id="queue"
-            resizable
-            :default-size="42"
-            :min-size="28"
-            :max-size="60"
-            :ui="{
-              root: 'min-h-0',
-              body: 'relative gap-3 sm:gap-3 p-3 sm:p-4',
-            }"
-          >
-            <template #header>
-              <UDashboardNavbar
-                :title="t('session.queue.title')"
-                icon="i-lucide-list-checks"
-                :toggle="false"
-              />
-            </template>
-            <template #body>
+              <SessionNowPanel />
               <SessionAmendmentQueue />
             </template>
           </UDashboardPanel>
 
           <UDashboardPanel
-            id="preview"
+            id="session-side"
             :ui="{
               root: 'min-h-0',
-              body: 'relative gap-3 sm:gap-3 p-3 sm:p-4',
+              body: 'relative gap-3 sm:gap-3 p-3 sm:p-4 bg-elevated/30',
             }"
           >
-            <template #header>
-              <UDashboardNavbar
+            <template #body>
+              <SessionFoldPanel
+                id="speakers"
+                :title="t('session.speakers.title')"
+                icon="i-lucide-mic"
+                :summary="speakersSummary"
+              >
+                <SessionSpeakersPanel />
+              </SessionFoldPanel>
+              <SessionFoldPanel
+                id="agenda"
+                :title="t('session.agenda.title')"
+                icon="i-lucide-list-tree"
+                :summary="agendaSummary"
+              >
+                <SessionAgendaPanel />
+              </SessionFoldPanel>
+              <SessionFoldPanel
+                id="preview"
                 :title="t('session.preview.title')"
                 icon="i-lucide-file-check-2"
-                :toggle="false"
-              />
-            </template>
-            <template #body>
-              <SessionConsolidatedPanel />
+                :summary="previewSummary"
+                :default-open="false"
+              >
+                <SessionConsolidatedPanel />
+              </SessionFoldPanel>
             </template>
           </UDashboardPanel>
         </UDashboardGroup>
 
-        <UTabs
-          v-else
-          v-model="tab"
-          :items="tabItems"
-          class="p-3"
-          :ui="{ list: 'w-full', trigger: 'flex-1 min-w-0', content: 'pt-3' }"
-        >
-          <template #agenda>
-            <SessionAgendaPanel />
-          </template>
-          <template #queue>
+        <!-- Phones and tablets: one column, the debate first. -->
+        <div v-else class="space-y-3 p-3">
+          <SessionNowPanel />
+          <SessionFoldPanel
+            id="speakers"
+            :title="t('session.speakers.title')"
+            icon="i-lucide-mic"
+            :summary="speakersSummary"
+          >
+            <SessionSpeakersPanel />
+          </SessionFoldPanel>
+          <div class="px-1">
             <SessionAmendmentQueue />
-          </template>
-          <template #preview>
+          </div>
+          <SessionFoldPanel
+            id="agenda"
+            :title="t('session.agenda.title')"
+            icon="i-lucide-list-tree"
+            :summary="agendaSummary"
+            :default-open="false"
+          >
+            <SessionAgendaPanel />
+          </SessionFoldPanel>
+          <SessionFoldPanel
+            id="preview"
+            :title="t('session.preview.title')"
+            icon="i-lucide-file-check-2"
+            :summary="previewSummary"
+            :default-open="false"
+          >
             <SessionConsolidatedPanel />
-          </template>
-        </UTabs>
+          </SessionFoldPanel>
+        </div>
       </section>
 
       <SessionVoteDialog />
@@ -316,8 +342,7 @@ defineShortcuts({
       <template #fallback>
         <div class="space-y-3" aria-busy="true">
           <USkeleton class="h-12 w-full" />
-          <div class="grid gap-3 lg:grid-cols-[1fr_2fr_2fr]">
-            <USkeleton class="h-96" />
+          <div class="grid gap-3 lg:grid-cols-[2fr_1fr]">
             <USkeleton class="h-96" />
             <USkeleton class="h-96" />
           </div>

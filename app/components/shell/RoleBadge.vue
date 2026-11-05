@@ -4,6 +4,7 @@ import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 const ROLE_KEYS: Record<string, string> = {
   [SYSTEM_ROLES.ADMIN]: "shell.roles.admin",
   [SYSTEM_ROLES.SECRETARIA]: "shell.roles.secretaria",
+  [SYSTEM_ROLES.PRESIDENCIA]: "shell.roles.presidencia",
   [SYSTEM_ROLES.MODERADOR]: "shell.roles.moderador",
   [SYSTEM_ROLES.CEA]: "shell.roles.cea",
   [SYSTEM_ROLES.ASOCIADO]: "shell.roles.asociado",
@@ -37,11 +38,17 @@ const label = computed(() => {
   return props.role || t("shell.roles.none");
 });
 
+/** The Mesa's roles (Secretaría, Presidencia, Moderador) share a colour. */
+const MESA_ROLES: ReadonlySet<string> = new Set([
+  SYSTEM_ROLES.SECRETARIA,
+  SYSTEM_ROLES.PRESIDENCIA,
+  SYSTEM_ROLES.MODERADOR,
+]);
+
 const color = computed(() =>
   props.role === SYSTEM_ROLES.ADMIN
     ? "primary"
-    : props.role === SYSTEM_ROLES.SECRETARIA ||
-        props.role === SYSTEM_ROLES.MODERADOR
+    : props.role && MESA_ROLES.has(props.role)
       ? "secondary"
       : "neutral",
 );

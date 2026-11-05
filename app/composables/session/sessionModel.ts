@@ -10,6 +10,7 @@ import type {
   DocumentSummaryDto,
   MemberRef,
   RelationDto,
+  SpeakingTurnDto,
   VoteInput,
 } from "~~/shared/types/api";
 import type {
@@ -73,12 +74,48 @@ export const SESSION_REOPENABLE: AmendmentStatus[] = [
 // Validation by the Secretaría ------------------------------------------------
 
 /**
- * Not checked by the Secretaría yet: presented and waiting for validation,
- * or sent back to its authors for a correction (a draft again). The Mesa
- * cannot debate, admit or decide it until the Secretaría validates it.
+ * A transactional proposed by a member, waiting for whoever presents the
+ * document to approve it before the Secretaría checks it. Draft or
+ * presented, it is not the Mesa's yet.
+ */
+export function isSessionAwaitingProponent(amendment: AmendmentDto): boolean {
+  return (
+    amendment.reviewState === "pending_proponent" &&
+    (amendment.status === "submitted" || amendment.status === "draft")
+  );
+}
+
+/**
+ * A transactional proposed by a member that whoever presents the document
+ * turned down. It stays presented and private, and the final vote waits for
+ * it, until whoever proposed it (or the Mesa) withdraws it. The presenter's
+ * answer is the acceptance of the document's proponent member, whatever its
+ * role (it may also have written a source): `presenterId` names it, and
+ * without it the row with the `proponent` role is taken.
+ */
+export function isSessionProponentRejected(
+  amendment: AmendmentDto,
+  presenterId: string | null = null,
+): boolean {
+  if (!isSessionAwaitingProponent(amendment)) return false;
+  return amendment.acceptances.some(
+    (party) =>
+      party.decision === "rejected" &&
+      (presenterId
+        ? party.member.id === presenterId
+        : party.role === "proponent"),
+  );
+}
+
+/**
+ * Not checked by the Secretaría yet: a transactional still waiting for the
+ * document's presenter, presented and waiting for validation, or sent back
+ * to its authors for a correction (a draft again). The Mesa cannot debate,
+ * admit or decide it until the Secretaría validates it.
  */
 export function isSessionAwaitingValidation(amendment: AmendmentDto): boolean {
   return (
+    isSessionAwaitingProponent(amendment) ||
     (amendment.status === "submitted" &&
       amendment.reviewState === "pending_validation") ||
     (amendment.status === "draft" &&
@@ -205,9 +242,41 @@ export function sessionMissingAcceptances(amendment: AmendmentDto): number {
     .length;
 }
 
-/** Whether the Mesa may approve or vote it right now. */
+/**
+ * Whether the Mesa may approve or vote it right now: open, accepted by
+ * every party of a transactional, and public (nothing is decided that
+ * delegates cannot read; the server answers 409 otherwise).
+ */
 export function isSessionDecidable(amendment: AmendmentDto): boolean {
-  return isSessionOpen(amendment) && sessionMissingAcceptances(amendment) === 0;
+  return (
+    isSessionOpen(amendment) &&
+    amendment.publishedAt !== null &&
+    sessionMissingAcceptances(amendment) === 0
+  );
+}
+
+/**
+ * Whether it can be a source of a transactional now: open and public (the
+ * server refuses private sources: delegates could not read what is merged).
+ */
+export function isSessionTransactable(amendment: AmendmentDto): boolean {
+  return isSessionOpen(amendment) && amendment.publishedAt !== null;
+}
+
+/**
+ * Whether this actor can put it on the projection: only public amendments
+ * are projected, so a private one needs someone who can publish it first.
+ */
+export function isSessionProjectable(amendment: AmendmentDto): boolean {
+  return amendment.publishedAt !== null || isSessionPublishable(amendment);
+}
+
+/**
+ * Whether this actor can put it under debate: the Mesa can decide it now
+ * and the projection can show it (see isSessionProjectable).
+ */
+export function isSessionDebatable(amendment: AmendmentDto): boolean {
+  return isSessionOpen(amendment) && isSessionProjectable(amendment);
 }
 
 /** Text order (totality amendments first, as positionKey encodes), then number. */
@@ -230,7 +299,10 @@ export type SessionQueueEntry =
       type: "cluster";
       id: string;
       amendments: AmendmentDto[];
-      /** Members the Mesa can still transact (submitted and admitted). */
+      /**
+       * Members the Mesa can still transact: submitted, admitted and public
+       * (isSessionTransactable).
+       */
       openIds: string[];
     };
 
@@ -304,7 +376,7 @@ export function buildSessionQueue(list: AmendmentDto[]): SessionQueue {
       type: "cluster",
       id: members[0]!.id,
       amendments: members,
-      openIds: members.filter(isSessionOpen).map((other) => other.id),
+      openIds: members.filter(isSessionTransactable).map((other) => other.id),
     });
   }
   return { validation, pending, entries };
@@ -336,18 +408,34 @@ export function sessionQueueCounts(list: AmendmentDto[]): {
 
 /**
  * Who the amendments outside the debate are waiting for: the Secretaría
- * (presented, not validated yet) or their authors (sent back for a
- * correction).
+ * (presented, not validated yet), their authors (sent back for a
+ * correction), whoever presents the document (a transactional proposed by a
+ * member, not approved by the presenter yet) or whoever proposed it (one
+ * the presenter turned down, to be withdrawn).
  */
-export function sessionValidationBreakdown(list: AmendmentDto[]): {
+export function sessionValidationBreakdown(
+  list: AmendmentDto[],
+  presenterId: string | null = null,
+): {
   toValidate: number;
   inCorrection: number;
+  awaitingProponent: number;
+  proponentRejected: number;
 } {
   const awaiting = list.filter(isSessionAwaitingValidation);
   const inCorrection = awaiting.filter(
     (amendment) => amendment.reviewState === "correction_requested",
   ).length;
-  return { toValidate: awaiting.length - inCorrection, inCorrection };
+  const withPresenter = awaiting.filter(isSessionAwaitingProponent);
+  const proponentRejected = withPresenter.filter((amendment) =>
+    isSessionProponentRejected(amendment, presenterId),
+  ).length;
+  return {
+    toValidate: awaiting.length - inCorrection - withPresenter.length,
+    inCorrection,
+    awaitingProponent: withPresenter.length - proponentRejected,
+    proponentRejected,
+  };
 }
 
 /**
@@ -355,14 +443,24 @@ export function sessionValidationBreakdown(list: AmendmentDto[]): {
  * The server blocks it while any amendment is submitted, validated or not:
  * the Mesa decides the validated ones (`undecided`); the Secretaría has to
  * validate the rest or send them back to their authors
- * (`awaitingValidation`). `serverIds` are the ids a refused final vote
- * reported (409 `{ undecided }`): they count too, unless the console already
- * knows they are decided. Ids the console has not loaded count as undecided.
+ * (`awaitingValidation`), except the transactionals the document's
+ * presenter has not approved yet (`awaitingProponent`) and those it turned
+ * down, which whoever proposed them or the Mesa has to withdraw
+ * (`proponentRejected`). `serverIds` are the ids a refused final vote
+ * reported (409 `{ undecided }`): they count too, unless the console
+ * already knows they are decided. Ids the console has not loaded count as
+ * undecided. `presenterId` is the document's proponent member.
  */
 export function sessionFinalVoteBlockers(
   list: AmendmentDto[],
   serverIds: string[] = [],
-): { undecided: string[]; awaitingValidation: string[] } {
+  presenterId: string | null = null,
+): {
+  undecided: string[];
+  awaitingValidation: string[];
+  awaitingProponent: string[];
+  proponentRejected: string[];
+} {
   const byId = new Map(list.map((amendment) => [amendment.id, amendment]));
   const ids = sortSessionAmendments(
     list.filter((amendment) => amendment.status === "submitted"),
@@ -377,15 +475,323 @@ export function sessionFinalVoteBlockers(
   }
   const undecided: string[] = [];
   const awaitingValidation: string[] = [];
+  const awaitingProponent: string[] = [];
+  const proponentRejected: string[] = [];
   for (const id of ids) {
     const amendment = byId.get(id);
-    if (amendment && isSessionAwaitingValidation(amendment)) {
+    if (amendment && isSessionProponentRejected(amendment, presenterId)) {
+      proponentRejected.push(id);
+    } else if (amendment && isSessionAwaitingProponent(amendment)) {
+      awaitingProponent.push(id);
+    } else if (amendment && isSessionAwaitingValidation(amendment)) {
       awaitingValidation.push(id);
     } else {
       undecided.push(id);
     }
   }
-  return { undecided, awaitingValidation };
+  return {
+    undecided,
+    awaitingValidation,
+    awaitingProponent,
+    proponentRejected,
+  };
+}
+
+export type SessionFinalVoteReason =
+  | { key: "notVoted" }
+  | { key: "notPublished" }
+  | { key: "amendmentsLoading" }
+  | { key: "totalityReturn"; id: string }
+  | { key: "undecided"; count: number }
+  | { key: "awaitingValidation"; count: number }
+  | { key: "awaitingProponent"; count: number }
+  | { key: "proponentRejected"; count: number };
+
+/**
+ * Why the final vote on a document cannot be recorded yet, one reason per
+ * party that has to act. Empty when it can. Until the document's amendments
+ * arrive, an empty list would read as "nothing undecided", so that is a
+ * reason too. An approved totality return comes before the undecided
+ * count: the text goes back and there is no final vote at all.
+ */
+export function sessionFinalVoteReasons(input: {
+  document: { voted: boolean; status: string } | null;
+  amendmentsLoaded: boolean;
+  totalityReturnId: string | null;
+  blockers: ReturnType<typeof sessionFinalVoteBlockers>;
+}): SessionFinalVoteReason[] {
+  const { document, blockers } = input;
+  if (!document) return [];
+  if (!document.voted) return [{ key: "notVoted" }];
+  if (document.status !== "published") return [{ key: "notPublished" }];
+  if (!input.amendmentsLoaded) return [{ key: "amendmentsLoading" }];
+  if (input.totalityReturnId) {
+    return [{ key: "totalityReturn", id: input.totalityReturnId }];
+  }
+  const reasons: SessionFinalVoteReason[] = [];
+  if (blockers.undecided.length > 0) {
+    reasons.push({ key: "undecided", count: blockers.undecided.length });
+  }
+  if (blockers.awaitingValidation.length > 0) {
+    reasons.push({
+      key: "awaitingValidation",
+      count: blockers.awaitingValidation.length,
+    });
+  }
+  if (blockers.awaitingProponent.length > 0) {
+    reasons.push({
+      key: "awaitingProponent",
+      count: blockers.awaitingProponent.length,
+    });
+  }
+  if (blockers.proponentRejected.length > 0) {
+    reasons.push({
+      key: "proponentRejected",
+      count: blockers.proponentRejected.length,
+    });
+  }
+  return reasons;
+}
+
+// Debate ---------------------------------------------------------------------
+
+/**
+ * Where an amendment stands in the session, as one status the console and
+ * the queue show with what happens next:
+ * - `awaiting_proponent`: a transactional the document's presenter has not
+ *   approved yet;
+ * - `proponent_rejected`: one the presenter turned down, waiting to be
+ *   withdrawn by whoever proposed it or the Mesa;
+ * - `awaiting_validation`: the Secretaría has not checked it;
+ * - `correction_requested`: back with its authors for a correction;
+ * - `late`: validated but presented after the deadline, waiting for the
+ *   assembly's decision to treat it;
+ * - `acceptances`: a transactional some party has not accepted yet;
+ * - `open`: the Mesa can decide it now;
+ * - otherwise its final status.
+ */
+export type SessionAmendmentStage =
+  | "awaiting_proponent"
+  | "proponent_rejected"
+  | "awaiting_validation"
+  | "correction_requested"
+  | "late"
+  | "acceptances"
+  | "open"
+  | Exclude<AmendmentStatus, "submitted">;
+
+/** `presenterId`: the document's proponent member (isSessionProponentRejected). */
+export function sessionAmendmentStage(
+  amendment: AmendmentDto,
+  presenterId: string | null = null,
+): SessionAmendmentStage {
+  if (isSessionProponentRejected(amendment, presenterId)) {
+    return "proponent_rejected";
+  }
+  if (isSessionAwaitingProponent(amendment)) return "awaiting_proponent";
+  if (isSessionAwaitingValidation(amendment)) {
+    return amendment.reviewState === "correction_requested"
+      ? "correction_requested"
+      : "awaiting_validation";
+  }
+  if (amendment.status !== "submitted") return amendment.status;
+  if (amendment.admission !== "admitted") return "late";
+  if (sessionMissingAcceptances(amendment) > 0) return "acceptances";
+  return "open";
+}
+
+/**
+ * The amendment "Siguiente" puts under debate: the first one this actor can
+ * debate (validated, admitted, undecided, and public or publishable by them:
+ * isSessionDebatable) after `currentId` in the order of the queue, wrapping
+ * around to those skipped before it. Late amendments still waiting for the
+ * assembly's decision, those not validated yet, private ones the actor
+ * cannot publish and decided ones are never offered. Null when nothing else
+ * is left.
+ */
+export function sessionNextAmendmentId(
+  queue: SessionQueue,
+  currentId: string | null,
+  debatable: (amendment: AmendmentDto) => boolean = isSessionDebatable,
+): string | null {
+  const byId = new Map<string, AmendmentDto>();
+  for (const entry of queue.entries) {
+    const members =
+      entry.type === "amendment" ? [entry.amendment] : entry.amendments;
+    members.forEach((amendment) => byId.set(amendment.id, amendment));
+  }
+  const order = sessionQueueOrder(queue).filter((id) => {
+    const amendment = byId.get(id);
+    return amendment !== undefined && debatable(amendment);
+  });
+  const index = currentId ? order.indexOf(currentId) : -1;
+  const after = index === -1 ? order : order.slice(index + 1);
+  const before = index === -1 ? [] : order.slice(0, index);
+  return [...after, ...before].find((id) => id !== currentId) ?? null;
+}
+
+export interface SessionAgendaTarget {
+  row: SessionAgendaRow;
+  /** Its only published document, debated with the item; null otherwise. */
+  document: DocumentSummaryDto | null;
+}
+
+/**
+ * The agenda item after `currentId` (the first one when nothing is under
+ * debate), with its document when it has exactly one published: the Mesa
+ * moves to the item and its text in one step. Null after the last item.
+ */
+export function sessionNextAgendaTarget(
+  rows: SessionAgendaRow[],
+  currentId: string | null,
+): SessionAgendaTarget | null {
+  const index = currentId
+    ? rows.findIndex((row) => row.item.id === currentId)
+    : -1;
+  const row = rows[index + 1];
+  if (!row) return null;
+  const published = row.documents.filter(
+    (document) => document.status === "published",
+  );
+  return { row, document: published.length === 1 ? published[0]! : null };
+}
+
+// Live connection ------------------------------------------------------------
+
+export type SessionConnection = "live" | "polling" | "connecting" | "offline";
+
+/**
+ * What the live badge says. Before the first connection is ready the
+ * console is still connecting, not offline; once it has been live, losing
+ * the stream reads as offline until polling takes over.
+ */
+export function sessionConnectionState(
+  connected: boolean,
+  polling: boolean,
+  everConnected: boolean,
+): SessionConnection {
+  if (connected) return "live";
+  if (polling) return "polling";
+  return everConnected ? "offline" : "connecting";
+}
+
+// Speaking turns -------------------------------------------------------------
+
+export interface SessionSpeakers {
+  /** Who has the floor now. */
+  speaking: SpeakingTurnDto | null;
+  /** Waiting turns, in the order they will speak. */
+  waiting: SpeakingTurnDto[];
+  /** Turns that already spoke, latest first. */
+  done: SpeakingTurnDto[];
+}
+
+function time(value: string | null): number {
+  const parsed = value ? new Date(value).getTime() : Number.NaN;
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * The speaking turns split as the Mesa reads them. Waiting turns follow
+ * their position (then the order they were written down); cancelled ones
+ * are left out. Should two turns be speaking at once, the latest to start
+ * has the floor.
+ */
+export function sessionSpeakers(turns: SpeakingTurnDto[]): SessionSpeakers {
+  const waiting = turns
+    .filter((turn) => turn.status === "waiting")
+    .sort(
+      (a, b) =>
+        a.position - b.position ||
+        time(a.createdAt) - time(b.createdAt) ||
+        a.id.localeCompare(b.id),
+    );
+  const speaking =
+    turns
+      .filter((turn) => turn.status === "speaking")
+      .sort((a, b) => time(b.startedAt) - time(a.startedAt))[0] ?? null;
+  const done = turns
+    .filter((turn) => turn.status === "done")
+    .sort(
+      (a, b) =>
+        time(b.endedAt) - time(a.endedAt) ||
+        time(b.startedAt) - time(a.startedAt),
+    );
+  return { speaking, waiting, done };
+}
+
+/**
+ * The place a waiting turn moves to, one step up (-1) or down (1): its
+ * 0-based index among the waiting turns, which is what the console sends
+ * as `position`. Null when it cannot move that way.
+ */
+export function sessionTurnMoveIndex(
+  waiting: SpeakingTurnDto[],
+  id: string,
+  step: 1 | -1,
+): number | null {
+  const index = waiting.findIndex((turn) => turn.id === id);
+  if (index === -1) return null;
+  const target = index + step;
+  return target >= 0 && target < waiting.length ? target : null;
+}
+
+/** Whole seconds since `startedAt`, never negative (clocks may disagree). */
+export function sessionElapsedSeconds(
+  startedAt: string | null,
+  now: number,
+): number {
+  if (!startedAt) return 0;
+  const start = new Date(startedAt).getTime();
+  if (!Number.isFinite(start)) return 0;
+  return Math.max(0, Math.floor((now - start) / 1000));
+}
+
+/** "m:ss", or "h:mm:ss" from an hour on. */
+export function sessionFormatDuration(seconds: number): string {
+  const total = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const rest = String(total % 60).padStart(2, "0");
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}`
+    : `${minutes}:${rest}`;
+}
+
+/**
+ * Whether a live event may change the speaking turns: a turn was written
+ * down, given the floor, ended, removed or moved, or who sees them changed
+ * (`speakers`); the live state changed (the Mesa's list follows the agenda
+ * item in debate); or the client lost track and must refetch everything
+ * (`poll`).
+ */
+export function isSessionSpeakersEvent(event: {
+  type: string;
+  entityType: string;
+}): boolean {
+  return (
+    event.type === "poll" ||
+    event.entityType === "speakers" ||
+    event.entityType === "live"
+  );
+}
+
+/**
+ * Who a turn is for, as one line for labels: the member's acronym and the
+ * person's name when the Mesa wrote it ("CEUM (Ana Pérez)"), or whichever
+ * of the two is there. Null when neither is.
+ */
+export function sessionTurnWho(turn: SpeakingTurnDto): string | null {
+  const speaker = turn.speaker?.trim() || null;
+  const member = turn.member?.acronym ?? null;
+  if (member && speaker) return `${member} (${speaker})`;
+  return member ?? speaker;
+}
+
+/** How long a finished turn lasted, in seconds; null when unknown. */
+export function sessionTurnDuration(turn: SpeakingTurnDto): number | null {
+  if (!turn.startedAt || !turn.endedAt) return null;
+  return sessionElapsedSeconds(turn.startedAt, time(turn.endedAt));
 }
 
 /**
@@ -444,13 +850,12 @@ export function sessionLapseOffer(
 ): SessionLapseOffer {
   const byId = new Map(list.map((amendment) => [amendment.id, amendment]));
   const excluded = new Set([target.id, ...target.sourceIds]);
-  // Amendments the Secretaría has not validated are not the Mesa's yet.
+  // Amendments the Secretaría has not validated are not the Mesa's yet, and
+  // late ones the assembly has not agreed to treat cannot be decided.
   const undecided = (id: string) => {
     const amendment = byId.get(id);
     return (
-      !excluded.has(id) &&
-      amendment !== undefined &&
-      isSessionUndecided(amendment)
+      !excluded.has(id) && amendment !== undefined && isSessionOpen(amendment)
     );
   };
 
@@ -531,8 +936,8 @@ export interface SessionAssentPlan {
 }
 
 /**
- * Admitted, undecided amendments the proponent accepted, ready to be approved
- * together by assent. Those that would collide with an approved amendment,
+ * Admitted, undecided, public amendments the proponent accepted, ready to be
+ * approved together by assent. Those that would collide with an approved amendment,
  * or with an earlier candidate, are skipped and reported, as are
  * transactionals still missing an acceptance.
  */
@@ -541,9 +946,12 @@ export function sessionAssentPlan(list: AmendmentDto[]): SessionAssentPlan {
   const approved = sorted.filter(
     (amendment) => amendment.status === "approved" && amendment.ops.length > 0,
   );
+  // Private ones are left out: the server refuses to decide them.
   const candidates = sorted.filter(
     (amendment) =>
-      isSessionOpen(amendment) && amendment.position?.position === "accept",
+      isSessionOpen(amendment) &&
+      amendment.publishedAt !== null &&
+      amendment.position?.position === "accept",
   );
 
   const plan: SessionAssentPlan = { ready: [], skipped: [] };

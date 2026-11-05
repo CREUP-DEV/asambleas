@@ -17,10 +17,12 @@ import {
 } from "~/components/shell/Navigation.vue";
 
 /**
- * Home: what the signed-in user has to do (GET /api/me/work), where their
- * documents and amendments stand, the Secretaría's pending review per
- * assembly, a live-session banner and the upcoming assemblies. It leads with
- * the work and stays calm: few cards, one sentence per item.
+ * Home: what the signed-in user has to do (GET /api/me/work: expected
+ * documents, corrections, drafts and, for presenters, the amendments and
+ * transactionals to answer), where their documents and amendments stand,
+ * the Secretaría's pending review per assembly, a live-session banner that
+ * leads to the live view and the upcoming assemblies. It leads with the
+ * work and stays calm: few cards, one sentence per item.
  */
 
 const { t, locale } = useI18n();
@@ -213,7 +215,7 @@ const adminLinks = computed(() =>
             </div>
             <div class="flex flex-wrap gap-2">
               <UButton
-                :to="localePath(assemblyPath(assembly.slug))"
+                :to="localePath(assemblyPath(assembly.slug, 'live'))"
                 icon="i-lucide-radio"
                 color="success"
               >

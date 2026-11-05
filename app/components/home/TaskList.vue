@@ -7,19 +7,26 @@ import {
 import { assemblyPath } from "~/components/shell/Navigation.vue";
 
 /**
- * Unlocalized path where a task is done: the document editor, or the
- * document with the amendment open.
+ * Unlocalized path where a task is done: the document editor, the
+ * presenter's review of the document's amendments, or the document with the
+ * amendment open.
  */
 export function homeTaskPath(task: HomeWorkTask): string {
   const base = `${assemblyPath(task.assembly.slug, "documents")}/${encodeURIComponent(task.document.slug)}`;
-  return task.target === "edit"
-    ? `${base}/editar`
-    : `${base}${homeWorkAmendmentQuery(task.amendment)}`;
+  switch (task.target) {
+    case "edit":
+      return `${base}/editar`;
+    case "review":
+      return `${base}/revisar`;
+    default:
+      return `${base}${homeWorkAmendmentQuery(task.amendment)}`;
+  }
 }
 
 const TASK_ICONS: Record<HomeWorkTaskKind, string> = {
   document_correction: "i-lucide-pencil-line",
   amendment_correction: "i-lucide-pencil-line",
+  proponent_review: "i-lucide-message-square-reply",
   document_prepare: "i-lucide-file-plus",
   document_send: "i-lucide-send",
   amendment_draft: "i-lucide-file-pen-line",
@@ -29,9 +36,10 @@ const TASK_ICONS: Record<HomeWorkTaskKind, string> = {
 <script setup lang="ts">
 /**
  * The things a user has to do, one row each: what it is, a sentence that
- * says what to do, the Secretaría's note when it asked for a correction,
- * the deadline of an expected document, and one button that goes where it
- * is done. With `primary`, the first row carries the screen's primary
+ * says what to do (for a presenter, how many transactionals and amendments
+ * wait for an answer), the Secretaría's note when it asked for a
+ * correction, the deadline of an expected document, and one button that
+ * goes where it is done. With `primary`, the first row carries the screen's primary
  * action; every other button stays secondary.
  */
 const props = withDefaults(
@@ -64,6 +72,34 @@ function context(task: HomeWorkTask): string {
   }
   if (props.showAssembly) parts.push(task.assembly.label);
   return parts.join(" · ");
+}
+
+/** What the row says has to be done, one sentence per line. */
+function sentences(task: HomeWorkTask): string[] {
+  const counts = task.counts;
+  if (task.kind !== "proponent_review" || !counts) {
+    return [t(`home.work.tasks.${task.kind}.text`)];
+  }
+  const lines: string[] = [];
+  if (counts.transactionals > 0) {
+    lines.push(
+      t(
+        "home.work.tasks.proponent_review.transactionals",
+        { count: counts.transactionals },
+        counts.transactionals,
+      ),
+    );
+  }
+  if (counts.positions > 0) {
+    lines.push(
+      t(
+        "home.work.tasks.proponent_review.positions",
+        { count: counts.positions },
+        counts.positions,
+      ),
+    );
+  }
+  return lines;
 }
 
 function dueDate(task: HomeWorkTask): string {
@@ -102,8 +138,12 @@ const isCorrection = (task: HomeWorkTask) =>
           <p v-if="context(task)" class="text-muted text-xs break-words">
             {{ context(task) }}
           </p>
-          <p class="text-default text-sm">
-            {{ t(`home.work.tasks.${task.kind}.text`) }}
+          <p
+            v-for="(sentence, line) in sentences(task)"
+            :key="line"
+            class="text-default text-sm"
+          >
+            {{ sentence }}
           </p>
           <p
             v-if="task.note"

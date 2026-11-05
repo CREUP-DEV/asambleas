@@ -11,6 +11,8 @@ import {
  *   return `{ data: [...], generated_at }`;
  * - `POST {base}/user/role` returns `{ role, name, initials, university }`
  *   for an email, or 404 when the intranet has no such account.
+ * Every request sends the API token when one is configured
+ * (intranetAuthHeaders).
  */
 
 export const INTRANET_TIMEOUT_MS = 10_000;
@@ -34,6 +36,16 @@ export function getIntranetApiBaseUrl(): string | null {
     });
     return null;
   }
+}
+
+/**
+ * Headers every intranet request carries: `Authorization: Bearer <token>`
+ * when `NUXT_INTRANET_API_TOKEN` is set (blank counts as unset). The token
+ * is a secret: never log these headers.
+ */
+export function intranetAuthHeaders(): Record<string, string> {
+  const token = process.env.NUXT_INTRANET_API_TOKEN?.trim();
+  return token ? { Authorization: `Bearer ${token}` } : {};
 }
 
 /** Joins the base URL and a path, tolerating slashes on either side. */
@@ -60,7 +72,7 @@ export async function fetchIntranetRoster(
   let response: Response;
   try {
     response = await fetch(intranetUrl(base, path), {
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...intranetAuthHeaders() },
       signal: AbortSignal.timeout(INTRANET_TIMEOUT_MS),
     });
   } catch (error) {

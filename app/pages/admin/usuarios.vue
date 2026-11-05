@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import type { TableColumn } from "@nuxt/ui";
 import type { MemberDto } from "~~/shared/types/api";
+import { SYSTEM_ROLES } from "~~/shared/constants/roles";
+import {
+  ALL_PERMISSION_KEYS,
+  PERMISSION_DESCRIPTION_I18N_KEYS,
+  PERMISSION_KEYS,
+  type PermissionKey,
+} from "~~/shared/constants/permissions";
 import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
 
 definePageMeta({
@@ -22,6 +29,11 @@ interface UserRow {
   role: { id: string; name: string } | null;
   /** The member the account acts for; undefined if the server omits it. */
   memberId?: string | null;
+  /**
+   * Permissions granted to this person on top of their role
+   * (user_permissions); undefined if the server omits them.
+   */
+  extraPermissions?: PermissionKey[];
 }
 
 /** A row of the table: the user with its linked member resolved. */
@@ -46,7 +58,7 @@ interface UsersResponse {
 
 const PAGE_SIZE = 50;
 
-const { t, locale } = useI18n();
+const { t, te, locale } = useI18n();
 const toast = useToast();
 const api = useApi();
 const { me } = useMe();
@@ -275,6 +287,228 @@ async function confirmMemberLink(): Promise<void> {
   }
 }
 
+// Extra permissions ------------------------------------------------------------
+
+function permissionLabel(key: PermissionKey): string {
+  const i18nKey = PERMISSION_DESCRIPTION_I18N_KEYS[key];
+  return i18nKey && te(i18nKey) ? t(i18nKey) : key;
+}
+
+/**
+ * Managing users, roles and permissions belongs to the Administrator role:
+ * /api/admin/** checks the role, never these keys, so granting them to one
+ * person would change nothing. They are not offered as extras.
+ */
+const ADMIN_ONLY_PERMISSIONS: readonly PermissionKey[] = [
+  PERMISSION_KEYS.USER_MANAGE_ROLES,
+  PERMISSION_KEYS.ROLE_MANAGE_PERMISSIONS,
+];
+
+function isAdminOnly(key: PermissionKey): boolean {
+  return ADMIN_ONLY_PERMISSIONS.includes(key);
+}
+
+/** Permissions each role gives, by role id. */
+const rolePermissions = ref<Record<string, PermissionKey[]>>({});
+/** Roles whose permissions are loading or could not be loaded, by role id. */
+const roleLoad = ref<Record<string, "loading" | "failed">>({});
+
+function setRoleLoad(roleId: string, state: "loading" | "failed" | null) {
+  const next = Object.fromEntries(
+    Object.entries(roleLoad.value).filter(([id]) => id !== roleId),
+  );
+  if (state) next[roleId] = state;
+  roleLoad.value = next;
+}
+
+async function loadRolePermissions(roleId: string): Promise<void> {
+  if (rolePermissions.value[roleId] || roleLoad.value[roleId] === "loading") {
+    return;
+  }
+  setRoleLoad(roleId, "loading");
+  try {
+    const result = await api.get<{ permissions: PermissionKey[] }>(
+      `/api/admin/roles/${encodeURIComponent(roleId)}/permissions`,
+    );
+    rolePermissions.value = {
+      ...rolePermissions.value,
+      [roleId]: result.permissions ?? [],
+    };
+    setRoleLoad(roleId, null);
+  } catch {
+    setRoleLoad(roleId, "failed");
+  }
+}
+
+// The badge on each row needs every role's permissions: there are few roles,
+// so they load once, in the browser. A failure only shows in the dialog.
+function loadAllRolePermissions(): void {
+  for (const role of rolesData.value?.data ?? []) {
+    if (role.name !== SYSTEM_ROLES.ADMIN) void loadRolePermissions(role.id);
+  }
+}
+onMounted(loadAllRolePermissions);
+watch(() => rolesData.value?.data, loadAllRolePermissions);
+
+/** What a role gives; null while it loads or if it could not be loaded. */
+function permissionsOfRole(
+  role: UserRow["role"] | undefined,
+): PermissionKey[] | null {
+  if (!role) return [];
+  if (role.name === SYSTEM_ROLES.ADMIN) return [...ALL_PERMISSION_KEYS];
+  return rolePermissions.value[role.id] ?? null;
+}
+
+/**
+ * Whether a stored grant adds something the role does not give. Until the
+ * role's permissions load, every grant counts (except the admin-only ones).
+ */
+function addsToRole(key: PermissionKey, fromRole: PermissionKey[] | null) {
+  return !isAdminOnly(key) && !(fromRole?.includes(key) ?? false);
+}
+
+/** Grants that add to the person's role: the "+N" badge on the row. */
+function extraCount(user: UserRow): number {
+  const fromRole = permissionsOfRole(user.role);
+  return (user.extraPermissions ?? []).filter((key) =>
+    addsToRole(key, fromRole),
+  ).length;
+}
+
+const permissionsTarget = ref<UserRow | null>(null);
+const permissionsDraft = ref<Set<PermissionKey>>(new Set());
+const permissionsSaving = ref(false);
+
+const permissionsOpen = computed({
+  get: () => permissionsTarget.value !== null,
+  set: (open: boolean) => {
+    if (!open && !permissionsSaving.value) permissionsTarget.value = null;
+  },
+});
+
+function openPermissions(user: UserRow): void {
+  permissionsTarget.value = user;
+  permissionsDraft.value = new Set(user.extraPermissions ?? []);
+  const role = user.role;
+  if (role && role.name !== SYSTEM_ROLES.ADMIN) {
+    void loadRolePermissions(role.id);
+  }
+}
+
+const targetIsAdmin = computed(
+  () => permissionsTarget.value?.role?.name === SYSTEM_ROLES.ADMIN,
+);
+
+/** What the target's role already gives; null while it loads or failed. */
+const targetRolePermissions = computed<PermissionKey[] | null>(() =>
+  permissionsOfRole(permissionsTarget.value?.role),
+);
+
+/** Whether the dialog can list the role's permissions yet. */
+const targetRoleState = computed<"ready" | "loading" | "failed">(() => {
+  if (targetRolePermissions.value !== null) return "ready";
+  const roleId = permissionsTarget.value?.role?.id;
+  return roleId && roleLoad.value[roleId] === "failed" ? "failed" : "loading";
+});
+
+function retryRolePermissions(): void {
+  const role = permissionsTarget.value?.role;
+  if (role) void loadRolePermissions(role.id);
+}
+
+const includedByRole = computed(() =>
+  ALL_PERMISSION_KEYS.filter((key) =>
+    (targetRolePermissions.value ?? []).includes(key),
+  ),
+);
+
+/** What can be switched on as an extra: outside the role, not admin-only. */
+const grantable = computed(() =>
+  ALL_PERMISSION_KEYS.filter(
+    (key) => !includedByRole.value.includes(key) && !isAdminOnly(key),
+  ),
+);
+
+/**
+ * Grants stored for the person that add nothing now: their role already
+ * gives them, or only the Administrator role uses them. They are listed so
+ * they can be removed; saving keeps the ones left on.
+ */
+const redundantGrants = computed(() => {
+  const stored = permissionsTarget.value?.extraPermissions ?? [];
+  return ALL_PERMISSION_KEYS.filter(
+    (key) =>
+      stored.includes(key) &&
+      (includedByRole.value.includes(key) || isAdminOnly(key)),
+  );
+});
+
+function redundantReason(key: PermissionKey): string {
+  return includedByRole.value.includes(key)
+    ? t("admin.users.permissions.coveredByRole")
+    : t("admin.users.permissions.adminOnly");
+}
+
+/** The server did not say which extras the person has: saving would guess. */
+const extrasUnknown = computed(
+  () =>
+    permissionsTarget.value !== null &&
+    permissionsTarget.value.extraPermissions === undefined,
+);
+
+const permissionsChanged = computed(() => {
+  const before = new Set(permissionsTarget.value?.extraPermissions ?? []);
+  const after = permissionsDraft.value;
+  return (
+    before.size !== after.size || [...after].some((key) => !before.has(key))
+  );
+});
+
+/** Extras the person will have that the role does not already give. */
+const draftExtraCount = computed(
+  () => grantable.value.filter((key) => permissionsDraft.value.has(key)).length,
+);
+
+function toggleExtra(key: PermissionKey, value: boolean): void {
+  const next = new Set(permissionsDraft.value);
+  if (value) next.add(key);
+  else next.delete(key);
+  permissionsDraft.value = next;
+}
+
+async function savePermissions(): Promise<void> {
+  const user = permissionsTarget.value;
+  if (!user || permissionsSaving.value || extrasUnknown.value) return;
+  permissionsSaving.value = true;
+  try {
+    // Grants that add nothing now (the role gives them, or only the
+    // Administrator uses them) are kept unless switched off: the role may
+    // change.
+    const permissions = ALL_PERMISSION_KEYS.filter((key) =>
+      permissionsDraft.value.has(key),
+    );
+    await api.send(
+      `/api/admin/users/${encodeURIComponent(user.id)}/permissions`,
+      {
+        method: "PUT",
+        body: { permissions },
+      },
+    );
+    const message = t("admin.users.permissions.saved", {
+      user: user.name || user.email,
+    });
+    statusMessage.value = message;
+    toast.add({ title: message, color: "success", icon: "i-lucide-check" });
+    permissionsSaving.value = false;
+    permissionsTarget.value = null;
+    await refreshUsers();
+  } catch (error) {
+    api.notifyError(error, "admin.users.permissions.saveFailed");
+  } finally {
+    permissionsSaving.value = false;
+  }
+}
+
 function toggleEditing(): void {
   editing.value = !editing.value;
   statusMessage.value = editing.value
@@ -386,33 +620,73 @@ function goToPage(next: number): void {
         </template>
 
         <template #role-cell="{ row }">
-          <span v-if="!editing" class="text-sm">
-            {{
-              row.original.role
-                ? roleName(row.original.role.name)
-                : t("admin.users.noRole")
-            }}
-          </span>
-          <USelect
-            v-else
-            :key="`${row.original.id}-${selectResetKey}`"
-            :model-value="row.original.roleId ?? undefined"
-            :items="roleOptions"
-            :loading="changingUserId === row.original.id"
-            :disabled="
-              row.original.id === currentUserId || changingUserId !== null
-            "
-            :placeholder="t('admin.users.noRole')"
-            :aria-label="
-              t('admin.users.roleFor', {
-                user: row.original.name || row.original.email,
-              })
-            "
-            class="w-44"
-            @update:model-value="
-              (value: unknown) => selectRole(row.original, value)
-            "
-          />
+          <div v-if="!editing" class="flex flex-wrap items-center gap-1.5">
+            <span class="text-sm">
+              {{
+                row.original.role
+                  ? roleName(row.original.role.name)
+                  : t("admin.users.noRole")
+              }}
+            </span>
+            <UBadge
+              v-if="extraCount(row.original) > 0"
+              color="neutral"
+              variant="outline"
+              size="sm"
+              icon="i-lucide-plus"
+              :label="
+                t(
+                  'admin.users.permissions.extraCount',
+                  { count: extraCount(row.original) },
+                  extraCount(row.original),
+                )
+              "
+            />
+          </div>
+          <div v-else class="space-y-1">
+            <USelect
+              :key="`${row.original.id}-${selectResetKey}`"
+              :model-value="row.original.roleId ?? undefined"
+              :items="roleOptions"
+              :loading="changingUserId === row.original.id"
+              :disabled="
+                row.original.id === currentUserId || changingUserId !== null
+              "
+              :placeholder="t('admin.users.noRole')"
+              :aria-label="
+                t('admin.users.roleFor', {
+                  user: row.original.name || row.original.email,
+                })
+              "
+              class="w-44"
+              @update:model-value="
+                (value: unknown) => selectRole(row.original, value)
+              "
+            />
+            <UButton
+              color="neutral"
+              variant="link"
+              size="xs"
+              class="px-0"
+              icon="i-lucide-key-round"
+              :label="
+                extraCount(row.original) > 0
+                  ? t(
+                      'admin.users.permissions.extraCount',
+                      { count: extraCount(row.original) },
+                      extraCount(row.original),
+                    )
+                  : t('admin.users.permissions.button')
+              "
+              :aria-label="
+                t('admin.users.permissions.buttonFor', {
+                  user: row.original.name || row.original.email,
+                })
+              "
+              :disabled="changingUserId !== null || linkingUserId !== null"
+              @click="openPermissions(row.original)"
+            />
+          </div>
         </template>
 
         <template #member-cell="{ row }">
@@ -560,6 +834,233 @@ function goToPage(next: number): void {
             <UButton color="primary" @click="confirmRoleChange">
               {{ t("admin.confirm") }}
             </UButton>
+          </div>
+        </template>
+      </UModal>
+
+      <UModal
+        v-model:open="permissionsOpen"
+        :title="
+          t('admin.users.permissions.title', {
+            user: permissionsTarget?.name || permissionsTarget?.email || '',
+          })
+        "
+        :description="t('admin.users.permissions.description')"
+        :dismissible="!permissionsSaving"
+        :ui="{ content: 'sm:max-w-xl' }"
+      >
+        <template #body>
+          <div v-if="permissionsTarget" class="space-y-5">
+            <UAlert
+              v-if="extrasUnknown"
+              color="warning"
+              variant="subtle"
+              icon="i-lucide-triangle-alert"
+              :title="t('admin.users.permissions.unknownExtras')"
+            />
+
+            <UAlert
+              v-if="targetIsAdmin"
+              color="neutral"
+              variant="subtle"
+              icon="i-lucide-shield-check"
+              :title="t('admin.users.permissions.allByRole')"
+            />
+
+            <div
+              v-else-if="targetRoleState === 'loading'"
+              class="space-y-2"
+              aria-busy="true"
+              :aria-label="t('admin.users.permissions.loading')"
+            >
+              <USkeleton v-for="n in 4" :key="n" class="h-8 w-full" />
+            </div>
+
+            <UAlert
+              v-else-if="targetRoleState === 'failed'"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-circle-alert"
+              :title="t('admin.users.permissions.loadFailed')"
+              :actions="[
+                {
+                  label: t('admin.retry'),
+                  color: 'error',
+                  variant: 'outline',
+                  onClick: retryRolePermissions,
+                },
+              ]"
+            />
+
+            <template v-else>
+              <section
+                class="space-y-2"
+                aria-labelledby="user-permissions-role"
+              >
+                <h3
+                  id="user-permissions-role"
+                  class="text-highlighted text-sm font-semibold"
+                >
+                  {{
+                    permissionsTarget.role
+                      ? t("admin.users.permissions.fromRole", {
+                          role: roleName(permissionsTarget.role.name),
+                        })
+                      : t("admin.users.permissions.noRoleTitle")
+                  }}
+                </h3>
+                <p v-if="!permissionsTarget.role" class="text-muted text-sm">
+                  {{ t("admin.users.permissions.noRole") }}
+                </p>
+                <p
+                  v-else-if="includedByRole.length === 0"
+                  class="text-muted text-sm"
+                >
+                  {{ t("admin.users.permissions.fromRoleNone") }}
+                </p>
+                <ul v-else class="space-y-1.5">
+                  <li
+                    v-for="key in includedByRole"
+                    :key="key"
+                    class="flex items-start gap-2 text-sm"
+                  >
+                    <UIcon
+                      name="i-lucide-check"
+                      class="text-success mt-0.5 size-4 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span>{{ permissionLabel(key) }}</span>
+                  </li>
+                </ul>
+              </section>
+
+              <section
+                class="space-y-3"
+                aria-labelledby="user-permissions-extra"
+              >
+                <div class="space-y-0.5">
+                  <h3
+                    id="user-permissions-extra"
+                    class="text-highlighted text-sm font-semibold"
+                  >
+                    {{ t("admin.users.permissions.extraTitle") }}
+                  </h3>
+                  <p class="text-muted text-sm">
+                    {{ t("admin.users.permissions.extraHelp") }}
+                  </p>
+                </div>
+                <p v-if="grantable.length === 0" class="text-muted text-sm">
+                  {{ t("admin.users.permissions.noneLeft") }}
+                </p>
+                <ul
+                  v-else
+                  class="border-default divide-default divide-y rounded-lg border"
+                >
+                  <li v-for="key in grantable" :key="key" class="px-3 py-2.5">
+                    <USwitch
+                      :model-value="permissionsDraft.has(key)"
+                      :label="permissionLabel(key)"
+                      :disabled="permissionsSaving || extrasUnknown"
+                      @update:model-value="
+                        (value: boolean) => toggleExtra(key, value)
+                      "
+                    />
+                  </li>
+                </ul>
+                <p class="text-muted flex items-start gap-1.5 text-sm">
+                  <UIcon
+                    name="i-lucide-lock"
+                    class="mt-0.5 size-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  <span>{{ t("admin.users.permissions.adminOnlyNote") }}</span>
+                </p>
+              </section>
+            </template>
+
+            <!-- Grants that add nothing now, so they can be found and removed. -->
+            <section
+              v-if="targetRoleState === 'ready' && redundantGrants.length > 0"
+              class="space-y-3"
+              aria-labelledby="user-permissions-redundant"
+            >
+              <div class="space-y-0.5">
+                <h3
+                  id="user-permissions-redundant"
+                  class="text-highlighted text-sm font-semibold"
+                >
+                  {{ t("admin.users.permissions.redundantTitle") }}
+                </h3>
+                <p class="text-muted text-sm">
+                  {{ t("admin.users.permissions.redundantHelp") }}
+                </p>
+              </div>
+              <ul
+                class="border-default divide-default divide-y rounded-lg border"
+              >
+                <li
+                  v-for="key in redundantGrants"
+                  :key="key"
+                  class="px-3 py-2.5"
+                >
+                  <USwitch
+                    :model-value="permissionsDraft.has(key)"
+                    :label="permissionLabel(key)"
+                    :description="redundantReason(key)"
+                    :disabled="permissionsSaving || extrasUnknown"
+                    @update:model-value="
+                      (value: boolean) => toggleExtra(key, value)
+                    "
+                  />
+                </li>
+              </ul>
+            </section>
+          </div>
+        </template>
+        <template #footer>
+          <div class="flex w-full flex-wrap items-center justify-between gap-2">
+            <p
+              class="text-muted text-sm"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              <template
+                v-if="
+                  !targetIsAdmin &&
+                  !extrasUnknown &&
+                  targetRoleState === 'ready'
+                "
+              >
+                {{
+                  t(
+                    "admin.users.permissions.summary",
+                    { count: draftExtraCount },
+                    draftExtraCount,
+                  )
+                }}
+              </template>
+            </p>
+            <div class="flex gap-2">
+              <UButton
+                color="neutral"
+                variant="ghost"
+                :disabled="permissionsSaving"
+                @click="permissionsOpen = false"
+              >
+                {{ t("admin.cancel") }}
+              </UButton>
+              <UButton
+                v-if="!targetIsAdmin || redundantGrants.length > 0"
+                color="primary"
+                icon="i-lucide-save"
+                :loading="permissionsSaving"
+                :disabled="!permissionsChanged || extrasUnknown"
+                @click="savePermissions"
+              >
+                {{ t("admin.save") }}
+              </UButton>
+            </div>
           </div>
         </template>
       </UModal>

@@ -165,6 +165,7 @@ export const liveStateBodySchema = z.object({
   amendmentId: assemblyEntityId.nullable().optional(),
   voteId: assemblyEntityId.nullable().optional(),
   message: multiLine(LIVE_MESSAGE_MAX_LENGTH).nullable().optional(),
+  speakersVisible: z.boolean().optional(),
 });
 
 // Compile-time checks: every parsed body is assignable to its API type.

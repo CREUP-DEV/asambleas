@@ -36,6 +36,7 @@ import {
   amendmentReviewView,
   amendmentSentNotice,
   amendmentsAwaitingActor,
+  amendmentLateState,
   isAmendmentPresenter,
 } from "./workspace";
 
@@ -807,6 +808,49 @@ describe("review by the Secretaría", () => {
         admission: "pending",
       }),
     ).toBe(false);
+    expect(
+      showAmendmentAdmission({
+        status: "submitted",
+        reviewState: "pending_proponent",
+        admission: "pending",
+      }),
+    ).toBe(false);
+  });
+
+  it("says a transactional waits for the document's presenter", () => {
+    const view = amendmentReviewView(
+      amendment("t", [], {
+        kind: "transactional",
+        reviewState: "pending_proponent",
+        admission: "pending",
+      }),
+    );
+    expect(view).toMatchObject({
+      key: "pending_proponent",
+      private: true,
+      awaitingAdmission: false,
+    });
+  });
+
+  it("tells late amendments waiting for the assembly's decision apart", () => {
+    const late = (extra: Partial<AmendmentDto>) =>
+      amendmentLateState(amendment("a", [], { late: true, ...extra }));
+    expect(amendmentLateState(amendment("a", []))).toBeNull();
+    expect(
+      late({ reviewState: "pending_validation", admission: "pending" }),
+    ).toBe("late");
+    expect(late({ reviewState: "validated", admission: "pending" })).toBe(
+      "awaiting_decision",
+    );
+    expect(late({ reviewState: "published", admission: "pending" })).toBe(
+      "awaiting_decision",
+    );
+    expect(late({ reviewState: "published", admission: "admitted" })).toBe(
+      "late",
+    );
+    expect(late({ status: "inadmissible", admission: "inadmissible" })).toBe(
+      "late",
+    );
   });
 
   it("lists my amendments, what needs me first", () => {

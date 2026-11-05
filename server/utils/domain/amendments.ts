@@ -115,11 +115,17 @@ import {
   admissionNeedsValidation,
   admissionOnValidation,
   amendmentReviewState,
+  awaitsAssemblyDecision,
+  awaitsProponent,
+  awaitsProponentAnswer,
   awaitsPublication,
   awaitsValidation,
   isAmendmentPublishable,
   numberingToKeep,
+  partyRole,
+  proponentApproval,
   submissionLate,
+  transactionalSourcesMessage,
   unopenSourcesMessage,
 } from "./reviewState";
 import {
@@ -153,6 +159,18 @@ export type AmendmentAdmissionResult = AmendmentAdmissionDto;
 
 const OPEN_STATUSES: AmendmentStatus[] = ["draft", "submitted"];
 const SYMMETRIC_RELATIONS: RelationKind[] = ["incompatible", "duplicate"];
+
+/**
+ * 409 for the Secretaría on a transactional the presenter has not approved
+ * (awaitsProponent): still waiting, or rejected.
+ */
+function proponentApprovalMessage(
+  rows: { proponentApproval: AcceptanceDecision | null }[],
+): string {
+  return rows.some((row) => row.proponentApproval === "rejected")
+    ? "Quien presenta el documento ha rechazado esta transaccional"
+    : "Esta transaccional todavía necesita la aprobación de quien presenta el documento";
+}
 
 function fail(statusCode: number, message: string, data?: unknown): never {
   throw createError({ statusCode, message, ...(data ? { data } : {}) });
@@ -419,6 +437,11 @@ export interface CapabilityInput {
   acceptances: { memberId: string; decision: AcceptanceDecision }[];
   validatedAt: Date | null;
   publishedAt: Date | null;
+  /**
+   * For a transactional, the presenter's answer (proponentApproval): the
+   * Secretaría validates it only once the presenter accepted it.
+   */
+  proponentApproval?: AcceptanceDecision | null;
 }
 
 export function amendmentCapabilities(
@@ -713,13 +736,7 @@ function isVisible(
   ctx: DocumentAmendmentContext,
   row: LoadedAmendment,
 ): boolean {
-  return canSeeAmendment(ctx.actor, {
-    status: row.status,
-    publishedAt: row.publishedAt,
-    createdByUserId: row.createdByUserId,
-    authorMemberIds: row.authors.map((author) => author.memberId),
-    partyMemberIds: row.acceptances.map((acceptance) => acceptance.memberId),
-  });
+  return canSeeLoadedAmendment(ctx.actor, row);
 }
 
 /** Loads the `[amendment]` route param. Hidden amendments answer 404. */
@@ -824,6 +841,8 @@ function lockAmendments(tx: Tx, documentId: string, ids: string[]) {
  * unless that lineage is still open (submitted, admitted, undecided). The
  * message says what is missing: the Secretaría's validation, the Mesa's
  * admission, or nothing to do because one is decided (unopenSourcesMessage).
+ * With `publishedSources` (presenting a transactional), the direct sources
+ * must also be published (transactionalSourcesMessage).
  * Returns the lineage.
  */
 async function lockOpenLineage(
@@ -831,6 +850,7 @@ async function lockOpenLineage(
   documentId: string,
   sourceIds: string[],
   alsoLock: string[] = [],
+  publishedSources = false,
 ): Promise<string[]> {
   const lineage =
     sourceIds.length > 0
@@ -847,9 +867,15 @@ async function lockOpenLineage(
   if (lineageRows.some((row) => row === undefined)) {
     fail(409, UNOPEN_SOURCE_MESSAGES.decided);
   }
-  const message = unopenSourcesMessage(
-    lineageRows.filter((row) => row !== undefined),
-  );
+  const message =
+    (publishedSources
+      ? transactionalSourcesMessage(
+          sourceIds
+            .map((id) => byId.get(id))
+            .filter((row) => row !== undefined),
+        )
+      : null) ??
+    unopenSourcesMessage(lineageRows.filter((row) => row !== undefined));
   if (message) fail(409, message);
   return lineage;
 }
@@ -1000,6 +1026,7 @@ export async function buildAmendmentDtos(
 
   return rows.map((row) => {
     const meta = readMeta(row);
+    const approval = proponentApproval(row, ctx.document.proponentMemberId);
     return {
       id: row.id,
       documentId: row.documentId,
@@ -1021,7 +1048,10 @@ export async function buildAmendmentDtos(
       submittedAt: iso(row.submittedAt),
       validatedAt: iso(row.validatedAt),
       publishedAt: iso(row.publishedAt),
-      reviewState: amendmentReviewState(row),
+      reviewState: amendmentReviewState({
+        ...row,
+        proponentApproval: approval,
+      }),
       correctionNote: canReadCorrection(ctx.actor, row)
         ? row.correctionNote
         : null,
@@ -1045,7 +1075,8 @@ export async function buildAmendmentDtos(
         .filter(keep),
       acceptances: row.acceptances.map((acceptance) => ({
         member: toMemberRef(acceptance.member),
-        role: acceptance.role,
+        // The presenter's row reads "proponent" also when it wrote a source.
+        role: partyRole(acceptance, ctx.document.proponentMemberId),
         decision: acceptance.decision,
         decidedAt: iso(acceptance.decidedAt),
       })),
@@ -1060,6 +1091,7 @@ export async function buildAmendmentDtos(
         acceptances: row.acceptances,
         validatedAt: row.validatedAt,
         publishedAt: row.publishedAt,
+        proponentApproval: approval,
       }),
     };
   });
@@ -1114,22 +1146,86 @@ export async function listDocumentAmendments(
 }
 
 /**
- * Amendments of these documents waiting for the Secretaría, in text order:
- * to validate (awaitsValidation) or to publish (awaitsPublication).
+ * Amendments of these documents for the Secretaría's validation inbox, in
+ * text order:
+ * - to validate (awaitsValidation);
+ * - to publish (awaitsPublication);
+ * - late ones it validated, published or not, still waiting for the
+ *   assembly's decision (awaitsAssemblyDecision);
+ * - read only, transactionals proposed by a member that the document's
+ *   presenter has not answered yet (awaitsProponentAnswer), so it sees what
+ *   is about to reach it. One the presenter rejected is left out.
  */
 export async function findAmendmentsAwaitingReview(
-  documentIds: string[],
+  documents: { id: string; proponentMemberId: string | null }[],
 ): Promise<LoadedAmendment[]> {
-  if (documentIds.length === 0) return [];
+  if (documents.length === 0) return [];
+  const proponentOf = new Map(
+    documents.map((document) => [document.id, document.proponentMemberId]),
+  );
   const rows = await findAmendments(
     db,
     and(
-      inArray(amendments.documentId, documentIds),
+      inArray(amendments.documentId, [...proponentOf.keys()]),
       ne(amendments.status, "draft"),
-      isNull(amendments.publishedAt),
+      or(
+        isNull(amendments.publishedAt),
+        and(
+          eq(amendments.late, true),
+          eq(amendments.admission, "pending"),
+          eq(amendments.status, "submitted"),
+          isNotNull(amendments.validatedAt),
+        ),
+      ),
     ),
   );
-  return rows.filter((row) => awaitsValidation(row) || awaitsPublication(row));
+  return rows.filter((row) => {
+    const fields = {
+      ...row,
+      proponentApproval: proponentApproval(
+        row,
+        proponentOf.get(row.documentId) ?? null,
+      ),
+    };
+    return (
+      awaitsValidation(fields) ||
+      awaitsPublication(fields) ||
+      awaitsAssemblyDecision(fields) ||
+      awaitsProponentAnswer(fields)
+    );
+  });
+}
+
+/**
+ * Presented, undecided amendments of these documents (status submitted), in
+ * text order, with their authors, acceptances and position. Callers filter
+ * them by visibility.
+ */
+export async function findSubmittedAmendments(
+  documentIds: string[],
+): Promise<LoadedAmendment[]> {
+  if (documentIds.length === 0) return [];
+  return findAmendments(
+    db,
+    and(
+      inArray(amendments.documentId, documentIds),
+      eq(amendments.status, "submitted"),
+    ),
+  );
+}
+
+/** canSeeAmendment for a loaded row, outside a document context. */
+export function canSeeLoadedAmendment(
+  actor: Actor,
+  row: LoadedAmendment,
+): boolean {
+  return canSeeAmendment(actor, {
+    status: row.status,
+    publishedAt: row.publishedAt,
+    createdByUserId: row.createdByUserId,
+    authorMemberIds: row.authors.map((author) => author.memberId),
+    partyMemberIds: row.acceptances.map((acceptance) => acceptance.memberId),
+  });
 }
 
 // Drafts -------------------------------------------------------------------
@@ -1458,11 +1554,16 @@ export async function submitAmendment(
     };
 
     if (transactional) {
+      // As on creation: published, open sources (and an open lineage).
       await lockOpenLineage(
         tx,
         document.id,
         amendment.sources.map((source) => source.sourceId),
+        [],
+        true,
       );
+      // Presented by a member, it waits for the document's presenter (unless
+      // it is that member) and then for the Secretaría (reviewState).
       instant = canModerate(actor);
       updated = await tx
         .update(amendments)
@@ -1476,10 +1577,14 @@ export async function submitAmendment(
           and(eq(amendments.id, amendment.id), eq(amendments.status, "draft")),
         )
         .returning({ id: amendments.id });
+      const approval = proponentApproval(amendment, document.proponentMemberId);
       payload = {
         code: amendment.code,
         late: false,
         admission: instant ? "admitted" : "pending",
+        ...(!instant && approval !== null && approval !== "accepted"
+          ? { awaitsProponent: true }
+          : {}),
       };
     } else {
       // Sent back for correction: it keeps its number and, while the same
@@ -1942,9 +2047,10 @@ export async function validateAmendments(
     );
     await lockOpenLineage(tx, document.id, sourceIds, body.amendmentIds);
     // Already locked by this transaction: the values are current.
-    const rows = await tx
+    const locked = await tx
       .select({
         id: amendments.id,
+        kind: amendments.kind,
         status: amendments.status,
         admission: amendments.admission,
         late: amendments.late,
@@ -1957,6 +2063,38 @@ export async function validateAmendments(
           inArray(amendments.id, body.amendmentIds),
         ),
       );
+    // The presenter's answer to a transactional, locked after the amendments
+    // ("Row locks"), so a concurrent rejection cannot slip past this check.
+    const transactionalIds = locked
+      .filter((row) => row.kind === "transactional")
+      .map((row) => row.id);
+    const acceptanceRows =
+      transactionalIds.length > 0
+        ? await tx
+            .select({
+              amendmentId: amendmentAcceptances.amendmentId,
+              memberId: amendmentAcceptances.memberId,
+              decision: amendmentAcceptances.decision,
+            })
+            .from(amendmentAcceptances)
+            .where(inArray(amendmentAcceptances.amendmentId, transactionalIds))
+            .orderBy(asc(amendmentAcceptances.id))
+            .for("share")
+        : [];
+    const rows = locked.map((row) => ({
+      ...row,
+      proponentApproval: proponentApproval(
+        {
+          kind: row.kind,
+          acceptances: acceptanceRows.filter(
+            (acceptance) => acceptance.amendmentId === row.id,
+          ),
+        },
+        document.proponentMemberId,
+      ),
+    }));
+    const waiting = rows.filter(awaitsProponent);
+    if (waiting.length > 0) fail(409, proponentApprovalMessage(waiting));
     if (
       rows.length !== body.amendmentIds.length ||
       !rows.every(awaitsValidation)
@@ -2082,7 +2220,15 @@ export async function requestAmendmentCorrection(
 ): Promise<AmendmentDto> {
   const { actor, amendment, now } = ctx;
   assertReviewer(actor);
-  if (!awaitsValidation(amendment)) {
+  const review = {
+    ...amendment,
+    proponentApproval: proponentApproval(
+      amendment,
+      ctx.document.proponentMemberId,
+    ),
+  };
+  if (awaitsProponent(review)) fail(409, proponentApprovalMessage([review]));
+  if (!awaitsValidation(review)) {
     fail(
       409,
       "Solo se puede pedir una corrección de una enmienda enviada y pendiente de validación",
@@ -2581,6 +2727,29 @@ export async function applyAmendmentOutcome(
 
 // Transactionals -------------------------------------------------------------
 
+/**
+ * Whether the actor may propose a transactional: any member account that
+ * presents amendments (amendment:create), the document's presenter and the
+ * authors of its sources (its parties), or the Mesa. docs/design.md,
+ * "Transactionals from anyone".
+ */
+export function canProposeTransactional(input: {
+  moderate: boolean;
+  canCreate: boolean;
+  actorMemberId: string | null;
+  isParty: boolean;
+}): boolean {
+  if (input.moderate) return true;
+  if (!input.actorMemberId) return false;
+  return input.canCreate || input.isParty;
+}
+
+/**
+ * A transactional over published, undecided amendments of the document.
+ * Proposed by a member, it is presented to the document's presenter, who
+ * approves it (its acceptance) before the Secretaría validates it; proposed
+ * by the Mesa, it is validated and published at once.
+ */
 export async function createTransactionalAmendment(
   ctx: DocumentAmendmentContext,
   body: TransactionalBody,
@@ -2601,7 +2770,9 @@ export async function createTransactionalAmendment(
   ) {
     fail(404, "Enmienda no encontrada");
   }
-  const unopen = unopenSourcesMessage(sources);
+  // Reviewers and the Mesa also see unpublished amendments: a transactional
+  // only builds on what everyone can read.
+  const unopen = transactionalSourcesMessage(sources);
   if (unopen) fail(409, unopen);
 
   // Over another transactional, the authors of what it absorbs are parties
@@ -2624,14 +2795,20 @@ export async function createTransactionalAmendment(
     ...nestedAuthors.map((row) => row.memberId),
   ]);
   const moderate = canModerate(actor);
-  const sourceAuthor =
-    actsFor(actor, sourceAuthorIds) ||
-    sources.some((source) => source.createdByUserId === actor.user.id);
-  if (!moderate && !ctx.isProponent && !sourceAuthor) {
-    fail(
-      403,
-      "Solo los autores, el proponente o la Mesa pueden proponer transaccionales",
-    );
+  const canCreate = actor.can(PERMISSION_KEYS.AMENDMENT_CREATE);
+  // Presents amendments but acts for no member: tell it how to fix that.
+  if (!moderate && canCreate && !actor.memberId) {
+    fail(403, UNLINKED_ACCOUNT_MESSAGE);
+  }
+  if (
+    !canProposeTransactional({
+      moderate,
+      canCreate,
+      actorMemberId: actor.memberId,
+      isParty: ctx.isProponent || actsFor(actor, sourceAuthorIds),
+    })
+  ) {
+    fail(403, "No tienes permiso para proponer transaccionales");
   }
 
   let authorIds: string[];
@@ -2661,14 +2838,24 @@ export async function createTransactionalAmendment(
   );
   const submit = body.submit ?? true;
   // Proposed by the Mesa in session: validated, admitted and published at
-  // once. Proposed by a party: presented, it waits for the Secretaría.
+  // once. Proposed by a member: presented, it waits for the document's
+  // presenter (accepted at once when the member is the presenter) and then
+  // for the Secretaría (reviewState "pending_proponent", then
+  // "pending_validation").
   const instant = submit && moderate;
+  const awaitingProponent =
+    submit &&
+    !instant &&
+    parties.some(
+      (party) =>
+        party.memberId === document.proponentMemberId && !party.accepted,
+    );
   const base = await loadBaseBlocks(document);
 
   const id = await db.transaction(async (tx) => {
     await lockDocument(tx, document.id);
     // The sources may have been decided since they were read.
-    await lockOpenLineage(tx, document.id, body.sourceIds);
+    await lockOpenLineage(tx, document.id, body.sourceIds, [], true);
     const { ops, errors } = prepareAmendmentOps({
       kind: "transactional",
       ops: body.ops,
@@ -2769,6 +2956,7 @@ export async function createTransactionalAmendment(
           code,
           late: false,
           admission: instant ? "admitted" : "pending",
+          ...(awaitingProponent ? { awaitsProponent: true } : {}),
         },
         actor,
       });
@@ -2837,6 +3025,11 @@ export async function recordAmendmentAcceptance(
         memberId,
         role: party.role,
         decision: body.decision,
+        // The document's presenter answering (it approves or rejects a
+        // transactional proposed by a member before the Secretaría).
+        ...(memberId === ctx.document.proponentMemberId
+          ? { presenter: true }
+          : {}),
         ...(memberId !== actor.memberId
           ? { recordedForMemberId: memberId }
           : {}),

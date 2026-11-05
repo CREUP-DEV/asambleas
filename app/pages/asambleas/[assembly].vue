@@ -285,6 +285,14 @@ const SECTIONS: Section[] = [
     icon: "i-lucide-layout-dashboard",
     visible: () => true,
   },
+  // The attendees' live view, for everyone at any time: before and after
+  // the session it says so (see the page), so links to it never break.
+  {
+    key: "live",
+    path: "directo",
+    icon: "i-lucide-radio",
+    visible: () => true,
+  },
   {
     key: "agenda",
     path: "orden-del-dia",
@@ -367,10 +375,21 @@ const sectionItems = computed<NavigationMenuItem[]>(() => {
       section.key === "validation" && reviewCount.value > 0
         ? reviewCount.value
         : 0;
+    const liveNow = section.key === "live" && value.status === "in_session";
     return {
       label: t(`assembly.sections.${section.key}`),
       icon: section.icon,
       to,
+      ...(liveNow
+        ? {
+            badge: {
+              label: t("assembly.sections.liveNow"),
+              color: "error" as const,
+              variant: "soft" as const,
+            },
+            "aria-label": t("assembly.sections.liveInSession"),
+          }
+        : {}),
       ...(pendingCount > 0
         ? {
             badge: {

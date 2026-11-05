@@ -10,9 +10,11 @@
 /**
  * Live event types that can change the inbox: documents and amendments
  * entering or leaving it, or changing what a card shows (title, admission).
- * "poll" is the synthetic event sent while the live stream is down, when
- * anything may have changed. Votes, outcomes, positions and draft edits are
- * left out: they never touch what waits for validation.
+ * An acceptance counts: the presenter approving a transactional is what
+ * makes it ready for validation. "poll" is the synthetic event sent while
+ * the live stream is down, when anything may have changed. Votes, outcomes,
+ * positions and draft edits are left out: they never touch what waits for
+ * validation.
  */
 export const REVIEW_LIVE_TYPES: ReadonlySet<string> = new Set([
   "poll",
@@ -29,10 +31,13 @@ export const REVIEW_LIVE_TYPES: ReadonlySet<string> = new Set([
   "amendment_published",
   "amendment_correction_requested",
   "amendment_withdrawn",
+  // The Mesa can declare lapsed a late one still waiting for the assembly.
+  "amendment_lapsed",
   "amendment_deleted",
   "amendment_reopened",
   "amendment_admitted",
   "amendment_inadmissible",
+  "acceptance_recorded",
 ]);
 
 /** Whether a batch of live events may have changed the review queue. */

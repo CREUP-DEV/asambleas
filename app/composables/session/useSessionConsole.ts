@@ -19,6 +19,7 @@ import type {
   PublishAmendmentsBody,
   RelationBody,
   RelationDto,
+  SpeakingTurnDto,
   TransactionalBody,
   ValidateAmendmentsBody,
   VoteInput,
@@ -44,20 +45,34 @@ import {
   isSessionAwaitingValidation,
   isSessionOpen,
   isSessionPendingAdmission,
+  isSessionProponentRejected,
   isSessionPublishable,
-  isSessionUndecided,
-  isSessionUnpublished,
+  isSessionTransactable,
+  sessionAmendmentStage,
   sessionAssentPlan,
+  sessionConnectionState,
   sessionConsolidatedPreview,
   sessionErrorData,
   sessionErrorIds,
   sessionFinalVoteBlockers,
+  sessionFinalVoteReasons,
   sessionLapseOffer,
+  sessionNextAgendaTarget,
+  sessionNextAmendmentId,
   sessionQueueCounts,
   sessionQueueOrder,
   sessionValidationIds,
   type SessionAdmissionDecision,
+  type SessionAgendaTarget,
+  type SessionAmendmentStage,
 } from "./sessionModel";
+import { useSessionSpeakers } from "./useSessionSpeakers";
+
+/**
+ * Busy key of the "who sees the speaking turns" switch. It must not start
+ * with "speaker-", the prefix the floor buttons wait for.
+ */
+export const SPEAKERS_VISIBLE_BUSY_KEY = "speakers-visible";
 
 /** What the console's `confirm` shows (SessionConfirmDialog's props). */
 export interface SessionConfirmProps {
@@ -289,12 +304,27 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       new Map(amendments.value.map((amendment) => [amendment.id, amendment])),
   );
   const base = computed(() => document.value?.baseVersion?.blocks ?? []);
+  /**
+   * The member that presents the document on screen: its acceptance is the
+   * one that lets a member's transactional through (whatever its role).
+   */
+  const presenterId = computed(() => document.value?.proponent?.id ?? null);
 
   /** Short label of an amendment: its code, or "#n" before it has one. */
   function label(id: string): string {
     const amendment = byId.value.get(id);
     if (!amendment) return "?";
     return amendment.code ?? (amendment.number ? `#${amendment.number}` : "?");
+  }
+
+  /** Where an amendment stands in the session (sessionAmendmentStage). */
+  function stageOf(amendment: AmendmentDto): SessionAmendmentStage {
+    return sessionAmendmentStage(amendment, presenterId.value);
+  }
+
+  /** A member's transactional the document's presenter turned down. */
+  function isProponentRejected(amendment: AmendmentDto): boolean {
+    return isSessionProponentRejected(amendment, presenterId.value);
   }
 
   // Queue ---------------------------------------------------------------------
@@ -310,14 +340,67 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   const undecided = computed(() =>
     amendments.value.filter((amendment) => amendment.status === "submitted"),
   );
-  // The same, split by who has to act: the Mesa or the Secretaría.
+  // The same, split by who has to act: the Mesa, the Secretaría, the
+  // document's presenter or whoever proposed a transactional it turned down.
   const finalVoteBlockers = computed(() =>
-    sessionFinalVoteBlockers(amendments.value),
+    sessionFinalVoteBlockers(amendments.value, [], presenterId.value),
   );
   const preview = computed(() =>
     sessionConsolidatedPreview(base.value, amendments.value),
   );
   const assentPlan = computed(() => sessionAssentPlan(amendments.value));
+  /** Why the final vote cannot be recorded yet (empty when it can). */
+  const finalVoteReasons = computed(() =>
+    sessionFinalVoteReasons({
+      document: document.value ?? null,
+      amendmentsLoaded: Boolean(amendmentsDto.value),
+      totalityReturnId: preview.value.totalityReturn?.id ?? null,
+      blockers: finalVoteBlockers.value,
+    }),
+  );
+
+  // What is under debate ----------------------------------------------------------
+
+  /**
+   * The console shows the document in debate unless a Mesa member picked
+   * another one in the agenda to look at: then what is debated may not be
+   * in the loaded list.
+   */
+  const showingLiveDocument = computed(
+    () =>
+      !liveState.value?.documentId ||
+      liveState.value.documentId === documentId.value,
+  );
+  /** The amendment under debate, when the console has it loaded. */
+  const debatedAmendment = computed<AmendmentDto | null>(() => {
+    const id = liveState.value?.amendmentId;
+    if (!id || !showingLiveDocument.value) return null;
+    return byId.value.get(id) ?? null;
+  });
+  /** What "Siguiente" debates: the next amendment the Mesa can decide. */
+  const nextAmendment = computed<AmendmentDto | null>(() => {
+    if (!showingLiveDocument.value || !liveState.value?.documentId) {
+      return null;
+    }
+    const id = sessionNextAmendmentId(
+      queue.value,
+      liveState.value.amendmentId ?? null,
+    );
+    return id ? (byId.value.get(id) ?? null) : null;
+  });
+  /** The agenda item after the one in debate, with its only document. */
+  const nextAgendaTarget = computed(() =>
+    sessionNextAgendaTarget(
+      agendaRows.value,
+      liveState.value?.agendaItemId ?? null,
+    ),
+  );
+
+  /** Goes back to the document under debate after looking at another one. */
+  function followLive(): void {
+    const id = liveState.value?.documentId;
+    if (id) documentId.value = id;
+  }
 
   /**
    * The amendment the keyboard shortcuts act on. One the Secretaría has not
@@ -360,6 +443,29 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     return focusedId.value;
   }
 
+  /** Mutations in flight, by amendment id or action name. */
+  const busy = ref<Record<string, boolean>>({});
+
+  async function track<T>(key: string, run: () => Promise<T>): Promise<T> {
+    busy.value = { ...busy.value, [key]: true };
+    try {
+      return await run();
+    } finally {
+      busy.value = Object.fromEntries(
+        Object.entries(busy.value).filter(([other]) => other !== key),
+      );
+    }
+  }
+
+  // Speaking turns ------------------------------------------------------------
+
+  const speakers = useSessionSpeakers({
+    baseUrl: assemblyUrl,
+    key: param,
+    enabled: canModerate,
+    track,
+  });
+
   // Live updates --------------------------------------------------------------
 
   function refreshAll(): Promise<unknown> {
@@ -369,10 +475,12 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       refreshLive(),
       refreshDocument(),
       refreshAmendments(),
+      speakers.refresh(),
     ]);
   }
 
   function onLive(events: LiveEventDto[]): void {
+    speakers.onLive(events);
     if (events.some((event) => event.type === "poll")) {
       // The hub refreshes the assembly itself on poll events.
       void (hub
@@ -433,6 +541,20 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     ));
   }
 
+  // Until the first connection is ready the console is connecting, not
+  // offline: the badge must not alarm the Mesa while the page opens.
+  const everConnected = ref(false);
+  watch(
+    connected,
+    (isConnected) => {
+      if (isConnected) everConnected.value = true;
+    },
+    { immediate: true },
+  );
+  const connection = computed(() =>
+    sessionConnectionState(connected.value, polling.value, everConnected.value),
+  );
+
   // Local updates ---------------------------------------------------------------
 
   /** Puts a fresh amendment in the local list, so its updatedAt is current. */
@@ -462,20 +584,6 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     return `${documentUrl.value ?? ""}${path}`;
   }
 
-  /** Mutations in flight, by amendment id or action name. */
-  const busy = ref<Record<string, boolean>>({});
-
-  async function track<T>(key: string, run: () => Promise<T>): Promise<T> {
-    busy.value = { ...busy.value, [key]: true };
-    try {
-      return await run();
-    } finally {
-      busy.value = Object.fromEntries(
-        Object.entries(busy.value).filter(([other]) => other !== key),
-      );
-    }
-  }
-
   function onConflict(error: unknown): void {
     if (api.isConflict(error)) {
       void refreshAmendments();
@@ -485,12 +593,17 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
 
   // Live state ------------------------------------------------------------------
 
+  /**
+   * Changes the live state. `key` is the busy key it holds: "live" (what is
+   * debated, which the debate buttons wait for) unless the change is
+   * something else, such as who sees the speaking turns.
+   */
   async function setLive(
     body: LiveStateBody,
-    options: { silent?: boolean } = {},
+    options: { silent?: boolean; key?: string } = {},
   ): Promise<boolean> {
     try {
-      liveState.value = await track("live", () =>
+      liveState.value = await track(options.key ?? "live", () =>
         api.send<LiveStateDto>(`${assemblyUrl.value}/live-state`, {
           method: "PUT",
           body,
@@ -535,30 +648,90 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   }
 
   /**
-   * Puts an amendment under debate from its card. Debating shows it on the
-   * projection, so one that is validated but not public yet asks first:
-   * whoever can publish it makes it public and debates it in one go; the
-   * rest of the Mesa is warned that the room will see it.
+   * Puts an amendment under debate from its card, its row or "Siguiente".
+   * Debating shows it on the projection, and the projection shows only
+   * public amendments (the server answers 409 otherwise):
+   * - one that is validated but private asks first, and whoever can publish
+   *   it makes it public and debates it in one go;
+   * - anyone else is told the Secretaría has to publish it, and nothing is
+   *   sent.
+   * Moving the debate to another document than the one the room follows
+   * asks first too: the projection and every attendee move with it.
    */
   async function requestDebate(amendment: AmendmentDto): Promise<boolean> {
-    if (!isSessionUnpublished(amendment)) return debateAmendment(amendment);
-    const publish = isSessionPublishable(amendment);
-    const confirmed = await confirm({
-      title: t("session.debateConfirm.title", { code: label(amendment.id) }),
-      description: t("session.debateConfirm.description"),
-      confirmLabel: publish
-        ? t("session.debateConfirm.publishAndDebate")
-        : t("session.debateConfirm.debateAnyway"),
-      confirmIcon: publish ? "i-lucide-eye" : "i-lucide-radio",
-      confirmColor: publish ? "primary" : "warning",
-    });
-    if (!confirmed) return false;
-    if (publish && !(await publishAmendments([amendment.id]))) return false;
-    return debateAmendment(byId.value.get(amendment.id) ?? amendment);
+    const fresh = byId.value.get(amendment.id) ?? amendment;
+    const code = label(fresh.id);
+    const isPrivate = fresh.publishedAt === null;
+    if (isPrivate && !isSessionPublishable(fresh)) {
+      toast.add({
+        id: `session-debate-private-${fresh.id}`,
+        title: t("session.debateConfirm.needsPublish", { code }),
+        color: "info",
+        icon: "i-lucide-eye-off",
+      });
+      return false;
+    }
+    const liveDocument = liveState.value?.documentId ?? null;
+    const otherDocument =
+      liveDocument !== null && liveDocument !== fresh.documentId;
+    const moveHint = otherDocument
+      ? t("session.debateConfirm.otherDocument")
+      : null;
+    if (isPrivate) {
+      const confirmed = await confirm({
+        title: t("session.debateConfirm.title", { code }),
+        description: [t("session.debateConfirm.description"), moveHint]
+          .filter(Boolean)
+          .join(" "),
+        confirmLabel: t("session.debateConfirm.publishAndDebate"),
+        confirmIcon: "i-lucide-eye",
+      });
+      if (!confirmed) return false;
+      if (!(await publishAmendments([fresh.id]))) return false;
+    } else if (moveHint) {
+      const confirmed = await confirm({
+        title: t("session.debateConfirm.otherDocumentTitle", { code }),
+        description: moveHint,
+        confirmLabel: t("session.debateConfirm.moveDebate"),
+        confirmIcon: "i-lucide-radio",
+      });
+      if (!confirmed) return false;
+    }
+    return debateAmendment(byId.value.get(fresh.id) ?? fresh);
   }
 
   function clearDebatedAmendment(): Promise<boolean> {
     return setLive({ amendmentId: null, voteId: null });
+  }
+
+  /**
+   * "Siguiente": debates the next amendment the Mesa can decide and makes
+   * it the target of the keyboard shortcuts.
+   */
+  async function debateNext(): Promise<boolean> {
+    const next = nextAmendment.value;
+    if (!next) return false;
+    const ok = await requestDebate(next);
+    if (ok) focusedId.value = next.id;
+    return ok;
+  }
+
+  /** Moves the debate to an agenda item and, if it has one, its document. */
+  function debateAgendaTarget(target: SessionAgendaTarget): Promise<boolean> {
+    return target.document
+      ? debateDocument(target.document)
+      : debateAgendaItem(target.row.item.id);
+  }
+
+  /**
+   * Whether attendees see who has the floor and who is next. It holds its
+   * own busy key: flipping it must not hold up the debate buttons.
+   */
+  function setSpeakersVisible(visible: boolean): Promise<boolean> {
+    return setLive(
+      { speakersVisible: visible },
+      { key: SPEAKERS_VISIBLE_BUSY_KEY },
+    );
   }
 
   function setMessage(message: string | null): Promise<boolean> {
@@ -596,6 +769,12 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     targetId: null,
     lapse: [],
     collisions: [],
+  });
+  // Kept here, like every dialog, so anyDialogOpen pauses the shortcuts
+  // while a name is being corrected (focus may be on a button, not a field).
+  const speakerRenameDialog = reactive({
+    open: false,
+    turn: null as SpeakingTurnDto | null,
   });
 
   // The document follows the live state, which another Mesa member can move.
@@ -637,7 +816,8 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       finalVoteDialog.open ||
       finalVoteAnnulDialog.open ||
       assentDialog.open ||
-      lapseDialog.open,
+      lapseDialog.open ||
+      speakerRenameDialog.open,
   );
 
   function openVote(amendment: AmendmentDto): void {
@@ -664,12 +844,19 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     admissionDialog.open = true;
   }
 
+  /** Opens the transactional composer over the sources it can take. */
   function openComposer(sourceIds: string[]): void {
     composer.sourceIds = sourceIds.filter((id) => {
       const amendment = byId.value.get(id);
-      return amendment ? isSessionOpen(amendment) : false;
+      return amendment ? isSessionTransactable(amendment) : false;
     });
     composer.open = true;
+  }
+
+  /** Opens the dialog that corrects the person's name of a speaking turn. */
+  function openSpeakerRename(turn: SpeakingTurnDto): void {
+    speakerRenameDialog.turn = turn;
+    speakerRenameDialog.open = true;
   }
 
   // Outcomes ----------------------------------------------------------------------
@@ -784,18 +971,64 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     return runOutcome(amendment, { action: "vote", vote: input });
   }
 
-  // Withdrawing or lapsing an amendment the Secretaría has not validated
-  // yet is not the Mesa's call: the Secretaría validates it or sends it back.
+  // The outcome endpoint settles only what the Mesa can decide now:
+  // validated and admitted. Nothing is lapsed before the Secretaría
+  // validates it or while the assembly has not agreed to treat it.
   function withdraw(amendment: AmendmentDto) {
     const fresh = byId.value.get(amendment.id) ?? amendment;
-    if (isSessionAwaitingValidation(fresh)) return Promise.resolve(null);
+    if (!isSessionOpen(fresh)) return Promise.resolve(null);
     return runOutcome(amendment, { action: "withdraw" });
   }
 
   function lapse(amendment: AmendmentDto) {
     const fresh = byId.value.get(amendment.id) ?? amendment;
-    if (isSessionAwaitingValidation(fresh)) return Promise.resolve(null);
+    if (!isSessionOpen(fresh)) return Promise.resolve(null);
     return runOutcome(amendment, { action: "lapse" });
+  }
+
+  /**
+   * Withdraws a presented amendment that is not open to a decision yet, on
+   * behalf of whoever presented it (POST .../withdraw: its authors or the
+   * Mesa, until it is decided): a member's transactional the document's
+   * presenter has not approved or turned down, or a late amendment the
+   * assembly has not agreed to treat. Undone from the toast by reopening it.
+   */
+  async function withdrawSubmission(
+    amendment: AmendmentDto,
+  ): Promise<AmendmentDto | null> {
+    const fresh = byId.value.get(amendment.id) ?? amendment;
+    if (fresh.status !== "submitted") return null;
+    try {
+      const updated = await track(fresh.id, () =>
+        api.send<AmendmentDto>(
+          documentApi(`/amendments/${encodeURIComponent(fresh.id)}/withdraw`),
+        ),
+      );
+      upsertAmendment(updated);
+      toast.add({
+        id: `session-outcome-${updated.id}`,
+        title: t("session.toasts.withdrawn", {
+          code: updated.code ?? label(updated.id),
+        }),
+        color: "success",
+        icon: "i-lucide-check",
+        actions: [
+          {
+            label: t("session.actions.undo"),
+            color: "neutral",
+            variant: "outline",
+            onClick: () => {
+              void reopen(updated);
+            },
+          },
+        ],
+      });
+      return updated;
+    } catch (error) {
+      api.notifyError(error, "session.errors.outcome");
+      onConflict(error);
+      return null;
+    }
   }
 
   function reopen(amendment: AmendmentDto) {
@@ -808,7 +1041,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     await track("lapse-many", async () => {
       for (const id of ids) {
         const amendment = byId.value.get(id);
-        if (!amendment || !isSessionUndecided(amendment)) continue;
+        if (!amendment || !isSessionOpen(amendment)) continue;
         const result = await runOutcome(
           amendment,
           { action: "lapse" },
@@ -1271,7 +1504,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     relations,
     byId,
     base,
+    presenterId,
     label,
+    stageOf,
+    isProponentRejected,
     // derived
     hideDecided,
     queue,
@@ -1282,12 +1518,20 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     finalVoteBlockers,
     preview,
     assentPlan,
+    finalVoteReasons,
     focusedId,
     focused,
     moveFocus,
+    // under debate
+    showingLiveDocument,
+    debatedAmendment,
+    nextAmendment,
+    nextAgendaTarget,
+    followLive,
     // live
     connected,
     polling,
+    connection,
     refreshAll,
     refreshAmendments,
     refreshDocument,
@@ -1299,7 +1543,12 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     debateAmendment,
     requestDebate,
     clearDebatedAmendment,
+    debateNext,
+    debateAgendaTarget,
     setMessage,
+    setSpeakersVisible,
+    // speaking turns
+    speakers,
     // dialogs
     voteDialog,
     relationDialog,
@@ -1309,16 +1558,19 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     finalVoteAnnulDialog,
     assentDialog,
     lapseDialog,
+    speakerRenameDialog,
     anyDialogOpen,
     confirm,
     openVote,
     openRelation,
     openAdmission,
     openComposer,
+    openSpeakerRename,
     // mutations
     approve,
     vote,
     withdraw,
+    withdrawSubmission,
     lapse,
     reopen,
     lapseMany,

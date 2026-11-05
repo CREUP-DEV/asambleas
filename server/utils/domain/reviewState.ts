@@ -1,5 +1,8 @@
 import type {
+  AcceptanceDecision,
+  AcceptanceRole,
   AdmissionStatus,
+  AmendmentKind,
   AmendmentStatus,
 } from "~~/shared/constants/domain";
 import type { AmendmentReviewState } from "~~/shared/types/api";
@@ -15,12 +18,57 @@ export interface AmendmentReviewFields {
   validatedAt: Date | null;
   publishedAt: Date | null;
   correctionRequestedAt: Date | null;
+  /**
+   * For a transactional, the answer of the document's presenter
+   * (proponentApproval). Null or absent when no approval is needed.
+   */
+  proponentApproval?: AcceptanceDecision | null;
+}
+
+/**
+ * The answer of the document's presenter to a transactional: the acceptance
+ * row of the document's proponent member, whatever its role (when the
+ * presenter also wrote a source, buildAcceptanceParties keeps a single row
+ * with the role "author"). Null for other kinds, for documents without a
+ * presenter and when the presenter is not a party.
+ */
+export function proponentApproval(
+  amendment: {
+    kind: AmendmentKind;
+    acceptances: { memberId: string; decision: AcceptanceDecision }[];
+  },
+  proponentMemberId: string | null,
+): AcceptanceDecision | null {
+  if (amendment.kind !== "transactional" || !proponentMemberId) return null;
+  return (
+    amendment.acceptances.find(
+      (acceptance) => acceptance.memberId === proponentMemberId,
+    )?.decision ?? null
+  );
+}
+
+/**
+ * The role an acceptance row shows in AcceptanceDto: "proponent" for the
+ * row of the document's presenter, also when it wrote one of the sources
+ * (its single stored row then has the role "author"), so clients find the
+ * presenter's answer by role; the stored role otherwise.
+ */
+export function partyRole(
+  acceptance: { memberId: string; role: AcceptanceRole },
+  proponentMemberId: string | null,
+): AcceptanceRole {
+  return proponentMemberId !== null && acceptance.memberId === proponentMemberId
+    ? "proponent"
+    : acceptance.role;
 }
 
 /**
  * Where an amendment stands for its authors and the Secretaría
  * (AmendmentReviewState). A draft is "correction_requested" only when the
  * Secretaría sent it back; a draft never presented has no review state.
+ * A transactional presented by a member waits for the document's presenter
+ * ("pending_proponent") before the Secretaría checks it, and stays there if
+ * the presenter rejects it (the rejection shows in its acceptances).
  * An amendment settled before the Secretaría got to it (withdrawn, lapsed or
  * inadmissible without validation, or withdrawn after a private validation)
  * waits for nothing, so it has no review state either.
@@ -32,16 +80,83 @@ export function amendmentReviewState(
     return row.correctionRequestedAt ? "correction_requested" : null;
   }
   if (row.publishedAt) return "published";
+  if (awaitsProponent(row)) return "pending_proponent";
   if (awaitsValidation(row)) return "pending_validation";
   if (awaitsPublication(row)) return "validated";
   return null;
 }
 
-/** Presented and not checked yet: the Secretaría validates it or asks for a correction. */
-export function awaitsValidation(
-  row: Pick<AmendmentReviewFields, "status" | "validatedAt">,
+/**
+ * A transactional presented by a member that the document's presenter has
+ * not approved (still pending, or rejected): the Secretaría does not check
+ * it until the presenter accepts it. One the Mesa presents is validated at
+ * once, so it never waits here.
+ */
+export function awaitsProponent(
+  row: Pick<
+    AmendmentReviewFields,
+    "status" | "validatedAt" | "proponentApproval"
+  >,
 ): boolean {
-  return row.status === "submitted" && row.validatedAt === null;
+  return (
+    row.status === "submitted" &&
+    row.validatedAt === null &&
+    (row.proponentApproval === "pending" ||
+      row.proponentApproval === "rejected")
+  );
+}
+
+/**
+ * Presented and not checked yet: the Secretaría validates it or asks for a
+ * correction. A transactional still waiting for the presenter's approval
+ * (awaitsProponent) is not its turn yet.
+ */
+export function awaitsValidation(
+  row: Pick<
+    AmendmentReviewFields,
+    "status" | "validatedAt" | "proponentApproval"
+  >,
+): boolean {
+  return (
+    row.status === "submitted" &&
+    row.validatedAt === null &&
+    !awaitsProponent(row)
+  );
+}
+
+/**
+ * A transactional proposed by a member whose presenter has not answered yet
+ * (proponentApproval "pending"). The validation inbox lists it, read only,
+ * so the Secretaría sees what is about to reach it; one the presenter
+ * rejected waits for nobody but its proposer, so it is left out.
+ */
+export function awaitsProponentAnswer(
+  row: Pick<
+    AmendmentReviewFields,
+    "status" | "validatedAt" | "proponentApproval"
+  >,
+): boolean {
+  return awaitsProponent(row) && row.proponentApproval === "pending";
+}
+
+/**
+ * Presented after its deadline and validated by the Secretaría, published
+ * or not, while the assembly has not decided whether to treat it
+ * (admission still pending): the Secretaría or the Mesa records that
+ * decision (POST .../amendments/admission).
+ */
+export function awaitsAssemblyDecision(row: {
+  status: AmendmentStatus;
+  late: boolean;
+  admission: AdmissionStatus;
+  validatedAt: Date | null;
+}): boolean {
+  return (
+    row.late &&
+    row.admission === "pending" &&
+    row.status === "submitted" &&
+    row.validatedAt !== null
+  );
 }
 
 /**
@@ -56,8 +171,10 @@ export const SETTLED_PRIVATE_STATUSES: readonly AmendmentStatus[] = [
 ];
 
 /**
- * Validated, not visible to everyone yet, and still relevant to the debate:
- * what the validation inbox and the home page list as "to publish".
+ * Validated, not visible to everyone yet, and still relevant to the debate.
+ * The validation inbox lists these as "to publish", except the late ones
+ * still waiting for the assembly's decision (awaitsAssemblyDecision), which
+ * it lists with the late ones; the home page counts them the same way.
  */
 export function awaitsPublication(
   row: Pick<AmendmentReviewFields, "status" | "validatedAt" | "publishedAt">,
@@ -117,7 +234,9 @@ export function admissionNeedsValidation(
  * Why an amendment cannot be grouped into (or absorbed by) a transactional,
  * or null when it can: it must be presented, admitted and undecided. Under
  * the Secretaría's validation the usual reason is an amendment still waiting
- * for it, or a late one still waiting for the Mesa's admission.
+ * for it, or a late one still waiting for the assembly to decide whether it
+ * is treated (validated with its admission pending: an on-time amendment is
+ * admitted by its validation).
  */
 export function unopenSourceReason(row: {
   status: AmendmentStatus;
@@ -142,7 +261,7 @@ export const UNOPEN_SOURCE_MESSAGES: Record<
   not_validated:
     "Alguna de las enmiendas que agrupa todavía no está validada por la Secretaría",
   not_admitted:
-    "Alguna de las enmiendas que agrupa todavía no está admitida por la Mesa",
+    "Alguna de las enmiendas que agrupa está fuera de plazo y la asamblea todavía no ha decidido si se trata",
   decided: "Alguna de las enmiendas de origen ya está decidida",
 };
 
@@ -159,6 +278,93 @@ export function unopenSourcesMessage(
     if (reasons.has(reason)) return UNOPEN_SOURCE_MESSAGES[reason];
   }
   return null;
+}
+
+/**
+ * Why an amendment cannot be a direct source of a new transactional, or
+ * null when it can: on top of being open (unopenSourceReason), it must be
+ * published, since a transactional builds on what everyone can read.
+ * Publication is never undone, so the check holds once passed.
+ */
+export function transactionalSourceReason(row: {
+  status: AmendmentStatus;
+  admission: AdmissionStatus;
+  validatedAt: Date | null;
+  decidedAt: Date | null;
+  publishedAt: Date | null;
+}): "not_validated" | "not_admitted" | "not_published" | "decided" | null {
+  return unopenSourceReason(row) ?? (row.publishedAt ? null : "not_published");
+}
+
+/** Messages for transactionalSourceReason. */
+export const TRANSACTIONAL_SOURCE_MESSAGES: Record<
+  NonNullable<ReturnType<typeof transactionalSourceReason>>,
+  string
+> = {
+  ...UNOPEN_SOURCE_MESSAGES,
+  not_published:
+    "Alguna de las enmiendas que agrupa todavía no está publicada por la Secretaría",
+};
+
+/**
+ * The message for the direct sources of a new transactional that cannot all
+ * be grouped, or null when they can. As in unopenSourcesMessage, the most
+ * actionable reason wins.
+ */
+export function transactionalSourcesMessage(
+  rows: Parameters<typeof transactionalSourceReason>[0][],
+): string | null {
+  const reasons = new Set(rows.map(transactionalSourceReason));
+  for (const reason of [
+    "not_validated",
+    "not_admitted",
+    "not_published",
+    "decided",
+  ] as const) {
+    if (reasons.has(reason)) return TRANSACTIONAL_SOURCE_MESSAGES[reason];
+  }
+  return null;
+}
+
+/**
+ * What the presenter of a published document still has to answer (its
+ * review mode, MeWorkProponentDto), over the amendments it can see:
+ * - `positionsPending`: presented, undecided amendments without a position
+ *   yet, once the Secretaría checked them (validated or published; one
+ *   still "pending_validation" is not the presenter's turn yet, as in its
+ *   review mode). Transactionals are left out: the presenter answers them
+ *   with its acceptance;
+ * - `transactionalsToApprove`: presented transactionals whose acceptance by
+ *   the presenter (proponentApproval) is still pending.
+ */
+export function countProponentWork(
+  rows: {
+    kind: AmendmentKind;
+    status: AmendmentStatus;
+    validatedAt: Date | null;
+    publishedAt: Date | null;
+    /** The presenter's position, null when there is no position row. */
+    position: string | null;
+    acceptances: { memberId: string; decision: AcceptanceDecision }[];
+  }[],
+  proponentMemberId: string,
+): { positionsPending: number; transactionalsToApprove: number } {
+  let positionsPending = 0;
+  let transactionalsToApprove = 0;
+  for (const row of rows) {
+    if (row.status !== "submitted") continue;
+    if (row.kind === "transactional") {
+      if (proponentApproval(row, proponentMemberId) === "pending") {
+        transactionalsToApprove += 1;
+      }
+    } else if (row.validatedAt === null && row.publishedAt === null) {
+      // Still waiting for the Secretaría ("pending_validation").
+      continue;
+    } else if (row.position === null || row.position === "pending") {
+      positionsPending += 1;
+    }
+  }
+  return { positionsPending, transactionalsToApprove };
 }
 
 /**

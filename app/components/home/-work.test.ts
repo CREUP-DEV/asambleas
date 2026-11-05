@@ -5,6 +5,7 @@ import type {
   MeWorkAssemblyRef,
   MeWorkDocumentDto,
   MeWorkDto,
+  MeWorkProponentDto,
   MeWorkReviewDto,
 } from "~~/shared/types/api";
 import {
@@ -12,6 +13,7 @@ import {
   homeWorkDocumentTask,
   homeWorkAmendmentQuery,
   homeWorkForAssembly,
+  homeWorkProponentCounts,
   homeWorkReviewPending,
   homeWorkReviewTotal,
   homeWorkTasks,
@@ -82,6 +84,18 @@ const review = (over: Partial<MeWorkReviewDto> = {}): MeWorkReviewDto => ({
   ...over,
 });
 
+const presents = (
+  id: string,
+  over: Partial<MeWorkProponentDto> = {},
+  assembly = ago,
+): MeWorkProponentDto => ({
+  assembly,
+  document: { id, slug: id, title: id.toUpperCase() },
+  positionsPending: 0,
+  transactionalsToApprove: 0,
+  ...over,
+});
+
 describe("home work", () => {
   it("classifies documents", () => {
     expect(homeWorkDocumentTask(doc("a", { hasContent: false }))).toBe(
@@ -147,11 +161,22 @@ describe("home work", () => {
         amend("waiting", { reviewState: "pending_validation" }),
       ],
       review: [],
+      proponent: [
+        presents("positions", { positionsPending: 3 }),
+        presents("done"),
+        presents("transact", {
+          positionsPending: 1,
+          transactionalsToApprove: 2,
+        }),
+      ],
     };
     const tasks = homeWorkTasks(work, NOW);
     expect(tasks.map((task) => task.key)).toEqual([
       "document-fix",
       "amendment-fixme",
+      // Transactionals waiting for approval hold up the debate.
+      "proponent-transact",
+      "proponent-positions",
       "document-late",
       "document-soon",
       "document-later",
@@ -177,6 +202,24 @@ describe("home work", () => {
     });
     // Notes are only carried by corrections.
     expect(byKey.get("document-nodue")?.note).toBe(null);
+    expect(byKey.get("proponent-transact")).toMatchObject({
+      kind: "proponent_review",
+      target: "review",
+      amendment: null,
+      counts: { positions: 1, transactionals: 2 },
+      document: { id: "transact", slug: "transact", title: "TRANSACT" },
+    });
+    expect(byKey.get("document-late")?.counts).toBe(null);
+  });
+
+  it("counts what waits for the presenter", () => {
+    expect(homeWorkProponentCounts(presents("a"))).toBe(null);
+    expect(
+      homeWorkProponentCounts(presents("a", { positionsPending: 2 })),
+    ).toEqual({ positions: 2, transactionals: 0 });
+    expect(
+      homeWorkProponentCounts(presents("a", { transactionalsToApprove: 1 })),
+    ).toEqual({ positions: 0, transactionals: 1 });
   });
 
   it("says where the rest stands", () => {
@@ -195,6 +238,7 @@ describe("home work", () => {
         amend("e5", { status: "inadmissible", reviewState: "published" }),
       ],
       review: [],
+      proponent: [presents("pub")],
     };
     expect(
       homeWorkUpdates(work).map((update) => [update.key, update.kind]),
@@ -207,6 +251,13 @@ describe("home work", () => {
       ["amendment-e3", "amendment_published"],
       ["amendment-e5", "amendment_other"],
     ]);
+    // With amendments to answer, the published document is a task instead.
+    expect(
+      homeWorkUpdates({
+        ...work,
+        proponent: [presents("pub", { positionsPending: 4 })],
+      }).map((update) => update.key),
+    ).not.toContain("document-pub");
   });
 
   it("summarises the Secretaría's pending review", () => {
@@ -222,11 +273,16 @@ describe("home work", () => {
       documents: [doc("a"), doc("b", {}, age)],
       amendments: [amend("e", {}, age)],
       review: [review(), review({ assembly: age, amendmentsToPublish: 1 })],
+      proponent: [
+        presents("p1", { positionsPending: 1 }),
+        presents("p2", { positionsPending: 1 }, age),
+      ],
     };
     const ours = homeWorkForAssembly(work, "s1");
     expect(ours.documents.map((entry) => entry.document.id)).toEqual(["a"]);
     expect(ours.amendments).toEqual([]);
     expect(ours.review.map((entry) => entry.assembly.id)).toEqual(["s1"]);
+    expect(ours.proponent.map((entry) => entry.document.id)).toEqual(["p1"]);
   });
 
   it("opens the amendment a task or update is about", () => {

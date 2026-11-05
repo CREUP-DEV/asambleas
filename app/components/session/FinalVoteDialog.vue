@@ -68,7 +68,27 @@ watch(
 const undecided = computed(() => session.undecided.value);
 /** Every amendment still open, split by who has to act (server ids too). */
 const blockers = computed(() =>
-  sessionFinalVoteBlockers(session.amendments.value, serverUndecided.value),
+  sessionFinalVoteBlockers(
+    session.amendments.value,
+    serverUndecided.value,
+    session.presenterId.value,
+  ),
+);
+/**
+ * Members' transactionals the document's presenter has not approved yet,
+ * or turned down (to be withdrawn): the final vote waits for them too.
+ */
+const proponentBlockers = computed(() =>
+  [
+    {
+      key: "session.preview.awaitingProponent",
+      ids: blockers.value.awaitingProponent,
+    },
+    {
+      key: "session.preview.proponentRejected",
+      ids: blockers.value.proponentRejected,
+    },
+  ].filter((group) => group.ids.length > 0),
 );
 const conflicts = computed(() =>
   serverConflicts.value.length > 0
@@ -193,6 +213,15 @@ async function record(): Promise<void> {
           :description="
             blockers.awaitingValidation.map(session.label).join(', ')
           "
+        />
+        <UAlert
+          v-for="group in proponentBlockers"
+          :key="group.key"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-user-round-check"
+          :title="t(group.key, { count: group.ids.length }, group.ids.length)"
+          :description="group.ids.map(session.label).join(', ')"
         />
         <UAlert
           v-if="conflicts.length > 0"

@@ -4,9 +4,11 @@ import { assemblyPath } from "./Navigation.vue";
 
 /**
  * Slim floating banner shown while any assembly the user can see is in
- * session, linking to it. It floats out of the layout flow so it never
- * shrinks the dashboard panels, and it is hidden inside that assembly.
- * Dismissing it hides it until another assembly goes into session.
+ * session, linking to its live view ("En directo"; the list of those in
+ * session when there are several). It floats out of the layout flow so it
+ * never shrinks the dashboard panels, and it is hidden inside that
+ * assembly, whose menu leads to the live view. Dismissing it hides it until
+ * another assembly goes into session.
  */
 const REFRESH_THROTTLE_MS = 30_000;
 
@@ -53,7 +55,7 @@ const single = computed(() =>
 
 const target = computed(() =>
   single.value
-    ? localePath(assemblyPath(single.value.slug))
+    ? localePath(assemblyPath(single.value.slug, "live"))
     : localePath({
         path: "/asambleas",
         query: { status: "in_session" },
