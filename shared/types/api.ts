@@ -6,6 +6,7 @@ import type { AssemblyType } from "../constants/assemblyTypes";
 import type {
   AcceptanceDecision,
   AcceptanceRole,
+  SpeakingTurnStatus,
   AdmissionStatus,
   AmendmentKind,
   AmendmentStatus,
@@ -423,6 +424,8 @@ export interface AmendmentCapabilities {
 
 /**
  * Where an amendment stands for its authors and the Secretaría:
+ * - "pending_proponent": a transactional proposed by a member, waiting for
+ *   the document's presenter to approve it before the Secretaría checks it;
  * - "pending_validation": presented, the Secretaría has not checked it;
  * - "correction_requested": back to draft with a note to fix;
  * - "validated": checked but not visible to everyone yet, and still relevant
@@ -432,7 +435,11 @@ export interface AmendmentCapabilities {
  * while private (withdrawn, lapsed or inadmissible before being published).
  */
 export type AmendmentReviewState =
-  "pending_validation" | "correction_requested" | "validated" | "published";
+  | "pending_proponent"
+  | "pending_validation"
+  | "correction_requested"
+  | "validated"
+  | "published";
 
 export interface AmendmentDto {
   id: string;
@@ -664,6 +671,8 @@ export interface LiveStateDto {
   amendmentId: string | null;
   vote: VoteDto | null;
   message: string | null;
+  /** Attendees see who has the floor and who is next. */
+  speakersVisible: boolean;
   updatedAt: IsoDate | null;
 }
 
@@ -673,6 +682,56 @@ export interface LiveStateBody {
   amendmentId?: string | null;
   voteId?: string | null;
   message?: string | null;
+  speakersVisible?: boolean;
+}
+
+// Speaking turns -----------------------------------------------------------
+
+/** A request to speak written down by the Mesa. */
+export interface SpeakingTurnDto {
+  id: string;
+  /** Who speaks for: a council, sectorial or CEA area. */
+  member: MemberRef | null;
+  /** The person's name, when the Mesa wrote it. */
+  speaker: string | null;
+  agendaItemId: string | null;
+  status: SpeakingTurnStatus;
+  position: number;
+  startedAt: IsoDate | null;
+  endedAt: IsoDate | null;
+  createdAt: IsoDate;
+  updatedAt: IsoDate;
+}
+
+/**
+ * GET /api/assemblies/[assembly]/speakers. The Mesa (session:moderate) gets
+ * every turn of the current agenda item and the waiting ones; anyone else
+ * gets the speaking and waiting turns only while `visible` is true, and an
+ * empty list otherwise.
+ */
+export interface SpeakersDto {
+  visible: boolean;
+  turns: SpeakingTurnDto[];
+}
+
+/** POST /api/assemblies/[assembly]/speakers (session:moderate): add to the queue. */
+export interface SpeakingTurnBody {
+  memberId?: string | null;
+  speaker?: string | null;
+  /** Defaults to the agenda item in debate (live state). */
+  agendaItemId?: string | null;
+}
+
+/**
+ * PUT /api/assemblies/[assembly]/speakers/[turn] (session:moderate).
+ * Setting status "speaking" ends the turn that was speaking ("done").
+ * `position` reorders the waiting queue. Returns SpeakersDto.
+ */
+export interface SpeakingTurnUpdateBody {
+  status?: SpeakingTurnStatus;
+  position?: number;
+  speaker?: string | null;
+  updatedAt: IsoDate;
 }
 
 export interface EventDto {

@@ -53,6 +53,34 @@ export const rolePermissions = pgTable(
   ],
 );
 
+/**
+ * Permissions granted to one user on top of their role, so a person can get
+ * a single extra capability without a new role. Revoking is done by removing
+ * the row; role permissions are never subtracted.
+ */
+export const userPermissions = pgTable(
+  "user_permissions",
+  {
+    id: text("id").primaryKey().$defaultFn(cuid),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    permissionId: text("permission_id")
+      .notNull()
+      .references(() => permissions.id, { onDelete: "cascade" }),
+    grantedByUserId: text("granted_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    unique().on(table.userId, table.permissionId),
+    index("idx_user_permissions_user_id").on(table.userId),
+  ],
+);
+
 export const rolesRelations = relations(roles, ({ many }) => ({
   users: many(users),
   rolePermissions: many(rolePermissions),

@@ -8,6 +8,7 @@ import {
   index,
   jsonb,
   uniqueIndex,
+  boolean,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { cuid } from "./common";
@@ -110,6 +111,8 @@ export const liveState = pgTable("live_state", {
   amendmentId: text("amendment_id"),
   voteId: text("vote_id"),
   message: text("message"),
+  /** The Mesa shows who has the floor (and who is next) to attendees. */
+  speakersVisible: boolean("speakers_visible").notNull().default(false),
   updatedByUserId: text("updated_by_user_id").references(() => users.id, {
     onDelete: "set null",
   }),

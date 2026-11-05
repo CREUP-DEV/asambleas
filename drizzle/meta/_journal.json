@@ -57,6 +57,13 @@
       "when": 1793839458305,
       "tag": "0007_narrow_dreaming_celestial",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793870211466,
+      "tag": "0008_remarkable_stature",
+      "breakpoints": true
     }
   ]
 }

@@ -7,9 +7,11 @@ import {
   index,
   jsonb,
 } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 import { cuid } from "./common";
 import { users } from "./auth";
 import { members } from "./member";
+import { agendaItems } from "./agendaItem";
 import { assemblies } from "./assembly";
 import {
   DECISION_KINDS,
@@ -17,6 +19,7 @@ import {
   VOTE_METHODS,
   VOTE_RESULTS,
   VOTE_SUBJECTS,
+  SPEAKING_TURN_STATUSES,
 } from "../../../shared/constants/domain";
 import { majorityEnum } from "./document";
 
@@ -24,6 +27,10 @@ export const voteMethodEnum = pgEnum("vote_method", VOTE_METHODS);
 export const voteResultEnum = pgEnum("vote_result", VOTE_RESULTS);
 export const voteSubjectEnum = pgEnum("vote_subject", VOTE_SUBJECTS);
 export const decisionKindEnum = pgEnum("decision_kind", DECISION_KINDS);
+export const speakingTurnStatusEnum = pgEnum(
+  "speaking_turn_status",
+  SPEAKING_TURN_STATUSES,
+);
 export const decisionMethodEnum = pgEnum("decision_method", DECISION_METHODS);
 
 /** A vote recorded by the Mesa: counts, majority and the computed result. */
@@ -116,5 +123,45 @@ export const events = pgTable(
   (table) => [
     index("idx_events_entity").on(table.entityType, table.entityId),
     index("idx_events_assembly_created").on(table.assemblyId, table.createdAt),
+  ],
+);
+
+/**
+ * Requests to speak the Mesa writes down during the session, in order. A
+ * turn belongs to a member (who speaks for it) and, optionally, to the
+ * agenda item being debated; `speaker` is the person's name when known.
+ */
+export const speakingTurns = pgTable(
+  "speaking_turns",
+  {
+    id: text("id").primaryKey().$defaultFn(cuid),
+    assemblyId: text("assembly_id")
+      .notNull()
+      .references(() => assemblies.id, { onDelete: "cascade" }),
+    agendaItemId: text("agenda_item_id").references(() => agendaItems.id, {
+      onDelete: "set null",
+    }),
+    memberId: text("member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    speaker: text("speaker"),
+    status: speakingTurnStatusEnum("status").notNull().default("waiting"),
+    /** Queue position among waiting turns; lower speaks first. */
+    position: integer("position").notNull().default(0),
+    startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),
+    endedAt: timestamp("ended_at", { withTimezone: true, mode: "date" }),
+    createdByUserId: text("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => sql`now()`),
+  },
+  (table) => [
+    index("idx_speaking_turns_assembly").on(table.assemblyId, table.status),
   ],
 );
