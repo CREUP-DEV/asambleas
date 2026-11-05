@@ -81,6 +81,17 @@ export interface MeWorkDto {
   amendments: MeWorkAmendmentDto[];
   /** For the Secretaría (document:manage / amendment:review): items waiting for it. */
   review: MeWorkReviewDto[];
+  /** Published documents the user's member presents with amendments to answer. */
+  proponent: MeWorkProponentDto[];
+}
+
+export interface MeWorkProponentDto {
+  assembly: MeWorkAssemblyRef;
+  document: { id: string; slug: string; title: string };
+  /** Undecided amendments with no position from the presenter yet. */
+  positionsPending: number;
+  /** Transactionals waiting for the presenter's approval. */
+  transactionalsToApprove: number;
 }
 
 export interface MeWorkAssemblyRef {
