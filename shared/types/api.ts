@@ -6,6 +6,7 @@ import type { AssemblyType } from "../constants/assemblyTypes";
 import type {
   AcceptanceDecision,
   AcceptanceRole,
+  AcceptedAmendmentRule,
   SpeakingTurnStatus,
   AdmissionStatus,
   AmendmentKind,
@@ -83,15 +84,46 @@ export interface MeWorkDto {
   review: MeWorkReviewDto[];
   /** Published documents the user's member presents with amendments to answer. */
   proponent: MeWorkProponentDto[];
+  /** Transactionals waiting for the user's member's answer. */
+  acceptances: MeWorkAcceptanceDto[];
+  /** Recent decisions others took on the member's documents and amendments. */
+  news: MeWorkNewsDto[];
 }
 
 export interface MeWorkProponentDto {
   assembly: MeWorkAssemblyRef;
   document: { id: string; slug: string; title: string };
-  /** Undecided amendments with no position from the presenter yet. */
+  /** Undecided amendments with no position from the main presenter yet. */
   positionsPending: number;
-  /** Transactionals waiting for the presenter's approval. */
-  transactionalsToApprove: number;
+}
+
+/** A transactional waiting for the user's member to accept or reject it. */
+export interface MeWorkAcceptanceDto {
+  assembly: MeWorkAssemblyRef;
+  document: { id: string; slug: string; title: string };
+  transactional: { id: string; code: string | null };
+  /** The user's amendments it would replace. */
+  replaces: { id: string; code: string | null }[];
+}
+
+/**
+ * Something decided about the user's member's work by someone else: the
+ * main presenter answering an amendment to a document the member co-presents,
+ * a main author answering a transactional over an amendment the member
+ * co-authored, and the Secretaría or the assembly settling them.
+ */
+export interface MeWorkNewsDto {
+  id: string;
+  assembly: MeWorkAssemblyRef;
+  document: { id: string; slug: string; title: string };
+  amendment: { id: string; code: string | null } | null;
+  /** The event type (position_changed, acceptance_recorded, amendment_validated...). */
+  type: string;
+  /** Who decided: the member acting, when there is one. */
+  by: MemberRef | null;
+  /** The decision in short: the position, the acceptance decision, the status. */
+  value: string | null;
+  at: IsoDate;
 }
 
 export interface MeWorkAssemblyRef {
@@ -114,6 +146,8 @@ export interface MeWorkAmendmentDto {
     status: AmendmentStatus;
     reviewState: AmendmentReviewState | null;
     correctionNote: string | null;
+    late: boolean;
+    admission: AdmissionStatus;
     updatedAt: IsoDate;
   };
 }
@@ -276,8 +310,13 @@ export interface DocumentSummaryDto {
   title: string;
   reference: string | null;
   status: DocumentStatus;
+  /** The main presenter: it answers the amendments to the document. */
   proponent: MemberRef | null;
+  /** Members presenting it jointly with the main presenter. */
+  coProponents: MemberRef[];
   amendable: boolean;
+  /** What an amendment the main presenter accepts becomes. */
+  acceptedAmendments: AcceptedAmendmentRule;
   voted: boolean;
   majority: Majority;
   amendmentCount: number;
@@ -355,9 +394,13 @@ export interface DocumentCreateBody {
   format: DocumentFormat;
   title: string;
   summary?: string | null;
+  /** Main presenter. Required when there are co-presenters. */
   proponentMemberId?: string | null;
+  /** Members presenting it jointly (never the main presenter). */
+  coProponentMemberIds?: string[];
   /** Defaults come from the kind. */
   amendable?: boolean;
+  acceptedAmendments?: AcceptedAmendmentRule;
   voted?: boolean;
   majority?: Majority;
   blocks?: Block[];
@@ -371,9 +414,11 @@ export interface DocumentUpdateBody {
   kind?: DocumentKind;
   agendaItemId?: string;
   proponentMemberId?: string | null;
+  coProponentMemberIds?: string[];
   amendable?: boolean;
   voted?: boolean;
   majority?: Majority;
+  acceptedAmendments?: AcceptedAmendmentRule;
   amendmentsOpenAt?: IsoDate | null;
   amendmentsCloseAt?: IsoDate | null;
   /** Managers only. */
@@ -435,8 +480,8 @@ export interface AmendmentCapabilities {
 
 /**
  * Where an amendment stands for its authors and the Secretaría:
- * - "pending_proponent": a transactional proposed by a member, waiting for
- *   the document's presenter to approve it before the Secretaría checks it;
+ * - "pending_authors": a transactional waiting for the main author of each
+ *   amendment it would replace to accept it, before the Secretaría checks it;
  * - "pending_validation": presented, the Secretaría has not checked it;
  * - "correction_requested": back to draft with a note to fix;
  * - "validated": checked but not visible to everyone yet, and still relevant
@@ -446,7 +491,7 @@ export interface AmendmentCapabilities {
  * while private (withdrawn, lapsed or inadmissible before being published).
  */
 export type AmendmentReviewState =
-  | "pending_proponent"
+  | "pending_authors"
   | "pending_validation"
   | "correction_requested"
   | "validated"
@@ -466,7 +511,13 @@ export interface AmendmentDto {
   justification: string;
   positionKey: number;
   changeKinds: ChangeKind[];
+  /** Presenting members, the main author first. */
   authors: MemberRef[];
+  /**
+   * The main author: it answers the transactionals proposed over this
+   * amendment. Required when there are co-authors.
+   */
+  mainAuthorId: string | null;
   submittedAt: IsoDate | null;
   validatedAt: IsoDate | null;
   publishedAt: IsoDate | null;
@@ -509,6 +560,8 @@ export interface AmendmentDraftBody {
   justification: string;
   /** Co-presenting members. The actor's member is always included. */
   authorMemberIds?: string[];
+  /** Main author among the authors; required when there are several. */
+  mainAuthorMemberId?: string | null;
   globalReplace?: { find: string; replace: string } | null;
   /** Moderators may present on behalf of a member (e.g. dictated in session). */
   onBehalfOfMemberId?: string | null;
@@ -524,6 +577,8 @@ export interface TransactionalBody {
   justification: string;
   /** Proposed by these members; defaults to the actor's member. */
   authorMemberIds?: string[];
+  /** Main author among the proposers; required when there are several. */
+  mainAuthorMemberId?: string | null;
   /** Submit right away (typical in session). Default true. */
   submit?: boolean;
 }
@@ -539,6 +594,11 @@ export interface AdmissionBody {
 export interface PositionBody {
   position: ProponentPosition;
   comment?: string | null;
+  /**
+   * PositionDto.updatedAt the client saw (null when there was none), so two
+   * people answering at once get a 409 instead of overwriting each other.
+   */
+  positionUpdatedAt?: IsoDate | null;
 }
 
 export interface AcceptanceBody {

@@ -64,6 +64,13 @@
       "when": 1793870211466,
       "tag": "0008_remarkable_stature",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793875174026,
+      "tag": "0009_thin_wiccan",
+      "breakpoints": true
     }
   ]
 }

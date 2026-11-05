@@ -79,10 +79,19 @@ export type DocumentStatus = (typeof DOCUMENT_STATUSES)[number];
 export const MAJORITIES = ["simple", "absolute", "two_thirds"] as const;
 export type Majority = (typeof MAJORITIES)[number];
 
+/**
+ * What happens to an amendment the document's presenter accepts:
+ * "incorporate" puts it in the text without a vote (regulations), "vote"
+ * leaves it to the assembly like any other.
+ */
+export const ACCEPTED_AMENDMENT_RULES = ["incorporate", "vote"] as const;
+export type AcceptedAmendmentRule = (typeof ACCEPTED_AMENDMENT_RULES)[number];
+
 export interface DocumentKindDefaults {
   amendable: boolean;
   voted: boolean;
   majority: Majority;
+  acceptedAmendments: AcceptedAmendmentRule;
   /** Prefix of the reference assigned on admission, e.g. "RES 012/2026". */
   referencePrefix?: string;
 }
@@ -95,38 +104,97 @@ export const DOCUMENT_KIND_DEFAULTS: Record<
   positioning: {
     amendable: true,
     voted: true,
+    acceptedAmendments: "vote",
     majority: "two_thirds",
     referencePrefix: "PO",
   },
   resolution: {
     amendable: true,
     voted: true,
+    acceptedAmendments: "vote",
     majority: "two_thirds",
     referencePrefix: "RES",
   },
   internal_motion: {
     amendable: true,
     voted: true,
+    acceptedAmendments: "vote",
     majority: "two_thirds",
     referencePrefix: "MI",
   },
   executive_report: {
     amendable: true,
     voted: true,
+    acceptedAmendments: "vote",
     majority: "two_thirds",
     referencePrefix: "IEJ",
   },
-  regulation: { amendable: true, voted: true, majority: "two_thirds" },
-  statutes: { amendable: true, voted: true, majority: "two_thirds" },
-  budget: { amendable: true, voted: true, majority: "simple" },
-  accounts: { amendable: false, voted: true, majority: "simple" },
-  work_plan: { amendable: false, voted: true, majority: "simple" },
-  agreement: { amendable: false, voted: true, majority: "simple" },
-  report: { amendable: false, voted: false, majority: "simple" },
-  minutes: { amendable: false, voted: true, majority: "simple" },
-  candidacy: { amendable: false, voted: true, majority: "simple" },
-  venue: { amendable: false, voted: true, majority: "simple" },
-  other: { amendable: false, voted: false, majority: "simple" },
+  regulation: {
+    amendable: true,
+    voted: true,
+    acceptedAmendments: "incorporate",
+    majority: "two_thirds",
+  },
+  statutes: {
+    amendable: true,
+    voted: true,
+    acceptedAmendments: "vote",
+    majority: "two_thirds",
+  },
+  budget: {
+    amendable: true,
+    voted: true,
+    acceptedAmendments: "vote",
+    majority: "simple",
+  },
+  accounts: {
+    amendable: false,
+    voted: true,
+    acceptedAmendments: "vote",
+    majority: "simple",
+  },
+  work_plan: {
+    amendable: false,
+    voted: true,
+    acceptedAmendments: "vote",
+    majority: "simple",
+  },
+  agreement: {
+    amendable: false,
+    voted: true,
+    acceptedAmendments: "vote",
+    majority: "simple",
+  },
+  report: {
+    amendable: false,
+    voted: false,
+    acceptedAmendments: "vote",
+    majority: "simple",
+  },
+  minutes: {
+    amendable: false,
+    voted: true,
+    acceptedAmendments: "vote",
+    majority: "simple",
+  },
+  candidacy: {
+    amendable: false,
+    voted: true,
+    acceptedAmendments: "vote",
+    majority: "simple",
+  },
+  venue: {
+    amendable: false,
+    voted: true,
+    acceptedAmendments: "vote",
+    majority: "simple",
+  },
+  other: {
+    amendable: false,
+    voted: false,
+    acceptedAmendments: "vote",
+    majority: "simple",
+  },
 };
 
 export const AMENDMENT_KINDS = [
@@ -258,8 +326,6 @@ export type DecisionMethod = (typeof DECISION_METHODS)[number];
 export interface AssemblySettings {
   /** Who sees the proponent's position on each amendment. */
   positionVisibility: "mesa" | "session" | "public";
-  /** Whether amendments accepted by the proponent are incorporated by assent or voted. */
-  acceptedAmendments: "assent" | "vote";
   /** Outcome of a tied vote. */
   tieRule: "rejected" | "repeat";
   /** Denominator for majorities. */
@@ -268,7 +334,6 @@ export interface AssemblySettings {
 
 export const DEFAULT_ASSEMBLY_SETTINGS: AssemblySettings = {
   positionVisibility: "session",
-  acceptedAmendments: "assent",
   tieRule: "rejected",
   denominator: "valid_votes",
 };
