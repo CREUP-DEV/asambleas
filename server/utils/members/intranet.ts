@@ -156,8 +156,8 @@ export function isIntranetAuthenticated(): boolean {
  * does not exist: a token is set and the lookup goes to the intranet the
  * token is for, the origin of NUXT_INTRANET_API_URL (or there is no base,
  * and NUXT_ROLE_API_URL is the only intranet configured). A NUXT_ROLE_API_URL
- * on another origin (a leftover such as the legacy public route or an
- * example host) never receives the token: the lookup is then
+ * on another origin (a leftover such as an example host) never receives the
+ * token: the lookup is then
  * unauthenticated, nobody loses access, and the mismatch is logged once.
  */
 export function isRoleLookupAuthenticated(
@@ -215,8 +215,9 @@ const nullableText = z
 
 /**
  * The 200 answer of the role lookup. `id` is the intranet `users.id`; the
- * legacy public route sends none, so a missing or null `id` is null. Any
- * other key is ignored; a field of the wrong type invalidates the answer.
+ * Intranet always sends it, but a missing or null `id` is read as null so an
+ * older answer never breaks sign-in. Any other key is ignored; a field of the
+ * wrong type invalidates the answer.
  */
 export const intranetRoleResponseSchema = z.object({
   id: intranetIdSchema.nullish().transform((value) => value ?? null),
@@ -243,8 +244,9 @@ export type IntranetLookupFailure =
  *   an authenticated lookup (isRoleLookupAuthenticated) that answered 404 with
  *   exactly `{"error":"not_found"}`, without a redirect, counts;
  * - `failed`: anything else (network error, timeout, any other status, any
- *   other 404 such as an unauthenticated one, a missing route or the legacy
- *   `{"error":"Usuario no encontrado"}`, invalid JSON or payload). It says
+ *   other 404 such as an unauthenticated one or a missing route, including
+ *   the removed public `{"error":"Usuario no encontrado"}`, invalid JSON or
+ *   payload). It says
  *   nothing about the account;
  * - `unconfigured`: no usable role lookup URL (getRoleApiUrl).
  */
