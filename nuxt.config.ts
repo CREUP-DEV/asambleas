@@ -185,9 +185,12 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     siteUrl: siteUrl,
-    roleApiUrl:
-      process.env.NUXT_ROLE_API_URL ||
-      "https://intranet.creup.es/api/user/role",
+    // Not read by the server: the role lookup reads process.env through
+    // getRoleApiUrl (server/utils/members/intranet.ts), which defaults to
+    // `${NUXT_INTRANET_API_URL}/user/role`. Empty by default, never the old
+    // public Intranet route (/api/user/role), which the Intranet closes once
+    // the private group is live (docs/intranet.md, section 8).
+    roleApiUrl: process.env.NUXT_ROLE_API_URL || "",
     initialAdminEmail: process.env.INITIAL_ADMIN_EMAIL || "tic@creup.es",
     appSecret: process.env.APP_SECRET || "",
     googleClientId: process.env.GOOGLE_CLIENT_ID || "",

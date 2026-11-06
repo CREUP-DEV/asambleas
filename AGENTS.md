@@ -53,9 +53,10 @@ The public website lives in a separate `creup/web` repository. This app may mirr
 - App: `http://localhost:3000`
 - PostgreSQL: `localhost:5432`
 - Adminer: `http://localhost:8080`
-- Intranet API base: `NUXT_INTRANET_API_URL` (role sync falls back to `${base}/user/role`; members from `/usuarios/asociados` and `/usuarios/sectoriales`)
-- Intranet API token: `NUXT_INTRANET_API_TOKEN`, sent as `Authorization: Bearer <token>` on every intranet call when set; never log it
-- Role sync env var: `NUXT_ROLE_API_URL`
+- Intranet API base: `NUXT_INTRANET_API_URL` (role sync falls back to `${base}/user/role`; members from `/usuarios/asociados` and `/usuarios/sectoriales`). In production only `https:`, or `http:` to a host with no dot such as `http://intranet`; anything else counts as unset (`isIntranetUrlAllowed`)
+- Intranet API token: `NUXT_INTRANET_API_TOKEN`, sent as `Authorization: Bearer <token>` on every intranet call when set; never log it. Without it nobody ever loses access
+- Role sync env var: `NUXT_ROLE_API_URL`, an optional override of `${base}/user/role`; normally unset. On another origin than the base it never receives the token (`isRoleLookupAuthenticated`)
+- Daily roster sync: `NUXT_INTRANET_ROSTER_SYNC` (only `false` turns it off; needs `NUXT_INTRANET_API_URL`). The daily access re-check does not depend on it
 - Export storage env var: `EXPORT_STORAGE_DIR`
 
 ## Repository Map
@@ -72,7 +73,7 @@ server/
   api/              Nitro endpoints
   db/               Drizzle client and schema
   handlers/         global auth/CSRF middleware
-  plugins/          export worker and live updates hub
+  plugins/          export worker, daily intranet jobs and live updates hub
   utils/            auth, RBAC, domain (actor, visibility, events, resolvers), live, export and CRUD helpers
 shared/
   constants/        roles, permissions, domain enums and security constants
@@ -101,24 +102,32 @@ server/assets/      server-bundled fonts/assets
 
 - First interaction is Google authentication.
 - Unauthenticated users go to `/login`.
-- All authenticated Google users may sign in; there is no allowlist.
-- After authentication, call `NUXT_ROLE_API_URL` with `{ "email": "user@creup.es" }`. Every intranet call (role sync and roster sync) sends `Authorization: Bearer <NUXT_INTRANET_API_TOKEN>` when the token is set (`intranetAuthHeaders` in `server/utils/members/intranet.ts`).
-- Always update `externalRole`, `externalName`, `externalInitials`, `university` and `lastRoleSyncAt` when role sync returns data.
-- If role sync fails, log a warning and do not block sign-in.
+- All authenticated Google users may sign in (there is no allowlist), except an account deleted in the Intranet. That is an authenticated lookup (token set) answering 404 with exactly `{"error":"not_found"}` for an account the Intranet knew before (`externalRole` or `intranetId` set). It revokes access in one transaction: `accessRevokedAt` and `accessRevokedReason` (`intranet_deleted`) together, role `Invitado`, member cleared, every session deleted, open impersonations of it closed (`revoked`), `user.access_revoked`, and the sign-in refused (the login page of the user's language with `?error=access_revoked`, sent as `errorCallbackURL`). Exceptions: a `PROTECTED_ROLES` account keeps everything and gets `user.intranet_missing`; a Google account the Intranet never knew stays as before. Any other 404, a timeout or a 5xx is a plain failure and changes nothing.
+- A revoked account gets access back only at a sign-in whose authenticated lookup returns it (`user.access_restored`, then normal role sync). Never restore it by hand: the Intranet is the source of truth. Its role never changes by hand (409 `admin.users.errors.targetRevoked`), and an Admin without access does not count as the last Admin.
+- Sessions last 7 days and renew daily, so sign-in alone misses an account that keeps its session. The daily access re-check (`recheckIntranetAccess` in `server/utils/auth/accessRecheck.ts`, pg-boss queue `users-access-recheck` at 05:30 Europe/Madrid) looks up every account with a live session, access, intranet data and no protected role, one every 500 ms, and calls `applyIntranetNotFound` on each authenticated `notFound`; it never runs role sync. More than max(3, 30%) not found of the accounts the Intranet answered for revokes nobody and records `users.access_recheck_blocked`.
+- `getAuthUserWithRole` reads `access_revoked_at` on every request and answers 401 for an account without access, so better-auth's 5-minute session cookie cache never keeps a revoked account in. Never add `accessRevokedAt` to `AuthUserWithRole`.
+- Before the session is created (`databaseHooks.session.create.before`, `checkSignInAccess` in `server/utils/auth/roleSync.ts`), look the account up once with `lookupIntranetRole` (`server/utils/members/intranet.ts`): `POST` `{ "email": "user@creup.es" }` to `getRoleApiUrl()` with `Accept: application/json`. Role sync in `session.create.after` reuses that answer. Every intranet call (role sync and roster sync) sends `Authorization: Bearer <NUXT_INTRANET_API_TOKEN>` when the token is set (`intranetAuthHeaders`).
+- Always update `externalRole`, `externalName`, `externalInitials`, `university` and `lastRoleSyncAt` when the lookup succeeds, and `intranetId` when the answer carries an `id`. A failed lookup writes nothing, `lastRoleSyncAt` included.
+- If the Intranet lookup fails, log a warning and do not block sign-in. A database error in the access check refuses it (`sign_in_unavailable`) rather than let a deleted account in. Logs carry `accountRef` (`emailFingerprint`), never the email.
 - `INITIAL_ADMIN_EMAIL` receives `Admin` on first sign-in.
 
 Role assignment rules:
 
-| Case                                                                        | Platform role result                               | Member link (`users.memberId`)                                                                     |
-| --------------------------------------------------------------------------- | -------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| New user + external `Asociado`                                              | `Asociado` (`Invitado` if its role row is missing) | The council with its intranet initials                                                             |
-| New user + external `CEA`                                                   | `CEA` (`Invitado` if its role row is missing)      | The `executive` area with its initials, created if missing                                         |
-| New user + anything else or sync failure                                    | `Invitado`                                         | A `Sectorial` account: the sectorial with its initials; otherwise none                             |
-| Existing `Invitado`, `Asociado` or `CEA` + external `Asociado`              | `Asociado`                                         | The council with its initials                                                                      |
-| Existing `Invitado`, `Asociado` or `CEA` + external `CEA`                   | `CEA`                                              | Linked again by initials when the role or the initials change; otherwise kept, even if set by hand |
-| Existing `Asociado` or `CEA` + any other external type                      | `Invitado`                                         | Cleared; linked again only if the new type is `Sectorial`                                          |
-| Existing `Invitado` whose type stops being `Asociado`, `Sectorial` or `CEA` | `Invitado`                                         | Cleared                                                                                            |
-| Existing `Admin`, `Secretaria`, `Presidencia` or `Moderador`                | Keep current platform role                         | Never cleared; linked by initials like any account of its intranet type                            |
+| Case                                                                                     | Platform role result                                                                  | Member link (`users.memberId`)                                                                     |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| New user + external `Asociado`                                                           | `Asociado` (`Invitado` if its role row is missing)                                    | The council with its intranet id, else its initials                                                |
+| New user + external `CEA`                                                                | `CEA` (`Invitado` if its role row is missing)                                         | The `executive` area with its initials, created if missing                                         |
+| New user + anything else, sync failure or `not_found`                                    | `Invitado`                                                                            | A `Sectorial` account: the sectorial with its id, else its initials; otherwise none                |
+| Existing `Invitado`, `Asociado` or `CEA` + external `Asociado`                           | `Asociado`                                                                            | The council with its id, else its initials                                                         |
+| Existing `Invitado`, `Asociado` or `CEA` + external `CEA`                                | `CEA`                                                                                 | Linked again by initials when the role or the initials change; otherwise kept, even if set by hand |
+| Existing `Asociado` or `CEA` + any other external type                                   | `Invitado`                                                                            | Cleared; linked again only if the new type is `Sectorial`                                          |
+| Existing `Invitado` whose type stops being `Asociado`, `Sectorial` or `CEA`              | `Invitado`                                                                            | Cleared                                                                                            |
+| Existing `Admin`, `Secretaria`, `Presidencia` or `Moderador`                             | Keep current platform role                                                            | Never cleared; linked like any account of its intranet type                                        |
+| Existing account the Intranet knew, not a protected role, + authenticated `not_found`    | `Invitado`, without access (`accessRevokedAt` set, sessions deleted, sign-in refused) | Cleared                                                                                            |
+| Existing `Admin`, `Secretaria`, `Presidencia` or `Moderador` + authenticated `not_found` | Keep current platform role (`user.intranet_missing` and a warning)                    | Kept                                                                                               |
+| Existing account the Intranet never knew + authenticated `not_found`                     | Unchanged                                                                             | Unchanged                                                                                          |
+| Account without access + authenticated lookup that returns it                            | Access restored (`user.access_restored`), then the rows above                         | As in the rows above                                                                               |
+| Account without access + any other answer                                                | Sign-in refused, nothing changes                                                      | Unchanged (none)                                                                                   |
 
 ## RBAC
 
@@ -174,8 +183,9 @@ Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`
 ### Members
 
 - Documents and amendments are presented by members (`members`): student councils (asociados), sectorials and executive areas.
-- Asociados and sectorials are synced from the intranet roster (`/usuarios/asociados`, `/usuarios/sectoriales`) and keyed by acronym (the intranet's `initials`).
-- `users.memberId` links an account to the member it acts for. In the intranet an Asociado account is the member itself.
+- Asociados and sectorials are synced from the intranet roster (`/usuarios/asociados`, `/usuarios/sectoriales`), by hand and daily at 05:00 Europe/Madrid (pg-boss, `server/utils/members/schedule.ts`). They are matched by their Intranet id (`members.intranetId`, unique when set) first, then by acronym (the intranet's `initials`), so an acronym change updates the member.
+- A roster sync that would deactivate every active member of a kind, or more than max(3, 30%) of them, is not applied unless the body says `confirmDeactivation: true` with `confirmedKinds` covering what it would deactivate now (`isDeactivationConfirmed`): otherwise it records `members.sync_blocked` and answers 409 `large_deactivation` with the current counts. The daily run never confirms, and its audit rows have actor null.
+- `users.memberId` links an account to the member it acts for. In the intranet an Asociado account is the member itself. Asociado and Sectorial accounts link by `users.intranetId` = `members.intranetId` first, then by initials (`server/utils/members/link.ts`).
 - CEA accounts (intranet type `CEA`) act for an `executive` member keyed by their intranet initials. Whoever holds `user:manage_roles` can link any account by hand (`PUT /api/admin/users/[id]/member`).
 
 ### Assemblies
@@ -228,8 +238,9 @@ Model in [`docs/design.md`](docs/design.md) ("Traceability", "Impersonation"); e
 
 - Every mutation calls `recordEvent` or `recordAudit`, directly or through a server function. Never insert into `audit_log` directly: `recordAudit` (`server/utils/domain/audit.ts`) is the only writer. `server/utils/domain/traceability.test.ts` enforces it; an endpoint that writes no state goes in its commented `NON_RECORDING_MUTATIONS` allowlist.
 - Identity comes only from `getAuthUserWithRole`, `requireActor` or the RBAC callers on the server and from `useMe` on the client, never from `session.user` or `authClient.useSession`: while an Admin impersonates, the session is still the Admin's.
-- Impersonation is Admin-only by the real role through `requireAdmin`, never a permission key. Never as oneself or another Admin, never nested, 60 minutes fixed, with a reason. The admin section and `/api/members` are read-only while it lasts, and every unsafe request sends `x-acting-user`.
+- Impersonation is Admin-only by the real role through `requireAdmin`, never a permission key. Never as oneself or another Admin, never as an account without access (403 `targetRevoked`), never nested, 60 minutes fixed, with a reason. An open impersonation of an account that loses access ends as `revoked`. The admin section and `/api/members` are read-only while it lasts, and every unsafe request sends `x-acting-user`.
 - Events recorded with `actor: null` inside an impersonated request pass `impersonationId` explicitly.
+- The Intranet writes with source `intranet` and actor null: `user.access_revoked`, `user.access_restored` and `user.intranet_missing` at sign-in, `user.access_revoked` and `users.access_recheck_blocked` in the daily access re-check, and the daily roster sync's `members.sync` rows and `members.sync_blocked`. A manual roster sync keeps the account that ran it as actor.
 - Update events put what changed in `payload.changes`, built with `diffChanges` (`server/utils/domain/changes.ts`) from the stored row against what was written, never from the request body; never content blocks or correction notes. Delete events carry an explicit allowlist that names the entity and its insiders; never spread the row into a payload.
 - Read activity only through `server/utils/domain/activity.ts`. A new event type, audit action or payload key goes into `shared/constants/activity.ts` and into `EVENT_PAYLOAD_KEYS` or `AUDIT_PAYLOAD_KEYS` (otherwise non-Admins see nothing of it), with an `activity.actions.<action>` key in both locales and an icon in `ACTIVITY_ACTION_ICONS`. Linked messages (`@:key`) may reuse existing wording.
 - Scripts that write to the database outside Nuxt (seed, one-off loaders) write audit rows with the exact `recordAudit` shape (source `seed` or `import`). The seed may import `audit.ts`, so keep its runtime imports to packages and `../../db/schema`.
@@ -376,6 +387,8 @@ pg-boss v12 reminders:
 - Export downloads authorized.
 - Every mutation leaves an event or an audit row (`recordEvent` / `recordAudit`).
 - Impersonation only for the real Admin role; the admin section and `/api/members` read-only while it lasts; `x-acting-user` on unsafe requests.
+- An account deleted in the Intranet has no access (`accessRevokedAt`), checked on every request and found by the daily re-check even if it never signs in again; only an authenticated Intranet lookup gives it back.
+- The Intranet token never travels over `http:` to a public host in production, and logs never carry an email (`accountRef`).
 - Activity readers re-check visibility with the current actor and never show others' IPs or emails to non-Admins.
 
 ## Formatting
@@ -421,7 +434,7 @@ pnpm build
 Also verify manually when relevant:
 
 - unauthenticated users land on `/login`;
-- Google sign-in calls role sync and preserves privileged roles;
+- Google sign-in calls role sync and preserves privileged roles, and an account the Intranet deleted is refused;
 - admin pages reject users without `user:manage_roles` or `role:manage_permissions` server-side, only an Admin gives or takes the Admin role, and only an Admin changes Secretaría's and Presidencia's access;
 - ES and EN UI both render new strings;
 - document content stays block-based and escaped on render;

@@ -10,11 +10,11 @@ vi.mock("../core/logger", () => ({
   logWarn: vi.fn(),
 }));
 vi.mock("../members/intranet", () => ({
-  getIntranetApiBaseUrl: vi.fn(),
-  intranetAuthHeaders: vi.fn(() => ({})),
-  intranetUrl: vi.fn(),
-  INTRANET_TIMEOUT_MS: 1_000,
+  emailFingerprint: vi.fn(() => null),
+  isRoleLookupAuthenticated: vi.fn(() => true),
+  lookupIntranetRole: vi.fn(),
 }));
+vi.mock("./impersonation", () => ({ endImpersonations: vi.fn() }));
 vi.mock("../members/link", () => ({
   INTRANET_MEMBER_TYPES: new Map([
     ["Asociado", "asociado"],
@@ -35,6 +35,7 @@ const {
 describe("roleSyncAuditStates", () => {
   const current = {
     roleName: SYSTEM_ROLES.CEA,
+    intranetId: null,
     externalRole: "CEA",
     externalName: "Persona",
     externalInitials: "VPU",
@@ -71,6 +72,7 @@ describe("roleSyncAuditStates", () => {
     expect(before).toEqual(current);
     expect(after).toEqual({
       roleName: SYSTEM_ROLES.INVITADO,
+      intranetId: null,
       externalRole: "Alumni",
       externalName: null,
       externalInitials: null,
@@ -89,7 +91,8 @@ describe("roleSyncAuditStates", () => {
   });
 });
 
-const external = (role: string) => ({
+const external = (role: string, id: number | null = null) => ({
+  id,
   role,
   name: "Persona",
   initials: "VPU",
@@ -197,6 +200,23 @@ describe("computeRoleSyncUpdate", () => {
     expect(
       computeRoleSyncUpdate(user(null), external("CEA"), true).assignRoleName,
     ).toBe(SYSTEM_ROLES.ADMIN);
+  });
+
+  it("dates and identifies the account only from a successful lookup", () => {
+    const now = new Date("2026-11-06T09:00:00Z");
+    expect(
+      computeRoleSyncUpdate(user(null), external("Asociado", 412), false, now)
+        .fields,
+    ).toMatchObject({ lastRoleSyncAt: now, intranetId: 412 });
+    // No id (legacy route): the stored one stays.
+    expect(
+      computeRoleSyncUpdate(user(null), external("Asociado"), false, now)
+        .fields,
+    ).not.toHaveProperty("intranetId");
+    // A failed lookup writes neither, so an existing account gets no update.
+    expect(
+      computeRoleSyncUpdate(user(SYSTEM_ROLES.CEA), null, false, now).fields,
+    ).toEqual({});
   });
 });
 

@@ -31,6 +31,7 @@ import type {
 } from "../constants/domain";
 import type { PermissionKey } from "../constants/permissions";
 import type {
+  AccessRevokedReason,
   ActivityCategory,
   ActivityKind,
   AuditSource,
@@ -65,6 +66,57 @@ export interface MemberSyncResult {
   created: number;
   updated: number;
   deactivated: number;
+}
+
+/** The member kinds the Intranet roster lists (asociados and sectorials). */
+export type RosterMemberKind = Extract<MemberKind, "asociado" | "sectorial">;
+
+/**
+ * Body of POST /api/members/sync (memberSyncBodySchema). The body may be
+ * absent, as it was before: that is the same as `{}`.
+ */
+export interface MemberSyncBody {
+  /**
+   * Applies a sync that would deactivate every active intranet member of a
+   * kind, or more than max(3, 30%) of them, together with `confirmedKinds`.
+   * Without it such a sync writes nothing but a `members.sync_blocked` audit
+   * row and answers 409 with MemberSyncBlockedData. The scheduled sync never
+   * sends it.
+   */
+  confirmDeactivation?: boolean;
+  /**
+   * What the account confirmed: the `kinds` of the 409 it was shown. The
+   * sync applies only when every kind it would now deactivate too much of is
+   * here with at least as many members (isDeactivationConfirmed); if the
+   * Intranet returns less on the retry, it answers 409 again with the new
+   * counts. Without it `confirmDeactivation` confirms nothing.
+   */
+  confirmedKinds?: MemberSyncConfirmedKind[];
+}
+
+/** One kind the account agreed to deactivate members of, and how many. */
+export type MemberSyncConfirmedKind = Pick<
+  MemberSyncDeactivationKind,
+  "kind" | "toDeactivate"
+>;
+
+/** One member kind a refused roster sync would deactivate too much of. */
+export interface MemberSyncDeactivationKind {
+  kind: RosterMemberKind;
+  /** Active intranet members of the kind before the sync. */
+  active: number;
+  /** How many of them the sync would deactivate. */
+  toDeactivate: number;
+}
+
+/**
+ * `data` of the 409 that POST /api/members/sync answers when the sync needs
+ * `confirmDeactivation: true` (only the kinds over the limit are listed).
+ * The client shows the counts and repeats the request with it.
+ */
+export interface MemberSyncBlockedData {
+  reason: "large_deactivation";
+  kinds: MemberSyncDeactivationKind[];
 }
 
 export interface MeDto {
@@ -866,6 +918,44 @@ export interface LiveEventDto {
   entityId: string;
   type: string;
   documentId?: string;
+}
+
+// Admin users ---------------------------------------------------------------
+
+/**
+ * A row of GET /api/admin/users (`data`), also returned by the endpoints
+ * that change one user so the client can replace it in place
+ * (server/utils/auth/adminUsers.ts, ADMIN_USER_COLUMNS).
+ */
+export interface AdminUserDto {
+  /** better-auth id. */
+  id: string;
+  name: string;
+  email: string;
+  image: string | null;
+  roleId: string | null;
+  /** The member the account acts for (users.memberId). */
+  memberId: string | null;
+  /** Intranet data from the last successful role lookup. */
+  externalRole: string | null;
+  externalName: string | null;
+  externalInitials: string | null;
+  university: string | null;
+  /** The last successful role lookup; a failed one never moves it. */
+  lastRoleSyncAt: IsoDate | null;
+  /**
+   * When the account lost access to the platform (the Intranet deleted it);
+   * null while it has access. It comes back by itself when the Intranet
+   * knows the account again on a sign-in.
+   */
+  accessRevokedAt: IsoDate | null;
+  /** Why it lost access; null exactly when `accessRevokedAt` is. */
+  accessRevokedReason: AccessRevokedReason | null;
+  createdAt: IsoDate;
+  role: { id: string; name: string } | null;
+  member: MemberRef | null;
+  /** Permissions granted on top of the role (user_permissions), in catalog order. */
+  extraPermissions: PermissionKey[];
 }
 
 // Impersonation ------------------------------------------------------------

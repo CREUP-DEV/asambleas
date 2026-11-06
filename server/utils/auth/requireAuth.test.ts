@@ -39,6 +39,14 @@ function user(id: string, roleName: string) {
   };
 }
 
+/** The users row the lookup returns: the user plus its access columns. */
+function row(
+  account: ReturnType<typeof user>,
+  accessRevokedAt: Date | null = null,
+) {
+  return { ...account, accessRevokedAt };
+}
+
 describe("getAuthUserWithRole", () => {
   beforeEach(() => {
     findFirst.mockReset();
@@ -52,11 +60,11 @@ describe("getAuthUserWithRole", () => {
       user: { id: "u1" },
       session: { id: "s1" },
     });
-    findFirst.mockResolvedValue(me);
+    findFirst.mockResolvedValue(row(me));
     resolveImpersonation.mockResolvedValue(null);
 
     const event = fakeEvent();
-    expect(await getAuthUserWithRole(event)).toBe(me);
+    expect(await getAuthUserWithRole(event)).toEqual(me);
     expect(event.context).toMatchObject({
       user: me,
       realUser: me,
@@ -67,6 +75,8 @@ describe("getAuthUserWithRole", () => {
       sessionId: "s1",
       realUser: me,
     });
+    // The access column never reaches the user object.
+    expect(event.context.user).not.toHaveProperty("accessRevokedAt");
 
     // Cached for the rest of the request.
     await getAuthUserWithRole(event);
@@ -81,7 +91,7 @@ describe("getAuthUserWithRole", () => {
       user: { id: "admin" },
       session: { id: "s1" },
     });
-    findFirst.mockResolvedValue(admin);
+    findFirst.mockResolvedValue(row(admin));
     resolveImpersonation.mockResolvedValue({ user: target, impersonation });
 
     const event = fakeEvent();
@@ -101,6 +111,23 @@ describe("getAuthUserWithRole", () => {
     expect(await getAuthUserWithRole(event)).toBeNull();
     expect(resolveImpersonation).not.toHaveBeenCalled();
     expect(event.context.user).toBeUndefined();
+  });
+
+  it("rejects an account that lost access, even with a cached session", async () => {
+    getSession.mockResolvedValue({
+      user: { id: "u1" },
+      session: { id: "s1" },
+    });
+    findFirst.mockResolvedValue(
+      row(user("u1", "Invitado"), new Date("2026-11-01T10:00:00Z")),
+    );
+    const event = fakeEvent();
+    await expect(getAuthUserWithRole(event)).rejects.toThrowError(
+      expect.objectContaining({ statusCode: 401 }),
+    );
+    expect(resolveImpersonation).not.toHaveBeenCalled();
+    expect(event.context.user).toBeUndefined();
+    expect(event.context.realUser).toBeUndefined();
   });
 
   it("rejects requests without a session", async () => {

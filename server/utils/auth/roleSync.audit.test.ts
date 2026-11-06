@@ -47,11 +47,9 @@ vi.mock("../core/logger", () => ({
   logInfo: vi.fn(),
   logWarn: vi.fn(),
 }));
-vi.mock("../members/intranet", () => ({
-  getIntranetApiBaseUrl: vi.fn(() => null),
-  intranetAuthHeaders: vi.fn(() => ({})),
-  intranetUrl: vi.fn(),
-  INTRANET_TIMEOUT_MS: 1_000,
+// The real intranet client answers through the stubbed fetch.
+vi.mock("./impersonation", () => ({
+  endImpersonations: vi.fn(async () => []),
 }));
 vi.mock("../members/link", () => ({
   INTRANET_MEMBER_TYPES: new Map([
@@ -80,6 +78,8 @@ beforeEach(() => {
   updates.length = 0;
   recordAudit.mockClear();
   vi.stubEnv("INITIAL_ADMIN_EMAIL", "tic@creup.es");
+  vi.stubEnv("NUXT_INTRANET_API_URL", "");
+  vi.stubEnv("NUXT_INTRANET_API_TOKEN", "");
 });
 
 afterEach(() => {
@@ -186,6 +186,7 @@ describe("syncUserRole traceability", () => {
   it("reports a failed call and leaves the account as it was", async () => {
     vi.stubEnv("NUXT_ROLE_API_URL", "https://intranet.test/user/role");
     answer({ error: "boom" }, 500);
+    // Nothing to write: not even lastRoleSyncAt.
     freshUser = {
       id: "u3",
       email: "persona@creup.es",
@@ -199,6 +200,7 @@ describe("syncUserRole traceability", () => {
     };
 
     expect(await syncUserRole("u3")).toBe("failed");
+    expect(updates).toEqual([]);
     // recordAudit skips it: before and after are equal.
     const sync = auditCall(AUDIT_ACTIONS.USER_ROLE_SYNC);
     expect(sync?.after).toEqual(sync?.before);

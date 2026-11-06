@@ -5,9 +5,11 @@ vi.mock("../core/logger", () => ({ logInfo: vi.fn(), logWarn: vi.fn() }));
 
 const {
   INTRANET_MEMBER_TYPES,
+  acronymHeldByAnotherAccount,
   canLinkToMember,
   initialsToAcronym,
   keepsCurrentLink,
+  memberIntranetId,
   newLinkedMember,
 } = await import("./link");
 
@@ -56,10 +58,23 @@ describe("newLinkedMember", () => {
       acronym: "CEUM",
       name: "Consejo de Estudiantes",
       university: "Universidad de Murcia",
+      intranetId: null,
       source: "intranet",
       active: true,
       syncedAt: now,
     });
+  });
+
+  it("keeps the intranet id of a council or a sectorial, never of an area", () => {
+    expect(
+      newLinkedMember("asociado", "CEUM", { ...identity, id: 412 }, now),
+    ).toMatchObject({ intranetId: 412 });
+    expect(
+      newLinkedMember("sectorial", "CEEM", { ...identity, id: 7 }, now),
+    ).toMatchObject({ intranetId: 7 });
+    expect(
+      newLinkedMember("executive", "VPU", { ...identity, id: 99 }, now),
+    ).toMatchObject({ intranetId: null });
   });
 
   it("creates executive areas as manual members named by their acronym", () => {
@@ -79,6 +94,25 @@ describe("newLinkedMember", () => {
     expect(
       newLinkedMember("sectorial", "CEEM", { name: " ", university: "X" }, now),
     ).toMatchObject({ name: "CEEM", university: null });
+  });
+});
+
+describe("memberIntranetId", () => {
+  it("links councils and sectorials by the account id, CEA areas never", () => {
+    expect(memberIntranetId("asociado", 412)).toBe(412);
+    expect(memberIntranetId("sectorial", 7)).toBe(7);
+    expect(memberIntranetId("executive", 99)).toBeNull();
+    expect(memberIntranetId("asociado", null)).toBeNull();
+    expect(memberIntranetId("asociado", undefined)).toBeNull();
+  });
+});
+
+describe("acronymHeldByAnotherAccount", () => {
+  it("refuses an acronym only when both ids are known and differ", () => {
+    expect(acronymHeldByAnotherAccount(412, 413)).toBe(true);
+    expect(acronymHeldByAnotherAccount(412, 412)).toBe(false);
+    expect(acronymHeldByAnotherAccount(412, null)).toBe(false);
+    expect(acronymHeldByAnotherAccount(null, 413)).toBe(false);
   });
 });
 

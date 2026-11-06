@@ -1,4 +1,5 @@
-import { eq, inArray } from "drizzle-orm";
+import { eq, inArray, isNotNull, type SQL } from "drizzle-orm";
+import { z } from "zod/v4";
 import { db } from "../../db";
 import { permissions, userPermissions, users } from "../../db/schema";
 import {
@@ -8,10 +9,12 @@ import {
 
 /**
  * The user row the admin users list returns (GET /api/admin/users), shared by
- * the endpoints that change one user so the client can replace it in place.
- * `member` is the member the account acts for (users.memberId);
- * `extraPermissions` are the permissions granted to the user on top of their
- * role (user_permissions), in catalog order.
+ * the endpoints that change one user so the client can replace it in place
+ * (AdminUserDto). `member` is the member the account acts for
+ * (users.memberId); `extraPermissions` are the permissions granted to the
+ * user on top of their role (user_permissions), in catalog order;
+ * `accessRevokedAt` and `accessRevokedReason` say when and why the account
+ * lost access to the platform (null while it has access).
  */
 export const ADMIN_USER_COLUMNS = {
   id: true,
@@ -25,8 +28,32 @@ export const ADMIN_USER_COLUMNS = {
   externalInitials: true,
   university: true,
   lastRoleSyncAt: true,
+  accessRevokedAt: true,
+  accessRevokedReason: true,
   createdAt: true,
 } as const;
+
+/**
+ * Which accounts GET /api/admin/users lists: every one (`all`, the default)
+ * or only those that lost access to the platform (`revoked`).
+ */
+export const ADMIN_USERS_ACCESS_FILTERS = ["all", "revoked"] as const;
+export type AdminUsersAccessFilter =
+  (typeof ADMIN_USERS_ACCESS_FILTERS)[number];
+
+/** The query of GET /api/admin/users: a page and the access filter. */
+export const adminUsersQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(50),
+  access: z.enum(ADMIN_USERS_ACCESS_FILTERS).default("all"),
+});
+
+/** The `where` of the users list for an access filter; none for `all`. */
+export function adminUsersAccessWhere(
+  access: AdminUsersAccessFilter,
+): SQL | undefined {
+  return access === "revoked" ? isNotNull(users.accessRevokedAt) : undefined;
+}
 
 export const ADMIN_USER_RELATIONS = {
   role: { columns: { id: true, name: true } },

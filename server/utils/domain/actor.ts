@@ -1,11 +1,8 @@
 import type { H3Event } from "h3";
 import { createError } from "h3";
 import { getAuthUserWithRole, requireAuth } from "../auth/requireAuth";
-import type {
-  AuthEventContext,
-  AuthUserWithRole,
-  ImpersonationContext,
-} from "../auth/requireAuth";
+import type { AuthEventContext, AuthUserWithRole } from "../auth/requireAuth";
+import type { ImpersonationContext } from "../auth/impersonation";
 import { getEffectivePermissions, isAdmin } from "../auth/rbac";
 import {
   PERMISSION_KEYS,

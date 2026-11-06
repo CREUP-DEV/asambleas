@@ -75,7 +75,8 @@ export function isAdminRole(roleName: string | null | undefined): boolean {
  * - `apply`: the request runs as the target;
  * - `close`: the row no longer applies and is closed with that reason: it
  *   expired, the signed-in user is no longer Admin, or the target vanished,
- *   became Admin or is the Admin itself (revoked).
+ *   became Admin, lost access to the platform (users.access_revoked_at) or
+ *   is the Admin itself (revoked).
  */
 export type ImpersonationDecision =
   | { kind: "none" }
@@ -90,7 +91,12 @@ export function decideImpersonation(input: {
   realRoleName: string | null | undefined;
   row: Pick<ImpersonationRow, "endedAt" | "expiresAt" | "targetUserId"> | null;
   /** The target as it is now; null when the account no longer exists. */
-  target: { id: string; roleName: string | null | undefined } | null;
+  target: {
+    id: string;
+    roleName: string | null | undefined;
+    /** Whether the account lost access to the platform. */
+    accessRevoked?: boolean;
+  } | null;
   now: Date;
 }): ImpersonationDecision {
   const { row, target } = input;
@@ -105,7 +111,8 @@ export function decideImpersonation(input: {
     !target ||
     target.id !== row.targetUserId ||
     target.id === input.realUserId ||
-    isAdminRole(target.roleName)
+    isAdminRole(target.roleName) ||
+    target.accessRevoked === true
   ) {
     return { kind: "close", reason: "revoked" };
   }
@@ -140,25 +147,37 @@ export const IMPERSONATION_START_ERRORS = {
     message: "No se puede acceder como otro Admin",
     messageKey: "impersonation.errors.targetAdmin",
   },
+  target_revoked: {
+    statusCode: 403,
+    message:
+      "No se puede acceder como una cuenta que ya no tiene acceso a la plataforma",
+    messageKey: "impersonation.errors.targetRevoked",
+  },
 } as const;
 export type ImpersonationStartBlocker = keyof typeof IMPERSONATION_START_ERRORS;
 
 /**
  * Why the signed-in user may not start acting as `target`, or null when it
  * may. Only a user whose real role is Admin, not already impersonating,
- * never as itself nor as another Admin. Checked in this order.
+ * never as itself, as another Admin or as an account that lost access to
+ * the platform. Checked in this order.
  */
 export function impersonationStartBlocker(input: {
   realUserId: string;
   realRoleName: string | null | undefined;
   impersonating: boolean;
-  target: { id: string; roleName: string | null | undefined } | null;
+  target: {
+    id: string;
+    roleName: string | null | undefined;
+    accessRevoked?: boolean;
+  } | null;
 }): ImpersonationStartBlocker | null {
   if (!isAdminRole(input.realRoleName)) return "admin_only";
   if (input.impersonating) return "nested";
   if (!input.target) return "not_found";
   if (input.target.id === input.realUserId) return "self";
   if (isAdminRole(input.target.roleName)) return "target_admin";
+  if (input.target.accessRevoked === true) return "target_revoked";
   return null;
 }
 
@@ -295,12 +314,17 @@ const targetRoles = alias(roles, "impersonation_target_role");
 /**
  * The open impersonation of an Admin session (expired or not, so a stale
  * one can be closed), with the target as getAuthUserWithRole loads users.
- * `target` is null when the account no longer exists.
+ * `target` is null when the account no longer exists; `targetAccessRevoked`
+ * says whether it lost access to the platform.
  */
 export async function findOpenImpersonation(
   sessionId: string,
   executor: Executor = db,
-): Promise<{ row: ImpersonationRow; target: AuthUserWithRole | null } | null> {
+): Promise<{
+  row: ImpersonationRow;
+  target: AuthUserWithRole | null;
+  targetAccessRevoked: boolean;
+} | null> {
   const [found] = await executor
     .select({
       row: impersonationColumns,
@@ -318,6 +342,7 @@ export async function findOpenImpersonation(
         lastRoleSyncAt: targetUsers.lastRoleSyncAt,
       },
       targetRole: { id: targetRoles.id, name: targetRoles.name },
+      targetAccessRevokedAt: targetUsers.accessRevokedAt,
     })
     .from(impersonations)
     .leftJoin(targetUsers, eq(targetUsers.id, impersonations.targetUserId))
@@ -333,7 +358,11 @@ export async function findOpenImpersonation(
   const target = found.target?.id
     ? { ...found.target, role: found.targetRole?.id ? found.targetRole : null }
     : null;
-  return { row: found.row, target };
+  return {
+    row: found.row,
+    target,
+    targetAccessRevoked: Boolean(found.targetAccessRevokedAt),
+  };
 }
 
 /** Which open impersonations endImpersonations closes. */
@@ -341,7 +370,10 @@ export type ImpersonationFilter =
   | { id: string }
   /** Every open one of an Admin session (sign-out). */
   | { sessionId: string }
-  /** Every open one where the user is the Admin or the target (role changes). */
+  /**
+   * Every open one where the user is the Admin or the target (role changes,
+   * an account that lost access).
+   */
   | { userId: string }
   /** Every open one past its expiry (a sweep before listing). */
   | { expired: true };
@@ -451,7 +483,11 @@ export async function resolveImpersonation(
     realRoleName: realUser.role?.name,
     row: found.row,
     target: found.target
-      ? { id: found.target.id, roleName: found.target.role?.name }
+      ? {
+          id: found.target.id,
+          roleName: found.target.role?.name,
+          accessRevoked: found.targetAccessRevoked,
+        }
       : null,
     now: input.now ?? new Date(),
   });
@@ -493,7 +529,9 @@ export async function resolveImpersonation(
  * impersonation from event.context. Throws the IMPERSONATION_START_ERRORS
  * (with `data.messageKey`), or 409 nested when another tab started one in
  * the same session meanwhile. Writes the row and `impersonation.start` in
- * one transaction. No cookie changes: the client reloads.
+ * one transaction, holding the target row (FOR SHARE) so that it cannot
+ * lose access meanwhile: a revocation waits and then closes the new row.
+ * No cookie changes: the client reloads.
  */
 export async function startImpersonation(
   event: H3Event,
@@ -512,6 +550,7 @@ export async function startImpersonation(
       name: users.name,
       externalName: users.externalName,
       roleName: roles.name,
+      accessRevokedAt: users.accessRevokedAt,
     })
     .from(users)
     .leftJoin(roles, eq(roles.id, users.roleId))
@@ -522,15 +561,12 @@ export async function startImpersonation(
     realUserId: realUser.id,
     realRoleName: realUser.role?.name,
     impersonating: Boolean(context.impersonation),
-    target: target ?? null,
+    target: target
+      ? { ...target, accessRevoked: target.accessRevokedAt !== null }
+      : null,
   });
   if (blocker || !target) {
-    const error = IMPERSONATION_START_ERRORS[blocker ?? "not_found"];
-    throw createError({
-      statusCode: error.statusCode,
-      message: error.message,
-      data: { messageKey: error.messageKey },
-    });
+    throw startError(blocker ?? "not_found");
   }
 
   const startedAt = input.now ?? new Date();
@@ -544,6 +580,13 @@ export async function startImpersonation(
   let row: ImpersonationRow;
   try {
     row = await db.transaction(async (tx) => {
+      // The target may have lost access since it was read above.
+      const [stillAllowed] = await tx
+        .select({ id: users.id })
+        .from(users)
+        .where(and(eq(users.id, target.id), isNull(users.accessRevokedAt)))
+        .for("share");
+      if (!stillAllowed) throw startError("target_revoked");
       const [inserted] = await tx
         .insert(impersonations)
         .values({
@@ -572,14 +615,7 @@ export async function startImpersonation(
       return inserted;
     });
   } catch (error) {
-    if (isUniqueConstraintViolation(error)) {
-      const nested = IMPERSONATION_START_ERRORS.nested;
-      throw createError({
-        statusCode: nested.statusCode,
-        message: nested.message,
-        data: { messageKey: nested.messageKey },
-      });
-    }
+    if (isUniqueConstraintViolation(error)) throw startError("nested");
     throw error;
   }
 
@@ -597,6 +633,16 @@ export async function startImpersonation(
     },
     startedAt,
   );
+}
+
+/** The H3 error of a start blocker, with its `data.messageKey`. */
+function startError(blocker: ImpersonationStartBlocker) {
+  const error = IMPERSONATION_START_ERRORS[blocker];
+  return createError({
+    statusCode: error.statusCode,
+    message: error.message,
+    data: { messageKey: error.messageKey },
+  });
 }
 
 /**

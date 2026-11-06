@@ -147,6 +147,7 @@ export const ACTIVITY_ACTION_ICONS = {
   "member.create": "i-lucide-building-2",
   "member.update": "i-lucide-pencil",
   "members.sync": "i-lucide-refresh-cw",
+  "members.sync_blocked": "i-lucide-shield-alert",
   "member.sync_create": "i-lucide-building-2",
   "member.sync_update": "i-lucide-refresh-cw",
   "member.sync_deactivate": "i-lucide-archive",
@@ -156,6 +157,10 @@ export const ACTIVITY_ACTION_ICONS = {
   "user.created": "i-lucide-user-plus",
   "user.role_sync": "i-lucide-refresh-cw",
   "user.initial_admin": "i-lucide-shield",
+  "user.access_revoked": "i-lucide-user-x",
+  "user.access_restored": "i-lucide-user-check",
+  "user.intranet_missing": "i-lucide-user-search",
+  "users.access_recheck_blocked": "i-lucide-shield-alert",
   "auth.sign_in": "i-lucide-log-in",
   "auth.sign_out": "i-lucide-log-out",
   "auth.session_ended": "i-lucide-timer-off",
@@ -499,6 +504,14 @@ function auditDetails(
     case "user.member_link": {
       const member = changed(before, after, "memberId");
       return member ? [{ type: "member", ...member }] : [];
+    }
+    case "user.access_revoked": {
+      const details: ActivityDetail[] = [];
+      const role = changed(before, after, "roleName");
+      if (role) details.push({ type: "role", ...role });
+      const member = changed(before, after, "memberId");
+      if (member) details.push({ type: "member", ...member });
+      return details;
     }
     case "user.permissions_set":
     case "permissions.set":

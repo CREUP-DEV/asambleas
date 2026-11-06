@@ -20,7 +20,8 @@ PostgreSQL 5432
 - El build se genera en local o CI.
 - El servidor ejecuta `.output/server/index.mjs`.
 - PostgreSQL no debe exponerse a internet.
-- `pg-boss` usa la misma base de datos.
+- `pg-boss` usa la misma base de datos, para las exportaciones y para la sincronización diaria del listado de miembros (05:00, Europe/Madrid).
+- La plataforma llama a la Intranet por la red de Docker `creup-edge` (`http://intranet/api/asambleas/v1`), sin salir del VPS. Cómo y por qué: [docs/intranet.md](docs/intranet.md), sección 5.8.
 - Los PDFs generados se guardan en `EXPORT_STORAGE_DIR`; ese directorio debe ser persistente.
 - No hay Redis ni Mailpit.
 
@@ -57,7 +58,10 @@ APP_SECRET=<openssl rand -base64 32>
 INITIAL_ADMIN_EMAIL=tic@creup.es
 GOOGLE_CLIENT_ID=<client-id>.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=<client-secret>
-NUXT_ROLE_API_URL=https://intranet.creup.es/api/user/role
+
+NUXT_INTRANET_API_URL=http://intranet/api/asambleas/v1
+NUXT_INTRANET_API_TOKEN=<token asm_... del gestor de contraseñas>
+# NUXT_INTRANET_ROSTER_SYNC=false
 
 POSTGRES_USER=creup_asambleas
 POSTGRES_PASSWORD=<password>
@@ -76,6 +80,11 @@ Notas:
 - En Compose, `DATABASE_URL` usa host `postgres`, no `localhost`.
 - `NUXT_SITE_URL` debe coincidir con el dominio real usado por OAuth.
 - Google OAuth debe registrar `https://asambleas.creup.es/api/auth/callback/google`.
+- `NUXT_INTRANET_API_TOKEN` es el token en claro; la Intranet solo guarda su hash. Sin token, la plataforma no puede saber si una cuenta se ha borrado en la Intranet y no retira el acceso a nadie.
+- No definas `NUXT_ROLE_API_URL`: la consulta de rol usa `${NUXT_INTRANET_API_URL}/user/role`. Si queda el valor de antes (`https://intranet.creup.es/api/user/role`), la consulta sigue yendo a la ruta pública vieja, que no responde el 404 del grupo privado (nadie pierde el acceso), y dejará de funcionar cuando la Intranet la cierre.
+- Con `NODE_ENV=production`, las URL de la Intranet solo admiten `https:` o `http:` hacia un nombre sin punto (`http://intranet`). Cualquier otra cuenta como no configurada y deja un error `intranet.config` en los logs.
+- `NUXT_INTRANET_ROSTER_SYNC=false` apaga la sincronización diaria del listado; sin ella, o con otro valor, queda activa.
+- Para pasar de la configuración vieja a esta, seguir el orden de [docs/intranet.md](docs/intranet.md), sección 8.
 
 ## Compose De Producción
 
@@ -97,6 +106,10 @@ services:
     volumes:
       - ./app/.output:/app/.output:ro
       - ./storage/exports:/app/storage/exports
+    networks:
+      default: {} # its own database
+      creup-edge:
+        ipv4_address: 172.30.0.20 # the only address the Intranet accepts
 
   postgres:
     image: postgres:18-alpine
@@ -115,7 +128,13 @@ services:
 
 volumes:
   pgdata:
+
+networks:
+  creup-edge:
+    external: true # created by the Intranet's compose
 ```
+
+`creup-edge` la crea el compose de la Intranet ([docs/intranet.md](docs/intranet.md), sección 5.8, punto 1) y tiene que existir antes de levantar `app`. La Intranet solo acepta llamadas a su API privada desde `172.30.0.20`. Cambiar de red o de variables exige recrear el contenedor (`up -d app`); `restart` no basta.
 
 ## NGINX
 
@@ -194,7 +213,9 @@ rsync -az --delete .output/ user@vps:/opt/creup-asambleas/app/.output/
 ssh user@vps "cd /opt/creup-asambleas && docker compose -f docker-compose.prod.yml restart app"
 ```
 
-Si hay migraciones nuevas, aplícalas antes de reiniciar o antes de enrutar tráfico a la nueva versión.
+Si hay migraciones nuevas, aplícalas antes de reiniciar o antes de enrutar tráfico a la nueva versión. Si cambian el `.env` o las redes del compose, `restart` conserva lo de antes: usa `docker compose -f docker-compose.prod.yml up -d app`.
+
+Tras desplegar la versión que guarda el id de la Intranet (migración `0012`), es normal que la primera sincronización del listado dé casi todos los miembros como actualizados, y que el primer inicio de sesión de cada cuenta deje un `user.role_sync` en Actividad: los dos guardan ese id.
 
 ## Backups
 
@@ -244,13 +265,44 @@ ORDER BY createdon DESC
 LIMIT 20;
 ```
 
+Sincronización diaria del listado (cola `members-roster-sync`, cada día a las 05:00, Europe/Madrid):
+
+```sql
+SELECT id, state, createdon, completedon
+FROM pgboss.job
+WHERE name = 'members-roster-sync'
+ORDER BY createdon DESC
+LIMIT 7;
+```
+
+- Corre en su propia instancia de `pg-boss`, que abre hasta 2 conexiones más con PostgreSQL.
+- Si falla (la Intranet no responde), reintenta dos veces cada 15 minutos. Si el servidor estaba parado a las 05:00, la hace una vez al arrancar.
+- Nunca desactiva muchos miembros de golpe: si la Intranet devolviera una lista incompleta, deja `members.sync_blocked` en Actividad y un aviso `members.schedule` en los logs. Revisar la Intranet y, si la baja es real, sincronizar a mano desde Miembros, que pide confirmación.
+
+Revisión diaria de accesos (cola `users-access-recheck`, cada día a las 05:30, Europe/Madrid): vuelve a consultar en la Intranet, una cada medio segundo, las cuentas con sesión abierta, y retira el acceso a las que ya no existen. Corre siempre que haya `NUXT_INTRANET_API_TOKEN`, aunque `NUXT_INTRANET_ROSTER_SYNC=false`. Si la Intranet dijera no tener más de max(3, 30 %) de las cuentas, no retira nada: deja `users.access_recheck_blocked` en Actividad y un error `access.recheck` en los logs; revisar entonces `NUXT_INTRANET_API_URL` y la Intranet. Tras 5 fallos seguidos se detiene y reintenta dos veces cada 15 minutos.
+
+```sql
+SELECT id, state, createdon, completedon
+FROM pgboss.job
+WHERE name = 'users-access-recheck'
+ORDER BY createdon DESC
+LIMIT 7;
+```
+
+Cuentas sin acceso: una cuenta borrada en la Intranet pierde el acceso la próxima vez que inicia sesión o, si mantiene una sesión abierta, en la revisión de las 05:30; desde ese momento cada petición suya recibe 401 en todos sus dispositivos ([docs/intranet.md](docs/intranet.md), sección 1). Administración > Usuarios, con "Solo cuentas sin acceso", las lista. No hay forma de devolver el acceso a mano: lo recupera sola cuando la Intranet vuelve a tener la cuenta. Las cuentas `Admin`, `Secretaria`, `Presidencia` y `Moderador` nunca lo pierden; en su lugar queda `user.intranet_missing` en Actividad.
+
 ## Problemas Frecuentes
 
-| Síntoma                    | Revisión                                                                                   |
-| -------------------------- | ------------------------------------------------------------------------------------------ |
-| La app no arranca          | Logs de `app`, `APP_SECRET`, `DATABASE_URL`, credenciales OAuth                            |
-| OAuth falla                | Callback en Google, `NUXT_SITE_URL`, cabecera `X-Forwarded-Proto`                          |
-| No conectan migraciones    | Host correcto: `postgres` dentro de Compose, `localhost` desde host                        |
-| Export PDF falla           | `EXPORT_STORAGE_DIR` existe y es escribible; fuentes en `server/assets/fonts` empaquetadas |
-| Jobs no avanzan            | Logs del worker, tabla `pgboss.job`, conexión PostgreSQL                                   |
-| Descarga 404 tras reinicio | Confirmar que `storage/exports` está montado como volumen persistente                      |
+| Síntoma                                                   | Revisión                                                                                                                                                              |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| La app no arranca                                         | Logs de `app`, `APP_SECRET`, `DATABASE_URL`, credenciales OAuth                                                                                                       |
+| OAuth falla                                               | Callback en Google, `NUXT_SITE_URL`, cabecera `X-Forwarded-Proto`                                                                                                     |
+| No conectan migraciones                                   | Host correcto: `postgres` dentro de Compose, `localhost` desde host                                                                                                   |
+| Export PDF falla                                          | `EXPORT_STORAGE_DIR` existe y es escribible; fuentes en `server/assets/fonts` empaquetadas                                                                            |
+| Jobs no avanzan                                           | Logs del worker, tabla `pgboss.job`, conexión PostgreSQL                                                                                                              |
+| Descarga 404 tras reinicio                                | Confirmar que `storage/exports` está montado como volumen persistente                                                                                                 |
+| "Sincronizar" responde 503                                | `NUXT_INTRANET_API_URL` falta o se rechaza (en producción, solo `https:` o `http://intranet`); buscar `intranet.config` en los logs                                   |
+| "Sincronizar" responde 502                                | La Intranet no responde: `app` fuera de `creup-edge`, IP distinta de `172.30.0.20` o token erróneo ([docs/intranet.md](docs/intranet.md), sección 8)                  |
+| Miembros pide confirmar la sincronización                 | Desactivaría todos los miembros de un tipo o más de max(3, 30 %): revisar el listado de la Intranet antes de confirmar                                                |
+| Una cuenta no puede entrar: "ya no existe en la Intranet" | La Intranet la ha borrado o la ha dejado sin tipo o, si ya estaba sin acceso, la Intranet no responde. Recupera el acceso sola cuando la Intranet vuelve a devolverla |
+| Nadie puede entrar y los logs muestran `auth.hook.access` | Error de base de datos al comprobar el acceso: el inicio de sesión se rechaza para no dejar entrar a una cuenta borrada. Revisar PostgreSQL                           |

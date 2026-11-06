@@ -8,7 +8,10 @@ import {
   PERMISSION_KEYS,
   type PermissionKey,
 } from "~~/shared/constants/permissions";
-import { IMPERSONATION_REASON_MAX_LENGTH } from "~~/shared/constants/activity";
+import {
+  IMPERSONATION_REASON_MAX_LENGTH,
+  type AccessRevokedReason,
+} from "~~/shared/constants/activity";
 import { IMPERSONATION_TTL_MINUTES } from "~~/shared/constants/security";
 import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
 
@@ -32,6 +35,12 @@ import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
  * /api/admin/users/[id]/impersonate). Never for oneself nor another Admin.
  * While an Admin acts as an account that may open this page, it is
  * read-only: the server refuses every change then.
+ *
+ * An account that lost access to the platform (the Intranet deleted it:
+ * `accessRevokedAt`) shows "Sin acceso" under its name, with the reason and
+ * the date, and never offers "Acceder como" (the server refuses it too).
+ * The access filter (`?access=revoked`, so it can be linked) lists only
+ * those accounts; the server filters, since the list is paged.
  */
 definePageMeta({
   middleware: ["admin"],
@@ -48,6 +57,13 @@ interface UserRow {
   externalInitials: string | null;
   university: string | null;
   lastRoleSyncAt: string | null;
+  /**
+   * When the account lost access to the platform; null (or undefined if the
+   * server omits it) while it has access.
+   */
+  accessRevokedAt?: string | null;
+  /** Why it lost access; set exactly when `accessRevokedAt` is. */
+  accessRevokedReason?: AccessRevokedReason | null;
   createdAt: string;
   role: { id: string; name: string } | null;
   /** The member the account acts for; undefined if the server omits it. */
@@ -81,16 +97,56 @@ interface UsersResponse {
 
 const PAGE_SIZE = 50;
 
+/** Every account, or only those that lost access to the platform. */
+type AccessFilter = "all" | "revoked";
+
 const { t, te, locale } = useI18n();
 const toast = useToast();
 const api = useApi();
 const { me, isAdmin, can, impersonation, refresh: refreshMe } = useMe();
 const { startImpersonating } = useAuth();
 const localePath = useLocalePath();
+const route = useRoute();
+const router = useRouter();
 
 useHead({ title: () => t("admin.users.title") });
 
 const page = ref(1);
+
+/**
+ * The access filter, kept in the URL (`?access=revoked`) so the view can be
+ * linked. Anything else in the URL means every account.
+ */
+const accessFilter = computed<AccessFilter>({
+  get: () => {
+    const raw = route.query.access;
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    return value === "revoked" ? "revoked" : "all";
+  },
+  set: (value) => {
+    void router.replace({
+      query: {
+        ...route.query,
+        access: value === "revoked" ? "revoked" : undefined,
+      },
+    });
+  },
+});
+
+// A new filter starts again from the first page. Sync, so the list is
+// fetched once with both changes.
+watch(
+  accessFilter,
+  () => {
+    page.value = 1;
+  },
+  { flush: "sync" },
+);
+
+const accessFilterItems = computed(() => [
+  { label: t("admin.users.access.all"), value: "all" },
+  { label: t("admin.users.access.revokedOnly"), value: "revoked" },
+]);
 
 const {
   data: usersData,
@@ -99,7 +155,11 @@ const {
   refresh: refreshUsers,
 } = await useFetch<UsersResponse>("/api/admin/users", {
   key: "admin-users",
-  query: computed(() => ({ page: page.value, pageSize: PAGE_SIZE })),
+  query: computed(() => ({
+    page: page.value,
+    pageSize: PAGE_SIZE,
+    access: accessFilter.value === "revoked" ? "revoked" : undefined,
+  })),
 });
 
 const { data: rolesData } = await useFetch<{ data: RoleOption[] }>(
@@ -196,6 +256,51 @@ function formatDay(value: string | null): string {
   return value
     ? formatDate(value, { locale: locale.value, style: "medium" })
     : "";
+}
+
+// Access -----------------------------------------------------------------------
+
+/** Why an account lost access, in words; one key per reason. */
+const ACCESS_REVOKED_REASON_KEYS: Record<AccessRevokedReason, string> = {
+  intranet_deleted: "admin.users.access.reasons.intranetDeleted",
+};
+
+function isRevoked(user: UserRow): boolean {
+  return Boolean(user.accessRevokedAt);
+}
+
+/**
+ * Why the role select of a row is locked: the row's own reason, or that
+ * the account has no access (its role stays Invitado until the Intranet
+ * gives access back; the server refuses the change too).
+ */
+function roleLockReason(user: UserRow): string | null {
+  return (
+    rowLockReason(user) ??
+    (isRevoked(user) ? t("admin.users.access.roleLocked") : null)
+  );
+}
+
+/**
+ * "Borrada en la Intranet el 6 nov 2026": why and since when the account
+ * has no access. A reason this page does not know yet shows only the date.
+ */
+function revokedDetail(user: UserRow): string {
+  const date = formatDay(user.accessRevokedAt ?? null);
+  const key = user.accessRevokedReason
+    ? ACCESS_REVOKED_REASON_KEYS[user.accessRevokedReason]
+    : undefined;
+  return key && te(key)
+    ? t("admin.users.access.revokedOn", { reason: t(key), date })
+    : t("admin.users.access.since", { date });
+}
+
+function selectAccessFilter(value: unknown): void {
+  accessFilter.value = value === "revoked" ? "revoked" : "all";
+}
+
+function showAllAccounts(): void {
+  accessFilter.value = "all";
 }
 
 /** Sentinel for "no member" in the member select. */
@@ -631,13 +736,17 @@ function activityLink(user: UserRow) {
   return localePath({ path: "/admin/actividad", query: { user: user.id } });
 }
 
-/** Only an Admin acts as someone else: never as itself nor another Admin. */
+/**
+ * Only an Admin acts as someone else: never as itself, another Admin or an
+ * account without access to the platform.
+ */
 function canImpersonate(user: UserRow): boolean {
   return (
     isAdmin.value &&
     !impersonation.value &&
     !isSelf(user) &&
-    !isAdminRoleName(user.role?.name)
+    !isAdminRoleName(user.role?.name) &&
+    !isRevoked(user)
   );
 }
 
@@ -681,6 +790,13 @@ async function confirmImpersonation(): Promise<void> {
   } catch (error) {
     impersonationStarting.value = false;
     api.notifyError(error, "admin.users.impersonation.failed");
+    // The account changed since the list loaded (it lost access, became an
+    // Admin or no longer exists): close and show it as it is now.
+    const status = api.errorStatus(error);
+    if (status === 403 || status === 404) {
+      impersonationTarget.value = null;
+      await refreshUsers();
+    }
   }
 }
 
@@ -730,10 +846,36 @@ function goToPage(next: number): void {
           />
         </template>
       </UDashboardNavbar>
+
+      <UDashboardToolbar>
+        <template #left>
+          <div class="py-2">
+            <USelect
+              :model-value="accessFilter"
+              :items="accessFilterItems"
+              icon="i-lucide-filter"
+              :aria-label="t('admin.users.access.filterLabel')"
+              class="w-52"
+              @update:model-value="selectAccessFilter"
+            />
+          </div>
+        </template>
+      </UDashboardToolbar>
     </template>
 
     <template #body>
       <p class="text-muted text-sm">{{ t("admin.users.description") }}</p>
+      <p
+        v-if="accessFilter === 'revoked'"
+        class="text-muted flex items-start gap-1.5 text-sm"
+      >
+        <UIcon
+          name="i-lucide-user-x"
+          class="mt-0.5 size-4 shrink-0"
+          aria-hidden="true"
+        />
+        <span>{{ t("admin.users.access.filterHelp") }}</span>
+      </p>
       <UAlert
         v-if="impersonation"
         color="warning"
@@ -801,6 +943,21 @@ function goToPage(next: number): void {
               <p class="text-muted truncate text-xs">
                 {{ row.original.email }}
               </p>
+              <p
+                v-if="isRevoked(row.original)"
+                class="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5"
+              >
+                <UBadge
+                  :label="t('admin.users.access.revoked')"
+                  color="error"
+                  variant="subtle"
+                  size="sm"
+                  icon="i-lucide-user-x"
+                />
+                <span class="text-muted text-xs">
+                  {{ revokedDetail(row.original) }}
+                </span>
+              </p>
             </div>
           </div>
         </template>
@@ -838,6 +995,7 @@ function goToPage(next: number): void {
               :disabled="
                 ownAccountLocked(row.original) ||
                 roleLocked(row.original) ||
+                isRevoked(row.original) ||
                 changingUserId !== null
               "
               :placeholder="t('admin.users.noRole')"
@@ -847,7 +1005,7 @@ function goToPage(next: number): void {
                 })
               "
               :aria-describedby="
-                rowLockReason(row.original)
+                roleLockReason(row.original)
                   ? `row-locked-${row.original.id}`
                   : undefined
               "
@@ -857,7 +1015,7 @@ function goToPage(next: number): void {
               "
             />
             <p
-              v-if="rowLockReason(row.original)"
+              v-if="roleLockReason(row.original)"
               :id="`row-locked-${row.original.id}`"
               class="text-muted flex max-w-44 items-start gap-1 text-xs"
             >
@@ -866,7 +1024,7 @@ function goToPage(next: number): void {
                 class="mt-px size-3.5 shrink-0"
                 aria-hidden="true"
               />
-              <span>{{ rowLockReason(row.original) }}</span>
+              <span>{{ roleLockReason(row.original) }}</span>
             </p>
             <!-- Disabled on one's own row: the note above says why. An Admin
                  already has every permission, so it shows only to clear
@@ -1040,6 +1198,23 @@ function goToPage(next: number): void {
 
         <template #empty>
           <CommonEmptyState
+            v-if="accessFilter === 'revoked'"
+            icon="i-lucide-user-check"
+            :title="t('admin.users.access.noneRevoked')"
+          >
+            <template #action>
+              <UButton
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-filter-x"
+                @click="showAllAccounts"
+              >
+                {{ t("admin.users.access.showAll") }}
+              </UButton>
+            </template>
+          </CommonEmptyState>
+          <CommonEmptyState
+            v-else
             icon="i-lucide-users"
             :title="t('admin.users.noUsers')"
           />

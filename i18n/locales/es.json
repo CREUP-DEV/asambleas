@@ -130,7 +130,13 @@
     "signOut": "Cerrar sesión",
     "unauthorized": "No tienes permisos para acceder a esta página",
     "sessionExpired": "Tu sesión ha expirado. Inicia sesión de nuevo.",
-    "identityChanged": "La cuenta con la que actúas ha cambiado, quizá en otra pestaña. Se va a recargar la página."
+    "identityChanged": "La cuenta con la que actúas ha cambiado, quizá en otra pestaña. Se va a recargar la página.",
+    "signInErrors": {
+      "title": "No has podido entrar",
+      "accessRevoked": "Tu cuenta ya no existe en la Intranet de CREUP, así que no puedes entrar en la plataforma. Si crees que es un error, escribe a la Secretaría.",
+      "unavailable": "No se ha podido comprobar tu acceso. Inténtalo de nuevo dentro de un rato.",
+      "generic": "No se ha podido iniciar sesión con Google. Inténtalo de nuevo."
+    }
   },
   "nav": {
     "home": "Inicio",
@@ -1638,6 +1644,24 @@
         "reasonRequired": "Escribe el motivo.",
         "confirm": "Acceder como esta cuenta",
         "failed": "No se ha podido acceder como esa cuenta"
+      },
+      "access": {
+        "filterLabel": "Filtrar por acceso",
+        "all": "Todas las cuentas",
+        "revokedOnly": "Solo cuentas sin acceso",
+        "revoked": "Sin acceso",
+        "reasons": {
+          "intranetDeleted": "Borrada en la intranet"
+        },
+        "revokedOn": "{reason} el {date}",
+        "since": "Sin acceso desde el {date}",
+        "filterHelp": "Cuentas que la intranet ha borrado. No pueden entrar en la plataforma hasta que la intranet vuelva a tenerlas.",
+        "noneRevoked": "Ninguna cuenta ha perdido el acceso",
+        "showAll": "Ver todas las cuentas",
+        "roleLocked": "Esta cuenta no tiene acceso, así que su rol no se puede cambiar."
+      },
+      "errors": {
+        "targetRevoked": "Esta cuenta ya no tiene acceso porque la intranet la ha borrado, así que su rol no se puede cambiar."
       }
     },
     "roles": {
@@ -1735,6 +1759,18 @@
         "conflictTitle": "No se han guardado los cambios",
         "conflict": "Otro miembro usa esas siglas o alguien ha editado este miembro. Revisa la lista actualizada.",
         "saveFailed": "No se ha podido guardar el miembro"
+      },
+      "largeDeactivation": {
+        "title": "La sincronización desactivaría muchos miembros",
+        "intro": "La lista que ha enviado la intranet deja fuera a muchos miembros activos. Si sincronizas, se desactivarán:",
+        "some": "{kind}: {count} de los {active} activos",
+        "all": "{kind}: el único que está activo | {kind}: los {count} que están activos, es decir, todos",
+        "warning": "Si la intranet ha enviado una lista incompleta por un error, cancela y revísala antes. Los miembros desactivados no pueden presentar documentos ni enmiendas.",
+        "confirm": "Sincronizar y desactivar",
+        "kinds": {
+          "asociado": "Consejos asociados",
+          "sectorial": "Sectoriales"
+        }
       }
     },
     "impersonationReadOnly": "Mientras actúas como otra cuenta no puedes cambiar usuarios, roles ni miembros. Vuelve a tu cuenta para hacerlo."
@@ -3980,7 +4016,8 @@
       "self": "No puedes acceder como tu propia cuenta.",
       "targetAdmin": "No se puede acceder como otra cuenta con el rol Administrador.",
       "notActive": "Ya no estabas actuando como otra cuenta.",
-      "reason": "Escribe el motivo en una sola línea de hasta 200 caracteres."
+      "reason": "Escribe el motivo en una sola línea de hasta 200 caracteres.",
+      "targetRevoked": "No se puede acceder como una cuenta que ya no tiene acceso a la plataforma."
     }
   },
   "activity": {
@@ -4077,7 +4114,8 @@
       "member": "Un miembro",
       "members": "Lista de miembros de la intranet",
       "session": "Sesión de la asamblea",
-      "assembly": "Una asamblea"
+      "assembly": "Una asamblea",
+      "users": "Cuentas de la plataforma"
     },
     "actor": {
       "intranet": "La intranet de CREUP",
@@ -4277,7 +4315,10 @@
         "member_link": "Miembro vinculado a la cuenta cambiado",
         "created": "Cuenta creada al entrar por primera vez",
         "role_sync": "Datos de la cuenta actualizados desde la intranet",
-        "initial_admin": "Rol de administrador inicial asignado"
+        "initial_admin": "Rol de administrador inicial asignado",
+        "access_revoked": "La cuenta perdió el acceso porque ya no existe en la intranet",
+        "access_restored": "La cuenta recuperó el acceso porque vuelve a existir en la intranet",
+        "intranet_missing": "La intranet ya no tiene la cuenta, pero conserva su rol"
       },
       "permissions": {
         "set": "Permisos de un rol cambiados"
@@ -4290,7 +4331,8 @@
         "sync_deactivate": "Miembro desactivado por la intranet"
       },
       "members": {
-        "sync": "Miembros sincronizados con la intranet"
+        "sync": "Miembros sincronizados con la intranet",
+        "sync_blocked": "Sincronización de miembros detenida porque desactivaba demasiados"
       },
       "assembly": {
         "delete": "Asamblea en borrador borrada",
@@ -4319,7 +4361,10 @@
         "request": "Cambio hecho actuando como otra cuenta",
         "session": "La administración actuó como esta cuenta"
       },
-      "other": "@:amendment.history.events.other"
+      "other": "@:amendment.history.events.other",
+      "users": {
+        "access_recheck_blocked": "Revisión de accesos detenida porque faltaban demasiadas cuentas en la intranet"
+      }
     },
     "changes": {
       "milestoneNote": "Nota de «{milestone}»",

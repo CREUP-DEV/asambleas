@@ -29,18 +29,27 @@ Amendments and documents are presented by **members** (student councils,
 sectorials, executive areas), not by people.
 
 - `members`: `kind` (`asociado`, `sectorial`, `executive`, `other`),
-  `acronym` (unique, canonical), `name`, `university`, `region`, `source`
-  (`intranet`, `manual`), `active`.
-- The intranet already exposes the roster: `GET {NUXT_INTRANET_API_URL}/usuarios/asociados`
-  and `/usuarios/sectoriales` return `{ data: [{ denomination, initials,
-university, autonomous_community, ... }] }`. Members are upserted by
-  `initials` = `acronym`. Executive areas are created manually.
+  `acronym` (unique, canonical), `intranet_id` (the intranet's `users.id`,
+  unique when set: partial index `members_intranet_id_unique`), `name`,
+  `university`, `region`, `source` (`intranet`, `manual`), `active`.
+- The intranet exposes the roster: `GET {NUXT_INTRANET_API_URL}/usuarios/asociados`
+  and `/usuarios/sectoriales` return
+  `{ data: [{ id, denomination, initials, university, autonomous_community }] }`.
+  The roster sync matches a member by `intranet_id` first, then by `initials`
+  = `acronym`, so a change of acronym updates the member instead of creating
+  another. It runs by hand from Miembros and daily at 05:00 Europe/Madrid (a
+  pg-boss schedule, `server/utils/members/schedule.ts`, off with
+  `NUXT_INTRANET_ROSTER_SYNC=false`). A sync that would deactivate every
+  active member of a kind, or more than max(3, 30%) of them, is not applied
+  unless the request confirms those counts (`confirmedKinds`; a retry that
+  would deactivate more asks again): it records `members.sync_blocked`, and
+  the daily run never confirms. Executive areas are created manually.
 - In the intranet an `Asociado` account _is_ the member, and
-  `POST /user/role` returns the same `initials`. Role sync therefore links
-  `users.memberId` by acronym, creating the member if the roster has not been
-  synced yet.
-- Recommended intranet change: add a stable `id` to the roster payload, so a
-  member that changes acronym keeps its link.
+  `POST /user/role` returns its `id` (stored in `users.intranet_id`) and the
+  same `initials`. Role sync therefore links the `users.memberId` of Asociado
+  and Sectorial accounts by `intranet_id`, then by acronym, creating the
+  member if the roster has not been synced yet. CEA accounts link to their
+  executive area by initials only, since their `id` is a person's.
 
 A user acts for the member in `users.memberId`. Users with moderation
 permissions may act on behalf of any member; every such action records both.
@@ -339,11 +348,65 @@ permissions, a user can be granted individual permissions
 (`user_permissions`); a user's permissions are the union of both.
 
 **Intranet.** Calls to the intranet API send `Authorization: Bearer
-<NUXT_INTRANET_API_TOKEN>` when the token is configured. The intranet's
-`POST /user/role` is public today and reveals a user's type, name, initials
-and university to anyone who knows an email: it should require that token,
-be rate limited and answer only what this app needs. What the Intranet has
-to implement, and how, is in [`intranet.md`](intranet.md).
+<NUXT_INTRANET_API_TOKEN>` when the token is configured, and the role lookup
+sends `Accept: application/json`. The intranet's old public
+`POST /api/user/role` reveals a user's type, name, initials and university to
+anyone who knows an email; its private group `/api/asambleas/v1` requires
+that token, is reachable only over the Docker network and answers only what
+this app needs. In production the base URL must be `https:`, or `http:` to a
+host with no dot (`http://intranet`); anything else counts as unconfigured.
+Logs never carry an email, only `accountRef` (a keyed HMAC of it). What the
+Intranet has to implement, and how, is in [`intranet.md`](intranet.md).
+
+**Access and deleted accounts.** Every Google account may sign in, except one
+the Intranet deleted. The role lookup runs once per sign-in, before the
+session exists (better-auth `session.create.before`, `checkSignInAccess` in
+`server/utils/auth/roleSync.ts`), and role sync reuses its answer. Only a
+successful lookup writes the intranet data, `users.intranet_id` and
+`lastRoleSyncAt`. An authenticated 404 `{"error":"not_found"}` for an
+account the Intranet knew before (`externalRole` or `intranet_id` set)
+revokes its access in one transaction: `users.access_revoked_at` and
+`access_revoked_reason` (`intranet_deleted`, from `ACCESS_REVOKED_REASONS`;
+the CHECK `users_access_revoked_consistent` keeps both set or both null),
+role `Invitado`, no member, every session deleted, its open impersonations
+closed (`revoked`), and `user.access_revoked`. The sign-in is refused and
+lands on the login page of the user's language with `?error=access_revoked`
+(the client sends it as `errorCallbackURL`). Per-user grants are kept and
+apply again on restore.
+
+- Protected roles (Admin, Secretaría, Presidencia, Moderador) keep
+  everything and get `user.intranet_missing` and a warning instead; an
+  account the Intranet never knew stays as it is (a new one is an
+  `Invitado`).
+- A revoked account gets access back only at a sign-in whose authenticated
+  lookup returns it (`user.access_restored`); role sync then gives back its
+  role and member. There is no manual restore: the Intranet is the source of
+  truth. Any other answer, an unreachable Intranet included, refuses it. Its
+  role cannot be changed by hand either (409
+  `admin.users.errors.targetRevoked`), and an Admin without access does not
+  count as the last Admin.
+- Intranet failures never block anyone with access, but a database error
+  while checking refuses the sign-in (`sign_in_unavailable`).
+- Open sessions: sessions last 7 days and renew each day they are used, so
+  sign-in alone would never catch an account that keeps its session alive.
+  A daily re-check (05:30 Europe/Madrid, pg-boss queue
+  `users-access-recheck`, `server/utils/auth/accessRecheck.ts`) looks up
+  again, one every half second, every account with a live session, access,
+  intranet data and no protected role, and revokes those the Intranet
+  deleted. It never touches role sync data. It runs whenever the role
+  lookup is authenticated, whatever `NUXT_INTRANET_ROSTER_SYNC` says. If the
+  Intranet no longer has more than max(3, 30%) of the accounts it answered
+  for, it revokes nobody, records `users.access_recheck_blocked` and logs
+  an error; after 5 failed lookups in a row it stops and pg-boss retries.
+- Every request reads `access_revoked_at` (`getAuthUserWithRole`): an
+  account without access gets 401 at once, even on devices whose session
+  better-auth still serves from its 5-minute cookie cache.
+- The token only travels to the Intranet it is for: a `NUXT_ROLE_API_URL`
+  on another origin than `NUXT_INTRANET_API_URL` is called without it
+  (`isRoleLookupAuthenticated`), so it can never revoke anyone.
+- The users page marks such accounts "Sin acceso" with the reason and the
+  date, filters them with `/admin/usuarios?access=revoked`, and never offers
+  "Acceder como" on them.
 
 ## Traceability
 
@@ -376,13 +439,22 @@ from where and, while an Admin impersonates, who really did it.
 - Accounts: `user.created`; `auth.sign_in` (with the role sync outcome),
   `auth.sign_out` and `auth.session_ended`, with IP and user agent.
 - Role sync, in the transaction of the users update: `user.role_sync` with
-  before and after (role, external fields, member), `user.initial_admin`,
-  and the automatic `user.member_link` and `member.create`, source `intranet`.
+  before and after (role, external fields, intranet id, member),
+  `user.initial_admin`, and the automatic `user.member_link` and
+  `member.create`, source `intranet`.
+- Access, source `intranet` and no actor: `user.access_revoked` (before and
+  after: role, member, reason, plus the sessions and impersonations it
+  ended), `user.access_restored`, `user.intranet_missing` for a protected
+  role the Intranet no longer has, and `users.access_recheck_blocked`
+  (target `users`/`intranet`, counts only, Admins only) when the daily
+  re-check refused a mass revocation.
 - Admin section: `role.assign`, `user.permissions_set`, `user.member_link`,
   `permissions.set`, with the caller as actor and no row when nothing changed.
 - Members: `member.create`, `member.update`, and for each roster sync one row
   per created, updated or deactivated member plus the `members.sync` summary,
-  sharing a `batchId`.
+  sharing a `batchId`; `members.sync_blocked` when a large deactivation was
+  not confirmed. The daily sync's rows have no actor; a manual one's keep the
+  account that ran it.
 - Exports: `export.request` (no job without its row) and `export.download`.
 - `rbac.seed` when the seed adds grants; `assembly.import` when data is loaded
   outside the app (source `import`, no actor).
@@ -405,7 +477,8 @@ through per-action allowlists (`EVENT_PAYLOAD_KEYS`, `AUDIT_PAYLOAD_KEYS`, and
 - **Mi actividad** (`/actividad`, from the user menu), for every account:
   what it did, changes to the account (role, permissions, member link, role
   sync, grants of its role while it held it), its accesses (sign-ins and
-  sign-outs with its own IP) and, when linked, what other accounts did for its
+  sign-outs with its own IP, access lost or given back) and, when linked,
+  what other accounts did for its
   member. A notice says when an Admin acted as the account in the last 30
   days. Rows about something the account can no longer see keep their type and
   time and say so. Others' IPs and emails are never shown.
@@ -430,11 +503,12 @@ better-auth's admin plugin is not used.
 
 - **Who.** Only a user whose real role is Admin (never a permission key:
   Secretaría and Presidencia hold every key). Never as oneself, never as
-  another Admin, never nested. A reason is required.
+  another Admin, never as an account without access, never nested. A reason
+  is required.
 - **How long.** Fixed 60 minutes, never renewed, capped by the Admin's own
-  session. Signing out, losing the Admin role or the target becoming Admin
-  ends it (`stopped`, `expired`, `signed_out`, `revoked`), each with an audit
-  row.
+  session. Signing out, losing the Admin role, the target becoming Admin or
+  the target losing access ends it (`stopped`, `expired`, `signed_out`,
+  `revoked`), each with an audit row.
 - **Effective identity.** `getAuthUserWithRole` loads the real user and, only
   for Admins, the open row of the session. While it applies, the request runs
   entirely as the target: permissions, member, visibility, authorship, exports,

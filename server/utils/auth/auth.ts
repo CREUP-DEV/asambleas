@@ -1,5 +1,6 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { APIError } from "better-auth/api";
 import {
   getOptionalConfigUrl,
   requireConfigString,
@@ -16,7 +17,12 @@ import { db } from "../../db";
 import { users, sessions, accounts, verifications } from "../../db/schema";
 import { recordAudit } from "../domain/audit";
 import { endImpersonations } from "./impersonation";
-import { syncUserRole, type RoleSyncOutcome } from "./roleSync";
+import {
+  checkSignInAccess,
+  syncUserRole,
+  type RoleSyncOutcome,
+} from "./roleSync";
+import type { IntranetRoleLookup } from "../members/intranet";
 import { logError, logInfo } from "../core/logger";
 
 // Traceability of the auth layer ----------------------------------------------
@@ -171,6 +177,139 @@ export async function recordSessionEnd(
   });
 }
 
+// Access gate on sign-in ------------------------------------------------------
+
+/**
+ * Codes of the sign-in refusals. The OAuth callback turns an APIError's
+ * `code` into `?error=<code>` on SIGN_IN_ERROR_URL, and the login page
+ * shows the localized message of each one (app/pages/login.vue keeps the
+ * same strings).
+ */
+export const SIGN_IN_ERROR_CODES = {
+  /** The account lost access: the Intranet deleted it (users.access_revoked_at). */
+  accessRevoked: "access_revoked",
+  /** The access check itself failed (a database error): nothing was decided. */
+  unavailable: "sign_in_unavailable",
+} as const;
+
+/**
+ * Where better-auth sends a failed sign-in (`onAPIError.errorURL`), with
+ * `?error=<code>`: the login page, instead of better-auth's own error page.
+ */
+export const SIGN_IN_ERROR_URL = "/login";
+
+/** The refusal of an account without access. The login page never shows `message`. */
+export function accessRevokedError(): APIError {
+  return new APIError("FORBIDDEN", {
+    code: SIGN_IN_ERROR_CODES.accessRevoked,
+    message: "Tu cuenta ya no existe en la Intranet de CREUP",
+  });
+}
+
+function signInUnavailableError(): APIError {
+  return new APIError("SERVICE_UNAVAILABLE", {
+    code: SIGN_IN_ERROR_CODES.unavailable,
+    message: "No se ha podido comprobar el acceso. Inténtalo de nuevo",
+  });
+}
+
+/** How long a lookup waits for the session it was made for. */
+const PENDING_LOOKUP_TTL_MS = 60_000;
+
+/**
+ * The intranet lookup of each sign-in, from session.create.before to its
+ * after hook, keyed by the new session's token (better-auth generates it
+ * before the before hook, and it is unique), so role sync asks the intranet
+ * once. An entry whose session was never created expires.
+ */
+const pendingLookups = new Map<
+  string,
+  { lookup: IntranetRoleLookup; at: number }
+>();
+
+function keepSignInLookup(
+  token: string,
+  lookup: IntranetRoleLookup,
+  now = Date.now(),
+): void {
+  for (const [key, entry] of pendingLookups) {
+    if (now - entry.at > PENDING_LOOKUP_TTL_MS) pendingLookups.delete(key);
+  }
+  pendingLookups.set(token, { lookup, at: now });
+}
+
+function takeSignInLookup(
+  token: string | null | undefined,
+  now = Date.now(),
+): IntranetRoleLookup | null {
+  if (!token) return null;
+  const entry = pendingLookups.get(token);
+  pendingLookups.delete(token);
+  return entry && now - entry.at <= PENDING_LOOKUP_TTL_MS ? entry.lookup : null;
+}
+
+/**
+ * better-auth session.create.before: lets the session be created only when
+ * the account may sign in (checkSignInAccess). An account without access is
+ * refused with `access_revoked`; a database error while checking refuses
+ * with `sign_in_unavailable` rather than letting a deleted account in. An
+ * intranet that fails or is not configured never refuses anyone with
+ * access.
+ */
+export async function guardSessionCreate(session: {
+  userId: string;
+  token?: string | null;
+}): Promise<void> {
+  let access: Awaited<ReturnType<typeof checkSignInAccess>>;
+  try {
+    access = await checkSignInAccess(session.userId);
+  } catch (error) {
+    logError("auth.hook.access", error);
+    throw signInUnavailableError();
+  }
+  if (!access.allowed) {
+    logInfo("auth.hook", {
+      action: "sign-in refused",
+      userId: session.userId,
+      code: SIGN_IN_ERROR_CODES.accessRevoked,
+    });
+    throw accessRevokedError();
+  }
+  if (access.lookup && session.token) {
+    keepSignInLookup(session.token, access.lookup);
+  }
+}
+
+/**
+ * better-auth session.create.after: role sync with the lookup the before
+ * hook made, then `auth.sign_in`. Neither ever blocks signing in.
+ */
+export async function afterSessionCreate(session: {
+  id: string;
+  userId: string;
+  token?: string | null;
+  ipAddress?: string | null;
+  userAgent?: string | null;
+}): Promise<void> {
+  let roleSync: RoleSyncOutcome = "failed";
+  try {
+    const lookup = takeSignInLookup(session.token);
+    roleSync = await syncUserRole(session.userId, lookup ? { lookup } : {});
+    logInfo("auth.hook", {
+      action: "roleSync",
+      userId: session.userId,
+      outcome: roleSync,
+    });
+  } catch (error) {
+    logError("auth.hook.roleSync", error);
+  }
+  try {
+    await recordSignIn(session, roleSync);
+  } catch (error) {
+    logError("auth.hook.signIn", error);
+  }
+}
+
 function getAuthBaseUrl() {
   return (
     getOptionalConfigUrl(process.env.BETTER_AUTH_URL, "BETTER_AUTH_URL") ||
@@ -242,6 +381,11 @@ export const auth = betterAuth({
       maxAge: 60 * 5,
     },
   },
+  // Failed sign-ins land on the login page with `?error=<code>`
+  // (SIGN_IN_ERROR_CODES), which shows a localized message.
+  onAPIError: {
+    errorURL: SIGN_IN_ERROR_URL,
+  },
   advanced: {
     cookies: {
       session_token: {
@@ -255,8 +399,10 @@ export const auth = betterAuth({
       },
     },
   },
-  // Run after better-auth's transaction commits. Each one catches its own
-  // errors: a failed sync or audit row never blocks signing in or out.
+  // The after hooks run once better-auth's transaction commits and catch
+  // their own errors: a failed sync or audit row never blocks signing in or
+  // out. Only session.create.before refuses a sign-in, for an account
+  // without access (guardSessionCreate).
   databaseHooks: {
     user: {
       create: {
@@ -271,23 +417,11 @@ export const auth = betterAuth({
     },
     session: {
       create: {
+        before: async (session) => {
+          await guardSessionCreate(session);
+        },
         after: async (session) => {
-          let roleSync: RoleSyncOutcome = "failed";
-          try {
-            roleSync = await syncUserRole(session.userId);
-            logInfo("auth.hook", {
-              action: "roleSync",
-              userId: session.userId,
-              outcome: roleSync,
-            });
-          } catch (error) {
-            logError("auth.hook.roleSync", error);
-          }
-          try {
-            await recordSignIn(session, roleSync);
-          } catch (error) {
-            logError("auth.hook.signIn", error);
-          }
+          await afterSessionCreate(session);
         },
       },
       delete: {

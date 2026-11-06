@@ -1,9 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
+  findLargeDeactivations,
   intranetRosterResponseSchema,
+  isDeactivationConfirmed,
+  isLargeDeactivation,
   normalizeRoster,
   planRosterSync,
   type ExistingMember,
+  type RosterMember,
 } from "./roster";
 
 const existing = (overrides: Partial<ExistingMember>): ExistingMember => ({
@@ -13,9 +17,30 @@ const existing = (overrides: Partial<ExistingMember>): ExistingMember => ({
   name: "Consejo de Estudiantes de la Universidad de Murcia",
   university: "Universidad de Murcia",
   region: "Región de Murcia",
+  intranetId: null,
   source: "intranet",
   active: true,
   ...overrides,
+});
+
+const entry = (overrides: Partial<RosterMember>): RosterMember => ({
+  kind: "asociado",
+  acronym: "CEUM",
+  name: "Consejo de Estudiantes de la Universidad de Murcia",
+  university: "Universidad de Murcia",
+  region: "Región de Murcia",
+  intranetId: null,
+  ...overrides,
+});
+
+/** The same member as the roster lists it (nothing to change). */
+const listed = (member: ExistingMember): RosterMember => ({
+  kind: member.kind as RosterMember["kind"],
+  acronym: member.acronym,
+  name: member.name,
+  university: member.university,
+  region: member.region,
+  intranetId: member.intranetId,
 });
 
 describe("intranetRosterResponseSchema", () => {
@@ -32,6 +57,7 @@ describe("intranetRosterResponseSchema", () => {
       generated_at: "2026-11-04T10:00:00Z",
     });
     expect(parsed.data[0]).toMatchObject({
+      id: null,
       denomination: "Consejo de Estudiantes",
       initials: "CEUM",
       university: null,
@@ -39,6 +65,29 @@ describe("intranetRosterResponseSchema", () => {
     });
     expect(parsed.data[1]?.initials).toBeNull();
   });
+
+  it("reads the Intranet id of the private group, null when missing", () => {
+    const parsed = intranetRosterResponseSchema.parse({
+      data: [
+        { id: 412, initials: "CdEUB" },
+        { id: null, initials: "CEUM" },
+      ],
+    });
+    expect(parsed.data.map((row) => row.id)).toEqual([412, null]);
+  });
+
+  it.each([0, -1, 1.5, "412", 2 ** 31])(
+    "rejects the whole list for an id %p",
+    (id) => {
+      const parsed = intranetRosterResponseSchema.safeParse({
+        data: [
+          { id: 1, initials: "A" },
+          { id, initials: "B" },
+        ],
+      });
+      expect(parsed.success).toBe(false);
+    },
+  );
 });
 
 describe("normalizeRoster", () => {
@@ -48,6 +97,7 @@ describe("normalizeRoster", () => {
         kind: "asociado",
         entries: [
           {
+            id: 10,
             order: 1,
             denomination: "Consejo A",
             initials: "CEUM",
@@ -55,6 +105,7 @@ describe("normalizeRoster", () => {
             autonomous_community: "Murcia",
           },
           {
+            id: 11,
             order: 2,
             denomination: "Sin siglas",
             initials: null,
@@ -67,6 +118,7 @@ describe("normalizeRoster", () => {
         kind: "sectorial",
         entries: [
           {
+            id: 12,
             order: 1,
             denomination: "Duplicado",
             initials: "ceum",
@@ -74,6 +126,7 @@ describe("normalizeRoster", () => {
             autonomous_community: null,
           },
           {
+            id: null,
             order: 2,
             denomination: null,
             initials: "CEEM",
@@ -85,6 +138,7 @@ describe("normalizeRoster", () => {
     ]);
     expect(roster.skipped).toBe(1);
     expect(roster.duplicates).toEqual(["ceum"]);
+    expect(roster.duplicateIds).toEqual([]);
     expect(roster.members).toEqual([
       {
         kind: "asociado",
@@ -92,6 +146,7 @@ describe("normalizeRoster", () => {
         name: "Consejo A",
         university: "UM",
         region: "Murcia",
+        intranetId: 10,
       },
       {
         kind: "sectorial",
@@ -99,8 +154,25 @@ describe("normalizeRoster", () => {
         name: "CEEM",
         university: null,
         region: null,
+        intranetId: null,
       },
     ]);
+  });
+
+  it("keeps the first row of a repeated Intranet id", () => {
+    const row = {
+      order: null,
+      denomination: null,
+      university: null,
+      autonomous_community: null,
+    };
+    const roster = normalizeRoster([
+      { kind: "asociado", entries: [{ ...row, id: 7, initials: "A" }] },
+      { kind: "sectorial", entries: [{ ...row, id: 7, initials: "B" }] },
+    ]);
+    expect(roster.members.map((member) => member.acronym)).toEqual(["A"]);
+    expect(roster.duplicateIds).toEqual([7]);
+    expect(roster.duplicates).toEqual([]);
   });
 });
 
@@ -108,34 +180,26 @@ describe("planRosterSync", () => {
   it("creates, updates, reactivates and deactivates intranet members only", () => {
     const plan = planRosterSync(
       [
-        {
-          kind: "asociado",
-          acronym: "CEUM",
-          name: "Nuevo nombre",
-          university: "Universidad de Murcia",
-          region: "Región de Murcia",
-        },
-        {
-          kind: "asociado",
+        entry({ name: "Nuevo nombre" }),
+        entry({
           acronym: "ceule",
           name: "Consejo de León",
           university: null,
           region: null,
-        },
-        {
-          kind: "asociado",
+        }),
+        entry({
           acronym: "UGR",
           name: "Delegación UGR",
           university: null,
           region: null,
-        },
-        {
+        }),
+        entry({
           kind: "sectorial",
           acronym: "VPU",
           name: "Colisión",
           university: null,
           region: null,
-        },
+        }),
       ],
       [
         existing({ id: "m1" }),
@@ -163,28 +227,263 @@ describe("planRosterSync", () => {
       ],
     );
     expect(plan.create.map((member) => member.acronym)).toEqual(["UGR"]);
-    expect(plan.update.map((entry) => entry.id)).toEqual(["m1", "m2"]);
+    expect(plan.update.map((change) => change.id)).toEqual(["m1", "m2"]);
     expect(plan.unchanged).toEqual([]);
     expect(plan.deactivate).toEqual(["m3"]);
     expect(plan.manualConflicts).toEqual(["VPU"]);
+    expect(plan.acronymConflicts).toEqual([]);
   });
 
   it("only touches syncedAt when nothing changed", () => {
-    const member = existing({});
+    const member = existing({ intranetId: 4 });
+    const plan = planRosterSync([listed(member)], [member]);
+    expect(plan.unchanged).toEqual(["m1"]);
+    expect(plan.update).toEqual([]);
+    expect(plan.deactivate).toEqual([]);
+  });
+
+  it("follows an acronym change through the Intranet id", () => {
+    const member = existing({ id: "m1", acronym: "CEUM", intranetId: 412 });
     const plan = planRosterSync(
-      [
-        {
-          kind: "asociado",
-          acronym: member.acronym,
-          name: member.name,
-          university: member.university,
-          region: member.region,
-        },
-      ],
+      [entry({ acronym: "CEUMU", intranetId: 412 })],
+      [member],
+    );
+    expect(plan.update).toEqual([
+      {
+        id: "m1",
+        values: entry({ acronym: "CEUMU", intranetId: 412 }),
+      },
+    ]);
+    expect(plan.create).toEqual([]);
+    expect(plan.deactivate).toEqual([]);
+  });
+
+  it("stores the Intranet id on the member it matches by acronym", () => {
+    const member = existing({ intranetId: null });
+    const plan = planRosterSync(
+      [{ ...listed(member), intranetId: 412 }],
+      [member],
+    );
+    expect(plan.update).toEqual([
+      { id: "m1", values: { ...listed(member), intranetId: 412 } },
+    ]);
+    expect(plan.replacedIds).toEqual([]);
+  });
+
+  it("never clears a stored id when the roster sends none", () => {
+    const member = existing({ intranetId: 412 });
+    const plan = planRosterSync(
+      [{ ...listed(member), intranetId: null }],
       [member],
     );
     expect(plan.unchanged).toEqual(["m1"]);
     expect(plan.update).toEqual([]);
+  });
+
+  it("reuses a member whose account left when a new account takes its acronym", () => {
+    const member = existing({ intranetId: 5 });
+    const plan = planRosterSync(
+      [{ ...listed(member), intranetId: 9 }],
+      [member],
+    );
+    expect(plan.update).toEqual([
+      { id: "m1", values: { ...listed(member), intranetId: 9 } },
+    ]);
+    expect(plan.replacedIds).toEqual([
+      { id: "m1", acronym: "CEUM", from: 5, to: 9 },
+    ]);
     expect(plan.deactivate).toEqual([]);
+    expect(plan.create).toEqual([]);
+  });
+
+  it("creates the entry that takes the acronym of a member renamed under its id", () => {
+    const plan = planRosterSync(
+      [
+        entry({ acronym: "CEUM", intranetId: 9, name: "Otro consejo" }),
+        entry({ acronym: "CEUM2", intranetId: 5 }),
+      ],
+      [existing({ id: "m1", acronym: "CEUM", intranetId: 5 })],
+    );
+    expect(plan.update.map(({ id, values }) => [id, values.acronym])).toEqual([
+      ["m1", "CEUM2"],
+    ]);
+    expect(
+      plan.create.map((member) => [member.acronym, member.intranetId]),
+    ).toEqual([["CEUM", 9]]);
+    expect(plan.deactivate).toEqual([]);
+  });
+
+  it("applies a swap of acronyms between two members matched by id", () => {
+    const plan = planRosterSync(
+      [
+        entry({ acronym: "B", intranetId: 1 }),
+        entry({ acronym: "A", intranetId: 2 }),
+      ],
+      [
+        existing({ id: "ma", acronym: "A", intranetId: 1 }),
+        existing({ id: "mb", acronym: "B", intranetId: 2 }),
+      ],
+    );
+    expect(plan.update.map(({ id, values }) => [id, values.acronym])).toEqual([
+      ["ma", "B"],
+      ["mb", "A"],
+    ]);
+    expect(plan.acronymConflicts).toEqual([]);
+  });
+
+  it("keeps the acronym of a member renamed onto one another member keeps", () => {
+    const plan = planRosterSync(
+      [entry({ acronym: "B", intranetId: 1 })],
+      [
+        existing({ id: "ma", acronym: "A", intranetId: 1 }),
+        // No longer listed: deactivated, but it keeps "B".
+        existing({ id: "mb", acronym: "B", intranetId: 2 }),
+      ],
+    );
+    expect(plan.update).toEqual([]);
+    expect(plan.unchanged).toEqual(["ma"]);
+    expect(plan.deactivate).toEqual(["mb"]);
+    expect(plan.acronymConflicts).toEqual(["B"]);
+  });
+
+  it("never renames onto a manual member's acronym", () => {
+    const plan = planRosterSync(
+      [entry({ acronym: "VPU", intranetId: 1, name: "Nuevo" })],
+      [
+        existing({ id: "ma", acronym: "A", intranetId: 1 }),
+        existing({ id: "mv", acronym: "VPU", source: "manual" }),
+      ],
+    );
+    expect(plan.update.map(({ id, values }) => [id, values.acronym])).toEqual([
+      ["ma", "A"],
+    ]);
+    expect(plan.manualConflicts).toEqual(["VPU"]);
+    expect(plan.deactivate).toEqual([]);
+  });
+
+  it("follows a blocked rename down a chain and does not create onto it", () => {
+    // ma wants "B", which mb keeps because its own "C" is manual. The new
+    // entry "A" cannot be created while ma keeps "A".
+    const plan = planRosterSync(
+      [
+        entry({ acronym: "B", intranetId: 1 }),
+        entry({ acronym: "C", intranetId: 2 }),
+        entry({ acronym: "A", intranetId: 3 }),
+      ],
+      [
+        existing({ id: "ma", acronym: "A", intranetId: 1 }),
+        existing({ id: "mb", acronym: "B", intranetId: 2 }),
+        existing({ id: "mc", acronym: "C", source: "manual" }),
+      ],
+    );
+    expect(plan.update).toEqual([]);
+    expect(plan.unchanged).toEqual(["ma", "mb"]);
+    expect(plan.create).toEqual([]);
+    expect(plan.manualConflicts).toEqual(["C"]);
+    expect(plan.acronymConflicts).toEqual(["B", "A"]);
+    expect(plan.deactivate).toEqual([]);
+  });
+
+  it("never touches a manual member, even through an Intranet id", () => {
+    const manual = existing({ id: "mv", source: "manual", intranetId: 7 });
+    const plan = planRosterSync(
+      [entry({ acronym: "OTRO", intranetId: 7 })],
+      [manual],
+    );
+    expect(plan.update).toEqual([]);
+    expect(plan.create).toEqual([]);
+    expect(plan.manualConflicts).toEqual(["CEUM"]);
+  });
+});
+
+describe("isLargeDeactivation", () => {
+  it.each([
+    // [active, toDeactivate, large]
+    [0, 0, false],
+    [5, 0, false],
+    [1, 1, true],
+    [2, 2, true],
+    [3, 3, true],
+    [4, 3, false],
+    [10, 3, false],
+    [10, 4, true],
+    [20, 6, false],
+    [20, 7, true],
+    [100, 30, false],
+    [100, 31, true],
+  ])("%i active, %i leaving: %s", (active, toDeactivate, large) => {
+    expect(isLargeDeactivation(active, toDeactivate)).toBe(large);
+  });
+});
+
+describe("findLargeDeactivations", () => {
+  const sectorials = Array.from({ length: 10 }, (_, index) =>
+    existing({
+      id: `s${index}`,
+      kind: "sectorial",
+      acronym: `S${index}`,
+    }),
+  );
+
+  it("reports each roster kind over the limit with its counts", () => {
+    const members = [
+      existing({ id: "a1" }),
+      existing({ id: "a2", acronym: "B" }),
+      ...sectorials,
+    ];
+    expect(
+      findLargeDeactivations(members, ["a1", "a2", "s0", "s1", "s2", "s3"]),
+    ).toEqual([
+      { kind: "asociado", active: 2, toDeactivate: 2 },
+      { kind: "sectorial", active: 10, toDeactivate: 4 },
+    ]);
+    expect(findLargeDeactivations(members, ["a1", "s0", "s1", "s2"])).toEqual(
+      [],
+    );
+  });
+
+  it("counts only active intranet members of the kind", () => {
+    const members = [
+      existing({ id: "a1" }),
+      existing({ id: "a2", acronym: "B", active: false }),
+      existing({ id: "a3", acronym: "C", source: "manual" }),
+      existing({ id: "e1", acronym: "E", kind: "executive" }),
+    ];
+    expect(findLargeDeactivations(members, ["a1", "e1"])).toEqual([
+      { kind: "asociado", active: 1, toDeactivate: 1 },
+    ]);
+  });
+});
+
+describe("isDeactivationConfirmed", () => {
+  const large = [
+    { kind: "asociado" as const, active: 100, toDeactivate: 100 },
+    { kind: "sectorial" as const, active: 12, toDeactivate: 6 },
+  ];
+
+  it("needs every kind confirmed with at least as many members", () => {
+    expect(
+      isDeactivationConfirmed(large, [
+        { kind: "asociado", toDeactivate: 100 },
+        { kind: "sectorial", toDeactivate: 8 },
+      ]),
+    ).toBe(true);
+    expect(
+      isDeactivationConfirmed(large, [{ kind: "asociado", toDeactivate: 100 }]),
+    ).toBe(false);
+    expect(isDeactivationConfirmed(large, [])).toBe(false);
+  });
+
+  it("never stretches a confirmation of 5 to 100", () => {
+    expect(
+      isDeactivationConfirmed(
+        [{ kind: "asociado", active: 100, toDeactivate: 100 }],
+        [{ kind: "asociado", toDeactivate: 5 }],
+      ),
+    ).toBe(false);
+  });
+
+  it("needs nothing when there is nothing large", () => {
+    expect(isDeactivationConfirmed([], [])).toBe(true);
   });
 });

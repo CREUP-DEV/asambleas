@@ -47,27 +47,76 @@ The usual AGENTS.md handler order applies:
 
 ## Members and me
 
-| Method | Path                                | Who                       | Notes                                                                                       |
-| ------ | ----------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------- |
-| GET    | `/api/me`                           | any                       | `MeDto`. `permissions` are the role's plus the user's own grants (see "Permissions" below). |
-| GET    | `/api/me/work`                      | any                       | `MeWorkDto`, see "Review and work" below.                                                   |
-| GET    | `/api/members`                      | any                       | `MemberDto[]`, active first, by acronym. `?all=1` also returns inactive members.            |
-| POST   | `/api/members`                      | `member:manage`           | Creates a member manually, typically an executive area.                                     |
-| PUT    | `/api/members/[id]`                 | `member:manage`           | Edits name, kind or active, with `updatedAt`.                                               |
-| POST   | `/api/members/sync`                 | `member:manage`           | Syncs the intranet roster. Returns `MemberSyncResult`.                                      |
-| GET    | `/api/admin/users`                  | `user:manage_roles`       | Paginated user rows, each with `member` and `extraPermissions`.                             |
-| PUT    | `/api/admin/users/[id]/role`        | `user:manage_roles`       | Body `{ roleId }`. Only an Admin gives or takes Admin, Secretaría or Presidencia.           |
-| PUT    | `/api/admin/users/[id]/member`      | `user:manage_roles`       | Body `{ memberId: string \| null }`. Links an account to a member, see below.               |
-| PUT    | `/api/admin/users/[id]/permissions` | `user:manage_roles`       | Body `{ permissions: PermissionKey[] }`. Sets the user's own grants, see "Permissions".     |
-| GET    | `/api/admin/roles`                  | see notes                 | The roles. `user:manage_roles` or `role:manage_permissions`.                                |
-| GET    | `/api/admin/roles/[id]/permissions` | see notes                 | What a role grants. `user:manage_roles` or `role:manage_permissions`.                       |
-| PUT    | `/api/admin/roles/[id]/permissions` | `role:manage_permissions` | Body `{ permissionKeys }`. Not on the Admin role, see "Admin section".                      |
-| GET    | `/api/admin/permissions`            | see notes                 | The permission catalog. `user:manage_roles` or `role:manage_permissions`.                   |
+| Method | Path                                | Who                       | Notes                                                                                                                                     |
+| ------ | ----------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/me`                           | any                       | `MeDto`. `permissions` are the role's plus the user's own grants (see "Permissions" below).                                               |
+| GET    | `/api/me/work`                      | any                       | `MeWorkDto`, see "Review and work" below.                                                                                                 |
+| GET    | `/api/members`                      | any                       | `MemberDto[]`, active first, by acronym. `?all=1` also returns inactive members.                                                          |
+| POST   | `/api/members`                      | `member:manage`           | Creates a member manually, typically an executive area.                                                                                   |
+| PUT    | `/api/members/[id]`                 | `member:manage`           | Edits name, kind or active, with `updatedAt`.                                                                                             |
+| POST   | `/api/members/sync`                 | `member:manage`           | Optional body `MemberSyncBody`. Syncs the intranet roster. Returns `MemberSyncResult`; 409 when it needs confirmation, see "Roster sync". |
+| GET    | `/api/admin/users`                  | `user:manage_roles`       | Paginated `AdminUserDto` rows, each with `member`, `extraPermissions` and its access state. See "Users list".                             |
+| PUT    | `/api/admin/users/[id]/role`        | `user:manage_roles`       | Body `{ roleId }`. Only an Admin gives or takes Admin, Secretaría or Presidencia.                                                         |
+| PUT    | `/api/admin/users/[id]/member`      | `user:manage_roles`       | Body `{ memberId: string \| null }`. Links an account to a member, see below.                                                             |
+| PUT    | `/api/admin/users/[id]/permissions` | `user:manage_roles`       | Body `{ permissions: PermissionKey[] }`. Sets the user's own grants, see "Permissions".                                                   |
+| GET    | `/api/admin/roles`                  | see notes                 | The roles. `user:manage_roles` or `role:manage_permissions`.                                                                              |
+| GET    | `/api/admin/roles/[id]/permissions` | see notes                 | What a role grants. `user:manage_roles` or `role:manage_permissions`.                                                                     |
+| PUT    | `/api/admin/roles/[id]/permissions` | `role:manage_permissions` | Body `{ permissionKeys }`. Not on the Admin role, see "Admin section".                                                                    |
+| GET    | `/api/admin/permissions`            | see notes                 | The permission catalog. `user:manage_roles` or `role:manage_permissions`.                                                                 |
 
 **Intranet.** Every call to the intranet API (role sync, `POST /user/role`,
 and the roster sync, `GET /usuarios/asociados` and `/usuarios/sectoriales`)
 sends `Authorization: Bearer <NUXT_INTRANET_API_TOKEN>` when that variable
-is set (a blank value counts as unset). The token is never logged.
+is set (a blank value counts as unset). The token is never logged, and
+neither is an email: logs carry `accountRef`. The role lookup also sends
+`Accept: application/json`. In production, `NUXT_INTRANET_API_URL` and
+`NUXT_ROLE_API_URL` must be `https:`, or `http:` to a host with no dot
+(`http://intranet`); anything else counts as unset. A `NUXT_ROLE_API_URL` on
+another origin than `NUXT_INTRANET_API_URL` never receives the token. Details
+in [`intranet.md`](./intranet.md), section 1.
+
+**Sign-in and access.** The role lookup runs once per sign-in, before the
+session is created. An account the Intranet deleted (an authenticated 404
+`{"error":"not_found"}` for an account it knew before) loses access, unless
+it holds a protected role; see "Access and deleted accounts" in
+[`design.md`](./design.md). A refused sign-in lands on the login page of the
+user's language with `?error=<code>` and the same `redirect` (the client's
+`errorCallbackURL`; `onAPIError.errorURL`, `/login`, is the fallback), with
+`access_revoked` (the account has no access) or
+`sign_in_unavailable` (the access check failed); the login page shows a
+localized message for each and a general one for any other code, and never
+`error_description`. `auth.sign_in` records the lookup outcome in `roleSync`:
+`ok`, `not_found`, `failed` or `unconfigured`. Every request then reads
+`access_revoked_at`: an account without access gets 401 on every endpoint,
+`GET /api/auth/session` included, so the client sends it to `/login`. A
+daily re-check (05:30 Europe/Madrid) revokes the accounts with a live
+session that the Intranet deleted.
+
+**Roster sync.** `POST /api/members/sync` takes an optional body
+`MemberSyncBody` `{ confirmDeactivation?: boolean, confirmedKinds?: [{ kind,
+toDeactivate }] }` (at most one entry per kind); no body is `{}`, and an
+invalid one answers 400. It answers 503 without a usable
+`NUXT_INTRANET_API_URL` and 502 when either list fails, writing nothing.
+Members are matched by `intranet_id`, then by acronym. A sync that would
+deactivate every active intranet member of a kind, or more than max(3, 30%)
+of them, needs `confirmDeactivation: true` and, in `confirmedKinds`, every
+kind it would deactivate too much of with at least as many members as it
+would deactivate now. Otherwise nothing changes but a `members.sync_blocked`
+audit row, and the answer is 409 with `data: MemberSyncBlockedData`
+`{ reason: "large_deactivation", kinds: [{ kind, active, toDeactivate }] }`,
+listing only the kinds over the limit with the current counts. The members
+page shows those counts and sends the request again with them; if the
+Intranet answers less on that retry (say 100 to deactivate where 5 were
+confirmed), it gets 409 again with the new counts. The same sync runs daily
+at 05:00 Europe/Madrid with no actor, and it never confirms.
+
+**Users list.** `GET /api/admin/users` takes `page`, `pageSize` (up to 100,
+default 50) and `access`: `all` (the default) or `revoked`, the accounts whose
+`access_revoked_at` is set. Order is by name. An invalid value answers 400
+("Paginación o filtro inválidos"). Each row (`AdminUserDto`) carries
+`accessRevokedAt` and `accessRevokedReason` (`intranet_deleted`), null while
+the account has access; `PUT .../member` and `.../permissions` return the
+same row.
 
 **Permissions.** A user's permissions are the union of their role's
 (`role_permissions`) and the ones an admin granted to that user alone
@@ -93,9 +142,15 @@ each endpoint checks its own:
 - only an Admin gives or takes the Admin role: `PUT .../users/[id]/role`
   answers 403 to anyone else when the new role or the user's current one is
   Admin. Only an Admin changes its own role (403 for anyone else, "Solo un
-  Admin puede cambiar su propio rol"), and the last Admin cannot leave the
-  role (409): give it to someone else first. The Admin accounts are locked
-  in id order, so two Admins leaving at once cannot both go;
+  Admin puede cambiar su propio rol"), and the last Admin who can sign in
+  cannot leave the role (409): give it to someone else first. An Admin
+  without access (`access_revoked_at`) does not count. The Admin accounts
+  are locked in id order, so two Admins leaving at once cannot both go;
+- the role of an account without access never changes: `PUT
+.../users/[id]/role` answers 409 with `data.messageKey`
+  `admin.users.errors.targetRevoked`, also when the account lost access
+  while the request ran. Access, and with it the role, comes back only from
+  the Intranet;
 - only an Admin may touch the Admin role's permissions (403 for anyone
   else); it holds every permission anyway, so even an Admin gets 400;
 - only an Admin changes the access of the association's Secretaría and
@@ -135,22 +190,28 @@ malformed body returns 400 and keys outside the catalog 422 with
 returns the user row as `GET /api/admin/users` lists it, whose rows carry
 `extraPermissions: PermissionKey[]` in catalog order.
 
-**Linking accounts to members.** After each sign-in, role sync links
-`users.memberId` by the intranet `initials` (the member's acronym):
+**Linking accounts to members.** After each successful role lookup, role sync
+links `users.memberId`:
 
-- `Asociado` and `Sectorial` accounts are the member itself. A missing member
-  is created as an intranet member, and the next roster sync fills it in.
+- `Asociado` and `Sectorial` accounts are the member itself: the member of
+  that kind with the account's intranet id (`users.intranet_id` =
+  `members.intranet_id`), else the one with its `initials` (the member's
+  acronym). A member found by acronym whose `intranet_id` belongs to another
+  account is not linked, and a warning is logged. A missing member is created
+  as an intranet member with the account's id, and the next roster sync
+  fills it in.
 - `CEA` accounts act for their executive area. A missing area is created as a
   manual `executive` member named after its acronym (the intranet name may be
   the person's), so the roster sync never deactivates it; an admin renames
-  it. A CEA account is never linked to a council or a sectorial that shares
-  its initials.
+  it. CEA accounts link by initials only, since their intranet id is a
+  person's. A CEA account is never linked to a council or a sectorial that
+  shares its initials.
 - Other types leave `memberId` alone.
 - A CEA account that already acts for a member keeps it while its intranet
   initials stay the same, so a link an admin set by hand is not undone at
   the next sign-in. When the initials change (the cargo moved to another
   area), it is linked again by them. Asociado and Sectorial accounts always
-  follow their initials.
+  follow their id or their initials.
 - An account stops acting for its member (`memberId` becomes null, in the
   same transaction as the role change) when it has a synced role (`Invitado`,
   `Asociado`, `CEA`) and either its role changes with its intranet type (a CEA
@@ -173,8 +234,9 @@ named after them, which the admin can deactivate). The member must exist
 audit log (`user.member_link`). It returns the user row as
 `GET /api/admin/users` lists it, which now includes `memberId` and `member`
 (`MemberRef` or null). A manual link on an Asociado or Sectorial account with
-initials is replaced at its next sign-in, and a CEA account's when its
-initials change.
+an id or initials is replaced at its next sign-in, and a CEA account's when
+its initials change. An account that loses access (see "Sign-in and
+access") loses its member link too.
 
 An account with no member that tries to create a document or an amendment
 gets 403 with the next step: ask the Secretaría to link it.
@@ -1053,8 +1115,10 @@ Contract in `shared/types/api.ts`, schemas in `shared/utils/schemas/activity.ts`
 **Starting.** `requireAdmin` on the real role, never a permission key. The
 reason is one line of 1 to 200 characters. Errors carry `data.messageKey`:
 403 `impersonation.errors.adminOnly`, 404 `notFound`, 422 `self`, 403
-`targetAdmin`, 409 `nested`, 400 `reason`. The limit is 60 minutes, fixed,
-capped by the Admin's session. Nothing touches cookies; the client reloads.
+`targetAdmin`, 403 `targetRevoked` (an account without access), 409
+`nested`, 400 `reason`. The limit is 60 minutes, fixed, capped by the
+Admin's session. Nothing touches cookies; the client reloads. An open
+impersonation ends as `revoked` when its target loses access.
 
 **While impersonating.** Every request runs as the target. `GET /api/me`
 returns `impersonation: { id, by, startedAt, expiresAt }` (otherwise null), and
@@ -1078,8 +1142,9 @@ id), `category` (repeated or comma-separated), `from` (inclusive) and `to`
 - `to`: audit rows about the account (creation, role, grants, member link,
   role sync), grants of the roles it held while it held them (`approximate`
   when the period is inferred), and impersonations of the account.
-- `access`: its sign-ins and sign-outs (with its own IP and user agent) and
-  impersonations on it or by it.
+- `access`: its sign-ins and sign-outs (with its own IP and user agent),
+  access lost or given back (`user.access_revoked`, `user.access_restored`)
+  and impersonations on it or by it.
 - `member`: other accounts' events for its member, and answers the Mesa
   recorded for it; empty without a member.
 - Privacy: every row is judged again with the current actor; rows about
@@ -1111,6 +1176,11 @@ download records `export.download`. `PUT /api/admin/users/[id]/role`,
 `.../permissions`, `PUT /api/admin/roles/[id]/permissions` and
 `PUT /api/members/[id]` write no row when nothing changes; giving or taking
 Admin ends the affected impersonations. `POST /api/members/sync` writes one
-row per changed member plus the summary, linked by `batchId`.
+row per changed member plus the summary, linked by `batchId`, or only
+`members.sync_blocked` when it answers 409. Sign-in and the daily access
+re-check write `user.access_revoked`, `user.access_restored` (sign-in only)
+and `user.intranet_missing` (sign-in only) (source `intranet`, no actor)
+when the Intranet says so; the re-check writes `users.access_recheck_blocked`
+when it refuses a mass revocation.
 `DELETE /api/assemblies/[assembly]` keeps a copy of the deleted draft's
 history in its audit row.

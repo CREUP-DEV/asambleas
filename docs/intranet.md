@@ -10,64 +10,81 @@ lo implementa en Laravel. Los identificadores de código van en inglés.
 - La plataforma llama hoy a tres endpoints de la Intranet: `POST /api/user/role`
   en cada inicio de sesión y `GET /api/usuarios/asociados` y
   `GET /api/usuarios/sectoriales` cuando alguien pulsa "Sincronizar" en
-  Miembros.
+  Miembros y cada día a las 05:00.
 - `POST /api/user/role` es **público**: cualquiera que conozca un email sabe si
   tiene cuenta en la Intranet, su tipo, su nombre, sus siglas y su universidad.
   Es el problema principal.
 - Los dos listados son públicos **a propósito**: los consume la web pública
   (`creup/web`, `server/utils/public/publicMembers.ts`). No hay que cerrarlos;
   hay que dejar de depender de ellos.
-- Propuesta: un grupo nuevo y privado, `/api/asambleas/v1`, con las mismas tres
-  rutas relativas (`user/role`, `usuarios/asociados`, `usuarios/sectoriales`),
-  token de servicio obligatorio, límite de peticiones propio, sin CORS y con
-  solo los campos que la plataforma lee. La plataforma no cambia código: solo
+- Propuesta: un grupo nuevo, `/api/asambleas/v1`, con las mismas tres rutas
+  relativas (`user/role`, `usuarios/asociados`, `usuarios/sectoriales`), token
+  de servicio obligatorio, límite de peticiones propio, sin CORS y con solo
+  los campos que la plataforma lee. Para pasar a él, la plataforma solo cambia
   variables de entorno.
-- Requisito previo: en producción la cadena es Cloudflare → contenedor nginx
-  (`proxy_pass`) → Apache en el contenedor `intranet`. nginx tiene que
-  recuperar la IP real que le pasa Cloudflare y sobrescribir las cabeceras
-  `X-Forwarded-*`, y `TrustProxies` (hoy `'*'`) tiene que confiar solo en
-  nginx. Sin eso, Laravel ve la IP del borde de Cloudflare o una inventada, y
-  los límites por IP, la lista de IP y la comprobación de HTTPS no sirven (R6,
-  sección 5.8). Hay que revisarlo en el VPS y en Cloudflare.
-- Estado: la fase 1 está implementada en la Intranet (commit `eb92083` de
-  `master`). Ni él ni los dos commits que tiene debajo están publicados. Antes
-  de publicarla hay que añadir las correcciones de este documento que el
-  commit no incluye y decidir qué commits salen con ella (sección 8).
-- Despliegue en tres pasos (1, 2 y 4 de la sección 8): Intranet con el grupo
-  nuevo (la ruta pública vieja sigue viva), cambio de variables en la
-  plataforma, cierre de la ruta vieja.
-  Las variables de la Intranet se aplican recreando su contenedor, nunca con
-  `config:cache` (sección 5.1).
-- Fase 2 opcional: id estable, áreas ejecutivas, derechos de cada miembro y
-  aviso de cambios, para que la plataforma deje de pedir a mano lo que la
-  Intranet ya sabe.
+- El grupo es accesible desde Internet y lo protege el token: la plataforma lo
+  llama por `https://intranet.creup.es/api/asambleas/v1`, también desde el
+  servidor de desarrollo de quien la programa, o por la red de Docker del VPS
+  si comparte red con la Intranet. Sin lista de IP ni bloqueo en nginx: los
+  listados ya son públicos en la web, y la consulta de rol solo responde a
+  quien presenta el token (sección 5.8).
+- Requisito previo: la cadena es Cloudflare → contenedor nginx (`proxy_pass`)
+  → Apache en el contenedor `intranet`. nginx ya recupera la IP real de
+  Cloudflare; falta que `TrustProxies` confíe solo en nginx
+  (`TRUSTED_PROXIES`, la red de Docker que comparten). La fase 1 ya no confía
+  en `'*'`: sin esa variable, todos los visitantes comparten la dirección de
+  nginx y sus límites por IP (R6, sección 5.8).
+- Estado: la fase 1 está implementada en la Intranet (commit `28d4579` de
+  `master`, con las correcciones de la revisión). Ni él ni los dos commits que
+  tiene debajo están publicados: hay que decidir qué commits salen con ella
+  (sección 8).
+- Despliegue (sección 8): Intranet con el grupo nuevo, `TRUSTED_PROXIES` y la
+  ruta vieja cerrada (la plataforma aún no está en producción); después,
+  variables de la plataforma. Las variables de la Intranet se aplican recreando su
+  contenedor, nunca con `config:cache` (sección 5.1).
+- La plataforma ya usa lo que añade el grupo nuevo (sección 9): envía
+  `Accept`, enlaza por `id`, retira el acceso a las cuentas borradas en la
+  Intranet (un 404 autenticado) y sincroniza el listado cada día.
+- Fase 2 opcional: áreas ejecutivas, derechos de cada miembro y aviso de
+  cambios, para que la plataforma deje de pedir a mano lo que la Intranet ya
+  sabe.
 
 ## 1. Qué usa hoy la plataforma
 
 ### Variables de entorno
 
-| Variable                  | Uso                                                                                                                                                                                      |
-| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NUXT_INTRANET_API_URL`   | Base de la API. La plataforma le añade `user/role`, `usuarios/asociados` y `usuarios/sectoriales`. Acepta `https:` y `http:`; sin ella no hay sincronización del listado.                |
-| `NUXT_INTRANET_API_TOKEN` | Si tiene valor, cada llamada lleva `Authorization: Bearer <token>`. Un valor en blanco cuenta como ausente. Nunca se registra en logs (`intranetAuthHeaders`).                           |
-| `NUXT_ROLE_API_URL`       | URL completa de la consulta de rol. **Tiene prioridad sobre la base**: si está definida, la consulta de rol va ahí aunque `NUXT_INTRANET_API_URL` apunte a otro sitio (`getRoleApiUrl`). |
+| Variable                    | Uso                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `NUXT_INTRANET_API_URL`     | Base de la API. La plataforma le añade `user/role`, `usuarios/asociados` y `usuarios/sectoriales`; sin ella no hay sincronización del listado. En producción (`NODE_ENV=production`) solo acepta `https:`, o `http:` hacia un nombre sin punto (un servicio de Docker como `http://intranet`); otro valor, o uno inválido, cuenta como ausente y se registra una vez (`intranet.config`). Para la Intranet: `https://intranet.creup.es/api/asambleas/v1` desde cualquier sitio (también el servidor de desarrollo), o `http://intranet/api/asambleas/v1` desde la red de Docker del VPS (sección 5.8). |
+| `NUXT_INTRANET_API_TOKEN`   | Si tiene valor, cada llamada lleva `Authorization: Bearer <token>`. Un valor en blanco cuenta como ausente. Nunca se registra en logs (`intranetAuthHeaders`). Sin token, la plataforma nunca retira el acceso a nadie.                                                                                                                                                                                                                                                                                                                                                                                |
+| `NUXT_ROLE_API_URL`         | Opcional, y lo normal es no definirla. URL completa de la consulta de rol; sin ella, `{NUXT_INTRANET_API_URL}/user/role`. **Si está definida tiene prioridad sobre la base**, aunque esta apunte a otro sitio (`getRoleApiUrl`). Sigue la misma regla de `http:`; si la rechaza, se usa la base. Si está en otro origen que `NUXT_INTRANET_API_URL`, se llama **sin token** (`isRoleLookupAuthenticated`, error `intranet.config` una vez): nunca retira el acceso a nadie, pero el token no sale hacia otro sitio.                                                                                    |
+| `NUXT_INTRANET_ROSTER_SYNC` | Sincronización diaria del listado (05:00, Europe/Madrid). Opcional: solo la palabra `false` la apaga. Necesita `NUXT_INTRANET_API_URL`. No afecta a la revisión diaria de accesos (05:30), que corre siempre que la consulta de rol lleve token.                                                                                                                                                                                                                                                                                                                                                       |
 
-El `.env` de producción de `DEPLOYMENT.md` fija hoy
-`NUXT_ROLE_API_URL=https://intranet.creup.es/api/user/role` y no define
-`NUXT_INTRANET_API_URL` ni `NUXT_INTRANET_API_TOKEN` (si producción sigue esa
-plantilla, "Sincronizar" en Miembros responde 503 "no está configurada").
-`.env.example` solo trae un marcador (`https://example.com/api/user/role`). Al
-migrar hay que quitar `NUXT_ROLE_API_URL` o cambiarla (ver el despliegue).
+El `.env` de producción de `DEPLOYMENT.md` usa ya el grupo nuevo
+(`NUXT_INTRANET_API_URL`, `NUXT_INTRANET_API_TOKEN`, sin `NUXT_ROLE_API_URL`).
+Un `.env` que siga la plantilla anterior
+(`NUXT_ROLE_API_URL=https://intranet.creup.es/api/user/role`, sin base ni
+token) consulta la ruta pública vieja: el rol se sincroniza, pero nadie pierde
+el acceso y "Sincronizar" en Miembros responde 503 "no está configurada". Al
+migrar hay que quitar `NUXT_ROLE_API_URL` (sección 8, paso 2).
 
 ### Consulta de rol (`server/utils/auth/roleSync.ts`)
 
-- **Cuándo:** al crearse cada sesión (cada inicio de sesión con Google), en el
-  hook `databaseHooks.session.create.after` de `server/utils/auth/auth.ts`.
-  Un fallo nunca bloquea el acceso.
-- **Petición:** `POST`, cuerpo `{"email": "<email de Google>"}`, cabeceras
-  `Content-Type: application/json` y el token si existe. **No envía
-  `Accept: application/json`.** Tiempo máximo: 10 s.
-- **Respuesta que acepta (Zod):** un objeto JSON con
+- **Cuándo:** una vez en cada inicio de sesión con Google, antes de crear la
+  sesión. El hook `databaseHooks.session.create.before` de
+  `server/utils/auth/auth.ts` (`checkSignInAccess`) decide si la cuenta puede
+  entrar, y la sincronización del rol, en `session.create.after`, reutiliza la
+  misma respuesta. Un fallo de la Intranet nunca bloquea a quien tiene acceso;
+  un error de base de datos al comprobarlo sí (`sign_in_unavailable`), para no
+  dejar entrar a una cuenta borrada.
+- **Petición:** `lookupIntranetRole` (`server/utils/members/intranet.ts`):
+  `POST`, cuerpo `{"email": "<email de Google>"}`, cabeceras
+  `Accept: application/json`, `Content-Type: application/json` y el token si
+  existe. Tiempo máximo: 10 s.
+- **Respuesta 200 que acepta (Zod):** un objeto JSON con
+  - `id`: entero de 1 a 2^31-1 (el `users.id` de la Intranet), `null` o
+    ausente (la ruta vieja no lo envía). Otro valor invalida la respuesta
+    entera;
   - `role`: string no vacío tras `trim` (el `users.type` de la Intranet). Se
     compara literalmente, distinguiendo mayúsculas: solo `Asociado`, `CEA` y
     `Sectorial` tienen efecto; `asociado` o `ASOCIADO` contarían como
@@ -78,55 +95,154 @@ migrar hay que quitar `NUXT_ROLE_API_URL` o cambiarla (ver el despliegue).
 
   Ignora cualquier otra clave, así que añadir campos es compatible.
 
-- **Qué hace con ella:** guarda `externalRole`, `externalName`,
-  `externalInitials`, `university` y `lastRoleSyncAt`, y decide el rol:
+- **Resultados.** Cada inicio de sesión guarda el suyo en `auth.sign_in`
+  (`roleSync`):
+  - `ok`: un 200 válido;
+  - `not_found`: solo si la petición llevaba token y la respuesta es un 404,
+    sin redirección, cuyo cuerpo es exactamente `{"error":"not_found"}`;
+  - `failed`: todo lo demás: red, tiempo agotado, 5xx, JSON inválido, un 404
+    sin token, el de la ruta vieja (`{"error":"Usuario no encontrado"}`), el
+    de una ruta de Laravel que no existe (`{"message":"Not Found."}`), uno en
+    HTML o un `not_found` con más claves;
+  - `unconfigured`: no hay URL usable.
+- **Con `ok`:** guarda `externalRole`, `externalName`, `externalInitials`,
+  `university`, `intranetId` (solo si llega `id`: la ruta vieja nunca borra
+  uno guardado) y `lastRoleSyncAt`, y decide el rol:
   - `Asociado` da el rol `Asociado`; `CEA` da `CEA`; cualquier otro tipo
     (`Sectorial`, `Invitado`, `Desasociado`, `CdG`, `CAI`, `Otros`) da
     `Invitado`.
-  - Enlaza la cuenta con su miembro por `initials`: `Asociado` con su consejo,
-    `Sectorial` con su sectorial y `CEA` con un área ejecutiva (que crea, con
-    las siglas como nombre, si no existe).
+  - Enlaza la cuenta con su miembro (`server/utils/members/link.ts`):
+    `Asociado` con su consejo y `Sectorial` con su sectorial, primero por `id`
+    (`users.intranet_id` igual a `members.intranet_id`) y si no por
+    `initials`; `CEA` con un área ejecutiva solo por `initials` (el `id` de
+    una cuenta CEA es una persona, no un área), que crea con las siglas como
+    nombre si no existe. Un miembro encontrado por siglas cuyo `intranet_id`
+    es de otra cuenta no se enlaza (aviso en el log).
   - `Admin`, `Secretaria`, `Presidencia` y `Moderador` nunca cambian por la
     sincronización.
-- **Si falla** (cualquier respuesta no 2xx, JSON inválido, `role` ausente o
-  vacío, tiempo agotado): registra un aviso; una cuenta nueva queda como
-  `Invitado` y sin miembro, y en una existente **no cambia ni el rol, ni el
-  miembro, ni los datos externos**; solo se escribe `lastRoleSyncAt`, que por
-  eso no indica la última consulta con éxito. `fetch` sigue las redirecciones:
-  un 302 a una página HTML acaba en "JSON inválido". Por eso un 404 para un email
-  desconocido es seguro y un 200 con un rol inventado no lo sería (degradaría a
-  un Asociado o CEA y le quitaría su miembro).
+- **Con `failed` o `unconfigured`:** `lookupIntranetRole` registra el aviso
+  (`intranet.role`); una cuenta nueva queda como `Invitado` y sin miembro, y
+  en una existente **no cambia nada**, ni siquiera `lastRoleSyncAt`, que así
+  indica la última consulta con éxito. `fetch` sigue las redirecciones: un
+  302 a una página HTML acaba en "JSON inválido". Por eso un 200 con un rol
+  inventado sería peligroso (degradaría a un Asociado o CEA y le quitaría su
+  miembro), y un 404 que no sea exactamente el del grupo nuevo no cambia
+  nada.
+- **Con `not_found` (cuenta borrada en la Intranet):**
+  - si la Intranet no la conoció nunca (`externalRole` e `intranet_id`
+    vacíos: alguien que entra con un Google sin cuenta en la Intranet), sigue
+    como siempre, como `Invitado`;
+  - si tiene un rol protegido (`Admin`, `Secretaria`, `Presidencia`,
+    `Moderador`), lo conserva todo: solo se registran `user.intranet_missing`
+    y un aviso en el log;
+  - si no, **pierde el acceso**, en una transacción: `access_revoked_at` y
+    `access_revoked_reason = intranet_deleted`, rol `Invitado`, sin miembro,
+    todas sus sesiones borradas, las suplantaciones abiertas sobre ella
+    cerradas (`revoked`) y `user.access_revoked` (origen `intranet`, sin
+    actor). Conserva sus permisos individuales (`user_permissions`). El
+    inicio de sesión se rechaza y vuelve a la página de entrada en el idioma
+    de quien entra (`/login` o `/en/login`, con `?error=access_revoked` y el
+    mismo `redirect`: el cliente lo pide como `errorCallbackURL`), que
+    explica que la cuenta ya no existe en la Intranet.
+- **Una cuenta sin acceso que vuelve a entrar** se consulta otra vez. Si la
+  consulta con token la devuelve (200), recupera el acceso
+  (`user.access_restored`) y sigue la sincronización normal, que le devuelve
+  su rol y su miembro. Con cualquier otra respuesta, también si la Intranet
+  no contesta, se rechaza. No hay forma de devolver el acceso a mano: manda
+  la Intranet. Un Admin no puede suplantarla, su rol no se puede cambiar
+  (409 `admin.users.errors.targetRevoked`) y un Admin sin acceso no cuenta
+  como el último Admin. Administración > Usuarios la marca "Sin acceso"
+  (`/admin/usuarios?access=revoked`).
+- **Sesiones abiertas:** una sesión dura 7 días y se renueva cada día que
+  se usa, así que el inicio de sesión no basta. Cada día a las 05:30
+  (Europe/Madrid) una tarea de pg-boss (cola `users-access-recheck`,
+  `server/utils/auth/accessRecheck.ts`) vuelve a consultar, una cada medio
+  segundo (como mucho 120 por minuto, por debajo de los 300 del limitador),
+  cada cuenta con sesión sin caducar, con acceso, con datos de la Intranet y
+  sin rol protegido. Las que la Intranet ya no tiene (`not_found` con token)
+  pierden el acceso como arriba; cualquier otra respuesta no cambia nada, y
+  la revisión no toca el rol ni `lastRoleSyncAt`. Corre siempre que la
+  consulta de rol lleve token, aunque `NUXT_INTRANET_ROSTER_SYNC` sea
+  `false`. Salvaguardas:
+  - si la Intranet dice no tener más de max(3, 30 %) de las cuentas por las
+    que respondió, no retira el acceso a nadie: registra
+    `users.access_recheck_blocked` (solo recuentos, visible para Admin) y un
+    error en el log (`access.recheck`). Una Intranet apuntando a una base de
+    datos vacía no echa a todo el mundo;
+  - tras 5 fallos seguidos (Intranet caída) se detiene sin cambiar nada y
+    pg-boss la reintenta dos veces cada 15 minutos.
+- **En cada petición** se lee `access_revoked_at`: una cuenta sin acceso
+  recibe 401 al momento en todos sus dispositivos, aunque better-auth aún
+  sirva su sesión desde la caché de la cookie (5 minutos), y la página la
+  lleva a `/login`.
+- **Límites:** una cuenta borrada conserva el acceso, como mucho, hasta la
+  revisión de las 05:30 siguiente. Y todo esto solo funciona con el grupo
+  nuevo y su token (sección 4.3).
+- **Logs:** nunca el email. Llevan `accountRef`, los 12 primeros caracteres
+  hexadecimales de un HMAC-SHA256 del email en minúsculas con `APP_SECRET`
+  (o `BETTER_AUTH_SECRET`, si está definida), para relacionar los avisos de
+  una misma cuenta.
 
 ### Sincronización del listado (`server/utils/members/sync.ts`, `roster.ts`)
 
 - **Cuándo:** a mano, con `POST /api/members/sync` (permiso `member:manage`,
-  botón en Miembros). No hay sincronización periódica.
+  botón en Miembros), y cada día a las 05:00 (Europe/Madrid) con una tarea
+  programada de pg-boss (cola `members-roster-sync`,
+  `server/utils/members/schedule.ts`). La tarea solo corre si
+  `NUXT_INTRANET_API_URL` es usable y `NUXT_INTRANET_ROSTER_SYNC` no vale
+  `false`; si falla, reintenta dos veces cada 15 minutos, y si el servidor
+  estaba parado a las 05:00, la hace una vez al arrancar. Sus filas de
+  auditoría no tienen actor; las de la sincronización a mano llevan la cuenta
+  que la lanzó. Dos sincronizaciones nunca se solapan (candado de
+  PostgreSQL).
 - **Petición:** `GET {base}/usuarios/asociados` y
   `GET {base}/usuarios/sectoriales` en paralelo, con
   `Accept: application/json` y el token si existe. 10 s cada una.
 - **Respuesta que acepta:** `{ "data": Entry[], "generated_at"?: string | null }`
-  con como mucho 5000 filas. Cada `Entry` es un objeto que puede traer
-  `denomination`, `initials`, `university` y `autonomous_community` (string,
-  número, `null` o ausente) y `order` (**solo número**, `null` o ausente: un
-  `order` en texto invalida la lista entera). Ignora el resto de claves.
+  con como mucho 5000 filas. Cada `Entry` es un objeto que puede traer `id`
+  (entero de 1 a 2^31-1, `null` o ausente), `denomination`, `initials`,
+  `university` y `autonomous_community` (string, número, `null` o ausente) y
+  `order` (**solo número**, `null` o ausente). Un `id` u `order` de otro tipo
+  invalida la lista entera. Ignora el resto de claves.
 - **Qué hace:**
   - sin `NUXT_INTRANET_API_URL` responde 503 sin llamar a nada;
   - las dos listas se piden antes de escribir nada y, si cualquiera falla, no
     se toca la base de datos (502);
-  - colapsa espacios y empareja por `initials` sin distinguir mayúsculas,
-    recortadas a 20 caracteres; el nombre es `denomination` (o las siglas si
-    falta), recortado a 200, igual que `university` y `autonomous_community`;
-  - descarta filas sin `initials`; si unas siglas se repiten, gana la primera
-    (asociados antes que sectoriales);
+  - colapsa espacios y recorta las siglas a 20 caracteres; el nombre es
+    `denomination` (o las siglas si falta), recortado a 200, igual que
+    `university` y `autonomous_community`;
+  - descarta filas sin `initials`; si unas siglas (sin distinguir mayúsculas)
+    o un `id` se repiten, gana la primera (asociados antes que sectoriales);
+  - empareja cada fila con el miembro guardado con su `id`
+    (`members.intranet_id`) y, si no, con el de sus siglas: un cambio de
+    siglas actualiza el miembro en lugar de crear otro. Emparejar por siglas
+    guarda el `id`, y una fila sin `id` nunca borra el guardado. Si las siglas
+    las tiene un miembro cuyo `id` ya no está en la lista, se reutiliza y se
+    sustituye su `id` (aviso en el log);
+  - nunca deja dos miembros con las mismas siglas: si un miembro pasa a unas
+    siglas que otro conserva, se queda con las suyas y se avisa
+    (`acronymConflicts` en `members.sync`);
   - nunca toca miembros creados a mano (las áreas ejecutivas que crea la
     consulta de rol son manuales);
   - reactiva los miembros de origen Intranet que vuelven a aparecer y
     **desactiva todo miembro de origen Intranet que no aparezca en la lista**;
-  - deja constancia en `audit_log` (`members.sync`).
+  - **salvaguarda:** si eso desactivaría todos los miembros activos de un tipo
+    (asociados o sectoriales), o más de max(3, 30 %) de ellos, no aplica
+    nada: registra `members.sync_blocked` y responde 409 `large_deactivation`
+    con los recuentos de cada tipo. Miembros los enseña y pide confirmación,
+    que se envía con esos recuentos (`confirmDeactivation: true` y
+    `confirmedKinds`). Si al repetirla la Intranet devuelve aún menos (por
+    ejemplo, `data: []` después de una lista parcial), la confirmación no
+    vale: vuelve a responder 409 con los recuentos nuevos. La tarea diaria
+    nunca confirma: deja esa fila y un aviso en el log, y hay que sincronizar
+    a mano;
+  - deja constancia en `audit_log`: una fila por miembro que cambia y el
+    resumen `members.sync`.
 
-La última regla es la que hace peligrosa cualquier respuesta parcial: una
-primera página de una lista paginada, o un `200` con `data: []` tras un error
-interno, desactivaría miembros en bloque.
+La salvaguarda frena el peor caso de una respuesta parcial (la primera página
+de una lista paginada, o un `200` con `data: []` tras un error interno), pero
+no unos pocos miembros que falten: la Intranet nunca debe devolver una lista
+incompleta (sección 4.3).
 
 ## 2. Estado actual en la Intranet
 
@@ -138,7 +254,7 @@ interno, desactivaría miembros en bloque.
 | `GET /api/user`                 | Closure con `auth:sanctum`                  | Sanctum       | El mismo                                    | `*`  | El modelo `User` entero (salvo `password` y `remember_token`)                                                                                                                              | Nadie: no se emite ningún token |
 
 Esta sección describe lo que hay hoy en producción. La fase 1 (secciones de la
-4 a la 6) está implementada en el commit `eb92083` de `master` de la Intranet,
+4 a la 6) está implementada en el commit `28d4579` de `master` de la Intranet,
 aún sin publicar ni desplegar (sección 8).
 
 Otros datos relevantes:
@@ -156,29 +272,37 @@ Otros datos relevantes:
 - `TrustProxies::$proxies = '*'`: Laravel confía en quien abre la conexión
   (`REMOTE_ADDR`), sea quien sea, y acepta de él `X-Forwarded-For`,
   `-Host`, `-Port` y `-Proto` (`HEADER_X_FORWARDED_AWS_ELB`, que también
-  figura, no añade otras). `eb92083` lo cambia por loopback y los rangos
-  privados, sin tocar las cabeceras. Ver R6.
+  figura, no añade otras). `28d4579` lo cambia por las direcciones de
+  `TRUSTED_PROXIES` (la red de Docker de nginx o su dirección fija) y solo
+  `X-Forwarded-For` y `X-Forwarded-Proto`. Ver R6.
 - Topología de producción:
   - `intranet.creup.es` está detrás de Cloudflare: resuelve a direcciones de
     Cloudflare (A `104.21.24.128` y `172.67.218.236`, AAAA en
     `2606:4700::/32`) y responde con `Server: cloudflare` y `CF-RAY`.
-  - En el VPS, un contenedor `nginx` publica 80 y 443 (ejemplo de
-    `docker-compose.yml` en el `README.md` de la Intranet) y, como la imagen
-    solo sirve HTTP en el 80, pasa las peticiones por `proxy_pass` al
-    servicio `intranet`. Que nginx termine TLS no está confirmado: el ejemplo
-    monta `/etc/letsencrypt`, pero la copia vieja del vhost en `CREUP/VPS`
-    solo escucha en el 80, con el certificado comentado, y así solo funciona
-    con Cloudflare en modo Flexible (sección 5.8, punto 2).
+  - En el VPS (revisado el 2026-11-06), el contenedor `nginx` publica 80 y
+    443, termina TLS con el certificado de Let's Encrypt de `creup.es`,
+    redirige el 80 a HTTPS y recupera la IP real de Cloudflare para todos los
+    sitios (`snippets/cloudflare-realip.conf`). Pasa las peticiones de la
+    Intranet por `proxy_pass` al servicio `intranet`.
   - La imagen de la Intranet es `php:8.4-apache`: Apache escucha solo en el
-    80, sin TLS. Tiene `mod_remoteip` activo pero sin `RemoteIPHeader`, así
-    que `REMOTE_ADDR` es quien abre la conexión: nginx, en la red de Docker.
+    80, sin TLS, y el contenedor no publica ningún puerto. Tiene
+    `mod_remoteip` activo pero sin `RemoteIPHeader`, así que `REMOTE_ADDR`
+    es quien abre la conexión: nginx, en la red de Docker.
+  - Todos los contenedores están en una sola red de Docker,
+    `esternocleidomastoideo2003_default` (`172.18.0.0/16`); nginx no tiene
+    dirección fija.
   - Las variables llegan por el `env_file` del servicio `intranet`
-    (`intranet.env` en el ejemplo); la imagen no lleva `.env`.
-  - El vhost de nginx de producción no está en ningún repositorio.
-    `docker/nginx/default.conf` de la Intranet (FastCGI a `intranet:9000`) es
-    un resto de desarrollo que no corresponde a esta imagen, y la copia de
-    `CREUP/VPS` (noviembre de 2025, PHP-FPM por FastCGI, `9001:9000`
-    publicado) está desactualizada.
+    (`config/intranet/.env` del directorio de compose); la imagen no lleva
+    `.env`.
+  - La web pública (`web-app`) llama a la Intranet por esa red
+    (`NUXT_EXTERNAL_API_BASE_URL=http://intranet`), sin pasar por Cloudflare.
+    La plataforma de asambleas aún no está desplegada en el VPS.
+  - El vhost de nginx de producción
+    (`config/nginx/conf.d/intranet.creup.es.conf`) no está en ningún
+    repositorio. `docker/nginx/default.conf` de la Intranet (FastCGI a
+    `intranet:9000`) es un resto de desarrollo, y la copia de `CREUP/VPS`
+    (noviembre de 2025, PHP-FPM por FastCGI, `9001:9000` publicado) está
+    desactualizada.
 - Sanctum está instalado y existe la tabla `personal_access_tokens`, pero
   ningún código llama a `createToken`.
 - No hay configuración de tokens para esta integración ni carpetas
@@ -199,19 +323,19 @@ Otros datos relevantes:
 
 ## 3. Riesgos actuales
 
-| #   | Riesgo                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | Impacto                                                                                                                     | Gravedad                                                           |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| R1  | `POST /api/user/role` responde a cualquiera: confirma si un email tiene cuenta y devuelve tipo, nombre, siglas y universidad. Cualquier persona que haya entrado alguna vez con su Google personal está en `users` (como `Invitado`) con su nombre real.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Revelación de datos personales (RGPD) y de quién pertenece a qué órgano.                                                    | Alta                                                               |
-| R2  | Enumeración: 60 consultas/min por IP sin más control; con varias IP no hay techo. Con CORS `*` cualquier web puede hacer que los navegadores de sus visitantes consulten la ruta y lean la respuesta, repartiendo el límite entre miles de IP.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Barrido masivo de emails.                                                                                                   | Alta                                                               |
-| R3  | El límite `throttle:api` (60/min por IP) es compartido: toda la plataforma sale por una sola IP. Al abrirse una sesión entran muchas personas a la vez; pasadas 60 en un minuto, la Intranet responde 429.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Cuentas nuevas quedan como `Invitado`, las existentes con datos viejos; una sincronización del listado en ese minuto falla. | Media                                                              |
-| R4  | La consulta de rol de la plataforma no envía `Accept: application/json`. Un error de validación en Laravel responde con una redirección 302 a HTML; `fetch` la sigue y la plataforma ve "respuesta inválida".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Fallos enmascarados y difíciles de diagnosticar.                                                                            | Baja                                                               |
-| R5  | La plataforma depende de listados con forma de web pública (logos, redes, `contact_email`, orden de la web). Si la web pide paginar o renombrar campos, la plataforma se rompe; si se pagina, **desactiva en silencio** a los miembros de las páginas siguientes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | Acoplamiento con otro producto y datos de más.                                                                              | Media                                                              |
-| R6  | Las cabeceras de proxy no son fiables. En producción la cadena es Cloudflare → nginx → Apache por `proxy_pass`, así que Laravel siempre ve a nginx como quien abre la conexión, y `TrustProxies::$proxies = '*'` le cree todo `X-Forwarded-*`. Si nginx no recupera la IP real de Cloudflare, `ip()` es la IP del borde de Cloudflare para todo el mundo: el límite por IP se reparte entre todos los que salen por el mismo borde y una lista de IP con la de la plataforma respondería 403 a todas sus llamadas. Si nginx añade a lo que manda el cliente (`$proxy_add_x_forwarded_for`) o no fija las cabeceras, cualquiera elige su IP, su esquema y su host. Si el origen acepta conexiones que no vienen de Cloudflare (80/443 abiertos a todos, IPv6 incluida) o el contenedor `intranet` publica su puerto, se puede hablar con nginx o con Apache directamente. El cambio de `eb92083` (loopback y rangos privados) cierra el acceso directo desde fuera, pero confía también en la pasarela de Docker y en los contenedores vecinos. | Anula todas las medidas por IP; con Cloudflare en modo Flexible, el token viaja en claro entre Cloudflare y el VPS.         | Alta (a confirmar con la configuración real de nginx y Cloudflare) |
-| R7  | `GET /api/user` devuelve el modelo `User` entero a quien tenga un token Sanctum. Hoy no se emite ninguno, pero si algún día se emite, expone `google_id`, email y todas las columnas visibles.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Exposición futura.                                                                                                          | Baja                                                               |
+| #   | Riesgo                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Impacto                                                                                                                     | Gravedad                                                    |
+| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| R1  | `POST /api/user/role` responde a cualquiera: confirma si un email tiene cuenta y devuelve tipo, nombre, siglas y universidad. Cualquier persona que haya entrado alguna vez con su Google personal está en `users` (como `Invitado`) con su nombre real.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Revelación de datos personales (RGPD) y de quién pertenece a qué órgano.                                                    | Alta                                                        |
+| R2  | Enumeración: 60 consultas/min por IP sin más control; con varias IP no hay techo. Con CORS `*` cualquier web puede hacer que los navegadores de sus visitantes consulten la ruta y lean la respuesta, repartiendo el límite entre miles de IP.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Barrido masivo de emails.                                                                                                   | Alta                                                        |
+| R3  | El límite `throttle:api` (60/min por IP) es compartido: toda la plataforma sale por una sola IP. Al abrirse una sesión entran muchas personas a la vez; pasadas 60 en un minuto, la Intranet responde 429.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | Cuentas nuevas quedan como `Invitado`, las existentes con datos viejos; una sincronización del listado en ese minuto falla. | Media                                                       |
+| R4  | La consulta de rol de la plataforma no enviaba `Accept: application/json` (ya lo envía, sección 9). Un error de validación en Laravel responde con una redirección 302 a HTML; `fetch` la sigue y la plataforma ve "respuesta inválida".                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Fallos enmascarados y difíciles de diagnosticar.                                                                            | Baja                                                        |
+| R5  | La plataforma depende de listados con forma de web pública (logos, redes, `contact_email`, orden de la web). Si la web pide paginar o renombrar campos, la plataforma se rompe; si se pagina, **desactiva en silencio** a los miembros de las páginas siguientes (la salvaguarda de la sección 1 ya frena las desactivaciones grandes).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | Acoplamiento con otro producto y datos de más.                                                                              | Media                                                       |
+| R6  | Las cabeceras de proxy no son fiables. En producción la cadena es Cloudflare → nginx → Apache por `proxy_pass`, así que Laravel siempre ve a nginx como quien abre la conexión, y `TrustProxies::$proxies = '*'` le cree todo `X-Forwarded-*`. Si nginx no recupera la IP real de Cloudflare, `ip()` es la IP del borde de Cloudflare para todo el mundo y el límite por IP se reparte entre todos los que salen por el mismo borde. Si nginx añade a lo que manda el cliente (`$proxy_add_x_forwarded_for`) o no fija las cabeceras, cualquiera elige su IP, su esquema y su host. Si el origen acepta conexiones que no vienen de Cloudflare (80/443 abiertos a todos, IPv6 incluida) o el contenedor `intranet` publica su puerto, se puede hablar con nginx o con Apache directamente. Revisado en el VPS: nginx ya recupera la IP real de Cloudflare, así que hoy Laravel ve a cada visitante. `28d4579` confía solo en `TRUSTED_PROXIES` (sección 5.8), y la API además pide el token. | Límites por IP de la Intranet compartidos o esquivables (`throttle:api`, formularios públicos, enlaces de la gestoría).     | Baja (nginx ya recupera la IP real; revisado el 2026-11-06) |
+| R7  | `GET /api/user` devuelve el modelo `User` entero a quien tenga un token Sanctum. Hoy no se emite ninguno, pero si algún día se emite, expone `google_id`, email y todas las columnas visibles.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | Exposición futura.                                                                                                          | Baja                                                        |
 
 ## 4. Diseño propuesto
 
-### 4.1 Un grupo privado: `/api/asambleas/v1`
+### 4.1 Un grupo con token: `/api/asambleas/v1`
 
 Tres rutas nuevas, con las mismas rutas relativas que la plataforma ya usa:
 
@@ -221,14 +345,16 @@ Tres rutas nuevas, con las mismas rutas relativas que la plataforma ya usa:
 | `GET`  | `/api/asambleas/v1/usuarios/asociados`   | `GET /api/usuarios/asociados`    |
 | `GET`  | `/api/asambleas/v1/usuarios/sectoriales` | `GET /api/usuarios/sectoriales`  |
 
-Con `NUXT_INTRANET_API_URL=https://intranet.creup.es/api/asambleas/v1` la
-plataforma llama a las rutas nuevas sin cambiar código. Los listados públicos
-de la web se quedan como están. La ruta pública `POST /api/user/role` se
-mantiene solo durante la transición y después se cierra (solo la usa esta
-plataforma).
+Con `NUXT_INTRANET_API_URL=https://intranet.creup.es/api/asambleas/v1` (o
+`http://intranet/api/asambleas/v1` desde la red de Docker del VPS) la
+plataforma llama a las rutas nuevas sin cambiar código (sección 5.8). Los
+listados públicos de la web se quedan como están. La ruta pública
+`POST /api/user/role` se cierra al desplegar (solo la usaba esta plataforma,
+que aún no está en producción; sección 8).
 
 Todo el grupo:
 
+- es accesible desde Internet y desde la red de Docker del VPS;
 - exige el token de servicio (sección 4.2);
 - no hereda `throttle:api` y tiene su propio limitador;
 - responde siempre JSON y nunca redirige;
@@ -257,7 +383,8 @@ Todo el grupo:
 - Comparación en tiempo constante con `hash_equals`, recorriendo todas las
   ranuras sin salir antes.
 - Solo en la cabecera `Authorization: Bearer`. Nunca en la query string (acaba
-  en logs de acceso) ni en el cuerpo.
+  en logs de acceso) ni en el cuerpo. Por Internet viaja siempre por HTTPS; por
+  HTTP, solo dentro de la red de Docker del VPS.
 - Si no hay ningún hash configurado, el grupo responde 503 (falla cerrado).
 
 **Alternativa aceptable: Sanctum** con un token de capacidad `assemblies:read`,
@@ -279,7 +406,7 @@ configuración es más simple.
 | ------ | --------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- | -------------------------- |
 | 200    | Éxito                                                                                                                                   | El de cada endpoint                                                    | `Cache-Control: no-store`  |
 | 401    | Falta el token o no es válido (mismo cuerpo en ambos casos, sea cual sea el email)                                                      | `{"error": "unauthorized"}`                                            | `WWW-Authenticate: Bearer` |
-| 403    | Petición no HTTPS con HTTPS exigido, o IP fuera de la lista permitida                                                                   | `{"error": "forbidden"}`                                               |                            |
+| 403    | Petición no HTTPS con HTTPS exigido (por defecto), o IP fuera de la lista permitida si se configura una                                 | `{"error": "forbidden"}`                                               |                            |
 | 404    | Solo en `user/role`, y solo con token válido: email sin cuenta o cuenta sin tipo                                                        | `{"error": "not_found"}`                                               | `Cache-Control: no-store`  |
 | 405    | Método equivocado (lo da el framework)                                                                                                  | JSON del framework                                                     |                            |
 | 422    | Cuerpo inválido                                                                                                                         | `{"message": "...", "errors": {"email": ["..."]}}`                     |                            |
@@ -292,8 +419,12 @@ Toda respuesta que pasa por el middleware lleva `Cache-Control: no-store`
 datos.
 
 La plataforma trata cualquier código distinto de 2xx como "Intranet no
-disponible": no cambia el rol, el miembro ni los datos externos de las cuentas
-existentes (solo `lastRoleSyncAt`) y no escribe el listado.
+disponible": no cambia nada de las cuentas existentes y no escribe el
+listado. La única excepción es el 404 `{"error": "not_found"}` de `user/role`
+con token: para una cuenta que la Intranet ya conocía significa que se ha
+borrado, y le retira el acceso a la plataforma (sección 1). Ese cuerpo tiene
+que ser exactamente ese: con cualquier otra clave, la plataforma lo toma como
+un fallo y no retira el acceso a nadie.
 
 #### `POST /api/asambleas/v1/user/role`
 
@@ -329,7 +460,7 @@ Respuesta 200:
 
 | Campo        | Tipo            | Origen             | Notas                                                                                                                                                                       |
 | ------------ | --------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`         | integer         | `users.id`         | Nuevo. La plataforma lo ignora hoy; servirá para enlazar por id y no por siglas (fase 2).                                                                                   |
+| `id`         | integer         | `users.id`         | Nuevo. La plataforma lo guarda en `users.intranet_id` y enlaza por él las cuentas Asociado y Sectorial con su miembro, aunque cambien las siglas. De 1 a 2^31-1.            |
 | `role`       | string no vacío | `users.type`       | Valores actuales: `Asociado`, `Desasociado`, `Invitado`, `Sectorial`, `CEA`, `CdG`, `CAI`, `Otros`. Tal cual, con estas mayúsculas: la plataforma los compara literalmente. |
 | `name`       | string \| null  | `users.name`       | Lo que ya devuelve hoy.                                                                                                                                                     |
 | `initials`   | string \| null  | `users.initials`   | Como mucho 20 caracteres útiles: la plataforma recorta a 20 y empareja por ellas.                                                                                           |
@@ -341,6 +472,11 @@ personales de `personal_data`.
 Errores: 404 `{"error": "not_found"}` si no hay cuenta con ese email **o** si
 la cuenta tiene `type` nulo o vacío (mismo cuerpo, misma cabecera). 422 si el
 email no es válido. El resto, según la tabla común.
+
+Para la plataforma, ese 404 retira el acceso a una cuenta que ya conocía
+(sección 1): vaciar el `type` de una cuenta en la Intranet tiene el mismo
+efecto que borrarla. Las cuentas con un rol protegido en la plataforma
+(`Admin`, `Secretaria`, `Presidencia`, `Moderador`) lo conservan.
 
 #### `GET /api/asambleas/v1/usuarios/asociados`
 
@@ -363,14 +499,14 @@ Respuesta 200:
 }
 ```
 
-| Campo                  | Tipo           | Origen                       |
-| ---------------------- | -------------- | ---------------------------- |
-| `id`                   | integer        | `users.id` (nuevo)           |
-| `denomination`         | string \| null | `users.designation`          |
-| `initials`             | string \| null | `users.initials`             |
-| `university`           | string \| null | `users.university`           |
-| `autonomous_community` | string \| null | `users.autonomous_community` |
-| `generated_at`         | string ISO8601 | Momento de la respuesta      |
+| Campo                  | Tipo           | Origen                                                                                         |
+| ---------------------- | -------------- | ---------------------------------------------------------------------------------------------- |
+| `id`                   | integer        | `users.id` (nuevo). La plataforma lo guarda en `members.intranet_id` y empareja primero por él |
+| `denomination`         | string \| null | `users.designation`                                                                            |
+| `initials`             | string \| null | `users.initials`                                                                               |
+| `university`           | string \| null | `users.university`                                                                             |
+| `autonomous_community` | string \| null | `users.autonomous_community`                                                                   |
+| `generated_at`         | string ISO8601 | Momento de la respuesta                                                                        |
 
 Reglas:
 
@@ -379,8 +515,13 @@ Reglas:
   Hoy son del orden de un centenar de filas; el cliente admite hasta 5000.
 - Orden estable (`initials`, `id`); la plataforma no usa el orden y no hace
   falta `order`.
+- `id` estable y único: la plataforma empareja por él antes que por siglas.
+  Un `id` que no sea un entero de 1 a 2^31-1 invalida la lista entera; uno
+  repetido se descarta (gana la primera fila).
 - Sin `description`, logos ni `social_networks`: eso es para la web.
-- Ante cualquier fallo, error 5xx. Nunca `200` con `data: []` por un error.
+- Ante cualquier fallo, error 5xx. Nunca `200` con `data: []` por un error
+  (la plataforma pide confirmación antes de desactivar muchos miembros, pero
+  la sincronización diaria no confirma nunca).
 - Sin respuestas condicionales (ETag/304): la plataforma trata un 304 como
   fallo.
 
@@ -392,27 +533,27 @@ no las envía): para las cuentas sectoriales ese dato no es fiable.
 
 ### 4.4 Medidas de seguridad
 
-| Medida                 | Cómo                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Token dedicado         | Middleware `AuthenticateAssembliesService` en todo el grupo; hash SHA-256 en configuración, dos ranuras, `hash_equals`, solo cabecera `Authorization`; token con prefijo `asm_` para que no se confunda con un hash.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Proxies de confianza   | **Requisito previo** de todas las medidas por IP y de la comprobación de HTTPS (R6, sección 5.8). nginx recupera la IP real de Cloudflare (`real_ip_header CF-Connecting-IP` con todos sus rangos) y sobrescribe `X-Forwarded-For`, `-Proto`, `-Host` y `-Port`. `TrustProxies` confía solo en la dirección fija de nginx (`TRUSTED_PROXIES`; sin ella, en nadie) y solo acepta `X-Forwarded-For` y `X-Forwarded-Proto`.                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Lista de IP (opcional) | `ASSEMBLIES_API_ALLOWED_IPS` con la IP con la que Laravel ve a la plataforma (admite CIDR, `IpUtils::checkIp`). No poner "la IP de salida" de memoria: copiar el `ip` que registra `assemblies_api.denied` tras la primera llamada sin token del paso 1 (sección 8), y solo cuando sea la IP pública real del servidor de la plataforma, no una de Cloudflare ni una privada `172.x`. Si ese servidor tiene IPv4 e IPv6, puede llegar por cualquiera de las dos: poner las dos. Si la plataforma corre en el mismo VPS y llama al nombre público, sale por Cloudflare y vuelve con la IP pública del VPS. Solo sirve con la sección 5.8 hecha.                                                                                                                                                                                                                            |
-| Solo HTTPS             | `ASSEMBLIES_API_REQUIRE_HTTPS=true`: el middleware responde 403 a peticiones no seguras (`$request->secure()`), y con eso una URL mal configurada falla a la vista en vez de funcionar en claro. Apache no termina TLS, así que Laravel solo sabe que la petición es HTTPS por el `X-Forwarded-Proto` que fija nginx (`$scheme`), y solo porque nginx es proxy de confianza. Cloudflare tiene que estar en modo SSL **Full (strict)**: en Flexible llega al origen por HTTP, el token cruza internet en claro, `$scheme` es `http` y cada llamada recibe 403. HSTS en nginx. Si el token llegó a viajar por `http`, rotarlo. Excepción, solo si aplica: si la plataforma corre en el mismo VPS y llama por una red Docker interna que no sale del servidor, se puede desactivar HTTPS **y** limitar las IP a la dirección fija de la plataforma en esa red (sección 5.8). |
-| Límite de peticiones   | Sin `throttle:api`. Limitador `assemblies-api`: 300/min por token en `user/role`, 30/min por token en cada listado, 600/min por IP. La clave por token usa el hash completo, nunca la huella de 8 caracteres que sale en los logs. El token se compara primero y un token válido pasa siempre; tras 10 tokens erróneos en un minuto desde una IP, los siguientes tokens erróneos reciben 429 en vez de 401 y dejan de escribir `assemblies_api.denied`. No protege de fuerza bruta (un token de 256 bits no se adivina): solo limita el ruido en los logs. El límite de 600/min por IP corre antes de la autenticación y cuenta también las peticiones sin token.                                                                                                                                                                                                         |
-| Campos mínimos         | Recursos dedicados (`AssemblyAccountResource`, `AssemblyMemberResource`) con lista cerrada de claves. Sin emails, teléfonos, redes ni logos.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| Sin enumeración        | Sin token, 401 idéntico para cualquier email (no se consulta la base de datos). Con token, 404 idéntico para email desconocido y cuenta sin tipo. CORS cerrado: ningún navegador puede leer el grupo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| Logs sin secretos      | Nunca la cabecera `Authorization`, el token ni el hash completo; como huella, los 8 primeros caracteres del hash. Nunca el email en claro: HMAC con `APP_KEY`, truncado. No registrar cuerpos de petición. `LOG_LEVEL=info` exactamente durante la transición: `role_lookup` y `roster` se registran en `info` y `legacy_role_lookup` en `notice`, y las secciones 7 y 8 los leen. Con `notice` faltan los dos primeros, y con `warning` o más alto, los tres.                                                                                                                                                                                                                                                                                                                                                                                                            |
-| Rotación               | Procedimiento de la sección 7, con dos ranuras: ningún token válido se rechaza durante el cambio. Cada cambio de variables recrea el contenedor de la Intranet (sección 5.1), que deja de responder unos segundos.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| CORS cerrado           | `config/cors.php` deja de usar `api/*` y lista solo las rutas públicas. El grupo `api/asambleas/*` queda fuera: sin `Access-Control-Allow-Origin`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Validación             | `FormRequest` (`AssemblyRoleLookupRequest`) con normalización previa; JSON forzado para que un error sea 422 y no una redirección.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| Falla cerrado          | Sin hash configurado, 503. Un error interno, 5xx y nunca datos parciales. `APP_DEBUG=false`, comprobado en el contenedor antes de poner el hash (sección 8, paso 1): con `APP_DEBUG=true` cualquiera obtiene la traza completa de un error, también sin token. Interruptores booleanos estrictos: un valor en blanco o mal escrito deja el valor seguro por defecto.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| Tests                  | Sección 6.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Medida               | Cómo                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Token dedicado       | Middleware `AuthenticateAssembliesService` en todo el grupo; hash SHA-256 en configuración, dos ranuras, `hash_equals`, solo cabecera `Authorization`; token con prefijo `asm_` para que no se confunda con un hash.                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Proxies de confianza | nginx ya recupera la IP real de Cloudflare (`real_ip_header CF-Connecting-IP` con todos sus rangos) y fija `X-Forwarded-Proto`; `TrustProxies` confía solo en `TRUSTED_PROXIES` (la red de Docker que comparte con nginx, o su dirección fija; sin ella, en nadie) y solo acepta `X-Forwarded-For` y `-Proto` (R6, sección 5.8).                                                                                                                                                                                                                                                                                                                                  |
+| Lista de IP          | Opcional, y vacía: `ASSEMBLIES_API_ALLOWED_IPS` (admite CIDR, `IpUtils::checkIp`). No se usa porque la plataforma también llama desde el servidor de desarrollo, sin IP fija. Si algún día se usa, el `ip` que registra `assemblies_api.denied` dice desde qué dirección llega cada cliente.                                                                                                                                                                                                                                                                                                                                                                      |
+| Solo HTTPS           | `ASSEMBLIES_API_REQUIRE_HTTPS` (por defecto `true`): el middleware responde 403 a peticiones no seguras, y así una URL mal configurada falla a la vista. Por Internet, Laravel sabe que la petición es HTTPS por el `X-Forwarded-Proto` de nginx, porque nginx está en `TRUSTED_PROXIES`. Solo se desactiva (`false`) si la plataforma llama por la red de Docker, que es HTTP; no abre nada hacia fuera, porque nginx redirige todo el puerto 80 a HTTPS (sección 5.8, punto 3).                                                                                                                                                                                 |
+| Límite de peticiones | Sin `throttle:api`. Limitador `assemblies-api`: 300/min por token en `user/role`, 30/min por token en cada listado, 600/min por IP. La clave por token usa el hash completo, nunca la huella de 8 caracteres que sale en los logs. El token se compara primero y un token válido pasa siempre; tras 10 tokens erróneos en un minuto desde una IP, los siguientes tokens erróneos reciben 429 en vez de 401 y dejan de escribir `assemblies_api.denied`. No protege de fuerza bruta (un token de 256 bits no se adivina): solo limita el ruido en los logs. El límite de 600/min por IP corre antes de la autenticación y cuenta también las peticiones sin token. |
+| Campos mínimos       | Recursos dedicados (`AssemblyAccountResource`, `AssemblyMemberResource`) con lista cerrada de claves. Sin emails, teléfonos, redes ni logos.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Sin enumeración      | Sin token, 401 idéntico para cualquier email (no se consulta la base de datos). Con token, 404 idéntico para email desconocido y cuenta sin tipo. CORS cerrado: ningún navegador puede leer el grupo.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Logs sin secretos    | Nunca la cabecera `Authorization`, el token ni el hash completo; como huella, los 8 primeros caracteres del hash. Nunca el email en claro: HMAC con `APP_KEY`, truncado. No registrar cuerpos de petición. `LOG_LEVEL=info` en producción: `role_lookup` y `roster` se registran en `info`, y las secciones 7 y 8 los leen; con `notice` o más alto no se escriben.                                                                                                                                                                                                                                                                                               |
+| Rotación             | Procedimiento de la sección 7, con dos ranuras: ningún token válido se rechaza durante el cambio. Cada cambio de variables recrea el contenedor de la Intranet (sección 5.1), que deja de responder unos segundos.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| CORS cerrado         | `config/cors.php` deja de usar `api/*` y lista solo las rutas públicas. El grupo `api/asambleas/*` queda fuera: sin `Access-Control-Allow-Origin`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Validación           | `FormRequest` (`AssemblyRoleLookupRequest`) con normalización previa; JSON forzado para que un error sea 422 y no una redirección.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Falla cerrado        | Sin hash configurado, 503. Un error interno, 5xx y nunca datos parciales. `APP_DEBUG=false`, comprobado en el contenedor al desplegar (sección 8, paso 1): con `APP_DEBUG=true` cualquiera obtiene la traza completa de un error, también sin token. Interruptores booleanos estrictos: un valor en blanco o mal escrito deja el valor seguro por defecto.                                                                                                                                                                                                                                                                                                        |
+| Tests                | Sección 6.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ## 5. Implementación en Laravel
 
-Bocetos pensados para la estructura actual de la Intranet (Laravel 13 con
-`Kernel` y `RouteServiceProvider` clásicos). Ajustar nombres al estilo del
-repositorio y pasar Pint.
+Implementado en el commit `28d4579` de la Intranet (Laravel 13 con `Kernel` y
+`RouteServiceProvider` clásicos). Estos bocetos lo resumen; el código del
+repositorio es la referencia.
 
 ### 5.1 Configuración
 
@@ -460,18 +601,37 @@ repositorio y pasar Pint.
 # Private API for the assemblies platform (/api/asambleas/v1)
 # SHA-256 hex of the token, never the token itself (asm_...):
 # printf %s "$TOKEN" | sha256sum
+# The _NEXT slot is for rotating the token without downtime.
 ASSEMBLIES_API_TOKEN_SHA256=
 ASSEMBLIES_API_TOKEN_SHA256_NEXT=
+# Optional, comma separated IPs or CIDR ranges the platform calls from
 ASSEMBLIES_API_ALLOWED_IPS=
 # Only the word false turns a switch off; blank or anything else keeps true
 ASSEMBLIES_API_REQUIRE_HTTPS=true
+# Old public POST /api/user/role; set to false once the platform uses the new group
 ASSEMBLIES_API_LEGACY_ROLE_ROUTE=true
 
-# Fixed address of the nginx container (comma separated); empty trusts nobody
+# The nginx container in front of Apache: its fixed address or the range of
+# the Docker network it shares with the Intranet (CIDR, comma separated).
+# Empty trusts nobody. In production, without it every visitor shares nginx's
+# address (and its per-IP limits) and no request is seen as HTTPS.
 TRUSTED_PROXIES=
 ```
 
 `TRUSTED_PROXIES` la lee `config/trustedproxy.php` (sección 5.8).
+
+En producción (VPS revisado el 2026-11-06), el `env_file` de la Intranet
+(`config/intranet/.env`) lleva:
+
+```dotenv
+ASSEMBLIES_API_TOKEN_SHA256=<hash>
+ASSEMBLIES_API_LEGACY_ROLE_ROUTE=false
+TRUSTED_PROXIES=172.18.0.0/16
+```
+
+`ASSEMBLIES_API_ALLOWED_IPS` se queda vacía, y `ASSEMBLIES_API_REQUIRE_HTTPS`
+en su valor por defecto salvo que la plataforma llame por la red de Docker
+(`false`; sección 5.8, punto 3).
 
 **Aplicar un cambio de estas variables en producción.** La imagen no lleva
 `.env` (`.dockerignore` lo excluye): las variables llegan al contenedor
@@ -641,9 +801,10 @@ class AuthenticateAssembliesService
 
 El `Accept` que fuerza el middleware solo cubre lo que ocurre después de él.
 Un 405 se lanza al resolver la ruta y un 429 de `ThrottleRequests` llega antes
-que `assemblies.service` (sección 5.3); como la consulta de rol no envía
-`Accept`, saldrían en HTML. Para que todo el grupo responda JSON sin depender
-del orden, en `app/Exceptions/Handler.php`:
+que `assemblies.service` (sección 5.3); a un cliente que no envíe `Accept`
+(como la consulta de rol de la plataforma antes de enviarlo) le saldrían en
+HTML. Para que todo el grupo responda JSON sin depender del orden ni del
+cliente, en `app/Exceptions/Handler.php`:
 
 ```php
 /**
@@ -933,605 +1094,232 @@ se compara desde el inicio de la ruta. Este cambio ya corta el riesgo R2 sobre
 la ruta vieja desde el primer despliegue (la plataforma llama desde el
 servidor y no le afecta).
 
-### 5.8 Otros ajustes en la Intranet
+### 5.8 Proxies, acceso de la plataforma y otros ajustes
 
-**Cadena de proxies (R6), antes del paso 1 del despliegue.** La cadena es
-Cloudflare → contenedor `nginx` → Apache por `proxy_pass` (sección 2).
-El vhost de producción no está en ningún repositorio: revisarlo en el VPS
-(`docker compose exec -T nginx nginx -T`). Laravel solo ve la dirección real
-del visitante y el esquema si se cumplen los cinco puntos siguientes.
+**La API es accesible desde Internet y la protege el token.** La plataforma la
+llama por la URL pública, `https://intranet.creup.es/api/asambleas/v1`, tanto
+en producción como desde el servidor de desarrollo de quien la programa; si en
+el VPS comparte red de Docker con la Intranet, también puede llamarla por
+dentro (punto 3). No hay lista de IP ni bloqueo en nginx: los listados son
+datos que ya publica la web, y la consulta de rol solo responde a quien
+presenta el token.
 
-1. **nginx recupera la IP real de Cloudflare y sobrescribe las cabeceras.** En
-   el `server` de la Intranet:
+Estado del VPS revisado el 2026-11-06. El vhost está en
+`config/nginx/conf.d/intranet.creup.es.conf` del directorio de compose, y
+`docker compose exec -T nginx nginx -T` muestra la configuración entera.
 
-   ```nginx
-   # Real visitor address. One line per range Cloudflare publishes, IPv4 and
-   # IPv6 (https://www.cloudflare.com/ips/); the list changes now and then.
-   set_real_ip_from 173.245.48.0/20;
-   set_real_ip_from 2400:cb00::/32;
-   # ...every other range
-   real_ip_header CF-Connecting-IP;
+1. **nginx ya hace lo necesario.**
+   - `snippets/cloudflare-realip.conf`, incluido en `nginx.conf` para todos
+     los sitios, recupera la IP real con `real_ip_header CF-Connecting-IP` y
+     todos los rangos de Cloudflare, IPv4 e IPv6. El log de acceso de la
+     Intranet muestra IP reales de visitantes. Cuando Cloudflare cambie sus
+     rangos (<https://www.cloudflare.com/ips/>), hay que actualizar ese
+     archivo.
+   - Termina TLS con el certificado de Let's Encrypt de `creup.es`, válido
+     para `intranet.creup.es`, y el puerto 80 redirige todo a HTTPS.
+   - El vhost de la Intranet hace `proxy_pass http://intranet:80` con
+     `X-Forwarded-Proto $scheme` y
+     `X-Forwarded-For $proxy_add_x_forwarded_for`.
 
-   location / {
-       proxy_pass http://intranet:80;
-       proxy_set_header Host $host;
-       # Overwrite, never append: $proxy_add_x_forwarded_for would keep
-       # whatever the client sent in front of the real address.
-       proxy_set_header X-Forwarded-For $remote_addr;
-       proxy_set_header X-Forwarded-Proto $scheme;
-       proxy_set_header X-Forwarded-Host $host;
-       proxy_set_header X-Forwarded-Port $server_port;
-   }
+   No hace falta cambiar nada. Recomendado, para que la cabecera lleve solo la
+   dirección real: `proxy_set_header X-Forwarded-For $remote_addr;`. Con
+   `$proxy_add_x_forwarded_for` también es seguro: nginx añade la IP real al
+   final, y Laravel se queda con la última dirección que no es de confianza,
+   así que lo que el cliente escriba delante nunca gana (lo prueba la sección
+   6). `X-Forwarded-Host` y `-Port` sobran: Laravel ya no los lee (punto 4).
+
+2. **`TRUSTED_PROXIES`: quién puede acreditar la IP y HTTPS.** `28d4579` deja
+   de confiar en `'*'` (punto 4). En el VPS todos los contenedores están en una
+   sola red de Docker, `esternocleidomastoideo2003_default` (`172.18.0.0/16`),
+   y nginx tiene una dirección dinámica (`172.18.0.15` al revisarlo). Lo
+   simple es confiar en esa red:
+
+   ```dotenv
+   TRUSTED_PROXIES=172.18.0.0/16
    ```
 
-   `real_ip_header` solo cambia `$remote_addr` cuando la conexión llega desde
-   un rango de Cloudflare; quien conecte directamente con un `CF-Connecting-IP`
-   inventado se queda con su propia dirección. Nada de
-   `$proxy_add_x_forwarded_for` en este vhost. Comprobar en el log de acceso de
-   nginx (`docker compose logs --tail 20 nginx` con el log por defecto de la
-   imagen oficial, o el archivo que fije `access_log` en el vhost) que, tras
-   cargar una página, aparece la IP propia y no una de Cloudflare ni una
-   `172.x.0.1`.
+   - Confía en nginx esté donde esté dentro de la red. También en los demás
+     contenedores (la web, WordPress, phpMyAdmin...): uno comprometido podría
+     hablar con Apache directamente, declarar otra IP o HTTPS y saltarse los
+     límites por IP. No le da acceso a la API, que pide el token.
+   - Más estricto, para más adelante: dar a nginx una dirección fija en una
+     red propia compartida con la Intranet, apuntar su `proxy_pass` a un alias
+     de la Intranet que solo exista en esa red, y poner en `TRUSTED_PROXIES`
+     solo esa dirección. Se aplica con
+     `docker compose up -d --no-deps nginx intranet`, conservando las redes
+     que ya tienen; un `docker compose up -d` sin nombres arrancaría o
+     recrearía también el resto de servicios del VPS.
+   - Sin `TRUSTED_PROXIES`, Laravel no confía en nadie: todos los visitantes
+     comparten la dirección de nginx (y los límites por IP, los 60/min de
+     `throttle:api` incluidos), ninguna petición se ve como HTTPS y la
+     plataforma recibe 403 `https_required` por la URL pública. Por eso la
+     variable entra en el `env_file` en el mismo despliegue que `28d4579`.
+   - Si la red por defecto se recrea con otra subred, hay que actualizar la
+     variable. Para comprobarla:
+     `docker network inspect esternocleidomastoideo2003_default --format '{{range .IPAM.Config}}{{.Subnet}}{{end}}'`.
 
-2. **Cloudflare en modo SSL/TLS Full (strict)**, con un certificado válido en
-   el origen (el de Let's Encrypt que monta el ejemplo del `README.md`, o uno
-   de origen de Cloudflare). En Flexible, Cloudflare llega al origen por HTTP:
-   el token cruza internet en claro, `$scheme` es `http` y cada llamada de la
-   plataforma recibe 403. Mirar el modo antes que nada: la copia vieja del
-   vhost en `CREUP/VPS` solo escucha en el 80, con el certificado comentado,
-   y así solo funciona en Flexible.
-
-3. **El origen solo acepta a Cloudflare.** Los puertos 80 y 443 del VPS se
-   abren solo a los rangos de Cloudflare, IPv4 **e IPv6**, con el cortafuegos
-   del proveedor o con reglas en la cadena `DOCKER-USER` (`ufw` no filtra los
-   puertos que publica Docker). Opcional: Authenticated Origin Pulls.
-   Comprobar desde una máquina de fuera que no responde (código `000` tras el
-   tiempo máximo):
-
-   ```bash
-   curl -m 10 -sk -o /dev/null -w '%{http_code}\n' \
-     --resolve intranet.creup.es:443:<IPv4 del VPS> https://intranet.creup.es/
-   curl -m 10 -sk -o /dev/null -w '%{http_code}\n' \
-     --resolve 'intranet.creup.es:443:[<IPv6 del VPS>]' https://intranet.creup.es/
-   ```
-
-4. **El contenedor `intranet` no publica ningún puerto** (sin `ports:` en su
-   servicio, como en el ejemplo): `docker compose ps intranet` muestra `80/tcp`
-   sin dirección del host. Apache solo es accesible desde la red de Docker. No
-   configurar `RemoteIPHeader` en Apache: Laravel tiene que seguir viendo a
-   nginx como quien abre la conexión.
-
-5. **`TrustProxies` confía solo en nginx, y solo para la dirección y el
-   esquema.** `eb92083` cambia `'*'` por loopback y los rangos privados
-   (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`). Funciona
-   detrás de nginx, pero también confía en la pasarela de cada red de Docker
-   (por la que entra, por ejemplo, el tráfico IPv6 que reenvía `docker-proxy`)
-   y en cualquier contenedor vecino (`mariadb`, phpMyAdmin...), que puede
-   llamar a `intranet:80` directamente y declarar cualquier IP o HTTPS. Y
-   sigue aceptando `X-Forwarded-Host` y `X-Forwarded-Port`. Recomendado:
-   - nginx con una dirección fija en una red propia, `edge`, que sea la única
-     que comparte con la Intranet, para que llegue siempre desde esa
-     dirección. nginx sigue en `default` para lo demás que sirva; la Intranet
-     sale de `default` y habla con la base de datos por otra red, `db`. En el
-     `docker-compose.yml` del VPS:
+3. **Cómo llega la plataforma.**
+   - **Por la URL pública**, `https://intranet.creup.es/api/asambleas/v1`:
+     desde el servidor de desarrollo y, si se quiere, también desde
+     producción. Pasa por Cloudflare y por nginx, que acredita HTTPS, así que
+     vale con `ASSEMBLIES_API_REQUIRE_HTTPS` por defecto (`true`). Si
+     Cloudflare desafía esas llamadas (Bot Fight Mode o una regla del WAF: un
+     403 en HTML, con cabecera `cf-ray` y nada en los logs de la Intranet),
+     añadir en Cloudflare una excepción para `/api/asambleas/`.
+   - **Por la red de Docker**, `http://intranet/api/asambleas/v1`, si la
+     plataforma se despliega en el VPS en una red que comparta con la
+     Intranet, como la web, que ya llama a `http://intranet`. No pasa por
+     Cloudflare. Es HTTP y no pasa por nginx, así que exige
+     `ASSEMBLIES_API_REQUIRE_HTTPS=false`. Eso no abre nada hacia fuera: nginx
+     redirige todo el puerto 80 a HTTPS, así que ninguna petición en claro de
+     Internet llega a la Intranet. Desde otro proyecto de compose, la
+     plataforma se une a la red de la Intranet así:
 
      ```yaml
      services:
-       nginx:
-         networks:
-           default: {} # other services it proxies
-           edge:
-             ipv4_address: 172.30.0.10
-       intranet:
-         networks: [edge, db] # not on default
-       mariadb:
-         networks: [db]
+       app:
+         networks: [default, intranet]
      networks:
-       edge:
-         ipam:
-           config:
-             - subnet: 172.30.0.0/24 # any free subnet
-       db: {}
+       intranet:
+         external: true
+         name: esternocleidomastoideo2003_default
      ```
 
-     Dejar `edge` sin IPv6 (como viene por defecto) o fijar también
-     `ipv6_address` y añadirla a la lista. Cualquier otro servicio que use la
-     base de datos (phpMyAdmin, por ejemplo) tiene que unirse a `db`.
+     Cambiar de red exige recrear el contenedor (`up -d app`); `restart` no
+     basta. La plataforma, en producción, solo acepta `http:` hacia nombres
+     sin punto (sección 1): `http://intranet` vale.
 
-     Aplicarlo **antes del paso 1, por separado** y fuera de horas punta:
-     desde el directorio de compose, `docker compose up -d`, que recrea nginx,
-     la Intranet y la base de datos con la imagen ya desplegada (la que fija
-     el `.env` de ese directorio; comprobarlo antes como en la sección 5.1,
-     paso 2). Esa imagen confía en `'*'`, así que la red
-     nueva no le cambia nada. Se cortan unos segundos todos los sitios que
-     sirve nginx; después, comprobar que la Intranet carga.
-     `scripts/deploy.sh` no sirve para esto: solo recrea `intranet`, así que
-     nginx no entraría en `edge` y dejaría de llegar a ella.
+   - En los dos casos, `ASSEMBLIES_API_ALLOWED_IPS` se queda vacía: el
+     servidor de desarrollo no tiene una IP fija.
 
-   - `TRUSTED_PROXIES=172.30.0.10` en el `env_file` de la Intranet, leída de
-     la configuración. `config/trustedproxy.php`:
+4. **`TrustProxies` confía solo en `TRUSTED_PROXIES`, y solo para la dirección
+   y el esquema.** Lo implementa `28d4579`. `config/trustedproxy.php`:
 
-     ```php
-     <?php
+   ```php
+   <?php
 
-     return [
-         // The nginx container's fixed address, the only peer allowed to vouch
-         // for the client's IP and scheme. Comma separated, blank entries
-         // dropped. Unset trusts nobody (fails closed). Never '*'.
-         'proxies' => array_values(array_filter(array_map(
-             'trim',
-             explode(',', (string) env('TRUSTED_PROXIES', '')),
-         ))),
-     ];
-     ```
+   return [
+       // The reverse proxy in front of Apache, the only peer allowed to vouch for
+       // the client's IP and scheme (App\Http\Middleware\TrustProxies): the nginx
+       // container's fixed address or, more simply, the range (CIDR) of the
+       // Docker network it shares with the Intranet. Comma separated, blank
+       // entries dropped. Unset trusts nobody (fails closed). Never '*': the
+       // wildcards and REMOTE_ADDR, which would trust whoever opens the
+       // connection, are dropped too.
+       'proxies' => array_values(array_filter(
+           array_map('trim', explode(',', (string) env('TRUSTED_PROXIES', ''))),
+           fn (string $proxy) => $proxy !== '' && ! in_array($proxy, ['*', '**', 'REMOTE_ADDR'], true),
+       )),
+   ];
+   ```
 
-     `app/Http/Middleware/TrustProxies.php`, sin la lista de `$proxies`:
+   `app/Http/Middleware/TrustProxies.php`, sin lista de `$proxies`:
 
-     ```php
-     /** Only what nginx overwrites: the client's address and the scheme. */
-     protected $headers = Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_PROTO;
+   ```php
+   /** Only what nginx sets: the client's address and the scheme. */
+   protected $headers = Request::HEADER_X_FORWARDED_FOR | Request::HEADER_X_FORWARDED_PROTO;
 
-     /** The nginx container only (config/trustedproxy.php). */
-     protected function proxies()
-     {
-         return config('trustedproxy.proxies');
-     }
-     ```
+   /** The addresses or ranges in config/trustedproxy.php; empty trusts nobody. */
+   protected function proxies()
+   {
+       return config('trustedproxy.proxies');
+   }
+   ```
 
-   - Sin `TRUSTED_PROXIES`, Laravel no confía en nadie: la API responde 403
-     `https_required` (falla cerrado; el paso 1 lo detecta) y el resto de la
-     Intranet ve a todos los visitantes con la dirección de nginx, así que los
-     límites por IP (los 60/min de `throttle:api` incluidos) se comparten
-     entre todos. Por eso `TRUSTED_PROXIES` entra en el `env_file` con el
-     despliegue del paso 1, el del código que la lee, cuando la red fija ya
-     existe.
    - `X-Forwarded-Host` y `-Port` dejan de leerse. `URL::forceRootUrl` en
-     `AppServiceProvider` ya fija las URL que genera la Intranet; esto cubre
-     además lo que se lee de la petición (`$request->url()`, `fullUrl()`, las
-     rutas del paginador).
-   - Los tests de la sección 6 fijan `trustedproxy.proxies` y comprueban que
-     nginx acredita HTTPS y que nadie más lo hace, para que un cambio de
-     `TrustProxies` (por ejemplo, a `null`) no deje a la plataforma en 403 con
-     la suite en verde.
+     `AppServiceProvider` ya fija las URL que genera la Intranet, y las que se
+     leen de la petición (`$request->url()`, `fullUrl()`, las rutas del
+     paginador) salen del `Host` que fija nginx.
+   - Los tests de la sección 6 comprueban que solo quien está en
+     `TRUSTED_PROXIES` acredita HTTPS, que con un rango de Docker se sigue
+     viendo al cliente real y que `config/trustedproxy.php` nunca confía en
+     quien abre la conexión.
 
-**Si la plataforma corre en el mismo VPS**, puede llamar por una red Docker
-interna sin pasar por Cloudflare: unir su contenedor a `edge` con dirección
-fija (por ejemplo `172.30.0.20`; en su compose, `edge` como red `external`
-con el nombre completo que le da Compose, `<proyecto>_edge`),
-usar `NUXT_INTRANET_API_URL=http://intranet/api/asambleas/v1` y poner en la
-Intranet `ASSEMBLIES_API_REQUIRE_HTTPS=false` **y**
-`ASSEMBLIES_API_ALLOWED_IPS=172.30.0.20`. La plataforma no es proxy de
-confianza, así que Laravel ve su dirección real, y el token no sale del
-servidor. Es la excepción de la sección 4.4. Si no, la plataforma llama al
-nombre público como cualquier otro cliente.
+5. **El contenedor `intranet` no publica ningún puerto** (comprobado:
+   `docker compose ps intranet` muestra `80/tcp` sin dirección del host).
+   Apache solo es accesible desde la red de Docker. No configurar
+   `RemoteIPHeader` en Apache: Laravel tiene que seguir viendo a nginx como
+   quien abre la conexión.
+
+6. **Cloudflare en modo SSL/TLS Full (strict)** (recomendado). No puede estar
+   en Flexible: como el 80 redirige a HTTPS, la web entraría en un bucle de
+   redirecciones. Así que es Full o Full (strict), y con el certificado válido
+   del origen se puede pasar a Full (strict) sin riesgo.
+
+7. **El origen responde también sin Cloudflare** (comprobado: el 443 del VPS
+   contesta a conexiones directas con el certificado válido). No afecta a las
+   IP, porque nginx solo cree a Cloudflare, ni a la API, que pide el token,
+   pero permite saltarse el WAF de Cloudflare. Opcional: abrir el 80 y el 443
+   solo a los rangos de Cloudflare, con el cortafuegos del proveedor o con
+   reglas en la cadena `DOCKER-USER` (`ufw` no filtra los puertos que publica
+   Docker). **Antes**, comprobar que todos los dominios que sirve ese nginx
+   (Moodle, encuestas...) pasan por el proxy de Cloudflare: uno en "solo DNS"
+   dejaría de responder.
 
 Otros ajustes:
 
 - **`GET /api/user` (R7):** eliminarla si no la usa nadie (no se emite ningún
   token Sanctum). Si se mantiene, devolver un recurso con campos cerrados.
-- **Producción:** `APP_DEBUG=false`, comprobado con
-  `docker compose exec -T intranet php artisan config:show app.debug` después
-  de recrear el contenedor y antes de poner el hash del token (sección 8, paso
-  1). `LOG_LEVEL=info` exactamente durante la transición (sección 4.4),
-  comprobado con `config:show logging.channels.single.level` (el canal por
-  defecto, `stack`, escribe en `single`).
+- **Producción:** `APP_DEBUG=false` (comprobado en el `env_file`).
+  `LOG_LEVEL=info` (hoy es `debug`): `role_lookup` y `roster` se registran en
+  `info` y la sección 8 los lee. Se comprueba con
+  `config:show logging.channels.single.level` (el canal por defecto, `stack`,
+  escribe en `single`).
 
 ## 6. Tests (PHPUnit)
 
-`tests/Feature/Api/AssembliesApiTest.php`, en el estilo del repositorio
-(PHPUnit 13, `RefreshDatabase`, `#[DataProvider]`, métodos `test_...`):
+La suite está en la Intranet, `tests/Feature/Api/AssembliesApiTest.php`
+(commit `28d4579`), en el estilo del repositorio (PHPUnit 13,
+`RefreshDatabase`, `#[DataProvider]`, métodos `test_...`). Ese archivo es la
+referencia; esto es lo que cubre:
 
-```php
-<?php
+- **Token:** sin token o con uno erróneo, el mismo 401 en las tres rutas; un
+  token en la query string no vale; sin hash configurado, 503; valen las dos
+  ranuras de rotación.
+- **Contrato:** la consulta de rol devuelve exactamente `id`, `role`, `name`,
+  `initials` y `university`, con el email normalizado y
+  `Cache-Control: no-store`; un email desconocido y una cuenta sin tipo dan el
+  mismo 404; los listados traen solo `data` y `generated_at`, completos y sin
+  otros tipos, y el de sectoriales sin universidad ni comunidad autónoma.
+- **JSON sin `Accept`:** el 422, el 405 y el 429 del limitador salen en JSON
+  aunque la petición no lo pida, como la consulta de rol de la plataforma.
+- **Límites:** no se aplica el de 60/min del grupo `api`; cada listado tiene
+  su propio cupo por token; tras 10 tokens erróneos, los erróneos reciben 429
+  y uno válido sigue pasando.
+- **Lista de IP y proxies:** la lista de IP se aplica; HTTP se rechaza cuando
+  se exige HTTPS; solo quien está en `TRUSTED_PROXIES` acredita HTTPS (con la
+  dirección de nginx, ni la pasarela de Docker, ni un contenedor vecino, ni un
+  cliente público); con el rango de la red de Docker se sigue viendo al
+  cliente real aunque nginx añada a `X-Forwarded-For`; un `X-Forwarded-For`
+  falsificado no gana, y `X-Forwarded-Host` se ignora.
+- **Configuración:** `config/services.php` descarta un token pegado o un hash
+  truncado, normaliza un hash con espacios o mayúsculas y solo apaga un
+  interruptor con la palabra `false`; `config/trustedproxy.php` descarta `*`,
+  `**` y `REMOTE_ADDR`.
+- **CORS:** ni el grupo nuevo ni la ruta vieja responden a un origen de
+  navegador; los listados públicos siguen abiertos.
+- **Logs:** nunca el token, su hash ni el email.
+- **Ruta vieja:** responde exactamente lo de antes hasta que su interruptor la
+  cierra.
 
-namespace Tests\Feature\Api;
-
-use App\Models\User;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Request;
-use Illuminate\Log\Events\MessageLogged;
-use Illuminate\Support\Facades\Event;
-use Illuminate\Support\Facades\Route;
-use PHPUnit\Framework\Attributes\DataProvider;
-use Tests\TestCase;
-
-/**
- * The private API for the assemblies platform: service token on every route,
- * its own rate limit, no CORS, only the fields the platform reads, and logs
- * that never carry the token or an email.
- */
-class AssembliesApiTest extends TestCase
-{
-    use RefreshDatabase;
-
-    // Same shape as real tokens (section 7): "asm_" and base64url.
-    private const TOKEN = 'asm_current-token-for-the-tests-0123456789abcdef';
-
-    private const NEXT_TOKEN = 'asm_next-token-for-the-tests-0123456789abcdefgh';
-
-    /** The nginx container's fixed address (section 5.8). */
-    private const NGINX = '172.30.0.10';
-
-    protected function setUp(): void
-    {
-        parent::setUp();
-
-        config([
-            'services.assemblies.token_hashes' => [hash('sha256', self::TOKEN), hash('sha256', self::NEXT_TOKEN)],
-            'services.assemblies.allowed_ips' => [],
-            'services.assemblies.require_https' => false,
-            'services.assemblies.legacy_role_route' => true,
-        ]);
-    }
-
-    /** @return array<string, array{string, string}> */
-    public static function routes(): array
-    {
-        return [
-            'role' => ['POST', '/api/asambleas/v1/user/role'],
-            'asociados' => ['GET', '/api/asambleas/v1/usuarios/asociados'],
-            'sectoriales' => ['GET', '/api/asambleas/v1/usuarios/sectoriales'],
-        ];
-    }
-
-    #[DataProvider('routes')]
-    public function test_every_route_refuses_a_missing_or_wrong_token_the_same_way(string $method, string $uri): void
-    {
-        User::factory()->create(['email' => 'cdeub@ub.edu', 'type' => 'Asociado']);
-
-        foreach ([[], $this->auth('wrong-token')] as $headers) {
-            $this->json($method, $uri, ['email' => 'cdeub@ub.edu'], $headers)
-                ->assertStatus(401)
-                ->assertHeader('WWW-Authenticate', 'Bearer')
-                ->assertExactJson(['error' => 'unauthorized']);
-        }
-    }
-
-    #[DataProvider('routes')]
-    public function test_a_token_in_the_query_string_is_not_accepted(string $method, string $uri): void
-    {
-        $this->json($method, $uri.'?token='.self::TOKEN, ['email' => 'x@example.com'])->assertStatus(401);
-    }
-
-    #[DataProvider('routes')]
-    public function test_the_api_fails_closed_without_a_configured_token(string $method, string $uri): void
-    {
-        config(['services.assemblies.token_hashes' => []]);
-
-        $this->json($method, $uri, ['email' => 'x@example.com'], $this->auth())->assertStatus(503);
-    }
-
-    public function test_both_rotation_slots_are_accepted(): void
-    {
-        foreach ([self::TOKEN, self::NEXT_TOKEN] as $token) {
-            $this->getJson('/api/asambleas/v1/usuarios/asociados', $this->auth($token))->assertOk();
-        }
-    }
-
-    public function test_the_role_lookup_returns_only_what_the_platform_reads(): void
-    {
-        $user = User::factory()->create([
-            'email' => 'cdeub@ub.edu',
-            'type' => 'Asociado',
-            'name' => 'Consell de l\'Estudiantat UB',
-            'initials' => 'CdEUB',
-            'university' => 'Universitat de Barcelona',
-        ]);
-
-        $response = $this->postJson('/api/asambleas/v1/user/role', ['email' => '  CdEUB@UB.edu '], $this->auth())
-            ->assertOk()
-            ->assertExactJson([
-                'id' => $user->id,
-                'role' => 'Asociado',
-                'name' => 'Consell de l\'Estudiantat UB',
-                'initials' => 'CdEUB',
-                'university' => 'Universitat de Barcelona',
-            ]);
-
-        $this->assertStringContainsString('no-store', (string) $response->headers->get('Cache-Control'));
-    }
-
-    public function test_an_unknown_email_and_an_account_without_type_answer_the_same_404(): void
-    {
-        User::factory()->create(['email' => 'sin-tipo@example.com', 'type' => null]);
-
-        foreach (['nadie@example.com', 'sin-tipo@example.com'] as $email) {
-            $this->postJson('/api/asambleas/v1/user/role', ['email' => $email], $this->auth())
-                ->assertNotFound()
-                ->assertExactJson(['error' => 'not_found']);
-        }
-    }
-
-    public function test_an_invalid_email_is_a_json_422_even_without_an_accept_header(): void
-    {
-        // The platform's role call sends Content-Type but no Accept.
-        $this->call('POST', '/api/asambleas/v1/user/role', [], [], [], [
-            'CONTENT_TYPE' => 'application/json',
-            'HTTP_AUTHORIZATION' => 'Bearer '.self::TOKEN,
-        ], json_encode(['email' => 'no-es-un-email']))
-            ->assertStatus(422)
-            ->assertJsonValidationErrors('email');
-    }
-
-    public function test_a_wrong_method_is_answered_in_json_without_an_accept_header(): void
-    {
-        // Raised while resolving the route, before the service middleware.
-        $response = $this->call('GET', '/api/asambleas/v1/user/role', [], [], [], [
-            'HTTP_AUTHORIZATION' => 'Bearer '.self::TOKEN,
-        ]);
-
-        $response->assertStatus(405);
-        $this->assertStringContainsString('application/json', (string) $response->headers->get('Content-Type'));
-    }
-
-    public function test_a_rate_limit_answer_is_json_without_an_accept_header(): void
-    {
-        for ($i = 0; $i < 30; $i++) {
-            $this->getJson('/api/asambleas/v1/usuarios/asociados', $this->auth())->assertOk();
-        }
-
-        // Raised by ThrottleRequests, before the service middleware forces JSON.
-        $response = $this->call('GET', '/api/asambleas/v1/usuarios/asociados', [], [], [], [
-            'HTTP_AUTHORIZATION' => 'Bearer '.self::TOKEN,
-        ]);
-
-        $response->assertStatus(429)->assertHeader('Retry-After');
-        $this->assertStringContainsString('application/json', (string) $response->headers->get('Content-Type'));
-    }
-
-    public function test_the_asociados_roster_is_complete_minimal_and_unpaginated(): void
-    {
-        User::factory()->create(['type' => 'Asociado', 'initials' => 'CdEUB', 'designation' => 'CdEUB',
-            'university' => 'Universitat de Barcelona', 'autonomous_community' => 'Cataluña']);
-        User::factory()->create(['type' => 'Desasociado', 'initials' => 'OLD']);
-        User::factory()->create(['type' => 'Sectorial', 'initials' => 'CEEM']);
-
-        $response = $this->getJson('/api/asambleas/v1/usuarios/asociados', $this->auth())->assertOk();
-
-        $this->assertSame(['data', 'generated_at'], array_keys($response->json()));
-        $this->assertSame(['CdEUB'], array_column($response->json('data'), 'initials'));
-        $this->assertSame(
-            ['id', 'denomination', 'initials', 'university', 'autonomous_community'],
-            array_keys($response->json('data.0')),
-        );
-    }
-
-    public function test_the_sectoriales_roster_never_sends_a_university(): void
-    {
-        User::factory()->create(['type' => 'Sectorial', 'initials' => 'CEEM', 'university' => 'Ruido de Google']);
-
-        $this->getJson('/api/asambleas/v1/usuarios/sectoriales', $this->auth())
-            ->assertOk()
-            ->assertJsonPath('data.0.initials', 'CEEM')
-            ->assertJsonPath('data.0.university', null);
-    }
-
-    public function test_the_shared_api_limit_does_not_apply(): void
-    {
-        // More than the api group's 60/min, within the role lookup's 300/min.
-        User::factory()->create(['email' => 'cdeub@ub.edu', 'type' => 'Asociado']);
-
-        for ($i = 0; $i < 70; $i++) {
-            $this->postJson('/api/asambleas/v1/user/role', ['email' => 'cdeub@ub.edu'], $this->auth())->assertOk();
-        }
-    }
-
-    public function test_each_roster_has_its_own_budget_per_token(): void
-    {
-        for ($i = 0; $i < 30; $i++) {
-            $this->getJson('/api/asambleas/v1/usuarios/asociados', $this->auth())->assertOk();
-        }
-
-        $this->getJson('/api/asambleas/v1/usuarios/asociados', $this->auth())->assertStatus(429);
-        $this->getJson('/api/asambleas/v1/usuarios/sectoriales', $this->auth())->assertOk();
-    }
-
-    public function test_repeated_bad_tokens_get_429_but_a_valid_token_still_passes(): void
-    {
-        for ($i = 0; $i < 10; $i++) {
-            $this->getJson('/api/asambleas/v1/usuarios/asociados', $this->auth('wrong'))->assertStatus(401);
-        }
-
-        $this->getJson('/api/asambleas/v1/usuarios/asociados', $this->auth('wrong'))
-            ->assertStatus(429)
-            ->assertHeader('Retry-After');
-
-        // Same address: whoever shares it with the platform cannot lock it out.
-        $this->getJson('/api/asambleas/v1/usuarios/asociados', $this->auth())->assertOk();
-    }
-
-    public function test_the_ip_allow_list_is_enforced_when_set(): void
-    {
-        config(['services.assemblies.allowed_ips' => ['10.0.0.0/8']]);
-
-        $this->getJson('/api/asambleas/v1/usuarios/asociados', $this->auth())->assertForbidden();
-        $this->withServerVariables(['REMOTE_ADDR' => '10.1.2.3'])
-            ->getJson('/api/asambleas/v1/usuarios/asociados', $this->auth())
-            ->assertOk();
-    }
-
-    public function test_plain_http_is_refused_when_https_is_required(): void
-    {
-        config(['services.assemblies.require_https' => true]);
-
-        $this->getJson('http://localhost/api/asambleas/v1/usuarios/asociados', $this->auth())->assertForbidden();
-        $this->getJson('https://localhost/api/asambleas/v1/usuarios/asociados', $this->auth())->assertOk();
-    }
-
-    public function test_only_the_nginx_peer_vouches_for_https(): void
-    {
-        // Production: Cloudflare (Full strict), nginx (TLS), then Apache over
-        // plain HTTP. The URL stays http:// so only X-Forwarded-Proto can make
-        // it secure.
-        config([
-            'trustedproxy.proxies' => [self::NGINX],
-            'services.assemblies.require_https' => true,
-        ]);
-        $uri = 'http://localhost/api/asambleas/v1/usuarios/asociados';
-        $headers = $this->auth() + ['X-Forwarded-Proto' => 'https'];
-
-        $this->withServerVariables(['REMOTE_ADDR' => self::NGINX])->getJson($uri, $headers)->assertOk();
-
-        // The Docker gateway, a neighbour container, a public client.
-        foreach (['172.30.0.1', '172.30.0.20', '203.0.113.7'] as $peer) {
-            $this->withServerVariables(['REMOTE_ADDR' => $peer])->getJson($uri, $headers)->assertForbidden();
-        }
-    }
-
-    public function test_a_forged_first_forwarded_address_never_wins(): void
-    {
-        config([
-            'trustedproxy.proxies' => [self::NGINX],
-            'services.assemblies.allowed_ips' => ['6.6.6.6'],
-        ]);
-        $uri = '/api/asambleas/v1/usuarios/asociados';
-
-        // nginx overwrites X-Forwarded-For; were it ever to append, the
-        // rightmost untrusted hop (here the gateway) is the client, not
-        // whatever the client wrote first.
-        $this->withServerVariables(['REMOTE_ADDR' => self::NGINX])
-            ->getJson($uri, $this->auth() + ['X-Forwarded-For' => '6.6.6.6, 172.30.0.1'])
-            ->assertForbidden();
-        $this->withServerVariables(['REMOTE_ADDR' => self::NGINX])
-            ->getJson($uri, $this->auth() + ['X-Forwarded-For' => '6.6.6.6'])
-            ->assertOk();
-    }
-
-    public function test_a_forwarded_host_is_ignored_even_from_nginx(): void
-    {
-        config(['trustedproxy.proxies' => [self::NGINX]]);
-        Route::get('/_probe/host', fn (Request $request) => $request->getHttpHost());
-
-        $this->withServerVariables(['REMOTE_ADDR' => self::NGINX])
-            ->get('/_probe/host', ['X-Forwarded-Host' => 'evil.example', 'X-Forwarded-Port' => '8443'])
-            ->assertOk()
-            ->assertDontSee('evil.example')
-            ->assertDontSee('8443');
-    }
-
-    public function test_the_config_keeps_only_well_formed_hashes_and_strict_switches(): void
-    {
-        $vars = [
-            // A pasted token and a truncated hash are dropped: 503, not 401.
-            'ASSEMBLIES_API_TOKEN_SHA256' => self::TOKEN,
-            'ASSEMBLIES_API_TOKEN_SHA256_NEXT' => substr(hash('sha256', self::TOKEN), 0, 63),
-            // A blank switch keeps its default instead of turning off.
-            'ASSEMBLIES_API_REQUIRE_HTTPS' => '',
-            'ASSEMBLIES_API_LEGACY_ROLE_ROUTE' => '',
-        ];
-
-        try {
-            foreach ($vars as $key => $value) {
-                $_SERVER[$key] = $_ENV[$key] = $value;
-            }
-            $config = (require config_path('services.php'))['assemblies'];
-            $this->assertSame([], $config['token_hashes']);
-            $this->assertTrue($config['require_https']);
-            $this->assertTrue($config['legacy_role_route']);
-
-            // A hash with stray spaces or capitals is normalised and kept.
-            $_SERVER['ASSEMBLIES_API_TOKEN_SHA256'] = $_ENV['ASSEMBLIES_API_TOKEN_SHA256']
-                = ' '.strtoupper(hash('sha256', self::TOKEN));
-            $config = (require config_path('services.php'))['assemblies'];
-            $this->assertSame([hash('sha256', self::TOKEN)], $config['token_hashes']);
-        } finally {
-            foreach (array_keys($vars) as $key) {
-                unset($_SERVER[$key], $_ENV[$key]);
-            }
-        }
-    }
-
-    /** @return array<string, array{string}> */
-    public static function privateRoutes(): array
-    {
-        return [
-            'role lookup' => ['/api/asambleas/v1/user/role'],
-            'legacy role lookup' => ['/api/user/role'],
-        ];
-    }
-
-    #[DataProvider('privateRoutes')]
-    public function test_no_browser_origin_is_allowed(string $uri): void
-    {
-        $this->call('OPTIONS', $uri, [], [], [], [
-            'HTTP_ORIGIN' => 'https://evil.example',
-            'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'POST',
-        ])->assertHeaderMissing('Access-Control-Allow-Origin');
-    }
-
-    public function test_the_public_listings_stay_readable_by_browsers(): void
-    {
-        // The website reads these from the visitor's browser.
-        $this->call('OPTIONS', '/api/usuarios/asociados', [], [], [], [
-            'HTTP_ORIGIN' => 'https://creup.es',
-            'HTTP_ACCESS_CONTROL_REQUEST_METHOD' => 'GET',
-        ])->assertHeader('Access-Control-Allow-Origin', '*');
-    }
-
-    public function test_logs_never_carry_the_token_or_the_email(): void
-    {
-        $logged = [];
-        Event::listen(MessageLogged::class, function (MessageLogged $event) use (&$logged) {
-            $logged[] = $event->message.' '.json_encode($event->context);
-        });
-        User::factory()->create(['email' => 'cdeub@ub.edu', 'type' => 'Asociado']);
-
-        $this->postJson('/api/asambleas/v1/user/role', ['email' => 'cdeub@ub.edu'], $this->auth());
-        $this->postJson('/api/asambleas/v1/user/role', ['email' => 'cdeub@ub.edu'], $this->auth('wrong'));
-
-        $this->assertNotEmpty($logged);
-        foreach ($logged as $line) {
-            $this->assertStringNotContainsString(self::TOKEN, $line);
-            $this->assertStringNotContainsString(hash('sha256', self::TOKEN), $line);
-            $this->assertStringNotContainsString('cdeub@ub.edu', $line);
-        }
-    }
-
-    public function test_the_legacy_route_answers_as_before_until_its_switch_closes_it(): void
-    {
-        User::factory()->create(['email' => 'cdeub@ub.edu', 'type' => 'Asociado', 'name' => 'CdEUB',
-            'initials' => 'CdEUB', 'university' => 'Universitat de Barcelona']);
-
-        // Exactly what the platform in production reads today.
-        $this->postJson('/api/user/role', ['email' => 'cdeub@ub.edu'])
-            ->assertOk()
-            ->assertExactJson(['role' => 'Asociado', 'name' => 'CdEUB', 'initials' => 'CdEUB',
-                'university' => 'Universitat de Barcelona']);
-        $this->postJson('/api/user/role', ['email' => 'nadie@example.com'])
-            ->assertNotFound()
-            ->assertExactJson(['error' => 'Usuario no encontrado']);
-
-        config(['services.assemblies.legacy_role_route' => false]);
-        $this->postJson('/api/user/role', ['email' => 'cdeub@ub.edu'])->assertNotFound();
-    }
-
-    /** @return array<string, string> */
-    private function auth(string $token = self::TOKEN): array
-    {
-        return ['Authorization' => 'Bearer '.$token];
-    }
-}
-```
+La red de Docker y nginx (sección 5.8) no se prueban aquí: se comprueban en el
+despliegue (sección 8).
 
 Notas:
 
-- `users.type` es nullable desde la migración inicial, así que la cuenta sin
-  tipo se crea tal cual.
-- `UserFactory` no fija `type`, así que cada test lo da explícitamente.
 - Los límites viven en la caché. `config/cache.php` lee `CACHE_DRIVER`, que
   `phpunit.xml` fija a `array` (el `CACHE_STORE=array` de `.env.testing` no lo
   lee nadie); esa caché empieza vacía en cada test, así que los contadores no
   se arrastran de un test a otro.
-- Los tests de proxies fijan `trustedproxy.proxies` en vez de depender de la
-  lista que tenga `TrustProxies`; `NGINX` es la dirección de ejemplo de la
-  sección 5.8. La URL `http://` del test de nginx es a propósito: con
-  `https://` la petición sería segura por la variable `HTTPS` del servidor,
-  sin pasar por `X-Forwarded-Proto`.
-- El test de configuración carga `config/services.php` con variables de
-  entorno reales, porque el resto fija la configuración ya calculada y no
-  vería el filtro de 64 caracteres hexadecimales ni los interruptores.
-- Al cerrar la ventana de transición y borrar la ruta vieja, sustituir el
-  último test por uno que compruebe que `POST /api/user/role` da 404.
+- Los tests de proxies fijan `trustedproxy.proxies` (una dirección de nginx
+  o un rango de Docker) en vez de depender de la configuración. Sus URL son
+  `http://` a propósito: con `https://` la petición sería segura por la
+  variable `HTTPS` del servidor, sin pasar por `X-Forwarded-Proto`.
+- Los tests de configuración cargan `config/services.php` y
+  `config/trustedproxy.php` con variables de entorno reales, porque el resto
+  fija la configuración ya calculada y no vería esos filtros.
+- Al borrar la ruta vieja, sustituir el
+  test de la ruta vieja por uno que compruebe que `POST /api/user/role` da 404.
 
 ## 7. Rotación del token
 
@@ -1590,127 +1378,100 @@ solo guarda el hash.
 Hacerlo fuera de una semana de asamblea.
 
 **Antes del primer push de la Intranet.** El código de la fase 1 es el commit
-`eb92083` de `master` en la Intranet. No está publicado, y entre él y
-`origin/master` (`2f0b417`) hay otros dos commits sin publicar: `e57094b`
-(exportación de tesorería) y `c7e584f` (portafirmas). `scripts/deploy.sh`
-exige que `HEAD` coincida con `origin/master` (salvo `--skip-push-check`) y
-construye la imagen con el árbol de trabajo, así que hacer push de `master` y
-desplegar publica los tres. Decidirlo antes del primer push:
+`28d4579` de `master` en la Intranet, con las correcciones de la revisión. No
+está publicado, y entre él y `origin/master` (`2f0b417`) hay otros dos commits
+sin publicar: `e57094b` (exportación de tesorería) y `c7e584f` (portafirmas).
+`scripts/deploy.sh` exige que `HEAD` coincida con `origin/master` (salvo
+`--skip-push-check`) y construye la imagen con el árbol de trabajo, así que
+hacer push de `master` y desplegar publica los tres. Decidirlo antes del primer
+push:
 
 - o salen los tres juntos, si portafirmas y tesorería están listos;
-- o sale solo la API: `eb92083` no comparte archivos con los otros dos, así
+- o sale solo la API: `28d4579` no comparte archivos con los otros dos, así
   que se puede reordenar para que quede justo encima de `2f0b417`, publicar
   solo ese commit (`git push origin <sha>:master`) y desplegar desde él (con
   ese commit en `HEAD` y el árbol limpio; desde `master`, con los otros dos
   encima, `deploy.sh` se niega).
 
-`eb92083` sigue el diseño anterior a la revisión y **no incluye** estas
-correcciones del documento, que hay que añadir antes (en el mismo commit, que
-aún no está publicado, o en uno siguiente):
-
-- el token se compara antes que el bloqueo por tokens erróneos (sección 5.2);
-- la clave por token del limitador usa el hash completo (sección 5.3);
-- interruptores booleanos estrictos y el comentario del filtro de hashes
-  coherente con el formato `asm_` (sección 5.1);
-- `TrustProxies` solo con la dirección fija de nginx (`TRUSTED_PROXIES`) y
-  solo `X-Forwarded-For` y `X-Forwarded-Proto` (sección 5.8);
-- los tests de la sección 6: los que faltan, y dos que cambian.
-  `test_repeated_bad_tokens_lock_the_ip_out_for_a_minute` exige hoy que un
-  token válido reciba 429 y pasa a ser
-  `test_repeated_bad_tokens_get_429_but_a_valid_token_still_passes`;
-  `test_the_legacy_route_closes_with_its_switch` pasa a ser
-  `test_the_legacy_route_answers_as_before_until_its_switch_closes_it`, con
-  el JSON exacto de la ruta vieja.
-  `test_a_client_reaching_the_app_directly_cannot_claim_https` queda cubierto
-  por `test_only_the_nginx_peer_vouches_for_https`.
-
-Además, `eb92083` cambia la Intranet entera, no solo la API: CORS pasa de
-`api/*` a una lista de rutas y `TrustProxies` deja de ser `'*'`. Tras
-desplegar, comprobar que la web pública sigue leyendo los listados y que el
-log de acceso de nginx muestra IP reales.
+En los dos casos, `28d4579` cambia la Intranet entera, no solo la API: CORS
+pasa de `api/*` a una lista de rutas y `TrustProxies` deja de confiar en `'*'`.
+Sin `TRUSTED_PROXIES` no confía en nadie: todos los visitantes comparten la
+dirección de nginx (y sus límites por IP) y ninguna petición se ve como HTTPS.
+Por eso no se despliega sin `TRUSTED_PROXIES` en el `env_file`.
 
 **Paso 0. Preparar.** Generar el token (sección 7, paso 1) y guardarlo en el
 gestor de contraseñas.
 
-**Paso 1. Intranet: grupo nuevo con token obligatorio; la ruta vieja sigue.**
+**Paso 1. Intranet: grupo nuevo con token y ruta vieja cerrada.**
 
-1. Requisito previo: la sección 5.8 hecha y comprobada (nginx con la IP real
-   de Cloudflare y las cabeceras sobrescritas, Cloudflare en Full (strict),
-   80/443 solo desde Cloudflare con IPv6 incluida, contenedor `intranet` sin
-   puertos publicados, red `edge` con la dirección fija de nginx, aplicada
-   por separado). Sin eso, el
-   límite por IP y la lista de IP ven la IP del borde de Cloudflare o una
-   inventada, y la comprobación de HTTPS puede rechazar todo o creerse
-   cualquier cosa.
-2. En el `env_file` del servicio `intranet` (sección 5.1):
-   `APP_DEBUG=false`, `LOG_LEVEL=info`, `TRUSTED_PROXIES=<dirección de nginx>`,
-   `ASSEMBLIES_API_LEGACY_ROLE_ROUTE=true`, `ASSEMBLIES_API_REQUIRE_HTTPS=true`,
-   `ASSEMBLIES_API_ALLOWED_IPS` vacía de momento y **sin** hash de token
-   todavía.
-3. Desplegar con `scripts/deploy.sh` (recrea el contenedor y recarga nginx).
-   Sin hash, el grupo nuevo responde 503 a todo: el hash es la llave que lo
-   abre.
-4. Antes de poner el hash, comprobar en el contenedor lo que ha cargado:
+1. En el `env_file` del servicio `intranet` (`config/intranet/.env` del
+   directorio de compose; sección 5.1). `APP_DEBUG=false` ya está.
 
-   ```bash
-   docker compose exec -T intranet php artisan config:show app.debug                    # false
-   docker compose exec -T intranet php artisan config:show logging.channels.single.level  # info
+   ```dotenv
+   LOG_LEVEL=info
+   TRUSTED_PROXIES=172.18.0.0/16
+   ASSEMBLIES_API_TOKEN_SHA256=<hash>
+   ASSEMBLIES_API_LEGACY_ROLE_ROUTE=false
    ```
 
-   Con `APP_DEBUG=true`, cualquiera obtiene la traza completa de un error
-   (también de un 405 sin token, y un error de base de datos incluye la
-   consulta con el email). Desde fuera,
-   `curl -s https://intranet.creup.es/api/asambleas/v1/user/role | jq 'has("trace")'`
-   tiene que dar `false`.
+   `ASSEMBLIES_API_ALLOWED_IPS` no se pone, y `ASSEMBLIES_API_REQUIRE_HTTPS`
+   solo si la plataforma va a llamar por la red de Docker (`false`; sección
+   5.8, punto 3).
 
-5. Poner `ASSEMBLIES_API_TOKEN_SHA256=<hash>` en el `env_file` y aplicarlo
-   (sección 5.1). La comprobación con `tinker` da 1 hash.
+   La ruta vieja se cierra en el mismo despliegue: la plataforma aún no está
+   en producción (no hay ningún contenedor suyo en el VPS) y los logs de nginx
+   de unas dos semanas solo tienen 2 llamadas a `POST /api/user/role`. Así no
+   hay ventana de transición y R1 desaparece desde el primer día. Si algo la
+   necesitara, `true` y recrear el contenedor (sección 5.1).
 
-Después:
+2. Desplegar con `scripts/deploy.sh` (recrea el contenedor y recarga nginx).
+3. Comprobar lo que ha cargado:
 
-- La ruta pública `POST /api/user/role` sigue respondiendo (ya sin CORS) y
-  registra cada uso como `assemblies_api.legacy_role_lookup`. La plataforma
-  ya envía el token a la ruta vieja si lo tiene; eso es inocuo.
-- Comprobar desde el servidor de la plataforma (con el token en una variable
-  leída con `read -rs TOKEN`, no escrito en la línea de órdenes):
+   ```bash
+   docker compose exec -T intranet php artisan config:show trustedproxy.proxies           # 172.18.0.0/16
+   docker compose exec -T intranet php artisan config:show logging.channels.single.level  # info
+   docker compose exec -T intranet php artisan tinker --execute="dump(count(config('services.assemblies.token_hashes')))"   # 1
+   ```
 
-  ```bash
-  B=https://intranet.creup.es/api/asambleas/v1
-  curl -s -o /dev/null -w '%{http_code}\n' -X POST "$B/user/role" \
-    -H 'Content-Type: application/json' -d '{"email":"nadie@example.com"}'   # 401
-  curl -s -o /dev/null -w '%{http_code}\n' -X POST "$B/user/role" \
-    -H "Authorization: Bearer $TOKEN" \
-    -H 'Content-Type: application/json' -d '{"email":"nadie@example.com"}'   # 404
-  curl -s "$B/usuarios/asociados" -H "Authorization: Bearer $TOKEN" | jq '.data | length'
-  ```
+4. Comprobar desde fuera, desde cualquier máquina, con el token leído con
+   `read -rs TOKEN`, no escrito en la línea de órdenes:
 
-- Si la primera llamada da 403 en vez de 401, mirar quién responde:
-  - Cuerpo HTML, cabecera `cf-ray` y nada en los logs de la Intranet: es
-    Cloudflare (WAF, Bot Fight Mode o un desafío a un cliente sin navegador).
-    Añadir en Cloudflare una excepción para `/api/asambleas/` desde el
-    servidor de la plataforma.
-  - `{"error": "forbidden"}` con `assemblies_api.denied` y `reason`
-    `https_required`: Laravel no ve la petición como HTTPS
-    (`ASSEMBLIES_API_REQUIRE_HTTPS` está activo por defecto). Apache no
-    termina TLS, así que `$request->secure()` sale solo del
-    `X-Forwarded-Proto` de nginx: o Cloudflare está en Flexible (`$scheme` es
-    `http`), o nginx no fija la cabecera, o su dirección no está en
-    `TRUSTED_PROXIES` (sección 5.8).
-  - `reason` `ip_not_allowed`: la lista de IP (siguiente punto).
+   ```bash
+   B=https://intranet.creup.es/api/asambleas/v1
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST "$B/user/role" \
+     -H 'Content-Type: application/json' -d '{"email":"nadie@example.com"}'   # 401
+   read -rs TOKEN
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST "$B/user/role" \
+     -H "Authorization: Bearer $TOKEN" \
+     -H 'Content-Type: application/json' -d '{"email":"nadie@example.com"}'   # 404
+   curl -s "$B/usuarios/asociados" -H "Authorization: Bearer $TOKEN" | jq '.data | length'
+   unset TOKEN
+   curl -s "$B/user/role" | jq 'has("trace")'                                  # false
+   curl -s -o /dev/null -w '%{http_code}\n' -X POST https://intranet.creup.es/api/user/role \
+     -H 'Content-Type: application/json' -d '{"email":"nadie@example.com"}'   # 404
+   ```
 
-  Corregirlo antes de seguir: si no, cada consulta de rol de la plataforma
-  recibiría 403 y fallaría sin aviso visible.
+   - La primera llamada deja en los logs de la Intranet un
+     `assemblies_api.denied` con `ip`: tiene que ser la IP pública de la
+     máquina desde la que se llama, no una de Cloudflare ni una `172.x`.
+   - La de `has("trace")` es un `GET` a una ruta `POST` (405): con
+     `APP_DEBUG=true` traería la traza completa del error.
+   - La última es la ruta vieja: 404 porque está cerrada.
+   - La web pública sigue mostrando los consejos y las sectoriales (los pide
+     por la red de Docker; CORS no le afecta).
 
-- La primera llamada deja en los logs de la Intranet un
-  `assemblies_api.denied` con el `ip` con el que Laravel ve al servidor de la
-  plataforma. **No poner lista de IP hasta que ese `ip` sea la IP pública
-  real de ese servidor** (`curl -s https://www.cloudflare.com/cdn-cgi/trace`
-  en él la muestra en `ip=`). Si es una dirección de Cloudflare o una privada
-  `172.x`, nginx no está recuperando la IP real (sección 5.8, punto 1), y la
-  lista dejaría fuera a la plataforma. Cuando coincida, ponerla en
-  `ASSEMBLIES_API_ALLOWED_IPS` (las dos si el servidor tiene IPv4 e IPv6),
-  aplicarlo (sección 5.1), comprobar la lista con `tinker` y repetir las
-  llamadas con token.
+Si algo no cuadra:
+
+- 403 en HTML, con cabecera `cf-ray` y nada en los logs de la Intranet: es
+  Cloudflare (sección 5.8, punto 3).
+- 403 `{"error": "forbidden"}` con `assemblies_api.denied` y `reason`
+  `https_required`: Laravel no ve la petición como HTTPS. La dirección de
+  nginx no está en `TRUSTED_PROXIES` (sección 5.8, punto 2):
+  `docker inspect nginx --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'`.
+- 403 con `reason` `ip_not_allowed`: `ASSEMBLIES_API_ALLOWED_IPS` no está
+  vacía.
+- 503: no hay ningún hash válido (un token pegado en su lugar, un hash
+  truncado) y `tinker` da 0 hashes.
 
 **Paso 2. Plataforma: cambiar variables.**
 
@@ -1728,91 +1489,91 @@ Después:
   HAVING n > 1;
   ```
 
-- `NUXT_INTRANET_API_URL=https://intranet.creup.es/api/asambleas/v1`
-- `NUXT_INTRANET_API_TOKEN=<token>`
-- **Quitar `NUXT_ROLE_API_URL`** (o ponerla a
-  `https://intranet.creup.es/api/asambleas/v1/user/role`). Si se queda con el
-  valor actual, la consulta de rol seguirá yendo a la ruta pública vieja y
-  dejará de funcionar al cerrarla.
-- Aplicar las tres a la vez. El servicio lee el `.env` con `env_file`, así
-  que hay que recrear el contenedor
-  (`docker compose -f docker-compose.prod.yml up -d app`, con el compose de
-  `DEPLOYMENT.md`): `restart` conserva las variables viejas.
-- Verificar: entrar con una cuenta Asociado y una CEA (rol y
-  miembro correctos en Administración), pulsar "Sincronizar" en Miembros (sin
-  desactivaciones inesperadas; queda `members.sync` en el registro de
-  auditoría), y en los logs de la Intranet ver `assemblies_api.role_lookup` con
-  la huella del token y ningún `legacy_role_lookup` nuevo.
-- Marcha atrás: restaurar las variables anteriores; la ruta vieja sigue viva.
+- La plataforma tiene que llevar ya la versión que usa `id`, retira el acceso
+  a las cuentas borradas y sincroniza cada día, con sus migraciones
+  aplicadas (`DEPLOYMENT.md`).
+- **Servidor de desarrollo**, en su `.env` local:
+  `NUXT_INTRANET_API_URL=https://intranet.creup.es/api/asambleas/v1`,
+  `NUXT_INTRANET_API_TOKEN=<token>` y sin `NUXT_ROLE_API_URL`. Trabaja con
+  datos reales de producción: la consulta de rol y la sincronización escriben
+  en la base de datos local, y una cuenta que la Intranet no conozca pierde
+  el acceso en ella. El token vive solo en ese `.env`, nunca en el
+  repositorio.
+- **Producción**, cuando se despliegue: `NUXT_INTRANET_API_URL` con la URL
+  pública o, si comparte red con la Intranet, `http://intranet/api/asambleas/v1`
+  (sección 5.8, punto 3); `NUXT_INTRANET_API_TOKEN=<token>`; sin
+  `NUXT_ROLE_API_URL`. `NUXT_INTRANET_ROSTER_SYNC` no hace falta: sin ella, la
+  sincronización diaria queda activa; `false` la apaga. El servicio lee el
+  `.env` con `env_file`, así que hay que recrear el contenedor
+  (`docker compose -f docker-compose.prod.yml up -d app`): `restart` conserva
+  las variables viejas.
+- Verificar: entrar con una cuenta Asociado y una CEA (rol y miembro correctos
+  en Administración), pulsar "Sincronizar" en Miembros (sin desactivaciones
+  inesperadas; queda `members.sync` en el registro de auditoría), y en los
+  logs de la Intranet ver `assemblies_api.role_lookup` con la huella del
+  token. Esa primera sincronización da casi todos los miembros como
+  actualizados, porque guarda su `id`; si pide confirmación para desactivar,
+  revisar antes qué falta en la Intranet.
+- Desde este paso, una cuenta que la Intranet haya borrado pierde el acceso
+  la próxima vez que inicie sesión o, si tiene una sesión abierta, en la
+  revisión de las 05:30. Administración > Usuarios, con "Solo cuentas sin
+  acceso", las lista: revisarlas el primer día, y buscar en Actividad
+  `users.access_recheck_blocked`, que indicaría que la revisión no retiró
+  nada porque faltaban demasiadas cuentas.
 
-**Paso 3. Ventana de transición.** Vigilar
-`assemblies_api.legacy_role_lookup`: las entradas con el `ip` de la
-plataforma deben quedarse a cero; las de otras IP son terceros que consultan
-la ruta pública (un motivo más para cerrarla). En el mismo periodo tiene que
-haber entradas `assemblies_api.role_lookup`: así "cero `legacy_role_lookup`"
-significa que nadie usó la ruta vieja y no que los logs no se escriben (con
-`LOG_LEVEL` por encima de `info`, `role_lookup` no se escribe). Mientras siga
-abierta, R1
-sigue vivo, y volver atrás es solo cambiar el interruptor y recrear el
-contenedor, así que basta con un día con inicios de sesión reales, no una
-semana.
-
-**Paso 4. Cerrar la ruta vieja.** Poner
-`ASSEMBLIES_API_LEGACY_ROLE_ROUTE=false` en el `env_file` y aplicarlo
-(sección 5.1; con `config:cache` o `restart` la ruta seguiría abierta). La
-comprobación con `tinker` da `false` y la ruta responde 404:
-
-```bash
-curl -s -o /dev/null -w '%{http_code}\n' -X POST https://intranet.creup.es/api/user/role \
-  -H 'Content-Type: application/json' -d '{"email":"nadie@example.com"}'   # 404
-```
-
-Si algo se rompe, volver a `true` y aplicarlo igual (unos segundos de corte de
-la Intranet). En un cambio posterior, borrar la ruta y
-`AdminController::getUserRoleByEmail`.
+**La ruta vieja.** Queda cerrada desde el paso 1 y responde 404. En un cambio
+posterior, borrar la ruta y `AdminController::getUserRoleByEmail`.
 
 Los listados públicos (`/api/usuarios/asociados` y
 `/api/usuarios/sectoriales`) **no se cierran**: son de la web.
 
-## 9. Cambios pendientes en la plataforma
+## 9. Cambios en la plataforma
 
-No forman parte del trabajo de la Intranet, pero conviene hacerlos a la par:
+Hechos a la par que la fase 1 de la Intranet (detalle en la sección 1):
 
-- **Documentación y ejemplo de entorno:** `DEPLOYMENT.md` fija
-  `NUXT_ROLE_API_URL` a la ruta pública vieja, `.env.example` trae un
-  marcador de esa misma variable, y ninguno de los dos (ni `README.md`)
-  menciona `NUXT_INTRANET_API_URL` ni `NUXT_INTRANET_API_TOKEN`. El valor por
-  defecto de `runtimeConfig.roleApiUrl` en `nuxt.config.ts` apunta también a
-  la ruta vieja (no se usa: `roleSync.ts` lee `process.env`, pero confunde).
-- **`Accept: application/json`** en la consulta de rol, como ya hace el
-  listado (la Intranet lo fuerza igualmente).
-- **Rechazar `http:`** en `NUXT_INTRANET_API_URL` en producción
-  (`getIntranetApiBaseUrl` lo acepta hoy): el token viajaría en claro. La
-  única excepción sería la red Docker interna de la sección 5.8 (por ejemplo,
-  permitiendo `http:` solo hacia nombres sin punto como `intranet`).
-- **Emails en logs:** `roleSync` pasa el email a sus avisos, pero el logger
-  (`server/utils/core/logger.ts`) ya sustituye toda clave `email` y todo valor
-  con forma de email por `[REDACTED]`, igual que las claves `token` o
-  `authorization`: no hay fuga. Lo que falta es poder correlacionar; una
-  huella (HMAC truncado) lo permitiría.
-- **`lastRoleSyncAt`** se escribe también cuando la consulta falla. Separar
-  "último intento" de "última consulta con éxito", o escribirlo solo con
-  éxito, para que Administración vea qué cuentas llevan tiempo sin
-  actualizarse.
-- **Defensa ante listas vacías:** la plataforma desactiva todo lo que no
-  recibe. Aunque la Intranet nunca debería devolver una lista parcial, negarse
-  a aplicar una sincronización que desactivaría todos (o una gran parte de)
-  los miembros de un tipo, y pedir confirmación, evita un desastre por un
-  error ajeno.
-- **Cuentas borradas en la Intranet:** hoy un 404 cuenta como fallo y la cuenta
-  conserva su rol (un Asociado borrado en la Intranet sigue siendo Asociado en
-  la plataforma). Con el grupo nuevo, un 404 autenticado sí significa "no
-  existe", así que la plataforma podría tratarlo como `Invitado`. Decisión de
-  producto.
-- **Enlazar por `id`** cuando la Intranet lo envíe (fase 1 ya lo incluye):
+- **Documentación y entorno:** `DEPLOYMENT.md` y `README.md` usan
+  `NUXT_INTRANET_API_URL` y `NUXT_INTRANET_API_TOKEN`, sin
+  `NUXT_ROLE_API_URL`, y el compose de producción de `DEPLOYMENT.md` une `app`
+  a `creup-edge` con su dirección fija (sección 5.8, punto 3).
+  `runtimeConfig.roleApiUrl` de `nuxt.config.ts` ya no apunta a la ruta vieja.
+- **`Accept: application/json`** en la consulta de rol, como el listado.
+- **`http:` solo hacia nombres sin punto en producción**
+  (`isIntranetUrlAllowed`): el token nunca viaja en claro por internet.
+- **Huella del email en los logs** (`accountRef`): se pueden relacionar los
+  avisos de una cuenta sin escribir su email.
+- **`lastRoleSyncAt`** se escribe solo cuando la consulta sale bien, así que
+  Administración ve qué cuentas llevan tiempo sin actualizarse.
+- **Defensa ante listas vacías:** una sincronización que desactivaría todos
+  los miembros de un tipo, o más de max(3, 30 %), pide confirmación
+  (`members.sync_blocked`).
+- **Cuentas borradas en la Intranet:** pierden el acceso a la plataforma, con
+  las excepciones de la sección 1 (cuentas que la Intranet nunca conoció y
+  roles protegidos). Decisión de producto.
+- **Enlazar por `id`** (`users.intranet_id`, `members.intranet_id`):
   sobrevive a un cambio de siglas.
-- **Sincronización periódica** del listado (tarea programada de pg-boss), en
-  vez de solo a mano.
+- **Sincronización diaria** del listado (tarea programada de pg-boss).
+- **Revisión diaria de accesos** (05:30, cola `users-access-recheck`): las
+  cuentas con sesión abierta que la Intranet borró pierden el acceso aunque
+  no vuelvan a iniciar sesión, con su propia salvaguarda ante bajas masivas
+  (`users.access_recheck_blocked`).
+- **`access_revoked_at` en cada petición:** una cuenta sin acceso recibe 401
+  al momento, sin esperar a que caduque la caché de la cookie de sesión.
+- **El token solo va a la Intranet:** un `NUXT_ROLE_API_URL` en otro origen
+  que `NUXT_INTRANET_API_URL` se llama sin token.
+- **Confirmación con recuentos:** confirmar una desactivación grande del
+  listado vale solo para lo que se enseñó (`confirmedKinds`).
+- **Aviso en el idioma de quien entra:** un inicio de sesión rechazado
+  vuelve a `/login` o `/en/login` (`errorCallbackURL`).
+
+Pendientes:
+
+- **`DEPLOYMENT.md` y la red `creup-edge`:** según el punto anterior, el
+  compose de producción une `app` a `creup-edge` con dirección fija, que era
+  del diseño anterior. Con el acceso por Internet (sección 5.8) ya no hace
+  falta: basta la URL pública o, para llamar a `http://intranet`, unirse a la
+  red de la Intranet (`esternocleidomastoideo2003_default`).
+- **Áreas ejecutivas por `id`:** las cuentas CEA se siguen enlazando por
+  siglas (fase 2, punto 1).
 
 ## 10. Fase 2 (opcional): menos datos a mano
 
@@ -1870,8 +1631,8 @@ necesitan además cambios en la plataforma.
      una cabecera (`X-Intranet-Signature`) con un secreto distinto del token y
      con marca de tiempo para evitar reenvíos;
    - la plataforma, al recibirlo, vuelve a pedir el listado completo con su
-     token, y además lo sincroniza de forma periódica por si se pierde un
-     aviso.
+     token; la sincronización diaria que ya hace (sección 1) cubre los avisos
+     que se pierdan.
 
 5. **Calidad de datos en la Intranet.** Validar en la edición de cuentas
    (`AdminController`) que las cuentas `Asociado`, `Sectorial` y `CEA` tienen
@@ -1929,76 +1690,79 @@ Cambios propuestos:
 
 ## 12. Checklist
 
-Intranet, fase 1:
+Intranet, fase 1 (hecho en `28d4579`, sin publicar):
 
-- [ ] `config/services.php` (`assemblies`) y `.env.example` con las cinco
+- [x] `config/services.php` (`assemblies`) y `.env.example` con las cinco
       variables y `TRUSTED_PROXIES` (`config/trustedproxy.php`); interruptores
       booleanos estrictos (en blanco o mal escritos quedan en `true`).
-- [ ] `AuthenticateAssembliesService` registrado como `assemblies.service` en
+- [x] `AuthenticateAssembliesService` registrado como `assemblies.service` en
       `Kernel::$routeMiddleware`; compara el token antes de mirar el bloqueo,
       y un token válido pasa siempre. Tras 10 tokens erróneos por minuto e IP,
       los siguientes erróneos reciben 429.
-- [ ] `Handler::shouldReturnJson` devuelve JSON para `api/asambleas/*` (405 y
+- [x] `Handler::shouldReturnJson` devuelve JSON para `api/asambleas/*` (405 y
       429 incluidos).
-- [ ] Limitador `assemblies-api` en `RouteServiceProvider` (por token, con el
+- [x] Limitador `assemblies-api` en `RouteServiceProvider` (por token, con el
       hash completo, y ruta; por IP).
-- [ ] Grupo `asambleas/v1` en `routes/api.php` con `withoutMiddleware('throttle:api')`.
-- [ ] `AssemblyRoleLookupRequest`, `AssembliesApiController`,
+- [x] Grupo `asambleas/v1` en `routes/api.php` con `withoutMiddleware('throttle:api')`.
+- [x] `AssemblyRoleLookupRequest`, `AssembliesApiController`,
       `AssemblyAccountResource`, `AssemblyMemberResource`.
-- [ ] Listados completos, sin paginar, con 5xx ante cualquier error; 404
+- [x] Listados completos, sin paginar, con 5xx ante cualquier error; 404
       idéntico para email desconocido y cuenta sin tipo.
-- [ ] `Cache-Control: no-store` puesto por el middleware en toda respuesta
+- [x] `Cache-Control: no-store` puesto por el middleware en toda respuesta
       que pasa por él (datos y errores del controlador incluidos).
-- [ ] Hashes de token validados como 64 caracteres hexadecimales; si no queda
-      ninguno válido, 503. Tokens con el formato `asm_` y base64url.
-- [ ] `config/cors.php` con rutas públicas explícitas; el grupo privado y
+- [x] Hashes de token validados como 64 caracteres hexadecimales; si no queda
+      ninguno válido, 503.
+- [x] `config/cors.php` con rutas públicas explícitas; el grupo nuevo y
       `api/user/role` fuera.
-- [ ] Interruptor `legacy_role_route` y aviso `legacy_role_lookup` en
+- [x] Interruptor `legacy_role_route` y aviso `legacy_role_lookup` en
       `getUserRoleByEmail`.
-- [ ] Logs sin token, sin hash completo y sin emails en claro.
-- [ ] `TrustProxies` solo con la dirección fija de nginx
-      (`config/trustedproxy.php`, `TRUSTED_PROXIES`; sin ella, nadie) y solo
-      `X-Forwarded-For` y `X-Forwarded-Proto`.
-- [ ] `AssembliesApiTest` en verde con `composer test`, con los tests nuevos
-      (bloqueo que deja pasar un token válido, 429 en JSON sin `Accept`,
-      filtro de hashes e interruptores, nginx acredita HTTPS y nadie más,
-      `X-Forwarded-For` falsificado, `X-Forwarded-Host` ignorado, JSON exacto
-      de la ruta vieja, CORS de la ruta vieja y de los listados públicos);
-      Pint en verde.
+- [x] Logs sin token, sin hash completo y sin emails en claro.
+- [x] `TrustProxies` solo con `TRUSTED_PROXIES` (`config/trustedproxy.php`:
+      la dirección de nginx o el rango de su red de Docker; sin ella, nadie;
+      nunca `*` ni `REMOTE_ADDR`) y solo `X-Forwarded-For` y
+      `X-Forwarded-Proto`.
+- [x] `AssembliesApiTest` (sección 6) y la suite completa en verde con
+      `composer test`; Pint en verde.
 
 Despliegue:
 
-- [ ] Decidido qué sale con el primer push de la Intranet (`eb92083` con
-      `c7e584f` y `e57094b`, o solo `eb92083`) y añadidas las correcciones
-      que `eb92083` no incluye (sección 8).
-- [ ] **Antes del paso 1** (sección 5.8): nginx con `set_real_ip_from` para
-      todos los rangos de Cloudflare (IPv4 e IPv6), `CF-Connecting-IP` como
-      `real_ip_header` y `X-Forwarded-For`, `-Proto`, `-Host` y `-Port`
-      sobrescritas (nada de `$proxy_add_x_forwarded_for`); Cloudflare en Full
-      (strict); 80/443 del VPS solo desde Cloudflare, IPv6 incluida; contenedor
-      `intranet` sin puertos publicados; nginx con dirección fija en `edge`,
-      aplicada por separado con `docker compose up -d` y con la Intranet
-      cargando después; el log de acceso de nginx muestra IP reales de
-      visitantes.
-- [ ] `APP_DEBUG=false` y `LOG_LEVEL=info` en el `env_file` de la Intranet,
-      comprobados con `config:show` tras recrear el contenedor y antes de
-      poner el hash.
-- [ ] Token generado y guardado en el gestor de contraseñas; hash en el
-      `env_file` del servicio `intranet`, aplicado recreando el contenedor
-      (sección 5.1) y comprobado con `tinker` (1 hash).
-- [ ] Paso 1 verificado con `curl` (401, 404, número de asociados); `ip` de
-      la plataforma anotado desde `assemblies_api.denied` y, si se usa lista
-      de IP, solo cuando es su IP pública real.
+- [ ] Decidido qué sale con el primer push de la Intranet (`28d4579` con
+      `c7e584f` y `e57094b`, o solo `28d4579`; sección 8).
+- [ ] Token generado con el formato `asm_` y guardado en el gestor de
+      contraseñas (sección 7, paso 1).
+- [ ] `env_file` de la Intranet (`config/intranet/.env`) con
+      `LOG_LEVEL=info`, `TRUSTED_PROXIES=172.18.0.0/16`, el hash del token y
+      `ASSEMBLIES_API_LEGACY_ROLE_ROUTE=false` (y
+      `ASSEMBLIES_API_REQUIRE_HTTPS=false` solo si la plataforma va a llamar
+      por la red de Docker).
+- [ ] Desplegado con `scripts/deploy.sh`; comprobados `trustedproxy.proxies`,
+      `LOG_LEVEL` y 1 hash.
+- [ ] Desde fuera: 401 sin token, 404 con token, número de asociados, sin
+      `trace` y la ruta vieja en 404; `assemblies_api.denied` con la IP
+      pública propia.
+- [ ] La web pública sigue mostrando los consejos y las sectoriales.
 - [ ] Siglas sin duplicados entre asociados y entre sectoriales (paso 2).
-- [ ] Plataforma con `NUXT_INTRANET_API_URL` nuevo, `NUXT_INTRANET_API_TOKEN` y
-      **sin** `NUXT_ROLE_API_URL` viejo, con el contenedor recreado
-      (`docker compose -f docker-compose.prod.yml up -d app`).
+- [ ] Servidor de desarrollo de la plataforma con
+      `NUXT_INTRANET_API_URL=https://intranet.creup.es/api/asambleas/v1`, el
+      token y sin `NUXT_ROLE_API_URL`.
+- [ ] Plataforma en producción, cuando se despliegue: la versión que enlaza
+      por `id` y sus migraciones, `NUXT_INTRANET_API_URL` (pública o
+      `http://intranet/api/asambleas/v1`), `NUXT_INTRANET_API_TOKEN` y sin
+      `NUXT_ROLE_API_URL`, con el contenedor recreado.
 - [ ] Inicio de sesión Asociado y CEA correcto; sincronización del listado sin
       desactivaciones inesperadas.
-- [ ] Un día con inicios de sesión sin `legacy_role_lookup` desde la IP de la
-      plataforma y con `role_lookup` en el mismo periodo; ruta vieja cerrada
-      en el `env_file` y con el contenedor recreado (`tinker` da `false`).
+- [ ] Cuentas sin acceso revisadas en Administración > Usuarios tras el
+      primer día.
 - [ ] Rotación anual apuntada en el calendario de TIC.
+
+Recomendado (sección 5.8):
+
+- [ ] `proxy_set_header X-Forwarded-For $remote_addr;` en el vhost de la
+      Intranet.
+- [ ] Cloudflare en modo SSL/TLS Full (strict).
+- [ ] nginx con dirección fija y `TRUSTED_PROXIES` solo con ella.
+- [ ] 80/443 del VPS solo desde Cloudflare, tras comprobar que todos los
+      dominios que sirve ese nginx pasan por el proxy de Cloudflare.
 
 Opcional:
 

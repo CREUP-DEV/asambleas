@@ -369,6 +369,32 @@ describe("activityDetails", () => {
     ]);
   });
 
+  it("reads the role and member an account lost with its access", () => {
+    expect(
+      activityDetails(
+        item({
+          kind: "audit",
+          action: "user.access_revoked",
+          payload: {
+            before: {
+              roleName: "Asociado",
+              memberId: "m1",
+              accessRevokedReason: null,
+            },
+            after: {
+              roleName: "Invitado",
+              memberId: null,
+              accessRevokedReason: "intranet_deleted",
+            },
+          },
+        }),
+      ),
+    ).toEqual([
+      { type: "role", from: "Asociado", to: "Invitado" },
+      { type: "member", from: "m1", to: null },
+    ]);
+  });
+
   it("diffs permissions and lists seeded grants", () => {
     expect(
       activityDetails(
