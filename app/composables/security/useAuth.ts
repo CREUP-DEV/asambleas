@@ -14,10 +14,21 @@ export const useAuth = () => {
   const { clear: clearPermissions } = usePermissions();
   const api = useApi();
 
+  /**
+   * Google sign-in, back at `callbackURL`. A refused sign-in (an account
+   * the Intranet deleted, SIGN_IN_ERROR_CODES) comes back to the login page
+   * of the current language with `?error=<code>` and the same `redirect`,
+   * instead of better-auth's fallback (`onAPIError.errorURL`, the Spanish
+   * /login without it).
+   */
   const signInWithGoogle = async (callbackURL = "/") => {
     return authClient.signIn.social({
       provider: "google",
       callbackURL,
+      errorCallbackURL: localePath({
+        path: "/login",
+        query: callbackURL !== "/" ? { redirect: callbackURL } : {},
+      }),
     });
   };
 

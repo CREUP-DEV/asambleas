@@ -1,4 +1,4 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { db } from "../../db";
 import { members, users } from "../../db/schema";
 import { AUDIT_ACTIONS } from "../../../shared/constants/activity";
@@ -17,9 +17,10 @@ export type LinkedMemberKind = Extract<
 >;
 
 /**
- * Intranet account types (intranet `users.type`) linked to a member by their
- * initials: Asociado and Sectorial accounts are the member itself, and a CEA
- * account acts for its executive area.
+ * Intranet account types (intranet `users.type`) linked to a member:
+ * Asociado and Sectorial accounts are the member itself (linked by their
+ * intranet id, then their initials), and a CEA account acts for its
+ * executive area (by initials only: its id is a person, not an area).
  */
 export const INTRANET_MEMBER_TYPES: ReadonlyMap<string, LinkedMemberKind> =
   new Map<string, LinkedMemberKind>([
@@ -29,6 +30,11 @@ export const INTRANET_MEMBER_TYPES: ReadonlyMap<string, LinkedMemberKind> =
   ]);
 
 export interface ExternalMemberIdentity {
+  /**
+   * The intranet `users.id` of the account; null or absent when the
+   * intranet sends none (the legacy route).
+   */
+  id?: number | null;
   /** Intranet `type`, e.g. "Asociado". */
   role: string;
   initials: string | null;
@@ -63,23 +69,37 @@ export function canLinkToMember(
 }
 
 /**
- * The member created when none has the acronym yet. Councils and sectorials
- * come from the intranet roster, whose next sync fills in their details.
- * Executive areas are not in the roster: they are created as manual members,
- * so a roster sync never deactivates them, and named after their acronym,
- * since a CEA account may carry the name of the person rather than the area
- * (an admin renames it in the members page).
+ * The intranet id an account is linked to its member by: the account's own
+ * id for councils and sectorials (the account is the member), never for a
+ * CEA account (its id is a person, not the area it acts for).
+ */
+export function memberIntranetId(
+  kind: LinkedMemberKind,
+  id: number | null | undefined,
+): number | null {
+  return kind !== "executive" && typeof id === "number" ? id : null;
+}
+
+/**
+ * The member created when none has the intranet id or the acronym yet.
+ * Councils and sectorials come from the intranet roster, whose next sync
+ * fills in their details; they keep the account's intranet id, which the
+ * roster matches first. Executive areas are not in the roster: they are
+ * created as manual members, so a roster sync never deactivates them, and
+ * named after their acronym, since a CEA account may carry the name of the
+ * person rather than the area (an admin renames it in the members page).
  */
 export function newLinkedMember(
   kind: LinkedMemberKind,
   acronym: string,
-  external: Pick<ExternalMemberIdentity, "name" | "university">,
+  external: Pick<ExternalMemberIdentity, "id" | "name" | "university">,
   now = new Date(),
 ): {
   kind: LinkedMemberKind;
   acronym: string;
   name: string;
   university: string | null;
+  intranetId: number | null;
   source: MemberSource;
   active: boolean;
   syncedAt: Date | null;
@@ -95,10 +115,27 @@ export function newLinkedMember(
       kind === "asociado"
         ? external.university?.trim().slice(0, NAME_MAX_LENGTH) || null
         : null,
+    intranetId: memberIntranetId(kind, external.id),
     source: executive ? "manual" : "intranet",
     active: true,
     syncedAt: executive ? null : now,
   };
+}
+
+/**
+ * Whether a member found by acronym belongs to another intranet account:
+ * both ids are known and differ (the acronym moved to another council).
+ * Linking by acronym is then refused.
+ */
+export function acronymHeldByAnotherAccount(
+  accountIntranetId: number | null,
+  memberIntranetId: number | null,
+): boolean {
+  return (
+    accountIntranetId !== null &&
+    memberIntranetId !== null &&
+    memberIntranetId !== accountIntranetId
+  );
 }
 
 /** Initials compared the way acronyms are matched: normalized, any case. */
@@ -131,24 +168,64 @@ export function keepsCurrentLink(input: {
   );
 }
 
-function findMemberByAcronym(
-  acronym: string,
-): Promise<{ id: string; kind: MemberKind } | null> {
+interface FoundMember {
+  id: string;
+  kind: MemberKind;
+  intranetId: number | null;
+}
+
+const foundMemberColumns = {
+  id: members.id,
+  kind: members.kind,
+  intranetId: members.intranetId,
+};
+
+function findMemberByAcronym(acronym: string): Promise<FoundMember | null> {
   return db
-    .select({ id: members.id, kind: members.kind })
+    .select(foundMemberColumns)
     .from(members)
     .where(sql`lower(${members.acronym}) = lower(${acronym})`)
     .limit(1)
     .then((rows) => rows[0] ?? null);
 }
 
+/** The member of that kind with the intranet id, if any. */
+function findMemberByIntranetId(
+  intranetId: number,
+  kind: LinkedMemberKind,
+): Promise<FoundMember | null> {
+  return db
+    .select(foundMemberColumns)
+    .from(members)
+    .where(and(eq(members.intranetId, intranetId), eq(members.kind, kind)))
+    .limit(1)
+    .then((rows) => rows[0] ?? null);
+}
+
+/** By intranet id first (when there is one), then by acronym. */
+async function findLinkedMember(
+  kind: LinkedMemberKind,
+  intranetId: number | null,
+  acronym: string | null,
+): Promise<FoundMember | null> {
+  if (intranetId !== null) {
+    const byId = await findMemberByIntranetId(intranetId, kind);
+    if (byId) return byId;
+  }
+  return acronym ? findMemberByAcronym(acronym) : null;
+}
+
 /**
  * Links `users.memberId` after a successful role sync, when the intranet
- * account is an Asociado, a Sectorial or a CEA account, by its `initials`
- * (the member's acronym). The member is created when none has that acronym
- * yet (see newLinkedMember). A CEA account that already acts for a member
- * keeps it until its initials change (keepsCurrentLink); `previousInitials`
- * are the ones stored by the previous sync.
+ * account is an Asociado, a Sectorial or a CEA account. Asociado and
+ * Sectorial accounts link to the member of their kind with their intranet
+ * `id` first (it survives a change of acronym), then to the member with
+ * their `initials` (the acronym), unless that member belongs to another
+ * intranet account (acronymHeldByAnotherAccount). A CEA account links by
+ * initials only. The member is created when none matches yet (see
+ * newLinkedMember). A CEA account that already acts for a member keeps it
+ * until its initials change (keepsCurrentLink); `previousInitials` are the
+ * ones stored by the previous sync.
  *
  * Other external roles leave `memberId` alone: it may have been set by hand
  * (PUT /api/admin/users/[id]/member), for example for an account without
@@ -168,8 +245,10 @@ export async function linkUserToIntranetMember(
   options: { previousInitials?: string | null } = {},
 ): Promise<string | null> {
   const kind = INTRANET_MEMBER_TYPES.get(external.role);
+  if (!kind) return null;
   const acronym = initialsToAcronym(external.initials);
-  if (!kind || !acronym) return null;
+  const intranetId = memberIntranetId(kind, external.id);
+  if (!acronym && intranetId === null) return null;
 
   const [account] = await db
     .select({ memberId: users.memberId })
@@ -187,15 +266,16 @@ export async function linkUserToIntranetMember(
     return null;
   }
 
-  let member = await findMemberByAcronym(acronym);
-  if (!member) {
-    // Two sign-ins of the same member can race: the unique index settles it,
-    // and only the one that inserted records the creation.
+  let member = await findLinkedMember(kind, intranetId, acronym);
+  if (!member && acronym) {
+    // Two sign-ins of the same member can race: the unique indexes (acronym
+    // and intranet id) settle it, and only the one that inserted records
+    // the creation.
     const created = await db.transaction(async (tx) => {
       const [row] = await tx
         .insert(members)
         .values(newLinkedMember(kind, acronym, external))
-        .onConflictDoNothing({ target: members.acronym })
+        .onConflictDoNothing()
         .returning();
       if (row) {
         await recordAudit(tx, {
@@ -209,10 +289,19 @@ export async function linkUserToIntranetMember(
       }
       return row ?? null;
     });
-    member = created ?? (await findMemberByAcronym(acronym));
+    member = created ?? (await findLinkedMember(kind, intranetId, acronym));
     if (created) logInfo("members.link", { action: "member created", acronym });
   }
   if (!member) return null;
+  if (acronymHeldByAnotherAccount(intranetId, member.intranetId)) {
+    logWarn("members.link", {
+      reason: "acronym held by another intranet account",
+      acronym,
+      intranetId,
+      memberIntranetId: member.intranetId,
+    });
+    return null;
+  }
   if (!canLinkToMember(kind, member.kind)) {
     logWarn("members.link", {
       reason: "acronym held by a member of another kind",

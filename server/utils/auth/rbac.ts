@@ -14,8 +14,8 @@ import {
   requireAuth,
   type AuthEventContext,
   type AuthSession,
-  type ImpersonationContext,
 } from "./requireAuth";
+import type { ImpersonationContext } from "./impersonation";
 
 interface CacheEntry {
   permissions: PermissionKey[];

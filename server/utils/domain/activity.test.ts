@@ -406,6 +406,55 @@ describe("payload allowlists", () => {
     ).toEqual({ before: null, after: { roleSync: "ok" } });
   });
 
+  it("shows the loss of access without what it ended", () => {
+    expect(
+      allowActivityPayload("audit", "user.access_revoked", {
+        before: {
+          roleName: "Asociado",
+          memberId: null,
+          accessRevokedReason: null,
+        },
+        after: {
+          roleName: "Invitado",
+          memberId: null,
+          accessRevokedReason: "intranet_deleted",
+          sessionsEnded: 2,
+          impersonationsEnded: 1,
+        },
+      }),
+    ).toEqual({
+      before: {
+        roleName: "Asociado",
+        memberId: null,
+        member: null,
+        accessRevokedReason: null,
+      },
+      after: {
+        roleName: "Invitado",
+        memberId: null,
+        member: null,
+        accessRevokedReason: "intranet_deleted",
+      },
+    });
+    expect(
+      allowActivityPayload("audit", "members.sync_blocked", {
+        before: null,
+        after: {
+          reason: "large_deactivation",
+          kinds: [{ kind: "asociado", active: 40, toDeactivate: 40 }],
+          trigger: "scheduled",
+        },
+      }),
+    ).toEqual({
+      before: null,
+      after: {
+        reason: "large_deactivation",
+        kinds: [{ kind: "asociado", active: 40, toDeactivate: 40 }],
+        trigger: "scheduled",
+      },
+    });
+  });
+
   it("names the member a member link points to", () => {
     const members = new Map([
       [
@@ -632,7 +681,12 @@ describe("meActivityBranches", () => {
     ]);
     const { sql, params } = render(activityQuery(branches, undefined, 51));
     expect(params).toEqual(
-      expect.arrayContaining(["auth.sign_in", "auth.sign_out"]),
+      expect.arrayContaining([
+        "auth.sign_in",
+        "auth.sign_out",
+        "user.access_revoked",
+        "user.access_restored",
+      ]),
     );
     expect(sql).toContain(`"impersonations"."admin_user_id" = $`);
   });

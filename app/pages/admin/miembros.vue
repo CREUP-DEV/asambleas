@@ -2,7 +2,16 @@
 import type { FormError, FormSubmitEvent, TableColumn } from "@nuxt/ui";
 import { MEMBER_KINDS } from "~~/shared/constants/domain";
 import type { MemberKind } from "~~/shared/constants/domain";
-import type { IsoDate, MemberDto, MemberSyncResult } from "~~/shared/types/api";
+import type {
+  IsoDate,
+  MemberDto,
+  MemberSyncBlockedData,
+  MemberSyncBody,
+  MemberSyncConfirmedKind,
+  MemberSyncDeactivationKind,
+  MemberSyncResult,
+  RosterMemberKind,
+} from "~~/shared/types/api";
 import {
   MEMBER_ACRONYM_MAX_LENGTH,
   MEMBER_ACRONYM_PATTERN,
@@ -136,12 +145,88 @@ function formatDay(value: string | null): string {
 const syncing = ref(false);
 const statusMessage = ref("");
 
-async function sync(): Promise<void> {
+const ROSTER_KINDS: readonly RosterMemberKind[] = ["asociado", "sectorial"];
+
+/**
+ * The kinds a refused sync would deactivate too much of: the 409 that
+ * POST /api/members/sync answers with MemberSyncBlockedData. Null for any
+ * other error, including the other 409s (identity changed, duplicates).
+ */
+function blockedSyncKinds(error: unknown): MemberSyncDeactivationKind[] | null {
+  if (api.errorStatus(error) !== 409) return null;
+  // ofetch keeps the response body in `data`; createError's `data` is inside.
+  const body = (error as { data?: { data?: unknown } }).data?.data;
+  if (!body || typeof body !== "object") return null;
+  const data = body as Partial<MemberSyncBlockedData>;
+  if (data.reason !== "large_deactivation" || !Array.isArray(data.kinds)) {
+    return null;
+  }
+  const kinds = data.kinds.filter(
+    (entry): entry is MemberSyncDeactivationKind =>
+      Boolean(entry) &&
+      ROSTER_KINDS.includes(entry.kind) &&
+      Number.isInteger(entry.active) &&
+      Number.isInteger(entry.toDeactivate),
+  );
+  return kinds.length > 0 ? kinds : null;
+}
+
+/** Set while the confirm dialog asks about a large deactivation. */
+const pendingDeactivation = ref<MemberSyncDeactivationKind[] | null>(null);
+
+const deactivationConfirmOpen = computed({
+  get: () => pendingDeactivation.value !== null,
+  set: (open: boolean) => {
+    if (!open) pendingDeactivation.value = null;
+  },
+});
+
+function deactivationLine(entry: MemberSyncDeactivationKind): string {
+  const kind = t(`admin.members.largeDeactivation.kinds.${entry.kind}`);
+  return entry.toDeactivate >= entry.active
+    ? t(
+        "admin.members.largeDeactivation.all",
+        { kind, count: entry.toDeactivate },
+        entry.toDeactivate,
+      )
+    : t("admin.members.largeDeactivation.some", {
+        kind,
+        count: entry.toDeactivate,
+        active: entry.active,
+      });
+}
+
+function sync(): Promise<void> {
+  return runSync(null);
+}
+
+/**
+ * Sends the sync again with the counts the dialog showed: the server applies
+ * it only if it would deactivate no more than that, and asks again with the
+ * new counts otherwise.
+ */
+function confirmDeactivation(): Promise<void> {
+  const confirmed = pendingDeactivation.value;
+  pendingDeactivation.value = null;
+  if (!confirmed) return Promise.resolve();
+  return runSync(
+    confirmed.map(({ kind, toDeactivate }) => ({ kind, toDeactivate })),
+  );
+}
+
+async function runSync(
+  confirmedKinds: MemberSyncConfirmedKind[] | null,
+): Promise<void> {
   if (syncing.value) return;
   syncing.value = true;
   statusMessage.value = t("admin.members.syncing");
   try {
-    const result = await api.send<MemberSyncResult>("/api/members/sync");
+    const body: MemberSyncBody | null = confirmedKinds
+      ? { confirmDeactivation: true, confirmedKinds }
+      : null;
+    const result = await api.send<MemberSyncResult>("/api/members/sync", {
+      body,
+    });
     const message = t("admin.members.syncDone", {
       created: result.created,
       updated: result.updated,
@@ -156,6 +241,13 @@ async function sync(): Promise<void> {
     });
     await refresh();
   } catch (error) {
+    const kinds = blockedSyncKinds(error);
+    if (kinds) {
+      // Nothing changed: ask before deactivating that many members.
+      statusMessage.value = t("admin.members.largeDeactivation.title");
+      pendingDeactivation.value = kinds;
+      return;
+    }
     statusMessage.value = t("admin.members.syncFailed");
     api.notifyError(error, "admin.members.syncFailed");
   } finally {
@@ -620,6 +712,48 @@ async function submit(event: FormSubmitEvent<MemberFormState>): Promise<void> {
             </UButton>
             <UButton type="submit" form="member-form" :loading="saving">
               {{ editing ? t("admin.save") : t("admin.members.createAction") }}
+            </UButton>
+          </div>
+        </template>
+      </UModal>
+
+      <UModal
+        v-model:open="deactivationConfirmOpen"
+        :title="t('admin.members.largeDeactivation.title')"
+      >
+        <template #body>
+          <div v-if="pendingDeactivation" class="space-y-3">
+            <p class="text-sm">
+              {{ t("admin.members.largeDeactivation.intro") }}
+            </p>
+            <ul class="list-disc space-y-1 ps-5 text-sm">
+              <li v-for="entry in pendingDeactivation" :key="entry.kind">
+                {{ deactivationLine(entry) }}
+              </li>
+            </ul>
+            <UAlert
+              color="warning"
+              variant="subtle"
+              icon="i-lucide-triangle-alert"
+              :description="t('admin.members.largeDeactivation.warning')"
+            />
+          </div>
+        </template>
+        <template #footer>
+          <div class="flex w-full justify-end gap-2">
+            <UButton
+              color="neutral"
+              variant="ghost"
+              @click="pendingDeactivation = null"
+            >
+              {{ t("admin.cancel") }}
+            </UButton>
+            <UButton
+              color="warning"
+              icon="i-lucide-refresh-cw"
+              @click="confirmDeactivation"
+            >
+              {{ t("admin.members.largeDeactivation.confirm") }}
             </UButton>
           </div>
         </template>

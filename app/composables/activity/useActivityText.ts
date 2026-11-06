@@ -305,6 +305,8 @@ export function useActivityText() {
         return target.label ?? t("activity.target.member");
       case "members":
         return t("activity.target.members");
+      case "users":
+        return t("activity.target.users");
       case "vote":
       case "decision":
       case "live":

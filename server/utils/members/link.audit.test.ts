@@ -93,6 +93,54 @@ describe("linkUserToIntranetMember traceability", () => {
     ]);
   });
 
+  it("links a council by its intranet id, whatever its acronym is now", async () => {
+    // The council renamed its acronym: the id finds it, nothing is created.
+    selects.push(
+      [{ memberId: null }],
+      [{ id: "m-ceum", kind: "asociado", intranetId: 412 }],
+    );
+    updated = [{ id: "u1" }];
+
+    expect(await linkUserToIntranetMember("u1", { ...asociado, id: 412 })).toBe(
+      "m-ceum",
+    );
+    expect(audits()).toEqual([
+      expect.objectContaining({
+        action: AUDIT_ACTIONS.USER_MEMBER_LINK,
+        before: { memberId: null },
+        after: { memberId: "m-ceum", reason: "role_sync" },
+      }),
+    ]);
+  });
+
+  it("falls back to the acronym, and creates the member with the id", async () => {
+    selects.push([{ memberId: null }], [], []);
+    inserted = [{ id: "m-new" }];
+    updated = [{ id: "u1" }];
+
+    expect(await linkUserToIntranetMember("u1", { ...asociado, id: 412 })).toBe(
+      "m-new",
+    );
+    expect(audits()[0]).toMatchObject({
+      action: AUDIT_ACTIONS.MEMBER_CREATE,
+      after: { acronym: "CEUNEW", intranetId: 412 },
+    });
+  });
+
+  it("never links by acronym to a member of another intranet account", async () => {
+    selects.push(
+      [{ memberId: null }],
+      [],
+      [{ id: "m-other", kind: "asociado", intranetId: 500 }],
+    );
+    updated = [{ id: "u1" }];
+
+    expect(
+      await linkUserToIntranetMember("u1", { ...asociado, id: 412 }),
+    ).toBeNull();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
   it("records nothing it did not do: a lost insert race or an unchanged link", async () => {
     // Another sign-in created the member first; the link was already set
     // (or an admin's manual link won), so the update touched no row.

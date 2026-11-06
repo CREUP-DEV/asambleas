@@ -8,8 +8,6 @@ import { resolveImpersonation } from "./impersonation";
 import type { ImpersonationContext } from "./impersonation";
 import type { PermissionKey } from "~~/shared/constants/permissions";
 
-export type { ImpersonationContext } from "./impersonation";
-
 export type AuthSession = Awaited<ReturnType<typeof auth.api.getSession>>;
 
 export interface AuthUserWithRole {
@@ -77,10 +75,15 @@ export async function requireAuth(event: H3Event) {
   return session;
 }
 
+/**
+ * The signed-in account with its role, and whether it lost access
+ * (users.access_revoked_at). The flag stays out of AuthUserWithRole, so it
+ * never reaches a DTO.
+ */
 async function loadUserWithRole(
   userId: string,
-): Promise<AuthUserWithRole | null> {
-  const user = await db.query.users.findFirst({
+): Promise<{ user: AuthUserWithRole; accessRevoked: boolean } | null> {
+  const row = await db.query.users.findFirst({
     where: eq(users.id, userId),
     columns: {
       id: true,
@@ -94,12 +97,15 @@ async function loadUserWithRole(
       university: true,
       memberId: true,
       lastRoleSyncAt: true,
+      accessRevokedAt: true,
     },
     with: {
       role: { columns: { id: true, name: true } },
     },
   });
-  return user ?? null;
+  if (!row) return null;
+  const { accessRevokedAt, ...user } = row;
+  return { user, accessRevoked: accessRevokedAt !== null };
 }
 
 /**
@@ -110,6 +116,11 @@ async function loadUserWithRole(
  * `context.impersonation` the row. Losing the Admin role, the expiry or the
  * target becoming Admin stop it at once, since the real role is read on
  * every request.
+ *
+ * An account that lost access (users.access_revoked_at, an account the
+ * Intranet deleted) gets 401 on every request, read from the database each
+ * time: revoking deletes its sessions, but better-auth's session cookie
+ * cache would otherwise keep its other devices signed in for minutes.
  */
 export async function getAuthUserWithRole(
   event: H3Event,
@@ -121,10 +132,17 @@ export async function getAuthUserWithRole(
   }
 
   const session = await requireAuth(event);
-  const realUser = await loadUserWithRole(session.user.id);
-  if (!realUser) {
+  const loaded = await loadUserWithRole(session.user.id);
+  if (!loaded) {
     return null;
   }
+  if (loaded.accessRevoked) {
+    throw createError({
+      statusCode: 401,
+      message: "No autorizado",
+    });
+  }
+  const realUser = loaded.user;
 
   const impersonated = await resolveImpersonation(event, {
     sessionId: session.session.id,

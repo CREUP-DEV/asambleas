@@ -130,7 +130,13 @@
     "signOut": "Sign out",
     "unauthorized": "You do not have permission to access this page",
     "sessionExpired": "Your session has expired. Please sign in again.",
-    "identityChanged": "The account you are acting as has changed, maybe in another tab. The page will reload."
+    "identityChanged": "The account you are acting as has changed, maybe in another tab. The page will reload.",
+    "signInErrors": {
+      "title": "You could not sign in",
+      "accessRevoked": "Your account no longer exists in the CREUP Intranet, so you cannot sign in to the platform. If you think this is a mistake, write to the Secretariat.",
+      "unavailable": "Your access could not be checked. Please try again in a while.",
+      "generic": "Signing in with Google did not work. Please try again."
+    }
   },
   "nav": {
     "home": "Home",
@@ -1638,6 +1644,24 @@
         "reasonRequired": "Write the reason.",
         "confirm": "Act as this account",
         "failed": "Could not act as that account"
+      },
+      "access": {
+        "filterLabel": "Filter by access",
+        "all": "All accounts",
+        "revokedOnly": "Only accounts without access",
+        "revoked": "No access",
+        "reasons": {
+          "intranetDeleted": "Deleted in the intranet"
+        },
+        "revokedOn": "{reason} on {date}",
+        "since": "No access since {date}",
+        "filterHelp": "Accounts the intranet has deleted. They cannot sign in to the platform until the intranet has them again.",
+        "noneRevoked": "No account has lost access",
+        "showAll": "Show all accounts",
+        "roleLocked": "This account has no access, so its role cannot be changed."
+      },
+      "errors": {
+        "targetRevoked": "This account no longer has access because the intranet deleted it, so its role cannot be changed."
       }
     },
     "roles": {
@@ -1735,6 +1759,18 @@
         "conflictTitle": "The changes were not saved",
         "conflict": "Another member uses that acronym or someone else edited this member. Check the refreshed list.",
         "saveFailed": "The member could not be saved"
+      },
+      "largeDeactivation": {
+        "title": "The sync would deactivate many members",
+        "intro": "The list the intranet sent leaves out many active members. If you sync, these will be deactivated:",
+        "some": "{kind}: {count} of the {active} active ones",
+        "all": "{kind}: the only active one | {kind}: all {count} active ones",
+        "warning": "If the intranet sent an incomplete list by mistake, cancel and check it first. Deactivated members cannot present documents or amendments.",
+        "confirm": "Sync and deactivate",
+        "kinds": {
+          "asociado": "Member councils",
+          "sectorial": "Sectoral bodies"
+        }
       }
     },
     "impersonationReadOnly": "While you act as another account you cannot change users, roles or members. Go back to your account to do it."
@@ -3980,7 +4016,8 @@
       "self": "You cannot act as your own account.",
       "targetAdmin": "You cannot act as another account with the Administrator role.",
       "notActive": "You were no longer acting as another account.",
-      "reason": "Write the reason in a single line of up to 200 characters."
+      "reason": "Write the reason in a single line of up to 200 characters.",
+      "targetRevoked": "You cannot act as an account that no longer has access to the platform."
     }
   },
   "activity": {
@@ -4077,7 +4114,8 @@
       "member": "A member",
       "members": "Intranet member list",
       "session": "Assembly session",
-      "assembly": "An assembly"
+      "assembly": "An assembly",
+      "users": "Platform accounts"
     },
     "actor": {
       "intranet": "The CREUP intranet",
@@ -4277,7 +4315,10 @@
         "member_link": "Member linked to the account changed",
         "created": "Account created on first sign-in",
         "role_sync": "Account details updated from the intranet",
-        "initial_admin": "Initial administrator role given"
+        "initial_admin": "Initial administrator role given",
+        "access_revoked": "The account lost access because it no longer exists in the intranet",
+        "access_restored": "The account got access back because it exists in the intranet again",
+        "intranet_missing": "The intranet no longer has the account, but it keeps its role"
       },
       "permissions": {
         "set": "Permissions of a role changed"
@@ -4290,7 +4331,8 @@
         "sync_deactivate": "Member deactivated by the intranet"
       },
       "members": {
-        "sync": "Members synced with the intranet"
+        "sync": "Members synced with the intranet",
+        "sync_blocked": "Member sync stopped because it would deactivate too many"
       },
       "assembly": {
         "delete": "Draft assembly deleted",
@@ -4319,7 +4361,10 @@
         "request": "Change made acting as another account",
         "session": "An administrator acted as this account"
       },
-      "other": "@:amendment.history.events.other"
+      "other": "@:amendment.history.events.other",
+      "users": {
+        "access_recheck_blocked": "Access check stopped because too many accounts were missing from the intranet"
+      }
     },
     "changes": {
       "milestoneNote": "Note on “{milestone}”",

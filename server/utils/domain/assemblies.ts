@@ -26,7 +26,7 @@ import {
   votes,
 } from "../../db/schema";
 import { isUniqueConstraintViolation, throwMutationError } from "../errors";
-import { recordEvent, type LiveMessage } from "./events";
+import { recordEvent, type Executor, type LiveMessage } from "./events";
 import {
   canManageAssemblies,
   canManageDocuments,
@@ -70,8 +70,6 @@ import { buildAssemblySlug, formatAssemblyLabel } from "~~/shared/utils/slug";
 
 export type AssemblyRow = typeof assemblies.$inferSelect;
 export type AgendaItemRow = typeof agendaItems.$inferSelect;
-export type Executor =
-  typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
 /**
  * Document statuses that keep an agenda item from being deleted. A document

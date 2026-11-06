@@ -7,7 +7,7 @@ Este repositorio está separado de la web pública `creup/web`, pero comparte id
 ## Qué Incluye
 
 - Autenticación obligatoria con Google mediante `better-auth`.
-- Sincronización de rol externo con la intranet de CREUP.
+- Sincronización de rol y de miembros con la Intranet de CREUP (el listado, a mano y cada día); una cuenta borrada en la Intranet pierde el acceso.
 - RBAC con roles de sistema y matriz de permisos editable.
 - Asambleas con estados `draft`, `provisional` y `definitive`.
 - Orden del día recursivo con rutas por slug legibles.
@@ -62,16 +62,21 @@ Servicios locales por defecto:
 
 La referencia completa está en `.env.example`. Las variables que casi siempre hay que revisar son:
 
-| Variable                                                  | Uso                                                        |
-| --------------------------------------------------------- | ---------------------------------------------------------- |
-| `NUXT_SITE_URL`                                           | Origen público de la aplicación                            |
-| `APP_SECRET`                                              | Secreto de sesiones, generar con `openssl rand -base64 32` |
-| `INITIAL_ADMIN_EMAIL`                                     | Cuenta que recibirá rol `Admin` en el primer acceso        |
-| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`               | Credenciales OAuth de Google                               |
-| `NUXT_ROLE_API_URL`                                       | Endpoint externo de sincronización de rol                  |
-| `DATABASE_URL`                                            | Conexión PostgreSQL                                        |
-| `EXPORT_STORAGE_DIR`                                      | Directorio persistente para PDFs generados                 |
-| `NUXT_PUBLIC_UMAMI_HOST` / `NUXT_PUBLIC_UMAMI_WEBSITE_ID` | Analítica Umami opcional                                   |
+| Variable                                                  | Uso                                                                                                                                                                                     |
+| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NUXT_SITE_URL`                                           | Origen público de la aplicación                                                                                                                                                         |
+| `APP_SECRET`                                              | Secreto de sesiones, generar con `openssl rand -base64 32`                                                                                                                              |
+| `INITIAL_ADMIN_EMAIL`                                     | Cuenta que recibirá rol `Admin` en el primer acceso                                                                                                                                     |
+| `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`               | Credenciales OAuth de Google                                                                                                                                                            |
+| `NUXT_INTRANET_API_URL`                                   | Base de la API de la Intranet: rol al iniciar sesión y listado de miembros. En producción, `http://intranet/api/asambleas/v1`; solo admite `https:` o `http:` hacia un nombre sin punto |
+| `NUXT_INTRANET_API_TOKEN`                                 | Token de servicio de la Intranet. Sin él, nadie pierde el acceso aunque la Intranet borre su cuenta                                                                                     |
+| `NUXT_INTRANET_ROSTER_SYNC`                               | Opcional: `false` apaga la sincronización diaria del listado (05:00)                                                                                                                    |
+| `NUXT_ROLE_API_URL`                                       | Opcional, normalmente vacía: sustituye a `${NUXT_INTRANET_API_URL}/user/role`                                                                                                           |
+| `DATABASE_URL`                                            | Conexión PostgreSQL                                                                                                                                                                     |
+| `EXPORT_STORAGE_DIR`                                      | Directorio persistente para PDFs generados                                                                                                                                              |
+| `NUXT_PUBLIC_UMAMI_HOST` / `NUXT_PUBLIC_UMAMI_WEBSITE_ID` | Analítica Umami opcional                                                                                                                                                                |
+
+En local, las variables de la Intranet pueden quedar vacías: todas las cuentas entran como `Invitado` y no hay sincronización del listado. El contrato con la Intranet está en [docs/intranet.md](docs/intranet.md).
 
 ## Scripts
 
@@ -105,6 +110,7 @@ server/assets/    Fuentes y assets empaquetados para servidor
 ## Documentación Relacionada
 
 - [DEPLOYMENT.md](DEPLOYMENT.md): despliegue de producción, backups y operación.
+- [docs/intranet.md](docs/intranet.md): integración con la Intranet de CREUP (rol, listado de miembros, cuentas borradas).
 - [AGENTS.md](AGENTS.md): reglas obligatorias para agentes que editen el código.
 - [PLAN.md](PLAN.md): plan histórico por fases. No sustituye a `AGENTS.md`.
 

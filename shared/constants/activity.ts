@@ -11,7 +11,8 @@ import { MILESTONE_KEYS } from "./domain";
 /**
  * Where an audit row comes from (audit_log.source):
  * - `user`: a request by a signed-in account (the default);
- * - `intranet`: role sync, member links and roster sync driven by the intranet;
+ * - `intranet`: role sync, member links, roster sync (manual or scheduled)
+ *   and the loss or return of access, driven by the intranet;
  * - `auth`: better-auth sign-in, sign-out and account creation;
  * - `seed`: `pnpm db:seed`;
  * - `system`: the platform itself (an impersonation that expired or was revoked);
@@ -56,8 +57,23 @@ export const AUDIT_ACTIONS = {
   MEMBER_CREATE: "member.create",
   /** PUT /api/members/[id]. Target member; before/after MemberDto-like. */
   MEMBER_UPDATE: "member.update",
-  /** POST /api/members/sync summary. Target members/"intranet"; after {created, updated, deactivated, unchanged, manualConflicts, batchId}. */
+  /**
+   * Roster sync summary: POST /api/members/sync (actor the account that ran
+   * it) or the scheduled job (actor null). Source intranet. Target
+   * members/"intranet"; after {created, updated, deactivated, unchanged,
+   * manualConflicts, batchId}.
+   */
   MEMBERS_SYNC: "members.sync",
+  /**
+   * A roster sync refused because it would deactivate every active member of
+   * a kind, or more than max(3, 30%) of them, without confirmDeactivation
+   * (the manual sync answers 409 large_deactivation; the scheduled job never
+   * confirms). Nothing is written but this row. Source intranet; actor the
+   * account that ran it, or null for the scheduled job. Target
+   * members/"intranet"; after {reason: "large_deactivation", kinds:
+   * MemberSyncDeactivationKind[], trigger: "manual" | "scheduled"}.
+   */
+  MEMBERS_SYNC_BLOCKED: "members.sync_blocked",
   /** One per member the roster sync created. Target member; after {..., batchId}. */
   MEMBER_SYNC_CREATE: "member.sync_create",
   /** One per member the roster sync changed. Target member; before/after, after.batchId. */
@@ -89,6 +105,40 @@ export const AUDIT_ACTIONS = {
   /** INITIAL_ADMIN_EMAIL received Admin on sign-in. Target user; source intranet. */
   USER_INITIAL_ADMIN: "user.initial_admin",
   /**
+   * The account lost access because the Intranet deleted it: an
+   * authenticated role lookup answered 404 {"error":"not_found"} for an
+   * account the Intranet knew before. In one transaction its sessions are
+   * deleted, its member link cleared, its role set to Invitado and the open
+   * impersonations of it closed (revoked). Source intranet; actor null;
+   * target user; before {roleName, memberId, accessRevokedReason: null};
+   * after {roleName: "Invitado", memberId: null, accessRevokedReason:
+   * "intranet_deleted", sessionsEnded, impersonationsEnded}.
+   */
+  USER_ACCESS_REVOKED: "user.access_revoked",
+  /**
+   * A revoked account signed in again and the Intranet knows it (200):
+   * access is back and sign-in goes on with the normal role sync. Source
+   * intranet; actor null; target user; before {accessRevokedReason:
+   * "intranet_deleted"}; after {accessRevokedReason: null}.
+   */
+  USER_ACCESS_RESTORED: "user.access_restored",
+  /**
+   * The Intranet deleted an account that holds a PROTECTED_ROLES role
+   * (Admin, Secretaria, Presidencia, Moderador): nothing changes, this row
+   * and a warning log record it. Source intranet; actor null; target user;
+   * after {roleName}.
+   */
+  USER_INTRANET_MISSING: "user.intranet_missing",
+  /**
+   * The daily access re-check (server/utils/auth/accessRecheck.ts) found
+   * that the Intranet no longer has too many of the accounts it answered
+   * for, more than max(3, 30%), and revoked none: an Intranet pointed at an
+   * empty or partial database would otherwise sign everybody out. Source
+   * intranet; actor null; target users/"intranet"; after {reason:
+   * "mass_not_found", checked, notFound}.
+   */
+  USERS_ACCESS_RECHECK_BLOCKED: "users.access_recheck_blocked",
+  /**
    * A sign-in (better-auth session.create.after). Target user; source auth;
    * after {sessionId, roleSync: "ok" | "failed" | "unconfigured"}; the row's
    * ip_address and user_agent hold the access.
@@ -116,7 +166,10 @@ export const AUDIT_ACTIONS = {
   IMPERSONATION_STOP: "impersonation.stop",
   /** The time limit passed (closed lazily). Source system. */
   IMPERSONATION_EXPIRE: "impersonation.expire",
-  /** It stopped applying: the Admin lost the role, the target became Admin or was deleted. Source system. */
+  /**
+   * It stopped applying: the Admin lost the role, the target became Admin,
+   * was deleted or lost access (user.access_revoked). Source system.
+   */
   IMPERSONATION_REVOKE: "impersonation.revoke",
   /**
    * Optional safety net: an unsafe request made while impersonating, by a
@@ -136,6 +189,8 @@ export const AUDIT_TARGET_TYPES = [
   "member",
   /** The whole roster (members.sync), targetId "intranet". */
   "members",
+  /** The platform accounts as a whole (users.access_recheck_blocked), targetId "intranet". */
+  "users",
   "assembly",
   "document",
   "impersonation",
@@ -215,10 +270,23 @@ export const IMPERSONATION_END_REASONS = [
   "expired",
   /** The Admin signed out. */
   "signed_out",
-  /** It stopped applying: the Admin lost the role, the target became Admin or was deleted. */
+  /**
+   * It stopped applying: the Admin lost the role, the target became Admin,
+   * was deleted or lost access to the platform (user.access_revoked).
+   */
   "revoked",
 ] as const;
 export type ImpersonationEndReason = (typeof IMPERSONATION_END_REASONS)[number];
+
+/**
+ * Why an account lost access to the platform (users.access_revoked_reason):
+ * - `intranet_deleted`: the Intranet no longer has the account (an
+ *   authenticated role lookup answered 404 {"error":"not_found"}). It comes
+ *   back only when the Intranet knows the account again on a later sign-in;
+ *   there is no manual restore.
+ */
+export const ACCESS_REVOKED_REASONS = ["intranet_deleted"] as const;
+export type AccessRevokedReason = (typeof ACCESS_REVOKED_REASONS)[number];
 
 /** The audit action that records each end reason. */
 export function impersonationEndAction(
@@ -338,6 +406,7 @@ const AUDIT_CATEGORIES: Record<AuditAction, ActivityCategory> = {
   "member.create": "member",
   "member.update": "member",
   "members.sync": "member",
+  "members.sync_blocked": "member",
   "member.sync_create": "member",
   "member.sync_update": "member",
   "member.sync_deactivate": "member",
@@ -347,6 +416,10 @@ const AUDIT_CATEGORIES: Record<AuditAction, ActivityCategory> = {
   "user.created": "account",
   "user.role_sync": "account",
   "user.initial_admin": "account",
+  "user.access_revoked": "access",
+  "user.access_restored": "access",
+  "user.intranet_missing": "account",
+  "users.access_recheck_blocked": "access",
   "auth.sign_in": "access",
   "auth.sign_out": "access",
   "auth.session_ended": "access",

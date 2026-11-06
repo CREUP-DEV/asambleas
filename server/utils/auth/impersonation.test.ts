@@ -14,6 +14,9 @@ const dbState = vi.hoisted(() => ({
   updateRows: [] as unknown[],
   selects: 0,
   updates: [] as { set: Record<string, unknown> }[],
+  /** What the start transaction's FOR SHARE read of the target returns. */
+  lockRows: [] as unknown[],
+  inserts: [] as Record<string, unknown>[],
 }));
 
 vi.mock("../../db", () => {
@@ -23,8 +26,26 @@ vi.mock("../../db", () => {
     where: () => selectChain,
     limit: async () => dbState.selectRows,
   };
+  const lockChain = {
+    from: () => lockChain,
+    where: () => lockChain,
+    for: async () => dbState.lockRows,
+  };
+  const tx = {
+    select: () => lockChain,
+    insert: () => ({
+      values: (values: Record<string, unknown>) => ({
+        returning: async () => {
+          dbState.inserts.push(values);
+          return [{ id: "imp-new", endedAt: null, endReason: null, ...values }];
+        },
+      }),
+    }),
+  };
   return {
     db: {
+      transaction: async (run: (inner: typeof tx) => Promise<unknown>) =>
+        run(tx),
       select: () => {
         dbState.selects += 1;
         return selectChain;
@@ -60,6 +81,7 @@ const {
   impersonationIsActive,
   impersonationStartBlocker,
   resolveImpersonation,
+  startImpersonation,
   stopImpersonation,
   toImpersonationDto,
 } = await import("./impersonation");
@@ -171,6 +193,21 @@ describe("decideImpersonation", () => {
     ).toEqual({ kind: "close", reason: "revoked" });
   });
 
+  it("revokes when the target lost access to the platform", () => {
+    expect(
+      decideImpersonation({
+        ...base,
+        target: { id: "target", roleName: "Invitado", accessRevoked: true },
+      }),
+    ).toEqual({ kind: "close", reason: "revoked" });
+    expect(
+      decideImpersonation({
+        ...base,
+        target: { id: "target", roleName: "Invitado", accessRevoked: false },
+      }),
+    ).toEqual({ kind: "apply" });
+  });
+
   it("prefers expired over revoked when both hold", () => {
     expect(
       decideImpersonation({
@@ -229,6 +266,19 @@ describe("impersonationStartBlocker", () => {
         target: { id: "other", roleName: "Admin" },
       }),
     ).toBe("target_admin");
+  });
+
+  it("refuses an account that lost access to the platform", () => {
+    expect(
+      impersonationStartBlocker({
+        ...base,
+        target: { id: "target", roleName: "Invitado", accessRevoked: true },
+      }),
+    ).toBe("target_revoked");
+    expect(IMPERSONATION_START_ERRORS.target_revoked).toMatchObject({
+      statusCode: 403,
+      messageKey: "impersonation.errors.targetRevoked",
+    });
   });
 
   it("maps every blocker to its status and i18n key", () => {
@@ -427,6 +477,29 @@ describe("resolveImpersonation", () => {
     );
   });
 
+  it("revokes when the target lost access meanwhile", async () => {
+    dbState.selectRows = [
+      { ...found(), targetAccessRevokedAt: new Date("2026-11-05T09:45:00Z") },
+    ];
+    dbState.updateRows = [row({ endedAt: NOW })];
+    expect(
+      await resolveImpersonation(fakeEvent("GET"), {
+        sessionId: "session-1",
+        realUser: admin,
+        now: NOW,
+      }),
+    ).toBeNull();
+    expect(dbState.updates[0]?.set.endReason).toBe("revoked");
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "impersonation.revoke",
+        source: "system",
+        targetId: "target",
+      }),
+    );
+  });
+
   it("revokes when the target became Admin", async () => {
     dbState.selectRows = [found({}, user("target", "Admin"))];
     dbState.updateRows = [row({ endedAt: NOW })];
@@ -438,6 +511,104 @@ describe("resolveImpersonation", () => {
       }),
     ).toBeNull();
     expect(dbState.updates[0]?.set.endReason).toBe("revoked");
+  });
+});
+
+describe("startImpersonation and accounts without access", () => {
+  const admin = user("admin", "Admin");
+
+  beforeEach(() => {
+    dbState.selectRows = [];
+    dbState.lockRows = [];
+    dbState.inserts = [];
+    recordAudit.mockClear();
+  });
+
+  function adminEvent() {
+    return fakeEvent(
+      "POST",
+      {},
+      {
+        realUser: admin,
+        user: admin,
+        impersonation: null,
+        session: {
+          session: { id: "session-1", expiresAt: LATER },
+          user: { id: "admin" },
+        },
+      },
+    );
+  }
+
+  async function startError(): Promise<{
+    statusCode?: number;
+    data?: { messageKey?: string };
+  }> {
+    return startImpersonation(adminEvent(), {
+      targetUserId: "target",
+      reason: "Revisar su borrador",
+      now: NOW,
+    }).then(
+      () => ({}),
+      (error: { statusCode?: number; data?: { messageKey?: string } }) => error,
+    );
+  }
+
+  it("refuses an account that lost access, before writing anything", async () => {
+    dbState.selectRows = [
+      {
+        id: "target",
+        name: "Persona",
+        externalName: null,
+        roleName: "Invitado",
+        accessRevokedAt: EARLIER,
+      },
+    ];
+    const error = await startError();
+    expect(error.statusCode).toBe(403);
+    expect(error.data?.messageKey).toBe("impersonation.errors.targetRevoked");
+    expect(dbState.inserts).toEqual([]);
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
+  it("refuses one that lost access between the read and the write", async () => {
+    dbState.selectRows = [
+      {
+        id: "target",
+        name: "Persona",
+        externalName: null,
+        roleName: "Asociado",
+        accessRevokedAt: null,
+      },
+    ];
+    dbState.lockRows = [];
+    const error = await startError();
+    expect(error.data?.messageKey).toBe("impersonation.errors.targetRevoked");
+    expect(dbState.inserts).toEqual([]);
+  });
+
+  it("starts on an account with access", async () => {
+    dbState.selectRows = [
+      {
+        id: "target",
+        name: "Persona",
+        externalName: null,
+        roleName: "Asociado",
+        accessRevokedAt: null,
+      },
+    ];
+    dbState.lockRows = [{ id: "target" }];
+    const dto = await startImpersonation(adminEvent(), {
+      targetUserId: "target",
+      reason: "Revisar su borrador",
+      now: NOW,
+    });
+    expect(dto).toMatchObject({ id: "imp-new", active: true });
+    expect(dbState.inserts).toHaveLength(1);
+    expect(recordAudit).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ action: "impersonation.start" }),
+    );
   });
 });
 

@@ -1,34 +1,38 @@
 import { createError, defineEventHandler, getQuery } from "h3";
-import { z } from "zod/v4";
 import { db } from "../../../db";
 import {
   ADMIN_USER_COLUMNS,
   ADMIN_USER_RELATIONS,
+  adminUsersAccessWhere,
+  adminUsersQuerySchema,
   withExtraPermissions,
 } from "../../../utils/auth/adminUsers";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { requireAnyPermission } from "../../../utils/auth/rbac";
 
-const querySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(50),
-});
-
-/** The users, with their role, member and grants (user:manage_roles). */
+/**
+ * The users, with their role, member and grants (user:manage_roles).
+ * `?access=revoked` lists only the accounts that lost access to the
+ * platform (users.access_revoked_at set); the default lists every account.
+ */
 export default defineEventHandler(async (event) => {
   await requireAnyPermission(event, [PERMISSION_KEYS.USER_MANAGE_ROLES]);
 
-  const parsed = querySchema.safeParse(getQuery(event));
+  const parsed = adminUsersQuerySchema.safeParse(getQuery(event));
   if (!parsed.success) {
-    throw createError({ statusCode: 400, message: "Paginación inválida" });
+    throw createError({
+      statusCode: 400,
+      message: "Paginación o filtro inválidos",
+    });
   }
 
-  const { page, pageSize } = parsed.data;
+  const { page, pageSize, access } = parsed.data;
   const offset = (page - 1) * pageSize;
 
   const users = await db.query.users.findMany({
     columns: ADMIN_USER_COLUMNS,
     with: ADMIN_USER_RELATIONS,
+    where: adminUsersAccessWhere(access),
     orderBy: (u, { asc }) => [asc(u.name)],
     limit: pageSize + 1,
     offset,

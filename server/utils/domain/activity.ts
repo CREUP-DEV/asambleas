@@ -434,13 +434,16 @@ export const ME_TO_ACTIONS: readonly AuditAction[] = [
   AUDIT_ACTIONS.USER_MEMBER_LINK,
   AUDIT_ACTIONS.USER_ROLE_SYNC,
   AUDIT_ACTIONS.USER_INITIAL_ADMIN,
+  AUDIT_ACTIONS.USER_INTRANET_MISSING,
 ];
 
-/** Sign-ins and sign-outs (tab `access`). */
+/** Sign-ins and sign-outs, and the loss and return of access (tab `access`). */
 export const ME_ACCESS_ACTIONS: readonly AuditAction[] = [
   AUDIT_ACTIONS.AUTH_SIGN_IN,
   AUDIT_ACTIONS.AUTH_SIGN_OUT,
   AUDIT_ACTIONS.AUTH_SESSION_ENDED,
+  AUDIT_ACTIONS.USER_ACCESS_REVOKED,
+  AUDIT_ACTIONS.USER_ACCESS_RESTORED,
 ];
 
 /** Changes to a role's permissions, attributed to the accounts holding it. */
@@ -736,7 +739,8 @@ export const ROLE_TENURE_MAX_PERIODS = 30;
 
 /**
  * The roles the account held and when, from its recorded role changes
- * (user.created, role.assign, user.role_sync, user.initial_admin; oldest
+ * (user.created, role.assign, user.role_sync, user.initial_admin,
+ * user.access_revoked; oldest
  * first). A period that a recorded change starts is exact; the role held
  * before the first recorded change, the current role when nothing was
  * recorded, and a current role that no recorded change explains are
@@ -797,6 +801,8 @@ const ROLE_TIMELINE_ACTIONS: readonly AuditAction[] = [
   AUDIT_ACTIONS.ROLE_ASSIGN,
   AUDIT_ACTIONS.USER_ROLE_SYNC,
   AUDIT_ACTIONS.USER_INITIAL_ADMIN,
+  // Losing access sets the role to Invitado.
+  AUDIT_ACTIONS.USER_ACCESS_REVOKED,
 ];
 
 async function loadRoleTenure(userId: string): Promise<RolePeriod[]> {
@@ -966,6 +972,8 @@ export const AUDIT_PAYLOAD_KEYS: Record<AuditAction, readonly string[]> = {
     "active",
   ],
   "members.sync": ["created", "updated", "deactivated", "unchanged"],
+  // The counts per kind of a refused roster sync; who ran it is the actor.
+  "members.sync_blocked": ["reason", "kinds", "trigger"],
   "member.sync_create": [],
   "member.sync_update": [],
   "member.sync_deactivate": [],
@@ -983,6 +991,12 @@ export const AUDIT_PAYLOAD_KEYS: Record<AuditAction, readonly string[]> = {
     "memberId",
   ],
   "user.initial_admin": ["roleName"],
+  // Never the counts of sessions or impersonations it ended.
+  "user.access_revoked": ["roleName", "memberId", "accessRevokedReason"],
+  "user.access_restored": ["accessRevokedReason"],
+  "user.intranet_missing": ["roleName"],
+  // Counts only: which accounts the Intranet missed is never stored here.
+  "users.access_recheck_blocked": ["reason", "checked", "notFound"],
   "auth.sign_in": ["roleSync"],
   "auth.sign_out": [],
   "auth.session_ended": [],
@@ -1997,7 +2011,8 @@ function auditTarget(
       break;
     }
     default:
-      // impersonation (the account is gone) and anything new: Admins only.
+      // impersonation (the account is gone), users (the access re-check)
+      // and anything new: Admins only.
       visible = !actor || actor.isAdmin;
   }
   if (actor && assembly && !canSeeAssembly(actor, assembly)) visible = false;

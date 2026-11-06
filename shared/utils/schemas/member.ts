@@ -1,5 +1,9 @@
 import { z } from "zod/v4";
 import { MEMBER_KINDS } from "../../constants/domain";
+import type {
+  MemberSyncConfirmedKind,
+  RosterMemberKind,
+} from "../../types/api";
 import { normalizeText } from "./content";
 
 /**
@@ -79,3 +83,64 @@ export const userMemberLinkBodySchema = z.object({
     .regex(/^[a-z0-9]{20,32}$/)
     .nullable(),
 });
+
+/** The member kinds the intranet roster lists (RosterMemberKind). */
+export const ROSTER_MEMBER_KINDS = [
+  "asociado",
+  "sectorial",
+] as const satisfies readonly RosterMemberKind[];
+
+/** Largest count a confirmation may carry: more members than any roster has. */
+const CONFIRMED_COUNT_MAX = 10_000;
+
+const memberSyncConfirmedKindSchema = z.strictObject({
+  kind: z.enum(ROSTER_MEMBER_KINDS),
+  toDeactivate: z.number().int().min(0).max(CONFIRMED_COUNT_MAX),
+});
+
+/**
+ * POST /api/members/sync (MemberSyncBody in shared/types/api.ts). The body
+ * may be absent, as it was before the safeguard: undefined and null parse
+ * as `{}`. The output always says whether a large deactivation is
+ * confirmed (only a literal `true` confirms it) and what was confirmed:
+ * `confirmedKinds`, one entry per kind at most, empty without a
+ * confirmation.
+ */
+export const memberSyncBodySchema = z
+  .object({
+    confirmDeactivation: z.boolean().optional(),
+    confirmedKinds: z
+      .array(memberSyncConfirmedKindSchema)
+      .max(ROSTER_MEMBER_KINDS.length)
+      .refine(
+        (kinds) =>
+          new Set(kinds.map((entry) => entry.kind)).size === kinds.length,
+        { message: "one entry per kind" },
+      )
+      .optional(),
+  })
+  .nullish()
+  .transform(
+    (
+      body,
+    ): {
+      confirmDeactivation: boolean;
+      confirmedKinds: MemberSyncConfirmedKind[];
+    } => {
+      const confirmDeactivation = body?.confirmDeactivation === true;
+      return {
+        confirmDeactivation,
+        confirmedKinds: confirmDeactivation ? (body?.confirmedKinds ?? []) : [],
+      };
+    },
+  );
+
+/** Largest Intranet id the platform stores (Postgres `integer`). */
+export const INTRANET_ID_MAX = 2_147_483_647;
+
+/**
+ * An Intranet account id (`users.id`), as the role lookup and the roster
+ * send it: a positive integer that fits users.intranet_id and
+ * members.intranet_id.
+ */
+export const intranetIdSchema = z.number().int().min(1).max(INTRANET_ID_MAX);

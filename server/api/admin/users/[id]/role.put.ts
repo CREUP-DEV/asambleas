@@ -1,5 +1,5 @@
 import { defineEventHandler, readBody, createError } from "h3";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "../../../../db";
 import { users, roles } from "../../../../db/schema";
@@ -21,12 +21,26 @@ const bodySchema = z.object({
   roleId: z.string().refine(isDefaultCuid),
 });
 
+function targetRevokedError() {
+  return createError({
+    statusCode: 409,
+    message: "La cuenta no tiene acceso a la plataforma: su rol no se cambia",
+    data: { messageKey: "admin.users.errors.targetRevoked" },
+  });
+}
+
 /**
  * Changes a user's role (user:manage_roles). Only an Admin gives or takes
  * the Admin role, and only an Admin changes its own role (403 otherwise,
- * adminGrantViolation); the last Admin cannot leave the role (409), so
- * someone can always manage it. A non-Admin may not give or take, through
- * the role, a permission it does not hold itself (403).
+ * adminGrantViolation); the last Admin who can sign in cannot leave the role
+ * (409), so someone can always manage it. A non-Admin may not give or take,
+ * through the role, a permission it does not hold itself (403).
+ *
+ * An account without access (users.access_revoked_at: the Intranet deleted
+ * it) keeps Invitado: its role cannot change (409
+ * `admin.users.errors.targetRevoked`). Access comes back only from the
+ * Intranet, and a role given to it would count for nothing, or let the last
+ * Admin who can sign in leave the role.
  *
  * Writes `role.assign` (before/after role) when the role changes. Giving or
  * taking the Admin role also ends, as `revoked`, the impersonations it
@@ -56,12 +70,16 @@ export default defineEventHandler(async (event) => {
 
   const targetUser = await db.query.users.findFirst({
     where: eq(users.id, userId),
-    columns: { id: true, email: true, roleId: true },
+    columns: { id: true, email: true, roleId: true, accessRevokedAt: true },
     with: { role: { columns: { name: true } } },
   });
 
   if (!targetUser) {
     throw createError({ statusCode: 404, message: "Usuario no encontrado" });
+  }
+
+  if (targetUser.accessRevokedAt) {
+    throw targetRevokedError();
   }
 
   // Identity comes from the caller, never from the session.
@@ -123,12 +141,18 @@ export default defineEventHandler(async (event) => {
 
   await db.transaction(async (tx) => {
     if (leavesAdmin && targetUser.roleId) {
-      // The Admin accounts, locked in id order: two Admins leaving the role
-      // at once cannot both see the other one still there.
+      // The Admin accounts that can sign in, locked in id order: two Admins
+      // leaving the role at once cannot both see the other one still there.
+      // An Admin without access does not count (it cannot sign in).
       const admins = await tx
         .select({ id: users.id })
         .from(users)
-        .where(eq(users.roleId, targetUser.roleId))
+        .where(
+          and(
+            eq(users.roleId, targetUser.roleId),
+            isNull(users.accessRevokedAt),
+          ),
+        )
         .orderBy(asc(users.id))
         .for("no key update");
       if (admins.every((row) => row.id === targetUser.id)) {
@@ -139,10 +163,16 @@ export default defineEventHandler(async (event) => {
         });
       }
     }
-    await tx
+    // Only while the account has access: a revocation that committed since
+    // the read above (it locks the row) leaves nothing to update.
+    const updated = await tx
       .update(users)
       .set({ roleId: parsed.data.roleId })
-      .where(eq(users.id, userId));
+      .where(and(eq(users.id, userId), isNull(users.accessRevokedAt)))
+      .returning({ id: users.id });
+    if (updated.length === 0) {
+      throw targetRevokedError();
+    }
 
     // No row when the role stays the same (recordAudit skips the no-op).
     await recordAudit(tx, {

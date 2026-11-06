@@ -9,6 +9,28 @@ const redirectPath = computed(() => {
   return typeof r === "string" && r.startsWith("/") ? r : "/";
 });
 
+/**
+ * Messages of the sign-in refusals better-auth sends back here as
+ * `?error=<code>` (SIGN_IN_ERROR_CODES in server/utils/auth/auth.ts). Any
+ * other code (Google cancelled, an expired state) gets the general one.
+ * `error_description` is never shown: it is untranslated server text.
+ */
+const SIGN_IN_ERROR_KEYS: Readonly<Record<string, string>> = {
+  access_revoked: "auth.signInErrors.accessRevoked",
+  sign_in_unavailable: "auth.signInErrors.unavailable",
+};
+
+const signInError = computed(() => {
+  const raw = route.query.error;
+  const code = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof code !== "string" || !code.trim()) return null;
+  // Own keys only: `?error=constructor` must not reach the prototype.
+  const key = Object.hasOwn(SIGN_IN_ERROR_KEYS, code)
+    ? SIGN_IN_ERROR_KEYS[code]
+    : undefined;
+  return t(key ?? "auth.signInErrors.generic");
+});
+
 const handleGoogleSignIn = async () => {
   if (isSigningIn.value) {
     return;
@@ -48,6 +70,15 @@ useHead({
         <p class="text-sm text-muted">
           {{ t("app.description") }}
         </p>
+        <UAlert
+          v-if="signInError"
+          role="alert"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          :title="t('auth.signInErrors.title')"
+          :description="signInError"
+        />
         <UButton
           icon="i-tabler-brand-google"
           :label="t('auth.signInWithGoogle')"

@@ -2,41 +2,74 @@ import {
   pgTable,
   text,
   boolean,
+  integer,
   timestamp,
   index,
   uniqueIndex,
+  check,
 } from "drizzle-orm/pg-core";
 import { relations, sql } from "drizzle-orm";
 import { roles } from "./rbac";
 import { members } from "./member";
+import type { AccessRevokedReason } from "../../../shared/constants/activity";
 
-export const users = pgTable("users", {
-  id: text("id").primaryKey(),
-  name: text("name").notNull(),
-  email: text("email").notNull().unique(),
-  emailVerified: boolean("email_verified").default(false).notNull(),
-  image: text("image"),
-  roleId: text("role_id").references(() => roles.id, { onDelete: "set null" }),
-  externalRole: text("external_role"),
-  externalName: text("external_name"),
-  externalInitials: text("external_initials"),
-  university: text("university"),
-  /** The member this account acts for (an Asociado account is its member). */
-  memberId: text("member_id").references(() => members.id, {
-    onDelete: "set null",
-  }),
-  lastRoleSyncAt: timestamp("last_role_sync_at", {
-    withTimezone: true,
-    mode: "date",
-  }),
-  createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull(),
-  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
-    .defaultNow()
-    .notNull()
-    .$onUpdate(() => sql`now()`),
-});
+export const users = pgTable(
+  "users",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    email: text("email").notNull().unique(),
+    emailVerified: boolean("email_verified").default(false).notNull(),
+    image: text("image"),
+    roleId: text("role_id").references(() => roles.id, {
+      onDelete: "set null",
+    }),
+    externalRole: text("external_role"),
+    externalName: text("external_name"),
+    externalInitials: text("external_initials"),
+    university: text("university"),
+    /** The member this account acts for (an Asociado account is its member). */
+    memberId: text("member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+    lastRoleSyncAt: timestamp("last_role_sync_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    /**
+     * The account's id in the Intranet (its `users.id`), from the role
+     * lookup. Not unique: it only helps to link the account to its member.
+     */
+    intranetId: integer("intranet_id"),
+    /**
+     * Set when the account lost access to the platform (the Intranet deleted
+     * it): sign-in is refused until the Intranet knows it again. Set and
+     * cleared together with `accessRevokedReason` (CHECK
+     * users_access_revoked_consistent).
+     */
+    accessRevokedAt: timestamp("access_revoked_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    /** Why the account lost access (ACCESS_REVOKED_REASONS); null while it has access. */
+    accessRevokedReason: text(
+      "access_revoked_reason",
+    ).$type<AccessRevokedReason>(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => sql`now()`),
+  },
+  (table) => [
+    check(
+      "users_access_revoked_consistent",
+      sql`(${table.accessRevokedAt} is null) = (${table.accessRevokedReason} is null)`,
+    ),
+  ],
+);
 
 export const sessions = pgTable(
   "sessions",
