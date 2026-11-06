@@ -32,7 +32,7 @@ export const INTRANET_MEMBER_TYPES: ReadonlyMap<string, LinkedMemberKind> =
 export interface ExternalMemberIdentity {
   /**
    * The intranet `users.id` of the account; null or absent when the
-   * intranet sends none (the legacy route).
+   * intranet sends none.
    */
   id?: number | null;
   /** Intranet `type`, e.g. "Asociado". */

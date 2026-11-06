@@ -38,9 +38,10 @@ lo implementa en Laravel. Los identificadores de código van en inglés.
   `master`, con las correcciones de la revisión). Ni él ni los dos commits que
   tiene debajo están publicados: hay que decidir qué commits salen con ella
   (sección 8).
-- Despliegue (sección 8): Intranet con el grupo nuevo, `TRUSTED_PROXIES` y la
-  ruta vieja cerrada (la plataforma aún no está en producción); después,
-  variables de la plataforma. Las variables de la Intranet se aplican recreando su
+- Despliegue (sección 8): Intranet con el grupo nuevo y `TRUSTED_PROXIES`
+  (desplegado el 2026-11-06); la ruta vieja se elimina sin transición, porque
+  la plataforma aún no está en producción; después, variables de la
+  plataforma. Las variables de la Intranet se aplican recreando su
   contenedor, nunca con `config:cache` (sección 5.1).
 - La plataforma ya usa lo que añade el grupo nuevo (sección 9): envía
   `Accept`, enlaza por `id`, retira el acceso a las cuentas borradas en la
@@ -349,8 +350,8 @@ Con `NUXT_INTRANET_API_URL=https://intranet.creup.es/api/asambleas/v1` (o
 `http://intranet/api/asambleas/v1` desde la red de Docker del VPS) la
 plataforma llama a las rutas nuevas sin cambiar código (sección 5.8). Los
 listados públicos de la web se quedan como están. La ruta pública
-`POST /api/user/role` se cierra al desplegar (solo la usaba esta plataforma,
-que aún no está en producción; sección 8).
+`POST /api/user/role` se elimina (solo la usaba esta plataforma, que aún no
+está en producción; sección 8).
 
 Todo el grupo:
 
@@ -378,10 +379,10 @@ Todo el grupo:
   alguien lo pega por error en la ranura del hash, la configuración lo
   descarta (sección 5.1) y el grupo responde 503 en vez de guardar el token en
   claro en la Intranet.
-- Dos ranuras, `ASSEMBLIES_API_TOKEN_SHA256` y
-  `ASSEMBLIES_API_TOKEN_SHA256_NEXT`, para rotar sin cortes (sección 7).
-- Comparación en tiempo constante con `hash_equals`, recorriendo todas las
-  ranuras sin salir antes.
+- Un solo hash, `ASSEMBLIES_API_TOKEN_SHA256`: rotar el token supone un corte
+  breve en la consulta de rol y el listado, que la plataforma aguanta sin
+  bloquear a nadie (sección 7).
+- Comparación en tiempo constante con `hash_equals`.
 - Solo en la cabecera `Authorization: Bearer`. Nunca en la query string (acaba
   en logs de acceso) ni en el cuerpo. Por Internet viaja siempre por HTTPS; por
   HTTP, solo dentro de la red de Docker del VPS.
@@ -535,7 +536,7 @@ no las envía): para las cuentas sectoriales ese dato no es fiable.
 
 | Medida               | Cómo                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Token dedicado       | Middleware `AuthenticateAssembliesService` en todo el grupo; hash SHA-256 en configuración, dos ranuras, `hash_equals`, solo cabecera `Authorization`; token con prefijo `asm_` para que no se confunda con un hash.                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Token dedicado       | Middleware `AuthenticateAssembliesService` en todo el grupo; hash SHA-256 en configuración, `hash_equals`, solo cabecera `Authorization`; token con prefijo `asm_` para que no se confunda con un hash.                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | Proxies de confianza | nginx ya recupera la IP real de Cloudflare (`real_ip_header CF-Connecting-IP` con todos sus rangos) y fija `X-Forwarded-Proto`; `TrustProxies` confía solo en `TRUSTED_PROXIES` (la red de Docker que comparte con nginx, o su dirección fija; sin ella, en nadie) y solo acepta `X-Forwarded-For` y `-Proto` (R6, sección 5.8).                                                                                                                                                                                                                                                                                                                                  |
 | Lista de IP          | Opcional, y vacía: `ASSEMBLIES_API_ALLOWED_IPS` (admite CIDR, `IpUtils::checkIp`). No se usa porque la plataforma también llama desde el servidor de desarrollo, sin IP fija. Si algún día se usa, el `ip` que registra `assemblies_api.denied` dice desde qué dirección llega cada cliente.                                                                                                                                                                                                                                                                                                                                                                      |
 | Solo HTTPS           | `ASSEMBLIES_API_REQUIRE_HTTPS` (por defecto `true`): el middleware responde 403 a peticiones no seguras, y así una URL mal configurada falla a la vista. Por Internet, Laravel sabe que la petición es HTTPS por el `X-Forwarded-Proto` de nginx, porque nginx está en `TRUSTED_PROXIES`. Solo se desactiva (`false`) si la plataforma llama por la red de Docker, que es HTTP; no abre nada hacia fuera, porque nginx redirige todo el puerto 80 a HTTPS (sección 5.8, punto 3).                                                                                                                                                                                 |
@@ -543,10 +544,10 @@ no las envía): para las cuentas sectoriales ese dato no es fiable.
 | Campos mínimos       | Recursos dedicados (`AssemblyAccountResource`, `AssemblyMemberResource`) con lista cerrada de claves. Sin emails, teléfonos, redes ni logos.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Sin enumeración      | Sin token, 401 idéntico para cualquier email (no se consulta la base de datos). Con token, 404 idéntico para email desconocido y cuenta sin tipo. CORS cerrado: ningún navegador puede leer el grupo.                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | Logs sin secretos    | Nunca la cabecera `Authorization`, el token ni el hash completo; como huella, los 8 primeros caracteres del hash. Nunca el email en claro: HMAC con `APP_KEY`, truncado. No registrar cuerpos de petición. `LOG_LEVEL=info` en producción: `role_lookup` y `roster` se registran en `info`, y las secciones 7 y 8 los leen; con `notice` o más alto no se escriben.                                                                                                                                                                                                                                                                                               |
-| Rotación             | Procedimiento de la sección 7, con dos ranuras: ningún token válido se rechaza durante el cambio. Cada cambio de variables recrea el contenedor de la Intranet (sección 5.1), que deja de responder unos segundos.                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Rotación             | Procedimiento de la sección 7, con un solo hash: entre el cambio en la Intranet y el de la plataforma, sus consultas fallan sin bloquear a nadie. Cada cambio de variables recrea el contenedor de la Intranet (sección 5.1), que deja de responder unos segundos.                                                                                                                                                                                                                                                                                                                                                                                                |
 | CORS cerrado         | `config/cors.php` deja de usar `api/*` y lista solo las rutas públicas. El grupo `api/asambleas/*` queda fuera: sin `Access-Control-Allow-Origin`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
 | Validación           | `FormRequest` (`AssemblyRoleLookupRequest`) con normalización previa; JSON forzado para que un error sea 422 y no una redirección.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
-| Falla cerrado        | Sin hash configurado, 503. Un error interno, 5xx y nunca datos parciales. `APP_DEBUG=false`, comprobado en el contenedor al desplegar (sección 8, paso 1): con `APP_DEBUG=true` cualquiera obtiene la traza completa de un error, también sin token. Interruptores booleanos estrictos: un valor en blanco o mal escrito deja el valor seguro por defecto.                                                                                                                                                                                                                                                                                                        |
+| Falla cerrado        | Sin hash configurado, 503. Un error interno, 5xx y nunca datos parciales. `APP_DEBUG=false`, comprobado en el contenedor al desplegar (sección 8, paso 1): con `APP_DEBUG=true` cualquiera obtiene la traza completa de un error, también sin token. Interruptor de HTTPS estricto: un valor en blanco o mal escrito lo deja activo.                                                                                                                                                                                                                                                                                                                              |
 | Tests                | Sección 6.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 ## 5. Implementación en Laravel
@@ -561,20 +562,15 @@ repositorio es la referencia.
 
 ```php
 'assemblies' => [
-    // SHA-256 (hex) of the tokens the assemblies platform may present. Two
-    // slots so a rotation never needs downtime. The token itself never
-    // lives in the Intranet.
-    // Anything that is not 64 hex characters (a pasted token, which starts
-    // with "asm_", or a truncated hash) is dropped, so a slot set by mistake
-    // fails closed (503 when no slot is left) instead of quietly answering
-    // 401.
-    'token_hashes' => array_values(array_filter(
-        array_map(
-            fn ($hash) => strtolower(trim((string) $hash)),
-            [env('ASSEMBLIES_API_TOKEN_SHA256'), env('ASSEMBLIES_API_TOKEN_SHA256_NEXT')],
-        ),
-        fn (string $hash) => preg_match('/^[0-9a-f]{64}$/', $hash) === 1,
-    )),
+    // SHA-256 (hex) of the token the assemblies platform presents; the
+    // token itself never lives in the Intranet. Anything that is not 64
+    // hex characters (a pasted token, which starts with "asm_", or a
+    // truncated hash) is dropped, so a value set by mistake fails closed
+    // (503) instead of quietly answering 401.
+    'token_hash' => with(
+        strtolower(trim((string) env('ASSEMBLIES_API_TOKEN_SHA256'))),
+        fn (string $hash) => preg_match('/^[0-9a-f]{64}$/', $hash) === 1 ? $hash : null,
+    ),
 
     // Optional allow-list (IPs or CIDR ranges), comma separated.
     'allowed_ips' => array_values(array_filter(array_map(
@@ -582,34 +578,25 @@ repositorio es la referencia.
         explode(',', (string) env('ASSEMBLIES_API_ALLOWED_IPS', '')),
     ))),
 
-    // Both switches default to true and only the word false (which env()
-    // turns into a boolean) turns them off. A blank value, "off", "0" or a
-    // typo keeps the default instead of being cast: (bool) '' would quietly
-    // turn the HTTPS check off or close the old route, and
-    // FILTER_VALIDATE_BOOL also reads '' as false.
+    // Defaults to true and only the word false (which env() turns into a
+    // boolean) turns it off. A blank value, "off", "0" or a typo keeps the
+    // check instead of being cast: (bool) '' would quietly turn it off,
+    // and FILTER_VALIDATE_BOOL also reads '' as false.
     'require_https' => env('ASSEMBLIES_API_REQUIRE_HTTPS') !== false,
-
-    // Keeps the old public POST /api/user/role answering during the
-    // transition window. Turn off once the platform uses /api/asambleas/v1.
-    'legacy_role_route' => env('ASSEMBLIES_API_LEGACY_ROLE_ROUTE') !== false,
 ],
 ```
 
 `.env.example`:
 
 ```dotenv
-# Private API for the assemblies platform (/api/asambleas/v1)
+# API for the assemblies platform (/api/asambleas/v1)
 # SHA-256 hex of the token, never the token itself (asm_...):
 # printf %s "$TOKEN" | sha256sum
-# The _NEXT slot is for rotating the token without downtime.
 ASSEMBLIES_API_TOKEN_SHA256=
-ASSEMBLIES_API_TOKEN_SHA256_NEXT=
 # Optional, comma separated IPs or CIDR ranges the platform calls from
 ASSEMBLIES_API_ALLOWED_IPS=
-# Only the word false turns a switch off; blank or anything else keeps true
+# Only the word false turns it off; blank or anything else keeps HTTPS required
 ASSEMBLIES_API_REQUIRE_HTTPS=true
-# Old public POST /api/user/role; set to false once the platform uses the new group
-ASSEMBLIES_API_LEGACY_ROLE_ROUTE=true
 
 # The nginx container in front of Apache: its fixed address or the range of
 # the Docker network it shares with the Intranet (CIDR, comma separated).
@@ -625,7 +612,6 @@ En producción (VPS revisado el 2026-11-06), el `env_file` de la Intranet
 
 ```dotenv
 ASSEMBLIES_API_TOKEN_SHA256=<hash>
-ASSEMBLIES_API_LEGACY_ROLE_ROUTE=false
 TRUSTED_PROXIES=172.18.0.0/16
 ```
 
@@ -636,8 +622,7 @@ en su valor por defecto salvo que la plataforma llame por la red de Docker
 **Aplicar un cambio de estas variables en producción.** La imagen no lleva
 `.env` (`.dockerignore` lo excluye): las variables llegan al contenedor
 `intranet` por el `env_file` de su servicio en el `docker-compose.yml` del VPS
-(`intranet.env` en el ejemplo del `README.md` de la Intranet; comprobar el
-nombre real). Docker las fija al **crear** el contenedor, y al arrancar
+(`config/intranet/.env` en el VPS). Docker las fija al **crear** el contenedor, y al arrancar
 `docker/apache/entrypoint.sh` ejecuta `optimize:clear` y `config:cache` con
 ese entorno. Por eso ni `php artisan config:cache` dentro del contenedor ni
 `docker compose restart` aplican un cambio: vuelven a cachear los valores
@@ -664,10 +649,10 @@ variables dentro del `docker-compose.yml` (ahí `scripts/deploy.sh` fija
    puede tener otra dirección. Alternativa: editar el `env_file` y desplegar
    con `scripts/deploy.sh`, que también recrea el contenedor y recarga nginx.
 
-3. Comprobar lo que ha cargado (el recuento, nunca los hashes):
+3. Comprobar lo que ha cargado (si hay hash, nunca el hash):
 
    ```bash
-   docker compose exec -T intranet php artisan tinker --execute="dump(count(config('services.assemblies.token_hashes')), config('services.assemblies.allowed_ips'), config('services.assemblies.require_https'), config('services.assemblies.legacy_role_route'), config('trustedproxy.proxies'))"
+   docker compose exec -T intranet php artisan tinker --execute="dump(config('services.assemblies.token_hash') !== null, config('services.assemblies.allowed_ips'), config('services.assemblies.require_https'), config('trustedproxy.proxies'))"
    ```
 
 Efectos: la Intranet entera deja de responder unos segundos (hacerlo fuera de
@@ -717,7 +702,7 @@ class AuthenticateAssembliesService
             return $this->deny($request, 403, 'ip_not_allowed');
         }
 
-        if ($config['token_hashes'] === []) {
+        if ($config['token_hash'] === null) {
             Log::critical('assemblies_api.not_configured');
 
             return $this->noStore(response()->json(['error' => 'service_unavailable'], 503));
@@ -726,7 +711,7 @@ class AuthenticateAssembliesService
         // The token is compared first and a valid one always passes: the
         // failure counter is never read for it, so nobody sharing an address
         // with the platform can lock it out by sending bad tokens.
-        if ($this->matches((string) $request->bearerToken(), $config['token_hashes'])) {
+        if ($this->matches((string) $request->bearerToken(), $config['token_hash'])) {
             // Covers whatever the controller answers, errors rendered by the
             // handler included (404, 422, 500).
             return $this->noStore($next($request));
@@ -754,25 +739,10 @@ class AuthenticateAssembliesService
         return $response;
     }
 
-    /**
-     * Whether the presented token hashes to one of the configured slots.
-     * Every slot is compared, so timing does not tell which one matched.
-     *
-     * @param  array<int, string>  $hashes
-     */
-    private function matches(string $presented, array $hashes): bool
+    /** Whether the presented token hashes to the configured one, in constant time. */
+    private function matches(string $presented, string $hash): bool
     {
-        if ($presented === '') {
-            return false;
-        }
-
-        $candidate = hash('sha256', $presented);
-        $matched = false;
-        foreach ($hashes as $hash) {
-            $matched = hash_equals($hash, $candidate) || $matched;
-        }
-
-        return $matched;
+        return $presented !== '' && hash_equals($hash, hash('sha256', $presented));
     }
 
     private function deny(Request $request, int $status, string $reason): Response
@@ -808,7 +778,7 @@ cliente, en `app/Exceptions/Handler.php`:
 
 ```php
 /**
- * The private API for the assemblies platform always answers JSON, also for
+ * The API for the assemblies platform always answers JSON, also for
  * errors raised before its middleware runs (405, 429).
  */
 protected function shouldReturnJson($request, Throwable $e)
@@ -853,9 +823,10 @@ son ajustables. Un token filtrado sigue limitado y deja rastro en los logs.
 ```php
 use App\Http\Controllers\Api\AssembliesApiController;
 
-// Private API for the assemblies platform. Server to server only: service
-// token, its own rate limit (not the shared 60/min of the api group) and no
-// CORS (see config/cors.php).
+// API for the assemblies platform, reachable from the internet so that its
+// development server can call production: service token, its own rate limit
+// (not the shared 60/min of the api group) and no CORS (see config/cors.php).
+// It replaces the old public POST /api/user/role, which is gone.
 Route::prefix('asambleas/v1')
     ->name('api.asambleas.')
     ->withoutMiddleware('throttle:api')
@@ -865,22 +836,12 @@ Route::prefix('asambleas/v1')
         Route::get('usuarios/asociados', [AssembliesApiController::class, 'asociados'])->name('asociados');
         Route::get('usuarios/sectoriales', [AssembliesApiController::class, 'sectoriales'])->name('sectoriales');
     });
-
-// Old public lookup: answers only during the transition window
-// (services.assemblies.legacy_role_route), then 404. Remove afterwards.
-Route::post('/user/role', [AdminController::class, 'getUserRoleByEmail']);
 ```
 
-En `AdminController::getUserRoleByEmail`, al principio:
-
-```php
-abort_unless(config('services.assemblies.legacy_role_route'), 404);
-
-Log::notice('assemblies_api.legacy_role_lookup', ['ip' => $request->ip()]);
-```
-
-El interruptor se lee en tiempo de petición (no al cargar rutas), así que no
-depende de `route:cache` y se puede probar.
+La ruta pública vieja, `POST /api/user/role`, y su acción
+`AdminController::getUserRoleByEmail` se han eliminado. No hubo ventana de
+transición: la plataforma aún no estaba en producción (sección 8). Un test
+comprueba que responde 404.
 
 ### 5.5 Validación
 
@@ -1074,8 +1035,9 @@ admite patrones negativos, así que hay que enumerarlas:
 
 ```php
 'paths' => [
-    // Public endpoints. The private api/asambleas/* group and the old
-    // api/user/role are left out on purpose: no browser may read them.
+    // Public endpoints only, listed one by one because Laravel has no negative
+    // patterns. The api/asambleas/* group of the assemblies platform is left
+    // out on purpose: no browser may read it.
     'api/organigrama',
     'api/organigrama/*',
     'api/comites',
@@ -1090,9 +1052,8 @@ admite patrones negativos, así que hay que enumerarlas:
 ```
 
 `api/usuarios/*` no casa con `api/asambleas/v1/usuarios/...` porque el patrón
-se compara desde el inicio de la ruta. Este cambio ya corta el riesgo R2 sobre
-la ruta vieja desde el primer despliegue (la plataforma llama desde el
-servidor y no le afecta).
+se compara desde el inicio de la ruta. La plataforma llama desde el servidor,
+así que CORS no le afecta.
 
 ### 5.8 Proxies, acceso de la plataforma y otros ajustes
 
@@ -1268,21 +1229,19 @@ Otros ajustes:
 
 ## 6. Tests (PHPUnit)
 
-La suite está en la Intranet, `tests/Feature/Api/AssembliesApiTest.php`
-(commit `28d4579`), en el estilo del repositorio (PHPUnit 13,
-`RefreshDatabase`, `#[DataProvider]`, métodos `test_...`). Ese archivo es la
-referencia; esto es lo que cubre:
+La suite está en la Intranet, `tests/Feature/Api/AssembliesApiTest.php`, en el
+estilo del repositorio (PHPUnit 13, `RefreshDatabase`, `#[DataProvider]`,
+métodos `test_...`). Ese archivo es la referencia; esto es lo que cubre:
 
 - **Token:** sin token o con uno erróneo, el mismo 401 en las tres rutas; un
-  token en la query string no vale; sin hash configurado, 503; valen las dos
-  ranuras de rotación.
+  token en la query string no vale; sin hash configurado, 503.
 - **Contrato:** la consulta de rol devuelve exactamente `id`, `role`, `name`,
   `initials` y `university`, con el email normalizado y
   `Cache-Control: no-store`; un email desconocido y una cuenta sin tipo dan el
   mismo 404; los listados traen solo `data` y `generated_at`, completos y sin
   otros tipos, y el de sectoriales sin universidad ni comunidad autónoma.
 - **JSON sin `Accept`:** el 422, el 405 y el 429 del limitador salen en JSON
-  aunque la petición no lo pida, como la consulta de rol de la plataforma.
+  aunque la petición no lo pida.
 - **Límites:** no se aplica el de 60/min del grupo `api`; cada listado tiene
   su propio cupo por token; tras 10 tokens erróneos, los erróneos reciben 429
   y uno válido sigue pasando.
@@ -1293,14 +1252,13 @@ referencia; esto es lo que cubre:
   cliente real aunque nginx añada a `X-Forwarded-For`; un `X-Forwarded-For`
   falsificado no gana, y `X-Forwarded-Host` se ignora.
 - **Configuración:** `config/services.php` descarta un token pegado o un hash
-  truncado, normaliza un hash con espacios o mayúsculas y solo apaga un
-  interruptor con la palabra `false`; `config/trustedproxy.php` descarta `*`,
-  `**` y `REMOTE_ADDR`.
-- **CORS:** ni el grupo nuevo ni la ruta vieja responden a un origen de
-  navegador; los listados públicos siguen abiertos.
+  truncado, normaliza un hash con espacios o mayúsculas y solo desactiva
+  HTTPS con la palabra `false`; `config/trustedproxy.php` descarta `*`, `**`
+  y `REMOTE_ADDR`.
+- **CORS:** el grupo no responde a un origen de navegador; los listados
+  públicos siguen abiertos.
 - **Logs:** nunca el token, su hash ni el email.
-- **Ruta vieja:** responde exactamente lo de antes hasta que su interruptor la
-  cierra.
+- **Ruta vieja:** `POST /api/user/role` ya no existe (404).
 
 La red de Docker y nginx (sección 5.8) no se prueban aquí: se comprueban en el
 despliegue (sección 8).
@@ -1318,13 +1276,18 @@ Notas:
 - Los tests de configuración cargan `config/services.php` y
   `config/trustedproxy.php` con variables de entorno reales, porque el resto
   fija la configuración ya calculada y no vería esos filtros.
-- Al borrar la ruta vieja, sustituir el
-  test de la ruta vieja por uno que compruebe que `POST /api/user/role` da 404.
 
 ## 7. Rotación del token
 
 Cuándo: una vez al año, en cada relevo de la persona responsable de TIC y de
 inmediato ante cualquier sospecha de filtración.
+
+La Intranet guarda un solo hash, así que hay un corte breve: desde que tiene
+el hash nuevo hasta que la plataforma envía el token nuevo, las consultas de la
+plataforma reciben 401. Nadie pierde el acceso: las cuentas conservan su rol y
+su miembro, las nuevas entran como `Invitado` hasta su siguiente inicio de
+sesión y "Sincronizar" en Miembros da 502. Hacer los pasos 2 y 3 seguidos y
+fuera de los picos de inicio de sesión.
 
 1. Generar el token nuevo y su hash sin dejarlo en el historial de la shell:
 
@@ -1336,73 +1299,51 @@ inmediato ante cualquier sospecha de filtración.
 
    El token sale con 47 caracteres (`asm_` y 43 de base64url). El prefijo
    evita confundirlo con su hash, que son 64 caracteres hexadecimales: si se
-   pega el token en la Intranet por error, la ranura se descarta (sección
-   5.1).
+   pega el token en la Intranet por error, se descarta (sección 5.1).
 
-2. Intranet: poner el hash nuevo en `ASSEMBLIES_API_TOKEN_SHA256_NEXT` y
-   aplicarlo recreando el contenedor (sección 5.1, "Aplicar un cambio";
-   `config:cache` no basta). La comprobación con `tinker` da 2 hashes. Ahora
-   valen los dos.
-3. Plataforma: poner el token nuevo en `NUXT_INTRANET_API_TOKEN` y recrear el
-   contenedor (`docker compose -f docker-compose.prod.yml up -d app`, con el
-   compose de `DEPLOYMENT.md`; `restart` no relee el `.env`).
+2. Intranet: sustituir el valor de `ASSEMBLIES_API_TOKEN_SHA256` por el hash
+   nuevo (que solo quede una línea con esa variable) y aplicarlo recreando el
+   contenedor (sección 5.1, "Aplicar un cambio"; `config:cache` no basta). El
+   token viejo deja de valer en ese momento.
+3. Plataforma: poner el token nuevo en `NUXT_INTRANET_API_TOKEN`, en
+   producción (recreando el contenedor:
+   `docker compose -f docker-compose.prod.yml up -d app`; `restart` no relee
+   el `.env`) y en el `.env` local del servidor de desarrollo.
 4. Comprobar en los logs de la Intranet (`assemblies_api.role_lookup`) que la
    huella `token` coincide con los 8 primeros caracteres del hash nuevo, y que
    un inicio de sesión y una sincronización del listado funcionan.
-5. Intranet: mover el hash nuevo a `ASSEMBLIES_API_TOKEN_SHA256`, vaciar
-   `_NEXT` y aplicarlo igual (sección 5.1). La comprobación con `tinker` da 1
-   hash. Solo entonces deja de valer el token viejo: mientras el contenedor no
-   se recrea, la configuración cargada sigue aceptándolo.
-6. Borrar el token viejo del gestor de contraseñas.
+5. Borrar el token viejo del gestor de contraseñas.
 
-Ante una filtración, saltar directamente a sustituir
-`ASSEMBLIES_API_TOKEN_SHA256` (vaciando `_NEXT`) y el token de la plataforma,
-lo más seguidos posible, y aplicar los dos recreando sus contenedores (sección
-5.1 en la Intranet). El token filtrado sigue valiendo hasta que se recrea el
-contenedor de la Intranet: confirmar con `tinker` que solo queda 1 hash.
-Mientras la plataforma siga con el token viejo:
+Mientras la plataforma siga con el token viejo, sus consultas reciben 401, y
+429 a partir de la undécima en un minuto, pero pasan en cuanto envía el token
+nuevo: el bloqueo solo afecta a tokens erróneos, así que no hay que esperar ni
+borrar contadores. Ante una filtración, los mismos pasos, sin esperar.
 
-- los accesos siguen funcionando, pero no se refresca el rol: las cuentas
-  nuevas entran como `Invitado` y sin miembro hasta su siguiente inicio de
-  sesión, y "Sincronizar" en Miembros da 502;
-- sus consultas reciben 401, y 429 a partir de la undécima en un minuto, pero
-  pasan en cuanto envía el token nuevo: el bloqueo solo afecta a tokens
-  erróneos, así que no hay que esperar ni borrar contadores.
-
-Dónde vive el token: en el `.env` de producción de la plataforma y en el gestor
-de contraseñas de TIC. Nunca en repositorios, correos ni chats. La Intranet
-solo guarda el hash.
+Dónde vive el token: en el `.env` de producción de la plataforma, en el `.env`
+local de su servidor de desarrollo y en el gestor de contraseñas de TIC. Nunca
+en repositorios, correos ni chats. La Intranet solo guarda el hash.
 
 ## 8. Despliegue
 
 Hacerlo fuera de una semana de asamblea.
 
-**Antes del primer push de la Intranet.** El código de la fase 1 es el commit
-`28d4579` de `master` en la Intranet, con las correcciones de la revisión. No
-está publicado, y entre él y `origin/master` (`2f0b417`) hay otros dos commits
-sin publicar: `e57094b` (exportación de tesorería) y `c7e584f` (portafirmas).
-`scripts/deploy.sh` exige que `HEAD` coincida con `origin/master` (salvo
-`--skip-push-check`) y construye la imagen con el árbol de trabajo, así que
-hacer push de `master` y desplegar publica los tres. Decidirlo antes del primer
-push:
+**Estado (2026-11-06).** Desplegado `28d4579`, con los dos commits que tenía
+debajo (`e57094b`, tesorería, y `c7e584f`, portafirmas), y el `env_file` del
+paso 1: la API responde 401 sin token y la ruta vieja, 404. Falta desplegar el
+commit `0e1badf`, que elimina la ruta vieja y la segunda ranura del token. No
+necesita variables nuevas; después sobran `ASSEMBLIES_API_LEGACY_ROLE_ROUTE` y
+`ASSEMBLIES_API_TOKEN_SHA256_NEXT` en el `env_file`.
 
-- o salen los tres juntos, si portafirmas y tesorería están listos;
-- o sale solo la API: `28d4579` no comparte archivos con los otros dos, así
-  que se puede reordenar para que quede justo encima de `2f0b417`, publicar
-  solo ese commit (`git push origin <sha>:master`) y desplegar desde él (con
-  ese commit en `HEAD` y el árbol limpio; desde `master`, con los otros dos
-  encima, `deploy.sh` se niega).
-
-En los dos casos, `28d4579` cambia la Intranet entera, no solo la API: CORS
-pasa de `api/*` a una lista de rutas y `TrustProxies` deja de confiar en `'*'`.
-Sin `TRUSTED_PROXIES` no confía en nadie: todos los visitantes comparten la
+`28d4579` cambia la Intranet entera, no solo la API: CORS pasa de `api/*` a
+una lista de rutas y `TrustProxies` deja de confiar en `'*'`. Sin
+`TRUSTED_PROXIES` no confía en nadie: todos los visitantes comparten la
 dirección de nginx (y sus límites por IP) y ninguna petición se ve como HTTPS.
 Por eso no se despliega sin `TRUSTED_PROXIES` en el `env_file`.
 
 **Paso 0. Preparar.** Generar el token (sección 7, paso 1) y guardarlo en el
 gestor de contraseñas.
 
-**Paso 1. Intranet: grupo nuevo con token y ruta vieja cerrada.**
+**Paso 1. Intranet: grupo nuevo con token.**
 
 1. En el `env_file` del servicio `intranet` (`config/intranet/.env` del
    directorio de compose; sección 5.1). `APP_DEBUG=false` ya está.
@@ -1411,18 +1352,18 @@ gestor de contraseñas.
    LOG_LEVEL=info
    TRUSTED_PROXIES=172.18.0.0/16
    ASSEMBLIES_API_TOKEN_SHA256=<hash>
-   ASSEMBLIES_API_LEGACY_ROLE_ROUTE=false
    ```
 
+   Con el hash de verdad en lugar de `<hash>`, y una sola línea
+   `ASSEMBLIES_API_TOKEN_SHA256=`: con dos, Docker se queda con la última.
    `ASSEMBLIES_API_ALLOWED_IPS` no se pone, y `ASSEMBLIES_API_REQUIRE_HTTPS`
    solo si la plataforma va a llamar por la red de Docker (`false`; sección
    5.8, punto 3).
 
-   La ruta vieja se cierra en el mismo despliegue: la plataforma aún no está
-   en producción (no hay ningún contenedor suyo en el VPS) y los logs de nginx
-   de unas dos semanas solo tienen 2 llamadas a `POST /api/user/role`. Así no
-   hay ventana de transición y R1 desaparece desde el primer día. Si algo la
-   necesitara, `true` y recrear el contenedor (sección 5.1).
+   La ruta vieja desaparece sin ventana de transición: la plataforma aún no
+   está en producción (no hay ningún contenedor suyo en el VPS) y los logs de
+   nginx de unas dos semanas solo tenían 2 llamadas a `POST /api/user/role`.
+   R1 desaparece con el despliegue.
 
 2. Desplegar con `scripts/deploy.sh` (recrea el contenedor y recarga nginx).
 3. Comprobar lo que ha cargado:
@@ -1430,7 +1371,7 @@ gestor de contraseñas.
    ```bash
    docker compose exec -T intranet php artisan config:show trustedproxy.proxies           # 172.18.0.0/16
    docker compose exec -T intranet php artisan config:show logging.channels.single.level  # info
-   docker compose exec -T intranet php artisan tinker --execute="dump(count(config('services.assemblies.token_hashes')))"   # 1
+   docker compose exec -T intranet php artisan tinker --execute="var_dump(config('services.assemblies.token_hash') !== null);"   # true
    ```
 
 4. Comprobar desde fuera, desde cualquier máquina, con el token leído con
@@ -1456,7 +1397,7 @@ gestor de contraseñas.
      máquina desde la que se llama, no una de Cloudflare ni una `172.x`.
    - La de `has("trace")` es un `GET` a una ruta `POST` (405): con
      `APP_DEBUG=true` traería la traza completa del error.
-   - La última es la ruta vieja: 404 porque está cerrada.
+   - La última es la ruta vieja: 404 porque ya no existe.
    - La web pública sigue mostrando los consejos y las sectoriales (los pide
      por la red de Docker; CORS no le afecta).
 
@@ -1470,8 +1411,9 @@ Si algo no cuadra:
   `docker inspect nginx --format '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}'`.
 - 403 con `reason` `ip_not_allowed`: `ASSEMBLIES_API_ALLOWED_IPS` no está
   vacía.
-- 503: no hay ningún hash válido (un token pegado en su lugar, un hash
-  truncado) y `tinker` da 0 hashes.
+- 503: no hay ningún hash válido y `tinker` da `false`. Un token pegado en su
+  lugar, un hash truncado o una segunda línea `ASSEMBLIES_API_TOKEN_SHA256=`
+  más abajo que tapa la buena (pasó en el primer despliegue).
 
 **Paso 2. Plataforma: cambiar variables.**
 
@@ -1521,9 +1463,6 @@ Si algo no cuadra:
   `users.access_recheck_blocked`, que indicaría que la revisión no retiró
   nada porque faltaban demasiadas cuentas.
 
-**La ruta vieja.** Queda cerrada desde el paso 1 y responde 404. En un cambio
-posterior, borrar la ruta y `AdminController::getUserRoleByEmail`.
-
 Los listados públicos (`/api/usuarios/asociados` y
 `/api/usuarios/sectoriales`) **no se cierran**: son de la web.
 
@@ -1533,8 +1472,10 @@ Hechos a la par que la fase 1 de la Intranet (detalle en la sección 1):
 
 - **Documentación y entorno:** `DEPLOYMENT.md` y `README.md` usan
   `NUXT_INTRANET_API_URL` y `NUXT_INTRANET_API_TOKEN`, sin
-  `NUXT_ROLE_API_URL`, y el compose de producción de `DEPLOYMENT.md` une `app`
-  a `creup-edge` con su dirección fija (sección 5.8, punto 3).
+  `NUXT_ROLE_API_URL`. El compose de producción de `DEPLOYMENT.md` llama a la
+  URL pública por defecto y, para llamar por dentro, se une a la red de la
+  Intranet (`esternocleidomastoideo2003_default`, con
+  `ASSEMBLIES_API_REQUIRE_HTTPS=false` en ella; sección 5.8, punto 3).
   `runtimeConfig.roleApiUrl` de `nuxt.config.ts` ya no apunta a la ruta vieja.
 - **`Accept: application/json`** en la consulta de rol, como el listado.
 - **`http:` solo hacia nombres sin punto en producción**
@@ -1567,11 +1508,6 @@ Hechos a la par que la fase 1 de la Intranet (detalle en la sección 1):
 
 Pendientes:
 
-- **`DEPLOYMENT.md` y la red `creup-edge`:** según el punto anterior, el
-  compose de producción une `app` a `creup-edge` con dirección fija, que era
-  del diseño anterior. Con el acceso por Internet (sección 5.8) ya no hace
-  falta: basta la URL pública o, para llamar a `http://intranet`, unirse a la
-  red de la Intranet (`esternocleidomastoideo2003_default`).
 - **Áreas ejecutivas por `id`:** las cuentas CEA se siguen enlazando por
   siglas (fase 2, punto 1).
 
@@ -1690,11 +1626,12 @@ Cambios propuestos:
 
 ## 12. Checklist
 
-Intranet, fase 1 (hecho en `28d4579`, sin publicar):
+Intranet, fase 1 (`28d4579`, desplegado; y `0e1badf`, que elimina la ruta vieja y la segunda ranura, pendiente de desplegar):
 
-- [x] `config/services.php` (`assemblies`) y `.env.example` con las cinco
-      variables y `TRUSTED_PROXIES` (`config/trustedproxy.php`); interruptores
-      booleanos estrictos (en blanco o mal escritos quedan en `true`).
+- [x] `config/services.php` (`assemblies`) y `.env.example` con el hash, la
+      lista de IP y el interruptor de HTTPS, y `TRUSTED_PROXIES`
+      (`config/trustedproxy.php`); interruptor estricto (en blanco o mal
+      escrito queda en `true`).
 - [x] `AuthenticateAssembliesService` registrado como `assemblies.service` en
       `Kernel::$routeMiddleware`; compara el token antes de mirar el bloqueo,
       y un token válido pasa siempre. Tras 10 tokens erróneos por minuto e IP,
@@ -1710,12 +1647,12 @@ Intranet, fase 1 (hecho en `28d4579`, sin publicar):
       idéntico para email desconocido y cuenta sin tipo.
 - [x] `Cache-Control: no-store` puesto por el middleware en toda respuesta
       que pasa por él (datos y errores del controlador incluidos).
-- [x] Hashes de token validados como 64 caracteres hexadecimales; si no queda
-      ninguno válido, 503.
-- [x] `config/cors.php` con rutas públicas explícitas; el grupo nuevo y
-      `api/user/role` fuera.
-- [x] Interruptor `legacy_role_route` y aviso `legacy_role_lookup` en
-      `getUserRoleByEmail`.
+- [x] Un solo hash, validado como 64 caracteres hexadecimales; si no es
+      válido, 503.
+- [x] `config/cors.php` con rutas públicas explícitas; el grupo de la
+      plataforma fuera.
+- [x] Ruta vieja `POST /api/user/role` y
+      `AdminController::getUserRoleByEmail` eliminadas.
 - [x] Logs sin token, sin hash completo y sin emails en claro.
 - [x] `TrustProxies` solo con `TRUSTED_PROXIES` (`config/trustedproxy.php`:
       la dirección de nginx o el rango de su red de Docker; sin ella, nadie;
@@ -1726,25 +1663,28 @@ Intranet, fase 1 (hecho en `28d4579`, sin publicar):
 
 Despliegue:
 
-- [ ] Decidido qué sale con el primer push de la Intranet (`28d4579` con
-      `c7e584f` y `e57094b`, o solo `28d4579`; sección 8).
-- [ ] Token generado con el formato `asm_` y guardado en el gestor de
+- [x] Primer push de la Intranet con `28d4579`, `c7e584f` y `e57094b`.
+- [x] Token generado con el formato `asm_` y guardado en el gestor de
       contraseñas (sección 7, paso 1).
-- [ ] `env_file` de la Intranet (`config/intranet/.env`) con
-      `LOG_LEVEL=info`, `TRUSTED_PROXIES=172.18.0.0/16`, el hash del token y
-      `ASSEMBLIES_API_LEGACY_ROLE_ROUTE=false` (y
-      `ASSEMBLIES_API_REQUIRE_HTTPS=false` solo si la plataforma va a llamar
-      por la red de Docker).
-- [ ] Desplegado con `scripts/deploy.sh`; comprobados `trustedproxy.proxies`,
-      `LOG_LEVEL` y 1 hash.
-- [ ] Desde fuera: 401 sin token, 404 con token, número de asociados, sin
-      `trace` y la ruta vieja en 404; `assemblies_api.denied` con la IP
-      pública propia.
+- [x] `env_file` de la Intranet (`config/intranet/.env`) con
+      `LOG_LEVEL=info`, `TRUSTED_PROXIES=172.18.0.0/16` y una sola línea con
+      el hash del token.
+- [x] Desplegado con `scripts/deploy.sh`; `trustedproxy.proxies`,
+      `LOG_LEVEL` y el hash cargados; 401 sin token y la ruta vieja en 404.
+- [ ] Desplegado `0e1badf`, que elimina la ruta vieja y la segunda ranura;
+      quitadas `ASSEMBLIES_API_LEGACY_ROLE_ROUTE` y
+      `ASSEMBLIES_API_TOKEN_SHA256_NEXT` del `env_file`.
+- [ ] Desde fuera, con el token: 404 para un email desconocido, número de
+      asociados y sin `trace`; `assemblies_api.denied` con la IP pública
+      propia.
 - [ ] La web pública sigue mostrando los consejos y las sectoriales.
-- [ ] Siglas sin duplicados entre asociados y entre sectoriales (paso 2).
-- [ ] Servidor de desarrollo de la plataforma con
+- [x] Siglas sin duplicados entre asociados y entre sectoriales (paso 2): la
+      primera sincronización desde el servidor de desarrollo (2026-11-06) no
+      dio ningún conflicto de siglas.
+- [x] Servidor de desarrollo de la plataforma con
       `NUXT_INTRANET_API_URL=https://intranet.creup.es/api/asambleas/v1`, el
-      token y sin `NUXT_ROLE_API_URL`.
+      token y sin `NUXT_ROLE_API_URL` (2026-11-06: consulta de rol `ok` con
+      `id` y listado de 40 asociados y 20 sectoriales).
 - [ ] Plataforma en producción, cuando se despliegue: la versión que enlaza
       por `id` y sus migraciones, `NUXT_INTRANET_API_URL` (pública o
       `http://intranet/api/asambleas/v1`), `NUXT_INTRANET_API_TOKEN` y sin
@@ -1757,7 +1697,7 @@ Despliegue:
 
 Recomendado (sección 5.8):
 
-- [ ] `proxy_set_header X-Forwarded-For $remote_addr;` en el vhost de la
+- [x] `proxy_set_header X-Forwarded-For $remote_addr;` en el vhost de la
       Intranet.
 - [ ] Cloudflare en modo SSL/TLS Full (strict).
 - [ ] nginx con dirección fija y `TRUSTED_PROXIES` solo con ella.

@@ -18,8 +18,8 @@ import { acronymKey } from "./dto";
  *
  * The intranet serializes nullable columns: `initials` and `denomination` may
  * be null, and `/usuarios/sectoriales` has no `university` nor
- * `autonomous_community` keys at all. `id` (the Intranet `users.id`) is new
- * in the private group: the legacy routes send none.
+ * `autonomous_community` keys at all. `id` is the Intranet `users.id`; the
+ * public listings of the website send none.
  */
 
 const optionalText = z
@@ -33,7 +33,7 @@ const optionalText = z
 
 export const intranetRosterEntrySchema = z.object({
   /**
-   * The Intranet account. Missing or null on the legacy routes; anything
+   * The Intranet account. Missing or null on the public listings; anything
    * but a positive integer that fits Postgres `integer` invalidates the
    * whole list, so the sync writes nothing.
    */

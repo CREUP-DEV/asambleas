@@ -349,11 +349,13 @@ permissions, a user can be granted individual permissions
 
 **Intranet.** Calls to the intranet API send `Authorization: Bearer
 <NUXT_INTRANET_API_TOKEN>` when the token is configured, and the role lookup
-sends `Accept: application/json`. The intranet's old public
-`POST /api/user/role` reveals a user's type, name, initials and university to
-anyone who knows an email; its private group `/api/asambleas/v1` requires
-that token, is reachable only over the Docker network and answers only what
-this app needs. In production the base URL must be `https:`, or `http:` to a
+sends `Accept: application/json`. The Intranet removed its old public
+`POST /api/user/role`, which revealed a user's type, name, initials and
+university to anyone who knew an email. Its group `/api/asambleas/v1`
+requires that token and answers only what this app needs; it is reachable
+from the internet (`https://intranet.creup.es/api/asambleas/v1`, which the
+development server also uses, with real data) and, on the VPS, over the
+Intranet's Docker network (`http://intranet/api/asambleas/v1`). In production the base URL must be `https:`, or `http:` to a
 host with no dot (`http://intranet`); anything else counts as unconfigured.
 Logs never carry an email, only `accountRef` (a keyed HMAC of it). What the
 Intranet has to implement, and how, is in [`intranet.md`](intranet.md).

@@ -21,7 +21,7 @@ PostgreSQL 5432
 - El servidor ejecuta `.output/server/index.mjs`.
 - PostgreSQL no debe exponerse a internet.
 - `pg-boss` usa la misma base de datos, para las exportaciones y para la sincronización diaria del listado de miembros (05:00, Europe/Madrid).
-- La plataforma llama a la Intranet por la red de Docker `creup-edge` (`http://intranet/api/asambleas/v1`), sin salir del VPS. Cómo y por qué: [docs/intranet.md](docs/intranet.md), sección 5.8.
+- La plataforma llama a la API de la Intranet por su URL pública, `https://intranet.creup.es/api/asambleas/v1`, con el token. Si se despliega en el mismo VPS, puede llamarla por dentro, `http://intranet/api/asambleas/v1`, uniéndose a la red de Docker de la Intranet (abajo). Cómo y por qué: [docs/intranet.md](docs/intranet.md), sección 5.8.
 - Los PDFs generados se guardan en `EXPORT_STORAGE_DIR`; ese directorio debe ser persistente.
 - No hay Redis ni Mailpit.
 
@@ -59,7 +59,8 @@ INITIAL_ADMIN_EMAIL=tic@creup.es
 GOOGLE_CLIENT_ID=<client-id>.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=<client-secret>
 
-NUXT_INTRANET_API_URL=http://intranet/api/asambleas/v1
+NUXT_INTRANET_API_URL=https://intranet.creup.es/api/asambleas/v1
+# o, unida a la red de la Intranet: http://intranet/api/asambleas/v1
 NUXT_INTRANET_API_TOKEN=<token asm_... del gestor de contraseñas>
 # NUXT_INTRANET_ROSTER_SYNC=false
 
@@ -81,7 +82,7 @@ Notas:
 - `NUXT_SITE_URL` debe coincidir con el dominio real usado por OAuth.
 - Google OAuth debe registrar `https://asambleas.creup.es/api/auth/callback/google`.
 - `NUXT_INTRANET_API_TOKEN` es el token en claro; la Intranet solo guarda su hash. Sin token, la plataforma no puede saber si una cuenta se ha borrado en la Intranet y no retira el acceso a nadie.
-- No definas `NUXT_ROLE_API_URL`: la consulta de rol usa `${NUXT_INTRANET_API_URL}/user/role`. Si queda el valor de antes (`https://intranet.creup.es/api/user/role`), la consulta sigue yendo a la ruta pública vieja, que no responde el 404 del grupo privado (nadie pierde el acceso), y dejará de funcionar cuando la Intranet la cierre.
+- No definas `NUXT_ROLE_API_URL`: la consulta de rol usa `${NUXT_INTRANET_API_URL}/user/role`. La ruta pública vieja (`https://intranet.creup.es/api/user/role`) ya no existe: con ese valor, cada consulta de rol fallaría (nadie pierde el acceso, pero no se actualizan roles ni miembros).
 - Con `NODE_ENV=production`, las URL de la Intranet solo admiten `https:` o `http:` hacia un nombre sin punto (`http://intranet`). Cualquier otra cuenta como no configurada y deja un error `intranet.config` en los logs.
 - `NUXT_INTRANET_ROSTER_SYNC=false` apaga la sincronización diaria del listado; sin ella, o con otro valor, queda activa.
 - Para pasar de la configuración vieja a esta, seguir el orden de [docs/intranet.md](docs/intranet.md), sección 8.
@@ -106,10 +107,9 @@ services:
     volumes:
       - ./app/.output:/app/.output:ro
       - ./storage/exports:/app/storage/exports
-    networks:
-      default: {} # its own database
-      creup-edge:
-        ipv4_address: 172.30.0.20 # the only address the Intranet accepts
+    # To call the Intranet as http://intranet instead of its public URL,
+    # also join its network (see below):
+    # networks: [default, intranet]
 
   postgres:
     image: postgres:18-alpine
@@ -129,12 +129,14 @@ services:
 volumes:
   pgdata:
 
-networks:
-  creup-edge:
-    external: true # created by the Intranet's compose
+# Only with the networks line of app above:
+# networks:
+#   intranet:
+#     external: true
+#     name: esternocleidomastoideo2003_default
 ```
 
-`creup-edge` la crea el compose de la Intranet ([docs/intranet.md](docs/intranet.md), sección 5.8, punto 1) y tiene que existir antes de levantar `app`. La Intranet solo acepta llamadas a su API privada desde `172.30.0.20`. Cambiar de red o de variables exige recrear el contenedor (`up -d app`); `restart` no basta.
+Por defecto, `app` llama a la URL pública de la Intranet: pasa por Cloudflare y por nginx, y no hace falta nada más. Para llamarla por dentro (`http://intranet/api/asambleas/v1`, sin salir del VPS), descomentar la red `intranet` en `app` y al final del compose: es la red de Docker de la Intranet (`esternocleidomastoideo2003_default`) y tiene que existir antes de levantar `app`. Por esa red la llamada es HTTP, así que la Intranet necesita `ASSEMBLIES_API_REQUIRE_HTTPS=false` en su `env_file` ([docs/intranet.md](docs/intranet.md), sección 5.8, punto 3). Cambiar de red o de variables exige recrear el contenedor (`up -d app`); `restart` no basta.
 
 ## NGINX
 
@@ -293,16 +295,16 @@ Cuentas sin acceso: una cuenta borrada en la Intranet pierde el acceso la próxi
 
 ## Problemas Frecuentes
 
-| Síntoma                                                   | Revisión                                                                                                                                                              |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| La app no arranca                                         | Logs de `app`, `APP_SECRET`, `DATABASE_URL`, credenciales OAuth                                                                                                       |
-| OAuth falla                                               | Callback en Google, `NUXT_SITE_URL`, cabecera `X-Forwarded-Proto`                                                                                                     |
-| No conectan migraciones                                   | Host correcto: `postgres` dentro de Compose, `localhost` desde host                                                                                                   |
-| Export PDF falla                                          | `EXPORT_STORAGE_DIR` existe y es escribible; fuentes en `server/assets/fonts` empaquetadas                                                                            |
-| Jobs no avanzan                                           | Logs del worker, tabla `pgboss.job`, conexión PostgreSQL                                                                                                              |
-| Descarga 404 tras reinicio                                | Confirmar que `storage/exports` está montado como volumen persistente                                                                                                 |
-| "Sincronizar" responde 503                                | `NUXT_INTRANET_API_URL` falta o se rechaza (en producción, solo `https:` o `http://intranet`); buscar `intranet.config` en los logs                                   |
-| "Sincronizar" responde 502                                | La Intranet no responde: `app` fuera de `creup-edge`, IP distinta de `172.30.0.20` o token erróneo ([docs/intranet.md](docs/intranet.md), sección 8)                  |
-| Miembros pide confirmar la sincronización                 | Desactivaría todos los miembros de un tipo o más de max(3, 30 %): revisar el listado de la Intranet antes de confirmar                                                |
-| Una cuenta no puede entrar: "ya no existe en la Intranet" | La Intranet la ha borrado o la ha dejado sin tipo o, si ya estaba sin acceso, la Intranet no responde. Recupera el acceso sola cuando la Intranet vuelve a devolverla |
-| Nadie puede entrar y los logs muestran `auth.hook.access` | Error de base de datos al comprobar el acceso: el inicio de sesión se rechaza para no dejar entrar a una cuenta borrada. Revisar PostgreSQL                           |
+| Síntoma                                                   | Revisión                                                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| La app no arranca                                         | Logs de `app`, `APP_SECRET`, `DATABASE_URL`, credenciales OAuth                                                                                                                                                                                                                                                                             |
+| OAuth falla                                               | Callback en Google, `NUXT_SITE_URL`, cabecera `X-Forwarded-Proto`                                                                                                                                                                                                                                                                           |
+| No conectan migraciones                                   | Host correcto: `postgres` dentro de Compose, `localhost` desde host                                                                                                                                                                                                                                                                         |
+| Export PDF falla                                          | `EXPORT_STORAGE_DIR` existe y es escribible; fuentes en `server/assets/fonts` empaquetadas                                                                                                                                                                                                                                                  |
+| Jobs no avanzan                                           | Logs del worker, tabla `pgboss.job`, conexión PostgreSQL                                                                                                                                                                                                                                                                                    |
+| Descarga 404 tras reinicio                                | Confirmar que `storage/exports` está montado como volumen persistente                                                                                                                                                                                                                                                                       |
+| "Sincronizar" responde 503                                | `NUXT_INTRANET_API_URL` falta o se rechaza (en producción, solo `https:` o `http://intranet`); buscar `intranet.config` en los logs                                                                                                                                                                                                         |
+| "Sincronizar" responde 502                                | La Intranet no responde o rechaza la llamada: token erróneo, URL mal puesta, Cloudflare desafiando la llamada (403 en HTML con `cf-ray`: excepción para `/api/asambleas/`) o, por dentro, `app` fuera de la red de la Intranet o sin `ASSEMBLIES_API_REQUIRE_HTTPS=false` en ella ([docs/intranet.md](docs/intranet.md), secciones 5.8 y 8) |
+| Miembros pide confirmar la sincronización                 | Desactivaría todos los miembros de un tipo o más de max(3, 30 %): revisar el listado de la Intranet antes de confirmar                                                                                                                                                                                                                      |
+| Una cuenta no puede entrar: "ya no existe en la Intranet" | La Intranet la ha borrado o la ha dejado sin tipo o, si ya estaba sin acceso, la Intranet no responde. Recupera el acceso sola cuando la Intranet vuelve a devolverla                                                                                                                                                                       |
+| Nadie puede entrar y los logs muestran `auth.hook.access` | Error de base de datos al comprobar el acceso: el inicio de sesión se rechaza para no dejar entrar a una cuenta borrada. Revisar PostgreSQL                                                                                                                                                                                                 |

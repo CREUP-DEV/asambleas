@@ -56,6 +56,7 @@ The public website lives in a separate `creup/web` repository. This app may mirr
 - Intranet API base: `NUXT_INTRANET_API_URL` (role sync falls back to `${base}/user/role`; members from `/usuarios/asociados` and `/usuarios/sectoriales`). In production only `https:`, or `http:` to a host with no dot such as `http://intranet`; anything else counts as unset (`isIntranetUrlAllowed`)
 - Intranet API token: `NUXT_INTRANET_API_TOKEN`, sent as `Authorization: Bearer <token>` on every intranet call when set; never log it. Without it nobody ever loses access
 - Role sync env var: `NUXT_ROLE_API_URL`, an optional override of `${base}/user/role`; normally unset. On another origin than the base it never receives the token (`isRoleLookupAuthenticated`)
+- The development server uses the production Intranet (`https://intranet.creup.es/api/asambleas/v1`, token in the local `.env` only): sign-in role sync, "Sincronizar", the daily roster sync and the daily access re-check read real data and write it to the local database. In production, the same public URL or `http://intranet/api/asambleas/v1` over the Intranet's Docker network (`DEPLOYMENT.md`).
 - Daily roster sync: `NUXT_INTRANET_ROSTER_SYNC` (only `false` turns it off; needs `NUXT_INTRANET_API_URL`). The daily access re-check does not depend on it
 - Export storage env var: `EXPORT_STORAGE_DIR`
 
