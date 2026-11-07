@@ -43,6 +43,7 @@ import type {
   Majority,
   RelationKind,
 } from "../../../shared/constants/domain";
+import { amendmentVoteMajority } from "../../../shared/constants/domain";
 import { PERMISSION_KEYS } from "../../../shared/constants/permissions";
 import type {
   AcceptanceBody,
@@ -559,18 +560,20 @@ function voteCounts(vote: VoteInput): Required<Omit<VoteCounts, "present">> & {
 }
 
 /**
- * Computes a vote with `computeVoteOutcome`. A tie under tieRule "repeat"
- * answers 409 with `{ tie: true }` before anything is stored, and counts
- * that exceed the members present are refused.
+ * Computes a vote with `computeVoteOutcome`, under the vote's majority or
+ * else `defaultMajority`. A tie under tieRule "repeat" answers 409 with
+ * `{ tie: true }` before anything is stored, and counts that exceed the
+ * members present are refused.
  */
 export function evaluateVoteInput(
   vote: VoteInput,
   settings: Pick<AssemblySettings, "denominator" | "tieRule">,
+  defaultMajority: Majority = "simple",
 ): {
   majority: Majority;
   outcome: VoteOutcome & { result: "approved" | "rejected" };
 } {
-  const majority = vote.majority ?? "simple";
+  const majority = vote.majority ?? defaultMajority;
   // Assent carries no counts: nobody objected, so it passes (as in the
   // document final vote, evaluateFinalVote).
   if (vote.method === "assent") {
@@ -3274,9 +3277,14 @@ export async function applyAmendmentOutcome(
         "La Secretaría tiene que publicar la enmienda antes de decidirla",
       );
     }
+    // Absolute in a reform of the Estatutos or a regulation (RRI art. 65.5).
     const evaluated =
       body.action === "vote"
-        ? evaluateVoteInput(body.vote, ctx.settings)
+        ? evaluateVoteInput(
+            body.vote,
+            ctx.settings,
+            amendmentVoteMajority(document.kind),
+          )
         : null;
     const approved =
       body.action === "approve" || evaluated?.outcome.result === "approved";

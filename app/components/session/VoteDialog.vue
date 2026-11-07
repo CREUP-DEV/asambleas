@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { amendmentVoteMajority } from "~~/shared/constants/domain";
 import type { VoteInput } from "~~/shared/types/api";
 import {
   isSessionVoteReady,
@@ -9,8 +10,9 @@ import {
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 
 /**
- * Records the vote on one amendment. Amendments are decided by simple
- * majority unless the Mesa picks another one.
+ * Records the vote on one amendment. It proposes the majority of the
+ * document's kind (amendmentVoteMajority: absolute in a reform of the
+ * Estatutos or a regulation, simple otherwise); the Mesa may pick another.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -27,9 +29,14 @@ const amendment = computed(() =>
     : null,
 );
 
-const vote = ref<VoteInput>(sessionEmptyVote("simple"));
+const proposedMajority = computed(() =>
+  session.document.value
+    ? amendmentVoteMajority(session.document.value.kind)
+    : "simple",
+);
+const vote = ref<VoteInput>(sessionEmptyVote(proposedMajority.value));
 watch(open, (isOpen) => {
-  if (isOpen) vote.value = sessionEmptyVote("simple");
+  if (isOpen) vote.value = sessionEmptyVote(proposedMajority.value);
 });
 
 const outcome = computed(() =>

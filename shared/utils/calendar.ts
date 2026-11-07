@@ -1,6 +1,6 @@
 import { fromDate, toCalendarDateTime } from "@internationalized/date";
 import type { DocumentKind, MilestoneKey } from "../constants/domain";
-import { MILESTONE_KEYS } from "../constants/domain";
+import { MILESTONE_KEYS, REGULATION_DOCUMENT_KINDS } from "../constants/domain";
 
 /** The assemblies' time zone: every date is set and shown in it. */
 export const ASSEMBLY_TIME_ZONE = "Europe/Madrid";
@@ -45,12 +45,6 @@ export interface CalendarRules {
    */
   regulationWindowDays: number | null;
 }
-
-/** Document kinds whose amendment window has the reform minimum. */
-export const REGULATION_DOCUMENT_KINDS: readonly DocumentKind[] = [
-  "regulation",
-  "statutes",
-];
 
 /** The instant `offset` before `start`. */
 export function milestoneOffsetBefore(
