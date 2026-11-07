@@ -1806,8 +1806,9 @@
       "saved": "Deadlines saved",
       "saveError": "The deadlines could not be saved",
       "unsavedConfirm": "The deadlines have unsaved changes. Leave without saving them?",
-      "notStoredTitle": "Deadlines not stored yet",
-      "notStored": "This assembly type uses the initial deadlines until the initial data load runs (pnpm db:seed). Until then they cannot be edited."
+      "notStoredTitle": "Initial deadlines not saved yet",
+      "notStored": "This assembly type uses the platform’s initial deadlines, taken from the 2026 regulations. Review them and press Save to keep them.",
+      "switchConfirm": "The deadlines of this assembly type have unsaved changes. Switch type without saving them?"
     }
   },
   "export": {

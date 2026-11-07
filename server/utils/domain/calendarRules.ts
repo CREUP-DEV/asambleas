@@ -25,7 +25,8 @@ import {
 /**
  * The calendar rules of each assembly type (`calendar_rules`). The stored
  * row rules; INITIAL_CALENDAR_RULES only stands in, with a warning, while a
- * type has no row yet (a database migrated but never seeded).
+ * type has no row yet (a database migrated but neither seeded nor saved
+ * from the admin page).
  */
 
 type RulesRow = typeof calendarRules.$inferSelect;
@@ -51,7 +52,7 @@ function toDto(
     if (!warnedMissing.has(type)) {
       warnedMissing.add(type);
       console.warn(
-        `[calendar-rules] No stored rules for ${type}; using the initial ones until \`pnpm db:seed\` runs.`,
+        `[calendar-rules] No stored rules for ${type}; using the initial ones until they are seeded or saved.`,
       );
     }
     return {
@@ -91,52 +92,64 @@ export async function loadCalendarRules(
 }
 
 /**
- * Replaces the rules of a type (PUT /api/calendar-rules/[type]). The row
- * must exist and still carry the `updatedAt` the client read (409
- * otherwise). Writes `calendar_rules.update` with the rules before and
- * after, unless nothing changed.
+ * Replaces the rules of a type (PUT /api/calendar-rules/[type]) and returns
+ * them. The client sends the `updatedAt` it read: the stored row's, or null
+ * while the type has none, and then this call stores the first row (so a
+ * deploy without `pnpm db:seed` still lets managers save). Any mismatch, or
+ * a row that appeared in the meantime, is a 409. Writes
+ * `calendar_rules.update` with the rules before (the initial ones when
+ * there was no row) and after; an unchanged update writes nothing.
  */
 export async function updateCalendarRules(input: {
   event: H3Event;
   actor: Actor;
   type: AssemblyType;
   rules: CalendarRules;
-  updatedAt: string;
+  updatedAt: string | null;
 }): Promise<CalendarRulesDto> {
   const next = normalizeCalendarRules(input.rules);
+  const conflict =
+    "Otra persona ha cambiado las reglas del calendario. Recarga la página.";
   return db.transaction(async (tx) => {
     const [current] = await tx
       .select()
       .from(calendarRules)
       .where(eq(calendarRules.type, input.type))
       .for("update");
-    if (!current) {
-      throw createError({
-        statusCode: 409,
-        message:
-          "Las reglas del calendario de este tipo aún no están guardadas: ejecuta pnpm db:seed",
-        data: { messageKey: "admin.calendarRules.notStored" },
-      });
-    }
-    const conflict =
-      "Otra persona ha cambiado las reglas del calendario. Recarga la página.";
-    assertOptimisticLock(input.updatedAt, current.updatedAt, conflict);
 
-    const before = normalizeCalendarRules(storedRules(current));
-    const [updated] = await tx
-      .update(calendarRules)
-      .set({ rules: next })
-      .where(
-        and(
-          eq(calendarRules.id, current.id),
-          buildOptimisticLockCondition(
-            calendarRules.updatedAt,
-            input.updatedAt,
+    let saved: RulesRow | undefined;
+    let before: CalendarRules;
+    if (!current) {
+      if (input.updatedAt !== null) {
+        throw createError({ statusCode: 409, message: conflict });
+      }
+      before = normalizeCalendarRules(INITIAL_CALENDAR_RULES[input.type]);
+      [saved] = await tx
+        .insert(calendarRules)
+        .values({ type: input.type, rules: next })
+        .onConflictDoNothing({ target: calendarRules.type })
+        .returning();
+    } else {
+      if (input.updatedAt === null) {
+        throw createError({ statusCode: 409, message: conflict });
+      }
+      assertOptimisticLock(input.updatedAt, current.updatedAt, conflict);
+      before = normalizeCalendarRules(storedRules(current));
+      [saved] = await tx
+        .update(calendarRules)
+        .set({ rules: next })
+        .where(
+          and(
+            eq(calendarRules.id, current.id),
+            buildOptimisticLockCondition(
+              calendarRules.updatedAt,
+              input.updatedAt,
+            ),
           ),
-        ),
-      )
-      .returning();
-    if (!updated) throw createError({ statusCode: 409, message: conflict });
+        )
+        .returning();
+    }
+    if (!saved) throw createError({ statusCode: 409, message: conflict });
 
     await recordAudit(tx, {
       event: input.event,
@@ -146,7 +159,9 @@ export async function updateCalendarRules(input: {
       targetId: input.type,
       before: { rules: before },
       after: { rules: next },
+      // Storing the first row is a change even when it keeps the values.
+      recordUnchanged: !current,
     });
-    return toDto(input.type, updated);
+    return toDto(input.type, saved);
   });
 }

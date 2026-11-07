@@ -16,7 +16,8 @@ export const CALENDAR_RULES_PERMISSION = PERMISSION_KEYS.ASSEMBLY_MANAGE;
  * without the suggestions left pending in that consolidated version. They
  * are only a bootstrap: the rules in force live in `calendar_rules` and are
  * edited in the admin section; the server falls back to these (with a
- * warning) only while a type has no stored row.
+ * warning) only while a type has no stored row, and the first save from the
+ * admin page stores one.
  *
  * Minimums (the latest each milestone may fall):
  * - convocation: 1 month for an AGO and 15 natural days for an AGE (RRI
