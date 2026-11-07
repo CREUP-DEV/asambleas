@@ -939,7 +939,13 @@ defineExpose({ reset: resetForm, check, save });
         />
         <template #content>
           <div class="space-y-4 pt-2">
-            <UFormField name="format" :label="t('document.metadata.format')">
+            <UFormField
+              name="format"
+              :label="t('document.metadata.format')"
+              :help="
+                isPublished ? undefined : t('document.metadata.formatHelp')
+              "
+            >
               <p class="text-default flex items-center gap-2 text-sm">
                 <UIcon
                   :name="isFile ? 'i-lucide-file-text' : 'i-lucide-text'"

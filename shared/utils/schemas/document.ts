@@ -66,6 +66,7 @@ export const documentUpdateSchema = z.object({
   title: titleSchema.optional(),
   summary: summarySchema.nullable().optional(),
   kind: z.enum(DOCUMENT_KINDS).optional(),
+  format: z.enum(DOCUMENT_FORMATS).optional(),
   agendaItemId: entityIdSchema.optional(),
   proponentMemberId: entityIdSchema.nullable().optional(),
   coProponentMemberIds: coProponentIdsSchema.optional(),

@@ -581,6 +581,7 @@
       "retry": "Try again",
       "backToDocuments": "Back to documents",
       "backToWorkspace": "View document",
+      "backToAgenda": "Back to the agenda",
       "noLongerEditable": "This document can no longer be edited",
       "leaveConfirm": "You have unsaved changes. Leave anyway?",
       "submittedTitle": "Submitted, awaiting publication",
@@ -620,6 +621,7 @@
         "description": "You are seeing the last version loaded, and your unsaved changes are still here. Try again once you are back online."
       },
       "returningToDocuments": "Returning to the document list",
+      "returningToAgenda": "Returning to the agenda",
       "steps": {
         "what": "What it is",
         "text": "The text",
@@ -693,6 +695,34 @@
       "invalidType": "Only PDF files are accepted.",
       "tooLarge": "The file is larger than the 20 MB limit."
     },
+    "formatSwitch": {
+      "current": {
+        "structured": "This document is text on the platform.",
+        "file": "This document comes as a PDF."
+      },
+      "to": {
+        "structured": "Switch to text",
+        "file": "Switch to PDF"
+      },
+      "saveFirst": "Save your changes before switching the format.",
+      "confirm": {
+        "file": {
+          "title": "Provide it as a PDF?",
+          "effect": "You will need to upload the PDF, and a PDF document takes no amendments.",
+          "kept": "The text already written is kept: switch back to text to get it back."
+        },
+        "structured": {
+          "title": "Turn it into text on the platform?",
+          "effect": "You will need to upload the Word file or write the text here.",
+          "kept": "The PDF already uploaded is kept: switch back to PDF to get it back."
+        }
+      },
+      "done": {
+        "structured": "It is now text on the platform",
+        "file": "It now comes as a PDF"
+      },
+      "error": "The format could not be changed"
+    },
     "metadata": {
       "heading": "Document details",
       "title": "Title",
@@ -701,6 +731,7 @@
       "optional": "Optional",
       "kind": "Document type",
       "format": "Format",
+      "formatHelp": "Switch it above the text until it is published.",
       "agendaItem": "Agenda item",
       "agendaUnavailable": "The agenda could not be loaded",
       "proponent": "Who presents it",
@@ -2405,6 +2436,8 @@
       "voted": "Put to a vote",
       "majority": "Required majority",
       "create": "Add document",
+      "createAndUpload": "Create and upload the text",
+      "createAndUploadPdf": "Create and upload the PDF",
       "created": "Document created",
       "error": "The document could not be created",
       "createdFor": "Document added: {title}",
@@ -4405,6 +4438,7 @@
           "title": "Title",
           "summary": "Summary",
           "kind": "Document type",
+          "format": "Format",
           "amendable": "Open to amendments",
           "voted": "Put to a vote",
           "majority": "Majority required",
