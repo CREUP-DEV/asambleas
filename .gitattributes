@@ -1,0 +1,2 @@
+# Run by bash on the VPS and under WSL: CRLF breaks them.
+*.sh text eol=lf

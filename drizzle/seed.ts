@@ -1,6 +1,8 @@
 /**
  * Seeds the RBAC catalog (roles, every permission key and the default role
- * permissions). Idempotent: safe to run on every deploy.
+ * permissions). Idempotent, but it puts back every default grant, including
+ * ones removed by hand in the roles page: production runs it only on request
+ * (`bash ./deploy.sh --seed`), for the first deploy or a new key or role.
  *
  * With SEED_DEMO=1 it also loads a demo dataset so every screen has data:
  * members, an 80.ª AGO convened with its amendment window open, a structured

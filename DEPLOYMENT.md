@@ -2,57 +2,85 @@
 
 Runbook de producción para CREUP Asambleas. El README cubre desarrollo local; este documento solo cubre operación y despliegue.
 
+El build ocurre siempre en local: `deploy.sh` construye la imagen, la publica en GHCR y el VPS solo la descarga y la ejecuta, igual que la web.
+
 ## Arquitectura
 
 ```text
 Internet
   |
   v
-NGINX con TLS
+Cloudflare (proxy, Full strict)
   |
   v
-Nitro / Node 22 en puerto 3000
+nginx (contenedor del compose raíz, certificado *.creup.es)
   |
   v
-PostgreSQL 5432
+asambleas-app (Nitro / Node 22, puerto 3000, sin publicar)
+  |
+  v
+postgresql (PostgreSQL 18 compartido, base de datos asambleas)
 ```
 
-- El build se genera en local o CI.
-- El servidor ejecuta `.output/server/index.mjs`.
-- PostgreSQL no debe exponerse a internet.
-- `pg-boss` usa la misma base de datos, para las exportaciones y para la sincronización diaria del listado de miembros (05:00, Europe/Madrid).
-- La plataforma llama a la API de la Intranet por su URL pública, `https://intranet.creup.es/api/asambleas/v1`, con el token. Si se despliega en el mismo VPS, puede llamarla por dentro, `http://intranet/api/asambleas/v1`, uniéndose a la red de Docker de la Intranet (abajo). Cómo y por qué: [docs/intranet.md](docs/intranet.md), sección 5.8.
-- Los PDFs generados se guardan en `EXPORT_STORAGE_DIR`; ese directorio debe ser persistente.
+- En el VPS, todos los proyectos viven bajo un compose raíz compartido, `/home/esternocleidomastoideo2003` (`COMPOSE_DIR`), que incluye el de cada proyecto (`include:`). La plataforma está en `asambleas/` (`REMOTE_DIR`) y usa los servicios `postgresql` y `nginx` del compose raíz.
+- Todo comparte la red de Docker `esternocleidomastoideo2003_default`: nginx llega a la app como `asambleas-app:3000`, y la app puede llamar a la Intranet como `http://intranet`.
+- La imagen es `ghcr.io/creup-dev/asambleas:<commit>`. El compose la lee de `ASAMBLEAS_IMAGE`, en el `.env` del compose raíz, que escriben `deploy.sh` y `rollback.sh`.
+- `pg-boss` usa la misma base de datos para las exportaciones, para la sincronización diaria del listado de miembros (05:00, Europe/Madrid) y para la revisión diaria de accesos (05:30).
+- Los PDFs generados (`EXPORT_STORAGE_DIR`) y los PDFs subidos a los documentos (`UPLOAD_STORAGE_DIR`) viven en `asambleas/data/`, montado en el contenedor. Sin esos montajes se pierden al recrearlo.
+- La plataforma llama a la API de la Intranet por su URL pública, `https://intranet.creup.es/api/asambleas/v1`, con el token. También puede llamarla por dentro (más abajo). Cómo y por qué: [docs/intranet.md](docs/intranet.md), sección 5.8.
 - No hay Redis ni Mailpit.
 
-## Requisitos Del VPS
+## Requisitos
 
-- Ubuntu 22.04+ o Debian 12+.
-- Docker Engine y Docker Compose v2.
-- NGINX y Certbot.
-- 1 GB de RAM mínimo, 2 GB recomendado.
-- Dominio apuntando al VPS.
+En tu máquina:
 
-## Directorios
+- Docker con Buildx (Docker Desktop).
+- `bash`: Git Bash o WSL. Bajo WSL los scripts usan el `ssh.exe` de Windows, así que valen las claves de `%USERPROFILE%\.ssh`.
+- `git` y acceso SSH al VPS.
+- Permiso para publicar en `ghcr.io/creup-dev` (un PAT con `write:packages`).
 
-Ejemplo con `/opt/creup-asambleas`:
+En el VPS: el compose raíz con `postgresql` y `nginx`, y `docker login ghcr.io` hecho con un token que pueda leer los paquetes de `creup-dev` (el mismo que usan la web y la Intranet).
+
+## Primer Despliegue
+
+### 1. Cloudflare y Google
+
+- DNS: `asambleas` como registro `A` (o `CNAME`) al VPS, con proxy. SSL/TLS ya está en Full (strict) para la zona.
+- Rocket Loader desactivado para `asambleas.creup.es`: la CSP usa nonce y `strict-dynamic`, y Rocket Loader rompe los scripts.
+- Google OAuth (cliente web): origen `https://asambleas.creup.es` y redirección `https://asambleas.creup.es/api/auth/callback/google`.
+
+### 2. Base de datos en el PostgreSQL compartido
+
+En el VPS, con una contraseña sin caracteres especiales (`openssl rand -hex 24`), para no tener que escaparla en `DATABASE_URL`:
 
 ```bash
-sudo mkdir -p /opt/creup-asambleas
-sudo chown "$USER:$USER" /opt/creup-asambleas
-cd /opt/creup-asambleas
-mkdir -p app/.output storage/exports backups
+cd ~
+docker compose exec postgresql sh -c 'psql -U "$POSTGRES_USER" -d postgres'
 ```
 
-## Entorno De Producción
+```sql
+CREATE ROLE asambleas LOGIN PASSWORD '<password>';
+CREATE DATABASE asambleas OWNER asambleas;
+```
 
-Crear `/opt/creup-asambleas/.env`:
+La base de datos hereda la configuración regional del clúster (ICU `es-ES`). Las migraciones las aplica `deploy.sh`.
+
+### 3. Directorio del proyecto en el VPS
+
+```bash
+mkdir -p ~/asambleas/data/exports ~/asambleas/data/uploads
+```
+
+Desde tu máquina, el compose del servicio:
+
+```bash
+scp docker-compose.production.example.yml esternocleidomastoideo2003@creup.org:asambleas/docker-compose.yml
+```
+
+`~/asambleas/.env` (con `chmod 600`):
 
 ```env
 NUXT_SITE_URL=https://asambleas.creup.es
-TZ=Europe/Madrid
-NODE_ENV=production
-
 APP_SECRET=<openssl rand -base64 32>
 
 INITIAL_ADMIN_EMAIL=tic@creup.es
@@ -60,201 +88,184 @@ GOOGLE_CLIENT_ID=<client-id>.apps.googleusercontent.com
 GOOGLE_CLIENT_SECRET=<client-secret>
 
 NUXT_INTRANET_API_URL=https://intranet.creup.es/api/asambleas/v1
-# o, unida a la red de la Intranet: http://intranet/api/asambleas/v1
 NUXT_INTRANET_API_TOKEN=<token asm_... del gestor de contraseñas>
 # NUXT_INTRANET_ROSTER_SYNC=false
 
-POSTGRES_USER=creup_asambleas
-POSTGRES_PASSWORD=<password>
-POSTGRES_DB=creup_asambleas
-DATABASE_URL=postgresql://creup_asambleas:<password>@postgres:5432/creup_asambleas?schema=public
-DATABASE_MAX_CONNECTIONS=20
-
-EXPORT_STORAGE_DIR=/app/storage/exports
-
-NUXT_PUBLIC_UMAMI_HOST=
-NUXT_PUBLIC_UMAMI_WEBSITE_ID=
+DATABASE_URL=postgresql://asambleas:<password>@postgresql:5432/asambleas
+DATABASE_MAX_CONNECTIONS=10
 ```
 
 Notas:
 
-- En Compose, `DATABASE_URL` usa host `postgres`, no `localhost`.
+- `NODE_ENV`, `TZ`, `EXPORT_STORAGE_DIR` y `UPLOAD_STORAGE_DIR` los fija el compose; no hace falta repetirlos.
+- `DATABASE_URL` usa el host `postgresql`, el servicio compartido. El clúster admite 100 conexiones para todos los proyectos. La app abre como mucho unas 16: `DATABASE_MAX_CONNECTIONS`, 3 de la cola de exportaciones, 2 de los trabajos diarios y 1 de las actualizaciones en directo. Durante un despliegue, las migraciones abren otra más.
+- No pongas `SEED_DEMO`: el seed de producción cargaría los datos de demostración.
 - `NUXT_SITE_URL` debe coincidir con el dominio real usado por OAuth.
-- Google OAuth debe registrar `https://asambleas.creup.es/api/auth/callback/google`.
 - `NUXT_INTRANET_API_TOKEN` es el token en claro; la Intranet solo guarda su hash. Sin token, la plataforma no puede saber si una cuenta se ha borrado en la Intranet y no retira el acceso a nadie.
 - No definas `NUXT_ROLE_API_URL`: la consulta de rol usa `${NUXT_INTRANET_API_URL}/user/role`. La ruta pública vieja (`https://intranet.creup.es/api/user/role`) ya no existe: con ese valor, cada consulta de rol fallaría (nadie pierde el acceso, pero no se actualizan roles ni miembros).
 - Con `NODE_ENV=production`, las URL de la Intranet solo admiten `https:` o `http:` hacia un nombre sin punto (`http://intranet`). Cualquier otra cuenta como no configurada y deja un error `intranet.config` en los logs.
 - `NUXT_INTRANET_ROSTER_SYNC=false` apaga la sincronización diaria del listado; sin ella, o con otro valor, queda activa.
 - Para pasar de la configuración vieja a esta, seguir el orden de [docs/intranet.md](docs/intranet.md), sección 8.
 
-## Compose De Producción
+### 4. Compose raíz
 
-Ejemplo mínimo:
+En `~/docker-compose.yml`, añadir el proyecto a `include:`:
 
 ```yaml
-services:
-  app:
-    image: node:22-alpine
-    working_dir: /app
-    command: node .output/server/index.mjs
-    restart: unless-stopped
-    env_file: .env
-    ports:
-      - "127.0.0.1:3000:3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - ./app/.output:/app/.output:ro
-      - ./storage/exports:/app/storage/exports
-    # To call the Intranet as http://intranet instead of its public URL,
-    # also join its network (see below):
-    # networks: [default, intranet]
-
-  postgres:
-    image: postgres:18-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-volumes:
-  pgdata:
-
-# Only with the networks line of app above:
-# networks:
-#   intranet:
-#     external: true
-#     name: esternocleidomastoideo2003_default
+include:
+  - postgresql/docker-compose.yml
+  - umami/docker-compose.yml
+  - web/docker-compose.yml
+  - recuento/docker-compose.yml
+  - asambleas/docker-compose.yml
 ```
 
-Por defecto, `app` llama a la URL pública de la Intranet: pasa por Cloudflare y por nginx, y no hace falta nada más. Para llamarla por dentro (`http://intranet/api/asambleas/v1`, sin salir del VPS), descomentar la red `intranet` en `app` y al final del compose: es la red de Docker de la Intranet (`esternocleidomastoideo2003_default`) y tiene que existir antes de levantar `app`. Por esa red la llamada es HTTP, así que la Intranet necesita `ASSEMBLIES_API_REQUIRE_HTTPS=false` en su `env_file` ([docs/intranet.md](docs/intranet.md), sección 5.8, punto 3). Cambiar de red o de variables exige recrear el contenedor (`up -d app`); `restart` no basta.
+La lista de arriba es un ejemplo: añade solo la línea de `asambleas`, sin tocar las demás. Hazlo después de crear `asambleas/.env` y `asambleas/docker-compose.yml` (paso 3), y haz antes una copia del compose raíz.
 
-## NGINX
+Opcional, para tener todos los límites a la vista: repetir en `~/docker-compose.override.yml` los de `asambleas-app` (640M de límite y 192M de reserva). Si no se repiten, rigen los del compose del proyecto.
 
-Configurar TLS con Certbot y hacer proxy a `127.0.0.1:3000`:
-
-```nginx
-server {
-    listen 80;
-    server_name asambleas.creup.es;
-    return 301 https://$host$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name asambleas.creup.es;
-
-    ssl_certificate /etc/letsencrypt/live/asambleas.creup.es/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/asambleas.creup.es/privkey.pem;
-
-    client_max_body_size 20m;
-
-    location / {
-        proxy_pass http://127.0.0.1:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $remote_addr;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
-    }
-}
-```
-
-No dupliques CSP/HSTS en NGINX si los gestiona `nuxt-security`.
-
-## Primer Despliegue
-
-En local o CI:
+Comprobar al momento que el conjunto es válido, sin arrancar nada, y volver a la copia si no lo es:
 
 ```bash
-pnpm install
-pnpm lint
-pnpm typecheck
-pnpm i18n:check
-pnpm build
-rsync -az --delete .output/ user@vps:/opt/creup-asambleas/app/.output/
+cd ~ && docker compose config --quiet && docker compose config --services
 ```
 
-En el VPS:
+No ejecutes `docker compose up -d` sin nombres de servicio: arrancaría o recrearía todo el VPS.
+
+### 5. Vhost de nginx
+
+Desde tu máquina:
 
 ```bash
-cd /opt/creup-asambleas
-docker compose -f docker-compose.prod.yml up -d
+scp deploy/nginx/asambleas.creup.es.conf esternocleidomastoideo2003@creup.org:config/nginx/conf.d/
 ```
 
-Aplicar migraciones antes de abrir el servicio al público. La forma más simple es ejecutar `pnpm db:migrate` desde un entorno con acceso a la base de datos y `DATABASE_URL` de producción. Ejecuta `pnpm db:seed` solo en el primer despliegue o cuando cambien roles/permisos de sistema.
-
-Comprobación rápida:
+El vhost usa el certificado comodín `*.creup.es` (`/etc/letsencrypt/live/creup.es`), y el servidor por defecto de `creup.es.conf` ya redirige el puerto 80 a HTTPS. Resuelve `asambleas-app` en cada petición, así que nginx carga aunque la app no exista todavía; mientras tanto el sitio responde 502. Para aplicarlo:
 
 ```bash
-curl -I https://asambleas.creup.es
+cd ~ && docker compose exec nginx nginx -t && docker compose exec nginx nginx -s reload
 ```
 
-Sin sesión, la app debe redirigir a `/login`.
+Si `nginx -t` falla, borra el fichero en el momento: un vhost roto en `conf.d` tumba todos los sitios en el siguiente reinicio de nginx.
 
-## Actualizaciones
+Lo que hace el vhost:
+
+- No duplica CSP ni HSTS: las pone `nuxt-security`.
+- Bloquea `/api/health` desde fuera.
+- No guarda en búfer las actualizaciones en directo (`/api/assemblies/<asamblea>/live`, eventos SSE con latido cada 25 s, por debajo de los 100 s de Cloudflare).
+- Deja pasar cuerpos de hasta 25 MB, por encima del límite de la propia app (21 MB para un PDF y 16 MB para importar un DOCX), que es la que responde con un error claro.
+- No toca la IP del visitante: la recupera el `nginx.conf` compartido (`snippets/cloudflare-realip.conf`, en el bloque `http`), así que `X-Forwarded-For` ya lleva la del visitante y no la de Cloudflare.
+
+### 6. Variables de despliegue en tu `.env` local
+
+Junto a las de desarrollo:
+
+```env
+VPS_HOST=esternocleidomastoideo2003@creup.org
+COMPOSE_DIR=/home/esternocleidomastoideo2003
+REMOTE_DIR=/home/esternocleidomastoideo2003/asambleas
+GHCR_USERNAME=<usuario de GitHub>
+GHCR_TOKEN=<PAT con write:packages>
+# Opcionales:
+# NUXT_DEPLOY_SITE_URL=https://asambleas.creup.es
+# NUXT_DEPLOY_UMAMI_HOST=https://umami.creup.es
+# NUXT_DEPLOY_UMAMI_WEBSITE_ID=<id>
+# DEPLOY_IMAGE_RETENTION=2
+```
+
+- La URL pública y Umami se incrustan en el bundle al compilar (`nuxt.config.ts`), así que salen de `NUXT_DEPLOY_*`, no del `NUXT_SITE_URL` local, que sigue en `localhost`. Sin `NUXT_DEPLOY_SITE_URL` se usa `https://asambleas.creup.es`.
+- Si ya has hecho `docker login ghcr.io` en tu máquina, `GHCR_USERNAME` y `GHCR_TOKEN` sobran.
+
+### 7. Desplegar
+
+La primera vez, con el seed de roles y permisos (la base de datos está vacía):
 
 ```bash
-pnpm lint
-pnpm typecheck
-pnpm i18n:check
-pnpm build
-rsync -az --delete .output/ user@vps:/opt/creup-asambleas/app/.output/
-ssh user@vps "cd /opt/creup-asambleas && docker compose -f docker-compose.prod.yml restart app"
+bash ./deploy.sh --seed
 ```
 
-Si hay migraciones nuevas, aplícalas antes de reiniciar o antes de enrutar tráfico a la nueva versión. Si cambian el `.env` o las redes del compose, `restart` conserva lo de antes: usa `docker compose -f docker-compose.prod.yml up -d app`.
+Con la primera imagen publicada, el paquete `ghcr.io/creup-dev/asambleas` aparece en GitHub. La imagen lleva la etiqueta `org.opencontainers.image.source`, que lo enlaza al repositorio `CREUP-DEV/asambleas` y le da sus permisos. Si el VPS no puede descargarlo, el despliegue se para antes de las migraciones: dale acceso al token del VPS desde la configuración del paquete y repite.
 
-Tras desplegar la versión que guarda el id de la Intranet (migración `0012`), es normal que la primera sincronización del listado dé casi todos los miembros como actualizados, y que el primer inicio de sesión de cada cuenta deje un `user.role_sync` en Actividad: los dos guardan ese id.
+## Qué Hace deploy.sh
+
+1. Carga el `.env` local y construye la imagen para `linux/amd64`, etiquetada con el commit, y la publica en GHCR. Con cambios sin confirmar, la etiqueta es `<commit>-dirty-<fecha y hora UTC>`, distinta en cada build, y no mueve `latest`, que solo nombra builds confirmados. Mejor desplegar siempre un commit.
+2. Por SSH, en `COMPOSE_DIR`:
+   1. Crea `asambleas/data/exports` y `asambleas/data/uploads` si faltan, como el usuario de despliegue, y se para si no son del uid 1000, el de la app: no podría escribir los PDFs.
+   2. Comprueba que `postgresql` está en marcha y sano. Si estuviera parado lo arranca, pero nunca lo recrea: lo comparten todos los proyectos.
+   3. Si la app en marcha está sana, guarda su imagen en `.last_asambleas_image`, por digest (`repo@sha256:...`), para el rollback. Si no lo está (un despliegue anterior falló), conserva la guardada.
+   4. Descarga la imagen nueva si el VPS no la tiene.
+   5. Aplica las migraciones en un contenedor efímero (`/app/ops/migrate.mjs`, con un advisory lock). Si una falla, se detiene y sigue la imagen anterior.
+   6. Solo con `--seed`, ejecuta el seed de roles y permisos (`/app/ops/seed.mjs`). Vuelve a dar todos los permisos por defecto, también los que se hayan quitado a mano en Administración, y deja `rbac.seed` en el registro de auditoría. Hace falta en el primer despliegue y cuando el código añade una clave de permiso o un rol de sistema. Nunca carga datos de demo.
+   7. Recrea solo `asambleas-app` y espera hasta 120 s a que esté `healthy`. Si no lo está, muestra los últimos logs y termina con error.
+   8. Ya sana, guarda `ASAMBLEAS_IMAGE` en el `.env` raíz, para que un `up -d` posterior no vuelva a un `latest` viejo.
+   9. Comprueba y recarga nginx, y borra las imágenes viejas del proyecto. Conserva la nueva, la del rollback y hasta `DEPLOY_IMAGE_RETENTION` (2 por defecto).
+3. Si el lado remoto no llega al final, el script termina con error aunque la conexión no lo diga.
+
+Para volver a desplegar una imagen ya publicada sin compilar: `DEPLOY_SKIP_BUILD=1 IMAGE=ghcr.io/creup-dev/asambleas:<etiqueta> bash ./deploy.sh`.
+
+Recrear el contenedor corta el servicio unos segundos. Evita desplegar durante una sesión de asamblea.
+
+Antes de desplegar, pasa la lista de verificación de `AGENTS.md` (`pnpm lint`, `pnpm typecheck`, `pnpm test`...): `deploy.sh` no la ejecuta.
+
+### Rollback
+
+```bash
+bash ./rollback.sh           # vuelve a la imagen guardada por el último despliegue
+bash ./rollback.sh <commit>  # o a una etiqueta concreta
+```
+
+Recrea la app con esa imagen, espera a que esté sana y la deja en `ASAMBLEAS_IMAGE`.
+
+Las migraciones no se revierten: son de un solo sentido. Si una migración hay que deshacerla, se escribe otra que la deshaga.
+
+## Comprobaciones
+
+```bash
+curl -I https://asambleas.creup.es    # 302 a /login
+```
+
+- Entra con `tic@creup.es`: queda como `Admin`.
+- Entra con una cuenta Asociado y otra CEA, y comprueba en Administración que tienen el rol y el miembro correctos.
+- Pulsa "Sincronizar" en Miembros.
+- Sube un PDF a un documento y exporta otro. Tras otro `bash ./deploy.sh`, los dos siguen ahí.
+
+Tras desplegar por primera vez la versión que guarda el id de la Intranet (migración `0012`), es normal que la primera sincronización del listado dé casi todos los miembros como actualizados, y que el primer inicio de sesión de cada cuenta deje un `user.role_sync` en Actividad: los dos guardan ese id.
+
+## Llamar a la Intranet por dentro
+
+Como `asambleas-app` está en la red de la Intranet, puede usar `NUXT_INTRANET_API_URL=http://intranet/api/asambleas/v1`, sin pasar por Cloudflare. Por esa red la llamada es HTTP, así que la Intranet necesita `ASSEMBLIES_API_REQUIRE_HTTPS=false` en su `env_file` ([docs/intranet.md](docs/intranet.md), sección 5.8, punto 3). Cambiar el `.env` exige recrear el contenedor:
+
+```bash
+cd ~ && docker compose up -d --no-deps asambleas-app
+```
+
+`restart` conserva las variables viejas.
 
 ## Backups
 
-PostgreSQL:
+No hace falta nada propio: `~/ops/db-dump.sh` vuelca el clúster entero de PostgreSQL con `pg_dumpall` (incluida la base de datos `asambleas` y su rol) en `~/backups/`, y restic se lleva fuera esa carpeta y los ficheros del host, `~/asambleas/data/` incluido. Restic no entra en `/var/lib/docker`: los datos de la plataforma no pueden vivir en volúmenes de Docker.
+
+Copia manual solo de esta base de datos:
 
 ```bash
-cd /opt/creup-asambleas
-docker compose -f docker-compose.prod.yml exec -T postgres \
-  pg_dump -U "$POSTGRES_USER" "$POSTGRES_DB" \
-  | gzip > "backups/db-$(date +%Y%m%d-%H%M%S).sql.gz"
-```
-
-PDFs exportados:
-
-```bash
-tar -czf "backups/exports-$(date +%Y%m%d-%H%M%S).tar.gz" storage/exports
-```
-
-Retención básica:
-
-```bash
-find /opt/creup-asambleas/backups -type f -mtime +30 -delete
+cd ~
+docker compose exec -T postgresql pg_dump -U asambleas asambleas | zstd > "backups/db/asambleas-$(date +%Y%m%d-%H%M%S).sql.zst"
 ```
 
 ## Operación
 
-Logs:
+Logs y estado:
 
 ```bash
-docker compose -f docker-compose.prod.yml logs -f app
-docker compose -f docker-compose.prod.yml logs -f postgres
+cd ~
+docker compose logs -f asambleas-app
+docker compose ps asambleas-app
 ```
 
-Estado:
+Base de datos:
 
 ```bash
-docker compose -f docker-compose.prod.yml ps
+docker compose exec postgresql psql -U asambleas -d asambleas
 ```
 
 Jobs `pg-boss`:
@@ -295,16 +306,22 @@ Cuentas sin acceso: una cuenta borrada en la Intranet pierde el acceso la próxi
 
 ## Problemas Frecuentes
 
-| Síntoma                                                   | Revisión                                                                                                                                                                                                                                                                                                                                    |
-| --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| La app no arranca                                         | Logs de `app`, `APP_SECRET`, `DATABASE_URL`, credenciales OAuth                                                                                                                                                                                                                                                                             |
-| OAuth falla                                               | Callback en Google, `NUXT_SITE_URL`, cabecera `X-Forwarded-Proto`                                                                                                                                                                                                                                                                           |
-| No conectan migraciones                                   | Host correcto: `postgres` dentro de Compose, `localhost` desde host                                                                                                                                                                                                                                                                         |
-| Export PDF falla                                          | `EXPORT_STORAGE_DIR` existe y es escribible; fuentes en `server/assets/fonts` empaquetadas                                                                                                                                                                                                                                                  |
-| Jobs no avanzan                                           | Logs del worker, tabla `pgboss.job`, conexión PostgreSQL                                                                                                                                                                                                                                                                                    |
-| Descarga 404 tras reinicio                                | Confirmar que `storage/exports` está montado como volumen persistente                                                                                                                                                                                                                                                                       |
-| "Sincronizar" responde 503                                | `NUXT_INTRANET_API_URL` falta o se rechaza (en producción, solo `https:` o `http://intranet`); buscar `intranet.config` en los logs                                                                                                                                                                                                         |
-| "Sincronizar" responde 502                                | La Intranet no responde o rechaza la llamada: token erróneo, URL mal puesta, Cloudflare desafiando la llamada (403 en HTML con `cf-ray`: excepción para `/api/asambleas/`) o, por dentro, `app` fuera de la red de la Intranet o sin `ASSEMBLIES_API_REQUIRE_HTTPS=false` en ella ([docs/intranet.md](docs/intranet.md), secciones 5.8 y 8) |
-| Miembros pide confirmar la sincronización                 | Desactivaría todos los miembros de un tipo o más de max(3, 30 %): revisar el listado de la Intranet antes de confirmar                                                                                                                                                                                                                      |
-| Una cuenta no puede entrar: "ya no existe en la Intranet" | La Intranet la ha borrado o la ha dejado sin tipo o, si ya estaba sin acceso, la Intranet no responde. Recupera el acceso sola cuando la Intranet vuelve a devolverla                                                                                                                                                                       |
-| Nadie puede entrar y los logs muestran `auth.hook.access` | Error de base de datos al comprobar el acceso: el inicio de sesión se rechaza para no dejar entrar a una cuenta borrada. Revisar PostgreSQL                                                                                                                                                                                                 |
+| Síntoma                                                   | Revisión                                                                                                                                                                                                                                                                                                    |
+| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `deploy.sh` falla en el push                              | `docker login ghcr.io` en tu máquina, o `GHCR_USERNAME` y `GHCR_TOKEN` con `write:packages`                                                                                                                                                                                                                 |
+| `deploy.sh` falla en el pull del VPS                      | El token del `docker login` del VPS no puede leer `ghcr.io/creup-dev/asambleas`: darle acceso al paquete                                                                                                                                                                                                    |
+| `deploy.sh` falla en las migraciones                      | `DATABASE_URL` en `asambleas/.env` (host `postgresql`, rol y base `asambleas`). Un lock atascado: `SELECT pid FROM pg_locks WHERE locktype = 'advisory';` y `pg_terminate_backend(pid)`                                                                                                                     |
+| `deploy.sh` se para: "belongs to uid"                     | `sudo chown -R 1000:1000 ~/asambleas/data`: la app corre con el uid 1000 y no podría escribir los PDFs                                                                                                                                                                                                      |
+| "the remote deploy stopped before its last step"          | El script remoto terminó antes de tiempo (conexión cortada o un comando que se comió la entrada): revisar la salida y repetir                                                                                                                                                                               |
+| La app no llega a `healthy`                               | Los logs que imprime el script: `APP_SECRET`, `DATABASE_URL`, credenciales OAuth                                                                                                                                                                                                                            |
+| 502 en `asambleas.creup.es`                               | `docker compose ps asambleas-app`; el contenedor tiene que estar en la red del compose raíz                                                                                                                                                                                                                 |
+| OAuth falla                                               | Callback en Google, `NUXT_SITE_URL`, cabecera `X-Forwarded-Proto` en el vhost                                                                                                                                                                                                                               |
+| Las actualizaciones en directo no llegan                  | El `location` de `/live` del vhost (`proxy_buffering off`) y que Cloudflare no lo esté desafiando                                                                                                                                                                                                           |
+| Export PDF falla                                          | `asambleas/data/exports` existe y es del uid 1000                                                                                                                                                                                                                                                           |
+| Jobs no avanzan                                           | Logs del worker, tabla `pgboss.job`, conexión PostgreSQL                                                                                                                                                                                                                                                    |
+| PDFs o descargas 404 tras recrear                         | Los dos montajes de `asambleas/docker-compose.yml`: `docker inspect asambleas-app -f '{{range .Mounts}}{{.Destination}} {{end}}'`                                                                                                                                                                           |
+| "Sincronizar" responde 503                                | `NUXT_INTRANET_API_URL` falta o se rechaza (en producción, solo `https:` o `http://intranet`); buscar `intranet.config` en los logs                                                                                                                                                                         |
+| "Sincronizar" responde 502                                | La Intranet no responde o rechaza la llamada: token erróneo, URL mal puesta, Cloudflare desafiando la llamada (403 en HTML con `cf-ray`: excepción para `/api/asambleas/`) o, por dentro, sin `ASSEMBLIES_API_REQUIRE_HTTPS=false` en la Intranet ([docs/intranet.md](docs/intranet.md), secciones 5.8 y 8) |
+| Miembros pide confirmar la sincronización                 | Desactivaría todos los miembros de un tipo o más de max(3, 30 %): revisar el listado de la Intranet antes de confirmar                                                                                                                                                                                      |
+| Una cuenta no puede entrar: "ya no existe en la Intranet" | La Intranet la ha borrado o la ha dejado sin tipo o, si ya estaba sin acceso, la Intranet no responde. Recupera el acceso sola cuando la Intranet vuelve a devolverla                                                                                                                                       |
+| Nadie puede entrar y los logs muestran `auth.hook.access` | Error de base de datos al comprobar el acceso: el inicio de sesión se rechaza para no dejar entrar a una cuenta borrada. Revisar PostgreSQL                                                                                                                                                                 |

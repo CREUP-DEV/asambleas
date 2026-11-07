@@ -1133,21 +1133,12 @@ Estado del VPS revisado el 2026-11-06. El vhost está en
      Cloudflare. Es HTTP y no pasa por nginx, así que exige
      `ASSEMBLIES_API_REQUIRE_HTTPS=false`. Eso no abre nada hacia fuera: nginx
      redirige todo el puerto 80 a HTTPS, así que ninguna petición en claro de
-     Internet llega a la Intranet. Desde otro proyecto de compose, la
-     plataforma se une a la red de la Intranet así:
-
-     ```yaml
-     services:
-       app:
-         networks: [default, intranet]
-     networks:
-       intranet:
-         external: true
-         name: esternocleidomastoideo2003_default
-     ```
-
-     Cambiar de red exige recrear el contenedor (`up -d app`); `restart` no
-     basta. La plataforma, en producción, solo acepta `http:` hacia nombres
+     Internet llega a la Intranet. La plataforma ya está en esa red: su
+     compose se incluye en el compose raíz del VPS (`DEPLOYMENT.md`), cuya
+     red por defecto es `esternocleidomastoideo2003_default`. Cambiar
+     `NUXT_INTRANET_API_URL` exige recrear el contenedor
+     (`docker compose up -d --no-deps asambleas-app` en el compose raíz);
+     `restart` no basta. La plataforma, en producción, solo acepta `http:` hacia nombres
      sin punto (sección 1): `http://intranet` vale.
 
    - En los dos casos, `ASSEMBLIES_API_ALLOWED_IPS` se queda vacía: el
@@ -1307,7 +1298,7 @@ fuera de los picos de inicio de sesión.
    token viejo deja de valer en ese momento.
 3. Plataforma: poner el token nuevo en `NUXT_INTRANET_API_TOKEN`, en
    producción (recreando el contenedor:
-   `docker compose -f docker-compose.prod.yml up -d app`; `restart` no relee
+   `docker compose up -d --no-deps asambleas-app` en el compose raíz; `restart` no relee
    el `.env`) y en el `.env` local del servidor de desarrollo.
 4. Comprobar en los logs de la Intranet (`assemblies_api.role_lookup`) que la
    huella `token` coincide con los 8 primeros caracteres del hash nuevo, y que
@@ -1447,7 +1438,7 @@ Si algo no cuadra:
   `NUXT_ROLE_API_URL`. `NUXT_INTRANET_ROSTER_SYNC` no hace falta: sin ella, la
   sincronización diaria queda activa; `false` la apaga. El servicio lee el
   `.env` con `env_file`, así que hay que recrear el contenedor
-  (`docker compose -f docker-compose.prod.yml up -d app`): `restart` conserva
+  (`docker compose up -d --no-deps asambleas-app` en el compose raíz): `restart` conserva
   las variables viejas.
 - Verificar: entrar con una cuenta Asociado y una CEA (rol y miembro correctos
   en Administración), pulsar "Sincronizar" en Miembros (sin desactivaciones
@@ -1472,10 +1463,10 @@ Hechos a la par que la fase 1 de la Intranet (detalle en la sección 1):
 
 - **Documentación y entorno:** `DEPLOYMENT.md` y `README.md` usan
   `NUXT_INTRANET_API_URL` y `NUXT_INTRANET_API_TOKEN`, sin
-  `NUXT_ROLE_API_URL`. El compose de producción de `DEPLOYMENT.md` llama a la
-  URL pública por defecto y, para llamar por dentro, se une a la red de la
-  Intranet (`esternocleidomastoideo2003_default`, con
-  `ASSEMBLIES_API_REQUIRE_HTTPS=false` en ella; sección 5.8, punto 3).
+  `NUXT_ROLE_API_URL`. En producción la plataforma llama a la URL pública por
+  defecto; como se incluye en el compose raíz del VPS, ya está en la red de la
+  Intranet (`esternocleidomastoideo2003_default`) y puede llamarla por dentro
+  con `ASSEMBLIES_API_REQUIRE_HTTPS=false` en ella (sección 5.8, punto 3).
   `runtimeConfig.roleApiUrl` de `nuxt.config.ts` ya no apunta a la ruta vieja.
 - **`Accept: application/json`** en la consulta de rol, como el listado.
 - **`http:` solo hacia nombres sin punto en producción**

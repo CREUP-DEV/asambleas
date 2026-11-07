@@ -1,0 +1,36 @@
+# Production service, copied to the VPS as asambleas/docker-compose.yml and
+# pulled in by the shared root compose (include: - asambleas/docker-compose.yml).
+# It uses the root's shared `postgresql` and `nginx` services. See DEPLOYMENT.md.
+services:
+  asambleas-app:
+    # Per-project image var, never a bare ${IMAGE}: the root .env is shared.
+    # deploy.sh and rollback.sh write it there.
+    image: ${ASAMBLEAS_IMAGE:-ghcr.io/creup-dev/asambleas:latest}
+    container_name: asambleas-app
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      NODE_OPTIONS: --max-old-space-size=448
+      TZ: Europe/Madrid
+      HOST: 0.0.0.0
+      NITRO_PORT: 3000
+      EXPORT_STORAGE_DIR: /app/storage/exports
+      UPLOAD_STORAGE_DIR: /app/storage/uploads
+    expose:
+      - "3000"
+    volumes:
+      # Generated PDFs and uploaded document PDFs: both must survive a recreate.
+      - ./data/exports:/app/storage/exports
+      - ./data/uploads:/app/storage/uploads
+    depends_on:
+      postgresql:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 640M
+        reservations:
+          memory: 192M
