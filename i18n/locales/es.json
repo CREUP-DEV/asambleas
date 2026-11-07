@@ -1807,8 +1807,12 @@
       "saveError": "No se han podido guardar los plazos",
       "unsavedConfirm": "Hay cambios sin guardar en los plazos. ¿Salir sin guardarlos?",
       "notStoredTitle": "Plazos iniciales sin guardar",
-      "notStored": "Este tipo de asamblea usa los plazos iniciales de la plataforma, tomados del reglamento de 2026. Revísalos y pulsa Guardar para fijarlos.",
-      "switchConfirm": "Hay cambios sin guardar en los plazos de este tipo de asamblea. ¿Cambiar de tipo sin guardarlos?"
+      "notStored": "Este tipo de asamblea usa los plazos iniciales de la plataforma, tomados del reglamento vigente. Revísalos y pulsa Guardar para fijarlos.",
+      "switchConfirm": "Hay cambios sin guardar en los plazos de este tipo de asamblea. ¿Cambiar de tipo sin guardarlos?",
+      "documentsWithConvocationBelow": "Documentación junto con la convocatoria",
+      "documentsWithConvocationHint": "Si se convoca con menos antelación que esta, toda la documentación debe ir con la convocatoria. Vacío si el reglamento no lo exige para este tipo de asamblea.",
+      "documentsWithConvocationAmount": "Antelación por debajo de la cual la documentación va con la convocatoria: cantidad",
+      "documentsWithConvocationUnit": "Antelación por debajo de la cual la documentación va con la convocatoria: unidad"
     }
   },
   "export": {
@@ -2533,7 +2537,8 @@
       "after_start": "Hay un plazo posterior al inicio de la asamblea",
       "agenda_after_publication": "El orden del día se cierra después de publicar los documentos",
       "below_minimum": "Este plazo debe caer al menos {limit} antes del inicio de la asamblea",
-      "regulation_window_short": "El plazo de enmiendas de «{document}» dura menos de {limit}, el mínimo para reformar un reglamento"
+      "regulation_window_short": "El plazo de enmiendas de «{document}» dura menos de {limit}, el mínimo para reformar un reglamento o los Estatutos",
+      "documents_not_with_convocation": "Una asamblea convocada con menos de {limit} de antelación debe enviar toda la documentación con la convocatoria: publica los documentos como tarde al convocar"
     },
     "offset": {
       "days": "0 días | 1 día | {count} días",

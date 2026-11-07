@@ -150,6 +150,7 @@ describe("checkCalendar with configurable rules", () => {
       amendments_close: { hours: 72 },
       candidacies_close: { hours: 96 },
     },
+    documentsWithConvocationBelow: null,
     regulationWindowDays: null,
   };
   const codes = (warnings: ReturnType<typeof checkCalendar>) =>
@@ -229,6 +230,7 @@ describe("checkCalendar reform window", () => {
   const rules: CalendarRules = {
     defaults: {},
     minimums: {},
+    documentsWithConvocationBelow: null,
     regulationWindowDays: 12,
   };
   const milestones = {
@@ -286,5 +288,68 @@ describe("checkCalendar reform window", () => {
         { ...regulation, kind: "statutes" },
       ]).map((warning) => warning.code),
     ).toEqual(["regulation_window_short"]);
+  });
+});
+
+describe("checkCalendar documents with a short convocation", () => {
+  const start = new Date("2027-04-15T08:00:00.000Z");
+  const rules: CalendarRules = {
+    defaults: {},
+    minimums: {},
+    documentsWithConvocationBelow: { days: 5 },
+    regulationWindowDays: null,
+  };
+  const convocation = milestoneOffsetBefore(start, { days: 4 });
+
+  it("warns when an assembly convened at 4 days publishes its documents later", () => {
+    expect(
+      checkCalendar(rules, start, {
+        convocation,
+        documents_publish: milestoneOffsetBefore(start, { days: 3 }),
+      }),
+    ).toEqual([
+      {
+        code: "documents_not_with_convocation",
+        keys: ["convocation", "documents_publish"],
+        limit: { days: 5 },
+      },
+    ]);
+  });
+
+  it("warns when it has no publication date at all", () => {
+    expect(
+      checkCalendar(rules, start, { convocation }).map(
+        (warning) => warning.code,
+      ),
+    ).toEqual(["documents_not_with_convocation"]);
+  });
+
+  it("accepts documents published with the convocation", () => {
+    expect(
+      checkCalendar(rules, start, {
+        convocation,
+        documents_publish: convocation,
+      }),
+    ).toEqual([]);
+  });
+
+  it("does not apply with 5 days of notice or more, or without the rule", () => {
+    const onTime = milestoneOffsetBefore(start, { days: 5 });
+    expect(checkCalendar(rules, start, { convocation: onTime })).toEqual([]);
+    expect(
+      checkCalendar({ ...rules, documentsWithConvocationBelow: null }, start, {
+        convocation,
+      }),
+    ).toEqual([]);
+  });
+
+  it("the initial AGET rules accept the exceptional 4-day notice only with the documents attached", () => {
+    const aget = INITIAL_CALENDAR_RULES.AGET;
+    const codes = checkCalendar(aget, start, {
+      convocation,
+      documents_publish: milestoneOffsetBefore(start, { days: 3 }),
+    }).map((warning) => warning.code);
+    expect(codes).not.toContain("short_notice");
+    expect(codes).toContain("documents_not_with_convocation");
   });
 });

@@ -32,9 +32,16 @@ export interface CalendarRules {
    */
   minimums: Partial<Record<MilestoneKey, MilestoneOffset>>;
   /**
-   * Shortest amendment window, in days, of a regulation or statutes reform
-   * (REGULATION_DOCUMENT_KINDS): its own window, else the assembly's. null:
-   * no minimum (RRI 2026 art. 84.1 sets none; RRI 2025 art. 65.3 had 12).
+   * An assembly convened with less notice than this must send every
+   * document with the convocation, or the convocation is not valid (RRI
+   * art. 13.1.a, extraordinary assemblies): the documents must be published
+   * no later than the convocation. null: no such rule for the type.
+   */
+  documentsWithConvocationBelow: MilestoneOffset | null;
+  /**
+   * Shortest amendment window, in days, of a reform of the Estatutos or a
+   * regulation (REGULATION_DOCUMENT_KINDS, RRI art. 65.3): its own window,
+   * else the assembly's. null: no minimum.
    */
   regulationWindowDays: number | null;
 }
@@ -105,6 +112,7 @@ export function defaultMilestones(
 export type CalendarWarningCode =
   | "short_notice"
   | "below_minimum"
+  | "documents_not_with_convocation"
   | "regulation_window_short"
   | "amendments_before_publication"
   | "amendments_close_before_open"
@@ -115,7 +123,10 @@ export type CalendarWarningCode =
 export interface CalendarWarning {
   code: CalendarWarningCode;
   keys: MilestoneKey[];
-  /** The minimum broken (`short_notice`, `below_minimum`). */
+  /**
+   * The rule broken (`short_notice`, `below_minimum`,
+   * `documents_not_with_convocation`).
+   */
   limit?: MilestoneOffset;
   /** The minimum window in days (`regulation_window_short`). */
   days?: number;
@@ -164,7 +175,22 @@ export function checkCalendar(
     }
   }
 
+  const convocation = at("convocation");
   const publish = at("documents_publish");
+  const attachBelow = rules.documentsWithConvocationBelow;
+  if (
+    attachBelow &&
+    convocation !== undefined &&
+    convocation > milestoneOffsetBefore(start, attachBelow).getTime() &&
+    (publish === undefined || publish > convocation)
+  ) {
+    warnings.push({
+      code: "documents_not_with_convocation",
+      keys: ["convocation", "documents_publish"],
+      limit: attachBelow,
+    });
+  }
+
   const open = at("amendments_open");
   const close = at("amendments_close");
   if (open !== undefined && publish !== undefined && open < publish) {

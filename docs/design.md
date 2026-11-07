@@ -189,6 +189,9 @@ regulations change often. Managers edit them at `/admin/calendario`
 - `minimums`: the latest each milestone may fall, as an offset before the
   start (notice of the convocatoria, final agenda, documents, the 72 hours the
   amendment window may be extended to, candidacies);
+- `documentsWithConvocationBelow`: an assembly convened with less notice
+  than this must publish its documents with the convocation (RRI art.
+  13.1.a, extraordinary assemblies; null: no such rule);
 - `regulationWindowDays`: the shortest amendment window of an amendable
   `regulation` or `statutes` document, its own window or else the assembly's
   (null: no minimum).
@@ -204,7 +207,8 @@ needs no `--seed` for this. Changing the rules never
 moves existing dates.
 
 `checkCalendar(rules, start, milestones, documents)` warns when the calendar
-breaks a minimum (`short_notice`, `below_minimum`, `regulation_window_short`)
+breaks a minimum (`short_notice`, `below_minimum`,
+`documents_not_with_convocation`, `regulation_window_short`)
 or is inconsistent, for example when amendments close before documents are
 published. Warnings are computed on read, so past assemblies are checked
 against the rules in force. The convocatoria is generated from the assembly
