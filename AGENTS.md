@@ -416,6 +416,8 @@ pnpm db:seed
 pnpm db:studio
 pnpm i18n:check
 pnpm i18n:audit-identical
+bash ./deploy.sh    # build, push to GHCR and roll out on the VPS (DEPLOYMENT.md); --seed also runs the RBAC seed
+bash ./rollback.sh
 ```
 
 ## Verification Checklist

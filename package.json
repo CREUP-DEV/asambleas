@@ -17,6 +17,7 @@
     "db:migrate": "node ./ops/migrate.mjs",
     "db:studio": "drizzle-kit studio",
     "db:seed": "tsx drizzle/seed.ts",
+    "build:ops": "node scripts/build-ops.mjs",
     "i18n:check": "tsx scripts/check-i18n-parity.ts",
     "i18n:audit-identical": "tsx scripts/check-i18n-identical-values.ts",
     "test": "vitest run"
