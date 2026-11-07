@@ -540,6 +540,7 @@ export const CHANGE_FIELDS: Record<
     title: "values",
     summary: "values",
     kind: "values",
+    format: "values",
     amendable: "values",
     voted: "values",
     majority: "values",

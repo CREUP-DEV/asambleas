@@ -1,10 +1,13 @@
 import type {
   Block,
   ConsolidatedBlock,
+  ListMarker,
   Mark,
   MarkType,
   Segment,
 } from "../../types/content";
+import { markerOf } from "./lists";
+import { groupTables, type TableGroup } from "./tables";
 
 /**
  * HTML rendering of structured content. Text is always escaped and links are
@@ -87,9 +90,14 @@ export function renderInline(text: string, marks: Mark[], offset = 0): string {
 interface ListFrame {
   tag: "ul" | "ol";
   level: number;
+  /** Ordered lists: their marker; null for bullets. */
+  marker: ListMarker | null;
 }
 
-type RenderableBlock = Pick<Block, "id" | "type" | "level" | "list"> & {
+type RenderableBlock = Pick<
+  Block,
+  "id" | "type" | "level" | "list" | "marker" | "start" | "cell"
+> & {
   inner: string;
   attrs?: string;
   /** Extra class of the block element, e.g. "cx-block-inserted". */
@@ -98,13 +106,51 @@ type RenderableBlock = Pick<Block, "id" | "type" | "level" | "list"> & {
 
 export interface RenderOptions {
   /**
-   * Headings as real <h2>-<h4> (the default). Excerpts pass false so their
+   * Headings as real <h2>-<h5> (the default). Excerpts pass false so their
    * headings are styled paragraphs and stay out of the page outline.
    */
   headings?: boolean;
 }
 
+/**
+ * Blocks to HTML: tables (groupTables) as <table>, each cell's blocks laid
+ * out like the text around them, inside a wrapper that scrolls sideways on
+ * narrow screens.
+ */
 function wrapBlocks(items: RenderableBlock[], headings = true): string {
+  let html = "";
+  for (const run of groupTables(items)) {
+    html +=
+      run.kind === "blocks"
+        ? wrapFlow(run.items, headings)
+        : tableHtml(run.table, headings);
+  }
+  return html;
+}
+
+function tableHtml(
+  table: TableGroup<RenderableBlock>,
+  headings: boolean,
+): string {
+  let html = '<div class="cx-table-wrap"><table class="cx-table"><tbody>';
+  for (const row of table.rows) {
+    html += "<tr>";
+    for (const cell of row.cells) {
+      const tag = cell.cell.header ? "th" : "td";
+      let attrs = "";
+      if (cell.cell.colspan)
+        attrs += ` colspan="${Math.trunc(cell.cell.colspan)}"`;
+      if (cell.cell.rowspan)
+        attrs += ` rowspan="${Math.trunc(cell.cell.rowspan)}"`;
+      html += `<${tag}${attrs}>${wrapFlow(cell.blocks, headings)}</${tag}>`;
+    }
+    html += "</tr>";
+  }
+  return `${html}</tbody></table></div>`;
+}
+
+/** Blocks outside tables, or inside one cell: paragraphs, lists, headings. */
+function wrapFlow(items: RenderableBlock[], headings: boolean): string {
   let html = "";
   const stack: ListFrame[] = [];
   const closeFrame = () => {
@@ -121,23 +167,40 @@ function wrapBlocks(items: RenderableBlock[], headings = true): string {
     if (item.type === "list_item") {
       const level = Math.max(0, Math.min(6, item.level ?? 0));
       const tag = item.list === "ordered" ? "ol" : "ul";
+      const marker = tag === "ol" ? markerOf(item) : null;
       while (stack.length > 0 && stack[stack.length - 1]!.level > level) {
         closeFrame();
       }
       const top = stack[stack.length - 1];
-      if (top && top.level === level && top.tag === tag) {
+      // An item with `start` begins its list again (orderedListNumbers).
+      if (
+        top &&
+        top.level === level &&
+        top.tag === tag &&
+        top.marker === marker &&
+        item.start === undefined
+      ) {
         html += `</li><li ${attrs}>${item.inner}`;
         continue;
       }
       if (top && top.level === level) closeFrame();
-      // Opens a new list, nested inside the open item when deeper.
-      html += `<${tag}><li ${attrs}>${item.inner}`;
-      stack.push({ tag, level });
+      // Opens a new list, nested inside the open item when deeper. Markers
+      // other than "1." are drawn by the CSS for `data-marker`.
+      let listAttrs = "";
+      if (marker && marker !== "1.") {
+        listAttrs += ` data-marker="${escapeHtml(marker)}"`;
+      }
+      if (tag === "ol" && item.start !== undefined) {
+        listAttrs += ` start="${Math.trunc(item.start)}"`;
+      }
+      html += `<${tag}${listAttrs}><li ${attrs}>${item.inner}`;
+      stack.push({ tag, level, marker });
       continue;
     }
     while (stack.length > 0) closeFrame();
     if (item.type === "heading") {
-      const level = Math.max(2, Math.min(4, (item.level ?? 1) + 1));
+      // Block levels 1-4 become h2-h5: pages keep their own h1.
+      const level = Math.max(2, Math.min(5, (item.level ?? 1) + 1));
       html += headings
         ? `<h${level} ${attrs}>${item.inner}</h${level}>`
         : `<p ${attrsOf(item, "cx-heading", `cx-heading-${level}`)}>${item.inner}</p>`;

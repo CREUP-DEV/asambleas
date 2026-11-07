@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { AmendmentOp, Block } from "../../types/content";
 import { consolidate, mapPosition, previewAmendment } from "./consolidate";
 import { diffPassage, diffText } from "./diff";
+import { blocksSchema } from "../schemas/content";
 import { blocksToEditor, editorToBlocks } from "./editor";
+import { formatListNumber, orderedListNumbers } from "./lists";
+import { groupTables, tableGrid, type TableGroup } from "./tables";
 import { changeKinds, globalReplaceOps, positionKey, validateOps } from "./ops";
 import { findOverlaps, overlapBetween } from "./overlaps";
 import { renderAnnotated, renderBlocks } from "./render";
@@ -505,5 +508,243 @@ describe("editor conversion", () => {
       { id: "e005", type: "quote", text: "cita", marks: [] },
     ];
     expect(editorToBlocks(blocksToEditor(blocks), newId)).toEqual(blocks);
+  });
+});
+
+describe("ordered list markers", () => {
+  const item = (
+    id: string,
+    text: string,
+    extra: Partial<Block> = {},
+  ): Block => ({
+    id,
+    type: "list_item",
+    level: 0,
+    list: "ordered",
+    text,
+    marks: [],
+    ...extra,
+  });
+  // "a)", "b)", an interruption, then "c)" and a nested "i.".
+  const lettered: Block[] = [
+    item("o001", "Primero", { marker: "a)" }),
+    item("o002", "Segundo", { marker: "a)" }),
+    p("o003", "Párrafo intermedio."),
+    item("o004", "Tercero", { marker: "a)", start: 3 }),
+    item("o005", "Detalle", { marker: "i.", level: 1 }),
+    item("o006", "Cuarto", { marker: "a)" }),
+  ];
+
+  it("formats numbers as Word does", () => {
+    expect(formatListNumber(3, "a)")).toBe("c)");
+    expect(formatListNumber(28, "a.")).toBe("bb.");
+    expect(formatListNumber(4, "I.")).toBe("IV.");
+    expect(formatListNumber(9, "i)")).toBe("ix)");
+    expect(formatListNumber(12, "1.")).toBe("12.");
+  });
+
+  it("numbers items the way every renderer groups them", () => {
+    const numbers = orderedListNumbers(lettered);
+    expect([...numbers.entries()]).toEqual([
+      ["o001", 1],
+      ["o002", 2],
+      ["o004", 3],
+      ["o005", 1],
+      ["o006", 4],
+    ]);
+    // A different marker or an explicit start begins a new list.
+    const mixed = orderedListNumbers([
+      item("x1", "uno"),
+      item("x2", "a", { marker: "a)" }),
+      item("x3", "otra vez", { start: 1 }),
+      item("x4", "dos"),
+    ]);
+    expect([...mixed.values()]).toEqual([1, 1, 1, 2]);
+  });
+
+  it("keeps markers and starts only on ordered items", () => {
+    const parsed = blocksSchema.parse([
+      item("s001", "a", { marker: "a)", start: 3 }),
+      item("s002", "b", { marker: "1." }),
+      { ...item("s003", "c", { marker: "I.", start: 2 }), list: "bullet" },
+    ]);
+    expect(parsed.map((block) => [block.marker, block.start])).toEqual([
+      ["a)", 3],
+      [undefined, undefined],
+      [undefined, undefined],
+    ]);
+    expect(() =>
+      blocksSchema.parse([{ ...item("s004", "d"), marker: "ii)" }]),
+    ).toThrow();
+  });
+
+  it("renders the marker and starts a list again where an item says so", () => {
+    const html = renderBlocks(lettered);
+    expect(html.match(/<ol[^>]*>/g)).toEqual([
+      '<ol data-marker="a)">',
+      '<ol data-marker="a)" start="3">',
+      '<ol data-marker="i.">',
+    ]);
+  });
+
+  it("survives a round trip through the editor", () => {
+    const doc = blocksToEditor(lettered);
+    const lists = doc.content!.filter((node) => node.type === "orderedList");
+    expect(lists.map((node) => node.attrs)).toEqual([
+      { start: 1, marker: "a)" },
+      { start: 3, marker: "a)" },
+    ]);
+    expect(editorToBlocks(doc, newId)).toEqual(lettered);
+
+    // Two lists side by side, the second from 1 again, stay two.
+    const twice = [
+      item("t001", "uno"),
+      item("t002", "uno otra vez", { start: 1 }),
+    ];
+    expect(editorToBlocks(blocksToEditor(twice), newId)).toEqual(twice);
+  });
+
+  it("carries markers and starts through consolidation", () => {
+    const { blocks } = consolidate(lettered, []);
+    expect(blocks).toEqual(lettered);
+  });
+});
+
+describe("tables", () => {
+  const at = (
+    row: string,
+    cell: string,
+    extra: Partial<Block["cell"]> = {},
+  ): Block["cell"] => ({ table: "tab1", row, cell, ...extra });
+  const c = (
+    id: string,
+    text: string,
+    cell: Block["cell"],
+    extra: Partial<Block> = {},
+  ): Block => ({ id, type: "paragraph", text, marks: [], cell, ...extra });
+  const table: Block[] = [
+    p("t000", "Antes."),
+    c("t001", "Órgano", at("row1", "cel1", { header: true })),
+    c("t002", "Fecha", at("row1", "cel2", { header: true })),
+    c("t003", "Secretaría", at("row2", "cel3")),
+    c("t004", "", at("row2", "cel4")),
+    c("t005", "Nota a toda la fila", at("row3", "cel5", { colspan: 2 })),
+    {
+      id: "t006",
+      type: "list_item",
+      level: 0,
+      list: "bullet",
+      text: "detalle",
+      marks: [],
+      cell: at("row3", "cel5", { colspan: 2 }),
+    },
+    p("t007", "Después."),
+  ];
+
+  it("groups blocks into tables, rows and cells", () => {
+    const runs = groupTables(table);
+    expect(runs.map((run) => run.kind)).toEqual(["blocks", "table", "blocks"]);
+    const grid = tableGrid(
+      (runs[1] as Extract<(typeof runs)[number], { kind: "table" }>).table,
+    );
+    expect(grid.columns).toBe(2);
+    expect(grid.headerRows).toBe(1);
+    expect(
+      grid.rows.map((row) => row.map((cell) => [cell.column, cell.colspan])),
+    ).toEqual([
+      [
+        [0, 1],
+        [1, 1],
+      ],
+      [
+        [0, 1],
+        [1, 1],
+      ],
+      [[0, 2]],
+    ]);
+  });
+
+  it("lays rowspans out like a browser", () => {
+    const grid = tableGrid(
+      (
+        groupTables([
+          c("r001", "alto", at("a", "x", { rowspan: 2 })),
+          c("r002", "1", at("a", "y")),
+          c("r003", "2", at("b", "z")),
+        ])[0] as { kind: "table"; table: TableGroup<Block> }
+      ).table,
+    );
+    expect(grid.rows[1]![0]!.column).toBe(1);
+  });
+
+  it("renders a table with headers, spans and lists in cells", () => {
+    const html = renderBlocks(table);
+    expect(html).toContain(
+      '<div class="cx-table-wrap"><table class="cx-table">',
+    );
+    expect(html).toContain("<th><p");
+    expect(html).toContain('<td colspan="2"><p');
+    expect(html).toMatch(
+      /<td colspan="2"><p[^>]*>Nota a toda la fila<\/p><ul>/,
+    );
+    // A blank cell keeps its place.
+    expect(html).toContain("<td><p");
+  });
+
+  it("validates cell references", () => {
+    const parsed = blocksSchema.parse(table);
+    expect(parsed[5]!.cell).toEqual(at("row3", "cel5", { colspan: 2 }));
+    expect(() =>
+      blocksSchema.parse([c("v001", "x", at("bad id!", "cel1"))]),
+    ).toThrow();
+  });
+
+  it("survives a round trip through the editor", () => {
+    const doc = blocksToEditor(table);
+    expect(doc.content!.map((node) => node.type)).toEqual([
+      "paragraph",
+      "table",
+      "paragraph",
+    ]);
+    const tableNode = doc.content![1]!;
+    expect(tableNode.content![0]!.content![0]!.type).toBe("tableHeader");
+    expect(tableNode.content![2]!.content![0]!.attrs).toMatchObject({
+      cellId: "cel5",
+      colspan: 2,
+    });
+    expect(editorToBlocks(doc, newId)).toEqual(table);
+  });
+
+  it("gives copies of a cell their own id, and blank cells a paragraph", () => {
+    const doc = blocksToEditor(table);
+    const row = doc.content![1]!.content![1]!;
+    // Splitting a cell copies its attributes, id included.
+    row.content![1] = {
+      ...row.content![1]!,
+      attrs: { ...row.content![1]!.attrs, cellId: "cel3" },
+      content: [],
+    };
+    const blocks = editorToBlocks(doc, newId);
+    const cells = blocks.filter((block) => block.cell?.row === "row2");
+    expect(cells.map((block) => block.text)).toEqual(["Secretaría", ""]);
+    expect(cells[0]!.cell!.cell).toBe("cel3");
+    expect(cells[1]!.cell!.cell).not.toBe("cel3");
+  });
+
+  it("keeps blank cells of a row an amendment adds", () => {
+    const passage = table.slice(1, 7);
+    const edited = [
+      ...passage,
+      c("n001", "Nueva", at("row4", "cel6")),
+      c("n002", "", at("row4", "cel7")),
+    ];
+    const ops = diffPassage(passage, edited, "t000", newId);
+    expect(ops).toEqual([
+      { op: "insert", afterBlockId: "t006", blocks: edited.slice(6) },
+    ]);
+    const { blocks } = consolidate(table, [{ id: "a1", ops }]);
+    expect(blocks.filter((block) => block.cell?.row === "row4")).toHaveLength(
+      2,
+    );
   });
 });

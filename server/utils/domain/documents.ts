@@ -535,8 +535,9 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
       showCorrection: canSeeDocumentCorrection(actor, document),
     }),
     summary: document.summary,
-    fileUrl: document.fileUrl,
-    fileName: document.fileName,
+    // A PDF left behind by a switch to text is not the document's.
+    fileUrl: document.format === "file" ? document.fileUrl : null,
+    fileName: document.format === "file" ? document.fileName : null,
     amendmentsOpenAt: toIso(document.amendmentsOpenAt),
     amendmentsCloseAt: toIso(document.amendmentsCloseAt),
     // Everyone who can see an unpublished document (its presenters, managers
@@ -1073,6 +1074,7 @@ function changedFields(
     "title",
     "summary",
     "kind",
+    "format",
     "agendaItemId",
     "proponentMemberId",
     "amendable",
@@ -1218,7 +1220,8 @@ async function requireAgendaTarget(
 
 /**
  * Updates the metadata of a document. Presenters may change title, summary,
- * kind, agenda item and presenters (planPresenters) of their draft;
+ * kind, format (text or PDF, until it is published), agenda item and
+ * presenters (planPresenters) of their draft;
  * everything else needs document:manage. The slug never changes, since it is
  * part of the URLs already shared.
  */
@@ -1267,6 +1270,14 @@ export async function updateDocument(
 
     const changed = changedFields(current, body);
     if (changed.length === 0) return;
+    // Published text (or PDF) is what amendments and the vote refer to.
+    if (changed.includes("format") && isTextFrozen(current)) {
+      fail(
+        409,
+        "El documento ya está publicado: ya no se puede cambiar entre texto y PDF",
+      );
+    }
+    const format = body.format ?? current.format;
     if (changed.includes("agendaItemId")) {
       await requireAgendaTarget(tx, assembly.id, body.agendaItemId!, manager);
     }
@@ -1281,8 +1292,7 @@ export async function updateDocument(
       if (!manager) {
         // Presenters always get the defaults of the kind they pick.
         const defaults = DOCUMENT_KIND_DEFAULTS[body.kind!];
-        patch.amendable =
-          current.format === "file" ? false : defaults.amendable;
+        patch.amendable = format === "file" ? false : defaults.amendable;
         patch.voted = defaults.voted;
         patch.majority = defaults.majority;
         patch.acceptedAmendments = defaults.acceptedAmendments;
@@ -1346,7 +1356,33 @@ export async function updateDocument(
       }
     }
 
-    if (current.format === "file" && (patch.amendable ?? current.amendable)) {
+    if (changed.includes("format")) {
+      // The draft text and the PDF both stay where they are, so switching
+      // back loses nothing; the format says which one the document uses.
+      patch.format = format;
+      if (format === "file") {
+        patch.amendable = false;
+      } else if (patch.amendable === undefined) {
+        patch.amendable =
+          DOCUMENT_KIND_DEFAULTS[patch.kind ?? current.kind].amendable;
+      }
+      if (format === "structured" && !current.workingVersionId) {
+        const [version] = await tx
+          .insert(documentVersions)
+          .values({
+            documentId: current.id,
+            number: await nextVersionNumber(tx, current.id),
+            kind: "draft",
+            blocks: [],
+            contentHash: await hashBlocks([]),
+            createdByUserId: actor.user.id,
+          })
+          .returning({ id: documentVersions.id });
+        patch.workingVersionId = version!.id;
+      }
+    }
+
+    if (format === "file" && (patch.amendable ?? current.amendable)) {
       fail(422, "Un documento en PDF no puede ser enmendable");
     }
     const opensAt =
@@ -1403,7 +1439,11 @@ export async function updateDocument(
           // What was written, kind defaults included; the status has its own
           // event below.
           changes: {
-            ...diffChanges(current, { ...patch, status: undefined }),
+            ...diffChanges(current, {
+              ...patch,
+              status: undefined,
+              workingVersionId: undefined,
+            }),
             ...(presenters
               ? diffChanges(
                   {

@@ -109,8 +109,25 @@
       "invalidLink": "Only http, https and email links are allowed.",
       "heading": "Heading",
       "subheading": "Subheading",
+      "heading3": "Section",
+      "heading4": "Subsection",
       "bulletList": "Bulleted list",
       "orderedList": "Numbered list",
+      "listMarker": "Numbering style",
+      "table": {
+        "menu": "Table",
+        "insert": "Insert table",
+        "addRowBefore": "Add row above",
+        "addRowAfter": "Add row below",
+        "deleteRow": "Delete row",
+        "addColumnBefore": "Add column to the left",
+        "addColumnAfter": "Add column to the right",
+        "deleteColumn": "Delete column",
+        "toggleHeaderRow": "Header row",
+        "mergeCells": "Merge cells",
+        "splitCell": "Split cell",
+        "deleteTable": "Delete table"
+      },
       "quote": "Quote",
       "undo": "Undo",
       "redo": "Redo",
@@ -564,6 +581,7 @@
       "retry": "Try again",
       "backToDocuments": "Back to documents",
       "backToWorkspace": "View document",
+      "backToAgenda": "Back to the agenda",
       "noLongerEditable": "This document can no longer be edited",
       "leaveConfirm": "You have unsaved changes. Leave anyway?",
       "submittedTitle": "Submitted, awaiting publication",
@@ -603,6 +621,7 @@
         "description": "You are seeing the last version loaded, and your unsaved changes are still here. Try again once you are back online."
       },
       "returningToDocuments": "Returning to the document list",
+      "returningToAgenda": "Returning to the agenda",
       "steps": {
         "what": "What it is",
         "text": "The text",
@@ -650,7 +669,9 @@
       "warnings": {
         "tracked_changes": "The file has tracked changes that were neither accepted nor rejected. Check that the imported text is the final one.",
         "comments": "The file has comments. Comments are not imported.",
-        "images_dropped": "Images and other non-text elements were left out."
+        "images_dropped": "Images and other non-text elements were left out.",
+        "tables_flattened": "Tables inside another table were turned into one paragraph per row, with cells separated by \"{'|'}\".",
+        "highlight": "Text highlighting was lost; check whether it marked anything important."
       },
       "tooComplex": "The document is too long or complex to import. Split it into parts or simplify its formatting.",
       "busy": "An import is already in progress. Wait a few seconds and try again.",
@@ -674,6 +695,34 @@
       "invalidType": "Only PDF files are accepted.",
       "tooLarge": "The file is larger than the 20 MB limit."
     },
+    "formatSwitch": {
+      "current": {
+        "structured": "This document is text on the platform.",
+        "file": "This document comes as a PDF."
+      },
+      "to": {
+        "structured": "Switch to text",
+        "file": "Switch to PDF"
+      },
+      "saveFirst": "Save your changes before switching the format.",
+      "confirm": {
+        "file": {
+          "title": "Provide it as a PDF?",
+          "effect": "You will need to upload the PDF, and a PDF document takes no amendments.",
+          "kept": "The text already written is kept: switch back to text to get it back."
+        },
+        "structured": {
+          "title": "Turn it into text on the platform?",
+          "effect": "You will need to upload the Word file or write the text here.",
+          "kept": "The PDF already uploaded is kept: switch back to PDF to get it back."
+        }
+      },
+      "done": {
+        "structured": "It is now text on the platform",
+        "file": "It now comes as a PDF"
+      },
+      "error": "The format could not be changed"
+    },
     "metadata": {
       "heading": "Document details",
       "title": "Title",
@@ -682,6 +731,7 @@
       "optional": "Optional",
       "kind": "Document type",
       "format": "Format",
+      "formatHelp": "Switch it above the text until it is published.",
       "agendaItem": "Agenda item",
       "agendaUnavailable": "The agenda could not be loaded",
       "proponent": "Who presents it",
@@ -1824,9 +1874,14 @@
     "failed": "Failed to generate PDF",
     "pdf": {
       "untitled": "Untitled",
+      "band": {
+        "internalDocument": "Internal document",
+        "internalMotion": "Internal motion",
+        "ownRegulations": "Own regulations",
+        "positioning": "Position paper",
+        "resolution": "Resolution"
+      },
       "emptyDocument": "This document has no text.",
-      "agendaPoint": "Agenda item {number}: {title}",
-      "presentedBy": "Presented by {members}",
       "voteCounts": "votes in favour: {inFavor}, against: {against}, abstentions: {abstentions}",
       "finalVote": {
         "approved": "Approved at the {assembly} on {date} by {majority} ({counts}).",
@@ -1839,16 +1894,10 @@
       },
       "footer": {
         "generatedAt": "Generated on {date}",
-        "page": "Page {page} of {total}"
+        "page": "{page} of {total}"
       },
       "links": {
         "title": "Links"
-      },
-      "version": {
-        "consolidated": "Final approved text, with the amendments incorporated.",
-        "base": "Published text, without amendments incorporated.",
-        "working": "Unpublished working draft.",
-        "annotated": "Published text with the approved amendments marked in place."
       },
       "watermarkDraft": "DRAFT",
       "legend": {
@@ -2428,6 +2477,8 @@
       "voted": "Put to a vote",
       "majority": "Required majority",
       "create": "Add document",
+      "createAndUpload": "Create and upload the text",
+      "createAndUploadPdf": "Create and upload the PDF",
       "created": "Document created",
       "error": "The document could not be created",
       "createdFor": "Document added: {title}",
@@ -4442,6 +4493,7 @@
           "title": "Title",
           "summary": "Summary",
           "kind": "Document type",
+          "format": "Format",
           "amendable": "Open to amendments",
           "voted": "Put to a vote",
           "majority": "Majority required",

@@ -7,10 +7,22 @@ import type {
   ContentUnorderedList,
   TDocumentDefinitions,
 } from "pdfmake/interfaces";
+import { create as createFont } from "fontkit";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
 import { consolidate } from "../../../shared/utils/content/consolidate";
-import { LinkRegistry, annotatedToPdf, blocksToPdf } from "./content";
+import {
+  BRAND_FILES,
+  BRAND_RED,
+  bandLabelKey,
+  type ExportBrand,
+} from "./brand";
+import {
+  LINK_BLUE,
+  LinkRegistry,
+  annotatedToPdf,
+  blocksToPdf,
+} from "./content";
 import { createTranslator, formatExportDateRange, interpolate } from "./labels";
 import {
   amendmentCodes,
@@ -38,6 +50,14 @@ import {
 } from "./pdfmake";
 
 const FONTS_DIR = resolve(__dirname, "../../assets/fonts");
+const ASSETS_DIR = resolve(__dirname, "../../assets");
+
+/** The letterhead files the export worker reads. */
+const brand: ExportBrand = {
+  creupLogoPng: readFileSync(resolve(ASSETS_DIR, BRAND_FILES.creupLogo)),
+  esuLogoPng: readFileSync(resolve(ASSETS_DIR, BRAND_FILES.esuLogo)),
+  labelFont: createFont(readFileSync(resolve(FONTS_DIR, "Raleway-Bold.woff"))),
+};
 
 beforeAll(() => {
   const files = Object.fromEntries(
@@ -675,5 +695,273 @@ describe("pdf rendering", () => {
     const flat = JSON.stringify(definition.content as Content);
     expect(flat).toContain("<img src=x onerror=alert(1)>");
     expect(flat).not.toContain('"image"');
+  });
+});
+
+// Template ------------------------------------------------------------------
+
+describe("CREUP template", () => {
+  const heading = (id: string, level: number, text: string): Block => ({
+    id,
+    type: "heading",
+    level,
+    text,
+    marks: [],
+  });
+
+  const headings = [
+    heading("a", 1, "Áreas de trabajo"),
+    heading("b", 2, "Trabajo individual"),
+    heading("c", 3, "Trabajo realizado"),
+    heading("d", 4, "Dominios"),
+  ];
+  type HeadingNode = Content & {
+    style?: string;
+    headlineLevel?: number;
+    table?: { body: ContentText[][] };
+    layout?: { fillColor?: () => string | null };
+  };
+
+  it("draws level 1 on a burgundy bar and level 3 in a box, keeping bookmarks", () => {
+    const nodes = blocksToPdf(headings, {
+      links: new LinkRegistry(),
+      outline: {},
+    }) as HeadingNode[];
+    expect(nodes.map((node) => node.headlineLevel)).toEqual([1, 2, 3, 4]);
+    const bar = nodes[0]!;
+    expect(bar.layout!.fillColor!()).toBe(BRAND_RED);
+    expect(bar.table!.body[0]![0]).toMatchObject({
+      style: "barHeading",
+      outline: true,
+      outlineText: "Áreas de trabajo",
+    });
+    expect(nodes[2]!.layout!.fillColor!()).toBeNull();
+    expect(nodes[1]).toMatchObject({ style: "heading2", outline: true });
+  });
+
+  it("colours links, makes them work and keeps their references", () => {
+    const nodes = blocksToPdf(
+      [
+        p("x", "Ver la web y esto", [
+          { type: "link", from: 4, to: 10, href: "https://creup.es" },
+          { type: "link", from: 13, to: 17, href: "javascript:alert(1)" },
+        ]),
+      ],
+      { links: new LinkRegistry() },
+    );
+    const pieces = (nodes[0] as ContentText).text as ContentText[];
+    expect(pieces).toContainEqual(
+      expect.objectContaining({
+        text: "la web",
+        color: LINK_BLUE,
+        link: "https://creup.es",
+        decoration: "underline",
+      }),
+    );
+    expect(pieces).toContainEqual(
+      expect.objectContaining({ text: "[1]", sup: true }),
+    );
+    // An unsafe link stays plain text.
+    expect(pieces.find((piece) => piece.text === "esto")).not.toHaveProperty(
+      "link",
+    );
+  });
+
+  it("lays out the letterhead: logos, band and footer", () => {
+    const data: DocumentExportData = {
+      assembly,
+      document: meta,
+      body: { variant: "clean", source: "base", blocks: base },
+      generatedAt: new Date(),
+    };
+    const definition = buildDocumentPdf(data, "es", brand);
+    expect(Object.keys(definition.images ?? {})).toEqual([
+      "creupLogo",
+      "esuLogo",
+    ]);
+    const header = JSON.stringify((definition.header as () => Content)());
+    expect(header).toContain('"image":"creupLogo"');
+    expect(header).toContain('"image":"esuLogo"');
+
+    const band = (definition.background as () => { svg: string })();
+    expect(band.svg).toContain(`fill="${BRAND_RED}"`);
+    // The label, drawn as glyph outlines.
+    expect(band.svg).toMatch(/<path [^>]*rotate\(-90\)[^>]*d="M/);
+
+    const footer = JSON.stringify(
+      (definition.footer as (page: number, total: number) => Content)(3, 12),
+    );
+    expect(footer).toContain('"link":"https://www.creup.es/"');
+    expect(footer).toContain('"link":"mailto:info@creup.es"');
+    expect(footer).toContain(
+      '{"text":"3","bold":true},{"text":" de "},{"text":"12","bold":true}',
+    );
+    // This fixture is a resolution: no cover.
+    expect(definition.content).not.toContainEqual(
+      expect.objectContaining({ style: "coverTitle" }),
+    );
+
+    // Without the letterhead files the band keeps no label.
+    const bare = buildDocumentPdf(data, "en");
+    expect(bare.images).toBeUndefined();
+    expect((bare.background as () => { svg: string })().svg).not.toContain(
+      "<path",
+    );
+  });
+
+  it("renders the letterhead into every page, embedding the logos once", async () => {
+    const blocks = Array.from({ length: 120 }, (_, index) =>
+      p(`p${index}`, "Texto de relleno para ocupar varias páginas. ".repeat(6)),
+    );
+    const { pdf, pages } = await render(
+      buildDocumentPdf(
+        {
+          assembly,
+          document: meta,
+          body: { variant: "clean", source: "base", blocks },
+          generatedAt: new Date(),
+        },
+        "es",
+        brand,
+      ),
+    );
+    expect(pages).toBeGreaterThan(3);
+    expect((pdf.match(/\/Subtype \/Image/g) ?? []).length).toBeLessThanOrEqual(
+      4,
+    );
+  });
+
+  it("names the kind of document on the band", () => {
+    const label = (kind: ExportDocumentMeta["kind"]) => bandLabelKey(kind);
+    expect(label("internal_motion")).toBe("internalMotion");
+    expect(label("regulation")).toBe("ownRegulations");
+    expect(label("statutes")).toBe("ownRegulations");
+    expect(label("positioning")).toBe("positioning");
+    expect(label("resolution")).toBe("resolution");
+    expect(label("report")).toBe("internalDocument");
+    expect(createTranslator("es")("band.internalMotion")).toBe(
+      "Moción Interna",
+    );
+  });
+
+  it("opens a positioning with a cover and counts pages after it", async () => {
+    const data: DocumentExportData = {
+      assembly,
+      document: {
+        ...meta,
+        kind: "positioning",
+        title: "Posicionamiento sobre becas",
+      },
+      body: { variant: "clean", source: "base", blocks: base },
+      generatedAt: new Date(),
+    };
+    const definition = buildDocumentPdf(data, "es", brand);
+    expect((definition.content as Content[])[0]).toMatchObject({
+      text: "POSICIONAMIENTO SOBRE BECAS",
+      style: "coverTitle",
+      pageBreak: "after",
+    });
+    const header = definition.header as (page: number) => Content | null;
+    const footer = definition.footer as (
+      page: number,
+      total: number,
+    ) => Content | null;
+    expect(header(1)).toBeNull();
+    expect(footer(1, 5)).toBeNull();
+    expect(JSON.stringify(footer(2, 5))).toContain(
+      '{"text":"1","bold":true},{"text":" de "},{"text":"4","bold":true}',
+    );
+    const { pages } = await render(definition);
+    expect(pages).toBeGreaterThanOrEqual(2);
+  });
+
+  it("numbers PDF lists with their marker and start", () => {
+    const item = (id: string, text: string, extra: Partial<Block> = {}) => ({
+      ...li(id, text, 0, "ordered"),
+      ...extra,
+    });
+    const nodes = blocksToPdf(
+      [
+        item("a", "Primero", { marker: "a)" }),
+        item("b", "Segundo", { marker: "a)" }),
+        p("c", "Párrafo intermedio."),
+        item("d", "Tercero", { marker: "a)", start: 3 }),
+        item("e", "Cuarto", { marker: "I." }),
+      ],
+      { links: new LinkRegistry() },
+    ) as (ContentOrderedList & { separator?: string })[];
+    const lists = nodes.filter((node) => "ol" in node);
+    expect(lists.map((list) => [list.type, list.separator])).toEqual([
+      ["lower-alpha", ")"],
+      ["lower-alpha", ")"],
+      ["upper-roman", "."],
+    ]);
+    const counters = lists.map((list) =>
+      list.ol.map((entry) => (entry as { counter?: number }).counter),
+    );
+    expect(counters).toEqual([[1, 2], [3], [1]]);
+  });
+
+  it("draws tables with header rows, spans and widths that fit the page", async () => {
+    const at = (row: string, cell: string, extra = {}) => ({
+      table: "tab1",
+      row,
+      cell,
+      ...extra,
+    });
+    const cellBlock = (id: string, text: string, cell: Block["cell"]) => ({
+      ...p(id, text),
+      cell,
+    });
+    const blocks: Block[] = [
+      cellBlock("c1", "Órgano/organismo", at("r1", "a", { header: true })),
+      cellBlock("c2", "Fecha", at("r1", "b", { header: true })),
+      cellBlock("c3", "Descripción", at("r1", "c", { header: true })),
+      cellBlock("c4", "Vocalía de Relaciones Internacionales", at("r2", "d")),
+      cellBlock("c5", "05/03/2026", at("r2", "e")),
+      cellBlock(
+        "c6",
+        "Contestación de encuesta de ESU sobre IA y digitalización en las universidades.",
+        at("r2", "f"),
+      ),
+      cellBlock(
+        "c7",
+        "Explicación breve que ocupa dos",
+        at("r3", "g", { colspan: 2 }),
+      ),
+      cellBlock("c8", "Resto", at("r3", "h")),
+    ];
+    const [node] = blocksToPdf(blocks, { links: new LinkRegistry() }) as {
+      table: {
+        headerRows: number;
+        widths: number[];
+        body: Record<string, unknown>[][];
+      };
+    }[];
+    expect(node!.table.headerRows).toBe(1);
+    expect(node!.table.body[0]![0]).toMatchObject({
+      fillColor: BRAND_RED,
+      color: "#ffffff",
+    });
+    // The spanning cell, then pdfmake's placeholder for what it covers.
+    expect(node!.table.body[2]![0]).toMatchObject({ colSpan: 2 });
+    expect(node!.table.body[2]![1]).toEqual({});
+    const total = node!.table.widths.reduce((sum, width) => sum + width, 0);
+    expect(total).toBeCloseTo(595.28 - 85 - 85.6, 1);
+    // The date column is wide enough for its date.
+    expect(node!.table.widths[1]).toBeGreaterThan(60);
+
+    const { pages } = await render(
+      buildDocumentPdf(
+        {
+          assembly,
+          document: meta,
+          body: { variant: "clean", source: "base", blocks },
+          generatedAt: new Date(),
+        },
+        "es",
+      ),
+    );
+    expect(pages).toBe(1);
   });
 });

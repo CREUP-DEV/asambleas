@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
-import { BLOCK_TYPES, MARK_TYPES } from "../../types/content";
-import type { Block, Mark } from "../../types/content";
+import { BLOCK_TYPES, LIST_MARKERS, MARK_TYPES } from "../../types/content";
+import type { Block, BlockCell, Mark } from "../../types/content";
 import { isSafeHref } from "../content/render";
 
 export const BLOCK_TEXT_MAX_LENGTH = 20_000;
@@ -24,12 +24,39 @@ const markSchema = z.object({
   href: z.string().max(2000).optional(),
 });
 
+const spanSchema = z.number().int().min(2).max(100).optional();
+
+/** A cell reference (BlockCell): ids shaped like block ids. */
+const cellSchema = z
+  .object({
+    table: blockIdSchema,
+    row: blockIdSchema,
+    cell: blockIdSchema,
+    header: z.boolean().optional(),
+    colspan: spanSchema,
+    rowspan: spanSchema,
+  })
+  .transform((cell): BlockCell => {
+    const result: BlockCell = {
+      table: cell.table,
+      row: cell.row,
+      cell: cell.cell,
+    };
+    if (cell.header) result.header = true;
+    if (cell.colspan) result.colspan = cell.colspan;
+    if (cell.rowspan) result.rowspan = cell.rowspan;
+    return result;
+  });
+
 export const blockSchema = z
   .object({
     id: blockIdSchema,
     type: z.enum(BLOCK_TYPES),
     level: z.number().int().min(0).max(6).optional(),
     list: z.enum(["bullet", "ordered"]).optional(),
+    marker: z.enum(LIST_MARKERS).optional(),
+    start: z.number().int().min(0).max(99_999).optional(),
+    cell: cellSchema.optional(),
     text: z.string().max(BLOCK_TEXT_MAX_LENGTH),
     marks: z.array(markSchema).max(500).default([]),
   })
@@ -51,7 +78,15 @@ export const blockSchema = z
     if (block.type === "list_item") {
       result.level = block.level ?? 0;
       result.list = block.list ?? "bullet";
+      // Only ordered items number; "1." is the default and stays implicit.
+      if (result.list === "ordered") {
+        if (block.marker !== undefined && block.marker !== "1.") {
+          result.marker = block.marker;
+        }
+        if (block.start !== undefined) result.start = block.start;
+      }
     }
+    if (block.cell) result.cell = block.cell;
     return result;
   });
 

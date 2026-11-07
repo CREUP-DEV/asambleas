@@ -32,21 +32,21 @@ The public website lives in a separate `creup/web` repository. This app may mirr
 
 ## Stack
 
-| Area          | Technology                                          |
-| ------------- | --------------------------------------------------- |
-| Framework     | Nuxt 4 + Nitro                                      |
-| UI            | Nuxt UI v4 + Tailwind CSS v4                        |
-| Auth          | `better-auth` + Google OAuth + Drizzle adapter      |
-| Database      | PostgreSQL + Drizzle ORM                            |
-| Jobs          | `pg-boss` v12 on PostgreSQL                         |
-| Validation    | Zod v4 (`zod/v4`)                                   |
-| i18n          | `@nuxtjs/i18n`, locales `es` default and `en`       |
-| Accessibility | `@nuxt/a11y`, content font preferences              |
-| Security      | `nuxt-security`, CSRF double-submit cookie          |
-| Analytics     | `nuxt-umami`, self-hosted and cookie-free           |
-| Diffs         | `diff-match-patch`                                  |
-| PDF           | `pdfmake`, Raleway bundled in `server/assets/fonts` |
-| IDs           | `@paralleldrive/cuid2`                              |
+| Area          | Technology                                                                               |
+| ------------- | ---------------------------------------------------------------------------------------- |
+| Framework     | Nuxt 4 + Nitro                                                                           |
+| UI            | Nuxt UI v4 + Tailwind CSS v4                                                             |
+| Auth          | `better-auth` + Google OAuth + Drizzle adapter                                           |
+| Database      | PostgreSQL + Drizzle ORM                                                                 |
+| Jobs          | `pg-boss` v12 on PostgreSQL                                                              |
+| Validation    | Zod v4 (`zod/v4`)                                                                        |
+| i18n          | `@nuxtjs/i18n`, locales `es` default and `en`                                            |
+| Accessibility | `@nuxt/a11y`, content font preferences                                                   |
+| Security      | `nuxt-security`, CSRF double-submit cookie                                               |
+| Analytics     | `nuxt-umami`, self-hosted and cookie-free                                                |
+| Diffs         | `diff-match-patch`                                                                       |
+| PDF           | `pdfmake`, Raleway bundled in `server/assets/fonts`, letterhead in `server/assets/brand` |
+| IDs           | `@paralleldrive/cuid2`                                                                   |
 
 ## Local Defaults
 
@@ -209,6 +209,7 @@ Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`
 - `format`:
   - `structured`: blocks, amendable when `amendable`;
   - `file`: an uploaded PDF, never amendable.
+  - Presenters and managers may switch it until publication (`DocumentFormatSwitch`); the draft text and the PDF both stay for a switch back.
 - Kind defaults (amendable, voted, majority, accepted amendments) come from `DOCUMENT_KIND_DEFAULTS`. An amendment vote proposes `amendmentVoteMajority` (absolute in a reform of the Estatutos or a regulation, simple otherwise). `acceptedAmendments` is per document: `incorporate` (regulations and the Estatutos, RRI art. 65.5) approves an amendment the main presenter accepts at once (approval method `proponent`), and changing that answer before the final vote reopens it; `vote` leaves it to the assembly. Only managers change it, never after the final vote, and the change applies to the amendments already answered (`applyAcceptedAmendmentsRule`).
 - A document has a main presenter (`proponentMemberId`), who alone answers its amendments, and may have co-presenters (`document_proponents`, see `server/utils/domain/presenters.ts`). Co-presenters see and edit the draft like the main one and follow what it decides, but only the main presenter or a manager changes who the main presenter is (403 `main_only`); with co-presenters a main presenter is required. Visibility checks take both (`DocumentPresenters`): load the co-presenters with the row (`resolveDocument`, `withCoProponentIds`).
 - The presenters edit the working draft. Publishing freezes it as the immutable `base` version, and amendments anchor to that.
@@ -364,7 +365,8 @@ Security and reliability:
 - Do not store generated PDFs only in memory.
 - Include `EXPORT_STORAGE_DIR` in backups.
 - Keep PDF labels localized and use shared assembly/date formatters.
-- Raleway font files must be available from `server/assets/fonts` after build.
+- Raleway font files must be available from `server/assets/fonts` after build, and the letterhead logos from `server/assets/brand`.
+- Exports follow CREUP's document template (`server/utils/export/brand.ts` and `CONTENT_STYLES`): logos in the header, a band down the left edge naming the kind of document ("Documentación interna", "Moción Interna", "Normativa propia", "Posicionamiento", "Resolución"), website, email and page count in the footer, and the title alone above the text. Level 1 headings sit on a burgundy bar and level 3 in a burgundy box, in exports and in the platform (`--content-heading` in `main.css`); positionings open with a cover page. Logos are PNGs because pdfmake embeds an image once but redraws an SVG on every page; the band's label is drawn as glyph outlines with `fontkit`, since pdfmake's SVG text cannot reach fonts in its virtual file system.
 
 pg-boss v12 reminders:
 

@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { createId } from "@paralleldrive/cuid2";
 import type { EditorToolbarItem } from "@nuxt/ui";
-import type { Editor, JSONContent } from "@tiptap/core";
-import type { Block } from "~~/shared/types/content";
+import type { ChainedCommands, Editor, JSONContent } from "@tiptap/core";
+import { LIST_MARKERS } from "~~/shared/types/content";
+import type { Block, ListMarker } from "~~/shared/types/content";
+import { formatListNumber } from "~~/shared/utils/content/lists";
 import {
   blocksToEditor,
   editorToBlocks,
@@ -10,14 +12,17 @@ import {
 } from "~~/shared/utils/content/editor";
 import { isSafeHref } from "~~/shared/utils/content/render";
 import { BlockIdExtension } from "~/utils/editor/blockIdExtension";
+import { ListMarkerExtension } from "~/utils/editor/listMarkerExtension";
+import { TableIdsExtension } from "~/utils/editor/tableIdsExtension";
+import { TableKit } from "@tiptap/extension-table";
 
 /**
  * Structured content editor (UEditor / TipTap). Works on blocks: the model is
  * `Block[]`, and every paragraph and heading keeps its block id through
  * edits thanks to `BlockIdExtension`.
  *
- * Toolbar headings: "H2" sets block level 1 and "H3" block level 2, which is
- * how `renderBlocks` shows them (pages keep their own h1).
+ * Toolbar headings: "H2" to "H5" set block levels 1 to 4, which is how
+ * `renderBlocks` shows them (pages keep their own h1).
  */
 const props = withDefaults(
   defineProps<{
@@ -126,6 +131,114 @@ function action(
   } as EditorToolbarItem;
 }
 
+// Tables -------------------------------------------------------------------
+
+/** Tables without column resizing: blocks keep no widths. */
+const extensions = [
+  BlockIdExtension,
+  ListMarkerExtension,
+  TableKit.configure({ table: { resizable: false } }),
+  TableIdsExtension,
+];
+
+/** Whether the cursor is in a table, for the table menu. */
+const inTable = ref(false);
+
+function updateInTable(): void {
+  inTable.value = editor.value?.isActive("table") ?? false;
+}
+
+watch(
+  editor,
+  (instance, previous) => {
+    previous?.off("transaction", updateInTable);
+    instance?.on("transaction", updateInTable);
+    updateInTable();
+  },
+  { immediate: true },
+);
+
+function runInTable(command: (chain: ChainedCommands) => ChainedCommands) {
+  const instance = editor.value;
+  if (!instance) return;
+  command(instance.chain().focus()).run();
+}
+
+/** One entry of the table menu, available only with the cursor in a table. */
+function tableAction(
+  labelKey: string,
+  icon: string,
+  command: (chain: ChainedCommands) => ChainedCommands,
+) {
+  return {
+    label: t(`common.editor.table.${labelKey}`),
+    icon,
+    disabled: !inTable.value,
+    onSelect: () => runInTable(command),
+  };
+}
+
+/** Inserting tables, rows and columns, and removing them. */
+const tableMenu = computed(
+  () =>
+    ({
+      icon: "i-lucide-table",
+      trailingIcon: "i-lucide-chevron-down",
+      "aria-label": t("common.editor.table.menu"),
+      tooltip: { text: t("common.editor.table.menu") },
+      items: [
+        [
+          {
+            label: t("common.editor.table.insert"),
+            icon: "i-lucide-table",
+            // A table inside a cell would join that cell's text.
+            disabled: inTable.value,
+            onSelect: () =>
+              runInTable((chain) =>
+                chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }),
+              ),
+          },
+        ],
+        [
+          tableAction(
+            "addRowBefore",
+            "i-lucide-between-horizontal-start",
+            (c) => c.addRowBefore(),
+          ),
+          tableAction("addRowAfter", "i-lucide-between-horizontal-end", (c) =>
+            c.addRowAfter(),
+          ),
+          tableAction("deleteRow", "i-lucide-trash-2", (c) => c.deleteRow()),
+        ],
+        [
+          tableAction(
+            "addColumnBefore",
+            "i-lucide-between-vertical-start",
+            (c) => c.addColumnBefore(),
+          ),
+          tableAction("addColumnAfter", "i-lucide-between-vertical-end", (c) =>
+            c.addColumnAfter(),
+          ),
+          tableAction("deleteColumn", "i-lucide-trash-2", (c) =>
+            c.deleteColumn(),
+          ),
+        ],
+        [
+          tableAction("toggleHeaderRow", "i-lucide-panel-top", (c) =>
+            c.toggleHeaderRow(),
+          ),
+          tableAction("mergeCells", "i-lucide-table-cells-merge", (c) =>
+            c.mergeCells(),
+          ),
+          tableAction("splitCell", "i-lucide-table-cells-split", (c) =>
+            c.splitCell(),
+          ),
+        ],
+        [tableAction("deleteTable", "i-lucide-trash", (c) => c.deleteTable())],
+      ],
+    }) as EditorToolbarItem,
+);
+
 const toolbarItems = computed<EditorToolbarItem[][]>(() => {
   const marks = [
     action(
@@ -150,6 +263,7 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
     ),
   ];
   const link = [{ slot: "link" } as EditorToolbarItem];
+  const tables = [tableMenu.value];
   const history = [
     action({ kind: "undo", icon: "i-lucide-undo-2" }, "common.editor.undo", [
       "meta",
@@ -161,7 +275,8 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
       "z",
     ]),
   ];
-  if (props.compact) return [marks, link, history];
+  // Amendments may change a table's text, rows and columns too.
+  if (props.compact) return [marks, link, tables, history];
 
   const structure = [
     action(
@@ -173,6 +288,14 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
       "common.editor.subheading",
     ),
     action(
+      { kind: "heading", level: 3, icon: "i-lucide-heading-4" },
+      "common.editor.heading3",
+    ),
+    action(
+      { kind: "heading", level: 4, icon: "i-lucide-heading-5" },
+      "common.editor.heading4",
+    ),
+    action(
       { kind: "bulletList", icon: "i-lucide-list" },
       "common.editor.bulletList",
     ),
@@ -180,13 +303,33 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
       { kind: "orderedList", icon: "i-lucide-list-ordered" },
       "common.editor.orderedList",
     ),
+    // How the list numbers its items; makes the paragraph a numbered list
+    // when it is not one yet.
+    {
+      icon: "i-lucide-list-ordered",
+      trailingIcon: "i-lucide-chevron-down",
+      "aria-label": t("common.editor.listMarker"),
+      tooltip: { text: t("common.editor.listMarker") },
+      items: LIST_MARKERS.map((marker) => ({
+        label: [1, 2, 3].map((n) => formatListNumber(n, marker)).join(" "),
+        onSelect: () => setListMarker(marker),
+      })),
+    } as EditorToolbarItem,
     action(
       { kind: "blockquote", icon: "i-lucide-text-quote" },
       "common.editor.quote",
     ),
   ];
-  return [structure, marks, link, history];
+  return [structure, tables, marks, link, history];
 });
+
+function setListMarker(marker: ListMarker): void {
+  const instance = editor.value;
+  if (!instance) return;
+  const chain = instance.chain().focus();
+  if (!instance.isActive("orderedList")) chain.toggleOrderedList();
+  chain.setListMarker(marker).run();
+}
 
 // Link popover ---------------------------------------------------------------
 
@@ -244,7 +387,8 @@ const editorUi = computed(() => ({
   base: [
     "content-font",
     props.compact ? "min-h-16 px-3 py-2 sm:px-3" : "min-h-48 px-4 py-4 sm:px-6",
-    "[&_h1]:text-[1.75rem] [&_h2]:text-[1.375rem] [&_h3]:text-lg [&_h4]:text-base",
+    "[&_h1]:text-[1.75rem] [&_h2]:text-[1.375rem] [&_h3]:text-lg [&_h4]:text-[1.0625rem] [&_h4]:font-bold",
+    "content-editor",
   ].join(" "),
 }));
 
@@ -265,7 +409,7 @@ defineExpose({
       v-slot="{ editor: slotEditor }"
       :model-value="content as JSONContent"
       content-type="json"
-      :extensions="[BlockIdExtension]"
+      :extensions="extensions"
       :starter-kit="{
         code: false,
         codeBlock: false,
