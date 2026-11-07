@@ -7,6 +7,10 @@ import {
   presenterPartners,
 } from "~/composables/document/documentPresenters";
 import { formatDateTime } from "~/utils/format";
+import {
+  agendaAtItem,
+  cameFromAgenda,
+} from "~/composables/document/agendaReturn";
 
 /**
  * Authoring and management of a document (inside the assembly hub).
@@ -32,6 +36,11 @@ import { formatDateTime } from "~/utils/format";
  * and the metadata form (advanced options folded) and the status actions
  * (withdraw, postpone, publish again, delete before publication) remain.
  * Anyone else is sent to the document workspace.
+ *
+ * Opened from the agenda (`?desde=orden-del-dia`, after adding the document
+ * there), the header leads back to it, and publishing or deleting returns
+ * to that item with the agenda organized, ready for the next document; the
+ * success toast links to the document instead.
  *
  * A failed refresh never unmounts the editor: useDocument keeps the last
  * document loaded and the page keeps the last assembly, and the failure is
@@ -86,6 +95,14 @@ const workspacePath = computed(() =>
   ),
 );
 const documentsPath = computed(() => sectionPath("documentos"));
+
+/** Opened right after adding it on the agenda: the way back is there. */
+const fromAgenda = computed(() => cameFromAgenda(route.query));
+const agendaPath = computed(() =>
+  document.value
+    ? agendaAtItem(sectionPath("orden-del-dia"), document.value.agendaItemId)
+    : sectionPath("orden-del-dia"),
+);
 
 useHead({
   title: () =>
@@ -224,14 +241,15 @@ const canAskCorrection = computed(
 
 /**
  * Publishing as the header's primary action: validating what a presenter
- * sent, publishing again, or a text with no presenter (or the manager's own
- * member). Otherwise the draft is still with a member, and "Publicar ahora"
- * waits in the "Más" menu.
+ * sent, publishing again, a text with no presenter (or the manager's own
+ * member), or one the Secretaría opened from the agenda to supply the text
+ * itself ("Crear y subir el texto"). Otherwise the draft is still with a
+ * member, and "Publicar ahora" waits in the "Más" menu.
  */
 const publishPrimary = computed(() => {
   const current = document.value;
   if (!current || !canPublish.value) return false;
-  if (validating.value || republish.value) return true;
+  if (validating.value || republish.value || fromAgenda.value) return true;
   return (
     current.proponent === null ||
     isDocumentPresenter(current, me.member.value?.id)
@@ -332,6 +350,10 @@ async function confirmAction(): Promise<void> {
       body: { updatedAt: document.value?.updatedAt ?? current.updatedAt },
     });
     const stays = mode === "submit" && updated.can.edit;
+    // Published from the agenda: back to its item for the next document.
+    const toAgenda = !stays && mode === "publish" && fromAgenda.value;
+    const destination = toAgenda ? agendaPath.value : workspacePath.value;
+    const published = workspacePath.value;
     if (!stays) leaving.value = true;
     storeDocument(updated);
     dialogOpen.value = false;
@@ -346,8 +368,27 @@ async function confirmAction(): Promise<void> {
           : undefined,
       color: "success",
       icon: "i-lucide-check",
+      actions: toAgenda
+        ? [
+            {
+              label: t("document.authoring.backToWorkspace"),
+              color: "neutral",
+              variant: "outline",
+              onClick: () => {
+                void navigateTo(published);
+              },
+            },
+          ]
+        : undefined,
     });
-    if (!stays) await leaveTo(workspacePath.value);
+    if (!stays) {
+      await leaveTo(
+        destination,
+        toAgenda
+          ? "document.authoring.returningToAgenda"
+          : "document.authoring.redirecting",
+      );
+    }
   } catch (failure) {
     actionStatus.value = "";
     notifyError(failure, `document.${mode}.error`);
@@ -407,6 +448,10 @@ const fileReplaceable = computed(() => document.value?.finalVote == null);
 
 async function onDeleted(): Promise<void> {
   // Unsaved edits die with the document; never prompt for them.
+  if (fromAgenda.value) {
+    await leaveTo(agendaPath.value, "document.authoring.returningToAgenda");
+    return;
+  }
   await leaveTo(documentsPath.value, "document.authoring.returningToDocuments");
 }
 </script>
@@ -489,10 +534,18 @@ async function onDeleted(): Promise<void> {
         :show-answerer="!(guided && partners)"
       >
         <UButton
-          :to="workspacePath"
+          v-if="fromAgenda"
+          :to="agendaPath"
           color="neutral"
           variant="ghost"
           icon="i-lucide-arrow-left"
+          :label="t('document.authoring.backToAgenda')"
+        />
+        <UButton
+          :to="workspacePath"
+          color="neutral"
+          variant="ghost"
+          :icon="fromAgenda ? 'i-lucide-file-text' : 'i-lucide-arrow-left'"
           :label="t('document.authoring.backToWorkspace')"
         />
         <!-- Presenters send from step 3; managers decide here -->
@@ -642,6 +695,14 @@ async function onDeleted(): Promise<void> {
                 : t("document.authoring.steps.pdf")
             }}
           </h3>
+          <DocumentFormatSwitch
+            :document="document"
+            :document-api="documentApi"
+            :disabled="busy"
+            :pending="textDirty || metadataDirty"
+            @updated="storeDocument"
+            @stale="refetch"
+          />
           <DocumentDraftEditor
             v-if="isStructured"
             ref="draftEditor"
@@ -762,7 +823,16 @@ async function onDeleted(): Promise<void> {
         v-else
         class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]"
       >
-        <div class="min-w-0">
+        <div class="min-w-0 space-y-4">
+          <DocumentFormatSwitch
+            v-if="textEditable"
+            :document="document"
+            :document-api="documentApi"
+            :disabled="busy"
+            :pending="textDirty || metadataDirty"
+            @updated="storeDocument"
+            @stale="refetch"
+          />
           <DocumentDraftEditor
             v-if="isStructured && textEditable"
             ref="draftEditor"
