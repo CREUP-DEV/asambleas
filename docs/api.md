@@ -733,8 +733,11 @@ memberId }`, the main presenter) after `position_changed`, and closes the
 `AmendmentOutcomeDto`.
 
 - `approve` sets `status=approved` with `approvalMethod`.
-- `vote` records a vote with `computeVoteOutcome` (majority `simple` by
-  default) and then approves or rejects. A tie under `tieRule=repeat` stores
+- `vote` records a vote with `computeVoteOutcome` and then approves or
+  rejects. Without a `majority` in the body it uses `amendmentVoteMajority`:
+  `absolute` for an amendment to `regulation` or `statutes` (RRI 2025 art.
+  65.5), `simple` otherwise (art. 18.3). The session's vote dialog proposes
+  the same one. A tie under `tieRule=repeat` stores
   nothing and returns 409. The vote is projected live, pointing the
   projection at the amendment.
 - `withdraw` and `lapse` set `withdrawn` and `lapsed`, only on amendments in

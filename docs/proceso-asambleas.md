@@ -218,7 +218,7 @@ Como cada enmienda cita el párrafo entero, dos que tocan frases distintas parec
 
 - 2/3 de los votos válidos para los acuerdos.
 - Mayoría simple para enmiendas y ratificaciones (RFAG 2025, art. 23.2; RRI 2025, art. 18.3).
-- Inconsistencias: el RFAG 2025 (art. 23.1) pide 2/3 de los votos válidos y el RRI 2025 (art. 18.2) 2/3 de los miembros representados; en las reformas normativas, las enmiendas que rechaza el proponente necesitan mayoría absoluta (RRI 2025, art. 65.5, como antes el RRI-75, art. 62.5).
+- Inconsistencias: el RFAG 2025 (art. 23.1) pide 2/3 de los votos válidos y el RRI 2025 (art. 18.2) 2/3 de los miembros representados; en las reformas normativas, las enmiendas que rechaza el proponente necesitan mayoría absoluta (RRI 2025, art. 65.5, como antes el RRI-75, art. 62.5). La plataforma propone esa mayoría al votar enmiendas a Estatutos y reglamentos, y en ambos incorpora sin votación las que acepta el proponente.
 
 **Métodos:** asentimiento, mano alzada, voto secreto a petición (la votación final de la 34 AGE), voto nominal, voto secreto para elegir personas y el portal en las AGET.
 

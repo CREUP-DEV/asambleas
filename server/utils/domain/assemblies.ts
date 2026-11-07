@@ -42,6 +42,7 @@ import {
 import { coPresentedBy } from "./presenters";
 import {
   MILESTONE_KEYS,
+  REGULATION_DOCUMENT_KINDS,
   type AssemblyStatus,
 } from "~~/shared/constants/domain";
 import type { AssemblyType } from "~~/shared/constants/assemblyTypes";
@@ -62,7 +63,6 @@ import type {
 } from "~~/shared/types/api";
 import {
   checkCalendar,
-  REGULATION_DOCUMENT_KINDS,
   type CalendarRules,
   type Milestones,
 } from "~~/shared/utils/calendar";

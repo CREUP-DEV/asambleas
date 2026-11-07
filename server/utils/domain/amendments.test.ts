@@ -1,5 +1,10 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
+import {
+  amendmentVoteMajority,
+  DOCUMENT_KIND_DEFAULTS,
+  REGULATION_DOCUMENT_KINDS,
+} from "../../../shared/constants/domain";
 
 // Only the pure helpers are tested here: stub every module that touches the
 // database or relies on Nuxt aliases. h3 is a Nitro dependency, not a direct
@@ -619,6 +624,44 @@ describe("evaluateVoteInput", () => {
     );
     expect(result.majority).toBe("two_thirds");
     expect(result.outcome.result).toBe("rejected");
+  });
+
+  it("falls back to the default majority it is given (a reform, RRI art. 65.5)", () => {
+    // 6 of 13 valid votes: more in favor than against, but not over half.
+    const counts = {
+      method: "show_of_hands" as const,
+      inFavor: 6,
+      against: 4,
+      abstentions: 3,
+    };
+    const reform = evaluateVoteInput(
+      counts,
+      settings,
+      amendmentVoteMajority("statutes"),
+    );
+    expect(reform.majority).toBe("absolute");
+    expect(reform.outcome.result).toBe("rejected");
+    expect(
+      evaluateVoteInput(counts, settings, amendmentVoteMajority("resolution"))
+        .outcome.result,
+    ).toBe("approved");
+  });
+});
+
+describe("amendmentVoteMajority", () => {
+  it("is absolute for the Estatutos and regulations, simple elsewhere", () => {
+    expect(amendmentVoteMajority("regulation")).toBe("absolute");
+    expect(amendmentVoteMajority("statutes")).toBe("absolute");
+    expect(amendmentVoteMajority("resolution")).toBe("simple");
+    expect(amendmentVoteMajority("positioning")).toBe("simple");
+  });
+
+  it("goes with incorporating what the presenter accepts", () => {
+    for (const kind of REGULATION_DOCUMENT_KINDS) {
+      expect(DOCUMENT_KIND_DEFAULTS[kind].acceptedAmendments).toBe(
+        "incorporate",
+      );
+    }
   });
 });
 
