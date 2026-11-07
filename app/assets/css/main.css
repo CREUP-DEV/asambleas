@@ -133,6 +133,15 @@ html {
   --cx-prov-3: #7e22ce;
   --cx-prov-4: #be185d;
   --cx-prov-5: #0e7490;
+  /*
+   * Content headings after CREUP's document template: level 1 in white on a
+   * burgundy bar, level 3 in a burgundy box, levels 2 and 4 in burgundy.
+   * The bar stays burgundy in dark mode (white on it is 9:1); the text
+   * colour lightens to keep its contrast on the dark background.
+   */
+  --content-heading: var(--color-creup-red-900);
+  --content-heading-bar: var(--color-creup-red-900);
+  --content-heading-bar-fg: #fff;
 }
 
 .dark {
@@ -145,6 +154,7 @@ html {
   --cx-del-fg: var(--ui-color-error-300);
   --cx-del-bg: color-mix(in oklab, var(--ui-color-error-500) 16%, transparent);
   --cx-selected-bg: color-mix(in oklab, var(--ui-primary) 16%, transparent);
+  --content-heading: var(--color-creup-red-300);
   --cx-prov-0: #60a5fa;
   --cx-prov-1: #fbbf24;
   --cx-prov-2: #34d399;
@@ -156,6 +166,74 @@ html {
 /* Marks mode carries no hue: emphasis rings use the text colour. */
 .diff-marks {
   --cx-ring: var(--ui-text-highlighted);
+}
+
+/* Ordered list markers followed by a parenthesis: "1)", "a)", "i)". */
+@counter-style decimal-paren {
+  system: extends decimal;
+  suffix: ") ";
+}
+
+@counter-style lower-alpha-paren {
+  system: extends lower-alpha;
+  suffix: ") ";
+}
+
+@counter-style upper-alpha-paren {
+  system: extends upper-alpha;
+  suffix: ") ";
+}
+
+@counter-style lower-roman-paren {
+  system: extends lower-roman;
+  suffix: ") ";
+}
+
+@counter-style upper-roman-paren {
+  system: extends upper-roman;
+  suffix: ") ";
+}
+
+/*
+ * Ordered list markers other than "1." (`data-marker`, written by
+ * renderBlocks and the editor). "a)" and the like need a counter style of
+ * their own for the parenthesis. Outside any layer, so the editor's own list
+ * utilities do not override them.
+ */
+:is(.rich-text, .content-editor) ol[data-marker="1)"] {
+  list-style-type: decimal-paren;
+}
+
+:is(.rich-text, .content-editor) ol[data-marker="a."] {
+  list-style-type: lower-alpha;
+}
+
+:is(.rich-text, .content-editor) ol[data-marker="a)"] {
+  list-style-type: lower-alpha-paren;
+}
+
+:is(.rich-text, .content-editor) ol[data-marker="A."] {
+  list-style-type: upper-alpha;
+}
+
+:is(.rich-text, .content-editor) ol[data-marker="A)"] {
+  list-style-type: upper-alpha-paren;
+}
+
+:is(.rich-text, .content-editor) ol[data-marker="i."] {
+  list-style-type: lower-roman;
+}
+
+:is(.rich-text, .content-editor) ol[data-marker="i)"] {
+  list-style-type: lower-roman-paren;
+}
+
+:is(.rich-text, .content-editor) ol[data-marker="I."] {
+  list-style-type: upper-roman;
+}
+
+:is(.rich-text, .content-editor) ol[data-marker="I)"] {
+  list-style-type: upper-roman-paren;
 }
 
 @layer components {
@@ -185,6 +263,7 @@ html {
   .rich-text h2,
   .rich-text h3,
   .rich-text h4,
+  .rich-text h5,
   .rich-text .cx-heading {
     font-family: var(--font-sans);
     font-weight: 700;
@@ -207,7 +286,107 @@ html {
   }
 
   /*
-   * Headings of excerpts (`cx-heading-N`): they look like h2-h4 but stay out
+   * Tables, in the template's colours: burgundy rules and a burgundy header
+   * row in white. Wide ones scroll sideways instead of the page.
+   */
+  .rich-text .cx-table-wrap {
+    overflow-x: auto;
+  }
+
+  :is(.rich-text, .content-editor) table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.95em;
+    line-height: 1.5;
+  }
+
+  :is(.rich-text, .content-editor) :is(td, th) {
+    min-width: 4rem;
+    padding: 0.4em 0.6em;
+    border: 1px solid var(--content-heading);
+    text-align: start;
+    vertical-align: top;
+  }
+
+  :is(.rich-text, .content-editor) th {
+    color: var(--content-heading-bar-fg);
+    background-color: var(--content-heading-bar);
+    font-family: var(--font-sans);
+    font-weight: 700;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Inside a cell, blocks sit closer than in the text around it. */
+  :is(.rich-text, .content-editor) :is(td, th) > :first-child {
+    margin-top: 0;
+  }
+
+  .rich-text :is(td, th) :is(p, ul, ol) + :is(p, ul, ol) {
+    margin-top: 0.5rem;
+  }
+
+  /* The cell the editor's cursor is in, or the cells selected. */
+  .content-editor .selectedCell {
+    outline: 2px solid var(--ui-primary);
+    outline-offset: -2px;
+  }
+
+  /*
+   * The editor's headings look like the rendered ones (TipTap writes levels
+   * 1-4 as h1-h4).
+   */
+  .content-editor h1 {
+    padding: 0.2em 0.45em;
+    color: var(--content-heading-bar-fg);
+    background-color: var(--content-heading-bar);
+  }
+
+  .content-editor h2,
+  .content-editor h4 {
+    color: var(--content-heading);
+  }
+
+  .content-editor h3 {
+    padding: 0.15em 0.45em;
+    border: 1px solid currentColor;
+    color: var(--content-heading);
+    font-weight: 400;
+  }
+
+  /* The template's colours (see --content-heading). */
+  .rich-text h2,
+  .rich-text .cx-heading-2 {
+    padding: 0.2em 0.45em;
+    color: var(--content-heading-bar-fg);
+    background-color: var(--content-heading-bar);
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  .rich-text h3,
+  .rich-text h5,
+  .rich-text .cx-heading-3,
+  .rich-text .cx-heading-5 {
+    color: var(--content-heading);
+  }
+
+  .rich-text h4,
+  .rich-text .cx-heading-4 {
+    padding: 0.15em 0.45em;
+    border: 1px solid currentColor;
+    color: var(--content-heading);
+    font-weight: 400;
+  }
+
+  /* The fourth level keeps the size of the text; weight and family set it apart. */
+  .rich-text h5 {
+    margin-top: 1.25rem;
+    font-size: 1em;
+  }
+
+  /*
+   * Headings of excerpts (`cx-heading-N`): they look like h2-h5 but stay out
    * of the page outline. Sizes follow the text (1.0625rem by default, where
    * they match the headings above), so views that enlarge it enlarge them.
    */
@@ -224,6 +403,11 @@ html {
   .rich-text .cx-heading-4 {
     margin-top: 1.5rem;
     font-size: calc(1em * 1.125 / 1.0625);
+  }
+
+  .rich-text .cx-heading-5 {
+    margin-top: 1.25rem;
+    font-size: 1em;
   }
 
   /* What follows keeps the spacing it has after a real heading. */
@@ -641,6 +825,12 @@ html {
     color: #000 !important;
   }
 
+  /* Printed on white whatever the colour mode. */
+  :root,
+  .dark {
+    --content-heading: var(--color-creup-red-900);
+  }
+
   .rich-text {
     font-size: 11pt;
     line-height: 1.55;
@@ -649,6 +839,7 @@ html {
   .rich-text h2,
   .rich-text h3,
   .rich-text h4,
+  .rich-text h5,
   .rich-text .cx-heading {
     break-after: avoid;
   }

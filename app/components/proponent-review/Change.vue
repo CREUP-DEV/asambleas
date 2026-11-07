@@ -142,4 +142,9 @@ const place = computed(() => {
 .review-text :deep(.rich-text .cx-heading-4) {
   font-size: 1.15em;
 }
+
+.review-text :deep(.rich-text h5),
+.review-text :deep(.rich-text .cx-heading-5) {
+  font-size: 1em;
+}
 </style>

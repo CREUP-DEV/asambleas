@@ -109,8 +109,25 @@
       "invalidLink": "Only http, https and email links are allowed.",
       "heading": "Heading",
       "subheading": "Subheading",
+      "heading3": "Section",
+      "heading4": "Subsection",
       "bulletList": "Bulleted list",
       "orderedList": "Numbered list",
+      "listMarker": "Numbering style",
+      "table": {
+        "menu": "Table",
+        "insert": "Insert table",
+        "addRowBefore": "Add row above",
+        "addRowAfter": "Add row below",
+        "deleteRow": "Delete row",
+        "addColumnBefore": "Add column to the left",
+        "addColumnAfter": "Add column to the right",
+        "deleteColumn": "Delete column",
+        "toggleHeaderRow": "Header row",
+        "mergeCells": "Merge cells",
+        "splitCell": "Split cell",
+        "deleteTable": "Delete table"
+      },
       "quote": "Quote",
       "undo": "Undo",
       "redo": "Redo",
@@ -650,7 +667,9 @@
       "warnings": {
         "tracked_changes": "The file has tracked changes that were neither accepted nor rejected. Check that the imported text is the final one.",
         "comments": "The file has comments. Comments are not imported.",
-        "images_dropped": "Images and other non-text elements were left out."
+        "images_dropped": "Images and other non-text elements were left out.",
+        "tables_flattened": "Tables inside another table were turned into one paragraph per row, with cells separated by \"{'|'}\".",
+        "highlight": "Text highlighting was lost; check whether it marked anything important."
       },
       "tooComplex": "The document is too long or complex to import. Split it into parts or simplify its formatting.",
       "busy": "An import is already in progress. Wait a few seconds and try again.",
@@ -1784,9 +1803,14 @@
     "failed": "Failed to generate PDF",
     "pdf": {
       "untitled": "Untitled",
+      "band": {
+        "internalDocument": "Internal document",
+        "internalMotion": "Internal motion",
+        "ownRegulations": "Own regulations",
+        "positioning": "Position paper",
+        "resolution": "Resolution"
+      },
       "emptyDocument": "This document has no text.",
-      "agendaPoint": "Agenda item {number}: {title}",
-      "presentedBy": "Presented by {members}",
       "voteCounts": "votes in favour: {inFavor}, against: {against}, abstentions: {abstentions}",
       "finalVote": {
         "approved": "Approved at the {assembly} on {date} by {majority} ({counts}).",
@@ -1799,16 +1823,10 @@
       },
       "footer": {
         "generatedAt": "Generated on {date}",
-        "page": "Page {page} of {total}"
+        "page": "{page} of {total}"
       },
       "links": {
         "title": "Links"
-      },
-      "version": {
-        "consolidated": "Final approved text, with the amendments incorporated.",
-        "base": "Published text, without amendments incorporated.",
-        "working": "Unpublished working draft.",
-        "annotated": "Published text with the approved amendments marked in place."
       },
       "watermarkDraft": "DRAFT",
       "legend": {

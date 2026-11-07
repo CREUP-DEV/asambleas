@@ -169,7 +169,8 @@ export function diffPassage(
       continue;
     }
     const fresh = original ? { ...block, id: newId() } : block;
-    if (fresh.text.trim() !== "") pending.push(fresh);
+    // A blank cell still holds its place in its row.
+    if (fresh.text.trim() !== "" || fresh.cell) pending.push(fresh);
   }
   flush();
 

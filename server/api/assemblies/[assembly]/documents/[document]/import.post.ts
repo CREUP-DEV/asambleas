@@ -25,6 +25,7 @@ export default defineEventHandler(async (event): Promise<DocxImportDto> => {
   return convertDocx(file.data, {
     owner: actor.user.id,
     signal: clientGoneSignal(event),
+    documentTitle: document.title,
   });
 });
 

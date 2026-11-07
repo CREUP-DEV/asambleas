@@ -238,15 +238,19 @@ describe("convertDocx", { timeout: 30_000 }, () => {
     expect(hasZipSignature(data)).toBe(true);
     const result = await convert(data);
     expect(result.warnings).toEqual([]);
+    // The Word title is no heading: Heading 1 keeps level 1 to itself.
     expect(result.blocks.map((b) => [b.type, b.level ?? null, b.text])).toEqual(
       [
-        ["heading", 1, "Resolución sobre becas"],
+        ["paragraph", null, "Resolución sobre becas"],
         ["heading", 1, "Artículo 1"],
         ["paragraph", null, "Texto normal"],
         ["paragraph", null, "Hola mundo"],
         ["heading", 2, "Sección"],
       ],
     );
+    expect(result.blocks[0]!.marks).toEqual([
+      { type: "bold", from: 0, to: 22 },
+    ]);
     expect(result.blocks[3]!.marks).toEqual([
       { type: "bold", from: 5, to: 10 },
     ]);
@@ -325,6 +329,324 @@ describe("convertDocx", { timeout: 30_000 }, () => {
     );
     const result = await convert(data);
     expect(result.blocks.map((b) => b.text)).toEqual(["Texto"]);
+  });
+});
+
+/** Relationships of the main document to the parts the tests below use. */
+const STRUCTURE_RELATIONSHIPS = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">
+<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>
+<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/numbering" Target="numbering.xml"/>
+<Relationship Id="rId4" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footnotes" Target="footnotes.xml"/>
+<Relationship Id="rIdL" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://creup.es" TargetMode="External"/>
+</Relationships>`;
+
+const STRUCTURE_STYLES = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:styles ${W}>
+<w:style w:type="paragraph" w:styleId="Ttulo"><w:name w:val="Title"/></w:style>
+<w:style w:type="paragraph" w:styleId="Ttulo1"><w:name w:val="heading 1"/></w:style>
+<w:style w:type="paragraph" w:styleId="Ttulo2"><w:name w:val="heading 2"/></w:style>
+<w:style w:type="paragraph" w:styleId="Cita"><w:name w:val="Quote"/></w:style>
+</w:styles>`;
+
+/** A level of an abstract numbering. */
+const level = (ilvl: number, format: string, text: string, extra = "") =>
+  `<w:lvl w:ilvl="${ilvl}"><w:start w:val="1"/><w:numFmt w:val="${format}"/>${extra}<w:lvlText w:val="${text}"/></w:lvl>`;
+
+/**
+ * Numbering for the tests below:
+ * - 1 and 2 share an abstract numbering of "Artículo %1." and "%2)";
+ * - 3 restarts that numbering at 1;
+ * - 4 is a bulleted list;
+ * - 5 has a level with no number at all.
+ */
+const STRUCTURE_NUMBERING = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:numbering ${W}>
+<w:abstractNum w:abstractNumId="0">${level(0, "decimal", "Artículo %1.")}${level(1, "lowerLetter", "%2)")}${level(2, "upperRoman", "%1.%3", "<w:isLgl/>")}</w:abstractNum>
+<w:abstractNum w:abstractNumId="1">${level(0, "bullet", "•")}</w:abstractNum>
+<w:abstractNum w:abstractNumId="2">${level(0, "none", "")}</w:abstractNum>
+<w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num>
+<w:num w:numId="2"><w:abstractNumId w:val="0"/></w:num>
+<w:num w:numId="3"><w:abstractNumId w:val="0"/><w:lvlOverride w:ilvl="0"><w:startOverride w:val="1"/></w:lvlOverride></w:num>
+<w:num w:numId="4"><w:abstractNumId w:val="1"/></w:num>
+<w:num w:numId="5"><w:abstractNumId w:val="2"/></w:num>
+</w:numbering>`;
+
+/** A paragraph of numbering `numId` at `ilvl`, with an optional style. */
+const numbered = (
+  numId: number,
+  ilvl: number,
+  text: string,
+  style: string | null = null,
+) =>
+  `<w:p><w:pPr>${style ? `<w:pStyle w:val="${style}"/>` : ""}<w:numPr><w:ilvl w:val="${ilvl}"/><w:numId w:val="${numId}"/></w:numPr></w:pPr>${run(text)}</w:p>`;
+
+/** A DOCX with styles, numbering, footnotes and a hyperlink `rIdL`. */
+function structureDocx(body: string, footnotes: string[] = []) {
+  return buildDocx(body, {
+    "word/_rels/document.xml.rels": STRUCTURE_RELATIONSHIPS,
+    "word/styles.xml": STRUCTURE_STYLES,
+    "word/numbering.xml": STRUCTURE_NUMBERING,
+    "word/footnotes.xml": `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<w:footnotes ${W}>${footnotes
+      .map(
+        (text, index) =>
+          `<w:footnote w:id="${index + 1}"><w:p>${run(text)}</w:p></w:footnote>`,
+      )
+      .join("")}</w:footnotes>`,
+  });
+}
+
+/** A run with `properties` (`<w:b/>`, `<w:caps/>`...). */
+const styledRun = (properties: string, text: string) =>
+  `<w:r><w:rPr>${properties}</w:rPr><w:t xml:space="preserve">${text}</w:t></w:r>`;
+
+const summary = (blocks: { type: string; level?: number; text: string }[]) =>
+  blocks.map((block) => [block.type, block.level ?? null, block.text]);
+
+describe("convertDocx structure", { timeout: 30_000 }, () => {
+  it("drops a Word title that repeats the document's title", async () => {
+    const data = await structureDocx(
+      p("Ttulo", "Resolución  sobre becas") + p("Ttulo1", "Exposición"),
+    );
+    const same = await convertDocx(data, {
+      owner: nextOwner(),
+      documentTitle: "resolución sobre becas.",
+    });
+    expect(summary(same.blocks)).toEqual([["heading", 1, "Exposición"]]);
+    const other = await convertDocx(data, {
+      owner: nextOwner(),
+      documentTitle: "Otra resolución",
+    });
+    expect(summary(other.blocks)).toEqual([
+      ["paragraph", null, "Resolución sobre becas"],
+      ["heading", 1, "Exposición"],
+    ]);
+  });
+
+  it("numbers lists and headings as Word shows them", async () => {
+    // mammoth reads the numbering through a wrapper: if an upgrade bypasses
+    // it, the numbers disappear and this test fails.
+    const result = await convert(
+      await structureDocx(
+        numbered(1, 0, "Del objeto", "Ttulo2") +
+          p(null, "Texto del artículo.") +
+          numbered(1, 1, "Primero") +
+          numbered(1, 1, "Segundo") +
+          p(null, "Párrafo sin número.") +
+          numbered(1, 1, "Tercero") +
+          numbered(1, 2, "Legal") +
+          // Another list of the same numbering continues it.
+          numbered(2, 0, "Del ámbito", "Ttulo2") +
+          numbered(2, 1, "Otra vez a") +
+          // A restart begins again at 1.
+          numbered(3, 0, "Reinicio", "Ttulo2") +
+          numbered(4, 0, "Viñeta") +
+          numbered(5, 0, "Sin número"),
+      ),
+    );
+    // Headings and "1.1" keep their number as text; "a)" items stay a list
+    // that starts again at 3 after the paragraph that interrupts it.
+    expect(
+      result.blocks.map((block) => [
+        block.type,
+        block.level ?? null,
+        block.marker ?? null,
+        block.start ?? null,
+        block.text,
+      ]),
+    ).toEqual([
+      ["heading", 2, null, null, "Artículo 1. Del objeto"],
+      ["paragraph", null, null, null, "Texto del artículo."],
+      ["list_item", 1, "a)", null, "Primero"],
+      ["list_item", 1, "a)", null, "Segundo"],
+      ["paragraph", null, null, null, "Párrafo sin número."],
+      ["list_item", 1, "a)", 3, "Tercero"],
+      ["paragraph", null, null, null, "1.1 Legal"],
+      ["heading", 2, null, null, "Artículo 2. Del ámbito"],
+      ["list_item", 1, "a)", null, "Otra vez a"],
+      ["heading", 2, null, null, "Artículo 1. Reinicio"],
+      ["list_item", 0, null, null, "Viñeta"],
+      ["paragraph", null, null, null, "Sin número"],
+    ]);
+  });
+
+  it("reads tables of one column as their content and others by rows", async () => {
+    const link = `<w:hyperlink r:id="rIdL">${run("web")}</w:hyperlink>`;
+    const result = await convert(
+      await structureDocx(
+        // A box around a signature: its paragraphs stay paragraphs.
+        table(
+          row(
+            cell(
+              p("Ttulo1", "Firma") +
+                `<w:p>${styledRun("<w:b/>", "Nombre Apellido")}</w:p>` +
+                `<w:p>${styledRun("<w:i/>", "Cargo")}</w:p>`,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(result.warnings).toEqual([]);
+    expect(summary(result.blocks)).toEqual([
+      ["heading", 1, "Firma"],
+      ["paragraph", null, "Nombre Apellido"],
+      ["paragraph", null, "Cargo"],
+    ]);
+    expect(result.blocks[1]!.marks).toEqual([
+      { type: "bold", from: 0, to: 15 },
+    ]);
+
+    const rows = await convert(
+      await structureDocx(
+        table(
+          row(
+            cell(`<w:p>${styledRun("<w:b/>", "Órgano")}</w:p>`),
+            cell(p(null, "Fecha")),
+          ),
+          row(
+            cell(p(null, "Secretaría") + `<w:p>${link}</w:p>`),
+            cell(
+              numbered(4, 0, "uno") +
+                numbered(4, 0, "dos") +
+                table(row(cell(p(null, "x")), cell(p(null, "y")))),
+            ),
+          ),
+        ),
+      ),
+    );
+    // Only the table nested in a cell loses its layout.
+    expect(rows.warnings).toEqual(["tables_flattened"]);
+    expect(
+      rows.blocks.map((block) => [
+        block.type,
+        block.text,
+        block.cell?.header ?? false,
+      ]),
+    ).toEqual([
+      // A cell all in bold reads as a header cell.
+      ["paragraph", "Órgano", true],
+      ["paragraph", "Fecha", false],
+      ["paragraph", "Secretaría", false],
+      ["paragraph", "web", false],
+      ["list_item", "uno", false],
+      ["list_item", "dos", false],
+      ["paragraph", "x | y", false],
+    ]);
+    const cells = rows.blocks.map((block) => block.cell!);
+    expect(new Set(cells.map((cell) => cell.table)).size).toBe(1);
+    expect(new Set(cells.map((cell) => cell.row)).size).toBe(2);
+    expect(new Set(cells.map((cell) => cell.cell)).size).toBe(4);
+    expect(cells[2]!.cell).toBe(cells[3]!.cell);
+    expect(cells[4]!.cell).toBe(cells[6]!.cell);
+    expect(rows.blocks[3]!.marks).toEqual([
+      { type: "link", from: 0, to: 3, href: "https://creup.es" },
+    ]);
+  });
+
+  it("keeps spans, header rows and blank cells", async () => {
+    const result = await convert(
+      await structureDocx(
+        table(
+          `<w:tr><w:trPr><w:tblHeader/></w:trPr>${cell(p(null, "A"))}${cell(p(null, "B"))}</w:tr>`,
+          // Google Docs marks every row with an off header flag.
+          `<w:tr><w:trPr><w:tblHeader w:val="0"/></w:trPr><w:tc><w:tcPr><w:gridSpan w:val="2"/></w:tcPr>${p(null, "AB")}</w:tc></w:tr>`,
+          row(cell(p(null, "C")), cell("<w:p/>")),
+        ),
+      ),
+    );
+    expect(
+      result.blocks.map((block) => [
+        block.text,
+        block.cell?.header ?? false,
+        block.cell?.colspan ?? 1,
+      ]),
+    ).toEqual([
+      ["A", true, 1],
+      ["B", true, 1],
+      ["AB", false, 2],
+      ["C", false, 1],
+      ["", false, 1],
+    ]);
+  });
+
+  it("turns footnotes into paragraphs that keep their number", async () => {
+    const reference = `<w:r><w:footnoteReference w:id="1"/></w:r>`;
+    const result = await convert(
+      await structureDocx(
+        `<w:p>${run("Texto con nota")}${reference}${run(" y sigue.")}</w:p>`,
+        ["Contenido de la nota."],
+      ),
+    );
+    expect(result.blocks.map((block) => block.text)).toEqual([
+      "Texto con nota[1] y sigue.",
+      "[1] Contenido de la nota.",
+    ]);
+  });
+
+  it("turns thousands of footnotes into paragraphs without stalling", async () => {
+    // 100 paragraphs of 29 references each, and their 2,900 notes: the
+    // block limit.
+    const count = 2_900;
+    const paragraphs = Array.from({ length: 100 }, (_, paragraph) => {
+      const references = Array.from(
+        { length: 29 },
+        (_, index) =>
+          `<w:r><w:footnoteReference w:id="${paragraph * 29 + index + 1}"/></w:r>`,
+      ).join("");
+      return `<w:p>${run("Notas")}${references}</w:p>`;
+    }).join("");
+    const data = await structureDocx(
+      paragraphs,
+      Array.from({ length: count }, (_, index) => `Nota ${index + 1}`),
+    );
+    const { value, error, longestStall } = await convertTimed(
+      data,
+      DOCX_LIMITS,
+    );
+    expect(error).toBeNull();
+    expect(value!.blocks).toHaveLength(DOCUMENT_MAX_BLOCKS);
+    expect(value!.blocks.at(-1)!.text).toBe(`[${count}] Nota ${count}`);
+    expect(longestStall).toBeLessThan(3_000);
+  });
+
+  it("leaves links without an underline of their own", async () => {
+    const result = await convert(
+      await structureDocx(
+        `<w:p>${run("Ver ")}<w:hyperlink r:id="rIdL">${styledRun('<w:u w:val="single"/>', "la web")}</w:hyperlink></w:p>`,
+      ),
+    );
+    expect(result.blocks[0]!.marks).toEqual([
+      { type: "link", from: 4, to: 10, href: "https://creup.es" },
+    ]);
+  });
+
+  it("keeps ordinals, capitals, quotes and underline, and warns of highlights", async () => {
+    const result = await convert(
+      await structureDocx(
+        `<w:p>${run("La 80")}${styledRun('<w:vertAlign w:val="superscript"/>', "a")}${run(" AGO, el m")}${styledRun('<w:vertAlign w:val="superscript"/>', "2")}${run(" y la")}${styledRun('<w:vertAlign w:val="superscript"/>', "a")}</w:p>` +
+          `<w:p>${styledRun("<w:caps/>", "mayúsculas")}${run(" y ")}${styledRun('<w:u w:val="single"/>', "subrayado")}</w:p>` +
+          p("Cita", "Una cita") +
+          `<w:p>${styledRun('<w:highlight w:val="none"/>', "sin resaltar")}</w:p>`,
+      ),
+    );
+    expect(result.warnings).toEqual([]);
+    expect(summary(result.blocks)).toEqual([
+      ["paragraph", null, "La 80ª AGO, el m2 y laa"],
+      ["paragraph", null, "MAYÚSCULAS y subrayado"],
+      ["quote", null, "Una cita"],
+      ["paragraph", null, "sin resaltar"],
+    ]);
+    expect(result.blocks[1]!.marks).toEqual([
+      { type: "underline", from: 13, to: 22 },
+    ]);
+
+    const highlighted = await convert(
+      await structureDocx(
+        `<w:p>${styledRun('<w:highlight w:val="yellow"/>', "importante")}</w:p>`,
+      ),
+    );
+    expect(highlighted.warnings).toEqual(["highlight"]);
   });
 });
 
@@ -878,8 +1200,12 @@ describe("convertDocx HTML bounds", { timeout: 60_000 }, () => {
     const data = deflatedDocx(twoRows);
     const result = await convert(data, { ...DOCX_LIMITS, maxBlockElements: 2 });
     expect(result.blocks.map((block) => block.text)).toEqual([
-      "a | b | c",
-      "d | e | f",
+      "a",
+      "b",
+      "c",
+      "d",
+      "e",
+      "f",
     ]);
     await expect(
       convert(data, { ...DOCX_LIMITS, maxBlockElements: 1 }),
@@ -890,7 +1216,8 @@ describe("convertDocx HTML bounds", { timeout: 60_000 }, () => {
     // table > tr > td > table > tr > td > p
     const data = deflatedDocx(nestedTables(2, p(null, "x")));
     const result = await convert(data, { ...DOCX_LIMITS, maxHtmlDepth: 7 });
-    expect(result.blocks.map((block) => block.text)).toEqual(["x | x", "x"]);
+    // Tables of one column are read as the text inside them.
+    expect(result.blocks.map((block) => block.text)).toEqual(["x"]);
     await expect(
       convert(data, { ...DOCX_LIMITS, maxHtmlDepth: 6 }),
     ).rejects.toMatchObject({ statusCode: 422 });
@@ -901,6 +1228,86 @@ describe("convertDocx HTML bounds", { timeout: 60_000 }, () => {
     const { error, longestStall } = await convertTimed(deep, DOCX_LIMITS);
     expect(error).toMatchObject({ statusCode: 422 });
     expect(longestStall).toBeLessThan(1_000);
+  });
+
+  it("counts marks and list copies in tables like those outside", async () => {
+    const marked = deflatedDocx(
+      table(row(cell(`<w:p>${boldItalic("x")}</w:p>`), cell(p(null, "y")))),
+    );
+    await expect(
+      convert(marked, { ...DOCX_LIMITS, maxMarks: 1 }),
+    ).rejects.toMatchObject({ statusCode: 422 });
+    const result = await convert(marked, { ...DOCX_LIMITS, maxMarks: 2 });
+    expect(result.blocks[0]!.marks.map((mark) => mark.type).sort()).toEqual([
+      "bold",
+      "italic",
+    ]);
+
+    // A table of one column is walked like the text around it, copies
+    // included.
+    const nested = listDocx(
+      table(row(cell(item(0, run("a")) + item(1, run("b"))))),
+    );
+    await expect(
+      convert(nested, { ...DOCX_LIMITS, maxListCopies: 5 }),
+    ).rejects.toMatchObject({ statusCode: 422 });
+    const nestedResult = await convert(nested);
+    expect(nestedResult.blocks.map((block) => block.level)).toEqual([0, 1]);
+  });
+
+  it("still converts a table of 3,000 formatted cells, the block limit", async () => {
+    const formatted = cell(`<w:p>${boldItalic("palabra")}</w:p>`);
+    const linked = cell(
+      `<w:p><w:hyperlink r:id="rIdL">${run("web")}</w:hyperlink></w:p>`,
+    );
+    const rows = (count: number) =>
+      deflatedDocx(
+        table(
+          row(linked, ...Array.from({ length: 5 }, () => formatted)).repeat(
+            count,
+          ),
+        ),
+      );
+    const { value, error, longestStall } = await convertTimed(
+      rows(DOCUMENT_MAX_BLOCKS / 6),
+      DOCX_LIMITS,
+    );
+    expect(error).toBeNull();
+    // Every cell is a block.
+    expect(value!.blocks).toHaveLength(DOCUMENT_MAX_BLOCKS);
+    expect(value!.blocks[1]!.marks).toHaveLength(2);
+    expect(longestStall).toBeLessThan(3_000);
+
+    // 3,000 rows of six cells are past the limit: refused, quickly.
+    const large = await convertTimed(rows(DOCUMENT_MAX_BLOCKS), DOCX_LIMITS);
+    expect(large.error).toMatchObject({ statusCode: 422 });
+    expect(large.longestStall).toBeLessThan(3_000);
+  });
+
+  it("converts or refuses tables up to the node limit without stalling", async () => {
+    // Many tiny formatted cells: about 95,000 nodes.
+    const cells = Array.from({ length: 19 }, () =>
+      cell(`<w:p>${boldItalic("x")}</w:p>`),
+    ).join("");
+    const tiny = await convertTimed(
+      deflatedDocx(table(row(cells).repeat(1_000))),
+      DOCX_LIMITS,
+    );
+    expect(tiny.longestStall).toBeLessThan(3_000);
+
+    // A box of one column holding paragraphs with nothing to keep, which
+    // yield no block, and one holding more paragraphs than blocks allowed.
+    const blank = await convertTimed(
+      deflatedDocx(table(row(cell(p(null, " ").repeat(45_000))))),
+      DOCX_LIMITS,
+    );
+    expect(blank.longestStall).toBeLessThan(3_000);
+    const full = await convertTimed(
+      deflatedDocx(table(row(cell(p(null, "x").repeat(30_000))))),
+      DOCX_LIMITS,
+    );
+    expect(full.error).toMatchObject({ statusCode: 422 });
+    expect(full.longestStall).toBeLessThan(3_000);
   });
 
   it("counts one mark per formatting element around each run of text", async () => {
@@ -961,9 +1368,12 @@ describe("convertDocx HTML bounds", { timeout: 60_000 }, () => {
       ),
     );
     const tableResult = await convert(rows, limits);
+    // Each cell is a block; the one-column table nested in a cell is read
+    // as that cell's text.
     expect(tableResult.blocks.map((block) => block.text)).toEqual([
-      "ab | cd",
-      "ef | gh | gh",
+      "ab",
+      "cd",
+      "ef",
       "gh",
     ]);
     await expect(
@@ -982,10 +1392,7 @@ describe("convertDocx HTML bounds", { timeout: 60_000 }, () => {
       statusCode: 422,
     });
     const result = await convert(nested);
-    expect(result.blocks.map((block) => block.text)).toEqual([
-      `${text} | ${text}`,
-      text,
-    ]);
+    expect(result.blocks.map((block) => block.text)).toEqual([text]);
   });
 
   it("refuses text read again in many nested tables without stalling", async () => {
