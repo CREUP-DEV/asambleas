@@ -9,6 +9,7 @@ import {
   inArray,
   isNull,
   ne,
+  notInArray,
   or,
   sql,
   type SQL,
@@ -41,6 +42,7 @@ import {
 import { coPresentedBy } from "./presenters";
 import {
   MILESTONE_KEYS,
+  REGULATION_DOCUMENT_KINDS,
   type AssemblyStatus,
 } from "~~/shared/constants/domain";
 import type { AssemblyType } from "~~/shared/constants/assemblyTypes";
@@ -52,13 +54,19 @@ import type {
   AssemblyDto,
   AssemblyListDto,
   AssemblySummaryDto,
+  CalendarDocumentDto,
   DecisionDto,
   LiveEventDto,
   LiveStateBody,
   LiveStateDto,
   MilestoneDto,
 } from "~~/shared/types/api";
-import { checkCalendar, type Milestones } from "~~/shared/utils/calendar";
+import {
+  checkCalendar,
+  type CalendarRules,
+  type Milestones,
+} from "~~/shared/utils/calendar";
+import { loadCalendarRules } from "./calendarRules";
 import { ASSEMBLY_LIST_PAGE_SIZE } from "~~/shared/utils/schemas/assembly";
 import { buildAssemblySlug, formatAssemblyLabel } from "~~/shared/utils/slug";
 
@@ -324,7 +332,13 @@ export function toAssemblySummaryDto(
 export function toAssemblyDto(
   actor: Actor,
   row: AssemblyRow,
-  extra: { documentCount: number; milestones: MilestoneDto[]; now?: Date },
+  extra: {
+    documentCount: number;
+    milestones: MilestoneDto[];
+    calendarRules: CalendarRules;
+    calendarDocuments: CalendarDocumentDto[];
+    now?: Date;
+  },
 ): AssemblyDto {
   return {
     ...toAssemblySummaryDto(row, extra),
@@ -332,12 +346,52 @@ export function toAssemblyDto(
     settings: assemblySettings(row),
     milestones: extra.milestones,
     calendarWarnings: checkCalendar(
-      row.type,
+      extra.calendarRules,
       row.startDate,
       milestonesToMap(extra.milestones),
+      extra.calendarDocuments,
     ),
+    calendarRules: extra.calendarRules,
+    calendarDocuments: extra.calendarDocuments,
     can: assemblyCapabilities(actor),
   };
+}
+
+/**
+ * The documents the reform window check reads (checkCalendar): the
+ * amendable regulation and statutes documents still on the table, with
+ * their own windows. Managers only; an empty list for everyone else.
+ */
+export async function loadCalendarDocuments(
+  actor: Actor,
+  assemblyId: string,
+  executor: Executor = db,
+): Promise<CalendarDocumentDto[]> {
+  if (!canManageAssemblies(actor)) return [];
+  const rows = await executor
+    .select({
+      id: documents.id,
+      title: documents.title,
+      kind: documents.kind,
+      amendable: documents.amendable,
+      amendmentsOpenAt: documents.amendmentsOpenAt,
+      amendmentsCloseAt: documents.amendmentsCloseAt,
+    })
+    .from(documents)
+    .where(
+      and(
+        eq(documents.assemblyId, assemblyId),
+        eq(documents.amendable, true),
+        inArray(documents.kind, [...REGULATION_DOCUMENT_KINDS]),
+        notInArray(documents.status, ["withdrawn", "postponed"]),
+      ),
+    )
+    .orderBy(asc(documents.createdAt), asc(documents.id));
+  return rows.map((row) => ({
+    ...row,
+    amendmentsOpenAt: iso(row.amendmentsOpenAt),
+    amendmentsCloseAt: iso(row.amendmentsCloseAt),
+  }));
 }
 
 /**
@@ -359,13 +413,18 @@ export async function loadAssemblyDto(
         )[0]
       : assembly;
   if (!row) fail(404, "Asamblea no encontrada");
-  const [milestones, counts] = await Promise.all([
-    loadMilestoneDtos([row.id], executor),
-    countVisibleDocuments(actor, [row.id], executor),
-  ]);
+  const [milestones, counts, calendarRules, calendarDocuments] =
+    await Promise.all([
+      loadMilestoneDtos([row.id], executor),
+      countVisibleDocuments(actor, [row.id], executor),
+      loadCalendarRules(row.type, executor),
+      loadCalendarDocuments(actor, row.id, executor),
+    ]);
   return toAssemblyDto(actor, row, {
     documentCount: counts.get(row.id) ?? 0,
     milestones: milestones.get(row.id) ?? [],
+    calendarRules,
+    calendarDocuments,
   });
 }
 

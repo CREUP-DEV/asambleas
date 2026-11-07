@@ -195,7 +195,7 @@ Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`
   - `draft` is visible only to managers.
   - `agendaFinalizedAt` marks the final agenda (ODD definitivo): root agenda items are then locked.
 - Each type keeps its own counter: `(type, number)` is unique.
-- Calendar milestones live in `assembly_milestones`, seeded from `shared/utils/calendar.ts` and checked by `checkCalendar`.
+- Calendar milestones live in `assembly_milestones`, seeded by `defaultMilestones` and checked by `checkCalendar`, both from the calendar rules of the type (`calendar_rules`: default offsets, regulatory minimums, documents sent with a short convocation, reform window; read from the 2025 RRI and RFAG, since the 2026 drafts were never approved). The rules are data, edited at `/admin/calendario` (`CALENDAR_RULES_PERMISSION`); never hardcode a regulatory deadline. `INITIAL_CALENDAR_RULES` is only what `pnpm db:seed` stores for a type with no row (it never overwrites one).
 - Per-assembly policies live in `assemblies.settings`. Always read them merged over `DEFAULT_ASSEMBLY_SETTINGS`.
 - Public routes use readable slugs (`80-ago`). Resolve them server-side with `server/utils/domain/resolvers.ts`.
 
@@ -210,7 +210,7 @@ Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`
   - `structured`: blocks, amendable when `amendable`;
   - `file`: an uploaded PDF, never amendable.
   - Presenters and managers may switch it until publication (`DocumentFormatSwitch`); the draft text and the PDF both stay for a switch back.
-- Kind defaults (amendable, voted, majority, accepted amendments) come from `DOCUMENT_KIND_DEFAULTS`. `acceptedAmendments` is per document: `incorporate` (regulations) approves an amendment the main presenter accepts at once (approval method `proponent`), and changing that answer before the final vote reopens it; `vote` leaves it to the assembly. Only managers change it, never after the final vote, and the change applies to the amendments already answered (`applyAcceptedAmendmentsRule`).
+- Kind defaults (amendable, voted, majority, accepted amendments) come from `DOCUMENT_KIND_DEFAULTS`. An amendment vote proposes `amendmentVoteMajority` (absolute in a reform of the Estatutos or a regulation, simple otherwise). `acceptedAmendments` is per document: `incorporate` (regulations and the Estatutos, RRI art. 65.5) approves an amendment the main presenter accepts at once (approval method `proponent`), and changing that answer before the final vote reopens it; `vote` leaves it to the assembly. Only managers change it, never after the final vote, and the change applies to the amendments already answered (`applyAcceptedAmendmentsRule`).
 - A document has a main presenter (`proponentMemberId`), who alone answers its amendments, and may have co-presenters (`document_proponents`, see `server/utils/domain/presenters.ts`). Co-presenters see and edit the draft like the main one and follow what it decides, but only the main presenter or a manager changes who the main presenter is (403 `main_only`); with co-presenters a main presenter is required. Visibility checks take both (`DocumentPresenters`): load the co-presenters with the row (`resolveDocument`, `withCoProponentIds`).
 - The presenters edit the working draft. Publishing freezes it as the immutable `base` version, and amendments anchor to that.
 - The final vote stores the `consolidated` version produced by `consolidate`.
@@ -240,7 +240,7 @@ Model in [`docs/design.md`](docs/design.md) ("Traceability", "Impersonation"); e
 
 - Every mutation calls `recordEvent` or `recordAudit`, directly or through a server function. Never insert into `audit_log` directly: `recordAudit` (`server/utils/domain/audit.ts`) is the only writer. `server/utils/domain/traceability.test.ts` enforces it; an endpoint that writes no state goes in its commented `NON_RECORDING_MUTATIONS` allowlist.
 - Identity comes only from `getAuthUserWithRole`, `requireActor` or the RBAC callers on the server and from `useMe` on the client, never from `session.user` or `authClient.useSession`: while an Admin impersonates, the session is still the Admin's.
-- Impersonation is Admin-only by the real role through `requireAdmin`, never a permission key. Never as oneself or another Admin, never as an account without access (403 `targetRevoked`), never nested, 60 minutes fixed, with a reason. An open impersonation of an account that loses access ends as `revoked`. The admin section and `/api/members` are read-only while it lasts, and every unsafe request sends `x-acting-user`.
+- Impersonation is Admin-only by the real role through `requireAdmin`, never a permission key. Never as oneself or another Admin, never as an account without access (403 `targetRevoked`), never nested, 60 minutes fixed, with a reason. An open impersonation of an account that loses access ends as `revoked`. The admin section, `/api/members` and `/api/calendar-rules` are read-only while it lasts, and every unsafe request sends `x-acting-user`.
 - Events recorded with `actor: null` inside an impersonated request pass `impersonationId` explicitly.
 - The Intranet writes with source `intranet` and actor null: `user.access_revoked`, `user.access_restored` and `user.intranet_missing` at sign-in, `user.access_revoked` and `users.access_recheck_blocked` in the daily access re-check, and the daily roster sync's `members.sync` rows and `members.sync_blocked`. A manual roster sync keeps the account that ran it as actor.
 - Update events put what changed in `payload.changes`, built with `diffChanges` (`server/utils/domain/changes.ts`) from the stored row against what was written, never from the request body; never content blocks or correction notes. Delete events carry an explicit allowlist that names the entity and its insiders; never spread the row into a payload.
@@ -389,7 +389,7 @@ pg-boss v12 reminders:
 - Unknown permission keys rejected, not silently ignored.
 - Export downloads authorized.
 - Every mutation leaves an event or an audit row (`recordEvent` / `recordAudit`).
-- Impersonation only for the real Admin role; the admin section and `/api/members` read-only while it lasts; `x-acting-user` on unsafe requests.
+- Impersonation only for the real Admin role; the admin section, `/api/members` and `/api/calendar-rules` read-only while it lasts; `x-acting-user` on unsafe requests.
 - An account deleted in the Intranet has no access (`accessRevokedAt`), checked on every request and found by the daily re-check even if it never signs in again; only an authenticated Intranet lookup gives it back.
 - The Intranet token never travels over `http:` to a public host in production, and logs never carry an email (`accountRef`).
 - Activity readers re-check visibility with the current actor and never show others' IPs or emails to non-Admins.

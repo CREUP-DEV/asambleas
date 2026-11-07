@@ -28,6 +28,9 @@
  *
  * Grants it adds are recorded as `rbac.seed` audit rows (one per role).
  *
+ * It also stores the initial calendar rules of each assembly type that has
+ * none (`calendar_rules.seed`), and never touches stored ones.
+ *
  * Runs under tsx, outside Nuxt: import only from `shared/**` and
  * `server/db/schema`, with relative paths. The one exception is
  * `server/utils/domain/audit.ts` (recordAudit, the only audit_log writer),
@@ -69,6 +72,8 @@ import type {
   MarkType,
 } from "../shared/types/content";
 import { defaultMilestones, type Milestones } from "../shared/utils/calendar";
+import { INITIAL_CALENDAR_RULES } from "../shared/constants/calendarRules";
+import { ALL_ASSEMBLY_TYPES } from "../shared/constants/assemblyTypes";
 import { diffText } from "../shared/utils/content/diff";
 import {
   globalReplaceOps,
@@ -202,6 +207,45 @@ async function seedRbac(db: Db): Promise<void> {
   } else {
     console.log("  No assignments to create");
   }
+}
+
+/**
+ * Stores the initial calendar rules (INITIAL_CALENDAR_RULES) of every
+ * assembly type that has none, with a `calendar_rules.seed` audit row each.
+ * Never overwrites a stored row: the rules are edited in the admin section,
+ * and a later `deploy.sh --seed` must not undo those edits.
+ */
+async function seedCalendarRules(db: Db): Promise<void> {
+  console.log("Seeding calendar rules...");
+  const inserted = await db.transaction(async (tx) => {
+    const rows = await tx
+      .insert(schema.calendarRules)
+      .values(
+        ALL_ASSEMBLY_TYPES.map((type) => ({
+          type,
+          rules: INITIAL_CALENDAR_RULES[type],
+        })),
+      )
+      .onConflictDoNothing({ target: schema.calendarRules.type })
+      .returning({
+        type: schema.calendarRules.type,
+        rules: schema.calendarRules.rules,
+      });
+    for (const row of rows) {
+      await recordAudit(tx, {
+        actor: null,
+        source: "seed",
+        action: AUDIT_ACTIONS.CALENDAR_RULES_SEED,
+        targetType: "calendar_rules",
+        targetId: row.type,
+        after: { rules: row.rules },
+      });
+    }
+    return rows;
+  });
+  console.log(
+    `  ${inserted.length} calendar rule sets created (kept the stored ones)`,
+  );
 }
 
 // Demo content (pure) -----------------------------------------------------------
@@ -643,7 +687,7 @@ export function buildDemoContent(
   newId: () => string = createId,
 ): DemoContent {
   const agoStart = atUtcHour(now, 7, 9);
-  const agoMilestones = defaultMilestones("AGO", agoStart);
+  const agoMilestones = defaultMilestones(INITIAL_CALENDAR_RULES.AGO, agoStart);
   const ageStart = atUtcHour(now, 40, 9);
 
   const positioning = positioningBlocks(newId);
@@ -1125,7 +1169,7 @@ export function buildDemoContent(
     age: {
       start: ageStart,
       end: new Date(ageStart.getTime() + 8 * HOUR),
-      milestones: defaultMilestones("AGE", ageStart),
+      milestones: defaultMilestones(INITIAL_CALENDAR_RULES.AGE, ageStart),
     },
     positioning,
     mentalHealth,
@@ -1989,6 +2033,7 @@ async function main(): Promise<void> {
   );
   try {
     await seedRbac(db);
+    await seedCalendarRules(db);
     if (process.env.SEED_DEMO === "1") {
       console.log("Seeding demo data...");
       await seedDemo(db, buildDemoContent());

@@ -96,7 +96,33 @@ export interface DocumentKindDefaults {
   referencePrefix?: string;
 }
 
-/** Defaults per document kind (RFAG/RRI 2026). All editable per document. */
+/**
+ * Kinds whose amendments follow the reform rules of RRI art. 65 (Estatutos
+ * and regulations): a minimum amendment window (65.3), the amendments the
+ * presenter accepts join the text (65.5) and the rest need an absolute
+ * majority (65.5).
+ */
+export const REGULATION_DOCUMENT_KINDS: readonly DocumentKind[] = [
+  "regulation",
+  "statutes",
+];
+
+/**
+ * The majority an amendment vote proposes: absolute in a reform of the
+ * Estatutos or a regulation (RRI art. 65.5), simple otherwise (RRI art.
+ * 18.3, RFAG art. 23.2). The Mesa may pick another one for each vote.
+ */
+export function amendmentVoteMajority(kind: DocumentKind): Majority {
+  return REGULATION_DOCUMENT_KINDS.includes(kind) ? "absolute" : "simple";
+}
+
+/**
+ * Defaults per document kind, all editable per document. Rules in force
+ * (2025): agreements need two thirds (RFAG art. 23.1, RRI art. 18.2); in a
+ * reform of the Estatutos or a regulation the amendments the presenter
+ * accepts join the text (RRI art. 65.5), elsewhere every substantive
+ * amendment is voted (RRI art. 18.6). The rest is usual practice.
+ */
 export const DOCUMENT_KIND_DEFAULTS: Record<
   DocumentKind,
   DocumentKindDefaults
@@ -138,7 +164,7 @@ export const DOCUMENT_KIND_DEFAULTS: Record<
   statutes: {
     amendable: true,
     voted: true,
-    acceptedAmendments: "vote",
+    acceptedAmendments: "incorporate",
     majority: "two_thirds",
   },
   budget: {

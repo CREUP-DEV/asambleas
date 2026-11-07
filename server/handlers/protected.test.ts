@@ -23,6 +23,7 @@ vi.mock("../utils/auth/requestProtection", () => protection);
 
 const {
   default: handler,
+  isCalendarRulesPath,
   isMembersPath,
   isStopImpersonationRequest,
   requestPathname,
@@ -256,6 +257,9 @@ describe("request path helpers", () => {
     expect(isMembersPath("/api/Members")).toBe(true);
     expect(isMembersPath("/api/me")).toBe(false);
     expect(isMembersPath("/api/membership")).toBe(false);
+    expect(isCalendarRulesPath("/api/calendar-rules")).toBe(true);
+    expect(isCalendarRulesPath("/api/Calendar-Rules/AGO")).toBe(true);
+    expect(isCalendarRulesPath("/api/calendar-rulesx")).toBe(false);
   });
 
   it("recognises only the stop request", () => {

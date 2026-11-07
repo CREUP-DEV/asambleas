@@ -1,7 +1,6 @@
 import { fromDate, toCalendarDateTime } from "@internationalized/date";
-import type { AssemblyType } from "../constants/assemblyTypes";
-import type { MilestoneKey } from "../constants/domain";
-import { MILESTONE_KEYS } from "../constants/domain";
+import type { DocumentKind, MilestoneKey } from "../constants/domain";
+import { MILESTONE_KEYS, REGULATION_DOCUMENT_KINDS } from "../constants/domain";
 
 /** The assemblies' time zone: every date is set and shown in it. */
 export const ASSEMBLY_TIME_ZONE = "Europe/Madrid";
@@ -10,53 +9,42 @@ const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
 
 /**
- * How long before the assembly start a milestone falls: whole days in the
- * assemblies' time zone (same wall-clock time, also across a clock change)
- * or exact hours (the regulation's "96 horas").
+ * How long before the assembly start a milestone falls: whole days or
+ * calendar months in the assemblies' time zone (same wall-clock time, also
+ * across a clock change) or exact hours (the regulation's "96 horas").
  */
-export type MilestoneOffset = { days: number } | { hours: number };
+export type MilestoneOffset =
+  { days: number } | { hours: number } | { months: number };
 
 /**
- * Default offsets before the assembly start (RFAG and RRI 2026, see
- * docs/proceso-asambleas.md §3). Every value stays editable per assembly.
+ * The calendar rules of one assembly type, stored in `calendar_rules` and
+ * edited in the admin section (the regulations change often, so none of
+ * this is fixed in code). `defaults` fill a new calendar; the rest only
+ * warns (checkCalendar), since every date stays editable per assembly.
  */
-export const DEFAULT_MILESTONE_OFFSETS: Record<
-  AssemblyType,
-  Partial<Record<MilestoneKey, MilestoneOffset>>
-> = {
-  AGO: {
-    convocation: { days: 30 },
-    agenda_requests_close: { days: 21 },
-    agenda_final: { days: 14 },
-    documents_publish: { days: 12 },
-    amendments_open: { days: 12 },
-    documents_close: { days: 8 },
-    amendments_close: { days: 4 },
-    candidacies_close: { hours: 96 },
-  },
-  AGE: {
-    convocation: { days: 15 },
-    agenda_final: { days: 7 },
-    documents_publish: { days: 5 },
-    amendments_open: { days: 5 },
-    amendments_close: { days: 2 },
-    candidacies_close: { hours: 48 },
-  },
-  AGET: {
-    convocation: { days: 7 },
-    agenda_final: { days: 7 },
-    documents_publish: { days: 5 },
-    amendments_open: { days: 5 },
-    amendments_close: { days: 2 },
-  },
-};
-
-/** Regulatory minimum notice of the convocation, in days, by type. */
-export const MINIMUM_NOTICE_DAYS: Record<AssemblyType, number> = {
-  AGO: 30,
-  AGE: 15,
-  AGET: 5,
-};
+export interface CalendarRules {
+  /** Offsets before the start that "Apply default deadlines" proposes. */
+  defaults: Partial<Record<MilestoneKey, MilestoneOffset>>;
+  /**
+   * Regulatory minimums: each milestone must fall at least this long before
+   * the start (the convocation's notice, the final agenda, the documents,
+   * the latest the amendment window may be extended to...).
+   */
+  minimums: Partial<Record<MilestoneKey, MilestoneOffset>>;
+  /**
+   * An assembly convened with less notice than this must send every
+   * document with the convocation, or the convocation is not valid (RRI
+   * art. 13.1.a, extraordinary assemblies): the documents must be published
+   * no later than the convocation. null: no such rule for the type.
+   */
+  documentsWithConvocationBelow: MilestoneOffset | null;
+  /**
+   * Shortest amendment window, in days, of a reform of the Estatutos or a
+   * regulation (REGULATION_DOCUMENT_KINDS, RRI art. 65.3): its own window,
+   * else the assembly's. null: no minimum.
+   */
+  regulationWindowDays: number | null;
+}
 
 /** The instant `offset` before `start`. */
 export function milestoneOffsetBefore(
@@ -65,9 +53,13 @@ export function milestoneOffsetBefore(
 ): Date {
   if ("hours" in offset) return new Date(start.getTime() - offset.hours * HOUR);
   if (Number.isNaN(start.getTime())) return new Date(Number.NaN);
-  return fromDate(start, ASSEMBLY_TIME_ZONE)
-    .subtract({ days: offset.days })
-    .toDate();
+  const zoned = fromDate(start, ASSEMBLY_TIME_ZONE);
+  // A month back from the 31st lands on the last day of the shorter month
+  // (31 March -> 28 or 29 February): the notice is never less than a month.
+  if ("months" in offset) {
+    return zoned.subtract({ months: offset.months }).toDate();
+  }
+  return zoned.subtract({ days: offset.days }).toDate();
 }
 
 /**
@@ -96,10 +88,14 @@ export function wholeDaysBeforeStart(start: Date, at: Date): number | null {
 
 export type Milestones = Partial<Record<MilestoneKey, Date>>;
 
-export function defaultMilestones(type: AssemblyType, start: Date): Milestones {
+/** The calendar the rules propose for an assembly starting at `start`. */
+export function defaultMilestones(
+  rules: Pick<CalendarRules, "defaults">,
+  start: Date,
+): Milestones {
   const result: Milestones = {};
   for (const key of MILESTONE_KEYS) {
-    const offset = DEFAULT_MILESTONE_OFFSETS[type][key];
+    const offset = rules.defaults[key];
     if (offset !== undefined) {
       result[key] = milestoneOffsetBefore(start, offset);
     }
@@ -109,6 +105,9 @@ export function defaultMilestones(type: AssemblyType, start: Date): Milestones {
 
 export type CalendarWarningCode =
   | "short_notice"
+  | "below_minimum"
+  | "documents_not_with_convocation"
+  | "regulation_window_short"
   | "amendments_before_publication"
   | "amendments_close_before_open"
   | "amendments_overlap_documents"
@@ -118,33 +117,76 @@ export type CalendarWarningCode =
 export interface CalendarWarning {
   code: CalendarWarningCode;
   keys: MilestoneKey[];
+  /**
+   * The rule broken (`short_notice`, `below_minimum`,
+   * `documents_not_with_convocation`).
+   */
+  limit?: MilestoneOffset;
+  /** The minimum window in days (`regulation_window_short`). */
+  days?: number;
+  /** The document whose window is too short (`regulation_window_short`). */
+  document?: { id: string; title: string };
 }
 
-/** Flags calendars that break a regulatory minimum or contradict themselves. */
+/**
+ * A document of the assembly as the calendar check needs it: its kind and
+ * its own amendment window, which overrides the assembly's when set.
+ */
+export interface CalendarDocument {
+  id: string;
+  title: string;
+  kind: DocumentKind;
+  amendable: boolean;
+  amendmentsOpenAt: Date | string | null;
+  amendmentsCloseAt: Date | string | null;
+}
+
+/**
+ * Flags calendars that break a regulatory minimum of `rules` or contradict
+ * themselves. `documents` adds the reform window check for the amendable
+ * regulation and statutes documents among them.
+ */
 export function checkCalendar(
-  type: AssemblyType,
+  rules: CalendarRules,
   start: Date,
   milestones: Milestones,
+  documents: readonly CalendarDocument[] = [],
 ): CalendarWarning[] {
   const warnings: CalendarWarning[] = [];
   const at = (key: MilestoneKey) => milestones[key]?.getTime();
+  for (const key of MILESTONE_KEYS) {
+    const limit = rules.minimums[key];
+    const value = at(key);
+    if (limit === undefined || value === undefined) continue;
+    // Counted in the assemblies' time zone, like the defaults, so a clock
+    // change in between neither adds nor removes an hour of notice.
+    if (value > milestoneOffsetBefore(start, limit).getTime()) {
+      warnings.push({
+        code: key === "convocation" ? "short_notice" : "below_minimum",
+        keys: [key],
+        limit,
+      });
+    }
+  }
 
-  // Counted in days in the assemblies' time zone, like the defaults, so a
-  // clock change in between neither adds nor removes an hour of notice.
   const convocation = at("convocation");
+  const publish = at("documents_publish");
+  const attachBelow = rules.documentsWithConvocationBelow;
   if (
+    attachBelow &&
     convocation !== undefined &&
-    convocation >
-      milestoneOffsetBefore(start, {
-        days: MINIMUM_NOTICE_DAYS[type],
-      }).getTime()
+    convocation > milestoneOffsetBefore(start, attachBelow).getTime() &&
+    (publish === undefined || publish > convocation)
   ) {
-    warnings.push({ code: "short_notice", keys: ["convocation"] });
+    warnings.push({
+      code: "documents_not_with_convocation",
+      keys: ["convocation", "documents_publish"],
+      limit: attachBelow,
+    });
   }
 
   const open = at("amendments_open");
   const close = at("amendments_close");
-  const publish = at("documents_publish");
   if (open !== undefined && publish !== undefined && open < publish) {
     warnings.push({
       code: "amendments_before_publication",
@@ -179,6 +221,32 @@ export function checkCalendar(
       keys: ["agenda_final", "documents_publish"],
     });
   }
+
+  const windowDays = rules.regulationWindowDays;
+  if (windowDays !== null) {
+    for (const document of documents) {
+      if (
+        !document.amendable ||
+        !REGULATION_DOCUMENT_KINDS.includes(document.kind)
+      ) {
+        continue;
+      }
+      const window = amendmentWindow(document, milestones);
+      if (!window.opensAt || !window.closesAt) continue;
+      const shortestClose = milestoneOffsetBefore(window.closesAt, {
+        days: windowDays,
+      });
+      if (window.opensAt.getTime() > shortestClose.getTime()) {
+        warnings.push({
+          code: "regulation_window_short",
+          keys: ["amendments_open", "amendments_close"],
+          days: windowDays,
+          document: { id: document.id, title: document.title },
+        });
+      }
+    }
+  }
+
   for (const key of MILESTONE_KEYS) {
     const value = at(key);
     if (value !== undefined && value > start.getTime()) {

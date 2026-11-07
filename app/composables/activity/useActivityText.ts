@@ -309,6 +309,10 @@ export function useActivityText() {
         return t("activity.target.members");
       case "users":
         return t("activity.target.users");
+      case "calendar_rules":
+        return target.label
+          ? t("activity.target.calendarRules", { type: target.label })
+          : t("activity.target.calendarRulesNoType");
       case "vote":
       case "decision":
       case "live":

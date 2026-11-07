@@ -40,8 +40,20 @@ function decodePath(path: string): string {
  * check can only ever cover more.
  */
 export function isMembersPath(pathname: string): boolean {
+  return isUnderPrefix(pathname, "/api/members");
+}
+
+/**
+ * The calendar rules of the assembly types (/api/calendar-rules/**):
+ * platform configuration, read-only while impersonating like members.
+ */
+export function isCalendarRulesPath(pathname: string): boolean {
+  return isUnderPrefix(pathname, "/api/calendar-rules");
+}
+
+function isUnderPrefix(pathname: string, prefix: string): boolean {
   const path = pathname.toLowerCase();
-  return path === "/api/members" || path.startsWith("/api/members/");
+  return path === prefix || path.startsWith(`${prefix}/`);
 }
 
 /**
@@ -67,8 +79,9 @@ export function isStopImpersonationRequest(
  *
  * Unsafe requests must also name the effective user in `x-acting-user`
  * (409 `auth.identityChanged` otherwise, and the client reloads): while an
- * Admin impersonates, identity can switch under an open tab. Members are
- * read-only while impersonating (403 `admin.impersonationReadOnly`).
+ * Admin impersonates, identity can switch under an open tab. Members and
+ * the calendar rules are read-only while impersonating (403
+ * `admin.impersonationReadOnly`).
  */
 export default defineEventHandler(async (event) => {
   if (event.method === "OPTIONS") {
@@ -84,7 +97,7 @@ export default defineEventHandler(async (event) => {
   if (!isStopImpersonationRequest(event.method, pathname)) {
     assertActingUser(event);
   }
-  if (isMembersPath(pathname)) {
+  if (isMembersPath(pathname) || isCalendarRulesPath(pathname)) {
     assertNotImpersonatingMutation(event);
   }
 });
