@@ -34,6 +34,7 @@ import {
   withPresenterLead,
   type PresenterChoice,
 } from "~/composables/document/documentPresenters";
+import { editorFromAgenda } from "~/composables/document/agendaReturn";
 
 /**
  * Adds a document under an agenda item.
@@ -49,8 +50,11 @@ import {
  *   Secretaría can create in advance the documents it expects; the rules of
  *   the type (format, amendments, vote, what an accepted amendment becomes)
  *   stay under "Opciones avanzadas", with the type's defaults preselected.
- *   A document expected from a member stays on the agenda; one with no
- *   presenter, or presented by the manager's own member, opens the editor.
+ *   A document expected from a member stays on the agenda ("Crear"), unless
+ *   the Secretaría already has its text ("Crear y subir el texto"); one with
+ *   no presenter, or presented by the manager's own member, opens the
+ *   editor. The editor knows it was opened from the agenda and comes back
+ *   to the item when the document is published.
  * - Both may add co-presenters ("¿Lo presentáis varios miembros?", folded);
  *   with several presenters, who answers the amendments is a required
  *   choice, which starts on the member presenting it (or the manager's
@@ -386,9 +390,22 @@ const proponentHelp = computed(() => {
   );
 });
 
+/**
+ * Managers: the text will come from another member (the editor opens only
+ * on "Crear y subir el texto").
+ */
+const expectsOtherMember = computed(
+  () =>
+    isManager.value &&
+    state.proponent !== NO_PROPONENT &&
+    state.proponent !== member.value?.id,
+);
+/** "Crear y subir el texto" was pressed. */
+const uploadNow = ref(false);
+
 /** Managers stay on the agenda when someone else has to provide the text. */
 function opensEditor(created: DocumentDto): boolean {
-  if (!isManager.value) return true;
+  if (!isManager.value || uploadNow.value) return true;
   return (
     created.proponent === null || isDocumentPresenter(created, member.value?.id)
   );
@@ -427,7 +444,9 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
     });
     emit("created", created);
     open.value = false;
-    const editorPath = `${props.basePath}/documentos/${encodeURIComponent(created.slug)}/editar`;
+    const editorPath = editorFromAgenda(
+      `${props.basePath}/documentos/${encodeURIComponent(created.slug)}`,
+    );
     if (opensEditor(created)) {
       toast.add({
         title: isManager.value
@@ -768,7 +787,21 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
           form="agenda-new-document-form"
           icon="i-lucide-file-plus"
           :label="t('agenda.newDocument.create')"
-          :loading="saving"
+          :color="expectsOtherMember ? 'neutral' : 'primary'"
+          :variant="expectsOtherMember ? 'outline' : 'solid'"
+          :loading="saving && !uploadNow"
+          :disabled="saving && uploadNow"
+          @click="uploadNow = false"
+        />
+        <UButton
+          v-if="expectsOtherMember"
+          type="submit"
+          form="agenda-new-document-form"
+          icon="i-lucide-file-up"
+          :label="t('agenda.newDocument.createAndUpload')"
+          :loading="saving && uploadNow"
+          :disabled="saving && !uploadNow"
+          @click="uploadNow = true"
         />
         <UButton
           v-else

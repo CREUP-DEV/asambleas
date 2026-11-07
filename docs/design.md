@@ -63,7 +63,7 @@ permissions may act on behalf of any member; every such action records both.
   `report`, `minutes`, `candidacy`, `venue`, `other`. Defaults per kind
   (`shared/constants/documentKinds.ts`) set whether it is amendable, whether it
   is voted and with which majority. All defaults are editable per document.
-- `format`: `structured` (amendable text) or `file` (uploaded PDF).
+- `format`: `structured` (amendable text) or `file` (uploaded PDF). It can change until the document is published; the draft text and the PDF both stay, so a switch back loses nothing.
 - `proponentMemberId` (who presents it) and `submittedByUserId`.
 - `reference` (`RES 012/2026`, `MI 003/2026`), assigned on admission.
 - `status`: `draft`, `submitted`, `published`, `withdrawn`, `postponed`.

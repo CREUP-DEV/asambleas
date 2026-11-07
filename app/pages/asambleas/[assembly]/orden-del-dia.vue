@@ -11,6 +11,7 @@ import {
   type AgendaTreeContext,
 } from "~/components/agenda/ItemNode.vue";
 import { isDocumentPresenter } from "~/composables/document/documentPresenters";
+import { ORGANIZE_QUERY } from "~/composables/document/agendaReturn";
 import type { AgendaMove, AgendaTreeNode } from "~/utils/agendaTree";
 
 /**
@@ -19,9 +20,14 @@ import type { AgendaMove, AgendaTreeNode } from "~/utils/agendaTree";
  * "Presentar documento" under the items that accept submissions. Managers
  * switch to "Organizar orden del día" to add, edit, move (buttons, keyboard
  * accessible), switch submissions, delete items and add documents.
+ * `?organizar=1` opens it organized and a `#agenda-item-…` hash focuses that
+ * item: the editor of a document added here comes back that way, so the
+ * Secretaría adds the next one without looking for the item again.
  */
 
 const { t } = useI18n();
+const route = useRoute();
+const router = useRouter();
 const toast = useToast();
 const api = useApi();
 const me = useMe();
@@ -100,10 +106,21 @@ const showSubmitBlocked = computed(
 
 /** Who gets the organize mode: item managers and document managers. */
 const canOrganize = computed(() => manage.value || canCreateDocument.value);
-const organizing = ref(false);
+const organizing = ref(
+  canOrganize.value && route.query[ORGANIZE_QUERY] === "1",
+);
 
 watch(canOrganize, (allowed) => {
   if (!allowed) organizing.value = false;
+});
+
+// The address keeps the mode, so going back to this page restores it.
+watch(organizing, (value) => {
+  const query = Object.fromEntries(
+    Object.entries(route.query).filter(([key]) => key !== ORGANIZE_QUERY),
+  );
+  if (value) query[ORGANIZE_QUERY] = "1";
+  void router.replace({ query, hash: route.hash });
 });
 
 function toggleOrganizing() {
@@ -171,6 +188,16 @@ async function focusItem(id: string, move?: AgendaMove) {
     document.getElementById(agendaItemAnchor(id));
   target?.focus();
 }
+
+// Back from a document added here: focus its item.
+onMounted(() => {
+  const prefix = `#${agendaItemAnchor("")}`;
+  if (!route.hash.startsWith(prefix)) return;
+  const id = decodeURIComponent(route.hash.slice(prefix.length));
+  const heading = document.getElementById(agendaItemAnchor(id));
+  heading?.scrollIntoView({ block: "start" });
+  heading?.focus({ preventScroll: true });
+});
 
 // Moves -------------------------------------------------------------------------
 
