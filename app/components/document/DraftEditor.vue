@@ -61,6 +61,18 @@ function canonical(blocks: Block[]): string {
       block.type,
       block.level ?? null,
       block.list ?? null,
+      block.marker ?? null,
+      block.start ?? null,
+      block.cell
+        ? [
+            block.cell.table,
+            block.cell.row,
+            block.cell.cell,
+            block.cell.header ?? false,
+            block.cell.colspan ?? 1,
+            block.cell.rowspan ?? 1,
+          ]
+        : null,
       block.text,
       block.marks.map((mark) => [
         mark.type,

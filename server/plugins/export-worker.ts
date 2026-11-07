@@ -7,6 +7,8 @@ import {
   buildAssemblyExportData,
   buildDocumentExportData,
 } from "../utils/export/buildData";
+import { create as createFont } from "fontkit";
+import { BRAND_FILES, type ExportBrand } from "../utils/export/brand";
 import { buildAssemblyPdf, buildDocumentPdf } from "../utils/export/pdfBuilder";
 import {
   RALEWAY_FILES,
@@ -30,13 +32,34 @@ import {
 } from "../utils/export/storage";
 
 let fontsReady = false;
+let brand: ExportBrand | null = null;
 
-async function readServerFont(name: RalewayFile): Promise<Buffer> {
-  const raw = await useStorage("assets:server").getItemRaw(`fonts/${name}`);
+async function readServerAsset(path: string): Promise<Buffer> {
+  const raw = await useStorage("assets:server").getItemRaw(path);
   if (!raw) {
-    throw new Error(`PDF font asset not found: ${name}`);
+    throw new Error(`PDF asset not found: ${path}`);
   }
   return Buffer.isBuffer(raw) ? raw : Buffer.from(raw as Uint8Array);
+}
+
+function readServerFont(name: RalewayFile): Promise<Buffer> {
+  return readServerAsset(`fonts/${name}`);
+}
+
+/** The letterhead's logos, read once like the fonts. */
+async function loadBrand(): Promise<ExportBrand> {
+  if (brand) return brand;
+  const [creupLogo, esuLogo, bold] = await Promise.all([
+    readServerAsset(BRAND_FILES.creupLogo),
+    readServerAsset(BRAND_FILES.esuLogo),
+    readServerFont(RALEWAY_FILES.bold),
+  ]);
+  brand = {
+    creupLogoPng: creupLogo,
+    esuLogoPng: esuLogo,
+    labelFont: createFont(bold),
+  };
+  return brand;
 }
 
 async function ensurePdfFonts() {
@@ -98,7 +121,7 @@ async function processAssemblyExport(job: Job<unknown>) {
   await writePdf(
     job.id,
     metadata.filePath,
-    buildAssemblyPdf(exportData, data.locale),
+    buildAssemblyPdf(exportData, data.locale, await loadBrand()),
   );
 }
 
@@ -110,7 +133,7 @@ async function processDocumentExport(job: Job<unknown>) {
   await writePdf(
     job.id,
     metadata.filePath,
-    buildDocumentPdf(exportData, data.locale),
+    buildDocumentPdf(exportData, data.locale, await loadBrand()),
   );
 }
 

@@ -17,12 +17,17 @@ import {
   DOCUMENT_MAX_BLOCKS,
 } from "../../../shared/utils/schemas/content";
 import { logError, logWarn } from "../core/logger";
+import { prepareImportedHtml } from "./docxHtml";
 
 /**
  * DOCX import: Word file -> sanitized blocks. The file is never stored. Only
  * text, headings, lists, quotes and inline emphasis survive the conversion;
  * htmlElementToBlocks drops everything else and blocksSchema removes unsafe
- * links.
+ * links. Word numbers are written into the text (NUMBERING_SCRIPT), tables
+ * become a paragraph per row (htmlElementToBlocks), and footnotes, ordinal
+ * superscripts and the Word title are adjusted (prepareImportedHtml). What
+ * is lost on the way is reported as warnings: tracked changes, comments,
+ * images, the layout of tables and highlighting.
  */
 
 export const DOCX_MAX_BYTES = 15 * 1024 * 1024;
@@ -57,9 +62,14 @@ export const DOCX_MAX_BYTES = 15 * 1024 * 1024;
  * - the marks that nested formatting multiplies;
  * - the text of each block, since one huge string costs several times more
  *   per byte than many small ones;
- * - the text and nodes the walk reads, counting every read: each row of a
- *   table reads all the cells nested in it again;
+ * - the text and nodes the walk reads, counted as an earlier walk that read
+ *   the cells of nested tables again for every row around them (the walk
+ *   now reads each once);
  * - the nodes the walk copies to read list items, more the deeper they are.
+ *
+ * Before walking, prepareImportedHtml drops the repeated Word title, turns
+ * footnotes into paragraphs and ordinal superscripts into "ª" and "º", and
+ * drops the underline of links, adding no marks or nesting.
  *
  * The walk then stops at the first block past the document limit, and block
  * ids come from the system CSPRNG instead of cuid2, whose createId costs about
@@ -80,6 +90,9 @@ export const DOCX_MAX_BYTES = 15 * 1024 * 1024;
  * a development machine with other work running:
  *
  * - 0.2 s for 3,000 plain paragraphs and 0.4 s for a 3,000-row table;
+ * - 0.6 to 0.75 s for a 3,000-row table of six formatted cells, a table of
+ *   19,000 tiny formatted cells or a one-column box of 45,000 blank
+ *   paragraphs, each read once with their marks;
  * - 0.65 to 0.95 s for the largest documents the bounds admit, about 100,000
  *   nodes, such as 3,000 densely formatted paragraphs or list items;
  * - for uploads built against the bounds, each pushing one of them to the
@@ -118,11 +131,14 @@ export interface DocxLimits {
    * Paragraphs, headings and list items outside tables, plus table rows: the
    * elements the walk visits. Each yields at most one block, but one without
    * text yields none and a footnote takes two (an item and its paragraph).
+   * Paragraphs in table cells are read as lines of their row, or, in a table
+   * of one column, walked like the text around it; the node count and
+   * `maxBlocks` bound those.
    */
   maxBlockElements: number;
   /**
    * Marks the walk creates: one per bold, italic, underline, strikethrough or
-   * link element around each text node outside tables. Nested links
+   * link element around each text node, in tables or not. Nested links
    * multiply them: 30,000 line breaks inside 26 nested links made 870,000.
    */
   maxMarks: number;
@@ -135,10 +151,10 @@ export interface DocxLimits {
   maxBlockTextBytes: number;
   /**
    * Bytes of text the walk reads, plus NODE_READ_BYTES for each node it
-   * visits, counted again every time it reads them: 30 to 50 ns a byte. It
-   * reads text and nodes outside tables once, and those in a table nested t
-   * deep t(t+1)/2 times: every row of the outermost table reads each cell
-   * nested in it. 7 MB of text ten tables deep took 38 s.
+   * visits: 30 to 50 ns a byte. The walk reads each node once, but this
+   * still counts what an earlier walk read again in nested tables (see
+   * readsAt), which took 38 s for 7 MB of text ten tables deep: stricter
+   * than needed, never looser.
    */
   maxWalkReads: number;
   /**
@@ -241,30 +257,339 @@ interface LoadedEntryData {
   compression?: { magic?: unknown } | null;
 }
 
-/** Headings beyond mammoth's defaults (which already map Heading 1-6). */
+/**
+ * What mammoth's defaults leave out. They already map Heading 1-6 to h1-h6,
+ * which the walk turns into block levels 1-4 (5 and 6 become 4).
+ *
+ * - The Word title is not a heading: it usually repeats the document's own
+ *   title, and as a heading it would share level 1 with Heading 1. It comes
+ *   out as a bold `p.docx-title`, which prepareImportedHtml drops when it
+ *   repeats the document's title and keeps as a paragraph otherwise. A
+ *   subtitle is a paragraph.
+ * - Quotes become quote blocks.
+ * - Underline, which mammoth drops unless mapped.
+ */
 const STYLE_MAP = [
-  "p[style-name='Title'] => h1:fresh",
-  "p[style-name='Subtitle'] => h2:fresh",
-  // Spanish Word stores built-in heading ids without the accent.
-  "p.Ttulo => h1:fresh",
+  "p[style-name='Title'] => p.docx-title:fresh > strong:fresh",
+  "p[style-name='Subtitle'] => p:fresh",
+  "p[style-name='Quote'] => blockquote > p:fresh",
+  "p[style-name='Intense Quote'] => blockquote > p:fresh",
+  // Spanish Word stores built-in style ids without the accent.
+  "p.Ttulo => p.docx-title:fresh > strong:fresh",
+  "p.Subttulo => p:fresh",
   "p.Ttulo1 => h1:fresh",
   "p.Ttulo2 => h2:fresh",
   "p.Ttulo3 => h3:fresh",
   "p.Ttulo4 => h4:fresh",
-  "p.Subttulo => h2:fresh",
+  "p.Ttulo5 => h5:fresh",
+  "p.Ttulo6 => h6:fresh",
+  "p.Cita => blockquote > p:fresh",
+  "p.Citadestacada => blockquote > p:fresh",
+  "u => u",
+  // The number of a list item, which prepareImportedHtml turns into the
+  // list's marker and start (see NUMBERING_SCRIPT).
+  "r[style-name='docx-list-label'] => span.docx-list-label",
 ];
 
 // <w:ins>, <w:del>, <w:moveFrom>, <w:moveTo>, but not <w:instrText> or <w:delText>.
 const TRACKED_CHANGE_PATTERN = /<w:(ins|del|moveFrom|moveTo)[\s>/]/;
 const COMMENT_PATTERN = /<w:comment[\s>]/;
+// Highlighted text, whose colour is lost: `w:val="none"` is no highlight.
+const HIGHLIGHT_PATTERN = /<w:highlight\s+w:val="(?!none")/;
+
+/**
+ * Word numbering, for the converter process (plain JavaScript, no backslashes
+ * or backticks: it is spliced into a template literal).
+ *
+ * mammoth turns a numbered paragraph into a list item and never writes its
+ * number, so "Artículo 5." would vanish from a heading and "c)" would become a
+ * third item of a fresh "1, 2, 3" list. Here mammoth's numbering reader is
+ * wrapped to also keep the format of each level, and a document transform
+ * computes every label in document order.
+ *
+ * - A list item numbered the way blocks can number it ("1.", "a)", "IV.":
+ *   its own level's number in one of the five formats, then "." or ")")
+ *   stays a list item. Its marker and number travel as a hidden run
+ *   (`docx-list-label`, "a)|3"), which prepareImportedHtml turns into the
+ *   list's marker and, where the numbers do not simply follow on, a start.
+ * - Any other numbered paragraph (a heading, "Artículo 5.", "1.1", legal
+ *   numbering) gets its label written at its start and stops being a list
+ *   item.
+ * - Bulleted paragraphs stay lists.
+ *
+ * Counters follow Word:
+ *
+ * - they belong to the abstract numbering (w:abstractNum), so lists that
+ *   share one continue each other's numbers;
+ * - a w:num with w:lvlOverride/w:startOverride restarts its level the first
+ *   time a paragraph of that w:num uses it;
+ * - a level restarts when a higher one is used, unless w:lvlRestart says
+ *   otherwise;
+ * - an unused higher level referenced in w:lvlText counts as its start value.
+ *
+ * Checked against the numbers Word itself shows (Word.Paragraph ListString)
+ * for drafts with several lists sharing an abstract numbering.
+ */
+const NUMBERING_SCRIPT = `
+const NUMBER_FORMATS = {
+  decimal: (n) => String(n),
+  decimalZero: (n) => (n >= 0 && n < 10 ? "0" + n : String(n)),
+  lowerLetter: (n) => letters(n),
+  upperLetter: (n) => letters(n).toUpperCase(),
+  lowerRoman: (n) => roman(n).toLowerCase(),
+  upperRoman: (n) => roman(n),
+  ordinal: (n) => n + ".º",
+  none: () => "",
+};
+// Word repeats the letter past z (aa, bb) and shows none for 0; past 30
+// repeats, digits.
+function letters(n) {
+  if (n < 1) return "";
+  if (n > 26 * 30) return String(n);
+  return String.fromCharCode(97 + ((n - 1) % 26)).repeat(Math.ceil(n / 26));
+}
+const ROMAN = [[1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"],
+  [90, "XC"], [50, "L"], [40, "XL"], [10, "X"], [9, "IX"], [5, "V"],
+  [4, "IV"], [1, "I"]];
+function roman(n) {
+  if (n < 1 || n > 3999) return String(n);
+  let out = "";
+  for (const [value, digits] of ROMAN) {
+    while (n >= value) {
+      out += digits;
+      n -= value;
+    }
+  }
+  return out;
+}
+function formatNumber(n, numFmt) {
+  return (NUMBER_FORMATS[numFmt] || NUMBER_FORMATS.decimal)(n);
+}
+function attribute(element, name) {
+  return element.firstOrEmpty(name).attributes["w:val"];
+}
+function integer(value, fallback) {
+  const n = Number(value);
+  return value !== undefined && Number.isSafeInteger(n) ? n : fallback;
+}
+function readLevel(element) {
+  const legal = element.first("w:isLgl");
+  const legalValue = legal && legal.attributes["w:val"];
+  return {
+    numFmt: attribute(element, "w:numFmt") || "decimal",
+    text: attribute(element, "w:lvlText"),
+    // The schema's default is 0; Word always writes it.
+    start: integer(attribute(element, "w:start"), 0),
+    suffix: attribute(element, "w:suff") || "tab",
+    legal: !!legal && legalValue !== "0" && legalValue !== "false",
+    restart: integer(attribute(element, "w:lvlRestart"), undefined),
+    styleId: attribute(element, "w:pStyle"),
+  };
+}
+function readNumberingFormats(root, styles) {
+  const abstracts = Object.create(null);
+  root.getElementsByTagName("w:abstractNum").forEach((element) => {
+    const levels = Object.create(null);
+    element.getElementsByTagName("w:lvl").forEach((level) => {
+      levels[integer(level.attributes["w:ilvl"], 0)] = readLevel(level);
+    });
+    abstracts[element.attributes["w:abstractNumId"]] = {
+      levels,
+      link: attribute(element, "w:numStyleLink"),
+    };
+  });
+  const nums = Object.create(null);
+  root.getElementsByTagName("w:num").forEach((element) => {
+    const overrides = Object.create(null);
+    element.getElementsByTagName("w:lvlOverride").forEach((override) => {
+      const level = override.first("w:lvl");
+      overrides[integer(override.attributes["w:ilvl"], 0)] = {
+        start: integer(attribute(override, "w:startOverride"), undefined),
+        level: level ? readLevel(level) : null,
+      };
+    });
+    nums[element.attributes["w:numId"]] = {
+      abstractId: attribute(element, "w:abstractNumId"),
+      overrides,
+    };
+  });
+  // Follows w:numStyleLink to the abstract numbering it names, as mammoth does.
+  function resolve(abstractId, seen) {
+    const abstract = abstracts[abstractId];
+    if (!abstract) return null;
+    if (!abstract.link) return abstractId;
+    if (seen[abstractId]) return null;
+    seen[abstractId] = true;
+    const style = styles && styles.findNumberingStyleById(abstract.link);
+    const num = style && nums[style.numId];
+    return num ? resolve(num.abstractId, seen) : null;
+  }
+  return {
+    forNum(numId, ilvl) {
+      const num = nums[numId];
+      const key = num ? resolve(num.abstractId, Object.create(null)) : null;
+      if (key === null) return null;
+      const levels = Object.assign(Object.create(null), abstracts[key].levels);
+      for (const index of Object.keys(num.overrides)) {
+        if (num.overrides[index].level) levels[index] = num.overrides[index].level;
+      }
+      return { key, numId, ilvl, levels, overrides: num.overrides };
+    },
+    forStyle(styleId) {
+      let found = null;
+      for (const key of Object.keys(abstracts)) {
+        const levels = abstracts[key].levels;
+        for (const index of Object.keys(levels)) {
+          if (levels[index].styleId === styleId) {
+            found = { key, numId: null, ilvl: Number(index), levels,
+              overrides: Object.create(null) };
+          }
+        }
+      }
+      return found;
+    },
+  };
+}
+// Set when mammoth's numbering no longer has the shape wrapped here.
+let numberingUnsupported = false;
+function wrapNumberingReader(numberingXml) {
+  const read = numberingXml && numberingXml.readNumberingXml;
+  if (typeof read !== "function") throw new Error("numbering reader not found");
+  numberingXml.readNumberingXml = function (root, readOptions) {
+    const numbering = read(root, readOptions);
+    if (!numbering || typeof numbering.findLevel !== "function" ||
+        typeof numbering.findLevelByParagraphStyleId !== "function") {
+      numberingUnsupported = true;
+      throw new Error("unexpected numbering");
+    }
+    const formats = readNumberingFormats(root, readOptions && readOptions.styles);
+    return {
+      findLevel(numId, level) {
+        const found = numbering.findLevel(numId, level);
+        return found && Object.assign({}, found, {
+          word: formats.forNum(numId, integer(level, 0)),
+        });
+      },
+      findLevelByParagraphStyleId(styleId) {
+        const found = numbering.findLevelByParagraphStyleId(styleId);
+        return found && Object.assign({}, found, { word: formats.forStyle(styleId) });
+      },
+    };
+  };
+}
+function numberLabels(documents) {
+  const counters = new Map();
+  const restarted = new Set();
+  return (paragraph) => {
+    const word = paragraph.numbering && paragraph.numbering.word;
+    const level = word && word.levels[word.ilvl];
+    if (!level || level.numFmt === "bullet") return paragraph;
+    const ilvl = word.ilvl;
+    let values = counters.get(word.key);
+    if (!values) {
+      values = [];
+      counters.set(word.key, values);
+    }
+    const override = word.overrides[ilvl];
+    const restartAt = override &&
+      (override.start !== undefined ? override.start : override.level && override.level.start);
+    const restartKey = word.numId + ":" + ilvl;
+    if (word.numId !== null && restartAt !== undefined && !restarted.has(restartKey)) {
+      restarted.add(restartKey);
+      values[ilvl] = restartAt - 1;
+    }
+    if (values[ilvl] === undefined || values[ilvl] === null) values[ilvl] = level.start - 1;
+    values[ilvl] += 1;
+    for (let deeper = ilvl + 1; deeper < 9; deeper++) {
+      const definition = word.levels[deeper];
+      const restart = definition ? definition.restart : undefined;
+      if (restart === 0) continue;
+      if (restart === undefined || ilvl < restart) values[deeper] = null;
+    }
+    const marker = listMarker(paragraph, level, ilvl);
+    if (marker) {
+      const run = documents.Run([documents.Text(marker + "|" + values[ilvl])], {
+        styleName: "docx-list-label",
+      });
+      return Object.assign({}, paragraph, {
+        children: [run].concat(paragraph.children),
+      });
+    }
+    const pattern = level.text === undefined ? "%" + (ilvl + 1) + "." : level.text;
+    const label = pattern.replace(/%([1-9])/g, (match, digit) => {
+      const index = Number(digit) - 1;
+      const definition = word.levels[index];
+      const value = values[index] !== undefined && values[index] !== null
+        ? values[index] : definition ? definition.start : 1;
+      return formatNumber(value,
+        level.legal ? "decimal" : definition ? definition.numFmt : "decimal");
+    });
+    const children = label.trim()
+      ? [documents.Run([documents.Text(label + (level.suffix === "nothing" ? "" : " "))])]
+          .concat(paragraph.children)
+      : paragraph.children;
+    return Object.assign({}, paragraph, { numbering: null, children });
+  };
+}
+// Numbering formats a list block can show (shared/types/content.ts).
+const LIST_FORMATS = {
+  decimal: "1",
+  lowerLetter: "a",
+  upperLetter: "A",
+  lowerRoman: "i",
+  upperRoman: "I",
+};
+// Paragraphs the style map makes headings: their number stays text.
+function isHeading(paragraph) {
+  const name = paragraph.styleName || "";
+  const id = paragraph.styleId || "";
+  return /^(heading|t[ií]tulo) ?[0-9]$/i.test(name) ||
+    /^(title|t[ií]tulo)$/i.test(name) ||
+    /^(Heading|Ttulo)[0-9]$/.test(id) || /^(Title|Ttulo)$/.test(id);
+}
+// The marker of a list item numbered as blocks can number it, else null.
+function listMarker(paragraph, level, ilvl) {
+  if (isHeading(paragraph) || level.legal) return null;
+  const format = LIST_FORMATS[level.numFmt];
+  const pattern = level.text === undefined ? "%" + (ilvl + 1) + "." : level.text;
+  const match = /^%([1-9])([.)])$/.exec(pattern);
+  if (!format || !match || Number(match[1]) !== ilvl + 1) return null;
+  return format + match[2];
+}
+// mammoth makes a row a header whenever it has w:tblHeader, whatever its
+// value; Google Docs writes w:val="0" on every row. Off values do not count.
+function honourOffHeaders(nodes) {
+  const first = nodes && nodes.Element && nodes.Element.prototype.first;
+  if (typeof first !== "function") throw new Error("xml elements not found");
+  nodes.Element.prototype.first = function (name) {
+    const found = first.call(this, name);
+    if (name !== "w:tblHeader" || !found) return found;
+    const value = found.attributes && found.attributes["w:val"];
+    return value === "0" || value === "false" || value === "off" ? undefined : found;
+  };
+}
+// Text formatted as all caps is shown in capitals: write it so.
+function upperCaseRun(run) {
+  if (!run.isAllCaps) return run;
+  return Object.assign({}, run, {
+    isAllCaps: false,
+    children: run.children.map((child) =>
+      child.type === "text"
+        ? Object.assign({}, child, { value: child.value.toLocaleUpperCase("es") })
+        : child),
+  });
+}
+`;
 
 /**
  * The converter process (CommonJS, run with `node -e`). It reads the DOCX from
  * stdin, loads mammoth from the path in argv and writes one JSON header line,
  * followed by the HTML when the conversion succeeded. Images are dropped, so
  * they are never read or inlined, and a style map embedded in the file is
- * ignored: only STYLE_MAP decides which elements come out. On Linux it asks
- * to be the first process the kernel kills when memory runs out.
+ * ignored: only STYLE_MAP decides which elements come out. Numbered
+ * paragraphs get their Word numbers and text in all caps is capitalized
+ * (NUMBERING_SCRIPT). On Linux it asks to be the first process the kernel
+ * kills when memory runs out.
  */
 const CONVERTER_SCRIPT = `"use strict";
 if (process.platform === "linux") {
@@ -272,6 +597,7 @@ if (process.platform === "linux") {
     require("node:fs").writeFileSync("/proc/self/oom_score_adj", "1000");
   } catch {}
 }
+const path = require("node:path");
 const [entry, settings] = process.argv.slice(1);
 const options = JSON.parse(settings);
 const input = [];
@@ -279,16 +605,28 @@ function reply(header, body) {
   const head = Buffer.from(JSON.stringify(header) + "\\n", "utf8");
   process.stdout.write(body ? Buffer.concat([head, body]) : head);
 }
+${NUMBERING_SCRIPT}
 process.stdin.on("data", (chunk) => input.push(chunk));
 process.stdin.on("end", () => {
   let mammoth;
+  let documents;
   try {
     mammoth = require(entry);
+    // mammoth's own modules, the ones its reader and converter use.
+    const lib = path.dirname(entry);
+    wrapNumberingReader(require(path.join(lib, "docx", "numbering-xml.js")));
+    honourOffHeaders(require(path.join(lib, "xml", "nodes.js")));
+    documents = require(path.join(lib, "documents.js"));
+    if (typeof documents.Run !== "function" || typeof documents.Text !== "function") {
+      throw new Error("document model not found");
+    }
   } catch {
     reply({ status: "unavailable" });
     return;
   }
   let imagesDropped = false;
+  const labels = mammoth.transforms.paragraph(numberLabels(documents));
+  const capitals = mammoth.transforms.run(upperCaseRun);
   Promise.resolve()
     .then(() =>
       mammoth.convertToHtml(
@@ -297,6 +635,7 @@ process.stdin.on("end", () => {
           styleMap: options.styleMap,
           externalFileAccess: false,
           includeEmbeddedStyleMap: false,
+          transformDocument: (document) => capitals(labels(document)),
           convertImage: mammoth.images.imgElement(async () => {
             imagesDropped = true;
             return { src: "" };
@@ -310,7 +649,7 @@ process.stdin.on("end", () => {
         if (html.length > options.maxHtmlBytes) reply({ status: "too_large" });
         else reply({ status: "ok", imagesDropped }, html);
       },
-      () => reply({ status: "invalid" }),
+      () => reply({ status: numberingUnsupported ? "unavailable" : "invalid" }),
     );
 });
 `;
@@ -412,11 +751,11 @@ function tagName(html: Buffer, start: number): string {
 }
 
 /**
- * Times the walk reads a node or text inside `tables` nested tables. The
- * outermost table reads each of its rows, nested ones included, and each row
- * the text of every cell inside it, so text t tables deep is read once by
- * each of the t rows around it for each of the cells between that row and
- * the text: t(t+1)/2 times.
+ * Times an earlier walk read a node or text inside `tables` nested tables:
+ * the outermost table read each of its rows, nested ones included, and each
+ * row the text of every cell inside it, so text t tables deep was read
+ * t(t+1)/2 times. The walk now reads it once; the count is kept so that this
+ * change loosens no bound.
  */
 function readsAt(tables: number): number {
   return tables === 0 ? 1 : (tables * (tables + 1)) / 2;
@@ -434,7 +773,9 @@ function inspectHtml(html: Buffer, limits: DocxLimits): void {
   let nodes = 0;
   let depth = 0;
   let tables = 0;
-  // Lists open outside tables: the walk copies what is inside them.
+  // Lists open: the walk copies what is inside them. In tables it only does
+  // for those of one column, walked like the text around them, but every
+  // list counts.
   let lists = 0;
   let blockElements = 0;
   // Mark elements open around the current text, and the marks the walk will
@@ -477,8 +818,7 @@ function inspectHtml(html: Buffer, limits: DocxLimits): void {
     addReads(end - start);
     blockText += end - start;
     if (blockText > limits.maxBlockTextBytes) tooExtensive();
-    // Text in table cells is read whole, without marks.
-    if (markElements > 0 && tables === 0) {
+    if (markElements > 0) {
       marks += markElements * textNodes;
       if (marks > limits.maxMarks) tooExtensive();
     }
@@ -498,7 +838,7 @@ function inspectHtml(html: Buffer, limits: DocxLimits): void {
       depth--;
       const name = tagName(html, index + 2);
       if (name === "table") tables--;
-      else if (tables === 0 && LIST_ELEMENTS.has(name)) lists--;
+      else if (LIST_ELEMENTS.has(name)) lists--;
       else if (MARK_ELEMENTS.has(name)) markElements--;
     } else {
       addNodes(1);
@@ -515,7 +855,7 @@ function inspectHtml(html: Buffer, limits: DocxLimits): void {
       if (html[end - 1] !== SLASH) {
         if (++depth > limits.maxHtmlDepth) tooExtensive();
         if (name === "table") tables++;
-        else if (tables === 0 && LIST_ELEMENTS.has(name)) lists++;
+        else if (LIST_ELEMENTS.has(name)) lists++;
         else if (MARK_ELEMENTS.has(name)) markElements++;
       }
     }
@@ -668,6 +1008,7 @@ async function inspectArchive(
   if (commentsXml !== null && COMMENT_PATTERN.test(commentsXml)) {
     warnings.add("comments");
   }
+  if (HIGHLIGHT_PATTERN.test(documentXml)) warnings.add("highlight");
   return { warnings };
 }
 
@@ -887,6 +1228,11 @@ export interface ConvertDocxOptions {
    */
   signal?: AbortSignal;
   limits?: DocxLimits;
+  /**
+   * The title of the document the import is for: a Word title that repeats
+   * it is left out of the text.
+   */
+  documentTitle?: string;
 }
 
 /**
@@ -897,7 +1243,7 @@ export interface ConvertDocxOptions {
  */
 export async function convertDocx(
   data: Buffer,
-  { owner, signal, limits = DOCX_LIMITS }: ConvertDocxOptions,
+  { owner, signal, limits = DOCX_LIMITS, documentTitle }: ConvertDocxOptions,
 ): Promise<DocxImportDto> {
   if (!hasZipSignature(data)) invalidFile();
 
@@ -919,6 +1265,7 @@ export async function convertDocx(
       // between them lets other requests through.
       await nextTurn();
       if (signal?.aborted) throw cancelledError();
+      prepareImportedHtml(document as unknown as Document, { documentTitle });
       let produced = 0;
       const blocks = htmlElementToBlocks(
         document.body as unknown as Element,
@@ -926,6 +1273,11 @@ export async function convertDocx(
           // Stops the walk at the first block past the limit.
           if (++produced > limits.maxBlocks) tooExtensive();
           return newBlockId();
+        },
+        {
+          onTableFlattened: () => warnings.add("tables_flattened"),
+          // Tables, rows and cells are no blocks: they do not count.
+          newTableId: newBlockId,
         },
       );
       return { blocks, warnings };
@@ -941,6 +1293,8 @@ export async function convertDocx(
     "tracked_changes",
     "comments",
     "images_dropped",
+    "tables_flattened",
+    "highlight",
   ];
   return {
     blocks: parsed.data,

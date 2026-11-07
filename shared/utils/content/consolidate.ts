@@ -8,6 +8,7 @@ import type {
   ReplaceOp,
   Segment,
 } from "../../types/content";
+import { copyShape } from "./lists";
 import { compareReplaceOps, validateOps } from "./ops";
 import { isHardOverlap, overlapBetween } from "./overlaps";
 
@@ -150,6 +151,9 @@ export function consolidate(
           type: block.type,
           level: block.level,
           list: block.list,
+          marker: block.marker,
+          start: block.start,
+          cell: block.cell,
           segments: [{ text: block.text, source: insert.source }],
           marks: block.marks,
           status: "inserted",
@@ -168,6 +172,9 @@ export function consolidate(
         type: block.type,
         level: block.level,
         list: block.list,
+        marker: block.marker,
+        start: block.start,
+        cell: block.cell,
         segments: [{ text: block.text, source: deleter, removed: true }],
         marks: [],
         status: "deleted",
@@ -180,6 +187,9 @@ export function consolidate(
         type: block.type,
         level: block.level,
         list: block.list,
+        marker: block.marker,
+        start: block.start,
+        cell: block.cell,
         segments: buildSegments(block, ops),
         marks: mapMarks(block.marks, ops),
         status: "kept",
@@ -198,9 +208,7 @@ export function consolidate(
         text: cleanText(block.segments),
         marks: block.marks,
       };
-      if (block.level !== undefined) result.level = block.level;
-      if (block.list !== undefined) result.list = block.list;
-      return result;
+      return copyShape(block, result);
     });
 
   return {

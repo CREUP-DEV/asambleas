@@ -537,6 +537,11 @@ export interface DocumentUpdateBody {
   title?: string;
   summary?: string | null;
   kind?: DocumentKind;
+  /**
+   * Structured text or uploaded PDF, while the text is not frozen. Switching
+   * keeps the other one (the draft text or the PDF) for a switch back.
+   */
+  format?: DocumentFormat;
   agendaItemId?: string;
   proponentMemberId?: string | null;
   coProponentMemberIds?: string[];
@@ -570,7 +575,13 @@ export interface DocumentContentBody {
 
 export interface DocxImportDto {
   blocks: Block[];
-  warnings: ("tracked_changes" | "comments" | "images_dropped")[];
+  warnings: (
+    | "tracked_changes"
+    | "comments"
+    | "images_dropped"
+    | "tables_flattened"
+    | "highlight"
+  )[];
 }
 
 // Amendments -------------------------------------------------------------
