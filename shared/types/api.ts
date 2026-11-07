@@ -529,7 +529,13 @@ export interface DocumentContentBody {
 
 export interface DocxImportDto {
   blocks: Block[];
-  warnings: ("tracked_changes" | "comments" | "images_dropped")[];
+  warnings: (
+    | "tracked_changes"
+    | "comments"
+    | "images_dropped"
+    | "tables_flattened"
+    | "highlight"
+  )[];
 }
 
 // Amendments -------------------------------------------------------------

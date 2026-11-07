@@ -18,10 +18,23 @@ import type {
 } from "../../../shared/constants/domain";
 import type { Block, ConsolidatedBlock } from "../../../shared/types/content";
 import {
+  BRAND_RED,
+  CONTACT,
+  COVER,
+  LOGOS,
+  PAGE_WIDTH,
+  TEMPLATE_MARGINS,
+  bandLabelKey,
+  bandSvg,
+  hasCover,
+  type ExportBrand,
+} from "./brand";
+import {
   CONTENT_STYLES,
   CREUP_RED,
   LinkRegistry,
   MUTED_GREY,
+  TEMPLATE_TABLE_LAYOUT,
   annotatedToPdf,
   blocksToPdf,
   linksToPdf,
@@ -38,10 +51,13 @@ import {
 } from "./labels";
 
 export type { ExportLocale } from "./labels";
+export type { ExportBrand } from "./brand";
 
 /**
  * pdfmake document definitions for exports. Pure: buildData.ts loads and
- * filters everything, so these functions only lay the data out.
+ * filters everything, and the export worker reads the letterhead files
+ * (`ExportBrand`), so these functions only lay the data out. The layout
+ * follows CREUP's document template (brand.ts and CONTENT_STYLES).
  */
 
 // Data ------------------------------------------------------------------
@@ -145,10 +161,7 @@ export interface AssemblyExportData {
 
 // Layout ----------------------------------------------------------------
 
-const PAGE_MARGINS: [number, number, number, number] = [50, 62, 50, 54];
-/** A4 width minus the horizontal margins. */
-const CONTENT_WIDTH = 595.28 - PAGE_MARGINS[0] - PAGE_MARGINS[2];
-const LIGHT_RED = "#f4e9ea";
+const PAGE_MARGINS = TEMPLATE_MARGINS;
 
 /**
  * Raleway's "fi"/"fl" ligatures have no Unicode mapping in the embedded
@@ -162,86 +175,114 @@ const NO_LIGATURES = { liga: false, clig: false } as unknown as NonNullable<
 
 const STYLES = {
   ...CONTENT_STYLES,
+  // The template's title: Raleway Bold 22 pt in burgundy.
   docTitle: {
-    fontSize: 18,
+    fontSize: 22,
     bold: true,
     color: CREUP_RED,
-    margin: [0, 0, 0, 4],
+    lineHeight: 1,
+    margin: [0, 6, 0, 8],
   },
-  docSubtitle: { fontSize: 10, color: MUTED_GREY, margin: [0, 0, 0, 2] },
-  meta: { fontSize: 9, color: "#333333", margin: [0, 0, 0, 1] },
-  note: { fontSize: 9, italics: true, color: MUTED_GREY, margin: [0, 2, 0, 2] },
+  // The cover of a positioning.
+  coverTitle: {
+    fontSize: 28,
+    bold: true,
+    color: CREUP_RED,
+    alignment: "center",
+    lineHeight: 1.05,
+    margin: [0, 120, 0, 0],
+  },
+  meta: { fontSize: 10, color: "#333333", margin: [0, 0, 0, 1] },
+  note: {
+    fontSize: 9.5,
+    italics: true,
+    color: MUTED_GREY,
+    margin: [0, 2, 0, 2],
+  },
   sectionTitle: {
     fontSize: 14,
     bold: true,
     color: CREUP_RED,
-    margin: [0, 0, 0, 8],
+    margin: [0, 0, 0, 12],
   },
   linksTitle: {
-    fontSize: 9,
+    fontSize: 10,
     bold: true,
     color: CREUP_RED,
-    margin: [0, 10, 0, 3],
+    margin: [0, 12, 0, 4],
   },
-  legend: { fontSize: 8.5, color: "#333333", margin: [0, 0, 0, 1] },
+  legend: { fontSize: 9.5, color: "#333333", margin: [0, 0, 0, 1] },
+  // The template's tables: a burgundy header row in white bold.
   tableHeader: {
-    fontSize: 8.5,
+    fontSize: 9.5,
     bold: true,
-    color: CREUP_RED,
-    fillColor: LIGHT_RED,
+    color: "#ffffff",
+    fillColor: CREUP_RED,
   },
-  tableCell: { fontSize: 8.5 },
+  tableCell: { fontSize: 9.5 },
   coverLabel: {
     fontSize: 30,
     bold: true,
     color: CREUP_RED,
-    margin: [0, 160, 0, 6],
+    margin: [0, 140, 0, 6],
   },
   coverType: { fontSize: 15, color: "#333333", margin: [0, 0, 0, 18] },
   coverMeta: { fontSize: 11, color: "#333333", margin: [0, 0, 0, 4] },
-  agendaItem: { fontSize: 10.5, margin: [0, 5, 0, 1] },
-  agendaDescription: { fontSize: 8.5, color: MUTED_GREY, margin: [0, 0, 0, 1] },
-  agendaDocument: { fontSize: 9, color: "#333333" },
+  agendaItem: { fontSize: 11, margin: [0, 5, 0, 1] },
+  agendaDescription: {
+    fontSize: 9.5,
+    color: MUTED_GREY,
+    margin: [0, 0, 0, 1],
+  },
+  agendaDocument: { fontSize: 10, color: "#333333" },
 } satisfies TDocumentDefinitions["styles"];
 
 function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
 }
 
-function rule(): Content {
-  return {
-    canvas: [
-      {
-        type: "line",
-        x1: 0,
-        y1: 0,
-        x2: CONTENT_WIDTH,
-        y2: 0,
-        lineWidth: 0.6,
-        lineColor: CREUP_RED,
-      },
-    ],
-    margin: [0, 6, 0, 10],
-  };
+/** "3 de 12" with the numbers in bold, as the template's footer has it. */
+function pageCount(t: Translate, page: number, total: number): ContentText[] {
+  // Private-use characters mark where the numbers go in the label.
+  const PAGE = String.fromCharCode(0xe000);
+  const TOTAL = String.fromCharCode(0xe001);
+  return t("footer.page", { page: PAGE, total: TOTAL })
+    .split(new RegExp(`(${PAGE}|${TOTAL})`))
+    .filter(Boolean)
+    .map((part) =>
+      part === PAGE
+        ? { text: String(page), bold: true }
+        : part === TOTAL
+          ? { text: String(total), bold: true }
+          : { text: part },
+    );
 }
 
+/**
+ * The template's letterhead: logos in the header (or the name in text when
+ * the worker has no brand files), the "internal document" band down the
+ * left edge, and the website, email and page count in the footer.
+ */
 function frame(input: {
   locale: ExportLocale;
   t: Translate;
   assembly: ExportAssembly;
-  headerRight: string;
   title: string;
-  generatedAt: Date;
   content: Content[];
+  brand?: ExportBrand;
+  /** What the band down the left edge says. */
+  bandLabel: string;
+  /** The first page is a cover: no letterhead, and pages count from the next. */
+  cover?: boolean;
 }): TDocumentDefinitions {
-  const { locale, t, assembly } = input;
-  const generated = t("footer.generatedAt", {
-    date: formatExportDateTime(input.generatedAt, locale),
-  });
+  const { locale, t, assembly, brand } = input;
+  const band = bandSvg(input.bandLabel, brand?.labelFont);
+  const onCover = (page: number) => input.cover === true && page === 1;
+  const firstPage = input.cover ? 1 : 0;
   return {
     content: input.content,
     styles: STYLES,
-    defaultStyle: { font: "Raleway", fontSize: 10, fontFeatures: NO_LIGATURES },
+    defaultStyle: { font: "Raleway", fontSize: 11, fontFeatures: NO_LIGATURES },
     pageSize: "A4",
     pageMargins: PAGE_MARGINS,
     language: EXPORT_INTL_LOCALES[locale],
@@ -252,37 +293,141 @@ function frame(input: {
       subject: assembly.label,
       creator: "CREUP",
     },
-    header: () => ({
-      columns: [
-        {
-          text: `CREUP · ${assembly.label}`,
-          bold: true,
-          color: CREUP_RED,
-          width: "auto",
-        },
-        {
-          text: truncate(input.headerRight, 95),
-          alignment: "right",
-          color: MUTED_GREY,
-          width: "*",
-        },
-      ],
-      columnGap: 12,
-      fontSize: 8,
-      margin: [PAGE_MARGINS[0], 26, PAGE_MARGINS[2], 0],
-    }),
-    footer: (currentPage: number, pageCount: number) => ({
-      columns: [
-        { text: generated, color: MUTED_GREY, width: "*" },
-        {
-          text: t("footer.page", { page: currentPage, total: pageCount }),
-          alignment: "right",
-          width: "auto",
-        },
-      ],
-      fontSize: 8,
-      margin: [PAGE_MARGINS[0], 18, PAGE_MARGINS[2], 0],
-    }),
+    ...(brand
+      ? {
+          images: {
+            creupLogo: `data:image/png;base64,${brand.creupLogoPng.toString("base64")}`,
+            esuLogo: `data:image/png;base64,${brand.esuLogoPng.toString("base64")}`,
+          },
+        }
+      : {}),
+    background: (page: number) =>
+      onCover(page)
+        ? coverBackground(brand)
+        : {
+            svg: band.svg,
+            width: band.width,
+            height: band.height,
+            absolutePosition: { x: band.x, y: band.y },
+          },
+    header: (page: number) =>
+      onCover(page)
+        ? null
+        : brand
+          ? {
+              stack: [
+                {
+                  image: "creupLogo",
+                  width: LOGOS.creup.width,
+                  absolutePosition: { x: LOGOS.creup.x, y: LOGOS.creup.y },
+                },
+                {
+                  image: "esuLogo",
+                  width: LOGOS.esu.width,
+                  absolutePosition: { x: LOGOS.esu.x, y: LOGOS.esu.y },
+                },
+              ],
+            }
+          : {
+              text: "CREUP",
+              bold: true,
+              fontSize: 22,
+              color: BRAND_RED,
+              margin: [LOGOS.creup.x, LOGOS.creup.y + 8, 0, 0],
+            },
+    footer: (currentPage: number, pageTotal: number) =>
+      onCover(currentPage)
+        ? null
+        : {
+            columns: [
+              { text: "", width: "*" },
+              {
+                text: [
+                  {
+                    text: CONTACT.web.text,
+                    link: CONTACT.web.href,
+                    decoration: "underline",
+                  },
+                  " – ",
+                  {
+                    text: CONTACT.email.text,
+                    link: CONTACT.email.href,
+                    decoration: "underline",
+                  },
+                ],
+                width: "auto",
+              },
+              {
+                text: pageCount(
+                  t,
+                  currentPage - firstPage,
+                  pageTotal - firstPage,
+                ),
+                alignment: "right",
+                width: "*",
+              },
+            ],
+            columnGap: 12,
+            color: BRAND_RED,
+            fontSize: 11,
+            margin: [PAGE_MARGINS[0], 28, PAGE_MARGINS[2], 0],
+          },
+  };
+}
+
+/**
+ * The cover's lower half, after CREUP's positioning template: the logo
+ * centred, a burgundy rule across the page, and a burgundy band with the
+ * website and email in white.
+ */
+function coverBackground(brand?: ExportBrand): Content {
+  const logoX = (PAGE_WIDTH - COVER.logo.width) / 2;
+  return {
+    stack: [
+      ...(brand
+        ? [
+            {
+              image: "creupLogo",
+              width: COVER.logo.width,
+              absolutePosition: { x: logoX, y: COVER.logo.y },
+            },
+          ]
+        : []),
+      {
+        canvas: [
+          {
+            type: "line",
+            x1: 0,
+            y1: COVER.rule.y,
+            x2: PAGE_WIDTH,
+            y2: COVER.rule.y,
+            lineWidth: COVER.rule.width,
+            lineColor: BRAND_RED,
+          },
+          {
+            type: "rect",
+            x: 0,
+            y: COVER.band.y,
+            w: PAGE_WIDTH,
+            h: COVER.band.height,
+            color: BRAND_RED,
+          },
+        ],
+        absolutePosition: { x: 0, y: 0 },
+      },
+      {
+        text: [
+          { text: CONTACT.web.text, link: CONTACT.web.href },
+          " - ",
+          { text: CONTACT.email.text, link: CONTACT.email.href },
+        ],
+        color: "#ffffff",
+        bold: true,
+        fontSize: 13,
+        alignment: "center",
+        absolutePosition: { x: 0, y: COVER.band.y + 6 },
+      },
+    ],
   };
 }
 
@@ -333,47 +478,51 @@ function documentHeading(input: {
   assembly: ExportAssembly;
   locale: ExportLocale;
   t: Translate;
-  versionNote: string | null;
+  /** False when a cover page already shows the title. */
+  title?: boolean;
   outlineId?: string;
   pageBreak?: boolean;
 }): Content[] {
   const { meta, assembly, locale, t } = input;
-  // pdfmake reads `id` to nest bookmarks under it; its typings omit it here.
-  const title: ContentText & { id?: string } = {
-    text: meta.title || t("untitled"),
-    style: "docTitle",
-  };
-  if (input.outlineId) {
-    title.id = input.outlineId;
-    title.outline = true;
-    title.outlineText = truncate(meta.title || t("untitled"), 120);
-  }
-  if (input.pageBreak) title.pageBreak = "before";
-
-  const subtitle = [t(`documentKinds.${meta.kind}`), meta.reference]
-    .filter(Boolean)
-    .join(" · ");
-  const lines: Content[] = [title, { text: subtitle, style: "docSubtitle" }];
-  if (meta.agendaNumbering && meta.agendaTitle) {
-    lines.push({
-      text: t("agendaPoint", {
-        number: meta.agendaNumbering,
-        title: meta.agendaTitle,
-      }),
-      style: "meta",
-    });
-  }
-  if (meta.proponent) {
-    lines.push({
-      text: t("presentedBy", { members: meta.proponent }),
-      style: "meta",
-    });
+  const lines: Content[] = [];
+  if (input.title !== false) {
+    // pdfmake reads `id` to nest bookmarks under it; its typings omit it here.
+    const title: ContentText & { id?: string } = {
+      text: meta.title || t("untitled"),
+      style: "docTitle",
+    };
+    if (input.outlineId) {
+      title.id = input.outlineId;
+      title.outline = true;
+      title.outlineText = truncate(meta.title || t("untitled"), 120);
+    }
+    if (input.pageBreak) title.pageBreak = "before";
+    lines.push(title);
   }
   const vote = finalVoteLine(meta, assembly, locale, t);
   if (vote) lines.push(vote);
-  if (input.versionNote) lines.push({ text: input.versionNote, style: "note" });
-  lines.push(rule());
-  return lines;
+  if (lines.length === 0) return [];
+  // The text starts after a paragraph's worth of space.
+  return [{ stack: lines, margin: [0, 0, 0, 16] }];
+}
+
+/**
+ * The cover of a positioning: its title in capitals, a third of the way down.
+ * The logo, rule and contact band under it are drawn by the frame.
+ */
+function coverTitle(
+  meta: ExportDocumentMeta,
+  locale: ExportLocale,
+  t: Translate,
+): Content {
+  const text = meta.title || t("untitled");
+  return {
+    text: text.toLocaleUpperCase(EXPORT_INTL_LOCALES[locale]),
+    style: "coverTitle",
+    outline: true,
+    outlineText: truncate(text, 120),
+    pageBreak: "after",
+  };
 }
 
 function linksSection(links: LinkRegistry, t: Translate): Content[] {
@@ -476,10 +625,10 @@ function annexSection(rows: ExportAnnexRow[], t: Translate): Content[] {
       table: {
         headerRows: 1,
         dontBreakRows: true,
-        widths: ["auto", 70, 90, "*", 62],
+        widths: ["auto", 62, 80, "*", 58],
         body: [header, ...rows.map((row) => annexRow(row, t))],
       },
-      layout: "lightHorizontalLines",
+      layout: TEMPLATE_TABLE_LAYOUT,
     },
   ];
 }
@@ -519,37 +668,31 @@ function legendSection(t: Translate): Content[] {
 export function buildDocumentPdf(
   data: DocumentExportData,
   locale: ExportLocale,
+  brand?: ExportBrand,
 ): TDocumentDefinitions {
   const t = createTranslator(locale);
   const { assembly, document: meta, body } = data;
   const links = new LinkRegistry();
   const ctx: PdfContentContext = { links, outline: {} };
+  const cover = hasCover(meta.kind);
 
-  const content: Content[] = [];
+  const content: Content[] = cover ? [coverTitle(meta, locale, t)] : [];
+  const heading = documentHeading({
+    meta,
+    assembly,
+    locale,
+    t,
+    title: !cover,
+  });
   if (body.variant === "clean") {
     content.push(
-      ...documentHeading({
-        meta,
-        assembly,
-        locale,
-        t,
-        versionNote: t(`version.${body.source}`),
-      }),
+      ...heading,
       ...cleanBody(body.blocks, ctx, t),
       ...linksSection(links, t),
     );
   } else {
     const conflicting = body.annex.filter((row) => row.conflict);
-    content.push(
-      ...documentHeading({
-        meta,
-        assembly,
-        locale,
-        t,
-        versionNote: t("version.annotated"),
-      }),
-      ...legendSection(t),
-    );
+    content.push(...heading, ...legendSection(t));
     if (conflicting.length > 0) {
       content.push({
         text: t("conflicts", {
@@ -576,10 +719,11 @@ export function buildDocumentPdf(
     locale,
     t,
     assembly,
-    headerRight: documentHeaderRight(meta),
     title: documentHeaderRight(meta),
-    generatedAt: data.generatedAt,
     content,
+    brand,
+    bandLabel: t(`band.${bandLabelKey(meta.kind)}`),
+    cover,
   });
   // Keeps headings with the text that follows them.
   definition.pageBreakBefore = (node, queries) =>
@@ -645,6 +789,7 @@ function agendaContent(
 export function buildAssemblyPdf(
   data: AssemblyExportData,
   locale: ExportLocale,
+  brand?: ExportBrand,
 ): TDocumentDefinitions {
   const t = createTranslator(locale);
   const { assembly } = data;
@@ -663,6 +808,13 @@ export function buildAssemblyPdf(
       style: "coverMeta",
     },
     { text: assembly.location, style: "coverMeta" },
+    {
+      text: t("footer.generatedAt", {
+        date: formatExportDateTime(data.generatedAt, locale),
+      }),
+      style: "coverMeta",
+      color: MUTED_GREY,
+    },
     {
       text: t("agendaTitle"),
       style: "sectionTitle",
@@ -692,7 +844,6 @@ export function buildAssemblyPdf(
         assembly,
         locale,
         t,
-        versionNote: entry.source ? t(`version.${entry.source}`) : null,
         outlineId,
         pageBreak: true,
       }),
@@ -720,9 +871,9 @@ export function buildAssemblyPdf(
     locale,
     t,
     assembly,
-    headerRight: typeName,
     title: `${assembly.label} · ${typeName}`,
-    generatedAt: data.generatedAt,
     content,
+    brand,
+    bandLabel: t("band.internalDocument"),
   });
 }

@@ -1,20 +1,34 @@
 import type {
   Content,
+  ContentTable,
   ContentText,
+  CustomTableLayout,
   Decoration,
   OrderedListElement,
   OrderedListElementProperties,
   OrderedListType,
   Style,
+  TableCell,
   UnorderedListElement,
   UnorderedListType,
 } from "pdfmake/interfaces";
 import type {
   Block,
   BlockType,
+  BlockCell,
   ConsolidatedBlock,
+  ListMarker,
   Mark,
 } from "../../../shared/types/content";
+import { markerOf } from "../../../shared/utils/content/lists";
+import {
+  groupTables,
+  tableGrid,
+  type GridCell,
+  type TableGrid,
+  type TableGroup,
+} from "../../../shared/utils/content/tables";
+import { PAGE_WIDTH, TEMPLATE_MARGINS } from "./brand";
 import { isSafeHref } from "../../../shared/utils/content/render";
 
 /**
@@ -28,44 +42,66 @@ import { isSafeHref } from "../../../shared/utils/content/render";
 
 export const CREUP_RED = "#792225";
 export const MUTED_GREY = "#6b6b6b";
+/** Links, in the blue of the template. */
+export const LINK_BLUE = "#1155cc";
 
-/** Styles referenced by the nodes this module produces. */
+/**
+ * Styles referenced by the nodes this module produces, after CREUP's
+ * document template: Raleway 11 pt at 1.15 lines, 12 pt after every block,
+ * and four heading levels in burgundy: level 1 is white on a burgundy bar
+ * and level 3 sits in a burgundy box (see headingNode). The space before
+ * them is the template's, less the 12 pt the block above already leaves.
+ */
 export const CONTENT_STYLES: Record<string, Style> = {
-  heading1: {
+  // Level 1 in white on the bar, level 3 inside the box.
+  barHeading: {
     fontSize: 15,
     bold: true,
+    color: "#ffffff",
+    lineHeight: 1,
+  },
+  boxHeading: {
+    fontSize: 12,
     color: CREUP_RED,
-    margin: [0, 14, 0, 6],
+    lineHeight: 1,
   },
   heading2: {
-    fontSize: 13,
+    fontSize: 14,
     bold: true,
     color: CREUP_RED,
-    margin: [0, 12, 0, 5],
-  },
-  heading3: {
-    fontSize: 11.5,
-    bold: true,
-    color: CREUP_RED,
-    margin: [0, 10, 0, 4],
+    lineHeight: 1,
+    margin: [0, 0, 0, 12],
   },
   heading4: {
-    fontSize: 10.5,
+    fontSize: 12,
     bold: true,
     color: CREUP_RED,
-    margin: [0, 8, 0, 3],
+    lineHeight: 1.15,
+    margin: [0, 0, 0, 12],
   },
-  paragraph: { fontSize: 10, lineHeight: 1.35, margin: [0, 0, 0, 7] },
+  paragraph: { fontSize: 11, lineHeight: 1.15, margin: [0, 0, 0, 12] },
   quote: {
-    fontSize: 10,
-    lineHeight: 1.35,
+    fontSize: 11,
+    lineHeight: 1.15,
     italics: true,
     color: "#3d3d3d",
-    margin: [18, 0, 18, 7],
+    margin: [18, 0, 18, 12],
   },
-  listItem: { fontSize: 10, lineHeight: 1.35, margin: [0, 0, 0, 3] },
-  list: { margin: [0, 0, 0, 6] },
+  listItem: { fontSize: 11, lineHeight: 1.15 },
+  list: { margin: [0, 0, 0, 12] },
   amendmentRef: { color: CREUP_RED, bold: true },
+};
+
+/** The template's tables: burgundy rules around every cell. */
+export const TEMPLATE_TABLE_LAYOUT: CustomTableLayout = {
+  hLineWidth: () => 0.75,
+  vLineWidth: () => 0.75,
+  hLineColor: () => CREUP_RED,
+  vLineColor: () => CREUP_RED,
+  paddingLeft: () => 5,
+  paddingRight: () => 5,
+  paddingTop: () => 3,
+  paddingBottom: () => 3,
 };
 
 /** Collects link targets and numbers them in order of appearance. */
@@ -156,6 +192,16 @@ function markedInlines(
     if (types.has("italic")) piece.italics = true;
     const decorations: Decoration[] = [];
     if (types.has("underline")) decorations.push("underline");
+    // Links read as links, and work on screen; the [n] after them lists
+    // the address for print.
+    const link = active.find(
+      (entry) => entry.mark.type === "link" && isSafeHref(entry.mark.href),
+    );
+    if (link) {
+      piece.color = LINK_BLUE;
+      piece.link = link.mark.href!.trim();
+      decorations.push("underline");
+    }
     if (types.has("strike")) decorations.push("lineThrough");
     if (extra) {
       decorations.push(extra.decoration);
@@ -192,6 +238,9 @@ interface BlockShape {
   type: BlockType;
   level?: number;
   list?: "bullet" | "ordered";
+  marker?: ListMarker;
+  start?: number;
+  cell?: BlockCell;
 }
 
 interface Item {
@@ -207,32 +256,39 @@ interface ListFrame {
   kind: ListKind;
   level: number;
   depth: number;
+  /** Ordered lists: how they number their items. */
+  marker: ListMarker;
   /** List items and nested lists, which pdfmake renders without a marker. */
   items: Content[];
   counter: number;
 }
 
-const ORDERED_TYPES: { type: OrderedListType; separator: string }[] = [
-  { type: "decimal", separator: "." },
-  { type: "lower-alpha", separator: ")" },
-  { type: "lower-roman", separator: "." },
-];
+/** pdfmake's list type for each number format of a marker. */
+const ORDERED_TYPES: Record<string, OrderedListType> = {
+  "1": "decimal",
+  a: "lower-alpha",
+  A: "upper-alpha",
+  i: "lower-roman",
+  I: "upper-roman",
+};
 const UNORDERED_TYPES: UnorderedListType[] = ["disc", "circle", "square"];
 
 function listNode(frame: ListFrame): Content {
+  // Only the outermost list leaves space after it.
+  const style = frame.depth === 0 ? "list" : undefined;
   if (frame.kind === "ol") {
-    const style = ORDERED_TYPES[frame.depth % ORDERED_TYPES.length]!;
     return {
       ol: frame.items as OrderedListElement[],
-      type: style.type,
-      separator: style.separator,
-      style: "list",
+      type: ORDERED_TYPES[frame.marker[0]!] ?? "decimal",
+      separator: frame.marker[1]!,
+      style,
     };
   }
   return {
     ul: frame.items as UnorderedListElement[],
     type: UNORDERED_TYPES[frame.depth % UNORDERED_TYPES.length],
-    style: "list",
+    markerColor: CREUP_RED,
+    style,
   };
 }
 
@@ -249,25 +305,191 @@ function plainText(inlines: Inline[]): string {
     .trim();
 }
 
-function blockNode(item: Item, ctx: PdfContentContext): ContentText {
-  const text = emptySafe(item.inlines);
-  if (item.shape.type === "heading") {
-    const level = headingLevel(item.shape.level);
-    const node: ContentText = {
-      text,
-      style: `heading${level}`,
-      headlineLevel: level,
-    };
-    const label = plainText(item.inlines).slice(0, 120);
-    if (ctx.outline && item.countable && label) {
-      node.outline = true;
-      node.outlineText = label;
-      if (ctx.outline.parentId) node.outlineParentId = ctx.outline.parentId;
-    }
-    return node;
+/** Colours that would vanish on the burgundy bar, made light. */
+function onBurgundy(inline: Inline): Inline {
+  const light = { ...inline };
+  if (light.style === "amendmentRef" || light.color === CREUP_RED) {
+    light.color = "#ffffff";
+  } else if (light.color === MUTED_GREY) {
+    light.color = "#e6c7c9";
+  } else if (light.color === LINK_BLUE) {
+    light.color = "#ffffff";
   }
+  if (light.decorationColor) light.decorationColor = "#ffffff";
+  return light;
+}
+
+/**
+ * A heading in the template's style. Levels 1 and 3 are one-cell tables: a
+ * burgundy bar with a 2 pt border that sticks out 6 pt on each side, and a
+ * 1 pt burgundy box. The table carries `headlineLevel`, so the heading keeps
+ * with the text after it, and its text the bookmark.
+ */
+function headingNode(item: Item, ctx: PdfContentContext): Content {
+  const level = headingLevel(item.shape.level);
+  const framed = level === 1 || level === 3;
+  const bar = framed && level === 1;
+  const text: ContentText = {
+    text: emptySafe(bar ? item.inlines.map(onBurgundy) : item.inlines),
+    style: framed ? (bar ? "barHeading" : "boxHeading") : `heading${level}`,
+  };
+  const label = plainText(item.inlines).slice(0, 120);
+  if (ctx.outline && item.countable && label) {
+    text.outline = true;
+    text.outlineText = label;
+    if (ctx.outline.parentId) text.outlineParentId = ctx.outline.parentId;
+  }
+  if (!framed) return { ...text, headlineLevel: level };
+
+  const border = bar ? 2 : 1;
+  const table: ContentTable = {
+    table: { widths: ["*"], body: [[text]] },
+    layout: {
+      hLineWidth: () => border,
+      vLineWidth: () => border,
+      hLineColor: () => CREUP_RED,
+      vLineColor: () => CREUP_RED,
+      fillColor: () => (bar ? CREUP_RED : null),
+      paddingLeft: () => (bar ? 4 : 3.5),
+      paddingRight: () => 4,
+      paddingTop: () => (bar ? 0.5 : 1),
+      paddingBottom: () => (bar ? 0.5 : 1),
+    },
+    margin: bar ? [-6, 12, -6, 12] : [-4.5, 0, -4.5, 12],
+    headlineLevel: level,
+  };
+  return table;
+}
+
+function blockNode(item: Item, ctx: PdfContentContext): Content {
+  if (item.shape.type === "heading") return headingNode(item, ctx);
+  const text = emptySafe(item.inlines);
   if (item.shape.type === "quote") return { text, style: "quote" };
   return { text, style: "paragraph" };
+}
+
+/** Tables (groupTables) become pdfmake tables; other blocks flow. */
+function assemble(items: Item[], ctx: PdfContentContext): Content[] {
+  const output: Content[] = [];
+  const runs = groupTables(
+    items.map((item) => ({ ...item, cell: item.shape.cell })),
+  );
+  for (const run of runs) {
+    if (run.kind === "blocks") output.push(...assembleFlow(run.items, ctx));
+    else output.push(tableNode(run.table, ctx));
+  }
+  return output;
+}
+
+/**
+ * A table in the template's style: burgundy rules, a burgundy header row in
+ * white bold that repeats on every page, and spans laid out as a browser
+ * does (tableGrid). pdfmake wants every row full, so spanned positions get
+ * the empty placeholders it expects, and rows an amendment left short are
+ * filled with blank cells.
+ */
+function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
+  const grid = tableGrid(table);
+  const body: TableCell[][] = grid.rows.map(() =>
+    Array.from({ length: grid.columns }, () => ({ text: "" }) as TableCell),
+  );
+  // Positions a spanning cell covers, which pdfmake wants left empty.
+  const covered = new Set<string>();
+  grid.rows.forEach((row, r) => {
+    for (const cell of row) {
+      for (let dr = 0; dr < cell.rowspan; dr += 1) {
+        for (let dc = 0; dc < cell.colspan; dc += 1) {
+          if (dr || dc) covered.add(`${r + dr}:${cell.column + dc}`);
+        }
+      }
+      const nodes = assembleFlow(cell.blocks, ctx);
+      // Blocks in a cell sit close together, the last one flush.
+      const stack = nodes.map((node, index) =>
+        typeof node === "object" && node !== null
+          ? { ...node, margin: [0, 0, 0, index < nodes.length - 1 ? 4 : 0] }
+          : node,
+      ) as Content[];
+      body[r]![cell.column] = {
+        stack,
+        ...(cell.colspan > 1 ? { colSpan: cell.colspan } : {}),
+        ...(cell.rowspan > 1 ? { rowSpan: cell.rowspan } : {}),
+        ...(cell.cell.header
+          ? { fillColor: CREUP_RED, color: "#ffffff", bold: true }
+          : {}),
+      } as TableCell;
+    }
+  });
+  for (const key of covered) {
+    const [r, c] = key.split(":").map(Number) as [number, number];
+    if (body[r]) body[r]![c] = {} as TableCell;
+  }
+  return {
+    table: {
+      headerRows: grid.headerRows,
+      // A row stays on one page, as in the template.
+      dontBreakRows: true,
+      widths: columnWidths(grid),
+      body,
+    },
+    layout: TEMPLATE_TABLE_LAYOUT,
+    margin: [0, 0, 0, 12],
+  };
+}
+
+/** The text width a table may take: the page between the template's margins. */
+const TABLE_WIDTH = PAGE_WIDTH - TEMPLATE_MARGINS[0] - TEMPLATE_MARGINS[2];
+/** About the width of a character of Raleway 11 pt, and a cell's padding. */
+const CHAR_WIDTH = 6.2;
+const CELL_PADDING = 11;
+
+/**
+ * Column widths that add up to the text width, as a browser's automatic
+ * layout would share it: by how much text each column's own cells hold
+ * (cells spanning several columns aside), but never narrower than its
+ * longest word, which pdfmake would push past the page instead of wrapping.
+ */
+function columnWidths(grid: TableGrid<Item>): number[] {
+  const text = (cell: GridCell<Item>) =>
+    cell.blocks.map((item) => plainText(item.inlines)).join(" ");
+  const longest = Array.from({ length: grid.columns }, () => 0);
+  const word = Array.from({ length: grid.columns }, () => 0);
+  for (const row of grid.rows) {
+    for (const cell of row) {
+      if (cell.colspan > 1) continue;
+      const content = text(cell);
+      longest[cell.column] = Math.max(longest[cell.column]!, content.length);
+      for (const part of content.split(/\s+/)) {
+        word[cell.column] = Math.max(word[cell.column]!, part.length);
+      }
+    }
+  }
+  // Long text wraps anyway: past 40 characters a column wants no more.
+  const weights = longest.map((length, column) =>
+    Math.max(Math.min(length, 40), word[column]!, 4),
+  );
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  const widths = weights.map((weight) => (TABLE_WIDTH * weight) / total);
+  const minimum = word.map((length) =>
+    Math.min(length * CHAR_WIDTH + CELL_PADDING, TABLE_WIDTH / grid.columns),
+  );
+  // Columns under their minimum take it from the others, in proportion.
+  const short = widths.map((width, column) => width < minimum[column]!);
+  const missing = widths.reduce(
+    (sum, width, column) =>
+      sum + (short[column] ? minimum[column]! - width : 0),
+    0,
+  );
+  const spare = widths.reduce(
+    (sum, width, column) =>
+      sum + (short[column] ? 0 : width - minimum[column]!),
+    0,
+  );
+  return widths.map((width, column) =>
+    short[column]
+      ? minimum[column]!
+      : width -
+        (spare > 0 ? (missing * (width - minimum[column]!)) / spare : 0),
+  );
 }
 
 /**
@@ -276,7 +498,7 @@ function blockNode(item: Item, ctx: PdfContentContext): ContentText {
  * marker. Ordered items carry an explicit counter so struck items do not
  * consume a number.
  */
-function assemble(items: Item[], ctx: PdfContentContext): Content[] {
+function assembleFlow(items: Item[], ctx: PdfContentContext): Content[] {
   const output: Content[] = [];
   const stack: ListFrame[] = [];
 
@@ -289,11 +511,23 @@ function assemble(items: Item[], ctx: PdfContentContext): Content[] {
 
     const level = Math.max(0, Math.min(6, item.shape.level ?? 0));
     const kind: ListKind = item.shape.list === "ordered" ? "ol" : "ul";
+    const marker = markerOf(item.shape);
+    // A struck item that would start the list again takes no number, so it
+    // does not start it either.
+    const start =
+      kind === "ol" && item.countable ? item.shape.start : undefined;
     while (stack.length > 0 && stack[stack.length - 1]!.level > level) {
       stack.pop();
     }
     let top = stack[stack.length - 1];
-    if (top && top.level === level && top.kind !== kind) {
+    // A list ends where its level changes kind or marker, or starts again
+    // (as orderedListNumbers groups items).
+    if (
+      top &&
+      top.level === level &&
+      (top.kind !== kind ||
+        (kind === "ol" && (top.marker !== marker || start !== undefined)))
+    ) {
       stack.pop();
       top = stack[stack.length - 1];
     }
@@ -302,8 +536,9 @@ function assemble(items: Item[], ctx: PdfContentContext): Content[] {
         kind,
         level,
         depth: stack.length,
+        marker,
         items: [],
-        counter: 0,
+        counter: start !== undefined ? start - 1 : 0,
       };
       const node = listNode(frame);
       if (top) top.items.push(node);

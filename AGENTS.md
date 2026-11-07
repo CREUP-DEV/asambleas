@@ -32,21 +32,21 @@ The public website lives in a separate `creup/web` repository. This app may mirr
 
 ## Stack
 
-| Area          | Technology                                          |
-| ------------- | --------------------------------------------------- |
-| Framework     | Nuxt 4 + Nitro                                      |
-| UI            | Nuxt UI v4 + Tailwind CSS v4                        |
-| Auth          | `better-auth` + Google OAuth + Drizzle adapter      |
-| Database      | PostgreSQL + Drizzle ORM                            |
-| Jobs          | `pg-boss` v12 on PostgreSQL                         |
-| Validation    | Zod v4 (`zod/v4`)                                   |
-| i18n          | `@nuxtjs/i18n`, locales `es` default and `en`       |
-| Accessibility | `@nuxt/a11y`, content font preferences              |
-| Security      | `nuxt-security`, CSRF double-submit cookie          |
-| Analytics     | `nuxt-umami`, self-hosted and cookie-free           |
-| Diffs         | `diff-match-patch`                                  |
-| PDF           | `pdfmake`, Raleway bundled in `server/assets/fonts` |
-| IDs           | `@paralleldrive/cuid2`                              |
+| Area          | Technology                                                                               |
+| ------------- | ---------------------------------------------------------------------------------------- |
+| Framework     | Nuxt 4 + Nitro                                                                           |
+| UI            | Nuxt UI v4 + Tailwind CSS v4                                                             |
+| Auth          | `better-auth` + Google OAuth + Drizzle adapter                                           |
+| Database      | PostgreSQL + Drizzle ORM                                                                 |
+| Jobs          | `pg-boss` v12 on PostgreSQL                                                              |
+| Validation    | Zod v4 (`zod/v4`)                                                                        |
+| i18n          | `@nuxtjs/i18n`, locales `es` default and `en`                                            |
+| Accessibility | `@nuxt/a11y`, content font preferences                                                   |
+| Security      | `nuxt-security`, CSRF double-submit cookie                                               |
+| Analytics     | `nuxt-umami`, self-hosted and cookie-free                                                |
+| Diffs         | `diff-match-patch`                                                                       |
+| PDF           | `pdfmake`, Raleway bundled in `server/assets/fonts`, letterhead in `server/assets/brand` |
+| IDs           | `@paralleldrive/cuid2`                                                                   |
 
 ## Local Defaults
 
@@ -364,7 +364,8 @@ Security and reliability:
 - Do not store generated PDFs only in memory.
 - Include `EXPORT_STORAGE_DIR` in backups.
 - Keep PDF labels localized and use shared assembly/date formatters.
-- Raleway font files must be available from `server/assets/fonts` after build.
+- Raleway font files must be available from `server/assets/fonts` after build, and the letterhead logos from `server/assets/brand`.
+- Exports follow CREUP's document template (`server/utils/export/brand.ts` and `CONTENT_STYLES`): logos in the header, a band down the left edge naming the kind of document ("Documentación interna", "Moción Interna", "Normativa propia", "Posicionamiento", "Resolución"), website, email and page count in the footer, and the title alone above the text. Level 1 headings sit on a burgundy bar and level 3 in a burgundy box, in exports and in the platform (`--content-heading` in `main.css`); positionings open with a cover page. Logos are PNGs because pdfmake embeds an image once but redraws an SVG on every page; the band's label is drawn as glyph outlines with `fontkit`, since pdfmake's SVG text cannot reach fonts in its virtual file system.
 
 pg-boss v12 reminders:
 

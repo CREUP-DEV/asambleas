@@ -109,8 +109,25 @@
       "invalidLink": "Solo se admiten enlaces http, https o de correo electrónico.",
       "heading": "Título",
       "subheading": "Subtítulo",
+      "heading3": "Apartado",
+      "heading4": "Subapartado",
       "bulletList": "Lista con viñetas",
       "orderedList": "Lista numerada",
+      "listMarker": "Estilo de numeración",
+      "table": {
+        "menu": "Tabla",
+        "insert": "Insertar tabla",
+        "addRowBefore": "Añadir fila encima",
+        "addRowAfter": "Añadir fila debajo",
+        "deleteRow": "Eliminar fila",
+        "addColumnBefore": "Añadir columna a la izquierda",
+        "addColumnAfter": "Añadir columna a la derecha",
+        "deleteColumn": "Eliminar columna",
+        "toggleHeaderRow": "Fila de encabezado",
+        "mergeCells": "Combinar celdas",
+        "splitCell": "Dividir celda",
+        "deleteTable": "Eliminar tabla"
+      },
       "quote": "Cita",
       "undo": "Deshacer",
       "redo": "Rehacer",
@@ -650,7 +667,9 @@
       "warnings": {
         "tracked_changes": "El archivo tiene cambios con control de cambios sin aceptar ni rechazar. Revisa que el texto importado sea el definitivo.",
         "comments": "El archivo tiene comentarios. Los comentarios no se importan.",
-        "images_dropped": "Se han descartado imágenes y otros elementos que no son texto."
+        "images_dropped": "Se han descartado imágenes y otros elementos que no son texto.",
+        "tables_flattened": "Las tablas dentro de otra tabla se han convertido en un párrafo por fila, con las celdas separadas por «{'|'}».",
+        "highlight": "Se ha perdido el resaltado de color del texto; revisa si marcaba algo importante."
       },
       "tooComplex": "El documento es demasiado extenso o complejo para importarlo. Divídelo en partes o simplifica su formato.",
       "busy": "Ya hay una importación en curso. Espera unos segundos y vuelve a intentarlo.",
@@ -1784,9 +1803,14 @@
     "failed": "Error al generar PDF",
     "pdf": {
       "untitled": "Sin título",
+      "band": {
+        "internalDocument": "Documentación interna",
+        "internalMotion": "Moción Interna",
+        "ownRegulations": "Normativa propia",
+        "positioning": "Posicionamiento",
+        "resolution": "Resolución"
+      },
       "emptyDocument": "Este documento no tiene texto.",
-      "agendaPoint": "Punto {number} del orden del día: {title}",
-      "presentedBy": "Presentado por {members}",
       "voteCounts": "votos a favor: {inFavor}, en contra: {against}, abstenciones: {abstentions}",
       "finalVote": {
         "approved": "Aprobado en la {assembly} el {date} por {majority} ({counts}).",
@@ -1799,16 +1823,10 @@
       },
       "footer": {
         "generatedAt": "Generado el {date}",
-        "page": "Página {page} de {total}"
+        "page": "{page} de {total}"
       },
       "links": {
         "title": "Enlaces"
-      },
-      "version": {
-        "consolidated": "Texto definitivo aprobado, con las enmiendas incorporadas.",
-        "base": "Texto publicado, sin enmiendas incorporadas.",
-        "working": "Borrador de trabajo sin publicar.",
-        "annotated": "Texto publicado con las enmiendas aprobadas señaladas en su lugar."
       },
       "watermarkDraft": "BORRADOR",
       "legend": {

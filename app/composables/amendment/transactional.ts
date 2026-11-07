@@ -20,6 +20,7 @@ import type {
 } from "~~/shared/types/api";
 import type { AmendmentInput, Block } from "~~/shared/types/content";
 import { consolidate } from "~~/shared/utils/content/consolidate";
+import { copyShape } from "~~/shared/utils/content/lists";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
 import { MAX_TRANSACTIONAL_SOURCES } from "~~/shared/utils/schemas/amendment";
 import { sessionReplacingIds } from "~/composables/session/sessionModel";
@@ -209,9 +210,7 @@ export function transactionalComposerSeed(
         .join(""),
       marks: block.marks.map((mark) => ({ ...mark })),
     };
-    if (block.level !== undefined) clean.level = block.level;
-    if (block.list !== undefined) clean.list = block.list;
-    seed.push(clean);
+    seed.push(copyShape(block, clean));
   }
 
   return {
@@ -228,6 +227,9 @@ function blockContent(block: Block): string {
     block.text,
     block.level ?? null,
     block.list ?? null,
+    block.marker ?? null,
+    block.start ?? null,
+    block.cell ?? null,
     block.marks,
   ]);
 }

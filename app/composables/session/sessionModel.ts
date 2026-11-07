@@ -27,6 +27,7 @@ import type {
 } from "~~/shared/constants/domain";
 import { amendmentAcceptBlocked } from "~/composables/amendment/workspace";
 import { consolidate } from "~~/shared/utils/content/consolidate";
+import { copyShape } from "~~/shared/utils/content/lists";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
 import {
   findOverlaps,
@@ -1438,9 +1439,7 @@ export function sessionTransactionalSeed(
         .join(""),
       marks: block.marks,
     };
-    if (block.level !== undefined) clean.level = block.level;
-    if (block.list !== undefined) clean.list = block.list;
-    seed.push(clean);
+    seed.push(copyShape(block, clean));
   }
 
   return {
@@ -1464,6 +1463,9 @@ function blockContent(block: Block): string {
     block.text,
     block.level ?? null,
     block.list ?? null,
+    block.marker ?? null,
+    block.start ?? null,
+    block.cell ?? null,
     block.marks,
   ]);
 }

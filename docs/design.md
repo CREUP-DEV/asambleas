@@ -80,6 +80,9 @@ type Block = {
   type: "heading" | "paragraph" | "list_item" | "quote";
   level?: number; // heading level or list depth
   list?: "bullet" | "ordered";
+  marker?: ListMarker; // ordered items: "1." (default), "1)", "a.", "a)", "A.", "A)", "i.", "i)", "I.", "I)"
+  start?: number; // ordered items: the list starts again here, at this number
+  cell?: BlockCell; // inside a table: { table, row, cell, header?, colspan?, rowspan? }
   text: string; // plain text
   marks: Mark[]; // bold/italic/underline/strike/link ranges over `text`
 };
@@ -89,11 +92,48 @@ Versions live in `document_versions` (`blocks` jsonb, `kind`: `draft`,
 `base`, `consolidated`, `published`, content hash, author, note). The document
 points to its working version, to the **base** version frozen when the
 amendment window opens, and to the published consolidated version. Visible
-numbering (articles, sections) is computed when rendering, never stored.
+numbering of headings (articles, sections) is meant to be computed when
+rendering (R-DOC-02 in `proceso-asambleas.md`); nothing computes it yet, so
+the DOCX import writes those numbers into the text, where they stay as typed
+text. Ordered lists do number themselves: consecutive items of a level with
+one marker form a list, and `start` begins one again ("c)" after a paragraph
+that interrupts "a)", "b)"). `orderedListNumbers` in
+`shared/utils/content/lists.ts` is that rule; the web view, the editor and
+the PDF group items the same way.
+
+Tables are blocks too: every block inside one carries its cell
+(`BlockCell`: table, row and cell ids as stable as block ids, header and
+spans). Consecutive blocks of one table form it, of one row a row, of one
+cell a cell (`groupTables`, `tableGrid` in `shared/utils/content/tables.ts`),
+and a blank cell holds an empty paragraph. Amendments need no new
+operations: a cell's text changes like any block's, and rows and columns
+are added or removed by inserting or deleting the blocks of their cells.
+The editor uses TipTap's tables with the ids kept on their nodes
+(`TableIdsExtension`), and a table menu in the toolbar.
 
 The editor is Nuxt UI `UEditor` (TipTap) with a small extension that keeps a
-`blockId` attribute on every block node. DOCX import goes through `mammoth`,
-is sanitized, converted to blocks, and warns about unaccepted tracked changes.
+`blockId` attribute on every block node, and offers heading levels 1 to 4
+(shown as h2 to h5). DOCX import goes through `mammoth` in a child process,
+is sanitized and converted to blocks (`server/utils/content/docx.ts`):
+
+- Heading 1 to 4 become levels 1 to 4 (5 and 6 become 4). The Word title is
+  dropped when it repeats the document's title, and kept as a bold paragraph
+  otherwise; a subtitle is a paragraph. Quote styles become quote blocks.
+- Numbered list items whose number blocks can show (their own level's number
+  as 1, a, A, i or I, then "." or ")") stay list items, with Word's marker
+  and, where Word continues or restarts the count, its `start`. Any other
+  numbered paragraph (headings, "Artículo 5.", "1.1", legal numbering) gets
+  the number Word shows written at its start. Bulleted ones stay lists.
+- A table whose rows have one cell each (a framed signature or note) is read
+  as its content. Any other table stays a table: its cells' blocks carry
+  their cell, with header cells (Word's header rows, and cells all in bold,
+  as templates mark them) and spans. A table nested inside a cell becomes a
+  paragraph per row, cells joined by " | ".
+- Footnotes and endnotes become paragraphs at the end that start with their
+  reference ("[1]"); ordinals typed as a superscript letter become "ª"/"º";
+  text in all caps is written in capitals.
+- It warns about tracked changes, comments, dropped images, flattened tables
+  and highlighting, whose meaning is lost.
 
 ## Amendments
 
@@ -583,7 +623,14 @@ identity. The sidebar becomes a drawer on mobile.
 - **Projection**: chrome-free large text showing the passage under debate and
   its diff, then the vote result. It updates live.
 - **Consolidated view and exports**: clean and annotated PDF, plus an annex of
-  every amendment and its outcome.
+  every amendment and its outcome. Exports use CREUP's document template:
+  CREUP and ESU logos, a band down the left edge naming the kind of document
+  ("Documentación interna", "Moción Interna", "Normativa propia",
+  "Posicionamiento", "Resolución"), website, email and page count in the
+  footer, Raleway 11 pt and the title alone above the text. Level 1
+  headings sit on a burgundy bar and level 3 in a burgundy box, as they do
+  in the platform's viewer and editor; positionings open with a cover page. Links are blue, clickable and
+  numbered, with their addresses listed at the end for print.
 
 Content accessibility preferences (fonts, diff color or marks) keep applying to
 document content only.

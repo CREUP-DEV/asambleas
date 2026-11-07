@@ -118,6 +118,8 @@ const WARNING_ICONS: Record<DocxImportDto["warnings"][number], string> = {
   tracked_changes: "i-lucide-git-compare",
   comments: "i-lucide-message-square-warning",
   images_dropped: "i-lucide-image-off",
+  tables_flattened: "i-lucide-table",
+  highlight: "i-lucide-highlighter",
 };
 
 /** Nothing to replace: the imported text simply becomes the draft. */
