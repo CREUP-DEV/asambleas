@@ -39,7 +39,20 @@ import type {
   MeActivityTab,
 } from "../constants/activity";
 import type { AmendmentOp, Block, ChangeKind } from "./content";
-import type { CalendarWarning } from "../utils/calendar";
+import type {
+  CalendarDocument,
+  CalendarRules,
+  CalendarWarning,
+} from "../utils/calendar";
+
+/** A document as the calendar check reads it, with ISO dates. */
+export type CalendarDocumentDto = Omit<
+  CalendarDocument,
+  "amendmentsOpenAt" | "amendmentsCloseAt"
+> & {
+  amendmentsOpenAt: string | null;
+  amendmentsCloseAt: string | null;
+};
 
 export type IsoDate = string;
 
@@ -305,7 +318,18 @@ export interface AssemblyDto extends AssemblySummaryDto {
   convocationIntro: string | null;
   settings: AssemblySettings;
   milestones: MilestoneDto[];
+  /**
+   * From checkCalendar with the type's rules and, for managers, the
+   * amendable regulation and statutes documents (reform window).
+   */
   calendarWarnings: CalendarWarning[];
+  /** The calendar rules of the assembly's type, for the calendar editor. */
+  calendarRules: CalendarRules;
+  /**
+   * Managers only (empty otherwise): the documents the reform window check
+   * needs, so the calendar editor can repeat it while dates change.
+   */
+  calendarDocuments: CalendarDocumentDto[];
   can: AssemblyCapabilities;
 }
 
@@ -340,6 +364,23 @@ export interface AssemblyUpdateBody {
 export interface AssemblyStatusBody {
   status: AssemblyStatus;
   updatedAt: IsoDate;
+}
+
+/** The calendar rules of one assembly type (GET /api/calendar-rules). */
+export interface CalendarRulesDto {
+  type: AssemblyType;
+  rules: CalendarRules;
+  /** For optimistic locking; null while the type has no stored row. */
+  updatedAt: IsoDate | null;
+  /** False while the type has no stored row and the initial rules apply. */
+  stored: boolean;
+}
+
+/** PUT /api/calendar-rules/[type]. */
+export interface CalendarRulesBody {
+  rules: CalendarRules;
+  /** The `updatedAt` the client read; null while the type had no stored row. */
+  updatedAt: IsoDate | null;
 }
 
 export interface CalendarBody {

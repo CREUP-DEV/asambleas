@@ -246,18 +246,39 @@ gets 403 with the next step: ask the Secretaría to link it.
 | Method | Path                                  | Who               | Notes                                                                                                                                            |
 | ------ | ------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | GET    | `/api/assemblies`                     | any               | `AssemblyListDto`. Drafts are listed only for managers. Takes `?status=&type=&page=`.                                                            |
-| POST   | `/api/assemblies`                     | `assembly:create` | `AssemblyCreateBody`. Seeds the milestones from `defaultMilestones` unless told not to.                                                          |
-| GET    | `/api/assemblies/[assembly]`          | visible           | `AssemblyDto`, including the milestones and the warnings from `checkCalendar`.                                                                   |
+| POST   | `/api/assemblies`                     | `assembly:create` | `AssemblyCreateBody`. Seeds the milestones from `defaultMilestones` with the calendar rules of the type, unless told not to.                     |
+| GET    | `/api/assemblies/[assembly]`          | visible           | `AssemblyDto`, including the milestones, the type's `calendarRules` and the warnings from `checkCalendar`.                                       |
 | PUT    | `/api/assemblies/[assembly]`          | `assembly:manage` | `AssemblyUpdateBody`. Settings are merged (see below).                                                                                           |
 | DELETE | `/api/assemblies/[assembly]`          | `assembly:manage` | Only in `draft`.                                                                                                                                 |
 | PUT    | `/api/assemblies/[assembly]/status`   | `assembly:manage` | Follows `ASSEMBLY_STATUS_TRANSITIONS`. Entering `in_session` creates the `live_state` row. Closing ends the speaking turns (see speaking turns). |
 | PUT    | `/api/assemblies/[assembly]/calendar` | `assembly:manage` | `CalendarBody`. Upserts or deletes the milestones and toggles `agendaFinalizedAt`. Returns `AssemblyDto`.                                        |
 | GET    | `/api/assemblies/[assembly]/review`   | see notes         | `ReviewQueueDto`, the Secretaría's validation inbox. `document:manage` or `amendment:review`, otherwise 403. See "Review and work" below.        |
 
+**Calendar warnings.** `calendarWarnings` comes from `checkCalendar` with the
+calendar rules of the assembly's type. For managers, `calendarDocuments` lists
+the amendable `regulation` and `statutes` documents (not withdrawn or
+postponed) with their own windows, so the reform window check
+(`regulation_window_short`) runs on the server and again in the calendar
+editor while dates change; it is empty for everyone else. A warning carries
+the broken minimum (`limit`, an offset, or `days`) and, for the reform
+window, the `document`.
+
 **Settings.** `AssemblyDto.settings` is the stored JSON merged over
 `DEFAULT_ASSEMBLY_SETTINGS`, reading only the keys the defaults have. Keys of
 removed policies, such as the old `amendmentVisibility`, are neither returned
 nor kept: the next `PUT` writes the settings back without them.
+
+## Calendar rules
+
+The default deadlines and regulatory minimums of each assembly type
+(`calendar_rules`, docs/design.md "Calendar and convocatoria"). Both need
+`CALENDAR_RULES_PERMISSION` (`assembly:manage`) and are read-only while an
+Admin impersonates (403 `admin.impersonationReadOnly`).
+
+| Method | Path                         | Notes                                                                                                                                                                                                                                                                                                                                                    |
+| ------ | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/calendar-rules`        | `CalendarRulesDto[]`, one per type in `ALL_ASSEMBLY_TYPES` order. A type with no stored row shows `INITIAL_CALENDAR_RULES` with `stored: false` and `updatedAt: null`.                                                                                                                                                                                   |
+| PUT    | `/api/calendar-rules/[type]` | `CalendarRulesBody` (`rules` plus the `updatedAt` read, null while the type has no stored row: the call then stores the first one). 404 for an unknown type, 400 for invalid rules (strict: unknown milestones, mixed units or keys are refused), 409 on a stale `updatedAt` (a row that appeared or changed meanwhile). Writes `calendar_rules.update`. |
 
 ## Agenda
 
@@ -442,8 +463,8 @@ the old file is kept for the record, not served.
 
 - Needs a published document with `voted`, in an assembly that is neither
   `draft` nor `closed`, and no final vote yet.
-- An approved totality return (devolución) sends the text back (RFAG 2026 art.
-  23ter): it returns 409 with `{ totalityReturn: id }`, whatever the vote.
+- An approved totality return (devolución) sends the text back: it returns
+  409 with `{ totalityReturn: id }`, whatever the vote.
 - Every amendment must be decided first: otherwise 409 with
   `{ undecided: ids }`.
 - Records the vote on the whole text, whatever its result, as `finalVoteId`.
@@ -712,8 +733,11 @@ memberId }`, the main presenter) after `position_changed`, and closes the
 `AmendmentOutcomeDto`.
 
 - `approve` sets `status=approved` with `approvalMethod`.
-- `vote` records a vote with `computeVoteOutcome` (majority `simple` by
-  default) and then approves or rejects. A tie under `tieRule=repeat` stores
+- `vote` records a vote with `computeVoteOutcome` and then approves or
+  rejects. Without a `majority` in the body it uses `amendmentVoteMajority`:
+  `absolute` for an amendment to `regulation` or `statutes` (RRI 2025 art.
+  65.5), `simple` otherwise (art. 18.3). The session's vote dialog proposes
+  the same one. A tie under `tieRule=repeat` stores
   nothing and returns 409. The vote is projected live, pointing the
   projection at the amendment.
 - `withdraw` and `lapse` set `withdrawn` and `lapsed`, only on amendments in

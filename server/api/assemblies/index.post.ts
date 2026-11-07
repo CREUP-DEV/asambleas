@@ -14,9 +14,13 @@ import {
   readAssemblyBody,
   throwAssemblyMutationError,
 } from "../../utils/domain/assemblies";
+import { loadCalendarRules } from "../../utils/domain/calendarRules";
 import { recordEvent } from "../../utils/domain/events";
 
-/** Creates a draft assembly and, unless told not to, its default calendar. */
+/**
+ * Creates a draft assembly and, unless told not to, its default calendar
+ * from the calendar rules of its type.
+ */
 export default defineEventHandler(async (event): Promise<AssemblyDto> => {
   const actor = await requireActor(event);
   requireCan(actor, PERMISSION_KEYS.ASSEMBLY_CREATE);
@@ -58,7 +62,7 @@ export default defineEventHandler(async (event): Promise<AssemblyDto> => {
         await insertMilestones(
           tx,
           created.id,
-          defaultMilestones(body.type, startDate),
+          defaultMilestones(await loadCalendarRules(body.type, tx), startDate),
         );
       }
 

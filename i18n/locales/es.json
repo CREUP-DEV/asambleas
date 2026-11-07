@@ -1823,7 +1823,47 @@
         }
       }
     },
-    "impersonationReadOnly": "Mientras actúas como otra cuenta no puedes cambiar usuarios, roles ni miembros. Vuelve a tu cuenta para hacerlo."
+    "impersonationReadOnly": "Mientras actúas como otra cuenta no puedes cambiar usuarios, roles, miembros ni plazos del reglamento. Vuelve a tu cuenta para hacerlo.",
+    "calendarRules": {
+      "title": "Plazos del reglamento",
+      "description": "Plazos por defecto y mínimos del reglamento para cada tipo de asamblea. Cámbialos cuando cambie la normativa.",
+      "intro": "Los plazos por defecto rellenan el calendario de una asamblea nueva. Los mínimos son los del reglamento: el calendario avisa cuando un plazo cae más tarde. Las fechas de cada asamblea se siguen pudiendo cambiar.",
+      "typeLabel": "Tipo de asamblea",
+      "tableCaption": "Plazos por defecto y mínimos de la {type}",
+      "milestone": "Plazo",
+      "columns": {
+        "defaults": "Por defecto",
+        "minimums": "Mínimo del reglamento"
+      },
+      "columnHints": {
+        "defaults": "Antes del inicio, al aplicar los plazos por defecto",
+        "minimums": "Como muy tarde, esto antes del inicio"
+      },
+      "amountLabel": "{column}: cantidad para {milestone}",
+      "unitLabel": "{column}: unidad para {milestone}",
+      "units": {
+        "days": "Días",
+        "hours": "Horas",
+        "months": "Meses"
+      },
+      "none": "Sin plazo",
+      "defaultAfterMinimum": "El plazo por defecto cae después del mínimo",
+      "regulationWindowDays": "Plazo mínimo de enmiendas a una reforma de reglamento o de Estatutos (días)",
+      "regulationWindowHint": "Vacío si el reglamento no fija un mínimo propio. Se comprueba con la ventana de cada documento.",
+      "regulationWindowInvalid": "Escribe un número entero entre 1 y {max}",
+      "existingUnchanged": "Las fechas de las asambleas ya creadas no cambian; sus avisos se calculan con los nuevos mínimos.",
+      "discard": "Descartar cambios",
+      "saved": "Plazos guardados",
+      "saveError": "No se han podido guardar los plazos",
+      "unsavedConfirm": "Hay cambios sin guardar en los plazos. ¿Salir sin guardarlos?",
+      "notStoredTitle": "Plazos iniciales sin guardar",
+      "notStored": "Este tipo de asamblea usa los plazos iniciales de la plataforma, tomados del reglamento vigente. Revísalos y pulsa Guardar para fijarlos.",
+      "switchConfirm": "Hay cambios sin guardar en los plazos de este tipo de asamblea. ¿Cambiar de tipo sin guardarlos?",
+      "documentsWithConvocationBelow": "Documentación junto con la convocatoria",
+      "documentsWithConvocationHint": "Si se convoca con menos antelación que esta, toda la documentación debe ir con la convocatoria. Vacío si el reglamento no lo exige para este tipo de asamblea.",
+      "documentsWithConvocationAmount": "Antelación por debajo de la cual la documentación va con la convocatoria: cantidad",
+      "documentsWithConvocationUnit": "Antelación por debajo de la cual la documentación va con la convocatoria: unidad"
+    }
   },
   "export": {
     "exportPdf": "Exportar PDF",
@@ -1996,7 +2036,8 @@
       "users": "Usuarios",
       "roles": "Roles y permisos",
       "members": "Miembros",
-      "activity": "Actividad"
+      "activity": "Actividad",
+      "calendarRules": "Plazos del reglamento"
     },
     "assembly": {
       "navLabel": "Secciones de la {assembly}",
@@ -2540,12 +2581,20 @@
       "candidacies_close": "Último momento para presentar candidaturas a los cargos que se eligen."
     },
     "warnings": {
-      "short_notice": "La convocatoria no respeta la antelación mínima que exige el reglamento",
+      "short_notice": "La convocatoria no respeta la antelación mínima del reglamento: {limit}",
       "amendments_before_publication": "El plazo de enmiendas se abre antes de que se publiquen los documentos",
       "amendments_close_before_open": "El plazo de enmiendas se cierra antes de abrirse",
       "amendments_overlap_documents": "El plazo de documentos termina después que el de enmiendas: los últimos documentos no tendrán tiempo de recibir enmiendas",
       "after_start": "Hay un plazo posterior al inicio de la asamblea",
-      "agenda_after_publication": "El orden del día se cierra después de publicar los documentos"
+      "agenda_after_publication": "El orden del día se cierra después de publicar los documentos",
+      "below_minimum": "Este plazo debe caer al menos {limit} antes del inicio de la asamblea",
+      "regulation_window_short": "El plazo de enmiendas de «{document}» dura menos de {limit}, el mínimo para reformar un reglamento o los Estatutos",
+      "documents_not_with_convocation": "Una asamblea convocada con menos de {limit} de antelación debe enviar toda la documentación con la convocatoria: publica los documentos como tarde al convocar"
+    },
+    "offset": {
+      "days": "0 días | 1 día | {count} días",
+      "hours": "0 horas | 1 hora | {count} horas",
+      "months": "0 meses | 1 mes | {count} meses"
     }
   },
   "convocation": {
@@ -4166,7 +4215,9 @@
       "members": "Lista de miembros de la intranet",
       "session": "Sesión de la asamblea",
       "assembly": "Una asamblea",
-      "users": "Cuentas de la plataforma"
+      "users": "Cuentas de la plataforma",
+      "calendarRules": "Plazos del calendario de la {type}",
+      "calendarRulesNoType": "Plazos del calendario"
     },
     "actor": {
       "intranet": "La intranet de CREUP",
@@ -4415,6 +4466,10 @@
       "other": "@:amendment.history.events.other",
       "users": {
         "access_recheck_blocked": "Revisión de accesos detenida porque faltaban demasiadas cuentas en la intranet"
+      },
+      "calendar_rules": {
+        "update": "Plazos del calendario de un tipo de asamblea cambiados",
+        "seed": "Plazos iniciales del calendario guardados"
       }
     },
     "changes": {

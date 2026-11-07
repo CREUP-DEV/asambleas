@@ -1,9 +1,11 @@
 <script setup lang="ts">
+import { CALENDAR_RULES_PERMISSION } from "~~/shared/constants/calendarRules";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 
 /**
  * Administration home: one card per section the user may open. Each one
- * opens by permission (users, roles, members); an Admin sees them all.
+ * opens by permission (users, roles, members, calendar rules); an Admin
+ * sees them all.
  */
 definePageMeta({
   middleware: ["admin"],
@@ -11,6 +13,8 @@ definePageMeta({
     "user:manage_roles",
     "role:manage_permissions",
     "member:manage",
+    // CALENDAR_RULES_PERMISSION (page meta must be a literal).
+    "assembly:manage",
   ],
 });
 
@@ -45,6 +49,14 @@ const sections = computed(() =>
       description: t("admin.members.description"),
       icon: "i-lucide-building-2",
       to: localePath("/admin/miembros"),
+    },
+    {
+      key: "calendarRules",
+      visible: can(CALENDAR_RULES_PERMISSION),
+      label: t("admin.calendarRules.title"),
+      description: t("admin.calendarRules.description"),
+      icon: "i-lucide-calendar-cog",
+      to: localePath("/admin/calendario"),
     },
   ].filter((section) => section.visible),
 );

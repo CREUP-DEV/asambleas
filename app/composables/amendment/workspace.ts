@@ -721,7 +721,7 @@ export function amendmentOverlapIndex(
 export interface AmendmentGroup<T extends AmendmentLike = AmendmentDto> {
   key: string;
   /**
-   * - `totality`: amendments to the whole text, always first (RFAG 23ter);
+   * - `totality`: amendments to the whole text, always first (usual practice);
    * - `overlap`: amendments acting on the same passage;
    * - `single`: an amendment that overlaps with none of the others.
    */

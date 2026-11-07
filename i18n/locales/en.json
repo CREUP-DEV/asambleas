@@ -1823,7 +1823,47 @@
         }
       }
     },
-    "impersonationReadOnly": "While you act as another account you cannot change users, roles or members. Go back to your account to do it."
+    "impersonationReadOnly": "While you act as another account you cannot change users, roles, members or regulatory deadlines. Go back to your account to do it.",
+    "calendarRules": {
+      "title": "Regulatory deadlines",
+      "description": "Default deadlines and regulatory minimums for each assembly type. Change them when the regulations change.",
+      "intro": "Default deadlines fill the calendar of a new assembly. Minimums come from the regulations: the calendar warns when a deadline falls later. Each assembly’s dates can still be changed.",
+      "typeLabel": "Assembly type",
+      "tableCaption": "Default deadlines and minimums of the {type}",
+      "milestone": "Deadline",
+      "columns": {
+        "defaults": "Default",
+        "minimums": "Regulatory minimum"
+      },
+      "columnHints": {
+        "defaults": "Before the start, when the default deadlines are applied",
+        "minimums": "At the latest, this long before the start"
+      },
+      "amountLabel": "{column}: amount for {milestone}",
+      "unitLabel": "{column}: unit for {milestone}",
+      "units": {
+        "days": "Days",
+        "hours": "Hours",
+        "months": "Months"
+      },
+      "none": "No deadline",
+      "defaultAfterMinimum": "The default falls after the minimum",
+      "regulationWindowDays": "Minimum amendment window for a reform of a regulation or the Statutes (days)",
+      "regulationWindowHint": "Leave it empty if the regulations set no minimum of their own. It is checked against each document’s window.",
+      "regulationWindowInvalid": "Enter a whole number between 1 and {max}",
+      "existingUnchanged": "The dates of assemblies already created do not change; their warnings use the new minimums.",
+      "discard": "Discard changes",
+      "saved": "Deadlines saved",
+      "saveError": "The deadlines could not be saved",
+      "unsavedConfirm": "The deadlines have unsaved changes. Leave without saving them?",
+      "notStoredTitle": "Initial deadlines not saved yet",
+      "notStored": "This assembly type uses the platform’s initial deadlines, taken from the regulations in force. Review them and press Save to keep them.",
+      "switchConfirm": "The deadlines of this assembly type have unsaved changes. Switch type without saving them?",
+      "documentsWithConvocationBelow": "Documents sent with the notice of meeting",
+      "documentsWithConvocationHint": "When the assembly is convened with less notice than this, every document must go with the notice of meeting. Leave it empty if the regulations do not require it for this assembly type.",
+      "documentsWithConvocationAmount": "Notice below which the documents go with the notice of meeting: amount",
+      "documentsWithConvocationUnit": "Notice below which the documents go with the notice of meeting: unit"
+    }
   },
   "export": {
     "exportPdf": "Export PDF",
@@ -1996,7 +2036,8 @@
       "users": "Users",
       "roles": "Roles and permissions",
       "members": "Members",
-      "activity": "Activity"
+      "activity": "Activity",
+      "calendarRules": "Regulatory deadlines"
     },
     "assembly": {
       "navLabel": "{assembly} sections",
@@ -2540,12 +2581,20 @@
       "candidacies_close": "Last moment to stand for the posts being elected."
     },
     "warnings": {
-      "short_notice": "The notice of meeting does not give the minimum notice the regulations require",
+      "short_notice": "The notice of meeting is shorter than the regulations allow: {limit}",
       "amendments_before_publication": "The amendment window opens before the documents are published",
       "amendments_close_before_open": "The amendment window closes before it opens",
       "amendments_overlap_documents": "The documents deadline ends after the amendment window: the last documents will have no time to receive amendments",
       "after_start": "A deadline falls after the assembly starts",
-      "agenda_after_publication": "The agenda becomes final after the documents are published"
+      "agenda_after_publication": "The agenda becomes final after the documents are published",
+      "below_minimum": "This deadline must fall at least {limit} before the assembly starts",
+      "regulation_window_short": "The amendment window of “{document}” is shorter than {limit}, the minimum for a reform of a regulation or the Statutes",
+      "documents_not_with_convocation": "An assembly convened with less than {limit} of notice must send all its documents with the notice of meeting: publish them no later than the convocation"
+    },
+    "offset": {
+      "days": "0 days | 1 day | {count} days",
+      "hours": "0 hours | 1 hour | {count} hours",
+      "months": "0 months | 1 month | {count} months"
     }
   },
   "convocation": {
@@ -4166,7 +4215,9 @@
       "members": "Intranet member list",
       "session": "Assembly session",
       "assembly": "An assembly",
-      "users": "Platform accounts"
+      "users": "Platform accounts",
+      "calendarRules": "{type} calendar deadlines",
+      "calendarRulesNoType": "Calendar deadlines"
     },
     "actor": {
       "intranet": "The CREUP intranet",
@@ -4415,6 +4466,10 @@
       "other": "@:amendment.history.events.other",
       "users": {
         "access_recheck_blocked": "Access check stopped because too many accounts were missing from the intranet"
+      },
+      "calendar_rules": {
+        "update": "Calendar deadlines of an assembly type changed",
+        "seed": "Initial calendar deadlines stored"
       }
     },
     "changes": {
