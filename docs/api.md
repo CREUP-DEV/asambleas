@@ -463,8 +463,8 @@ the old file is kept for the record, not served.
 
 - Needs a published document with `voted`, in an assembly that is neither
   `draft` nor `closed`, and no final vote yet.
-- An approved totality return (devolución) sends the text back (RFAG 2026 art.
-  23ter): it returns 409 with `{ totalityReturn: id }`, whatever the vote.
+- An approved totality return (devolución) sends the text back: it returns
+  409 with `{ totalityReturn: id }`, whatever the vote.
 - Every amendment must be decided first: otherwise 409 with
   `{ undecided: ids }`.
 - Records the vote on the whole text, whatever its result, as `finalVoteId`.

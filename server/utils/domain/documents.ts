@@ -1950,7 +1950,7 @@ export function evaluateFinalVote(
  * The final vote on the whole text (session:moderate).
  *
  * - An approved totality return (devolución) sends the text back: there is
- *   nothing left to vote, 409 `{ totalityReturn: id }` (RFAG 2026 art. 23ter).
+ *   nothing left to vote, 409 `{ totalityReturn: id }`.
  * - Every amendment must be decided first: 409 `{ undecided: ids }`.
  * - Approved amendments are consolidated over the base in approval order, or
  *   in `body.order`, which must list exactly those amendments. Conflicts
