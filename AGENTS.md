@@ -209,6 +209,7 @@ Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`
 - `format`:
   - `structured`: blocks, amendable when `amendable`;
   - `file`: an uploaded PDF, never amendable.
+  - Presenters and managers may switch it until publication (`DocumentFormatSwitch`); the draft text and the PDF both stay for a switch back.
 - Kind defaults (amendable, voted, majority, accepted amendments) come from `DOCUMENT_KIND_DEFAULTS`. `acceptedAmendments` is per document: `incorporate` (regulations) approves an amendment the main presenter accepts at once (approval method `proponent`), and changing that answer before the final vote reopens it; `vote` leaves it to the assembly. Only managers change it, never after the final vote, and the change applies to the amendments already answered (`applyAcceptedAmendmentsRule`).
 - A document has a main presenter (`proponentMemberId`), who alone answers its amendments, and may have co-presenters (`document_proponents`, see `server/utils/domain/presenters.ts`). Co-presenters see and edit the draft like the main one and follow what it decides, but only the main presenter or a manager changes who the main presenter is (403 `main_only`); with co-presenters a main presenter is required. Visibility checks take both (`DocumentPresenters`): load the co-presenters with the row (`resolveDocument`, `withCoProponentIds`).
 - The presenters edit the working draft. Publishing freezes it as the immutable `base` version, and amendments anchor to that.

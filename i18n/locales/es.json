@@ -564,6 +564,7 @@
       "retry": "Reintentar",
       "backToDocuments": "Volver a los documentos",
       "backToWorkspace": "Ver documento",
+      "backToAgenda": "Volver al orden del día",
       "noLongerEditable": "Este documento ya no se puede editar",
       "leaveConfirm": "Tienes cambios sin guardar. ¿Quieres salir de todas formas?",
       "submittedTitle": "Presentado y pendiente de publicación",
@@ -603,6 +604,7 @@
         "description": "Se muestra la última versión cargada y tus cambios sin guardar siguen aquí. Vuelve a intentarlo cuando tengas conexión."
       },
       "returningToDocuments": "Volviendo a la lista de documentos",
+      "returningToAgenda": "Volviendo al orden del día",
       "steps": {
         "what": "Qué es",
         "text": "El texto",
@@ -674,6 +676,34 @@
       "invalidType": "Solo se admiten archivos PDF.",
       "tooLarge": "El archivo supera el límite de 20 MB."
     },
+    "formatSwitch": {
+      "current": {
+        "structured": "Este documento es un texto en la plataforma.",
+        "file": "Este documento se entrega como PDF."
+      },
+      "to": {
+        "structured": "Cambiar a texto",
+        "file": "Cambiar a PDF"
+      },
+      "saveFirst": "Guarda los cambios antes de cambiar el formato.",
+      "confirm": {
+        "file": {
+          "title": "¿Entregarlo como PDF?",
+          "effect": "Tendrás que subir el PDF, y un documento en PDF no admite enmiendas.",
+          "kept": "El texto que ya hay se guarda: si vuelves a texto, lo recuperas."
+        },
+        "structured": {
+          "title": "¿Pasarlo a texto en la plataforma?",
+          "effect": "Tendrás que subir el Word o escribir el texto aquí.",
+          "kept": "El PDF que ya has subido se guarda: si vuelves a PDF, lo recuperas."
+        }
+      },
+      "done": {
+        "structured": "Ahora es un texto en la plataforma",
+        "file": "Ahora se entrega como PDF"
+      },
+      "error": "No se ha podido cambiar el formato"
+    },
     "metadata": {
       "heading": "Datos del documento",
       "title": "Título",
@@ -682,6 +712,7 @@
       "optional": "Opcional",
       "kind": "Tipo de documento",
       "format": "Formato",
+      "formatHelp": "Se cambia encima del texto mientras no esté publicado.",
       "agendaItem": "Punto del orden del día",
       "agendaUnavailable": "No se ha podido cargar el orden del día",
       "proponent": "Quién lo presenta",
@@ -2387,6 +2418,7 @@
       "voted": "Se vota",
       "majority": "Mayoría necesaria",
       "create": "Añadir documento",
+      "createAndUpload": "Crear y subir el texto",
       "created": "Documento creado",
       "error": "No se ha podido crear el documento",
       "createdFor": "Documento añadido: {title}",
@@ -4387,6 +4419,7 @@
           "title": "Título",
           "summary": "Resumen",
           "kind": "Tipo de documento",
+          "format": "Formato",
           "amendable": "Admite enmiendas",
           "voted": "Se vota",
           "majority": "Mayoría necesaria",

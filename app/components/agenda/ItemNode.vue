@@ -2,6 +2,7 @@
 import type { InjectionKey, Ref } from "vue";
 import type { AgendaItemDto, DocumentSummaryDto } from "~~/shared/types/api";
 import type { AgendaMove, AgendaTreeNode } from "~/utils/agendaTree";
+import { agendaItemAnchor } from "~/composables/document/agendaReturn";
 
 /** What the agenda page shares with every (recursive) item node. */
 export interface AgendaTreeContext {
@@ -42,9 +43,7 @@ export const AGENDA_TREE_CONTEXT: InjectionKey<AgendaTreeContext> =
   Symbol("agenda-tree");
 
 /** DOM id of an item's heading (focus target and anchor). */
-export function agendaItemAnchor(id: string): string {
-  return `agenda-item-${id}`;
-}
+export { agendaItemAnchor };
 </script>
 
 <script setup lang="ts">

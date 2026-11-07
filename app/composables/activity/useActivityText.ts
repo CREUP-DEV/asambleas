@@ -125,6 +125,8 @@ export function useActivityText() {
       key = `assembly.settings.${field.slice("settings.".length)}.options.${code}.label`;
     } else if (entity === "document" && field === "kind") {
       key = `document.kinds.${code}`;
+    } else if (entity === "document" && field === "format") {
+      key = `agenda.formats.${code}`;
     } else if (entity === "document" && field === "majority") {
       key = `document.majorities.${code}`;
     } else if (entity === "document" && field === "acceptedAmendments") {
