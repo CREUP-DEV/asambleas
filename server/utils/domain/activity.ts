@@ -981,6 +981,9 @@ export const AUDIT_PAYLOAD_KEYS: Record<AuditAction, readonly string[]> = {
   // Ids, file ids and folder names of the source: Admins only.
   "assembly.import": [],
   "document.import": ["fileName", "blockCount"],
+  // The regulations' deadlines: nothing personal in them.
+  "calendar_rules.update": ["rules"],
+  "calendar_rules.seed": ["rules"],
   "user.created": ["roleName"],
   "user.role_sync": [
     "roleName",
@@ -1985,6 +1988,12 @@ function auditTarget(
       break;
     }
     case "members":
+      visible = true;
+      break;
+    case "calendar_rules":
+      // The deadlines of the regulations: whoever reads the activity may
+      // see that they changed and how.
+      label = row.targetId;
       visible = true;
       break;
     case "assembly": {

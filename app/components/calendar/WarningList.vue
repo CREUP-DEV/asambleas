@@ -3,7 +3,8 @@ import type { CalendarWarning } from "~~/shared/utils/calendar";
 
 /**
  * The calendar warnings of checkCalendar, one UAlert each, naming the
- * milestones involved. Announced politely when they change.
+ * milestones involved and the minimum of the calendar rules they break.
+ * Announced politely when they change.
  */
 const props = withDefaults(
   defineProps<{
@@ -17,10 +18,19 @@ const props = withDefaults(
 
 const { t } = useI18n();
 
+function limitOf(warning: CalendarWarning): string {
+  if (warning.limit) return formatMilestoneOffset(t, warning.limit);
+  if (warning.days) return formatMilestoneOffset(t, { days: warning.days });
+  return "";
+}
+
 const items = computed(() =>
   props.warnings.map((warning, index) => ({
-    key: `${warning.code}-${warning.keys.join("-")}-${index}`,
-    title: t(`calendar.warnings.${warning.code}`),
+    key: `${warning.code}-${warning.keys.join("-")}-${warning.document?.id ?? ""}-${index}`,
+    title: t(`calendar.warnings.${warning.code}`, {
+      limit: limitOf(warning),
+      document: warning.document?.title ?? "",
+    }),
     description: t("calendar.warningMilestones", {
       milestones: warning.keys
         .map((key) => t(`calendar.milestones.${key}`))
