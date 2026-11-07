@@ -1,7 +1,7 @@
 {
   "app": {
     "title": "CREUP Assemblies",
-    "description": "CREUP internal assembly management platform"
+    "description": "Internal assembly management platform of the Coordinadora de Representantes de Estudiantes de Universidades Públicas"
   },
   "hero": {
     "cta": "View Assemblies"
