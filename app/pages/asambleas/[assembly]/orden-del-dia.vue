@@ -120,7 +120,7 @@ watch(organizing, (value) => {
     Object.entries(route.query).filter(([key]) => key !== ORGANIZE_QUERY),
   );
   if (value) query[ORGANIZE_QUERY] = "1";
-  void router.replace({ query, hash: route.hash });
+  void router.replace({ query });
 });
 
 function toggleOrganizing() {
