@@ -241,14 +241,15 @@ const canAskCorrection = computed(
 
 /**
  * Publishing as the header's primary action: validating what a presenter
- * sent, publishing again, or a text with no presenter (or the manager's own
- * member). Otherwise the draft is still with a member, and "Publicar ahora"
- * waits in the "Más" menu.
+ * sent, publishing again, a text with no presenter (or the manager's own
+ * member), or one the Secretaría opened from the agenda to supply the text
+ * itself ("Crear y subir el texto"). Otherwise the draft is still with a
+ * member, and "Publicar ahora" waits in the "Más" menu.
  */
 const publishPrimary = computed(() => {
   const current = document.value;
   if (!current || !canPublish.value) return false;
-  if (validating.value || republish.value) return true;
+  if (validating.value || republish.value || fromAgenda.value) return true;
   return (
     current.proponent === null ||
     isDocumentPresenter(current, me.member.value?.id)

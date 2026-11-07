@@ -2419,6 +2419,7 @@
       "majority": "Mayoría necesaria",
       "create": "Añadir documento",
       "createAndUpload": "Crear y subir el texto",
+      "createAndUploadPdf": "Crear y subir el PDF",
       "created": "Documento creado",
       "error": "No se ha podido crear el documento",
       "createdFor": "Documento añadido: {title}",
