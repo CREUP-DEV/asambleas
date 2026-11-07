@@ -1,4 +1,5 @@
 <script lang="ts">
+import { CALENDAR_RULES_PERMISSION } from "~~/shared/constants/calendarRules";
 import type { NavigationMenuItem } from "@nuxt/ui";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { AssemblyDto } from "~~/shared/types/api";
@@ -274,6 +275,15 @@ const adminItems = computed<NavigationMenuItem[]>(() => {
       icon: "i-lucide-building-2",
       to: members,
       active: isWithin(members),
+    });
+  }
+  if (can(CALENDAR_RULES_PERMISSION)) {
+    const calendarRules = localePath("/admin/calendario");
+    items.push({
+      label: t("shell.nav.calendarRules"),
+      icon: "i-lucide-calendar-cog",
+      to: calendarRules,
+      active: isWithin(calendarRules),
     });
   }
   // The whole activity log: Admins only, by their real role. Secretaría

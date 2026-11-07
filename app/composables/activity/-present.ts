@@ -154,6 +154,8 @@ export const ACTIVITY_ACTION_ICONS = {
   "assembly.delete": "i-lucide-trash-2",
   "assembly.import": "i-lucide-file-input",
   "document.import": "i-lucide-file-input",
+  "calendar_rules.update": "i-lucide-calendar-cog",
+  "calendar_rules.seed": "i-lucide-calendar-cog",
   "user.created": "i-lucide-user-plus",
   "user.role_sync": "i-lucide-refresh-cw",
   "user.initial_admin": "i-lucide-shield",

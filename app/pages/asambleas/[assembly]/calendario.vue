@@ -11,8 +11,9 @@ import { MILESTONE_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/assembly";
 
 /**
  * Calendar editor: one date-time per milestone (Europe/Madrid), a note, the
- * regulatory defaults of the assembly type, live warnings from
- * checkCalendar, and the "final agenda" switch. Read-only for non-managers.
+ * default deadlines of the assembly type (its calendar rules, edited in
+ * /admin/calendario), live warnings from checkCalendar, and the "final
+ * agenda" switch. Read-only for non-managers.
  */
 
 const { t, locale } = useI18n();
@@ -115,9 +116,10 @@ const formMap = computed<Milestones>(() => {
 const warnings = computed(() =>
   assembly.value
     ? checkCalendar(
-        assembly.value.type,
+        assembly.value.calendarRules,
         new Date(assembly.value.startDate),
         formMap.value,
+        assembly.value.calendarDocuments,
       )
     : [],
 );
@@ -127,7 +129,10 @@ const warnedKeys = computed(
 
 const defaults = computed<Milestones>(() =>
   assembly.value
-    ? defaultMilestones(assembly.value.type, new Date(assembly.value.startDate))
+    ? defaultMilestones(
+        assembly.value.calendarRules,
+        new Date(assembly.value.startDate),
+      )
     : {},
 );
 

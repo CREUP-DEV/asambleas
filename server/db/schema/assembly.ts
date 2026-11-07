@@ -22,6 +22,7 @@ import {
   type AssemblySettings,
 } from "../../../shared/constants/domain";
 import { ALL_ASSEMBLY_TYPES } from "../../../shared/constants/assemblyTypes";
+import type { CalendarRules } from "../../../shared/utils/calendar";
 
 export const assemblyTypeEnum = pgEnum(
   "assembly_type",
@@ -96,6 +97,22 @@ export const assemblyMilestones = pgTable(
     ),
   ],
 );
+
+/**
+ * The calendar rules of each assembly type: default offsets and regulatory
+ * minimums (shared/utils/calendar.ts, CalendarRules). One row per type,
+ * written by `pnpm db:seed` (never over an existing row) and edited in the
+ * admin section, since the regulations change often.
+ */
+export const calendarRules = pgTable("calendar_rules", {
+  id: text("id").primaryKey().$defaultFn(cuid),
+  type: assemblyTypeEnum("type").notNull().unique(),
+  rules: jsonb("rules").$type<CalendarRules>().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+    .defaultNow()
+    .notNull()
+    .$onUpdate(() => sql`now()`),
+});
 
 /** What the Mesa is debating right now. One row per assembly. */
 export const liveState = pgTable("live_state", {

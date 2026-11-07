@@ -92,6 +92,13 @@
       "when": 1793984093342,
       "tag": "0012_mixed_sugar_man",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1794075338603,
+      "tag": "0013_hard_goblin_queen",
+      "breakpoints": true
     }
   ]
 }

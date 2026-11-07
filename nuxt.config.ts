@@ -223,6 +223,7 @@ export default defineNuxtConfig({
       "/api/exports",
       "/api/uploads",
       "/api/members",
+      "/api/calendar-rules",
       "/api/me",
     ].map((route) => ({
       route,

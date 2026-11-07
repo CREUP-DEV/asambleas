@@ -177,12 +177,37 @@ Tests run with Vitest.
 
 `assembly_milestones` store dated milestones per assembly: convocatoria, final
 agenda, documents deadline, documents publication, amendment window
-open/close, candidacies. Defaults come from rules per assembly type
-(`shared/utils/calendar.ts`, RFAG/RRI 2026). Every value stays
-editable. `checkCalendar` warns when the calendar breaks a regulatory minimum
+open/close, candidacies. Every date stays editable per assembly.
+
+The calendar rules of each assembly type live in `calendar_rules` (one row
+per type, `CalendarRules` in `shared/utils/calendar.ts`), because the
+regulations change often. Managers edit them at `/admin/calendario`
+(`CALENDAR_RULES_PERMISSION`, today `assembly:manage`). A rule set has:
+
+- `defaults`: offsets before the start that fill a new calendar and the
+  "Apply default deadlines" button (`defaultMilestones`);
+- `minimums`: the latest each milestone may fall, as an offset before the
+  start (notice of the convocatoria, final agenda, documents, the 72 hours the
+  amendment window may be extended to, candidacies);
+- `regulationWindowDays`: the shortest amendment window of an amendable
+  `regulation` or `statutes` document, its own window or else the assembly's
+  (null: no minimum).
+
+An offset is whole `days` or calendar `months` in Europe/Madrid (same
+wall-clock time; a month back from the 31st clamps to the end of the shorter
+month, so a notice is never under a month), or exact `hours`. `pnpm db:seed`
+stores `INITIAL_CALENDAR_RULES` (`shared/constants/calendarRules.ts`, with
+the article each value comes from) for a type with no row and never
+overwrites a stored one; until then the server falls back to them with a
+warning and the admin page cannot edit that type. Changing the rules never
+moves existing dates.
+
+`checkCalendar(rules, start, milestones, documents)` warns when the calendar
+breaks a minimum (`short_notice`, `below_minimum`, `regulation_window_short`)
 or is inconsistent, for example when amendments close before documents are
-published. The convocatoria is generated from the assembly data, the agenda and
-the milestones as a print view and a PDF.
+published. Warnings are computed on read, so past assemblies are checked
+against the rules in force. The convocatoria is generated from the assembly
+data, the agenda and the milestones as a print view and a PDF.
 
 ## Assemblies and session
 
@@ -422,7 +447,8 @@ from where and, while an Admin impersonates, who really did it.
   (`server/utils/domain/events.ts`) writes it, which also notifies live
   listeners.
 - `audit_log` holds everything else: accounts, roles, permissions, members,
-  sign-ins, exports, assembly deletion, imports and impersonations. Only
+  calendar rules, sign-ins, exports, assembly deletion, imports and
+  impersonations. Only
   `recordAudit` (`server/utils/domain/audit.ts`) writes it. It fills the actor,
   the impersonation, the IP (`getRequestIP` with X-Forwarded-For, trustworthy
   only behind a proxy that overwrites that header) and the user agent, keeps
@@ -516,7 +542,8 @@ better-auth's admin plugin is not used.
   entirely as the target: permissions, member, visibility, authorship, exports,
   news. Role sync never runs for the target, because no session is created for
   it.
-- **Safeguards.** The admin section and `/api/members` are read-only. Every
+- **Safeguards.** The admin section, `/api/members` and
+  `/api/calendar-rules` are read-only. Every
   unsafe request carries `x-acting-user` with the account the page acts as;
   for a real Admin it is required, and a mismatch (an expiry, or a stop in
   another tab) answers 409 and the page reloads, so a form opened as the target

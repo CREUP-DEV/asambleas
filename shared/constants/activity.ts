@@ -92,6 +92,18 @@ export const AUDIT_ACTIONS = {
   ASSEMBLY_IMPORT: "assembly.import",
   /** POST .../documents/[document]/import (DOCX to blocks, no state). Target document; after {fileName, blockCount}. */
   DOCUMENT_IMPORT: "document.import",
+  /**
+   * PUT /api/calendar-rules/[type]: the default offsets and regulatory
+   * minimums of an assembly type changed. Target calendar_rules/the type
+   * ("AGO"); before/after {rules: CalendarRules}.
+   */
+  CALENDAR_RULES_UPDATE: "calendar_rules.update",
+  /**
+   * `pnpm db:seed` stored the initial rules of a type that had none (it never
+   * overwrites a stored row). Target calendar_rules/the type; source seed;
+   * after {rules: CalendarRules}.
+   */
+  CALENDAR_RULES_SEED: "calendar_rules.seed",
 
   // Account and sign-in ---------------------------------------------------
   /** First Google sign-in created the account (better-auth user.create.after). Target user; source auth. */
@@ -194,6 +206,8 @@ export const AUDIT_TARGET_TYPES = [
   "assembly",
   "document",
   "impersonation",
+  /** The calendar rules of an assembly type, targetId the type ("AGO"). */
+  "calendar_rules",
 ] as const;
 export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
 
@@ -413,6 +427,8 @@ const AUDIT_CATEGORIES: Record<AuditAction, ActivityCategory> = {
   "assembly.delete": "assembly",
   "assembly.import": "assembly",
   "document.import": "document",
+  "calendar_rules.update": "assembly",
+  "calendar_rules.seed": "assembly",
   "user.created": "account",
   "user.role_sync": "account",
   "user.initial_admin": "account",
