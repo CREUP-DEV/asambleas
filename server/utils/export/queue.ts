@@ -7,13 +7,41 @@ import {
 } from "../../../shared/utils/schemas/export";
 
 let boss: PgBoss | null = null;
+let starting: Promise<PgBoss> | null = null;
 
 /** Attempts after the first one. Deterministic failures are never retried. */
 export const EXPORT_RETRY_LIMIT = 2;
 
-export async function getExportQueue(): Promise<PgBoss> {
-  if (boss) return boss;
+/**
+ * Start attempts at boot. After a host reboot the app can come up before the
+ * shared PostgreSQL accepts connections; pg-boss waits 1, 2, 4... up to 30 s
+ * between attempts, so 20 cover about 7 minutes instead of giving up at once
+ * and leaving the export worker unregistered until the next restart.
+ */
+export const EXPORT_QUEUE_BOOT_ATTEMPTS = 20;
 
+/**
+ * Connections of the queue's own pool. Both workers take one job at a time,
+ * and the shared cluster's budget is small (DEPLOYMENT.md).
+ */
+const EXPORT_QUEUE_MAX_CONNECTIONS = 3;
+
+/**
+ * The started queue. Concurrent callers share one start, so a request that
+ * arrives while the boot start is still retrying waits for it instead of
+ * opening a second instance.
+ */
+export function getExportQueue(
+  options: { attempts?: number } = {},
+): Promise<PgBoss> {
+  if (boss) return Promise.resolve(boss);
+  starting ??= startExportQueue(options.attempts ?? 1).finally(() => {
+    starting = null;
+  });
+  return starting;
+}
+
+async function startExportQueue(attempts: number): Promise<PgBoss> {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
     throw new Error("DATABASE_URL is required for pg-boss queue");
@@ -22,9 +50,10 @@ export async function getExportQueue(): Promise<PgBoss> {
   const instance = new PgBoss({
     connectionString: databaseUrl,
     schema: "pgboss",
+    max: EXPORT_QUEUE_MAX_CONNECTIONS,
   });
 
-  await instance.start();
+  await instance.start({ attempts });
 
   // pg-boss >= 10 rejects send() and work() on a queue that was never created.
   // createQueue is idempotent, so running it on every boot is safe.

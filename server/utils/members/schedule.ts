@@ -43,6 +43,12 @@ export const ACCESS_RECHECK_RETRY_LIMIT = 2;
 
 /** Same schema as the export queue (server/utils/export/queue.ts). */
 const PG_BOSS_SCHEMA = "pgboss";
+/**
+ * Start attempts at boot, like the export queue's: after a host reboot the
+ * shared PostgreSQL may not accept connections yet, and a failed start is
+ * cached, so the daily jobs would never run until the next restart.
+ */
+const SCHEDULE_START_ATTEMPTS = 20;
 
 /**
  * NUXT_INTRANET_ROSTER_SYNC: only the word `false` (any case, spaces
@@ -233,7 +239,7 @@ export function startIntranetSchedules(): Promise<PgBoss | null> {
     });
     boss.on("error", (error) => logError("members.schedule", error));
     try {
-      await boss.start();
+      await boss.start({ attempts: SCHEDULE_START_ATTEMPTS });
       const state = await setupRosterSyncSchedule(boss);
       logInfo("members.schedule", {
         state,

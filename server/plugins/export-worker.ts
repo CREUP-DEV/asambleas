@@ -19,6 +19,7 @@ import {
   EXPORT_RETRY_LIMIT,
   assemblyExportJobSchema,
   documentExportJobSchema,
+  EXPORT_QUEUE_BOOT_ATTEMPTS,
   getExportQueue,
 } from "../utils/export/queue";
 import { ExportRejectedError } from "../utils/export/rules";
@@ -159,7 +160,9 @@ export default defineNitroPlugin(async (nitroApp) => {
   }
 
   try {
-    const boss = await getExportQueue();
+    const boss = await getExportQueue({
+      attempts: EXPORT_QUEUE_BOOT_ATTEMPTS,
+    });
 
     await boss.work<unknown>(
       EXPORT_QUEUE_NAMES.ASSEMBLY_EXPORT,

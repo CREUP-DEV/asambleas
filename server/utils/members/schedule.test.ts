@@ -15,6 +15,7 @@ const instances: FakeBoss[] = [];
 
 class FakeBoss {
   options: unknown;
+  startOptions: unknown;
   started = false;
   stopped = false;
   createQueue = vi.fn(async () => undefined);
@@ -26,7 +27,8 @@ class FakeBoss {
     this.options = options;
     instances.push(this);
   }
-  async start() {
+  async start(options?: unknown) {
+    this.startOptions = options;
     this.started = true;
     return this;
   }
@@ -289,6 +291,8 @@ describe("startIntranetSchedules", () => {
     expect(first).toBe(instances[0]);
     expect(second).toBe(first);
     expect(instances[0]!.started).toBe(true);
+    // Retried at boot: PostgreSQL may not accept connections yet.
+    expect(instances[0]!.startOptions).toEqual({ attempts: 20 });
     expect(instances[0]!.work).toHaveBeenCalled();
 
     await stopIntranetSchedules();
