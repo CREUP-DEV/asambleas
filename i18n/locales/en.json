@@ -1807,8 +1807,12 @@
       "saveError": "The deadlines could not be saved",
       "unsavedConfirm": "The deadlines have unsaved changes. Leave without saving them?",
       "notStoredTitle": "Initial deadlines not saved yet",
-      "notStored": "This assembly type uses the platform’s initial deadlines, taken from the 2026 regulations. Review them and press Save to keep them.",
-      "switchConfirm": "The deadlines of this assembly type have unsaved changes. Switch type without saving them?"
+      "notStored": "This assembly type uses the platform’s initial deadlines, taken from the regulations in force. Review them and press Save to keep them.",
+      "switchConfirm": "The deadlines of this assembly type have unsaved changes. Switch type without saving them?",
+      "documentsWithConvocationBelow": "Documents sent with the notice of meeting",
+      "documentsWithConvocationHint": "When the assembly is convened with less notice than this, every document must go with the notice of meeting. Leave it empty if the regulations do not require it for this assembly type.",
+      "documentsWithConvocationAmount": "Notice below which the documents go with the notice of meeting: amount",
+      "documentsWithConvocationUnit": "Notice below which the documents go with the notice of meeting: unit"
     }
   },
   "export": {
@@ -2533,7 +2537,8 @@
       "after_start": "A deadline falls after the assembly starts",
       "agenda_after_publication": "The agenda becomes final after the documents are published",
       "below_minimum": "This deadline must fall at least {limit} before the assembly starts",
-      "regulation_window_short": "The amendment window of “{document}” is shorter than {limit}, the minimum for a regulation reform"
+      "regulation_window_short": "The amendment window of “{document}” is shorter than {limit}, the minimum for a reform of a regulation or the Statutes",
+      "documents_not_with_convocation": "An assembly convened with less than {limit} of notice must send all its documents with the notice of meeting: publish them no later than the convocation"
     },
     "offset": {
       "days": "0 days | 1 day | {count} days",

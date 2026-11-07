@@ -38,6 +38,7 @@ const offsetsByMilestone = z
 export const calendarRulesSchema = z.strictObject({
   defaults: offsetsByMilestone,
   minimums: offsetsByMilestone,
+  documentsWithConvocationBelow: milestoneOffsetSchema.nullable(),
   regulationWindowDays: z
     .number()
     .int()
@@ -67,6 +68,7 @@ export function normalizeCalendarRules(rules: CalendarRules): CalendarRules {
   return {
     defaults: ordered(rules.defaults),
     minimums: ordered(rules.minimums),
+    documentsWithConvocationBelow: rules.documentsWithConvocationBelow,
     regulationWindowDays: rules.regulationWindowDays,
   };
 }

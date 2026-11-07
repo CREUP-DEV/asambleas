@@ -25,6 +25,7 @@ describe("calendarRulesSchema", () => {
       { ...base, minimums: { convocation: { weeks: 1 } } },
       { ...base, minimums: { convocation: { months: 1.5 } } },
       { ...base, regulationWindowDays: 0 },
+      { ...base, documentsWithConvocationBelow: { days: 5, hours: 1 } },
       { ...base, extra: true },
     ];
     for (const rules of bad) {
@@ -47,6 +48,7 @@ describe("calendarRulesSchema", () => {
         convocation: { days: 15 },
       },
       minimums: {},
+      documentsWithConvocationBelow: null,
       regulationWindowDays: null,
     };
     expect(Object.keys(normalizeCalendarRules(rules).defaults)).toEqual([

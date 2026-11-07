@@ -40,6 +40,7 @@ interface OffsetField {
 interface RulesForm {
   defaults: Record<MilestoneKey, OffsetField>;
   minimums: Record<MilestoneKey, OffsetField>;
+  documentsWithConvocationBelow: OffsetField;
   regulationWindowDays: number | null;
 }
 
@@ -104,6 +105,9 @@ function formFrom(rules: CalendarRules | undefined): RulesForm {
   return {
     defaults: column(rules?.defaults),
     minimums: column(rules?.minimums),
+    documentsWithConvocationBelow: fieldFrom(
+      rules?.documentsWithConvocationBelow ?? undefined,
+    ),
     regulationWindowDays: rules?.regulationWindowDays ?? null,
   };
 }
@@ -127,6 +131,9 @@ function rulesOf(value: RulesForm): CalendarRules {
   return {
     defaults: column(value.defaults),
     minimums: column(value.minimums),
+    documentsWithConvocationBelow: offsetOf(
+      value.documentsWithConvocationBelow,
+    ),
     regulationWindowDays: value.regulationWindowDays || null,
   };
 }
@@ -146,21 +153,25 @@ const dirty = computed(
       JSON.stringify(rulesOf(formFrom(current.value.rules))),
 );
 
+function isInvalidOffset(field: OffsetField): boolean {
+  if (field.amount === null) return false;
+  return (
+    !Number.isInteger(field.amount) ||
+    field.amount < 0 ||
+    field.amount > OFFSET_MAX[field.unit]
+  );
+}
+
 /** Field-level problems, keyed `${column}.${key}`, before sending. */
 const invalid = computed(() => {
   const result = new Set<string>();
   for (const column of COLUMNS) {
     for (const key of MILESTONE_KEYS) {
-      const field = form[column][key];
-      if (field.amount === null) continue;
-      if (
-        !Number.isInteger(field.amount) ||
-        field.amount < 0 ||
-        field.amount > OFFSET_MAX[field.unit]
-      ) {
-        result.add(`${column}.${key}`);
-      }
+      if (isInvalidOffset(form[column][key])) result.add(`${column}.${key}`);
     }
+  }
+  if (isInvalidOffset(form.documentsWithConvocationBelow)) {
+    result.add("documentsWithConvocationBelow");
   }
   const days = form.regulationWindowDays;
   if (
@@ -404,6 +415,52 @@ onBeforeRouteLeave(() => {
                 </tbody>
               </table>
             </div>
+          </UCard>
+
+          <UCard>
+            <fieldset class="space-y-1.5">
+              <legend class="text-default text-sm font-medium">
+                {{ t("admin.calendarRules.documentsWithConvocationBelow") }}
+              </legend>
+              <p class="text-muted text-sm">
+                {{ t("admin.calendarRules.documentsWithConvocationHint") }}
+              </p>
+              <div class="flex items-center gap-2">
+                <UInput
+                  v-model.number="form.documentsWithConvocationBelow.amount"
+                  type="number"
+                  inputmode="numeric"
+                  min="0"
+                  :max="OFFSET_MAX[form.documentsWithConvocationBelow.unit]"
+                  step="1"
+                  class="w-24"
+                  :placeholder="t('admin.calendarRules.none')"
+                  :color="
+                    invalid.has('documentsWithConvocationBelow')
+                      ? 'error'
+                      : undefined
+                  "
+                  :aria-invalid="invalid.has('documentsWithConvocationBelow')"
+                  :aria-label="
+                    t('admin.calendarRules.documentsWithConvocationAmount')
+                  "
+                  @update:model-value="
+                    (value: unknown) => {
+                      if (value === '' || value === undefined)
+                        form.documentsWithConvocationBelow.amount = null;
+                    }
+                  "
+                />
+                <USelect
+                  v-model="form.documentsWithConvocationBelow.unit"
+                  :items="unitItems"
+                  class="w-28"
+                  :aria-label="
+                    t('admin.calendarRules.documentsWithConvocationUnit')
+                  "
+                />
+              </div>
+            </fieldset>
           </UCard>
 
           <UCard>
