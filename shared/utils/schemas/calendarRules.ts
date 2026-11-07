@@ -48,8 +48,8 @@ export const calendarRulesSchema = z.strictObject({
 
 export const calendarRulesBodySchema = z.strictObject({
   rules: calendarRulesSchema,
-  /** The `updatedAt` the client read (optimistic locking). */
-  updatedAt: z.iso.datetime({ offset: true }),
+  /** The `updatedAt` the client read (optimistic locking); null: no row yet. */
+  updatedAt: z.iso.datetime({ offset: true }).nullable(),
 });
 
 /**

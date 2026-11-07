@@ -101,8 +101,9 @@ export const assemblyMilestones = pgTable(
 /**
  * The calendar rules of each assembly type: default offsets and regulatory
  * minimums (shared/utils/calendar.ts, CalendarRules). One row per type,
- * written by `pnpm db:seed` (never over an existing row) and edited in the
- * admin section, since the regulations change often.
+ * written by `pnpm db:seed` (never over an existing row) or by the first
+ * save in the admin section, where it is edited since the regulations
+ * change often.
  */
 export const calendarRules = pgTable("calendar_rules", {
   id: text("id").primaryKey().$defaultFn(cuid),

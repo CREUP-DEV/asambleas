@@ -198,8 +198,9 @@ wall-clock time; a month back from the 31st clamps to the end of the shorter
 month, so a notice is never under a month), or exact `hours`. `pnpm db:seed`
 stores `INITIAL_CALENDAR_RULES` (`shared/constants/calendarRules.ts`, with
 the article each value comes from) for a type with no row and never
-overwrites a stored one; until then the server falls back to them with a
-warning and the admin page cannot edit that type. Changing the rules never
+overwrites a stored one. Without it the server falls back to them with a
+warning, and the first save from the admin page stores the row, so a deploy
+needs no `--seed` for this. Changing the rules never
 moves existing dates.
 
 `checkCalendar(rules, start, milestones, documents)` warns when the calendar

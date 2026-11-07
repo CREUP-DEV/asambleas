@@ -1806,8 +1806,9 @@
       "saved": "Plazos guardados",
       "saveError": "No se han podido guardar los plazos",
       "unsavedConfirm": "Hay cambios sin guardar en los plazos. ¿Salir sin guardarlos?",
-      "notStoredTitle": "Plazos aún no guardados",
-      "notStored": "Este tipo de asamblea usa los plazos iniciales hasta que se ejecute la carga inicial de datos (pnpm db:seed). Hasta entonces no se pueden editar."
+      "notStoredTitle": "Plazos iniciales sin guardar",
+      "notStored": "Este tipo de asamblea usa los plazos iniciales de la plataforma, tomados del reglamento de 2026. Revísalos y pulsa Guardar para fijarlos.",
+      "switchConfirm": "Hay cambios sin guardar en los plazos de este tipo de asamblea. ¿Cambiar de tipo sin guardarlos?"
     }
   },
   "export": {

@@ -73,6 +73,22 @@ const current = computed(
   () => data.value?.find((dto) => dto.type === selectedType.value) ?? null,
 );
 
+/** The tabs' model: switching type with unsaved edits asks first. */
+const tabType = computed<AssemblyType>({
+  get: () => selectedType.value,
+  set: (type) => {
+    if (type === selectedType.value) return;
+    if (
+      dirty.value &&
+      import.meta.client &&
+      !window.confirm(t("admin.calendarRules.switchConfirm"))
+    ) {
+      return;
+    }
+    selectedType.value = type;
+  },
+});
+
 function fieldFrom(offset: MilestoneOffset | undefined): OffsetField {
   if (!offset) return { amount: null, unit: "days" };
   if ("months" in offset) return { amount: offset.months, unit: "months" };
@@ -181,8 +197,7 @@ const defaultBreaksMinimum = (key: MilestoneKey) => {
 
 async function save() {
   const dto = current.value;
-  if (!dto || !dirty.value || invalid.value.size > 0) return;
-  if (!dto.updatedAt) return;
+  if (!dto || (dto.stored && !dirty.value) || invalid.value.size > 0) return;
   const body: CalendarRulesBody = {
     rules: rulesOf(form),
     updatedAt: dto.updatedAt,
@@ -224,7 +239,7 @@ onBeforeRouteLeave(() => {
       <UDashboardToolbar>
         <template #left>
           <UTabs
-            v-model="selectedType"
+            v-model="tabType"
             :items="typeItems"
             :content="false"
             variant="link"
@@ -439,7 +454,7 @@ onBeforeRouteLeave(() => {
               icon="i-lucide-save"
               :label="t('admin.save')"
               :loading="saving"
-              :disabled="!dirty || invalid.size > 0 || !current.stored"
+              :disabled="(current.stored && !dirty) || invalid.size > 0"
             />
           </div>
         </form>

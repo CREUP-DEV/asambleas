@@ -379,8 +379,8 @@ export interface CalendarRulesDto {
 /** PUT /api/calendar-rules/[type]. */
 export interface CalendarRulesBody {
   rules: CalendarRules;
-  /** The `updatedAt` the client read. */
-  updatedAt: IsoDate;
+  /** The `updatedAt` the client read; null while the type had no stored row. */
+  updatedAt: IsoDate | null;
 }
 
 export interface CalendarBody {
