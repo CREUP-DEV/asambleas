@@ -96,7 +96,13 @@ export interface DocumentKindDefaults {
   referencePrefix?: string;
 }
 
-/** Defaults per document kind (RFAG/RRI 2026). All editable per document. */
+/**
+ * Defaults per document kind, all editable per document. Rules in force
+ * (2025): agreements need two thirds (RFAG art. 23.1, RRI art. 18.2); in a
+ * reform of the Estatutos or a regulation the amendments the presenter
+ * accepts join the text (RRI art. 65.5), elsewhere every substantive
+ * amendment is voted (RRI art. 18.6). The rest is usual practice.
+ */
 export const DOCUMENT_KIND_DEFAULTS: Record<
   DocumentKind,
   DocumentKindDefaults

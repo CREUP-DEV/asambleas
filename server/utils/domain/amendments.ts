@@ -327,7 +327,11 @@ export function prepareAmendmentOps(input: {
   return { ops, errors: validateOps(input.base, ops) };
 }
 
-/** Sort key by position in the base. Totality amendments go first (RFAG 23ter). */
+/**
+ * Sort key by position in the base. Totality amendments go first: an
+ * approved return leaves nothing else to vote (usual practice; no rule in
+ * force fixes the order).
+ */
 export function amendmentSortKey(
   kind: AmendmentKind,
   ops: AmendmentOp[],
