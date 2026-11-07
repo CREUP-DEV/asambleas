@@ -798,13 +798,17 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
           type="submit"
           form="agenda-new-document-form"
           icon="i-lucide-file-up"
-          :label="t('agenda.newDocument.createAndUpload')"
+          :label="
+            state.format === 'file'
+              ? t('agenda.newDocument.createAndUploadPdf')
+              : t('agenda.newDocument.createAndUpload')
+          "
           :loading="saving && uploadNow"
           :disabled="saving && !uploadNow"
           @click="uploadNow = true"
         />
         <UButton
-          v-else
+          v-if="!isManager"
           type="submit"
           form="agenda-new-document-form"
           trailing-icon="i-lucide-arrow-right"

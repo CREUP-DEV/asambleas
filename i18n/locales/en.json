@@ -2419,6 +2419,7 @@
       "majority": "Required majority",
       "create": "Add document",
       "createAndUpload": "Create and upload the text",
+      "createAndUploadPdf": "Create and upload the PDF",
       "created": "Document created",
       "error": "The document could not be created",
       "createdFor": "Document added: {title}",
