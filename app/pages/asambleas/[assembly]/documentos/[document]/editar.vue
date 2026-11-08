@@ -8,8 +8,9 @@ import {
 } from "~/composables/document/documentPresenters";
 import { formatDateTime } from "~/utils/format";
 import {
-  agendaAtItem,
-  cameFromAgenda,
+  addAnotherPath,
+  originOf,
+  originPath,
 } from "~/composables/document/agendaReturn";
 
 /**
@@ -37,10 +38,13 @@ import {
  * (withdraw, postpone, publish again, delete before publication) remain.
  * Anyone else is sent to the document workspace.
  *
- * Opened from the agenda (`?desde=orden-del-dia`, after adding the document
- * there), the header leads back to it, and publishing or deleting returns
- * to that item with the agenda organized, ready for the next document; the
- * success toast links to the document instead.
+ * Opened right after adding the document on the home page or the agenda
+ * (`?desde=inicio`, `?desde=orden-del-dia`), the header leads back there
+ * and offers "Guardar y añadir otro", the dialog offers "Publicar y añadir
+ * otro" ("Enviar y presentar otro"), and publishing or deleting returns
+ * there (the agenda organized, at the item); the success toast links to the
+ * document instead. "… y añadir otro" comes back with the new-document
+ * modal open on the next item.
  *
  * A failed refresh never unmounts the editor: useDocument keeps the last
  * document loaded and the page keeps the last assembly, and the failure is
@@ -96,12 +100,38 @@ const workspacePath = computed(() =>
 );
 const documentsPath = computed(() => sectionPath("documentos"));
 
-/** Opened right after adding it on the agenda: the way back is there. */
-const fromAgenda = computed(() => cameFromAgenda(route.query));
-const agendaPath = computed(() =>
-  document.value
-    ? agendaAtItem(sectionPath("orden-del-dia"), document.value.agendaItemId)
-    : sectionPath("orden-del-dia"),
+/**
+ * Opened right after adding it on the home page or the agenda: the way
+ * back is there, and "… y añadir otro" returns with the new-document modal
+ * open on the next item.
+ */
+const origin = computed(() => originOf(route.query));
+const fromOrigin = computed(() => origin.value !== null);
+const originReturnPath = computed(() =>
+  originPath(
+    origin.value ?? "agenda",
+    sectionPath(),
+    document.value?.agendaItemId ?? "",
+  ),
+);
+const addAnotherTarget = computed(() =>
+  addAnotherPath(
+    origin.value ?? "agenda",
+    sectionPath(),
+    document.value?.agendaItemId ?? "",
+  ),
+);
+/** i18n keys of the way back ("Volver al orden del día", "Volver al inicio"). */
+const originLabels = computed(() =>
+  origin.value === "home"
+    ? {
+        back: "document.authoring.backToHome",
+        returning: "document.authoring.returningToHome",
+      }
+    : {
+        back: "document.authoring.backToAgenda",
+        returning: "document.authoring.returningToAgenda",
+      },
 );
 
 useHead({
@@ -249,7 +279,7 @@ const canAskCorrection = computed(
 const publishPrimary = computed(() => {
   const current = document.value;
   if (!current || !canPublish.value) return false;
-  if (validating.value || republish.value || fromAgenda.value) return true;
+  if (validating.value || republish.value || fromOrigin.value) return true;
   return (
     current.proponent === null ||
     isDocumentPresenter(current, me.member.value?.id)
@@ -317,7 +347,41 @@ async function openDialog(mode: "submit" | "publish"): Promise<void> {
   dialogOpen.value = true;
 }
 
-async function confirmAction(): Promise<void> {
+/**
+ * Saves the data and the text before leaving: true when everything on screen
+ * is stored (otherwise the form or the editor says why).
+ */
+async function saveEverything(): Promise<boolean> {
+  draftEditor.value?.flush();
+  if (metadataDirty.value && metadataForm.value) {
+    if (!(await metadataForm.value.save())) return false;
+    await nextTick();
+  }
+  if (isStructured.value && textEditable.value && draftEditor.value) {
+    const saved = await draftEditor.value.save();
+    if (!saved || draftEditor.value?.dirty) return false;
+  }
+  return true;
+}
+
+/** "Guardar y añadir otro": keep the draft as it is and go on. */
+async function saveAndAddAnother(): Promise<void> {
+  if (acting.value) return;
+  acting.value = true;
+  try {
+    if (!(await saveEverything())) return;
+    toast.add({
+      title: t("document.authoring.savedForLater"),
+      color: "success",
+      icon: "i-lucide-check",
+    });
+    await leaveTo(addAnotherTarget.value, originLabels.value.returning);
+  } finally {
+    acting.value = false;
+  }
+}
+
+async function confirmAction(addAnother = false): Promise<void> {
   const current = document.value;
   if (!current || acting.value) return;
   const mode = dialogMode.value;
@@ -349,10 +413,17 @@ async function confirmAction(): Promise<void> {
     const updated = await send<DocumentDto>(`${documentApi.value}/${mode}`, {
       body: { updatedAt: document.value?.updatedAt ?? current.updatedAt },
     });
-    const stays = mode === "submit" && updated.can.edit;
-    // Published from the agenda: back to its item for the next document.
-    const toAgenda = !stays && mode === "publish" && fromAgenda.value;
-    const destination = toAgenda ? agendaPath.value : workspacePath.value;
+    const next = addAnother && fromOrigin.value;
+    const stays = mode === "submit" && updated.can.edit && !next;
+    // Published from the home page or the agenda: back there, or on to the
+    // next document with "… y añadir otro".
+    const toOrigin =
+      !stays && (next || (mode === "publish" && fromOrigin.value));
+    const destination = next
+      ? addAnotherTarget.value
+      : toOrigin
+        ? originReturnPath.value
+        : workspacePath.value;
     const published = workspacePath.value;
     if (!stays) leaving.value = true;
     storeDocument(updated);
@@ -368,7 +439,7 @@ async function confirmAction(): Promise<void> {
           : undefined,
       color: "success",
       icon: "i-lucide-check",
-      actions: toAgenda
+      actions: toOrigin
         ? [
             {
               label: t("document.authoring.backToWorkspace"),
@@ -384,8 +455,8 @@ async function confirmAction(): Promise<void> {
     if (!stays) {
       await leaveTo(
         destination,
-        toAgenda
-          ? "document.authoring.returningToAgenda"
+        toOrigin
+          ? originLabels.value.returning
           : "document.authoring.redirecting",
       );
     }
@@ -448,8 +519,8 @@ const fileReplaceable = computed(() => document.value?.finalVote == null);
 
 async function onDeleted(): Promise<void> {
   // Unsaved edits die with the document; never prompt for them.
-  if (fromAgenda.value) {
-    await leaveTo(agendaPath.value, "document.authoring.returningToAgenda");
+  if (fromOrigin.value) {
+    await leaveTo(originReturnPath.value, originLabels.value.returning);
     return;
   }
   await leaveTo(documentsPath.value, "document.authoring.returningToDocuments");
@@ -534,19 +605,29 @@ async function onDeleted(): Promise<void> {
         :show-answerer="!(guided && partners)"
       >
         <UButton
-          v-if="fromAgenda"
-          :to="agendaPath"
+          v-if="fromOrigin"
+          :to="originReturnPath"
           color="neutral"
           variant="ghost"
           icon="i-lucide-arrow-left"
-          :label="t('document.authoring.backToAgenda')"
+          :label="t(originLabels.back)"
         />
         <UButton
           :to="workspacePath"
           color="neutral"
           variant="ghost"
-          :icon="fromAgenda ? 'i-lucide-file-text' : 'i-lucide-arrow-left'"
+          :icon="fromOrigin ? 'i-lucide-file-text' : 'i-lucide-arrow-left'"
           :label="t('document.authoring.backToWorkspace')"
+        />
+        <!-- Adding several in a row: keep this one as it is and go on -->
+        <UButton
+          v-if="fromOrigin && textEditable"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-file-plus"
+          :label="t('document.authoring.saveAndAddAnother')"
+          :disabled="busy"
+          @click="saveAndAddAnother"
         />
         <!-- Presenters send from step 3; managers decide here -->
         <UButton
@@ -957,6 +1038,7 @@ async function onDeleted(): Promise<void> {
         :manager="manager"
         :deadline-exempt="deadlineExempt"
         :busy="acting"
+        :add-another="fromOrigin"
         @confirm="confirmAction"
       />
 

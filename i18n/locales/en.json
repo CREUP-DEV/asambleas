@@ -404,7 +404,11 @@
       },
       "loading": "Loading the assembly figures",
       "documentCount": "No documents | 1 document | {count} documents",
-      "amendmentCount": "No amendments | 1 amendment | {count} amendments"
+      "amendmentCount": "No amendments | 1 amendment | {count} amendments",
+      "addDocument": {
+        "title": "Documents can be presented",
+        "until": "Until {date}."
+      }
     },
     "settingsPage": {
       "title": "Settings",
@@ -652,7 +656,11 @@
         "orWrite": "Or write it directly in the box below."
       },
       "sendNeedsText": "First add the text in step 2.",
-      "sendNeedsPdf": "First upload the PDF in step 2."
+      "sendNeedsPdf": "First upload the PDF in step 2.",
+      "backToHome": "Back to the overview",
+      "returningToHome": "Returning to the overview",
+      "saveAndAddAnother": "Save and add another",
+      "savedForLater": "Document saved"
     },
     "recovery": {
       "title": "Your version was not saved",
@@ -800,7 +808,8 @@
       "success": "Sent to the Secretariat",
       "error": "The document could not be sent",
       "resend": "Send to the Secretariat again",
-      "resendDescription": "The Secretariat will review the corrected document again. Meanwhile you cannot edit it."
+      "resendDescription": "The Secretariat will review the corrected document again. Meanwhile you cannot edit it.",
+      "confirmAndAddAnother": "Send and present another"
     },
     "publish": {
       "button": "Publish",
@@ -850,7 +859,8 @@
         "duePassedHint": "You can still send it.",
         "metadataWillSave": "The changes to the document details will be saved before continuing",
         "correctionReopen": "The Secretariat asked for this correction: you can send it again."
-      }
+      },
+      "confirmAndAddAnother": "Publish and add another"
     },
     "republish": {
       "button": "Publish again",
@@ -2532,7 +2542,11 @@
         "position": "Step {step} of {total}:"
       },
       "searchKind": "Search document types",
-      "titleFromItem": "This is the agenda item’s title. Change it if the document has another one."
+      "titleFromItem": "This is the agenda item’s title. Change it if the document has another one.",
+      "item": "Agenda item",
+      "itemPlaceholder": "Choose the item",
+      "searchItem": "Search agenda items",
+      "itemRequired": "Choose the agenda item"
     },
     "organize": {
       "start": "Organise agenda",

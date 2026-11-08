@@ -404,7 +404,11 @@
       },
       "loading": "Cargando las cifras de la asamblea",
       "documentCount": "Sin documentos | 1 documento | {count} documentos",
-      "amendmentCount": "Sin enmiendas | 1 enmienda | {count} enmiendas"
+      "amendmentCount": "Sin enmiendas | 1 enmienda | {count} enmiendas",
+      "addDocument": {
+        "title": "Plazo de presentación de documentos abierto",
+        "until": "Hasta el {date}."
+      }
     },
     "settingsPage": {
       "title": "Ajustes",
@@ -652,7 +656,11 @@
         "orWrite": "O escríbelo directamente en el recuadro de abajo."
       },
       "sendNeedsText": "Primero añade el texto en el paso 2.",
-      "sendNeedsPdf": "Primero sube el PDF en el paso 2."
+      "sendNeedsPdf": "Primero sube el PDF en el paso 2.",
+      "backToHome": "Volver al inicio",
+      "returningToHome": "Volviendo al inicio",
+      "saveAndAddAnother": "Guardar y añadir otro",
+      "savedForLater": "Documento guardado"
     },
     "recovery": {
       "title": "Tu versión no se ha guardado",
@@ -800,7 +808,8 @@
       "success": "Enviado a Secretaría",
       "error": "No se ha podido enviar el documento",
       "resend": "Volver a enviar a Secretaría",
-      "resendDescription": "Secretaría revisará de nuevo el documento corregido. Mientras tanto no podrás editarlo."
+      "resendDescription": "Secretaría revisará de nuevo el documento corregido. Mientras tanto no podrás editarlo.",
+      "confirmAndAddAnother": "Enviar y presentar otro"
     },
     "publish": {
       "button": "Publicar",
@@ -850,7 +859,8 @@
         "duePassedHint": "Puedes enviarlo igualmente.",
         "metadataWillSave": "Los cambios en los datos del documento se guardarán antes de continuar",
         "correctionReopen": "Secretaría te ha pedido la corrección: puedes volver a enviarlo."
-      }
+      },
+      "confirmAndAddAnother": "Publicar y añadir otro"
     },
     "republish": {
       "button": "Volver a publicar",
@@ -2532,7 +2542,11 @@
         "position": "Paso {step} de {total}:"
       },
       "searchKind": "Buscar tipo de documento",
-      "titleFromItem": "Es el título del punto. Cámbialo si el documento tiene otro."
+      "titleFromItem": "Es el título del punto. Cámbialo si el documento tiene otro.",
+      "item": "Punto del orden del día",
+      "itemPlaceholder": "Elige el punto",
+      "searchItem": "Buscar punto del orden del día",
+      "itemRequired": "Elige el punto del orden del día"
     },
     "organize": {
       "start": "Organizar orden del día",

@@ -35,14 +35,28 @@ import {
   withPresenterLead,
   type PresenterChoice,
 } from "~/composables/document/documentPresenters";
-import { editorFromAgenda } from "~/composables/document/agendaReturn";
+import {
+  editorFrom,
+  type AddOrigin,
+} from "~/composables/document/agendaReturn";
+import {
+  proposeFromItem,
+  type ItemProposal,
+} from "~/composables/document/itemProposal";
 
 /**
  * Adds a document under an agenda item.
  *
- * - The type is a searchable menu, and on an item without documents the
- *   title starts as the item's own (editable), so an item with a single
- *   document needs no typing.
+ * - The item is the first field, a numbered and searchable list (members
+ *   only get the items that take their documents). It starts on `itemId`
+ *   ("Añadir documento" on an item) and stays changeable, so the buttons at
+ *   the top of the home page and of the agenda open the same modal with no
+ *   item yet.
+ * - The type and the title are proposed from the item (proposeFromItem):
+ *   "Aprobación, si procede, del Posicionamiento sobre X" gives a
+ *   positioning titled "Posicionamiento sobre X". Choosing another item
+ *   proposes again what the user has not changed. The type is a searchable
+ *   menu.
  * - Members ("Presentar documento") go through the first step of a short
  *   guided flow: what it is (type, title, short summary) and, for types that
  *   take no amendments, whether the text comes as a PDF. The types their
@@ -57,8 +71,9 @@ import { editorFromAgenda } from "~/composables/document/agendaReturn";
  *   A document expected from a member stays on the agenda ("Crear"), unless
  *   the Secretaría already has its text ("Crear y subir el texto"); one with
  *   no presenter, or presented by the manager's own member, opens the
- *   editor. The editor knows it was opened from the agenda and comes back
- *   to the item when the document is published.
+ *   editor. The editor knows where it was opened from (`origin`) and comes
+ *   back there when the document is published, or with this modal open on
+ *   the next item ("Publicar y añadir otro", "Guardar y añadir otro").
  * - Both may add co-presenters ("¿Lo presentáis varios miembros?", folded);
  *   with several presenters, who answers the amendments is a required
  *   choice, which starts on the member presenting it (or the manager's
@@ -74,17 +89,21 @@ const props = defineProps<{
   /** Localized hub path ("/asambleas/80-ago"). */
   basePath: string;
   /**
-   * `hasDocuments`: the item already shows documents. Without them the
-   * title starts as the item's own ("Informe de la Tesorería"), since an
-   * item with a single document is usually named after it.
+   * Agenda items in agenda order with their number ("3.2"). `hasDocuments`:
+   * the item already shows documents, so no title is proposed from it.
    */
-  item: {
+  items: {
     id: string;
     title: string;
     number: string;
-    hasDocuments?: boolean;
-  } | null;
+    acceptsSubmissions: boolean;
+    hasDocuments: boolean;
+  }[];
+  /** The item to start on, if any. */
+  itemId: string | null;
   mode: "manager" | "member";
+  /** Where the editor comes back to (the agenda or the home page). */
+  origin: AddOrigin;
 }>();
 
 const open = defineModel<boolean>("open", { default: false });
@@ -105,6 +124,7 @@ const isManager = computed(() => props.mode === "manager");
 
 const schema = computed(() =>
   z.object({
+    agendaItemId: z.string().min(1, t("agenda.newDocument.itemRequired")),
     kind: z.enum(DOCUMENT_KINDS, {
       error: () => t("agenda.newDocument.kindRequired"),
     }),
@@ -157,19 +177,32 @@ type DocumentFormState = Omit<DocumentForm, "kind"> & {
   kind: DocumentKind | undefined;
 };
 
-/** The title proposed from the agenda item, or null (see `item`). */
-const titleFromItem = computed(() => {
-  const item = props.item;
-  if (!item || item.hasDocuments) return null;
-  const title = item.title.trim();
-  return title && title.length <= TITLE_MAX ? title : null;
-});
+/** The items the user may present under (members: those that take them). */
+const pickableItems = computed(() =>
+  props.items.filter((item) => isManager.value || item.acceptsSubmissions),
+);
+
+/** Type and title proposed from an item (none without an item). */
+function proposalFor(itemId: string): ItemProposal {
+  const item = props.items.find((candidate) => candidate.id === itemId);
+  return item ? proposeFromItem(item) : { kind: null, title: null };
+}
+
+function startItemId(): string {
+  const wanted = props.itemId;
+  return wanted && pickableItems.value.some((item) => item.id === wanted)
+    ? wanted
+    : "";
+}
 
 function initialState(): DocumentFormState {
+  const agendaItemId = startItemId();
+  const proposal = proposalFor(agendaItemId);
   return {
-    kind: undefined,
+    agendaItemId,
+    kind: proposal.kind ?? undefined,
     format: "structured",
-    title: titleFromItem.value ?? "",
+    title: proposal.title ?? "",
     summary: "",
     proponent: member.value?.id ?? NO_PROPONENT,
     coProponents: [],
@@ -205,6 +238,34 @@ function choiceOf(data: {
 }
 
 const state = reactive<DocumentFormState>(initialState());
+/** What was last proposed, to tell it from what the user typed or chose. */
+const lastProposal = shallowRef<ItemProposal>(proposalFor(state.agendaItemId));
+
+// Another item: propose again the type and title the user has not changed.
+watch(
+  () => state.agendaItemId,
+  (itemId) => {
+    const previous = lastProposal.value;
+    const next = proposalFor(itemId);
+    if (state.kind === (previous.kind ?? undefined)) {
+      state.kind = next.kind ?? undefined;
+    }
+    if (state.title === (previous.title ?? "")) state.title = next.title ?? "";
+    lastProposal.value = next;
+  },
+);
+
+/** Numbered, searchable items; long titles wrap. */
+const itemOptions = computed(() =>
+  pickableItems.value.map((item) => ({
+    label: `${item.number}. ${item.title}`,
+    value: item.id,
+  })),
+);
+const itemSelectUi = {
+  value: "whitespace-normal text-start",
+  itemLabel: "whitespace-normal",
+};
 const saving = ref(false);
 const advancedOpen = ref(false);
 
@@ -233,6 +294,7 @@ watch(
   (isOpen) => {
     if (!isOpen) return;
     Object.assign(state, initialState());
+    lastProposal.value = proposalFor(state.agendaItemId);
     advancedOpen.value = false;
     if (isManager.value) void loadMembers();
   },
@@ -437,14 +499,13 @@ function opensEditor(created: DocumentDto): boolean {
 }
 
 async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
-  if (!props.item) return;
   const data = event.data;
   const presenters = presenterFields(choiceOf(data));
   const amendable = data.format === "file" ? false : data.amendable;
   // A member presenting alone sends no presenter: the server uses its own.
   const jointly = presenters.coProponentMemberIds.length > 0;
   const body: DocumentCreateBody = {
-    agendaItemId: props.item.id,
+    agendaItemId: data.agendaItemId,
     kind: data.kind,
     format: data.format,
     title: data.title,
@@ -469,8 +530,9 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
     });
     emit("created", created);
     open.value = false;
-    const editorPath = editorFromAgenda(
+    const editorPath = editorFrom(
       `${props.basePath}/documentos/${encodeURIComponent(created.slug)}`,
+      props.origin,
     );
     if (opensEditor(created)) {
       toast.add({
@@ -527,14 +589,6 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
       isManager
         ? t('agenda.newDocument.title')
         : t('agenda.newDocument.submitTitle')
-    "
-    :description="
-      item
-        ? t('agenda.newDocument.under', {
-            number: item.number,
-            title: item.title,
-          })
-        : undefined
     "
     :dismissible="!saving"
     :ui="{ content: 'sm:max-w-2xl' }"
@@ -593,6 +647,30 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
         class="space-y-4"
         @submit="onSubmit"
       >
+        <UFormField
+          :label="t('agenda.newDocument.item')"
+          name="agendaItemId"
+          required
+        >
+          <USelectMenu
+            v-model="state.agendaItemId"
+            :items="itemOptions"
+            value-key="value"
+            :placeholder="t('agenda.newDocument.itemPlaceholder')"
+            :aria-label="
+              selectMenuLabel(
+                t('agenda.newDocument.item'),
+                itemOptions,
+                state.agendaItemId,
+                t('agenda.newDocument.itemPlaceholder'),
+              )
+            "
+            :search-input="labelledSearch(t('agenda.newDocument.searchItem'))"
+            :ui="itemSelectUi"
+            class="w-full"
+          />
+        </UFormField>
+
         <UFormField :label="t('agenda.newDocument.kind')" name="kind" required>
           <USelectMenu
             v-model="state.kind"
@@ -615,7 +693,7 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
         <UFormField
           :label="t('agenda.newDocument.documentTitle')"
           :help="
-            titleFromItem && state.title === titleFromItem
+            lastProposal.title && state.title === lastProposal.title
               ? t('agenda.newDocument.titleFromItem')
               : undefined
           "

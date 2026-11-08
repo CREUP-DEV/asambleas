@@ -12,6 +12,7 @@ import {
 } from "~/components/agenda/ItemNode.vue";
 import { isDocumentPresenter } from "~/composables/document/documentPresenters";
 import { ORGANIZE_QUERY } from "~/composables/document/agendaReturn";
+import { useAddDocument } from "~/composables/document/useAddDocument";
 import type { AgendaMove, AgendaTreeNode } from "~/utils/agendaTree";
 
 /**
@@ -23,6 +24,9 @@ import type { AgendaMove, AgendaTreeNode } from "~/utils/agendaTree";
  * `?organizar=1` opens it organized and a `#agenda-item-…` hash focuses that
  * item: the editor of a document added here comes back that way, so the
  * Secretaría adds the next one without looking for the item again.
+ * While documents can be presented, "Añadir documento" ("Presentar
+ * documento" for members) at the top opens the same modal with the item to
+ * choose (useAddDocument), and `?nuevo=<item>` opens it on the next item.
  */
 
 const { t } = useI18n();
@@ -397,27 +401,13 @@ async function confirmDelete() {
 
 // New document ------------------------------------------------------------------
 
-const documentOpen = ref(false);
-const documentMode = ref<"manager" | "member">("member");
-const documentItem = ref<{
-  id: string;
-  title: string;
-  number: string;
-  hasDocuments: boolean;
-} | null>(null);
+const addDocument = useAddDocument(agenda);
 
 function openNewDocument(
   node: AgendaTreeNode<AgendaItemDto>,
   mode: "manager" | "member",
 ) {
-  documentItem.value = {
-    id: node.item.id,
-    title: node.item.title,
-    number: node.number,
-    hasDocuments: (documentsByItem.value.get(node.item.id)?.length ?? 0) > 0,
-  };
-  documentMode.value = mode;
-  documentOpen.value = true;
+  addDocument.openFor(node.item.id, mode);
 }
 
 async function onDocumentCreated(document: DocumentSummaryDto) {
@@ -496,6 +486,16 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
         </p>
       </div>
       <div class="flex flex-wrap items-center gap-2">
+        <UButton
+          v-if="addDocument.canAdd.value && tree.length > 0"
+          icon="i-lucide-file-plus"
+          :label="
+            addDocument.manager.value
+              ? t('agenda.newDocument.title')
+              : t('agenda.newDocument.submitTitle')
+          "
+          @click="addDocument.openFor(null)"
+        />
         <UButton
           v-if="!organizing"
           color="neutral"
@@ -645,11 +645,13 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
     />
 
     <AgendaNewDocumentModal
-      v-model:open="documentOpen"
+      v-model:open="addDocument.open.value"
       :api-base="apiBase"
       :base-path="sectionPath()"
-      :item="documentItem"
-      :mode="documentMode"
+      :items="addDocument.items.value"
+      :item-id="addDocument.itemId.value"
+      :mode="addDocument.mode.value"
+      origin="agenda"
       @created="onDocumentCreated"
     />
 
