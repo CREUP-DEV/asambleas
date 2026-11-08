@@ -753,6 +753,7 @@
       "proponent": "Who presents it",
       "proponentPlaceholder": "Choose who presents it",
       "searchMember": "Search by acronym or name",
+      "searchAgendaItem": "Search agenda items",
       "noProponent": "No proponent",
       "managerOnly": "Only the Secretariat can change who presents it.",
       "procedure": "Amendments and voting",
