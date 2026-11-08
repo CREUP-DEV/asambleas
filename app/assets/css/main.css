@@ -304,6 +304,8 @@ html {
     font-family: var(--font-sans);
     font-weight: 700;
     line-height: 1.25;
+    /* Clear of the sticky selection bar when the index jumps to it. */
+    scroll-margin-top: 4.5rem;
   }
 
   .rich-text h2 {

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { OutlineEntry } from "~/components/content/ContentView.vue";
 import type { AmendmentDto } from "~~/shared/types/api";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { touchedBlockIds, validateOps } from "~~/shared/utils/content/ops";
@@ -79,7 +80,12 @@ import {
 
 interface TextViewHandle {
   getSelectedBlockIds: () => string[];
-  scrollToBlock: (blockId: string) => void;
+  scrollToBlock: (
+    blockId: string,
+    options?: { align?: "center" | "start" },
+  ) => void;
+  currentHeading: () => string | null;
+  outline: OutlineEntry[];
 }
 
 type TextMode = "original" | "amended" | "consolidated" | "compare";
@@ -123,6 +129,11 @@ useHead({
 
 const isDesktop = useMediaQuery("(min-width: 1024px)");
 const textView = useTemplateRef<TextViewHandle>("textView");
+const draftView = useTemplateRef<TextViewHandle>("draftView");
+
+/** The headings of the text on show, for its index (two or more). */
+const textOutline = computed(() => textView.value?.outline ?? []);
+const draftOutline = computed(() => draftView.value?.outline ?? []);
 const workspaceBox = useTemplateRef<HTMLElement>("workspaceBox");
 const selectionBar = useTemplateRef<HTMLElement>("selectionBar");
 
@@ -1241,7 +1252,19 @@ const filteredBlockLabel = computed(() =>
           v-if="fallbackText && fallbackText.length > 0"
           class="border-default rounded-lg border p-4 sm:p-6"
         >
-          <ContentView :blocks="fallbackText" />
+          <!-- Sticky: the index stays at hand while the draft scrolls. -->
+          <div
+            v-if="draftOutline.length > 1"
+            class="sticky top-2 z-10 mb-2 flex justify-end"
+          >
+            <ContentOutline
+              :items="draftOutline"
+              variant="outline"
+              :current="() => draftView?.currentHeading() ?? null"
+              @select="(id) => draftView?.scrollToBlock(id, { align: 'start' })"
+            />
+          </div>
+          <ContentView ref="draftView" :blocks="fallbackText" />
         </div>
         <CommonEmptyState
           v-else
@@ -1289,6 +1312,20 @@ const filteredBlockLabel = computed(() =>
           :aria-label="t('workspace.panes.label')"
         />
 
+        <!-- The index on narrow screens, floating over the text while it
+             scrolls with the page. -->
+        <div
+          v-if="textOutline.length > 1 && mobilePane === 'text'"
+          class="fixed end-4 bottom-4 z-30 lg:hidden"
+        >
+          <ContentOutline
+            :items="textOutline"
+            variant="outline"
+            :current="() => textView?.currentHeading() ?? null"
+            @select="(id) => textView?.scrollToBlock(id, { align: 'start' })"
+          />
+        </div>
+
         <!-- As tall as the hub body's scroll area (viewport minus navbar,
              section toolbar and padding), like the session console. -->
         <div
@@ -1332,6 +1369,17 @@ const filteredBlockLabel = computed(() =>
                   </UDropdownMenu>
                 </template>
                 <template #right>
+                  <!-- Narrow screens float it instead (below): the page
+                       scrolls this toolbar away. -->
+                  <div v-if="textOutline.length > 1" class="max-lg:hidden">
+                    <ContentOutline
+                      :items="textOutline"
+                      :current="() => textView?.currentHeading() ?? null"
+                      @select="
+                        (id) => textView?.scrollToBlock(id, { align: 'start' })
+                      "
+                    />
+                  </div>
                   <UBadge
                     v-if="
                       includeAccepted &&

@@ -94,7 +94,11 @@
       "previewUnavailableDescription": "The operations of this amendment no longer match the base text of the document.",
       "inserted": "Added:",
       "removed": "Removed:",
-      "fragmentFrom": "{text} (from amendment {label})"
+      "fragmentFrom": "{text} (from amendment {label})",
+      "outline": {
+        "button": "Contents",
+        "label": "Document contents"
+      }
     },
     "editor": {
       "bold": "Bold",
