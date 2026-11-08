@@ -40,8 +40,14 @@ const props = withDefaults(
      */
     deadlineExempt?: boolean;
     busy?: boolean;
+    /**
+     * Offer "Publicar y añadir otro" ("Enviar y presentar otro"): the
+     * document was added from the home page or the agenda.
+     */
+    addAnother?: boolean;
   }>(),
   {
+    addAnother: false,
     textDirty: false,
     metadataDirty: false,
     manager: false,
@@ -51,7 +57,8 @@ const props = withDefaults(
 );
 
 const open = defineModel<boolean>("open", { default: false });
-const emit = defineEmits<{ confirm: [] }>();
+/** `addAnother`: go on with the next document after confirming. */
+const emit = defineEmits<{ confirm: [addAnother: boolean] }>();
 
 const { t, locale } = useI18n();
 
@@ -444,11 +451,24 @@ const copy = computed(() => {
         @click="close"
       />
       <UButton
+        v-if="addAnother && !validating && !republish"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-file-plus"
+        :label="
+          mode === 'submit'
+            ? t('document.submit.confirmAndAddAnother')
+            : t('document.publish.confirmAndAddAnother')
+        "
+        :disabled="blocked || busy"
+        @click="emit('confirm', true)"
+      />
+      <UButton
         :icon="copy.icon"
         :label="copy.confirm"
         :loading="busy"
         :disabled="blocked || busy"
-        @click="emit('confirm')"
+        @click="emit('confirm', false)"
       />
     </template>
   </UModal>

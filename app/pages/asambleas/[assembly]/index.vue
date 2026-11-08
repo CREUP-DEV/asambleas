@@ -7,6 +7,8 @@ import {
   homeWorkTasks,
   homeWorkUpdates,
 } from "~/components/home/-work";
+import { useAddDocument } from "~/composables/document/useAddDocument";
+import { formatDateTime } from "~/utils/format";
 
 /**
  * Assembly overview: what the signed-in user has to do here and, for the
@@ -15,9 +17,14 @@ import {
  * timeline with the countdown to the next milestone and its warnings.
  * Anyone acting for a member always sees their tasks card, even with
  * nothing in it, so they know where requests will show up.
+ *
+ * While documents can be presented, a strip at the top says until when and
+ * offers "Añadir documento" ("Presentar documento" for members), which opens
+ * the new-document modal with the item to choose (useAddDocument); the
+ * editor comes back here, or with the modal open on the next item.
  */
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const localePath = useLocalePath();
 const { member } = useMe();
 const current = useCurrentAssembly();
@@ -36,6 +43,22 @@ const {
   error: agendaError,
   refresh: refreshAgenda,
 } = await useAssemblyAgenda();
+
+// Adding documents ----------------------------------------------------------
+
+const addDocument = useAddDocument(agenda);
+
+/** The calendar's deadline for presenting documents, if set. */
+const documentsClose = computed(
+  () =>
+    assembly.value?.milestones.find(
+      (milestone) => milestone.key === "documents_close",
+    )?.at ?? null,
+);
+
+async function onDocumentCreated(): Promise<void> {
+  await Promise.all([refreshAgenda(), refreshWork()]);
+}
 
 // Your work here ----------------------------------------------------------
 
@@ -195,6 +218,60 @@ const warnedKeys = computed(() =>
       v-if="assembly.can.manage && assembly.calendarWarnings.length > 0"
       :warnings="assembly.calendarWarnings"
       :edit-to="sectionPath('calendario')"
+    />
+
+    <!-- Documents can be presented: until when, and the way to add one -->
+    <section
+      v-if="addDocument.canAdd.value && addDocument.items.value.length > 0"
+      class="border-default flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"
+      aria-labelledby="overview-add-document-title"
+      data-testid="overview-add-document"
+    >
+      <div class="min-w-0 space-y-1">
+        <h3
+          id="overview-add-document-title"
+          class="text-highlighted flex items-center gap-2 font-semibold"
+        >
+          <UIcon
+            name="i-lucide-file-plus"
+            class="text-primary size-5 shrink-0"
+            aria-hidden="true"
+          />
+          {{ t("assembly.overview.addDocument.title") }}
+        </h3>
+        <p v-if="documentsClose" class="text-muted text-sm">
+          {{
+            t("assembly.overview.addDocument.until", {
+              date: formatDateTime(documentsClose, { style: "long", locale }),
+            })
+          }}
+          <CommonCountdown
+            :to="documentsClose"
+            :urgent-hours="48"
+            icon="i-lucide-hourglass"
+          />
+        </p>
+      </div>
+      <UButton
+        icon="i-lucide-file-plus"
+        :label="
+          addDocument.manager.value
+            ? t('agenda.newDocument.title')
+            : t('agenda.newDocument.submitTitle')
+        "
+        @click="addDocument.openFor(null)"
+      />
+    </section>
+
+    <AgendaNewDocumentModal
+      v-model:open="addDocument.open.value"
+      :api-base="current.apiBase.value"
+      :base-path="sectionPath()"
+      :items="addDocument.items.value"
+      :item-id="addDocument.itemId.value"
+      :mode="addDocument.mode.value"
+      origin="home"
+      @created="onDocumentCreated"
     />
 
     <!-- Your part in this assembly -->

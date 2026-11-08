@@ -1,38 +1,86 @@
 /**
- * The way back to the agenda for a document opened from it. Adding a
- * document under an item opens its editor with `?desde=orden-del-dia`; the
- * editor then offers "Volver al orden del día" and, once the Secretaría
- * publishes or deletes it, goes straight back to that item with the agenda
- * still organized, where "Añadir documento" waits for the next one.
+ * The way back for a document added from the home page or the agenda.
+ * Adding a document opens its editor with `?desde=inicio` or
+ * `?desde=orden-del-dia`; the editor then leads back there, and after
+ * publishing (or saving) the Secretaría either returns or goes on with
+ * "… y añadir otro", which comes back with `?nuevo=<item>` so the page opens
+ * the new-document modal on the item after that one.
  */
+
+/** Where a document was added from. */
+export type AddOrigin = "agenda" | "home";
+
+/** Query key the editor receives, and its value for each origin. */
+export const FROM_QUERY = "desde";
+const ORIGIN_VALUES: Record<AddOrigin, string> = {
+  agenda: "orden-del-dia",
+  home: "inicio",
+};
+
+/** Query key that opens the agenda in organize mode. */
+export const ORGANIZE_QUERY = "organizar";
+
+/** Query key that opens the new-document modal after the given item. */
+export const ADD_AFTER_QUERY = "nuevo";
 
 /** DOM id of an agenda item's heading (focus target and anchor). */
 export function agendaItemAnchor(id: string): string {
   return `agenda-item-${id}`;
 }
 
-/** Query key and value the editor receives when opened from the agenda. */
-export const FROM_QUERY = "desde";
-export const FROM_AGENDA = "orden-del-dia";
-
-/** Query key that opens the agenda in organize mode. */
-export const ORGANIZE_QUERY = "organizar";
-
-/** Whether a route query says the page was opened from the agenda. */
-export function cameFromAgenda(query: Record<string, unknown>): boolean {
-  const value = query[FROM_QUERY];
-  return (Array.isArray(value) ? value[0] : value) === FROM_AGENDA;
+function firstValue(value: unknown): unknown {
+  return Array.isArray(value) ? value[0] : value;
 }
 
-/** The editor of a document, remembering that it was opened from the agenda. */
-export function editorFromAgenda(documentPath: string): string {
-  return `${documentPath}/editar?${FROM_QUERY}=${FROM_AGENDA}`;
+/** Where the editor was opened from, read from its query. */
+export function originOf(query: Record<string, unknown>): AddOrigin | null {
+  const value = firstValue(query[FROM_QUERY]);
+  const origin = (Object.keys(ORIGIN_VALUES) as AddOrigin[]).find(
+    (key) => ORIGIN_VALUES[key] === value,
+  );
+  return origin ?? null;
+}
+
+/** The item id after which to open the new-document modal, if asked. */
+export function addAfterOf(query: Record<string, unknown>): string | null {
+  const value = firstValue(query[ADD_AFTER_QUERY]);
+  return typeof value === "string" && value ? value : null;
+}
+
+/** The editor of a document, remembering where it was added from. */
+export function editorFrom(documentPath: string, origin: AddOrigin): string {
+  return `${documentPath}/editar?${FROM_QUERY}=${ORIGIN_VALUES[origin]}`;
 }
 
 /**
- * The agenda at an item: organized (for whoever may organize it) and
- * scrolled to the item.
+ * The page a document was added from. The agenda comes back organized (for
+ * whoever may organize it) and at the item.
  */
-export function agendaAtItem(agendaPath: string, itemId: string): string {
-  return `${agendaPath}?${ORGANIZE_QUERY}=1#${agendaItemAnchor(itemId)}`;
+export function originPath(
+  origin: AddOrigin,
+  hubPath: string,
+  itemId: string,
+): string {
+  if (origin === "home") return hubPath;
+  return `${hubPath}/orden-del-dia?${ORGANIZE_QUERY}=1#${agendaItemAnchor(itemId)}`;
+}
+
+/** The same page with the new-document modal open on the next item. */
+export function addAnotherPath(
+  origin: AddOrigin,
+  hubPath: string,
+  itemId: string,
+): string {
+  const page = origin === "home" ? hubPath : `${hubPath}/orden-del-dia`;
+  return `${page}?${ADD_AFTER_QUERY}=${encodeURIComponent(itemId)}`;
+}
+
+/**
+ * The item after `itemId` in agenda order among `ids` (the ones the user may
+ * add to), or the first one when it is the last or not among them.
+ */
+export function nextItemId(ids: string[], itemId: string): string | null {
+  if (ids.length === 0) return null;
+  const index = ids.indexOf(itemId);
+  return ids[index + 1] ?? ids[0] ?? null;
 }
