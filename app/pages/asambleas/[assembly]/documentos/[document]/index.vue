@@ -1252,18 +1252,29 @@ const filteredBlockLabel = computed(() =>
           v-if="fallbackText && fallbackText.length > 0"
           class="border-default rounded-lg border p-4 sm:p-6"
         >
-          <!-- Sticky: the index stays at hand while the draft scrolls. -->
-          <div
-            v-if="draftOutline.length > 1"
-            class="sticky top-2 z-10 mb-2 flex justify-end"
-          >
-            <ContentOutline
-              :items="draftOutline"
-              variant="outline"
-              :current="() => draftView?.currentHeading() ?? null"
-              @select="(id) => draftView?.scrollToBlock(id, { align: 'start' })"
-            />
-          </div>
+          <template v-if="draftOutline.length > 1">
+            <!-- Marks in the box's left margin, kept in view as the draft
+                 scrolls; they take no room of their own. -->
+            <div class="sticky top-4 z-20 -ms-5 h-0 max-sm:hidden">
+              <ContentOutlineRail
+                :items="draftOutline"
+                :current="() => draftView?.currentHeading() ?? null"
+                @select="
+                  (id) => draftView?.scrollToBlock(id, { align: 'start' })
+                "
+              />
+            </div>
+            <!-- No margin for them on a narrow screen: a floating button. -->
+            <div class="sticky top-3 z-10 mb-3 w-fit sm:hidden">
+              <ContentOutline
+                :items="draftOutline"
+                :current="() => draftView?.currentHeading() ?? null"
+                @select="
+                  (id) => draftView?.scrollToBlock(id, { align: 'start' })
+                "
+              />
+            </div>
+          </template>
           <ContentView ref="draftView" :blocks="fallbackText" />
         </div>
         <CommonEmptyState
@@ -1312,15 +1323,14 @@ const filteredBlockLabel = computed(() =>
           :aria-label="t('workspace.panes.label')"
         />
 
-        <!-- The index on narrow screens, floating over the text while it
+        <!-- The index on narrow screens, floating at the corner while the text
              scrolls with the page. -->
         <div
           v-if="textOutline.length > 1 && mobilePane === 'text'"
-          class="fixed end-4 bottom-4 z-30 lg:hidden"
+          class="fixed start-4 bottom-4 z-30 lg:hidden"
         >
           <ContentOutline
             :items="textOutline"
-            variant="outline"
             :current="() => textView?.currentHeading() ?? null"
             @select="(id) => textView?.scrollToBlock(id, { align: 'start' })"
           />
@@ -1369,17 +1379,6 @@ const filteredBlockLabel = computed(() =>
                   </UDropdownMenu>
                 </template>
                 <template #right>
-                  <!-- Narrow screens float it instead (below): the page
-                       scrolls this toolbar away. -->
-                  <div v-if="textOutline.length > 1" class="max-lg:hidden">
-                    <ContentOutline
-                      :items="textOutline"
-                      :current="() => textView?.currentHeading() ?? null"
-                      @select="
-                        (id) => textView?.scrollToBlock(id, { align: 'start' })
-                      "
-                    />
-                  </div>
                   <UBadge
                     v-if="
                       includeAccepted &&
@@ -1397,6 +1396,23 @@ const filteredBlockLabel = computed(() =>
             </template>
 
             <template #body>
+              <!-- The index as marks in the panel's left margin, kept in
+                   view as the text scrolls; no room of their own (the body
+                   is a column with gaps). Narrow screens float a button
+                   instead (above). -->
+              <div
+                v-if="textOutline.length > 1"
+                class="sticky top-2 z-20 -ms-[1.125rem] -mb-4 h-0 max-lg:hidden"
+              >
+                <ContentOutlineRail
+                  :items="textOutline"
+                  :current="() => textView?.currentHeading() ?? null"
+                  @select="
+                    (id) => textView?.scrollToBlock(id, { align: 'start' })
+                  "
+                />
+              </div>
+
               <!-- Original -->
               <template v-if="textMode === 'original'">
                 <div
