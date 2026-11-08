@@ -17,7 +17,8 @@ import {
  *   (document:manage) add under any item; members, for their own member,
  *   under the items that take submissions.
  * - `?nuevo=<item>` (the editor's "… y añadir otro") opens the modal on the
- *   item after that one and is then dropped from the address. It works for
+ *   next item without documents after that one (nextItemId) and is then
+ *   dropped from the address. It works for
  *   managers outside the window too, as the agenda's own buttons do.
  */
 export function useAddDocument(agenda: Ref<AgendaDto | null | undefined>) {
@@ -85,10 +86,10 @@ export function useAddDocument(agenda: Ref<AgendaDto | null | undefined>) {
   function openAfter(after: string): void {
     const asManager = manager.value;
     if (!asManager && !canAdd.value) return;
-    const ids = items.value
-      .filter((item) => asManager || item.acceptsSubmissions)
-      .map((item) => item.id);
-    openFor(nextItemId(ids, after));
+    const pickable = items.value.filter(
+      (item) => asManager || item.acceptsSubmissions,
+    );
+    openFor(nextItemId(pickable, after));
   }
 
   onMounted(() => {

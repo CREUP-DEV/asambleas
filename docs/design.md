@@ -70,6 +70,16 @@ permissions may act on behalf of any member; every such action records both.
 - Optional per-document amendment window overriding the assembly calendar.
 - `carriedFromDocumentId` for documents postponed to a later assembly.
 
+While documents can be presented (the assembly is not closed and
+`documents_close` has not passed), the home page and the agenda offer "Añadir
+documento" ("Presentar documento" for members). The modal starts with the
+agenda item and proposes the kind and the title from it (`proposeFromItem`:
+"Aprobación, si procede, del Posicionamiento sobre X" gives a positioning
+titled "Posicionamiento sobre X"; an item that names several documents gets
+no title). The editor opened from there leads back, and "Publicar y añadir
+otro", "Enviar y presentar otro" or "Guardar y añadir otro" return with the
+modal open on the next item without documents.
+
 ### Structured content
 
 Structured text is a list of **blocks**, each with a stable id:

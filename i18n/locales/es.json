@@ -2542,7 +2542,7 @@
         "position": "Paso {step} de {total}:"
       },
       "searchKind": "Buscar tipo de documento",
-      "titleFromItem": "Es el título del punto. Cámbialo si el documento tiene otro.",
+      "titleFromItem": "Propuesto a partir del punto. Cámbialo si el documento se llama de otra forma.",
       "item": "Punto del orden del día",
       "itemPlaceholder": "Elige el punto",
       "searchItem": "Buscar punto del orden del día",
