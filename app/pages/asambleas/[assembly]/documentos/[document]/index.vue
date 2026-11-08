@@ -1402,7 +1402,7 @@ const filteredBlockLabel = computed(() =>
                    instead (above). -->
               <div
                 v-if="textOutline.length > 1"
-                class="sticky top-2 z-20 -ms-[1.125rem] -mb-4 h-0 max-lg:hidden"
+                class="sticky top-2 z-20 -ms-5 -mb-4 h-0 max-lg:hidden"
               >
                 <ContentOutlineRail
                   :items="textOutline"
