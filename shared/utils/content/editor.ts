@@ -187,6 +187,7 @@ export function editorToBlocks(doc: EditorNode, newId: () => string): Block[] {
           cell: tableIdFor(cellNode, "cellId"),
         };
         if (cellNode.type === "tableHeader") cell.header = true;
+        else if (cellNode.attrs?.shade === true) cell.shade = true;
         const colspan = span(cellNode.attrs?.colspan);
         const rowspan = span(cellNode.attrs?.rowspan);
         if (colspan) cell.colspan = colspan;
@@ -418,6 +419,7 @@ function tableNode(table: TableGroup<Block>): EditorNode {
           type: cell.cell.header ? "tableHeader" : "tableCell",
           attrs: {
             cellId: cell.cell.cell,
+            shade: !cell.cell.header && cell.cell.shade === true,
             colspan: cell.cell.colspan ?? 1,
             rowspan: cell.cell.rowspan ?? 1,
             colwidth: null,
@@ -781,6 +783,10 @@ export function htmlElementToBlocks(
         if (marked === "true") cell.header = true;
         else if (marked !== "false" && own.length > 0 && own.every(isAllBold)) {
           cell.header = true;
+        }
+        // A light fill, as the DOCX import says (`data-shade`).
+        if (!cell.header && cellElement.getAttribute("data-shade") === "true") {
+          cell.shade = true;
         }
         for (const block of own) block.cell = { ...cell };
         if (blocks.length === before) {

@@ -18,6 +18,7 @@ import {
   type ExportBrand,
 } from "./brand";
 import {
+  CELL_SHADE,
   LINK_BLUE,
   LinkRegistry,
   annotatedToPdf,
@@ -891,7 +892,8 @@ describe("CREUP template", () => {
     expect((pdf.match(/\/Subtype \/Image/g) ?? []).length).toBeLessThanOrEqual(
       4,
     );
-  });
+    // Laying out several pages takes seconds under a full run's load.
+  }, 15_000);
 
   it("names the kind of document on the band", () => {
     const label = (kind: ExportDocumentMeta["kind"]) => bandLabelKey(kind);
@@ -1031,6 +1033,22 @@ describe("CREUP template", () => {
       ),
     );
     expect(pages).toBe(1);
+  });
+
+  it("fills header cells in burgundy and shaded ones in the light fill", () => {
+    const cell = (id: string, extra: Partial<Block["cell"]>) => ({
+      ...p(id, id),
+      cell: { table: "fill", row: "r1", cell: `c${id}`, ...extra },
+    });
+    const [node] = blocksToPdf(
+      [cell("h", { header: true }), cell("s", { shade: true }), cell("n", {})],
+      { links: new LinkRegistry() },
+    ) as { table: { body: { fillColor?: string }[][] } }[];
+    expect(node!.table.body[0]!.map((entry) => entry.fillColor)).toEqual([
+      BRAND_RED,
+      CELL_SHADE,
+      undefined,
+    ]);
   });
 
   it("sets wide tables in smaller type, cell by cell", () => {

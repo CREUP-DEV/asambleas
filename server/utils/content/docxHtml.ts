@@ -156,18 +156,25 @@ function alignments(document: Document): void {
 }
 
 /**
- * Cells on a dark fill (`span.docx-cell`, see darkCells in docx.ts) become
- * header cells (`data-header="true"`). A table that marks cells this way
- * marks its headers by colour, so its other cells are no headers however
- * bold their text (`data-header="false"`); htmlElementToBlocks reads both.
- * Cells Word itself makes headers (repeated header rows, `th`) stay so.
+ * Filled cells (`span.docx-cell`, see cellFills in docx.ts): on a dark fill
+ * they become header cells (`data-header="true"`), on a light one shaded
+ * cells (`data-shade="true"`). A table that marks dark cells marks its
+ * headers by colour, so its other cells are no headers however bold their
+ * text (`data-header="false"`); htmlElementToBlocks reads all three. Cells
+ * Word itself makes headers (repeated header rows, `th`) stay so.
  */
-function darkCells(document: Document): void {
+function cellFills(document: Document): void {
   const tables = new Set<Element>();
   for (const span of Array.from(document.querySelectorAll("span.docx-cell"))) {
+    const fill = span.textContent;
     const cell = span.closest("td, th");
     span.remove();
     if (!cell) continue;
+    if (fill === "light") {
+      cell.setAttribute("data-shade", "true");
+      continue;
+    }
+    if (fill !== "dark") continue;
     cell.setAttribute("data-header", "true");
     const table = cell.closest("table");
     if (table) tables.add(table);
@@ -242,7 +249,7 @@ export function prepareImportedHtml(
   flattenNotes(document);
   listLabels(document);
   alignments(document);
-  darkCells(document);
+  cellFills(document);
   linkUnderlines(document);
   ordinalSuperscripts(document);
 }

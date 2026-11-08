@@ -133,7 +133,12 @@
         "addColumnBefore": "Add column to the left",
         "addColumnAfter": "Add column to the right",
         "deleteColumn": "Delete column",
-        "toggleHeaderCell": "Header cell",
+        "fill": {
+          "label": "Cell fill",
+          "none": "No fill",
+          "light": "Light",
+          "dark": "Burgundy (header)"
+        },
         "toggleHeaderRow": "Header row",
         "toggleHeaderColumn": "Header column",
         "mergeCells": "Merge cells",

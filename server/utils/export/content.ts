@@ -459,7 +459,9 @@ function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
         ...(cell.rowspan > 1 ? { rowSpan: cell.rowspan } : {}),
         ...(cell.cell.header
           ? { fillColor: CREUP_RED, color: "#ffffff", bold: true }
-          : {}),
+          : cell.cell.shade
+            ? { fillColor: CELL_SHADE }
+            : {}),
       } as TableCell;
     }
   });
@@ -479,6 +481,9 @@ function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
     margin: [0, 0, 0, 12],
   };
 }
+
+/** The template's light fill for shaded cells (`shade`). */
+export const CELL_SHADE = "#f5eee6";
 
 /** The body text's size, which tables keep up to five columns. */
 const BODY_FONT_SIZE = 11;

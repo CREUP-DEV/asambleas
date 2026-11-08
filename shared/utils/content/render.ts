@@ -137,7 +137,8 @@ function tableHtml(
     html += "<tr>";
     for (const cell of row.cells) {
       const tag = cell.cell.header ? "th" : "td";
-      let attrs = "";
+      let attrs =
+        !cell.cell.header && cell.cell.shade ? ' class="cx-shade"' : "";
       if (cell.cell.colspan)
         attrs += ` colspan="${Math.trunc(cell.cell.colspan)}"`;
       if (cell.cell.rowspan)

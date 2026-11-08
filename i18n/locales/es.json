@@ -133,7 +133,12 @@
         "addColumnBefore": "Añadir columna a la izquierda",
         "addColumnAfter": "Añadir columna a la derecha",
         "deleteColumn": "Eliminar columna",
-        "toggleHeaderCell": "Celda de encabezado",
+        "fill": {
+          "label": "Fondo de celda",
+          "none": "Sin fondo",
+          "light": "Claro",
+          "dark": "Burdeos (encabezado)"
+        },
         "toggleHeaderRow": "Fila de encabezado",
         "toggleHeaderColumn": "Columna de encabezado",
         "mergeCells": "Combinar celdas",

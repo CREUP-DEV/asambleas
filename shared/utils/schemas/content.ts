@@ -38,6 +38,7 @@ const cellSchema = z
     row: blockIdSchema,
     cell: blockIdSchema,
     header: z.boolean().optional(),
+    shade: z.boolean().optional(),
     colspan: spanSchema,
     rowspan: spanSchema,
   })
@@ -48,6 +49,7 @@ const cellSchema = z
       cell: cell.cell,
     };
     if (cell.header) result.header = true;
+    else if (cell.shade) result.shade = true;
     if (cell.colspan) result.colspan = cell.colspan;
     if (cell.rowspan) result.rowspan = cell.rowspan;
     return result;

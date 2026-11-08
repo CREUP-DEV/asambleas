@@ -69,6 +69,7 @@ function canonical(blocks: Block[]): string {
             block.cell.row,
             block.cell.cell,
             block.cell.header ?? false,
+            block.cell.shade ?? false,
             block.cell.colspan ?? 1,
             block.cell.rowspan ?? 1,
           ]

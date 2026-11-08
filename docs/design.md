@@ -92,7 +92,7 @@ type Block = {
   list?: "bullet" | "ordered";
   marker?: ListMarker; // ordered items: "1." (default), "1)", "a.", "a)", "A.", "A)", "i.", "i)", "I.", "I)"
   start?: number; // ordered items: the list starts again here, at this number
-  cell?: BlockCell; // inside a table: { table, row, cell, header?, colspan?, rowspan? }
+  cell?: BlockCell; // inside a table: { table, row, cell, header?, shade?, colspan?, rowspan? }
   align?: "center" | "right"; // start when absent; never justified (WCAG 1.4.8)
   text: string; // plain text
   marks: Mark[]; // bold/italic/underline/strike/link ranges over `text`
@@ -113,8 +113,10 @@ that interrupts "a)", "b)"). `orderedListNumbers` in
 the PDF group items the same way.
 
 Tables are blocks too: every block inside one carries its cell
-(`BlockCell`: table, row and cell ids as stable as block ids, header and
-spans). Consecutive blocks of one table form it, of one row a row, of one
+(`BlockCell`: table, row and cell ids as stable as block ids, header,
+shade and spans). A cell's fill is one choice in the editor (none, light,
+burgundy): burgundy is a header cell (white bold text), light a shaded one
+(`shade`, the template's beige, never on a header). Consecutive blocks of one table form it, of one row a row, of one
 cell a cell (`groupTables`, `tableGrid` in `shared/utils/content/tables.ts`),
 and a blank cell holds an empty paragraph. Amendments need no new
 operations: a cell's text changes like any block's, and rows and columns
@@ -137,8 +139,10 @@ is sanitized and converted to blocks (`server/utils/content/docx.ts`):
   the number Word shows written at its start. Bulleted ones stay lists.
 - A table whose rows have one cell each (a framed signature or note) is read
   as its content. Any other table stays a table: its cells' blocks carry
-  their cell, with header cells (Word's header rows, and cells all in bold,
-  as templates mark them) and spans. A table nested inside a cell becomes a
+  their cell, with header cells (Word's header rows and cells on a dark
+  fill; in a table without fills, cells all in bold), shaded cells (a light
+  fill) and spans. A table of contents is left out: the view offers its own
+  index of the headings. A table nested inside a cell becomes a
   paragraph per row, cells joined by " | ".
 - Footnotes and endnotes become paragraphs at the end that start with their
   reference ("[1]"); ordinals typed as a superscript letter become "ª"/"º";

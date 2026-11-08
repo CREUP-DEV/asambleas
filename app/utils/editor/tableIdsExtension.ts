@@ -6,7 +6,7 @@ import { Extension } from "@tiptap/core";
  * a block keeps its row and cell. New rows and cells start without an id and
  * get one when the editor's content becomes blocks, which also gives a fresh
  * id to any copy (splitting a cell copies its attributes). Ids are never read
- * from pasted HTML, like block ids.
+ * from pasted HTML, like block ids. A cell's fill is CellFillExtension's.
  */
 export const TableIdsExtension = Extension.create({
   name: "tableIds",

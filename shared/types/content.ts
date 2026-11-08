@@ -47,6 +47,11 @@ export interface BlockCell {
   cell: string;
   /** A header cell. */
   header?: boolean;
+  /**
+   * A shaded body cell, on the template's light fill (a statement's lines);
+   * never a header, which has its own.
+   */
+  shade?: boolean;
   /** Columns and rows the cell spans, when more than one. */
   colspan?: number;
   rowspan?: number;
