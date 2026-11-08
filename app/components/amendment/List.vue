@@ -87,7 +87,9 @@ function groupLabel(group: AmendmentGroup<AmendmentDto>): string {
         <div class="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 px-1">
           <p
             class="flex items-center gap-1.5 text-xs font-semibold"
-            :class="group.kind === 'overlap' ? 'text-warning' : 'text-muted'"
+            :class="
+              group.kind === 'overlap' ? 'text-highlighted' : 'text-muted'
+            "
           >
             <UIcon
               :name="
@@ -96,6 +98,7 @@ function groupLabel(group: AmendmentGroup<AmendmentDto>): string {
                   : 'i-lucide-file-stack'
               "
               class="size-4"
+              :class="{ 'text-warning': group.kind === 'overlap' }"
               aria-hidden="true"
             />
             {{ groupLabel(group) }}
