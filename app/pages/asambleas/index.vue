@@ -147,6 +147,9 @@ const createOpen = ref(false);
   <UDashboardPanel id="assemblies">
     <template #header>
       <UDashboardNavbar :title="t('assemblies.title')">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
         <template #right>
           <UButton
             v-if="canCreate"

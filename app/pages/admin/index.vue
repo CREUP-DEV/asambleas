@@ -65,7 +65,11 @@ const sections = computed(() =>
 <template>
   <UDashboardPanel id="admin-home">
     <template #header>
-      <UDashboardNavbar :title="t('admin.title')" />
+      <UDashboardNavbar :title="t('admin.title')">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
+      </UDashboardNavbar>
     </template>
 
     <template #body>

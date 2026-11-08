@@ -7,6 +7,9 @@ import { roleLabelKey } from "./RoleBadge.vue";
  * a menu with the account's activity, accessibility preferences, language,
  * colour mode and sign out. While an Admin acts as another account it shows
  * that account, and "Volver a mi cuenta" replaces signing out.
+ *
+ * The button truncates a long name; the menu wraps every line instead, so
+ * opening it always shows the whole name, email and labels.
  */
 const props = defineProps<{ collapsed?: boolean }>();
 
@@ -163,8 +166,10 @@ const items = computed<DropdownMenuItem[][]>(() => [
       }"
       :ui="{
         content: props.collapsed
-          ? 'w-64'
-          : 'w-(--reka-dropdown-menu-trigger-width) min-w-56',
+          ? 'w-72'
+          : 'w-(--reka-dropdown-menu-trigger-width) min-w-64',
+        itemLabel: 'text-clip whitespace-normal wrap-anywhere',
+        itemDescription: 'text-clip whitespace-normal wrap-anywhere',
       }"
     >
       <UButton

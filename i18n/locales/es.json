@@ -2132,8 +2132,8 @@
       "emptyDescription": "Cuando se convoque una asamblea, aparecerá aquí con sus plazos."
     },
     "member": {
-      "title": "Tu miembro",
-      "actingFor": "Presentas documentos y enmiendas en nombre de este miembro.",
+      "title": "Tu usuario",
+      "actingFor": "Presentas documentos y enmiendas en nombre de este usuario.",
       "none": "Tu cuenta no está vinculada a ningún miembro. Si representas a un consejo, una sectorial o un área, pide a Secretaría que lo revise.",
       "role": "Rol en la plataforma"
     },

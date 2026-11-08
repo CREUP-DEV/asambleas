@@ -138,7 +138,11 @@ const panelTitleId = useId();
 <template>
   <UDashboardPanel id="my-activity">
     <template #header>
-      <UDashboardNavbar :title="t('activity.me.title')" />
+      <UDashboardNavbar :title="t('activity.me.title')">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
+      </UDashboardNavbar>
     </template>
 
     <template #body>
