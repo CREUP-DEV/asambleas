@@ -4,8 +4,8 @@ import type { DocumentDto, DocumentUpdateBody } from "~~/shared/types/api";
 
 /**
  * Secretaría actions on a document (`document.can.manage`) at any stage:
- * withdraw, postpone, recover a withdrawn submission and delete a document
- * that was never published. Each one asks for confirmation first. Publishing
+ * withdraw, postpone, recover a withdrawn submission and delete it
+ * (`document.can.delete`). Each one asks for confirmation first. Publishing
  * (and publishing again) stays with the page's publish dialog; with
  * `publishable` the menu also offers "Publicar ahora", which only emits
  * `publish` (for a draft still in a presenter's hands, where publishing is
@@ -22,9 +22,11 @@ import type { DocumentDto, DocumentUpdateBody } from "~~/shared/types/api";
  * - only published texts can be postponed;
  * - a withdrawn submission that was never published goes back to "submitted"
  *   (a text that was published is published again instead);
- * - frozen texts cannot be deleted.
- * A document with a final vote keeps its status: the vote must be annulled
- * first.
+ * - deleting follows `can.delete` (deleteBlocker): a published text only
+ *   while it has no amendments. When it cannot go, the item stays disabled
+ *   with the reason, so the Secretaría knows to withdraw it instead.
+ * A document with a final vote keeps its status and cannot be deleted: the
+ * vote must be annulled first.
  */
 const props = withDefaults(
   defineProps<{
@@ -113,8 +115,20 @@ const available = computed<ManageAction[]>(() => {
     current.submittedAt !== null
   )
     list.push("restore");
-  if (!everPublished.value) list.push("delete");
+  if (current.can.delete) list.push("delete");
   return list;
+});
+
+/**
+ * Why "Eliminar" is off. With can.manage the server refuses only for a final
+ * vote or, on a published text, for its amendments (deleteBlocker).
+ */
+const deleteBlockedReason = computed<string | null>(() => {
+  const current = props.document;
+  if (!current.can.manage || current.can.delete) return null;
+  return decided.value
+    ? t("document.manage.delete.blockedVote")
+    : t("document.manage.delete.blockedAmendments");
 });
 
 const pendingAction = ref<ManageAction | null>(null);
@@ -143,7 +157,16 @@ const items = computed<DropdownMenuItem[][]>(() => {
           onSelect: () => ask("delete"),
         },
       ]
-    : [];
+    : deleteBlockedReason.value
+      ? [
+          {
+            label: t("document.delete"),
+            description: deleteBlockedReason.value,
+            icon: ICONS.delete,
+            disabled: true,
+          },
+        ]
+      : [];
   const publishItems: DropdownMenuItem[] = props.publishable
     ? [
         {
@@ -158,14 +181,27 @@ const items = computed<DropdownMenuItem[][]>(() => {
   );
 });
 
+/**
+ * A published text says what goes with it; while it is still public, the
+ * dialog also points to withdrawing, which keeps everything.
+ */
+const deleteDescription = computed(() => {
+  const title = props.document.title;
+  if (!everPublished.value) {
+    return t("document.manage.delete.description", { title });
+  }
+  const text = t("document.manage.delete.descriptionPublished", { title });
+  return WITHDRAWABLE.has(props.document.status)
+    ? `${text} ${t("document.manage.delete.withdrawHint")}`
+    : text;
+});
+
 const copy = computed(() => {
   const action = pendingAction.value ?? "withdraw";
   if (action === "delete") {
     return {
       title: t("document.deleteConfirm"),
-      description: t("document.manage.delete.description", {
-        title: props.document.title,
-      }),
+      description: deleteDescription.value,
       confirm: t("document.delete"),
       icon: ICONS.delete,
       color: CONFIRM_COLORS.delete,

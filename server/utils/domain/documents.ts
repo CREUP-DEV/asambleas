@@ -396,17 +396,45 @@ export function canAmendDocument(
   return moderator || !window.opensAt || now >= window.opensAt;
 }
 
+/**
+ * Why a document cannot be deleted, or null when it can. A final vote settled
+ * it (annul the vote first). Once published, its amendments are other
+ * members' work that would go with it, so a published document with any
+ * amendment (drafts included) is withdrawn instead; one without them, and
+ * any document never published, can go.
+ */
+export function deleteBlocker(
+  document: Pick<
+    DocumentRow,
+    "status" | "baseVersionId" | "publishedAt" | "finalVoteId"
+  >,
+  hasAmendments: boolean,
+): string | null {
+  if (document.finalVoteId) {
+    return "El documento ya se ha votado: anula la votación final antes de eliminarlo";
+  }
+  if (isTextFrozen(document) && hasAmendments) {
+    return "No se puede eliminar un documento publicado que tiene enmiendas: retíralo en su lugar";
+  }
+  return null;
+}
+
 export function documentCapabilities(
   actor: Actor,
   assembly: Pick<AssemblyRow, "status">,
   document: PresentedDocumentRow,
   window: AmendmentWindow,
+  /** Any amendment row at all, drafts and other members' included. */
+  hasAmendments: boolean,
   now = new Date(),
 ): DocumentCapabilities {
   return {
     edit: canEditDocument(actor, document) && !isTextFrozen(document),
     manage: canManageDocuments(actor),
     publish: canManageDocuments(actor) && isPublishable(document),
+    delete:
+      canManageDocuments(actor) &&
+      deleteBlocker(document, hasAmendments) === null,
     amend: canAmendDocument(actor, assembly, document, window, now),
     // Only the main presenter answers the amendments (or the Mesa for it).
     position:
@@ -511,6 +539,8 @@ export interface DocumentDtoInput {
   proponent: MemberRef | null;
   coProponents: MemberRef[];
   amendmentCount: number;
+  /** Any amendment row, visible to the actor or not (deleteBlocker). */
+  hasAmendments: boolean;
   hasContent: boolean;
   workingVersion: VersionRow | null;
   baseVersion: VersionRow | null;
@@ -556,7 +586,14 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
       assemblyStatus: assembly.status,
       isPresenter: isDocumentPresenter(actor, document),
     }),
-    can: documentCapabilities(actor, assembly, document, window, now),
+    can: documentCapabilities(
+      actor,
+      assembly,
+      document,
+      window,
+      input.hasAmendments,
+      now,
+    ),
   };
 }
 
@@ -843,9 +880,10 @@ export async function loadDocumentDto(
           .then((rows) => rows[0] ?? null)
       : Promise.resolve(null),
   ]);
-  const [counts, content] = await Promise.all([
+  const [counts, content, anyAmendment] = await Promise.all([
     countVisibleAmendments(actor, [document.id], executor),
     loadContentFlags(executor, [document]),
+    hasAnyAmendment(executor, document.id),
   ]);
   return toDocumentDto({
     actor,
@@ -855,6 +893,7 @@ export async function loadDocumentDto(
     proponent: memberRefOrNull(proponent),
     coProponents,
     amendmentCount: counts.get(document.id) ?? 0,
+    hasAmendments: anyAmendment,
     hasContent: content.has(document.id),
     workingVersion,
     baseVersion,
@@ -1752,7 +1791,30 @@ export async function publishDocument(
 
 // Deletion ------------------------------------------------------------------
 
-/** Deletes a document that was never published (document:manage). */
+/** Whether the document has any amendment row, drafts included. */
+export async function hasAnyAmendment(
+  executor: Executor,
+  documentId: string,
+): Promise<boolean> {
+  const [row] = await executor
+    .select({ id: amendments.id })
+    .from(amendments)
+    .where(eq(amendments.documentId, documentId))
+    .limit(1);
+  return row !== undefined;
+}
+
+/**
+ * Deletes a document (document:manage) unless deleteBlocker refuses it: a
+ * final vote, or a published text with amendments. Its versions and
+ * co-presenters go with it (cascade), and so do the votes of a final vote
+ * that was annulled, whose subject would otherwise point at nothing. The
+ * events stay in the history, closed by `document_deleted`.
+ *
+ * The document is locked FOR UPDATE before counting its amendments: an
+ * amendment insert takes FOR KEY SHARE on it, so one in flight finishes
+ * first and is counted, and one that starts later fails its foreign key.
+ */
 export async function deleteDocument(
   ctx: DocumentRouteContext,
 ): Promise<{ success: true }> {
@@ -1762,10 +1824,26 @@ export async function deleteDocument(
   }
 
   const fileUrl = await db.transaction(async (tx) => {
+    // A published document may be on the live projection, which the delete
+    // clears (clearLiveDocument): take the assembly first, as every path
+    // that moves the projection does.
+    await shareLockAssembly(tx, assembly.id);
     const current = await lockDocument(tx, ctx.document.id, "update");
-    if (isTextFrozen(current)) {
-      fail(409, "No se puede eliminar un documento ya publicado");
-    }
+    const blocker = deleteBlocker(
+      current,
+      await hasAnyAmendment(tx, current.id),
+    );
+    if (blocker) fail(409, blocker);
+    await clearLiveDocument(tx, {
+      assemblyId: assembly.id,
+      documentId: current.id,
+      actor,
+    });
+    await tx
+      .delete(votes)
+      .where(
+        and(eq(votes.subjectType, "document"), eq(votes.subjectId, current.id)),
+      );
     await tx.delete(documents).where(eq(documents.id, current.id));
     await recordEvent(tx, {
       assemblyId: assembly.id,
@@ -1946,6 +2024,26 @@ export async function clearLiveVote(
     input.assemblyId,
     previous,
     { ...previous, voteId: null },
+    input.actor,
+  );
+}
+
+/**
+ * Stops projecting a document that is being deleted, keeping its agenda item
+ * on screen. Without it the foreign key would clear the pointer silently and
+ * the live views would keep showing the document. Records `live_changed`.
+ */
+async function clearLiveDocument(
+  tx: Executor,
+  input: { assemblyId: string; documentId: string; actor: Actor },
+): Promise<void> {
+  const previous = await lockLiveState(tx, input.assemblyId);
+  if (!previous || previous.documentId !== input.documentId) return;
+  await writeLiveState(
+    tx,
+    input.assemblyId,
+    previous,
+    { ...previous, documentId: null, amendmentId: null, voteId: null },
     input.actor,
   );
 }
