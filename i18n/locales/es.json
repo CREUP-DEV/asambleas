@@ -94,7 +94,11 @@
       "previewUnavailableDescription": "Las operaciones de esta enmienda ya no encajan con el texto base del documento.",
       "inserted": "Se añade:",
       "removed": "Se quita:",
-      "fragmentFrom": "{text} (de la enmienda {label})"
+      "fragmentFrom": "{text} (de la enmienda {label})",
+      "outline": {
+        "button": "Índice",
+        "label": "Índice del documento"
+      }
     },
     "editor": {
       "bold": "Negrita",

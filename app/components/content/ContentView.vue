@@ -4,6 +4,14 @@ import { renderAnnotated, renderBlocks } from "~~/shared/utils/content/render";
 
 export type ContentViewMode = "plain" | "diff" | "provenance" | "clean";
 
+/** A heading of the rendered text, for its index (ContentOutline). */
+export interface OutlineEntry {
+  id: string;
+  /** 1 for the top level, as blocks number it. */
+  level: number;
+  text: string;
+}
+
 /** Gutter marker of one block: amendments touching it and whether they overlap. */
 export interface BlockMarker {
   count: number;
@@ -123,7 +131,10 @@ function markerLabel(marker: BlockMarker): string {
 
 function decorate(): void {
   const root = contentEl.value;
-  if (!root) return;
+  if (!root) {
+    if (outline.value.length > 0) outline.value = [];
+    return;
+  }
   const selected = new Set(props.selected);
 
   root.querySelectorAll<HTMLElement>("[data-block-id]").forEach((element) => {
@@ -167,6 +178,8 @@ function decorate(): void {
       }
     });
 
+  readOutline(root);
+
   const order = new Map<string, number>();
   root.querySelectorAll<HTMLElement>(".cx-prov").forEach((element) => {
     const id = element.dataset.amendmentId ?? "";
@@ -178,6 +191,77 @@ function decorate(): void {
       reference.classList.add(colorClass);
     }
   });
+}
+
+// Outline -------------------------------------------------------------------------
+// The headings as shown (in a diff, the text they end up with), read from the
+// rendered HTML so every mode lists what it displays. Headings inside table
+// cells are part of the table, not the document's structure.
+
+const outline = shallowRef<OutlineEntry[]>([]);
+
+function readOutline(root: HTMLElement): void {
+  const entries: OutlineEntry[] = [];
+  root
+    .querySelectorAll<HTMLElement>(
+      "h2[data-block-id], h3[data-block-id], h4[data-block-id], h5[data-block-id]",
+    )
+    .forEach((element) => {
+      if (element.closest("table")) return;
+      const copy = element.cloneNode(true) as HTMLElement;
+      copy.querySelectorAll("del, .sr-only, .cx-ref").forEach((node) => {
+        node.remove();
+      });
+      const text = (copy.textContent ?? "").replace(/\s+/g, " ").trim();
+      if (!text) return;
+      entries.push({
+        id: element.dataset.blockId ?? "",
+        level: Number(element.tagName.slice(1)) - 1,
+        text,
+      });
+    });
+  const previous = outline.value;
+  const same =
+    previous.length === entries.length &&
+    previous.every(
+      (entry, i) =>
+        entry.id === entries[i]!.id &&
+        entry.level === entries[i]!.level &&
+        entry.text === entries[i]!.text,
+    );
+  if (!same) outline.value = entries;
+}
+
+/** The nearest ancestor that scrolls, or null for the page itself. */
+function scrollParent(element: HTMLElement): HTMLElement | null {
+  for (let node = element.parentElement; node; node = node.parentElement) {
+    const { overflowY } = getComputedStyle(node);
+    if (
+      (overflowY === "auto" || overflowY === "scroll") &&
+      node.scrollHeight > node.clientHeight
+    ) {
+      return node;
+    }
+  }
+  return null;
+}
+
+/** The heading of the section being read: the last one scrolled past the top. */
+function currentHeading(): string | null {
+  const root = contentEl.value;
+  if (!root || outline.value.length === 0) return null;
+  const parent = scrollParent(root);
+  const top = (parent ? parent.getBoundingClientRect().top : 0) + 96;
+  let current: string | null = null;
+  for (const entry of outline.value) {
+    const element = root.querySelector<HTMLElement>(
+      `[data-block-id="${CSS.escape(entry.id)}"]`,
+    );
+    if (!element) continue;
+    if (element.getBoundingClientRect().top > top) break;
+    current = entry.id;
+  }
+  return current ?? outline.value[0]!.id;
 }
 
 // Gutter layout ---------------------------------------------------------------------
@@ -321,8 +405,16 @@ function getSelectedBlockIds(): string[] {
   return [...ids];
 }
 
-/** Scrolls a block into view and focuses it when the view is interactive. */
-function scrollToBlock(blockId: string): void {
+/**
+ * Scrolls a block into view: centred, or to the top for a heading picked in
+ * the index (`align: "start"`), which also takes the focus there so the
+ * keyboard and screen readers carry on from it. Otherwise it is focused when
+ * the view is interactive.
+ */
+function scrollToBlock(
+  blockId: string,
+  options: { align?: "center" | "start" } = {},
+): void {
   const element = contentEl.value?.querySelector<HTMLElement>(
     `[data-block-id="${CSS.escape(blockId)}"]`,
   );
@@ -330,14 +422,31 @@ function scrollToBlock(blockId: string): void {
   const reduceMotion = window.matchMedia?.(
     "(prefers-reduced-motion: reduce)",
   ).matches;
+  const start = options.align === "start";
   element.scrollIntoView({
-    block: "center",
+    block: start ? "start" : "center",
     behavior: reduceMotion ? "auto" : "smooth",
   });
-  if (selectableBlocks.value) element.focus({ preventScroll: true });
+  if (start && !selectableBlocks.value) {
+    element.tabIndex = -1;
+    element.addEventListener(
+      "blur",
+      () => {
+        if (!selectableBlocks.value) element.removeAttribute("tabindex");
+      },
+      { once: true },
+    );
+  }
+  if (start || selectableBlocks.value) element.focus({ preventScroll: true });
 }
 
-defineExpose({ getSelectedBlockIds, scrollToBlock, root: contentEl });
+defineExpose({
+  getSelectedBlockIds,
+  scrollToBlock,
+  currentHeading,
+  outline,
+  root: contentEl,
+});
 </script>
 
 <template>
