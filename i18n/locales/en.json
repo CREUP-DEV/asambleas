@@ -871,7 +871,11 @@
         "success": "Document restored"
       },
       "delete": {
-        "description": "“{title}” will be deleted with its text and details. This action cannot be undone."
+        "description": "“{title}” will be deleted with its text and details. This action cannot be undone.",
+        "descriptionPublished": "“{title}”, which has been published, will be deleted with its text, reference and version history. It disappears for everyone and this cannot be undone.",
+        "blockedAmendments": "It has amendments: withdraw it instead",
+        "blockedVote": "It has been voted on: annul the final vote first",
+        "withdrawHint": "If you only want it to stop being published, withdraw it instead."
       },
       "publishNow": "Publish now"
     },

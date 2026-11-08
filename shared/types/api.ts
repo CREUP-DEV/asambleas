@@ -478,11 +478,17 @@ export interface DocumentCapabilities {
   edit: boolean;
   /**
    * Secretaría-level management at any stage: metadata (window override,
-   * majority, voted), status changes (withdraw, postpone) and deleting a
-   * never-published document. document:manage.
+   * majority, voted) and status changes (withdraw, postpone).
+   * document:manage.
    */
   manage: boolean;
   publish: boolean;
+  /**
+   * Delete the document for good (document:manage): any document without a
+   * final vote, and once published only while it has no amendments
+   * (deleteBlocker). A published one that has them is withdrawn instead.
+   */
+  delete: boolean;
   /** Present amendments now (window open or late submission allowed). */
   amend: boolean;
   /** Record proponent positions. */

@@ -27,6 +27,7 @@ vi.mock("./resolvers", () => ({
 const {
   assemblySettings,
   assertStatusChange,
+  deleteBlocker,
   isExpectedDocument,
   presentationClosed,
   toDocumentSummaryDto,
@@ -57,6 +58,38 @@ function outcome(document: DocumentRow, next: NextStatus): "ok" | number {
     return (error as { statusCode: number }).statusCode;
   }
 }
+
+describe("deleteBlocker", () => {
+  it("deletes a document never published, with or without amendments", () => {
+    for (const status of ["draft", "submitted", "withdrawn"]) {
+      expect(deleteBlocker(doc({ status }), false)).toBeNull();
+    }
+  });
+
+  it("deletes a published text only while it has no amendments", () => {
+    const published = [
+      doc({ status: "published", publishedAt: at, baseVersionId: "b1" }),
+      doc({ status: "withdrawn", publishedAt: at, baseVersionId: "b1" }),
+      doc({ status: "postponed", publishedAt: at, baseVersionId: "b1" }),
+      // A PDF document is published without a base version.
+      doc({ status: "published", publishedAt: at }),
+    ];
+    for (const document of published) {
+      expect(deleteBlocker(document, false)).toBeNull();
+      expect(deleteBlocker(document, true)).toMatch(/retíralo/);
+    }
+  });
+
+  it("never deletes a document with a final vote", () => {
+    const voted = doc({
+      status: "published",
+      publishedAt: at,
+      baseVersionId: "b1",
+      finalVoteId: "v1",
+    });
+    expect(deleteBlocker(voted, false)).toMatch(/anula la votación final/);
+  });
+});
 
 describe("assertStatusChange", () => {
   it("withdraws only presented or public documents without a final vote", () => {
