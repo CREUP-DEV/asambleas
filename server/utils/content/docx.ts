@@ -291,6 +291,19 @@ const STYLE_MAP = [
   "r[style-name='docx-list-label'] => span.docx-list-label",
   // A centred or right-aligned paragraph, for prepareImportedHtml.
   "r[style-name='docx-align'] => span.docx-align",
+  // A table cell on a dark fill, for prepareImportedHtml (see darkCells).
+  "r[style-name='docx-cell'] => span.docx-cell",
+  // The entries of a table of contents Word wrote without a content
+  // control: the platform builds its own from the headings.
+  "p[style-name='toc 1'] => !",
+  "p[style-name='toc 2'] => !",
+  "p[style-name='toc 3'] => !",
+  "p[style-name='toc 4'] => !",
+  "p[style-name='toc 5'] => !",
+  "p[style-name='toc 6'] => !",
+  "p[style-name='toc 7'] => !",
+  "p[style-name='toc 8'] => !",
+  "p[style-name='toc 9'] => !",
 ];
 
 // <w:ins>, <w:del>, <w:moveFrom>, <w:moveTo>, but not <w:instrText> or <w:delText>.
@@ -583,6 +596,61 @@ function alignmentRun(documents) {
     return Object.assign({}, paragraph, { children: [run].concat(paragraph.children) });
   };
 }
+// A table of contents (Word's and Google Docs', a content control in the
+// "Table of Contents" gallery) is left out: its entries are the headings
+// again, with page numbers that mean nothing on the platform, which shows
+// its own index. Cells on a dark fill (a header row, a subtotal) start with
+// a hidden run (docx-cell), which prepareImportedHtml turns into header
+// cells: templates mark them by colour, and bold alone would make a header
+// of every bold line of a statement. mammoth reads a cell's properties right
+// before it makes the cell, so the fill read is handed straight to it.
+function darkCells(nodes, documents) {
+  const first = nodes.Element.prototype.first;
+  const makeCell = documents.TableCell;
+  if (typeof makeCell !== "function") throw new Error("table cells not found");
+  let dark = false;
+  nodes.Element.prototype.first = function (name) {
+    if (name === "w:sdtContent" && this.name === "w:sdt" && isContents(this)) {
+      return undefined;
+    }
+    const found = first.call(this, name);
+    if (name === "w:tcPr" && this.name === "w:tc") dark = isDarkFill(found);
+    return found;
+  };
+  documents.TableCell = function (children, options) {
+    const marked = dark;
+    dark = false;
+    const index = marked
+      ? children.findIndex((child) => child.type === "paragraph")
+      : -1;
+    if (index < 0) return makeCell(children, options);
+    const run = documents.Run([documents.Text("dark")], { styleName: "docx-cell" });
+    const paragraph = children[index];
+    const withRun = children.slice();
+    withRun[index] = Object.assign({}, paragraph, {
+      children: [run].concat(paragraph.children),
+    });
+    return makeCell(withRun, options);
+  };
+}
+function isContents(sdt) {
+  const properties = sdt.first("w:sdtPr");
+  const part = properties && properties.first("w:docPartObj");
+  const gallery = part && part.first("w:docPartGallery");
+  const value = gallery && gallery.attributes["w:val"];
+  return typeof value === "string" && value.toLowerCase() === "table of contents";
+}
+// A fill darker than mid grey, by its relative luminance.
+function isDarkFill(properties) {
+  const shading = properties && properties.first("w:shd");
+  const fill = shading && shading.attributes["w:fill"];
+  if (typeof fill !== "string" || !/^[0-9a-fA-F]{6}$/.test(fill)) return false;
+  const channel = (offset) => {
+    const value = parseInt(fill.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4) < 0.4;
+}
 // Text formatted as all caps is shown in capitals: write it so.
 function upperCaseRun(run) {
   if (!run.isAllCaps) return run;
@@ -630,11 +698,13 @@ process.stdin.on("end", () => {
     // mammoth's own modules, the ones its reader and converter use.
     const lib = path.dirname(entry);
     wrapNumberingReader(require(path.join(lib, "docx", "numbering-xml.js")));
-    honourOffHeaders(require(path.join(lib, "xml", "nodes.js")));
+    const nodes = require(path.join(lib, "xml", "nodes.js"));
+    honourOffHeaders(nodes);
     documents = require(path.join(lib, "documents.js"));
     if (typeof documents.Run !== "function" || typeof documents.Text !== "function") {
       throw new Error("document model not found");
     }
+    darkCells(nodes, documents);
   } catch {
     reply({ status: "unavailable" });
     return;

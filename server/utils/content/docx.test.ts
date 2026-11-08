@@ -570,6 +570,63 @@ describe("convertDocx structure", { timeout: 30_000 }, () => {
     ]);
   });
 
+  it("marks headers by a dark fill where the table uses fills, not by bold", async () => {
+    const filled = (fill: string, content: string) =>
+      `<w:tc><w:tcPr><w:shd w:val="clear" w:fill="${fill}"/></w:tcPr>${content}</w:tc>`;
+    const result = await convert(
+      await structureDocx(
+        table(
+          row(
+            filled("792225", p(null, "Concepto", true)),
+            filled("792225", "<w:p/>"),
+          ),
+          // Bold on a light fill: a line of the statement, no header.
+          row(
+            filled("f5eee6", p(null, "1. Ingresos", true)),
+            filled("f5eee6", p(null, "10")),
+          ),
+          row(
+            filled("a6a6a6", p(null, "Subtotal")),
+            filled("a6a6a6", p(null, "20")),
+          ),
+        ) +
+          // Without fills, a cell all in bold still reads as a header.
+          table(row(cell(p(null, "Bold", true)), cell(p(null, "x")))),
+      ),
+    );
+    expect(
+      result.blocks.map((block) => [block.text, block.cell?.header ?? false]),
+    ).toEqual([
+      ["Concepto", true],
+      ["", true],
+      ["1. Ingresos", false],
+      ["10", false],
+      ["Subtotal", true],
+      ["20", true],
+      ["Bold", true],
+      ["x", false],
+    ]);
+  });
+
+  it("leaves out a table of contents", async () => {
+    const entry = (text: string) =>
+      `<w:p><w:hyperlink w:anchor="_a">${run(text)}<w:r><w:tab/></w:r>${run("2")}</w:hyperlink></w:p>`;
+    const result = await convert(
+      await structureDocx(
+        `<w:sdt><w:sdtPr><w:docPartObj><w:docPartGallery w:val="Table of Contents"/></w:docPartObj></w:sdtPr><w:sdtContent>${entry("Introducción")}${entry("Cuentas")}</w:sdtContent></w:sdt>` +
+          // Any other content control keeps its content.
+          `<w:sdt><w:sdtPr/><w:sdtContent>${p(null, "Dentro")}</w:sdtContent></w:sdt>` +
+          p("Ttulo1", "Introducción") +
+          p(null, "Texto."),
+      ),
+    );
+    expect(result.blocks.map((block) => [block.type, block.text])).toEqual([
+      ["paragraph", "Dentro"],
+      ["heading", "Introducción"],
+      ["paragraph", "Texto."],
+    ]);
+  });
+
   it("keeps centred and right-aligned paragraphs, and drops justified ones", async () => {
     const aligned = (value: string, text: string) =>
       `<w:p><w:pPr><w:jc w:val="${value}"/></w:pPr>${run(text)}</w:p>`;

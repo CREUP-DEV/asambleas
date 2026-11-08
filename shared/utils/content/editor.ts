@@ -774,9 +774,14 @@ export function htmlElementToBlocks(
           inCell = false;
         }
         const own = blocks.slice(before);
-        // Templates mark header cells by look, not as headers: a cell all
+        // Templates mark header cells by look, not as headers: by a dark
+        // fill, as the DOCX import says (`data-header`), or else a cell all
         // in bold reads as one (Word's own header rows already are).
-        if (own.length > 0 && own.every(isAllBold)) cell.header = true;
+        const marked = cellElement.getAttribute("data-header");
+        if (marked === "true") cell.header = true;
+        else if (marked !== "false" && own.length > 0 && own.every(isAllBold)) {
+          cell.header = true;
+        }
         for (const block of own) block.cell = { ...cell };
         if (blocks.length === before) {
           blocks.push({
