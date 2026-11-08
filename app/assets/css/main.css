@@ -80,6 +80,14 @@
   /* Nuxt UI's dimmed text (neutral-400 on white, 2.6:1) fails WCAG AA for
      the small hints and labels that use it; one step darker reaches 4.8:1. */
   --ui-text-dimmed: var(--ui-color-neutral-500);
+  /* Nuxt UI's status colours use the 500 step, which fails as text on white
+     (yellow 1.9:1, green 2.3:1, blue and red under 4:1), and white fails on
+     them too. The 700 step reads as text on white and carries white text.
+     Boxes still keep their body text neutral (app.config.ts, AGENTS.md). */
+  --ui-success: var(--ui-color-success-700);
+  --ui-info: var(--ui-color-info-700);
+  --ui-warning: var(--ui-color-warning-700);
+  --ui-error: var(--ui-color-error-700);
 }
 
 html {
@@ -111,6 +119,10 @@ html {
   --ui-secondary: var(--color-creup-blue-400);
   /* neutral-500 on the dark background is 3.7:1; neutral-400 is 7:1. */
   --ui-text-dimmed: var(--ui-color-neutral-400);
+  --ui-success: var(--ui-color-success-400);
+  --ui-info: var(--ui-color-info-400);
+  --ui-warning: var(--ui-color-warning-400);
+  --ui-error: var(--ui-color-error-400);
 }
 
 /*
