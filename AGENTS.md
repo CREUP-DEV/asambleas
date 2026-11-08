@@ -97,6 +97,7 @@ server/assets/      server-bundled fonts/assets
   - Raleway;
   - Atkinson Hyperlegible;
   - OpenDyslexic.
+- Never put body text in a status colour (`success`, `info`, `warning`, `error`) on a tint of that colour: yellow text in a yellow box does not read, and the others are hard work too. Status boxes keep their text neutral (`text-default`, `text-highlighted`) and use the colour only on the icon, the border or the ring. `UAlert` does this for every status colour through `app/app.config.ts`, so never pass `:ui` classes that colour its title or description again; hand-built boxes (`bg-<colour>/5`, `bg-<colour>/10`) follow the same rule. Only a large result heading (an outcome, a count) may keep its colour. Light mode uses the 700 step for `--ui-success`, `--ui-info`, `--ui-warning` and `--ui-error` (`main.css`) so standalone status words and white text on a solid status background pass WCAG AA; status badges and buttons on a tint go one step darker (`app.config.ts`).
 - Diff UI must support color mode and marks mode. Render diffs, provenance and plain text through the shared engine (`shared/utils/content/render.ts`) and `app/components/content/*`, never with component-level diff logic.
 
 ## Authentication And Role Sync

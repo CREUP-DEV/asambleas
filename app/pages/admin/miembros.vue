@@ -406,6 +406,9 @@ async function submit(event: FormSubmitEvent<MemberFormState>): Promise<void> {
   <UDashboardPanel id="admin-members">
     <template #header>
       <UDashboardNavbar :title="t('admin.members.title')">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
         <template #right>
           <UButton
             icon="i-lucide-refresh-cw"

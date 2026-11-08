@@ -67,10 +67,6 @@ useHead({
             class="flex flex-1 flex-col gap-2 focus:outline-none"
           >
             <ShellNavigation :collapsed="collapsed" />
-
-            <div class="mt-auto hidden pt-2 lg:flex">
-              <UDashboardSidebarCollapse :class="collapsed ? 'mx-auto' : ''" />
-            </div>
           </div>
         </template>
 

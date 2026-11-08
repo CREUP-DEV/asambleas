@@ -514,6 +514,9 @@ watch(() => route.path, revealActiveSection);
         :title="assembly?.label ?? t('assembly.hub.loading')"
         :ui="{ left: 'shrink-0', title: 'shrink-0', center: 'min-w-0' }"
       >
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
         <template #trailing>
           <template v-if="assembly">
             <CommonStatusBadge kind="assembly" :value="assembly.status" />
