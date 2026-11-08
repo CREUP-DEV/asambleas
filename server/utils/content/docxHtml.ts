@@ -155,6 +155,35 @@ function alignments(document: Document): void {
   }
 }
 
+/**
+ * Cells on a dark fill (`span.docx-cell`, see darkCells in docx.ts) become
+ * header cells (`data-header="true"`). A table that marks cells this way
+ * marks its headers by colour, so its other cells are no headers however
+ * bold their text (`data-header="false"`); htmlElementToBlocks reads both.
+ * Cells Word itself makes headers (repeated header rows, `th`) stay so.
+ */
+function darkCells(document: Document): void {
+  const tables = new Set<Element>();
+  for (const span of Array.from(document.querySelectorAll("span.docx-cell"))) {
+    const cell = span.closest("td, th");
+    span.remove();
+    if (!cell) continue;
+    cell.setAttribute("data-header", "true");
+    const table = cell.closest("table");
+    if (table) tables.add(table);
+  }
+  for (const table of tables) {
+    for (const cell of Array.from(table.querySelectorAll("td"))) {
+      if (
+        cell.closest("table") === table &&
+        !cell.hasAttribute("data-header")
+      ) {
+        cell.setAttribute("data-header", "false");
+      }
+    }
+  }
+}
+
 /** Replaces `element` with its content. */
 function unwrap(element: Element): void {
   element.replaceWith(...Array.from(element.childNodes));
@@ -213,6 +242,7 @@ export function prepareImportedHtml(
   flattenNotes(document);
   listLabels(document);
   alignments(document);
+  darkCells(document);
   linkUnderlines(document);
   ordinalSuperscripts(document);
 }
