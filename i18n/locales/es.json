@@ -871,7 +871,11 @@
         "success": "Documento recuperado"
       },
       "delete": {
-        "description": "Se eliminará «{title}» con su texto y sus datos. Esta acción no se puede deshacer."
+        "description": "Se eliminará «{title}» con su texto y sus datos. Esta acción no se puede deshacer.",
+        "descriptionPublished": "Se eliminará «{title}», que ya se publicó, con su texto, su referencia y su historial de versiones. Desaparece para todos y no se puede deshacer.",
+        "blockedAmendments": "Tiene enmiendas: retíralo en su lugar",
+        "blockedVote": "Ya se ha votado: anula antes la votación final",
+        "withdrawHint": "Si solo quieres que deje de estar publicado, retíralo."
       },
       "publishNow": "Publicar ahora"
     },
