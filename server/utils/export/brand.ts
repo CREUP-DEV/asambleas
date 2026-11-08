@@ -106,6 +106,28 @@ function textOutline(
 }
 
 /**
+ * The draft watermark ("BORRADOR") across the page as SVG glyph outlines,
+ * not text: as text, its rotated box covers the whole page, so selecting
+ * the text around it highlights a huge block, and copying or reading the
+ * page aloud picks the word up on every page. Diagonal like pdfmake's own
+ * watermark, three quarters of the diagonal long, faint burgundy.
+ */
+export function watermarkSvg(label: string, font: Font): string {
+  const diagonal = Math.hypot(PAGE_WIDTH, PAGE_HEIGHT);
+  const angle = (-Math.atan2(PAGE_HEIGHT, PAGE_WIDTH) * 180) / Math.PI;
+  const unit = textOutline(font, label, 100);
+  const size = (100 * diagonal * 0.75) / unit.width;
+  const outline = textOutline(font, label, size);
+  // Raleway's capitals rise about 0.71 em above the baseline.
+  const lift = (size * 0.71) / 2;
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_WIDTH}" height="${PAGE_HEIGHT}" viewBox="0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}">` +
+    `<path transform="translate(${(PAGE_WIDTH / 2).toFixed(2)} ${(PAGE_HEIGHT / 2).toFixed(2)}) rotate(${angle.toFixed(3)}) translate(${(-outline.width / 2).toFixed(2)} ${lift.toFixed(2)})" fill="${BRAND_RED}" fill-opacity="0.07" d="${outline.d}"/>` +
+    `</svg>`
+  );
+}
+
+/**
  * The band as SVG, with its label written bottom to top in white Raleway
  * Bold 14 pt, ending just below the rounded top. The label is drawn as glyph
  * outlines: pdfmake's SVG text cannot reach fonts registered in its virtual

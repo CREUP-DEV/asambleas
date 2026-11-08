@@ -24,8 +24,10 @@ import {
   LOGOS,
   PAGE_WIDTH,
   TEMPLATE_MARGINS,
+  PAGE_HEIGHT,
   bandLabelKey,
   bandSvg,
+  watermarkSvg,
   hasCover,
   type ExportBrand,
 } from "./brand";
@@ -274,9 +276,17 @@ function frame(input: {
   bandLabel: string;
   /** The first page is a cover: no letterhead, and pages count from the next. */
   cover?: boolean;
+  /** A draft's watermark ("BORRADOR"). */
+  watermark?: string;
 }): TDocumentDefinitions {
   const { locale, t, assembly, brand } = input;
   const band = bandSvg(input.bandLabel, brand?.labelFont);
+  // Drawn as outlines with the letterhead's font; without it, pdfmake's own
+  // (text) watermark stands in.
+  const watermark =
+    input.watermark && brand
+      ? watermarkSvg(input.watermark, brand.labelFont)
+      : null;
   const onCover = (page: number) => input.cover === true && page === 1;
   const firstPage = input.cover ? 1 : 0;
   return {
@@ -305,10 +315,24 @@ function frame(input: {
       onCover(page)
         ? coverBackground(brand)
         : {
-            svg: band.svg,
-            width: band.width,
-            height: band.height,
-            absolutePosition: { x: band.x, y: band.y },
+            stack: [
+              ...(watermark
+                ? [
+                    {
+                      svg: watermark,
+                      width: PAGE_WIDTH,
+                      height: PAGE_HEIGHT,
+                      absolutePosition: { x: 0, y: 0 },
+                    },
+                  ]
+                : []),
+              {
+                svg: band.svg,
+                width: band.width,
+                height: band.height,
+                absolutePosition: { x: band.x, y: band.y },
+              },
+            ],
           },
     header: (page: number) =>
       onCover(page)
@@ -675,6 +699,7 @@ export function buildDocumentPdf(
   const links = new LinkRegistry();
   const ctx: PdfContentContext = { links, outline: {} };
   const cover = hasCover(meta.kind);
+  const draft = body.variant === "clean" && body.source === "working";
 
   const content: Content[] = cover ? [coverTitle(meta, locale, t)] : [];
   const heading = documentHeading({
@@ -724,12 +749,13 @@ export function buildDocumentPdf(
     brand,
     bandLabel: t(`band.${bandLabelKey(meta.kind)}`),
     cover,
+    watermark: draft ? t("watermarkDraft") : undefined,
   });
   // Keeps headings with the text that follows them.
   definition.pageBreakBefore = (node, queries) =>
     node.headlineLevel !== undefined &&
     queries.getFollowingNodesOnPage().length === 0;
-  if (body.variant === "clean" && body.source === "working") {
+  if (draft && !brand) {
     definition.watermark = {
       text: t("watermarkDraft"),
       color: CREUP_RED,

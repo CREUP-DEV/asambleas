@@ -700,6 +700,16 @@ describe("pdf rendering", () => {
 
 // Template ------------------------------------------------------------------
 
+/** The layers of a page's background (the watermark, then the band). */
+function background(definition: TDocumentDefinitions): { svg: string }[] {
+  const page = (
+    definition.background as (page: number) => {
+      stack: { svg: string }[];
+    }
+  )(1);
+  return page.stack;
+}
+
 describe("CREUP template", () => {
   const heading = (id: string, level: number, text: string): Block => ({
     id,
@@ -737,6 +747,57 @@ describe("CREUP template", () => {
     });
     expect(nodes[2]!.layout!.fillColor!()).toBeNull();
     expect(nodes[1]).toMatchObject({ style: "heading2", outline: true });
+  });
+
+  it("nests each bookmark under the nearest higher heading", () => {
+    const nodes = blocksToPdf(
+      [
+        heading("a", 1, "Áreas"),
+        heading("b", 1, "Valoración"),
+        heading("c", 2, "Individual"),
+        heading("d", 3, "Realizado"),
+        heading("e", 4, "Dominios"),
+        heading("f", 3, "Pendiente"),
+        heading("g", 2, "Comisión"),
+      ],
+      { links: new LinkRegistry(), outline: { parentId: "doc" } },
+    ) as HeadingNode[];
+    const marks = nodes.map((node) => {
+      const text = (
+        node.table ? node.table.body[0]![0] : node
+      ) as ContentText & {
+        id?: string;
+      };
+      return [text.outlineText, text.id, text.outlineParentId];
+    });
+    expect(marks).toEqual([
+      ["Áreas", "doc-heading-1", "doc"],
+      ["Valoración", "doc-heading-2", "doc"],
+      ["Individual", "doc-heading-3", "doc-heading-2"],
+      ["Realizado", "doc-heading-4", "doc-heading-3"],
+      ["Dominios", "doc-heading-5", "doc-heading-4"],
+      ["Pendiente", "doc-heading-6", "doc-heading-3"],
+      ["Comisión", "doc-heading-7", "doc-heading-2"],
+    ]);
+  });
+
+  it("draws a draft's watermark as outlines, not selectable text", () => {
+    const data: DocumentExportData = {
+      assembly,
+      document: meta,
+      body: { variant: "clean", source: "working", blocks: base },
+      generatedAt: new Date(),
+    };
+    const definition = buildDocumentPdf(data, "es", brand);
+    expect(definition.watermark).toBeUndefined();
+    const [watermark, band] = background(definition);
+    expect(watermark!.svg).toMatch(/fill-opacity="0.07" d="M/);
+    expect(watermark!.svg).not.toContain("<text");
+    expect(band!.svg).toContain(`fill="${BRAND_RED}"`);
+    // Without the letterhead's font, pdfmake's own watermark stands in.
+    expect(buildDocumentPdf(data, "es").watermark).toMatchObject({
+      text: "BORRADOR",
+    });
   });
 
   it("colours links, makes them work and keeps their references", () => {
@@ -783,7 +844,10 @@ describe("CREUP template", () => {
     expect(header).toContain('"image":"creupLogo"');
     expect(header).toContain('"image":"esuLogo"');
 
-    const band = (definition.background as () => { svg: string })();
+    const layers = background(definition);
+    // A published text has no watermark: the band alone.
+    expect(layers).toHaveLength(1);
+    const band = layers[0]!;
     expect(band.svg).toContain(`fill="${BRAND_RED}"`);
     // The label, drawn as glyph outlines.
     expect(band.svg).toMatch(/<path [^>]*rotate\(-90\)[^>]*d="M/);
@@ -804,9 +868,7 @@ describe("CREUP template", () => {
     // Without the letterhead files the band keeps no label.
     const bare = buildDocumentPdf(data, "en");
     expect(bare.images).toBeUndefined();
-    expect((bare.background as () => { svg: string })().svg).not.toContain(
-      "<path",
-    );
+    expect(background(bare)[0]!.svg).not.toContain("<path");
   });
 
   it("renders the letterhead into every page, embedding the logos once", async () => {
@@ -946,8 +1008,14 @@ describe("CREUP template", () => {
     // The spanning cell, then pdfmake's placeholder for what it covers.
     expect(node!.table.body[2]![0]).toMatchObject({ colSpan: 2 });
     expect(node!.table.body[2]![1]).toEqual({});
+    // pdfmake adds each cell's padding (5 pt a side) and the rules (0.75 pt)
+    // to the widths: with them, the table fills the text width exactly.
+    const columns = node!.table.widths.length;
     const total = node!.table.widths.reduce((sum, width) => sum + width, 0);
-    expect(total).toBeCloseTo(595.28 - 85 - 85.6, 1);
+    expect(total + columns * 10 + (columns + 1) * 0.75).toBeCloseTo(
+      595.28 - 85 - 85.6,
+      1,
+    );
     // The date column is wide enough for its date.
     expect(node!.table.widths[1]).toBeGreaterThan(60);
 

@@ -94,13 +94,17 @@ export const CONTENT_STYLES: Record<string, Style> = {
 };
 
 /** The template's tables: burgundy rules around every cell. */
+/** A table cell's side padding and its rules, in points. */
+const TABLE_CELL_PADDING = 5;
+const TABLE_RULE = 0.75;
+
 export const TEMPLATE_TABLE_LAYOUT: CustomTableLayout = {
-  hLineWidth: () => 0.75,
-  vLineWidth: () => 0.75,
+  hLineWidth: () => TABLE_RULE,
+  vLineWidth: () => TABLE_RULE,
   hLineColor: () => CREUP_RED,
   vLineColor: () => CREUP_RED,
-  paddingLeft: () => 5,
-  paddingRight: () => 5,
+  paddingLeft: () => TABLE_CELL_PADDING,
+  paddingRight: () => TABLE_CELL_PADDING,
   paddingTop: () => 3,
   paddingBottom: () => 3,
 };
@@ -121,10 +125,24 @@ export class LinkRegistry {
   }
 }
 
+/**
+ * The bookmarks of one document's headings. Each heading nests under the
+ * nearest earlier heading of a higher level (a level 3 under the level 2
+ * before it), and the top ones under `parentId` when given (the document's
+ * title in the assembly dossier). The stack and counter are filled in as
+ * headings are laid out; ids start with `parentId`, so they stay unique
+ * across the documents of a dossier.
+ */
+export interface OutlineState {
+  parentId?: string;
+  open?: { level: number; id: string }[];
+  count?: number;
+}
+
 export interface PdfContentContext {
   links: LinkRegistry;
   /** Adds headings to the PDF bookmarks, under the given parent bookmark id. */
-  outline?: { parentId?: string };
+  outline?: OutlineState;
 }
 
 export interface AnnotatedContext extends PdfContentContext {
@@ -338,9 +356,18 @@ function headingNode(item: Item, ctx: PdfContentContext): Content {
   };
   const label = plainText(item.inlines).slice(0, 120);
   if (ctx.outline && item.countable && label) {
+    const outline = ctx.outline;
+    const open = (outline.open ??= []);
+    while (open.length > 0 && open[open.length - 1]!.level >= level) open.pop();
+    const parent = open[open.length - 1]?.id ?? outline.parentId;
+    outline.count = (outline.count ?? 0) + 1;
+    const id = `${outline.parentId ?? "outline"}-heading-${outline.count}`;
+    // pdfmake reads `id` to nest bookmarks under it; its typings omit it.
+    (text as ContentText & { id?: string }).id = id;
     text.outline = true;
     text.outlineText = label;
-    if (ctx.outline.parentId) text.outlineParentId = ctx.outline.parentId;
+    if (parent) text.outlineParentId = parent;
+    open.push({ level, id });
   }
   if (!framed) return { ...text, headlineLevel: level };
 
@@ -447,13 +474,14 @@ function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
 
 /** The text width a table may take: the page between the template's margins. */
 const TABLE_WIDTH = PAGE_WIDTH - TEMPLATE_MARGINS[0] - TEMPLATE_MARGINS[2];
-/** About the width of a character of Raleway 11 pt, and a cell's padding. */
+/** About the width of a character of Raleway 11 pt. */
 const CHAR_WIDTH = 6.2;
-const CELL_PADDING = 11;
 
 /**
- * Column widths that add up to the text width, as a browser's automatic
- * layout would share it: by how much text each column's own cells hold
+ * Column widths that, with each cell's padding and the rules between them
+ * (which pdfmake adds on top of a fixed width), fill the text width, shared
+ * as a browser's automatic layout would: by how much text each column's own
+ * cells hold
  * (cells spanning several columns aside), but never narrower than its
  * longest word, which pdfmake would push past the page instead of wrapping.
  */
@@ -476,10 +504,14 @@ function columnWidths(grid: TableGrid<Item>): number[] {
   const weights = longest.map((length, column) =>
     Math.max(Math.min(length, 40), word[column]!, 4),
   );
+  const available =
+    TABLE_WIDTH -
+    grid.columns * 2 * TABLE_CELL_PADDING -
+    (grid.columns + 1) * TABLE_RULE;
   const total = weights.reduce((sum, weight) => sum + weight, 0);
-  const widths = weights.map((weight) => (TABLE_WIDTH * weight) / total);
+  const widths = weights.map((weight) => (available * weight) / total);
   const minimum = word.map((length) =>
-    Math.min(length * CHAR_WIDTH + CELL_PADDING, TABLE_WIDTH / grid.columns),
+    Math.min(length * CHAR_WIDTH + 1, available / grid.columns),
   );
   // Columns under their minimum take it from the others, in proportion.
   const short = widths.map((width, column) => width < minimum[column]!);
