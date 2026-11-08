@@ -19,6 +19,7 @@ import type {
 import {
   kindSelectItems,
   presenterKindGroups,
+  type KindSelectItem,
 } from "~/composables/document/documentKinds";
 import {
   choicePresenterIds,
@@ -39,6 +40,9 @@ import { editorFromAgenda } from "~/composables/document/agendaReturn";
 /**
  * Adds a document under an agenda item.
  *
+ * - The type is a searchable menu, and on an item without documents the
+ *   title starts as the item's own (editable), so an item with a single
+ *   document needs no typing.
  * - Members ("Presentar documento") go through the first step of a short
  *   guided flow: what it is (type, title, short summary) and, for types that
  *   take no amendments, whether the text comes as a PDF. The types their
@@ -69,7 +73,17 @@ const props = defineProps<{
   apiBase: string;
   /** Localized hub path ("/asambleas/80-ago"). */
   basePath: string;
-  item: { id: string; title: string; number: string } | null;
+  /**
+   * `hasDocuments`: the item already shows documents. Without them the
+   * title starts as the item's own ("Informe de la Tesorería"), since an
+   * item with a single document is usually named after it.
+   */
+  item: {
+    id: string;
+    title: string;
+    number: string;
+    hasDocuments?: boolean;
+  } | null;
   mode: "manager" | "member";
 }>();
 
@@ -143,11 +157,19 @@ type DocumentFormState = Omit<DocumentForm, "kind"> & {
   kind: DocumentKind | undefined;
 };
 
+/** The title proposed from the agenda item, or null (see `item`). */
+const titleFromItem = computed(() => {
+  const item = props.item;
+  if (!item || item.hasDocuments) return null;
+  const title = item.title.trim();
+  return title && title.length <= TITLE_MAX ? title : null;
+});
+
 function initialState(): DocumentFormState {
   return {
     kind: undefined,
     format: "structured",
-    title: "",
+    title: titleFromItem.value ?? "",
     summary: "",
     proponent: member.value?.id ?? NO_PROPONENT,
     coProponents: [],
@@ -301,10 +323,13 @@ function onMainPick(id: string | null): void {
 /** Members to name in the presenters' choice even before the list loads. */
 const knownMembers = computed(() => (member.value ? [member.value] : []));
 
-const kindItems = computed(() => {
+/** Always grouped (managers get one group), as the searchable menu wants. */
+const kindItems = computed<KindSelectItem[][]>(() => {
   const label = (kind: DocumentKind) => t(`agenda.documentKinds.${kind}`);
   if (isManager.value) {
-    return DOCUMENT_KINDS.map((kind) => ({ label: label(kind), value: kind }));
+    return [
+      DOCUMENT_KINDS.map((kind) => ({ label: label(kind), value: kind })),
+    ];
   }
   return kindSelectItems(
     presenterKindGroups({ memberKind: member.value?.kind }),
@@ -569,16 +594,31 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
         @submit="onSubmit"
       >
         <UFormField :label="t('agenda.newDocument.kind')" name="kind" required>
-          <USelect
+          <USelectMenu
             v-model="state.kind"
             :items="kindItems"
+            value-key="value"
             :placeholder="t('agenda.newDocument.kindPlaceholder')"
+            :aria-label="
+              selectMenuLabel(
+                t('agenda.newDocument.kind'),
+                kindItems,
+                state.kind,
+                t('agenda.newDocument.kindPlaceholder'),
+              )
+            "
+            :search-input="labelledSearch(t('agenda.newDocument.searchKind'))"
             class="w-full sm:w-80"
           />
         </UFormField>
 
         <UFormField
           :label="t('agenda.newDocument.documentTitle')"
+          :help="
+            titleFromItem && state.title === titleFromItem
+              ? t('agenda.newDocument.titleFromItem')
+              : undefined
+          "
           name="title"
           required
         >

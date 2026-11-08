@@ -4,6 +4,7 @@ import {
   checkCalendar,
   defaultMilestones,
   milestoneOffsetBefore,
+  respectsNotice,
   wholeDaysBeforeStart,
   type CalendarDocument,
   type CalendarRules,
@@ -53,8 +54,6 @@ describe("defaultMilestones", () => {
 });
 
 describe("checkCalendar short notice", () => {
-  const MINUTE = 60_000;
-
   it.each([
     ["autumn", "2026-11-12T09:00:00.000Z"],
     ["spring", "2027-04-15T08:00:00.000Z"],
@@ -71,18 +70,101 @@ describe("checkCalendar short notice", () => {
     ["autumn", "2026-11-12T09:00:00.000Z"],
     ["spring", "2027-04-15T08:00:00.000Z"],
   ])(
-    "warns when the convocation is a minute late (%s)",
+    "accepts a convocation later on the same day (%s)",
     (_season, startIso) => {
       const start = new Date(startIso);
       const milestones = defaultMilestones(AGO, start);
-      const late = new Date(milestones.convocation!.getTime() + MINUTE);
+      const later = new Date(milestones.convocation!.getTime() + 5 * 3_600_000);
       const codes = checkCalendar(AGO, start, {
         ...milestones,
-        convocation: late,
+        convocation: later,
       }).map((warning) => warning.code);
-      expect(codes).toContain("short_notice");
+      expect(codes).not.toContain("short_notice");
     },
   );
+
+  it.each([
+    ["autumn", "2026-11-12T09:00:00.000Z"],
+    ["spring", "2027-04-15T08:00:00.000Z"],
+  ])("warns when the convocation is a day late (%s)", (_season, startIso) => {
+    const start = new Date(startIso);
+    const milestones = defaultMilestones(AGO, start);
+    const late = new Date(milestones.convocation!.getTime() + 24 * 3_600_000);
+    const codes = checkCalendar(AGO, start, {
+      ...milestones,
+      convocation: late,
+    }).map((warning) => warning.code);
+    expect(codes).toContain("short_notice");
+  });
+
+  it("counts the day in Madrid, not in UTC", () => {
+    // Start 18 Nov 2026, 00:30 in Madrid (17 Nov in UTC). A convocation on
+    // 18 Oct at 01:30 Madrid (17 Oct 23:30 UTC) gives a month's notice.
+    const start = new Date("2026-11-17T23:30:00.000Z");
+    const codes = checkCalendar(AGO, start, {
+      convocation: new Date("2026-10-17T23:30:00.000Z"),
+    }).map((warning) => warning.code);
+    expect(codes).not.toContain("short_notice");
+    const lateCodes = checkCalendar(AGO, start, {
+      convocation: new Date("2026-10-18T22:30:00.000Z"),
+    }).map((warning) => warning.code);
+    expect(lateCodes).toContain("short_notice");
+  });
+});
+
+describe("checkCalendar counts days and months by calendar day", () => {
+  // The 80.ª AGO: starts Wednesday 18 Nov 2026 at 9:00 in Madrid.
+  const start = new Date("2026-11-18T08:00:00.000Z");
+  const rules = {
+    ...AGO,
+    minimums: {
+      convocation: { months: 1 },
+      documents_close: { days: 8 },
+      candidacies_close: { hours: 96 },
+    },
+  };
+
+  it("accepts a convocation on 18 Oct and a close on 10 Nov at any hour", () => {
+    const warnings = checkCalendar(rules, start, {
+      convocation: new Date("2026-10-18T09:47:03.000Z"), // 11:47 CEST
+      documents_close: new Date("2026-11-10T22:59:00.000Z"), // 23:59 CET
+    });
+    expect(warnings).toEqual([]);
+  });
+
+  it("keeps hours exact: 72 hours is short of 96", () => {
+    const warnings = checkCalendar(rules, start, {
+      candidacies_close: new Date("2026-11-15T08:00:00.000Z"),
+    });
+    expect(warnings).toMatchObject([
+      { code: "below_minimum", keys: ["candidacies_close"] },
+    ]);
+    expect(
+      checkCalendar(rules, start, {
+        candidacies_close: new Date("2026-11-14T08:00:00.000Z"),
+      }),
+    ).toEqual([]);
+  });
+});
+
+describe("respectsNotice", () => {
+  const start = new Date("2026-11-18T08:00:00.000Z");
+
+  it("moves the limit a day only when the date changes", () => {
+    const eightDays = { days: 8 };
+    expect(
+      respectsNotice(new Date("2026-11-10T22:59:00.000Z"), start, eightDays),
+    ).toBe(true);
+    expect(
+      respectsNotice(new Date("2026-11-11T00:00:00.000Z"), start, eightDays),
+    ).toBe(false);
+  });
+
+  it("is false for an invalid date", () => {
+    expect(respectsNotice(new Date(Number.NaN), start, { days: 1 })).toBe(
+      false,
+    );
+  });
 });
 
 describe("milestoneOffsetBefore", () => {
