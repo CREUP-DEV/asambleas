@@ -748,3 +748,53 @@ describe("tables", () => {
     );
   });
 });
+
+describe("alignment", () => {
+  const aligned: Block[] = [
+    { ...p("a001", "Última actualización: 10 abr 2026"), align: "right" },
+    {
+      id: "a002",
+      type: "heading",
+      level: 1,
+      text: "Firma",
+      marks: [],
+      align: "center",
+    },
+    p("a003", "Sin alinear."),
+  ];
+
+  it("keeps centred and right alignment only", () => {
+    const parsed = blocksSchema.parse(aligned);
+    expect(parsed.map((block) => block.align)).toEqual([
+      "right",
+      "center",
+      undefined,
+    ]);
+    expect(() =>
+      blocksSchema.parse([{ ...p("a004", "x"), align: "justify" }]),
+    ).toThrow();
+  });
+
+  it("renders the alignment as a class", () => {
+    const html = renderBlocks(aligned);
+    expect(html).toContain('class="cx-align-right">Última actualización');
+    expect(html).toMatch(/<h2 [^>]*class="cx-align-center">Firma<\/h2>/);
+  });
+
+  it("survives a round trip through the editor, left as the default", () => {
+    const doc = blocksToEditor(aligned);
+    expect(doc.content!.map((node) => node.attrs?.textAlign ?? null)).toEqual([
+      "right",
+      "center",
+      null,
+    ]);
+    expect(editorToBlocks(doc, newId)).toEqual(aligned);
+    // TipTap writes "left" when someone aligns back to the start.
+    doc.content![0]!.attrs!.textAlign = "left";
+    expect(editorToBlocks(doc, newId)[0]!.align).toBeUndefined();
+  });
+
+  it("carries the alignment through consolidation", () => {
+    expect(consolidate(aligned, []).blocks).toEqual(aligned);
+  });
+});

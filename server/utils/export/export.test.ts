@@ -964,4 +964,20 @@ describe("CREUP template", () => {
     );
     expect(pages).toBe(1);
   });
+
+  it("aligns centred and right-aligned blocks", () => {
+    const nodes = blocksToPdf(
+      [
+        { ...p("r1", "Última actualización"), align: "right" },
+        { ...p("r2", "Firma"), align: "center" },
+        p("r3", "Normal"),
+      ],
+      { links: new LinkRegistry() },
+    ) as ContentText[];
+    expect(nodes.map((node) => node.alignment)).toEqual([
+      "right",
+      "center",
+      undefined,
+    ]);
+  });
 });

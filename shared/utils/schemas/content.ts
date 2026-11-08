@@ -1,5 +1,10 @@
 import { z } from "zod/v4";
-import { BLOCK_TYPES, LIST_MARKERS, MARK_TYPES } from "../../types/content";
+import {
+  BLOCK_ALIGNMENTS,
+  BLOCK_TYPES,
+  LIST_MARKERS,
+  MARK_TYPES,
+} from "../../types/content";
 import type { Block, BlockCell, Mark } from "../../types/content";
 import { isSafeHref } from "../content/render";
 
@@ -57,6 +62,7 @@ export const blockSchema = z
     marker: z.enum(LIST_MARKERS).optional(),
     start: z.number().int().min(0).max(99_999).optional(),
     cell: cellSchema.optional(),
+    align: z.enum(BLOCK_ALIGNMENTS).optional(),
     text: z.string().max(BLOCK_TEXT_MAX_LENGTH),
     marks: z.array(markSchema).max(500).default([]),
   })
@@ -87,6 +93,7 @@ export const blockSchema = z
       }
     }
     if (block.cell) result.cell = block.cell;
+    if (block.align) result.align = block.align;
     return result;
   });
 

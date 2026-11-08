@@ -83,6 +83,7 @@ type Block = {
   marker?: ListMarker; // ordered items: "1." (default), "1)", "a.", "a)", "A.", "A)", "i.", "i)", "I.", "I)"
   start?: number; // ordered items: the list starts again here, at this number
   cell?: BlockCell; // inside a table: { table, row, cell, header?, colspan?, rowspan? }
+  align?: "center" | "right"; // start when absent; never justified (WCAG 1.4.8)
   text: string; // plain text
   marks: Mark[]; // bold/italic/underline/strike/link ranges over `text`
 };
@@ -131,7 +132,8 @@ is sanitized and converted to blocks (`server/utils/content/docx.ts`):
   paragraph per row, cells joined by " | ".
 - Footnotes and endnotes become paragraphs at the end that start with their
   reference ("[1]"); ordinals typed as a superscript letter become "ª"/"º";
-  text in all caps is written in capitals.
+  text in all caps is written in capitals. Centred and right-aligned
+  paragraphs keep their alignment; justified ones go back to the start.
 - It warns about tracked changes, comments, dropped images, flattened tables
   and highlighting, whose meaning is lost.
 

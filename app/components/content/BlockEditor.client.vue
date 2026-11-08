@@ -15,6 +15,7 @@ import { BlockIdExtension } from "~/utils/editor/blockIdExtension";
 import { ListMarkerExtension } from "~/utils/editor/listMarkerExtension";
 import { TableIdsExtension } from "~/utils/editor/tableIdsExtension";
 import { TableKit } from "@tiptap/extension-table";
+import { TextAlign } from "@tiptap/extension-text-align";
 
 /**
  * Structured content editor (UEditor / TipTap). Works on blocks: the model is
@@ -139,6 +140,12 @@ const extensions = [
   ListMarkerExtension,
   TableKit.configure({ table: { resizable: false } }),
   TableIdsExtension,
+  // Blocks keep centred and right-aligned text (BLOCK_ALIGNMENTS); left is
+  // the default and stores nothing.
+  TextAlign.configure({
+    types: ["heading", "paragraph"],
+    alignments: ["left", "center", "right"],
+  }),
 ];
 
 /** Whether the cursor is in a table, for the table menu. */
@@ -264,6 +271,19 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
   ];
   const link = [{ slot: "link" } as EditorToolbarItem];
   const tables = [tableMenu.value];
+  // Shows the icon of the current alignment.
+  const alignment = {
+    icon: "i-lucide-align-left",
+    trailingIcon: "i-lucide-chevron-down",
+    "aria-label": t("common.editor.align.menu"),
+    tooltip: { text: t("common.editor.align.menu") },
+    items: (["left", "center", "right"] as const).map((align) => ({
+      kind: "textAlign",
+      align,
+      icon: `i-lucide-align-${align}`,
+      label: t(`common.editor.align.${align}`),
+    })),
+  } as EditorToolbarItem;
   const history = [
     action({ kind: "undo", icon: "i-lucide-undo-2" }, "common.editor.undo", [
       "meta",
@@ -320,7 +340,7 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
       "common.editor.quote",
     ),
   ];
-  return [structure, tables, marks, link, history];
+  return [structure, [alignment], tables, marks, link, history];
 });
 
 function setListMarker(marker: ListMarker): void {

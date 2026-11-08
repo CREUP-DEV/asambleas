@@ -96,7 +96,7 @@ interface ListFrame {
 
 type RenderableBlock = Pick<
   Block,
-  "id" | "type" | "level" | "list" | "marker" | "start" | "cell"
+  "id" | "type" | "level" | "list" | "marker" | "start" | "cell" | "align"
 > & {
   inner: string;
   attrs?: string;
@@ -157,7 +157,9 @@ function wrapFlow(items: RenderableBlock[], headings: boolean): string {
     html += `</li></${stack.pop()!.tag}>`;
   };
   const attrsOf = (item: RenderableBlock, ...classes: string[]) => {
-    const names = [...classes, item.className].filter(Boolean).join(" ");
+    // Alignment from a fixed set (BLOCK_ALIGNMENTS), as a class.
+    const align = item.align ? `cx-align-${item.align}` : "";
+    const names = [...classes, item.className, align].filter(Boolean).join(" ");
     const classAttr = names ? ` class="${escapeHtml(names)}"` : "";
     return `data-block-id="${escapeHtml(item.id)}"${item.attrs ?? ""}${classAttr}`;
   };

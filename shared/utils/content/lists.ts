@@ -1,5 +1,5 @@
-import type { Block, ListMarker } from "../../types/content";
-import { LIST_MARKERS } from "../../types/content";
+import type { Block, BlockAlign, ListMarker } from "../../types/content";
+import { BLOCK_ALIGNMENTS, LIST_MARKERS } from "../../types/content";
 
 /**
  * Ordered lists: their markers ("a)", "IV.") and the shape a list item
@@ -9,12 +9,12 @@ import { LIST_MARKERS } from "../../types/content";
 /** The block fields that place a block in a list, a table or the outline. */
 export type BlockShape = Pick<
   Block,
-  "level" | "list" | "marker" | "start" | "cell"
+  "level" | "list" | "marker" | "start" | "cell" | "align"
 >;
 
 /**
- * Copies `level`, `list`, `marker`, `start` and `cell`, leaving out absent
- * ones. The cell is copied, not shared.
+ * Copies `level`, `list`, `marker`, `start`, `cell` and `align`, leaving
+ * out absent ones. The cell is copied, not shared.
  */
 export function copyShape<T extends BlockShape>(from: BlockShape, to: T): T {
   if (from.level !== undefined) to.level = from.level;
@@ -22,6 +22,7 @@ export function copyShape<T extends BlockShape>(from: BlockShape, to: T): T {
   if (from.marker !== undefined) to.marker = from.marker;
   if (from.start !== undefined) to.start = from.start;
   if (from.cell !== undefined) to.cell = { ...from.cell };
+  if (from.align !== undefined) to.align = from.align;
   return to;
 }
 
@@ -32,6 +33,10 @@ export function markerOf(block: Pick<Block, "marker">): ListMarker {
 
 export function isListMarker(value: unknown): value is ListMarker {
   return (LIST_MARKERS as readonly unknown[]).includes(value);
+}
+
+export function isBlockAlign(value: unknown): value is BlockAlign {
+  return (BLOCK_ALIGNMENTS as readonly unknown[]).includes(value);
 }
 
 /** Roman numerals up to 3999; past it, digits. */

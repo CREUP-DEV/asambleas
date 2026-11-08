@@ -52,6 +52,13 @@ export interface BlockCell {
   rowspan?: number;
 }
 
+/**
+ * Alignments a block may take besides the default (start). Justified text
+ * is left out on purpose: its uneven spacing is hard to read (WCAG 1.4.8).
+ */
+export const BLOCK_ALIGNMENTS = ["center", "right"] as const;
+export type BlockAlign = (typeof BLOCK_ALIGNMENTS)[number];
+
 export const MARK_TYPES = [
   "bold",
   "italic",
@@ -85,6 +92,8 @@ export interface Block {
   start?: number;
   /** Blocks inside a table: the cell they belong to. */
   cell?: BlockCell;
+  /** Centred or right-aligned; aligned to the start when absent. */
+  align?: BlockAlign;
   text: string;
   marks: Mark[];
 }
@@ -134,6 +143,7 @@ export interface ConsolidatedBlock {
   marker?: ListMarker;
   start?: number;
   cell?: BlockCell;
+  align?: BlockAlign;
   segments: Segment[];
   /** Marks over the clean text of the block (removed segments excluded). */
   marks: Mark[];

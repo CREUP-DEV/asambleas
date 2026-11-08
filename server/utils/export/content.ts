@@ -15,6 +15,7 @@ import type {
 import type {
   Block,
   BlockType,
+  BlockAlign,
   BlockCell,
   ConsolidatedBlock,
   ListMarker,
@@ -241,6 +242,7 @@ interface BlockShape {
   marker?: ListMarker;
   start?: number;
   cell?: BlockCell;
+  align?: BlockAlign;
 }
 
 interface Item {
@@ -332,6 +334,7 @@ function headingNode(item: Item, ctx: PdfContentContext): Content {
   const text: ContentText = {
     text: emptySafe(bar ? item.inlines.map(onBurgundy) : item.inlines),
     style: framed ? (bar ? "barHeading" : "boxHeading") : `heading${level}`,
+    ...alignment(item.shape),
   };
   const label = plainText(item.inlines).slice(0, 120);
   if (ctx.outline && item.countable && label) {
@@ -361,11 +364,17 @@ function headingNode(item: Item, ctx: PdfContentContext): Content {
   return table;
 }
 
+/** pdfmake's alignment for a block's, when it has one. */
+function alignment(shape: BlockShape): Pick<ContentText, "alignment"> {
+  return shape.align ? { alignment: shape.align } : {};
+}
+
 function blockNode(item: Item, ctx: PdfContentContext): Content {
   if (item.shape.type === "heading") return headingNode(item, ctx);
   const text = emptySafe(item.inlines);
-  if (item.shape.type === "quote") return { text, style: "quote" };
-  return { text, style: "paragraph" };
+  const align = alignment(item.shape);
+  if (item.shape.type === "quote") return { text, style: "quote", ...align };
+  return { text, style: "paragraph", ...align };
 }
 
 /** Tables (groupTables) become pdfmake tables; other blocks flow. */
@@ -550,6 +559,7 @@ function assembleFlow(items: Item[], ctx: PdfContentContext): Content[] {
     const element: ContentText & OrderedListElementProperties = {
       text: emptySafe(item.inlines),
       style: "listItem",
+      ...alignment(item.shape),
     };
     if (top.kind === "ol") {
       if (item.countable) {

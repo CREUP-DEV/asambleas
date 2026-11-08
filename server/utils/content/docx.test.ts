@@ -570,6 +570,28 @@ describe("convertDocx structure", { timeout: 30_000 }, () => {
     ]);
   });
 
+  it("keeps centred and right-aligned paragraphs, and drops justified ones", async () => {
+    const aligned = (value: string, text: string) =>
+      `<w:p><w:pPr><w:jc w:val="${value}"/></w:pPr>${run(text)}</w:p>`;
+    const result = await convert(
+      await structureDocx(
+        aligned("right", "Última actualización") +
+          aligned("center", "Firma") +
+          aligned("end", "Al final") +
+          aligned("both", "Justificado") +
+          `<w:p><w:pPr><w:jc w:val="center"/></w:pPr></w:p>`,
+      ),
+    );
+    expect(
+      result.blocks.map((block) => [block.text, block.align ?? null]),
+    ).toEqual([
+      ["Última actualización", "right"],
+      ["Firma", "center"],
+      ["Al final", "right"],
+      ["Justificado", null],
+    ]);
+  });
+
   it("turns footnotes into paragraphs that keep their number", async () => {
     const reference = `<w:r><w:footnoteReference w:id="1"/></w:r>`;
     const result = await convert(

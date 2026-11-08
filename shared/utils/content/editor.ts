@@ -6,7 +6,12 @@ import type {
   MarkType,
 } from "../../types/content";
 import { MARK_TYPES } from "../../types/content";
-import { formatListNumber, isListMarker, markerOf } from "./lists";
+import {
+  formatListNumber,
+  isBlockAlign,
+  isListMarker,
+  markerOf,
+} from "./lists";
 import { groupTables, type TableGroup } from "./tables";
 
 /**
@@ -37,6 +42,12 @@ interface WalkContext {
 
 /** The TipTap nodes of a table cell. */
 const CELL_NODES = new Set(["tableCell", "tableHeader"]);
+
+/** A block's alignment as the DOCX import marks it (`data-align`). */
+function alignFrom(element: Element): Pick<Block, "align"> {
+  const value = element.getAttribute("data-align");
+  return isBlockAlign(value) ? { align: value } : {};
+}
 
 /** Whether bold covers the whole of a block's text, spaces aside. */
 function isAllBold(block: Block): boolean {
@@ -205,6 +216,7 @@ export function editorToBlocks(doc: EditorNode, newId: () => string): Block[] {
                 ? "quote"
                 : "paragraph",
             ...inline,
+            ...alignOf(node),
           };
           if (context.list) placeInList(block, context);
           blocks.push(inCell(block, context));
@@ -219,6 +231,7 @@ export function editorToBlocks(doc: EditorNode, newId: () => string): Block[] {
                 type: "heading",
                 level: Math.max(1, Math.min(4, level)),
                 ...readInline(node.content),
+                ...alignOf(node),
               },
               context,
             ),
@@ -309,11 +322,22 @@ function inlineNodes(block: Pick<Block, "text" | "marks">): EditorNode[] {
   return nodes;
 }
 
+/** TipTap's `textAlign` for a block's alignment (TextAlign extension). */
+function alignAttrs(block: Pick<Block, "align">): { textAlign?: string } {
+  return block.align ? { textAlign: block.align } : {};
+}
+
+/** A block's alignment from a node's `textAlign`, when it is one blocks keep. */
+function alignOf(node: EditorNode): Pick<Block, "align"> {
+  const value = node.attrs?.textAlign;
+  return isBlockAlign(value) ? { align: value } : {};
+}
+
 function paragraph(block: Block): EditorNode {
   const content = inlineNodes(block);
   return {
     type: "paragraph",
-    attrs: { blockId: block.id },
+    attrs: { blockId: block.id, ...alignAttrs(block) },
     ...(content.length ? { content } : {}),
   };
 }
@@ -421,7 +445,11 @@ function flowNodes(blocks: Block[]): EditorNode[] {
       const inline = inlineNodes(block);
       content.push({
         type: "heading",
-        attrs: { level: block.level ?? 1, blockId: block.id },
+        attrs: {
+          level: block.level ?? 1,
+          blockId: block.id,
+          ...alignAttrs(block),
+        },
         ...(inline.length ? { content: inline } : {}),
       });
     } else if (block.type === "quote") {
@@ -632,6 +660,7 @@ export function htmlElementToBlocks(
             type: "heading",
             level: Math.min(4, Number(tag[1])),
             ...inline,
+            ...alignFrom(child),
           });
         }
       } else if (tag === "p" || tag === "div") {
@@ -644,7 +673,12 @@ export function htmlElementToBlocks(
         const inline = readElementInline(child);
         if (!inline.text) continue;
         if (list) {
-          const block: Block = { id: newId(), type: "list_item", ...inline };
+          const block: Block = {
+            id: newId(),
+            type: "list_item",
+            ...inline,
+            ...alignFrom(child),
+          };
           placeInList(block, { ...list, list: list.type });
           blocks.push(block);
         } else {
@@ -652,6 +686,7 @@ export function htmlElementToBlocks(
             id: newId(),
             type: quote ? "quote" : "paragraph",
             ...inline,
+            ...alignFrom(child),
           });
         }
       } else if (tag === "ul" || tag === "ol") {
@@ -671,7 +706,12 @@ export function htmlElementToBlocks(
           clone.querySelectorAll("ul, ol").forEach((sub) => sub.remove());
           const inline = readElementInline(clone);
           if (inline.text) {
-            const block: Block = { id: newId(), type: "list_item", ...inline };
+            const block: Block = {
+              id: newId(),
+              type: "list_item",
+              ...inline,
+              ...alignFrom(item),
+            };
             placeInList(block, { level, list: type, ...numbering });
             blocks.push(block);
           }

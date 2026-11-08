@@ -114,6 +114,12 @@
       "bulletList": "Lista con viñetas",
       "orderedList": "Lista numerada",
       "listMarker": "Estilo de numeración",
+      "align": {
+        "menu": "Alineación",
+        "left": "Alinear a la izquierda",
+        "center": "Centrar",
+        "right": "Alinear a la derecha"
+      },
       "table": {
         "menu": "Tabla",
         "insert": "Insertar tabla",
