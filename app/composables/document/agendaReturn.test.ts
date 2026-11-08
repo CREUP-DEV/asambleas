@@ -44,10 +44,15 @@ describe("agenda return", () => {
     expect(addAfterOf({ nuevo: "" })).toBeNull();
   });
 
-  it("picks the next item, wrapping to the first", () => {
-    expect(nextItemId(["a", "b", "c"], "a")).toBe("b");
-    expect(nextItemId(["a", "b", "c"], "c")).toBe("a");
-    expect(nextItemId(["a", "b"], "gone")).toBe("a");
+  it("picks the next item without documents, going round", () => {
+    const items = (spec: string) =>
+      [...spec].map((id) => ({ id, hasDocuments: id === id.toUpperCase() }));
+    // Lower case: no documents yet.
+    expect(nextItemId(items("aBc"), "a")).toBe("c");
+    expect(nextItemId(items("abc"), "c")).toBe("a");
+    expect(nextItemId(items("aB"), "gone")).toBe("a");
+    // Every item has documents: simply the next one.
+    expect(nextItemId(items("ABC"), "A")).toBe("B");
     expect(nextItemId([], "a")).toBeNull();
   });
 });

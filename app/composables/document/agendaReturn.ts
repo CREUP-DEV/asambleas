@@ -76,11 +76,19 @@ export function addAnotherPath(
 }
 
 /**
- * The item after `itemId` in agenda order among `ids` (the ones the user may
- * add to), or the first one when it is the last or not among them.
+ * The item to add the next document to, after `itemId` in agenda order among
+ * `items` (the ones the user may add to): the next one without documents
+ * yet, going round to the start, or else simply the next one.
  */
-export function nextItemId(ids: string[], itemId: string): string | null {
-  if (ids.length === 0) return null;
-  const index = ids.indexOf(itemId);
-  return ids[index + 1] ?? ids[0] ?? null;
+export function nextItemId(
+  items: { id: string; hasDocuments: boolean }[],
+  itemId: string,
+): string | null {
+  if (items.length === 0) return null;
+  const start = items.findIndex((item) => item.id === itemId) + 1;
+  const ordered = [...items.slice(start), ...items.slice(0, start)];
+  const empty = ordered.find(
+    (item) => !item.hasDocuments && item.id !== itemId,
+  );
+  return (empty ?? ordered[0])?.id ?? null;
 }

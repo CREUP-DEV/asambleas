@@ -289,7 +289,7 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
 
     <div
       v-if="$slots.default"
-      class="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end"
+      class="flex shrink-0 flex-wrap items-center gap-2 sm:max-w-[55%] sm:justify-end"
     >
       <slot />
     </div>

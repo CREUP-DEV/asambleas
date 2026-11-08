@@ -2542,7 +2542,7 @@
         "position": "Step {step} of {total}:"
       },
       "searchKind": "Search document types",
-      "titleFromItem": "This is the agenda item’s title. Change it if the document has another one.",
+      "titleFromItem": "Suggested from the agenda item. Change it if the document has another name.",
       "item": "Agenda item",
       "itemPlaceholder": "Choose the item",
       "searchItem": "Search agenda items",
