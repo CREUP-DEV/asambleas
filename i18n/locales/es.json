@@ -753,6 +753,7 @@
       "proponent": "Quién lo presenta",
       "proponentPlaceholder": "Elige quién lo presenta",
       "searchMember": "Buscar por siglas o nombre",
+      "searchAgendaItem": "Buscar punto del orden del día",
       "noProponent": "Sin proponente",
       "managerOnly": "Solo Secretaría puede cambiar quién lo presenta.",
       "procedure": "Enmiendas y votación",

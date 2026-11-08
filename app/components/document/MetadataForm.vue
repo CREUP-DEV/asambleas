@@ -9,7 +9,6 @@ import {
   type Majority,
 } from "~~/shared/constants/domain";
 import type {
-  AgendaItemDto,
   AssemblyDto,
   DocumentDto,
   DocumentUpdateBody,
@@ -437,34 +436,28 @@ const majorityItems = computed(() =>
 // Shared with the hub's agenda pages (same key, refreshed on live events).
 const { data: agenda, status: agendaStatus } = useAssemblyAgenda();
 
+/**
+ * Agenda items in order, each with its number as on the agenda ("3.12.
+ * Informe de ..."), which also shows where it sits in the tree.
+ */
 const agendaItems = computed(() => {
   const items = agenda.value?.items ?? [];
-  const children = new Map<string | null, AgendaItemDto[]>();
-  for (const item of items) {
-    const list = children.get(item.parentId) ?? [];
-    list.push(item);
-    children.set(item.parentId, list);
-  }
-  const result: { label: string; value: string; disabled: boolean }[] = [];
-  const visit = (parentId: string | null, depth: number) => {
-    const list = (children.get(parentId) ?? [])
-      .slice()
-      .sort((a, b) => a.order - b.order);
-    for (const item of list) {
-      result.push({
-        label: `${"\u2003".repeat(depth)}${item.title}`,
-        value: item.id,
-        disabled:
-          !manager.value &&
-          !item.acceptsSubmissions &&
-          item.id !== initial.value.agendaItemId,
-      });
-      visit(item.id, depth + 1);
-    }
-  };
-  visit(null, 0);
-  return result;
+  const numbers = agendaNumbers(items);
+  return flattenAgendaTree(buildAgendaTree(items)).map(({ item }) => ({
+    label: `${numbers.get(item.id)}. ${item.title}`,
+    value: item.id,
+    disabled:
+      !manager.value &&
+      !item.acceptsSubmissions &&
+      item.id !== initial.value.agendaItemId,
+  }));
 });
+
+/** Long titles wrap instead of being cut, in the list and in the field. */
+const agendaSelectUi = {
+  value: "whitespace-normal text-start",
+  itemLabel: "whitespace-normal",
+};
 
 const currentAgendaTitle = computed(
   () =>
@@ -851,10 +844,23 @@ defineExpose({ reset: resetForm, check, save });
                 aria-hidden="true"
                 class="h-8 w-full"
               />
-              <USelect
+              <USelectMenu
                 v-else-if="agendaItems.length > 0"
                 v-model="state.agendaItemId"
                 :items="agendaItems"
+                value-key="value"
+                :aria-label="
+                  selectMenuLabel(
+                    t('document.metadata.agendaItem'),
+                    agendaItems,
+                    state.agendaItemId,
+                    t('document.metadata.agendaItem'),
+                  )
+                "
+                :search-input="
+                  labelledSearch(t('document.metadata.searchAgendaItem'))
+                "
+                :ui="agendaSelectUi"
                 class="w-full"
               />
               <p v-else class="text-muted text-sm">
@@ -879,10 +885,23 @@ defineExpose({ reset: resetForm, check, save });
           aria-hidden="true"
           class="h-8 w-full"
         />
-        <USelect
+        <USelectMenu
           v-else-if="agendaItems.length > 0"
           v-model="state.agendaItemId"
           :items="agendaItems"
+          value-key="value"
+          :aria-label="
+            selectMenuLabel(
+              t('document.metadata.agendaItem'),
+              agendaItems,
+              state.agendaItemId,
+              t('document.metadata.agendaItem'),
+            )
+          "
+          :search-input="
+            labelledSearch(t('document.metadata.searchAgendaItem'))
+          "
+          :ui="agendaSelectUi"
           class="w-full"
         />
         <p v-else class="text-muted text-sm">
