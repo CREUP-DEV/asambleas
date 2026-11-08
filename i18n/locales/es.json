@@ -2529,7 +2529,9 @@
         "text": "El texto",
         "send": "Enviar a Secretaría",
         "position": "Paso {step} de {total}:"
-      }
+      },
+      "searchKind": "Buscar tipo de documento",
+      "titleFromItem": "Es el título del punto. Cámbialo si el documento tiene otro."
     },
     "organize": {
       "start": "Organizar orden del día",

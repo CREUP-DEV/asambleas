@@ -250,11 +250,20 @@ async function onSubmit(event: FormSubmitEvent<ExpectedForm>) {
 
         <div class="grid gap-4 sm:grid-cols-2">
           <UFormField :label="t('tracking.expected.kind')" name="kind" required>
-            <USelect
+            <USelectMenu
               v-model="state.kind"
               :items="kindOptions"
               value-key="value"
               :placeholder="t('tracking.expected.kindPlaceholder')"
+              :search-input="labelledSearch(t('agenda.newDocument.searchKind'))"
+              :aria-label="
+                selectMenuLabel(
+                  t('tracking.expected.kind'),
+                  kindOptions,
+                  state.kind,
+                  t('tracking.expected.kindPlaceholder'),
+                )
+              "
               class="w-full"
             />
           </UFormField>

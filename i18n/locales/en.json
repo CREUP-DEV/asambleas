@@ -2529,7 +2529,9 @@
         "text": "The text",
         "send": "Send to the Secretariat",
         "position": "Step {step} of {total}:"
-      }
+      },
+      "searchKind": "Search document types",
+      "titleFromItem": "This is the agenda item’s title. Change it if the document has another one."
     },
     "organize": {
       "start": "Organise agenda",

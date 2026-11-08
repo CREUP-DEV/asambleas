@@ -61,8 +61,14 @@ export function presenterKindGroups(options: {
   };
 }
 
+/**
+ * A heading carries `value?: undefined` only so that every item has the key
+ * USelectMenu's `value-key="value"` names (its type takes the keys all items
+ * share).
+ */
 export type KindSelectItem =
-  { type: "label"; label: string } | { label: string; value: DocumentKind };
+  | { type: "label"; label: string; value?: undefined }
+  | { label: string; value: DocumentKind };
 
 /**
  * The groups as USelect items: one group per list, each under its heading

@@ -252,7 +252,10 @@ moves existing dates.
 breaks a minimum (`short_notice`, `below_minimum`,
 `documents_not_with_convocation`, `regulation_window_short`)
 or is inconsistent, for example when amendments close before documents are
-published. Warnings are computed on read, so past assemblies are checked
+published. Minimums in days or months count calendar days in Europe/Madrid,
+whatever the hour (`respectsNotice`): a convocation sent on 18 October at any
+time gives a month's notice for an assembly starting on 18 November. Minimums
+in hours count exactly. Warnings are computed on read, so past assemblies are checked
 against the rules in force. The convocatoria is generated from the assembly
 data, the agenda and the milestones as a print view and a PDF.
 

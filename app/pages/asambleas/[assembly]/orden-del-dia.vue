@@ -399,9 +399,12 @@ async function confirmDelete() {
 
 const documentOpen = ref(false);
 const documentMode = ref<"manager" | "member">("member");
-const documentItem = ref<{ id: string; title: string; number: string } | null>(
-  null,
-);
+const documentItem = ref<{
+  id: string;
+  title: string;
+  number: string;
+  hasDocuments: boolean;
+} | null>(null);
 
 function openNewDocument(
   node: AgendaTreeNode<AgendaItemDto>,
@@ -411,6 +414,7 @@ function openNewDocument(
     id: node.item.id,
     title: node.item.title,
     number: node.number,
+    hasDocuments: (documentsByItem.value.get(node.item.id)?.length ?? 0) > 0,
   };
   documentMode.value = mode;
   documentOpen.value = true;

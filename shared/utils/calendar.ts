@@ -62,6 +62,33 @@ export function milestoneOffsetBefore(
   return zoned.subtract({ days: offset.days }).toDate();
 }
 
+/** The calendar day of `at` in the assemblies' time zone, as "YYYY-MM-DD". */
+function assemblyDay(at: Date | number): string {
+  return toCalendarDateTime(fromDate(new Date(at), ASSEMBLY_TIME_ZONE))
+    .toString()
+    .slice(0, 10);
+}
+
+/**
+ * Whether `at` respects a notice of `offset` before `reference`. Days and
+ * months count calendar days in the assemblies' time zone, as CREUP reads
+ * the regulations: a convocation sent on 18 October gives a month's notice
+ * for an assembly starting on 18 November, whatever the hour of either.
+ * Hours count exactly ("96 horas" is 96 hours).
+ */
+export function respectsNotice(
+  at: Date | number,
+  reference: Date,
+  offset: MilestoneOffset,
+): boolean {
+  const limit = milestoneOffsetBefore(reference, offset);
+  if ("hours" in offset) return new Date(at).getTime() <= limit.getTime();
+  if (Number.isNaN(limit.getTime()) || Number.isNaN(new Date(at).getTime())) {
+    return false;
+  }
+  return assemblyDay(at) <= assemblyDay(limit);
+}
+
 /**
  * Whole days from `at` to `start` when both fall at the same wall-clock time
  * in the assemblies' time zone, or null. A 2-day deadline across a clock
@@ -158,9 +185,8 @@ export function checkCalendar(
     const limit = rules.minimums[key];
     const value = at(key);
     if (limit === undefined || value === undefined) continue;
-    // Counted in the assemblies' time zone, like the defaults, so a clock
-    // change in between neither adds nor removes an hour of notice.
-    if (value > milestoneOffsetBefore(start, limit).getTime()) {
+    // Days and months by calendar day, hours exactly (respectsNotice).
+    if (!respectsNotice(value, start, limit)) {
       warnings.push({
         code: key === "convocation" ? "short_notice" : "below_minimum",
         keys: [key],
@@ -175,7 +201,7 @@ export function checkCalendar(
   if (
     attachBelow &&
     convocation !== undefined &&
-    convocation > milestoneOffsetBefore(start, attachBelow).getTime() &&
+    !respectsNotice(convocation, start, attachBelow) &&
     (publish === undefined || publish > convocation)
   ) {
     warnings.push({
@@ -233,10 +259,11 @@ export function checkCalendar(
       }
       const window = amendmentWindow(document, milestones);
       if (!window.opensAt || !window.closesAt) continue;
-      const shortestClose = milestoneOffsetBefore(window.closesAt, {
-        days: windowDays,
-      });
-      if (window.opensAt.getTime() > shortestClose.getTime()) {
+      // Counted by calendar day too: open on the 1st, close on the 15th is
+      // a 14-day window whatever the hours.
+      if (
+        !respectsNotice(window.opensAt, window.closesAt, { days: windowDays })
+      ) {
         warnings.push({
           code: "regulation_window_short",
           keys: ["amendments_open", "amendments_close"],
