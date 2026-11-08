@@ -248,6 +248,30 @@ html {
   list-style-type: upper-roman-paren;
 }
 
+/*
+ * The editor's headings look like the rendered ones (TipTap writes levels
+ * 1-4 as h1-h4). Outside any layer: the editor's theme colours every heading
+ * with a utility (`text-highlighted`, bold), which would win over a component
+ * rule.
+ */
+.content-editor h1 {
+  padding: 0.2em 0.45em;
+  color: var(--content-heading-bar-fg);
+  background-color: var(--content-heading-bar);
+}
+
+.content-editor h2,
+.content-editor h4 {
+  color: var(--content-heading);
+}
+
+.content-editor h3 {
+  padding: 0.15em 0.45em;
+  border: 1px solid currentColor;
+  color: var(--content-heading);
+  font-weight: 400;
+}
+
 @layer components {
   .rich-text {
     max-width: none;
@@ -344,26 +368,13 @@ html {
     outline-offset: -2px;
   }
 
-  /*
-   * The editor's headings look like the rendered ones (TipTap writes levels
-   * 1-4 as h1-h4).
-   */
-  .content-editor h1 {
-    padding: 0.2em 0.45em;
-    color: var(--content-heading-bar-fg);
-    background-color: var(--content-heading-bar);
+  /* Block alignment (`align`), centred or to the right. */
+  :is(.rich-text, .content-editor) .cx-align-center {
+    text-align: center;
   }
 
-  .content-editor h2,
-  .content-editor h4 {
-    color: var(--content-heading);
-  }
-
-  .content-editor h3 {
-    padding: 0.15em 0.45em;
-    border: 1px solid currentColor;
-    color: var(--content-heading);
-    font-weight: 400;
+  :is(.rich-text, .content-editor) .cx-align-right {
+    text-align: right;
   }
 
   /* The template's colours (see --content-heading). */

@@ -73,6 +73,7 @@ function canonical(blocks: Block[]): string {
             block.cell.rowspan ?? 1,
           ]
         : null,
+      block.align ?? null,
       block.text,
       block.marks.map((mark) => [
         mark.type,

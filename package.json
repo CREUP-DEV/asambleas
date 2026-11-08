@@ -36,6 +36,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@tiptap/core": "3.22.5",
     "@tiptap/extension-table": "3.22.5",
+    "@tiptap/extension-text-align": "3.22.5",
     "@tiptap/pm": "3.22.5",
     "@vueuse/core": "^14.4.0",
     "@vueuse/nuxt": "14.4.0",

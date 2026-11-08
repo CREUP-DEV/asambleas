@@ -133,6 +133,28 @@ function listLabels(document: Document): void {
   }
 }
 
+const ALIGNED_BLOCKS = new Set(["p", "li", "h1", "h2", "h3", "h4", "h5", "h6"]);
+
+/**
+ * The hidden alignment of a paragraph (`span.docx-align`, see alignmentRun
+ * in docx.ts) becomes `data-align` on its block, which htmlElementToBlocks
+ * reads.
+ */
+function alignments(document: Document): void {
+  for (const span of Array.from(document.querySelectorAll("span.docx-align"))) {
+    const value = span.textContent;
+    const block = span.parentElement;
+    span.remove();
+    if (
+      block &&
+      (value === "center" || value === "right") &&
+      ALIGNED_BLOCKS.has(block.tagName.toLowerCase())
+    ) {
+      block.setAttribute("data-align", value);
+    }
+  }
+}
+
 /** Replaces `element` with its content. */
 function unwrap(element: Element): void {
   element.replaceWith(...Array.from(element.childNodes));
@@ -190,6 +212,7 @@ export function prepareImportedHtml(
   resolveTitles(document, options.documentTitle);
   flattenNotes(document);
   listLabels(document);
+  alignments(document);
   linkUnderlines(document);
   ordinalSuperscripts(document);
 }

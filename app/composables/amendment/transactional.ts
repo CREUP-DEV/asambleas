@@ -230,6 +230,7 @@ function blockContent(block: Block): string {
     block.marker ?? null,
     block.start ?? null,
     block.cell ?? null,
+    block.align ?? null,
     block.marks,
   ]);
 }

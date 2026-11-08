@@ -289,6 +289,8 @@ const STYLE_MAP = [
   // The number of a list item, which prepareImportedHtml turns into the
   // list's marker and start (see NUMBERING_SCRIPT).
   "r[style-name='docx-list-label'] => span.docx-list-label",
+  // A centred or right-aligned paragraph, for prepareImportedHtml.
+  "r[style-name='docx-align'] => span.docx-align",
 ];
 
 // <w:ins>, <w:del>, <w:moveFrom>, <w:moveTo>, but not <w:instrText> or <w:delText>.
@@ -568,6 +570,19 @@ function honourOffHeaders(nodes) {
     return value === "0" || value === "false" || value === "off" ? undefined : found;
   };
 }
+// Centred and right-aligned paragraphs keep their alignment through a hidden
+// run (docx-align), which prepareImportedHtml turns into data-align. Left and
+// justified text are the default.
+function alignmentRun(documents) {
+  return (paragraph) => {
+    const value = paragraph.alignment;
+    const align = value === "center" ? "center"
+      : value === "right" || value === "end" ? "right" : null;
+    if (!align) return paragraph;
+    const run = documents.Run([documents.Text(align)], { styleName: "docx-align" });
+    return Object.assign({}, paragraph, { children: [run].concat(paragraph.children) });
+  };
+}
 // Text formatted as all caps is shown in capitals: write it so.
 function upperCaseRun(run) {
   if (!run.isAllCaps) return run;
@@ -626,6 +641,7 @@ process.stdin.on("end", () => {
   }
   let imagesDropped = false;
   const labels = mammoth.transforms.paragraph(numberLabels(documents));
+  const aligned = mammoth.transforms.paragraph(alignmentRun(documents));
   const capitals = mammoth.transforms.run(upperCaseRun);
   Promise.resolve()
     .then(() =>
@@ -635,7 +651,7 @@ process.stdin.on("end", () => {
           styleMap: options.styleMap,
           externalFileAccess: false,
           includeEmbeddedStyleMap: false,
-          transformDocument: (document) => capitals(labels(document)),
+          transformDocument: (document) => capitals(aligned(labels(document))),
           convertImage: mammoth.images.imgElement(async () => {
             imagesDropped = true;
             return { src: "" };
