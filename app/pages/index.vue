@@ -108,10 +108,9 @@ const workIsPrimary = computed(() => inSession.value.length === 0);
 
 // Greeting --------------------------------------------------------------
 
-const firstName = computed(() => {
-  const name = me.value?.name?.trim() ?? "";
-  return name.split(/\s+/)[0] ?? "";
-});
+// The whole name: many accounts belong to a body ("Vocalía de ..."), whose
+// first word alone says nothing.
+const displayName = computed(() => me.value?.name?.trim() ?? "");
 
 const greetingKey = computed(() => {
   const hour = Number(
@@ -127,8 +126,8 @@ const greetingKey = computed(() => {
 });
 
 const greeting = computed(() =>
-  firstName.value
-    ? t(greetingKey.value, { name: firstName.value })
+  displayName.value
+    ? t(greetingKey.value, { name: displayName.value })
     : t(`${greetingKey.value}Anonymous`),
 );
 
@@ -172,7 +171,11 @@ const adminLinks = computed(() =>
 <template>
   <UDashboardPanel id="home">
     <template #header>
-      <UDashboardNavbar :title="t('home.title')" />
+      <UDashboardNavbar :title="t('home.title')">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
+      </UDashboardNavbar>
     </template>
 
     <template #body>

@@ -246,7 +246,11 @@ onBeforeRouteLeave(() => {
 <template>
   <UDashboardPanel id="admin-calendar-rules">
     <template #header>
-      <UDashboardNavbar :title="t('admin.calendarRules.title')" />
+      <UDashboardNavbar :title="t('admin.calendarRules.title')">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
+      </UDashboardNavbar>
       <UDashboardToolbar>
         <template #left>
           <UTabs

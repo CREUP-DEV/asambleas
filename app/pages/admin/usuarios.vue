@@ -817,6 +817,9 @@ function goToPage(next: number): void {
   <UDashboardPanel id="admin-users">
     <template #header>
       <UDashboardNavbar :title="t('admin.users.title')">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
         <template #right>
           <UButton
             color="neutral"

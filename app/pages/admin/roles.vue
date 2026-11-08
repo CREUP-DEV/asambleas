@@ -303,6 +303,9 @@ onBeforeRouteLeave(() => {
   <UDashboardPanel id="admin-roles">
     <template #header>
       <UDashboardNavbar :title="t('admin.roles.title')">
+        <template #leading>
+          <UDashboardSidebarCollapse />
+        </template>
         <template #right>
           <UButton
             color="neutral"
