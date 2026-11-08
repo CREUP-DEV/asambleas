@@ -15,6 +15,10 @@ import type { DocumentDto, DocumentUpdateBody } from "~~/shared/types/api";
  * `pending` (unsaved changes on the page) the switch waits for them to be
  * saved, so it never overwrites them or trips the optimistic lock.
  *
+ * With `inline` it is only the button (and the reminder to save first), for
+ * the folded "Formato" field of the metadata form, which already says which
+ * format the document uses.
+ *
  * Emits `updated` with the stored document and `stale` after a conflict.
  */
 const props = withDefaults(
@@ -25,8 +29,10 @@ const props = withDefaults(
     disabled?: boolean;
     /** The page holds unsaved changes. */
     pending?: boolean;
+    /** Only the button, inside a field that names the current format. */
+    inline?: boolean;
   }>(),
-  { disabled: false, pending: false },
+  { disabled: false, pending: false, inline: false },
 );
 
 const emit = defineEmits<{
@@ -92,10 +98,17 @@ async function confirm(): Promise<void> {
 <template>
   <div
     v-if="offered"
-    class="border-default flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md border border-dashed px-3 py-2 text-sm"
+    :class="
+      inline
+        ? 'flex flex-col items-start gap-1 text-sm'
+        : 'border-default flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md border border-dashed px-3 py-2 text-sm'
+    "
     data-testid="document-format-switch"
   >
-    <p class="text-muted flex min-w-0 items-start gap-2">
+    <p v-if="inline && pending" class="text-muted text-xs">
+      {{ t("document.formatSwitch.saveFirst") }}
+    </p>
+    <p v-if="!inline" class="text-muted flex min-w-0 items-start gap-2">
       <UIcon
         :name="isFile ? 'i-lucide-file-type' : 'i-lucide-file-text'"
         class="mt-0.5 size-4 shrink-0"
@@ -111,7 +124,7 @@ async function confirm(): Promise<void> {
     <UButton
       color="neutral"
       variant="outline"
-      size="sm"
+      :size="inline ? 'xs' : 'sm'"
       :icon="isFile ? 'i-lucide-file-text' : 'i-lucide-file-up'"
       :label="t(`document.formatSwitch.to.${target}`)"
       :disabled="disabled || pending || saving"

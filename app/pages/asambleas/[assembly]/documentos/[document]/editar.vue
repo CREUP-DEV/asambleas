@@ -577,6 +577,14 @@ async function onDeleted(): Promise<void> {
           :disabled="busy"
           @click="correctionOpen = true"
         />
+        <!-- Managers export the draft to check how it prints -->
+        <ExportButton
+          v-if="manager && isStructured"
+          :assembly="assembly.id"
+          :document="document.id"
+          variant="clean"
+          button-variant="outline"
+        />
         <DocumentManageActions
           v-if="manager"
           v-model:busy="managing"
@@ -675,7 +683,19 @@ async function onDeleted(): Promise<void> {
               secondary-save
               @saved="storeDocument"
               @stale="refetch"
-            />
+            >
+              <template v-if="textEditable" #format>
+                <DocumentFormatSwitch
+                  inline
+                  :document="document"
+                  :document-api="documentApi"
+                  :disabled="busy"
+                  :pending="textDirty || metadataDirty"
+                  @updated="storeDocument"
+                  @stale="refetch"
+                />
+              </template>
+            </DocumentMetadataForm>
           </UCard>
         </section>
 
@@ -695,14 +715,6 @@ async function onDeleted(): Promise<void> {
                 : t("document.authoring.steps.pdf")
             }}
           </h3>
-          <DocumentFormatSwitch
-            :document="document"
-            :document-api="documentApi"
-            :disabled="busy"
-            :pending="textDirty || metadataDirty"
-            @updated="storeDocument"
-            @stale="refetch"
-          />
           <DocumentDraftEditor
             v-if="isStructured"
             ref="draftEditor"
@@ -824,15 +836,6 @@ async function onDeleted(): Promise<void> {
         class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]"
       >
         <div class="min-w-0 space-y-4">
-          <DocumentFormatSwitch
-            v-if="textEditable"
-            :document="document"
-            :document-api="documentApi"
-            :disabled="busy"
-            :pending="textDirty || metadataDirty"
-            @updated="storeDocument"
-            @stale="refetch"
-          />
           <DocumentDraftEditor
             v-if="isStructured && textEditable"
             ref="draftEditor"
@@ -926,7 +929,19 @@ async function onDeleted(): Promise<void> {
               :secondary-save="publishPrimary"
               @saved="storeDocument"
               @stale="refetch"
-            />
+            >
+              <template v-if="textEditable" #format>
+                <DocumentFormatSwitch
+                  inline
+                  :document="document"
+                  :document-api="documentApi"
+                  :disabled="busy"
+                  :pending="textDirty || metadataDirty"
+                  @updated="storeDocument"
+                  @stale="refetch"
+                />
+              </template>
+            </DocumentMetadataForm>
           </UCard>
         </aside>
       </div>
