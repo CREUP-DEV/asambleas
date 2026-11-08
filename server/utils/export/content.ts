@@ -425,7 +425,10 @@ function assemble(items: Item[], ctx: PdfContentContext): Content[] {
  * filled with blank cells.
  */
 function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
-  const grid = tableGrid(table);
+  const grid = tableGrid(table, (item) => !plainText(item.inlines).trim());
+  // Wide tables (a balance sheet, landscape in Word) take a smaller type so
+  // their figures and words fit their columns.
+  const fontSize = tableFontSize(grid.columns);
   const body: TableCell[][] = grid.rows.map(() =>
     Array.from({ length: grid.columns }, () => ({ text: "" }) as TableCell),
   );
@@ -439,10 +442,15 @@ function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
         }
       }
       const nodes = assembleFlow(cell.blocks, ctx);
-      // Blocks in a cell sit close together, the last one flush.
+      // Blocks in a cell sit close together, the last one flush, in the
+      // table's type (their own style would set the body's).
       const stack = nodes.map((node, index) =>
         typeof node === "object" && node !== null
-          ? { ...node, margin: [0, 0, 0, index < nodes.length - 1 ? 4 : 0] }
+          ? {
+              ...node,
+              margin: [0, 0, 0, index < nodes.length - 1 ? 4 : 0],
+              ...(fontSize < BODY_FONT_SIZE ? { fontSize } : {}),
+            }
           : node,
       ) as Content[];
       body[r]![cell.column] = {
@@ -464,7 +472,7 @@ function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
       headerRows: grid.headerRows,
       // A row stays on one page, as in the template.
       dontBreakRows: true,
-      widths: columnWidths(grid),
+      widths: columnWidths(grid, fontSize),
       body,
     },
     layout: TEMPLATE_TABLE_LAYOUT,
@@ -472,10 +480,21 @@ function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
   };
 }
 
+/** The body text's size, which tables keep up to five columns. */
+const BODY_FONT_SIZE = 11;
+
+function tableFontSize(columns: number): number {
+  if (columns <= 5) return BODY_FONT_SIZE;
+  return columns <= 7 ? 9 : 8;
+}
+
 /** The text width a table may take: the page between the template's margins. */
 const TABLE_WIDTH = PAGE_WIDTH - TEMPLATE_MARGINS[0] - TEMPLATE_MARGINS[2];
-/** About the width of a character of Raleway 11 pt. */
-const CHAR_WIDTH = 6.2;
+/**
+ * About the width of a character of Raleway Bold 11 pt: a column's longest
+ * word must fit, in bold too (a header's, say).
+ */
+const BOLD_CHAR_WIDTH = 6.8;
 
 /**
  * Column widths that, with each cell's padding and the rules between them
@@ -485,7 +504,11 @@ const CHAR_WIDTH = 6.2;
  * (cells spanning several columns aside), but never narrower than its
  * longest word, which pdfmake would push past the page instead of wrapping.
  */
-function columnWidths(grid: TableGrid<Item>): number[] {
+function columnWidths(
+  grid: TableGrid<Item>,
+  fontSize = BODY_FONT_SIZE,
+): number[] {
+  const scale = fontSize / BODY_FONT_SIZE;
   const text = (cell: GridCell<Item>) =>
     cell.blocks.map((item) => plainText(item.inlines)).join(" ");
   const longest = Array.from({ length: grid.columns }, () => 0);
@@ -511,7 +534,7 @@ function columnWidths(grid: TableGrid<Item>): number[] {
   const total = weights.reduce((sum, weight) => sum + weight, 0);
   const widths = weights.map((weight) => (available * weight) / total);
   const minimum = word.map((length) =>
-    Math.min(length * CHAR_WIDTH + 1, available / grid.columns),
+    Math.min(length * BOLD_CHAR_WIDTH * scale + 1, available / grid.columns),
   );
   // Columns under their minimum take it from the others, in proportion.
   const short = widths.map((width, column) => width < minimum[column]!);

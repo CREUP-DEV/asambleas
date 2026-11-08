@@ -1033,6 +1033,24 @@ describe("CREUP template", () => {
     expect(pages).toBe(1);
   });
 
+  it("sets wide tables in smaller type, cell by cell", () => {
+    const cells = Array.from({ length: 8 }, (_, index) => ({
+      ...p(`w${index}`, `Celda ${index}`),
+      cell: { table: "wide", row: "r1", cell: `c${index}` },
+    }));
+    const [node] = blocksToPdf(cells, { links: new LinkRegistry() }) as {
+      table: { body: { stack: { fontSize?: number }[] }[][] };
+    }[];
+    expect(node!.table.body[0]!.map((cell) => cell.stack[0]!.fontSize)).toEqual(
+      Array.from({ length: 8 }, () => 8),
+    );
+    // Up to five columns keep the body's size.
+    const [narrow] = blocksToPdf(cells.slice(0, 5), {
+      links: new LinkRegistry(),
+    }) as { table: { body: { stack: { fontSize?: number }[] }[][] } }[];
+    expect(narrow!.table.body[0]![0]!.stack[0]!.fontSize).toBeUndefined();
+  });
+
   it("aligns centred and right-aligned blocks", () => {
     const nodes = blocksToPdf(
       [

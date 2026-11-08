@@ -664,6 +664,22 @@ describe("tables", () => {
     ]);
   });
 
+  it("counts a header row with a blank corner when told what is blank", () => {
+    const corner = groupTables([
+      c("h001", "", at("row1", "cel1")),
+      c("h002", "2025", at("row1", "cel2", { header: true })),
+      c("h003", "Activo", at("row2", "cel3", { header: true })),
+      c("h004", "10", at("row2", "cel4")),
+    ]);
+    const group = (
+      corner[0] as Extract<(typeof corner)[number], { kind: "table" }>
+    ).table;
+    expect(tableGrid(group).headerRows).toBe(0);
+    const blank = (block: Block) => !block.text.trim();
+    // The second row is no header: it holds a figure.
+    expect(tableGrid(group, blank).headerRows).toBe(1);
+  });
+
   it("lays rowspans out like a browser", () => {
     const grid = tableGrid(
       (

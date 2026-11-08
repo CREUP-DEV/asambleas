@@ -71,7 +71,10 @@ export interface GridCell<T> extends TableCellGroup<T> {
 export interface TableGrid<T> {
   columns: number;
   rows: GridCell<T>[][];
-  /** Rows at the top whose cells are all headers. */
+  /**
+   * Rows at the top whose cells are all headers, or blank (the empty corner
+   * over a column of labels), with at least one header.
+   */
   headerRows: number;
 }
 
@@ -81,7 +84,11 @@ export interface TableGrid<T> {
  * Rows may hold fewer cells than others (an amendment may leave them so);
  * renderers that need a full grid fill the rest.
  */
-export function tableGrid<T>(table: TableGroup<T>): TableGrid<T> {
+export function tableGrid<T>(
+  table: TableGroup<T>,
+  /** Whether a block is blank; without it, no cell counts as blank. */
+  isBlank: (item: T) => boolean = () => false,
+): TableGrid<T> {
   // Columns taken in each row by cells spanning down from rows above.
   const taken: Set<number>[] = table.rows.map(() => new Set<number>());
   let columns = 0;
@@ -107,11 +114,12 @@ export function tableGrid<T>(table: TableGroup<T>): TableGrid<T> {
   for (const row of taken) {
     for (const column of row) columns = Math.max(columns, column + 1);
   }
+  const blank = (cell: GridCell<T>) => cell.blocks.every(isBlank);
   let headerRows = 0;
   while (
     headerRows < rows.length &&
-    rows[headerRows]!.length > 0 &&
-    rows[headerRows]!.every((cell) => cell.cell.header)
+    rows[headerRows]!.some((cell) => cell.cell.header) &&
+    rows[headerRows]!.every((cell) => cell.cell.header || blank(cell))
   ) {
     headerRows += 1;
   }
