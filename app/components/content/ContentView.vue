@@ -246,12 +246,19 @@ function scrollParent(element: HTMLElement): HTMLElement | null {
   return null;
 }
 
-/** The heading of the section being read: the last one scrolled past the top. */
+/**
+ * The heading of the section being read: the last one above the reading
+ * line, a quarter down the visible text (at least 96 px, clear of sticky
+ * bars).
+ */
 function currentHeading(): string | null {
   const root = contentEl.value;
   if (!root || outline.value.length === 0) return null;
   const parent = scrollParent(root);
-  const top = (parent ? parent.getBoundingClientRect().top : 0) + 96;
+  const box = parent
+    ? parent.getBoundingClientRect()
+    : { top: 0, height: window.innerHeight };
+  const top = box.top + Math.max(96, box.height / 4);
   let current: string | null = null;
   for (const entry of outline.value) {
     const element = root.querySelector<HTMLElement>(

@@ -97,7 +97,8 @@
       "fragmentFrom": "{text} (from amendment {label})",
       "outline": {
         "button": "Contents",
-        "label": "Document contents"
+        "label": "Document contents",
+        "progress": "Section {current} of {total}"
       }
     },
     "editor": {

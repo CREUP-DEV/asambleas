@@ -97,7 +97,8 @@
       "fragmentFrom": "{text} (de la enmienda {label})",
       "outline": {
         "button": "Índice",
-        "label": "Índice del documento"
+        "label": "Índice del documento",
+        "progress": "Sección {current} de {total}"
       }
     },
     "editor": {
