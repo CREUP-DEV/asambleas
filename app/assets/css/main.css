@@ -154,6 +154,8 @@ html {
   --content-heading: var(--color-creup-red-900);
   --content-heading-bar: var(--color-creup-red-900);
   --content-heading-bar-fg: #fff;
+  /* The template's light fill for table cells (`shade`). */
+  --content-cell-shade: #f5eee6;
 }
 
 .dark {
@@ -167,6 +169,11 @@ html {
   --cx-del-bg: color-mix(in oklab, var(--ui-color-error-500) 16%, transparent);
   --cx-selected-bg: color-mix(in oklab, var(--ui-primary) 16%, transparent);
   --content-heading: var(--color-creup-red-300);
+  --content-cell-shade: color-mix(
+    in oklab,
+    var(--color-creup-red-900) 22%,
+    transparent
+  );
   --cx-prov-0: #60a5fa;
   --cx-prov-1: #fbbf24;
   --cx-prov-2: #34d399;
@@ -272,6 +279,14 @@ html {
   font-weight: 400;
 }
 
+/*
+ * Text in a table cell keeps the table's compact leading. Outside any layer
+ * too: the editor's theme sets every paragraph's leading with a utility.
+ */
+:is(.rich-text, .content-editor) :is(td, th) :is(p, li) {
+  line-height: inherit;
+}
+
 @layer components {
   .rich-text {
     max-width: none;
@@ -327,20 +342,29 @@ html {
    * Tables, in the template's colours: burgundy rules and a burgundy header
    * row in white. Wide ones scroll sideways instead of the page.
    */
-  .rich-text .cx-table-wrap {
+  .rich-text .cx-table-wrap,
+  .content-editor .tableWrapper {
     overflow-x: auto;
   }
 
   :is(.rich-text, .content-editor) table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.95em;
-    line-height: 1.5;
+    font-size: 0.875em;
+    line-height: 1.4;
+  }
+
+  /*
+   * Six columns or more (a balance sheet, landscape in Word): smaller type,
+   * as Word sets them, so labels and figures fit their columns.
+   */
+  :is(.rich-text, .content-editor) table:has(> tbody > tr > :nth-child(6)) {
+    font-size: 0.75em;
   }
 
   :is(.rich-text, .content-editor) :is(td, th) {
-    min-width: 4rem;
-    padding: 0.4em 0.6em;
+    min-width: 3rem;
+    padding: 0.25em 0.5em;
     border: 1px solid var(--content-heading);
     text-align: start;
     vertical-align: top;
@@ -353,6 +377,20 @@ html {
     font-weight: 700;
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
+  }
+
+  /* A shaded cell (`shade`), on the template's light fill. */
+  .rich-text td.cx-shade,
+  .content-editor td[data-shade="true"] {
+    background-color: var(--content-cell-shade);
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Figures, right-aligned, stay on one line: "53.048,86" never breaks. */
+  :is(.rich-text, .content-editor)
+    :is(td, th):has(> :is(.cx-align-right, [style*="text-align: right"])) {
+    white-space: nowrap;
   }
 
   /* Inside a cell, blocks sit closer than in the text around it. */

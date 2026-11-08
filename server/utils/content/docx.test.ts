@@ -570,7 +570,7 @@ describe("convertDocx structure", { timeout: 30_000 }, () => {
     ]);
   });
 
-  it("marks headers by a dark fill where the table uses fills, not by bold", async () => {
+  it("marks headers by a dark fill and shades cells on a light one, not by bold", async () => {
     const filled = (fill: string, content: string) =>
       `<w:tc><w:tcPr><w:shd w:val="clear" w:fill="${fill}"/></w:tcPr>${content}</w:tc>`;
     const result = await convert(
@@ -595,16 +595,21 @@ describe("convertDocx structure", { timeout: 30_000 }, () => {
       ),
     );
     expect(
-      result.blocks.map((block) => [block.text, block.cell?.header ?? false]),
+      result.blocks.map((block) => [
+        block.text,
+        block.cell?.header ?? false,
+        block.cell?.shade ?? false,
+      ]),
     ).toEqual([
-      ["Concepto", true],
-      ["", true],
-      ["1. Ingresos", false],
-      ["10", false],
-      ["Subtotal", true],
-      ["20", true],
-      ["Bold", true],
-      ["x", false],
+      ["Concepto", true, false],
+      ["", true, false],
+      // The light fill keeps as a shaded cell.
+      ["1. Ingresos", false, true],
+      ["10", false, true],
+      ["Subtotal", true, false],
+      ["20", true, false],
+      ["Bold", true, false],
+      ["x", false, false],
     ]);
   });
 

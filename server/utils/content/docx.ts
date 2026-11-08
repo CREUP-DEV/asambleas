@@ -291,7 +291,7 @@ const STYLE_MAP = [
   "r[style-name='docx-list-label'] => span.docx-list-label",
   // A centred or right-aligned paragraph, for prepareImportedHtml.
   "r[style-name='docx-align'] => span.docx-align",
-  // A table cell on a dark fill, for prepareImportedHtml (see darkCells).
+  // A filled table cell, for prepareImportedHtml (see cellFills).
   "r[style-name='docx-cell'] => span.docx-cell",
   // The entries of a table of contents Word wrote without a content
   // control: the platform builds its own from the headings.
@@ -599,32 +599,33 @@ function alignmentRun(documents) {
 // A table of contents (Word's and Google Docs', a content control in the
 // "Table of Contents" gallery) is left out: its entries are the headings
 // again, with page numbers that mean nothing on the platform, which shows
-// its own index. Cells on a dark fill (a header row, a subtotal) start with
-// a hidden run (docx-cell), which prepareImportedHtml turns into header
-// cells: templates mark them by colour, and bold alone would make a header
-// of every bold line of a statement. mammoth reads a cell's properties right
-// before it makes the cell, so the fill read is handed straight to it.
-function darkCells(nodes, documents) {
+// its own index. A filled table cell starts with a hidden run (docx-cell)
+// saying how: "dark" (a header row, a subtotal), which prepareImportedHtml
+// turns into a header cell, since templates mark headers by colour and bold
+// alone would make a header of every bold line of a statement; or "light",
+// a shaded cell. mammoth reads a cell's properties right before it makes the
+// cell, so the fill read is handed straight to it.
+function cellFills(nodes, documents) {
   const first = nodes.Element.prototype.first;
   const makeCell = documents.TableCell;
   if (typeof makeCell !== "function") throw new Error("table cells not found");
-  let dark = false;
+  let fill = null;
   nodes.Element.prototype.first = function (name) {
     if (name === "w:sdtContent" && this.name === "w:sdt" && isContents(this)) {
       return undefined;
     }
     const found = first.call(this, name);
-    if (name === "w:tcPr" && this.name === "w:tc") dark = isDarkFill(found);
+    if (name === "w:tcPr" && this.name === "w:tc") fill = fillOf(found);
     return found;
   };
   documents.TableCell = function (children, options) {
-    const marked = dark;
-    dark = false;
+    const marked = fill;
+    fill = null;
     const index = marked
       ? children.findIndex((child) => child.type === "paragraph")
       : -1;
     if (index < 0) return makeCell(children, options);
-    const run = documents.Run([documents.Text("dark")], { styleName: "docx-cell" });
+    const run = documents.Run([documents.Text(marked)], { styleName: "docx-cell" });
     const paragraph = children[index];
     const withRun = children.slice();
     withRun[index] = Object.assign({}, paragraph, {
@@ -640,16 +641,19 @@ function isContents(sdt) {
   const value = gallery && gallery.attributes["w:val"];
   return typeof value === "string" && value.toLowerCase() === "table of contents";
 }
-// A fill darker than mid grey, by its relative luminance.
-function isDarkFill(properties) {
+// A cell's fill by its relative luminance: "dark" below mid grey, "light"
+// for any other colour short of white, null for none.
+function fillOf(properties) {
   const shading = properties && properties.first("w:shd");
   const fill = shading && shading.attributes["w:fill"];
-  if (typeof fill !== "string" || !/^[0-9a-fA-F]{6}$/.test(fill)) return false;
+  if (typeof fill !== "string" || !/^[0-9a-fA-F]{6}$/.test(fill)) return null;
   const channel = (offset) => {
     const value = parseInt(fill.slice(offset, offset + 2), 16) / 255;
     return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
   };
-  return 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4) < 0.4;
+  const luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
+  if (luminance < 0.4) return "dark";
+  return luminance < 0.97 ? "light" : null;
 }
 // Text formatted as all caps is shown in capitals: write it so.
 function upperCaseRun(run) {
@@ -704,7 +708,7 @@ process.stdin.on("end", () => {
     if (typeof documents.Run !== "function" || typeof documents.Text !== "function") {
       throw new Error("document model not found");
     }
-    darkCells(nodes, documents);
+    cellFills(nodes, documents);
   } catch {
     reply({ status: "unavailable" });
     return;

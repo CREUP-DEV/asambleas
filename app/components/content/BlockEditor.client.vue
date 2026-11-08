@@ -14,6 +14,11 @@ import { isSafeHref } from "~~/shared/utils/content/render";
 import { BlockIdExtension } from "~/utils/editor/blockIdExtension";
 import { ListMarkerExtension } from "~/utils/editor/listMarkerExtension";
 import { TableIdsExtension } from "~/utils/editor/tableIdsExtension";
+import {
+  CellFillExtension,
+  cellFillOf,
+  type CellFill,
+} from "~/utils/editor/cellFillExtension";
 import { TableKit } from "@tiptap/extension-table";
 import { TextAlign } from "@tiptap/extension-text-align";
 
@@ -138,8 +143,10 @@ function action(
 const extensions = [
   BlockIdExtension,
   ListMarkerExtension,
-  TableKit.configure({ table: { resizable: false } }),
+  // The wrapper scrolls a wide table sideways, as in the view (main.css).
+  TableKit.configure({ table: { resizable: false, renderWrapper: true } }),
   TableIdsExtension,
+  CellFillExtension,
   // Blocks keep centred and right-aligned text (BLOCK_ALIGNMENTS); left is
   // the default and stores nothing.
   TextAlign.configure({
@@ -148,11 +155,37 @@ const extensions = [
   }),
 ];
 
-/** Whether the cursor is in a table, for the table menu. */
+/** Whether the cursor is in a table, and its cell's fill, for the table menu. */
 const inTable = ref(false);
+const cellFill = ref<CellFill | null>(null);
 
 function updateInTable(): void {
   inTable.value = editor.value?.isActive("table") ?? false;
+  cellFill.value = cellFillOf(editor.value);
+}
+
+const CELL_FILLS: { fill: CellFill; icon: string }[] = [
+  { fill: "none", icon: "i-lucide-square" },
+  { fill: "light", icon: "i-lucide-paint-bucket" },
+  { fill: "dark", icon: "i-lucide-square-dot" },
+];
+
+/**
+ * The cell fill choice: none, light or burgundy (a header cell), checked on
+ * the current one.
+ */
+function cellFillItems(
+  current: CellFill | null,
+  apply: (fill: CellFill) => void,
+) {
+  return CELL_FILLS.map(({ fill, icon }) => ({
+    label: t(`common.editor.table.fill.${fill}`),
+    icon,
+    type: "checkbox" as const,
+    checked: current === fill,
+    disabled: current === null,
+    onSelect: () => apply(fill),
+  }));
 }
 
 watch(
@@ -231,10 +264,13 @@ const tableMenu = computed(
           ),
         ],
         [
-          // A header cell is the burgundy one with white text.
-          tableAction("toggleHeaderCell", "i-lucide-square-dot", (c) =>
-            c.toggleHeaderCell(),
+          // The fill of the cell: burgundy is a header cell.
+          { type: "label", label: t("common.editor.table.fill.label") },
+          ...cellFillItems(cellFill.value, (fill) =>
+            runInTable((c) => c.setCellFill(fill)),
           ),
+        ],
+        [
           tableAction("toggleHeaderRow", "i-lucide-panel-top", (c) =>
             c.toggleHeaderRow(),
           ),
@@ -557,11 +593,11 @@ function buildContextItems(): void {
           ],
           [
             {
-              ...action("toggleHeaderCell", "i-lucide-square-dot", (c) =>
-                c.toggleHeaderCell(),
+              label: t("common.editor.table.fill.label"),
+              icon: "i-lucide-paint-bucket",
+              children: cellFillItems(cellFillOf(instance), (fill) =>
+                run((c) => c.setCellFill(fill)),
               ),
-              type: "checkbox",
-              checked: instance.isActive("tableHeader"),
             },
             action("toggleHeaderRow", "i-lucide-panel-top", (c) =>
               c.toggleHeaderRow(),

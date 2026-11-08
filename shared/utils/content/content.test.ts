@@ -731,6 +731,36 @@ describe("tables", () => {
     expect(editorToBlocks(doc, newId)).toEqual(table);
   });
 
+  it("keeps shaded cells through the schema, the editor and the view", () => {
+    const shaded = [
+      c("s001", "Concepto", at("srow1", "scel1", { header: true })),
+      c("s002", "Ingresos", at("srow2", "scel2", { shade: true })),
+      c("s003", "10", at("srow2", "scel3")),
+    ];
+    // A header has its own fill: shading one means nothing.
+    const parsed = blocksSchema.parse([
+      ...shaded,
+      c("s004", "x", at("srow3", "scel4", { header: true, shade: true })),
+    ]);
+    expect(parsed.map((block) => block.cell!.shade ?? false)).toEqual([
+      false,
+      true,
+      false,
+      false,
+    ]);
+    const doc = blocksToEditor(shaded);
+    const cells = doc.content![0]!.content!.flatMap((row) => row.content!);
+    expect(cells.map((cell) => cell.attrs!.shade)).toEqual([
+      false,
+      true,
+      false,
+    ]);
+    expect(editorToBlocks(doc, newId)).toEqual(shaded);
+    expect(renderBlocks(shaded)).toMatch(
+      /<td class="cx-shade"><p[^>]*>Ingresos<\/p><\/td><td><p/,
+    );
+  });
+
   it("gives copies of a cell their own id, and blank cells a paragraph", () => {
     const doc = blocksToEditor(table);
     const row = doc.content![1]!.content![1]!;
