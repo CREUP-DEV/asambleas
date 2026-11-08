@@ -823,7 +823,24 @@ defineExpose({ reset: resetForm, check, save });
           :label="t('document.metadata.more')"
         />
         <template #content>
-          <div class="pt-2">
+          <div class="space-y-4 pt-2">
+            <UFormField
+              v-if="$slots.format"
+              name="format"
+              :label="t('document.metadata.format')"
+            >
+              <p class="text-default flex items-center gap-2 text-sm">
+                <UIcon
+                  :name="isFile ? 'i-lucide-file-text' : 'i-lucide-text'"
+                  class="text-muted size-4"
+                  aria-hidden="true"
+                />
+                {{ t(`document.formats.${document.format}`) }}
+              </p>
+              <div class="mt-2">
+                <slot name="format" />
+              </div>
+            </UFormField>
             <UFormField
               name="agendaItemId"
               :label="t('document.metadata.agendaItem')"
@@ -954,6 +971,10 @@ defineExpose({ reset: resetForm, check, save });
                 />
                 {{ t(`document.formats.${document.format}`) }}
               </p>
+              <!-- The page's format switch (DocumentFormatSwitch inline) -->
+              <div v-if="$slots.format" class="mt-2">
+                <slot name="format" />
+              </div>
             </UFormField>
 
             <div class="space-y-3">

@@ -1165,6 +1165,18 @@ const filteredBlockLabel = computed(() =>
                   : t('workspace.editDraft')
               "
             />
+            <!-- The text as a PDF: the published one, or the draft for
+                 managers (canExportWorkingDraft). -->
+            <ExportButton
+              v-if="
+                isStructured &&
+                (document.can.manage || Boolean(document.baseVersion))
+              "
+              :assembly="assembly.id"
+              :document="document.id"
+              variant="clean"
+              button-variant="outline"
+            />
             <UDropdownMenu
               v-if="moreItems.length > 0"
               :items="moreItems"

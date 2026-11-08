@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { createId } from "@paralleldrive/cuid2";
-import type { EditorToolbarItem } from "@nuxt/ui";
+import type { ContextMenuItem, EditorToolbarItem } from "@nuxt/ui";
 import type { ChainedCommands, Editor, JSONContent } from "@tiptap/core";
 import { LIST_MARKERS } from "~~/shared/types/content";
 import type { Block, ListMarker } from "~~/shared/types/content";
@@ -231,8 +231,15 @@ const tableMenu = computed(
           ),
         ],
         [
+          // A header cell is the burgundy one with white text.
+          tableAction("toggleHeaderCell", "i-lucide-square-dot", (c) =>
+            c.toggleHeaderCell(),
+          ),
           tableAction("toggleHeaderRow", "i-lucide-panel-top", (c) =>
             c.toggleHeaderRow(),
+          ),
+          tableAction("toggleHeaderColumn", "i-lucide-panel-left", (c) =>
+            c.toggleHeaderColumn(),
           ),
           tableAction("mergeCells", "i-lucide-table-cells-merge", (c) =>
             c.mergeCells(),
@@ -351,6 +358,290 @@ function setListMarker(marker: ListMarker): void {
   chain.setListMarker(marker).run();
 }
 
+// Context menu --------------------------------------------------------------
+
+/**
+ * Right-click menu over the text, built when it opens from where the cursor
+ * is: cut, copy and the marks with text selected; what the block is, its
+ * alignment and, in a numbered list, its numbering; table rows, columns and
+ * cells inside a table, or inserting one outside. Shift + right-click, and
+ * right-click outside the text, leave the browser's own menu (spelling).
+ */
+const contextItems = ref<ContextMenuItem[][]>([]);
+
+function run(command: (chain: ChainedCommands) => ChainedCommands): void {
+  const instance = editor.value;
+  if (instance) command(instance.chain().focus()).run();
+}
+
+/** Cut and copy through the browser, with the editor's selection back. */
+function clipboard(action: "cut" | "copy"): void {
+  editor.value?.commands.focus();
+  // Deprecated but the only way to keep the formatting; paste stays Ctrl+V.
+  document.execCommand(action);
+}
+
+function buildContextItems(): void {
+  const instance = editor.value;
+  if (!instance) return;
+  const selected = !instance.state.selection.empty;
+  const editable = instance.isEditable;
+  const groups: ContextMenuItem[][] = [];
+
+  const clip: ContextMenuItem[] = [
+    {
+      label: t("common.editor.contextMenu.copy"),
+      icon: "i-lucide-copy",
+      kbds: ["meta", "c"],
+      disabled: !selected,
+      onSelect: () => clipboard("copy"),
+    },
+  ];
+  if (editable) {
+    clip.unshift({
+      label: t("common.editor.contextMenu.cut"),
+      icon: "i-lucide-scissors",
+      kbds: ["meta", "x"],
+      disabled: !selected,
+      onSelect: () => clipboard("cut"),
+    });
+  }
+  groups.push(clip);
+  if (!editable) {
+    contextItems.value = groups;
+    return;
+  }
+
+  if (selected) {
+    const mark = (
+      name: "bold" | "italic" | "underline" | "strike",
+      icon: string,
+      kbds: string[],
+      toggle: (chain: ChainedCommands) => ChainedCommands,
+    ): ContextMenuItem => ({
+      label: t(`common.editor.${name}`),
+      icon,
+      kbds,
+      type: "checkbox",
+      checked: instance.isActive(name),
+      onSelect: (event: Event) => {
+        event.preventDefault();
+        run(toggle);
+      },
+    });
+    groups.push([
+      mark("bold", "i-lucide-bold", ["meta", "b"], (c) => c.toggleBold()),
+      mark("italic", "i-lucide-italic", ["meta", "i"], (c) => c.toggleItalic()),
+      mark("underline", "i-lucide-underline", ["meta", "u"], (c) =>
+        c.toggleUnderline(),
+      ),
+      mark("strike", "i-lucide-strikethrough", ["meta", "shift", "s"], (c) =>
+        c.toggleStrike(),
+      ),
+      {
+        label: t("common.editor.link"),
+        icon: "i-lucide-link",
+        onSelect: () => {
+          linkOpen.value = true;
+        },
+      },
+      {
+        label: t("common.editor.contextMenu.clearFormatting"),
+        icon: "i-lucide-remove-formatting",
+        onSelect: () => run((c) => c.unsetAllMarks()),
+      },
+    ]);
+  }
+
+  if (!props.compact) {
+    const heading = (level: 1 | 2 | 3 | 4, key: string, icon: string) => ({
+      label: t(`common.editor.${key}`),
+      icon,
+      onSelect: () => run((c) => c.setHeading({ level })),
+    });
+    const block: ContextMenuItem[] = [
+      {
+        label: t("common.editor.contextMenu.turnInto"),
+        icon: "i-lucide-pilcrow",
+        children: [
+          [
+            {
+              label: t("common.editor.contextMenu.paragraph"),
+              icon: "i-lucide-pilcrow",
+              onSelect: () => run((c) => c.setParagraph()),
+            },
+            heading(1, "heading", "i-lucide-heading-2"),
+            heading(2, "subheading", "i-lucide-heading-3"),
+            heading(3, "heading3", "i-lucide-heading-4"),
+            heading(4, "heading4", "i-lucide-heading-5"),
+          ],
+          [
+            {
+              label: t("common.editor.bulletList"),
+              icon: "i-lucide-list",
+              onSelect: () => run((c) => c.toggleBulletList()),
+            },
+            {
+              label: t("common.editor.orderedList"),
+              icon: "i-lucide-list-ordered",
+              onSelect: () => run((c) => c.toggleOrderedList()),
+            },
+            {
+              label: t("common.editor.quote"),
+              icon: "i-lucide-text-quote",
+              onSelect: () => run((c) => c.toggleBlockquote()),
+            },
+          ],
+        ],
+      },
+      {
+        label: t("common.editor.align.menu"),
+        icon: "i-lucide-align-left",
+        children: (["left", "center", "right"] as const).map((align) => ({
+          label: t(`common.editor.align.${align}`),
+          icon: `i-lucide-align-${align}`,
+          type: "checkbox" as const,
+          checked:
+            align === "left"
+              ? !instance.isActive({ textAlign: "center" }) &&
+                !instance.isActive({ textAlign: "right" })
+              : instance.isActive({ textAlign: align }),
+          onSelect: () => run((c) => c.setTextAlign(align)),
+        })),
+      },
+    ];
+    if (instance.isActive("orderedList")) {
+      block.push({
+        label: t("common.editor.listMarker"),
+        icon: "i-lucide-list-ordered",
+        children: LIST_MARKERS.map((marker) => ({
+          label: [1, 2, 3].map((n) => formatListNumber(n, marker)).join(" "),
+          onSelect: () => setListMarker(marker),
+        })),
+      });
+    }
+    groups.push(block);
+  }
+
+  if (instance.isActive("table")) {
+    const action = (
+      key: string,
+      icon: string,
+      command: (chain: ChainedCommands) => ChainedCommands,
+      color?: "error",
+    ): ContextMenuItem => ({
+      label: t(`common.editor.table.${key}`),
+      icon,
+      color,
+      disabled: !command(instance.can().chain().focus()).run(),
+      onSelect: () => run(command),
+    });
+    groups.push([
+      {
+        label: t("common.editor.table.menu"),
+        icon: "i-lucide-table",
+        children: [
+          [
+            action("addRowBefore", "i-lucide-between-horizontal-start", (c) =>
+              c.addRowBefore(),
+            ),
+            action("addRowAfter", "i-lucide-between-horizontal-end", (c) =>
+              c.addRowAfter(),
+            ),
+            action("addColumnBefore", "i-lucide-between-vertical-start", (c) =>
+              c.addColumnBefore(),
+            ),
+            action("addColumnAfter", "i-lucide-between-vertical-end", (c) =>
+              c.addColumnAfter(),
+            ),
+          ],
+          [
+            {
+              ...action("toggleHeaderCell", "i-lucide-square-dot", (c) =>
+                c.toggleHeaderCell(),
+              ),
+              type: "checkbox",
+              checked: instance.isActive("tableHeader"),
+            },
+            action("toggleHeaderRow", "i-lucide-panel-top", (c) =>
+              c.toggleHeaderRow(),
+            ),
+            action("toggleHeaderColumn", "i-lucide-panel-left", (c) =>
+              c.toggleHeaderColumn(),
+            ),
+            action("mergeCells", "i-lucide-table-cells-merge", (c) =>
+              c.mergeCells(),
+            ),
+            action("splitCell", "i-lucide-table-cells-split", (c) =>
+              c.splitCell(),
+            ),
+          ],
+          [
+            action(
+              "deleteRow",
+              "i-lucide-trash-2",
+              (c) => c.deleteRow(),
+              "error",
+            ),
+            action(
+              "deleteColumn",
+              "i-lucide-trash-2",
+              (c) => c.deleteColumn(),
+              "error",
+            ),
+            action(
+              "deleteTable",
+              "i-lucide-trash",
+              (c) => c.deleteTable(),
+              "error",
+            ),
+          ],
+        ],
+      },
+    ]);
+  } else {
+    groups.push([
+      {
+        label: t("common.editor.table.insert"),
+        icon: "i-lucide-table",
+        onSelect: () =>
+          run((c) => c.insertTable({ rows: 3, cols: 3, withHeaderRow: true })),
+      },
+    ]);
+  }
+
+  groups.push([
+    { type: "label", label: t("common.editor.contextMenu.browserMenu") },
+  ]);
+  contextItems.value = groups;
+}
+
+/**
+ * Runs before the context menu opens. Shift + right-click, or right-click
+ * off the text (the toolbar), keeps the browser's menu: the event stops
+ * before the context menu sees it. Otherwise the cursor goes where the click
+ * was, unless it falls inside the selection: the browser moves its caret
+ * there, but the editor would not read it before the menu takes the focus,
+ * and the menu would offer what fits the old position.
+ */
+function onContextMenu(event: MouseEvent): void {
+  const target = event.target as HTMLElement | null;
+  if (event.shiftKey || !target?.closest(".ProseMirror")) {
+    event.stopPropagation();
+    return;
+  }
+  const instance = editor.value;
+  if (!instance) return;
+  const hit = instance.view.posAtCoords({
+    left: event.clientX,
+    top: event.clientY,
+  });
+  if (!hit) return;
+  const { from, to, empty } = instance.state.selection;
+  if (!empty && hit.pos >= from && hit.pos <= to) return;
+  instance.chain().focus().setTextSelection(hit.pos).run();
+}
+
 // Link popover ---------------------------------------------------------------
 
 const linkOpen = ref(false);
@@ -423,118 +714,137 @@ defineExpose({
 <template>
   <div
     class="border-default bg-default focus-within:ring-primary/60 rounded-md border focus-within:ring-2"
+    @contextmenu.capture="onContextMenu"
   >
-    <UEditor
-      ref="editorComponent"
-      v-slot="{ editor: slotEditor }"
-      :model-value="content as JSONContent"
-      content-type="json"
-      :extensions="extensions"
-      :starter-kit="{
-        code: false,
-        codeBlock: false,
-        horizontalRule: false,
-        heading: { levels: [1, 2, 3, 4] },
-        link: { openOnClick: false, defaultProtocol: 'https' },
-      }"
-      :image="false"
-      :mention="false"
-      :enable-input-rules="[
-        'heading',
-        'bulletList',
-        'orderedList',
-        'blockquote',
-        'bold',
-        'italic',
-        'strike',
-        'underline',
-      ]"
-      :enable-paste-rules="['bold', 'italic', 'strike', 'underline', 'link']"
-      :autofocus="autofocus ? 'end' : false"
-      :editable="editable"
-      :placeholder="placeholder ?? t('common.editor.placeholder')"
-      :ui="editorUi"
-      role="textbox"
-      aria-multiline="true"
-      :aria-label="label ?? t('common.editor.label')"
-      @update:model-value="onEditorUpdate"
-      @blur="flush"
+    <UContextMenu
+      :items="contextItems"
+      :modal="false"
+      @update:open="(open: boolean) => open && buildContextItems()"
     >
-      <UEditorToolbar
-        :editor="slotEditor"
-        :items="toolbarItems"
-        :size="toolbarSize"
-        :aria-label="t('common.editor.toolbar')"
-        :class="[
-          'border-default flex-wrap gap-y-1 border-b',
-          compact
-            ? 'px-1 py-0.5'
-            : 'bg-default/95 sticky top-0 z-10 px-2 py-1 backdrop-blur',
-        ]"
-      >
-        <template #link>
-          <UPopover
-            v-model:open="linkOpen"
-            :content="{ side: 'bottom', align: 'start' }"
+      <!-- The menu's trigger: UEditor would not pass its listener on -->
+      <div>
+        <UEditor
+          ref="editorComponent"
+          v-slot="{ editor: slotEditor }"
+          :model-value="content as JSONContent"
+          content-type="json"
+          :extensions="extensions"
+          :starter-kit="{
+            code: false,
+            codeBlock: false,
+            horizontalRule: false,
+            heading: { levels: [1, 2, 3, 4] },
+            link: { openOnClick: false, defaultProtocol: 'https' },
+          }"
+          :image="false"
+          :mention="false"
+          :enable-input-rules="[
+            'heading',
+            'bulletList',
+            'orderedList',
+            'blockquote',
+            'bold',
+            'italic',
+            'strike',
+            'underline',
+          ]"
+          :enable-paste-rules="[
+            'bold',
+            'italic',
+            'strike',
+            'underline',
+            'link',
+          ]"
+          :autofocus="autofocus ? 'end' : false"
+          :editable="editable"
+          :placeholder="placeholder ?? t('common.editor.placeholder')"
+          :ui="editorUi"
+          role="textbox"
+          aria-multiline="true"
+          :aria-label="label ?? t('common.editor.label')"
+          @update:model-value="onEditorUpdate"
+          @blur="flush"
+        >
+          <UEditorToolbar
+            :editor="slotEditor"
+            :items="toolbarItems"
+            :size="toolbarSize"
+            :aria-label="t('common.editor.toolbar')"
+            :class="[
+              'border-default flex-wrap gap-y-1 border-b',
+              compact
+                ? 'px-1 py-0.5'
+                : 'bg-default/95 sticky top-0 z-10 px-2 py-1 backdrop-blur',
+            ]"
           >
-            <UTooltip :text="t('common.editor.link')">
-              <UButton
-                icon="i-lucide-link"
-                color="neutral"
-                variant="ghost"
-                active-color="primary"
-                active-variant="soft"
-                :size="toolbarSize"
-                :active="linkActive"
-                :disabled="linkDisabled"
-                :aria-label="t('common.editor.link')"
-              />
-            </UTooltip>
-
-            <template #content>
-              <form class="w-72 max-w-[90vw] p-2" @submit.prevent="applyLink">
-                <div class="flex items-center gap-1">
-                  <UInput
-                    v-model="linkHref"
-                    type="text"
-                    inputmode="url"
-                    autocomplete="off"
-                    size="sm"
-                    class="min-w-0 flex-1"
-                    autofocus
-                    :placeholder="t('common.editor.linkPlaceholder')"
-                    :aria-label="t('common.editor.linkUrl')"
-                    :aria-invalid="linkInvalid || undefined"
-                    @update:model-value="linkInvalid = false"
-                  />
+            <template #link>
+              <UPopover
+                v-model:open="linkOpen"
+                :content="{ side: 'bottom', align: 'start' }"
+              >
+                <UTooltip :text="t('common.editor.link')">
                   <UButton
-                    type="submit"
-                    icon="i-lucide-check"
-                    size="sm"
-                    :aria-label="t('common.editor.applyLink')"
-                  />
-                  <UButton
-                    v-if="linkActive"
-                    icon="i-lucide-unlink"
-                    size="sm"
+                    icon="i-lucide-link"
                     color="neutral"
                     variant="ghost"
-                    :aria-label="t('common.editor.removeLink')"
-                    @click="removeLink"
+                    active-color="primary"
+                    active-variant="soft"
+                    :size="toolbarSize"
+                    :active="linkActive"
+                    :disabled="linkDisabled"
+                    :aria-label="t('common.editor.link')"
                   />
-                </div>
-                <p
-                  v-if="linkInvalid"
-                  role="alert"
-                  class="text-error mt-1 text-xs"
-                >
-                  {{ t("common.editor.invalidLink") }}
-                </p>
-              </form>
+                </UTooltip>
+
+                <template #content>
+                  <form
+                    class="w-72 max-w-[90vw] p-2"
+                    @submit.prevent="applyLink"
+                  >
+                    <div class="flex items-center gap-1">
+                      <UInput
+                        v-model="linkHref"
+                        type="text"
+                        inputmode="url"
+                        autocomplete="off"
+                        size="sm"
+                        class="min-w-0 flex-1"
+                        autofocus
+                        :placeholder="t('common.editor.linkPlaceholder')"
+                        :aria-label="t('common.editor.linkUrl')"
+                        :aria-invalid="linkInvalid || undefined"
+                        @update:model-value="linkInvalid = false"
+                      />
+                      <UButton
+                        type="submit"
+                        icon="i-lucide-check"
+                        size="sm"
+                        :aria-label="t('common.editor.applyLink')"
+                      />
+                      <UButton
+                        v-if="linkActive"
+                        icon="i-lucide-unlink"
+                        size="sm"
+                        color="neutral"
+                        variant="ghost"
+                        :aria-label="t('common.editor.removeLink')"
+                        @click="removeLink"
+                      />
+                    </div>
+                    <p
+                      v-if="linkInvalid"
+                      role="alert"
+                      class="text-error mt-1 text-xs"
+                    >
+                      {{ t("common.editor.invalidLink") }}
+                    </p>
+                  </form>
+                </template>
+              </UPopover>
             </template>
-          </UPopover>
-        </template>
-      </UEditorToolbar>
-    </UEditor>
+          </UEditorToolbar>
+        </UEditor>
+      </div>
+    </UContextMenu>
   </div>
 </template>
