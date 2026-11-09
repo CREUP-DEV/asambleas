@@ -63,7 +63,7 @@ watch(past, (isPast, wasPast) => {
 <template>
   <span
     v-if="target"
-    class="inline-flex items-center gap-1 tabular-nums"
+    class="inline-flex items-baseline gap-1 tabular-nums"
     :class="{
       'text-warning': urgent,
       'text-muted': past,
@@ -74,7 +74,7 @@ watch(past, (isPast, wasPast) => {
     <UIcon
       v-if="icon"
       :name="icon"
-      class="size-4 shrink-0"
+      class="size-4 shrink-0 self-center"
       aria-hidden="true"
     />
     <span v-if="label">{{ label }}</span>
