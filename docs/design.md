@@ -125,7 +125,6 @@ are added or removed by inserting or deleting the blocks of their cells.
 The editor uses TipTap's tables with the ids kept on their nodes
 (`TableIdsExtension`), and a table menu in the toolbar.
 
-The editor is Nuxt UI `UEditor` (TipTap) with a small extension that keeps a
 Images are blocks too (`type: "image"`, `image: { asset, width, height,
 alt }`, empty text): a picture stored for the document in `document_images`
 and on disk under `UPLOAD_STORAGE_DIR/images/`, never a link to anything
@@ -153,6 +152,7 @@ version of its document or by any of its amendments stays. It records
 `document_images.cleanup` per document (source `system`), and also removes
 files left with no row.
 
+The editor is Nuxt UI `UEditor` (TipTap) with a small extension that keeps a
 `blockId` attribute on every block node, and offers heading levels 1 to 4
 (shown as h2 to h5). DOCX import goes through `mammoth` in a child process,
 is sanitized and converted to blocks (`server/utils/content/docx.ts`):

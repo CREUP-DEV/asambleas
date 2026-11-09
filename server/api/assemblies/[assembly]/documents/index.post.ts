@@ -138,6 +138,10 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
   await requireMembers(
     coProponentMemberIds.filter((id) => id !== actor.memberId),
   );
+  await requirePresentersMayPresent(body.kind, [
+    proponentMemberId,
+    ...coProponentMemberIds,
+  ]);
   const amendable = isFile
     ? false
     : manager
@@ -145,10 +149,6 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
       : defaults.amendable;
   const voted = manager ? (body.voted ?? defaults.voted) : defaults.voted;
   const majority = manager
-  await requirePresentersMayPresent(body.kind, [
-    proponentMemberId,
-    ...coProponentMemberIds,
-  ]);
     ? (body.majority ?? defaults.majority)
     : defaults.majority;
   const acceptedAmendments = manager
