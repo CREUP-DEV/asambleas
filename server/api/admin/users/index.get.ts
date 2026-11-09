@@ -3,8 +3,8 @@ import { db } from "../../../db";
 import {
   ADMIN_USER_COLUMNS,
   ADMIN_USER_RELATIONS,
-  adminUsersAccessWhere,
   adminUsersQuerySchema,
+  adminUsersWhere,
   withExtraPermissions,
 } from "../../../utils/auth/adminUsers";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
@@ -14,6 +14,8 @@ import { requireAnyPermission } from "../../../utils/auth/rbac";
  * The users, with their role, member and grants (user:manage_roles).
  * `?access=revoked` lists only the accounts that lost access to the
  * platform (users.access_revoked_at set); the default lists every account.
+ * `?q=` searches the name, the email, the intranet initials and the member
+ * the account acts for.
  */
 export default defineEventHandler(async (event) => {
   await requireAnyPermission(event, [PERMISSION_KEYS.USER_MANAGE_ROLES]);
@@ -26,13 +28,13 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const { page, pageSize, access } = parsed.data;
+  const { page, pageSize, access, q } = parsed.data;
   const offset = (page - 1) * pageSize;
 
   const users = await db.query.users.findMany({
     columns: ADMIN_USER_COLUMNS,
     with: ADMIN_USER_RELATIONS,
-    where: adminUsersAccessWhere(access),
+    where: adminUsersWhere(access, q),
     orderBy: (u, { asc }) => [asc(u.name)],
     limit: pageSize + 1,
     offset,

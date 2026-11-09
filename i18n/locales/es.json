@@ -1760,7 +1760,8 @@
       },
       "errors": {
         "targetRevoked": "Esta cuenta ya no tiene acceso porque la intranet la ha borrado, así que su rol no se puede cambiar."
-      }
+      },
+      "search": "Buscar por nombre, correo o siglas"
     },
     "roles": {
       "title": "Roles y permisos",

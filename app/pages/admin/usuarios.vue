@@ -143,6 +143,20 @@ watch(
   { flush: "sync" },
 );
 
+/**
+ * The search (`?q=`, also in the URL): part of the name, the email, the
+ * intranet initials or the member the account acts for. Debounced, and a new
+ * search starts again from the first page.
+ */
+const search = ref(typeof route.query.q === "string" ? route.query.q : "");
+const searchQuery = refDebounced(search, 300);
+watch(searchQuery, (value) => {
+  page.value = 1;
+  void router.replace({
+    query: { ...route.query, q: value.trim() || undefined },
+  });
+});
+
 const accessFilterItems = computed(() => [
   { label: t("admin.users.access.all"), value: "all" },
   { label: t("admin.users.access.revokedOnly"), value: "revoked" },
@@ -159,6 +173,7 @@ const {
     page: page.value,
     pageSize: PAGE_SIZE,
     access: accessFilter.value === "revoked" ? "revoked" : undefined,
+    q: searchQuery.value.trim() || undefined,
   })),
 });
 
@@ -852,7 +867,15 @@ function goToPage(next: number): void {
 
       <UDashboardToolbar>
         <template #left>
-          <div class="py-2">
+          <div class="flex flex-wrap items-center gap-2 py-2">
+            <UInput
+              v-model="search"
+              type="search"
+              icon="i-lucide-search"
+              :placeholder="t('admin.users.search')"
+              :aria-label="t('admin.users.search')"
+              class="w-64"
+            />
             <USelect
               :model-value="accessFilter"
               :items="accessFilterItems"
