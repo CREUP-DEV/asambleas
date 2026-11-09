@@ -624,7 +624,8 @@
       "text": "Texto del documento",
       "editorLabel": "Texto del documento",
       "editorPlaceholder": "Escribe o pega aquí el texto del documento, o impórtalo desde Word.",
-      "save": "Guardar texto",
+      "saveShort": "Guardar",
+      "savedShort": "Guardado",
       "saveShortcut": "Guardar el texto",
       "saving": "Guardando...",
       "savedAt": "Texto guardado a las {time}",
@@ -759,6 +760,8 @@
     },
     "metadata": {
       "heading": "Datos del documento",
+      "hide": "Ocultar los datos",
+      "unsavedHint": "Hay cambios sin guardar en los datos.",
       "title": "Título",
       "summary": "Resumen",
       "summaryDescription": "Unas líneas para la lista de documentos y la convocatoria.",

@@ -205,6 +205,29 @@ const metadataForm = useTemplateRef<MetadataFormHandle>("metadataForm");
 
 const textDirty = ref(false);
 const metadataDirty = ref(false);
+
+/**
+ * The Secretaría's data panel beside the text: closed, the editor takes the
+ * full width. The form stays mounted either way (publishing saves it), and
+ * opens itself when it has something to show. Remembered per browser.
+ */
+const dataPanel = useCookie<boolean>("asambleas-editor-data-panel", {
+  default: () => false,
+  maxAge: 60 * 60 * 24 * 365,
+  sameSite: "lax",
+});
+
+/** The Secretaría's editor is on the page: the PDF export goes beside it. */
+const editorHere = computed(
+  () => !guided.value && isStructured.value && textEditable.value,
+);
+
+/** Opens the data panel so the form can show what is wrong. */
+async function showData(): Promise<void> {
+  if (dataPanel.value) return;
+  dataPanel.value = true;
+  await nextTick();
+}
 const draftBlockCount = ref(0);
 
 const isStructured = computed(() => document.value?.format === "structured");
@@ -342,7 +365,14 @@ async function openDialog(mode: "submit" | "publish"): Promise<void> {
   // Invalid data: point at the field instead of opening the dialog (they
   // are saved on confirm, and a modal would keep the focus away from it).
   const form = metadataForm.value;
-  if (metadataDirty.value && form && !(await form.check())) return;
+  if (metadataDirty.value && form && !(await form.check())) {
+    // Hidden, the field it points at cannot take the focus: show it.
+    if (!dataPanel.value) {
+      await showData();
+      await form.check();
+    }
+    return;
+  }
   dialogMode.value = mode;
   dialogOpen.value = true;
 }
@@ -354,7 +384,10 @@ async function openDialog(mode: "submit" | "publish"): Promise<void> {
 async function saveEverything(): Promise<boolean> {
   draftEditor.value?.flush();
   if (metadataDirty.value && metadataForm.value) {
-    if (!(await metadataForm.value.save())) return false;
+    if (!(await metadataForm.value.save())) {
+      await showData();
+      return false;
+    }
     await nextTick();
   }
   if (isStructured.value && textEditable.value && draftEditor.value) {
@@ -396,6 +429,7 @@ async function confirmAction(addAnother = false): Promise<void> {
         // The form shows why (field errors or a conflict notice).
         actionStatus.value = "";
         dialogOpen.value = false;
+        await showData();
         return;
       }
       await nextTick();
@@ -658,9 +692,16 @@ async function onDeleted(): Promise<void> {
           :disabled="busy"
           @click="correctionOpen = true"
         />
-        <!-- Managers export the draft to check how it prints -->
+        <!-- The data beside the text, or out of the way -->
+        <DocumentDataToggle
+          v-if="!guided"
+          v-model:open="dataPanel"
+          :dirty="metadataDirty"
+        />
+        <!-- Managers export the draft to check how it prints (beside the
+             text when the editor is here) -->
         <ExportButton
-          v-if="manager && isStructured"
+          v-if="manager && isStructured && !editorHere"
           :assembly="assembly.id"
           :document="document.id"
           variant="clean"
@@ -914,7 +955,10 @@ async function onDeleted(): Promise<void> {
       <!-- Secretaría: text and data side by side -->
       <div
         v-else
-        class="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]"
+        class="grid items-start gap-6"
+        :class="{
+          'lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]': dataPanel,
+        }"
       >
         <div class="min-w-0 space-y-4">
           <DocumentDraftEditor
@@ -927,7 +971,16 @@ async function onDeleted(): Promise<void> {
             :disabled="busy"
             @saved="storeDocument"
             @stale="refetch"
-          />
+          >
+            <template v-if="manager" #actions>
+              <ExportButton
+                :assembly="assembly.id"
+                :document="document.id"
+                variant="clean"
+                button-variant="outline"
+              />
+            </template>
+          </DocumentDraftEditor>
           <!-- Published text: frozen, changed only through amendments -->
           <section
             v-else-if="isStructured"
@@ -994,12 +1047,28 @@ async function onDeleted(): Promise<void> {
           </section>
         </div>
 
-        <aside class="min-w-0 space-y-4">
+        <!-- Kept mounted while closed: publishing saves and checks it. Fixed
+             in view as the text scrolls, scrolling on its own if taller. -->
+        <aside
+          v-show="dataPanel"
+          id="document-data-panel"
+          class="min-w-0 space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-var(--ui-header-height)-2rem)] lg:overflow-y-auto"
+        >
           <UCard :ui="{ body: 'p-4 sm:p-5' }">
             <template #header>
-              <h3 class="text-highlighted text-base font-semibold">
-                {{ t("document.metadata.heading") }}
-              </h3>
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-highlighted text-base font-semibold">
+                  {{ t("document.metadata.heading") }}
+                </h3>
+                <UButton
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  icon="i-lucide-x"
+                  :aria-label="t('document.metadata.hide')"
+                  @click="dataPanel = false"
+                />
+              </div>
             </template>
             <!-- Publishing saves the data first: then it is the main action -->
             <DocumentMetadataForm

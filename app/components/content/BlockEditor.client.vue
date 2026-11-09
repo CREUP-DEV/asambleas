@@ -14,6 +14,8 @@ import { isSafeHref } from "~~/shared/utils/content/render";
 import { BlockIdExtension } from "~/utils/editor/blockIdExtension";
 import { ListMarkerExtension } from "~/utils/editor/listMarkerExtension";
 import { TableIdsExtension } from "~/utils/editor/tableIdsExtension";
+import { headingAtReadingLine } from "~/utils/outline";
+import type { OutlineEntry } from "./ContentView.vue";
 import {
   CellFillExtension,
   cellFillOf,
@@ -40,9 +42,12 @@ const props = withDefaults(
     placeholder?: string;
     /** Accessible name of the editing area. */
     label?: string;
+    /** The text's index as marks in the editor's left margin. */
+    outline?: boolean;
   }>(),
   {
     compact: false,
+    outline: false,
     autofocus: false,
     editable: true,
     placeholder: undefined,
@@ -289,6 +294,103 @@ const tableMenu = computed(
     }) as EditorToolbarItem,
 );
 
+const slots = useSlots();
+
+// The toolbar stays at the top as the text scrolls; while it does, it floats
+// as wide as its buttons, centred, opaque, framed and shadowed so it stands
+// out over the text.
+const frame = useTemplateRef<HTMLElement>("frame");
+const toolbarEl = useTemplateRef<{ $el: HTMLElement }>("toolbar");
+const stuck = ref(false);
+let stuckFrame = 0;
+function checkStuck(): void {
+  if (stuckFrame || props.compact) return;
+  stuckFrame = requestAnimationFrame(() => {
+    stuckFrame = 0;
+    const box = frame.value?.getBoundingClientRect();
+    const bar = toolbarEl.value?.$el?.getBoundingClientRect?.();
+    stuck.value = Boolean(box && bar && bar.top > box.top + 1);
+  });
+}
+useEventListener(window, "scroll", checkStuck, {
+  capture: true,
+  passive: true,
+});
+// The index (`outline`): the top-level headings as the editor shows them,
+// read again a moment after each change.
+const outlineItems = shallowRef<OutlineEntry[]>([]);
+function readOutline(): void {
+  const dom = props.outline ? editor.value?.view.dom : undefined;
+  const entries: OutlineEntry[] = [];
+  dom
+    ?.querySelectorAll<HTMLElement>(
+      ":scope > h1, :scope > h2, :scope > h3, :scope > h4",
+    )
+    .forEach((element) => {
+      const id = element.getAttribute("data-block-id");
+      const text = (element.textContent ?? "").replace(/\s+/g, " ").trim();
+      if (id && text) {
+        entries.push({ id, level: Number(element.tagName.slice(1)), text });
+      }
+    });
+  const previous = outlineItems.value;
+  const same =
+    previous.length === entries.length &&
+    previous.every(
+      (entry, i) =>
+        entry.id === entries[i]!.id &&
+        entry.level === entries[i]!.level &&
+        entry.text === entries[i]!.text,
+    );
+  if (!same) outlineItems.value = entries;
+}
+const readOutlineSoon = useDebounceFn(readOutline, 300);
+watch(
+  editor,
+  (instance, previous) => {
+    previous?.off("update", readOutlineSoon);
+    instance?.on("update", readOutlineSoon);
+    void nextTick(readOutline);
+  },
+  { immediate: true },
+);
+
+function currentHeading(): string | null {
+  const dom = editor.value?.view.dom;
+  if (!dom) return null;
+  return headingAtReadingLine(
+    dom,
+    outlineItems.value.map((entry) => entry.id),
+  );
+}
+
+/** Takes the reader, and the cursor, to the start of a heading. */
+function goToHeading(id: string): void {
+  const instance = editor.value;
+  const element = instance?.view.dom.querySelector<HTMLElement>(
+    `[data-block-id="${CSS.escape(id)}"]`,
+  );
+  if (!instance || !element) return;
+  const position = instance.view.posAtDOM(element, 0);
+  instance
+    .chain()
+    .setTextSelection(position)
+    .focus(undefined, { scrollIntoView: false })
+    .run();
+  const reduceMotion = window.matchMedia?.(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+  element.scrollIntoView({
+    block: "start",
+    behavior: reduceMotion ? "auto" : "smooth",
+  });
+}
+
+onBeforeUnmount(() => {
+  editor.value?.off("update", readOutlineSoon);
+  if (stuckFrame) cancelAnimationFrame(stuckFrame);
+});
+
 const toolbarItems = computed<EditorToolbarItem[][]>(() => {
   const marks = [
     action(
@@ -383,7 +485,12 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
       "common.editor.quote",
     ),
   ];
-  return [structure, [alignment], tables, marks, link, history];
+  const groups = [structure, [alignment], tables, marks, link, history];
+  // What the page adds at the toolbar's end (saving the text, say).
+  if (slots["toolbar-end"]) {
+    groups.push([{ slot: "toolbar-end" } as EditorToolbarItem]);
+  }
+  return groups;
 });
 
 function setListMarker(marker: ListMarker): void {
@@ -749,6 +856,7 @@ defineExpose({
 
 <template>
   <div
+    ref="frame"
     class="border-default bg-default focus-within:ring-primary/60 rounded-md border focus-within:ring-2"
     @contextmenu.capture="onContextMenu"
   >
@@ -793,7 +901,10 @@ defineExpose({
           ]"
           :autofocus="autofocus ? 'end' : false"
           :editable="editable"
-          :placeholder="placeholder ?? t('common.editor.placeholder')"
+          :placeholder="{
+            placeholder: placeholder ?? t('common.editor.placeholder'),
+            mode: 'firstLine',
+          }"
           :ui="editorUi"
           role="textbox"
           aria-multiline="true"
@@ -802,17 +913,28 @@ defineExpose({
           @blur="flush"
         >
           <UEditorToolbar
+            ref="toolbar"
             :editor="slotEditor"
             :items="toolbarItems"
             :size="toolbarSize"
             :aria-label="t('common.editor.toolbar')"
             :class="[
-              'border-default flex-wrap gap-y-1 border-b',
+              'border-default flex-wrap gap-y-1',
               compact
-                ? 'px-1 py-0.5'
-                : 'bg-default/95 sticky top-0 z-10 px-2 py-1 backdrop-blur',
+                ? 'border-b px-1 py-0.5'
+                : 'sticky top-2 z-10 px-2 py-1 transition-shadow',
+              !compact &&
+                (stuck
+                  ? 'bg-default mx-auto w-fit max-w-full rounded-lg shadow-xl ring ring-(--ui-border-accented)'
+                  : 'bg-default/95 border-b backdrop-blur'),
+              $slots['toolbar-end'] && !stuck
+                ? '[&>[data-slot=group]:last-child]:ms-auto'
+                : '',
             ]"
           >
+            <template v-if="$slots['toolbar-end']" #toolbar-end>
+              <slot name="toolbar-end" />
+            </template>
             <template #link>
               <UPopover
                 v-model:open="linkOpen"
@@ -879,6 +1001,21 @@ defineExpose({
               </UPopover>
             </template>
           </UEditorToolbar>
+
+          <!-- The index in the left margin, kept in view below the toolbar;
+               no room of its own. -->
+          <div
+            v-if="outline && outlineItems.length > 1"
+            class="sticky top-16 z-20 h-0 max-sm:hidden"
+          >
+            <div class="absolute start-1.5 top-3">
+              <ContentOutlineRail
+                :items="outlineItems"
+                :current="currentHeading"
+                @select="goToHeading"
+              />
+            </div>
+          </div>
         </UEditor>
       </div>
     </UContextMenu>
