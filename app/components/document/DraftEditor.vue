@@ -294,6 +294,7 @@ defineExpose({
           v-if="!showWordCard"
           :document-api="documentApi"
           :document-title="document.title"
+          :document-kind="document.kind"
           :current-count="blocks.length"
           :unsaved="unsaved"
           :disabled="disabled || saving"
@@ -352,6 +353,7 @@ defineExpose({
         prominent
         :document-api="documentApi"
         :document-title="document.title"
+        :document-kind="document.kind"
         :current-count="blocks.length"
         :unsaved="unsaved"
         :disabled="disabled || saving"
