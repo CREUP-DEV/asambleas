@@ -1,0 +1,54 @@
+/*
+ * Raleway, the UI font, served from the same files the PDF exports embed
+ * (server/assets/fonts, published at /fonts/raleway by nitro.publicAssets).
+ *
+ * The overrides pin its vertical metrics to the font's own hhea values
+ * (ascent 940, descent 234, no line gap, per 1000 units). Without them
+ * Chrome and Edge on Windows lay it out with winAscent (1154), which puts
+ * every line of text 1.5 to 3 px lower than on macOS, so icons next to text
+ * (`items-center`) looked too high. With them text sits the same on every
+ * platform and its capitals are centred on the line, like the icons.
+ */
+@font-face {
+  font-family: "Raleway";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/raleway/Raleway-Regular.woff") format("woff");
+  ascent-override: 94%;
+  descent-override: 23.4%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Raleway";
+  font-style: italic;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/raleway/Raleway-Italic.woff") format("woff");
+  ascent-override: 94%;
+  descent-override: 23.4%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Raleway";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/raleway/Raleway-Bold.woff") format("woff");
+  ascent-override: 94%;
+  descent-override: 23.4%;
+  line-gap-override: 0%;
+}
+
+@font-face {
+  font-family: "Raleway";
+  font-style: italic;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/raleway/Raleway-BoldItalic.woff") format("woff");
+  ascent-override: 94%;
+  descent-override: 23.4%;
+  line-gap-override: 0%;
+}

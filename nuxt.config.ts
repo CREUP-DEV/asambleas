@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import type { NitroRouteConfig } from "nitropack/types";
 import type { NuxtSecurityRouteRules } from "nuxt-security";
@@ -202,9 +203,17 @@ export default defineNuxtConfig({
 
   nitro: {
     compressPublicAssets: true,
+    // Raleway for the UI, from the files the PDF exports embed (fonts.css).
+    publicAssets: [
+      {
+        baseURL: "/fonts/raleway",
+        dir: fileURLToPath(new URL("./server/assets/fonts", import.meta.url)),
+        maxAge: 7 * 24 * 60 * 60,
+      },
+    ],
   },
 
-  css: ["~/assets/css/main.css"],
+  css: ["~/assets/css/fonts.css", "~/assets/css/main.css"],
 
   routeRules,
 
@@ -271,12 +280,9 @@ export default defineNuxtConfig({
     },
     families: [
       {
+        // Self-hosted with its metrics pinned (app/assets/css/fonts.css).
         name: "Raleway",
-        provider: "google",
-        global: true,
-        weights: [400, 700],
-        styles: ["normal", "italic"],
-        subsets: ["latin"],
+        provider: "none",
       },
       {
         name: "Red Rose",
