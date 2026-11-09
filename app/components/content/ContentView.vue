@@ -31,7 +31,8 @@ export interface BlockMarker {
  *   deleted block carries both, so both fire). Links never trigger them.
  * - With `interactive`, amended fragments are buttons (focusable, Enter/Space
  *   act as a click). Blocks are focusable only in `plain` mode, the only one
- *   where picking a block does something.
+ *   where picking a block does something, and then describe (for screen
+ *   readers) that Enter picks them and Shift with Enter adds to the choice.
  * - `headings: false` renders headings as styled paragraphs, for excerpts
  *   whose headings must not join the page outline.
  */
@@ -78,6 +79,9 @@ const { t, locale } = useI18n();
 const PROVENANCE_COLORS = 6;
 /** Height of a gutter marker in px (`.cx-marker`). */
 const MARKER_HEIGHT = 22;
+
+/** Says how to pick a focusable block, for screen readers (aria-describedby). */
+const blockHintId = useId();
 
 const containerEl = useTemplateRef<HTMLElement>("containerEl");
 const contentEl = useTemplateRef<HTMLElement>("contentEl");
@@ -140,8 +144,13 @@ function decorate(): void {
 
   root.querySelectorAll<HTMLElement>("[data-block-id]").forEach((element) => {
     const id = element.dataset.blockId ?? "";
-    if (selectableBlocks.value) element.tabIndex = 0;
-    else element.removeAttribute("tabindex");
+    if (selectableBlocks.value) {
+      element.tabIndex = 0;
+      element.setAttribute("aria-describedby", blockHintId);
+    } else {
+      element.removeAttribute("tabindex");
+      element.removeAttribute("aria-describedby");
+    }
     const isSelected = selected.has(id);
     element.classList.toggle("cx-selected", isSelected);
     if (isSelected) element.setAttribute("aria-current", "true");
@@ -468,6 +477,9 @@ defineExpose({
       </template>
     </div>
 
+    <span v-if="selectableBlocks" :id="blockHintId" class="sr-only">{{
+      t("common.content.blockHint")
+    }}</span>
     <!-- eslint-disable vue/no-v-html -- render.ts escapes all text and filters links -->
     <div
       v-if="html"
