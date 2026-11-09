@@ -88,6 +88,8 @@ export interface HomeWorkTask {
   amendment: HomeWorkAmendmentRef | null;
   /** Only for `transactional_answer`: the user's amendments it replaces. */
   replaces: HomeWorkAmendmentRef[];
+  /** Only for `transactional_answer`: acronym of the member proposing it. */
+  proposedBy?: string | null;
   /** Only for `proponent_review`: what is waiting; null otherwise. */
   counts: HomeWorkProponentCounts | null;
   /** The Secretaría's note when it asked for a correction. */
@@ -175,6 +177,7 @@ function acceptanceTask(entry: MeWorkAcceptanceDto): HomeWorkTask {
     document: { ...entry.document },
     amendment: { ...entry.transactional },
     replaces: entry.replaces.map((amendment) => ({ ...amendment })),
+    proposedBy: entry.proposedBy?.acronym ?? null,
     counts: null,
     note: null,
     dueAt: null,

@@ -63,7 +63,10 @@ const localePath = useLocalePath();
 function title(task: HomeWorkTask): string {
   if (!task.amendment) return task.document.title;
   if (task.kind === "transactional_answer") {
-    return t("home.work.transactional", { code: task.amendment.code ?? "" });
+    const code = task.amendment.code ?? "";
+    return task.proposedBy
+      ? t("home.work.transactionalBy", { code, member: task.proposedBy })
+      : t("home.work.transactional", { code });
   }
   return task.amendment.code
     ? t("home.work.amendment", { code: task.amendment.code })

@@ -138,6 +138,12 @@ const answer = (
   assembly,
   document: { id: "d1", slug: "d1", title: "Resolución" },
   transactional: { id, code: id.toUpperCase() },
+  proposedBy: {
+    id: "se",
+    acronym: "SE",
+    name: "Secretaría Ejecutiva",
+    kind: "executive",
+  },
   replaces: replaces.map((code) => ({ id: code.toLowerCase(), code })),
 });
 
@@ -270,6 +276,7 @@ describe("home work", () => {
       target: "document",
       amendment: { id: "t2", code: "T2" },
       replaces: [{ id: "ceum 2", code: "CEUM 2" }],
+      proposedBy: "SE",
       document: { id: "d1", slug: "d1", title: "Resolución" },
     });
     expect(homeWorkAmendmentQuery(byKey.get("acceptance-t2")!.amendment)).toBe(
