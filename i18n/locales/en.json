@@ -2278,7 +2278,8 @@
         "amendment_authors": "Waiting for the main authors of the amendments it would replace to accept it. Then the Secretariat will check it.",
         "amendment_late": "Late: the assembly still has to decide whether to treat it."
       },
-      "transactional": "Transactional {code}"
+      "transactional": "Transactional {code}",
+      "transactionalBy": "Transactional {code} by {member}"
     },
     "news": {
       "title": "News",

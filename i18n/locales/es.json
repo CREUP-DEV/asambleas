@@ -2278,7 +2278,8 @@
         "amendment_authors": "Espera a que la acepten los autores principales de las enmiendas que sustituiría. Después la revisará Secretaría.",
         "amendment_late": "Fuera de plazo: falta que la asamblea decida tratarla."
       },
-      "transactional": "Transaccional {code}"
+      "transactional": "Transaccional {code}",
+      "transactionalBy": "Transaccional {code} de {member}"
     },
     "news": {
       "title": "Novedades",

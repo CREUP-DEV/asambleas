@@ -962,7 +962,9 @@ managers and the Mesa), soonest first:
   still answer, as main author of an amendment they would replace
   (`awaitsPartyAnswer`: its answer pending, everything it groups still
   open, the document published and not voted), in assembly and document
-  order, each with `replaces`: the member's amendments it would replace;
+  order, each with `replaces`: the member's amendments it would replace,
+  and `proposedBy`: its main author (null when the Mesa presented it on
+  nobody's behalf);
 - `news` ("Novedades"): what others decided about the member's work in the
   last 30 days, newest first, at most 30 (`MeWorkNewsDto`):
   - for a co-presenter, the main presenter's answers to the document's

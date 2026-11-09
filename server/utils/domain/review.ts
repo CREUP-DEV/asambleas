@@ -43,6 +43,7 @@ import {
   findAmendmentsAwaitingReview,
   findSubmittedAmendments,
   findTransactionalsAwaitingMember,
+  loadedMainAuthor,
   membersSourcesOf,
 } from "./amendments";
 import { loadAgendaItems, visibleDocumentsCondition } from "./assemblies";
@@ -578,6 +579,10 @@ async function loadWorkAcceptances(
           title: document.title,
         },
         transactional: { id: transactional.id, code: transactional.code },
+        proposedBy:
+          transactional.authors.find(
+            (author) => author.memberId === loadedMainAuthor(transactional),
+          )?.member ?? null,
         replaces: replaces.get(transactional.id) ?? [],
       });
     }

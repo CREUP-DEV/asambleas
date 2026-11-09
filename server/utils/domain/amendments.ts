@@ -736,7 +736,7 @@ function involvedMemberIds(
 }
 
 /** The main author of a loaded amendment (AmendmentDto.mainAuthorId). */
-function loadedMainAuthor(row: LoadedAmendment): string | null {
+export function loadedMainAuthor(row: LoadedAmendment): string | null {
   return mainAuthorOf(
     row.authors.map((author) => author.memberId),
     readMeta(row).presentingMemberId,

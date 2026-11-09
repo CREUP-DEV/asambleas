@@ -192,6 +192,11 @@ export interface MeWorkAcceptanceDto {
   assembly: MeWorkAssemblyRef;
   document: { id: string; slug: string; title: string };
   transactional: { id: string; code: string | null };
+  /**
+   * Who proposes it: its main author, or null when the Mesa presented it on
+   * nobody's behalf.
+   */
+  proposedBy: MemberRef | null;
   /** The user's amendments it would replace. */
   replaces: { id: string; code: string | null }[];
 }
