@@ -99,7 +99,8 @@
         "button": "Índice",
         "label": "Índice del documento",
         "progress": "Sección {current} de {total}"
-      }
+      },
+      "blockHint": "Pulsa Intro para elegir este párrafo; con Mayúsculas e Intro se añade a los ya elegidos."
     },
     "editor": {
       "bold": "Negrita",
@@ -165,6 +166,14 @@
       "title": "No se han podido actualizar los datos",
       "description": "Se mantienen en pantalla los últimos datos cargados. Puedes reintentarlo ahora o esperar a la próxima actualización.",
       "retry": "Reintentar"
+    },
+    "dateSegments": {
+      "day": "Día",
+      "month": "Mes",
+      "year": "Año",
+      "hour": "Hora",
+      "minute": "Minutos",
+      "empty": "Vacío"
     }
   },
   "auth": {

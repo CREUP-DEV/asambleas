@@ -99,7 +99,8 @@
         "button": "Contents",
         "label": "Document contents",
         "progress": "Section {current} of {total}"
-      }
+      },
+      "blockHint": "Press Enter to choose this paragraph; Shift and Enter adds it to the ones already chosen."
     },
     "editor": {
       "bold": "Bold",
@@ -165,6 +166,14 @@
       "title": "The data could not be refreshed",
       "description": "The last loaded data stays on screen. Retry now or wait for the next update.",
       "retry": "Retry"
+    },
+    "dateSegments": {
+      "day": "Day",
+      "month": "Month",
+      "year": "Year",
+      "hour": "Hour",
+      "minute": "Minutes",
+      "empty": "Empty"
     }
   },
   "auth": {
