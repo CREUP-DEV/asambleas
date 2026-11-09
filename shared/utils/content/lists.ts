@@ -9,12 +9,12 @@ import { BLOCK_ALIGNMENTS, LIST_MARKERS } from "../../types/content";
 /** The block fields that place a block in a list, a table or the outline. */
 export type BlockShape = Pick<
   Block,
-  "level" | "list" | "marker" | "start" | "cell" | "align"
+  "level" | "list" | "marker" | "start" | "cell" | "align" | "image"
 >;
 
 /**
- * Copies `level`, `list`, `marker`, `start`, `cell` and `align`, leaving
- * out absent ones. The cell is copied, not shared.
+ * Copies `level`, `list`, `marker`, `start`, `cell`, `align` and `image`,
+ * leaving out absent ones. The cell and the image are copied, not shared.
  */
 export function copyShape<T extends BlockShape>(from: BlockShape, to: T): T {
   if (from.level !== undefined) to.level = from.level;
@@ -23,6 +23,7 @@ export function copyShape<T extends BlockShape>(from: BlockShape, to: T): T {
   if (from.start !== undefined) to.start = from.start;
   if (from.cell !== undefined) to.cell = { ...from.cell };
   if (from.align !== undefined) to.align = from.align;
+  if (from.image !== undefined) to.image = { ...from.image };
   return to;
 }
 

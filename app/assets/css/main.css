@@ -279,6 +279,16 @@ html {
   font-weight: 400;
 }
 
+/* Images in the editor: on their own line, never wider than the text. */
+.content-editor img.cx-editor-image {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin-inline: auto;
+  border-radius: var(--ui-radius);
+  cursor: default;
+}
+
 /* Clear of the floating toolbar when the editor's index jumps to them. */
 .content-editor :is(h1, h2, h3, h4) {
   scroll-margin-top: 5rem;
@@ -347,6 +357,19 @@ html {
    * Tables, in the template's colours: burgundy rules and a burgundy header
    * row in white. Wide ones scroll sideways instead of the page.
    */
+  /* An image block: on its own line, centred, never wider than the text. */
+  .rich-text figure.cx-figure {
+    margin-block: 1.5rem;
+  }
+
+  .rich-text figure.cx-figure img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+    margin-inline: auto;
+    border-radius: var(--ui-radius);
+  }
+
   .rich-text .cx-table-wrap,
   .content-editor .tableWrapper {
     overflow-x: auto;

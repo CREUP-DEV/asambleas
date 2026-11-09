@@ -56,6 +56,13 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
     getRouterParam(event, "assembly"),
   );
   const body = parseDocumentBody(documentCreateSchema, await readBody(event));
+  // Images are stored for a document once it exists: none can come with it.
+  if (body.blocks?.some((block) => block.type === "image")) {
+    throw createError({
+      statusCode: 400,
+      message: "El texto incluye una imagen que no es de este documento",
+    });
+  }
   const item = await resolveAgendaItem(assembly.id, body.agendaItemId);
   const manager = canManageDocuments(actor);
 

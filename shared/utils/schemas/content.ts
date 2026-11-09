@@ -2,10 +2,11 @@ import { z } from "zod/v4";
 import {
   BLOCK_ALIGNMENTS,
   BLOCK_TYPES,
+  IMAGE_ASSET_PATTERN,
   LIST_MARKERS,
   MARK_TYPES,
 } from "../../types/content";
-import type { Block, BlockCell, Mark } from "../../types/content";
+import type { Block, BlockCell, BlockImage, Mark } from "../../types/content";
 import { isSafeHref } from "../content/render";
 
 export const BLOCK_TEXT_MAX_LENGTH = 20_000;
@@ -55,6 +56,24 @@ const cellSchema = z
     return result;
   });
 
+/** The longest description an image may carry. */
+export const IMAGE_ALT_MAX_LENGTH = 500;
+
+/** An image block's picture (BlockImage). */
+const imageSchema = z
+  .object({
+    asset: z.string().regex(IMAGE_ASSET_PATTERN),
+    width: z.number().int().min(1).max(20_000),
+    height: z.number().int().min(1).max(20_000),
+    alt: z.string().max(IMAGE_ALT_MAX_LENGTH),
+  })
+  .transform((image): BlockImage => ({
+    asset: image.asset,
+    width: image.width,
+    height: image.height,
+    alt: normalizeText(image.alt).replace(/\s+/g, " ").trim(),
+  }));
+
 export const blockSchema = z
   .object({
     id: blockIdSchema,
@@ -65,10 +84,26 @@ export const blockSchema = z
     start: z.number().int().min(0).max(99_999).optional(),
     cell: cellSchema.optional(),
     align: z.enum(BLOCK_ALIGNMENTS).optional(),
+    image: imageSchema.optional(),
     text: z.string().max(BLOCK_TEXT_MAX_LENGTH),
     marks: z.array(markSchema).max(500).default([]),
   })
+  // An image block carries its picture and stays out of tables.
+  .refine((block) => block.type !== "image" || (block.image && !block.cell), {
+    message: "invalid_image",
+  })
   .transform((block): Block => {
+    if (block.type === "image") {
+      const result: Block = {
+        id: block.id,
+        type: "image",
+        image: block.image!,
+        text: "",
+        marks: [],
+      };
+      if (block.align) result.align = block.align;
+      return result;
+    }
     const text = normalizeText(block.text);
     const marks: Mark[] = block.marks
       .map((mark) => ({

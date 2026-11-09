@@ -40,6 +40,8 @@ import {
   annotatedToPdf,
   blocksToPdf,
   linksToPdf,
+  pdfImages,
+  type ExportImage,
   type PdfContentContext,
 } from "./content";
 import {
@@ -136,6 +138,8 @@ export interface DocumentExportData {
   document: ExportDocumentMeta;
   body: ExportBody;
   generatedAt: Date;
+  /** The images its text shows, by asset id. */
+  images?: Record<string, ExportImage>;
 }
 
 export interface ExportAgendaNode {
@@ -159,6 +163,8 @@ export interface AssemblyExportData {
   /** Published documents in agenda order. */
   documents: AssemblyDocumentEntry[];
   generatedAt: Date;
+  /** The images their texts show, by asset id. */
+  images?: Record<string, ExportImage>;
 }
 
 // Layout ----------------------------------------------------------------
@@ -697,7 +703,7 @@ export function buildDocumentPdf(
   const t = createTranslator(locale);
   const { assembly, document: meta, body } = data;
   const links = new LinkRegistry();
-  const ctx: PdfContentContext = { links, outline: {} };
+  const ctx: PdfContentContext = { links, outline: {}, images: data.images };
   const cover = hasCover(meta.kind);
   const draft = body.variant === "clean" && body.source === "working";
 
@@ -751,6 +757,7 @@ export function buildDocumentPdf(
     cover,
     watermark: draft ? t("watermarkDraft") : undefined,
   });
+  withContentImages(definition, data.images);
   // Keeps headings with the text that follows them.
   definition.pageBreakBefore = (node, queries) =>
     node.headlineLevel !== undefined &&
@@ -886,20 +893,35 @@ export function buildAssemblyPdf(
     content.push(
       ...cleanBody(
         entry.blocks,
-        { links, outline: { parentId: outlineId } },
+        { links, outline: { parentId: outlineId }, images: data.images },
         t,
       ),
       ...linksSection(links, t),
     );
   });
 
-  return frame({
-    locale,
-    t,
-    assembly,
-    title: `${assembly.label} · ${typeName}`,
-    content,
-    brand,
-    bandLabel: t("band.internalDocument"),
-  });
+  return withContentImages(
+    frame({
+      locale,
+      t,
+      assembly,
+      title: `${assembly.label} · ${typeName}`,
+      content,
+      brand,
+      bandLabel: t("band.internalDocument"),
+    }),
+    data.images,
+  );
+}
+
+/** Adds the text's images to the PDF's (the letterhead's logos stay). */
+function withContentImages(
+  definition: TDocumentDefinitions,
+  images: Record<string, ExportImage> | undefined,
+): TDocumentDefinitions {
+  const entries = pdfImages(images);
+  if (Object.keys(entries).length > 0) {
+    definition.images = { ...definition.images, ...entries };
+  }
+  return definition;
 }

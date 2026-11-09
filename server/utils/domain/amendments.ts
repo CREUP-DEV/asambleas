@@ -113,6 +113,7 @@ import {
   shareLockAssembly,
 } from "./documents";
 import { recordEvent } from "./events";
+import { assertOpImagesBelong } from "./documentImages";
 import {
   impersonatedByFor,
   loadImpersonators,
@@ -1818,6 +1819,8 @@ export async function createAmendmentDraft(
       takenIds: await otherInsertedIds(tx, document.id),
     });
     assertValidOps(errors);
+    // Images it inserts are this document's own.
+    await assertOpImagesBelong(document.id, ops);
 
     const meta: StoredAmendmentMeta = {
       presentingMemberId: mainAuthorId,
@@ -1972,6 +1975,8 @@ export async function updateAmendmentDraft(
       takenIds: await otherInsertedIds(tx, document.id, amendment.id),
     });
     assertValidOps(errors);
+    // Images it inserts are this document's own.
+    await assertOpImagesBelong(document.id, ops);
 
     const updated = await tx
       .update(amendments)
@@ -3729,6 +3734,8 @@ export async function createTransactionalAmendment(
       takenIds: await otherInsertedIds(tx, document.id),
     });
     assertValidOps(errors);
+    // Images it inserts are this document's own.
+    await assertOpImagesBelong(document.id, ops);
 
     const existing = await tx
       .select({ code: amendments.code })

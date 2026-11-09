@@ -8,6 +8,7 @@ import type {
   TDocumentDefinitions,
 } from "pdfmake/interfaces";
 import { create as createFont } from "fontkit";
+import sharp from "sharp";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
 import { consolidate } from "../../../shared/utils/content/consolidate";
@@ -23,6 +24,7 @@ import {
   LinkRegistry,
   annotatedToPdf,
   blocksToPdf,
+  pdfImageKey,
 } from "./content";
 import { createTranslator, formatExportDateRange, interpolate } from "./labels";
 import {
@@ -710,6 +712,69 @@ function background(definition: TDocumentDefinitions): { svg: string }[] {
   )(1);
   return page.stack;
 }
+
+describe("images", () => {
+  // A 1x1 red PNG.
+  const PNG =
+    "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/iZk9HQAAAABJRU5ErkJggg==";
+  const ASSET = "q8w2e9r1t7y3u6i4o0p5a2s8";
+  const picture = (id: string, width: number, height: number): Block => ({
+    id,
+    type: "image",
+    image: { asset: ASSET, width, height, alt: "Organigrama" },
+    text: "",
+    marks: [],
+  });
+
+  it("draws an image at its size, never wider than the text", () => {
+    const images = { [ASSET]: { dataUrl: PNG, width: 3000, height: 1500 } };
+    const [small, large] = blocksToPdf(
+      [picture("img1", 200, 100), picture("img2", 3000, 1500)],
+      { links: new LinkRegistry(), images },
+    ) as { image: string; width: number; height: number }[];
+    expect(small).toMatchObject({
+      image: pdfImageKey(ASSET),
+      width: 150,
+      height: 75,
+    });
+    expect(large!.width).toBeCloseTo(595.28 - 85 - 85.6, 1);
+    expect(large!.height).toBeCloseTo(large!.width / 2, 1);
+  });
+
+  it("leaves the description where an image could not be loaded", () => {
+    const [node] = blocksToPdf([picture("img3", 10, 10)], {
+      links: new LinkRegistry(),
+    }) as ContentText[];
+    expect(node).toMatchObject({ text: "[Organigrama]", italics: true });
+  });
+
+  it("embeds an image once, however often the text shows it", async () => {
+    // Opaque, so it is one image object (a transparent one adds its mask).
+    const opaque = await sharp({
+      create: { width: 2, height: 2, channels: 3, background: "#792225" },
+    })
+      .png()
+      .toBuffer();
+    const dataUrl = `data:image/png;base64,${opaque.toString("base64")}`;
+    const { pdf } = await render(
+      buildDocumentPdf(
+        {
+          assembly,
+          document: meta,
+          body: {
+            variant: "clean",
+            source: "base",
+            blocks: [picture("img4", 10, 10), picture("img5", 10, 10)],
+          },
+          generatedAt: new Date(),
+          images: { [ASSET]: { dataUrl, width: 2, height: 2 } },
+        },
+        "es",
+      ),
+    );
+    expect((pdf.match(/\/Subtype \/Image/g) ?? []).length).toBe(1);
+  });
+});
 
 describe("CREUP template", () => {
   const heading = (id: string, level: number, text: string): Block => ({

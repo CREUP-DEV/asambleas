@@ -19,7 +19,11 @@ import { createId } from "@paralleldrive/cuid2";
  *   document cannot hijack the ids of this one.
  */
 
-export const BLOCK_ID_NODE_TYPES = ["paragraph", "heading"] as const;
+export const BLOCK_ID_NODE_TYPES = [
+  "paragraph",
+  "heading",
+  "blockImage",
+] as const;
 export const blockIdPluginKey = new PluginKey("blockId");
 
 const TYPES = new Set<string>(BLOCK_ID_NODE_TYPES);

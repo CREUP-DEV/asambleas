@@ -144,6 +144,26 @@ let inflight: Promise<boolean> | null = null;
  * typed so far is stored: a call during a running save waits for it and
  * then saves what was typed meanwhile.
  */
+/**
+ * Stores an image for the text (the editor asks for its description next).
+ * A file the server refuses is said in the editor's words.
+ */
+async function uploadImage(
+  file: File,
+): Promise<{ asset: string; width: number; height: number } | null> {
+  const body = new FormData();
+  body.append("file", file, file.name);
+  try {
+    return await send<{ asset: string; width: number; height: number }>(
+      `${props.documentApi}/images`,
+      { body },
+    );
+  } catch (error) {
+    notifyError(error, "common.editor.image.uploadError");
+    return null;
+  }
+}
+
 function save(): Promise<boolean> {
   editor.value?.flush();
   if (inflight) {
@@ -379,6 +399,7 @@ defineExpose({
         :label="t('document.authoring.editorLabel')"
         :placeholder="t('document.authoring.editorPlaceholder')"
         outline
+        :upload-image="disabled ? undefined : uploadImage"
       >
         <!-- On the toolbar, which stays in view: saving needs no trip back
              up. A button only with something to save, else a quiet "saved"

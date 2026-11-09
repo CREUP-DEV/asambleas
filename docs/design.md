@@ -87,13 +87,14 @@ Structured text is a list of **blocks**, each with a stable id:
 ```ts
 type Block = {
   id: string; // stable, never reused within a document
-  type: "heading" | "paragraph" | "list_item" | "quote";
+  type: "heading" | "paragraph" | "list_item" | "quote" | "image";
   level?: number; // heading level or list depth
   list?: "bullet" | "ordered";
   marker?: ListMarker; // ordered items: "1." (default), "1)", "a.", "a)", "A.", "A)", "i.", "i)", "I.", "I)"
   start?: number; // ordered items: the list starts again here, at this number
   cell?: BlockCell; // inside a table: { table, row, cell, header?, shade?, colspan?, rowspan? }
   align?: "center" | "right"; // start when absent; never justified (WCAG 1.4.8)
+  image?: BlockImage; // image blocks: { asset, width, height, alt }; text stays ""
   text: string; // plain text
   marks: Mark[]; // bold/italic/underline/strike/link ranges over `text`
 };
@@ -125,6 +126,22 @@ The editor uses TipTap's tables with the ids kept on their nodes
 (`TableIdsExtension`), and a table menu in the toolbar.
 
 The editor is Nuxt UI `UEditor` (TipTap) with a small extension that keeps a
+Images are blocks too (`type: "image"`, `image: { asset, width, height,
+alt }`, empty text): a picture stored for the document in `document_images`
+and on disk under `UPLOAD_STORAGE_DIR/images/`, never a link to anything
+outside the platform. Uploads (PNG or JPEG, 10 MB) are checked by signature
+and written again by `sharp`: turned upright, without metadata (no location
+or camera details), at most 2,400 px a side. The editor inserts one from its
+toolbar and asks for its description, which is required; it sits on a line
+of its own, outside tables and lists. Saving the text and every amendment
+operation check that each image is one stored for that document
+(`assertImagesBelong`). Images are served to whoever can see their document
+(`/api/uploads/images/[id]`), drawn in the PDF at their size within the text
+width, and amendments insert or delete them like any block. Draft edits
+never remove an image's file, since a published version may still show it;
+files go with their document. Images left unused (uploaded and never saved)
+stay until a clean-up job removes them (phase 2, with DOCX import).
+
 `blockId` attribute on every block node, and offers heading levels 1 to 4
 (shown as h2 to h5). DOCX import goes through `mammoth` in a child process,
 is sanitized and converted to blocks (`server/utils/content/docx.ts`):
