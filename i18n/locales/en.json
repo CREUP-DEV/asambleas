@@ -24,7 +24,7 @@
         "draft": "Draft",
         "convened": "Convened",
         "in_session": "In session",
-        "closed": "Closed"
+        "closed": "Finished"
       },
       "document": {
         "draft": "Draft",
@@ -385,10 +385,10 @@
         "done": "Session suspended"
       },
       "in_session_closed": {
-        "label": "Close assembly",
-        "title": "Close the assembly?",
-        "description": "The {label} will be closed and no more documents can be submitted.",
-        "done": "Assembly closed"
+        "label": "Finish assembly",
+        "title": "Finish the assembly?",
+        "description": "The {label} will be finished and no more documents can be submitted.",
+        "done": "Assembly finished"
       },
       "closed_in_session": {
         "label": "Reopen the assembly session",
@@ -2366,7 +2366,7 @@
       "draft": "Draft",
       "convened": "Convened",
       "in_session": "In session",
-      "closed": "Closed"
+      "closed": "Finished"
     },
     "card": {
       "dates": "Dates",
@@ -2374,6 +2374,7 @@
       "documentsLabel": "Documents",
       "documents": "No documents | {count} document | {count} documents",
       "agendaFinal": "Final agenda",
+      "agendaProvisional": "Provisional agenda",
       "nextMilestone": "Next deadline"
     },
     "create": {
@@ -2425,7 +2426,7 @@
     "acceptsSubmissionsHelp": "Members can submit documents under this item until the documents deadline.",
     "lockedRoot": "Main item locked: the agenda is final",
     "documentsOf": "Documents of item {number}: {title}",
-    "submissionsClosedAssembly": "The assembly is closed: documents can no longer be submitted.",
+    "submissionsClosedAssembly": "The assembly has finished: documents can no longer be submitted.",
     "submissionsDeadlinePassed": "The deadline for submitting new documents has passed.",
     "submissionsOpened": "The item “{title}” now accepts documents from members",
     "submissionsClosed": "The item “{title}” no longer accepts documents from members",
