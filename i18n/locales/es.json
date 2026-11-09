@@ -1683,9 +1683,7 @@
       "noUsers": "No hay usuarios registrados",
       "email": "Correo electrónico",
       "role": "Rol",
-      "university": "Universidad",
       "lastSync": "Última sincronización",
-      "registeredAt": "Alta",
       "user": "Usuario",
       "description": "Cuentas que han iniciado sesión, con su rol y el miembro en cuyo nombre actúan. Casi todo llega solo desde la intranet al iniciar sesión.",
       "noRole": "Sin rol",
@@ -1709,13 +1707,8 @@
       "memberLinked": "{user} actúa ahora en nombre de {member}",
       "memberUnlinked": "{user} ya no está vinculado a ningún miembro",
       "memberLinkFailed": "No se ha podido cambiar la vinculación",
-      "edit": "Editar roles, vínculos y permisos",
-      "editDone": "Terminar",
       "editingHelp": "Los roles Asociado, Sectorial, CEA e Invitado se vuelven a leer de la intranet en cada inicio de sesión; los demás roles se quedan como los dejes. Cada cambio se confirma antes de guardarse.",
-      "editingOn": "Ya puedes cambiar los roles, los vínculos y los permisos extra.",
-      "editingOff": "Has terminado de editar.",
       "permissions": {
-        "button": "Permisos extra",
         "buttonFor": "Permisos extra de {user}",
         "extraCount": "{count} permiso extra | {count} permisos extra",
         "title": "Permisos de {user}",
@@ -1737,7 +1730,9 @@
         "redundantTitle": "Dados aparte que ahora no hacen falta",
         "redundantHelp": "Ahora no le dan nada nuevo. Desactívalos si no los necesita y guarda.",
         "coveredByRole": "Ya lo incluye su rol. Si cambia de rol, lo conservará.",
-        "powerfulHelp": "Da acceso a la administración y permite dar cualquier permiso salvo el de Administrador."
+        "powerfulHelp": "Da acceso a la administración y permite dar cualquier permiso salvo el de Administrador.",
+        "change": "Cambiar permisos extra",
+        "listFor": "Permisos extra de {user}: {list}"
       },
       "adminRoleOnlyAdmins": "Solo lo puede dar un Administrador",
       "adminRoleLocked": "Solo un Administrador puede dar o quitar el rol Administrador.",
@@ -1783,7 +1778,11 @@
       "errors": {
         "targetRevoked": "Esta cuenta ya no tiene acceso porque la intranet la ha borrado, así que su rol no se puede cambiar."
       },
-      "search": "Buscar por nombre, correo o siglas"
+      "search": "Buscar por nombre, correo o siglas",
+      "editAction": "Editar",
+      "editFor": "Editar a {user}",
+      "moreActionsFor": "Más acciones de {user}",
+      "registeredOn": "Alta: {date}"
     },
     "roles": {
       "title": "Roles y permisos",
