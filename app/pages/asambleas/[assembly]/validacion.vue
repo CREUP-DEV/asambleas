@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
-import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
+import {
+  DEFAULT_ASSEMBLY_SETTINGS,
+  type MilestoneKey,
+} from "~~/shared/constants/domain";
 import type {
   AmendmentDto,
   CorrectionBody,
@@ -253,6 +256,130 @@ async function sendDocumentCorrection(note: string) {
 function documentBusyFor(id: string): "publish" | "correction" | null {
   return documentBusy.value?.id === id ? documentBusy.value.action : null;
 }
+
+function milestoneTime(key: MilestoneKey): number | null {
+  const at = assembly.value?.milestones.find(
+    (milestone) => milestone.key === key,
+  )?.at;
+  return at ? new Date(at).getTime() : null;
+}
+
+/**
+ * Sent after its deadline (`candidacies_close` for candidacies, otherwise
+ * `documents_close`): marked late, so the Secretaría and the Mesa know the
+ * assembly has to agree to treat it.
+ */
+function sentLate(document: DocumentSummaryDto): boolean {
+  const due = milestoneTime(
+    document.kind === "candidacy" || document.kind === "venue"
+      ? "candidacies_close"
+      : "documents_close",
+  );
+  return (
+    due !== null &&
+    document.submittedAt !== null &&
+    new Date(document.submittedAt).getTime() > due
+  );
+}
+
+// Several documents at once --------------------------------------------------
+
+const selectedDocuments = ref<Set<string>>(new Set());
+const bulkPublishing = ref(false);
+const bulkOpen = ref(false);
+
+watch(documents, (list) => {
+  const present = new Set(list.map((document) => document.id));
+  const kept = [...selectedDocuments.value].filter((id) => present.has(id));
+  if (kept.length !== selectedDocuments.value.size) {
+    selectedDocuments.value = new Set(kept);
+  }
+});
+
+const selectedDocumentList = computed(() =>
+  documents.value.filter((document) =>
+    selectedDocuments.value.has(document.id),
+  ),
+);
+const allDocumentsSelected = computed<boolean | "indeterminate">(() => {
+  const count = selectedDocumentList.value.length;
+  if (count === 0) return false;
+  return count === documents.value.length ? true : "indeterminate";
+});
+const selectedDocumentsMessage = computed(() =>
+  selectedDocumentList.value.length > 0
+    ? t(
+        "review.documents.selected",
+        { count: selectedDocumentList.value.length },
+        selectedDocumentList.value.length,
+      )
+    : "",
+);
+
+function toggleAllDocuments(value: boolean | "indeterminate") {
+  selectedDocuments.value =
+    value === true
+      ? new Set(documents.value.map((document) => document.id))
+      : new Set();
+}
+
+function toggleDocument(id: string, value: boolean) {
+  const next = new Set(selectedDocuments.value);
+  if (value) next.add(id);
+  else next.delete(id);
+  selectedDocuments.value = next;
+}
+
+/**
+ * Validates and publishes the selected documents one after another, as the
+ * single action does, and says which ones failed (a conflict means someone
+ * changed it meanwhile; the queue is refreshed to show the current state).
+ */
+async function confirmBulkPublish() {
+  const targets = selectedDocumentList.value;
+  if (targets.length === 0 || bulkPublishing.value || documentBusy.value)
+    return;
+  bulkPublishing.value = true;
+  const failed: string[] = [];
+  let published = 0;
+  for (const document of targets) {
+    documentBusy.value = { id: document.id, action: "publish" };
+    try {
+      await api.send<DocumentDto>(`${documentUrl(document)}/publish`, {
+        method: "POST",
+        body: { updatedAt: document.updatedAt },
+      });
+      published++;
+      patch((value) => removeReviewDocument(value, document.id));
+    } catch {
+      failed.push(document.title);
+    }
+  }
+  documentBusy.value = null;
+  bulkPublishing.value = false;
+  bulkOpen.value = false;
+  selectedDocuments.value = new Set();
+  if (published > 0) {
+    const title = t(
+      "review.documents.bulkPublished",
+      { count: published },
+      published,
+    );
+    announce(title);
+    toast.add({ title, color: "success", icon: "i-lucide-check" });
+  }
+  if (failed.length > 0) {
+    toast.add({
+      title: t("review.documents.publishError"),
+      description: t("review.documents.bulkFailed", {
+        titles: failed.join(", "),
+      }),
+      color: "error",
+      icon: "i-lucide-circle-alert",
+    });
+  }
+  void refresh();
+}
 </script>
 
 <template>
@@ -365,18 +492,74 @@ function documentBusyFor(id: string): "publish" | "correction" | null {
           <p v-if="documents.length === 0" class="text-muted text-sm">
             {{ t("review.documents.none") }}
           </p>
-          <ul v-else class="space-y-3">
-            <li v-for="document in documents" :key="document.id">
-              <ReviewDocumentCard
-                :document="document"
-                :to="documentPath(document.slug)"
-                :busy="documentBusyFor(document.id)"
-                :disabled="documentBusy !== null"
-                @publish="publishTarget = document"
-                @correction="correctionTarget = document"
+          <template v-else>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <p class="text-muted flex items-start gap-1.5 text-sm">
+                <UIcon
+                  name="i-lucide-eye-off"
+                  class="mt-0.5 size-4 shrink-0"
+                  aria-hidden="true"
+                />
+                <span>{{ t("review.documents.waitingAll") }}</span>
+              </p>
+              <UCheckbox
+                v-if="documents.length > 1"
+                :model-value="allDocumentsSelected"
+                :label="t('review.documents.selectAll')"
+                :disabled="bulkPublishing"
+                @update:model-value="toggleAllDocuments"
               />
-            </li>
-          </ul>
+            </div>
+
+            <p
+              class="sr-only"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+            >
+              {{ selectedDocumentsMessage }}
+            </p>
+
+            <div
+              v-if="selectedDocumentList.length > 0"
+              class="border-primary/40 bg-primary/5 sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-lg border p-2"
+              role="group"
+              :aria-label="t('review.documents.bulkLabel')"
+            >
+              <span class="text-highlighted px-1 text-sm font-medium">
+                {{ selectedDocumentsMessage }}
+              </span>
+              <UButton
+                size="sm"
+                icon="i-lucide-check-check"
+                :label="
+                  t('review.documents.bulkPublish', {
+                    count: selectedDocumentList.length,
+                  })
+                "
+                :loading="bulkPublishing"
+                :disabled="documentBusy !== null && !bulkPublishing"
+                @click="bulkOpen = true"
+              />
+            </div>
+
+            <ul class="space-y-3">
+              <li v-for="document in documents" :key="document.id">
+                <ReviewDocumentCard
+                  :document="document"
+                  :to="documentPath(document.slug)"
+                  :busy="documentBusyFor(document.id)"
+                  :disabled="documentBusy !== null"
+                  :late="sentLate(document)"
+                  :selectable="documents.length > 1"
+                  :selected="selectedDocuments.has(document.id)"
+                  @select="toggleDocument(document.id, $event)"
+                  @publish="publishTarget = document"
+                  @correction="correctionTarget = document"
+                />
+              </li>
+            </ul>
+          </template>
         </section>
 
         <section
@@ -516,6 +699,65 @@ function documentBusyFor(id: string): "publish" | "correction" | null {
               :label="t('review.documents.publish')"
               :loading="documentBusy?.action === 'publish'"
               @click="confirmPublish"
+            />
+          </div>
+        </template>
+      </UModal>
+
+      <UModal
+        v-model:open="bulkOpen"
+        :title="
+          t(
+            'review.documents.bulkConfirmTitle',
+            { count: selectedDocumentList.length },
+            selectedDocumentList.length,
+          )
+        "
+        :dismissible="!bulkPublishing"
+      >
+        <template #body>
+          <ul class="mb-4 list-disc space-y-1 ps-5 text-sm">
+            <li v-for="document in selectedDocumentList" :key="document.id">
+              {{ document.title }}
+            </li>
+          </ul>
+          <ul class="space-y-2 text-sm">
+            <li class="flex items-start gap-2">
+              <UIcon
+                name="i-lucide-eye"
+                class="text-muted mt-0.5 size-4 shrink-0"
+                aria-hidden="true"
+              />
+              {{ t("review.documents.bulkConfirmVisible") }}
+            </li>
+            <li class="flex items-start gap-2">
+              <UIcon
+                name="i-lucide-lock"
+                class="text-muted mt-0.5 size-4 shrink-0"
+                aria-hidden="true"
+              />
+              {{ t("review.documents.bulkConfirmFrozen") }}
+            </li>
+          </ul>
+        </template>
+        <template #footer>
+          <div class="flex w-full flex-wrap justify-end gap-2">
+            <UButton
+              color="neutral"
+              variant="outline"
+              :label="t('common.cancel')"
+              :disabled="bulkPublishing"
+              @click="bulkOpen = false"
+            />
+            <UButton
+              icon="i-lucide-check-check"
+              :label="
+                t('review.documents.bulkPublish', {
+                  count: selectedDocumentList.length,
+                })
+              "
+              :loading="bulkPublishing"
+              @click="confirmBulkPublish"
             />
           </div>
         </template>

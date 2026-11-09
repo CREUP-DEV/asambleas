@@ -7,7 +7,9 @@ import type { DocumentSummaryDto } from "~~/shared/types/api";
  * and since when, with
  * "Validar y publicar" as the main action and "Pedir corrección" next to
  * it. The parent runs both. Every action names the document it acts on
- * through `aria-describedby`, so a list of buttons tells them apart.
+ * through `aria-describedby`, so a list of buttons tells them apart. With
+ * `selectable` a checkbox adds it to the bulk validation, and `late` marks
+ * one sent after the documents deadline.
  */
 const props = withDefaults(
   defineProps<{
@@ -18,11 +20,26 @@ const props = withDefaults(
     busy?: "publish" | "correction" | null;
     /** Another action is running elsewhere: keep the buttons quiet. */
     disabled?: boolean;
+    /** Sent after the documents deadline (documents_close). */
+    late?: boolean;
+    /** Show a checkbox to select it for the bulk validation. */
+    selectable?: boolean;
+    selected?: boolean;
   }>(),
-  { busy: null, disabled: false },
+  {
+    busy: null,
+    disabled: false,
+    late: false,
+    selectable: false,
+    selected: false,
+  },
 );
 
-const emit = defineEmits<{ publish: []; correction: [] }>();
+const emit = defineEmits<{
+  publish: [];
+  correction: [];
+  select: [selected: boolean];
+}>();
 
 const { t, locale } = useI18n();
 const now = useAppNow();
@@ -50,39 +67,62 @@ const submittedAbsolute = computed(() =>
     class="border-default bg-default space-y-3 rounded-lg border p-4"
     :aria-labelledby="titleId"
   >
-    <div class="space-y-1">
-      <h4 :id="titleId" class="text-highlighted font-semibold">
-        <NuxtLink
-          :to="props.to"
-          class="focus-visible:outline-primary rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
-        >
-          <UIcon
-            :name="
-              document.format === 'file'
-                ? 'i-lucide-file-text'
-                : 'i-lucide-file-pen-line'
-            "
-            class="text-muted me-1 inline size-4 align-[-2px]"
-            aria-hidden="true"
-          />{{ document.title }}
-        </NuxtLink>
-      </h4>
-      <p class="text-muted flex flex-wrap items-center gap-x-1.5 text-sm">
-        <span>{{ t(`agenda.documentKinds.${document.kind}`) }}</span>
-        <template v-if="document.format === 'file'">
-          <span aria-hidden="true">·</span>
-          <span>{{ t("agenda.formats.file") }}</span>
-        </template>
-        <template v-if="document.submittedAt">
-          <span aria-hidden="true">·</span>
-          <span>
-            {{ t("review.documents.sent") }}
-            <time :datetime="document.submittedAt" :title="submittedAbsolute">{{
-              submittedRelative
-            }}</time>
-          </span>
-        </template>
-      </p>
+    <div class="flex items-start gap-3">
+      <UCheckbox
+        v-if="selectable"
+        class="mt-0.5"
+        :model-value="selected"
+        :disabled="disabled"
+        :aria-label="t('review.documents.select', { title: document.title })"
+        @update:model-value="emit('select', $event === true)"
+      />
+      <div class="min-w-0 flex-1 space-y-1">
+        <h4 :id="titleId" class="text-highlighted font-semibold">
+          <NuxtLink
+            :to="props.to"
+            class="focus-visible:outline-primary rounded-sm hover:underline focus-visible:outline-2 focus-visible:outline-offset-2"
+          >
+            <UIcon
+              :name="
+                document.format === 'file'
+                  ? 'i-lucide-file-text'
+                  : 'i-lucide-file-pen-line'
+              "
+              class="text-muted me-1 inline size-4 align-[-2px]"
+              aria-hidden="true"
+            />{{ document.title }}
+          </NuxtLink>
+        </h4>
+        <p class="text-muted flex flex-wrap items-center gap-x-1.5 text-sm">
+          <span>{{ t(`agenda.documentKinds.${document.kind}`) }}</span>
+          <template v-if="document.format === 'file'">
+            <span aria-hidden="true">·</span>
+            <span>{{ t("agenda.formats.file") }}</span>
+          </template>
+          <template v-if="document.submittedAt">
+            <span aria-hidden="true">·</span>
+            <span>
+              {{ t("review.documents.sent") }}
+              <time
+                :datetime="document.submittedAt"
+                :title="submittedAbsolute"
+                >{{ submittedRelative }}</time
+              >
+            </span>
+          </template>
+          <UBadge
+            v-if="late"
+            color="warning"
+            variant="subtle"
+            size="sm"
+            icon="i-lucide-clock-alert"
+            :label="t('review.documents.late')"
+          />
+        </p>
+        <p v-if="late" class="text-muted text-sm">
+          {{ t("review.documents.lateHint") }}
+        </p>
+      </div>
     </div>
 
     <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
@@ -95,15 +135,6 @@ const submittedAbsolute = computed(() =>
       />
       <span v-else class="text-dimmed">{{ t("review.noPresenter") }}</span>
     </div>
-
-    <p class="text-muted flex items-start gap-1.5 text-sm">
-      <UIcon
-        name="i-lucide-eye-off"
-        class="mt-0.5 size-4 shrink-0"
-        aria-hidden="true"
-      />
-      <span>{{ t("review.documents.waiting") }}</span>
-    </p>
 
     <div class="flex flex-wrap gap-2">
       <UButton
