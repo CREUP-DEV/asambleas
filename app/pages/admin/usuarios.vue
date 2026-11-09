@@ -29,7 +29,12 @@ import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
  * last Admin cannot (409). The server refuses all of these too
  * (PUT /api/admin/users/[id]/role, /member and /permissions).
  *
- * Only an Admin sees the actions column: each person's activity (the
+ * The list reads as text and fits the width: the account (its name and
+ * email wrap, never cut), its role with the extra permissions (listed on
+ * hover), the member it acts for and the last sync, with the sign-up date
+ * under it. Each row's "Editar" opens a side panel with its role, its member
+ * and its extra permissions; each change is confirmed and saved on its own.
+ * An Admin also gets, in the row's "⋯" menu, the person's activity (the
  * Admin-only /admin/actividad, filtered by them) and "Acceder como", which
  * asks for a reason and then reloads the app as that account (POST
  * /api/admin/users/[id]/impersonate). Never for oneself nor another Admin.
@@ -187,10 +192,6 @@ const { data: membersData } = await useFetch<MemberDto[]>("/api/members", {
   key: "admin-users-members",
   query: { all: 1 },
 });
-
-// The list reads as text; the role and member selects appear only in edit
-// mode, so the table stays calm and narrow on small screens.
-const editing = ref(false);
 
 const users = computed(() => usersData.value?.data ?? []);
 const pagination = computed(() => usersData.value?.pagination);
@@ -353,17 +354,23 @@ const rows = computed<UserTableRow[]>(() =>
   })),
 );
 
+/** Shown from a width on: narrow screens keep the account, role and actions. */
+function fromWidth(breakpoint: "lg" | "xl") {
+  const shown =
+    breakpoint === "lg" ? "hidden lg:table-cell" : "hidden xl:table-cell";
+  return { class: { th: shown, td: shown } };
+}
+
 const columns = computed<TableColumn<UserTableRow>[]>(() => [
   { accessorKey: "name", header: t("admin.users.user") },
   { id: "role", header: t("admin.users.role") },
-  { id: "member", header: t("admin.users.actsFor") },
-  { accessorKey: "university", header: t("admin.users.university") },
-  { accessorKey: "lastRoleSyncAt", header: t("admin.users.lastSync") },
-  { accessorKey: "createdAt", header: t("admin.users.registeredAt") },
-  // The activity log and acting as someone are Admin-only.
-  ...(isAdmin.value
-    ? [{ id: "actions", header: t("admin.users.actions") }]
-    : []),
+  { id: "member", header: t("admin.users.actsFor"), meta: fromWidth("lg") },
+  {
+    accessorKey: "lastRoleSyncAt",
+    header: t("admin.users.lastSync"),
+    meta: fromWidth("xl"),
+  },
+  { id: "actions", header: t("admin.users.actions") },
 ]);
 
 const changingUserId = ref<string | null>(null);
@@ -604,12 +611,23 @@ function addsToRole(key: PermissionKey, fromRole: PermissionKey[] | null) {
   return !(fromRole?.includes(key) ?? false);
 }
 
-/** Grants that add to the person's role: the "+N" badge on the row. */
-function extraCount(user: UserRow): number {
+/** Grants that add to the person's role, in catalog order. */
+function extraKeys(user: UserRow): PermissionKey[] {
   const fromRole = permissionsOfRole(user.role);
-  return (user.extraPermissions ?? []).filter((key) =>
-    addsToRole(key, fromRole),
-  ).length;
+  const stored = user.extraPermissions ?? [];
+  return ALL_PERMISSION_KEYS.filter(
+    (key) => stored.includes(key) && addsToRole(key, fromRole),
+  );
+}
+
+/** How many: the "+N" badge on the row. */
+function extraCount(user: UserRow): number {
+  return extraKeys(user).length;
+}
+
+/** The extras in words, for the badge's tooltip and its accessible name. */
+function extraLabels(user: UserRow): string[] {
+  return extraKeys(user).map(permissionLabel);
 }
 
 const permissionsTarget = ref<UserRow | null>(null);
@@ -815,11 +833,54 @@ async function confirmImpersonation(): Promise<void> {
   }
 }
 
-function toggleEditing(): void {
-  editing.value = !editing.value;
-  statusMessage.value = editing.value
-    ? t("admin.users.editingOn")
-    : t("admin.users.editingOff");
+// Editing one account ------------------------------------------------------
+
+/**
+ * The account in the side panel, by id: after a change the list reloads and
+ * the panel shows the account as stored. It closes if the account leaves
+ * the page (another filter or page).
+ */
+const editUserId = ref<string | null>(null);
+const editTarget = computed(
+  () => rows.value.find((row) => row.id === editUserId.value) ?? null,
+);
+const editOpen = computed({
+  get: () => editTarget.value !== null,
+  set: (open: boolean) => {
+    if (!open) editUserId.value = null;
+  },
+});
+
+/** Read-only while an Admin acts as another account (the server refuses). */
+function openEdit(user: UserRow): void {
+  if (impersonation.value) return;
+  editUserId.value = user.id;
+  const role = user.role;
+  if (role && role.name !== SYSTEM_ROLES.ADMIN) {
+    void loadRolePermissions(role.id);
+  }
+}
+
+/** The Admin's "⋯" menu of a row: activity, and acting as the account. */
+function rowMenu(user: UserRow) {
+  return [
+    {
+      label: t("admin.users.viewActivity"),
+      icon: "i-lucide-history",
+      to: activityLink(user),
+    },
+    ...(canImpersonate(user)
+      ? [
+          {
+            label: t("admin.users.impersonation.button"),
+            icon: "i-lucide-venetian-mask",
+            color: "warning" as const,
+            disabled: impersonationStarting.value,
+            onSelect: () => openImpersonation(user),
+          },
+        ]
+      : []),
+  ];
 }
 
 function goToPage(next: number): void {
@@ -836,24 +897,6 @@ function goToPage(next: number): void {
           <UDashboardSidebarCollapse />
         </template>
         <template #right>
-          <UButton
-            color="neutral"
-            variant="outline"
-            :icon="editing ? 'i-lucide-check' : 'i-lucide-pencil'"
-            :disabled="
-              changingUserId !== null ||
-              linkingUserId !== null ||
-              (impersonation !== null && !editing)
-            "
-            @click="toggleEditing"
-          >
-            <span class="hidden sm:inline">{{
-              editing ? t("admin.users.editDone") : t("admin.users.edit")
-            }}</span>
-            <span class="sr-only sm:hidden">{{
-              editing ? t("admin.users.editDone") : t("admin.users.edit")
-            }}</span>
-          </UButton>
           <UButton
             icon="i-lucide-refresh-cw"
             color="neutral"
@@ -909,15 +952,6 @@ function goToPage(next: number): void {
         icon="i-lucide-lock"
         :title="t('admin.impersonationReadOnly')"
       />
-      <p v-if="editing" class="text-muted flex items-center gap-1.5 text-sm">
-        <UIcon
-          name="i-lucide-pencil"
-          class="size-4 shrink-0"
-          aria-hidden="true"
-        />
-        {{ t("admin.users.editingHelp") }}
-      </p>
-
       <p class="sr-only" aria-live="polite" aria-atomic="true">
         {{ statusMessage }}
       </p>
@@ -948,14 +982,15 @@ function goToPage(next: number): void {
         :ui="{ td: 'align-middle whitespace-normal' }"
       >
         <template #name-cell="{ row }">
-          <div class="flex min-w-48 items-center gap-3">
+          <div class="flex max-w-md min-w-48 items-center gap-3">
             <UAvatar
               :src="row.original.image ?? undefined"
               :alt="row.original.name || row.original.email"
               size="sm"
             />
             <div class="min-w-0">
-              <p class="text-highlighted truncate font-medium">
+              <!-- The whole name and email, on as many lines as they need. -->
+              <p class="text-highlighted font-medium break-words">
                 {{ row.original.name }}
                 <UBadge
                   v-if="row.original.id === currentUserId"
@@ -966,7 +1001,7 @@ function goToPage(next: number): void {
                   class="ms-1"
                 />
               </p>
-              <p class="text-muted truncate text-xs">
+              <p class="text-muted text-xs break-all">
                 {{ row.original.email }}
               </p>
               <p
@@ -989,165 +1024,82 @@ function goToPage(next: number): void {
         </template>
 
         <template #role-cell="{ row }">
-          <div v-if="!editing" class="flex flex-wrap items-center gap-1.5">
-            <span class="text-sm">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="text-sm whitespace-nowrap">
               {{
                 row.original.role
                   ? roleName(row.original.role.name)
                   : t("admin.users.noRole")
               }}
             </span>
-            <UBadge
+            <!-- Hover or focus lists the extras; a click opens the panel. -->
+            <UTooltip
               v-if="extraCount(row.original) > 0"
-              color="neutral"
-              variant="outline"
-              size="sm"
-              icon="i-lucide-plus"
-              :label="
-                t(
-                  'admin.users.permissions.extraCount',
-                  { count: extraCount(row.original) },
-                  extraCount(row.original),
-                )
-              "
-            />
-          </div>
-          <div v-else class="space-y-1">
-            <USelect
-              :key="`${row.original.id}-${selectResetKey}`"
-              :model-value="row.original.roleId ?? undefined"
-              :items="roleOptions"
-              :loading="changingUserId === row.original.id"
-              :disabled="
-                ownAccountLocked(row.original) ||
-                roleLocked(row.original) ||
-                isRevoked(row.original) ||
-                changingUserId !== null
-              "
-              :placeholder="t('admin.users.noRole')"
-              :aria-label="
-                t('admin.users.roleFor', {
-                  user: row.original.name || row.original.email,
-                })
-              "
-              :aria-describedby="
-                roleLockReason(row.original)
-                  ? `row-locked-${row.original.id}`
-                  : undefined
-              "
-              class="w-44"
-              @update:model-value="
-                (value: unknown) => selectRole(row.original, value)
-              "
-            />
-            <p
-              v-if="roleLockReason(row.original)"
-              :id="`row-locked-${row.original.id}`"
-              class="text-muted flex max-w-44 items-start gap-1 text-xs"
+              :content="{ side: 'bottom', align: 'start' }"
             >
-              <UIcon
-                name="i-lucide-lock"
-                class="mt-px size-3.5 shrink-0"
-                aria-hidden="true"
+              <UButton
+                color="neutral"
+                variant="outline"
+                size="xs"
+                icon="i-lucide-plus"
+                class="whitespace-nowrap"
+                :label="
+                  t(
+                    'admin.users.permissions.extraCount',
+                    { count: extraCount(row.original) },
+                    extraCount(row.original),
+                  )
+                "
+                :aria-label="
+                  t('admin.users.permissions.listFor', {
+                    user: displayName(row.original),
+                    list: extraLabels(row.original).join(', '),
+                  })
+                "
+                :disabled="impersonation !== null"
+                @click="openEdit(row.original)"
               />
-              <span>{{ roleLockReason(row.original) }}</span>
-            </p>
-            <!-- Disabled on one's own row: the note above says why. An Admin
-                 already has every permission, so it shows only to clear
-                 grants stored before they became Admin. -->
-            <UButton
-              v-if="
-                !isAdminRoleName(row.original.role?.name) ||
-                (row.original.extraPermissions?.length ?? 0) > 0
-              "
-              color="neutral"
-              variant="link"
-              size="xs"
-              class="px-0"
-              icon="i-lucide-key-round"
-              :label="
-                extraCount(row.original) > 0
-                  ? t(
-                      'admin.users.permissions.extraCount',
-                      { count: extraCount(row.original) },
-                      extraCount(row.original),
-                    )
-                  : t('admin.users.permissions.button')
-              "
-              :aria-label="
-                t('admin.users.permissions.buttonFor', {
-                  user: row.original.name || row.original.email,
-                })
-              "
-              :aria-describedby="
-                rowLockReason(row.original)
-                  ? `row-locked-${row.original.id}`
-                  : undefined
-              "
-              :disabled="
-                ownAccountLocked(row.original) ||
-                roleLocked(row.original) ||
-                changingUserId !== null ||
-                linkingUserId !== null
-              "
-              @click="openPermissions(row.original)"
-            />
+              <template #content>
+                <ul class="space-y-0.5 py-0.5 text-xs">
+                  <li
+                    v-for="label in extraLabels(row.original)"
+                    :key="label"
+                    class="flex items-center gap-1.5"
+                  >
+                    <UIcon
+                      name="i-lucide-key-round"
+                      class="size-3.5 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <span>{{ label }}</span>
+                  </li>
+                </ul>
+              </template>
+            </UTooltip>
           </div>
         </template>
 
         <template #member-cell="{ row }">
-          <div
-            class="max-w-64 min-w-40 space-y-1"
-            :class="editing ? 'w-56' : ''"
-          >
-            <template v-if="!editing">
-              <div
-                v-if="row.original.member"
-                class="flex flex-wrap items-center gap-1.5"
-              >
-                <CommonMemberBadge :member="row.original.member" show-name />
-                <UBadge
-                  v-if="!row.original.member.active"
-                  color="neutral"
-                  variant="outline"
-                  size="sm"
-                  :label="t('admin.members.inactive')"
-                />
-              </div>
-              <span v-else-if="row.original.memberId" class="text-dimmed">
-                {{ t("admin.none") }}
-              </span>
-              <span v-else class="text-dimmed text-sm">
-                {{ t("admin.users.noMember") }}
-              </span>
-            </template>
-            <USelectMenu
-              v-else
-              :key="`${row.original.id}-${memberSelectKey}`"
-              :model-value="memberValue(row.original)"
-              :items="memberOptionsFor(row.original)"
-              value-key="value"
-              :loading="linkingUserId === row.original.id"
-              :disabled="
-                linkingUserId !== null || ownAccountLocked(row.original)
-              "
-              :placeholder="t('admin.users.chooseMember')"
-              :search-input="labelledSearch(t('admin.users.searchMember'))"
-              :aria-label="
-                t('admin.users.memberFor', {
-                  user: row.original.name || row.original.email,
-                })
-              "
-              :aria-describedby="
-                ownAccountLocked(row.original)
-                  ? `row-locked-${row.original.id}`
-                  : undefined
-              "
-              class="w-full"
-              @update:model-value="
-                (value: unknown) => selectMember(row.original, value)
-              "
-            />
+          <div class="max-w-64 min-w-40 space-y-1">
+            <div
+              v-if="row.original.member"
+              class="flex flex-wrap items-center gap-1.5"
+            >
+              <CommonMemberBadge :member="row.original.member" show-name />
+              <UBadge
+                v-if="!row.original.member.active"
+                color="neutral"
+                variant="outline"
+                size="sm"
+                :label="t('admin.members.inactive')"
+              />
+            </div>
+            <span v-else-if="row.original.memberId" class="text-dimmed">
+              {{ t("admin.none") }}
+            </span>
+            <span v-else class="text-dimmed text-sm">
+              {{ t("admin.users.noMember") }}
+            </span>
             <p
               v-if="row.original.externalInitials || row.original.externalRole"
               class="text-muted text-xs"
@@ -1162,63 +1114,57 @@ function goToPage(next: number): void {
           </div>
         </template>
 
-        <template #university-cell="{ row }">
-          <span v-if="row.original.university" class="text-sm">
-            {{ row.original.university }}
-          </span>
-          <span v-else class="text-dimmed">{{ t("admin.none") }}</span>
-        </template>
-
         <template #lastRoleSyncAt-cell="{ row }">
-          <span
-            v-if="row.original.lastRoleSyncAt"
-            class="text-muted text-sm whitespace-nowrap"
-          >
-            {{ formatDay(row.original.lastRoleSyncAt) }}
-          </span>
-          <span v-else class="text-dimmed">{{
-            t("admin.users.neverSynced")
-          }}</span>
-        </template>
-
-        <template #createdAt-cell="{ row }">
-          <span class="text-muted text-sm whitespace-nowrap">
-            {{ formatDay(row.original.createdAt) }}
-          </span>
+          <div class="text-sm whitespace-nowrap">
+            <p v-if="row.original.lastRoleSyncAt" class="text-muted">
+              {{ formatDay(row.original.lastRoleSyncAt) }}
+            </p>
+            <p v-else class="text-dimmed">
+              {{ t("admin.users.neverSynced") }}
+            </p>
+            <p class="text-dimmed text-xs">
+              {{
+                t("admin.users.registeredOn", {
+                  date: formatDay(row.original.createdAt),
+                })
+              }}
+            </p>
+          </div>
         </template>
 
         <template #actions-cell="{ row }">
-          <div class="flex flex-col items-start gap-1">
+          <div class="flex items-center gap-1">
             <UButton
-              :to="activityLink(row.original)"
               color="neutral"
-              variant="link"
-              size="xs"
-              class="px-0 whitespace-nowrap"
-              icon="i-lucide-history"
-              :label="t('admin.users.viewActivity')"
-              :aria-label="
-                t('admin.users.viewActivityFor', {
-                  user: displayName(row.original),
-                })
-              "
-            />
-            <UButton
-              v-if="canImpersonate(row.original)"
-              color="warning"
               variant="outline"
-              size="xs"
+              size="sm"
+              icon="i-lucide-pencil"
               class="whitespace-nowrap"
-              icon="i-lucide-venetian-mask"
-              :label="t('admin.users.impersonation.button')"
+              :label="t('admin.users.editAction')"
               :aria-label="
-                t('admin.users.impersonation.buttonFor', {
-                  user: displayName(row.original),
-                })
+                t('admin.users.editFor', { user: displayName(row.original) })
               "
-              :disabled="impersonationStarting"
-              @click="openImpersonation(row.original)"
+              :disabled="impersonation !== null"
+              @click="openEdit(row.original)"
             />
+            <!-- The activity log and acting as someone are Admin-only. -->
+            <UDropdownMenu
+              v-if="isAdmin"
+              :items="rowMenu(row.original)"
+              :content="{ align: 'end' }"
+            >
+              <UButton
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                icon="i-lucide-ellipsis"
+                :aria-label="
+                  t('admin.users.moreActionsFor', {
+                    user: displayName(row.original),
+                  })
+                "
+              />
+            </UDropdownMenu>
           </div>
         </template>
 
@@ -1278,6 +1224,164 @@ function goToPage(next: number): void {
           </UButton>
         </div>
       </nav>
+
+      <!-- One account: its role, its member and its extra permissions. Each
+           change is confirmed (and saved) on its own, in the dialogs below. -->
+      <USlideover
+        v-model:open="editOpen"
+        :title="
+          editTarget
+            ? t('admin.users.editFor', { user: displayName(editTarget) })
+            : ''
+        "
+        :description="t('admin.users.editingHelp')"
+      >
+        <template #body>
+          <div v-if="editTarget" class="space-y-6">
+            <div class="flex items-start gap-3">
+              <UAvatar
+                :src="editTarget.image ?? undefined"
+                :alt="displayName(editTarget)"
+                size="md"
+              />
+              <div class="min-w-0 space-y-0.5 text-sm">
+                <p class="text-highlighted font-medium break-words">
+                  {{ editTarget.name }}
+                </p>
+                <p class="text-muted break-all">{{ editTarget.email }}</p>
+                <p v-if="editTarget.university" class="text-muted">
+                  {{ editTarget.university }}
+                </p>
+                <p
+                  v-if="editTarget.externalInitials || editTarget.externalRole"
+                  class="text-muted"
+                >
+                  {{
+                    t("admin.users.intranetInfo", {
+                      initials: editTarget.externalInitials ?? t("admin.none"),
+                      role: editTarget.externalRole ?? t("admin.none"),
+                    })
+                  }}
+                </p>
+                <UBadge
+                  v-if="isRevoked(editTarget)"
+                  :label="t('admin.users.access.revoked')"
+                  color="error"
+                  variant="subtle"
+                  size="sm"
+                  icon="i-lucide-user-x"
+                  class="mt-1"
+                />
+              </div>
+            </div>
+
+            <UFormField
+              :label="t('admin.users.role')"
+              :help="roleLockReason(editTarget) ?? undefined"
+            >
+              <USelect
+                :key="`${editTarget.id}-${selectResetKey}`"
+                :model-value="editTarget.roleId ?? undefined"
+                :items="roleOptions"
+                :loading="changingUserId === editTarget.id"
+                :disabled="
+                  ownAccountLocked(editTarget) ||
+                  roleLocked(editTarget) ||
+                  isRevoked(editTarget) ||
+                  changingUserId !== null
+                "
+                :placeholder="t('admin.users.noRole')"
+                :aria-label="
+                  t('admin.users.roleFor', { user: displayName(editTarget) })
+                "
+                class="w-full"
+                @update:model-value="
+                  (value: unknown) => selectRole(editTarget!, value)
+                "
+              />
+            </UFormField>
+
+            <UFormField :label="t('admin.users.actsFor')">
+              <USelectMenu
+                :key="`${editTarget.id}-${memberSelectKey}`"
+                :model-value="memberValue(editTarget)"
+                :items="memberOptionsFor(editTarget)"
+                value-key="value"
+                :loading="linkingUserId === editTarget.id"
+                :disabled="
+                  linkingUserId !== null || ownAccountLocked(editTarget)
+                "
+                :placeholder="t('admin.users.chooseMember')"
+                :search-input="labelledSearch(t('admin.users.searchMember'))"
+                :aria-label="
+                  t('admin.users.memberFor', { user: displayName(editTarget) })
+                "
+                class="w-full"
+                @update:model-value="
+                  (value: unknown) => selectMember(editTarget!, value)
+                "
+              />
+            </UFormField>
+
+            <section aria-labelledby="user-edit-extras" class="space-y-2">
+              <h3
+                id="user-edit-extras"
+                class="text-highlighted text-sm font-medium"
+              >
+                {{ t("admin.users.permissions.extraTitle") }}
+              </h3>
+              <p
+                v-if="isAdminRoleName(editTarget.role?.name)"
+                class="text-muted text-sm"
+              >
+                {{ t("admin.users.permissions.allByRole") }}
+              </p>
+              <ul v-else-if="extraCount(editTarget) > 0" class="space-y-1">
+                <li
+                  v-for="label in extraLabels(editTarget)"
+                  :key="label"
+                  class="flex items-center gap-1.5 text-sm"
+                >
+                  <UIcon
+                    name="i-lucide-key-round"
+                    class="text-dimmed size-4 shrink-0"
+                    aria-hidden="true"
+                  />
+                  <span>{{ label }}</span>
+                </li>
+              </ul>
+              <p v-else class="text-muted text-sm">
+                {{ t("admin.users.permissions.summary", 0) }}
+              </p>
+              <!-- An Admin already has every permission: shown only to clear
+                   grants stored before they became Admin. -->
+              <UButton
+                v-if="
+                  !isAdminRoleName(editTarget.role?.name) ||
+                  (editTarget.extraPermissions?.length ?? 0) > 0
+                "
+                color="neutral"
+                variant="outline"
+                size="sm"
+                icon="i-lucide-key-round"
+                :label="t('admin.users.permissions.change')"
+                :aria-label="
+                  t('admin.users.permissions.buttonFor', {
+                    user: displayName(editTarget),
+                  })
+                "
+                :disabled="
+                  ownAccountLocked(editTarget) ||
+                  roleLocked(editTarget) ||
+                  changingUserId !== null ||
+                  linkingUserId !== null
+                "
+                @click="openPermissions(editTarget)"
+              />
+            </section>
+          </div>
+        </template>
+      </USlideover>
 
       <UModal
         v-model:open="confirmOpen"

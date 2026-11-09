@@ -1683,9 +1683,7 @@
       "noUsers": "No registered users",
       "email": "Email",
       "role": "Role",
-      "university": "University",
       "lastSync": "Last sync",
-      "registeredAt": "Joined",
       "user": "User",
       "description": "Accounts that have signed in, with their role and the member they act for. Most of it comes from the intranet at sign-in.",
       "noRole": "No role",
@@ -1709,13 +1707,8 @@
       "memberLinked": "{user} now acts for {member}",
       "memberUnlinked": "{user} is no longer linked to any member",
       "memberLinkFailed": "Could not change the link",
-      "edit": "Edit roles, links and permissions",
-      "editDone": "Done",
       "editingHelp": "The Associate, Sectoral body, CEA and Guest roles are read again from the intranet at every sign-in; other roles stay as you set them. Every change is confirmed before it is saved.",
-      "editingOn": "You can change roles, links and extra permissions now.",
-      "editingOff": "You have finished editing.",
       "permissions": {
-        "button": "Extra permissions",
         "buttonFor": "Extra permissions for {user}",
         "extraCount": "{count} extra permission | {count} extra permissions",
         "title": "Permissions for {user}",
@@ -1737,7 +1730,9 @@
         "redundantTitle": "Granted separately but not needed now",
         "redundantHelp": "They give nothing new right now. Turn them off if they are not needed, then save.",
         "coveredByRole": "Their role already includes it. If their role changes, they keep it.",
-        "powerfulHelp": "Opens the administration and lets them give any permission except Administrator."
+        "powerfulHelp": "Opens the administration and lets them give any permission except Administrator.",
+        "change": "Change extra permissions",
+        "listFor": "Extra permissions of {user}: {list}"
       },
       "adminRoleOnlyAdmins": "Only an Administrator can give it",
       "adminRoleLocked": "Only an Administrator can give or take away the Administrator role.",
@@ -1783,7 +1778,11 @@
       "errors": {
         "targetRevoked": "This account no longer has access because the intranet deleted it, so its role cannot be changed."
       },
-      "search": "Search by name, email or acronym"
+      "search": "Search by name, email or acronym",
+      "editAction": "Edit",
+      "editFor": "Edit {user}",
+      "moreActionsFor": "More actions for {user}",
+      "registeredOn": "Joined {date}"
     },
     "roles": {
       "title": "Roles and permissions",
