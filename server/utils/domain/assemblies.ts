@@ -281,14 +281,25 @@ export function milestonesToMap(list: MilestoneDto[]): Milestones {
   return map;
 }
 
-/** The first milestone still to come, for countdowns. Expects a sorted list. */
+/**
+ * The first milestone still to come, for countdowns. Expects a sorted list.
+ * Once the assembly is convened its convocation date is no longer a deadline
+ * (the Secretaría may convene earlier than planned), and once the agenda is
+ * final neither is the date planned for it.
+ */
 export function nextMilestone(
   list: MilestoneDto[],
   now = new Date(),
+  done: { convened?: boolean; agendaFinal?: boolean } = {},
 ): MilestoneDto | null {
   const time = now.getTime();
   return (
-    list.find((milestone) => new Date(milestone.at).getTime() > time) ?? null
+    list.find(
+      (milestone) =>
+        new Date(milestone.at).getTime() > time &&
+        !(done.convened && milestone.key === "convocation") &&
+        !(done.agendaFinal && milestone.key === "agenda_final"),
+    ) ?? null
   );
 }
 
@@ -324,7 +335,10 @@ export function toAssemblySummaryDto(
     location: row.location,
     agendaFinalizedAt: iso(row.agendaFinalizedAt),
     documentCount: extra.documentCount,
-    nextMilestone: nextMilestone(extra.milestones, extra.now),
+    nextMilestone: nextMilestone(extra.milestones, extra.now, {
+      convened: row.status !== "draft",
+      agendaFinal: row.agendaFinalizedAt !== null,
+    }),
     updatedAt: row.updatedAt.toISOString(),
   };
 }
