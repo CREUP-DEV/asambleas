@@ -365,9 +365,9 @@ Prioridad: must / should / could.
 - ¿Debe ser pública la posición del proponente sobre cada enmienda (aceptar, rechazar o transaccionar) antes de la sesión, o solo visible para la Mesa y el propio proponente?
 - ¿Quién debe aceptar una transaccional: solo el autor de la enmienda original (como las orales, RFAG 2025 art. 21.2) o también el proponente del documento? Ninguna norma vigente lo dice. ¿Puede proponerla un miembro ajeno?
 - ¿Qué ocurre en caso de empate en la votación de una enmienda (UM 5: 13-13 en la 79 AGO)?
-- ¿Cuál es el denominador de los 2/3: votos válidos (RFAG) o miembros representados (RRI art. 24.2)? ¿Se aplica mayoría simple o absoluta a las enmiendas rechazadas en reformas normativas?
+- ¿Cuál es el denominador de los 2/3: votos válidos (RFAG) o miembros representados (RRI art. 24.2)? ¿Se aplica mayoría simple o absoluta a las enmiendas rechazadas en reformas normativas? En la 77 AGO el convenio con CANAE cayó con 18 a favor, 2 en contra y 10 abstenciones: no llega a 2/3 si las abstenciones cuentan en el denominador (18 de 30), y sí si no cuentan (18 de 20). Encaja con 2/3 de los votos válidos contando las abstenciones, que es lo que aplica la plataforma.
 - ¿Qué es hoy el «portal de votaciones»? ¿La plataforma debe sustituirlo, integrarse con él o solo registrar los resultados?
-- ¿Pueden las sectoriales presentar enmiendas? ¿Votan? En la 78 AGO aparecen como coautoras.
+- ¿Votan las sectoriales? Sí presentan documentos y enmiendas: en la 77 AGO la ANEM presentó dos resoluciones, el CEEM otra con ASEQ, CEUEx y CEUdL, y SIUEH (con el CEEM) y ASEQ firmaron enmiendas; en la 78 AGO aparecen como coautoras. La sincronización de roles les da hoy «Invitado», sin permisos: hay que darles `document:create` y `amendment:create` a mano.
 - ¿Qué tipos de documento son enmendables: cuentas, presupuestos, cuotas, POA, convenios, actas e informes? ¿Admiten todos enmiendas a la totalidad?
 - Cuando un documento se retira o aplaza y se vuelve a presentar (Becas, Refugios), ¿siguen vigentes las enmiendas ya aprobadas o se abre una ventana nueva sobre un texto limpio?
 - ¿El plazo de enmiendas debe ser único por asamblea o contarse por documento desde su publicación?
