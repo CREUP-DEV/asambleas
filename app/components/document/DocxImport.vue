@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { DocxImportDto } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
+import {
+  REGULATION_DOCUMENT_KINDS,
+  type DocumentKind,
+} from "~~/shared/constants/domain";
 
 /**
  * DOCX import for the working draft: pick a .docx, the server converts it
@@ -22,6 +26,8 @@ const props = withDefaults(
     prominent?: boolean;
     /** The document's title, to spot the template header that repeats it. */
     documentTitle?: string;
+    /** The document's kind: in a reform the approval line is content. */
+    documentKind?: DocumentKind | null;
   }>(),
   {
     currentCount: 0,
@@ -29,6 +35,7 @@ const props = withDefaults(
     disabled: false,
     prominent: false,
     documentTitle: "",
+    documentKind: null,
   },
 );
 
@@ -126,7 +133,17 @@ const headerLength = computed(() =>
 const headerLines = computed(() =>
   imported.value.slice(0, headerLength.value).map((block) => block.text),
 );
-const dropHeader = ref(true);
+/**
+ * Dropped by default, except in the Estatutos and the regulations: there the
+ * approval and amendment history line belongs to the text and may be
+ * amended ("Modificado parcialmente en la 76.ª AGO…").
+ */
+const dropByDefault = computed(
+  () =>
+    !props.documentKind ||
+    !REGULATION_DOCUMENT_KINDS.includes(props.documentKind),
+);
+const dropHeader = ref(dropByDefault.value);
 
 const blocks = computed(() =>
   dropHeader.value && headerLength.value > 0
@@ -162,7 +179,7 @@ function confirm(): void {
 
 watch(open, (isOpen) => {
   if (!isOpen) result.value = null;
-  else dropHeader.value = true;
+  else dropHeader.value = dropByDefault.value;
 });
 </script>
 
