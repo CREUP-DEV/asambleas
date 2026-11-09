@@ -189,7 +189,9 @@ export const DOCUMENT_KIND_DEFAULTS: Record<
     amendable: false,
     voted: true,
     acceptedAmendments: "vote",
-    majority: "simple",
+    // RFAG 2025 art. 23.1: two thirds of the valid votes. The 77.ª AGO
+    // rejected the CANAE agreement with 18 for, 2 against and 10 abstentions.
+    majority: "two_thirds",
   },
   report: {
     amendable: false,
