@@ -51,6 +51,25 @@ describe("presenterKindGroups", () => {
     expect(groups.others).toContain("executive_report");
   });
 
+  it("never offers a sectorial an internal motion", () => {
+    const groups = presenterKindGroups({ memberKind: "sectorial" });
+    expect(groups.common).toEqual([
+      "positioning",
+      "resolution",
+      "report",
+      "other",
+    ]);
+    expect(groups.others).not.toContain("internal_motion");
+  });
+
+  it("keeps the current kind of a sectorial's document", () => {
+    const groups = presenterKindGroups({
+      memberKind: "sectorial",
+      current: "internal_motion",
+    });
+    expect(groups.common).toContain("internal_motion");
+  });
+
   it("puts what CEA areas present first", () => {
     const groups = presenterKindGroups({ memberKind: "executive" });
     expect(groups.common[0]).toBe("executive_report");

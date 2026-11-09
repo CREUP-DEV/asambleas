@@ -47,6 +47,11 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
   Presidencia: [...ALL_PERMISSION_KEYS],
   CEA: [PERMISSION_KEYS.DOCUMENT_CREATE, PERMISSION_KEYS.AMENDMENT_CREATE],
   Asociado: [PERMISSION_KEYS.DOCUMENT_CREATE, PERMISSION_KEYS.AMENDMENT_CREATE],
+  // Internal motions are barred by member kind, not by a permission.
+  Sectorial: [
+    PERMISSION_KEYS.DOCUMENT_CREATE,
+    PERMISSION_KEYS.AMENDMENT_CREATE,
+  ],
   Moderador: [PERMISSION_KEYS.SESSION_MODERATE],
   Invitado: [],
 };

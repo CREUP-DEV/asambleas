@@ -15,6 +15,7 @@ import type {
   MemberDto,
   MemberRef,
 } from "~~/shared/types/api";
+import { memberMayPresent } from "~~/shared/utils/presenterKinds";
 import { formatDateTime, toDate } from "~/utils/format";
 import {
   kindSelectItems,
@@ -476,6 +477,16 @@ const {
   immediate: manager.value,
 });
 
+/**
+ * The members that may present a document of the kind chosen: a sectorial
+ * is not offered for an internal motion (memberMayPresent).
+ */
+const presentableMembers = computed<MemberDto[]>(() =>
+  (members.value ?? []).filter((member) =>
+    memberMayPresent(state.kind, member.kind),
+  ),
+);
+
 /** Presenters load the members when they unfold "varios miembros". */
 function loadMembers(): void {
   if (membersStatus.value === "idle") void fetchMembers();
@@ -512,7 +523,7 @@ const ownPresenter = computed(() =>
 );
 
 const memberItems = computed(() => {
-  const list = (members.value ?? []).map((member) => ({
+  const list = presentableMembers.value.map((member) => ({
     label: member.acronym,
     description: memberNameRepeatsAcronym(member) ? undefined : member.name,
     value: member.id,
@@ -788,7 +799,7 @@ defineExpose({ reset: resetForm, check, save });
           v-model:main-id="state.mainId"
           voice="presenter"
           :lead-id="state.proponentMemberId"
-          :members="members ?? []"
+          :members="presentableMembers"
           :known="knownMembers"
           :loading="membersStatus === 'pending'"
           :own-member-id="ownPresenter.id"
@@ -941,7 +952,7 @@ defineExpose({ reset: resetForm, check, save });
         :main-id="state.mainId"
         voice="manager"
         :lead-id="state.proponentMemberId"
-        :members="members ?? []"
+        :members="presentableMembers"
         :known="knownMembers"
         :loading="membersStatus === 'pending'"
         :own-member-id="myMember?.id ?? null"

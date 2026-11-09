@@ -222,7 +222,7 @@ Como cada enmienda cita el párrafo entero, dos que tocan frases distintas parec
 
 **Métodos:** asentimiento, mano alzada, voto secreto a petición (la votación final de la 34 AGE), voto nominal, voto secreto para elegir personas y el portal en las AGET.
 
-**Quórum:** los umbrales se calculan en una hoja de asistencia por sesión, contando las delegaciones (cada miembro puede recibir como máximo una).
+**Quórum:** los umbrales se calculan en una hoja de asistencia por sesión, contando las delegaciones (cada miembro puede recibir como máximo una). La AGO necesita la mitad de los miembros en primera convocatoria y un tercio de los que tienen derecho a voto en segunda (Estatutos art. 14.1, RFAG art. 9.1); la AGE y la AGET, más de la mitad en convocatoria única (Estatutos art. 14.2, que prevalece sobre el «como mínimo» del RRI art. 10.4 y el RFAG art. 9.2). Además tienen que estar la Presidencia y la Secretaría Ejecutiva, o quien las sustituya. El voto delegado cuenta para el quórum y para todas las votaciones (RRI art. 19.3). Los textos no dicen si el quórum se vuelve a comprobar durante la sesión; en la práctica se recuenta al empezar cada jornada y al volver de los descansos, y la plataforma lo recoge con los recuentos de la Mesa.
 
 **Registro de resultados:**
 
@@ -263,7 +263,7 @@ Al resubirse, llevan fusionadas en silencio las enmiendas de asambleas anteriore
 | Presidencia                  | Pide la convocatoria. Modera las AGE y AGET junto con la Secretaría.                                                                                                                                                                                            |
 | CE / CEA como proponente     | Fija el ODD y los plazos, y puede prorrogar las enmiendas hasta 72 h antes. Redacta la mayoría de los documentos. Fija su posición sobre cada enmienda, negocia las transaccionales y a menudo consolida.                                                       |
 | Miembros (MOREs) y delegados | Presentan documentos y enmiendas, también conjuntas. Aceptan o rechazan transaccionales, retiran o mantienen sus enmiendas, piden votaciones y delegan el voto.                                                                                                 |
-| Sectoriales                  | Asisten y aparecen como coautoras de enmiendas. No está claro si votan.                                                                                                                                                                                         |
+| Sectoriales                  | Asisten, presentan documentos (salvo mociones internas) y enmiendas, también como coautoras. No está claro si votan.                                                                                                                                            |
 | Comité de Garantías          | Resuelve los recursos contra la Mesa.                                                                                                                                                                                                                           |
 
 ## 6. Puntos de dolor
@@ -367,7 +367,7 @@ Prioridad: must / should / could.
 - ¿Qué ocurre en caso de empate en la votación de una enmienda (UM 5: 13-13 en la 79 AGO)?
 - ¿Cuál es el denominador de los 2/3: votos válidos (RFAG) o miembros representados (RRI art. 24.2)? ¿Se aplica mayoría simple o absoluta a las enmiendas rechazadas en reformas normativas? En la 77 AGO el convenio con CANAE cayó con 18 a favor, 2 en contra y 10 abstenciones: no llega a 2/3 si las abstenciones cuentan en el denominador (18 de 30), y sí si no cuentan (18 de 20). Encaja con 2/3 de los votos válidos contando las abstenciones, que es lo que aplica la plataforma.
 - ¿Qué es hoy el «portal de votaciones»? ¿La plataforma debe sustituirlo, integrarse con él o solo registrar los resultados?
-- ¿Votan las sectoriales? Sí presentan documentos y enmiendas: en la 77 AGO la ANEM presentó dos resoluciones, el CEEM otra con ASEQ, CEUEx y CEUdL, y SIUEH (con el CEEM) y ASEQ firmaron enmiendas; en la 78 AGO aparecen como coautoras. La sincronización de roles les da hoy «Invitado», sin permisos: hay que darles `document:create` y `amendment:create` a mano.
+- ¿Votan las sectoriales? Sí presentan documentos y enmiendas: en la 77 AGO la ANEM presentó dos resoluciones, el CEEM otra con ASEQ, CEUEx y CEUdL, y SIUEH (con el CEEM) y ASEQ firmaron enmiendas; en la 78 AGO aparecen como coautoras. La sincronización de roles les da el rol «Sectorial» (`document:create` y `amendment:create`), y no pueden presentar mociones internas, aunque sí enmendarlas.
 - ¿Qué tipos de documento son enmendables: cuentas, presupuestos, cuotas, POA, convenios, actas e informes? ¿Admiten todos enmiendas a la totalidad?
 - Cuando un documento se retira o aplaza y se vuelve a presentar (Becas, Refugios), ¿siguen vigentes las enmiendas ya aprobadas o se abre una ventana nueva sobre un texto limpio?
 - ¿El plazo de enmiendas debe ser único por asamblea o contarse por documento desde su publicación?

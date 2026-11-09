@@ -1698,7 +1698,7 @@
       "memberLinkFailed": "Could not change the link",
       "edit": "Edit roles, links and permissions",
       "editDone": "Done",
-      "editingHelp": "The Associate, CEA and Guest roles are read again from the intranet at every sign-in; other roles stay as you set them. Every change is confirmed before it is saved.",
+      "editingHelp": "The Associate, Sectoral body, CEA and Guest roles are read again from the intranet at every sign-in; other roles stay as you set them. Every change is confirmed before it is saved.",
       "editingOn": "You can change roles, links and extra permissions now.",
       "editingOff": "You have finished editing.",
       "permissions": {
@@ -2170,6 +2170,7 @@
       "afternoon": "Good afternoon, {name}",
       "evening": "Good evening, {name}",
       "morningAnonymous": "Good morning",
+      "sectorial": "Sectoral body",
       "afternoonAnonymous": "Good afternoon",
       "eveningAnonymous": "Good evening"
     },

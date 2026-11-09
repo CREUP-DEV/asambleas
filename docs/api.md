@@ -216,11 +216,12 @@ links `users.memberId`:
   follow their id or their initials.
 - An account stops acting for its member (`memberId` becomes null, in the
   same transaction as the role change) when it has a synced role (`Invitado`,
-  `Asociado`, `CEA`) and either its role changes with its intranet type (a CEA
-  cargo whose term ended becomes `Invitado`) or its intranet type stops being
-  `Asociado`, `Sectorial` or `CEA`. The new type, if it is one of those,
-  links it again. `Admin`, `Secretaría`, `Presidencia` and `Moderador`
-  accounts keep their role and their link.
+  `Asociado`, `Sectorial`, `CEA`) and either its role changes with its
+  intranet type (a CEA cargo whose term ended becomes `Invitado`, a
+  sectorial that signed in as `Invitado` becomes `Sectorial`) or its
+  intranet type stops being `Asociado`, `Sectorial` or `CEA`. The new type,
+  if it is one of those, links it again. `Admin`, `Secretaría`,
+  `Presidencia` and `Moderador` accounts keep their role and their link.
 - When the role resolved by the sync has no row (the database was not seeded
   after a role was added), the sync logs a warning; a new account gets
   `Invitado` instead, and an existing one keeps its role and its member. Run
@@ -317,9 +318,17 @@ deleted or moved. Sub-items still can.
 
 **Who can create.** Managers (`document:manage`) can always create a document,
 for any members (see presenters below) and with no content. Members with
-`document:create` (Asociado and CEA accounts) can create one under an agenda
-item that has `acceptsSubmissions`, until the `documents_close` milestone,
-always as one of its presenters.
+`document:create` (Asociado, Sectorial and CEA accounts) can create one under
+an agenda item that has `acceptsSubmissions`, until the `documents_close`
+milestone, always as one of its presenters.
+
+**Who may present a kind.** A sectorial never presents an internal motion,
+as main presenter or as co-presenter (it may amend one). The rule follows the
+member, not the account's role (`memberMayPresent` in
+`shared/utils/presenterKinds.ts`): `POST` and `PUT` check the kind and every
+presenter the document ends with, for managers too, and answer 422 with
+`data: { reason: "presenter_kind" }` (the message names the sectorials). A
+`PUT` that changes neither the kind nor the presenters is not checked.
 
 **Presenters.** A document has a main presenter (`proponentMemberId`,
 `DocumentSummaryDto.proponent`), who alone answers its amendments, and may

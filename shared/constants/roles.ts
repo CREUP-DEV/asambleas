@@ -7,6 +7,12 @@ export const SYSTEM_ROLES = {
   /** Members of the Comisión Ejecutiva (intranet type "CEA"). */
   CEA: "CEA",
   ASOCIADO: "Asociado",
+  /**
+   * Sectorial associations (intranet type "Sectorial"): they attend and
+   * present documents and amendments like a council, but never an internal
+   * motion (a rule of the member, shared/utils/presenterKinds.ts).
+   */
+  SECTORIAL: "Sectorial",
   INVITADO: "Invitado",
 } as const;
 
