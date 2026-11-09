@@ -40,6 +40,18 @@ const dates = computed(() =>
 
 const isLive = computed(() => props.assembly.status === "in_session");
 
+/**
+ * The convocation publishes a provisional agenda (ODD provisional) that stays
+ * so until it is made final; a draft has none yet and a finished assembly
+ * no longer needs the mark.
+ */
+const agendaProvisional = computed(
+  () =>
+    !props.assembly.agendaFinalizedAt &&
+    (props.assembly.status === "convened" ||
+      props.assembly.status === "in_session"),
+);
+
 const milestone = computed(() => props.assembly.nextMilestone);
 const milestoneLabel = computed(() =>
   milestone.value ? t(`calendar.milestones.${milestone.value.key}`) : "",
@@ -81,6 +93,14 @@ const headingTag = computed(() => `h${props.headingLevel}`);
           variant="outline"
           size="sm"
           icon="i-lucide-lock"
+        />
+        <UBadge
+          v-else-if="agendaProvisional"
+          :label="t('assemblies.card.agendaProvisional')"
+          color="neutral"
+          variant="outline"
+          size="sm"
+          icon="i-lucide-lock-open"
         />
       </div>
     </header>

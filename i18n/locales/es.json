@@ -24,7 +24,7 @@
         "draft": "Borrador",
         "convened": "Convocada",
         "in_session": "En sesión",
-        "closed": "Cerrada"
+        "closed": "Finalizada"
       },
       "document": {
         "draft": "Borrador",
@@ -385,10 +385,10 @@
         "done": "Sesión suspendida"
       },
       "in_session_closed": {
-        "label": "Cerrar asamblea",
-        "title": "¿Cerrar la asamblea?",
-        "description": "La {label} quedará cerrada y no se podrán presentar más documentos.",
-        "done": "Asamblea cerrada"
+        "label": "Finalizar asamblea",
+        "title": "¿Finalizar la asamblea?",
+        "description": "La {label} quedará finalizada y no se podrán presentar más documentos.",
+        "done": "Asamblea finalizada"
       },
       "closed_in_session": {
         "label": "Reabrir la sesión de la asamblea",
@@ -2366,7 +2366,7 @@
       "draft": "Borrador",
       "convened": "Convocada",
       "in_session": "En sesión",
-      "closed": "Cerrada"
+      "closed": "Finalizada"
     },
     "card": {
       "dates": "Fechas",
@@ -2374,6 +2374,7 @@
       "documentsLabel": "Documentos",
       "documents": "Sin documentos | {count} documento | {count} documentos",
       "agendaFinal": "ODD definitivo",
+      "agendaProvisional": "ODD provisional",
       "nextMilestone": "Próximo plazo"
     },
     "create": {
@@ -2425,7 +2426,7 @@
     "acceptsSubmissionsHelp": "Los miembros podrán presentar documentos en este punto hasta el cierre del plazo de documentos.",
     "lockedRoot": "Punto principal bloqueado: el orden del día es definitivo",
     "documentsOf": "Documentos del punto {number}: {title}",
-    "submissionsClosedAssembly": "La asamblea está cerrada: ya no se pueden presentar documentos.",
+    "submissionsClosedAssembly": "La asamblea ha finalizado: ya no se pueden presentar documentos.",
     "submissionsDeadlinePassed": "El plazo para presentar documentos nuevos ha terminado.",
     "submissionsOpened": "El punto «{title}» ahora admite documentos de los miembros",
     "submissionsClosed": "El punto «{title}» ya no admite documentos de los miembros",
