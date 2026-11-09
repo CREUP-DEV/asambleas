@@ -117,8 +117,8 @@ import {
 } from "~~/shared/utils/calendar";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { hashContent } from "~~/shared/utils/diff";
-import { slugify } from "~~/shared/utils/slug";
 import { barredPresenters } from "~~/shared/utils/presenterKinds";
+import { slugify } from "~~/shared/utils/slug";
 import { computeVoteOutcome } from "~~/shared/utils/votes";
 
 /**
@@ -958,7 +958,6 @@ export async function requireMembers(
 }
 
 /**
-/**
  * Every presenter (main or co-presenter) may present a document of this kind
  * (memberMayPresent): a sectorial never presents an internal motion. Applies
  * to managers too, since the rule is the member's, not the account's.
@@ -987,6 +986,7 @@ export async function requirePresentersMayPresent(
   }
 }
 
+/**
  * Reads and locks the current row until the transaction ends, with its
  * co-presenters (they change only under this lock). `no key update`
  * serializes every change of the document and still lets other transactions
@@ -1402,7 +1402,6 @@ export async function updateDocument(
       }
       patch.proponentMemberId = presenters.proponentMemberId;
     }
-    if (manager) {
     // The kind and the presenters it ends with: a sectorial never presents
     // an internal motion, whichever of the two changed.
     if (presenters || changed.includes("kind")) {
@@ -1413,6 +1412,7 @@ export async function updateDocument(
         tx,
       );
     }
+    if (manager) {
       if (changed.includes("amendable")) patch.amendable = body.amendable;
       if (changed.includes("acceptedAmendments")) {
         // The final vote settled what each amendment became.

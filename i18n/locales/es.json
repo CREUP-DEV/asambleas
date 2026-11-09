@@ -2160,6 +2160,7 @@
       "secretaria": "Secretaría",
       "moderador": "Moderador",
       "asociado": "Asociado",
+      "sectorial": "Sectorial",
       "invitado": "Invitado",
       "none": "Sin rol",
       "cea": "Comisión Ejecutiva (CEA)",
@@ -2187,7 +2188,6 @@
       "afternoon": "Buenas tardes, {name}",
       "evening": "Buenas noches, {name}",
       "morningAnonymous": "Buenos días",
-      "sectorial": "Sectorial",
       "afternoonAnonymous": "Buenas tardes",
       "eveningAnonymous": "Buenas noches"
     },
