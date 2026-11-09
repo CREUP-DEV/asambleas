@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { VoteInput } from "~~/shared/types/api";
+import type { HeadcountDto, VoteInput } from "~~/shared/types/api";
 import {
   MAJORITIES,
   VOTE_METHODS,
@@ -14,6 +14,12 @@ import { sessionVoteOutcome } from "~/composables/session/sessionModel";
  * (`computeVoteOutcome` with the assembly settings), including the tie rule
  * and counts that exceed the members present. Assent, when offered, has no
  * counts: only the method and the note are shown.
+ *
+ * With majorities on the members present, `headcount` is the Mesa's latest
+ * count (the caller fills `present` from it): the form says which count it
+ * is and warns, without blocking, when there is none or it lacks quorum.
+ * Left undefined (the caller does not load counts), it only says that an
+ * empty field takes the latest count, as the server does.
  */
 const props = withDefaults(
   defineProps<{
@@ -22,17 +28,20 @@ const props = withDefaults(
     methods?: VoteMethod[];
     showMajority?: boolean;
     showNote?: boolean;
+    /** The latest headcount; null when there is none yet. */
+    headcount?: HeadcountDto | null;
   }>(),
   {
     methods: () => VOTE_METHODS.filter((method) => method !== "assent"),
     showMajority: true,
     showNote: true,
+    headcount: undefined,
   },
 );
 
 const vote = defineModel<VoteInput>({ required: true });
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const uid = useId();
 
 const methodItems = computed(() =>
@@ -84,9 +93,34 @@ const cast = computed(
     (vote.value.blank ?? 0) +
     (vote.value.invalid ?? 0),
 );
-const needsPresent = computed(
-  () => props.settings.denominator === "present" && vote.value.present == null,
-);
+const onPresent = computed(() => props.settings.denominator === "present");
+/** What the form says about the base of majorities, under the counts. */
+const presentNote = computed<string | null>(() => {
+  if (!onPresent.value) return null;
+  const headcount = props.headcount;
+  if (headcount === undefined) return t("session.vote.presentFromHeadcount");
+  if (headcount === null) return null;
+  const time = formatTime(headcount.takenAt, { locale: locale.value });
+  return vote.value.present === headcount.present
+    ? t("session.vote.presentFromCount", { time })
+    : t("session.vote.presentCorrected", {
+        time,
+        present: headcount.present,
+      });
+});
+/** Warnings that never block: no headcount yet, or one without quorum. */
+const headcountWarning = computed<string | null>(() => {
+  if (!onPresent.value || props.headcount === undefined) return null;
+  if (props.headcount === null) {
+    return vote.value.present == null ? t("session.vote.noHeadcount") : null;
+  }
+  return props.headcount.quorum
+    ? null
+    : t("session.vote.headcountNoQuorum", {
+        present: props.headcount.present,
+        required: props.headcount.required,
+      });
+});
 
 const resultColor = computed(() =>
   outcome.value.result === "approved"
@@ -182,9 +216,16 @@ const denominatorText = computed(() =>
           />
         </UFormField>
       </div>
-      <p v-if="needsPresent" class="text-muted text-xs">
-        {{ t("session.vote.presentHint") }}
+      <p v-if="presentNote" class="text-muted text-xs">
+        {{ presentNote }}
       </p>
+      <UAlert
+        v-if="headcountWarning"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-users-round"
+        :description="headcountWarning"
+      />
     </fieldset>
 
     <UFormField

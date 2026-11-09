@@ -317,6 +317,7 @@ export function useActivityText() {
       case "decision":
       case "live":
       case "speakers":
+      case "headcount":
         return (
           target.document?.title ??
           target.assembly?.label ??

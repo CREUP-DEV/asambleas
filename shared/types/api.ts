@@ -4,6 +4,11 @@
  */
 import type { AssemblyType } from "../constants/assemblyTypes";
 import type {
+  AttendanceMark,
+  QuorumCall,
+  QuorumRules,
+} from "../utils/headcount";
+import type {
   AcceptanceDecision,
   AcceptanceRole,
   AcceptedAmendmentRule,
@@ -910,6 +915,71 @@ export interface LiveStateBody {
   voteId?: string | null;
   message?: string | null;
   speakersVisible?: boolean;
+}
+
+// Headcounts ---------------------------------------------------------------
+
+/** One asociado counted in a headcount. */
+export interface HeadcountEntryDto {
+  member: MemberRef;
+  mark: AttendanceMark;
+  /** The member in the room that votes for this one (when delegated). */
+  delegate: MemberRef | null;
+}
+
+/** A headcount the Mesa took: a snapshot of that moment. */
+export interface HeadcountDto {
+  id: string;
+  call: QuorumCall;
+  /** Active asociados when it was taken. */
+  eligible: number;
+  inRoom: number;
+  delegated: number;
+  /** In the room plus delegated. */
+  present: number;
+  /** Members needed for quorum under the rules then in force. */
+  required: number;
+  quorum: boolean;
+  note: string | null;
+  takenAt: IsoDate;
+  updatedAt: IsoDate;
+  entries: HeadcountEntryDto[];
+}
+
+/**
+ * GET /api/assemblies/[assembly]/headcounts (session:moderate, or
+ * amendment:review). Headcounts newest first; `latest` is the one in force
+ * (headcounts[0]). `members` are the asociados with a vote now and
+ * `quorum` the rules of the assembly type, for a new count.
+ */
+export interface HeadcountsDto {
+  headcounts: HeadcountDto[];
+  latest: HeadcountDto | null;
+  members: MemberRef[];
+  quorum: QuorumRules;
+}
+
+/** One mark of the Mesa's form; absent members are left out. */
+export interface HeadcountEntryInput {
+  memberId: string;
+  mark: AttendanceMark;
+  delegateId?: string | null;
+}
+
+/** POST /api/assemblies/[assembly]/headcounts (session:moderate). */
+export interface HeadcountBody {
+  call: QuorumCall;
+  entries: HeadcountEntryInput[];
+  note?: string | null;
+}
+
+/**
+ * PUT /api/assemblies/[assembly]/headcounts/[headcount] (session:moderate):
+ * corrects a count. Eligibility and the threshold stay those of the moment
+ * it was taken. Returns HeadcountsDto.
+ */
+export interface HeadcountUpdateBody extends HeadcountBody {
+  updatedAt: IsoDate;
 }
 
 // Speaking turns -----------------------------------------------------------

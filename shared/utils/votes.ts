@@ -24,6 +24,20 @@ export interface VoteOutcome {
 }
 
 /**
+ * Votes in favour needed under an absolute (more than half) or two-thirds
+ * (at least two thirds) majority of `denominator`. A simple majority has no
+ * fixed figure: more in favour than against.
+ */
+export function majorityThreshold(
+  majority: Exclude<Majority, "simple">,
+  denominator: number,
+): number {
+  return majority === "absolute"
+    ? Math.floor(denominator / 2) + 1
+    : Math.ceil((denominator * 2) / 3);
+}
+
+/**
  * Computes the result of a vote.
  * - simple: more in favor than against;
  * - absolute: more than half of the denominator;
@@ -61,10 +75,7 @@ export function computeVoteOutcome(
     };
   }
 
-  const threshold =
-    majority === "absolute"
-      ? Math.floor(denominator / 2) + 1
-      : Math.ceil((denominator * 2) / 3);
+  const threshold = majorityThreshold(majority, denominator);
   return {
     result:
       denominator > 0 && counts.inFavor >= threshold ? "approved" : "rejected",

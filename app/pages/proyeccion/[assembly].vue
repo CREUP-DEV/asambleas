@@ -4,6 +4,7 @@ import type {
   AssemblyDto,
   DocumentAmendmentsDto,
   DocumentDto,
+  HeadcountsDto,
   LiveEventDto,
   LiveStateDto,
   SpeakersDto,
@@ -31,6 +32,11 @@ import {
   liveVoteSubject,
   liveVoteSubjectText,
 } from "~/components/live-view/-model";
+import {
+  affectsHeadcounts,
+  liveAttendance,
+} from "~/components/live-view/-attendance";
+import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
 
 /**
  * Projection screen for the room: chrome-free, large type, high contrast.
@@ -38,8 +44,10 @@ import {
  * with its diff and one block of context), the result of the last vote and
  * the Mesa's message; when nothing is in debate, the agenda. While the Mesa
  * makes the speaking turns visible, a band at the bottom shows who has the
- * floor and who is next. It follows the live state and is open to every
- * signed-in user.
+ * floor and who is next. The header also shows the Mesa's latest
+ * headcount (members present, quorum and the majorities it gives), for
+ * transparency. It follows the live state and is open to every signed-in
+ * user.
  *
  * Nobody watches the projector to reload it, so a failed refresh never
  * wipes the screen: every source keeps its last good data (and the footer
@@ -131,6 +139,19 @@ const {
 } = keepLastGoodData(speakersFetch, { isGone });
 const refreshSpeakers = speakersFetch.refresh;
 
+// The Mesa's headcounts, public. A 404 shows nothing.
+const headcountsFetch = await useAsyncData(
+  () => `projection-headcounts-${param.value}`,
+  () =>
+    api.get<HeadcountsDto>(`${assemblyUrl.value}/headcounts`).catch(nullIfGone),
+);
+const {
+  data: headcountsDto,
+  stale: headcountsStale,
+  failed: headcountsFailed,
+} = keepLastGoodData(headcountsFetch, { isGone });
+const refreshHeadcounts = headcountsFetch.refresh;
+
 // From the kept live state, so a failed live-state refresh does not switch
 // the document fetches to "none".
 const documentId = computed(() => live.value?.documentId ?? null);
@@ -179,7 +200,8 @@ const stale = computed(
     agendaStale.value ||
     documentStale.value ||
     amendmentsStale.value ||
-    speakersStale.value,
+    speakersStale.value ||
+    headcountsStale.value,
 );
 
 /**
@@ -193,7 +215,8 @@ const failed = computed(
     agendaFailed.value ||
     documentFailed.value ||
     amendmentsFailed.value ||
-    speakersFailed.value,
+    speakersFailed.value ||
+    headcountsFailed.value,
 );
 
 // Live updates -------------------------------------------------------------------
@@ -216,6 +239,7 @@ function onLive(events: LiveEventDto[]): void {
 
   if (poll || touches(["live"])) refreshes.push(refreshLive());
   if (affectsSpeakers(events)) refreshes.push(refreshSpeakers());
+  if (affectsHeadcounts(events)) refreshes.push(refreshHeadcounts());
   if (poll || touches(["assembly"])) refreshes.push(refreshAssembly());
   if (affectsAgenda(events)) refreshes.push(refreshAgenda());
   if (poll || touchesDocument) {
@@ -295,6 +319,11 @@ useRetryFailed(
       status: speakersFetch.status,
       refresh: refreshSpeakers,
     },
+    {
+      failed: headcountsFailed,
+      status: headcountsFetch.status,
+      refresh: refreshHeadcounts,
+    },
   ],
   {
     onRecovered: () => {
@@ -347,6 +376,38 @@ const voteSubject = computed(() =>
 const voteCounts = computed(() =>
   vote.value ? liveVoteCounts(vote.value) : [],
 );
+
+/** The Mesa's latest headcount and the majorities it gives. */
+const attendance = computed(() =>
+  liveAttendance(headcountsDto.value, {
+    ...DEFAULT_ASSEMBLY_SETTINGS,
+    ...assembly.value?.settings,
+  }),
+);
+const attendanceLine = computed(() => {
+  const value = attendance.value;
+  if (!value || assembly.value?.status !== "in_session") return null;
+  const parts = [
+    t("projection.attendance.present", {
+      present: value.latest.present,
+      eligible: value.latest.eligible,
+    }),
+    value.latest.quorum
+      ? t("session.headcount.quorum")
+      : t("session.headcount.noQuorum"),
+  ];
+  if (value.majorities) {
+    parts.push(
+      t("projection.attendance.absolute", {
+        count: value.majorities.absolute,
+      }),
+      t("projection.attendance.twoThirds", {
+        count: value.majorities.twoThirds,
+      }),
+    );
+  }
+  return parts.join(" · ");
+});
 
 /** Who has the floor and who is next, only while the Mesa shows it. */
 const speakers = computed(() =>
@@ -406,6 +467,22 @@ useHead(() => ({
           {{ currentRow.number }}. {{ currentRow.item.title }}
         </p>
       </div>
+      <p
+        v-if="attendanceLine"
+        class="text-default flex items-center gap-2 text-[clamp(1rem,1.4vw,1.5rem)] font-medium tabular-nums"
+      >
+        <UIcon
+          :name="
+            attendance?.latest.quorum
+              ? 'i-lucide-users-round'
+              : 'i-lucide-user-round-x'
+          "
+          class="size-[1.2em] shrink-0"
+          :class="attendance?.latest.quorum ? 'text-success' : 'text-error'"
+          aria-hidden="true"
+        />
+        {{ attendanceLine }}
+      </p>
       <div class="flex items-center gap-3">
         <!-- Fullscreen support is only known in the browser. -->
         <ClientOnly>

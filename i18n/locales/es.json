@@ -520,7 +520,7 @@
           },
           "present": {
             "label": "Miembros presentes",
-            "description": "Todos los miembros presentes con derecho a voto. La Mesa debe introducir cuántos hay en cada votación."
+            "description": "Los miembros con derecho a voto presentes o representados por delegación, según el último recuento de la Mesa. Se puede corregir en cada votación."
           }
         }
       },
@@ -1937,7 +1937,21 @@
       "documentsWithConvocationBelow": "Documentación junto con la convocatoria",
       "documentsWithConvocationHint": "Si se convoca con menos antelación que esta, toda la documentación debe ir con la convocatoria. Vacío si el reglamento no lo exige para este tipo de asamblea.",
       "documentsWithConvocationAmount": "Antelación por debajo de la cual la documentación va con la convocatoria: cantidad",
-      "documentsWithConvocationUnit": "Antelación por debajo de la cual la documentación va con la convocatoria: unidad"
+      "documentsWithConvocationUnit": "Antelación por debajo de la cual la documentación va con la convocatoria: unidad",
+      "quorum": {
+        "title": "Quórum",
+        "hint": "Parte de los asociados con derecho a voto, contando las delegaciones, que tiene que haber en cada recuento de la Mesa.",
+        "hasSecondCall": "Tiene segunda convocatoria",
+        "firstCall": "Primera convocatoria",
+        "secondCall": "Segunda convocatoria",
+        "atLeast": "Al menos",
+        "moreThan": "Más de",
+        "comparison": "Al menos o más de",
+        "numerator": "Numerador",
+        "denominator": "Denominador",
+        "ofMembers": "de los asociados con derecho a voto",
+        "invalid": "Indica una fracción entre 1/100 y 1."
+      }
     }
   },
   "export": {
@@ -3062,7 +3076,6 @@
       "present": "Presentes",
       "optional": "Opcional",
       "presentPlaceholder": "Sin indicar",
-      "presentHint": "Esta asamblea calcula las mayorías sobre los miembros presentes: indica cuántos hay.",
       "note": "Nota",
       "previewTitle": "Resultado previsto",
       "result": {
@@ -3082,7 +3095,12 @@
       "inconsistentTitle": "Recuento imposible",
       "inconsistent": "Hay más votos emitidos que miembros presentes.",
       "submit": "Registrar votación",
-      "assentNoCount": "Por asentimiento no hay recuento: el texto queda aprobado."
+      "assentNoCount": "Por asentimiento no hay recuento: el texto queda aprobado.",
+      "presentFromHeadcount": "Si lo dejas vacío, se toman los presentes del último recuento de la Mesa.",
+      "presentFromCount": "Presentes del recuento de las {time}.",
+      "presentCorrected": "Corregido para esta votación. El recuento de las {time} da {present}.",
+      "noHeadcount": "Todavía no hay recuento: indica los presentes o haz un recuento antes de votar.",
+      "headcountNoQuorum": "El último recuento no llega al quórum: {present} presentes de {required} necesarios."
     },
     "admission": {
       "description": "La decisión queda registrada con su método y, si se vota, con el recuento.",
@@ -3420,6 +3438,61 @@
       "byMesa": "La Mesa, en nombre de {member}:",
       "waitsPublication": "Espera a que Secretaría la publique",
       "waitsPublicationFor": "Respuesta de {member}: se podrá dar cuando Secretaría la publique."
+    },
+    "headcount": {
+      "title": "Recuentos y quórum",
+      "loading": "Cargando los recuentos",
+      "retry": "Reintentar",
+      "errors": {
+        "load": "No se han podido cargar los recuentos",
+        "save": "No se ha podido guardar el recuento"
+      },
+      "changedElsewhere": "Otra persona de la Mesa ha cambiado el recuento. Se ha recargado.",
+      "quorum": "Hay quórum",
+      "noQuorum": "No hay quórum",
+      "figures": "{present} de {eligible} con voto, sin delegaciones | {present} de {eligible} con voto, {delegated} por delegación | {present} de {eligible} con voto, {delegated} por delegación",
+      "required": "Quórum: {required} · Recuento de las {time}",
+      "requiredOnly": "Hacen falta {required} para el quórum.",
+      "none": "Todavía no hay ningún recuento. Las votaciones toman los presentes del último.",
+      "new": "Nuevo recuento",
+      "correct": "Corregir",
+      "earlier": "Ningún recuento anterior | 1 recuento anterior | {count} recuentos anteriores",
+      "newTitle": "Nuevo recuento",
+      "correctTitle": "Corregir el recuento de las {time}",
+      "description": "Marca los asociados que están en la sala. Parte del recuento anterior, así que solo tienes que cambiar quién ha llegado o se ha ido.",
+      "call": "Convocatoria",
+      "calls": {
+        "first": "Primera convocatoria",
+        "second": "Segunda convocatoria"
+      },
+      "note": "Nota",
+      "notePlaceholder": "Por ejemplo, inicio de la segunda jornada",
+      "filter": "Buscar un asociado",
+      "allPresent": "Marcar todos presentes",
+      "noMembers": "No hay asociados activos. Sincroniza los miembros desde la Intranet.",
+      "problems": {
+        "duplicate": "Aparece dos veces.",
+        "not_eligible": "Ya no es un asociado activo.",
+        "delegate_missing": "Elige un asociado con derecho a voto.",
+        "delegate_twice": "Ese miembro ya recibe otra delegación."
+      },
+      "leadership": "Para constituir la asamblea también tienen que estar la Presidencia y la Secretaría Ejecutiva, o quien las sustituya.",
+      "save": "Guardar recuento",
+      "summary": "{present} de {eligible} · {quorum}",
+      "resume": "Continuar el recuento",
+      "resumeCorrection": "Continuar la corrección",
+      "draftRestored": "Se ha recuperado el recuento que dejaste sin guardar en este dispositivo.",
+      "startOver": "Empezar de nuevo",
+      "draftHint": "Si lo cierras sin guardar, se queda como borrador en este dispositivo.",
+      "later": "Seguir luego",
+      "listLabel": "Asociados con derecho a voto",
+      "delegate": "Delega…",
+      "delegateOf": "Delegación de {member}",
+      "searchDelegate": "Buscar quién recibe el voto",
+      "noDelegation": "Sin delegación",
+      "delegateOut": "{member} (no está en la sala)",
+      "uncounted": "La delegación no cuenta mientras {member} no esté en la sala.",
+      "alsoVotesFor": "Vota también por {member}."
     }
   },
   "projection": {
@@ -3459,7 +3532,12 @@
     },
     "stale": "Mostrando los últimos datos recibidos",
     "loadFailed": "No se han podido cargar los datos",
-    "connecting": "Conectando…"
+    "connecting": "Conectando…",
+    "attendance": {
+      "present": "{present} de {eligible} presentes",
+      "absolute": "Absoluta: {count}",
+      "twoThirds": "Dos tercios: {count}"
+    }
   },
   "documents": {
     "title": "Documentos",
@@ -3861,7 +3939,20 @@
       "document": "Ahora se debate: {title}",
       "speaker": "Tiene la palabra: {name}"
     },
-    "loadFailed": "No podemos mostrar qué se está debatiendo ahora mismo. Lo volvemos a intentar enseguida; no hace falta recargar la página."
+    "loadFailed": "No podemos mostrar qué se está debatiendo ahora mismo. Lo volvemos a intentar enseguida; no hace falta recargar la página.",
+    "attendance": {
+      "title": "Asistencia y quórum",
+      "none": "La Mesa todavía no ha hecho ningún recuento.",
+      "takenAt": "Recuento de las {time} · Quórum: {required}",
+      "present": "Presentes con voto",
+      "delegated": "Por delegación",
+      "majoritiesHint": "Votos a favor necesarios con los presentes de este recuento. La mayoría simple solo pide más votos a favor que en contra.",
+      "validVotesHint": "En esta asamblea las mayorías se calculan sobre los votos válidos de cada votación.",
+      "inRoom": "Nadie en la sala | 1 miembro en la sala | {count} miembros en la sala",
+      "delegations": "Sin delegaciones | 1 delegación | {count} delegaciones",
+      "votesThrough": "vota a través de",
+      "notCounted": "No cuenta: no está en la sala."
+    }
   },
   "transactional": {
     "composer": {
@@ -4569,6 +4660,8 @@
         "update": "Plazos del calendario de un tipo de asamblea cambiados",
         "seed": "Plazos iniciales del calendario guardados"
       },
+      "headcount_recorded": "Recuento de asistencia",
+      "headcount_corrected": "Recuento de asistencia corregido",
       "document_images": {
         "cleanup": "Imágenes sin usar borradas del documento"
       }
@@ -4604,6 +4697,14 @@
           "proponentMemberId": "Quién lo presenta",
           "coProponentMemberIds": "Quiénes lo presentan también",
           "dueAt": "Fecha límite interna"
+        },
+        "headcount": {
+          "call": "Convocatoria",
+          "inRoom": "En la sala",
+          "delegated": "Por delegación",
+          "present": "Presentes",
+          "required": "Quórum",
+          "note": "Nota"
         }
       }
     }

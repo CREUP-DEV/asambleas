@@ -363,5 +363,5 @@ export interface AssemblySettings {
 export const DEFAULT_ASSEMBLY_SETTINGS: AssemblySettings = {
   positionVisibility: "session",
   tieRule: "rejected",
-  denominator: "valid_votes",
+  denominator: "present",
 };

@@ -520,7 +520,7 @@
           },
           "present": {
             "label": "Members present",
-            "description": "Every member present with a vote. The Mesa must enter how many there are for each vote."
+            "description": "Members with a vote who are present or represented by a delegation, from the Mesa's latest headcount. It can be corrected for each vote."
           }
         }
       },
@@ -1937,7 +1937,21 @@
       "documentsWithConvocationBelow": "Documents sent with the notice of meeting",
       "documentsWithConvocationHint": "When the assembly is convened with less notice than this, every document must go with the notice of meeting. Leave it empty if the regulations do not require it for this assembly type.",
       "documentsWithConvocationAmount": "Notice below which the documents go with the notice of meeting: amount",
-      "documentsWithConvocationUnit": "Notice below which the documents go with the notice of meeting: unit"
+      "documentsWithConvocationUnit": "Notice below which the documents go with the notice of meeting: unit",
+      "quorum": {
+        "title": "Quorum",
+        "hint": "Share of the asociados with a vote, delegations included, that each Mesa headcount needs.",
+        "hasSecondCall": "Has a second call",
+        "firstCall": "First call",
+        "secondCall": "Second call",
+        "atLeast": "At least",
+        "moreThan": "More than",
+        "comparison": "At least or more than",
+        "numerator": "Numerator",
+        "denominator": "Denominator",
+        "ofMembers": "of the asociados with a vote",
+        "invalid": "Enter a fraction between 1/100 and 1."
+      }
     }
   },
   "export": {
@@ -3062,7 +3076,6 @@
       "present": "Present",
       "optional": "Optional",
       "presentPlaceholder": "Not given",
-      "presentHint": "This assembly computes majorities over the members present: enter how many there are.",
       "note": "Note",
       "previewTitle": "Expected result",
       "result": {
@@ -3082,7 +3095,12 @@
       "inconsistentTitle": "Impossible count",
       "inconsistent": "More votes were cast than there are members present.",
       "submit": "Record vote",
-      "assentNoCount": "Assent has no count: the text is approved."
+      "assentNoCount": "Assent has no count: the text is approved.",
+      "presentFromHeadcount": "Left empty, the members present come from the Mesa's latest headcount.",
+      "presentFromCount": "Members present from the headcount at {time}.",
+      "presentCorrected": "Corrected for this vote. The headcount at {time} gives {present}.",
+      "noHeadcount": "No headcount yet: enter the members present or take a headcount before voting.",
+      "headcountNoQuorum": "The latest headcount does not reach quorum: {present} present of {required} needed."
     },
     "admission": {
       "description": "The decision is recorded with its method and, when voted, with the count.",
@@ -3420,6 +3438,61 @@
       "byMesa": "The Mesa, on behalf of {member}:",
       "waitsPublication": "Waits for the Secretariat to publish it",
       "waitsPublicationFor": "Answer from {member}: it can be given once the Secretariat publishes it."
+    },
+    "headcount": {
+      "title": "Headcounts and quorum",
+      "loading": "Loading the headcounts",
+      "retry": "Try again",
+      "errors": {
+        "load": "The headcounts could not be loaded",
+        "save": "The headcount could not be saved"
+      },
+      "changedElsewhere": "Someone else in the Mesa changed the headcount. It has been reloaded.",
+      "quorum": "Quorum",
+      "noQuorum": "No quorum",
+      "figures": "{present} of {eligible} with a vote, no delegations | {present} of {eligible} with a vote, {delegated} by delegation | {present} of {eligible} with a vote, {delegated} by delegation",
+      "required": "Quorum: {required} · Count at {time}",
+      "requiredOnly": "{required} needed for quorum.",
+      "none": "No headcount yet. Votes take the members present from the latest one.",
+      "new": "New headcount",
+      "correct": "Correct",
+      "earlier": "No earlier headcounts | 1 earlier headcount | {count} earlier headcounts",
+      "newTitle": "New headcount",
+      "correctTitle": "Correct the headcount taken at {time}",
+      "description": "Tick the asociados in the room. It starts from the previous count, so you only change who arrived or left.",
+      "call": "Call",
+      "calls": {
+        "first": "First call",
+        "second": "Second call"
+      },
+      "note": "Note",
+      "notePlaceholder": "For example, start of the second day",
+      "filter": "Find an asociado",
+      "allPresent": "Mark everyone present",
+      "noMembers": "There are no active asociados. Sync the members from the Intranet.",
+      "problems": {
+        "duplicate": "Listed twice.",
+        "not_eligible": "No longer an active asociado.",
+        "delegate_missing": "Choose an asociado with a vote.",
+        "delegate_twice": "That member already receives another delegation."
+      },
+      "leadership": "To constitute the assembly, the Presidencia and the Secretaría Ejecutiva, or whoever stands in for them, must also be present.",
+      "save": "Save headcount",
+      "summary": "{present} of {eligible} · {quorum}",
+      "resume": "Continue the headcount",
+      "resumeCorrection": "Continue the correction",
+      "draftRestored": "The headcount you left unsaved on this device has been restored.",
+      "startOver": "Start over",
+      "draftHint": "If you close it without saving, it stays as a draft on this device.",
+      "later": "Finish later",
+      "listLabel": "Asociados with a vote",
+      "delegate": "Delegates…",
+      "delegateOf": "Delegation of {member}",
+      "searchDelegate": "Find who receives the vote",
+      "noDelegation": "No delegation",
+      "delegateOut": "{member} (not in the room)",
+      "uncounted": "The delegation does not count while {member} is not in the room.",
+      "alsoVotesFor": "Also votes for {member}."
     }
   },
   "projection": {
@@ -3459,7 +3532,12 @@
     },
     "stale": "Showing the last data received",
     "loadFailed": "The data could not be loaded",
-    "connecting": "Connecting…"
+    "connecting": "Connecting…",
+    "attendance": {
+      "present": "{present} of {eligible} present",
+      "absolute": "Absolute: {count}",
+      "twoThirds": "Two thirds: {count}"
+    }
   },
   "documents": {
     "title": "Documents",
@@ -3861,7 +3939,20 @@
       "document": "Now under debate: {title}",
       "speaker": "Now speaking: {name}"
     },
-    "loadFailed": "We cannot show what is being debated right now. We will try again shortly; there is no need to reload the page."
+    "loadFailed": "We cannot show what is being debated right now. We will try again shortly; there is no need to reload the page.",
+    "attendance": {
+      "title": "Attendance and quorum",
+      "none": "The Mesa has not taken a headcount yet.",
+      "takenAt": "Headcount at {time} · Quorum: {required}",
+      "present": "Present with a vote",
+      "delegated": "By delegation",
+      "majoritiesHint": "Votes in favour needed with the members present in this headcount. A simple majority only needs more votes in favour than against.",
+      "validVotesHint": "This assembly counts majorities on the valid votes of each vote.",
+      "inRoom": "Nobody in the room | 1 member in the room | {count} members in the room",
+      "delegations": "No delegations | 1 delegation | {count} delegations",
+      "votesThrough": "votes through",
+      "notCounted": "Does not count: not in the room."
+    }
   },
   "transactional": {
     "composer": {
@@ -4569,6 +4660,8 @@
         "update": "Calendar deadlines of an assembly type changed",
         "seed": "Initial calendar deadlines stored"
       },
+      "headcount_recorded": "Headcount",
+      "headcount_corrected": "Headcount corrected",
       "document_images": {
         "cleanup": "Unused images removed from the document"
       }
@@ -4604,6 +4697,14 @@
           "proponentMemberId": "Main presenter",
           "coProponentMemberIds": "Co-presenters",
           "dueAt": "Internal deadline"
+        },
+        "headcount": {
+          "call": "Call",
+          "inRoom": "In the room",
+          "delegated": "By delegation",
+          "present": "Present",
+          "required": "Quorum",
+          "note": "Note"
         }
       }
     }

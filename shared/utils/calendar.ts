@@ -1,6 +1,7 @@
 import { fromDate, toCalendarDateTime } from "@internationalized/date";
 import type { DocumentKind, MilestoneKey } from "../constants/domain";
 import { MILESTONE_KEYS, REGULATION_DOCUMENT_KINDS } from "../constants/domain";
+import type { QuorumRules } from "./headcount";
 
 /** The assemblies' time zone: every date is set and shown in it. */
 export const ASSEMBLY_TIME_ZONE = "Europe/Madrid";
@@ -44,6 +45,11 @@ export interface CalendarRules {
    * else the assembly's. null: no minimum.
    */
   regulationWindowDays: number | null;
+  /**
+   * Quorum to constitute the assembly, in each call. Rows stored before it
+   * existed have none: read it through `quorumRulesOf`.
+   */
+  quorum?: QuorumRules;
 }
 
 /** The instant `offset` before `start`. */

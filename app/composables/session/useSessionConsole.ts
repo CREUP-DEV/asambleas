@@ -66,6 +66,7 @@ import {
   type SessionAgendaTarget,
   type SessionAmendmentStage,
 } from "./sessionModel";
+import { useHeadcounts } from "./useSessionHeadcounts";
 import { useSessionSpeakers } from "./useSessionSpeakers";
 
 /**
@@ -467,6 +468,24 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     track,
   });
 
+  // Headcounts: the latest one is the base of majorities on "present".
+  const headcounts = useHeadcounts({
+    baseUrl: assemblyUrl,
+    key: param,
+    enabled: canModerate,
+    track,
+  });
+  /** What a new vote form fills as the members present. */
+  const votePresent = computed<number | null>(() =>
+    settings.value.denominator === "present"
+      ? (headcounts.latest.value?.present ?? null)
+      : null,
+  );
+  /** The latest headcount for the vote forms (undefined until loaded). */
+  const voteHeadcount = computed(() =>
+    headcounts.data.value ? headcounts.latest.value : undefined,
+  );
+
   // Live updates --------------------------------------------------------------
 
   function refreshAll(): Promise<unknown> {
@@ -477,11 +496,13 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       refreshDocument(),
       refreshAmendments(),
       speakers.refresh(),
+      headcounts.refresh(),
     ]);
   }
 
   function onLive(events: LiveEventDto[]): void {
     speakers.onLive(events);
+    headcounts.onLive(events);
     if (events.some((event) => event.type === "poll")) {
       // The hub refreshes the assembly itself on poll events.
       void (hub
@@ -1593,6 +1614,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     setSpeakersVisible,
     // speaking turns
     speakers,
+    headcounts,
+    votePresent,
+    voteHeadcount,
     // dialogs
     voteDialog,
     relationDialog,

@@ -113,6 +113,7 @@ import {
   shareLockAssembly,
 } from "./documents";
 import { recordEvent } from "./events";
+import { withHeadcount } from "./headcounts";
 import { assertOpImagesBelong } from "./documentImages";
 import {
   impersonatedByFor,
@@ -2450,10 +2451,12 @@ export async function decideAmendmentAdmission(
   }
   assertValidatedForAdmission(rows, body);
 
-  const evaluated =
+  // The members present come from the Mesa's latest headcount unless typed.
+  const based =
     body.method === "vote" && body.vote
-      ? evaluateVoteInput(body.vote, ctx.settings)
+      ? await withHeadcount(ctx.assembly.id, body.vote, ctx.settings)
       : null;
+  const evaluated = based ? evaluateVoteInput(based.vote, ctx.settings) : null;
   const admission: AmendmentAdmissionResult["admission"] =
     !evaluated || evaluated.outcome.result === "approved"
       ? body.decision
@@ -2518,18 +2521,19 @@ export async function decideAmendmentAdmission(
     };
     const decisionId = cuid();
     let voteRow: VoteRow | undefined;
-    if (evaluated && body.vote) {
+    if (evaluated && based) {
       [voteRow] = await tx
         .insert(votes)
         .values({
           assemblyId: ctx.assembly.id,
           subjectType: "decision",
           subjectId: decisionId,
-          method: body.vote.method,
-          ...voteCounts(body.vote),
+          method: based.vote.method,
+          ...voteCounts(based.vote),
+          headcountId: based.headcountId,
           majority: evaluated.majority,
           result: evaluated.outcome.result,
-          note: body.vote.note ?? null,
+          note: based.vote.note ?? null,
           recordedByUserId: actor.user.id,
         })
         .returning();
@@ -3282,15 +3286,19 @@ export async function applyAmendmentOutcome(
         "La Secretaría tiene que publicar la enmienda antes de decidirla",
       );
     }
-    // Absolute in a reform of the Estatutos or a regulation (RRI art. 65.5).
-    const evaluated =
+    // The members present come from the Mesa's latest headcount unless typed.
+    const based =
       body.action === "vote"
-        ? evaluateVoteInput(
-            body.vote,
-            ctx.settings,
-            amendmentVoteMajority(document.kind),
-          )
+        ? await withHeadcount(ctx.assembly.id, body.vote, ctx.settings)
         : null;
+    // Absolute in a reform of the Estatutos or a regulation (RRI art. 65.5).
+    const evaluated = based
+      ? evaluateVoteInput(
+          based.vote,
+          ctx.settings,
+          amendmentVoteMajority(document.kind),
+        )
+      : null;
     const approved =
       body.action === "approve" || evaluated?.outcome.result === "approved";
 
@@ -3325,18 +3333,19 @@ export async function applyAmendmentOutcome(
       }
 
       let voteRow: VoteRow | undefined;
-      if (body.action === "vote" && evaluated) {
+      if (based && evaluated) {
         [voteRow] = await tx
           .insert(votes)
           .values({
             assemblyId: ctx.assembly.id,
             subjectType: "amendment",
             subjectId: amendment.id,
-            method: body.vote.method,
-            ...voteCounts(body.vote),
+            method: based.vote.method,
+            ...voteCounts(based.vote),
+            headcountId: based.headcountId,
             majority: evaluated.majority,
             result: evaluated.outcome.result,
-            note: body.vote.note ?? null,
+            note: based.vote.note ?? null,
             recordedByUserId: actor.user.id,
           })
           .returning();

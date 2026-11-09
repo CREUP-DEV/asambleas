@@ -20,8 +20,9 @@ Secretaría, proponents and delegates:
 - follow the session live, both on a projector and on each delegate's device.
 
 In scope for this iteration, besides that core: DOCX import, the assembly
-calendar with regulatory checks, and convocatoria generation. Out of scope:
-electronic voting (the Mesa enters counts), attendance and quorum, minutes.
+calendar with regulatory checks, convocatoria generation, and the Mesa's
+headcounts with their quorum. Out of scope: electronic voting (the Mesa
+enters counts), credentials and per-person attendance, minutes.
 
 ## Members
 
@@ -326,6 +327,63 @@ data, the agenda and the milestones as a print view and a PDF.
   projecting it when it is voided (amendment reopened, final vote annulled).
 - A wrongly recorded final vote can be annulled while the assembly is open:
   the vote row and the consolidated version stay for the record.
+- Majorities are counted on the members present by default
+  (`DEFAULT_ASSEMBLY_SETTINGS.denominator`), as RRI art. 18.2 counts two
+  thirds "de los miembros representados" (RFAG art. 23.1 says valid votes;
+  the RRI prevails). Each assembly may switch to valid votes.
+
+### Headcounts and quorum
+
+The Mesa takes a headcount at the start of each day, after a break or
+whenever it decides (`headcounts`, `headcount_entries`). Each one marks every
+asociado with a vote (the active `asociado` members, synced from the
+Intranet) as in the room or not, and a member not in the room may delegate
+its vote to another. A delegated vote counts for quorum and for every vote
+(RRI art. 19.3, RFAG art. 9.4) only while its receiver is in the room; the
+delegation is kept otherwise, so it counts again when the receiver is back.
+Each member receives at most one (Estatutos art. 17.1, RFAG art. 8.5).
+`tallyHeadcount` (`shared/utils/headcount.ts`) counts and checks both on the
+server and in the form.
+
+The form is built for speed: a new count starts from the previous one, each
+asociado is one checkbox, and the delegation is a quiet searchable menu on
+the members not in the room. Until it is saved, the form stays as a draft in
+the browser of that device (`localStorage`), so closing it by mistake or
+reloading loses nothing.
+
+A count stores a snapshot: the asociados with a vote at that moment
+(`eligible`), those in the room, those delegated, the total (`present`) and
+the members needed for quorum (`required`) under the call it was taken in.
+Later roster syncs or rule changes never rewrite it; a correction keeps
+`eligible`, and `required` unless the call changes.
+
+The quorum is data, part of each type's calendar rules (`quorum`, edited at
+`/admin/calendario`): a share of the asociados with a vote, "at least" or
+"more than", for the first call and, when the type has one, the second
+(`INITIAL_CALENDAR_RULES` cites the articles: an AGO needs half in the first
+call and a third in the second, an AGE or AGET more than half in its single
+call). The Presidencia and the Secretaría Ejecutiva must also be present to
+constitute the assembly; the form reminds the Mesa, the count does not check
+it. The regulations are silent on re-checking quorum during the session; the
+counts at the start of each day and after breaks follow the practice of the
+assemblies and the delegations "antes del comienzo de cada jornada" (RFAG
+art. 8.2).
+
+The latest count is the base of majorities on "present": the vote forms
+fill `present` from it (the Mesa may correct it for one vote) and the server
+does the same when a vote leaves it out (`withHeadcount`). Every vote records
+the count in force (`votes.headcountId`). A count without quorum, or none at
+all, only warns: the Mesa may still record votes.
+
+The counts are public, for transparency (GET `.../headcounts` for everyone
+who sees the assembly). The live view (`LiveViewAttendance`) shows the
+latest one: members present out of those with a vote, delegated votes,
+whether there is quorum and, with majorities on the members present, the
+votes in favour an absolute and a two-thirds majority need
+(`majorityThreshold`), with who is in the room, the delegations (and which
+do not count) and the earlier counts folded away. The projection's header
+carries the same figures on one line during the session.
+
 - Live updates: mutations `pg_notify('assembly_events', ...)`. A Nitro plugin
   `LISTEN`s and fans out to SSE streams at `GET /api/assemblies/[id]/live`.
   Events carry ids only; clients refetch through the normal, permission-checked

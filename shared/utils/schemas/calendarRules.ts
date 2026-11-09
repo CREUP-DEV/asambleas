@@ -2,6 +2,7 @@ import { z } from "zod/v4";
 import { MILESTONE_KEYS, type MilestoneKey } from "../../constants/domain";
 import type { CalendarRulesBody } from "../../types/api";
 import type { CalendarRules, MilestoneOffset } from "../calendar";
+import type { QuorumThreshold } from "../headcount";
 
 /**
  * The calendar rules of an assembly type (docs/api.md, "Calendar rules"):
@@ -35,6 +36,24 @@ const offsetsByMilestone = z
     (offsets) => offsets as Partial<Record<MilestoneKey, MilestoneOffset>>,
   );
 
+/** Largest denominator of a quorum share (a third, a half, three quarters). */
+export const QUORUM_DENOMINATOR_MAX = 100;
+
+export const quorumThresholdSchema = z
+  .strictObject({
+    numerator: z.number().int().min(1).max(QUORUM_DENOMINATOR_MAX),
+    denominator: z.number().int().min(1).max(QUORUM_DENOMINATOR_MAX),
+    strict: z.boolean(),
+  })
+  .refine((share) => share.numerator <= share.denominator, {
+    message: "quorum_over_total",
+  });
+
+export const quorumRulesSchema = z.strictObject({
+  firstCall: quorumThresholdSchema,
+  secondCall: quorumThresholdSchema.nullable(),
+});
+
 export const calendarRulesSchema = z.strictObject({
   defaults: offsetsByMilestone,
   minimums: offsetsByMilestone,
@@ -45,6 +64,8 @@ export const calendarRulesSchema = z.strictObject({
     .min(1)
     .max(REGULATION_WINDOW_MAX_DAYS)
     .nullable(),
+  // Optional: rows stored before quorum was part of the rules lack it.
+  quorum: quorumRulesSchema.optional(),
 });
 
 export const calendarRulesBodySchema = z.strictObject({
@@ -58,6 +79,11 @@ export const calendarRulesBodySchema = z.strictObject({
  * two equal sets of rules compare equal in the audit log.
  */
 export function normalizeCalendarRules(rules: CalendarRules): CalendarRules {
+  const share = (threshold: QuorumThreshold): QuorumThreshold => ({
+    numerator: threshold.numerator,
+    denominator: threshold.denominator,
+    strict: threshold.strict,
+  });
   const ordered = (offsets: Partial<Record<MilestoneKey, MilestoneOffset>>) =>
     Object.fromEntries(
       MILESTONE_KEYS.flatMap((key) => {
@@ -70,6 +96,16 @@ export function normalizeCalendarRules(rules: CalendarRules): CalendarRules {
     minimums: ordered(rules.minimums),
     documentsWithConvocationBelow: rules.documentsWithConvocationBelow,
     regulationWindowDays: rules.regulationWindowDays,
+    ...(rules.quorum
+      ? {
+          quorum: {
+            firstCall: share(rules.quorum.firstCall),
+            secondCall: rules.quorum.secondCall
+              ? share(rules.quorum.secondCall)
+              : null,
+          },
+        }
+      : {}),
   };
 }
 

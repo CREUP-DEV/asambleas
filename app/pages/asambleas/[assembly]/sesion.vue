@@ -41,6 +41,18 @@ useHead(() => ({
 const isDesktop = useMediaQuery("(min-width: 1024px)");
 
 // One line under each folded section's title, so it is useful folded.
+const headcountSummary = computed(() => {
+  const latest = session.headcounts.latest.value;
+  if (!latest) return null;
+  return t("session.headcount.summary", {
+    present: latest.present,
+    eligible: latest.eligible,
+    quorum: latest.quorum
+      ? t("session.headcount.quorum")
+      : t("session.headcount.noQuorum"),
+  });
+});
+
 const speakersSummary = computed(() => {
   // Until the turns arrive, an empty list would claim nobody asked.
   if (session.speakers.loading.value || session.speakers.unavailable.value) {
@@ -281,6 +293,14 @@ defineShortcuts({
                 <SessionSpeakersPanel />
               </SessionFoldPanel>
               <SessionFoldPanel
+                id="headcount"
+                :title="t('session.headcount.title')"
+                icon="i-lucide-users-round"
+                :summary="headcountSummary"
+              >
+                <SessionHeadcountPanel />
+              </SessionFoldPanel>
+              <SessionFoldPanel
                 id="agenda"
                 :title="t('session.agenda.title')"
                 icon="i-lucide-list-tree"
@@ -315,6 +335,15 @@ defineShortcuts({
           <div class="px-1">
             <SessionAmendmentQueue />
           </div>
+          <SessionFoldPanel
+            id="headcount"
+            :title="t('session.headcount.title')"
+            icon="i-lucide-users-round"
+            :summary="headcountSummary"
+            :default-open="false"
+          >
+            <SessionHeadcountPanel />
+          </SessionFoldPanel>
           <SessionFoldPanel
             id="agenda"
             :title="t('session.agenda.title')"

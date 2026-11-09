@@ -18,7 +18,9 @@ export type EntityType =
   | "decision"
   | "live"
   /** Speaking turns: entityId is the turn, or the assembly for visibility. */
-  | "speakers";
+  | "speakers"
+  /** The Mesa's headcounts: entityId is the count. */
+  | "headcount";
 
 export interface LiveMessage {
   assemblyId: string;

@@ -283,6 +283,11 @@ Admin impersonates (403 `admin.impersonationReadOnly`).
 | GET    | `/api/calendar-rules`        | `CalendarRulesDto[]`, one per type in `ALL_ASSEMBLY_TYPES` order. A type with no stored row shows `INITIAL_CALENDAR_RULES` with `stored: false` and `updatedAt: null`.                                                                                                                                                                                   |
 | PUT    | `/api/calendar-rules/[type]` | `CalendarRulesBody` (`rules` plus the `updatedAt` read, null while the type has no stored row: the call then stores the first one). 404 for an unknown type, 400 for invalid rules (strict: unknown milestones, mixed units or keys are refused), 409 on a stale `updatedAt` (a row that appeared or changed meanwhile). Writes `calendar_rules.update`. |
 
+`rules.quorum` (optional, so rows stored before it stay valid) holds the
+quorum of each call: `{ numerator, denominator, strict }`, a share of the
+asociados with a vote, "at least" or, with `strict`, "more than";
+`secondCall` is null for a type with a single call.
+
 ## Agenda
 
 | Method | Path                                        | Who               | Notes                                                                                                                                                                                                       |
@@ -1068,6 +1073,44 @@ starts) says whether attendees see who has the floor and who is next.
 `live_changed` it then records `speakers_visibility_changed`
 (`entityType: "speakers"`, `{ visible }`), so clients that follow the
 speakers refetch them.
+
+## Headcounts
+
+| Method | Path                                                | Who                | Notes                                                                |
+| ------ | --------------------------------------------------- | ------------------ | -------------------------------------------------------------------- |
+| GET    | `/api/assemblies/[assembly]/headcounts`             | visible            | `HeadcountsDto`: counts newest first, `latest`, `members`, `quorum`. |
+| POST   | `/api/assemblies/[assembly]/headcounts`             | `session:moderate` | `HeadcountBody`. 201 with `HeadcountsDto`.                           |
+| PUT    | `/api/assemblies/[assembly]/headcounts/[headcount]` | `session:moderate` | `HeadcountUpdateBody` (with `updatedAt`). Returns `HeadcountsDto`.   |
+
+The Mesa's counts of the asociados with a vote (docs/design.md, "Headcounts
+and quorum"). Schemas: `shared/utils/schemas/headcount.ts`.
+
+- **Reading.** Public to everyone who sees the assembly, for transparency:
+  the live view and the projection show the latest count, who was in the
+  room, the delegations, the quorum and the majorities it gives. `members` are the
+  active asociados now and `quorum` the rules of the assembly type
+  (`quorumRulesOf`, the initial ones for a row stored before quorum existed).
+- **Recording.** `entries` lists the members in the room (`present`) and the
+  delegated ones (`delegated` with `delegateId`); absent ones are left out.
+  422 `{ problems: [{ memberId, problem }] }` when a member is listed twice,
+  is not an active asociado, or a delegation names nobody with a vote or one
+  that already receives another (`HEADCOUNT_PROBLEMS`). A delegation to a
+  member not in the room is stored but does not count (`delegated` and
+  `present` leave it out).
+  `call: "second"` on a type without a second call is 422. Refused (409) in
+  a draft or closed assembly. Records `headcount_recorded`.
+- **Correcting.** Optimistic lock on `updatedAt` (409 when stale). The
+  members it may list are the active asociados plus those it listed; its
+  `eligible` stays, and `required` too unless `call` changes. Records
+  `headcount_corrected` with `changes`.
+- **Locks and events.** Every write locks the assembly row first. Events
+  have `entityType: "headcount"` and carry the figures only (`call`,
+  `eligible`, `present`, `required`, `quorum`), never who was there (read
+  through GET); the activity log shows them to everyone who sees the
+  assembly.
+- **Votes.** With majorities on `present`, a vote whose body has no
+  `present` takes the latest count's, and every vote with counts stores the
+  latest count's id in `votes.headcountId`.
 
 ## Speaking turns
 

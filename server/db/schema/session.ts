@@ -6,6 +6,7 @@ import {
   pgEnum,
   index,
   jsonb,
+  primaryKey,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { cuid } from "./common";
@@ -22,6 +23,10 @@ import {
   VOTE_SUBJECTS,
   SPEAKING_TURN_STATUSES,
 } from "../../../shared/constants/domain";
+import {
+  ATTENDANCE_MARKS,
+  QUORUM_CALLS,
+} from "../../../shared/utils/headcount";
 import { majorityEnum } from "./document";
 
 export const voteMethodEnum = pgEnum("vote_method", VOTE_METHODS);
@@ -33,6 +38,74 @@ export const speakingTurnStatusEnum = pgEnum(
   SPEAKING_TURN_STATUSES,
 );
 export const decisionMethodEnum = pgEnum("decision_method", DECISION_METHODS);
+export const quorumCallEnum = pgEnum("quorum_call", QUORUM_CALLS);
+export const attendanceMarkEnum = pgEnum("attendance_mark", ATTENDANCE_MARKS);
+
+/**
+ * A headcount the Mesa takes during the session (at the start of each day,
+ * after a break or whenever it decides): the members with a vote in the
+ * room and those represented by a delegation, with the quorum it gave. The
+ * figures are a snapshot of that moment, so a later roster sync or a change
+ * of the quorum rules never rewrites a past count. Corrections keep the row
+ * (optimistic lock on `updatedAt`).
+ */
+export const headcounts = pgTable(
+  "headcounts",
+  {
+    id: text("id").primaryKey().$defaultFn(cuid),
+    assemblyId: text("assembly_id")
+      .notNull()
+      .references(() => assemblies.id, { onDelete: "cascade" }),
+    /** The call whose quorum applies (an AGE has only the first). */
+    call: quorumCallEnum("call").notNull().default("first"),
+    /** Active asociados when the count was taken. */
+    eligible: integer("eligible").notNull(),
+    /** Members in the room. */
+    inRoom: integer("in_room").notNull(),
+    /** Members represented through a delegation. */
+    delegated: integer("delegated").notNull(),
+    /** In the room plus delegated: the base of majorities on "present". */
+    present: integer("present").notNull(),
+    /** Members needed for quorum under the rules then in force. */
+    required: integer("required").notNull(),
+    note: text("note"),
+    takenAt: timestamp("taken_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    takenByUserId: text("taken_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => sql`now()`),
+  },
+  (table) => [
+    index("idx_headcounts_assembly").on(table.assemblyId, table.takenAt),
+  ],
+);
+
+/**
+ * Who a headcount counted: one row per asociado in the room or represented
+ * by a delegation (absent ones have none). `delegateMemberId` is the member
+ * in the room that votes for a delegated one.
+ */
+export const headcountEntries = pgTable(
+  "headcount_entries",
+  {
+    headcountId: text("headcount_id")
+      .notNull()
+      .references(() => headcounts.id, { onDelete: "cascade" }),
+    memberId: text("member_id")
+      .notNull()
+      .references(() => members.id, { onDelete: "cascade" }),
+    mark: attendanceMarkEnum("mark").notNull(),
+    delegateMemberId: text("delegate_member_id").references(() => members.id, {
+      onDelete: "set null",
+    }),
+  },
+  (table) => [primaryKey({ columns: [table.headcountId, table.memberId] })],
+);
 
 /** A vote recorded by the Mesa: counts, majority and the computed result. */
 export const votes = pgTable(
@@ -52,6 +125,10 @@ export const votes = pgTable(
     invalid: integer("invalid").notNull().default(0),
     /** Members present with vote, when the denominator needs it. */
     present: integer("present"),
+    /** The Mesa's headcount in force when the vote was recorded. */
+    headcountId: text("headcount_id").references(() => headcounts.id, {
+      onDelete: "set null",
+    }),
     majority: majorityEnum("majority").notNull(),
     result: voteResultEnum("result").notNull(),
     note: text("note"),

@@ -49,7 +49,10 @@ const summary = useTemplateRef<HTMLElement>("summary");
 
 watch(open, (isOpen) => {
   if (!isOpen) return;
-  vote.value = sessionEmptyVote(document.value?.majority ?? "simple");
+  vote.value = sessionEmptyVote(
+    document.value?.majority ?? "simple",
+    session.votePresent.value,
+  );
   serverConflicts.value = [];
   serverUndecided.value = [];
   serverTie.value = false;
@@ -246,6 +249,7 @@ async function record(): Promise<void> {
         <SessionVoteFields
           v-model="vote"
           :settings="session.settings.value"
+          :headcount="session.voteHeadcount.value"
           :methods="FINAL_VOTE_METHODS"
         />
 
