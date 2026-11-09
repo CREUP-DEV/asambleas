@@ -864,23 +864,141 @@ function pickImage(): void {
 
 async function onImagePicked(event: Event): Promise<void> {
   const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
+  const files = imageFiles(input.files);
   input.value = "";
-  if (!file || !props.uploadImage) return;
+  await uploadImages(files);
+}
+
+/** The PNG and JPEG files among those given (picked, pasted, dropped). */
+function imageFiles(list: FileList | null | undefined): File[] {
+  return Array.from(list ?? []).filter(
+    (file) => file.type === "image/png" || file.type === "image/jpeg",
+  );
+}
+
+// Images waiting for their description, one dialog after another.
+const waitingImages: Omit<BlockImageAttrs, "alt">[] = [];
+
+/** Stores the files one at a time; each goes in once described. */
+async function uploadImages(files: File[]): Promise<void> {
+  if (!props.uploadImage || files.length === 0) return;
   imageUploading.value = true;
   try {
-    const stored = await props.uploadImage(file);
-    if (stored) {
-      altImage.value = stored;
-      altMode.value = "insert";
-      altText.value = "";
-      altMissing.value = false;
-      altOpen.value = true;
+    for (const file of files) {
+      const stored = await props.uploadImage(file);
+      if (stored) describeNext(stored);
     }
   } finally {
     imageUploading.value = false;
   }
 }
+
+function describeNext(image: Omit<BlockImageAttrs, "alt">): void {
+  if (altOpen.value) {
+    waitingImages.push(image);
+    return;
+  }
+  altImage.value = image;
+  altMode.value = "insert";
+  altText.value = "";
+  altMissing.value = false;
+  altOpen.value = true;
+}
+
+watch(altOpen, (open) => {
+  const next = open ? undefined : waitingImages.shift();
+  if (next) void nextTick(() => describeNext(next));
+});
+
+const toast = useToast();
+let pastedImagesTold = false;
+
+/**
+ * Pasting: a picture alone (a screenshot, an image copied from a page) is
+ * stored and described like a chosen one. A copy that holds text keeps
+ * being pasted as text, even when it brings a picture along: Word puts an
+ * image of the copied passage next to its text. Pictures in pasted HTML
+ * that are not the platform's own are left out, which is said once.
+ */
+function hasText(html: string): boolean {
+  const parsed = new DOMParser().parseFromString(html, "text/html");
+  return Boolean(parsed.body.textContent?.trim());
+}
+
+/** Whether this editor takes new pictures (amendments never do). */
+const takesImages = computed(
+  () => Boolean(props.uploadImage) && !props.compact,
+);
+
+/** Said once per editor: where no picture can be added. */
+let imagesRefusedTold = false;
+function tellImagesRefused(): void {
+  if (imagesRefusedTold) return;
+  imagesRefusedTold = true;
+  toast.add({
+    title: t("common.editor.image.notHere"),
+    icon: "i-lucide-image-off",
+    color: "warning",
+  });
+}
+
+function handlePaste(_view: unknown, event: ClipboardEvent): boolean {
+  const files = imageFiles(event.clipboardData?.files);
+  if (files.length === 0) return false;
+  const html = event.clipboardData?.getData("text/html") ?? "";
+  if (html && hasText(html)) return false;
+  event.preventDefault();
+  if (takesImages.value) void uploadImages(files);
+  else tellImagesRefused();
+  return true;
+}
+
+function handleDrop(
+  view: {
+    posAtCoords: (coords: {
+      left: number;
+      top: number;
+    }) => { pos: number } | null;
+  },
+  event: DragEvent,
+  _slice: unknown,
+  moved: boolean,
+): boolean {
+  if (moved) return false;
+  const files = imageFiles(event.dataTransfer?.files);
+  if (files.length === 0) return false;
+  event.preventDefault();
+  if (!takesImages.value) {
+    tellImagesRefused();
+    return true;
+  }
+  // They go in where they were dropped.
+  const hit = view.posAtCoords({ left: event.clientX, top: event.clientY });
+  if (hit) editor.value?.commands.setTextSelection(hit.pos);
+  void uploadImages(files);
+  return true;
+}
+
+function transformPastedHTML(html: string): string {
+  // The platform's own pictures (data-asset) paste as they are; others are
+  // left out by the schema, which is said once.
+  if (!/<img\b(?![^>]*\bdata-asset=)/i.test(html)) return html;
+  if (!takesImages.value) {
+    tellImagesRefused();
+    return html;
+  }
+  if (!pastedImagesTold) {
+    pastedImagesTold = true;
+    toast.add({
+      title: t("common.editor.image.pastedSkipped"),
+      icon: "i-lucide-image-off",
+      color: "warning",
+    });
+  }
+  return html;
+}
+
+const editorProps = { handlePaste, handleDrop, transformPastedHTML };
 
 function openAltDialog(): void {
   const attrs = editor.value?.getAttributes("blockImage");
@@ -1008,6 +1126,7 @@ defineExpose({
             link: { openOnClick: false, defaultProtocol: 'https' },
           }"
           :image="false"
+          :editor-props="editorProps"
           :mention="false"
           :enable-input-rules="[
             'heading',
@@ -1152,6 +1271,7 @@ defineExpose({
       ref="imageInput"
       type="file"
       accept="image/png,image/jpeg"
+      multiple
       class="sr-only"
       tabindex="-1"
       aria-hidden="true"

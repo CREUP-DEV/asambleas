@@ -1117,7 +1117,8 @@ export function totalityAlternativeOps(
 ): AmendmentOp[] {
   const taken = new Set(base.map((block) => block.id));
   const fresh = blocks
-    .filter((block) => block.text.trim() !== "")
+    // An image has no text and still counts.
+    .filter((block) => block.text.trim() !== "" || block.type === "image")
     .map((block) => {
       let id = block.id;
       while (taken.has(id)) id = newId();

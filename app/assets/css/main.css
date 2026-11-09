@@ -289,6 +289,12 @@ html {
   cursor: default;
 }
 
+/* An image with no description yet (imported from Word): marked until it has one. */
+.content-editor img.cx-editor-image[alt=""] {
+  outline: 2px dashed var(--ui-warning);
+  outline-offset: 3px;
+}
+
 /* Clear of the floating toolbar when the editor's index jumps to them. */
 .content-editor :is(h1, h2, h3, h4) {
   scroll-margin-top: 5rem;
@@ -636,6 +642,11 @@ html {
 
   .diff-marks .cx-block-inserted {
     border-inline-start-width: 4px;
+  }
+
+  /* An image an amendment removes shows faded behind its dashed border. */
+  .cx-block-deleted.cx-figure img {
+    opacity: 0.45;
   }
 
   /* Provenance: consolidated text underlined per amendment, with its label. */

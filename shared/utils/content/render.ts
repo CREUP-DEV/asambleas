@@ -231,7 +231,9 @@ function wrapFlow(items: RenderableBlock[], headings: boolean): string {
     } else if (item.type === "quote") {
       html += `<blockquote ${attrs}><p>${item.inner}</p></blockquote>`;
     } else if (item.type === "image") {
-      html += `<figure ${attrsOf(item, "cx-figure")}>${imageHtml(item.image)}</figure>`;
+      // Its inner text is only the diff's hidden label, if any.
+      const label = item.inner === "<br>" ? "" : item.inner;
+      html += `<figure ${attrsOf(item, "cx-figure")}>${label}${imageHtml(item.image)}</figure>`;
     } else {
       html += `<p ${attrs}>${item.inner}</p>`;
     }
@@ -330,6 +332,15 @@ export function renderAnnotated(
     if (block.status !== "kept" && block.source) {
       attrs = ` data-amendment-id="${escapeHtml(block.source)}"`;
       className = `cx-block-${block.status}`;
+      // An image has no text to say it was added or removed: its figure
+      // says it to screen readers (the border shows it).
+      if (block.type === "image" && options.mode === "diff") {
+        inner = srOnly(
+          block.status === "inserted"
+            ? options.diffLabels?.inserted
+            : options.diffLabels?.removed,
+        );
+      }
     }
     items.push({ ...block, inner: inner || "<br>", attrs, className });
   }

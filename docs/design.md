@@ -132,15 +132,26 @@ and on disk under `UPLOAD_STORAGE_DIR/images/`, never a link to anything
 outside the platform. Uploads (PNG or JPEG, 10 MB) are checked by signature
 and written again by `sharp`: turned upright, without metadata (no location
 or camera details), at most 2,400 px a side. The editor inserts one from its
-toolbar and asks for its description, which is required; it sits on a line
-of its own, outside tables and lists. Saving the text and every amendment
+toolbar, or when a picture alone is pasted (a screenshot) or dropped, and
+asks for its description, which is required; it sits on a line of its own,
+outside tables and lists. Pasted HTML keeps its text only: pictures in it
+that are not the platform's own are left out, and the editor says so once.
+An image's id is a hash of its document and the bytes received
+(`imageAssetId`), so the same picture given twice to one document (a Word
+file imported again) is stored once. Saving the text and every amendment
 operation check that each image is one stored for that document
 (`assertImagesBelong`). Images are served to whoever can see their document
 (`/api/uploads/images/[id]`), drawn in the PDF at their size within the text
-width, and amendments insert or delete them like any block. Draft edits
-never remove an image's file, since a published version may still show it;
-files go with their document. Images left unused (uploaded and never saved)
-stay until a clean-up job removes them (phase 2, with DOCX import).
+width, and amendments insert or delete them like any block (a diff marks
+an added or removed one with its border and says it to screen readers).
+Draft edits never remove an image's file, since a published version may
+still show it; files go with their document. Images nothing uses (uploaded
+or imported and never saved) are removed by a daily job at 04:45 Madrid
+time (`server/utils/domain/imageCleanup.ts`, queue
+`document-images-cleanup`) once 14 days old: one still shown by any
+version of its document or by any of its amendments stays. It records
+`document_images.cleanup` per document (source `system`), and also removes
+files left with no row.
 
 `blockId` attribute on every block node, and offers heading levels 1 to 4
 (shown as h2 to h5). DOCX import goes through `mammoth` in a child process,
@@ -165,8 +176,18 @@ is sanitized and converted to blocks (`server/utils/content/docx.ts`):
   reference ("[1]"); ordinals typed as a superscript letter become "ª"/"º";
   text in all caps is written in capitals. Centred and right-aligned
   paragraphs keep their alignment; justified ones go back to the start.
-- It warns about tracked changes, comments, dropped images, flattened tables
-  and highlighting, whose meaning is lost.
+- Pictures become image blocks, stored for the document as they are read
+  (the import stores them even though it saves no text; unused ones go with
+  the daily clean-up). A picture inside a paragraph is lifted out to a
+  block of its own between the two halves; Word's description becomes its
+  alt text. PNG and JPEG stay as they are; GIF, WebP and TIFF become PNG.
+  Pictures in tables of several columns or in lists, Office's EMF and WMF,
+  charts, SmartArt and linked pictures are left out, as are those past 100
+  per file or 32 MB in all; pictures in headers and footers never reach the
+  text.
+- It warns about tracked changes, comments, dropped images, images in
+  tables, images without a description, flattened tables and highlighting,
+  whose meaning is lost.
 
 ## Amendments
 

@@ -88,12 +88,7 @@ const BARRIERS = new Set([
  * says why; the test fails if one of them starts recording (drop it then)
  * or stops existing.
  */
-const NON_RECORDING_MUTATIONS: Readonly<Record<string, string>> = {
-  // Converts an uploaded DOCX into blocks and returns them without storing
-  // anything; saving them is a PUT .../content, which records the change.
-  "server/api/assemblies/[assembly]/documents/[document]/import.post.ts":
-    "DOCX conversion, no state",
-};
+const NON_RECORDING_MUTATIONS: Readonly<Record<string, string>> = {};
 
 interface ModuleInfo {
   /** Local name -> the module file and the name it exports. */

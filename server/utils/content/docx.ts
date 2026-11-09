@@ -108,6 +108,12 @@ export const DOCX_MAX_BYTES = 15 * 1024 * 1024;
 export interface DocxLimits {
   /** Entries in the central directory. A Word file holds a few dozen. */
   maxEntries: number;
+  /** Pictures the converter hands back; the rest are left out. */
+  maxImages: number;
+  /** Bytes of one picture, as stored in the file; larger ones are left out. */
+  maxImageBytes: number;
+  /** Bytes of all the pictures together. */
+  maxImagesBytes: number;
   /** Real uncompressed bytes of all entries together. */
   maxUncompressedBytes: number;
   /** V8 heap of the converter process, in MB. */
@@ -170,6 +176,10 @@ export interface DocxLimits {
 
 export const DOCX_LIMITS: DocxLimits = {
   maxEntries: 1_000,
+  maxImages: 100,
+  maxImageBytes: 10 * 1024 * 1024,
+  // The archive's content is bounded to 32 MB already (maxUncompressedBytes).
+  maxImagesBytes: 32 * 1024 * 1024,
   maxUncompressedBytes: 32 * 1024 * 1024,
   converterHeapMb: 512,
   converterTimeoutMs: 15_000,
@@ -714,6 +724,27 @@ process.stdin.on("end", () => {
     return;
   }
   let imagesDropped = false;
+  // The pictures the parent stores: each img carries its index here
+  // (data-docx-image). Past the count or byte budgets, or one that cannot
+  // be read (a linked picture), it is left out and said.
+  const images = [];
+  let imageBytes = 0;
+  const keepImage = async (image) => {
+    if (images.length >= options.maxImages) return null;
+    let data;
+    try {
+      data = await image.read();
+    } catch {
+      return null;
+    }
+    if (!data || data.length === 0 || data.length > options.maxImageBytes) {
+      return null;
+    }
+    if (imageBytes + data.length > options.maxImagesBytes) return null;
+    imageBytes += data.length;
+    images.push(data);
+    return images.length - 1;
+  };
   const labels = mammoth.transforms.paragraph(numberLabels(documents));
   const aligned = mammoth.transforms.paragraph(alignmentRun(documents));
   const capitals = mammoth.transforms.run(upperCaseRun);
@@ -726,9 +757,13 @@ process.stdin.on("end", () => {
           externalFileAccess: false,
           includeEmbeddedStyleMap: false,
           transformDocument: (document) => capitals(aligned(labels(document))),
-          convertImage: mammoth.images.imgElement(async () => {
-            imagesDropped = true;
-            return { src: "" };
+          convertImage: mammoth.images.imgElement(async (image) => {
+            const index = await keepImage(image);
+            if (index === null) {
+              imagesDropped = true;
+              return { src: "" };
+            }
+            return { src: "", "data-docx-image": String(index) };
           }),
         },
       ),
@@ -737,7 +772,17 @@ process.stdin.on("end", () => {
       (result) => {
         const html = Buffer.from(result.value, "utf8");
         if (html.length > options.maxHtmlBytes) reply({ status: "too_large" });
-        else reply({ status: "ok", imagesDropped }, html);
+        else {
+          reply(
+            {
+              status: "ok",
+              imagesDropped,
+              htmlBytes: html.length,
+              images: images.map((data) => data.length),
+            },
+            Buffer.concat([html].concat(images)),
+          );
+        }
       },
       () => reply({ status: numberingUnsupported ? "unavailable" : "invalid" }),
     );
@@ -747,7 +792,40 @@ process.stdin.on("end", () => {
 const converterHeaderSchema = z.object({
   status: z.enum(["ok", "invalid", "too_large", "unavailable"]),
   imagesDropped: z.boolean().optional(),
+  /** The body is the HTML, then each picture: their sizes in bytes. */
+  htmlBytes: z.number().int().min(0).optional(),
+  images: z.array(z.number().int().min(1)).max(1_000).optional(),
 });
+
+/**
+ * The converter's answer split as its header says: never trusted beyond
+ * that, so a body whose size does not add up is no answer at all.
+ */
+function splitBody(
+  body: Buffer,
+  header: z.infer<typeof converterHeaderSchema>,
+  limits: DocxLimits,
+): { html: Buffer; images: Buffer[] } | null {
+  const sizes = header.images ?? [];
+  const htmlBytes = header.htmlBytes ?? body.length;
+  const total = sizes.reduce((sum, size) => sum + size, htmlBytes);
+  if (
+    total !== body.length ||
+    htmlBytes > limits.maxHtmlBytes ||
+    sizes.length > limits.maxImages ||
+    sizes.some((size) => size > limits.maxImageBytes) ||
+    total - htmlBytes > limits.maxImagesBytes
+  ) {
+    return null;
+  }
+  const images: Buffer[] = [];
+  let offset = htmlBytes;
+  for (const size of sizes) {
+    images.push(body.subarray(offset, offset + size));
+    offset += size;
+  }
+  return { html: body.subarray(0, htmlBytes), images };
+}
 
 /** Environment variables the converter process inherits; nothing else. */
 const CONVERTER_ENV_KEYS = ["PATH", "SystemRoot", "TEMP", "TMP", "TMPDIR"];
@@ -1196,7 +1274,7 @@ function runConverter(
   data: Buffer,
   limits: DocxLimits,
   abortSignal?: AbortSignal,
-): Promise<{ html: Buffer; imagesDropped: boolean }> {
+): Promise<{ html: Buffer; images: Buffer[]; imagesDropped: boolean }> {
   return new Promise((resolve, reject) => {
     if (abortSignal?.aborted) {
       reject(cancelledError());
@@ -1215,6 +1293,9 @@ function runConverter(
           JSON.stringify({
             styleMap: STYLE_MAP,
             maxHtmlBytes: limits.maxHtmlBytes,
+            maxImages: limits.maxImages,
+            maxImageBytes: limits.maxImageBytes,
+            maxImagesBytes: limits.maxImagesBytes,
           }),
         ],
         {
@@ -1260,8 +1341,8 @@ function runConverter(
     child.stdout?.on("data", (chunk: Buffer) => {
       if (settled) return;
       received += chunk.length;
-      // The header line is a few dozen bytes.
-      if (received > limits.maxHtmlBytes + 1024) {
+      // The header line is a few hundred bytes at most.
+      if (received > limits.maxHtmlBytes + limits.maxImagesBytes + 16_384) {
         abort(tooLargeError());
         return;
       }
@@ -1282,11 +1363,15 @@ function runConverter(
             header = null;
           }
         }
-        if (header?.status === "ok" && code === 0) {
-          resolve({
-            html: bytes.subarray(newline + 1),
-            imagesDropped: header.imagesDropped === true,
-          });
+        const parts =
+          header?.status === "ok" && code === 0
+            ? splitBody(bytes.subarray(newline + 1), header, limits)
+            : null;
+        if (header?.status === "ok" && code === 0 && !parts) {
+          logWarn("docx.converter", { reason: "body does not add up" });
+          reject(invalidFileError());
+        } else if (parts) {
+          resolve({ ...parts, imagesDropped: header?.imagesDropped === true });
         } else if (header?.status === "invalid") {
           reject(invalidFileError());
         } else if (header?.status === "unavailable") {
@@ -1323,6 +1408,58 @@ export interface ConvertDocxOptions {
    * it is left out of the text.
    */
   documentTitle?: string;
+  /**
+   * Stores one of the file's pictures for the document and says what it
+   * became, or null when it could not (it is then left out). Without it,
+   * pictures are left out.
+   */
+  storeImage?: (data: Buffer) => Promise<StoredDocxImage | null>;
+}
+
+export interface StoredDocxImage {
+  asset: string;
+  width: number;
+  height: number;
+}
+
+/**
+ * Points each picture the converter kept (`img[data-docx-image]`) at the
+ * image stored for it (`data-asset`, with its size), one at a time; one not
+ * stored is removed. Says whether any was left out and whether any stored
+ * one has no description.
+ */
+async function attachImages(
+  document: Document,
+  images: Buffer[],
+  storeImage: ConvertDocxOptions["storeImage"],
+  signal: AbortSignal | undefined,
+): Promise<{ dropped: boolean; withoutAlt: boolean }> {
+  let dropped = false;
+  let withoutAlt = false;
+  for (const img of Array.from(
+    document.querySelectorAll("img[data-docx-image]"),
+  )) {
+    if (signal?.aborted) throw cancelledError();
+    const data = images[Number(img.getAttribute("data-docx-image"))];
+    img.removeAttribute("data-docx-image");
+    const stored = data && storeImage ? await storeImage(data) : null;
+    if (!stored) {
+      dropped = true;
+      img.remove();
+      continue;
+    }
+    img.setAttribute("data-asset", stored.asset);
+    img.setAttribute("width", String(stored.width));
+    img.setAttribute("height", String(stored.height));
+    if (!(img.getAttribute("alt") ?? "").trim()) withoutAlt = true;
+  }
+  // Pictures the converter could not keep left an empty img behind.
+  for (const img of Array.from(
+    document.querySelectorAll("img:not([data-asset])"),
+  )) {
+    img.remove();
+  }
+  return { dropped, withoutAlt };
 }
 
 /**
@@ -1333,7 +1470,13 @@ export interface ConvertDocxOptions {
  */
 export async function convertDocx(
   data: Buffer,
-  { owner, signal, limits = DOCX_LIMITS, documentTitle }: ConvertDocxOptions,
+  {
+    owner,
+    signal,
+    limits = DOCX_LIMITS,
+    documentTitle,
+    storeImage,
+  }: ConvertDocxOptions,
 ): Promise<DocxImportDto> {
   if (!hasZipSignature(data)) invalidFile();
 
@@ -1344,7 +1487,11 @@ export async function convertDocx(
       // Aborted between being handed the slot and starting.
       if (signal?.aborted) throw cancelledError();
       const { warnings } = await inspectArchive(data, limits);
-      const { html, imagesDropped } = await runConverter(data, limits, signal);
+      const { html, images, imagesDropped } = await runConverter(
+        data,
+        limits,
+        signal,
+      );
       if (imagesDropped) warnings.add("images_dropped");
       inspectHtml(html, limits);
 
@@ -1355,6 +1502,14 @@ export async function convertDocx(
       // between them lets other requests through.
       await nextTurn();
       if (signal?.aborted) throw cancelledError();
+      const attached = await attachImages(
+        document as unknown as Document,
+        images,
+        storeImage,
+        signal,
+      );
+      if (attached.dropped) warnings.add("images_dropped");
+      if (attached.withoutAlt) warnings.add("images_without_alt");
       prepareImportedHtml(document as unknown as Document, { documentTitle });
       let produced = 0;
       const blocks = htmlElementToBlocks(
@@ -1366,6 +1521,7 @@ export async function convertDocx(
         },
         {
           onTableFlattened: () => warnings.add("tables_flattened"),
+          onImageDropped: () => warnings.add("images_in_tables"),
           // Tables, rows and cells are no blocks: they do not count.
           newTableId: newBlockId,
         },
@@ -1383,6 +1539,8 @@ export async function convertDocx(
     "tracked_changes",
     "comments",
     "images_dropped",
+    "images_in_tables",
+    "images_without_alt",
     "tables_flattened",
     "highlight",
   ];

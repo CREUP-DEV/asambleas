@@ -150,6 +150,10 @@ const blocks = computed(() =>
     ? imported.value.slice(headerLength.value)
     : imported.value,
 );
+/** Paragraphs and headings: images are not counted as either. */
+const textBlocks = computed(
+  () => blocks.value.filter((block) => block.type !== "image").length,
+);
 const words = computed(() =>
   blocks.value.reduce(
     (total, block) =>
@@ -162,6 +166,8 @@ const WARNING_ICONS: Record<DocxImportDto["warnings"][number], string> = {
   tracked_changes: "i-lucide-git-compare",
   comments: "i-lucide-message-square-warning",
   images_dropped: "i-lucide-image-off",
+  images_in_tables: "i-lucide-image-minus",
+  images_without_alt: "i-lucide-image",
   tables_flattened: "i-lucide-table",
   highlight: "i-lucide-highlighter",
 };
@@ -266,7 +272,7 @@ watch(open, (isOpen) => {
           <p class="text-muted text-sm">
             {{
               t("document.import.stats", {
-                blocks: blocks.length,
+                blocks: textBlocks,
                 words,
               })
             }}

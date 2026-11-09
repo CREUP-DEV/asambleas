@@ -172,7 +172,10 @@
         "cancel": "Cancel",
         "editAlt": "Image description…",
         "remove": "Remove image",
-        "uploadError": "The image could not be uploaded"
+        "uploadError": "The image could not be uploaded",
+        "pastedSkipped": "Images in what you pasted were not copied: insert them with the image button or paste each image on its own.",
+        "notHere": "Images cannot be added here: an amendment can only keep or remove those in the text.",
+        "notThisDocument": "A pasted image belongs to another document. Remove it and insert it again from its file."
       }
     },
     "staleData": {
@@ -726,7 +729,9 @@
       "warnings": {
         "tracked_changes": "The file has tracked changes that were neither accepted nor rejected. Check that the imported text is the final one.",
         "comments": "The file has comments. Comments are not imported.",
-        "images_dropped": "Images and other non-text elements were left out.",
+        "images_dropped": "Some images could not be imported (Excel charts, SmartArt or Office EMF images, for instance). If you need them, insert them as PNG or JPEG.",
+        "images_in_tables": "Images inside tables or lists are not imported: insert them outside.",
+        "images_without_alt": "Some images have no description: they show a dashed border. Add one from their menu (right-click) before sending the document.",
         "tables_flattened": "Tables inside another table were turned into one paragraph per row, with cells separated by \"{'|'}\".",
         "highlight": "Text highlighting was lost; check whether it marked anything important."
       },
@@ -4476,6 +4481,7 @@
       "document_content_updated": "Document text edited",
       "document_file_uploaded": "Document PDF uploaded",
       "document_image_uploaded": "Image uploaded to the document's text",
+      "document_images_imported": "Images imported from Word into the document's text",
       "document_submitted": "Document sent to the Secretariat",
       "document_correction_requested": "The Secretariat asked for the document to be corrected",
       "document_published": "Document published",
@@ -4562,6 +4568,9 @@
       "calendar_rules": {
         "update": "Calendar deadlines of an assembly type changed",
         "seed": "Initial calendar deadlines stored"
+      },
+      "document_images": {
+        "cleanup": "Unused images removed from the document"
       }
     },
     "changes": {

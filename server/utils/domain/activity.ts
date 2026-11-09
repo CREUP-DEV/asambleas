@@ -894,6 +894,7 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   document_content_updated: ["blockCount"],
   document_file_uploaded: ["fileName", "replaced"],
   document_image_uploaded: ["width", "height"],
+  document_images_imported: ["count"],
   document_submitted: ["submittedAt", "afterCorrection"],
   document_correction_requested: ["note"],
   document_published: ["reference", "republished", "from"],
@@ -982,6 +983,7 @@ export const AUDIT_PAYLOAD_KEYS: Record<AuditAction, readonly string[]> = {
   // Ids, file ids and folder names of the source: Admins only.
   "assembly.import": [],
   "document.import": ["fileName", "blockCount"],
+  "document_images.cleanup": ["count"],
   // The regulations' deadlines: nothing personal in them.
   "calendar_rules.update": ["rules"],
   "calendar_rules.seed": ["rules"],

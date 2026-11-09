@@ -528,6 +528,26 @@ export interface HtmlToBlocksOptions {
   onTableFlattened?: () => void;
   /** Ids for tables, rows and cells; `newId` when absent. */
   newTableId?: () => string;
+  /** Called for each stored picture left out: in a table cell or a list. */
+  onImageDropped?: () => void;
+}
+
+/** A stored picture in HTML (`img[data-asset]`, with its size), if whole. */
+function imageFromElement(element: Element): BlockImage | null {
+  const asset = element.getAttribute("data-asset");
+  const width = Number(element.getAttribute("width"));
+  const height = Number(element.getAttribute("height"));
+  if (
+    !asset ||
+    !IMAGE_ASSET_PATTERN.test(asset) ||
+    !Number.isInteger(width) ||
+    !Number.isInteger(height) ||
+    width < 1 ||
+    height < 1
+  ) {
+    return null;
+  }
+  return { asset, width, height, alt: element.getAttribute("alt") ?? "" };
 }
 
 /** Elements that end a line of table cell text; anything else is inline. */
@@ -756,6 +776,8 @@ export function htmlElementToBlocks(
           }
           const clone = item.cloneNode(true) as Element;
           clone.querySelectorAll("ul, ol").forEach((sub) => sub.remove());
+          if (clone.querySelector("img[data-asset]"))
+            options.onImageDropped?.();
           const inline = readElementInline(clone);
           if (inline.text) {
             const block: Block = {
@@ -774,6 +796,15 @@ export function htmlElementToBlocks(
               quote,
             );
         }
+      } else if (tag === "img") {
+        const image = imageFromElement(child);
+        if (!image) continue;
+        // Images stay out of tables and lists (blocksSchema).
+        if (inCell || list) {
+          options.onImageDropped?.();
+          continue;
+        }
+        blocks.push({ id: newId(), type: "image", image, text: "", marks: [] });
       } else if (tag === "blockquote") {
         walk(child, list, true);
       } else if (tag === "table") {

@@ -1,6 +1,7 @@
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
-import { imageFileName, processImage } from "./documentImages";
+import { imageAssetId, imageFileName, processImage } from "./documentImages";
+import { IMAGE_ASSET_PATTERN } from "../../../shared/types/content";
 
 /** Uploaded pictures are checked, then written again by sharp. */
 
@@ -54,6 +55,55 @@ describe("processImage", () => {
       Buffer.from("<html><script>alert(1)</script></html>"),
     ]);
     await expect(processImage(fake)).rejects.toMatchObject({ statusCode: 415 });
+  });
+});
+
+describe("processImage for a Word file's pictures", () => {
+  const coloured = (format: "gif" | "webp" | "tiff") =>
+    sharp({
+      create: { width: 30, height: 10, channels: 3, background: "#792225" },
+    })
+      [format]()
+      .toBuffer();
+
+  it("takes GIF, WebP and TIFF, written again as PNG", async () => {
+    for (const format of ["gif", "webp", "tiff"] as const) {
+      const input = await coloured(format);
+      // An upload never takes them.
+      await expect(processImage(input)).rejects.toMatchObject({
+        statusCode: 415,
+      });
+      const stored = await processImage(input, "import");
+      expect(stored).toMatchObject({
+        mimeType: "image/png",
+        width: 30,
+        height: 10,
+      });
+      expect((await sharp(stored.data).metadata()).format).toBe("png");
+    }
+  });
+
+  it("still refuses what sharp cannot read (Office's EMF, SVG)", async () => {
+    const emf = Buffer.from([0x01, 0, 0, 0, 0x6c, 0, 0, 0, 0, 0, 0, 0]);
+    await expect(processImage(emf, "import")).rejects.toMatchObject({
+      statusCode: 415,
+    });
+    const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"/>');
+    await expect(processImage(svg, "import")).rejects.toMatchObject({
+      statusCode: 415,
+    });
+  });
+});
+
+describe("imageAssetId", () => {
+  it("is the same for the same picture and document, a valid asset id", () => {
+    const picture = Buffer.from("picture");
+    const id = imageAssetId("doc1", picture);
+    expect(id).toMatch(IMAGE_ASSET_PATTERN);
+    expect(imageAssetId("doc1", Buffer.from("picture"))).toBe(id);
+    // Another document, or another picture, never shares it.
+    expect(imageAssetId("doc2", picture)).not.toBe(id);
+    expect(imageAssetId("doc1", Buffer.from("picturf"))).not.toBe(id);
   });
 });
 
