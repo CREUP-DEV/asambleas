@@ -1,4 +1,13 @@
-import { eq, inArray, isNotNull, type SQL } from "drizzle-orm";
+import {
+  and,
+  eq,
+  ilike,
+  inArray,
+  isNotNull,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { z } from "zod/v4";
 import { db } from "../../db";
 import { permissions, userPermissions, users } from "../../db/schema";
@@ -41,11 +50,20 @@ export const ADMIN_USERS_ACCESS_FILTERS = ["all", "revoked"] as const;
 export type AdminUsersAccessFilter =
   (typeof ADMIN_USERS_ACCESS_FILTERS)[number];
 
-/** The query of GET /api/admin/users: a page and the access filter. */
+/**
+ * The query of GET /api/admin/users: a page, the access filter and a search
+ * (`q`: part of the name, the email, the intranet initials or the acronym or
+ * name of the member the account acts for; blank is none).
+ */
 export const adminUsersQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(50),
   access: z.enum(ADMIN_USERS_ACCESS_FILTERS).default("all"),
+  q: z
+    .string()
+    .max(100)
+    .optional()
+    .transform((value) => value?.trim() || undefined),
 });
 
 /** The `where` of the users list for an access filter; none for `all`. */
@@ -53,6 +71,37 @@ export function adminUsersAccessWhere(
   access: AdminUsersAccessFilter,
 ): SQL | undefined {
   return access === "revoked" ? isNotNull(users.accessRevokedAt) : undefined;
+}
+
+/** The text anywhere, with `%`, `_` and `\` matching themselves. */
+function likePattern(text: string): string {
+  return `%${text.replace(/[\\%_]/g, (char) => `\\${char}`)}%`;
+}
+
+/**
+ * The `where` of a search in the users list: the text anywhere in the name,
+ * the email or the intranet initials, or in the acronym or the name of the
+ * member the account acts for. None for an empty search.
+ */
+export function adminUsersSearchWhere(q: string | undefined): SQL | undefined {
+  if (!q) return undefined;
+  const pattern = likePattern(q);
+  return or(
+    ilike(users.name, pattern),
+    ilike(users.email, pattern),
+    ilike(users.externalInitials, pattern),
+    // Written out: the relational query (db.query.users.findMany) rewrites
+    // every column in its `where` to the users table, members' included.
+    sql`${users.memberId} in (select m.id from members m where m.acronym ilike ${pattern} or m.name ilike ${pattern})`,
+  );
+}
+
+/** Both filters of the users list together. */
+export function adminUsersWhere(
+  access: AdminUsersAccessFilter,
+  q: string | undefined,
+): SQL | undefined {
+  return and(adminUsersAccessWhere(access), adminUsersSearchWhere(q));
 }
 
 export const ADMIN_USER_RELATIONS = {

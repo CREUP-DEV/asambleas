@@ -1760,7 +1760,8 @@
       },
       "errors": {
         "targetRevoked": "This account no longer has access because the intranet deleted it, so its role cannot be changed."
-      }
+      },
+      "search": "Search by name, email or acronym"
     },
     "roles": {
       "title": "Roles and permissions",
