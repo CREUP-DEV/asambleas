@@ -288,6 +288,8 @@ defineExpose({
         <DocumentContentStats :blocks="blocks" />
       </div>
       <div class="flex flex-wrap items-center gap-2">
+        <!-- What the page adds about the text (exporting it, say) -->
+        <slot name="actions" />
         <DocumentDocxImport
           v-if="!showWordCard"
           :document-api="documentApi"
@@ -296,22 +298,6 @@ defineExpose({
           :disabled="disabled || saving"
           @import="onImport"
         />
-        <UTooltip
-          :text="t('document.authoring.saveShortcut')"
-          :kbds="['meta', 's']"
-        >
-          <!-- Secondary: sending or publishing saves the text first -->
-          <UButton
-            icon="i-lucide-save"
-            size="sm"
-            color="neutral"
-            variant="outline"
-            :label="t('document.authoring.save')"
-            :loading="saving"
-            :disabled="disabled || !unsaved"
-            @click="save"
-          />
-        </UTooltip>
       </div>
     </div>
 
@@ -388,7 +374,39 @@ defineExpose({
         :editable="!disabled"
         :label="t('document.authoring.editorLabel')"
         :placeholder="t('document.authoring.editorPlaceholder')"
-      />
+        outline
+      >
+        <!-- On the toolbar, which stays in view: saving needs no trip back
+             up. A button only with something to save, else a quiet "saved"
+             (the status line above tells screen readers). Sending or
+             publishing saves the text first. -->
+        <template #toolbar-end>
+          <UTooltip
+            v-if="unsaved || saving"
+            :text="t('document.authoring.saveShortcut')"
+            :kbds="['meta', 's']"
+          >
+            <UButton
+              icon="i-lucide-save"
+              size="sm"
+              color="primary"
+              variant="soft"
+              :label="t('document.authoring.saveShort')"
+              :loading="saving"
+              :disabled="disabled"
+              @click="save"
+            />
+          </UTooltip>
+          <span
+            v-else
+            class="text-muted flex items-center gap-1 px-2 text-xs"
+            aria-hidden="true"
+          >
+            <UIcon name="i-lucide-check" class="size-3.5" />
+            {{ t("document.authoring.savedShort") }}
+          </span>
+        </template>
+      </ContentBlockEditor>
       <template #fallback>
         <div class="space-y-2" aria-hidden="true">
           <USkeleton class="h-10 w-full" />

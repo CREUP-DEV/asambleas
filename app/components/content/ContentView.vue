@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { Block, ConsolidatedBlock } from "~~/shared/types/content";
 import { renderAnnotated, renderBlocks } from "~~/shared/utils/content/render";
+import { headingAtReadingLine } from "~/utils/outline";
 
 export type ContentViewMode = "plain" | "diff" | "provenance" | "clean";
 
@@ -232,43 +233,14 @@ function readOutline(root: HTMLElement): void {
   if (!same) outline.value = entries;
 }
 
-/** The nearest ancestor that scrolls, or null for the page itself. */
-function scrollParent(element: HTMLElement): HTMLElement | null {
-  for (let node = element.parentElement; node; node = node.parentElement) {
-    const { overflowY } = getComputedStyle(node);
-    if (
-      (overflowY === "auto" || overflowY === "scroll") &&
-      node.scrollHeight > node.clientHeight
-    ) {
-      return node;
-    }
-  }
-  return null;
-}
-
-/**
- * The heading of the section being read: the last one above the reading
- * line, a quarter down the visible text (at least 96 px, clear of sticky
- * bars).
- */
+/** The heading of the section being read (headingAtReadingLine). */
 function currentHeading(): string | null {
   const root = contentEl.value;
-  if (!root || outline.value.length === 0) return null;
-  const parent = scrollParent(root);
-  const box = parent
-    ? parent.getBoundingClientRect()
-    : { top: 0, height: window.innerHeight };
-  const top = box.top + Math.max(96, box.height / 4);
-  let current: string | null = null;
-  for (const entry of outline.value) {
-    const element = root.querySelector<HTMLElement>(
-      `[data-block-id="${CSS.escape(entry.id)}"]`,
-    );
-    if (!element) continue;
-    if (element.getBoundingClientRect().top > top) break;
-    current = entry.id;
-  }
-  return current ?? outline.value[0]!.id;
+  if (!root) return null;
+  return headingAtReadingLine(
+    root,
+    outline.value.map((entry) => entry.id),
+  );
 }
 
 // Gutter layout ---------------------------------------------------------------------

@@ -624,7 +624,8 @@
       "text": "Document text",
       "editorLabel": "Document text",
       "editorPlaceholder": "Type or paste the document text here, or import it from Word.",
-      "save": "Save text",
+      "saveShort": "Save",
+      "savedShort": "Saved",
       "saveShortcut": "Save the text",
       "saving": "Saving...",
       "savedAt": "Text saved at {time}",
@@ -759,6 +760,8 @@
     },
     "metadata": {
       "heading": "Document details",
+      "hide": "Hide the data",
+      "unsavedHint": "The data has unsaved changes.",
       "title": "Title",
       "summary": "Summary",
       "summaryDescription": "A few lines for the document list and the notice of meeting.",

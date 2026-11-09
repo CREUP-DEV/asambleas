@@ -279,6 +279,11 @@ html {
   font-weight: 400;
 }
 
+/* Clear of the floating toolbar when the editor's index jumps to them. */
+.content-editor :is(h1, h2, h3, h4) {
+  scroll-margin-top: 5rem;
+}
+
 /*
  * Text in a table cell keeps the table's compact leading. Outside any layer
  * too: the editor's theme sets every paragraph's leading with a utility.
@@ -345,6 +350,19 @@ html {
   .rich-text .cx-table-wrap,
   .content-editor .tableWrapper {
     overflow-x: auto;
+  }
+
+  /*
+   * In a wide editor the text keeps a comfortable measure (about 90
+   * characters, near a line of the PDF), centred, and tables keep it too;
+   * only a table of six columns or more (a balance sheet, landscape in Word)
+   * takes the whole width.
+   */
+  .content-editor.ProseMirror > :not(.tableWrapper),
+  .content-editor.ProseMirror
+    > .tableWrapper:not(:has(> table > tbody > tr > :nth-child(6))) {
+    max-width: 52rem;
+    margin-inline: auto;
   }
 
   :is(.rich-text, .content-editor) table {
