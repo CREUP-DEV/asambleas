@@ -29,8 +29,9 @@ import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
  * last Admin cannot (409). The server refuses all of these too
  * (PUT /api/admin/users/[id]/role, /member and /permissions).
  *
- * The list reads as text and fits the width: the account (its name and
- * email wrap, never cut), its role with the extra permissions (listed on
+ * The list reads as text and fits the width: the account (its name, with
+ * its university when the name leaves it out, and its email wrap, never
+ * cut), its role with the extra permissions (listed on
  * hover), the member it acts for and the last sync, with the sign-up date
  * under it. Each row's "Editar" opens a side panel with its role, its member
  * and its extra permissions; each change is confirmed and saved on its own.
@@ -414,7 +415,7 @@ function selectRole(user: UserRow, roleId: unknown): void {
   }
   pendingChange.value = {
     userId: user.id,
-    userName: user.name || user.email,
+    userName: displayName(user),
     roleId,
     roleName: option.label,
     self: isSelf(user),
@@ -498,7 +499,7 @@ function selectMember(user: UserRow, value: unknown): void {
   if (memberId && !member) return;
   pendingLink.value = {
     userId: user.id,
-    userName: user.name || user.email,
+    userName: displayName(user),
     memberId,
     memberName: member ? memberLabel(member) : "",
   };
@@ -744,7 +745,7 @@ async function savePermissions(): Promise<void> {
       },
     );
     const message = t("admin.users.permissions.saved", {
-      user: user.name || user.email,
+      user: displayName(user),
     });
     statusMessage.value = message;
     toast.add({ title: message, color: "success", icon: "i-lucide-check" });
@@ -760,8 +761,22 @@ async function savePermissions(): Promise<void> {
 
 // Activity and acting as another account (Admin only) --------------------------
 
+/**
+ * The account's name with its university when the name leaves it out:
+ * many councils sign in as just "Consejo de Estudiantes".
+ */
+function accountName(user: UserRow): string {
+  const name = user.name.trim();
+  const university = user.university?.trim();
+  if (!university || name.toLowerCase().includes(university.toLowerCase())) {
+    return name;
+  }
+  return name ? `${name} · ${university}` : university;
+}
+
+/** How the page names an account: its name (and university), or its email. */
 function displayName(user: UserRow): string {
-  return user.name || user.email;
+  return accountName(user) || user.email;
 }
 
 /** The Admin-only activity log, filtered by this person. */
@@ -985,13 +1000,13 @@ function goToPage(next: number): void {
           <div class="flex max-w-md min-w-48 items-center gap-3">
             <UAvatar
               :src="row.original.image ?? undefined"
-              :alt="row.original.name || row.original.email"
+              :alt="displayName(row.original)"
               size="sm"
             />
             <div class="min-w-0">
               <!-- The whole name and email, on as many lines as they need. -->
               <p class="text-highlighted font-medium break-words">
-                {{ row.original.name }}
+                {{ accountName(row.original) }}
                 <UBadge
                   v-if="row.original.id === currentUserId"
                   :label="t('admin.users.you')"
@@ -1246,12 +1261,9 @@ function goToPage(next: number): void {
               />
               <div class="min-w-0 space-y-0.5 text-sm">
                 <p class="text-highlighted font-medium break-words">
-                  {{ editTarget.name }}
+                  {{ accountName(editTarget) }}
                 </p>
                 <p class="text-muted break-all">{{ editTarget.email }}</p>
-                <p v-if="editTarget.university" class="text-muted">
-                  {{ editTarget.university }}
-                </p>
                 <p
                   v-if="editTarget.externalInitials || editTarget.externalRole"
                   class="text-muted"
@@ -1434,7 +1446,7 @@ function goToPage(next: number): void {
         v-model:open="permissionsOpen"
         :title="
           t('admin.users.permissions.title', {
-            user: permissionsTarget?.name || permissionsTarget?.email || '',
+            user: permissionsTarget ? displayName(permissionsTarget) : '',
           })
         "
         :description="t('admin.users.permissions.description')"
