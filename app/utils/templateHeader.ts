@@ -13,6 +13,9 @@ const MAX_HEADER_BLOCKS = 4;
 /** Share of the title's words a paragraph must repeat to count as it. */
 const TITLE_OVERLAP = 0.6;
 
+/** Longest header line: the full official name, or the approval line. */
+const MAX_TITLE_LINE_WORDS = 30;
+
 const STOP_WORDS = new Set([
   "a",
   "al",
@@ -78,23 +81,43 @@ export function repeatsTitle(text: string, title: string): boolean {
 export function isApprovalLine(text: string): boolean {
   const line = normalize(text);
   return (
-    /^aprobad[oa]s? (en|por) (la|el) /.test(line) &&
+    /^aprobad[oa]s? /.test(line) &&
+    line.split(" ").length <= MAX_TITLE_LINE_WORDS &&
     /\b(asamblea|ago|age|aget|num)\b/.test(line)
   );
 }
 
 /**
+ * Whether the first line of a file is the full official name the title
+ * abbreviates ("Convenio marco de participación de entidades sectoriales en
+ * la Coordinadora de Representantes…" for "Convenio Marco de participación
+ * de entidades sectoriales"): a short line with every word of the title.
+ */
+export function expandsTitle(text: string, title: string): boolean {
+  const titleWords = significantWords(title);
+  if (titleWords.size < 2) return false;
+  if (normalize(text).split(" ").length > MAX_TITLE_LINE_WORDS) return false;
+  const lineWords = significantWords(text);
+  for (const word of titleWords) if (!lineWords.has(word)) return false;
+  return true;
+}
+
+/**
  * How many blocks at the start of an imported text are the template's
- * header: lines that repeat the title or are the approval line, before the
- * first line that is neither. Only plain paragraphs and headings count, never
- * list items, quotes or table cells.
+ * header: lines that repeat the title (the first one may also spell it out
+ * in full) or are the approval line, before the first line that is neither.
+ * Only plain paragraphs and headings count, never list items, quotes or
+ * table cells.
  */
 export function templateHeaderLength(blocks: Block[], title: string): number {
   let count = 0;
-  for (const block of blocks.slice(0, MAX_HEADER_BLOCKS)) {
+  for (const [index, block] of blocks.slice(0, MAX_HEADER_BLOCKS).entries()) {
     if (block.cell || (block.type !== "paragraph" && block.type !== "heading"))
       break;
-    if (!repeatsTitle(block.text, title) && !isApprovalLine(block.text)) break;
+    const isTitle =
+      repeatsTitle(block.text, title) ||
+      (index === 0 && expandsTitle(block.text, title));
+    if (!isTitle && !isApprovalLine(block.text)) break;
     count++;
   }
   return count;
