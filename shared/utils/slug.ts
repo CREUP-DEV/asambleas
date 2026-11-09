@@ -1,5 +1,13 @@
+export const SLUG_MAX_LENGTH = 60;
+
+/**
+ * URL slug of a title: lower case ASCII words joined by hyphens, at most
+ * SLUG_MAX_LENGTH characters. A long title is cut after its last whole word
+ * ("...a-las-lenguas", never "...a-las-lengu"), unless its first word alone
+ * is longer than the limit.
+ */
 export function slugify(text: string): string {
-  return text
+  const slug = text
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
@@ -7,8 +15,13 @@ export function slugify(text: string): string {
     .trim()
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 60);
+    .replace(/^-|-$/g, "");
+  if (slug.length <= SLUG_MAX_LENGTH) return slug;
+  const cut = slug.slice(0, SLUG_MAX_LENGTH + 1);
+  const lastBreak = cut.lastIndexOf("-");
+  return lastBreak > 0
+    ? cut.slice(0, lastBreak)
+    : slug.slice(0, SLUG_MAX_LENGTH);
 }
 
 export function buildAssemblySlug(assembly: {
