@@ -293,6 +293,7 @@ defineExpose({
         <DocumentDocxImport
           v-if="!showWordCard"
           :document-api="documentApi"
+          :document-title="document.title"
           :current-count="blocks.length"
           :unsaved="unsaved"
           :disabled="disabled || saving"
@@ -350,6 +351,7 @@ defineExpose({
       <DocumentDocxImport
         prominent
         :document-api="documentApi"
+        :document-title="document.title"
         :current-count="blocks.length"
         :unsaved="unsaved"
         :disabled="disabled || saving"

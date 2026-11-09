@@ -711,7 +711,11 @@
       "tooComplex": "El documento es demasiado extenso o complejo para importarlo. Divídelo en partes o simplifica su formato.",
       "busy": "Ya hay una importación en curso. Espera unos segundos y vuelve a intentarlo.",
       "uploadWord": "Subir archivo de Word",
-      "useText": "Usar este texto"
+      "useText": "Usar este texto",
+      "templateHeader": {
+        "label": "Quitar el encabezado de la plantilla",
+        "description": "La plataforma ya muestra el título y la aprobación del documento. Se quitará esta línea del principio: | La plataforma ya muestra el título y la aprobación del documento. Se quitarán estas {count} líneas del principio:"
+      }
     },
     "file": {
       "title": "Documento en PDF",

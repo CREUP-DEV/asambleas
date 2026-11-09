@@ -20,8 +20,16 @@ const props = withDefaults(
     disabled?: boolean;
     /** The main way in: a large primary button ("Subir archivo de Word"). */
     prominent?: boolean;
+    /** The document's title, to spot the template header that repeats it. */
+    documentTitle?: string;
   }>(),
-  { currentCount: 0, unsaved: false, disabled: false, prominent: false },
+  {
+    currentCount: 0,
+    unsaved: false,
+    disabled: false,
+    prominent: false,
+    documentTitle: "",
+  },
 );
 
 const emit = defineEmits<{ import: [blocks: Block[]] }>();
@@ -105,7 +113,26 @@ async function upload(file: File): Promise<void> {
   }
 }
 
-const blocks = computed(() => result.value?.blocks ?? []);
+const imported = computed(() => result.value?.blocks ?? []);
+
+/**
+ * Leading lines of CREUP's template (the title again, "Aprobada en la [NUM]
+ * Asamblea…"), which the platform already shows: dropped unless the user
+ * keeps them.
+ */
+const headerLength = computed(() =>
+  templateHeaderLength(imported.value, props.documentTitle),
+);
+const headerLines = computed(() =>
+  imported.value.slice(0, headerLength.value).map((block) => block.text),
+);
+const dropHeader = ref(true);
+
+const blocks = computed(() =>
+  dropHeader.value && headerLength.value > 0
+    ? imported.value.slice(headerLength.value)
+    : imported.value,
+);
 const words = computed(() =>
   blocks.value.reduce(
     (total, block) =>
@@ -135,6 +162,7 @@ function confirm(): void {
 
 watch(open, (isOpen) => {
   if (!isOpen) result.value = null;
+  else dropHeader.value = true;
 });
 </script>
 
@@ -191,6 +219,32 @@ watch(open, (isOpen) => {
               unsaved ? t('document.import.unsavedLost') : undefined
             "
           />
+
+          <div
+            v-if="headerLength > 0"
+            class="border-default rounded-md border p-3"
+          >
+            <UCheckbox
+              v-model="dropHeader"
+              :label="t('document.import.templateHeader.label')"
+              :description="
+                t(
+                  'document.import.templateHeader.description',
+                  { count: headerLength },
+                  headerLength,
+                )
+              "
+            />
+            <ul class="text-muted mt-2 ms-7 space-y-1 text-sm">
+              <li
+                v-for="(line, index) in headerLines"
+                :key="index"
+                :class="{ 'line-through': dropHeader }"
+              >
+                {{ line }}
+              </li>
+            </ul>
+          </div>
 
           <p class="text-muted text-sm">
             {{

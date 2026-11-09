@@ -711,7 +711,11 @@
       "tooComplex": "The document is too long or complex to import. Split it into parts or simplify its formatting.",
       "busy": "An import is already in progress. Wait a few seconds and try again.",
       "uploadWord": "Upload Word file",
-      "useText": "Use this text"
+      "useText": "Use this text",
+      "templateHeader": {
+        "label": "Remove the template header",
+        "description": "The platform already shows the document's title and approval. This line at the start will be removed: | The platform already shows the document's title and approval. These {count} lines at the start will be removed:"
+      }
     },
     "file": {
       "title": "PDF document",
