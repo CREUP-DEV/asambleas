@@ -26,7 +26,7 @@ postgresql (PostgreSQL 18 compartido, base de datos asambleas)
 - Todo comparte la red de Docker `esternocleidomastoideo2003_default`: nginx llega a la app como `asambleas-app:3000`, y la app puede llamar a la Intranet como `http://intranet`.
 - La imagen es `ghcr.io/creup-dev/asambleas:<commit>`. El compose la lee de `ASAMBLEAS_IMAGE`, en el `.env` del compose raíz, que escriben `deploy.sh` y `rollback.sh`.
 - `pg-boss` usa la misma base de datos para las exportaciones, para la sincronización diaria del listado de miembros (05:00, Europe/Madrid) y para la revisión diaria de accesos (05:30).
-- Los PDFs generados (`EXPORT_STORAGE_DIR`) y los PDFs subidos a los documentos (`UPLOAD_STORAGE_DIR`) viven en `asambleas/data/`, montado en el contenedor. Sin esos montajes se pierden al recrearlo.
+- Los PDFs generados (`EXPORT_STORAGE_DIR`) y los PDFs e imágenes subidos a los documentos (`UPLOAD_STORAGE_DIR`, las imágenes en `images/`) viven en `asambleas/data/`, montado en el contenedor. Sin esos montajes se pierden al recrearlo.
 - La plataforma llama a la API de la Intranet por su URL pública, `https://intranet.creup.es/api/asambleas/v1`, con el token. También puede llamarla por dentro (más abajo). Cómo y por qué: [docs/intranet.md](docs/intranet.md), sección 5.8.
 - No hay Redis ni Mailpit.
 

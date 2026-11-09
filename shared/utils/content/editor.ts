@@ -1,11 +1,12 @@
 import type {
   Block,
   BlockCell,
+  BlockImage,
   ListMarker,
   Mark,
   MarkType,
 } from "../../types/content";
-import { MARK_TYPES } from "../../types/content";
+import { IMAGE_ASSET_PATTERN, MARK_TYPES } from "../../types/content";
 import {
   formatListNumber,
   isBlockAlign,
@@ -125,6 +126,30 @@ function readInline(nodes: EditorNode[] | undefined): Inline {
     }
   }
   return { text, marks };
+}
+
+/** The picture of an editor image node (BlockImageExtension), if whole. */
+function imageOf(node: EditorNode): BlockImage | null {
+  const attrs = node.attrs ?? {};
+  const asset = attrs.asset;
+  const width = Number(attrs.width);
+  const height = Number(attrs.height);
+  if (
+    typeof asset !== "string" ||
+    !IMAGE_ASSET_PATTERN.test(asset) ||
+    !Number.isInteger(width) ||
+    !Number.isInteger(height) ||
+    width < 1 ||
+    height < 1
+  ) {
+    return null;
+  }
+  return {
+    asset,
+    width,
+    height,
+    alt: typeof attrs.alt === "string" ? attrs.alt : "",
+  };
 }
 
 export function editorToBlocks(doc: EditorNode, newId: () => string): Block[] {
@@ -268,6 +293,21 @@ export function editorToBlocks(doc: EditorNode, newId: () => string): Block[] {
             if (start !== 1 || joins) inner.start = { value: start };
           }
           for (const item of node.content ?? []) walk(item.content, inner);
+          break;
+        }
+        case "blockImage": {
+          // Images stay out of tables and lists (blocksSchema).
+          if (context.cell || context.list) break;
+          const image = imageOf(node);
+          if (image) {
+            blocks.push({
+              id: idFor(node),
+              type: "image",
+              image,
+              text: "",
+              marks: [],
+            });
+          }
           break;
         }
         case "blockquote":
@@ -441,6 +481,16 @@ function flowNodes(blocks: Block[]): EditorNode[] {
       const [list, next] = buildList(blocks, i, block.level ?? 0);
       content.push(list);
       i = next;
+      continue;
+    }
+    if (block.type === "image") {
+      if (block.image) {
+        content.push({
+          type: "blockImage",
+          attrs: { blockId: block.id, ...block.image },
+        });
+      }
+      i += 1;
       continue;
     }
     if (block.type === "heading") {

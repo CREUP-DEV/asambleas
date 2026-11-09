@@ -115,6 +115,7 @@ export const ACTIVITY_ACTION_ICONS = {
   document_status_changed: "i-lucide-flag",
   document_content_updated: "i-lucide-file-pen-line",
   document_file_uploaded: "i-lucide-file-up",
+  document_image_uploaded: "i-lucide-image-up",
   document_submitted: "i-lucide-send",
   document_correction_requested: "i-lucide-message-square-warning",
   document_published: "i-lucide-eye",

@@ -17,6 +17,7 @@ import type {
   BlockType,
   BlockAlign,
   BlockCell,
+  BlockImage,
   ConsolidatedBlock,
   ListMarker,
   Mark,
@@ -139,10 +140,19 @@ export interface OutlineState {
   count?: number;
 }
 
+/** A stored image ready for the PDF: its file as a data URL. */
+export interface ExportImage {
+  dataUrl: string;
+  width: number;
+  height: number;
+}
+
 export interface PdfContentContext {
   links: LinkRegistry;
   /** Adds headings to the PDF bookmarks, under the given parent bookmark id. */
   outline?: OutlineState;
+  /** The images the text shows, by asset id (loaded with the export data). */
+  images?: Record<string, ExportImage>;
 }
 
 export interface AnnotatedContext extends PdfContentContext {
@@ -261,6 +271,7 @@ interface BlockShape {
   start?: number;
   cell?: BlockCell;
   align?: BlockAlign;
+  image?: BlockImage;
 }
 
 interface Item {
@@ -396,8 +407,61 @@ function alignment(shape: BlockShape): Pick<ContentText, "alignment"> {
   return shape.align ? { alignment: shape.align } : {};
 }
 
+/** The tallest an image is drawn, in points: most of a page. */
+const IMAGE_MAX_HEIGHT = 560;
+
+/** The key an image takes in the PDF's `images` (embedded once). */
+export function pdfImageKey(asset: string): string {
+  return `doc-image-${asset}`;
+}
+
+/** The PDF's `images` entries for the loaded images. */
+export function pdfImages(
+  images: Record<string, ExportImage> | undefined,
+): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(images ?? {}).map(([asset, image]) => [
+      pdfImageKey(asset),
+      image.dataUrl,
+    ]),
+  );
+}
+
+/**
+ * An image block: at its own size (a pixel read as at 96 dpi), no wider
+ * than the text nor taller than most of a page, centred. One an amendment
+ * removes shows faded. An image that could not be loaded leaves its
+ * description in its place.
+ */
+function imageNode(item: Item, ctx: PdfContentContext): Content {
+  const image = item.shape.image;
+  if (!image || !ctx.images?.[image.asset]) {
+    return {
+      text: image?.alt ? `[${image.alt}]` : "",
+      style: "paragraph",
+      italics: true,
+      alignment: "center",
+    };
+  }
+  let width = Math.min(TABLE_WIDTH, image.width * 0.75);
+  let height = (width * image.height) / image.width;
+  if (height > IMAGE_MAX_HEIGHT) {
+    height = IMAGE_MAX_HEIGHT;
+    width = (height * image.width) / image.height;
+  }
+  return {
+    image: pdfImageKey(image.asset),
+    width,
+    height,
+    alignment: "center",
+    margin: [0, 6, 0, 12],
+    ...(item.countable ? {} : { opacity: 0.35 }),
+  };
+}
+
 function blockNode(item: Item, ctx: PdfContentContext): Content {
   if (item.shape.type === "heading") return headingNode(item, ctx);
+  if (item.shape.type === "image") return imageNode(item, ctx);
   const text = emptySafe(item.inlines);
   const align = alignment(item.shape);
   if (item.shape.type === "quote") return { text, style: "quote", ...align };

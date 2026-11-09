@@ -171,6 +171,33 @@ export const documentProponents = pgTable(
   ],
 );
 
+/**
+ * Images stored for a document's text (image blocks point to them by id,
+ * BlockImage.asset). Files live in the upload directory under images/, named
+ * by id; rows go with the document, and its files are removed with it.
+ * Draft edits never remove one: a published version may still show it.
+ */
+export const documentImages = pgTable(
+  "document_images",
+  {
+    id: text("id").primaryKey().$defaultFn(cuid),
+    documentId: text("document_id")
+      .notNull()
+      .references((): AnyPgColumn => documents.id, { onDelete: "cascade" }),
+    mimeType: text("mime_type").notNull(),
+    width: integer("width").notNull(),
+    height: integer("height").notNull(),
+    bytes: integer("bytes").notNull(),
+    uploadedByUserId: text("uploaded_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [index("idx_document_images_document").on(table.documentId)],
+);
+
 export const documentVersions = pgTable(
   "document_versions",
   {

@@ -169,8 +169,10 @@ export function diffPassage(
       continue;
     }
     const fresh = original ? { ...block, id: newId() } : block;
-    // A blank cell still holds its place in its row.
-    if (fresh.text.trim() !== "" || fresh.cell) pending.push(fresh);
+    // A blank cell still holds its place in its row; an image has no text.
+    if (fresh.text.trim() !== "" || fresh.cell || fresh.type === "image") {
+      pending.push(fresh);
+    }
   }
   flush();
 

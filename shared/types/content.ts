@@ -11,6 +11,7 @@ export const BLOCK_TYPES = [
   "paragraph",
   "list_item",
   "quote",
+  "image",
 ] as const;
 export type BlockType = (typeof BLOCK_TYPES)[number];
 
@@ -58,6 +59,27 @@ export interface BlockCell {
 }
 
 /**
+ * An image block's picture: an image stored for the document (`asset`, the
+ * id of its row in `document_images`, served by /api/uploads/images/), its
+ * size in pixels and the text that stands for it. Images hold no text of
+ * their own (`text` is empty), sit outside tables and are never a link to
+ * anything outside the platform.
+ */
+export interface BlockImage {
+  asset: string;
+  width: number;
+  height: number;
+  /** What the image shows, for those who cannot see it. */
+  alt: string;
+}
+
+/** Ids of stored images (cuid2). */
+export const IMAGE_ASSET_PATTERN = /^[a-z0-9]{20,32}$/;
+
+/** Where stored images are served, by asset id. */
+export const IMAGE_URL_PREFIX = "/api/uploads/images/";
+
+/**
  * Alignments a block may take besides the default (start). Justified text
  * is left out on purpose: its uneven spacing is hard to read (WCAG 1.4.8).
  */
@@ -99,6 +121,8 @@ export interface Block {
   cell?: BlockCell;
   /** Centred or right-aligned; aligned to the start when absent. */
   align?: BlockAlign;
+  /** Image blocks: the picture. */
+  image?: BlockImage;
   text: string;
   marks: Mark[];
 }
@@ -149,6 +173,7 @@ export interface ConsolidatedBlock {
   start?: number;
   cell?: BlockCell;
   align?: BlockAlign;
+  image?: BlockImage;
   segments: Segment[];
   /** Marks over the clean text of the block (removed segments excluded). */
   marks: Mark[];

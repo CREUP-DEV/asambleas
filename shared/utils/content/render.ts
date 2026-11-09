@@ -1,4 +1,5 @@
 import type {
+  BlockImage,
   Block,
   ConsolidatedBlock,
   ListMarker,
@@ -6,6 +7,7 @@ import type {
   MarkType,
   Segment,
 } from "../../types/content";
+import { IMAGE_ASSET_PATTERN, IMAGE_URL_PREFIX } from "../../types/content";
 import { markerOf } from "./lists";
 import { groupTables, type TableGroup } from "./tables";
 
@@ -96,7 +98,15 @@ interface ListFrame {
 
 type RenderableBlock = Pick<
   Block,
-  "id" | "type" | "level" | "list" | "marker" | "start" | "cell" | "align"
+  | "id"
+  | "type"
+  | "level"
+  | "list"
+  | "marker"
+  | "start"
+  | "cell"
+  | "align"
+  | "image"
 > & {
   inner: string;
   attrs?: string;
@@ -148,6 +158,17 @@ function tableHtml(
     html += "</tr>";
   }
   return `${html}</tbody></table></div>`;
+}
+
+/**
+ * A stored image, by its asset id only (never a link given in the content);
+ * its description and size escaped.
+ */
+function imageHtml(image: BlockImage | undefined): string {
+  if (!image || !IMAGE_ASSET_PATTERN.test(image.asset)) return "";
+  const width = Math.max(1, Math.trunc(image.width));
+  const height = Math.max(1, Math.trunc(image.height));
+  return `<img src="${IMAGE_URL_PREFIX}${image.asset}" alt="${escapeHtml(image.alt)}" width="${width}" height="${height}" loading="lazy" decoding="async">`;
 }
 
 /** Blocks outside tables, or inside one cell: paragraphs, lists, headings. */
@@ -209,6 +230,8 @@ function wrapFlow(items: RenderableBlock[], headings: boolean): string {
         : `<p ${attrsOf(item, "cx-heading", `cx-heading-${level}`)}>${item.inner}</p>`;
     } else if (item.type === "quote") {
       html += `<blockquote ${attrs}><p>${item.inner}</p></blockquote>`;
+    } else if (item.type === "image") {
+      html += `<figure ${attrsOf(item, "cx-figure")}>${imageHtml(item.image)}</figure>`;
     } else {
       html += `<p ${attrs}>${item.inner}</p>`;
     }

@@ -1,10 +1,13 @@
 import { and, asc, eq, inArray } from "drizzle-orm";
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { db } from "../../db";
 import {
   agendaItems,
   amendments,
   assemblies,
   documents,
+  documentImages,
   documentVersions,
   votes,
 } from "../../db/schema";
@@ -13,6 +16,8 @@ import { consolidate } from "../../../shared/utils/content/consolidate";
 import { formatAssemblyLabel } from "../../../shared/utils/slug";
 import type { Actor } from "../domain/actor";
 import { loadAmendmentVisibility } from "../domain/documents";
+import { getImageDir, imageFileName } from "../domain/documentImages";
+import { logError } from "../core/logger";
 import { loadCoProponents, withCoProponentIds } from "../domain/presenters";
 import { canSeeAssembly, canSeeDocument } from "../domain/visibility";
 import { loadExportActor } from "./actor";
@@ -34,6 +39,7 @@ import type {
   ExportDocumentMeta,
   ExportVote,
 } from "./pdfBuilder";
+import type { ExportImage } from "./content";
 import type { AssemblyExportJobData, DocumentExportJobData } from "./queue";
 import {
   EXPORT_REFUSAL_MESSAGES,
@@ -243,6 +249,53 @@ async function annotatedBody(
   };
 }
 
+/**
+ * The images the exported text shows, read from disk as data URLs. Only
+ * images of the documents being exported: content never points elsewhere
+ * (assertImagesBelong), and this keeps it so. One missing on disk is left
+ * out (the PDF shows its description instead) and logged.
+ */
+async function loadExportImages(
+  documentIds: string[],
+  blocks: { type: string; image?: { asset: string } }[],
+): Promise<Record<string, ExportImage>> {
+  const assets = new Set<string>();
+  for (const block of blocks) {
+    if (block.type === "image" && block.image) assets.add(block.image.asset);
+  }
+  if (assets.size === 0 || documentIds.length === 0) return {};
+  const rows = await db
+    .select({
+      id: documentImages.id,
+      mimeType: documentImages.mimeType,
+      width: documentImages.width,
+      height: documentImages.height,
+    })
+    .from(documentImages)
+    .where(
+      and(
+        inArray(documentImages.id, [...assets]),
+        inArray(documentImages.documentId, documentIds),
+      ),
+    );
+  const images: Record<string, ExportImage> = {};
+  for (const row of rows) {
+    const name = imageFileName(row.id, row.mimeType);
+    if (!name) continue;
+    try {
+      const data = await readFile(join(getImageDir(), name));
+      images[row.id] = {
+        dataUrl: `data:${row.mimeType};base64,${data.toString("base64")}`,
+        width: row.width,
+        height: row.height,
+      };
+    } catch (error) {
+      logError("export.loadExportImages", error);
+    }
+  }
+  return images;
+}
+
 async function cleanBody(
   actor: Actor,
   document: DocumentRow,
@@ -289,8 +342,10 @@ export async function buildDocumentExportData(
   ]);
   const agenda = buildAgendaTree(agendaRows);
   const agendaTitles = new Map(agendaRows.map((row) => [row.id, row.title]));
+  const images = await loadExportImages([document.id], body.blocks);
 
   return {
+    images,
     assembly: toExportAssembly(assembly),
     document: documentMeta(
       document,
@@ -366,10 +421,16 @@ export async function buildAssemblyExportData(
     };
   });
 
+  const images = await loadExportImages(
+    documentRows.map((document) => document.id),
+    entries.flatMap((entry) => entry.blocks),
+  );
+
   return {
     assembly: toExportAssembly(assembly),
     agenda: agenda.nodes,
     documents: entries,
     generatedAt: new Date(),
+    images,
   };
 }

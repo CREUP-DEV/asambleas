@@ -160,7 +160,20 @@
       "redo": "Redo",
       "placeholder": "Write the text here",
       "label": "Content editor",
-      "toolbar": "Text formatting"
+      "toolbar": "Text formatting",
+      "image": {
+        "insert": "Insert image",
+        "altTitle": "Describe the image",
+        "altHelp": "What it shows, for those who cannot see it: screen readers and the accessible PDF.",
+        "altLabel": "Description",
+        "altRequired": "Write a description of the image",
+        "insertAction": "Insert",
+        "save": "Save",
+        "cancel": "Cancel",
+        "editAlt": "Image description…",
+        "remove": "Remove image",
+        "uploadError": "The image could not be uploaded"
+      }
     },
     "staleData": {
       "title": "The data could not be refreshed",
@@ -4463,6 +4476,7 @@
       "document_status_changed": "Document status changed",
       "document_content_updated": "Document text edited",
       "document_file_uploaded": "Document PDF uploaded",
+      "document_image_uploaded": "Image uploaded to the document's text",
       "document_submitted": "Document sent to the Secretariat",
       "document_correction_requested": "The Secretariat asked for the document to be corrected",
       "document_published": "Document published",

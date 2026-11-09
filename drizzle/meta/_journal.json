@@ -99,6 +99,13 @@
       "when": 1794075338603,
       "tag": "0013_hard_goblin_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1794235241806,
+      "tag": "0014_curved_chamber",
+      "breakpoints": true
     }
   ]
 }

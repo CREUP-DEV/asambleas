@@ -160,7 +160,20 @@
       "redo": "Rehacer",
       "placeholder": "Escribe aquí el texto",
       "label": "Editor de contenido",
-      "toolbar": "Formato del texto"
+      "toolbar": "Formato del texto",
+      "image": {
+        "insert": "Insertar imagen",
+        "altTitle": "Describe la imagen",
+        "altHelp": "Lo que muestra, para quien no puede verla: lectores de pantalla y el PDF accesible.",
+        "altLabel": "Descripción",
+        "altRequired": "Escribe una descripción de la imagen",
+        "insertAction": "Insertar",
+        "save": "Guardar",
+        "cancel": "Cancelar",
+        "editAlt": "Descripción de la imagen…",
+        "remove": "Quitar imagen",
+        "uploadError": "No se ha podido subir la imagen"
+      }
     },
     "staleData": {
       "title": "No se han podido actualizar los datos",
@@ -4463,6 +4476,7 @@
       "document_status_changed": "Estado del documento cambiado",
       "document_content_updated": "Texto del documento editado",
       "document_file_uploaded": "PDF del documento subido",
+      "document_image_uploaded": "Imagen subida al texto del documento",
       "document_submitted": "Documento enviado a Secretaría",
       "document_correction_requested": "Secretaría pidió corregir el documento",
       "document_published": "Documento publicado",

@@ -2,7 +2,7 @@
 import { createId } from "@paralleldrive/cuid2";
 import type { ContextMenuItem, EditorToolbarItem } from "@nuxt/ui";
 import type { ChainedCommands, Editor, JSONContent } from "@tiptap/core";
-import { LIST_MARKERS } from "~~/shared/types/content";
+import { LIST_MARKERS, IMAGE_URL_PREFIX } from "~~/shared/types/content";
 import type { Block, ListMarker } from "~~/shared/types/content";
 import { formatListNumber } from "~~/shared/utils/content/lists";
 import {
@@ -14,6 +14,12 @@ import { isSafeHref } from "~~/shared/utils/content/render";
 import { BlockIdExtension } from "~/utils/editor/blockIdExtension";
 import { ListMarkerExtension } from "~/utils/editor/listMarkerExtension";
 import { TableIdsExtension } from "~/utils/editor/tableIdsExtension";
+import {
+  BlockImageExtension,
+  type BlockImageAttrs,
+} from "~/utils/editor/blockImageExtension";
+import { NodeSelection } from "@tiptap/pm/state";
+import { IMAGE_ALT_MAX_LENGTH } from "~~/shared/utils/schemas/content";
 import { headingAtReadingLine } from "~/utils/outline";
 import type { OutlineEntry } from "./ContentView.vue";
 import {
@@ -44,10 +50,16 @@ const props = withDefaults(
     label?: string;
     /** The text's index as marks in the editor's left margin. */
     outline?: boolean;
+    /**
+     * Stores an image for the text and gives back its picture, or null when
+     * it could not (the caller says why). Without it, no image can be added.
+     */
+    uploadImage?: (file: File) => Promise<Omit<BlockImageAttrs, "alt"> | null>;
   }>(),
   {
     compact: false,
     outline: false,
+    uploadImage: undefined,
     autofocus: false,
     editable: true,
     placeholder: undefined,
@@ -152,6 +164,7 @@ const extensions = [
   TableKit.configure({ table: { resizable: false, renderWrapper: true } }),
   TableIdsExtension,
   CellFillExtension,
+  BlockImageExtension,
   // Blocks keep centred and right-aligned text (BLOCK_ALIGNMENTS); left is
   // the default and stores nothing.
   TextAlign.configure({
@@ -415,7 +428,20 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
     ),
   ];
   const link = [{ slot: "link" } as EditorToolbarItem];
-  const tables = [tableMenu.value];
+  const tables: EditorToolbarItem[] = [tableMenu.value];
+  if (props.uploadImage && !props.compact) {
+    tables.push({
+      icon: "i-lucide-image-plus",
+      color: "neutral",
+      variant: "ghost",
+      loading: imageUploading.value,
+      // Images sit on a line of their own, never in a table.
+      disabled: inTable.value || imageUploading.value,
+      tooltip: { text: t("common.editor.image.insert") },
+      "aria-label": t("common.editor.image.insert"),
+      onClick: pickImage,
+    } as EditorToolbarItem);
+  }
   // Shows the icon of the current alignment.
   const alignment = {
     icon: "i-lucide-align-left",
@@ -555,7 +581,10 @@ function buildContextItems(): void {
     return;
   }
 
-  if (selected) {
+  // An image takes no marks, block type or alignment: only its own items.
+  const onImage = instance.isActive("blockImage");
+
+  if (selected && !onImage) {
     const mark = (
       name: "bold" | "italic" | "underline" | "strike",
       icon: string,
@@ -596,7 +625,7 @@ function buildContextItems(): void {
     ]);
   }
 
-  if (!props.compact) {
+  if (!props.compact && !onImage) {
     const heading = (level: 1 | 2 | 3 | 4, key: string, icon: string) => ({
       label: t(`common.editor.${key}`),
       icon,
@@ -664,6 +693,24 @@ function buildContextItems(): void {
       });
     }
     groups.push(block);
+  }
+
+  if (onImage) {
+    groups.push([
+      {
+        label: t("common.editor.image.editAlt"),
+        icon: "i-lucide-text-quote",
+        disabled: !editable,
+        onSelect: () => openAltDialog(),
+      },
+      {
+        label: t("common.editor.image.remove"),
+        icon: "i-lucide-trash-2",
+        color: "error",
+        disabled: !editable,
+        onSelect: () => run((c) => c.deleteSelection()),
+      },
+    ]);
   }
 
   if (instance.isActive("table")) {
@@ -742,7 +789,7 @@ function buildContextItems(): void {
         ],
       },
     ]);
-  } else {
+  } else if (!onImage) {
     groups.push([
       {
         label: t("common.editor.table.insert"),
@@ -775,6 +822,19 @@ function onContextMenu(event: MouseEvent): void {
   }
   const instance = editor.value;
   if (!instance) return;
+  // An image is chosen whole, so the menu offers what fits it.
+  const picture = target.closest<HTMLElement>("img.cx-editor-image");
+  if (picture && instance.view.dom.contains(picture)) {
+    const position = instance.view.posAtDOM(picture, 0);
+    const { state } = instance.view;
+    if (state.doc.nodeAt(position)?.type.name === "blockImage") {
+      instance.view.dispatch(
+        state.tr.setSelection(NodeSelection.create(state.doc, position)),
+      );
+      instance.view.focus();
+      return;
+    }
+  }
   const hit = instance.view.posAtCoords({
     left: event.clientX,
     top: event.clientY,
@@ -783,6 +843,73 @@ function onContextMenu(event: MouseEvent): void {
   const { from, to, empty } = instance.state.selection;
   if (!empty && hit.pos >= from && hit.pos <= to) return;
   instance.chain().focus().setTextSelection(hit.pos).run();
+}
+
+// Images -------------------------------------------------------------------
+// The toolbar button picks a file, which is stored for the document; the
+// image goes in once it has a description (alt text), which the dialog asks
+// for. Its menu (right-click) changes that description later.
+
+const imageInput = useTemplateRef<HTMLInputElement>("imageInput");
+const imageUploading = ref(false);
+const altOpen = ref(false);
+const altMode = ref<"insert" | "edit">("insert");
+const altText = ref("");
+const altMissing = ref(false);
+const altImage = shallowRef<Omit<BlockImageAttrs, "alt"> | null>(null);
+
+function pickImage(): void {
+  imageInput.value?.click();
+}
+
+async function onImagePicked(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (!file || !props.uploadImage) return;
+  imageUploading.value = true;
+  try {
+    const stored = await props.uploadImage(file);
+    if (stored) {
+      altImage.value = stored;
+      altMode.value = "insert";
+      altText.value = "";
+      altMissing.value = false;
+      altOpen.value = true;
+    }
+  } finally {
+    imageUploading.value = false;
+  }
+}
+
+function openAltDialog(): void {
+  const attrs = editor.value?.getAttributes("blockImage");
+  if (!attrs?.asset) return;
+  altImage.value = {
+    asset: attrs.asset,
+    width: attrs.width,
+    height: attrs.height,
+  };
+  altMode.value = "edit";
+  altText.value = attrs.alt ?? "";
+  altMissing.value = false;
+  altOpen.value = true;
+}
+
+function confirmAlt(): void {
+  const alt = altText.value.replace(/\s+/g, " ").trim();
+  if (!alt) {
+    altMissing.value = true;
+    return;
+  }
+  const image = altImage.value;
+  altOpen.value = false;
+  if (!image) return;
+  if (altMode.value === "insert") {
+    run((c) => c.insertBlockImage({ ...image, alt }));
+  } else {
+    run((c) => c.updateAttributes("blockImage", { alt }));
+  }
 }
 
 // Link popover ---------------------------------------------------------------
@@ -1019,5 +1146,70 @@ defineExpose({
         </UEditor>
       </div>
     </UContextMenu>
+
+    <input
+      v-if="uploadImage"
+      ref="imageInput"
+      type="file"
+      accept="image/png,image/jpeg"
+      class="sr-only"
+      tabindex="-1"
+      aria-hidden="true"
+      @change="onImagePicked"
+    />
+
+    <UModal
+      v-model:open="altOpen"
+      :title="t('common.editor.image.altTitle')"
+      :description="t('common.editor.image.altHelp')"
+    >
+      <template #body>
+        <form
+          id="block-image-alt"
+          class="space-y-4"
+          @submit.prevent="confirmAlt"
+        >
+          <img
+            v-if="altImage"
+            :src="IMAGE_URL_PREFIX + altImage.asset"
+            alt=""
+            class="border-default mx-auto max-h-60 rounded-md border object-contain"
+          />
+          <UFormField
+            :label="t('common.editor.image.altLabel')"
+            :error="altMissing ? t('common.editor.image.altRequired') : false"
+            required
+          >
+            <UTextarea
+              v-model="altText"
+              autofocus
+              :rows="3"
+              :maxlength="IMAGE_ALT_MAX_LENGTH"
+              class="w-full"
+              @update:model-value="altMissing = false"
+            />
+          </UFormField>
+        </form>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton
+            color="neutral"
+            variant="ghost"
+            :label="t('common.editor.image.cancel')"
+            @click="altOpen = false"
+          />
+          <UButton
+            type="submit"
+            form="block-image-alt"
+            :label="
+              altMode === 'insert'
+                ? t('common.editor.image.insertAction')
+                : t('common.editor.image.save')
+            "
+          />
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>
