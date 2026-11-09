@@ -328,7 +328,9 @@ presenter; up to 20, no repeats). The rules (`planPresenters` in
 `server/utils/domain/presenters.ts`):
 
 - with co-presenters there must be a main presenter: 422 otherwise;
-- managers set any members (they must exist, 422). On create the main
+- managers set any members (they must exist and be active, 422; a
+  presenter set earlier stays even if the roster sync deactivates it). On
+  create the main
   presenter defaults to their own member, and an explicit `null` leaves it
   empty when there are no co-presenters;
 - a member creating its own document is always one of its presenters: its

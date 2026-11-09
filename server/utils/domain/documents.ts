@@ -921,27 +921,38 @@ export async function resolveDocumentRoute(
 }
 
 /** Members referenced by documents must exist. */
+/**
+ * A member given a document as its new main presenter: it must exist and be
+ * active. A member the roster sync deactivated has no account acting for it,
+ * so nobody could prepare or send the document (the same rule as linking an
+ * account, PUT /api/admin/users/[id]/member). Presenters that were already
+ * set are never checked again.
+ */
 export async function requireMember(memberId: string, executor: Executor = db) {
   const [member] = await executor
-    .select({ id: members.id })
+    .select({ id: members.id, active: members.active })
     .from(members)
     .where(eq(members.id, memberId));
   if (!member) fail(422, "El miembro indicado no existe");
+  if (!member.active) fail(422, "El miembro indicado está dado de baja");
   return member;
 }
 
-/** Every member of the list must exist (co-presenters). */
+/** Every new co-presenter must exist and be active (see requireMember). */
 export async function requireMembers(
   memberIds: readonly string[],
   executor: Executor = db,
 ): Promise<void> {
   if (memberIds.length === 0) return;
   const rows = await executor
-    .select({ id: members.id })
+    .select({ id: members.id, active: members.active })
     .from(members)
     .where(inArray(members.id, [...memberIds]));
   if (rows.length !== new Set(memberIds).size) {
     fail(422, "Algún miembro indicado no existe");
+  }
+  if (rows.some((row) => !row.active)) {
+    fail(422, "Algún miembro indicado está dado de baja");
   }
 }
 
