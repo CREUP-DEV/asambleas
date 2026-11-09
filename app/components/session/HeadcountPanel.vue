@@ -554,7 +554,7 @@ async function save(): Promise<void> {
                 <template v-if="tally.problems.has(member.id)">
                   <UIcon
                     name="i-lucide-circle-alert"
-                    class="text-error size-3.5 align-[-0.125em]"
+                    class="text-error size-3.5 align-middle"
                     aria-hidden="true"
                   />
                   {{
@@ -566,7 +566,7 @@ async function save(): Promise<void> {
                 <template v-else-if="tally.uncounted.has(member.id)">
                   <UIcon
                     name="i-lucide-triangle-alert"
-                    class="text-warning size-3.5 align-[-0.125em]"
+                    class="text-warning size-3.5 align-middle"
                     aria-hidden="true"
                   />
                   {{

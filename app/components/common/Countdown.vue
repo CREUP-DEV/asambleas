@@ -71,13 +71,18 @@ watch(past, (isPast, wasPast) => {
     aria-live="polite"
     aria-atomic="true"
   >
-    <UIcon
-      v-if="icon"
-      :name="icon"
-      class="size-4 shrink-0 self-center"
-      aria-hidden="true"
-    />
-    <span v-if="label">{{ label }}</span>
-    <time :datetime="iso" :title="absolute">{{ relative }}</time>
+    <!--
+      The icon sits in a box one line tall at the top, so it stays centred
+      on the first line when a long label wraps; it takes no part in the
+      baseline, so the countdown lines up with the text around it.
+    -->
+    <span v-if="icon" class="flex h-[1lh] shrink-0 items-center self-start">
+      <UIcon :name="icon" class="size-4" aria-hidden="true" />
+    </span>
+    <!-- Label and time wrap together, as text. -->
+    <span class="min-w-0">
+      {{ label ? `${label} ` : "" }}
+      <time :datetime="iso" :title="absolute">{{ relative }}</time>
+    </span>
   </span>
 </template>

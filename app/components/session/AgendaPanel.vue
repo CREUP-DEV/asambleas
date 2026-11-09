@@ -125,11 +125,13 @@ function itemDone(documents: DocumentSummaryDto[]): boolean {
             <!-- Its own tooltip and icon: it must not pass for the button
                  of a document with the same title. -->
             <UTooltip :text="t('session.agenda.debateItemShort')">
+              <!-- 24 px on a 20 px first line: centred on it. -->
               <UButton
                 size="xs"
                 color="neutral"
                 variant="ghost"
                 icon="i-lucide-list-tree"
+                class="-my-0.5 shrink-0"
                 :aria-label="
                   t('session.agenda.debateItem', { title: row.item.title })
                 "
@@ -188,6 +190,7 @@ function itemDone(documents: DocumentSummaryDto[]): boolean {
                 <UTooltip :text="t('session.agenda.debateDocument')">
                   <UButton
                     size="xs"
+                    class="-my-0.5 shrink-0"
                     :color="
                       liveDocumentId === document.id ? 'primary' : 'neutral'
                     "

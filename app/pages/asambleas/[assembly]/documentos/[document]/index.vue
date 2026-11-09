@@ -1487,7 +1487,7 @@ const filteredBlockLabel = computed(() =>
                     >
                       <UIcon
                         name="i-lucide-mouse-pointer-click"
-                        class="me-1 size-4 align-text-bottom"
+                        class="me-1 size-4 align-middle"
                         aria-hidden="true"
                       />
                       {{ t("workspace.selection.hint") }}
@@ -1548,7 +1548,7 @@ const filteredBlockLabel = computed(() =>
                       <span class="text-warning text-sm">
                         <UIcon
                           name="i-lucide-layers"
-                          class="me-1 size-4 align-text-bottom"
+                          class="me-1 size-4 align-middle"
                           aria-hidden="true"
                         />
                         {{ t("workspace.amended.overlaps") }}

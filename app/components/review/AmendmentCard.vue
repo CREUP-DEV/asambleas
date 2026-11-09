@@ -428,7 +428,7 @@ const moreBusy = computed(
           <p v-if="amendment.globalReplace" class="text-sm">
             <UIcon
               name="i-lucide-replace-all"
-              class="text-muted me-1 size-4 align-text-bottom"
+              class="text-muted me-1 size-4 align-middle"
               aria-hidden="true"
             />{{
               t("amendment.detail.globalReplace", {
