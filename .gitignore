@@ -42,3 +42,6 @@ Thumbs.db
 
 # Uploads
 data/
+
+# PDFs uploaded in development (server/utils/core/uploadPaths.ts)
+/private/
