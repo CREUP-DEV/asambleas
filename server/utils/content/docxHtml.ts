@@ -191,6 +191,42 @@ function cellFills(document: Document): void {
   }
 }
 
+/**
+ * Takes each stored picture (`img[data-asset]`) out of the paragraph or
+ * heading Word put it in, splitting that block around it: what came before
+ * stays, the picture follows on its own, then a copy of the block (same
+ * attributes, alignment included) holds what came after. Inline wrappers
+ * (a link, bold) are split too; blocks left empty go. Pictures in a list
+ * item or a table cell stay where they are, and the reader leaves those out.
+ */
+function liftImages(document: Document): void {
+  for (const img of Array.from(document.querySelectorAll("img[data-asset]"))) {
+    const block = img.closest("p, h1, h2, h3, h4, h5, h6");
+    if (!block) continue;
+    // From the picture up to the block, everything after it moves to copies.
+    let current: Element = img;
+    let tail: Element | null = null;
+    while (current.parentElement && current.parentElement !== block) {
+      const parent: Element = current.parentElement;
+      const copy = parent.cloneNode(false) as Element;
+      if (tail) copy.appendChild(tail);
+      while (current.nextSibling) copy.appendChild(current.nextSibling);
+      tail = copy;
+      current = parent;
+    }
+    const after = block.cloneNode(false) as Element;
+    if (tail) after.appendChild(tail);
+    while (current.nextSibling) after.appendChild(current.nextSibling);
+    img.remove();
+    block.after(img, after);
+    for (const part of [block, after]) {
+      if (!(part.textContent ?? "").trim() && !part.querySelector("img")) {
+        part.remove();
+      }
+    }
+  }
+}
+
 /** Replaces `element` with its content. */
 function unwrap(element: Element): void {
   element.replaceWith(...Array.from(element.childNodes));
@@ -249,6 +285,7 @@ export function prepareImportedHtml(
   flattenNotes(document);
   listLabels(document);
   alignments(document);
+  liftImages(document);
   cellFills(document);
   linkUnderlines(document);
   ordinalSuperscripts(document);

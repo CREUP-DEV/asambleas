@@ -590,6 +590,8 @@ export interface DocxImportDto {
     | "tracked_changes"
     | "comments"
     | "images_dropped"
+    | "images_in_tables"
+    | "images_without_alt"
     | "tables_flattened"
     | "highlight"
   )[];

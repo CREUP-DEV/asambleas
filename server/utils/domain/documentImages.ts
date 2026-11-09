@@ -1,17 +1,18 @@
 import { createError } from "h3";
 import { and, count, eq, inArray } from "drizzle-orm";
+import { createHash } from "node:crypto";
 import { mkdir, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import sharp from "sharp";
 import { db } from "../../db";
-import { cuid, documentImages } from "../../db/schema";
+import { documentImages } from "../../db/schema";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
 import { IMAGE_ASSET_PATTERN } from "../../../shared/types/content";
 import { getUploadDir } from "../core/uploadPaths";
 import { logError } from "../core/logger";
 import type { DocumentRouteContext, UploadedFile } from "./documents";
 import { isTextFrozen, requireDocumentEditor } from "./documents";
-import { recordEvent } from "./events";
+import { recordEvent, type Executor } from "./events";
 
 /**
  * Images of a document's text. An upload is checked by its signature, then
@@ -64,13 +65,41 @@ export interface ProcessedImage {
 }
 
 /**
- * Checks an uploaded picture and writes it again (see the module comment).
- * Anything that is not a PNG or a JPEG sharp can read is refused.
+ * Where a picture comes from: an upload takes PNG and JPEG only; a Word
+ * file's pictures may also be GIF, WebP or TIFF, which become PNG. Never
+ * SVG, nor Office's EMF and WMF, which sharp cannot read.
  */
-export async function processImage(input: Buffer): Promise<ProcessedImage> {
-  const png = input.subarray(0, 8).equals(PNG_SIGNATURE);
-  const jpeg = input.subarray(0, 3).equals(JPEG_SIGNATURE);
-  if (!png && !jpeg) fail(415, "Solo se admiten imágenes PNG o JPEG");
+export type ImageSource = "upload" | "import";
+
+type ImageKind = "png" | "jpeg" | "gif" | "webp" | "tiff";
+
+/** The picture's format, by its first bytes (its signature). */
+function kindOf(input: Buffer): ImageKind | null {
+  if (input.subarray(0, 8).equals(PNG_SIGNATURE)) return "png";
+  if (input.subarray(0, 3).equals(JPEG_SIGNATURE)) return "jpeg";
+  const head = input.subarray(0, 12).toString("latin1");
+  if (head.startsWith("GIF87a") || head.startsWith("GIF89a")) return "gif";
+  if (head.startsWith("RIFF") && head.slice(8, 12) === "WEBP") return "webp";
+  if (head.startsWith("II*\u0000") || head.startsWith("MM\u0000*")) {
+    return "tiff";
+  }
+  return null;
+}
+
+/**
+ * Checks a picture and writes it again (see the module comment). Anything
+ * sharp cannot read, or not of a format `source` takes, is refused.
+ */
+export async function processImage(
+  input: Buffer,
+  source: ImageSource = "upload",
+): Promise<ProcessedImage> {
+  const kind = kindOf(input);
+  const accepted =
+    kind === "png" || kind === "jpeg" || (source === "import" && kind !== null);
+  if (!accepted) fail(415, "Solo se admiten imágenes PNG o JPEG");
+  // A JPEG stays JPEG; the rest, which may be transparent, becomes PNG.
+  const jpeg = kind === "jpeg";
   try {
     const pipeline = sharp(input, {
       limitInputPixels: IMAGE_MAX_INPUT_PIXELS,
@@ -83,16 +112,16 @@ export async function processImage(input: Buffer): Promise<ProcessedImage> {
         fit: "inside",
         withoutEnlargement: true,
       });
-    const { data, info } = png
+    const { data, info } = jpeg
       ? await pipeline
-          .png({ compressionLevel: 9 })
+          .jpeg({ quality: 85, mozjpeg: true })
           .toBuffer({ resolveWithObject: true })
       : await pipeline
-          .jpeg({ quality: 85, mozjpeg: true })
+          .png({ compressionLevel: 9 })
           .toBuffer({ resolveWithObject: true });
     return {
       data,
-      mimeType: png ? "image/png" : "image/jpeg",
+      mimeType: jpeg ? "image/jpeg" : "image/png",
       width: info.width,
       height: info.height,
     };
@@ -101,27 +130,60 @@ export async function processImage(input: Buffer): Promise<ProcessedImage> {
   }
 }
 
+/**
+ * An image's id, from its document and the bytes received: the same
+ * picture given twice to one document (a Word file imported again) is the
+ * same stored image, never a copy. 24 hex characters (IMAGE_ASSET_PATTERN).
+ */
+export function imageAssetId(documentId: string, input: Buffer): string {
+  return createHash("sha256")
+    .update(documentId)
+    .update("\u0000")
+    .update(input)
+    .digest("hex")
+    .slice(0, 24);
+}
+
 export interface StoredImageDto {
   asset: string;
   width: number;
   height: number;
 }
 
-/**
- * Stores an image for the text of a document its actor can edit: a
- * structured draft, before the text is frozen. Records
- * `document_image_uploaded`; the image shows in the text once a saved
- * version points to it.
- */
-export async function storeDocumentImage(
-  ctx: DocumentRouteContext,
-  file: UploadedFile,
-): Promise<StoredImageDto> {
-  const { actor, assembly, document } = ctx;
-  requireDocumentEditor(actor, document);
-  if (document.format !== "structured" || isTextFrozen(document)) {
+/** Images go only into the text of a structured draft not yet frozen. */
+function assertTextEditable(ctx: DocumentRouteContext): void {
+  requireDocumentEditor(ctx.actor, ctx.document);
+  if (ctx.document.format !== "structured" || isTextFrozen(ctx.document)) {
     fail(409, "El texto de este documento ya no se puede cambiar");
   }
+}
+
+interface ImageSize {
+  width: number;
+  height: number;
+}
+
+/**
+ * Stores a picture for a document, or finds it already stored (same id,
+ * imageAssetId). A new one counts against DOCUMENT_MAX_IMAGES, and
+ * `onCreated` runs with its size in the transaction that adds its row (to
+ * record it).
+ */
+async function saveImage(
+  ctx: DocumentRouteContext,
+  input: Buffer,
+  source: ImageSource,
+  onCreated?: (tx: Executor, size: ImageSize) => Promise<void>,
+): Promise<StoredImageDto & { created: boolean }> {
+  const { actor, document } = ctx;
+  const id = imageAssetId(document.id, input);
+  const [existing] = await db
+    .select({ width: documentImages.width, height: documentImages.height })
+    .from(documentImages)
+    .where(eq(documentImages.id, id))
+    .limit(1);
+  if (existing) return { asset: id, ...existing, created: false };
+
   const [{ total } = { total: 0 }] = await db
     .select({ total: count() })
     .from(documentImages)
@@ -130,39 +192,117 @@ export async function storeDocumentImage(
     fail(409, `El documento ya tiene ${DOCUMENT_MAX_IMAGES} imágenes`);
   }
 
-  const image = await processImage(file.data);
-  const id = cuid();
+  const image = await processImage(input, source);
   const name = imageFileName(id, image.mimeType)!;
   const directory = getImageDir();
   await mkdir(directory, { recursive: true });
   const path = join(directory, name);
   await writeFile(path, image.data);
+  let created = false;
   try {
     await db.transaction(async (tx) => {
-      await tx.insert(documentImages).values({
-        id,
-        documentId: document.id,
-        mimeType: image.mimeType,
-        width: image.width,
-        height: image.height,
-        bytes: image.data.length,
-        uploadedByUserId: actor.user.id,
-      });
-      await recordEvent(tx, {
-        assemblyId: assembly.id,
-        entityType: "document",
-        entityId: document.id,
-        documentId: document.id,
-        type: "document_image_uploaded",
-        payload: { width: image.width, height: image.height },
-        actor,
-      });
+      const rows = await tx
+        .insert(documentImages)
+        .values({
+          id,
+          documentId: document.id,
+          mimeType: image.mimeType,
+          width: image.width,
+          height: image.height,
+          bytes: image.data.length,
+          uploadedByUserId: actor.user.id,
+        })
+        .onConflictDoNothing()
+        .returning({ id: documentImages.id });
+      // Stored at the same moment by another request: the same picture.
+      created = rows.length > 0;
+      if (created && onCreated) {
+        await onCreated(tx, { width: image.width, height: image.height });
+      }
     });
   } catch (error) {
     await unlink(path).catch(() => {});
     throw error;
   }
-  return { asset: id, width: image.width, height: image.height };
+  return {
+    asset: id,
+    width: image.width,
+    height: image.height,
+    created,
+  };
+}
+
+/**
+ * Stores an image for the text of a document its actor can edit: a
+ * structured draft, before the text is frozen. Records
+ * `document_image_uploaded` when it is new; the image shows in the text
+ * once a saved version points to it.
+ */
+export async function storeDocumentImage(
+  ctx: DocumentRouteContext,
+  file: UploadedFile,
+): Promise<StoredImageDto> {
+  assertTextEditable(ctx);
+  const { asset, width, height } = await saveImage(
+    ctx,
+    file.data,
+    "upload",
+    (tx, size) =>
+      recordEvent(tx, {
+        assemblyId: ctx.assembly.id,
+        entityType: "document",
+        entityId: ctx.document.id,
+        documentId: ctx.document.id,
+        type: "document_image_uploaded",
+        payload: { ...size },
+        actor: ctx.actor,
+      }),
+  );
+  return { asset, width, height };
+}
+
+/**
+ * Stores a Word file's pictures for a document while it is imported: each
+ * one it can (`store` gives null for one it cannot: a format sharp cannot
+ * read, or past the document's limit), and `finish` records one
+ * `document_images_imported` for those new to the document.
+ */
+export function documentImageImporter(ctx: DocumentRouteContext): {
+  store: (data: Buffer) => Promise<StoredImageDto | null>;
+  finish: () => Promise<void>;
+} {
+  assertTextEditable(ctx);
+  let created = 0;
+  return {
+    async store(data) {
+      try {
+        const stored = await saveImage(ctx, data, "import");
+        if (stored.created) created += 1;
+        return {
+          asset: stored.asset,
+          width: stored.width,
+          height: stored.height,
+        };
+      } catch (error) {
+        if ((error as { statusCode?: number }).statusCode === undefined) {
+          logError("documentImages.import", error);
+        }
+        return null;
+      }
+    },
+    async finish() {
+      if (created === 0) return;
+      await recordEvent(db, {
+        assemblyId: ctx.assembly.id,
+        entityType: "document",
+        entityId: ctx.document.id,
+        documentId: ctx.document.id,
+        type: "document_images_imported",
+        payload: { count: created },
+        actor: ctx.actor,
+      });
+    },
+  };
 }
 
 /**
@@ -190,8 +330,13 @@ export async function assertImagesBelong(
         inArray(documentImages.id, assets),
       ),
     );
+  // Pasted from another document's editor, most likely.
   if (rows.length !== assets.length) {
-    fail(400, "El texto incluye una imagen que no es de este documento");
+    throw createError({
+      statusCode: 400,
+      message: "El texto incluye una imagen que no es de este documento",
+      data: { messageKey: "common.editor.image.notThisDocument" },
+    });
   }
 }
 

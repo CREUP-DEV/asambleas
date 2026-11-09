@@ -398,7 +398,9 @@ const localIssues = computed<string[]>(() => {
       if (find.value.trim() === replacement.value) return ["same_term"];
       return ops.value.length === 0 ? ["no_matches"] : [];
     case "alternative":
-      return alternativeBlocks.value.some((block) => block.text.trim())
+      return alternativeBlocks.value.some(
+        (block) => block.text.trim() || block.type === "image",
+      )
         ? []
         : ["alternative_empty"];
     default:

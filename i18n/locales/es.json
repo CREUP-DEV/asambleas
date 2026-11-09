@@ -172,7 +172,10 @@
         "cancel": "Cancelar",
         "editAlt": "Descripción de la imagen…",
         "remove": "Quitar imagen",
-        "uploadError": "No se ha podido subir la imagen"
+        "uploadError": "No se ha podido subir la imagen",
+        "pastedSkipped": "Las imágenes que venían en lo pegado no se han copiado: insértalas con el botón de imagen o pega cada imagen sola.",
+        "notHere": "Aquí no se pueden añadir imágenes: una enmienda solo puede conservar o quitar las del texto.",
+        "notThisDocument": "La imagen pegada es de otro documento. Quítala e insértala de nuevo desde su archivo."
       }
     },
     "staleData": {
@@ -726,7 +729,9 @@
       "warnings": {
         "tracked_changes": "El archivo tiene cambios con control de cambios sin aceptar ni rechazar. Revisa que el texto importado sea el definitivo.",
         "comments": "El archivo tiene comentarios. Los comentarios no se importan.",
-        "images_dropped": "Se han descartado imágenes y otros elementos que no son texto.",
+        "images_dropped": "Algunas imágenes no se han podido importar (por ejemplo, gráficos de Excel, SmartArt o imágenes EMF de Office). Si las necesitas, insértalas como PNG o JPEG.",
+        "images_in_tables": "Las imágenes dentro de tablas o listas no se importan: insértalas fuera de ellas.",
+        "images_without_alt": "Algunas imágenes no tienen descripción: aparecen con un borde discontinuo. Añádesela desde su menú (clic derecho) antes de enviar el documento.",
         "tables_flattened": "Las tablas dentro de otra tabla se han convertido en un párrafo por fila, con las celdas separadas por «{'|'}».",
         "highlight": "Se ha perdido el resaltado de color del texto; revisa si marcaba algo importante."
       },
@@ -4476,6 +4481,7 @@
       "document_content_updated": "Texto del documento editado",
       "document_file_uploaded": "PDF del documento subido",
       "document_image_uploaded": "Imagen subida al texto del documento",
+      "document_images_imported": "Imágenes importadas desde Word al texto del documento",
       "document_submitted": "Documento enviado a Secretaría",
       "document_correction_requested": "Secretaría pidió corregir el documento",
       "document_published": "Documento publicado",
@@ -4562,6 +4568,9 @@
       "calendar_rules": {
         "update": "Plazos del calendario de un tipo de asamblea cambiados",
         "seed": "Plazos iniciales del calendario guardados"
+      },
+      "document_images": {
+        "cleanup": "Imágenes sin usar borradas del documento"
       }
     },
     "changes": {

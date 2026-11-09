@@ -390,7 +390,18 @@ function getSelectedBlockIds(): string[] {
       ids.add(block.dataset.blockId);
     }
   }
-  return [...ids];
+  // Images hold no text: one counts when the selection runs over it. The
+  // blocks come back in the order of the text.
+  const ordered: string[] = [];
+  root.querySelectorAll<HTMLElement>("[data-block-id]").forEach((element) => {
+    const id = element.dataset.blockId ?? "";
+    const picked =
+      ids.has(id) ||
+      (element.matches("figure.cx-figure") &&
+        ranges.some((range) => range.intersectsNode(element)));
+    if (picked && !ordered.includes(id)) ordered.push(id);
+  });
+  return ordered;
 }
 
 /**

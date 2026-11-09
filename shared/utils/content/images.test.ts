@@ -152,4 +152,30 @@ describe("image blocks", () => {
     const annotated = renderAnnotated(result.annotated, { mode: "diff" });
     expect(annotated.match(/<img /g)).toHaveLength(2);
   });
+
+  it("say to screen readers, in a diff, that they were added or removed", () => {
+    const ops: AmendmentOp[] = [
+      {
+        op: "insert",
+        afterBlockId: "blk002",
+        blocks: [image("img009", "Anexo")],
+      },
+      { op: "delete", blockIds: ["img001"] },
+    ];
+    const result = consolidate(base, [{ id: "am1", ops }]);
+    const html = renderAnnotated(result.annotated, {
+      mode: "diff",
+      diffLabels: { inserted: "Imagen añadida", removed: "Imagen quitada" },
+    });
+    expect(html).toMatch(
+      /<figure [^>]*class="[^"]*cx-block-deleted[^"]*"[^>]*><span class="sr-only">Imagen quitada ?<\/span><img /,
+    );
+    expect(html).toMatch(
+      /<figure [^>]*class="[^"]*cx-block-inserted[^"]*"[^>]*><span class="sr-only">Imagen añadida ?<\/span><img /,
+    );
+    // The clean text says nothing and leaves the removed one out.
+    const clean = renderAnnotated(result.annotated, { mode: "clean" });
+    expect(clean).not.toContain("sr-only");
+    expect(clean.match(/<img /g)).toHaveLength(1);
+  });
 });

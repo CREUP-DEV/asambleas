@@ -323,6 +323,147 @@ describe("convertDocx", { timeout: 30_000 }, () => {
     expect(result.warnings).toEqual(["images_dropped"]);
   });
 
+  describe("with images stored", () => {
+    /** Stores every picture as asset `img…`, counting the calls. */
+    function storing() {
+      const stored: Buffer[] = [];
+      return {
+        stored,
+        storeImage: async (data: Buffer) => {
+          stored.push(data);
+          return {
+            asset: `img${stored.length}xxxxxxxxxxxxxxxxxxx`,
+            width: 640,
+            height: 480,
+          };
+        },
+      };
+    }
+
+    /** The picture of `imageParagraph`, with a description. */
+    const described = imageParagraph.replace(
+      'name="Imagen 1"',
+      'name="Imagen 1" descr="Logo de CREUP"',
+    );
+
+    it("keeps a picture as its own block, between the text", async () => {
+      const store = storing();
+      const data = await buildDocx(
+        p(null, "Antes") + described + p(null, "Después"),
+        imageParts,
+      );
+      const result = await convertDocx(data, {
+        owner: nextOwner(),
+        storeImage: store.storeImage,
+      });
+      expect(result.warnings).toEqual([]);
+      expect(result.blocks.map((block) => [block.type, block.text])).toEqual([
+        ["paragraph", "Antes"],
+        ["image", ""],
+        ["paragraph", "Después"],
+      ]);
+      expect(result.blocks[1]!.image).toEqual({
+        asset: "img1xxxxxxxxxxxxxxxxxxx",
+        width: 640,
+        height: 480,
+        alt: "Logo de CREUP",
+      });
+      expect(store.stored.map((data) => data.toString())).toEqual([
+        "not really a png",
+      ]);
+    });
+
+    it("lifts a picture out of the paragraph it sits in", async () => {
+      const store = storing();
+      const run = described.slice("<w:p>".length, -"</w:p>".length);
+      const data = await buildDocx(
+        `<w:p><w:r><w:t xml:space="preserve">Antes </w:t></w:r>${run}<w:r><w:t>después</w:t></w:r></w:p>`,
+        imageParts,
+      );
+      const result = await convertDocx(data, {
+        owner: nextOwner(),
+        storeImage: store.storeImage,
+      });
+      expect(result.blocks.map((block) => [block.type, block.text])).toEqual([
+        ["paragraph", "Antes"],
+        ["image", ""],
+        ["paragraph", "después"],
+      ]);
+    });
+
+    it("warns about a picture with no description", async () => {
+      const data = await buildDocx(
+        p(null, "Texto") + imageParagraph,
+        imageParts,
+      );
+      const result = await convertDocx(data, {
+        owner: nextOwner(),
+        storeImage: storing().storeImage,
+      });
+      expect(result.blocks[1]!.image?.alt).toBe("");
+      expect(result.warnings).toEqual(["images_without_alt"]);
+    });
+
+    it("leaves out a picture it could not store, with a warning", async () => {
+      const data = await buildDocx(p(null, "Texto") + described, imageParts);
+      const result = await convertDocx(data, {
+        owner: nextOwner(),
+        storeImage: async () => null,
+      });
+      expect(result.blocks.map((block) => block.type)).toEqual(["paragraph"]);
+      expect(result.warnings).toEqual(["images_dropped"]);
+    });
+
+    it("keeps a picture in a one-column table, which is only layout", async () => {
+      const data = await buildDocx(
+        p(null, "Texto") +
+          `<w:tbl><w:tr><w:tc>${described}</w:tc></w:tr></w:tbl>`,
+        imageParts,
+      );
+      const result = await convertDocx(data, {
+        owner: nextOwner(),
+        storeImage: storing().storeImage,
+      });
+      expect(result.blocks.map((block) => block.type)).toEqual([
+        "paragraph",
+        "image",
+      ]);
+      expect(result.warnings).toEqual([]);
+    });
+
+    it("leaves out a picture inside a table, with a warning", async () => {
+      const data = await buildDocx(
+        p(null, "Texto") +
+          `<w:tbl><w:tr><w:tc>${p(null, "Celda")}</w:tc><w:tc>${described}</w:tc></w:tr></w:tbl>`,
+        imageParts,
+      );
+      const result = await convertDocx(data, {
+        owner: nextOwner(),
+        storeImage: storing().storeImage,
+      });
+      expect(result.blocks.some((block) => block.type === "image")).toBe(false);
+      expect(result.warnings).toContain("images_in_tables");
+    });
+
+    it("leaves out pictures past the count limit", async () => {
+      const store = storing();
+      const data = await buildDocx(
+        p(null, "Texto") + described + described,
+        imageParts,
+      );
+      const result = await convertDocx(data, {
+        owner: nextOwner(),
+        limits: { ...DOCX_LIMITS, maxImages: 1 },
+        storeImage: store.storeImage,
+      });
+      expect(
+        result.blocks.filter((block) => block.type === "image"),
+      ).toHaveLength(1);
+      expect(store.stored).toHaveLength(1);
+      expect(result.warnings).toEqual(["images_dropped"]);
+    });
+  });
+
   it("converts a hand-written archive, so the zip helper is sound", async () => {
     const data = docxWith(
       stored("word/document.xml", documentXml(p(null, "Texto"))),

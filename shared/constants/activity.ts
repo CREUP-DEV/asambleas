@@ -161,6 +161,14 @@ export const AUDIT_ACTIONS = {
   /** A session ended without a request (expiry or revocation). Target user; source auth; after {sessionId}. */
   AUTH_SESSION_ENDED: "auth.session_ended",
 
+  // Document images ---------------------------------------------------------
+  /**
+   * The daily clean-up (server/utils/domain/imageCleanup.ts) removed images
+   * of a document that nothing used. Source system; actor null; target the
+   * document; after {count}.
+   */
+  DOCUMENT_IMAGES_CLEANUP: "document_images.cleanup",
+
   // Exports ---------------------------------------------------------------
   /** POST .../export. Target document or assembly; assemblyId set; after {jobId, variant, locale, documentId}. */
   EXPORT_REQUEST: "export.request",
@@ -248,6 +256,7 @@ export const EVENT_TYPES = [
   "document_content_updated",
   "document_file_uploaded",
   "document_image_uploaded",
+  "document_images_imported",
   "document_submitted",
   "document_correction_requested",
   "document_published",
@@ -387,6 +396,7 @@ const EVENT_CATEGORIES: Record<EventType, ActivityCategory> = {
   document_content_updated: "document",
   document_file_uploaded: "document",
   document_image_uploaded: "document",
+  document_images_imported: "document",
   document_submitted: "document",
   document_correction_requested: "document",
   document_published: "document",
@@ -429,6 +439,7 @@ const AUDIT_CATEGORIES: Record<AuditAction, ActivityCategory> = {
   "assembly.delete": "assembly",
   "assembly.import": "assembly",
   "document.import": "document",
+  "document_images.cleanup": "document",
   "calendar_rules.update": "assembly",
   "calendar_rules.seed": "assembly",
   "user.created": "account",
