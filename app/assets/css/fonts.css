@@ -2,12 +2,16 @@
  * Raleway, the UI font, served from the same files the PDF exports embed
  * (server/assets/fonts, published at /fonts/raleway by nitro.publicAssets).
  *
- * The overrides pin its vertical metrics to the font's own hhea values
- * (ascent 940, descent 234, no line gap, per 1000 units). Without them
- * Chrome and Edge on Windows lay it out with winAscent (1154), which puts
- * every line of text 1.5 to 3 px lower than on macOS, so icons next to text
- * (`items-center`) looked too high. With them text sits the same on every
- * platform and its capitals are centred on the line, like the icons.
+ * The overrides pin its vertical metrics, so text sits the same on every
+ * platform: without them Chrome and Edge on Windows lay it out with
+ * winAscent (1154 per 1000), 1.5 to 3 px lower than on macOS. They keep the
+ * font's own total height (hhea ascent 940 plus descent 234, no line gap)
+ * but split it so the middle of the box falls between the middle of the
+ * lowercase letters (x-height 520) and of the capitals (cap height 710),
+ * 293 units above the baseline. Most UI labels are lowercase, so icons
+ * centred on the line (`items-center`) then look centred on the words; the
+ * hhea split (940/234) centred them on the capitals, and next to lowercase
+ * text the icons looked about 1.5 px too high.
  */
 @font-face {
   font-family: "Raleway";
@@ -15,8 +19,8 @@
   font-weight: 400;
   font-display: swap;
   src: url("/fonts/raleway/Raleway-Regular.woff") format("woff");
-  ascent-override: 94%;
-  descent-override: 23.4%;
+  ascent-override: 88%;
+  descent-override: 29.4%;
   line-gap-override: 0%;
 }
 
@@ -26,8 +30,8 @@
   font-weight: 400;
   font-display: swap;
   src: url("/fonts/raleway/Raleway-Italic.woff") format("woff");
-  ascent-override: 94%;
-  descent-override: 23.4%;
+  ascent-override: 88%;
+  descent-override: 29.4%;
   line-gap-override: 0%;
 }
 
@@ -37,8 +41,8 @@
   font-weight: 700;
   font-display: swap;
   src: url("/fonts/raleway/Raleway-Bold.woff") format("woff");
-  ascent-override: 94%;
-  descent-override: 23.4%;
+  ascent-override: 88%;
+  descent-override: 29.4%;
   line-gap-override: 0%;
 }
 
@@ -48,7 +52,7 @@
   font-weight: 700;
   font-display: swap;
   src: url("/fonts/raleway/Raleway-BoldItalic.woff") format("woff");
-  ascent-override: 94%;
-  descent-override: 23.4%;
+  ascent-override: 88%;
+  descent-override: 29.4%;
   line-gap-override: 0%;
 }

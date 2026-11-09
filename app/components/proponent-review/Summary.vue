@@ -75,7 +75,7 @@ defineExpose({
               ? 'i-lucide-circle-check-big'
               : 'i-lucide-list-todo'
         "
-        class="mt-0.5 size-7 shrink-0"
+        class="size-7 shrink-0"
         :class="left === 0 && !readOnly ? 'text-success' : 'text-muted'"
         aria-hidden="true"
       />

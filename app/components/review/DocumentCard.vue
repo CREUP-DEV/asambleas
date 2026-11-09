@@ -88,7 +88,7 @@ const submittedAbsolute = computed(() =>
                   ? 'i-lucide-file-text'
                   : 'i-lucide-file-pen-line'
               "
-              class="text-muted me-1 inline size-4 align-[-2px]"
+              class="text-muted me-1 inline size-4 align-middle"
               aria-hidden="true"
             />{{ document.title }}
           </NuxtLink>

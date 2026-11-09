@@ -684,7 +684,7 @@ watch(() => route.path, revealActiveSection);
             <dd>{{ typeName }}</dd>
           </div>
           <div class="flex items-center gap-1.5">
-            <dt>
+            <dt class="flex">
               <UIcon
                 name="i-lucide-calendar-days"
                 class="size-4"
@@ -695,7 +695,7 @@ watch(() => route.path, revealActiveSection);
             <dd>{{ dateRange }}</dd>
           </div>
           <div class="flex min-w-0 items-center gap-1.5">
-            <dt>
+            <dt class="flex">
               <UIcon
                 name="i-lucide-map-pin"
                 class="size-4"
@@ -706,7 +706,7 @@ watch(() => route.path, revealActiveSection);
             <dd class="truncate">{{ assembly.location }}</dd>
           </div>
           <div v-if="assembly.nextMilestone" class="flex items-center gap-1.5">
-            <dt>
+            <dt class="flex">
               <UIcon
                 name="i-lucide-hourglass"
                 class="size-4"
