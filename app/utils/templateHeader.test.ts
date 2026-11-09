@@ -49,6 +49,11 @@ describe("isApprovalLine", () => {
     expect(
       isApprovalLine("Aprobado en la 77.ª AGO el 5 de abril de 2025"),
     ).toBe(true);
+    expect(
+      isApprovalLine(
+        "Aprobado por unanimidad en la 77.ª Asamblea General Ordinaria el 4 de abril de 2025",
+      ),
+    ).toBe(true);
   });
 
   it("leaves ordinary text alone", () => {
@@ -79,6 +84,30 @@ describe("templateHeaderLength", () => {
       ),
     ];
     expect(templateHeaderLength(blocks, title)).toBe(2);
+  });
+
+  it("takes a first line that spells the title out in full", () => {
+    const blocks = [
+      paragraph(
+        "a",
+        "Convenio marco de participación de entidades sectoriales en la Coordinadora de Representantes de Estudiantes de Universidades Públicas",
+      ),
+      { ...paragraph("b", "Reunidos"), type: "heading" as const, level: 2 },
+    ];
+    expect(
+      templateHeaderLength(
+        blocks,
+        "Convenio Marco de participación de entidades sectoriales",
+      ),
+    ).toBe(1);
+  });
+
+  it("never takes a later paragraph that merely mentions the title", () => {
+    const blocks = [
+      paragraph("a", "Apartado único"),
+      paragraph("b", "Este informe de Tesorería recoge las cuentas."),
+    ];
+    expect(templateHeaderLength(blocks, "Informe de Tesorería")).toBe(0);
   });
 
   it("is zero when the text starts with its content", () => {
