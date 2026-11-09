@@ -1526,8 +1526,14 @@ export function sessionPartySourceIds(
 
 // Votes ----------------------------------------------------------------------
 
-/** A blank vote form: show of hands, no counts yet. */
-export function sessionEmptyVote(majority: Majority): VoteInput {
+/**
+ * A blank vote form: show of hands, no counts yet. `present` is the latest
+ * headcount's, when majorities are on the members present.
+ */
+export function sessionEmptyVote(
+  majority: Majority,
+  present: number | null = null,
+): VoteInput {
   return {
     method: "show_of_hands",
     inFavor: 0,
@@ -1535,7 +1541,7 @@ export function sessionEmptyVote(majority: Majority): VoteInput {
     abstentions: 0,
     blank: 0,
     invalid: 0,
-    present: null,
+    present,
     majority,
     note: null,
   };

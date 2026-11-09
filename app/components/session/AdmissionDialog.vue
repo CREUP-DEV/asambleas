@@ -61,7 +61,7 @@ watch(open, (isOpen) => {
   selected.value = [...session.admissionDialog.ids];
   method.value = "mesa";
   note.value = "";
-  vote.value = sessionEmptyVote("simple");
+  vote.value = sessionEmptyVote("simple", session.votePresent.value);
 });
 
 const allSelected = computed(
@@ -210,6 +210,7 @@ async function submit(): Promise<void> {
           v-if="method === 'vote'"
           v-model="vote"
           :settings="session.settings.value"
+          :headcount="session.voteHeadcount.value"
           :show-note="false"
         />
 

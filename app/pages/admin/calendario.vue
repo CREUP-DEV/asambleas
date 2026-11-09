@@ -4,14 +4,17 @@ import {
   type AssemblyType,
 } from "~~/shared/constants/assemblyTypes";
 import { MILESTONE_KEYS, type MilestoneKey } from "~~/shared/constants/domain";
+import { INITIAL_CALENDAR_RULES } from "~~/shared/constants/calendarRules";
 import type { CalendarRulesBody, CalendarRulesDto } from "~~/shared/types/api";
 import {
   milestoneOffsetBefore,
   type CalendarRules,
   type MilestoneOffset,
 } from "~~/shared/utils/calendar";
+import type { QuorumThreshold } from "~~/shared/utils/headcount";
 import {
   OFFSET_MAX,
+  QUORUM_DENOMINATOR_MAX,
   REGULATION_WINDOW_MAX_DAYS,
 } from "~~/shared/utils/schemas/calendarRules";
 
@@ -42,7 +45,22 @@ interface RulesForm {
   minimums: Record<MilestoneKey, OffsetField>;
   documentsWithConvocationBelow: OffsetField;
   regulationWindowDays: number | null;
+  quorum: {
+    firstCall: QuorumField;
+    /** Off: the type is convened in a single call. */
+    hasSecondCall: boolean;
+    secondCall: QuorumField;
+  };
 }
+
+interface QuorumField {
+  numerator: number | null;
+  denominator: number | null;
+  strict: boolean;
+}
+
+type QuorumCallKey = "firstCall" | "secondCall";
+const QUORUM_CALL_KEYS: QuorumCallKey[] = ["firstCall", "secondCall"];
 
 type Column = "defaults" | "minimums";
 const COLUMNS: Column[] = ["defaults", "minimums"];
@@ -97,7 +115,28 @@ function fieldFrom(offset: MilestoneOffset | undefined): OffsetField {
   return { amount: offset.days, unit: "days" };
 }
 
-function formFrom(rules: CalendarRules | undefined): RulesForm {
+function quorumField(
+  threshold: QuorumThreshold | null | undefined,
+): QuorumField {
+  return threshold
+    ? { ...threshold }
+    : { numerator: 1, denominator: 3, strict: false };
+}
+
+function quorumOf(field: QuorumField): QuorumThreshold {
+  return {
+    numerator: Math.trunc(field.numerator ?? 0),
+    denominator: Math.trunc(field.denominator ?? 0),
+    strict: field.strict,
+  };
+}
+
+function formFrom(
+  rules: CalendarRules | undefined,
+  type: AssemblyType,
+): RulesForm {
+  // Rows stored before quorum was part of the rules show the initial one.
+  const quorum = rules?.quorum ?? INITIAL_CALENDAR_RULES[type].quorum;
   const column = (offsets?: CalendarRules["defaults"]) =>
     Object.fromEntries(
       MILESTONE_KEYS.map((key) => [key, fieldFrom(offsets?.[key])]),
@@ -109,6 +148,11 @@ function formFrom(rules: CalendarRules | undefined): RulesForm {
       rules?.documentsWithConvocationBelow ?? undefined,
     ),
     regulationWindowDays: rules?.regulationWindowDays ?? null,
+    quorum: {
+      firstCall: quorumField(quorum?.firstCall),
+      hasSecondCall: Boolean(quorum?.secondCall),
+      secondCall: quorumField(quorum?.secondCall),
+    },
   };
 }
 
@@ -135,14 +179,20 @@ function rulesOf(value: RulesForm): CalendarRules {
       value.documentsWithConvocationBelow,
     ),
     regulationWindowDays: value.regulationWindowDays || null,
+    quorum: {
+      firstCall: quorumOf(value.quorum.firstCall),
+      secondCall: value.quorum.hasSecondCall
+        ? quorumOf(value.quorum.secondCall)
+        : null,
+    },
   };
 }
 
-const form = reactive<RulesForm>(formFrom(undefined));
+const form = reactive<RulesForm>(formFrom(undefined, selectedType.value));
 const saving = ref(false);
 
 function resetForm() {
-  Object.assign(form, formFrom(current.value?.rules));
+  Object.assign(form, formFrom(current.value?.rules, selectedType.value));
 }
 watch(current, resetForm, { immediate: true });
 
@@ -150,7 +200,9 @@ const dirty = computed(
   () =>
     current.value !== null &&
     JSON.stringify(rulesOf(form)) !==
-      JSON.stringify(rulesOf(formFrom(current.value.rules))),
+      JSON.stringify(
+        rulesOf(formFrom(current.value.rules, current.value.type)),
+      ),
 );
 
 function isInvalidOffset(field: OffsetField): boolean {
@@ -161,6 +213,25 @@ function isInvalidOffset(field: OffsetField): boolean {
     field.amount > OFFSET_MAX[field.unit]
   );
 }
+
+function isInvalidQuorum(field: QuorumField): boolean {
+  const { numerator, denominator } = field;
+  return (
+    numerator === null ||
+    denominator === null ||
+    !Number.isInteger(numerator) ||
+    !Number.isInteger(denominator) ||
+    numerator < 1 ||
+    denominator < 1 ||
+    denominator > QUORUM_DENOMINATOR_MAX ||
+    numerator > denominator
+  );
+}
+
+const strictItems = computed(() => [
+  { label: t("admin.calendarRules.quorum.atLeast"), value: false },
+  { label: t("admin.calendarRules.quorum.moreThan"), value: true },
+]);
 
 /** Field-level problems, keyed `${column}.${key}`, before sending. */
 const invalid = computed(() => {
@@ -179,6 +250,10 @@ const invalid = computed(() => {
     (!Number.isInteger(days) || days < 1 || days > REGULATION_WINDOW_MAX_DAYS)
   ) {
     result.add("regulationWindowDays");
+  }
+  for (const call of QUORUM_CALL_KEYS) {
+    if (call === "secondCall" && !form.quorum.hasSecondCall) continue;
+    if (isInvalidQuorum(form.quorum[call])) result.add(`quorum.${call}`);
   }
   return result;
 });
@@ -497,6 +572,79 @@ onBeforeRouteLeave(() => {
                 "
               />
             </UFormField>
+          </UCard>
+
+          <UCard>
+            <div class="space-y-4">
+              <div class="space-y-1">
+                <h2 class="text-highlighted text-sm font-medium">
+                  {{ t("admin.calendarRules.quorum.title") }}
+                </h2>
+                <p class="text-muted text-sm">
+                  {{ t("admin.calendarRules.quorum.hint") }}
+                </p>
+              </div>
+              <UCheckbox
+                v-model="form.quorum.hasSecondCall"
+                :label="t('admin.calendarRules.quorum.hasSecondCall')"
+              />
+              <template v-for="call in QUORUM_CALL_KEYS" :key="call">
+                <fieldset
+                  v-if="call === 'firstCall' || form.quorum.hasSecondCall"
+                  class="space-y-1.5"
+                >
+                  <legend class="text-default text-sm font-medium">
+                    {{ t(`admin.calendarRules.quorum.${call}`) }}
+                  </legend>
+                  <div class="flex flex-wrap items-center gap-2">
+                    <USelect
+                      v-model="form.quorum[call].strict"
+                      :items="strictItems"
+                      class="w-32"
+                      :aria-label="t('admin.calendarRules.quorum.comparison')"
+                    />
+                    <UInput
+                      v-model.number="form.quorum[call].numerator"
+                      type="number"
+                      inputmode="numeric"
+                      min="1"
+                      :max="QUORUM_DENOMINATOR_MAX"
+                      step="1"
+                      class="w-20"
+                      :color="
+                        invalid.has(`quorum.${call}`) ? 'error' : undefined
+                      "
+                      :aria-invalid="invalid.has(`quorum.${call}`)"
+                      :aria-label="t('admin.calendarRules.quorum.numerator')"
+                    />
+                    <span class="text-muted" aria-hidden="true">/</span>
+                    <UInput
+                      v-model.number="form.quorum[call].denominator"
+                      type="number"
+                      inputmode="numeric"
+                      min="1"
+                      :max="QUORUM_DENOMINATOR_MAX"
+                      step="1"
+                      class="w-20"
+                      :color="
+                        invalid.has(`quorum.${call}`) ? 'error' : undefined
+                      "
+                      :aria-invalid="invalid.has(`quorum.${call}`)"
+                      :aria-label="t('admin.calendarRules.quorum.denominator')"
+                    />
+                    <span class="text-muted text-sm">
+                      {{ t("admin.calendarRules.quorum.ofMembers") }}
+                    </span>
+                  </div>
+                  <p
+                    v-if="invalid.has(`quorum.${call}`)"
+                    class="text-error text-sm"
+                  >
+                    {{ t("admin.calendarRules.quorum.invalid") }}
+                  </p>
+                </fieldset>
+              </template>
+            </div>
           </UCard>
 
           <div class="flex flex-wrap items-center justify-end gap-2">

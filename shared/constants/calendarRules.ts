@@ -1,6 +1,7 @@
 import type { AssemblyType } from "./assemblyTypes";
 import { PERMISSION_KEYS } from "./permissions";
 import type { CalendarRules } from "../utils/calendar";
+import type { QuorumRules } from "../utils/headcount";
 
 /**
  * Who reads and edits the calendar rules of the assembly types (GET and
@@ -39,6 +40,16 @@ export const CALENDAR_RULES_PERMISSION = PERMISSION_KEYS.ASSEMBLY_MANAGE;
  * reform of the Estatutos or a regulation needs an amendment window of at
  * least 12 days (RRI art. 65.3).
  *
+ * Quorum is counted on the members of the association, the active
+ * asociados at the time of the count, delegated votes included (RRI art.
+ * 19.3):
+ * - AGO: at least half in the first call (Estatutos art. 14.1, RFAG art.
+ *   9.1, RRI art. 10.3), at least a third in the second;
+ * - AGE and AGET: a single call, more than half (Estatutos art. 14.2, which
+ *   prevails over the "como mínimo" of RRI art. 10.4 and RFAG art. 9.2).
+ * The Presidencia and the Secretaría Ejecutiva, or whoever stands in for
+ * them, must also be present; the headcount does not check that.
+ *
  * Defaults are those minimums where the regulations fix the date, plus
  * usual practice where the Comisión Ejecutiva sets it (agenda requests,
  * submission deadlines, opening of the amendment window:
@@ -66,6 +77,10 @@ export const INITIAL_CALENDAR_RULES: Record<AssemblyType, CalendarRules> = {
     },
     documentsWithConvocationBelow: null,
     regulationWindowDays: 12,
+    quorum: {
+      firstCall: { numerator: 1, denominator: 2, strict: false },
+      secondCall: { numerator: 1, denominator: 3, strict: false },
+    },
   },
   AGE: {
     defaults: {
@@ -87,6 +102,10 @@ export const INITIAL_CALENDAR_RULES: Record<AssemblyType, CalendarRules> = {
     },
     documentsWithConvocationBelow: { days: 5 },
     regulationWindowDays: 12,
+    quorum: {
+      firstCall: { numerator: 1, denominator: 2, strict: true },
+      secondCall: null,
+    },
   },
   AGET: {
     defaults: {
@@ -107,5 +126,20 @@ export const INITIAL_CALENDAR_RULES: Record<AssemblyType, CalendarRules> = {
     },
     documentsWithConvocationBelow: { days: 5 },
     regulationWindowDays: 12,
+    quorum: {
+      firstCall: { numerator: 1, denominator: 2, strict: true },
+      secondCall: null,
+    },
   },
 };
+
+/**
+ * The quorum of a type's rules; rows stored before quorum was part of them
+ * fall back to the initial rules of the type.
+ */
+export function quorumRulesOf(
+  type: AssemblyType,
+  rules: CalendarRules,
+): QuorumRules {
+  return rules.quorum ?? INITIAL_CALENDAR_RULES[type].quorum!;
+}

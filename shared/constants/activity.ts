@@ -247,6 +247,8 @@ export const EVENT_TYPES = [
   "speaking_turn_restored",
   "speaking_turn_moved",
   "speaking_turn_updated",
+  "headcount_recorded",
+  "headcount_corrected",
   "vote_recorded",
   "decision_recorded",
   // Documents
@@ -388,6 +390,8 @@ const EVENT_CATEGORIES: Record<EventType, ActivityCategory> = {
   speaking_turn_restored: "session",
   speaking_turn_moved: "session",
   speaking_turn_updated: "session",
+  headcount_recorded: "session",
+  headcount_corrected: "session",
   vote_recorded: "session",
   decision_recorded: "session",
   document_created: "document",
@@ -510,6 +514,7 @@ export const CHANGE_ENTITIES = [
   "calendar",
   "agenda_item",
   "document",
+  "headcount",
 ] as const;
 export type ChangeEntity = (typeof CHANGE_ENTITIES)[number];
 
@@ -519,6 +524,7 @@ export const CHANGE_EVENT_ENTITIES = {
   calendar_updated: "calendar",
   agenda_item_updated: "agenda_item",
   document_updated: "document",
+  headcount_corrected: "headcount",
 } as const satisfies Partial<Record<EventType, ChangeEntity>>;
 
 export const CHANGE_FIELDS: Record<
@@ -566,6 +572,14 @@ export const CHANGE_FIELDS: Record<
     dueAt: "values",
     proponentMemberId: "changed",
     coProponentMemberIds: "changed",
+  },
+  headcount: {
+    call: "changed",
+    inRoom: "values",
+    delegated: "values",
+    present: "values",
+    required: "values",
+    note: "values",
   },
 };
 

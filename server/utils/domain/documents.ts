@@ -50,6 +50,7 @@ import {
 import { applyAcceptedAmendmentsRule } from "./acceptedRule";
 import { diffChanges, sortedIds } from "./changes";
 import { recordEvent } from "./events";
+import { withHeadcount } from "./headcounts";
 import {
   impersonatedByFor,
   loadImpersonators,
@@ -2159,6 +2160,13 @@ export async function recordFinalVote(
   if (assembly.status === "draft" || assembly.status === "closed") {
     fail(409, "La asamblea no está en curso");
   }
+  // The members present come from the Mesa's latest headcount unless typed.
+  const based = await withHeadcount(
+    assembly.id,
+    body.vote,
+    assemblySettings(assembly),
+  );
+  const vote = based.vote;
 
   await db.transaction(async (tx) => {
     // The projection shows the vote: assembly before document ("Row locks").
@@ -2169,9 +2177,9 @@ export async function recordFinalVote(
     if (!document.voted) fail(409, "Este documento no se somete a votación");
     if (document.finalVoteId) fail(409, "El documento ya se ha votado");
 
-    const majority = body.vote.majority ?? document.majority;
+    const majority = vote.majority ?? document.majority;
     const result = evaluateFinalVote(
-      body.vote,
+      vote,
       majority,
       assemblySettings(assembly),
     );
@@ -2242,22 +2250,23 @@ export async function recordFinalVote(
       consolidated = { blocks: outcome.blocks, applied: outcome.applied };
     }
 
-    const [vote] = await tx
+    const [voteRow] = await tx
       .insert(votes)
       .values({
         assemblyId: assembly.id,
         subjectType: "document",
         subjectId: document.id,
-        method: body.vote.method,
-        inFavor: body.vote.inFavor ?? 0,
-        against: body.vote.against ?? 0,
-        abstentions: body.vote.abstentions ?? 0,
-        blank: body.vote.blank ?? 0,
-        invalid: body.vote.invalid ?? 0,
-        present: body.vote.present ?? null,
+        method: vote.method,
+        inFavor: vote.inFavor ?? 0,
+        against: vote.against ?? 0,
+        abstentions: vote.abstentions ?? 0,
+        blank: vote.blank ?? 0,
+        invalid: vote.invalid ?? 0,
+        present: vote.present ?? null,
+        headcountId: based.headcountId,
         majority,
         result,
-        note: body.vote.note ?? null,
+        note: vote.note ?? null,
         recordedByUserId: actor.user.id,
       })
       .returning();
@@ -2281,7 +2290,7 @@ export async function recordFinalVote(
     await tx
       .update(documents)
       .set({
-        finalVoteId: vote!.id,
+        finalVoteId: voteRow!.id,
         ...(consolidatedVersionId ? { consolidatedVersionId } : {}),
       })
       .where(eq(documents.id, document.id));
@@ -2289,7 +2298,7 @@ export async function recordFinalVote(
     await recordEvent(tx, {
       assemblyId: assembly.id,
       entityType: "vote",
-      entityId: vote!.id,
+      entityId: voteRow!.id,
       documentId: document.id,
       type: "vote_recorded",
       payload: { subjectType: "document", subjectId: document.id, result },
@@ -2302,16 +2311,16 @@ export async function recordFinalVote(
       documentId: document.id,
       type: "document_voted",
       payload: {
-        voteId: vote!.id,
+        voteId: voteRow!.id,
         result,
-        method: vote!.method,
+        method: voteRow!.method,
         majority,
-        inFavor: vote!.inFavor,
-        against: vote!.against,
-        abstentions: vote!.abstentions,
-        blank: vote!.blank,
-        invalid: vote!.invalid,
-        present: vote!.present,
+        inFavor: voteRow!.inFavor,
+        against: voteRow!.against,
+        abstentions: voteRow!.abstentions,
+        blank: voteRow!.blank,
+        invalid: voteRow!.invalid,
+        present: voteRow!.present,
         consolidatedVersionId,
         appliedAmendmentIds:
           result === "approved" ? (consolidated?.applied ?? []) : [],
@@ -2320,7 +2329,7 @@ export async function recordFinalVote(
     });
     await pointLiveVote(tx, {
       assemblyId: assembly.id,
-      voteId: vote!.id,
+      voteId: voteRow!.id,
       actor,
       subject: {
         documentId: document.id,

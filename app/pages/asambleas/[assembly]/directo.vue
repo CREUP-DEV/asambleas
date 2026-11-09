@@ -4,6 +4,7 @@ import type {
   AmendmentDto,
   DocumentAmendmentsDto,
   DocumentDto,
+  HeadcountsDto,
   LiveStateDto,
   SpeakersDto,
 } from "~~/shared/types/api";
@@ -25,6 +26,10 @@ import {
   liveVoteSubject,
   liveVoteSubjectText,
 } from "~/components/live-view/-model";
+import {
+  affectsHeadcounts,
+  liveAttendance,
+} from "~/components/live-view/-attendance";
 
 /**
  * Live view for attendees (/asambleas/<slug>/directo), phone first: what
@@ -40,6 +45,8 @@ import {
  * when a refresh fails, like the projection; when the live state never
  * loaded, it says so rather than "nothing is being debated".
  * Only published amendments are listed, so the Mesa sees what the room sees.
+ * The Mesa's latest headcount (attendance, delegations, quorum and the
+ * majorities it gives) is public too, for transparency.
  * For the same reason, the main presenter's answer to the amendment in
  * debate shows only when the assembly does not keep answers to the Mesa
  * (the server already leaves them out for whoever may not see them).
@@ -88,29 +95,39 @@ function nullIfGone(error: unknown): null {
 // the whole agenda again. It refreshes only when the agenda can change
 // (affectsAgenda), as on the projection.
 
-const [liveFetch, speakersFetch, agendaFetch] = await Promise.all([
-  useAsyncData(
-    () => `live-view-state-${assemblyKey.value}`,
-    () =>
-      inSession.value
-        ? api.get<LiveStateDto>(`${apiBase.value}/live-state`)
-        : Promise.resolve(null),
-  ),
-  useAsyncData(
-    () => `live-view-speakers-${assemblyKey.value}`,
-    () =>
-      inSession.value
-        ? api.get<SpeakersDto>(`${apiBase.value}/speakers`).catch(nullIfGone)
-        : Promise.resolve(null),
-  ),
-  useAsyncData(
-    () => `live-view-agenda-${assemblyKey.value}`,
-    () =>
-      inSession.value
-        ? api.get<AgendaDto>(`${apiBase.value}/agenda`).catch(nullIfGone)
-        : Promise.resolve(null),
-  ),
-]);
+const [liveFetch, speakersFetch, agendaFetch, headcountsFetch] =
+  await Promise.all([
+    useAsyncData(
+      () => `live-view-state-${assemblyKey.value}`,
+      () =>
+        inSession.value
+          ? api.get<LiveStateDto>(`${apiBase.value}/live-state`)
+          : Promise.resolve(null),
+    ),
+    useAsyncData(
+      () => `live-view-speakers-${assemblyKey.value}`,
+      () =>
+        inSession.value
+          ? api.get<SpeakersDto>(`${apiBase.value}/speakers`).catch(nullIfGone)
+          : Promise.resolve(null),
+    ),
+    useAsyncData(
+      () => `live-view-agenda-${assemblyKey.value}`,
+      () =>
+        inSession.value
+          ? api.get<AgendaDto>(`${apiBase.value}/agenda`).catch(nullIfGone)
+          : Promise.resolve(null),
+    ),
+    useAsyncData(
+      () => `live-view-headcounts-${assemblyKey.value}`,
+      () =>
+        inSession.value
+          ? api
+              .get<HeadcountsDto>(`${apiBase.value}/headcounts`)
+              .catch(nullIfGone)
+          : Promise.resolve(null),
+    ),
+  ]);
 const {
   data: liveState,
   stale: liveStale,
@@ -126,6 +143,11 @@ const {
   stale: agendaStale,
   failed: agendaFailed,
 } = keepLastGoodData(agendaFetch, { isGone });
+const {
+  data: headcountsDto,
+  stale: headcountsStale,
+  failed: headcountsFailed,
+} = keepLastGoodData(headcountsFetch, { isGone });
 
 const live = computed<LiveStateDto | null>(() =>
   inSession.value ? (liveState.value ?? null) : null,
@@ -174,6 +196,7 @@ const stale = computed(
     liveStale.value ||
     speakersStale.value ||
     agendaStale.value ||
+    headcountsStale.value ||
     documentStale.value ||
     amendmentsStale.value,
 );
@@ -187,6 +210,7 @@ const failed = computed(
     liveFailed.value ||
     speakersFailed.value ||
     agendaFailed.value ||
+    headcountsFailed.value ||
     documentFailed.value ||
     amendmentsFailed.value,
 );
@@ -233,6 +257,7 @@ onLive((events) => {
   }
   if (affectsSpeakers(events)) refreshes.push(speakersFetch.refresh());
   if (affectsAgenda(events)) refreshes.push(agendaFetch.refresh());
+  if (affectsHeadcounts(events)) refreshes.push(headcountsFetch.refresh());
   if (documentId.value && isDocumentLiveBatch(events, documentId.value)) {
     refreshes.push(documentFetch.refresh(), amendmentsFetch.refresh());
   }
@@ -263,6 +288,11 @@ useRetryFailed(
       refresh: agendaFetch.refresh,
     },
     {
+      failed: headcountsFailed,
+      status: headcountsFetch.status,
+      refresh: headcountsFetch.refresh,
+    },
+    {
       failed: documentFailed,
       status: documentFetch.status,
       refresh: documentFetch.refresh,
@@ -286,6 +316,7 @@ watch(inSession, () => {
   void liveFetch.refresh();
   void speakersFetch.refresh();
   void agendaFetch.refresh();
+  void headcountsFetch.refresh();
 });
 
 /** "Reintentar" on the load-failed state: the automatic retry goes on too. */
@@ -297,6 +328,7 @@ async function retryNow(): Promise<void> {
       liveFetch.refresh(),
       speakersFetch.refresh(),
       agendaFetch.refresh(),
+      headcountsFetch.refresh(),
     ]);
     if (!failed.value) lastUpdate.value = new Date();
   } finally {
@@ -341,10 +373,16 @@ const debatedNote = computed(() => {
  * and the presenters always receive them, but this page shows what the room
  * sees, so it follows the assembly's policy rather than what arrived.
  */
+const settings = computed(() => ({
+  ...DEFAULT_ASSEMBLY_SETTINGS,
+  ...assembly.value?.settings,
+}));
 const showPosition = computed(
-  () =>
-    ({ ...DEFAULT_ASSEMBLY_SETTINGS, ...assembly.value?.settings })
-      .positionVisibility !== "mesa",
+  () => settings.value.positionVisibility !== "mesa",
+);
+/** The Mesa's latest headcount, public; null before its first count. */
+const attendance = computed(() =>
+  liveAttendance(headcountsDto.value, settings.value),
 );
 /** The Mesa debates an amendment this view cannot list (not public yet). */
 const amendmentHidden = computed(
@@ -666,6 +704,8 @@ watch(
         </h2>
         <LiveViewVoteResult :vote="vote" :subject="voteSubject" />
       </section>
+
+      <LiveViewAttendance v-if="headcountsDto" :attendance="attendance" />
 
       <LiveViewAmendmentList
         v-if="showAmendments && documentPath"

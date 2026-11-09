@@ -36,7 +36,12 @@ const proposedMajority = computed(() =>
 );
 const vote = ref<VoteInput>(sessionEmptyVote(proposedMajority.value));
 watch(open, (isOpen) => {
-  if (isOpen) vote.value = sessionEmptyVote(proposedMajority.value);
+  if (isOpen) {
+    vote.value = sessionEmptyVote(
+      proposedMajority.value,
+      session.votePresent.value,
+    );
+  }
 });
 
 const outcome = computed(() =>
@@ -75,7 +80,11 @@ async function submit(): Promise<void> {
         class="space-y-4"
         @submit.prevent="submit"
       >
-        <SessionVoteFields v-model="vote" :settings="session.settings.value" />
+        <SessionVoteFields
+          v-model="vote"
+          :settings="session.settings.value"
+          :headcount="session.voteHeadcount.value"
+        />
       </form>
     </template>
     <template #footer="{ close }">

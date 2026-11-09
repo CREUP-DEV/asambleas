@@ -72,11 +72,17 @@ const amendmentVotes: typeof documentVotes = [
 ];
 
 describe("computeVoteOutcome against the 77.ª AGO minutes", () => {
+  // The minutes counted majorities on the valid votes cast.
+  const settings = {
+    ...DEFAULT_ASSEMBLY_SETTINGS,
+    denominator: "valid_votes" as const,
+  };
+
   it.each(documentVotes)("final vote: $name", ({ kind, counts, result }) => {
     const outcome = computeVoteOutcome(
       counts,
       DOCUMENT_KIND_DEFAULTS[kind].majority,
-      DEFAULT_ASSEMBLY_SETTINGS,
+      settings,
     );
     expect(outcome.result).toBe(result);
   });
@@ -85,7 +91,7 @@ describe("computeVoteOutcome against the 77.ª AGO minutes", () => {
     const outcome = computeVoteOutcome(
       counts,
       amendmentVoteMajority(kind),
-      DEFAULT_ASSEMBLY_SETTINGS,
+      settings,
     );
     expect(outcome.result).toBe(result);
   });

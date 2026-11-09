@@ -108,6 +108,8 @@ export const ACTIVITY_ACTION_ICONS = {
   speaking_turn_restored: "i-lucide-rotate-ccw",
   speaking_turn_moved: "i-lucide-arrow-up-down",
   speaking_turn_updated: "i-lucide-pencil",
+  headcount_recorded: "i-lucide-users-round",
+  headcount_corrected: "i-lucide-user-round-pen",
   vote_recorded: "i-lucide-vote",
   decision_recorded: "i-lucide-gavel",
   document_created: "i-lucide-file-plus",
@@ -252,6 +254,7 @@ export function activityLink(
       return at("agenda");
     case "live":
     case "speakers":
+    case "headcount":
       return at("live");
     case "vote":
     case "decision":
@@ -413,6 +416,7 @@ function eventDetails(
     case "calendar_updated":
     case "agenda_item_updated":
     case "document_updated":
+    case "headcount_corrected":
       return changeDetails(action, payload);
     case "agenda_item_deleted": {
       // The first entry is the deleted item itself, then what was under it.
