@@ -109,9 +109,9 @@ migrar hay que quitar `NUXT_ROLE_API_URL` (sección 8, paso 2).
 - **Con `ok`:** guarda `externalRole`, `externalName`, `externalInitials`,
   `university`, `intranetId` (solo si llega `id`: la ruta vieja nunca borra
   uno guardado) y `lastRoleSyncAt`, y decide el rol:
-  - `Asociado` da el rol `Asociado`; `CEA` da `CEA`; cualquier otro tipo
-    (`Sectorial`, `Invitado`, `Desasociado`, `CdG`, `CAI`, `Otros`) da
-    `Invitado`.
+  - `Asociado` da el rol `Asociado`; `Sectorial` da `Sectorial`; `CEA` da
+    `CEA`; cualquier otro tipo (`Invitado`, `Desasociado`, `CdG`, `CAI`,
+    `Otros`) da `Invitado`.
   - Enlaza la cuenta con su miembro (`server/utils/members/link.ts`):
     `Asociado` con su consejo y `Sectorial` con su sectorial, primero por `id`
     (`users.intranet_id` igual a `members.intranet_id`) y si no por

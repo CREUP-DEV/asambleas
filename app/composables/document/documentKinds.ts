@@ -5,6 +5,7 @@ import {
   type DocumentKind,
   type MemberKind,
 } from "~~/shared/constants/domain";
+import { memberMayPresent } from "~~/shared/utils/presenterKinds";
 
 /**
  * The document types a presenter is offered, split into the ones their
@@ -14,7 +15,9 @@ import {
  *
  * - CEA areas (`executive` members) present their reports, work plans,
  *   budgets and accounts;
- * - councils and sectorials present positionings, resolutions and motions.
+ * - councils and sectorials present positionings, resolutions and motions,
+ *   but a sectorial never an internal motion (memberMayPresent), so it is
+ *   not offered at all.
  *
  * A PDF (`format: "file"`) is never amendable, so it only takes the types
  * that take no amendments; the current kind always stays, so an existing
@@ -50,7 +53,10 @@ export function presenterKindGroups(options: {
 }): DocumentKindGroups {
   const { memberKind = null, format = "structured", current = null } = options;
   const allowed = DOCUMENT_KINDS.filter(
-    (kind) => format !== "file" || kindAcceptsFile(kind) || kind === current,
+    (kind) =>
+      kind === current ||
+      ((format !== "file" || kindAcceptsFile(kind)) &&
+        (!memberKind || memberMayPresent(kind, memberKind))),
   );
   const preferred = COMMON_KINDS[
     memberKind === "executive" ? "executive" : "member"

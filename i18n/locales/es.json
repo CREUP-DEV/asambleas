@@ -1698,7 +1698,7 @@
       "memberLinkFailed": "No se ha podido cambiar la vinculación",
       "edit": "Editar roles, vínculos y permisos",
       "editDone": "Terminar",
-      "editingHelp": "Los roles Asociado, CEA e Invitado se vuelven a leer de la intranet en cada inicio de sesión; los demás roles se quedan como los dejes. Cada cambio se confirma antes de guardarse.",
+      "editingHelp": "Los roles Asociado, Sectorial, CEA e Invitado se vuelven a leer de la intranet en cada inicio de sesión; los demás roles se quedan como los dejes. Cada cambio se confirma antes de guardarse.",
       "editingOn": "Ya puedes cambiar los roles, los vínculos y los permisos extra.",
       "editingOff": "Has terminado de editar.",
       "permissions": {
@@ -2170,6 +2170,7 @@
       "afternoon": "Buenas tardes, {name}",
       "evening": "Buenas noches, {name}",
       "morningAnonymous": "Buenos días",
+      "sectorial": "Sectorial",
       "afternoonAnonymous": "Buenas tardes",
       "eveningAnonymous": "Buenas noches"
     },

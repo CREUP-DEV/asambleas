@@ -39,6 +39,15 @@ export default defineAppConfig({
       primary: "creup-red",
       secondary: "creup-blue",
     },
+    // The close button sits absolutely in the header's corner (end-4, 32px
+    // wide), so the title and description keep clear of it, with a gap: a
+    // long title would otherwise run under the X.
+    modal: {
+      slots: { wrapper: "min-w-0 pe-10" },
+    },
+    slideover: {
+      slots: { wrapper: "min-w-0 pe-10" },
+    },
     toast: {
       slots: {
         title: "text-sm font-medium text-highlighted select-text",

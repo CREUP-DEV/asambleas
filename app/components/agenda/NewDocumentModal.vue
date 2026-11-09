@@ -16,6 +16,7 @@ import type {
   DocumentDto,
   MemberDto,
 } from "~~/shared/types/api";
+import { memberMayPresent } from "~~/shared/utils/presenterKinds";
 import {
   kindSelectItems,
   presenterKindGroups,
@@ -182,10 +183,25 @@ const pickableItems = computed(() =>
   props.items.filter((item) => isManager.value || item.acceptsSubmissions),
 );
 
-/** Type and title proposed from an item (none without an item). */
+/**
+ * Type and title proposed from an item (none without an item). A presenter
+ * is never proposed a type its member may not present (a sectorial under the
+ * internal motions' item): the type stays empty for them to choose.
+ */
 function proposalFor(itemId: string): ItemProposal {
   const item = props.items.find((candidate) => candidate.id === itemId);
-  return item ? proposeFromItem(item) : { kind: null, title: null };
+  if (!item) return { kind: null, title: null };
+  const proposal = proposeFromItem(item);
+  const own = member.value?.kind;
+  if (
+    proposal.kind &&
+    !isManager.value &&
+    own &&
+    !memberMayPresent(proposal.kind, own)
+  ) {
+    return { ...proposal, kind: null };
+  }
+  return proposal;
 }
 
 function startItemId(): string {
@@ -423,9 +439,19 @@ const majorityItems = computed(() =>
     value: majority,
   })),
 );
+/**
+ * The members that may present a document of the kind chosen: a sectorial
+ * is not offered for an internal motion (memberMayPresent).
+ */
+const presentableMembers = computed<MemberDto[]>(() =>
+  members.value.filter(
+    (candidate) => !state.kind || memberMayPresent(state.kind, candidate.kind),
+  ),
+);
+
 const memberItems = computed(() => [
   { label: t("agenda.newDocument.noProponent"), value: NO_PROPONENT },
-  ...members.value
+  ...presentableMembers.value
     .filter((candidate) => candidate.active || candidate.id === state.proponent)
     .map((candidate) => ({
       label: memberLabel(candidate),
@@ -756,7 +782,7 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
             :main-id="state.mainPresenter"
             voice="presenter"
             :lead-id="leadId"
-            :members="members"
+            :members="presentableMembers"
             :known="knownMembers"
             :loading="membersLoading"
             :own-member-id="member.id"
@@ -819,7 +845,7 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
           :main-id="state.mainPresenter"
           voice="manager"
           :lead-id="leadId"
-          :members="members"
+          :members="presentableMembers"
           :known="knownMembers"
           :loading="membersLoading"
           :own-member-id="member?.id ?? null"

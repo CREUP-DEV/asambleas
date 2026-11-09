@@ -61,6 +61,7 @@ vi.mock("../members/link", () => ({
 }));
 
 const { syncUserRole } = await import("./roleSync");
+const { linkUserToIntranetMember } = vi.mocked(await import("../members/link"));
 
 function answer(body: unknown, status = 200) {
   vi.stubGlobal(
@@ -181,6 +182,36 @@ describe("syncUserRole traceability", () => {
         memberId: null,
       },
     });
+  });
+
+  it("moves a sectorial Invitado to Sectorial and links it again", async () => {
+    vi.stubEnv("NUXT_ROLE_API_URL", "https://intranet.test/user/role");
+    answer({ id: 41, role: "Sectorial", name: "AEEE", initials: "AEEE" });
+    freshUser = {
+      id: "u3",
+      email: "aeee@creup.es",
+      roleId: "role-invitado",
+      memberId: "m-aeee",
+      externalRole: "Sectorial",
+      externalName: "AEEE",
+      externalInitials: "AEEE",
+      university: null,
+      role: { name: SYSTEM_ROLES.INVITADO },
+    };
+    linkUserToIntranetMember.mockClear();
+
+    expect(await syncUserRole("u3")).toBe("ok");
+    expect(updates[0]).toMatchObject({ roleId: "role-new", memberId: null });
+    expect(auditCall(AUDIT_ACTIONS.USER_ROLE_SYNC)).toMatchObject({
+      before: { roleName: SYSTEM_ROLES.INVITADO, memberId: "m-aeee" },
+      after: { roleName: SYSTEM_ROLES.SECTORIAL, memberId: null },
+    });
+    // The member link comes back after the role transaction.
+    expect(linkUserToIntranetMember).toHaveBeenCalledWith(
+      "u3",
+      expect.objectContaining({ role: "Sectorial", initials: "AEEE" }),
+      { previousInitials: "AEEE" },
+    );
   });
 
   it("reports a failed call and leaves the account as it was", async () => {

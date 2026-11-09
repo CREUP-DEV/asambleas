@@ -296,7 +296,8 @@ data, the agenda and the milestones as a print view and a PDF.
 ## Validation by the Secretaría and documentation tracking
 
 Every document and every amendment is presented by the user who wrote it,
-acting for their member: a council or sectorial (Asociado accounts), or a CEA
+acting for their member: a council (Asociado accounts), a sectorial
+(Sectorial accounts, which never present an internal motion), or a CEA
 area (CEA accounts, intranet type `CEA`, linked to an `executive` member by
 their intranet initials). Nothing a member presents is visible to the rest of
 the assembly until the Secretaría has checked it.
@@ -627,9 +628,13 @@ The existing keys stay, plus:
 - `session:moderate`: Mesa actions such as live state, admissions, votes,
   decisions and transactionals on behalf of parties.
 
-The default `Moderador` role gets `session:moderate`. The `CEA` role (synced
-from the intranet type `CEA`) gets `document:create` and `amendment:create`,
-like `Asociado`. Validating documents needs `document:manage`; validating and
+The default `Moderador` role gets `session:moderate`. The `CEA` and
+`Sectorial` roles (synced from the intranet types `CEA` and `Sectorial`) get
+`document:create` and `amendment:create`, like `Asociado`. Sectorials present
+everything but internal motions; they may amend one. That is a rule of the
+member, not a permission: it follows the member a document is presented for
+(`memberMayPresent`), so it binds managers and accounts linked by hand too.
+Validating documents needs `document:manage`; validating and
 publishing amendments needs `amendment:review` (both held by the Secretaría).
 
 ## Interface

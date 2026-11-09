@@ -91,6 +91,7 @@ function logLookup(
 /** Intranet types (`users.type`) that grant a platform role; any other gives Invitado. */
 const EXTERNAL_ROLES: ReadonlyMap<string, string> = new Map<string, string>([
   ["Asociado", SYSTEM_ROLES.ASOCIADO],
+  ["Sectorial", SYSTEM_ROLES.SECTORIAL],
   ["CEA", SYSTEM_ROLES.CEA],
 ]);
 
@@ -102,14 +103,15 @@ const EXTERNAL_ROLES: ReadonlyMap<string, string> = new Map<string, string>([
 const SYNCED_ROLES: ReadonlySet<string> = new Set([
   SYSTEM_ROLES.INVITADO,
   SYSTEM_ROLES.ASOCIADO,
+  SYSTEM_ROLES.SECTORIAL,
   SYSTEM_ROLES.CEA,
 ]);
 
 /**
  * Role to assign after a successful sync, or null to keep the current one:
- * a new user gets the role of their intranet type (Asociado, CEA) or
- * Invitado; an Invitado, Asociado or CEA user follows their type when it
- * changes; everyone else keeps their role.
+ * a new user gets the role of their intranet type (Asociado, Sectorial,
+ * CEA) or Invitado; an Invitado, Asociado, Sectorial or CEA user follows
+ * their type when it changes; everyone else keeps their role.
  */
 export function resolveTargetRole(
   externalRole: string,
@@ -146,7 +148,8 @@ interface FreshUserRow {
 
 /**
  * Whether the account stops acting for the member it is linked to
- * (users.memberId): an account with a synced role (Invitado, Asociado, CEA)
+ * (users.memberId): an account with a synced role (Invitado, Asociado,
+ * Sectorial, CEA)
  * whose role changes with its intranet type (say a CEA cargo whose term
  * ended), or whose intranet type stops being one linked to a member. Role
  * sync then links it again by its new type, if any. Accounts with a role

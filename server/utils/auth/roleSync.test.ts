@@ -114,7 +114,28 @@ describe("resolveTargetRole", () => {
     );
     expect(resolveTargetRole("CEA", null, true)).toBe(SYSTEM_ROLES.CEA);
     expect(resolveTargetRole("Sectorial", null, true)).toBe(
+      SYSTEM_ROLES.SECTORIAL,
+    );
+    expect(resolveTargetRole("Alumni", null, true)).toBe(SYSTEM_ROLES.INVITADO);
+  });
+
+  it("moves sectorial Invitado accounts to the Sectorial role, and back", () => {
+    // Accounts that signed in before the role existed.
+    expect(resolveTargetRole("Sectorial", SYSTEM_ROLES.INVITADO, false)).toBe(
+      SYSTEM_ROLES.SECTORIAL,
+    );
+    expect(resolveTargetRole("Sectorial", SYSTEM_ROLES.SECTORIAL, false)).toBe(
+      null,
+    );
+    expect(resolveTargetRole("Asociado", SYSTEM_ROLES.SECTORIAL, false)).toBe(
+      SYSTEM_ROLES.ASOCIADO,
+    );
+    expect(resolveTargetRole("Alumni", SYSTEM_ROLES.SECTORIAL, false)).toBe(
       SYSTEM_ROLES.INVITADO,
+    );
+    // Roles assigned here stay.
+    expect(resolveTargetRole("Sectorial", SYSTEM_ROLES.MODERADOR, false)).toBe(
+      null,
     );
   });
 
@@ -253,6 +274,24 @@ describe("stopsActingForMember", () => {
         input(SYSTEM_ROLES.ASOCIADO, SYSTEM_ROLES.CEA, "Asociado", "CEA"),
       ),
     ).toBe(true);
+  });
+
+  it("unlinks a sectorial Invitado that becomes Sectorial, so it is linked again", () => {
+    expect(
+      stopsActingForMember(
+        input(
+          SYSTEM_ROLES.INVITADO,
+          SYSTEM_ROLES.SECTORIAL,
+          "Sectorial",
+          "Sectorial",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      stopsActingForMember(
+        input(SYSTEM_ROLES.SECTORIAL, null, "Sectorial", "Sectorial"),
+      ),
+    ).toBe(false);
   });
 
   it("unlinks an Invitado whose intranet type stops being a member", () => {

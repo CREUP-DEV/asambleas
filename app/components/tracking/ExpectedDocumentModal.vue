@@ -14,6 +14,7 @@ import type {
   DocumentDto,
   MemberDto,
 } from "~~/shared/types/api";
+import { memberMayPresent } from "~~/shared/utils/presenterKinds";
 import {
   documentPresenterMembers,
   formatMemberList,
@@ -147,23 +148,35 @@ interface MemberOption {
   type?: "label";
 }
 
+/**
+ * The member kinds that may present the document type chosen: a sectorial
+ * never presents an internal motion (memberMayPresent).
+ */
+const presentingKinds = computed(() =>
+  KIND_ORDER.filter(
+    (kind) => !state.kind || memberMayPresent(state.kind, kind),
+  ),
+);
+
 /** Grouped by kind; each group starts with its (unselectable) label. */
 const memberOptions = computed<MemberOption[][]>(() =>
-  KIND_ORDER.map((kind) => {
-    const list: MemberOption[] = members.value
-      .filter((candidate) => candidate.active && candidate.kind === kind)
-      .map((candidate) => ({
-        label: memberLabel(candidate),
-        value: candidate.id,
-      }));
-    if (list.length === 0) return [];
-    const heading: MemberOption = {
-      type: "label",
-      label: t(`shell.memberKinds.${kind}`),
-      value: `group:${kind}`,
-    };
-    return [heading, ...list];
-  }).filter((group) => group.length > 0),
+  presentingKinds.value
+    .map((kind) => {
+      const list: MemberOption[] = members.value
+        .filter((candidate) => candidate.active && candidate.kind === kind)
+        .map((candidate) => ({
+          label: memberLabel(candidate),
+          value: candidate.id,
+        }));
+      if (list.length === 0) return [];
+      const heading: MemberOption = {
+        type: "label",
+        label: t(`shell.memberKinds.${kind}`),
+        value: `group:${kind}`,
+      };
+      return [heading, ...list];
+    })
+    .filter((group) => group.length > 0),
 );
 
 const formatOptions = computed(() =>

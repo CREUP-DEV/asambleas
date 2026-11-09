@@ -104,6 +104,8 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
   [SYSTEM_ROLES.CEA]:
     "Presenta la documentación de su área de la Comisión Ejecutiva y enmiendas",
   [SYSTEM_ROLES.ASOCIADO]: "Presenta documentos y enmiendas",
+  [SYSTEM_ROLES.SECTORIAL]:
+    "Presenta documentos y enmiendas, salvo mociones internas",
   [SYSTEM_ROLES.INVITADO]: "Solo lectura de contenido publicado",
 };
 

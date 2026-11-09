@@ -26,6 +26,7 @@ import {
   parseDocumentBody,
   requireMember,
   requireMembers,
+  requirePresentersMayPresent,
   uniqueDocumentSlug,
 } from "../../../../utils/domain/documents";
 import {
@@ -45,7 +46,8 @@ import { documentCreateSchema } from "~~/shared/utils/schemas/document";
  * them under agenda items that accept submissions, until documents_close,
  * with the kind defaults, always among its presenters: they may add
  * co-presenters and name the main presenter, their own member or another
- * one (planPresenters).
+ * one (planPresenters). For everyone, no presenter may be barred from the
+ * kind (a sectorial never presents an internal motion).
  */
 export default defineEventHandler(async (event): Promise<DocumentDto> => {
   const actor = await requireActor(event);
@@ -136,6 +138,10 @@ export default defineEventHandler(async (event): Promise<DocumentDto> => {
       : defaults.amendable;
   const voted = manager ? (body.voted ?? defaults.voted) : defaults.voted;
   const majority = manager
+  await requirePresentersMayPresent(body.kind, [
+    proponentMemberId,
+    ...coProponentMemberIds,
+  ]);
     ? (body.majority ?? defaults.majority)
     : defaults.majority;
   const acceptedAmendments = manager

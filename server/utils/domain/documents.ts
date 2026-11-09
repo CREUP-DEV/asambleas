@@ -118,6 +118,7 @@ import {
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { hashContent } from "~~/shared/utils/diff";
 import { slugify } from "~~/shared/utils/slug";
+import { barredPresenters } from "~~/shared/utils/presenterKinds";
 import { computeVoteOutcome } from "~~/shared/utils/votes";
 
 /**
@@ -957,6 +958,35 @@ export async function requireMembers(
 }
 
 /**
+/**
+ * Every presenter (main or co-presenter) may present a document of this kind
+ * (memberMayPresent): a sectorial never presents an internal motion. Applies
+ * to managers too, since the rule is the member's, not the account's.
+ */
+export async function requirePresentersMayPresent(
+  kind: DocumentKind,
+  memberIds: readonly (string | null)[],
+  executor: Executor = db,
+): Promise<void> {
+  const ids = [...new Set(memberIds.filter((id): id is string => !!id))];
+  if (ids.length === 0) return;
+  const rows = await executor
+    .select({ acronym: members.acronym, kind: members.kind })
+    .from(members)
+    .where(inArray(members.id, ids));
+  const barred = barredPresenters(kind, rows);
+  if (barred.length > 0) {
+    fail(
+      422,
+      `Las sectoriales no pueden presentar mociones internas: ${barred
+        .map((member) => member.acronym)
+        .sort()
+        .join(", ")} no puede estar entre quienes la presentan`,
+      { reason: "presenter_kind" },
+    );
+  }
+}
+
  * Reads and locks the current row until the transaction ends, with its
  * co-presenters (they change only under this lock). `no key update`
  * serializes every change of the document and still lets other transactions
@@ -1373,6 +1403,16 @@ export async function updateDocument(
       patch.proponentMemberId = presenters.proponentMemberId;
     }
     if (manager) {
+    // The kind and the presenters it ends with: a sectorial never presents
+    // an internal motion, whichever of the two changed.
+    if (presenters || changed.includes("kind")) {
+      const final = presenters ?? current;
+      await requirePresentersMayPresent(
+        patch.kind ?? current.kind,
+        [final.proponentMemberId, ...final.coProponentMemberIds],
+        tx,
+      );
+    }
       if (changed.includes("amendable")) patch.amendable = body.amendable;
       if (changed.includes("acceptedAmendments")) {
         // The final vote settled what each amendment became.
