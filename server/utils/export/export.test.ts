@@ -378,9 +378,34 @@ describe("buildAgendaTree", () => {
       { id: "b", parentId: "a", title: "B", description: null, order: 1 },
       { id: "c", parentId: null, title: "C", description: null, order: 0 },
     ]);
-    expect(tree.numbering.get("c")).toBe("1");
-    expect(tree.numbering.get("a")).toBe("2");
-    expect(tree.numbering.get("b")).toBe("2.1");
+    // The same tree every screen builds: each item of the cycle is a root.
+    expect(tree.nodes.map((node) => node.numbering)).toEqual(["1", "2", "3"]);
+    expect(tree.numbering.get("a")).toBe("1");
+    expect(tree.numbering.get("c")).toBe("2");
+    expect(tree.numbering.get("b")).toBe("3");
+  });
+
+  it("gives no number to an unlisted item and never shifts its siblings", () => {
+    const row = (id: string, parentId: string | null, order: number) => ({
+      id,
+      parentId,
+      title: id,
+      description: null,
+      order,
+    });
+    const tree = buildAgendaTree([
+      row("r", null, 0),
+      { ...row("draft", "r", 0), unlisted: true },
+      row("published", "r", 1),
+      row("s", null, 1),
+    ]);
+    expect(tree.numbering.get("draft")).toBeNull();
+    expect(tree.numbering.get("published")).toBe("1.1");
+    expect(tree.numbering.get("s")).toBe("2");
+    expect(tree.nodes[0]!.children.map((node) => node.numbering)).toEqual([
+      null,
+      "1.1",
+    ]);
   });
 
   it("never carries the title of an item marked as hidden", () => {

@@ -508,8 +508,22 @@ true` and `generatedForDocumentId`. The sub-item:
   postponed one is public, as in the platform, though it is not printed)
   and with withheld titles, for every requester, and a
   document's export never prints such a title of the item it hangs from.
-  Numbering computed from the items can therefore differ between viewers
-  until the documents are published.
+- has no number while not everyone receives it. Agenda numbers ("17.1") are
+  never stored: they are computed from the items, and everyone reads the
+  same number for the same item, the one an account that sees only what is
+  public reads. `AgendaItemDto.unlisted` is true on the items such an
+  account does not receive (`unlistedAgendaItemIds`: what
+  `visibleAgendaItems` leaves out for someone who sees only the published
+  and postponed documents), whoever the viewer is. `numberAgendaItems`
+  (`shared/utils/agendaNumbering.ts`) counts the siblings skipping those,
+  so an unlisted item has no number (nor anything under it), keeps its
+  place and never shifts its siblings; clients show "Sin publicar" where
+  the number would be, and the convocation leaves it out. An item everyone
+  gets without its title (`titleHidden`) is listed and numbered. Screens
+  and PDFs use that one function. The assembly export never holds an
+  unlisted item, and `agendaNumbering` in a document's export data is null
+  while its item is unlisted. PUT `[item]` answers with the flag too; a new
+  item (POST) is always listed.
 
 Its events are `agenda_item_created`, `agenda_item_updated` (the title
 following the document) and `agenda_item_deleted`, each with `auto: true` and

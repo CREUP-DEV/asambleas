@@ -15,7 +15,11 @@ import {
   expandAllAgenda,
   findAgendaNode,
   isAgendaFinalConflict,
+  agendaNumberInText,
+  agendaNumbers,
+  flattenAgendaTree,
   mergedAgendaDocument,
+  numberedAgendaTitle,
   planAgendaMove,
   readAgendaFold,
   reorderChangesRoots,
@@ -61,6 +65,70 @@ describe("agendaAncestorIds", () => {
       { id: "y", parentId: "x", order: 0 },
     ];
     expect(agendaAncestorIds(loop, "x").length).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("numbers of an agenda with items not everyone receives", () => {
+  /**
+   * 1 r
+   *   -   draft (unlisted)
+   *   1.1 published
+   *   -   submitted (unlisted)
+   *   1.2 other
+   * 2 s
+   */
+  const mixed: AgendaTreeItem[] = [
+    { id: "r", parentId: null, order: 0 },
+    { id: "draft", parentId: "r", order: 0, unlisted: true },
+    { id: "published", parentId: "r", order: 1 },
+    { id: "submitted", parentId: "r", order: 2, unlisted: true },
+    { id: "other", parentId: "r", order: 3 },
+    { id: "s", parentId: null, order: 1 },
+  ];
+  const tree = buildAgendaTree(mixed);
+
+  it("keeps every item in its place and numbers only the listed ones", () => {
+    expect(
+      flattenAgendaTree(tree).map((node) => [node.item.id, node.number]),
+    ).toEqual([
+      ["r", "1"],
+      ["draft", null],
+      ["published", "1.1"],
+      ["submitted", null],
+      ["other", "1.2"],
+      ["s", "2"],
+    ]);
+    // Position among the siblings, for the moves, still counts every item.
+    expect(findAgendaNode(tree, "published")?.index).toBe(1);
+    expect(findAgendaNode(tree, "published")?.siblingCount).toBe(4);
+    expect(agendaNumbers(mixed).get("draft")).toBeNull();
+  });
+
+  it("moves an item without a number like any other", () => {
+    expect(canMoveAgendaItem(mixed, "draft", "down")).toBe(true);
+    expect(planAgendaMove(mixed, "draft", "down")).toEqual([
+      { id: "published", parentId: "r", order: 0 },
+      { id: "draft", parentId: "r", order: 1 },
+    ]);
+    expect(agendaNeighbours(tree, "draft").next?.item.id).toBe("published");
+    expect(agendaNodePath(tree, "draft").map((node) => node.number)).toEqual([
+      "1",
+      null,
+    ]);
+  });
+
+  it("never writes an empty number in a label", () => {
+    expect(numberedAgendaTitle("1.1", "Título", "(sin publicar)")).toBe(
+      "1.1. Título",
+    );
+    expect(numberedAgendaTitle(null, "Título", "(sin publicar)")).toBe(
+      "Título (sin publicar)",
+    );
+    expect(numberedAgendaTitle(undefined, "Título", "(sin publicar)")).toBe(
+      "Título (sin publicar)",
+    );
+    expect(agendaNumberInText("2", "(sin publicar)")).toBe("2");
+    expect(agendaNumberInText(null, "(sin publicar)")).toBe("(sin publicar)");
   });
 });
 

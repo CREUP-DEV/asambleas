@@ -34,8 +34,11 @@ import {
 const props = defineProps<{
   /** "/api/assemblies/<id>" */
   apiBase: string;
-  /** Agenda items in agenda order, with their number ("2.1"). */
-  items: { id: string; number: string; title: string }[];
+  /**
+   * Agenda items in agenda order, with their number ("2.1"; null for one
+   * that is not in the agenda for everyone yet).
+   */
+  items: { id: string; number: string | null; title: string }[];
 }>();
 
 const open = defineModel<boolean>("open", { default: false });
@@ -125,7 +128,11 @@ watch(
 
 const itemOptions = computed(() =>
   props.items.map((item) => ({
-    label: item.number ? `${item.number}. ${item.title}` : item.title,
+    label: numberedAgendaTitle(
+      item.number,
+      item.title,
+      t("agenda.unlisted.inText"),
+    ),
     value: item.id,
   })),
 );

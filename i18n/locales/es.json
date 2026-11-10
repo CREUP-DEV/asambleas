@@ -2698,6 +2698,12 @@
       "deleteNote": "El orden del día ya es definitivo. La eliminación quedará anotada en el historial.",
       "organizeHint": "El orden del día ya es definitivo. Para cambiar un punto principal tendrás que confirmarlo. Los subpuntos se cambian sin confirmar."
     },
+    "unlisted": {
+      "label": "Sin publicar",
+      "hint": "Todavía no está en el orden del día para todo el mundo. Tendrá número cuando se publique su documento o, si ya no lo tiene, cuando se le dé un título nuevo.",
+      "inText": "(sin publicar)",
+      "moved": "«{title}» se ha movido. Sigue sin número porque todavía no está en el orden del día para todo el mundo"
+    },
     "loading": "Cargando el orden del día",
     "loadError": "No se ha podido cargar el orden del día",
     "retry": "Reintentar",
@@ -2898,11 +2904,11 @@
       "noDescription": "Solo Secretaría añade documentos, uno o varios, directamente en el punto. No se crean subpuntos.",
       "yesDescription": "Cada documento que se añada será un subpunto propio, con su título. Los miembros presentan hasta que cierre el plazo de documentos.",
       "kinds": "Qué tipos pueden presentar",
+      "kindsHelp": "Si no eliges ninguno, pueden presentar cualquier tipo.",
       "allKinds": "Todos los tipos",
       "autoHint": "Este punto sigue el título de su documento. Si lo cambias aquí, deja de seguirlo.",
       "autoCustomHint": "Este punto ya no sigue el título de su documento, porque se cambió aquí.",
       "newDocumentHint": "El documento aparecerá como un subpunto propio dentro de este punto.",
-      "kindsHelp": "Si no eliges ninguno, pueden presentar cualquier tipo.",
       "takesAll": "Los miembros presentan documentos aquí",
       "takesKinds": "Los miembros presentan aquí: {kinds}",
       "kindRefused": "Este punto no admite ese tipo de documento."

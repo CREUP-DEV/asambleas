@@ -12,6 +12,7 @@ const item = (
   parentId: null,
   title,
   titleHidden,
+  unlisted: false,
   description: null,
   order: 0,
   acceptsSubmissions: false,

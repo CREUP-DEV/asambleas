@@ -119,7 +119,7 @@ function itemDone(documents: DocumentSummaryDto[]): boolean {
               aria-hidden="true"
             />
             <span class="text-highlighted min-w-0 flex-1 text-sm font-medium">
-              <span class="text-muted tabular-nums">{{ row.number }}.</span>
+              <AgendaItemNumber :number="row.number" class="text-muted" />
               {{ row.item.title }}
             </span>
             <!-- Its own tooltip and icon: it must not pass for the button

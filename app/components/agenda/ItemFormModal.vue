@@ -29,8 +29,11 @@ const props = withDefaults(
   defineProps<{
     apiBase: string;
     item?: AgendaItemDto | null;
-    /** Parent of a new item, with its number, for the subtitle. */
-    parent?: { id: string; title: string; number: string } | null;
+    /**
+     * Parent of a new item, with its number, for the subtitle; null for a
+     * parent without one (not in the agenda for everyone yet).
+     */
+    parent?: { id: string; title: string; number: string | null } | null;
     /**
      * Runs a save that may change the root items of a final agenda: the
      * page asks first when it has to and passes `confirmFinal`. Null when
@@ -165,7 +168,10 @@ const title = computed(() =>
 const description = computed(() =>
   props.parent && !editing.value
     ? t("agenda.form.parentHint", {
-        number: props.parent.number,
+        number: agendaNumberInText(
+          props.parent.number,
+          t("agenda.unlisted.inText"),
+        ),
         title: props.parent.title,
       })
     : t("agenda.form.hint"),

@@ -141,7 +141,9 @@ const groups = computed(() => {
     .sort(([a], [b]) => order.indexOf(a) - order.indexOf(b))
     .map(([itemId, documents]) => ({
       itemId,
-      number: numbers.value.get(itemId) ?? "",
+      number: numbers.value.get(itemId) ?? null,
+      // An item of the agenda without a number: not everyone gets it yet.
+      unlisted: numbers.value.get(itemId) === null,
       title: itemTitles.value.get(itemId) ?? "",
       documents,
     }));
@@ -315,9 +317,10 @@ function documentEditPath(document: DocumentSummaryDto): string | null {
           :id="`documents-item-${group.itemId}`"
           class="text-muted text-sm font-semibold"
         >
-          <span v-if="group.number" class="tabular-nums">
-            {{ group.number }}.
-          </span>
+          <AgendaItemNumber
+            v-if="group.number || group.unlisted"
+            :number="group.number"
+          />
           {{ group.title }}
         </h3>
         <AgendaDocumentRow

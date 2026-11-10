@@ -55,7 +55,7 @@ export function useAddDocument(agenda: Ref<AgendaDto | null | undefined>) {
     return flattenAgendaTree(buildAgendaTree(rows)).map(({ item }) => ({
       id: item.id,
       title: item.title,
-      number: numbers.get(item.id) ?? "",
+      number: numbers.get(item.id) ?? null,
       acceptsSubmissions: item.acceptsSubmissions,
       submissionKinds: item.submissionKinds,
       auto: item.auto,

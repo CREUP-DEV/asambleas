@@ -14,6 +14,7 @@ import type {
   DecisionDto,
   MemberRef,
 } from "~~/shared/types/api";
+import { isPublicDocumentStatus } from "~~/shared/utils/agendaSubmissions";
 import {
   actsFor,
   canManageAssemblies,
@@ -71,8 +72,7 @@ export function canSeeDocument(
     submittedByUserId: string | null;
   },
 ): boolean {
-  if (document.status === "published" || document.status === "postponed")
-    return true;
+  if (isPublicDocumentStatus(document.status)) return true;
   if (canManageDocuments(actor)) return true;
   if (document.status !== "draft" && canModerate(actor)) return true;
   if (document.submittedByUserId === actor.user.id) return true;

@@ -467,7 +467,8 @@ useHead(() => ({
           v-if="currentRow"
           class="text-muted truncate text-[clamp(1rem,1.4vw,1.5rem)]"
         >
-          {{ currentRow.number }}. {{ currentRow.item.title }}
+          <AgendaItemNumber :number="currentRow.number" />
+          {{ currentRow.item.title }}
         </p>
       </div>
       <p

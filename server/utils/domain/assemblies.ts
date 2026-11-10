@@ -68,9 +68,12 @@ import {
   type Milestones,
 } from "~~/shared/utils/calendar";
 import { loadCalendarRules } from "./calendarRules";
+import { unlistedAgendaItemIds } from "~~/shared/utils/agendaNumbering";
 import {
   hiddenTitleItemIds,
   isAutoItem,
+  isPublicDocumentStatus,
+  PUBLIC_DOCUMENT_STATUSES,
   titleDocumentId,
   visibleAgendaItems,
 } from "~~/shared/utils/agendaSubmissions";
@@ -89,7 +92,7 @@ import { buildAssemblySlug, formatAssemblyLabel } from "~~/shared/utils/slug";
 export type AssemblyRow = typeof assemblies.$inferSelect;
 export type AgendaItemRow = typeof agendaItems.$inferSelect;
 
-const VISIBLE_DOCUMENT_STATUSES = ["published", "postponed"] as const;
+const VISIBLE_DOCUMENT_STATUSES = PUBLIC_DOCUMENT_STATUSES;
 
 function iso(value: Date | null | undefined): string | null {
   return value ? value.toISOString() : null;
@@ -479,16 +482,21 @@ export function assertDateRange(start: Date, end: Date): void {
  * (hiddenTitleItemIds): it is sent without it, without its description and
  * without the document it was created for. Document managers always get
  * them.
+ *
+ * `unlisted`: someone who sees only what is public does not receive the
+ * item (unlistedAgendaItemIds), so it has no number for anyone.
  */
 export function toAgendaItemDto(
   row: AgendaItemRow,
   titleHidden = false,
+  unlisted = false,
 ): AgendaItemDto {
   return {
     id: row.id,
     parentId: row.parentId,
     title: titleHidden ? "" : row.title,
     titleHidden,
+    unlisted,
     description: titleHidden ? null : row.description,
     order: row.order,
     acceptsSubmissions: row.acceptsSubmissions,
@@ -540,6 +548,44 @@ export function loadAgendaItems(
     );
 }
 
+/**
+ * The items of the agenda as a viewer gets them. `documents` are the ones
+ * the viewer sees, with their status; `seesWithheld`: the viewer manages
+ * documents.
+ */
+export function agendaItemDtos(
+  items: readonly AgendaItemRow[],
+  documentSummaries: readonly {
+    id: string;
+    agendaItemId: string;
+    status: string;
+  }[],
+  seesWithheld: boolean,
+): AgendaItemDto[] {
+  // Without the items that carry the title of a document the actor cannot
+  // see (an automatic sub-item, or one kept after its document moved away);
+  // one that stays because of what it holds goes without its title.
+  // A title withheld after its document was deleted is the managers'.
+  const visible = visibleAgendaItems(items, documentSummaries, seesWithheld);
+  const hiddenTitles = hiddenTitleItemIds(
+    visible,
+    documentSummaries,
+    seesWithheld,
+  );
+  // The items someone who sees only the public documents would not get:
+  // the same rule, asked for that viewer. Everyone reads every public
+  // document, so the actor's own list holds them all.
+  const unlisted = unlistedAgendaItemIds(
+    items,
+    documentSummaries.filter((document) =>
+      isPublicDocumentStatus(document.status),
+    ),
+  );
+  return visible.map((item) =>
+    toAgendaItemDto(item, hiddenTitles.has(item.id), unlisted.has(item.id)),
+  );
+}
+
 export async function loadAgendaDto(
   actor: Actor,
   assembly: AssemblyRow,
@@ -548,23 +594,34 @@ export async function loadAgendaDto(
     loadAgendaItems(assembly.id),
     loadDocumentSummaries(assembly, actor),
   ]);
-  // Without the items that carry the title of a document the actor cannot
-  // see (an automatic sub-item, or one kept after its document moved away);
-  // one that stays because of what it holds goes without its title.
-  // A title withheld after its document was deleted is the managers'.
-  const seesWithheld = canManageDocuments(actor);
-  const visible = visibleAgendaItems(items, documentSummaries, seesWithheld);
-  const hiddenTitles = hiddenTitleItemIds(
-    visible,
-    documentSummaries,
-    seesWithheld,
-  );
   return {
-    items: visible.map((item) =>
-      toAgendaItemDto(item, hiddenTitles.has(item.id)),
-    ),
+    items: agendaItemDtos(items, documentSummaries, canManageDocuments(actor)),
     documents: documentSummaries,
   };
+}
+
+/**
+ * The items of the assembly that someone who sees only the public documents
+ * does not receive (unlistedAgendaItemIds), for an answer that carries one
+ * item and not the whole agenda.
+ */
+export async function loadUnlistedItemIds(
+  assemblyId: string,
+  executor: Executor = db,
+): Promise<Set<string>> {
+  const [items, publicDocuments] = await Promise.all([
+    loadAgendaItems(assemblyId, executor),
+    executor
+      .select({ id: documents.id, agendaItemId: documents.agendaItemId })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.assemblyId, assemblyId),
+          inArray(documents.status, VISIBLE_DOCUMENT_STATUSES),
+        ),
+      ),
+  ]);
+  return unlistedAgendaItemIds(items, publicDocuments);
 }
 
 /** Whether the agenda is final (ODD definitivo). */

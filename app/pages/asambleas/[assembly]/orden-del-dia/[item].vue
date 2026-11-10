@@ -51,7 +51,9 @@ if (agenda.value && !node.value) {
 }
 
 const item = computed(() => node.value?.item ?? null);
-const numbered = (number: string, title: string) => `${number}. ${title}`;
+/** "3. Resoluciones"; an item without a number says it is not published. */
+const numbered = (number: string | null, title: string) =>
+  numberedAgendaTitle(number, title, t("agenda.unlisted.inText"));
 
 useHead({
   title: () =>
@@ -242,8 +244,9 @@ async function onDeleted() {
           class="text-highlighted text-xl font-semibold break-words sm:text-2xl"
           data-testid="agenda-item-title"
         >
-          <span class="text-primary me-2 tabular-nums">{{ node.number }}.</span
-          >{{ item.title }}
+          <AgendaItemNumber :number="node.number" class="text-primary me-2" />{{
+            item.title
+          }}
         </h2>
         <p
           v-if="item.description"
@@ -336,9 +339,10 @@ async function onDeleted() {
               class="hover:bg-elevated/50 focus-visible:outline-primary flex min-h-12 flex-col gap-1 px-3 py-3 focus-visible:outline-2 focus-visible:-outline-offset-2 sm:flex-row sm:items-center sm:justify-between sm:gap-3 sm:px-4"
             >
               <span class="text-highlighted min-w-0 font-medium break-words">
-                <span class="text-primary me-1.5 tabular-nums"
-                  >{{ child.number }}.</span
-                >{{ child.item.title }}
+                <AgendaItemNumber
+                  :number="child.number"
+                  class="text-primary me-1.5"
+                />{{ child.item.title }}
               </span>
               <span
                 v-if="totalsFor(child.item.id).documents > 0"

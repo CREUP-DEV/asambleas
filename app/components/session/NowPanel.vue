@@ -64,12 +64,14 @@ const mode = computed<Mode>(() => {
   return "idle";
 });
 
+/** "3. Resoluciones"; an item without a number says it is not published. */
+const rowLabel = (row: { number: string | null; item: { title: string } }) =>
+  numberedAgendaTitle(row.number, row.item.title, t("agenda.unlisted.inText"));
+
 /** The context line above the headline: agenda item and document. */
 const context = computed(() =>
   [
-    liveRow.value
-      ? `${liveRow.value.number}. ${liveRow.value.item.title}`
-      : null,
+    liveRow.value ? rowLabel(liveRow.value) : null,
     mode.value === "amendment" || mode.value === "elsewhere"
       ? (liveDocumentSummary.value?.reference ??
         liveDocumentSummary.value?.title ??
@@ -82,9 +84,7 @@ const context = computed(() =>
 
 const nextAgenda = computed(() => session.nextAgendaTarget.value);
 const nextAgendaLabel = computed(() =>
-  nextAgenda.value
-    ? `${nextAgenda.value.row.number}. ${nextAgenda.value.row.item.title}`
-    : "",
+  nextAgenda.value ? rowLabel(nextAgenda.value.row) : "",
 );
 
 // Document under debate ------------------------------------------------------------
@@ -201,9 +201,7 @@ const announcement = computed(() => {
     }
     case "item":
       return liveRow.value
-        ? t("session.now.announce", {
-            what: `${liveRow.value.number}. ${liveRow.value.item.title}`,
-          })
+        ? t("session.now.announce", { what: rowLabel(liveRow.value) })
         : "";
     default:
       return "";
@@ -415,7 +413,7 @@ const announcement = computed(() => {
     <!-- An agenda item without a document in debate. -->
     <template v-else-if="mode === 'item' && liveRow">
       <h3 class="text-highlighted text-2xl font-bold sm:text-3xl">
-        {{ `${liveRow.number}. ${liveRow.item.title}` }}
+        {{ rowLabel(liveRow) }}
       </h3>
       <p class="text-default">
         {{

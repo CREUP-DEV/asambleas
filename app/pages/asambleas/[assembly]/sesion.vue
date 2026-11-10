@@ -82,7 +82,13 @@ const agendaSummary = computed(() => {
   const row = id
     ? session.agendaRows.value.find((other) => other.item.id === id)
     : null;
-  return row ? `${row.number}. ${row.item.title}` : null;
+  return row
+    ? numberedAgendaTitle(
+        row.number,
+        row.item.title,
+        t("agenda.unlisted.inText"),
+      )
+    : null;
 });
 const previewSummary = computed(() => {
   const current = session.document.value;

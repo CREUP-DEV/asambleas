@@ -398,11 +398,12 @@ async function moveItem(itemId: string, move: AgendaMove) {
       },
     );
     agenda.value = updated;
+    // An item without a number (not in the agenda for everyone yet) says so.
+    const number = numbers.value.get(itemId);
     announce(
-      t("agenda.moved", {
-        title,
-        number: numbers.value.get(itemId) ?? "",
-      }),
+      number
+        ? t("agenda.moved", { title, number })
+        : t("agenda.unlisted.moved", { title }),
     );
     if (import.meta.client && document.activeElement === document.body) {
       void focusItem(itemId, move);
@@ -484,9 +485,11 @@ async function toggleSubmissions(item: AgendaItemDto, value: boolean) {
 
 const formOpen = ref(false);
 const formItem = ref<AgendaItemDto | null>(null);
-const formParent = ref<{ id: string; title: string; number: string } | null>(
-  null,
-);
+const formParent = ref<{
+  id: string;
+  title: string;
+  number: string | null;
+} | null>(null);
 
 function openCreate(parent: AgendaTreeNode<AgendaItemDto> | null) {
   // Adding items is organizing: the first item (from the empty state) keeps
@@ -510,7 +513,10 @@ async function onSaved(item: AgendaItemDto, created: boolean) {
   announce(
     created
       ? t("agenda.created", {
-          number: numbers.value.get(item.id) ?? "",
+          number: agendaNumberInText(
+            numbers.value.get(item.id),
+            t("agenda.unlisted.inText"),
+          ),
           title: item.title,
         })
       : t("agenda.updated", { title: item.title }),

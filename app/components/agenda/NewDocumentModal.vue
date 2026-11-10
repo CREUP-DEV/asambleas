@@ -99,7 +99,8 @@ const props = defineProps<{
   /** Localized hub path ("/asambleas/80-ago"). */
   basePath: string;
   /**
-   * Agenda items in agenda order with their number ("3.2"). `hasDocuments`:
+   * Agenda items in agenda order with their number ("3.2"; null for one
+   * that is not in the agenda for everyone yet). `hasDocuments`:
    * the item already shows documents, so no title is proposed from it.
    * `submissionKinds`: the kinds it takes from members (none: every kind).
    * `auto`: the sub-item of one document, never offered.
@@ -107,7 +108,7 @@ const props = defineProps<{
   items: {
     id: string;
     title: string;
-    number: string;
+    number: string | null;
     acceptsSubmissions: boolean;
     submissionKinds?: DocumentKind[];
     auto?: boolean;
@@ -326,7 +327,11 @@ const selectedItem = computed(
 /** Numbered, searchable items; long titles wrap. */
 const itemOptions = computed(() =>
   pickableItems.value.map((item) => ({
-    label: `${item.number}. ${item.title}`,
+    label: numberedAgendaTitle(
+      item.number,
+      item.title,
+      t("agenda.unlisted.inText"),
+    ),
     value: item.id,
   })),
 );

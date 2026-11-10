@@ -79,6 +79,9 @@ export function agendaChildrenId(itemId: string): string {
  * actions as buttons with their text: AgendaItemManageBar) appear only while
  * the page is in organize mode, which shows every item unfolded and item
  * and document apart, and says what members present under each item.
+ * An item that is not in the agenda for everyone yet (`unlisted`) shows a
+ * neutral mark where its number would be (AgendaItemNumber) and its labels
+ * say so instead of a number; everything else works the same.
  */
 defineOptions({ name: "AgendaItemNode" });
 
@@ -110,9 +113,17 @@ const MOVES: { move: AgendaMove; icon: string }[] = [
   { move: "indent", icon: "i-lucide-indent-increase" },
 ];
 
+/**
+ * What stands for the number in the labels about the item: the number, or
+ * the words for an item that has none (not in the agenda for everyone yet).
+ */
+const numberText = computed(() =>
+  agendaNumberInText(props.node.number, t("agenda.unlisted.inText")),
+);
+
 const moveLabel = (move: AgendaMove) =>
   t(`agenda.move.${move}`, {
-    number: props.node.number,
+    number: numberText.value,
     title: item.value.title,
   });
 
@@ -190,7 +201,7 @@ const containerLabel = computed(() => {
             node.depth === 0 ? 'text-base sm:text-lg' : 'text-sm sm:text-base'
           "
         >
-          <span class="text-primary me-2 tabular-nums">{{ node.number }}.</span>
+          <AgendaItemNumber :number="node.number" class="text-primary me-2" />
           <NuxtLink
             v-if="merged"
             :to="ctx.documentPath(merged)"
@@ -221,7 +232,7 @@ const containerLabel = computed(() => {
           :label="t('agenda.item.open')"
           :aria-label="
             t('agenda.item.openOf', {
-              number: node.number,
+              number: numberText,
               title: item.title,
             })
           "
@@ -241,7 +252,7 @@ const containerLabel = computed(() => {
           :label="t('agenda.actions.submitDocument')"
           :aria-label="
             t('agenda.actions.submitDocumentIn', {
-              number: node.number,
+              number: numberText,
               title: item.title,
             })
           "
@@ -307,7 +318,7 @@ const containerLabel = computed(() => {
             :label="t('agenda.actions.newDocument')"
             :aria-label="
               t('agenda.actions.newDocumentIn', {
-                number: node.number,
+                number: numberText,
                 title: item.title,
               })
             "
@@ -323,7 +334,7 @@ const containerLabel = computed(() => {
         v-if="documents.length > 0 && !merged"
         class="mt-3 space-y-2"
         :aria-label="
-          t('agenda.documentsOf', { number: node.number, title: item.title })
+          t('agenda.documentsOf', { number: numberText, title: item.title })
         "
       >
         <li v-for="document in documents" :key="document.id">
@@ -348,7 +359,7 @@ const containerLabel = computed(() => {
       :aria-label="
         t('agenda.fold.of', {
           action: foldLabel,
-          number: node.number,
+          number: numberText,
           title: item.title,
         })
       "

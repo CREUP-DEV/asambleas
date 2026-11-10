@@ -57,8 +57,9 @@ const { assembly, apiBase, sectionPath } = current;
 const { data: agenda, refresh: refreshAgenda } = useAssemblyAgenda();
 
 const dto = computed(() => props.item.item);
+/** For the labels: an item without a number reads as not published. */
 const named = computed(() => ({
-  number: props.item.number,
+  number: agendaNumberInText(props.item.number, t("agenda.unlisted.inText")),
   title: dto.value.title,
 }));
 
@@ -118,9 +119,11 @@ const runRootChange: AgendaRootChangeRunner = async (changesRoots, run) => {
 const formMounted = ref(false);
 const formOpen = ref(false);
 const formItem = ref<AgendaItemDto | null>(null);
-const formParent = ref<{ id: string; title: string; number: string } | null>(
-  null,
-);
+const formParent = ref<{
+  id: string;
+  title: string;
+  number: string | null;
+} | null>(null);
 
 function openEdit(): void {
   formItem.value = dto.value;
@@ -131,7 +134,11 @@ function openEdit(): void {
 
 function openAddChild(): void {
   formItem.value = null;
-  formParent.value = { id: dto.value.id, ...named.value };
+  formParent.value = {
+    id: dto.value.id,
+    title: dto.value.title,
+    number: props.item.number,
+  };
   formMounted.value = true;
   formOpen.value = true;
 }

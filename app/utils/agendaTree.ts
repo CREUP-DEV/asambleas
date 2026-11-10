@@ -2,6 +2,9 @@
  * Agenda tree helpers. The API returns agenda items flat (`parentId` +
  * `order`); the client builds the tree, numbers it hierarchically ("1",
  * "1.1", "1.1.2") and computes the reorder payloads for keyboard moves.
+ * The numbers are the shared rule's (numberAgendaItems), the same for every
+ * viewer and for the PDFs: an item not everyone receives yet (`unlisted`)
+ * has none.
  *
  * It also holds the folding state of the tree, the rule that shows an item
  * and its only document in one row, and what a final agenda asks to confirm.
@@ -9,6 +12,11 @@
  * Every function is pure and never mutates its input.
  */
 
+import {
+  agendaChildGroups,
+  agendaEffectiveParents,
+  numberAgendaItems,
+} from "~~/shared/utils/agendaNumbering";
 import { AGENDA_FINAL_CONFLICT_CODE } from "~~/shared/utils/schemas/assembly";
 import { titleFromItemTitle } from "~/composables/document/itemProposal";
 
@@ -16,12 +24,17 @@ export interface AgendaTreeItem {
   id: string;
   parentId: string | null;
   order: number;
+  /** Not everyone receives the item yet: it has no number. */
+  unlisted?: boolean;
 }
 
 export interface AgendaTreeNode<T extends AgendaTreeItem = AgendaTreeItem> {
   item: T;
-  /** Hierarchical number: "1", "1.2", "1.2.3". */
-  number: string;
+  /**
+   * Hierarchical number: "1", "1.2", "1.2.3". Null for an item that is not
+   * in the agenda for everyone yet (`unlisted`), and for anything under one.
+   */
+  number: string | null;
   /** 0 for root items. */
   depth: number;
   /** Position among its siblings, from 0. */
@@ -40,54 +53,8 @@ export interface AgendaReorderEntry {
   order: number;
 }
 
-function compareSiblings(a: AgendaTreeItem, b: AgendaTreeItem): number {
-  return a.order - b.order || a.id.localeCompare(b.id);
-}
-
-/**
- * Effective parent of every item: the declared one, or null (root) when the
- * parent is missing or the declared chain loops back on itself.
- */
-function effectiveParents<T extends AgendaTreeItem>(
-  items: readonly T[],
-): Map<string, string | null> {
-  const byId = new Map(items.map((item) => [item.id, item]));
-  const parents = new Map<string, string | null>();
-  for (const item of items) {
-    let parentId =
-      item.parentId && byId.has(item.parentId) ? item.parentId : null;
-    // Walk up the chain: a cycle would make the item unreachable from a root.
-    const seen = new Set<string>([item.id]);
-    let cursor = parentId;
-    while (cursor) {
-      if (seen.has(cursor)) {
-        parentId = null;
-        break;
-      }
-      seen.add(cursor);
-      const next = byId.get(cursor)?.parentId ?? null;
-      cursor = next && byId.has(next) ? next : null;
-    }
-    parents.set(item.id, parentId);
-  }
-  return parents;
-}
-
-/** Children of every parent id (null = root items), sorted by `order`. */
-function groupChildren<T extends AgendaTreeItem>(
-  items: readonly T[],
-): Map<string | null, T[]> {
-  const parents = effectiveParents(items);
-  const groups = new Map<string | null, T[]>();
-  for (const item of items) {
-    const parentId = parents.get(item.id) ?? null;
-    const group = groups.get(parentId);
-    if (group) group.push(item);
-    else groups.set(parentId, [item]);
-  }
-  for (const group of groups.values()) group.sort(compareSiblings);
-  return groups;
-}
+const effectiveParents = agendaEffectiveParents;
+const groupChildren = agendaChildGroups;
 
 /**
  * Builds the agenda tree from the flat list. Items whose parent is missing
@@ -97,28 +64,25 @@ export function buildAgendaTree<T extends AgendaTreeItem>(
   items: readonly T[],
 ): AgendaTreeNode<T>[] {
   const groups = groupChildren(items);
+  const numbers = numberAgendaItems(items);
 
   const build = (
     parentId: string | null,
-    prefix: string,
     depth: number,
   ): AgendaTreeNode<T>[] => {
     const siblings = groups.get(parentId) ?? [];
-    return siblings.map((item, index) => {
-      const number = prefix ? `${prefix}.${index + 1}` : String(index + 1);
-      return {
-        item,
-        number,
-        depth,
-        index,
-        siblingCount: siblings.length,
-        parentId,
-        children: build(item.id, number, depth + 1),
-      };
-    });
+    return siblings.map((item, index) => ({
+      item,
+      number: numbers.get(item.id) ?? null,
+      depth,
+      index,
+      siblingCount: siblings.length,
+      parentId,
+      children: build(item.id, depth + 1),
+    }));
   };
 
-  return build(null, "", 0);
+  return build(null, 0);
 }
 
 /** The tree in reading order (pre-order): 1, 1.1, 1.2, 2... */
@@ -136,16 +100,36 @@ export function flattenAgendaTree<T extends AgendaTreeItem>(
   return result;
 }
 
-/** Hierarchical number of every item id. */
+/** Hierarchical number of every item id; null for one that has none. */
 export function agendaNumbers<T extends AgendaTreeItem>(
   items: readonly T[],
-): Map<string, string> {
-  return new Map(
-    flattenAgendaTree(buildAgendaTree(items)).map((node) => [
-      node.item.id,
-      node.number,
-    ]),
-  );
+): Map<string, string | null> {
+  return numberAgendaItems(items);
+}
+
+/**
+ * An item with its number in running text: "3. Resoluciones". One without a
+ * number (not in the agenda for everyone yet) reads as its title followed by
+ * `unlistedMark`, the words that say so ("(sin publicar)").
+ */
+export function numberedAgendaTitle(
+  number: string | null | undefined,
+  title: string,
+  unlistedMark: string,
+): string {
+  return number ? `${number}. ${title}` : `${title} ${unlistedMark}`;
+}
+
+/**
+ * What stands for the number inside a sentence about an item ("Subir el
+ * punto 3: ..."): the number, or `unlistedMark` for an item without one, so
+ * a label never reads an empty number.
+ */
+export function agendaNumberInText(
+  number: string | null | undefined,
+  unlistedMark: string,
+): string {
+  return number || unlistedMark;
 }
 
 /** The ids of an item and all its descendants. */

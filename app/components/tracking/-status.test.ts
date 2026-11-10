@@ -178,6 +178,27 @@ describe("groupByAgendaItem", () => {
       { id: "d2", agendaItemId: "i1" },
     ]);
     expect(groups.map((group) => group.itemId)).toEqual(["i1", "gone"]);
-    expect(groups[1]!.number).toBe("");
+    expect(groups[1]!.number).toBeNull();
+    expect(groups[1]!.unlisted).toBe(false);
+  });
+
+  it("gives no number to an item that is not in the agenda for everyone", () => {
+    const groups = groupByAgendaItem(
+      [
+        { id: "r", parentId: null, order: 0, title: "Resoluciones" },
+        { id: "a", parentId: "r", order: 0, title: "Borrador", unlisted: true },
+        { id: "b", parentId: "r", order: 1, title: "Publicada" },
+      ],
+      [
+        { id: "d1", agendaItemId: "a" },
+        { id: "d2", agendaItemId: "b" },
+      ],
+    );
+    expect(
+      groups.map((group) => [group.number, group.unlisted, group.title]),
+    ).toEqual([
+      [null, true, "Borrador"],
+      ["1.1", false, "Publicada"],
+    ]);
   });
 });

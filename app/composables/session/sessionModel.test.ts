@@ -479,6 +479,7 @@ describe("session model", () => {
       auto: false,
       generatedForDocumentId: null,
       titleHidden: false,
+      unlisted: false,
       titleCustom: false,
       updatedAt: "",
     });
@@ -491,6 +492,20 @@ describe("session model", () => {
       "2:a",
       "2.1:d",
       "2.2:c",
+    ]);
+    // An item not everyone receives keeps its place, without a number.
+    const mixed = buildSessionAgendaRows(
+      [
+        it("r", null, 0),
+        { ...it("draft", "r", 0), unlisted: true },
+        it("published", "r", 1),
+      ],
+      [],
+    );
+    expect(mixed.map((r) => [r.item.id, r.number])).toEqual([
+      ["r", "1"],
+      ["draft", null],
+      ["published", "1.1"],
     ]);
   });
 
@@ -1489,6 +1504,7 @@ describe("session model", () => {
         auto: false,
         generatedForDocumentId: null,
         titleHidden: false,
+        unlisted: false,
         titleCustom: false,
         updatedAt: "",
       });
