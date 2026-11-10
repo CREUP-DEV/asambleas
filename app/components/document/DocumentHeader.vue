@@ -257,15 +257,18 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
         keypath="document.presenters.answers"
         tag="p"
         scope="global"
-        class="text-muted text-sm leading-7"
+        class="text-muted text-sm"
         data-testid="document-answerer"
       >
+        <!-- By name, as the presenters line above it -->
         <template #member>
-          <CommonMemberBadge
-            :member="answerer"
-            size="sm"
-            class="align-middle"
-          />
+          <span class="text-default font-medium">
+            {{
+              memberNameRepeatsAcronym(answerer)
+                ? answerer.acronym
+                : answerer.name
+            }}
+          </span>
         </template>
       </i18n-t>
 
