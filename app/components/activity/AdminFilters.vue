@@ -85,10 +85,8 @@ const userItems = computed(() => {
 });
 
 const memberItems = computed(() => {
-  const items = props.members.map((member) => ({
-    label: memberLabel(member),
-    value: member.id,
-  }));
+  const items: { label: string; description?: string; value: string }[] =
+    props.members.map(memberMenuItem);
   const current = filters.value.member;
   if (current && !items.some((item) => item.value === current)) {
     items.unshift({
@@ -252,6 +250,8 @@ const fieldsId = useId();
             v-model="memberValue"
             :items="memberItems"
             value-key="value"
+            :ui="MEMBER_MENU_UI"
+            :filter-fields="MEMBER_MENU_FILTER_FIELDS"
             :search-input="
               labelledSearch(t('activity.admin.filters.searchMember'))
             "

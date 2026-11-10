@@ -91,12 +91,7 @@ const kindItems = computed(() =>
     value: kind,
   })),
 );
-const memberItems = computed(() =>
-  props.authorOptions.map((member) => ({
-    label: memberLabel(member),
-    value: member.id,
-  })),
-);
+const memberItems = computed(() => props.authorOptions.map(memberMenuItem));
 const reviewItems = computed(() =>
   AMENDMENT_REVIEW_FILTERS.filter((value) => {
     if (filters.value.review === value || value === "any") return true;
@@ -294,6 +289,8 @@ function clearAll(): void {
                 :model-value="filters.memberIds"
                 :items="memberItems"
                 value-key="value"
+                :ui="MEMBER_MENU_UI"
+                :filter-fields="MEMBER_MENU_FILTER_FIELDS"
                 multiple
                 class="w-full"
                 :placeholder="t('amendment.filters.any')"

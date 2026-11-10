@@ -354,10 +354,10 @@ function memberOptionsFor(user: UserRow) {
     ...(membersData.value ?? [])
       .filter((item) => item.active || item.id === user.memberId)
       .map((item) => ({
+        ...memberMenuItem(item),
         label: item.active
-          ? memberLabel(item)
-          : t("admin.users.inactiveMember", { member: memberLabel(item) }),
-        value: item.id,
+          ? item.acronym
+          : t("admin.users.inactiveMember", { member: item.acronym }),
       })),
   ];
 }
@@ -1367,6 +1367,8 @@ function goToPage(next: number): void {
                 :model-value="memberValue(editTarget)"
                 :items="memberOptionsFor(editTarget)"
                 value-key="value"
+                :ui="MEMBER_MENU_UI"
+                :filter-fields="MEMBER_MENU_FILTER_FIELDS"
                 :loading="linkingUserId === editTarget.id"
                 :disabled="
                   linkingUserId !== null || ownAccountLocked(editTarget)
