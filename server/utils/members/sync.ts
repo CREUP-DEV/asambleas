@@ -85,7 +85,7 @@ const ROSTER_SYNC_LOCK = "members_roster_sync";
 const renamePlaceholder = (memberId: string) => `~roster-sync~${memberId}`;
 
 /**
- * Fetches an optional list (the CEA's places). One the Intranet cannot
+ * Fetches an optional list (the CEA's places, the CAS). One the Intranet cannot
  * give, for example because it does not have the route yet, is logged and
  * left out: the sync leaves that kind as it was.
  */
@@ -109,14 +109,14 @@ async function fetchOptionalRoster(
 }
 
 /**
- * Syncs the members from the intranet rosters: asociados, sectorials and the
- * CEA's offices, all the same way.
+ * Syncs the members from the intranet rosters: asociados, sectorials, the
+ * CEA's offices and the CAS, all the same way.
  *
  * Every list is fetched before anything is written: a failed or partial
  * fetch must never deactivate the members it did not return. Without the
- * asociados or the sectorials the sync fails; without the CEA list it goes
- * on and leaves the offices as they were (`skipped`): none is created,
- * updated nor deactivated. What it could not
+ * asociados or the sectorials the sync fails; without the CEA or the CAS
+ * list it goes on and leaves those members as they were (`skipped`): none
+ * is created, updated nor deactivated. What it could not
  * sync is in `MemberSyncResult.ignored` (an acronym listed twice or held by
  * another member, an account without initials), for the members page to
  * warn. Members are
@@ -174,11 +174,13 @@ export async function syncIntranetRoster(options: {
   let asociados;
   let sectoriales;
   let executives: IntranetRosterEntry[] | null;
+  let committee: IntranetRosterEntry[] | null;
   try {
-    [asociados, sectoriales, executives] = await Promise.all([
+    [asociados, sectoriales, executives, committee] = await Promise.all([
       fetchIntranetRoster(base, "asociado"),
       fetchIntranetRoster(base, "sectorial"),
       fetchOptionalRoster(base, "executive", trigger),
+      fetchOptionalRoster(base, "other", trigger),
     ]);
   } catch (error) {
     if (error instanceof IntranetUnavailableError) {
@@ -191,18 +193,22 @@ export async function syncIntranetRoster(options: {
     throw error;
   }
 
+  const optional = { executive: executives, other: committee };
   const skipped = OPTIONAL_ROSTER_KINDS.filter(
-    (kind) => kind === "executive" && executives === null,
+    (kind) => optional[kind] === null,
   );
-  const synced: RosterKind[] = executives
-    ? ["asociado", "sectorial", "executive"]
-    : ["asociado", "sectorial"];
+  const synced: RosterKind[] = [
+    "asociado",
+    "sectorial",
+    ...OPTIONAL_ROSTER_KINDS.filter((kind) => optional[kind] !== null),
+  ];
   const roster = normalizeRoster([
     { kind: "asociado", entries: asociados },
     { kind: "sectorial", entries: sectoriales },
-    ...(executives
-      ? [{ kind: "executive" as const, entries: executives }]
-      : []),
+    ...OPTIONAL_ROSTER_KINDS.flatMap((kind) => {
+      const entries = optional[kind];
+      return entries ? [{ kind, entries }] : [];
+    }),
   ]);
   if (
     roster.skipped > 0 ||

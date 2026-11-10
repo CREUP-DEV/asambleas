@@ -13,22 +13,25 @@ import { memberAuditState } from "./sync";
 /** Member kinds an intranet account can act for. */
 export type LinkedMemberKind = Extract<
   MemberKind,
-  "asociado" | "sectorial" | "executive"
+  "asociado" | "sectorial" | "executive" | "other"
 >;
 
 /**
  * Intranet account types (intranet `users.type`) linked to a member, each
  * by its intranet id first, then its email, then its initials (only to a
  * member stored before the Intranet sent either): Asociado and Sectorial
- * accounts are the member itself, and a CEA account is the place of its
+ * accounts are the member itself, a CEA account is the place of its
  * executive office, which outlives whoever holds it (the CEA list,
- * `/usuarios/cea`, sends the same id).
+ * `/usuarios/cea`, sends the same id), and the Coordinación del CAS (the
+ * role lookup answers "CAS" for it) is the member "CAS", of kind "other"
+ * (the CAS list, `/usuarios/cas`, sends the same id).
  */
 export const INTRANET_MEMBER_TYPES: ReadonlyMap<string, LinkedMemberKind> =
   new Map<string, LinkedMemberKind>([
     ["Asociado", "asociado"],
     ["Sectorial", "sectorial"],
     ["CEA", "executive"],
+    ["CAS", "other"],
   ]);
 
 export interface ExternalMemberIdentity {
@@ -59,13 +62,14 @@ export function initialsToAcronym(initials: string | null): string | null {
 /**
  * Whether an account that acts for a member of `kind` may be linked to the
  * existing member with its acronym. A CEA account only links to an executive
- * area (or an "other" member), never to a council or a sectorial that
- * happens to share its initials.
+ * area (or an "other" member), and the CAS only to an "other" member, never
+ * to a council or a sectorial that happens to share its initials.
  */
 export function canLinkToMember(
   kind: LinkedMemberKind,
   existingKind: MemberKind,
 ): boolean {
+  if (kind === "other") return existingKind === "other";
   if (kind !== "executive") return true;
   return existingKind === "executive" || existingKind === "other";
 }
@@ -87,9 +91,9 @@ export function memberIntranetId(
  * address it signed in with, the one the Intranet looked up), which the
  * roster matches first and whose next sync fills in its details (or
  * deactivates it, once
- * the Intranet no longer lists it). An executive office is named after its
- * acronym until then, since a CEA account carries the name of the person
- * who holds the place, not the office's.
+ * the Intranet no longer lists it). An executive office and the CAS are
+ * named after their acronym until then, since those accounts carry the name
+ * of the person who holds the place, not the office's or the committee's.
  */
 export function newLinkedMember(
   kind: LinkedMemberKind,
@@ -108,11 +112,11 @@ export function newLinkedMember(
   active: boolean;
   syncedAt: Date | null;
 } {
-  const executive = kind === "executive";
+  const namedAfterAcronym = kind === "executive" || kind === "other";
   return {
     kind,
     acronym,
-    name: executive
+    name: namedAfterAcronym
       ? acronym
       : external.name?.trim().slice(0, NAME_MAX_LENGTH) || acronym,
     university:

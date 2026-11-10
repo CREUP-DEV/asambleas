@@ -20,7 +20,7 @@ import type {
 } from "~~/shared/types/api";
 import type { AssemblySettings } from "~~/shared/constants/domain";
 import { quorumRulesOf } from "~~/shared/constants/calendarRules";
-import { SYSTEM_ROLES } from "~~/shared/constants/roles";
+import { HEADCOUNT_GUEST_ROLES } from "~~/shared/constants/roles";
 import {
   ROLL_CALL_KINDS,
   compareGuests,
@@ -105,8 +105,9 @@ async function rollCallMembers(executor: Executor): Promise<MemberColumns[]> {
 }
 
 /**
- * The guests a new count lists: the accounts with the role Invitado, given
- * here by hand, that have access. Reverse alphabetical by name.
+ * The guests a new count lists: the accounts with access and a guest role
+ * (HEADCOUNT_GUEST_ROLES: Invitado, given here by hand, and the members of
+ * the CAI and the CdG). Reverse alphabetical by name.
  */
 async function invitedAccounts(
   executor: Executor,
@@ -116,7 +117,10 @@ async function invitedAccounts(
     .from(users)
     .innerJoin(roles, eq(roles.id, users.roleId))
     .where(
-      and(eq(roles.name, SYSTEM_ROLES.INVITADO), isNull(users.accessRevokedAt)),
+      and(
+        inArray(roles.name, [...HEADCOUNT_GUEST_ROLES]),
+        isNull(users.accessRevokedAt),
+      ),
     );
   return rows.sort(compareGuests);
 }

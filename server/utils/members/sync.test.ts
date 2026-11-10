@@ -51,6 +51,7 @@ let roster: {
   asociado: RosterRow[];
   sectorial: RosterRow[];
   executive?: RosterRow[] | null;
+  other?: RosterRow[] | null;
 } = {
   asociado: [],
   sectorial: [],
@@ -104,7 +105,7 @@ vi.mock("./intranet", () => {
     getIntranetApiBaseUrl: () => "https://intranet.test",
     fetchIntranetRoster: async (
       _base: string,
-      kind: "asociado" | "sectorial" | "executive",
+      kind: "asociado" | "sectorial" | "executive" | "other",
     ) => {
       const rows = roster[kind];
       if (rows === null) throw new IntranetUnavailableError("status 404");
@@ -466,6 +467,54 @@ describe("syncIntranetRoster write order", () => {
       "update acronym B",
       "update acronym A",
     ]);
+  });
+});
+
+describe("syncIntranetRoster with the CAS list", () => {
+  it("turns the office of the Coordinación del CAS into the member CAS", async () => {
+    existing = [
+      {
+        id: "m-cas",
+        kind: "executive",
+        acronym: "CoorCAS",
+        name: "Coordinación del CAS",
+        university: null,
+        region: null,
+        intranetId: 40,
+        email: "cas@creup.es",
+        source: "intranet",
+        active: true,
+      },
+    ];
+    roster = {
+      asociado: [],
+      sectorial: [],
+      executive: [],
+      other: [
+        {
+          id: 40,
+          email: "cas@creup.es",
+          initials: "CAS",
+          denomination: "Comité de Asuntos Sectoriales",
+        },
+      ],
+    };
+    const outcome = await syncIntranetRoster({ actor: null });
+    expect(outcome).toMatchObject({
+      status: "applied",
+      result: { created: 0, updated: 1, deactivated: 0, skipped: [] },
+    });
+  });
+
+  it("leaves the CAS alone when the Intranet cannot list it", async () => {
+    existing = [];
+    roster = { asociado: [], sectorial: [], other: null };
+    const outcome = await syncIntranetRoster({ actor: null });
+    expect(outcome).toMatchObject({
+      status: "applied",
+      result: { created: 0, skipped: ["other"] },
+    });
+    expect(writes).toEqual([]);
   });
 });
 

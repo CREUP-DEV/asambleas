@@ -91,8 +91,8 @@ export interface MemberSyncResult {
   updated: number;
   deactivated: number;
   /**
-   * Lists the Intranet could not give (the CEA's places): the sync left
-   * those members as they were.
+   * Lists the Intranet could not give (the CEA's places, the CAS): the sync
+   * left those members as they were.
    */
   skipped: MemberSyncSkippedKind[];
   /** What the Intranet listed that the sync could not store. */
@@ -100,7 +100,7 @@ export interface MemberSyncResult {
 }
 
 /** The lists a roster sync does without when the Intranet cannot give them. */
-export type MemberSyncSkippedKind = Extract<MemberKind, "executive">;
+export type MemberSyncSkippedKind = Extract<MemberKind, "executive" | "other">;
 
 export interface MemberSyncIgnored {
   /**

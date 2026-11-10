@@ -117,6 +117,30 @@ describe("resolveTargetRole", () => {
       SYSTEM_ROLES.SECTORIAL,
     );
     expect(resolveTargetRole("Alumni", null, true)).toBe(SYSTEM_ROLES.OTRO);
+    expect(resolveTargetRole("CAS", null, true)).toBe(SYSTEM_ROLES.CAS);
+    expect(resolveTargetRole("CAI", null, true)).toBe(SYSTEM_ROLES.CAI);
+    expect(resolveTargetRole("CdG", null, true)).toBe(SYSTEM_ROLES.CDG);
+    // The Secretaría del CAS is of type Otros in the Intranet.
+    expect(resolveTargetRole("Otros", null, true)).toBe(SYSTEM_ROLES.OTRO);
+  });
+
+  it("moves the committees' accounts with their type", () => {
+    // An Otro whose account joins the CdG, a CEA office that becomes the
+    // Coordinación del CAS, a CAI member who leaves the committee.
+    expect(resolveTargetRole("CdG", SYSTEM_ROLES.OTRO, false)).toBe(
+      SYSTEM_ROLES.CDG,
+    );
+    expect(resolveTargetRole("CAS", SYSTEM_ROLES.CEA, false)).toBe(
+      SYSTEM_ROLES.CAS,
+    );
+    expect(resolveTargetRole("Otros", SYSTEM_ROLES.CAI, false)).toBe(
+      SYSTEM_ROLES.OTRO,
+    );
+    // A guest given by hand keeps Invitado unless its type has a role.
+    expect(resolveTargetRole("Otros", SYSTEM_ROLES.INVITADO, false)).toBeNull();
+    expect(resolveTargetRole("CAI", SYSTEM_ROLES.INVITADO, false)).toBe(
+      SYSTEM_ROLES.CAI,
+    );
   });
 
   it("moves sectorial Otro accounts to the Sectorial role, and back", () => {

@@ -2014,7 +2014,8 @@
         }
       },
       "syncSkipped": {
-        "executive": "No se han podido leer los cargos de la CEA de la Intranet: se han dejado como estaban."
+        "executive": "No se han podido leer los cargos de la CEA de la Intranet: se han dejado como estaban.",
+        "other": "No se ha podido leer el CAS de la Intranet: se ha dejado como estaba."
       },
       "syncIgnored": {
         "title": "Hay siglas que no se han sincronizado",
@@ -2328,7 +2329,10 @@
       "none": "Sin rol",
       "cea": "Comisión Ejecutiva Ampliada (CEA)",
       "presidencia": "Presidencia",
-      "otro": "Otro"
+      "otro": "Otro",
+      "cas": "Comité de Asuntos Sectoriales (CAS)",
+      "cai": "Comité de Asuntos Internacionales (CAI)",
+      "cdg": "Comité de Garantías (CdG)"
     },
     "memberKinds": {
       "asociado": "Consejo asociado",
@@ -2362,6 +2366,7 @@
           "secretariat": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú las organizas: creas asambleas, revisas lo que presentan los miembros y lo publicas.",
           "mesa": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú llevas la sesión: los turnos de palabra, los recuentos y las votaciones.",
           "cea": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú presentas documentos y enmiendas en nombre de tu cargo de la CEA.",
+          "cas": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú presentas documentos y enmiendas en nombre del Comité de Asuntos Sectoriales (CAS). Solo hay una cosa que no puedes presentar: una moción interna. Sí puedes enmendarla.",
           "asociado": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú presentas documentos y enmiendas en nombre de tu consejo.",
           "sectorial": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú presentas documentos y enmiendas en nombre de tu sectorial. Solo hay una cosa que no puedes presentar: una moción interna. Sí puedes enmendarla.",
           "guest": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú puedes leerlo todo, pero no presentar ni cambiar nada."

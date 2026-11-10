@@ -20,6 +20,11 @@ describe("INTRANET_MEMBER_TYPES", () => {
     expect(INTRANET_MEMBER_TYPES.get("CEA")).toBe("executive");
     expect(INTRANET_MEMBER_TYPES.get("Asociado")).toBe("asociado");
     expect(INTRANET_MEMBER_TYPES.get("Sectorial")).toBe("sectorial");
+    // The role lookup answers "CAS" for the Coordinación del CAS.
+    expect(INTRANET_MEMBER_TYPES.get("CAS")).toBe("other");
+    // The CAI and the CdG read only: they act for no member.
+    expect(INTRANET_MEMBER_TYPES.get("CAI")).toBeUndefined();
+    expect(INTRANET_MEMBER_TYPES.get("CdG")).toBeUndefined();
     expect(INTRANET_MEMBER_TYPES.get("Alumni")).toBeUndefined();
   });
 });
@@ -38,6 +43,9 @@ describe("canLinkToMember", () => {
     expect(canLinkToMember("executive", "other")).toBe(true);
     expect(canLinkToMember("executive", "asociado")).toBe(false);
     expect(canLinkToMember("executive", "sectorial")).toBe(false);
+    expect(canLinkToMember("other", "other")).toBe(true);
+    expect(canLinkToMember("other", "executive")).toBe(false);
+    expect(canLinkToMember("other", "asociado")).toBe(false);
   });
 
   it("keeps linking councils and sectorials by acronym", () => {

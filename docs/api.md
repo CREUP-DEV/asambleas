@@ -171,7 +171,7 @@ An account that does not see the offices takes the ids from
 
 **Intranet.** Every call to the intranet API (role sync, `POST /user/role`,
 and the roster sync, `GET /usuarios/asociados`, `/usuarios/sectoriales`,
-and `/usuarios/cea`) sends `Authorization: Bearer <NUXT_INTRANET_API_TOKEN>` when that variable
+`/usuarios/cea` and `/usuarios/cas`) sends `Authorization: Bearer <NUXT_INTRANET_API_TOKEN>` when that variable
 is set (a blank value counts as unset). The token is never logged, and
 neither is an email: logs carry `accountRef`. The role lookup also sends
 `Accept: application/json`. In production, `NUXT_INTRANET_API_URL` and
@@ -209,9 +209,11 @@ release), and older `user.onboarding_seen` audit rows stay as they were.
 toDeactivate }] }` (at most one entry per kind); no body is `{}`, and an
 invalid one answers 400. It answers 503 without a usable
 `NUXT_INTRANET_API_URL` and 502 when the asociados or the sectorials fail,
-writing nothing. The CEA list (`/usuarios/cea`) is optional: when it fails,
-the sync goes on without it and leaves the offices as they were, and
-`MemberSyncResult.skipped` names it (the members page warns). Asociados,
+writing nothing. The CEA list (`/usuarios/cea`) and the CAS list
+(`/usuarios/cas`, the Coordinación del CAS as the `other` member `CAS`) are
+optional: when one fails, the sync goes on without it and leaves those
+members as they were, and `MemberSyncResult.skipped` names it (`executive`,
+`other`; the members page warns). Asociados,
 sectorials and offices are matched by `intranet_id`, then by `email` (an
 account recreated in the Intranet keeps its address), and deactivated once
 the Intranet no longer lists them. The acronym only matches a member that
@@ -589,7 +591,7 @@ an agenda item that has `acceptsSubmissions`, of a kind the item takes
 item the document gets its own automatic sub-item (see Agenda), whoever
 creates it.
 
-**Who may present a kind.** A sectorial never presents an internal motion,
+**Who may present a kind.** A sectorial or an `other` member (the CAS) never presents an internal motion,
 as main presenter or as co-presenter (it may amend one). The rule follows the
 member, not the account's role (`memberMayPresent` in
 `shared/utils/presenterKinds.ts`): `POST` and `PUT` check the kind and every
@@ -1416,7 +1418,7 @@ speakers refetch them.
 | PUT    | `/api/assemblies/[assembly]/headcounts/[headcount]` | `session:moderate` | `HeadcountUpdateBody` (with `updatedAt`). Returns `HeadcountsDto`.   |
 
 The Mesa's counts of the asociados with a vote, with the sectorials and the
-guests (accounts with the role `Invitado`) in the room, who never vote nor
+guests (accounts with the role `Invitado`, `CAI` or `CdG`: `HEADCOUNT_GUEST_ROLES`) in the room, who never vote nor
 count (docs/design.md, "Headcounts and quorum"). Schemas:
 `shared/utils/schemas/headcount.ts`.
 
@@ -1427,8 +1429,8 @@ count (docs/design.md, "Headcounts and quorum"). Schemas:
   the active asociados, then the active sectorials, each in reverse
   alphabetical order of its name and university), with their `university`;
   entries follow that order too, those counted with a vote first, and each
-  says whether it had a vote (`voting`). `guests` are the accounts with the
-  role `Invitado` and access (`userId`, `name`; never an email), reverse
+  says whether it had a vote (`voting`). `guests` are the accounts with a
+  guest role (`Invitado`, `CAI`, `CdG`) and access (`userId`, `name`; never an email), reverse
   alphabetical by name (`compareGuests`). Only the Mesa (`session:moderate`)
   gets `members` and `guests`; everyone else, empty lists. Each count
   carries its own `guests` (the name each account had then; `userId` null
@@ -1444,14 +1446,14 @@ count (docs/design.md, "Headcounts and quorum"). Schemas:
   sectorial delegates (`no_vote`), or a delegation names nobody with a vote
   or one that already receives another (`HEADCOUNT_PROBLEMS`); 422
   `{ guests: [ids] }` for a guest listed twice or that is no account with
-  the role `Invitado`. A delegation to a member not in the room is stored but
+  a guest role. A delegation to a member not in the room is stored but
   does not count (`delegated` and `present` leave it out). Refused (409) in
   a draft or closed assembly. Records `headcount_recorded`.
 - **Correcting.** Optimistic lock on `updatedAt` (409 when stale). The
   members it may list are those a new count lists plus those it listed, each
   as the count had it (`headcount_entries.voting`): a correction never turns
-  a sectorial into a vote. Its guests may be the accounts with the role
-  `Invitado` now and those it listed (a deleted account's entry stays). Its
+  a sectorial into a vote. Its guests may be the accounts with a guest
+  role now and those it listed (a deleted account's entry stays). Its
   `eligible` and `required` stay. Records `headcount_corrected` with
   `changes`.
 - **Locks and events.** Every write locks the assembly row first. Events
