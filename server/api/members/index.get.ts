@@ -1,6 +1,7 @@
 import { createError, defineEventHandler, getQuery } from "h3";
 import { asc, desc, eq } from "drizzle-orm";
 import type { MemberDto } from "~~/shared/types/api";
+import { orderMembers } from "~~/shared/utils/memberOrder";
 import { memberListQuerySchema } from "~~/shared/utils/schemas/member";
 import { db } from "../../db";
 import { members } from "../../db/schema";
@@ -8,7 +9,6 @@ import { requireActor } from "../../utils/domain/actor";
 import {
   canNameExecutiveAuthors,
   collapseExecutive,
-  placeGenericByAcronym,
 } from "../../utils/domain/visibility";
 import {
   genericExecutiveMemberDto,
@@ -24,7 +24,7 @@ import {
  * and transactionals only: an account that presents amendments
  * (canNameExecutiveAuthors) gets the active members with the real areas,
  * to name them as authors. It carries members, never who acts for them,
- * and what that account reads back afterwards is the generic "CEA" again.
+ * and what that account reads outside the composer is the generic "CEA".
  */
 export default defineEventHandler(async (event): Promise<MemberDto[]> => {
   const actor = await requireActor(event);
@@ -42,10 +42,11 @@ export default defineEventHandler(async (event): Promise<MemberDto[]> => {
       query.data.all && !forAmendment ? undefined : eq(members.active, true),
     )
     .orderBy(desc(members.active), asc(members.acronym));
-  if (forAmendment) return rows.map(toMemberDto);
+  // The general order of every list of members: asociados, sectorials, the
+  // others and the offices (the generic "CEA" among them), each by acronym.
+  if (forAmendment) return orderMembers(rows.map(toMemberDto));
 
-  // The generic entry goes where "CEA" sorts, not where the first area was.
-  return placeGenericByAcronym(
+  return orderMembers(
     collapseExecutive(actor, rows.map(toMemberDto), genericExecutiveMemberDto),
   );
 });

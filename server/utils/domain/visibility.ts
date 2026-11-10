@@ -309,11 +309,13 @@ export function canSeeExecutiveMembers(actor: Actor): boolean {
 }
 
 /**
- * Whether the actor may read the real executive areas to name them as
- * authors of an amendment or a transactional it composes (GET
- * /api/members?for=amendment): whoever sees them anyway, and an account
- * that presents amendments for a member. Only that list: everything it
- * reads afterwards, its own draft included, shows the generic "CEA".
+ * Whether the actor may read the real executive offices to name them as
+ * authors of an amendment or a transactional it composes: whoever sees
+ * them anyway, and an account that presents amendments for a member. Only
+ * in the composer: the list of offices (GET /api/members?for=amendment).
+ * The real authors of a draft (GET .../amendments/[amendment]/authors) do
+ * not ask for it: whoever may edit the draft reads them. Everything else
+ * such an account reads, its own draft included, shows the generic "CEA".
  */
 export function canNameExecutiveAuthors(actor: Actor): boolean {
   return (

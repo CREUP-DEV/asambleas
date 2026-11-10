@@ -42,10 +42,8 @@ const {
 const {
   EXECUTIVE_MAIN_REFUSED_REASON,
   EXECUTIVE_MEMBER_REFUSED_REASON,
-  planAmendmentAuthors,
-  planAmendmentMainAuthor,
+  planAmendmentBodyMembers,
   refuseExecutiveAuthor,
-  refuseExecutiveAuthorMain,
   planListedMembers,
   planNamedMember,
   refuseExecutiveMain,
@@ -707,184 +705,76 @@ describe("canNameExecutiveAuthors", () => {
   });
 });
 
-describe("planAmendmentAuthors", () => {
+describe("planAmendmentBodyMembers", () => {
   const plan = (
-    requested: string[] | undefined,
-    current: string[] = [],
-    hidden: ReadonlySet<string> | null = mask,
-  ) => planAmendmentAuthors({ mask: hidden, requested, current });
-
-  it("leaves a list that was left out as it is", () => {
-    expect(plan(undefined, [AREA_A.id])).toBeUndefined();
-  });
-
-  it("lets an actor who does not see the areas add them by their real ids", () => {
-    expect(plan([COUNCIL.id, AREA_A.id])).toEqual([COUNCIL.id, AREA_A.id]);
-    expect(plan([AREA_A.id, AREA_B.id], [COUNCIL.id])).toEqual([
-      AREA_A.id,
-      AREA_B.id,
-    ]);
-  });
-
-  it("keeps every area already there with the generic id", () => {
-    expect(
-      plan(
-        [COUNCIL.id, GENERIC_EXECUTIVE_MEMBER_ID],
-        [COUNCIL.id, AREA_A.id, AREA_B.id],
-      ),
-    ).toEqual([COUNCIL.id, AREA_A.id, AREA_B.id]);
-    // And adds others next to them, without saying which were there.
-    expect(plan([GENERIC_EXECUTIVE_MEMBER_ID, AREA_B.id], [AREA_A.id])).toEqual(
-      [AREA_B.id, AREA_A.id],
-    );
-    expect(plan([GENERIC_EXECUTIVE_MEMBER_ID, AREA_A.id], [AREA_A.id])).toEqual(
-      [AREA_A.id],
-    );
-  });
-
-  it("takes every area out without the generic id, except the ones named", () => {
-    expect(plan([COUNCIL.id], [COUNCIL.id, AREA_A.id, AREA_B.id])).toEqual([
-      COUNCIL.id,
-    ]);
-    expect(plan([AREA_B.id], [AREA_A.id, AREA_B.id])).toEqual([AREA_B.id]);
-  });
-
-  it("never takes the generic id for a member", () => {
-    expect(plan([GENERIC_EXECUTIVE_MEMBER_ID])).toBe("refused");
-    expect(plan([GENERIC_EXECUTIVE_MEMBER_ID], [COUNCIL.id])).toBe("refused");
-    expect(plan([GENERIC_EXECUTIVE_MEMBER_ID], [AREA_A.id], null)).toBe(
-      "refused",
-    );
-  });
-
-  it("takes the list of an actor who sees the areas as sent", () => {
-    expect(plan([AREA_A.id], [AREA_B.id], null)).toEqual([AREA_A.id]);
-  });
-});
-
-describe("planAmendmentMainAuthor", () => {
-  const plan = (
-    requested: string | null | undefined,
+    listed: string[] | undefined,
+    named: string | null | undefined,
     input: {
-      listed?: string[];
-      current?: string[];
-      currentMain?: string | null;
       hidden?: ReadonlySet<string> | null;
+      mayName?: boolean;
+      known?: string[];
     } = {},
   ) =>
-    planAmendmentMainAuthor({
+    planAmendmentBodyMembers({
       mask: input.hidden === undefined ? mask : input.hidden,
-      requested,
-      listed: input.listed,
-      current: input.current ?? [],
-      currentMain: input.currentMain ?? null,
+      mayName: input.mayName ?? true,
+      listed,
+      named,
+      known: input.known,
     });
 
-  it("passes null, undefined and the ids of councils through", () => {
-    expect(plan(undefined)).toBeUndefined();
-    expect(plan(null)).toBeNull();
-    expect(plan(COUNCIL.id, { current: [COUNCIL.id] })).toBe(COUNCIL.id);
+  it("takes councils and nothing at all as they are", () => {
+    expect(plan(undefined, undefined)).toBe("ok");
+    expect(plan(undefined, null)).toBe("ok");
+    expect(plan([COUNCIL.id], COUNCIL.id)).toBe("ok");
   });
 
-  it("takes an area by its real id only when the same body lists it", () => {
-    expect(plan(AREA_A.id, { listed: [COUNCIL.id, AREA_A.id] })).toBe(
-      AREA_A.id,
+  it("lets an account that names the offices send them by their real ids", () => {
+    expect(plan([COUNCIL.id, AREA_A.id, AREA_B.id], AREA_B.id)).toBe("ok");
+    // As main author with no list: the ordinary rule decides afterwards.
+    expect(plan(undefined, AREA_A.id)).toBe("ok");
+  });
+
+  it("never takes the generic id, in the list or as main author", () => {
+    expect(plan([COUNCIL.id, GENERIC_EXECUTIVE_MEMBER_ID], undefined)).toBe(
+      "generic",
     );
-    expect(plan(AREA_A.id, { listed: [COUNCIL.id] })).toBe("unlisted");
+    expect(plan(undefined, GENERIC_EXECUTIVE_MEMBER_ID)).toBe("generic");
+    expect(plan([AREA_A.id], GENERIC_EXECUTIVE_MEMBER_ID)).toBe("generic");
   });
 
-  it("answers the same for an unlisted area whether or not it is an author", () => {
-    const answers = [AREA_A.id, AREA_B.id].map((area) =>
-      plan(area, {
-        current: [COUNCIL.id, AREA_A.id],
-        currentMain: COUNCIL.id,
-      }),
-    );
-    expect(answers).toEqual(["unlisted", "unlisted"]);
-    // Also when it is the main author already.
+  it("refuses the generic id from those who see the offices too", () => {
     expect(
-      plan(AREA_A.id, { current: [AREA_A.id], currentMain: AREA_A.id }),
-    ).toBe("unlisted");
-    // The generic id in the list does not list it.
-    expect(
-      plan(AREA_A.id, {
-        listed: [GENERIC_EXECUTIVE_MEMBER_ID],
-        current: [AREA_A.id],
-      }),
-    ).toBe("unlisted");
+      plan([GENERIC_EXECUTIVE_MEMBER_ID], undefined, { hidden: null }),
+    ).toBe("generic");
+    expect(plan([AREA_A.id], AREA_A.id, { hidden: null })).toBe("ok");
   });
 
-  it("reads the generic id as the area that is the main author while it stays", () => {
-    expect(
-      plan(GENERIC_EXECUTIVE_MEMBER_ID, {
-        current: [AREA_A.id, AREA_B.id],
-        currentMain: AREA_B.id,
-      }),
-    ).toBe(AREA_B.id);
-  });
-
-  it("reads it as the first area behind the generic entry, however many", () => {
-    expect(
-      plan(GENERIC_EXECUTIVE_MEMBER_ID, {
-        current: [COUNCIL.id, AREA_A.id],
-        currentMain: COUNCIL.id,
-      }),
-    ).toBe(AREA_A.id);
-    expect(
-      plan(GENERIC_EXECUTIVE_MEMBER_ID, {
-        listed: [COUNCIL.id, GENERIC_EXECUTIVE_MEMBER_ID],
-        current: [COUNCIL.id, AREA_B.id, AREA_A.id],
-        currentMain: COUNCIL.id,
-      }),
-    ).toBe(AREA_B.id);
-  });
-
-  it("never lets the areas the body names change what the generic id means", () => {
-    // AREA_A hides behind the "CEA": naming it or another one next to the
-    // generic id resolves to the same area, with the same kind of answer.
-    const answers = [AREA_A.id, AREA_B.id].map((area) =>
-      plan(GENERIC_EXECUTIVE_MEMBER_ID, {
-        listed: [GENERIC_EXECUTIVE_MEMBER_ID, area],
-        current: [COUNCIL.id, AREA_A.id],
-        currentMain: COUNCIL.id,
-      }),
-    );
-    expect(answers).toEqual([AREA_A.id, AREA_A.id]);
-  });
-
-  it("reads it as the first area the list names when none stays behind it", () => {
-    expect(
-      plan(GENERIC_EXECUTIVE_MEMBER_ID, {
-        listed: [COUNCIL.id, AREA_B.id, AREA_A.id],
-        current: [AREA_A.id],
-        currentMain: AREA_A.id,
-      }),
-    ).toBe(AREA_B.id);
-  });
-
-  it("refuses it with no area among the authors, or from who sees the areas", () => {
-    expect(plan(GENERIC_EXECUTIVE_MEMBER_ID, { current: [COUNCIL.id] })).toBe(
+  it("refuses an office from an account that neither sees nor names them", () => {
+    expect(plan([COUNCIL.id, AREA_A.id], undefined, { mayName: false })).toBe(
       "refused",
     );
+    expect(plan(undefined, AREA_B.id, { mayName: false })).toBe("refused");
+    expect(plan([COUNCIL.id], COUNCIL.id, { mayName: false })).toBe("ok");
+    // The generic id keeps its own answer.
     expect(
-      plan(GENERIC_EXECUTIVE_MEMBER_ID, {
-        listed: [COUNCIL.id],
-        current: [AREA_A.id],
-        currentMain: AREA_A.id,
+      plan([GENERIC_EXECUTIVE_MEMBER_ID, AREA_A.id], undefined, {
+        mayName: false,
       }),
-    ).toBe("refused");
-    expect(
-      plan(GENERIC_EXECUTIVE_MEMBER_ID, {
-        current: [AREA_A.id],
-        currentMain: AREA_A.id,
-        hidden: null,
-      }),
-    ).toBe("refused");
+    ).toBe("generic");
   });
 
-  it("lets those who see the areas name any, listed or not", () => {
-    expect(plan(AREA_A.id, { current: [AREA_A.id], hidden: null })).toBe(
-      AREA_A.id,
+  it("lets that account keep the offices of the draft it edits, never add one", () => {
+    const editing = { mayName: false, known: [COUNCIL.id, AREA_A.id] };
+    expect(plan([COUNCIL.id, AREA_A.id], AREA_A.id, editing)).toBe("ok");
+    // Dropping them is the ordinary rule.
+    expect(plan([COUNCIL.id], COUNCIL.id, editing)).toBe("ok");
+    expect(plan([COUNCIL.id, AREA_A.id, AREA_B.id], undefined, editing)).toBe(
+      "refused",
+    );
+    expect(plan(undefined, AREA_B.id, editing)).toBe("refused");
+    expect(plan([GENERIC_EXECUTIVE_MEMBER_ID], undefined, editing)).toBe(
+      "generic",
     );
   });
 });
@@ -910,17 +800,11 @@ describe("refuseExecutiveMember", () => {
     expect(EXECUTIVE_MAIN_REFUSED_REASON).toBe("executive_main");
   });
 
-  it("answers 422 with the reasons of the amendment bodies", () => {
+  it("answers 422 with the reason of the amendment bodies", () => {
     expect(() => refuseExecutiveAuthor()).toThrowError(
       expect.objectContaining({
         statusCode: 422,
         data: { reason: "executive_author" },
-      }),
-    );
-    expect(() => refuseExecutiveAuthorMain()).toThrowError(
-      expect.objectContaining({
-        statusCode: 422,
-        data: { reason: "executive_author_main" },
       }),
     );
   });

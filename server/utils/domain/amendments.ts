@@ -55,6 +55,7 @@ import type {
   AdmissionBody,
   AmendmentAuthorsBody,
   AmendmentCapabilities,
+  AmendmentComposerAuthorsDto,
   AmendmentDraftBody,
   AmendmentDto,
   AmendmentUpdateBody,
@@ -127,7 +128,7 @@ import { recordEvent } from "./events";
 import {
   loadExecutiveMask,
   loadExecutiveMemberIds,
-  resolveAmendmentBodyMembers,
+  requireAmendmentBodyMembers,
 } from "./executiveMembers";
 import { withHeadcount } from "./headcounts";
 import { assertOpImagesBelong } from "./documentImages";
@@ -1850,22 +1851,17 @@ export async function createAmendmentDraft(
     fail(403, "No tienes permiso para presentar enmiendas");
   }
   assertAmendable(ctx);
-  // An account that does not see the executive areas names them by their
-  // real ids (it reads their list only to compose this); the generic "CEA"
-  // id is never a member (422 `executive_author`).
-  const named = await resolveAmendmentBodyMembers(actor, {
+  // Every executive office is named by its real id (an account that does
+  // not see them reads their list to compose this); the generic "CEA" id
+  // is never a member (422 `executive_author`).
+  await requireAmendmentBodyMembers(actor, {
     listed: body.authorMemberIds,
     named: body.mainAuthorMemberId,
-    current: [],
-    currentMain: null,
   });
-  const authors = await resolveDraftAuthors(actor, {
-    ...body,
-    authorMemberIds: named.listed,
-  });
+  const authors = await resolveDraftAuthors(actor, body);
   // With co-authors, the main author has to be named (pickMainAuthor).
   const mainAuthorId = mainAuthorOrFail(
-    pickMainAuthor(authors.memberIds, named.named),
+    pickMainAuthor(authors.memberIds, body.mainAuthorMemberId),
   )!;
   const base = await loadBaseBlocks(document);
 
@@ -1929,9 +1925,56 @@ export async function createAmendmentDraft(
   return amendmentDto(ctx, id);
 }
 
+/**
+ * Whether the composer may read the real authors of an amendment
+ * (amendmentComposerAuthors): exactly whoever may edit it, so the same
+ * checks as updateAmendmentDraft, in the same order. An author of a draft
+ * ("ok") still needs the document and the assembly to take edits
+ * (assertAmendable), which the caller checks.
+ */
+export function composerAuthorsAccess(input: {
+  isAuthor: boolean;
+  status: AmendmentStatus;
+}): "ok" | "not_author" | "not_draft" {
+  if (!input.isAuthor) return "not_author";
+  return input.status === "draft" ? "ok" : "not_draft";
+}
+
+/**
+ * The real authors of a draft, for its composer and nothing else: the one
+ * read where an account that does not see the executive offices gets the
+ * ones among the authors of an amendment, so it sees which it named and
+ * takes them out one by one. Only while the draft can be edited: once the
+ * document is voted or the assembly closed it answers 409, as the PUT does.
+ * Members only, never who acted for them. Every other answer about the
+ * same draft keeps the generic "CEA" (redactAuthors).
+ */
+export function amendmentComposerAuthors(
+  ctx: AmendmentContext,
+): AmendmentComposerAuthorsDto {
+  const { amendment } = ctx;
+  const access = composerAuthorsAccess({
+    isAuthor: ctx.isAuthor,
+    status: amendment.status,
+  });
+  if (access === "not_author") {
+    fail(403, "Solo los autores pueden editar la enmienda");
+  }
+  if (access === "not_draft") fail(409, "Solo se pueden editar borradores");
+  assertAmendable(ctx);
+  const mainAuthorId = loadedMainAuthor(amendment);
+  return {
+    authors: orderAuthors(
+      amendment.authors.map((author) => toMemberRef(author.member)),
+      mainAuthorId ?? undefined,
+    ),
+    mainAuthorId,
+  };
+}
+
 export async function updateAmendmentDraft(
   ctx: AmendmentContext,
-  input: AmendmentUpdateBody,
+  body: AmendmentUpdateBody,
 ): Promise<AmendmentDto> {
   const { actor, amendment, document } = ctx;
   if (!ctx.isAuthor) fail(403, "Solo los autores pueden editar la enmienda");
@@ -1940,21 +1983,17 @@ export async function updateAmendmentDraft(
   assertAmendable(ctx);
 
   const currentAuthorIds = amendment.authors.map((author) => author.memberId);
-  // For an account that does not see the executive areas the generic "CEA"
-  // id stands for the areas among the authors, all of them: they stay with
-  // it and go without it, and it adds others by their real ids
-  // (planAmendmentAuthors).
-  const named = await resolveAmendmentBodyMembers(actor, {
-    listed: input.authorMemberIds,
-    named: input.mainAuthorMemberId,
-    current: currentAuthorIds,
-    currentMain: loadedMainAuthor(amendment),
+  // The executive offices among the authors are named by their real ids,
+  // which whoever edits the draft reads in the composer
+  // (amendmentComposerAuthors); the generic "CEA" id is never one (422
+  // `executive_author`). The actor passed the checks of that read just
+  // above, so the offices already among the authors (`known`) are ones it
+  // reads there and may keep even when it may not name any other.
+  await requireAmendmentBodyMembers(actor, {
+    listed: body.authorMemberIds,
+    named: body.mainAuthorMemberId,
+    known: currentAuthorIds,
   });
-  const body: AmendmentUpdateBody = {
-    ...input,
-    authorMemberIds: named.listed,
-    mainAuthorMemberId: named.named,
-  };
 
   const transactional = amendment.kind === "transactional";
   if (transactional && body.kind) {
@@ -3224,14 +3263,14 @@ export async function changeAmendmentAuthors(
   const currentIds = amendment.authors.map((author) => author.memberId);
   const currentMain = loadedMainAuthor(amendment);
   // The generic "CEA" id is never a member (422 `executive_author`).
-  const named = await resolveAmendmentBodyMembers(actor, {
+  await requireAmendmentBodyMembers(actor, {
     listed: body.authorMemberIds,
     named: body.mainAuthorMemberId,
-    current: currentIds,
-    currentMain,
   });
-  const nextIds = unique(named.listed);
-  const nextMain = mainAuthorOrFail(pickMainAuthor(nextIds, named.named))!;
+  const nextIds = unique(body.authorMemberIds);
+  const nextMain = mainAuthorOrFail(
+    pickMainAuthor(nextIds, body.mainAuthorMemberId),
+  )!;
   const change = authorsChange({ currentIds, currentMain, nextIds, nextMain });
   if (!change) fail(422, "Quienes la presentan ya son esos");
   await assertMembers(change.added, true);
@@ -3999,15 +4038,13 @@ export async function createTransactionalAmendment(
       source.authors.map((author) => author.memberId),
     ),
   );
-  // The parties come from the database, so proposing one over an area's
-  // amendment needs nothing from the body. Its co-authors do: an account
-  // that does not see the executive areas names them by their real ids,
-  // never by the generic "CEA" one (422 `executive_author`).
-  const named = await resolveAmendmentBodyMembers(actor, {
+  // The parties come from the database, so proposing one over an office's
+  // amendment needs nothing from the body. Its co-authors do: every
+  // executive office is named by its real id, never by the generic "CEA"
+  // one (422 `executive_author`).
+  await requireAmendmentBodyMembers(actor, {
     listed: body.authorMemberIds,
     named: body.mainAuthorMemberId,
-    current: [],
-    currentMain: null,
   });
   const moderate = canModerate(actor);
   const canCreate = actor.can(PERMISSION_KEYS.AMENDMENT_CREATE);
@@ -4029,7 +4066,7 @@ export async function createTransactionalAmendment(
   let authorIds: string[];
   if (moderate) {
     authorIds = unique(
-      named.listed ?? (actor.memberId ? [actor.memberId] : []),
+      body.authorMemberIds ?? (actor.memberId ? [actor.memberId] : []),
     );
   } else {
     // Co-authors among those involved: the authors of what it groups and
@@ -4038,14 +4075,14 @@ export async function createTransactionalAmendment(
     // unauthorizedTransactionalAuthors.
     authorIds = unique([
       ...(actor.memberId ? [actor.memberId] : []),
-      ...(named.listed ?? []),
+      ...(body.authorMemberIds ?? []),
     ]);
     if (
       unauthorizedTransactionalAuthors(authorIds, {
         actorMemberId: actor.memberId,
         currentAuthorIds: [],
         partyMemberIds: [...sourceAuthorIds, document.proponentMemberId],
-        executiveIds: named.listed?.length
+        executiveIds: body.authorMemberIds?.length
           ? await loadExecutiveMemberIds()
           : undefined,
       }).length > 0
@@ -4057,7 +4094,9 @@ export async function createTransactionalAmendment(
     }
   }
   await assertMembers(authorIds, false);
-  const mainAuthorId = mainAuthorOrFail(pickMainAuthor(authorIds, named.named));
+  const mainAuthorId = mainAuthorOrFail(
+    pickMainAuthor(authorIds, body.mainAuthorMemberId),
+  );
 
   const sourceMainAuthors = sources.map(loadedMainAuthor);
   const parties = buildAcceptanceParties(sourceMainAuthors, actor.memberId);

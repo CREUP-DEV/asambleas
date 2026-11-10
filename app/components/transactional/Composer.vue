@@ -330,7 +330,8 @@ function onAuthorsChange(value: unknown): void {
  * A member may present it together with executive areas (the CEA presents
  * transactionals too). The composer's own list: the one place where an
  * account that does not see the areas reads them; once sent, it reads the
- * generic "CEA" like everywhere else.
+ * generic "CEA" like everywhere else. One sent back for correction is
+ * edited in the amendment composer, which shows its real authors again.
  */
 const { data: authorMembers } = useLazyFetch<MemberDto[]>("/api/members", {
   key: "amendment-composer-members",

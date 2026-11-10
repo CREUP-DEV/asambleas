@@ -10,9 +10,10 @@ import { MEMBER_LIST_FOR_AMENDMENT } from "~~/shared/utils/schemas/member";
  * executive areas"). It is a stand-in, never a member: it names the areas
  * already on a document or an amendment and filters by them, and nobody
  * adds it (422 `executive_member`). On a document nobody removes it either
- * (the server keeps the areas whatever is sent). On an amendment draft it
- * stands for every area among the authors: sent back they stay, left out
- * they all go.
+ * (the server keeps the areas whatever is sent). An amendment body never
+ * carries it (422 `executive_author`): whoever edits a draft reads its real
+ * authors in the composer (`hidesExecutiveAuthors`) and names every office
+ * by its real id.
  */
 
 /**
@@ -57,14 +58,15 @@ export function withFixedGenericExecutive(
 }
 
 /**
- * The generic "CEA" a stored amendment draft has among its authors, as the
- * list to offer it in its picker (empty without it): it names the areas
- * already there, and taking it out takes them all out.
+ * Whether the authors of a draft, as the viewer reads them, hide executive
+ * offices behind the generic "CEA". Its composer then needs the real ones
+ * (GET .../amendments/[amendment]/authors) before it opens; otherwise the
+ * ones it already has are the real ones.
  */
-export function seededGenericExecutive(ids: readonly string[]): string[] {
-  return ids.includes(GENERIC_EXECUTIVE_MEMBER_ID)
-    ? [GENERIC_EXECUTIVE_MEMBER_ID]
-    : [];
+export function hidesExecutiveAuthors(
+  authors: readonly { id: string }[],
+): boolean {
+  return authors.some((author) => isGenericExecutiveMember(author.id));
 }
 
 /** The executive areas of a member list, to offer them apart. */

@@ -83,8 +83,7 @@
       "server": "Server error. Try again in a few minutes.",
       "network": "Cannot reach the server. Check your connection.",
       "executiveMain": "You cannot choose the CEA as the main one. Ask the CEA or the Secretaría to do it.",
-      "executiveAuthor": "“CEA” only keeps the CEA offices already presenting it. To add one, choose the office by its name.",
-      "executiveAuthorMain": "For a CEA office to be the main author, tick it among those presenting it too.",
+      "executiveAuthor": "“CEA” is not a member. Choose the CEA office by its name.",
       "executiveMember": "You cannot add the CEA. Ask the CEA or the Secretaría to do it.",
       "unknown": "The operation could not be completed."
     },
@@ -1643,6 +1642,7 @@
       "submit": "Send",
       "saved": "Draft saved",
       "saveFailed": "The amendment could not be saved",
+      "authorsFailed": "The draft could not be opened: who presents it could not be read",
       "submitted": "Amendment sent to the Secretariat",
       "submittedLate": "It arrived late: the Secretariat will check it and the Mesa will decide whether to admit it.",
       "submitFailed": "The amendment could not be submitted",
@@ -1693,8 +1693,7 @@
         "othersHint": "You present it together.",
         "members": "Who do you present it with?",
         "placeholder": "Choose the members",
-        "ceaKept": "“CEA” stands for the CEA offices already presenting it; they are not ticked one by one. If you remove it, all of them stop presenting it. The offices you add will show as “CEA” too.",
-        "ceaAdded": "The CEA offices you add will show as “CEA” once saved.",
+        "ceaOutside": "Outside this editor, the CEA offices show as “CEA”.",
         "onBehalfToggle": "Present it on behalf of another member"
       },
       "why": {
@@ -4275,7 +4274,7 @@
       "authorsOptions": "More options: who presents it",
       "executiveOptions": "More options: present it with a CEA office",
       "executiveAuthors": "CEA offices presenting it with you",
-      "executiveAuthorsHint": "Optional. Once sent, they will show as “CEA”.",
+      "executiveAuthorsHint": "Optional. Outside this editor they show as “CEA”.",
       "executiveAuthorsOptional": "Optional.",
       "executiveAuthorsPlaceholder": "Choose the CEA offices",
       "authors": "Presented by",

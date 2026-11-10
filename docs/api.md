@@ -49,23 +49,23 @@ The usual AGENTS.md handler order applies:
 
 ## Members and me
 
-| Method | Path                                | Who                       | Notes                                                                                                                                                                         |
-| ------ | ----------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/me`                           | any                       | `MeDto`. `permissions` are the role's plus the user's own grants (see "Permissions" below).                                                                                   |
-| GET    | `/api/me/work`                      | any                       | `MeWorkDto`, see "Review and work" below.                                                                                                                                     |
-| POST   | `/api/me/onboarding`                | any, never impersonating  | No body. Marks the welcome as seen. Returns `MeOnboardingResult`. See "Welcome" below.                                                                                        |
-| GET    | `/api/members`                      | any                       | `MemberDto[]`, active first, by acronym. `?all=1` also returns inactive members. One generic entry instead of the executive offices, except with `?for=amendment`; see below. |
-| POST   | `/api/members`                      | `member:manage`           | Creates a member manually, typically an executive office.                                                                                                                     |
-| PUT    | `/api/members/[id]`                 | `member:manage`           | Edits name, kind or active, with `updatedAt`.                                                                                                                                 |
-| POST   | `/api/members/sync`                 | `member:manage`           | Optional body `MemberSyncBody`. Syncs the intranet roster. Returns `MemberSyncResult`; 409 when it needs confirmation, see "Roster sync".                                     |
-| GET    | `/api/admin/users`                  | `user:manage_roles`       | Paginated `AdminUserDto` rows, each with `member`, `extraPermissions` and its access state. See "Users list".                                                                 |
-| PUT    | `/api/admin/users/[id]/role`        | `user:manage_roles`       | Body `{ roleId }`. Only an Admin gives or takes Admin, Secretaría or Presidencia.                                                                                             |
-| PUT    | `/api/admin/users/[id]/member`      | `user:manage_roles`       | Body `{ memberId: string \| null }`. Links an account to a member, see below.                                                                                                 |
-| PUT    | `/api/admin/users/[id]/permissions` | `user:manage_roles`       | Body `{ permissions: PermissionKey[] }`. Sets the user's own grants, see "Permissions".                                                                                       |
-| GET    | `/api/admin/roles`                  | see notes                 | The roles. `user:manage_roles` or `role:manage_permissions`.                                                                                                                  |
-| GET    | `/api/admin/roles/[id]/permissions` | see notes                 | What a role grants. `user:manage_roles` or `role:manage_permissions`.                                                                                                         |
-| PUT    | `/api/admin/roles/[id]/permissions` | `role:manage_permissions` | Body `{ permissionKeys }`. Not on the Admin role, see "Admin section".                                                                                                        |
-| GET    | `/api/admin/permissions`            | see notes                 | The permission catalog. `user:manage_roles` or `role:manage_permissions`.                                                                                                     |
+| Method | Path                                | Who                       | Notes                                                                                                                                                                                                                           |
+| ------ | ----------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/me`                           | any                       | `MeDto`. `permissions` are the role's plus the user's own grants (see "Permissions" below).                                                                                                                                     |
+| GET    | `/api/me/work`                      | any                       | `MeWorkDto`, see "Review and work" below.                                                                                                                                                                                       |
+| POST   | `/api/me/onboarding`                | any, never impersonating  | No body. Marks the welcome as seen. Returns `MeOnboardingResult`. See "Welcome" below.                                                                                                                                          |
+| GET    | `/api/members`                      | any                       | `MemberDto[]`, active first, by kind (asociados, sectorials, others, offices) and acronym. `?all=1` also returns inactive members. One generic entry instead of the executive offices, except with `?for=amendment`; see below. |
+| POST   | `/api/members`                      | `member:manage`           | Creates a member manually, typically an executive office.                                                                                                                                                                       |
+| PUT    | `/api/members/[id]`                 | `member:manage`           | Edits name, kind or active, with `updatedAt`.                                                                                                                                                                                   |
+| POST   | `/api/members/sync`                 | `member:manage`           | Optional body `MemberSyncBody`. Syncs the intranet roster. Returns `MemberSyncResult`; 409 when it needs confirmation, see "Roster sync".                                                                                       |
+| GET    | `/api/admin/users`                  | `user:manage_roles`       | Paginated `AdminUserDto` rows, each with `member`, `extraPermissions` and its access state. See "Users list".                                                                                                                   |
+| PUT    | `/api/admin/users/[id]/role`        | `user:manage_roles`       | Body `{ roleId }`. Only an Admin gives or takes Admin, Secretaría or Presidencia.                                                                                                                                               |
+| PUT    | `/api/admin/users/[id]/member`      | `user:manage_roles`       | Body `{ memberId: string \| null }`. Links an account to a member, see below.                                                                                                                                                   |
+| PUT    | `/api/admin/users/[id]/permissions` | `user:manage_roles`       | Body `{ permissions: PermissionKey[] }`. Sets the user's own grants, see "Permissions".                                                                                                                                         |
+| GET    | `/api/admin/roles`                  | see notes                 | The roles. `user:manage_roles` or `role:manage_permissions`.                                                                                                                                                                    |
+| GET    | `/api/admin/roles/[id]/permissions` | see notes                 | What a role grants. `user:manage_roles` or `role:manage_permissions`.                                                                                                                                                           |
+| PUT    | `/api/admin/roles/[id]/permissions` | `role:manage_permissions` | Body `{ permissionKeys }`. Not on the Admin role, see "Admin section".                                                                                                                                                          |
+| GET    | `/api/admin/permissions`            | see notes                 | The permission catalog. `user:manage_roles` or `role:manage_permissions`.                                                                                                                                                       |
 
 **Executive offices (`MemberRef`).** Wherever an answer carries a member
 (`MemberRef`, `MemberDto`, a bare member id such as `mainAuthorId` or the
@@ -96,15 +96,30 @@ gets the generic presenter
   sorts, as among the co-presenters of a document;
 - PDF exports name the office as `CEA`, according to who requested them.
 
-The one exception is `GET /api/members?for=amendment`
+There are two exceptions, both for the composers of amendments only. The
+first is `GET /api/members?for=amendment`
 (`MEMBER_LIST_FOR_AMENDMENT`), the list the composers of amendments and
 transactionals offer as authors, and nothing else uses: an account that
 presents amendments for a member (`amendment:create` and a member,
 `canNameExecutiveAuthors`) gets the active members with the real offices,
 acronym and name, so it can present one together with them. It carries
 members only, never who acts for an office, and `all` is ignored. Any other
-account gets the usual list. What that account reads afterwards, its own
-draft included, is the generic presenter again.
+account gets the usual list.
+
+The second is `GET .../amendments/[amendment]/authors`
+(`AmendmentComposerAuthorsDto`: `authors`, the main one first, and
+`mainAuthorId`): whoever may edit a draft reads its real authors, so the
+composer shows which offices present the draft and which is the main
+author (decided on 2026-11-10). It answers under exactly the checks of
+`PUT /[amendment]`, in the same order: 404 when the amendment is hidden;
+403 unless the account is its creator or acts for one of its authors; 409
+once it is no longer a draft (one sent back for correction is a draft);
+409 when the document no longer takes amendments (not published, voted, or
+the assembly closed). It does not ask for `canNameExecutiveAuthors`: an
+author that lost its member still edits its draft. It carries members
+only. What that account reads anywhere else, its own draft included (the
+list, the detail, history, news, activity, PDFs), is the generic
+presenter.
 
 `MeDto.member` is always the account's real member, and
 `MeDto.seesExecutiveMembers` says whether the account reads the offices as
@@ -131,32 +146,25 @@ member. In the body of a document (`proponentMemberId`,
 
 The CEA presents amendments and transactionals too, and any member may
 present one with it, so in the body of an amendment or a transactional
-(`authorMemberIds`, `mainAuthorMemberId`; `resolveAmendmentBodyMembers`)
-an account that does not see the offices names any office by its real id, as a
-co-author or as the main author, taken from `GET /api/members?for=amendment`:
+(`authorMemberIds`, `mainAuthorMemberId`; `requireAmendmentBodyMembers`)
+every office is named by its real id, as a co-author or as the main author.
+An account that does not see the offices takes the ids from
+`GET /api/members?for=amendment` and, for the ones already on a draft, from
+`GET .../amendments/[amendment]/authors`:
 
-- the answer shows them as the generic presenter, so when that account
-  edits its draft again it cannot tell which offices are there. The generic
-  id in `authorMemberIds` stands for all of them: sent back they stay,
-  left out they all go (the ones the list names by their real id stay),
-  and others are added next to it by their real ids. With no office on the
-  draft, and on a create, the generic id is 422 with
-  `data: { reason: "executive_author" }`
-  (`EXECUTIVE_AUTHOR_REFUSED_REASON`);
-- a real office id as `mainAuthorMemberId` is taken only when the same body
-  lists it in `authorMemberIds`; otherwise 422 with
-  `data: { reason: "executive_author_main" }`
-  (`EXECUTIVE_AUTHOR_MAIN_REFUSED_REASON`), whether or not that office is
-  already an author;
-- the generic id as `mainAuthorMemberId` means one of the offices that stay
-  behind the generic entry: the one that is the main author now, otherwise
-  the first of them (several are no error); with none behind it, the first
-  office the list names, and with none at all 422 `executive_author`;
-- no answer depends on which offices the amendment already has, only on how
-  the body names them: that account knows every real id, so a different
-  answer for the office that is there would tell which one it is;
-- an account that sees the offices names them by their real ids; the generic
-  id gets 422 `executive_author`;
+- the generic id is never an author, whoever sends it, in the list or as
+  the main author: 422 with `data: { reason: "executive_author" }`
+  (`EXECUTIVE_AUTHOR_REFUSED_REASON`). It stands for nothing: the offices a
+  list leaves out stop presenting the draft, as any other member;
+- an office as `mainAuthorMemberId` follows the rule of every member: it
+  must be among the authors the body ends with (422 otherwise);
+- an account that neither sees the offices nor may name them
+  (`canNameExecutiveAuthors`) cannot name one: 422 `executive_member`.
+  The one exception is `PUT /[amendment]` on a draft it may edit: the
+  offices already among its authors, which it reads in the composer, may
+  be sent back (kept) or left out, never another one added;
+- whether the actor may edit the draft is checked before any answer that
+  depends on its authors;
 - a member that proposes a transactional may name any office as a co-author,
   party or not (the other co-authors must be parties);
 - once presented, whoever reviews amendments corrects who presents it (see
@@ -773,6 +781,7 @@ All paths are under `/api/assemblies/[assembly]/documents/[document]/amendments`
 | POST   | `/publish`                | `amendment:review`                                   | `PublishAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                               |
 | POST   | `/[amendment]/correction` | `amendment:review`                                   | `CorrectionBody`. See validation below. Returns `AmendmentDto`.                                               |
 | POST   | `/[amendment]/reclassify` | `amendment:review`                                   | `ReclassifyBody`. See reclassifying below. Returns `AmendmentDto`.                                            |
+| GET    | `/[amendment]/authors`    | author while the draft can be edited                 | `AmendmentComposerAuthorsDto`: the draft's real authors, for its composer only. See "Executive areas".        |
 | POST   | `/[amendment]/authors`    | `amendment:review`                                   | `AmendmentAuthorsBody`. See correcting who presents an amendment below. Returns `AmendmentDto`.               |
 | POST   | `/admission`              | `amendment:review` or moderator                      | See admission rules below.                                                                                    |
 | PUT    | `/[amendment]/position`   | main presenter or moderator                          | `PositionBody`. See the main presenter's answer below.                                                        |

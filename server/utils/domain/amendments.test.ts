@@ -57,6 +57,7 @@ const {
   amendmentSortKey,
   buildAcceptanceParties,
   canProposeTransactional,
+  composerAuthorsAccess,
   computeApprovalWarnings,
   evaluateVoteInput,
   insertedBlockIds,
@@ -896,6 +897,40 @@ describe("unauthorizedTransactionalAuthors", () => {
         executiveIds: new Set(["area"]),
       }),
     ).toEqual(["stranger"]);
+  });
+});
+
+describe("composerAuthorsAccess", () => {
+  const access = (
+    input: Partial<Parameters<typeof composerAuthorsAccess>[0]> = {},
+  ) =>
+    composerAuthorsAccess({
+      isAuthor: true,
+      status: "draft",
+      ...input,
+    });
+
+  it("answers an author of a draft", () => {
+    expect(access()).toBe("ok");
+  });
+
+  it("refuses anyone who is not an author, whatever else holds", () => {
+    expect(access({ isAuthor: false })).toBe("not_author");
+    expect(access({ isAuthor: false, status: "submitted" })).toBe("not_author");
+  });
+
+  it("answers only while the amendment is a draft", () => {
+    for (const status of [
+      "submitted",
+      "approved",
+      "rejected",
+      "withdrawn",
+      "lapsed",
+      "transacted",
+      "inadmissible",
+    ] as const) {
+      expect(access({ status })).toBe("not_draft");
+    }
   });
 });
 

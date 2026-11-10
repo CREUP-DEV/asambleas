@@ -89,8 +89,9 @@ Members of the other kinds read the same for everyone.
   entry goes where "CEA" sorts (`placeGenericByAcronym`), never where the
   office was, which would narrow down which office it is.
 - The generic id is a constant with the shape of an entity id and is never
-  a `members` row. The server never reads it as a member: in a body it only
-  stands for the offices already on the document or amendment.
+  a `members` row. The server never reads it as a member: in the body of a
+  document it only stands for the offices already there, and in the body of
+  an amendment it stands for nothing (422 `executive_author`).
 - On a document, an account that does not see the offices neither adds nor
   removes one (`planListedMembers`, `planNamedMember` in
   `server/utils/domain/executiveMembers.ts`): naming an office by its real
@@ -101,23 +102,30 @@ Members of the other kinds read the same for everyone.
   them in that place, answers 422 `executive_main`. The CEA itself or the
   Secretaría add and remove offices.
 - Amendments and transactionals are the exception, because the CEA
-  presents them too and any member may present one with it. Only to
-  compose one, an account that presents amendments for a member reads the
-  real offices (`GET /api/members?for=amendment`,
-  `canNameExecutiveAuthors`: members only, never who acts for them) and
-  names them by their real ids as co-authors or as the main author
-  (`planAmendmentAuthors`, `planAmendmentMainAuthor`). What it reads
-  afterwards is the generic "CEA" again, its own draft included: there the
-  generic entry stands for every office among the authors, so keeping it
-  keeps them all and taking it out takes them all out, and it may add
-  others without learning which were there. The generic id as main author
-  means the office that already is, or the first of the ones behind the
-  generic entry, and a real office id as main author counts only when the
-  same body lists it among the authors (422 `executive_author_main`
-  otherwise). Since that account knows every real id, no answer to these
-  bodies depends on which offices the amendment already has, only on how
-  the body names them; for the same reason a list of member ids in a
-  payload always carries the generic id last (`redactPayloadMembers`).
+  presents them too and any member may present one with it. Only in the
+  composer are the real offices read by accounts that do not see them: an
+  account that presents amendments for a member
+  (`canNameExecutiveAuthors`) reads the list to pick from
+  (`GET /api/members?for=amendment`) and, since 2026-11-10, whoever may
+  edit a draft reads its real authors and main author
+  (`GET .../amendments/[amendment]/authors`, `amendmentComposerAuthors`):
+  while it composes, whoever may edit a draft always sees which offices
+  present it. Both carry members only, never who acts for them, and the
+  second answers under exactly the checks of the edit: an author, a draft
+  (one sent back for correction included), and a document that still takes
+  amendments (published, not voted, assembly not closed). Every office is
+  therefore named by its real id (`planAmendmentBodyMembers`): the generic
+  id is never an author (422 `executive_author`), an office as main author
+  follows the rule of any member, and an office taken out of the list
+  stops presenting the draft like any other member. An author that may
+  not name the offices (it lost its member or `amendment:create`) still
+  edits its draft: it keeps or drops the offices already there, which it
+  reads in the composer, and cannot add another (422 `executive_member`).
+  Outside the composer those accounts read
+  the generic "CEA", its own draft included: lists, the detail, history,
+  news, activity and PDFs. A list of member ids in a payload always
+  carries the generic id last (`redactPayloadMembers`), so its place never
+  tells which office it is.
   Parties of a transactional come from the database, so such an
   account still proposes one over an office's amendment.
 - If an amendment was presented wrong, whoever reviews amendments

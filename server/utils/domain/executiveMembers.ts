@@ -4,7 +4,11 @@ import { db } from "../../db";
 import { members } from "../../db/schema";
 import { GENERIC_EXECUTIVE_MEMBER_ID } from "~~/shared/constants/domain";
 import type { Actor } from "./actor";
-import { canSeeExecutiveMembers, type ExecutiveMask } from "./visibility";
+import {
+  canNameExecutiveAuthors,
+  canSeeExecutiveMembers,
+  type ExecutiveMask,
+} from "./visibility";
 
 /**
  * The executive areas (members of kind "executive") and the accounts that
@@ -132,37 +136,19 @@ export function refuseExecutiveMember(): never {
 
 /**
  * `data.reason` of the 422 for the generic id in the body of an amendment
- * or a transactional when no area stands behind it. There the account adds
- * the areas itself, by name, so it has its own wording.
+ * or a transactional: there every office is named by its real id, so the
+ * generic id is never an author.
  */
 export const EXECUTIVE_AUTHOR_REFUSED_REASON = "executive_author";
 
 export const EXECUTIVE_AUTHOR_REFUSED_MESSAGE =
-  "«CEA» solo mantiene los cargos de la CEA que ya la presentan. Añade el cargo por su nombre.";
-
-/**
- * `data.reason` of the 422 for an area named as main author by an account
- * that does not see the areas, when the same body does not list it among
- * the authors.
- */
-export const EXECUTIVE_AUTHOR_MAIN_REFUSED_REASON = "executive_author_main";
-
-export const EXECUTIVE_AUTHOR_MAIN_REFUSED_MESSAGE =
-  "Para que un cargo de la CEA sea el autor principal, márcalo también entre quienes la presentan.";
+  "«CEA» no es un miembro. Elige el cargo de la CEA por su nombre.";
 
 export function refuseExecutiveAuthor(): never {
   throw createError({
     statusCode: 422,
     message: EXECUTIVE_AUTHOR_REFUSED_MESSAGE,
     data: { reason: EXECUTIVE_AUTHOR_REFUSED_REASON },
-  });
-}
-
-export function refuseExecutiveAuthorMain(): never {
-  throw createError({
-    statusCode: 422,
-    message: EXECUTIVE_AUTHOR_MAIN_REFUSED_MESSAGE,
-    data: { reason: EXECUTIVE_AUTHOR_MAIN_REFUSED_REASON },
   });
 }
 
@@ -229,128 +215,77 @@ export async function resolveBodyMembers<
 
 // Amendments -----------------------------------------------------------------
 // The CEA presents amendments and transactionals too, and any member may
-// present one with it. An account that does not see the areas reads their
-// real list only while it composes one (GET /api/members?for=amendment) and
-// names them by their real ids; what it reads back is the generic "CEA".
-// Since that account knows every real id, no answer here may depend on
-// which areas the amendment already has: only on how the body names them.
+// present one with it. An account that does not see the offices but
+// presents amendments for a member (canNameExecutiveAuthors) reads their
+// real list while it composes one (GET /api/members?for=amendment) and names
+// them by their real ids. Whoever may edit a draft reads its real authors (GET
+// .../amendments/[amendment]/authors), so the offices already there are
+// named by their real ids too. Outside the composer both read the generic
+// "CEA".
 
 /**
- * The authors an amendment body lists once the rule of the areas is
- * applied, or "refused" (422 `executive_author`):
- * - an actor who sees the areas names them as any member and never sends
- *   the generic id;
- * - an actor who does not see them may name any area by its real id. The
- *   generic id stands for the areas already there (`current`), all of them,
- *   since that actor cannot tell them apart: with it they stay, without it
- *   they go, except the ones the list names. The generic id with no area
- *   there is refused: it is never a member.
- * A list left out (undefined) stays left out.
+ * The rule for the members an amendment body names (authors and main
+ * author), from how the body names them alone, never from the amendment's
+ * stored authors:
+ * - "generic": the body carries the generic id, which is never a member
+ *   (422 `executive_author`), whoever sends it;
+ * - "refused": an office named by an actor who neither sees the offices
+ *   (`mask`) nor may name them (`mayName`) (422 `executive_member`),
+ *   unless it is one that actor reads anyway (`known`);
+ * - "ok" otherwise. An office named as main author then follows the rule
+ *   of every member: it must be among the authors the body ends with.
+ *
+ * `known` is the one place the stored authors count, and only on the edit
+ * of a draft: whoever may edit it reads its real authors in the composer
+ * (amendmentComposerAuthors, the same checks), so keeping them tells that
+ * actor nothing. It may keep or drop them, never add another office.
  */
-export function planAmendmentAuthors(input: {
+export function planAmendmentBodyMembers(input: {
   mask: ExecutiveMask;
-  requested: readonly string[] | undefined;
-  /** Member ids the amendment has now; empty on a create. */
-  current: readonly string[];
-}): string[] | undefined | "refused" {
-  const { mask, requested, current } = input;
-  if (requested === undefined) return undefined;
-  const generic = requested.includes(GENERIC_EXECUTIVE_MEMBER_ID);
-  if (!mask) return generic ? "refused" : [...requested];
-  const kept = current.filter((id) => mask.has(id));
-  if (generic && kept.length === 0) return "refused";
-  const named = requested.filter((id) => id !== GENERIC_EXECUTIVE_MEMBER_ID);
-  return unique([...named, ...(generic ? kept : [])]);
-}
-
-/**
- * The main author an amendment body names under the same rule. An actor who
- * sees the areas names any member by its id and never sends the generic
- * one. For an actor who does not see them:
- * - an area by its real id passes only when the same body lists it among
- *   the authors (`listed`); otherwise "unlisted" (422
- *   `executive_author_main`), whether or not that area is already an
- *   author, so the answer never tells which area the amendment has;
- * - the generic id means one of the areas that stay behind the generic
- *   entry (`current`, kept by a list with the generic id or by no list):
- *   the one that is the main author now, otherwise the first of them. Which
- *   areas the body names by their ids never changes that choice, and
- *   several areas are no error, so the answer tells neither which they are
- *   nor how many. With none behind it, it means the first area the list
- *   names, and with none at all it is refused.
- * Null and undefined pass through.
- */
-export function planAmendmentMainAuthor(input: {
-  mask: ExecutiveMask;
-  requested: string | null | undefined;
-  /** The authors the body lists, as it sent them; undefined with no list. */
+  /** canNameExecutiveAuthors: the actor reads the real offices to compose. */
+  mayName: boolean;
   listed: readonly string[] | undefined;
-  /** Member ids the amendment has now; empty on a create. */
-  current: readonly string[];
-  currentMain: string | null | undefined;
-}): string | null | undefined | "refused" | "unlisted" {
-  const { mask, requested, listed, current, currentMain } = input;
-  if (!requested) return requested;
-  if (requested !== GENERIC_EXECUTIVE_MEMBER_ID) {
-    if (mask?.has(requested) && !listed?.includes(requested)) return "unlisted";
-    return requested;
+  named: string | null | undefined;
+  /** Authors of the draft being edited, once the actor may edit it. */
+  known?: readonly string[];
+}): "ok" | "generic" | "refused" {
+  const ids = [...(input.listed ?? []), ...(input.named ? [input.named] : [])];
+  if (ids.includes(GENERIC_EXECUTIVE_MEMBER_ID)) return "generic";
+  const { mask } = input;
+  if (mask && !input.mayName) {
+    const known = new Set(input.known ?? []);
+    if (ids.some((id) => mask.has(id) && !known.has(id))) return "refused";
   }
-  if (!mask) return "refused";
-  const keeps =
-    listed === undefined || listed.includes(GENERIC_EXECUTIVE_MEMBER_ID);
-  const kept = keeps ? unique(current.filter((id) => mask.has(id))) : [];
-  if (kept.length > 0) {
-    return currentMain && kept.includes(currentMain) ? currentMain : kept[0]!;
-  }
-  const named = unique((listed ?? []).filter((id) => mask.has(id)));
-  return named[0] ?? "refused";
+  return "ok";
 }
 
 /**
- * Applies planAmendmentAuthors and planAmendmentMainAuthor to the body of
- * an amendment or a transactional (422 `executive_author` or
- * `executive_author_main`). The database is read only when the body names
- * a member.
+ * Applies planAmendmentBodyMembers to the body of an amendment or a
+ * transactional (422 `executive_author` or `executive_member`). The
+ * database is read only for an actor who may not name the offices and
+ * names a member.
  */
-export async function resolveAmendmentBodyMembers<
-  Listed extends readonly string[] | undefined,
-  Named extends string | null | undefined,
->(
+export async function requireAmendmentBodyMembers(
   actor: Actor,
   input: {
-    listed: Listed;
-    named: Named;
-    /** Every author the amendment has now, the main one included. */
-    current: readonly string[];
-    currentMain: string | null | undefined;
+    listed: readonly string[] | undefined;
+    named: string | null | undefined;
+    /**
+     * The authors of the draft being edited. Pass it only after checking
+     * that the actor may edit that draft (see planAmendmentBodyMembers).
+     */
+    known?: readonly string[];
   },
   executor: Executor = db,
-): Promise<{
-  listed: Listed extends undefined ? undefined : string[];
-  named: Named;
-}> {
-  type Result = {
-    listed: Listed extends undefined ? undefined : string[];
-    named: Named;
-  };
-  if (input.listed === undefined && !input.named) {
-    return { listed: undefined, named: input.named } as Result;
-  }
-  const mask = await loadExecutiveMask(actor, executor);
-  const listed = planAmendmentAuthors({
-    mask,
-    requested: input.listed,
-    current: input.current,
+): Promise<void> {
+  if (input.listed === undefined && !input.named) return;
+  const mayName = canNameExecutiveAuthors(actor);
+  const plan = planAmendmentBodyMembers({
+    ...input,
+    mayName,
+    // Only read for an actor it can refuse.
+    mask: mayName ? null : await loadExecutiveMask(actor, executor),
   });
-  if (listed === "refused") refuseExecutiveAuthor();
-  const named = planAmendmentMainAuthor({
-    mask,
-    requested: input.named,
-    listed: input.listed,
-    current: input.current,
-    currentMain: input.currentMain,
-  });
-  if (named === "refused") refuseExecutiveAuthor();
-  if (named === "unlisted") refuseExecutiveAuthorMain();
-  return { listed, named } as Result;
+  if (plan === "generic") refuseExecutiveAuthor();
+  if (plan === "refused") refuseExecutiveMember();
 }
