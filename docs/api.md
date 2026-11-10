@@ -1486,8 +1486,9 @@ the queue (`speaking_turns`). Schemas: `shared/utils/schemas/speakers.ts`.
   member with a turn in the assembly, how many it spoke in (`speaking` or
   `done`) and up to 10 names written down for it, the latest first. The
   form puts those who spoke most first and suggests those names; it offers
-  the councils and sectorials in the room at the latest headcount (marked
-  present), and the other members always.
+  the councils and sectorials of the latest headcount, in the room or
+  delegated (whoever holds the delegation may speak for them), and the other
+  members always.
 - **Adding.** A turn needs a `memberId` (an active member, 422 otherwise),
   a `speaker` name (one line, up to 120 characters) or both (422 with
   neither). `agendaItemId` defaults to the item in debate; one given must

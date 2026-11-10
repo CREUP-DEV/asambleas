@@ -3693,7 +3693,7 @@
       "addTitle": "Write down a turn",
       "member": "Who asks for the floor",
       "memberPlaceholder": "Search by acronym, name or university",
-      "memberInRoom": "Councils and sectoral bodies in the room at the latest headcount.",
+      "memberInRoom": "Councils and sectoral bodies in the room or delegated at the latest headcount.",
       "person": "Person's name",
       "add": "Add turn",
       "waiting": "Waiting ({count})",
