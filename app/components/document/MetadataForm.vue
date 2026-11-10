@@ -15,12 +15,10 @@ import type {
   MemberDto,
   MemberRef,
 } from "~~/shared/types/api";
+import { itemAcceptsKind } from "~~/shared/utils/agendaSubmissions";
 import { memberMayPresent } from "~~/shared/utils/presenterKinds";
 import { formatDateTime, toDate } from "~/utils/format";
-import {
-  kindSelectItems,
-  presenterKindGroups,
-} from "~/composables/document/documentKinds";
+import { presenterKindGroups } from "~/composables/document/documentKinds";
 import {
   choicePresenterIds,
   coPresentersDroppedWithoutLead,
@@ -53,10 +51,12 @@ import {
  * own member stays among the presenters), with the agenda item folded under
  * "Más opciones"; the server gives them the defaults of the kind. Everything
  * else needs document:manage (`document.can.manage`): who presents it, with
- * whom and the internal deadline stay in view, and the rules (format,
- * amendments, what an accepted amendment becomes, vote, window) are folded
- * under "Opciones avanzadas". Managers keep this form after publication,
- * when the text is frozen.
+ * whom and the internal deadline stay in view; the rules show as one line
+ * ("Se puede enmendar · Se vota · Mayoría simple", DocumentRulesSummary)
+ * with "Cambiar", which opens their controls (amendments, what an accepted
+ * amendment becomes, vote, window), folded under "Más opciones". Managers
+ * keep this form after publication, when the text is frozen. Text or PDF
+ * is not chosen here: the page shows DocumentFormatSwitch above the text.
  *
  * With several presenters, who answers the amendments (the main presenter)
  * is a required choice; it starts on the lead (the presenter's own member,
@@ -65,14 +65,15 @@ import {
  * form shows what will be stored. Leaving it empty leaves no co-presenters,
  * and the field names the ones that saving would remove.
  *
- * Presenters choose among the types their member usually presents first
- * (the rest under "Otros tipos"); a PDF only offers the types that take no
- * amendments, as when it was created.
+ * Presenters choose the type from cards, the ones their member usually
+ * presents and "Otro tipo" for the rest (DocumentKindPicker); a PDF only
+ * offers the types that take no amendments, as when it was created (the
+ * server refuses the others). Managers get a searchable list of every type.
  *
  * On a published document, changing what an accepted amendment becomes also
  * changes the amendments already answered, so the form says what saving
  * will do (DocumentAcceptedRuleWarning), by the choice and, while
- * "Opciones avanzadas" is folded, by the save button. Once the text is
+ * "Más opciones" is folded, by the save button. Once the text is
  * settled (final vote, consolidated text) the rule is shown but never sent.
  *
  * Emits `saved` with the updated DocumentDto (store it), and `stale` after an
@@ -403,29 +404,29 @@ const mainPresenterAcronym = computed(
 
 // Options -----------------------------------------------------------------
 
+/** Managers get every type, in a searchable list. */
+const kindItems = computed(() =>
+  DOCUMENT_KINDS.map((kind: DocumentKind) => ({
+    label: t(`document.kinds.${kind}`),
+    value: kind,
+  })),
+);
+
 /**
- * Managers get every type. Presenters get the usual ones of their member
- * first, and a PDF only the types that take no amendments (the server
- * would silently store it without them otherwise).
+ * Presenters get the usual types of their member as cards, and a PDF only
+ * the types that take no amendments (the server refuses the others).
  */
-const kindItems = computed(() => {
-  const label = (kind: DocumentKind) => t(`document.kinds.${kind}`);
-  if (manager.value) {
-    return DOCUMENT_KINDS.map((kind) => ({ label: label(kind), value: kind }));
-  }
-  return kindSelectItems(
-    presenterKindGroups({
-      memberKind: props.document.proponent?.kind ?? myMember.value?.kind,
-      format: props.document.format,
-      current: initial.value.kind,
-    }),
-    label,
-    {
-      common: t("document.kindGroups.common"),
-      others: t("document.kindGroups.others"),
-    },
-  );
-});
+const presenterKinds = computed(() =>
+  presenterKindGroups({
+    memberKind: props.document.proponent?.kind ?? myMember.value?.kind,
+    format: props.document.format,
+    current: initial.value.kind,
+  }),
+);
+
+function onKindPick(kind: DocumentKind | undefined): void {
+  if (kind) state.kind = kind;
+}
 
 const majorityItems = computed(() =>
   MAJORITIES.map((majority) => ({
@@ -433,25 +434,32 @@ const majorityItems = computed(() =>
     value: majority,
   })),
 );
+/** The three majorities in view, wrapping in the narrow data panel. */
+const majorityCardsUi = { fieldset: "flex-wrap gap-2" };
 
 // Shared with the hub's agenda pages (same key, refreshed on live events).
 const { data: agenda, status: agendaStatus } = useAssemblyAgenda();
 
 /**
  * Agenda items in order, each with its number as on the agenda ("3.12.
- * Informe de ..."), which also shows where it sits in the tree.
+ * Informe de ..."), which also shows where it sits in the tree. The
+ * automatic sub-item of another document is never a place to move to, for
+ * anyone (the server refuses it); presenters can only pick an item that
+ * takes the type chosen.
  */
 const agendaItems = computed(() => {
   const items = agenda.value?.items ?? [];
   const numbers = agendaNumbers(items);
-  return flattenAgendaTree(buildAgendaTree(items)).map(({ item }) => ({
-    label: `${numbers.get(item.id)}. ${item.title}`,
-    value: item.id,
-    disabled:
-      !manager.value &&
-      !item.acceptsSubmissions &&
-      item.id !== initial.value.agendaItemId,
-  }));
+  return flattenAgendaTree(buildAgendaTree(items))
+    .filter(({ item }) => !item.auto || item.id === initial.value.agendaItemId)
+    .map(({ item }) => ({
+      label: `${numbers.get(item.id)}. ${item.title}`,
+      value: item.id,
+      disabled:
+        !manager.value &&
+        item.id !== initial.value.agendaItemId &&
+        !itemAcceptsKind(item, state.kind),
+    }));
 });
 
 /** Long titles wrap instead of being cut, in the list and in the field. */
@@ -593,8 +601,19 @@ const showDueAt = computed(
 
 // Folded sections -----------------------------------------------------------
 
-/** Managers: format, amendments, vote and window. */
+/** Managers: amendments, vote and window. */
 const advancedOpen = ref(false);
+const advancedTriggerId = useId();
+
+/**
+ * "Cambiar" in the rules summary opens the controls and leaves the page as
+ * it does: focus goes to the trigger of the section it opened.
+ */
+async function openAdvanced(): Promise<void> {
+  advancedOpen.value = true;
+  await nextTick();
+  document.getElementById(advancedTriggerId)?.focus();
+}
 /** Presenters: the agenda item. */
 const moreOpen = ref(false);
 
@@ -603,6 +622,7 @@ function revealErrors(names: (string | undefined)[]): void {
   if (names.some((name) => name === "opensAt" || name === "closesAt")) {
     advancedOpen.value = true;
   }
+  if (names.includes("agendaItemId")) moreOpen.value = true;
 }
 
 function onError(event: FormErrorEvent): void {
@@ -630,6 +650,18 @@ function validate(current: Partial<FormState>): FormError[] {
       message: t("document.metadata.errors.summaryTooLong", {
         max: SUMMARY_MAX,
       }),
+    });
+  // A presenter who picked another item and then another type: the item
+  // must take it (the server would answer 422).
+  const kind = current.kind ?? state.kind;
+  const target =
+    !manager.value && current.agendaItemId !== initial.value.agendaItemId
+      ? agenda.value?.items.find((item) => item.id === current.agendaItemId)
+      : undefined;
+  if (target && !itemAcceptsKind(target, kind))
+    errors.push({
+      name: "agendaItemId",
+      message: t("agenda.container.kindRefused"),
     });
   if (mainPresenterMissing(choice.value))
     errors.push({
@@ -768,7 +800,29 @@ defineExpose({ reset: resetForm, check, save });
     </UFormField>
 
     <UFormField name="kind" :label="t('document.metadata.kind')" required>
-      <USelect v-model="state.kind" :items="kindItems" class="w-full" />
+      <DocumentKindPicker
+        v-if="!manager"
+        :model-value="state.kind"
+        :groups="presenterKinds"
+        :disabled="saving"
+        @update:model-value="onKindPick"
+      />
+      <USelectMenu
+        v-else
+        v-model="state.kind"
+        :items="kindItems"
+        value-key="value"
+        :aria-label="
+          selectMenuLabel(
+            t('document.metadata.kind'),
+            kindItems,
+            state.kind,
+            t('agenda.newDocument.kindPlaceholder'),
+          )
+        "
+        :search-input="labelledSearch(t('agenda.newDocument.searchKind'))"
+        class="w-full"
+      />
     </UFormField>
 
     <UFormField
@@ -828,23 +882,6 @@ defineExpose({ reset: resetForm, check, save });
         />
         <template #content>
           <div class="space-y-4 pt-2">
-            <UFormField
-              v-if="$slots.format"
-              name="format"
-              :label="t('document.metadata.format')"
-            >
-              <p class="text-default flex items-center gap-2 text-sm">
-                <UIcon
-                  :name="isFile ? 'i-lucide-file-text' : 'i-lucide-text'"
-                  class="text-muted size-4"
-                  aria-hidden="true"
-                />
-                {{ t(`document.formats.${document.format}`) }}
-              </p>
-              <div class="mt-2">
-                <slot name="format" />
-              </div>
-            </UFormField>
             <UFormField
               name="agendaItemId"
               :label="t('document.metadata.agendaItem')"
@@ -975,8 +1012,17 @@ defineExpose({ reset: resetForm, check, save });
         />
       </UFormField>
 
+      <!-- The rules in one line; their controls stay folded below -->
+      <DocumentRulesSummary
+        :amendable="effective.amendable"
+        :voted="effective.voted"
+        :majority="effective.majority"
+        :open="advancedOpen"
+        @change="openAdvanced"
+      />
       <UCollapsible v-model:open="advancedOpen">
         <UButton
+          :id="advancedTriggerId"
           color="neutral"
           variant="link"
           size="sm"
@@ -986,27 +1032,6 @@ defineExpose({ reset: resetForm, check, save });
         />
         <template #content>
           <div class="space-y-4 pt-2">
-            <UFormField
-              name="format"
-              :label="t('document.metadata.format')"
-              :help="
-                isPublished ? undefined : t('document.metadata.formatHelp')
-              "
-            >
-              <p class="text-default flex items-center gap-2 text-sm">
-                <UIcon
-                  :name="isFile ? 'i-lucide-file-text' : 'i-lucide-text'"
-                  class="text-muted size-4"
-                  aria-hidden="true"
-                />
-                {{ t(`document.formats.${document.format}`) }}
-              </p>
-              <!-- The page's format switch (DocumentFormatSwitch inline) -->
-              <div v-if="$slots.format" class="mt-2">
-                <slot name="format" />
-              </div>
-            </UFormField>
-
             <div class="space-y-3">
               <div class="flex items-center justify-between gap-2">
                 <h4 class="text-highlighted text-sm font-semibold">
@@ -1058,10 +1083,14 @@ defineExpose({ reset: resetForm, check, save });
                 name="majority"
                 :label="t('document.metadata.majority')"
               >
-                <USelect
+                <URadioGroup
                   v-model="state.majority"
                   :items="majorityItems"
-                  class="w-full"
+                  value-key="value"
+                  orientation="horizontal"
+                  variant="card"
+                  size="sm"
+                  :ui="majorityCardsUi"
                 />
               </UFormField>
             </div>

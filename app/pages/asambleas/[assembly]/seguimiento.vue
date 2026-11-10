@@ -50,13 +50,18 @@ const groups = computed(() =>
   ),
 );
 
-/** Agenda items in agenda order, for the "add" form. */
+/**
+ * Agenda items in agenda order, for the "add" form. The automatic sub-item
+ * of a document is that document's alone, never a place for another one.
+ */
 const agendaOptions = computed(() =>
-  flattenAgendaTree(buildAgendaTree(agenda.value?.items ?? [])).map((node) => ({
-    id: node.item.id,
-    number: node.number,
-    title: node.item.title,
-  })),
+  flattenAgendaTree(buildAgendaTree(agenda.value?.items ?? []))
+    .filter((node) => !node.item.auto)
+    .map((node) => ({
+      id: node.item.id,
+      number: node.number,
+      title: node.item.title,
+    })),
 );
 
 const hasDrafts = computed(() =>
@@ -118,17 +123,7 @@ async function onDeadlineSaved() {
       :title="t('tracking.forbiddenTitle')"
       :description="t('tracking.forbiddenDescription')"
       variant="outline"
-    >
-      <template #action>
-        <UButton
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-arrow-left"
-          :label="t('review.backToOverview')"
-          :to="sectionPath()"
-        />
-      </template>
-    </CommonEmptyState>
+    />
 
     <template v-else>
       <div class="flex flex-wrap items-start justify-between gap-3">

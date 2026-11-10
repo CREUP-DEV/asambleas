@@ -13,12 +13,22 @@ import {
 import { isDocumentPresenter } from "~/composables/document/documentPresenters";
 import { ORGANIZE_QUERY } from "~/composables/document/agendaReturn";
 import { useAddDocument } from "~/composables/document/useAddDocument";
-import type { AgendaMove, AgendaTreeNode } from "~/utils/agendaTree";
+import type {
+  AgendaFoldState,
+  AgendaMove,
+  AgendaRootChangeRunner,
+  AgendaTreeNode,
+} from "~/utils/agendaTree";
 
 /**
  * Agenda (orden del día): the item tree with its documents. By default it is
  * a clean list: numbered items, their documents and, for members,
- * "Presentar documento" under the items that accept submissions. Managers
+ * "Presentar documento" under the items that accept submissions. Items with
+ * sub-items fold: by default the sub-items of a root item show and theirs
+ * are hidden; what the reader opens or closes is remembered per assembly in
+ * the browser, and "Desplegar todo" / "Plegar todo" do it at once. Managers
+ * mark the agenda as final here (AgendaFinalAction); once final, a change
+ * to the root items asks for a confirmation first. Managers
  * switch to "Organizar orden del día" to add, edit, move (buttons, keyboard
  * accessible), switch submissions, delete items and add documents.
  * `?organizar=1` opens it organized and a `#agenda-item-…` hash focuses that
@@ -67,7 +77,7 @@ const documentsByItem = computed(() => {
 // Capabilities -----------------------------------------------------------------
 
 const manage = computed(() => Boolean(assembly.value?.can.manage));
-const rootsLocked = computed(() => Boolean(assembly.value?.agendaFinalizedAt));
+const agendaFinal = computed(() => Boolean(assembly.value?.agendaFinalizedAt));
 const canCreateDocument = computed(() =>
   me.can(PERMISSION_KEYS.DOCUMENT_MANAGE),
 );
@@ -146,7 +156,6 @@ const PROTECTED_STATUSES = new Set(["submitted", "published", "postponed"]);
 function canDelete(itemId: string): boolean {
   const item = items.value.find((candidate) => candidate.id === itemId);
   if (!item) return false;
-  if (item.parentId === null && rootsLocked.value) return false;
   for (const id of agendaSubtreeIds(items.value, itemId)) {
     if (
       (documentsByItem.value.get(id) ?? []).some(
@@ -161,6 +170,91 @@ function canDelete(itemId: string): boolean {
   return true;
 }
 
+// Folding ---------------------------------------------------------------------
+
+/**
+ * What the reader folded or unfolded, per assembly, in the browser. The
+ * server renders the default state and the stored one is read on mount, so
+ * hydration always matches.
+ */
+const storedFold = useLocalStorage<AgendaFoldState>(
+  `agenda-fold-${assembly.value?.id ?? String(route.params.assembly ?? "")}`,
+  { open: [], closed: [] },
+  { initOnMounted: true },
+);
+const foldState = computed(() => readAgendaFold(storedFold.value));
+const collapsedIds = computed(() =>
+  collapsedAgendaIds(items.value, foldState.value),
+);
+const foldableCount = computed(() => agendaFoldableIds(items.value).length);
+
+function toggleFold(itemId: string) {
+  storedFold.value = toggleAgendaFold(items.value, foldState.value, itemId);
+}
+
+/** Unfolds what hides an item, before focusing or scrolling to it. */
+function revealItem(itemId: string) {
+  const next = expandAgendaAncestors(items.value, foldState.value, itemId);
+  if (next !== foldState.value) storedFold.value = next;
+}
+
+function expandAll() {
+  storedFold.value = expandAllAgenda(items.value);
+  announce(t("agenda.fold.expandedAll"));
+}
+
+function collapseAll() {
+  storedFold.value = collapseAllAgenda(items.value);
+  announce(t("agenda.fold.collapsedAll"));
+}
+
+// Final agenda: confirm a change to the root items --------------------------------
+
+const finalConfirmOpen = ref(false);
+let answerFinalConfirm: ((confirmed: boolean) => void) | null = null;
+
+/** Asks "¿Cambiarlo igualmente?" and resolves with the answer. */
+function askFinalChange(): Promise<boolean> {
+  answerFinalConfirm?.(false);
+  return new Promise((resolve) => {
+    answerFinalConfirm = resolve;
+    finalConfirmOpen.value = true;
+  });
+}
+
+function settleFinalConfirm(confirmed: boolean) {
+  const answer = answerFinalConfirm;
+  answerFinalConfirm = null;
+  finalConfirmOpen.value = false;
+  answer?.(confirmed);
+}
+
+// Closing the dialog any other way (Escape, outside click) is a no.
+watch(finalConfirmOpen, (isOpen) => {
+  if (!isOpen) settleFinalConfirm(false);
+});
+
+/**
+ * Runs a request that may change the root items. With a final agenda it
+ * asks first; if the server still answers 409 `agenda_final` (the agenda
+ * became final meanwhile), it asks then and sends the request again.
+ */
+const runRootChange: AgendaRootChangeRunner = async (changesRoots, run) => {
+  let confirmed = false;
+  if (changesRoots && agendaFinal.value) {
+    if (!(await askFinalChange())) return null;
+    confirmed = true;
+  }
+  try {
+    return await run(confirmed);
+  } catch (failure) {
+    if (confirmed || !isAgendaFinalConflict(failure)) throw failure;
+    void current.refresh();
+    if (!(await askFinalChange())) return null;
+    return await run(true);
+  }
+};
+
 // Announcements and focus ----------------------------------------------------
 
 const announcement = ref("");
@@ -173,6 +267,7 @@ function announce(message: string) {
 }
 
 async function focusItem(id: string, move?: AgendaMove) {
+  revealItem(id);
   await nextTick();
   if (!import.meta.client) return;
   const buttons = Array.from(
@@ -193,11 +288,15 @@ async function focusItem(id: string, move?: AgendaMove) {
   target?.focus();
 }
 
-// Back from a document added here: focus its item.
-onMounted(() => {
+// A link to an item (back from a document added here, or from the overview):
+// unfold what hides it, then focus it. Registered after useLocalStorage, so
+// the stored fold state is already read.
+onMounted(async () => {
   const prefix = `#${agendaItemAnchor("")}`;
   if (!route.hash.startsWith(prefix)) return;
   const id = decodeURIComponent(route.hash.slice(prefix.length));
+  revealItem(id);
+  await nextTick();
   const heading = document.getElementById(agendaItemAnchor(id));
   heading?.scrollIntoView({ block: "start" });
   heading?.focus({ preventScroll: true });
@@ -208,18 +307,28 @@ onMounted(() => {
 const busyId = ref<string | null>(null);
 
 function canMove(itemId: string, move: AgendaMove): boolean {
-  return canMoveAgendaItem(items.value, itemId, move, {
-    rootsLocked: rootsLocked.value,
-  });
+  return canMoveAgendaItem(items.value, itemId, move);
 }
 
 async function moveItem(itemId: string, move: AgendaMove) {
   // Buttons stay enabled while busy (disabling them would drop focus).
   if (busyId.value || !agenda.value) return;
-  const plan = planAgendaMove(items.value, itemId, move, {
-    rootsLocked: rootsLocked.value,
-  });
+  const plan = planAgendaMove(items.value, itemId, move);
   if (!plan) return;
+
+  // A final agenda: ask before the root items change, and before the
+  // optimistic update shows the move.
+  let confirmFinal = false;
+  if (agendaFinal.value && reorderChangesRoots(items.value, plan)) {
+    busyId.value = itemId;
+    const confirmed = await askFinalChange();
+    busyId.value = null;
+    if (!confirmed || !agenda.value) {
+      void focusItem(itemId, move);
+      return;
+    }
+    confirmFinal = true;
+  }
 
   busyId.value = itemId;
   const previous = agenda.value;
@@ -235,7 +344,7 @@ async function moveItem(itemId: string, move: AgendaMove) {
       `${apiBase.value}/agenda/reorder`,
       {
         method: "PUT",
-        body: { items: plan },
+        body: { items: plan, ...(confirmFinal ? { confirmFinal: true } : {}) },
       },
     );
     agenda.value = updated;
@@ -250,6 +359,20 @@ async function moveItem(itemId: string, move: AgendaMove) {
     }
   } catch (failure) {
     agenda.value = previous;
+    if (!confirmFinal && isAgendaFinalConflict(failure)) {
+      // The agenda became final meanwhile: load that, then the same move
+      // asks for the confirmation.
+      await Promise.all([current.refresh(), refresh()]);
+      busyId.value = null;
+      if (agendaFinal.value) {
+        await moveItem(itemId, move);
+        return;
+      }
+      // The assembly could not be read again: say the move did not happen.
+      api.notifyError(failure, "agenda.moveError");
+      void focusItem(itemId, move);
+      return;
+    }
     api.notifyError(failure, "agenda.moveError");
     await refresh();
     void focusItem(itemId, move);
@@ -351,54 +474,6 @@ async function onSaved(item: AgendaItemDto, created: boolean) {
   void focusItem(item.id);
 }
 
-// Delete ------------------------------------------------------------------------
-
-const deleteTarget = ref<AgendaTreeNode<AgendaItemDto> | null>(null);
-const deleteOpen = ref(false);
-const deleting = ref(false);
-
-function askDelete(node: AgendaTreeNode<AgendaItemDto>) {
-  deleteTarget.value = node;
-  deleteOpen.value = true;
-}
-
-const deleteCounts = computed(() => {
-  const node = deleteTarget.value;
-  if (!node) return { children: 0, documents: 0 };
-  const ids = agendaSubtreeIds(items.value, node.item.id);
-  let documents = 0;
-  for (const id of ids) documents += documentsByItem.value.get(id)?.length ?? 0;
-  return { children: ids.size - 1, documents };
-});
-
-async function confirmDelete() {
-  const node = deleteTarget.value;
-  if (!node) return;
-  deleting.value = true;
-  try {
-    await api.send(`${apiBase.value}/agenda/${node.item.id}`, {
-      method: "DELETE",
-    });
-    deleteOpen.value = false;
-    await refresh();
-    announce(t("agenda.deleted", { title: node.item.title }));
-    toast.add({
-      title: t("agenda.deletedToast"),
-      description: node.item.title,
-      color: "success",
-      icon: "i-lucide-trash-2",
-    });
-  } catch (failure) {
-    api.notifyError(failure, "agenda.deleteError");
-    if (api.isConflict(failure)) {
-      deleteOpen.value = false;
-      await refresh();
-    }
-  } finally {
-    deleting.value = false;
-  }
-}
-
 // New document ------------------------------------------------------------------
 
 const addDocument = useAddDocument(agenda);
@@ -440,7 +515,8 @@ function documentEditPath(document: DocumentSummaryDto): string | null {
 const context: AgendaTreeContext = {
   manage,
   organizing,
-  rootsLocked,
+  isCollapsed: (itemId) => !organizing.value && collapsedIds.value.has(itemId),
+  toggleFold,
   canCreateDocument,
   canSubmitDocument,
   busyId,
@@ -454,7 +530,6 @@ const context: AgendaTreeContext = {
   },
   edit: openEdit,
   addChild: (node) => openCreate(node),
-  remove: askDelete,
   toggleSubmissions: (item, value) => {
     void toggleSubmissions(item, value);
   },
@@ -474,10 +549,10 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
             {{ t("agenda.title") }}
           </h2>
           <UBadge
-            :color="rootsLocked ? 'success' : 'neutral'"
+            :color="agendaFinal ? 'success' : 'neutral'"
             variant="subtle"
-            :icon="rootsLocked ? 'i-lucide-lock' : 'i-lucide-pencil-ruler'"
-            :label="rootsLocked ? t('agenda.final') : t('agenda.provisional')"
+            :icon="agendaFinal ? 'i-lucide-lock' : 'i-lucide-pencil-ruler'"
+            :label="agendaFinal ? t('agenda.final') : t('agenda.provisional')"
           />
         </div>
         <p class="text-muted text-sm">
@@ -504,19 +579,15 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
           :label="t('agenda.seeConvocation')"
           :to="sectionPath('convocatoria')"
         />
-        <UTooltip
+        <UButton
           v-if="manage && organizing"
-          :text="
-            rootsLocked ? t('agenda.rootsLockedShort') : t('agenda.addItem')
-          "
-        >
-          <UButton
-            icon="i-lucide-plus"
-            :label="t('agenda.addItem')"
-            :disabled="rootsLocked"
-            @click="openCreate(null)"
-          />
-        </UTooltip>
+          icon="i-lucide-plus"
+          :label="t('agenda.addItem')"
+          @click="openCreate(null)"
+        />
+        <!-- An empty agenda is not marked as final, but a final one that
+             lost its items can still be reopened -->
+        <AgendaFinalAction v-if="tree.length > 0 || agendaFinal" />
         <UButton
           v-if="canOrganize && tree.length > 0"
           :color="organizing ? 'primary' : 'neutral'"
@@ -557,23 +628,21 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
       :title="submitBlockedReason ?? ''"
     />
 
-    <UAlert
-      v-if="manage && rootsLocked && organizing"
-      color="info"
-      variant="subtle"
-      icon="i-lucide-lock"
-      :title="t('agenda.rootsLockedTitle')"
-      :description="t('agenda.rootsLockedDescription')"
-      :actions="[
-        {
-          label: t('agenda.reopenInCalendar'),
-          to: sectionPath('calendario'),
-          color: 'info',
-          variant: 'link',
-          trailingIcon: 'i-lucide-arrow-right',
-        },
-      ]"
-    />
+    <!-- The planned date of the final agenda passed and it is still provisional -->
+    <AgendaFinalAction v-if="tree.length > 0" as="reminder" />
+
+    <p
+      v-if="manage && agendaFinal && organizing"
+      class="text-muted flex items-start gap-2 text-sm"
+      data-testid="agenda-final-hint"
+    >
+      <UIcon
+        name="i-lucide-lock"
+        class="mt-0.5 size-4 shrink-0"
+        aria-hidden="true"
+      />
+      <span>{{ t("agenda.finalAgenda.organizeHint") }}</span>
+    </p>
 
     <!-- Loading -->
     <div v-if="pending && !agenda" class="space-y-3" role="status">
@@ -619,7 +688,7 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
       "
       variant="outline"
     >
-      <template v-if="manage && !rootsLocked" #action>
+      <template v-if="manage" #action>
         <UButton
           icon="i-lucide-plus"
           :label="t('agenda.addFirstItem')"
@@ -629,9 +698,33 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
     </CommonEmptyState>
 
     <!-- Tree -->
-    <ol v-else class="space-y-4" :aria-label="t('agenda.title')">
-      <AgendaItemNode v-for="node in tree" :key="node.item.id" :node="node" />
-    </ol>
+    <template v-else>
+      <div
+        v-if="!organizing && foldableCount > 0"
+        class="flex flex-wrap items-center justify-end gap-2"
+        data-testid="agenda-fold-all"
+      >
+        <UButton
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          icon="i-lucide-chevrons-up-down"
+          :label="t('agenda.fold.expandAll')"
+          @click="expandAll"
+        />
+        <UButton
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          icon="i-lucide-chevrons-down-up"
+          :label="t('agenda.fold.collapseAll')"
+          @click="collapseAll"
+        />
+      </div>
+      <ol class="space-y-4" :aria-label="t('agenda.title')">
+        <AgendaItemNode v-for="node in tree" :key="node.item.id" :node="node" />
+      </ol>
+    </template>
 
     <p class="sr-only" aria-live="polite" role="status">{{ announcement }}</p>
 
@@ -640,6 +733,7 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
       :api-base="apiBase"
       :item="formItem"
       :parent="formParent"
+      :root-change="runRootChange"
       @saved="onSaved"
       @conflict="refresh()"
     />
@@ -655,57 +749,25 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
       @created="onDocumentCreated"
     />
 
+    <!-- A change to the root items of a final agenda -->
     <UModal
-      v-model:open="deleteOpen"
-      :title="t('agenda.deleteTitle')"
-      :description="
-        deleteTarget
-          ? t('agenda.deleteDescription', {
-              number: deleteTarget.number,
-              title: deleteTarget.item.title,
-            })
-          : ''
-      "
-      :dismissible="!deleting"
+      v-model:open="finalConfirmOpen"
+      :title="t('agenda.finalAgenda.confirmChangeTitle')"
+      :description="t('agenda.finalAgenda.confirmChangeDescription')"
     >
-      <template #body>
-        <ul class="text-muted list-disc space-y-1 ps-5 text-sm">
-          <li v-if="deleteCounts.children > 0">
-            {{
-              t(
-                "agenda.deleteChildren",
-                { count: deleteCounts.children },
-                deleteCounts.children,
-              )
-            }}
-          </li>
-          <li v-if="deleteCounts.documents > 0">
-            {{
-              t(
-                "agenda.deleteDocuments",
-                { count: deleteCounts.documents },
-                deleteCounts.documents,
-              )
-            }}
-          </li>
-          <li>{{ t("agenda.deleteIrreversible") }}</li>
-        </ul>
-      </template>
       <template #footer>
         <div class="flex w-full flex-wrap justify-end gap-2">
           <UButton
             color="neutral"
             variant="outline"
             :label="t('common.cancel')"
-            :disabled="deleting"
-            @click="deleteOpen = false"
+            @click="settleFinalConfirm(false)"
           />
           <UButton
-            color="error"
-            icon="i-lucide-trash-2"
-            :label="t('common.delete')"
-            :loading="deleting"
-            @click="confirmDelete"
+            icon="i-lucide-check"
+            :label="t('agenda.finalAgenda.confirmChange')"
+            data-testid="agenda-confirm-final-change"
+            @click="settleFinalConfirm(true)"
           />
         </div>
       </template>

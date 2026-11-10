@@ -1,19 +1,20 @@
 <script setup lang="ts">
-import type { DocumentSummaryDto, MeWorkDto } from "~~/shared/types/api";
-import { agendaItemAnchor } from "~/components/agenda/ItemNode.vue";
+import type { MeWorkDto } from "~~/shared/types/api";
 import {
   homeWorkForAssembly,
   homeWorkReviewPending,
   homeWorkTasks,
   homeWorkUpdates,
 } from "~/components/home/-work";
+import { agendaItemPath } from "~/composables/document/agendaReturn";
 import { useAddDocument } from "~/composables/document/useAddDocument";
 import { formatDateTime } from "~/utils/format";
 
 /**
  * Assembly overview: what the signed-in user has to do here and, for the
  * Secretaría, what waits for its review; then a line of key figures, an
- * agenda summary with documents and amendment counts, and the calendar
+ * agenda summary with documents and amendment counts (each item opens its
+ * own page), and the calendar
  * timeline with the countdown to the next milestone and its warnings.
  * Anyone acting for a member always sees their tasks card, even with
  * nothing in it, so they know where requests will show up.
@@ -117,33 +118,10 @@ const showMine = computed(
 const tree = computed(() => buildAgendaTree(agenda.value?.items ?? []));
 const rows = computed(() => flattenAgendaTree(tree.value));
 
-const documentsByItem = computed(() => {
-  const map = new Map<string, DocumentSummaryDto[]>();
-  for (const document of agenda.value?.documents ?? []) {
-    const list = map.get(document.agendaItemId);
-    if (list) list.push(document);
-    else map.set(document.agendaItemId, [document]);
-  }
-  return map;
-});
-
 /** Documents and amendments of every item, including its sub-items. */
-const totals = computed(() => {
-  const items = agenda.value?.items ?? [];
-  const map = new Map<string, { documents: number; amendments: number }>();
-  for (const item of items) {
-    let documents = 0;
-    let amendments = 0;
-    for (const id of agendaSubtreeIds(items, item.id)) {
-      for (const document of documentsByItem.value.get(id) ?? []) {
-        documents += 1;
-        amendments += document.amendmentCount;
-      }
-    }
-    map.set(item.id, { documents, amendments });
-  }
-  return map;
-});
+const totals = computed(() =>
+  agendaSubtreeTotals(agenda.value?.items ?? [], agenda.value?.documents ?? []),
+);
 
 const totalsFor = (itemId: string) =>
   totals.value.get(itemId) ?? { documents: 0, amendments: 0 };
@@ -219,6 +197,10 @@ const warnedKeys = computed(() =>
       :warnings="assembly.calendarWarnings"
       :edit-to="sectionPath('calendario')"
     />
+
+    <!-- The planned date of the final agenda passed and it is still
+         provisional (never for an agenda with no items yet) -->
+    <AgendaFinalAction v-if="tree.length > 0" as="reminder" />
 
     <!-- Documents can be presented: until when, and the way to add one -->
     <section
@@ -468,7 +450,7 @@ const warnedKeys = computed(() =>
             :style="{ paddingInlineStart: `${row.depth * 1.25}rem` }"
           >
             <NuxtLink
-              :to="`${sectionPath('orden-del-dia')}#${agendaItemAnchor(row.item.id)}`"
+              :to="agendaItemPath(sectionPath(), row.item.id)"
               class="text-default hover:text-primary focus-visible:outline-primary min-w-0 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2"
               :class="row.depth === 0 ? 'font-medium' : 'text-sm'"
             >

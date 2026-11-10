@@ -4,7 +4,7 @@ export const SYSTEM_ROLES = {
   MODERADOR: "Moderador",
   /** Presidency of CREUP: same default permissions as the Secretaría. */
   PRESIDENCIA: "Presidencia",
-  /** Members of the Comisión Ejecutiva (intranet type "CEA"). */
+  /** Members of the Comisión Ejecutiva Ampliada (intranet type "CEA"). */
   CEA: "CEA",
   ASOCIADO: "Asociado",
   /**

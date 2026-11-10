@@ -74,6 +74,9 @@ const { document, pending, error, stale, refresh } = await useDocument(
   documentParam,
 );
 
+// Names the document in the breadcrumb row, from the DTO loaded above.
+useDocumentBreadcrumb(document);
+
 /** Secretaría-level management (document:manage) at any stage. */
 const manager = computed(() => Boolean(document.value?.can.manage));
 /** A presenter preparing their draft: the guided, numbered layout. */
@@ -297,7 +300,7 @@ const canAskCorrection = computed(
  * sent, publishing again, a text with no presenter (or the manager's own
  * member), or one the Secretaría opened from the agenda to supply the text
  * itself ("Crear y subir el texto"). Otherwise the draft is still with a
- * member, and "Publicar ahora" waits in the "Más" menu.
+ * member, and "Publicar ahora" is a secondary button (DocumentManageActions).
  */
 const publishPrimary = computed(() => {
   const current = document.value;
@@ -517,7 +520,8 @@ const { data: agenda } = useAssemblyAgenda();
  * as the server): a document the Secretaría expects, because it set an
  * internal deadline (`dueAt`, which governs instead) or put it under an
  * item that takes no submissions, and a draft sent back for a correction,
- * which reopens the presentation.
+ * which reopens the presentation. The automatic sub-item of a document
+ * presented under an item that takes them never exempts it.
  */
 const deadlineExempt = computed(() => {
   const current = document.value;
@@ -526,7 +530,7 @@ const deadlineExempt = computed(() => {
   const item = agenda.value?.items.find(
     (candidate) => candidate.id === current.agendaItemId,
   );
-  return item?.acceptsSubmissions === false;
+  return item?.acceptsSubmissions === false && !item.auto;
 });
 
 /** The calendar's deadline for presenting documents, when it applies. */
@@ -607,19 +611,12 @@ async function onDeleted(): Promise<void> {
           : t('document.authoring.loadErrorDescription')
       "
     >
-      <template #action>
+      <!-- The way back is the breadcrumb row, above -->
+      <template v-if="loadErrorStatus !== 404" #action>
         <UButton
-          v-if="loadErrorStatus !== 404"
           icon="i-lucide-refresh-ccw"
           :label="t('document.authoring.retry')"
           @click="refetch"
-        />
-        <UButton
-          :to="documentsPath"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-arrow-left"
-          :label="t('document.authoring.backToDocuments')"
         />
       </template>
     </CommonEmptyState>
@@ -805,19 +802,7 @@ async function onDeleted(): Promise<void> {
               secondary-save
               @saved="storeDocument"
               @stale="refetch"
-            >
-              <template v-if="textEditable" #format>
-                <DocumentFormatSwitch
-                  inline
-                  :document="document"
-                  :document-api="documentApi"
-                  :disabled="busy"
-                  :pending="textDirty || metadataDirty"
-                  @updated="storeDocument"
-                  @stale="refetch"
-                />
-              </template>
-            </DocumentMetadataForm>
+            />
           </UCard>
         </section>
 
@@ -837,6 +822,16 @@ async function onDeleted(): Promise<void> {
                 : t("document.authoring.steps.pdf")
             }}
           </h3>
+          <!-- Text or PDF, in view while it can still change -->
+          <DocumentFormatSwitch
+            v-if="textEditable"
+            :document="document"
+            :document-api="documentApi"
+            :disabled="busy"
+            :pending="textDirty || metadataDirty"
+            @updated="storeDocument"
+            @stale="refetch"
+          />
           <DocumentDraftEditor
             v-if="isStructured"
             ref="draftEditor"
@@ -961,6 +956,16 @@ async function onDeleted(): Promise<void> {
         }"
       >
         <div class="min-w-0 space-y-4">
+          <!-- Text or PDF, in view while it can still change -->
+          <DocumentFormatSwitch
+            v-if="textEditable"
+            :document="document"
+            :document-api="documentApi"
+            :disabled="busy"
+            :pending="textDirty || metadataDirty"
+            @updated="storeDocument"
+            @stale="refetch"
+          />
           <DocumentDraftEditor
             v-if="isStructured && textEditable"
             ref="draftEditor"
@@ -1052,7 +1057,7 @@ async function onDeleted(): Promise<void> {
         <aside
           v-show="dataPanel"
           id="document-data-panel"
-          class="min-w-0 space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-var(--ui-header-height)-2rem)] lg:overflow-y-auto"
+          class="min-w-0 space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-2rem)] lg:overflow-y-auto"
         >
           <UCard :ui="{ body: 'p-4 sm:p-5' }">
             <template #header>
@@ -1079,19 +1084,7 @@ async function onDeleted(): Promise<void> {
               :secondary-save="publishPrimary"
               @saved="storeDocument"
               @stale="refetch"
-            >
-              <template v-if="textEditable" #format>
-                <DocumentFormatSwitch
-                  inline
-                  :document="document"
-                  :document-api="documentApi"
-                  :disabled="busy"
-                  :pending="textDirty || metadataDirty"
-                  @updated="storeDocument"
-                  @stale="refetch"
-                />
-              </template>
-            </DocumentMetadataForm>
+            />
           </UCard>
         </aside>
       </div>

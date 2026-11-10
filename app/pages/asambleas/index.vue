@@ -161,6 +161,7 @@ const createOpen = ref(false);
           </UButton>
         </template>
       </UDashboardNavbar>
+      <ShellBreadcrumbs />
 
       <UDashboardToolbar>
         <template #left>

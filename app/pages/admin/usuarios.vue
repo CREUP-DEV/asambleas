@@ -922,6 +922,7 @@ function goToPage(next: number): void {
           />
         </template>
       </UDashboardNavbar>
+      <ShellBreadcrumbs />
 
       <UDashboardToolbar>
         <template #left>

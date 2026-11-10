@@ -369,6 +369,29 @@ describe("payload allowlists", () => {
     ).toEqual({ moved: 2 });
   });
 
+  it("keeps the mark of a root change made after the final agenda", () => {
+    expect(
+      allowActivityPayload("event", "agenda_item_created", {
+        parentId: null,
+        title: "Ruegos y preguntas",
+        afterFinal: true,
+      }),
+    ).toEqual({ title: "Ruegos y preguntas", afterFinal: true });
+    expect(
+      allowActivityPayload("event", "agenda_reordered", {
+        itemIds: ["i1"],
+        moves: [
+          {
+            id: "i1",
+            from: { parentId: null, order: 1 },
+            to: { parentId: null, order: 0 },
+          },
+        ],
+        afterFinal: true,
+      }),
+    ).toEqual({ moved: 1, afterFinal: true });
+  });
+
   it("shows nothing of an unknown action", () => {
     expect(allowActivityPayload("event", "future_type", { a: 1 })).toEqual({});
     expect(allowActivityPayload("event", "constructor", { a: 1 })).toEqual({});
@@ -1367,6 +1390,75 @@ describe("toAdminActivityItem", () => {
       label: "CEUA 9",
       document: null,
     });
+  });
+});
+
+describe("automatic agenda sub-items", () => {
+  const created = (documentId: string) => ({
+    action: "agenda_item_created",
+    targetType: "agenda_item",
+    targetId: "item",
+    actorUserId: OTHER,
+    payload: { title: "Borrador", auto: true, documentId },
+  });
+
+  it("show to those who see their document", () => {
+    const viewer = makeActor({ memberId: MEMBER });
+    // Another member's draft: its sub-item carries its title.
+    expect(meItem(viewer, "member", created("draftdoc"))).toBeNull();
+    expect(meItem(viewer, "member", created("doc"))?.target.available).toBe(
+      true,
+    );
+    const presenter = makeActor({ memberId: OTHER_MEMBER });
+    const item = meItem(presenter, "member", created("draftdoc"))!;
+    expect(item.target.available).toBe(true);
+    expect(item.payload).toEqual({ title: "Borrador", auto: true });
+  });
+
+  it("show to document managers once the document is gone", () => {
+    const deleted = {
+      ...created("gone"),
+      action: "agenda_item_deleted",
+      payload: {
+        title: "Borrador",
+        deletedItems: [{ id: "item", title: "Borrador" }],
+        auto: true,
+        cascade: true,
+        documentId: "gone",
+      },
+    };
+    expect(
+      meItem(makeActor({ memberId: MEMBER }), "member", deleted),
+    ).toBeNull();
+    const item = meItem(
+      makeActor({ permissions: [PERMISSION_KEYS.DOCUMENT_MANAGE] }),
+      "member",
+      deleted,
+    )!;
+    expect(item.payload).toEqual({
+      title: "Borrador",
+      deletedItems: [{ title: "Borrador" }],
+      auto: true,
+      cascade: true,
+    });
+  });
+
+  it("leave items written by hand visible to everyone", () => {
+    expect(
+      meItem(makeActor({ memberId: MEMBER }), "member", {
+        action: "agenda_item_created",
+        targetType: "agenda_item",
+        targetId: "item",
+        actorUserId: OTHER,
+        payload: { title: "Informes", documentId: "draftdoc" },
+      })?.target.available,
+    ).toBe(true);
+  });
+
+  it("load the document their events name", () => {
+    const ids = collectActivityIds([row(created("draftdoc"))]);
+    expect([...ids.documents]).toEqual(["draftdoc"]);
+    expect([...ids.agendaItems]).toEqual(["item"]);
   });
 });
 

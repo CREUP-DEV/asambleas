@@ -129,7 +129,7 @@ function baseFixture(): void {
       id: "m-cea",
       kind: "executive",
       acronym: "CEA",
-      name: "Área ejecutiva",
+      name: "Área de la CEA",
       source: "manual",
     }),
   ];

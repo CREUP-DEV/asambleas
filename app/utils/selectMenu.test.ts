@@ -32,7 +32,7 @@ describe("selectMenuLabel", () => {
   it("finds items inside groups and skips group labels", () => {
     const grouped = [
       [
-        { type: "label", label: "Áreas ejecutivas", value: "group:executive" },
+        { type: "label", label: "Áreas de la CEA", value: "group:executive" },
         { label: "VDT", value: "vdt" },
       ],
       [{ label: "PRES · Presidencia", value: "pres" }],

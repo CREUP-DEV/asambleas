@@ -17,7 +17,8 @@ import { SPEAKING_QUEUE_MAX_LENGTH } from "~~/shared/utils/schemas/speakers";
 import { getOptimisticLockTimestampMs } from "../optimisticLock";
 import { toMemberRef } from "../members/dto";
 import { canModerate, type Actor } from "./actor";
-import { lockAssembly, type AssemblyRow } from "./assemblies";
+import { lockAssembly } from "./agendaWrites";
+import type { AssemblyRow } from "./assemblies";
 import type { Executor } from "./events";
 import { recordEvent } from "./events";
 import {

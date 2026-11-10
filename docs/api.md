@@ -32,9 +32,11 @@ The usual AGENTS.md handler order applies:
   amendments (by id), acceptances, `live_state`. A path that settles an
   amendment locks the transactionals over it in the same amendment pass,
   since settling it closes them. A transaction that moves the
-  live projection from a document or amendment path, or moves a document to
-  another agenda item, share-locks the assembly before the document, so the
-  move serializes with an agenda delete of its target. Explicit locks are `FOR NO KEY UPDATE` or `FOR SHARE`,
+  live projection from a document or amendment path share-locks the assembly
+  before the document. One that may write agenda rows from a document path
+  (creating a document, deleting one, moving or renaming one) takes the
+  assembly lock of the agenda endpoints (`lockAssembly`) before the document,
+  so it serializes with an agenda delete. Explicit locks are `FOR NO KEY UPDATE` or `FOR SHARE`,
   and `FOR UPDATE` only on a row that is deleted, so foreign key checks never
   wait on them. "Row locks" in `server/utils/domain/documents.ts` has the
   details.
@@ -202,7 +204,8 @@ links `users.memberId`:
   account is not linked, and a warning is logged. A missing member is created
   as an intranet member with the account's id, and the next roster sync
   fills it in.
-- `CEA` accounts act for their executive area. A missing area is created as a
+- `CEA` accounts (role shown as "Comisión Ejecutiva Ampliada (CEA)") act for
+  their executive area (shown as "Área de la CEA"). A missing area is created as a
   manual `executive` member named after its acronym (the intranet name may be
   the person's), so the roster sync never deactivates it; an admin renames
   it. CEA accounts link by initials only, since their intranet id is a
@@ -290,26 +293,121 @@ asociados with a vote, "at least" or, with `strict`, "more than";
 
 ## Agenda
 
-| Method | Path                                        | Who               | Notes                                                                                                                                                                                                       |
-| ------ | ------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/assemblies/[assembly]/agenda`         | visible           | `AgendaDto`: flat items plus the documents the actor can see.                                                                                                                                               |
-| POST   | `/api/assemblies/[assembly]/agenda`         | `assembly:manage` | `AgendaItemBody`.                                                                                                                                                                                           |
-| PUT    | `/api/assemblies/[assembly]/agenda/[item]`  | `assembly:manage` | `AgendaItemBody` with `updatedAt`.                                                                                                                                                                          |
-| DELETE | `/api/assemblies/[assembly]/agenda/[item]`  | `assembly:manage` | Children cascade. Returns 409 if the item or its children hold a submitted, published or postponed document, or any document that was ever published (it keeps its base version, reference and amendments). |
-| PUT    | `/api/assemblies/[assembly]/agenda/reorder` | `assembly:manage` | `AgendaReorderBody`. Validates that every parent exists in the same assembly and that there are no cycles.                                                                                                  |
+| Method | Path                                                 | Who               | Notes                                                                                                                                                                                                                                                                    |
+| ------ | ---------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/api/assemblies/[assembly]/agenda`                  | visible           | `AgendaDto`: flat items plus the documents the actor can see. Automatic sub-items of documents the actor cannot see are left out.                                                                                                                                        |
+| POST   | `/api/assemblies/[assembly]/agenda`                  | `assembly:manage` | `AgendaItemBody` (`title`, `parentId`, `description`, `acceptsSubmissions`, `submissionKinds`, `confirmFinal`). Returns `AgendaItemDto`.                                                                                                                                 |
+| PUT    | `/api/assemblies/[assembly]/agenda/[item]`           | `assembly:manage` | `AgendaItemBody` with `updatedAt`. Returns `AgendaItemDto`. A new title on an automatic sub-item sets `titleCustom`.                                                                                                                                                     |
+| DELETE | `/api/assemblies/[assembly]/agenda/[item]`           | `assembly:manage` | Deletes the item with its sub-items and every document under them. 409 `agenda_item_amendments` while any of those documents has an amendment of any status; 409 `agenda_item_live` during the session while one of them is being debated. See "Deleting an item" below. |
+| PUT    | `/api/assemblies/[assembly]/agenda/reorder`          | `assembly:manage` | `AgendaReorderBody`. Validates that every parent exists in the same assembly and that there are no cycles.                                                                                                                                                               |
+| POST   | `/api/assemblies/[assembly]/agenda/[item]/documents` | `document:manage` | `BulkDocumentsBody`. Creates several documents under the item, all or none. Returns 201 `BulkDocumentsDto`. See "Adding several documents" below.                                                                                                                        |
 
-Once the agenda is final (`agendaFinalizedAt`), root items cannot be created,
-deleted or moved. Sub-items still can.
+Once the agenda is final (`agendaFinalizedAt`), a change to the root items
+needs a confirmation: creating one (POST), renaming one or moving an item
+from or to the root level (PUT `[item]`), changing which items are root items
+or their order (PUT `reorder`) and deleting one (DELETE). The request says
+`confirmFinal: true` in the body (`?confirmFinal=true` in the query of the
+DELETE, which has no body). Without it the answer is 409 with
+`data: { code: "agenda_final" }` (`AGENDA_FINAL_CONFLICT_CODE`) and nothing
+changes, so the client asks "El orden del día ya es definitivo. ¿Cambiarlo
+igualmente?" and sends the request again. The event of a confirmed change
+carries `afterFinal: true`. Sub-items, and the description and submissions
+switch of a root item, never need `confirmFinal` and never get `afterFinal`;
+on a provisional agenda `confirmFinal` is ignored (`confirmFinalRootChange`).
+
+The agenda is marked as final or reopened with PUT `calendar`
+(`{ milestones: [], agendaFinal }`), from the agenda page; it records
+`agenda_finalized` or `agenda_reopened`.
+
+**Items where members present ("containers").** `acceptsSubmissions` marks an
+item where members present documents, and `submissionKinds` names the
+document kinds it takes; an empty list means every kind (`itemAcceptsKind` in
+`shared/utils/agendaSubmissions.ts`). `AgendaItemBody.submissionKinds` is
+optional: left out, a POST stores none and a PUT keeps the stored ones. It is
+stored empty while `acceptsSubmissions` is off. The kinds bind members only:
+a member that creates a document of another kind there, moves one in or
+changes the kind of one already there gets 422 with
+`data: { reason: "submission_kind" }`; managers put any kind anywhere.
+
+**Automatic sub-items.** Every document created under an item that accepts
+submissions, by a member or by a manager, gets its own sub-item in the same
+transaction: titled like the document, last among its siblings, with
+`acceptsSubmissions` false, and the document hangs from it (so the
+`agendaItemId` of the answer is the sub-item's). The same happens when a
+document is moved (PUT) to such an item. `AgendaItemDto` says it with `auto:
+true` and `generatedForDocumentId`. The sub-item:
+
+- takes the document's new title when the document is renamed, until a manager
+  renames the sub-item itself (PUT `[item]` with another title sets
+  `titleCustom`); from then on it keeps its own;
+- is deleted when its document is deleted or moved to another item, unless it
+  holds another document or a sub-item by then; kept that way after a move,
+  it becomes an ordinary item (`auto` false, `generatedForDocumentId` null).
+  Moving the document to the item its sub-item hangs from changes nothing,
+  whatever the sub-item holds. The session keeps going on its parent (the
+  projection and the open speaking turns move there);
+- takes no other document: creating one under it (single or bulk) or moving
+  one into it answers 422 with `data: { reason: "auto_item" }`, for managers
+  too;
+- has `auto: true` and `documentId` in the payload of all its events, the
+  manager's PUT `[item]` included, so the activity shows them only to those
+  who see the document;
+- never needs `confirmFinal` nor gets `afterFinal`: it is a sub-item;
+- is left out of `AgendaDto.items` for a viewer who cannot see its document
+  (another member's draft), since it carries that document's title, unless
+  it holds a document the viewer sees or a sub-item (`visibleAgendaItems`).
+  The assembly export leaves out those of unpublished documents. Numbering
+  computed from the items can therefore differ between viewers until the
+  documents are published.
+
+Its events are `agenda_item_created`, `agenda_item_updated` (the title
+following the document) and `agenda_item_deleted`, each with `auto: true` and
+the `documentId`; the activity shows them to those who can see that document.
+
+**Deleting an item.** DELETE removes the item, its sub-items and every
+document under them, in one transaction. Only amendments keep it: while any
+of those documents has an amendment row of any status (drafts and withdrawn
+ones included) the answer is 409 with
+`data: { code: "agenda_item_amendments", documents, amendments }` (how many
+documents have amendments and how many amendments in all) and nothing
+changes. Published and voted documents without amendments go. While the
+assembly is `in_session` it is also refused, 409 with
+`data: { code: "agenda_item_live" }`, if the projection shows one of the
+items or documents or one of the items has a speaking turn waiting or in
+progress. Each document goes as in DELETE `documents/[document]`
+(`removeDocument`: its `document_deleted` event, the votes of its final vote,
+the projection, and its PDF and images once the delete commits), without
+`deleteBlocker` (a final vote does not keep it). Each item records its own
+`agenda_item_deleted`: the one asked for lists the sub-items written by hand
+in `deletedItems` and says `deletedDocuments`; the others say `cascade:
+true`. To word the confirmation the client counts sub-items and documents
+from `AgendaDto`, and reads `DocumentSummaryDto.hasAmendments` to know
+beforehand whether the delete is blocked.
+
+**Adding several documents.** `POST .../agenda/[item]/documents` takes
+`BulkDocumentsBody`: `{ documents: [{ title, kind, format, proponentMemberId?,
+dueAt? }] }`, 1 to 30 rows (`BULK_DOCUMENTS_MAX`). It creates them all or
+none: each one an empty draft with the defaults of its kind, with its
+automatic sub-item when the item accepts submissions and hanging from the
+item itself otherwise. A row without `proponentMemberId` (or with null) has
+no presenter; it never defaults to the manager's own member. The rules of a
+single create apply to each row (`presenter_kind`, a member that does not
+exist or is inactive); the error of a row carries `data.index`, its position
+in the request. It answers 201 with `BulkDocumentsDto`: `{ documents: [{ id,
+slug, title, kind, format, agendaItemId }] }` in the order sent, so the
+client uploads a PDF to each `file` document through `POST
+.../documents/[document]/file`. Each document records `document_created` and
+each sub-item `agenda_item_created`.
 
 ## Documents
 
 | Method | Path                                                         | Who                            | Notes                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | ------ | ------------------------------------------------------------ | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| GET    | `/api/assemblies/[assembly]/documents`                       | visible                        | `DocumentSummaryDto[]`. `amendmentCount` counts the amendments past draft that the actor can see (see who sees an amendment).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| POST   | `/api/assemblies/[assembly]/documents`                       | see below                      | `DocumentCreateBody`. Creates a draft and its working version.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| GET    | `/api/assemblies/[assembly]/documents`                       | visible                        | `DocumentSummaryDto[]`. `amendmentCount` counts the amendments past draft that the actor can see (see who sees an amendment). `hasAmendments` says whether the document has any amendment at all, drafts and unpublished ones included, to accounts with `document:manage` or `assembly:manage`; null for everyone else.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| POST   | `/api/assemblies/[assembly]/documents`                       | see below                      | `DocumentCreateBody`. Creates a draft and its working version. Under an item that accepts submissions it also creates the automatic sub-item, so the `agendaItemId` returned is the sub-item's.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | GET    | `/api/assemblies/[assembly]/documents/[document]`            | visible                        | `DocumentDto`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
-| PUT    | `/api/assemblies/[assembly]/documents/[document]`            | editor                         | `DocumentUpdateBody`. `format` switches between text and PDF until publication (409 after); the draft text and the PDF both stay for a switch back, and a PDF is never amendable. Status changes return 409 once the final vote is recorded.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
-| DELETE | `/api/assemblies/[assembly]/documents/[document]`            | `document:manage`              | Returns 409 with a final vote (annul it first) or, once published, while it has any amendment, drafts included (`deleteBlocker`; withdraw it instead). Takes its versions, co-presenters and the votes of an annulled final vote with it, and clears the live projection if it shows it. `DocumentDto.can.delete` mirrors the rule.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| PUT    | `/api/assemblies/[assembly]/documents/[document]`            | editor                         | `DocumentUpdateBody`. `format` switches between text and PDF until publication (409 after); the draft text and the PDF both stay for a switch back, and a PDF is never amendable. Status changes return 409 once the final vote is recorded. A new `title` renames its automatic sub-item unless that has its own title; a new `agendaItemId` removes the automatic sub-item left empty and, under an item that accepts submissions, creates a new one.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| DELETE | `/api/assemblies/[assembly]/documents/[document]`            | `document:manage`              | Returns 409 with a final vote (annul it first) or, once published, while it has any amendment, drafts included (`deleteBlocker`; withdraw it instead). Takes its versions, co-presenters and the votes of an annulled final vote with it, and clears the live projection if it shows it. `DocumentDto.can.delete` mirrors the rule. Its automatic sub-item goes with it when it holds nothing else.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | PUT    | `/api/assemblies/[assembly]/documents/[document]/content`    | editor                         | `DocumentContentBody`. Replaces the working draft. Returns 409 if `baseHash` is stale or the document is published.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | POST   | `/api/assemblies/[assembly]/documents/[document]/import`     | editor                         | Multipart DOCX up to 15 MB, with magic bytes checked. Returns `DocxImportDto` and saves no text; the file's pictures are stored for the document as images (as by the upload below), recording one `document_images_imported` with their count. The archive's real inflated size and entry count are bounded, mammoth runs in a child process with its own heap and time limit, and the HTML it returns is bounded in nodes, nesting, block elements and formatting marks before it is parsed. `warnings` lists what was lost: `tracked_changes`, `comments`, `images_dropped` (a picture that could not be read or stored, or past 100 pictures or 32 MB), `images_in_tables` (pictures in a table or list, left out), `images_without_alt` (stored pictures with no description), `tables_flattened` (a table nested in a table cell became a paragraph per row) and `highlight`. A Word title equal to the document's title is left out. 413 when a size or markup limit is exceeded, 415 for a corrupt or non-DOCX file, 422 when the document exceeds the content limits (blocks, text per paragraph, nesting, formatting) or has no usable text (that one carries `data: { reason: "empty" }`, since splitting the file cannot help), 429 when the user already has an import running or waiting or the conversion queue is full (an import whose client disconnects leaves the queue at once), 500 when the converter cannot start. |
 | POST   | `/api/assemblies/[assembly]/documents/[document]/images`     | editor                         | Multipart `file`: a PNG or JPEG up to 10 MB for the text of a structured draft (409 once the text is frozen, or past 200 images). Checked by signature and written again by `sharp` (upright, no metadata, at most 2,400 px a side). Returns `{ asset, width, height }`; records `document_image_uploaded`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
@@ -326,8 +424,11 @@ deleted or moved. Sub-items still can.
 **Who can create.** Managers (`document:manage`) can always create a document,
 for any members (see presenters below) and with no content. Members with
 `document:create` (Asociado, Sectorial and CEA accounts) can create one under
-an agenda item that has `acceptsSubmissions`, until the `documents_close`
-milestone, always as one of its presenters.
+an agenda item that has `acceptsSubmissions`, of a kind the item takes
+(`submissionKinds`; 422 `submission_kind` otherwise), until the
+`documents_close` milestone, always as one of its presenters. Under such an
+item the document gets its own automatic sub-item (see Agenda), whoever
+creates it.
 
 **Who may present a kind.** A sectorial never presents an internal motion,
 as main presenter or as co-presenter (it may amend one). The rule follows the
@@ -336,6 +437,15 @@ member, not the account's role (`memberMayPresent` in
 presenter the document ends with, for managers too, and answer 422 with
 `data: { reason: "presenter_kind" }` (the message names the sectorials). A
 `PUT` that changes neither the kind nor the presenters is not checked.
+
+**Who may use a PDF.** A kind that takes amendments by default
+(`DOCUMENT_KIND_DEFAULTS[kind].amendable`) is presented as text: only
+managers store one with `format: "file"`. A non-manager `POST` with such a
+kind and `format: "file"`, or a `PUT` that switches such a document to
+`file` or moves a PDF to such a kind, gets 422 with
+`data: { reason: "file_kind" }` (`fileFormatRefused` in
+`shared/utils/documentFormat.ts`). A PDF a manager stored for such a kind
+stays editable by its presenters, who may always switch it back to text.
 
 **Presenters.** A document has a main presenter (`proponentMemberId`,
 `DocumentSummaryDto.proponent`), who alone answers its amendments, and may
@@ -408,7 +518,9 @@ as an empty draft that the member fills in and presents. Only managers set
 `dueAt`: a presenter that sends one gets 403. A document is expected when it
 has a `dueAt` or hangs from an agenda item that does not accept submissions
 (only a manager could have created it there, such as a CEA report without an
-internal deadline). The `documents_close` milestone does not bind an expected
+internal deadline). An automatic sub-item does not count as such an item: a
+document in one was presented under an item that accepts submissions, so
+without a `dueAt` it is not expected and `documents_close` binds it. The `documents_close` milestone does not bind an expected
 document: its `dueAt`, if any, is the deadline, and an overdue one can still
 be presented (the tracking panel flags it).
 

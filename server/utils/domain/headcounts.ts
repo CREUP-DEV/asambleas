@@ -22,7 +22,8 @@ import {
 import { getOptimisticLockTimestampMs } from "../optimisticLock";
 import { toMemberRef } from "../members/dto";
 import type { Actor } from "./actor";
-import { lockAssembly, type AssemblyRow } from "./assemblies";
+import { lockAssembly } from "./agendaWrites";
+import type { AssemblyRow } from "./assemblies";
 import { loadCalendarRules } from "./calendarRules";
 import { diffChanges } from "./changes";
 import type { Executor } from "./events";

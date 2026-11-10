@@ -798,47 +798,30 @@ useHead({
           : t('workspace.loadErrorDescription')
       "
     >
-      <template #action>
+      <!-- The way back is the breadcrumb row, above -->
+      <template v-if="errorStatusCode !== 404" #action>
         <UButton
-          v-if="errorStatusCode !== 404"
           icon="i-lucide-refresh-ccw"
           :label="t('workspace.retry')"
           @click="refreshAll"
-        />
-        <UButton
-          :to="workspace.hub.sectionPath('documentos')"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-arrow-left"
-          :label="t('workspace.backToDocuments')"
         />
       </template>
     </CommonEmptyState>
 
     <template v-else>
       <header class="space-y-1">
-        <div class="flex flex-wrap items-center justify-between gap-2">
+        <!-- The way back to the document is the breadcrumb row, above -->
+        <div v-if="reviewing" class="flex items-center justify-end gap-2">
+          <ProponentReviewShortcutHelp class="hidden lg:inline-flex" />
           <UButton
-            :to="documentPath()"
+            class="lg:hidden"
             color="neutral"
-            variant="link"
+            variant="outline"
             size="sm"
-            icon="i-lucide-arrow-left"
-            class="px-0"
-            :label="t('proponentReview.back')"
+            icon="i-lucide-list"
+            :label="t('proponentReview.list.open')"
+            @click="listOpen = true"
           />
-          <div v-if="reviewing" class="flex items-center gap-2">
-            <ProponentReviewShortcutHelp class="hidden lg:inline-flex" />
-            <UButton
-              class="lg:hidden"
-              color="neutral"
-              variant="outline"
-              size="sm"
-              icon="i-lucide-list"
-              :label="t('proponentReview.list.open')"
-              @click="listOpen = true"
-            />
-          </div>
         </div>
         <h2 class="text-highlighted text-xl font-bold sm:text-2xl">
           {{
@@ -880,15 +863,7 @@ useHead({
         :title="t('proponentReview.noAccess.title')"
         :description="t('proponentReview.noAccess.description')"
         variant="outline"
-      >
-        <template #action>
-          <UButton
-            :to="documentPath()"
-            icon="i-lucide-arrow-left"
-            :label="t('proponentReview.back')"
-          />
-        </template>
-      </CommonEmptyState>
+      />
 
       <!-- Amendments loading -->
       <div
@@ -955,15 +930,7 @@ useHead({
         :title="t('proponentReview.closed.title')"
         :description="t('proponentReview.closed.description')"
         variant="outline"
-      >
-        <template #action>
-          <UButton
-            :to="documentPath()"
-            icon="i-lucide-arrow-left"
-            :label="t('proponentReview.back')"
-          />
-        </template>
-      </CommonEmptyState>
+      />
 
       <!-- Nothing to answer -->
       <CommonEmptyState
@@ -974,13 +941,6 @@ useHead({
         variant="outline"
       >
         <ProponentReviewWaiting :counts="waiting" class="text-start" />
-        <template #action>
-          <UButton
-            :to="documentPath()"
-            icon="i-lucide-arrow-left"
-            :label="t('proponentReview.back')"
-          />
-        </template>
       </CommonEmptyState>
 
       <!-- Review -->
@@ -1092,7 +1052,7 @@ useHead({
 
           <aside class="hidden lg:block">
             <div
-              class="sticky top-0 max-h-[calc(100dvh-var(--ui-header-height)-6rem)] space-y-3 overflow-x-hidden overflow-y-auto"
+              class="sticky top-0 max-h-[calc(100dvh-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-6rem)] space-y-3 overflow-x-hidden overflow-y-auto"
             >
               <h3 class="text-highlighted px-2 text-sm font-semibold">
                 {{ t("proponentReview.list.title") }}

@@ -326,6 +326,7 @@ onBeforeRouteLeave(() => {
           <UDashboardSidebarCollapse />
         </template>
       </UDashboardNavbar>
+      <ShellBreadcrumbs />
       <UDashboardToolbar>
         <template #left>
           <UTabs

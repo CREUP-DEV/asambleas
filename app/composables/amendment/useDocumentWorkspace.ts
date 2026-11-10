@@ -30,6 +30,9 @@ export function useDocumentWorkspace() {
     refresh: refreshDocument,
   } = useDocument(assemblyParam, documentParam);
 
+  // Names the document in the breadcrumb row, from the DTO loaded above.
+  useDocumentBreadcrumb(document);
+
   /** The frozen base the amendments anchor to (empty until publication). */
   const base = computed<Block[]>(
     () => document.value?.baseVersion?.blocks ?? [],

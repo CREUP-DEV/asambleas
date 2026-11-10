@@ -1095,19 +1095,12 @@ const filteredBlockLabel = computed(() =>
           : t('workspace.loadErrorDescription')
       "
     >
-      <template #action>
+      <!-- The way back is the breadcrumb row, above -->
+      <template v-if="errorStatusCode !== 404" #action>
         <UButton
-          v-if="errorStatusCode !== 404"
           icon="i-lucide-refresh-ccw"
           :label="t('workspace.retry')"
           @click="refreshAll"
-        />
-        <UButton
-          :to="workspace.hub.sectionPath('documentos')"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-arrow-left"
-          :label="t('workspace.backToDocuments')"
         />
       </template>
     </CommonEmptyState>
@@ -1340,7 +1333,7 @@ const filteredBlockLabel = computed(() =>
              section toolbar and padding), like the session console. -->
         <div
           ref="workspaceBox"
-          class="border-default flex flex-col overflow-hidden rounded-lg border lg:h-[calc(100dvh-var(--ui-header-height)-3rem)] lg:min-h-[32rem] lg:flex-row"
+          class="border-default flex flex-col overflow-hidden rounded-lg border lg:h-[calc(100dvh-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-3rem)] lg:min-h-[32rem] lg:flex-row"
         >
           <!-- Text -->
           <UDashboardPanel
@@ -1584,7 +1577,6 @@ const filteredBlockLabel = computed(() =>
                     ref="textView"
                     :annotated="amendedAnnotated"
                     mode="diff"
-                    :focus="selectedAmendment.id"
                     :selected="overlapBlockIds"
                   />
                 </template>

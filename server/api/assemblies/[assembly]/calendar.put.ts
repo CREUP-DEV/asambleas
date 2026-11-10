@@ -6,9 +6,9 @@ import { calendarBodySchema } from "~~/shared/utils/schemas/assembly";
 import { db } from "../../../db";
 import { assemblies, assemblyMilestones } from "../../../db/schema";
 import { requireActor, requireCan } from "../../../utils/domain/actor";
+import { lockAssembly } from "../../../utils/domain/agendaWrites";
 import {
   loadAssemblyDto,
-  lockAssembly,
   readAssemblyBody,
   throwAssemblyMutationError,
 } from "../../../utils/domain/assemblies";

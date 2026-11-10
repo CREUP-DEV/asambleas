@@ -12,6 +12,7 @@ import {
   votes,
 } from "../../db/schema";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
+import { visibleAgendaItems } from "../../../shared/utils/agendaSubmissions";
 import { consolidate } from "../../../shared/utils/content/consolidate";
 import { formatAssemblyLabel } from "../../../shared/utils/slug";
 import type { Actor } from "../domain/actor";
@@ -126,6 +127,7 @@ async function loadAgenda(assemblyId: string) {
       title: agendaItems.title,
       description: agendaItems.description,
       order: agendaItems.order,
+      generatedForDocumentId: agendaItems.generatedForDocumentId,
     })
     .from(agendaItems)
     .where(eq(agendaItems.assemblyId, assemblyId));
@@ -372,7 +374,7 @@ export async function buildAssemblyExportData(
   const actor = await requireExportActor(job.requestedBy);
   const assembly = await requireExportAssembly(actor, job.assemblyId);
 
-  const [agendaRows, documentRows] = await Promise.all([
+  const [allAgendaRows, documentRows] = await Promise.all([
     loadAgenda(assembly.id),
     db.query.documents.findMany({
       where: and(
@@ -383,6 +385,8 @@ export async function buildAssemblyExportData(
       orderBy: [asc(documents.createdAt), asc(documents.id)],
     }),
   ]);
+  // The automatic sub-item of an unpublished document carries its title.
+  const agendaRows = visibleAgendaItems(allAgendaRows, documentRows);
 
   const agenda = buildAgendaTree(agendaRows, documentRows);
   const agendaTitles = new Map(agendaRows.map((row) => [row.id, row.title]));

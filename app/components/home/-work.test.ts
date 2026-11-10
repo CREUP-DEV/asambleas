@@ -53,6 +53,7 @@ const doc = (
     voted: false,
     majority: "simple",
     amendmentCount: 0,
+    hasAmendments: null,
     window: { opensAt: null, closesAt: null, open: false },
     publishedAt: null,
     submittedAt: null,

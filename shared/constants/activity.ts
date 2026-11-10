@@ -553,6 +553,8 @@ export const CHANGE_FIELDS: Record<
     title: "values",
     description: "values",
     acceptsSubmissions: "values",
+    // A list of kinds: shown as changed, without its values.
+    submissionKinds: "changed",
     parentId: "changed",
   },
   document: {

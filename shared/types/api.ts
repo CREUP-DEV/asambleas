@@ -407,7 +407,26 @@ export interface AgendaItemDto {
   title: string;
   description: string | null;
   order: number;
+  /** Members present documents under this item (a "container" item). */
   acceptsSubmissions: boolean;
+  /**
+   * The document kinds members may present here while `acceptsSubmissions`
+   * is on. Empty means every kind (see itemAcceptsKind).
+   */
+  submissionKinds: DocumentKind[];
+  /**
+   * An automatic sub-item: the server created it for a document presented
+   * under an item that accepts submissions. It goes when that document is
+   * deleted or moved away, unless it holds something else by then.
+   */
+  auto: boolean;
+  /** The document an automatic sub-item was created for; null otherwise. */
+  generatedForDocumentId: string | null;
+  /**
+   * A manager renamed the automatic sub-item, so its title no longer
+   * follows the document's.
+   */
+  titleCustom: boolean;
   updatedAt: IsoDate;
 }
 
@@ -421,11 +440,23 @@ export interface AgendaItemBody {
   title: string;
   description?: string | null;
   acceptsSubmissions?: boolean;
+  /**
+   * The kinds members may present here; empty or left out on a create means
+   * every kind. Stored empty while `acceptsSubmissions` is off.
+   */
+  submissionKinds?: DocumentKind[];
   updatedAt?: IsoDate;
+  /**
+   * Go ahead although the agenda is final. Needed to create, move or rename
+   * a root item then; without it the server answers 409 `agenda_final`.
+   */
+  confirmFinal?: boolean;
 }
 
 export interface AgendaReorderBody {
   items: { id: string; parentId: string | null; order: number }[];
+  /** As in AgendaItemBody, when the sequence of root items changes. */
+  confirmFinal?: boolean;
 }
 
 // Documents --------------------------------------------------------------
@@ -454,7 +485,15 @@ export interface DocumentSummaryDto {
   acceptedAmendments: AcceptedAmendmentRule;
   voted: boolean;
   majority: Majority;
+  /** Amendments past draft that the viewer can see. */
   amendmentCount: number;
+  /**
+   * Whether the document has any amendment at all, of any status, drafts
+   * and other members' unpublished ones included: what keeps its agenda
+   * item from being deleted. Only for those who delete documents or agenda
+   * items (document:manage or assembly:manage); null for everyone else.
+   */
+  hasAmendments: boolean | null;
   window: AmendmentWindowDto;
   publishedAt: IsoDate | null;
   /** Presented to the Secretaría (null while it is a draft). */
@@ -547,6 +586,37 @@ export interface DocumentCreateBody {
   blocks?: Block[];
   /** Managers only: internal deadline for an expected document. */
   dueAt?: IsoDate | null;
+}
+
+/**
+ * Body of POST .../agenda/[item]/documents: several documents for one
+ * agenda item, created together (managers only).
+ */
+export interface BulkDocumentsBody {
+  documents: {
+    title: string;
+    kind: DocumentKind;
+    format: DocumentFormat;
+    /** Main presenter; left out or null leaves the document without one. */
+    proponentMemberId?: string | null;
+    /** Internal deadline for an expected document. */
+    dueAt?: IsoDate | null;
+  }[];
+}
+
+/** One document the bulk create made, in the order of the request. */
+export interface BulkCreatedDocumentDto {
+  id: string;
+  slug: string;
+  title: string;
+  kind: DocumentKind;
+  format: DocumentFormat;
+  /** The item it hangs from: its automatic sub-item, when it got one. */
+  agendaItemId: string;
+}
+
+export interface BulkDocumentsDto {
+  documents: BulkCreatedDocumentDto[];
 }
 
 export interface DocumentUpdateBody {

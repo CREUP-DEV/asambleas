@@ -330,7 +330,15 @@ export type ActivityDetail =
   /** The sub-items a deleted agenda item took with it, by title. */
   | { type: "subItems"; titles: string[] }
   /** How many agenda items a reorder moved. */
-  | { type: "moved"; count: number };
+  | { type: "moved"; count: number }
+  /** A change to the root agenda items made once the agenda was final. */
+  | { type: "afterFinal" }
+  /** The agenda item is the automatic sub-item of a document. */
+  | { type: "autoItem" }
+  /** The agenda item went with the item it hung from. */
+  | { type: "cascade" }
+  /** How many documents a deleted agenda item took with it. */
+  | { type: "deletedDocuments"; count: number };
 
 /** A value in a field change: text, number, flag or empty. */
 export type ActivityChangeValue = string | number | boolean | null;
@@ -407,6 +415,19 @@ function changeDetails(
   return details;
 }
 
+/** The mark of a root agenda change made once the agenda was final. */
+function afterFinalDetails(payload: Record<string, unknown>): ActivityDetail[] {
+  return payload.afterFinal === true ? [{ type: "afterFinal" }] : [];
+}
+
+/** The marks of an automatic sub-item and of one deleted with its parent. */
+function autoItemDetails(payload: Record<string, unknown>): ActivityDetail[] {
+  return [
+    ...(payload.auto === true ? [{ type: "autoItem" as const }] : []),
+    ...(payload.cascade === true ? [{ type: "cascade" as const }] : []),
+  ];
+}
+
 function eventDetails(
   action: string,
   payload: Record<string, unknown>,
@@ -414,10 +435,17 @@ function eventDetails(
   switch (action) {
     case "assembly_updated":
     case "calendar_updated":
-    case "agenda_item_updated":
     case "document_updated":
     case "headcount_corrected":
       return changeDetails(action, payload);
+    case "agenda_item_created":
+      return [...autoItemDetails(payload), ...afterFinalDetails(payload)];
+    case "agenda_item_updated":
+      return [
+        ...autoItemDetails(payload),
+        ...changeDetails(action, payload),
+        ...afterFinalDetails(payload),
+      ];
     case "agenda_item_deleted": {
       // The first entry is the deleted item itself, then what was under it.
       const titles = (
@@ -426,14 +454,25 @@ function eventDetails(
         .map((entry) => text(record(entry).title))
         .filter((title): title is string => title !== null)
         .slice(1);
-      return titles.length > 0 ? [{ type: "subItems", titles }] : [];
+      const documents = count(payload.deletedDocuments);
+      return [
+        ...autoItemDetails(payload),
+        ...(titles.length > 0 ? [{ type: "subItems" as const, titles }] : []),
+        ...(documents > 0
+          ? [{ type: "deletedDocuments" as const, count: documents }]
+          : []),
+        ...afterFinalDetails(payload),
+      ];
     }
     case "agenda_reordered": {
       // `moved` outside the Admin log; the raw `moves` in it.
       const moved = Array.isArray(payload.moves)
         ? payload.moves.length
         : count(payload.moved);
-      return moved > 0 ? [{ type: "moved", count: moved }] : [];
+      return [
+        ...(moved > 0 ? [{ type: "moved" as const, count: moved }] : []),
+        ...afterFinalDetails(payload),
+      ];
     }
     case "assembly_status_changed":
     case "document_status_changed": {

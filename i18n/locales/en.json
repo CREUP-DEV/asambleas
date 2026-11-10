@@ -359,21 +359,7 @@
       "staleDescription": "The assembly could not be refreshed. Showing the last loaded data. Select to retry."
     },
     "sections": {
-      "label": "Assembly sections",
-      "overview": "Overview",
-      "agenda": "Agenda",
-      "documents": "Documents",
-      "calendar": "Calendar",
-      "convocation": "Notice of meeting",
-      "session": "Session",
-      "projection": "Projection",
-      "settings": "Settings",
-      "validation": "Validation",
-      "tracking": "Tracking",
-      "validationPending": "Validation: {count} to validate | Validation: {count} to validate",
-      "live": "Live",
-      "liveNow": "Now",
-      "liveInSession": "Live: the session is under way"
+      "label": "Assembly sections"
     },
     "transitions": {
       "draft_convened": {
@@ -634,7 +620,6 @@
       "notFound": "Document not found",
       "notFoundDescription": "It does not exist or you do not have access to it.",
       "retry": "Try again",
-      "backToDocuments": "Back to documents",
       "backToWorkspace": "View document",
       "backToAgenda": "Back to the agenda",
       "noLongerEditable": "This document can no longer be edited",
@@ -798,8 +783,6 @@
       "summaryDescription": "A few lines for the document list and the notice of meeting.",
       "optional": "Optional",
       "kind": "Document type",
-      "format": "Format",
-      "formatHelp": "It can be switched until it is published.",
       "agendaItem": "Agenda item",
       "agendaUnavailable": "The agenda could not be loaded",
       "proponent": "Who presents it",
@@ -839,7 +822,7 @@
       "agendaItemHelp": "Change it only if the document belongs under another item.",
       "dueAt": "Internal deadline",
       "dueAtDescription": "The date by which the presenter has to send it to the Secretariat.",
-      "advanced": "Advanced options",
+      "advanced": "More options",
       "invalid": "Check the document details"
     },
     "submit": {
@@ -1037,9 +1020,19 @@
       "working": "Validating and publishing the document...",
       "success": "Document validated and published"
     },
-    "kindGroups": {
-      "common": "Most common",
-      "others": "Other types"
+    "kindPicker": {
+      "other": "Another type",
+      "otherDescription": "See more types",
+      "otherLabel": "Another document type"
+    },
+    "rules": {
+      "label": "Rules:",
+      "amendable": "Can be amended",
+      "notAmendable": "Cannot be amended",
+      "voted": "Voted on",
+      "notVoted": "Not voted on",
+      "change": "Change",
+      "changeLabel": "Change the rules of the document"
     },
     "presenters": {
       "fold": {
@@ -1563,7 +1556,7 @@
       "editorHint": "Change, delete or add whatever you want. Whatever you leave untouched stays as it is.",
       "deleteHint": "This is what would be removed from the text.",
       "find": "Current term",
-      "findPlaceholder": "e.g. Executive Committee",
+      "findPlaceholder": "e.g. Extended Executive Committee",
       "replace": "New term",
       "replacePlaceholder": "Leave it empty to remove it",
       "globalHint": "Type the term to see how often it appears.",
@@ -1832,7 +1825,7 @@
     "save": "Save",
     "members": {
       "title": "Members",
-      "description": "Member councils, sectoral bodies and executive areas that present documents and amendments. Councils and sectoral bodies are synced from the intranet; executive areas are added here.",
+      "description": "Member councils, sectoral bodies and Extended Executive Committee areas that present documents and amendments. Councils and sectoral bodies are synced from the intranet; CEA areas are added here.",
       "sync": "Sync with the intranet",
       "syncing": "Syncing with the intranet…",
       "syncDoneTitle": "Sync complete",
@@ -1840,7 +1833,7 @@
       "syncFailed": "The intranet sync failed",
       "create": "New member",
       "createTitle": "New member",
-      "createDescription": "For executive areas and other members that do not come from the intranet.",
+      "createDescription": "For CEA areas and other members that do not come from the intranet.",
       "createAction": "Create member",
       "created": "{acronym} created",
       "updated": "{acronym} updated",
@@ -2045,7 +2038,7 @@
         "positioning": "Position paper",
         "resolution": "Resolution",
         "internal_motion": "Internal motion",
-        "executive_report": "Executive Committee report",
+        "executive_report": "Extended Executive Committee report",
         "regulation": "Regulation",
         "statutes": "Statutes",
         "budget": "Budget",
@@ -2146,6 +2139,23 @@
       "liveNow": "Now",
       "liveInSession": "Live: the session is under way"
     },
+    "assemblyGroups": {
+      "assembly": "Assembly",
+      "secretariat": "Secretariat",
+      "mesa": "The Mesa"
+    },
+    "breadcrumb": {
+      "label": "Where you are",
+      "backTo": "Back to {label}",
+      "assembly": "Assembly",
+      "agendaItem": "Item",
+      "document": "Document",
+      "views": {
+        "edit": "Edit",
+        "answers": "Answers",
+        "consolidated": "Consolidated text"
+      }
+    },
     "live": {
       "region": "Assembly in session",
       "single": "In session: {assembly}",
@@ -2177,13 +2187,13 @@
       "sectorial": "Sectoral body",
       "invitado": "Guest",
       "none": "No role",
-      "cea": "Executive Committee (CEA)",
+      "cea": "Extended Executive Committee (CEA)",
       "presidencia": "Presidency"
     },
     "memberKinds": {
       "asociado": "Member council",
       "sectorial": "Sectoral body",
-      "executive": "Executive area",
+      "executive": "CEA area",
       "other": "Other"
     },
     "toastRegion": "Notifications (F8)",
@@ -2444,10 +2454,33 @@
     "seeConvocation": "See notice of meeting",
     "addItem": "Add item",
     "addFirstItem": "Add the first item",
-    "rootsLockedShort": "The agenda is final: main items cannot be added",
-    "rootsLockedTitle": "Final agenda",
-    "rootsLockedDescription": "Main items cannot be created, moved or deleted. Sub-items still can.",
-    "reopenInCalendar": "Reopen it in the calendar",
+    "fold": {
+      "show": "Show the sub-item | Show the {count} sub-items",
+      "hide": "Hide the sub-item | Hide the {count} sub-items",
+      "of": "{action} of item {number}: {title}",
+      "expandAll": "Expand all",
+      "collapseAll": "Collapse all",
+      "expandedAll": "All sub-items are shown",
+      "collapsedAll": "All sub-items are hidden"
+    },
+    "finalAgenda": {
+      "mark": "Mark as final",
+      "reopen": "Reopen as provisional",
+      "markTitle": "Mark the agenda as final?",
+      "markDescription": "Final means this is the agenda the assembly will follow. If you change a main item afterwards, you will have to confirm it and it will be noted in the history.",
+      "reopenTitle": "Reopen the agenda as provisional?",
+      "reopenDescription": "The agenda will be provisional again and main items can be changed without confirming.",
+      "marked": "The agenda is now final",
+      "reopened": "The agenda is provisional again",
+      "error": "The status of the agenda could not be changed",
+      "overdueTitle": "The agenda is still provisional",
+      "overdueDescription": "The final agenda was planned for {date}. When it is closed, mark it as final.",
+      "confirmChangeTitle": "The agenda is already final",
+      "confirmChangeDescription": "Change it anyway? The change will be noted in the history.",
+      "confirmChange": "Change anyway",
+      "deleteNote": "The agenda is already final. The deletion will be noted in the history.",
+      "organizeHint": "The agenda is already final. To change a main item you will have to confirm it. Sub-items change without confirming."
+    },
     "loading": "Loading the agenda",
     "loadError": "The agenda could not be loaded",
     "retry": "Try again",
@@ -2456,7 +2489,6 @@
     "emptyManagerDescription": "Add the agenda items. You can then create sub-items and documents in each one.",
     "acceptsSubmissions": "Accepts documents from members",
     "acceptsSubmissionsHelp": "Members can submit documents under this item until the documents deadline.",
-    "lockedRoot": "Main item locked: the agenda is final",
     "documentsOf": "Documents of item {number}: {title}",
     "submissionsClosedAssembly": "The assembly has finished: documents can no longer be submitted.",
     "submissionsDeadlinePassed": "The deadline for submitting new documents has passed.",
@@ -2470,13 +2502,30 @@
     "updated": "Item updated: {title}",
     "createdToast": "Item created",
     "updatedToast": "Item updated",
-    "deleted": "Item deleted: {title}",
     "deletedToast": "Item deleted",
     "deleteTitle": "Delete the item?",
     "deleteDescription": "You are about to delete item {number}: {title}.",
-    "deleteChildren": "Its sub-item will be deleted too. | Its {count} sub-items will be deleted too.",
-    "deleteDocuments": "The draft document it holds will be deleted. | The {count} draft documents it holds will be deleted.",
     "deleteIrreversible": "This cannot be undone.",
+    "item": {
+      "notFound": "This item does not exist or you cannot see it.",
+      "gone": {
+        "title": "This item is no longer on the agenda",
+        "back": "Go to the agenda"
+      },
+      "open": "Open item",
+      "openOf": "Open item {number}: {title}",
+      "documents": "Documents",
+      "noDocuments": "This item has no documents.",
+      "noOwnDocuments": "The documents are in its sub-items.",
+      "subItems": "Sub-items",
+      "submissions": {
+        "any": "Members submit their documents here.",
+        "kinds": "Members submit here: {kinds}."
+      },
+      "neighbours": "Previous and next item",
+      "previous": "Previous",
+      "next": "Next"
+    },
     "move": {
       "group": "Move the item",
       "up": "Move item {number} up: {title}",
@@ -2489,11 +2538,8 @@
       "outdentShort": "Up one level"
     },
     "actions": {
-      "edit": "Edit item",
       "addSubItem": "Add sub-item",
       "newDocument": "Add document",
-      "delete": "Delete item",
-      "menu": "Actions for item {number}: {title}",
       "submitDocument": "Submit a document",
       "newDocumentIn": "Add document to item {number}: {title}",
       "submitDocumentIn": "Submit a document under item {number}: {title}"
@@ -2540,10 +2586,6 @@
       "structured": "Text on the platform",
       "file": "PDF file"
     },
-    "formatDescriptions": {
-      "structured": "Written or imported on the platform; amendments are made on the text.",
-      "file": "A PDF is uploaded. It cannot be amended."
-    },
     "majorities": {
       "simple": "Simple majority",
       "absolute": "Absolute majority",
@@ -2583,7 +2625,14 @@
       "optional": "Optional",
       "dueAtHelp": "The date by which the presenter has to send it to the Secretariat.",
       "dueAtHelpMember": "The date by which {member} has to send it. They will see it on their home page. | The date by which {member} have to send it. They will see it on their home pages.",
-      "advanced": "Advanced options",
+      "advanced": "More options",
+      "formatCards": {
+        "structured": "Text on the platform",
+        "structuredDescription": "Can be amended.",
+        "structuredPlain": "Written here or imported from Word.",
+        "file": "Uploaded PDF",
+        "fileDescription": "Cannot be amended."
+      },
       "expectedFrom": "{member} will see it on their home page to prepare it. | {member} will see it on their home pages to prepare it.",
       "openDocument": "Open",
       "presentingAs": "You present it on behalf of",
@@ -2616,6 +2665,66 @@
       "hintDocuments": "You are organising the documents: add the documents you expect under each item.",
       "enabled": "Organising on: every item shows its controls to move, edit or delete it.",
       "disabled": "Organising finished: the agenda is back to the normal view."
+    },
+    "manage": {
+      "group": "Manage item {number}: {title}",
+      "addDocuments": "Add several documents",
+      "editOf": "Edit item {number}: {title}",
+      "addSubItemOf": "Add sub-item to item {number}: {title}",
+      "addDocumentsOf": "Add several documents to item {number}: {title}",
+      "deleteOf": "Delete item {number}: {title}"
+    },
+    "container": {
+      "question": "Do members submit documents here?",
+      "noDescription": "Only the Secretariat adds documents to this item.",
+      "yesDescription": "Until the deadline for documents.",
+      "kinds": "Which types they can submit",
+      "allKinds": "All types",
+      "moreKinds": "See more types",
+      "fewerKinds": "See fewer types",
+      "ownItem": "Each document submitted gets its own sub-item, with the title of the document.",
+      "autoHint": "This item follows the title of its document. If you change it here, it stops following it.",
+      "autoCustomHint": "This item no longer follows the title of its document, because it was changed here.",
+      "newDocumentHint": "The document will appear as a sub-item of its own under this item.",
+      "takesAll": "Members submit documents here",
+      "takesKinds": "Members submit here: {kinds}",
+      "kindRefused": "This item does not take that type of document."
+    },
+    "bulk": {
+      "title": "Add several documents",
+      "intro": "Write one document on each line. They are all created at once, as drafts.",
+      "containerHint": "Each one gets its own sub-item under this item.",
+      "row": "Document {n}",
+      "removeRow": "Remove",
+      "removeRowN": "Remove document {n}",
+      "addRow": "Add another line",
+      "maxRows": "No more than {max} documents at a time.",
+      "file": "PDF of the document",
+      "fileLabel": "Drop the PDF here or click to choose it",
+      "fileDescription": "Up to 20 MB. It can also be uploaded later.",
+      "submit": "Create the document | Create {count} documents",
+      "created": "The document was created | {count} documents were created",
+      "error": "The documents could not be created",
+      "rowRefused": "Check who presents this document: they cannot present that type or are no longer active.",
+      "fixRows": "Check the lines marked.",
+      "uploading": "Uploading the PDFs: {done} of {total}",
+      "uploadFailedTitle": "The documents were created, but a PDF is missing",
+      "uploadFailedDescription": "The PDF of these documents could not be uploaded. You can try again now or upload it later from each document.",
+      "openDocument": "Open the document",
+      "retry": "Try the upload again"
+    },
+    "delete": {
+      "subItems": "{count} sub-item | {count} sub-items",
+      "documents": "{count} document | {count} documents",
+      "both": "This will delete {subItems} and {documents}.",
+      "one": "This will delete {what}.",
+      "onlyItem": "Only this item will be deleted: it has no sub-items or documents.",
+      "documentsList": "Documents that will be deleted:",
+      "more": "and {count} more",
+      "blockedTitle": "This item cannot be deleted",
+      "blockedAmendments": "A document under this item or its sub-items has amendments. | {count} documents under this item or its sub-items have amendments.",
+      "blockedHelp": "Amendments are other members' work and are not deleted. Move those documents to another item first.",
+      "blockedLive": "This item, a sub-item or one of their documents is being dealt with in the session right now. Try again when the Mesa moves on to another item."
     }
   },
   "calendar": {
@@ -2639,10 +2748,6 @@
     "defaultsApplied": "There are no default deadlines for this assembly type | 1 default deadline applied. Save to confirm it. | {count} default deadlines applied. Save to confirm them.",
     "defaultsConfirmTitle": "Apply the default deadlines?",
     "defaultsConfirmDescription": "The dates you have already set will be replaced by the ones the regulations set for this assembly type. Nothing is saved until you press Save.",
-    "agendaFinal": "Mark the agenda as final",
-    "agendaFinalOn": "Main items are locked: they cannot be created, moved or deleted.",
-    "agendaFinalOff": "The agenda is provisional and can be fully reorganised.",
-    "agendaFinalizedAt": "Final since {date}",
     "unsaved": "No changes | 1 unsaved change | {count} unsaved changes",
     "unsavedConfirm": "The calendar has unsaved changes. Leave without saving them?",
     "saved": "Calendar saved",
@@ -2742,7 +2847,6 @@
     "loadError": "The document could not be loaded",
     "loadErrorDescription": "Check your connection and try again.",
     "retry": "Try again",
-    "backToDocuments": "Back to documents",
     "editDraft": "Edit draft",
     "consolidatedPage": "Consolidated text",
     "detailDescription": "Amendment details",
@@ -2828,7 +2932,6 @@
       "voted": "The text has been voted on: it takes no more amendments."
     },
     "consolidatedView": {
-      "back": "Back to the workspace",
       "text": "Consolidated text",
       "legend": "Click an underlined fragment to see the amendment it comes from.",
       "storedOnly": "The final vote used its own application order: the stored text is shown, without provenance.",
@@ -3565,7 +3668,6 @@
     "emptyDescription": "Nothing is waiting for your validation. When someone sends a document or an amendment, it will show up here.",
     "forbiddenTitle": "You do not have access to validation",
     "forbiddenDescription": "Only the Secretariat validates the documents and amendments that are presented.",
-    "backToOverview": "Back to the overview",
     "toTracking": "See tracking",
     "presentedBy": "Presented by",
     "noPresenter": "Not assigned",
@@ -3803,7 +3905,6 @@
       "documentTitleHelp": "The presenter can change it.",
       "deadline": "Internal deadline",
       "deadlineHelp": "By when they have to send it to the Secretariat. Spanish peninsular time.",
-      "more": "More options",
       "format": "How it will be delivered",
       "create": "Add document",
       "created": "Expected document added",
@@ -4465,6 +4566,10 @@
       "changed": "Changed: {field}",
       "subItems": "With its sub-items: {list}",
       "moved": "{count} item moved | {count} items moved",
+      "afterFinal": "Change made after the agenda was final",
+      "autoItem": "It is the sub-item of a document",
+      "cascade": "Deleted with the item it was under",
+      "deletedDocuments": "With {count} document | With {count} documents",
       "quoted": "“{text}”"
     },
     "endReasons": {
@@ -4681,6 +4786,7 @@
           "title": "Title",
           "description": "Description",
           "acceptsSubmissions": "Accepts documents from members",
+          "submissionKinds": "Document kinds it accepts",
           "parentId": "Place in the agenda"
         },
         "document": {

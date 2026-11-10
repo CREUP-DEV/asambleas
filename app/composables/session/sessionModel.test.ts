@@ -475,6 +475,10 @@ describe("session model", () => {
       description: null,
       order,
       acceptsSubmissions: false,
+      submissionKinds: [],
+      auto: false,
+      generatedForDocumentId: null,
+      titleCustom: false,
       updatedAt: "",
     });
     const rows = buildSessionAgendaRows(
@@ -1480,6 +1484,10 @@ describe("session model", () => {
         description: null,
         order,
         acceptsSubmissions: false,
+        submissionKinds: [],
+        auto: false,
+        generatedForDocumentId: null,
+        titleCustom: false,
         updatedAt: "",
       });
       const doc = (id: string, agendaItemId: string, status: string) =>

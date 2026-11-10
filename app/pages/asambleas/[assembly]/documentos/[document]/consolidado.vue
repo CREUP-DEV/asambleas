@@ -166,33 +166,18 @@ watch(popoverOpen, (open) => {
           : t('workspace.loadErrorDescription')
       "
     >
-      <template #action>
+      <!-- The way back is the breadcrumb row, above -->
+      <template v-if="errorStatusCode !== 404" #action>
         <UButton
-          v-if="errorStatusCode !== 404"
           icon="i-lucide-refresh-ccw"
           :label="t('workspace.retry')"
           @click="refreshAll"
-        />
-        <UButton
-          :to="workspace.hub.sectionPath('documentos')"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-arrow-left"
-          :label="t('workspace.backToDocuments')"
         />
       </template>
     </CommonEmptyState>
 
     <template v-else>
       <DocumentHeader :document="document" :assembly="assembly">
-        <UButton
-          :to="documentPath()"
-          icon="i-lucide-arrow-left"
-          color="neutral"
-          variant="outline"
-          size="sm"
-          :label="t('workspace.consolidatedView.back')"
-        />
         <template v-if="isPublished && document.format === 'structured'">
           <ExportButton
             :assembly="assembly.id"

@@ -327,6 +327,7 @@ onBeforeRouteLeave(() => {
           </UButton>
         </template>
       </UDashboardNavbar>
+      <ShellBreadcrumbs />
     </template>
 
     <template #body>

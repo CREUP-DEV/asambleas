@@ -457,7 +457,6 @@ const moreBusy = computed(
               :id="amendment.id"
               :base="base"
               :ops="amendment.ops"
-              :focus="amendment.id"
             >
               <template v-if="amendment.kind === 'totality_return'" #note>
                 <UAlert

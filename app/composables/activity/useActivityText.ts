@@ -268,6 +268,18 @@ export function useActivityText() {
           { count: detail.count },
           detail.count,
         );
+      case "afterFinal":
+        return t("activity.details.afterFinal");
+      case "autoItem":
+        return t("activity.details.autoItem");
+      case "cascade":
+        return t("activity.details.cascade");
+      case "deletedDocuments":
+        return t(
+          "activity.details.deletedDocuments",
+          { count: detail.count },
+          detail.count,
+        );
     }
   }
 

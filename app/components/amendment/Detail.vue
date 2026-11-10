@@ -535,7 +535,6 @@ async function remove(): Promise<void> {
           :id="amendment.id"
           :base="base"
           :ops="amendment.ops"
-          :focus="amendment.id"
           :context="1"
         >
           <template v-if="amendment.kind === 'totality_return'" #note>

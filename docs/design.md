@@ -27,7 +27,10 @@ enters counts), credentials and per-person attendance, minutes.
 ## Members
 
 Amendments and documents are presented by **members** (student councils,
-sectorials, executive areas), not by people.
+sectorials, executive areas), not by people. An executive area is an area of
+the Comisión Ejecutiva Ampliada: the interface calls it "Área de la CEA" and
+the `CEA` role "Comisión Ejecutiva Ampliada (CEA)". Interface and PDF texts
+never say "Comisión Ejecutiva" alone.
 
 - `members`: `kind` (`asociado`, `sectorial`, `executive`, `other`),
   `acronym` (unique, canonical), `intranet_id` (the intranet's `users.id`,
@@ -64,7 +67,7 @@ permissions may act on behalf of any member; every such action records both.
   `report`, `minutes`, `candidacy`, `venue`, `other`. Defaults per kind
   (`shared/constants/documentKinds.ts`) set whether it is amendable, whether it
   is voted and with which majority. All defaults are editable per document.
-- `format`: `structured` (amendable text) or `file` (uploaded PDF). It can change until the document is published; the draft text and the PDF both stay, so a switch back loses nothing.
+- `format`: `structured` (amendable text) or `file` (uploaded PDF). It can change until the document is published; the draft text and the PDF both stay, so a switch back loses nothing. Only managers use a PDF for a kind that takes amendments by default; members present those as text (`fileFormatRefused`).
 - `proponentMemberId` (who presents it) and `submittedByUserId`.
 - `reference` (`RES 012/2026`, `MI 003/2026`), assigned on admission.
 - `status`: `draft`, `submitted`, `published`, `withdrawn`, `postponed`.
@@ -315,7 +318,30 @@ data, the agenda and the milestones as a print view and a PDF.
 ## Assemblies and session
 
 - Assembly `status`: `draft`, `convened`, `in_session`, `closed`.
-  `agendaFinalizedAt` marks the final agenda.
+  `agendaFinalizedAt` marks the final agenda (ODD definitivo). Managers mark
+  it, or reopen it, on the agenda page; past the `agenda_final` milestone a
+  provisional agenda reminds them there and on the overview. A final agenda
+  does not lock anything: a manager still creates, renames, moves and deletes
+  root items after confirming it (`confirmFinal`), and the event of that
+  change carries `afterFinal: true`, which the activity shows. Sub-items are
+  outside this: changing them is not changing the final agenda.
+- Agenda items where members present ("containers"): `acceptsSubmissions`
+  with `submissionKinds`, the document kinds the item takes (empty means
+  every kind; it binds members, not the Secretaría). Each document created
+  under one gets its own automatic sub-item (`generatedForDocumentId`),
+  titled like the document. The sub-item follows the document's title until
+  a manager renames it (`titleCustom`) and goes when the document is deleted
+  or moved away, unless it holds something else by then. A viewer who cannot
+  see the document (another member's draft) does not get its sub-item. A
+  document in an automatic sub-item is not "expected" for that reason alone:
+  `documents_close` binds it like any document a member chose to present.
+- Deleting an agenda item removes its sub-items and every document under
+  them, each with its own event and the same clean-up as a single delete
+  (votes, projection, PDF and images). Only amendments keep it: one
+  amendment of any status on any of those documents refuses the delete.
+  During the session it is also refused while the item, a sub-item or one of
+  their documents is being debated. The Secretaría adds several documents
+  to one item in one step (`POST .../agenda/[item]/documents`).
 - Per-assembly policies, with defaults from the research: who sees proponent
   positions, whether accepted amendments need a vote, the tie rule, and the
   majority denominator. Who sees a presented amendment is not a policy: the
@@ -751,6 +777,22 @@ rules:
 One authenticated shell built on Nuxt UI dashboard components
 (`UDashboardGroup`, `UDashboardSidebar`, `UDashboardPanel`) with the CREUP
 identity. The sidebar becomes a drawer on mobile.
+
+Every page of the shell shows a breadcrumb row under its navbar
+(`ShellBreadcrumbs`): `Asambleas › 80.ª AGO › Documentos › R-3 › Editar`,
+`Administración › Usuarios`. The last crumb is the page on show; below `lg` the
+row is a single link to the level above. The trail comes from the route
+(`app/composables/shell/-trail.ts`), so pages do not link "back" up the
+hierarchy themselves. Every agenda item and sub-item has its own page
+(`orden-del-dia/[item]`, keyed by the item's id because its number changes
+when the agenda is reordered): number, title and description, its documents
+in full, its sub-items as links and "Anterior" / "Siguiente" in reading
+order, all from the agenda the hub already loads. Its trail names the items
+above it: `Asambleas › 80.ª AGO › Orden del día › 3. Resoluciones › 3.2 …`.
+The sections of an assembly come from one list
+(`app/composables/assembly/-sections.ts`, `useAssemblySections`) for the
+sidebar and the phone toolbar of the hub; whoever has a section of the
+Secretaría or the Mesa sees them under "Asamblea", "Secretaría" and "Mesa".
 
 - **Home**: upcoming assemblies, open deadlines with countdowns, my drafts, the
   amendments waiting for my position, and a live-session banner.

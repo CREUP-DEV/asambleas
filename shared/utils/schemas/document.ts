@@ -7,12 +7,14 @@ import {
   VOTE_METHODS,
 } from "../../constants/domain";
 import type {
+  BulkDocumentsBody,
   CorrectionBody,
   DocumentCreateBody,
   DocumentUpdateBody,
   FinalVoteAnnulBody,
   FinalVoteBody,
 } from "../../types/api";
+import { BULK_DOCUMENTS_MAX } from "../agendaSubmissions";
 import { blocksSchema } from "./content";
 
 /**
@@ -60,6 +62,27 @@ export const documentCreateSchema = z.object({
   majority: z.enum(MAJORITIES).optional(),
   blocks: blocksSchema.optional(),
   dueAt: isoDateSchema.nullable().optional(),
+});
+
+/**
+ * Body of POST .../agenda/[item]/documents (BulkDocumentsBody): the
+ * documents a manager adds to one agenda item in one go. Each row is a
+ * placeholder to fill in later (its text in the editor, its PDF through the
+ * upload endpoint), so it carries no text.
+ */
+export const bulkDocumentsSchema = z.object({
+  documents: z
+    .array(
+      z.object({
+        title: titleSchema,
+        kind: z.enum(DOCUMENT_KINDS),
+        format: z.enum(DOCUMENT_FORMATS),
+        proponentMemberId: entityIdSchema.nullable().optional(),
+        dueAt: isoDateSchema.nullable().optional(),
+      }),
+    )
+    .min(1)
+    .max(BULK_DOCUMENTS_MAX),
 });
 
 export const documentUpdateSchema = z.object({
@@ -146,6 +169,7 @@ export const finalVoteAnnulSchema = z.object({
 type Assignable<T, U extends T> = U;
 export type _DocumentSchemaChecks = [
   Assignable<DocumentCreateBody, z.output<typeof documentCreateSchema>>,
+  Assignable<BulkDocumentsBody, z.output<typeof bulkDocumentsSchema>>,
   Assignable<DocumentUpdateBody, z.output<typeof documentUpdateSchema>>,
   Assignable<CorrectionBody, z.output<typeof correctionBodySchema>>,
   Assignable<FinalVoteBody, z.output<typeof finalVoteSchema>>,

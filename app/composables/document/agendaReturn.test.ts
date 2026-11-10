@@ -3,6 +3,7 @@ import {
   addAfterOf,
   addAnotherPath,
   agendaItemAnchor,
+  agendaItemPath,
   editorFrom,
   nextItemId,
   originOf,
@@ -34,6 +35,11 @@ describe("agenda return", () => {
       `${hub}/orden-del-dia?organizar=1#${agendaItemAnchor("abc")}`,
     );
     expect(originPath("home", hub, "abc")).toBe(hub);
+  });
+
+  it("names the page of an item by its id", () => {
+    expect(agendaItemPath(hub, "abc")).toBe(`${hub}/orden-del-dia/abc`);
+    expect(agendaItemPath(hub, "a/b")).toBe(`${hub}/orden-del-dia/a%2Fb`);
   });
 
   it("asks the page to add another after the item", () => {

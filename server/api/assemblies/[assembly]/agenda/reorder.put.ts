@@ -6,13 +6,12 @@ import { agendaReorderBodySchema } from "~~/shared/utils/schemas/assembly";
 import { db } from "../../../../db";
 import { agendaItems } from "../../../../db/schema";
 import { requireActor, requireCan } from "../../../../utils/domain/actor";
+import { lockAssembly } from "../../../../utils/domain/agendaWrites";
 import {
-  assertRootsUnlocked,
+  confirmFinalRootChange,
   hasAgendaCycle,
-  isAgendaFinal,
   loadAgendaDto,
   loadAgendaItems,
-  lockAssembly,
   readAssemblyBody,
   rootSequence,
   throwAssemblyMutationError,
@@ -23,8 +22,9 @@ import { resolveAssembly } from "../../../../utils/domain/resolvers";
 /**
  * Sets parent and order of the listed items; the rest keep theirs. Every id
  * and parent must belong to the assembly and the result must be a tree. Once
- * the agenda is final, the sequence of root items cannot change. Returns the
- * whole agenda, as GET does.
+ * the agenda is final, changing the sequence of root items needs
+ * `confirmFinal` (409 `agenda_final` without it) and the event says
+ * `afterFinal`. Returns the whole agenda, as GET does.
  */
 export default defineEventHandler(async (event): Promise<AgendaDto> => {
   const actor = await requireActor(event);
@@ -73,11 +73,9 @@ export default defineEventHandler(async (event): Promise<AgendaDto> => {
           message: "Un punto no puede colgar de sí mismo ni de sus subpuntos",
         });
       }
-      if (isAgendaFinal(current)) {
-        const before = rootSequence(items).join(",");
-        const after = rootSequence(next).join(",");
-        if (before !== after) assertRootsUnlocked(current);
-      }
+      const afterFinal =
+        rootSequence(items).join(",") !== rootSequence(next).join(",") &&
+        confirmFinalRootChange(current, body.confirmFinal);
 
       for (const change of changes) {
         await tx
@@ -101,6 +99,7 @@ export default defineEventHandler(async (event): Promise<AgendaDto> => {
               to: { parentId: change.parentId, order: change.order },
             };
           }),
+          ...(afterFinal ? { afterFinal: true } : {}),
         },
         actor,
       });

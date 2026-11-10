@@ -6,6 +6,7 @@ import {
   addAfterOf,
   nextItemId,
 } from "~/composables/document/agendaReturn";
+import { memberSubmissionKinds } from "~/composables/document/documentKinds";
 
 /**
  * The new-document modal of a hub page (home, agenda): who may add, under
@@ -15,11 +16,15 @@ import {
  *   not closed and the calendar's "documents_close" has not passed (shared
  *   clock, so it goes away on time in a tab left open). Managers
  *   (document:manage) add under any item; members, for their own member,
- *   under the items that take submissions.
+ *   under the items that take submissions of a kind their member may
+ *   present. Nobody adds under an automatic sub-item (the one the server
+ *   creates for each document presented under such an item): the document
+ *   goes to the item above, and gets its own.
  * - `?nuevo=<item>` (the editor's "… y añadir otro") opens the modal on the
  *   next item without documents after that one (nextItemId) and is then
- *   dropped from the address. It works for
- *   managers outside the window too, as the agenda's own buttons do.
+ *   dropped from the address. After a document in an automatic sub-item it
+ *   opens on the item above again, which takes the next one too. It works
+ *   for managers outside the window too, as the agenda's own buttons do.
  */
 export function useAddDocument(agenda: Ref<AgendaDto | null | undefined>) {
   const me = useMe();
@@ -52,16 +57,28 @@ export function useAddDocument(agenda: Ref<AgendaDto | null | undefined>) {
       title: item.title,
       number: numbers.get(item.id) ?? "",
       acceptsSubmissions: item.acceptsSubmissions,
+      submissionKinds: item.submissionKinds,
+      auto: item.auto,
+      parentId: item.parentId,
       hasDocuments: withDocuments.has(item.id),
     }));
   });
+
+  /** The items the user may add a document under. */
+  const pickable = computed(() =>
+    items.value.filter((item) =>
+      manager.value
+        ? !item.auto
+        : memberSubmissionKinds(item, me.member.value?.kind).length > 0,
+    ),
+  );
 
   /** A member presenting for its own member. */
   const memberCanPresent = computed(
     () =>
       Boolean(assembly.value?.can.createDocuments) &&
       Boolean(me.member.value) &&
-      items.value.some((item) => item.acceptsSubmissions),
+      pickable.value.length > 0,
   );
 
   /** The button at the top of the page. */
@@ -84,12 +101,20 @@ export function useAddDocument(agenda: Ref<AgendaDto | null | undefined>) {
 
   /** Open the modal on the item after `after`, as "… y añadir otro" asks. */
   function openAfter(after: string): void {
-    const asManager = manager.value;
-    if (!asManager && !canAdd.value) return;
-    const pickable = items.value.filter(
-      (item) => asManager || item.acceptsSubmissions,
-    );
-    openFor(nextItemId(pickable, after));
+    if (!manager.value && !canAdd.value) return;
+    // A document presented under an item that takes several sits in its own
+    // sub-item: the next one goes to the item above again.
+    const previous = items.value.find((item) => item.id === after);
+    if (previous?.auto && previous.parentId) {
+      const container = pickable.value.find(
+        (item) => item.id === previous.parentId,
+      );
+      if (container) {
+        openFor(container.id);
+        return;
+      }
+    }
+    openFor(nextItemId(pickable.value, after));
   }
 
   onMounted(() => {

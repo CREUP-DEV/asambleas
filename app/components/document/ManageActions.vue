@@ -7,9 +7,10 @@ import type { DocumentDto, DocumentUpdateBody } from "~~/shared/types/api";
  * withdraw, postpone, recover a withdrawn submission and delete it
  * (`document.can.delete`). Each one asks for confirmation first. Publishing
  * (and publishing again) stays with the page's publish dialog; with
- * `publishable` the menu also offers "Publicar ahora", which only emits
- * `publish` (for a draft still in a presenter's hands, where publishing is
- * not the screen's main action).
+ * `publishable` a button "Publicar ahora" shows beside the menu, which only
+ * emits `publish` (for a draft still in a presenter's hands, where
+ * publishing is not the screen's main action). It is a button of its own:
+ * nothing the Secretaría does often hides in the menu.
  *
  * Status changes PUT `{ status, updatedAt }` and emit `updated` with the
  * returned DocumentDto (store it); a conflict emits `stale` (refetch).
@@ -167,18 +168,7 @@ const items = computed<DropdownMenuItem[][]>(() => {
           },
         ]
       : [];
-  const publishItems: DropdownMenuItem[] = props.publishable
-    ? [
-        {
-          label: t("document.manage.publishNow"),
-          icon: "i-lucide-megaphone",
-          onSelect: () => emit("publish"),
-        },
-      ]
-    : [];
-  return [publishItems, statusItems, dangerItems].filter(
-    (group) => group.length > 0,
-  );
+  return [statusItems, dangerItems].filter((group) => group.length > 0);
 });
 
 /**
@@ -273,6 +263,15 @@ async function confirm(): Promise<void> {
 </script>
 
 <template>
+  <UButton
+    v-if="publishable"
+    color="neutral"
+    variant="outline"
+    icon="i-lucide-megaphone"
+    :label="t('document.manage.publishNow')"
+    :disabled="disabled || busy"
+    @click="emit('publish')"
+  />
   <UDropdownMenu
     v-if="items.length > 0"
     :items="items"

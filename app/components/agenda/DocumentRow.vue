@@ -13,6 +13,11 @@ import { isPendingProgress } from "~/composables/document/documentProgress";
  * and what comes next (useDocumentProgress). With `editTo` (the presenter's
  * own draft) it offers the next step: prepare it, keep working on it or fix
  * it and send it again.
+ *
+ * `compact` (the agenda page) keeps only what is needed to find a document
+ * and see how it stands: format icon, title, status, the amendment count in
+ * words and that call to action (AgendaDocumentBadges). Presenters, the
+ * window countdown and the progress sentence are left out.
  */
 const props = withDefaults(
   defineProps<{
@@ -20,8 +25,9 @@ const props = withDefaults(
     to: string;
     /** The editor of the user's own draft, for the call to action. */
     editTo?: string | null;
+    compact?: boolean;
   }>(),
-  { editTo: null },
+  { editTo: null, compact: false },
 );
 
 const { t } = useI18n();
@@ -124,7 +130,10 @@ const SENTENCE_COLORS: Record<string, string> = {
           · {{ document.reference }}</span
         >
       </NuxtLink>
-      <div class="text-muted flex flex-wrap items-center gap-1.5 text-xs">
+      <div
+        v-if="!compact"
+        class="text-muted flex flex-wrap items-center gap-1.5 text-xs"
+      >
         <span>{{ t(`agenda.documentKinds.${document.kind}`) }}</span>
         <template v-if="document.format === 'file'">
           <span aria-hidden="true">·</span>
@@ -149,7 +158,7 @@ const SENTENCE_COLORS: Record<string, string> = {
       </div>
       <!-- Where it stands and what comes next (before publication) -->
       <p
-        v-if="pending"
+        v-if="pending && !compact"
         class="flex items-start gap-1.5 text-sm"
         :class="SENTENCE_COLORS[progress.color]"
         data-testid="document-progress"
@@ -163,7 +172,14 @@ const SENTENCE_COLORS: Record<string, string> = {
       </p>
     </div>
 
+    <AgendaDocumentBadges
+      v-if="compact"
+      :document="document"
+      :edit-to="editTo"
+      class="relative z-[1] sm:justify-end"
+    />
     <div
+      v-else
       class="relative z-[1] flex shrink-0 flex-wrap items-center gap-1.5 sm:justify-end"
     >
       <DocumentPresenters :document="document" :max-others="2" />
