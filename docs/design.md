@@ -37,18 +37,32 @@ never say "Comisión Ejecutiva" alone.
   `acronym` (unique, canonical), `intranet_id` (the intranet's `users.id`,
   unique when set: partial index `members_intranet_id_unique`), `name`,
   `university`, `region`, `source` (`intranet`, `manual`), `active`.
-- The intranet exposes the roster: `GET {NUXT_INTRANET_API_URL}/usuarios/asociados`
-  and `/usuarios/sectoriales` return
-  `{ data: [{ id, denomination, initials, university, autonomous_community }] }`.
-  The roster sync matches a member by `intranet_id` first, then by `initials`
-  = `acronym`, so a change of acronym updates the member instead of creating
-  another. It runs by hand from Miembros and daily at 05:00 Europe/Madrid (a
+- The intranet exposes the roster: `GET {NUXT_INTRANET_API_URL}/usuarios/asociados`,
+  `/usuarios/sectoriales`, `/usuarios/cea` (one account per place in the
+  CEA) and `/usuarios/invitados` (its `Invitado` and `Desasociado`
+  accounts, shown there as "Antiguos miembros") return
+  `{ data: [{ id, denomination, initials, university, autonomous_community }] }`
+  (a university only for current and former councils).
+  The roster sync matches an asociado, a sectorial or a guest (`guest`) by
+  `intranet_id` first, then by `initials` = `acronym`, so a change of
+  acronym updates the member instead of creating another, and a council that
+  leaves the association becomes a guest. Guests attend and are written down
+  in the headcounts, but never vote, present nor sign anything
+  (`memberPresents`): the server refuses them as presenters or authors, and
+  `GET /api/members` leaves them out unless asked (`?guests=1`, the members,
+  accounts and speakers pages). The CEA list only adds the executive offices
+  nobody has created yet, named after their denomination, so the Secretaría
+  can assign them documents before anyone signs in; offices stay manual
+  members and are never deactivated by a sync. Without the CEA list or the
+  guests (an Intranet without those routes) the sync goes on and leaves that
+  kind as it was. It runs by hand from Miembros and daily at 05:00 Europe/Madrid (a
   pg-boss schedule, `server/utils/members/schedule.ts`, off with
   `NUXT_INTRANET_ROSTER_SYNC=false`). A sync that would deactivate every
   active member of a kind, or more than max(3, 30%) of them, is not applied
   unless the request confirms those counts (`confirmedKinds`; a retry that
   would deactivate more asks again): it records `members.sync_blocked`, and
-  the daily run never confirms. Executive offices are created manually.
+  the daily run never confirms. The safeguard covers asociados and
+  sectorials only: guests come and go.
 - In the intranet an `Asociado` account _is_ the member, and
   `POST /user/role` returns its `id` (stored in `users.intranet_id`) and the
   same `initials`. Role sync therefore links the `users.memberId` of Asociado
@@ -504,7 +518,14 @@ The Mesa takes a headcount at the start of each day, after a break or
 whenever it decides (`headcounts`, `headcount_entries`). Each one marks every
 asociado with a vote (the active `asociado` members, synced from the
 Intranet) as in the room or not, and a member not in the room may delegate
-its vote to another. A delegated vote counts for quorum and for every vote
+its vote to another. The active sectorials and guests are marked too, only
+as in the room: they never vote, delegate, receive a delegation nor count for
+quorum or `present`, and each entry stores whether it had a vote
+(`headcount_entries.voting`), so a correction never turns one into a vote.
+The form and every list of a count follow the roll call (`compareRollCall`,
+the one exception to `orderMembers`): asociados, then sectorials, then
+guests, each in reverse alphabetical order of its denomination and, for a
+council, its university ("Consejo de Estudiantes" + "Universidad de ..."). A delegated vote counts for quorum and for every vote
 (RRI art. 19.3, RFAG art. 9.4) only while its receiver is in the room; the
 delegation is kept otherwise, so it counts again when the receiver is back.
 Each member receives at most one (Estatutos art. 17.1, RFAG art. 8.5).
@@ -512,16 +533,20 @@ Each member receives at most one (Estatutos art. 17.1, RFAG art. 8.5).
 server and in the form.
 
 The form is built for speed: a new count starts from the previous one, each
-asociado is one checkbox, and the delegation is a quiet searchable menu on
-the members not in the room. Until it is saved, the form stays as a draft in
+member is one checkbox under the heading of its group, and the delegation is
+a quiet searchable menu on the asociados not in the room. "Marcar presentes
+todos los asociados" ticks the asociados only. Until it is saved, the form stays as a draft in
 the browser of that device (`localStorage`), so closing it by mistake or
 reloading loses nothing.
 
 A count stores a snapshot: the asociados with a vote at that moment
 (`eligible`), those in the room, those delegated, the total (`present`) and
 the members needed for quorum (`required`) under the call it was taken in.
-Later roster syncs or rule changes never rewrite it; a correction keeps
-`eligible`, and `required` unless the call changes.
+That call is always the one an assembly starts in (`sessionCall`): the
+second call for a type that has one, since a session always opens in second
+call, and the single call otherwise; the Mesa never chooses it. Later roster
+syncs or rule changes never rewrite a count; a correction keeps its call,
+`eligible` and `required`.
 
 The quorum is data, part of each type's calendar rules (`quorum`, edited at
 `/admin/calendario`): a share of the asociados with a vote, "at least" or
@@ -546,8 +571,9 @@ who sees the assembly). The live view (`LiveViewAttendance`) shows the
 latest one: members present out of those with a vote, delegated votes,
 whether there is quorum and, with majorities on the members present, the
 votes in favour an absolute and a two-thirds majority need
-(`majorityThreshold`), with who is in the room, the delegations (and which
-do not count) and the earlier counts folded away. The projection's header
+(`majorityThreshold`), with who is in the room with a vote, the sectorials
+and guests in the room, the delegations (and which do not count) and the
+earlier counts folded away. The projection's header
 carries the same figures on one line during the session.
 
 - Live updates: mutations `pg_notify('assembly_events', ...)`. A Nitro plugin

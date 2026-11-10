@@ -19,10 +19,16 @@ import {
   getIntranetApiBaseUrl,
 } from "./intranet";
 import {
+  OPTIONAL_ROSTER_KINDS,
   findLargeDeactivations,
   isDeactivationConfirmed,
   normalizeRoster,
+  planExecutiveSync,
   planRosterSync,
+  type IntranetRosterEntry,
+  type OptionalRosterKind,
+  type RosterKind,
+  withoutReservedAcronyms,
 } from "./roster";
 
 /**
@@ -81,12 +87,42 @@ const ROSTER_SYNC_LOCK = "members_roster_sync";
 const renamePlaceholder = (memberId: string) => `~roster-sync~${memberId}`;
 
 /**
- * Syncs asociados and sectorials from the intranet roster.
+ * Fetches an optional list (the CEA's places, the guests). One the Intranet
+ * cannot give, for example because it does not have the route yet, is
+ * logged and left out: the sync leaves that kind as it was.
+ */
+async function fetchOptionalRoster(
+  base: string,
+  kind: OptionalRosterKind,
+  trigger: RosterSyncTrigger,
+): Promise<IntranetRosterEntry[] | null> {
+  try {
+    return await fetchIntranetRoster(base, kind);
+  } catch (error) {
+    if (!(error instanceof IntranetUnavailableError)) throw error;
+    logWarn("members.sync", {
+      reason: "optional roster unavailable",
+      kind,
+      detail: error.message,
+      trigger,
+    });
+    return null;
+  }
+}
+
+/**
+ * Syncs the members from the intranet rosters: asociados, sectorials and
+ * guests (Invitado and Desasociado accounts, who attend but never present),
+ * and the CEA's offices.
  *
- * Both lists are fetched before anything is written: a failed or partial
- * fetch must never deactivate the members it did not return. Members are
+ * Every list is fetched before anything is written: a failed or partial
+ * fetch must never deactivate the members it did not return. Without the
+ * asociados or the sectorials the sync fails; without the CEA list or the
+ * guests it goes on and leaves that kind as it was (`skipped`). Members are
  * matched by their Intranet id, then by acronym (the intranet's `initials`,
  * case-insensitively): planRosterSync. Manual members are never touched.
+ * The CEA list only adds offices (planExecutiveSync): they stay manual
+ * members and are never deactivated by a sync.
  *
  * A sync that would deactivate every active intranet member of a kind, or
  * more than max(3, 30%) of them, is applied only with `confirmDeactivation`
@@ -137,10 +173,14 @@ export async function syncIntranetRoster(options: {
 
   let asociados;
   let sectoriales;
+  let executives: IntranetRosterEntry[] | null;
+  let guests: IntranetRosterEntry[] | null;
   try {
-    [asociados, sectoriales] = await Promise.all([
+    [asociados, sectoriales, executives, guests] = await Promise.all([
       fetchIntranetRoster(base, "asociado"),
       fetchIntranetRoster(base, "sectorial"),
+      fetchOptionalRoster(base, "executive", trigger),
+      fetchOptionalRoster(base, "guest", trigger),
     ]);
   } catch (error) {
     if (error instanceof IntranetUnavailableError) {
@@ -153,9 +193,24 @@ export async function syncIntranetRoster(options: {
     throw error;
   }
 
+  const skipped = OPTIONAL_ROSTER_KINDS.filter(
+    (kind) => (kind === "executive" ? executives : guests) === null,
+  );
+  const synced: RosterKind[] = guests
+    ? ["asociado", "sectorial", "guest"]
+    : ["asociado", "sectorial"];
+  // Guests come last: an acronym a council or a sectorial holds stays theirs.
   const roster = normalizeRoster([
     { kind: "asociado", entries: asociados },
     { kind: "sectorial", entries: sectoriales },
+    ...(guests
+      ? [
+          {
+            kind: "guest" as const,
+            entries: withoutReservedAcronyms(guests, executives ?? []),
+          },
+        ]
+      : []),
   ]);
   if (
     roster.skipped > 0 ||
@@ -195,7 +250,7 @@ export async function syncIntranetRoster(options: {
       .from(members)
       .for("update");
 
-    const plan = planRosterSync(roster.members, existing);
+    const plan = planRosterSync(roster.members, existing, synced);
     const large = findLargeDeactivations(existing, plan.deactivate);
     if (
       large.length > 0 &&
@@ -311,10 +366,54 @@ export async function syncIntranetRoster(options: {
       }
     }
 
+    // The CEA's offices, against the members as the roster left them.
+    const current =
+      executives && executives.length > 0
+        ? await tx.select().from(members)
+        : [];
+    const executivePlan = planExecutiveSync(executives ?? [], current);
+    const currentById = new Map(current.map((member) => [member.id, member]));
+    for (const { id, name } of executivePlan.rename) {
+      const before = currentById.get(id);
+      if (!before) continue;
+      await tx.update(members).set({ name }).where(eq(members.id, id));
+      await memberAudit({
+        action: AUDIT_ACTIONS.MEMBER_SYNC_UPDATE,
+        memberId: id,
+        before: memberAuditState(before),
+        after: memberAuditState({ ...before, name }),
+      });
+    }
+    if (executivePlan.create.length > 0) {
+      const created = await tx
+        .insert(members)
+        .values(
+          executivePlan.create.map((office) => ({
+            kind: "executive" as const,
+            acronym: office.acronym,
+            name: office.name,
+            // A CEA account stands for a person's place, not an office.
+            intranetId: null,
+            source: "manual" as const,
+            active: true,
+          })),
+        )
+        .returning();
+      for (const row of created) {
+        await memberAudit({
+          action: AUDIT_ACTIONS.MEMBER_SYNC_CREATE,
+          memberId: row.id,
+          before: null,
+          after: memberAuditState(row),
+        });
+      }
+    }
+
     const result: MemberSyncResult = {
-      created: plan.create.length,
-      updated: plan.update.length,
+      created: plan.create.length + executivePlan.create.length,
+      updated: plan.update.length + executivePlan.rename.length,
       deactivated: plan.deactivate.length,
+      skipped,
     };
 
     await recordAudit(tx, {
@@ -325,8 +424,12 @@ export async function syncIntranetRoster(options: {
       after: {
         ...result,
         unchanged: plan.unchanged.length,
+        skipped,
         manualConflicts: plan.manualConflicts,
-        acronymConflicts: plan.acronymConflicts,
+        acronymConflicts: [
+          ...plan.acronymConflicts,
+          ...executivePlan.conflicts,
+        ],
         trigger,
         // A large deactivation applied because the account confirmed it.
         confirmedDeactivation: large.length > 0,
@@ -338,6 +441,12 @@ export async function syncIntranetRoster(options: {
       logWarn("members.sync", {
         reason: "roster acronyms held by manual members",
         acronyms: plan.manualConflicts,
+      });
+    }
+    if (executivePlan.conflicts.length > 0) {
+      logWarn("members.sync", {
+        reason: "CEA acronyms held by another kind of member",
+        acronyms: executivePlan.conflicts,
       });
     }
     if (plan.acronymConflicts.length > 0) {

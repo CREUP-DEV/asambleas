@@ -4,8 +4,8 @@ import type { LiveAttendance } from "~/components/live-view/-attendance";
 
 /**
  * Attendance and quorum for everyone, for transparency: the Mesa's latest
- * headcount (who is in the room, the delegated votes and whether they
- * count), whether there is quorum, the majorities it gives when the
+ * headcount (who is in the room with a vote, the delegated votes and
+ * whether they count, the sectorials and guests in the room), whether there is quorum, the majorities it gives when the
  * assembly counts them on the members present, and the earlier counts.
  * The lists fold away: on a phone the figures come first.
  */
@@ -118,6 +118,23 @@ const latest = computed(() => props.attendance?.latest ?? null);
         </summary>
         <ul class="mt-2 flex flex-wrap gap-1.5">
           <li v-for="member in attendance.inRoom" :key="member.id">
+            <CommonMemberBadge :member="member" />
+          </li>
+        </ul>
+      </details>
+
+      <details v-if="attendance.attending.length > 0">
+        <summary class="text-default cursor-pointer text-sm font-medium">
+          {{
+            t(
+              "liveView.attendance.attending",
+              { count: attendance.attending.length },
+              attendance.attending.length,
+            )
+          }}
+        </summary>
+        <ul class="mt-2 flex flex-wrap gap-1.5">
+          <li v-for="member in attendance.attending" :key="member.id">
             <CommonMemberBadge :member="member" />
           </li>
         </ul>

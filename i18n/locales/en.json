@@ -2014,6 +2014,10 @@
           "asociado": "Member councils",
           "sectorial": "Sectoral bodies"
         }
+      },
+      "syncSkipped": {
+        "executive": "The CEA offices could not be read from the Intranet: they were left as they were.",
+        "guest": "The guests could not be read from the Intranet: they were left as they were."
       }
     },
     "impersonationReadOnly": "While you act as another account you cannot change users, roles, members or regulatory deadlines. Go back to your account to do it.",
@@ -2331,7 +2335,8 @@
       "asociado": "Member council",
       "sectorial": "Sectoral body",
       "executive": "CEA office",
-      "other": "Other"
+      "other": "Other",
+      "guest": "Guest"
     },
     "toastRegion": "Notifications (F8)",
     "impersonation": {
@@ -3746,22 +3751,18 @@
       "earlier": "No earlier headcounts | 1 earlier headcount | {count} earlier headcounts",
       "newTitle": "New headcount",
       "correctTitle": "Correct the headcount taken at {time}",
-      "description": "Tick the asociados in the room. It starts from the previous count, so you only change who arrived or left.",
-      "call": "Call",
-      "calls": {
-        "first": "First call",
-        "second": "Second call"
-      },
+      "description": "Tick who is in the room, in roll-call order: the member councils, who vote, then the sectoral bodies and the guests, who neither vote nor count for quorum. It starts from the previous count, so you only change who has arrived or left.",
       "note": "Note",
       "notePlaceholder": "For example, start of the second day",
-      "filter": "Find an asociado",
-      "allPresent": "Mark everyone present",
+      "filter": "Search for a member",
+      "allPresent": "Mark every member council present",
       "noMembers": "There are no active asociados. Sync the members from the Intranet.",
       "problems": {
         "duplicate": "Listed twice.",
-        "not_eligible": "No longer an active asociado.",
+        "not_eligible": "It is no longer an active member.",
         "delegate_missing": "Choose an asociado with a vote.",
-        "delegate_twice": "That member already receives another delegation."
+        "delegate_twice": "That member already receives another delegation.",
+        "no_vote": "It has no vote: only tick it when it is in the room."
       },
       "leadership": "To constitute the assembly, the Presidencia and the Secretaría Ejecutiva, or whoever stands in for them, must also be present.",
       "save": "Save headcount",
@@ -3772,14 +3773,19 @@
       "startOver": "Start over",
       "draftHint": "If you close it without saving, it stays as a draft on this device.",
       "later": "Finish later",
-      "listLabel": "Asociados with a vote",
       "delegate": "Delegates…",
       "delegateOf": "Delegation of {member}",
       "searchDelegate": "Find who receives the vote",
       "noDelegation": "No delegation",
       "delegateOut": "{member} (not in the room)",
       "uncounted": "The delegation does not count while {member} is not in the room.",
-      "alsoVotesFor": "Also votes for {member}."
+      "alsoVotesFor": "Also votes for {member}.",
+      "groups": {
+        "asociado": "Member councils, with a vote",
+        "sectorial": "Sectoral bodies, without a vote",
+        "guest": "Guests, without a vote"
+      },
+      "attending": "No sectoral body or guest in the room | 1 sectoral body or guest in the room, without a vote | {count} sectoral bodies or guests in the room, without a vote"
     }
   },
   "projection": {
@@ -4233,10 +4239,11 @@
       "delegated": "By delegation",
       "majoritiesHint": "Votes in favour needed with the members present in this headcount. A simple majority only needs more votes in favour than against.",
       "validVotesHint": "This assembly counts majorities on the valid votes of each vote.",
-      "inRoom": "Nobody in the room | 1 member in the room | {count} members in the room",
+      "inRoom": "Nobody with a vote in the room | 1 member council in the room | {count} member councils in the room",
       "delegations": "No delegations | 1 delegation | {count} delegations",
       "votesThrough": "votes through",
-      "notCounted": "Does not count: not in the room."
+      "notCounted": "Does not count: not in the room.",
+      "attending": "No sectoral body or guest | 1 sectoral body or guest in the room, without a vote | {count} sectoral bodies or guests in the room, without a vote"
     }
   },
   "transactional": {

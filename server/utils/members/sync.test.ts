@@ -43,7 +43,13 @@ const sectorialRow = (initials: string): RosterRow => ({
 });
 
 let existing: StoredMember[] = [];
-let roster: { asociado: RosterRow[]; sectorial: RosterRow[] } = {
+/** Each list the Intranet answers; null for one it cannot give. */
+let roster: {
+  asociado: RosterRow[];
+  sectorial: RosterRow[];
+  executive?: RosterRow[] | null;
+  guest?: RosterRow[] | null;
+} = {
   asociado: [],
   sectorial: [],
 };
@@ -55,7 +61,11 @@ const recordAudit = vi.fn(async () => "audit-id");
 const execute = vi.fn(async () => undefined);
 const tx = {
   execute,
-  select: () => ({ from: () => ({ for: async () => existing }) }),
+  // Locked for the roster plan, read again for the CEA's offices.
+  select: () => ({
+    from: () =>
+      Object.assign(Promise.resolve(existing), { for: async () => existing }),
+  }),
   insert: () => ({
     values: (rows: Record<string, unknown>[]) => {
       writes.push(`insert ${rows.map((row) => row.acronym).join(",")}`);
@@ -85,18 +95,27 @@ vi.mock("../../db", () => ({
 }));
 vi.mock("../domain/audit", () => ({ recordAudit }));
 vi.mock("../core/logger", () => ({ logInfo: vi.fn(), logWarn: vi.fn() }));
-vi.mock("./intranet", () => ({
-  IntranetUnavailableError: class extends Error {},
-  getIntranetApiBaseUrl: () => "https://intranet.test",
-  fetchIntranetRoster: async (_base: string, kind: "asociado" | "sectorial") =>
-    roster[kind].map((row) => ({
-      id: row.id ?? null,
-      order: null,
-      university: null,
-      autonomous_community: null,
-      ...row,
-    })),
-}));
+vi.mock("./intranet", () => {
+  class IntranetUnavailableError extends Error {}
+  return {
+    IntranetUnavailableError,
+    getIntranetApiBaseUrl: () => "https://intranet.test",
+    fetchIntranetRoster: async (
+      _base: string,
+      kind: "asociado" | "sectorial" | "executive" | "guest",
+    ) => {
+      const rows = roster[kind];
+      if (rows === null) throw new IntranetUnavailableError("status 404");
+      return (rows ?? []).map((row) => ({
+        id: row.id ?? null,
+        order: null,
+        university: null,
+        autonomous_community: null,
+        ...row,
+      }));
+    },
+  };
+});
 
 const { memberAuditState, syncIntranetRoster } = await import("./sync");
 
@@ -195,7 +214,7 @@ describe("syncIntranetRoster traceability", () => {
     const outcome = await syncIntranetRoster({ actor });
     expect(outcome).toEqual({
       status: "applied",
-      result: { created: 1, updated: 1, deactivated: 1 },
+      result: { created: 1, updated: 1, deactivated: 1, skipped: [] },
     });
     expect(execute).toHaveBeenCalledTimes(1);
 
@@ -292,7 +311,7 @@ describe("syncIntranetRoster safeguard", () => {
     });
     expect(outcome).toEqual({
       status: "applied",
-      result: { created: 1, updated: 1, deactivated: 3 },
+      result: { created: 1, updated: 1, deactivated: 3, skipped: [] },
     });
     const summary = audits().at(-1)!;
     expect(summary).toMatchObject({
@@ -401,7 +420,7 @@ describe("syncIntranetRoster write order", () => {
     const outcome = await syncIntranetRoster({ actor: null });
     expect(outcome).toEqual({
       status: "applied",
-      result: { created: 1, updated: 1, deactivated: 0 },
+      result: { created: 1, updated: 1, deactivated: 0, skipped: [] },
     });
     expect(writes).toEqual(["update acronym A2", "insert A"]);
   });
@@ -425,5 +444,120 @@ describe("syncIntranetRoster write order", () => {
       "update acronym B",
       "update acronym A",
     ]);
+  });
+});
+
+describe("syncIntranetRoster guests", () => {
+  it("syncs the guests, a former council among them, and deactivates those gone", async () => {
+    existing = [
+      stored({ id: "m-old", kind: "asociado", acronym: "OLD", intranetId: 7 }),
+      stored({ id: "m-g1", kind: "guest", acronym: "G1", intranetId: 30 }),
+      stored({ id: "m-g2", kind: "guest", acronym: "G2", intranetId: 31 }),
+      stored({ id: "m-g3", kind: "guest", acronym: "G3", intranetId: 32 }),
+      stored({ id: "m-g4", kind: "guest", acronym: "G4", intranetId: 33 }),
+    ];
+    roster = {
+      asociado: [],
+      sectorial: [],
+      executive: [],
+      guest: [
+        // The council left the association: it is a guest now.
+        { id: 7, initials: "OLD", denomination: "OLD" },
+        { id: 40, initials: "NEW", denomination: "Invitada" },
+      ],
+    };
+    const outcome = await syncIntranetRoster({ actor: null });
+    // Four guests gone is more than max(3, 30%), but guests never block.
+    expect(outcome).toEqual({
+      status: "applied",
+      result: { created: 1, updated: 1, deactivated: 4, skipped: [] },
+    });
+    const update = audits().find(
+      (row) => row.action === AUDIT_ACTIONS.MEMBER_SYNC_UPDATE,
+    )!;
+    expect(update).toMatchObject({
+      targetId: "m-old",
+      before: { kind: "asociado" },
+      after: { kind: "guest" },
+    });
+  });
+
+  it("leaves the guests and the offices alone when the Intranet cannot list them", async () => {
+    existing = [
+      stored({ id: "m-g1", kind: "guest", acronym: "G1", intranetId: 30 }),
+    ];
+    roster = { asociado: [], sectorial: [], executive: null, guest: null };
+    const outcome = await syncIntranetRoster({ actor: null });
+    expect(outcome).toEqual({
+      status: "applied",
+      result: {
+        created: 0,
+        updated: 0,
+        deactivated: 0,
+        skipped: ["executive", "guest"],
+      },
+    });
+    expect(writes).toEqual([]);
+    expect(audits().at(-1)!.after).toMatchObject({
+      skipped: ["executive", "guest"],
+    });
+  });
+});
+
+describe("syncIntranetRoster CEA offices", () => {
+  it("adds the missing offices and names only those still named after their acronym", async () => {
+    existing = [
+      stored({
+        id: "m-pres",
+        kind: "executive",
+        acronym: "PRES",
+        name: "Presidencia de CREUP",
+        source: "manual",
+      }),
+      stored({
+        id: "m-vdt",
+        kind: "executive",
+        acronym: "VDT",
+        name: "VDT",
+        source: "manual",
+      }),
+      stored({ id: "m-tes", kind: "asociado", acronym: "TES", intranetId: 3 }),
+    ];
+    roster = {
+      asociado: [{ id: 3, initials: "TES", denomination: "TES" }],
+      sectorial: [],
+      executive: [
+        { id: 100, initials: "PRES", denomination: "Presidencia" },
+        { id: 101, initials: "VDT", denomination: "Vocalía de Transformación" },
+        { id: 102, initials: "SE", denomination: "Secretaría Ejecutiva" },
+        { id: 103, initials: "TES", denomination: "Tesorería" },
+      ],
+      // A guest whose initials match a new office never takes them.
+      guest: [{ id: 50, initials: "SE", denomination: "Sergio" }],
+    };
+    const outcome = await syncIntranetRoster({ actor: null });
+    expect(outcome).toEqual({
+      status: "applied",
+      result: { created: 1, updated: 1, deactivated: 0, skipped: [] },
+    });
+    expect(writes).toEqual(["update syncedAt", "update name", "insert SE"]);
+    const rows = audits();
+    expect(rows[0]).toMatchObject({
+      action: AUDIT_ACTIONS.MEMBER_SYNC_UPDATE,
+      targetId: "m-vdt",
+      before: { name: "VDT" },
+      after: { name: "Vocalía de Transformación", source: "manual" },
+    });
+    expect(rows[1]).toMatchObject({
+      action: AUDIT_ACTIONS.MEMBER_SYNC_CREATE,
+      after: {
+        kind: "executive",
+        acronym: "SE",
+        name: "Secretaría Ejecutiva",
+        source: "manual",
+        intranetId: null,
+      },
+    });
+    expect(rows.at(-1)!.after).toMatchObject({ acronymConflicts: ["TES"] });
   });
 });

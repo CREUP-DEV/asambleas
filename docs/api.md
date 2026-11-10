@@ -49,23 +49,23 @@ The usual AGENTS.md handler order applies:
 
 ## Members and me
 
-| Method | Path                                | Who                       | Notes                                                                                                                                                                                                                           |
-| ------ | ----------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/me`                           | any                       | `MeDto`. `permissions` are the role's plus the user's own grants (see "Permissions" below).                                                                                                                                     |
-| GET    | `/api/me/work`                      | any                       | `MeWorkDto`, see "Review and work" below.                                                                                                                                                                                       |
-| POST   | `/api/me/onboarding`                | any, never impersonating  | No body. Marks the welcome as seen. Returns `MeOnboardingResult`. See "Welcome" below.                                                                                                                                          |
-| GET    | `/api/members`                      | any                       | `MemberDto[]`, active first, by kind (asociados, sectorials, others, offices) and acronym. `?all=1` also returns inactive members. One generic entry instead of the executive offices, except with `?for=amendment`; see below. |
-| POST   | `/api/members`                      | `member:manage`           | Creates a member manually, typically an executive office.                                                                                                                                                                       |
-| PUT    | `/api/members/[id]`                 | `member:manage`           | Edits name, kind or active, with `updatedAt`.                                                                                                                                                                                   |
-| POST   | `/api/members/sync`                 | `member:manage`           | Optional body `MemberSyncBody`. Syncs the intranet roster. Returns `MemberSyncResult`; 409 when it needs confirmation, see "Roster sync".                                                                                       |
-| GET    | `/api/admin/users`                  | `user:manage_roles`       | Paginated `AdminUserDto` rows, each with `member`, `extraPermissions` and its access state. See "Users list".                                                                                                                   |
-| PUT    | `/api/admin/users/[id]/role`        | `user:manage_roles`       | Body `{ roleId }`. Only an Admin gives or takes Admin, Secretaría or Presidencia.                                                                                                                                               |
-| PUT    | `/api/admin/users/[id]/member`      | `user:manage_roles`       | Body `{ memberId: string \| null }`. Links an account to a member, see below.                                                                                                                                                   |
-| PUT    | `/api/admin/users/[id]/permissions` | `user:manage_roles`       | Body `{ permissions: PermissionKey[] }`. Sets the user's own grants, see "Permissions".                                                                                                                                         |
-| GET    | `/api/admin/roles`                  | see notes                 | The roles. `user:manage_roles` or `role:manage_permissions`.                                                                                                                                                                    |
-| GET    | `/api/admin/roles/[id]/permissions` | see notes                 | What a role grants. `user:manage_roles` or `role:manage_permissions`.                                                                                                                                                           |
-| PUT    | `/api/admin/roles/[id]/permissions` | `role:manage_permissions` | Body `{ permissionKeys }`. Not on the Admin role, see "Admin section".                                                                                                                                                          |
-| GET    | `/api/admin/permissions`            | see notes                 | The permission catalog. `user:manage_roles` or `role:manage_permissions`.                                                                                                                                                       |
+| Method | Path                                | Who                       | Notes                                                                                                                                                                                                                                                                                                                                                                                                                |
+| ------ | ----------------------------------- | ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/me`                           | any                       | `MeDto`. `permissions` are the role's plus the user's own grants (see "Permissions" below).                                                                                                                                                                                                                                                                                                                          |
+| GET    | `/api/me/work`                      | any                       | `MeWorkDto`, see "Review and work" below.                                                                                                                                                                                                                                                                                                                                                                            |
+| POST   | `/api/me/onboarding`                | any, never impersonating  | No body. Marks the welcome as seen. Returns `MeOnboardingResult`. See "Welcome" below.                                                                                                                                                                                                                                                                                                                               |
+| GET    | `/api/members`                      | any                       | `MemberDto[]`, active first, by kind (asociados, sectorials, others, offices, guests) and acronym. `?all=1` also returns inactive members, `?guests=1` the guests, who present nothing (`?all=1` too; both only for `member:manage`, `user:manage_roles` or `session:moderate`, `canSeeGuests`, and never with `?for`). One generic entry instead of the executive offices, except with `?for=amendment`; see below. |
+| POST   | `/api/members`                      | `member:manage`           | Creates a member manually, typically an executive office.                                                                                                                                                                                                                                                                                                                                                            |
+| PUT    | `/api/members/[id]`                 | `member:manage`           | Edits name, kind or active, with `updatedAt`.                                                                                                                                                                                                                                                                                                                                                                        |
+| POST   | `/api/members/sync`                 | `member:manage`           | Optional body `MemberSyncBody`. Syncs the intranet roster. Returns `MemberSyncResult`; 409 when it needs confirmation, see "Roster sync".                                                                                                                                                                                                                                                                            |
+| GET    | `/api/admin/users`                  | `user:manage_roles`       | Paginated `AdminUserDto` rows, each with `member`, `extraPermissions` and its access state. See "Users list".                                                                                                                                                                                                                                                                                                        |
+| PUT    | `/api/admin/users/[id]/role`        | `user:manage_roles`       | Body `{ roleId }`. Only an Admin gives or takes Admin, Secretaría or Presidencia.                                                                                                                                                                                                                                                                                                                                    |
+| PUT    | `/api/admin/users/[id]/member`      | `user:manage_roles`       | Body `{ memberId: string \| null }`. Links an account to a member, see below.                                                                                                                                                                                                                                                                                                                                        |
+| PUT    | `/api/admin/users/[id]/permissions` | `user:manage_roles`       | Body `{ permissions: PermissionKey[] }`. Sets the user's own grants, see "Permissions".                                                                                                                                                                                                                                                                                                                              |
+| GET    | `/api/admin/roles`                  | see notes                 | The roles. `user:manage_roles` or `role:manage_permissions`.                                                                                                                                                                                                                                                                                                                                                         |
+| GET    | `/api/admin/roles/[id]/permissions` | see notes                 | What a role grants. `user:manage_roles` or `role:manage_permissions`.                                                                                                                                                                                                                                                                                                                                                |
+| PUT    | `/api/admin/roles/[id]/permissions` | `role:manage_permissions` | Body `{ permissionKeys }`. Not on the Admin role, see "Admin section".                                                                                                                                                                                                                                                                                                                                               |
+| GET    | `/api/admin/permissions`            | see notes                 | The permission catalog. `user:manage_roles` or `role:manage_permissions`.                                                                                                                                                                                                                                                                                                                                            |
 
 **Executive offices (`MemberRef`).** Wherever an answer carries a member
 (`MemberRef`, `MemberDto`, a bare member id such as `mainAuthorId` or the
@@ -171,8 +171,8 @@ An account that does not see the offices takes the ids from
   "Correcting who presents an amendment").
 
 **Intranet.** Every call to the intranet API (role sync, `POST /user/role`,
-and the roster sync, `GET /usuarios/asociados` and `/usuarios/sectoriales`)
-sends `Authorization: Bearer <NUXT_INTRANET_API_TOKEN>` when that variable
+and the roster sync, `GET /usuarios/asociados`, `/usuarios/sectoriales`,
+`/usuarios/cea` and `/usuarios/invitados`) sends `Authorization: Bearer <NUXT_INTRANET_API_TOKEN>` when that variable
 is set (a blank value counts as unset). The token is never logged, and
 neither is an email: logs carry `accountRef`. The role lookup also sends
 `Accept: application/json`. In production, `NUXT_INTRANET_API_URL` and
@@ -211,10 +211,20 @@ and the client neither opens the welcome by itself nor calls it.
 `MemberSyncBody` `{ confirmDeactivation?: boolean, confirmedKinds?: [{ kind,
 toDeactivate }] }` (at most one entry per kind); no body is `{}`, and an
 invalid one answers 400. It answers 503 without a usable
-`NUXT_INTRANET_API_URL` and 502 when either list fails, writing nothing.
-Members are matched by `intranet_id`, then by acronym. A sync that would
-deactivate every active intranet member of a kind, or more than max(3, 30%)
-of them, needs `confirmDeactivation: true` and, in `confirmedKinds`, every
+`NUXT_INTRANET_API_URL` and 502 when the asociados or the sectorials fail,
+writing nothing. The CEA list (`/usuarios/cea`) and the guests
+(`/usuarios/invitados`: the Intranet's `Invitado` and `Desasociado`
+accounts) are optional: when one fails, the sync goes on without it and
+leaves that kind as it was, and `MemberSyncResult.skipped` names it (the
+members page warns). Asociados, sectorials and guests are matched by
+`intranet_id`, then by acronym; a council that leaves the association turns
+into a guest under its id. A guest never takes an acronym a council, a
+sectorial or the CEA list holds. The CEA list only adds offices
+(`planExecutiveSync`): a missing one is created as a manual `executive`
+member named after its denomination, one still named after its acronym
+takes the denomination, one renamed by hand keeps its name, and none is ever
+deactivated. A sync that would deactivate every active intranet asociado or
+sectorial, or more than max(3, 30%) of them, needs `confirmDeactivation: true` and, in `confirmedKinds`, every
 kind it would deactivate too much of with at least as many members as it
 would deactivate now. Otherwise nothing changes but a `members.sync_blocked`
 audit row, and the answer is 409 with `data: MemberSyncBlockedData`
@@ -1397,27 +1407,38 @@ speakers refetch them.
 | POST   | `/api/assemblies/[assembly]/headcounts`             | `session:moderate` | `HeadcountBody`. 201 with `HeadcountsDto`.                           |
 | PUT    | `/api/assemblies/[assembly]/headcounts/[headcount]` | `session:moderate` | `HeadcountUpdateBody` (with `updatedAt`). Returns `HeadcountsDto`.   |
 
-The Mesa's counts of the asociados with a vote (docs/design.md, "Headcounts
+The Mesa's counts of the asociados with a vote, with the sectorials and
+guests in the room, who never vote nor count (docs/design.md, "Headcounts
 and quorum"). Schemas: `shared/utils/schemas/headcount.ts`.
 
 - **Reading.** Public to everyone who sees the assembly, for transparency:
   the live view and the projection show the latest count, who was in the
-  room, the delegations, the quorum and the majorities it gives. `members` are the
-  active asociados now and `quorum` the rules of the assembly type
-  (`quorumRulesOf`, the initial ones for a row stored before quorum existed).
+  room, the delegations, the quorum and the majorities it gives. `members` are
+  those a new count lists, in the order of the roll call (`compareRollCall`:
+  the active asociados, then the active sectorials, then the active guests,
+  each in reverse alphabetical order of its name and university), with their
+  `university`; entries follow that order too, those counted with a vote
+  first, and each says whether it had a vote (`voting`). `attending` counts
+  the sectorials and guests in the room. Only the Mesa (`session:moderate`) gets `members`; everyone else, an empty list. `quorum` holds the rules of the
+  assembly type (`quorumRulesOf`, the initial ones for a row stored before
+  quorum existed).
 - **Recording.** `entries` lists the members in the room (`present`) and the
   delegated ones (`delegated` with `delegateId`); absent ones are left out.
-  422 `{ problems: [{ memberId, problem }] }` when a member is listed twice,
-  is not an active asociado, or a delegation names nobody with a vote or one
+  A sectorial or a guest is only ever `present`. 422
+  `{ problems: [{ memberId, problem }] }` when a member is listed twice, is
+  not an active asociado, sectorial or guest, a sectorial or a guest
+  delegates (`no_vote`), or a delegation names nobody with a vote or one
   that already receives another (`HEADCOUNT_PROBLEMS`). A delegation to a
   member not in the room is stored but does not count (`delegated` and
-  `present` leave it out).
-  `call: "second"` on a type without a second call is 422. Refused (409) in
-  a draft or closed assembly. Records `headcount_recorded`.
+  `present` leave it out). The body names no call: the server takes the one
+  an assembly starts in (`sessionCall`: the second call when the type has
+  one, its single call otherwise). Refused (409) in a draft or closed
+  assembly. Records `headcount_recorded`.
 - **Correcting.** Optimistic lock on `updatedAt` (409 when stale). The
-  members it may list are the active asociados plus those it listed; its
-  `eligible` stays, and `required` too unless `call` changes. Records
-  `headcount_corrected` with `changes`.
+  members it may list are those a new count lists plus those it listed, each
+  as the count had it (`headcount_entries.voting`): a correction never turns
+  a sectorial or a guest into a vote. Its `call`, `eligible` and `required`
+  stay. Records `headcount_corrected` with `changes`.
 - **Locks and events.** Every write locks the assembly row first. Events
   have `entityType: "headcount"` and carry the figures only (`call`,
   `eligible`, `present`, `required`, `quorum`), never who was there (read

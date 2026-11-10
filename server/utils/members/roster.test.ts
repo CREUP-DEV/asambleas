@@ -8,6 +8,8 @@ import {
   planRosterSync,
   type ExistingMember,
   type RosterMember,
+  planExecutiveSync,
+  withoutReservedAcronyms,
 } from "./roster";
 
 const existing = (overrides: Partial<ExistingMember>): ExistingMember => ({
@@ -485,5 +487,87 @@ describe("isDeactivationConfirmed", () => {
 
   it("needs nothing when there is nothing large", () => {
     expect(isDeactivationConfirmed([], [])).toBe(true);
+  });
+});
+
+describe("planRosterSync with lists left out", () => {
+  it("deactivates only members of the kinds the Intranet listed", () => {
+    const guest = {
+      id: "m-g",
+      kind: "guest" as const,
+      acronym: "G",
+      name: "G",
+      university: null,
+      region: null,
+      intranetId: 30,
+      source: "intranet" as const,
+      active: true,
+    };
+    const asociado = {
+      ...guest,
+      id: "m-a",
+      kind: "asociado" as const,
+      acronym: "A",
+      intranetId: 31,
+    };
+    expect(
+      planRosterSync([], [guest, asociado], ["asociado", "sectorial"])
+        .deactivate,
+    ).toEqual(["m-a"]);
+    expect(planRosterSync([], [guest, asociado]).deactivate).toEqual([
+      "m-g",
+      "m-a",
+    ]);
+  });
+});
+
+describe("planExecutiveSync", () => {
+  const entry = (initials: string, denomination: string | null) => ({
+    id: 1,
+    order: null,
+    initials,
+    denomination,
+    university: null,
+    autonomous_community: null,
+  });
+
+  it("creates, names and leaves offices as the CEA list says", () => {
+    const plan = planExecutiveSync(
+      [
+        entry("PRES", "Presidencia"),
+        entry("pres", "Duplicada"),
+        entry("VDT", "Vocalía"),
+        entry("SE", null),
+        entry("CEUM", "Consejo"),
+        entry("VPO", "Vicepresidencia"),
+      ],
+      [
+        {
+          id: "m-pres",
+          kind: "executive",
+          acronym: "PRES",
+          name: "Presidencia de CREUP",
+        },
+        { id: "m-vdt", kind: "executive", acronym: "VDT", name: "VDT" },
+        { id: "m-ceum", kind: "asociado", acronym: "CEUM", name: "Consejo" },
+      ],
+    );
+    expect(plan).toEqual({
+      create: [
+        { acronym: "SE", name: "SE" },
+        { acronym: "VPO", name: "Vicepresidencia" },
+      ],
+      rename: [{ id: "m-vdt", name: "Vocalía" }],
+      conflicts: ["CEUM"],
+    });
+  });
+
+  it("keeps the CEA's acronyms away from the guests", () => {
+    expect(
+      withoutReservedAcronyms(
+        [entry("se", "Sergio"), entry("ANA", "Ana")],
+        [entry("SE", "Secretaría Ejecutiva")],
+      ).map((item) => item.initials),
+    ).toEqual(["ANA"]);
   });
 });

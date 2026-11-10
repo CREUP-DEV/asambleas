@@ -3,6 +3,8 @@ import { INITIAL_CALENDAR_RULES } from "../constants/calendarRules";
 import {
   quorumRequired,
   quorumThreshold,
+  rollCallOrder,
+  sessionCall,
   tallyHeadcount,
   type AttendanceEntry,
 } from "./headcount";
@@ -104,5 +106,113 @@ describe("quorumRequired", () => {
     expect(quorumRequired(40, quorumThreshold(age, "first"))).toBe(21);
     // A type with a single call always uses the first.
     expect(quorumThreshold(age, "second")).toBe(age.firstCall);
+  });
+});
+
+describe("tallyHeadcount with sectorials and guests", () => {
+  const attendees = new Set(["s", "g"]);
+
+  it("writes them down in the room without counting them", () => {
+    const tally = tallyHeadcount(
+      [
+        { memberId: "a", mark: "present" },
+        { memberId: "s", mark: "present" },
+        { memberId: "g", mark: "present" },
+      ],
+      eligible,
+      attendees,
+    );
+    expect(tally).toMatchObject({
+      inRoom: 1,
+      attending: 2,
+      delegated: 0,
+      present: 1,
+    });
+    expect(tally.problems.size).toBe(0);
+  });
+
+  it("never lets them delegate nor receive a delegation", () => {
+    const tally = tallyHeadcount(
+      [
+        { memberId: "s", mark: "delegated", delegateId: "a" },
+        { memberId: "g", mark: "present" },
+        { memberId: "b", mark: "delegated", delegateId: "g" },
+      ],
+      eligible,
+      attendees,
+    );
+    expect(tally.problems.get("s")).toBe("no_vote");
+    expect(tally.problems.get("b")).toBe("delegate_missing");
+    expect(tally.present).toBe(0);
+  });
+});
+
+describe("sessionCall", () => {
+  it("counts in second call when the type has one, else in its single call", () => {
+    expect(
+      sessionCall({
+        firstCall: { numerator: 1, denominator: 2, strict: false },
+        secondCall: { numerator: 1, denominator: 3, strict: false },
+      }),
+    ).toBe("second");
+    expect(
+      sessionCall({
+        firstCall: { numerator: 1, denominator: 2, strict: true },
+        secondCall: null,
+      }),
+    ).toBe("first");
+  });
+});
+
+describe("rollCallOrder", () => {
+  it("calls asociados, sectorials and guests, each in reverse alphabetical order", () => {
+    const order = rollCallOrder([
+      { acronym: "G", name: "Antiguo consejo", kind: "guest" as const },
+      { acronym: "VPO", name: "Vicepresidencia", kind: "executive" as const },
+      {
+        acronym: "ANEM",
+        name: "Asociación Nacional de Matemáticas",
+        kind: "sectorial" as const,
+      },
+      {
+        acronym: "RITSI",
+        name: "Reunión de Informática",
+        kind: "sectorial" as const,
+      },
+      {
+        acronym: "CEUAL",
+        name: "Consejo de Estudiantes",
+        university: "Universidad de Almería",
+        kind: "asociado" as const,
+      },
+      {
+        acronym: "CEUZ",
+        name: "Consejo de Estudiantes",
+        university: "Universidad de Zaragoza",
+        kind: "asociado" as const,
+      },
+      {
+        acronym: "DCEUCM",
+        name: "Delegación Central de Estudiantes",
+        university: "Universidad Complutense de Madrid",
+        kind: "asociado" as const,
+      },
+      {
+        acronym: "CEUÁV",
+        name: "Consejo de Estudiantes",
+        university: "Universidad de Ávila",
+        kind: "asociado" as const,
+      },
+    ]).map((member) => member.acronym);
+    expect(order).toEqual([
+      "DCEUCM",
+      "CEUZ",
+      "CEUÁV",
+      "CEUAL",
+      "RITSI",
+      "ANEM",
+      "G",
+      "VPO",
+    ]);
   });
 });

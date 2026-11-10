@@ -69,11 +69,19 @@ export const memberUpdateBodySchema = z.object({
  */
 export const MEMBER_LIST_FOR_AMENDMENT = "amendment";
 
+const flagSchema = z
+  .enum(["1", "0", "true", "false"])
+  .optional()
+  .transform((value) => value === "1" || value === "true");
+
 export const memberListQuerySchema = z.object({
-  all: z
-    .enum(["1", "0", "true", "false"])
-    .optional()
-    .transform((value) => value === "1" || value === "true"),
+  all: flagSchema,
+  /**
+   * Also lists the guests, who present nothing: only the members page, the
+   * accounts page and the speakers list ask for them, so no presenter or
+   * author picker ever offers one.
+   */
+  guests: flagSchema,
   for: z.literal(MEMBER_LIST_FOR_AMENDMENT).optional(),
 });
 

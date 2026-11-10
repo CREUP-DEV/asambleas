@@ -1,27 +1,30 @@
 import { createError } from "h3";
-import { and, asc, desc, eq, inArray } from "drizzle-orm";
+import { and, desc, eq, inArray } from "drizzle-orm";
 import { db } from "../../db";
 import { headcountEntries, headcounts, members } from "../../db/schema";
 import type {
   HeadcountBody,
   HeadcountDto,
+  HeadcountMemberDto,
   HeadcountsDto,
   HeadcountUpdateBody,
-  MemberRef,
   VoteInput,
 } from "~~/shared/types/api";
 import type { AssemblySettings } from "~~/shared/constants/domain";
 import { quorumRulesOf } from "~~/shared/constants/calendarRules";
 import {
+  ROLL_CALL_KINDS,
+  compareRollCall,
   quorumRequired,
   quorumThreshold,
+  rollCallOrder,
+  sessionCall,
   tallyHeadcount,
-  type QuorumCall,
+  votesInHeadcount,
   type QuorumRules,
 } from "~~/shared/utils/headcount";
 import { getOptimisticLockTimestampMs } from "../optimisticLock";
-import { toMemberRef } from "../members/dto";
-import type { Actor } from "./actor";
+import { canModerate, type Actor } from "./actor";
 import { lockAssembly } from "./agendaWrites";
 import type { AssemblyRow } from "./assemblies";
 import { loadCalendarRules } from "./calendarRules";
@@ -33,7 +36,9 @@ import { recordEvent } from "./events";
  * Headcounts the Mesa takes during the session (docs/api.md, "Headcounts"):
  * who among the active asociados is in the room or represented by a
  * delegation, and whether that makes quorum under the rules of the
- * assembly type (`calendar_rules`). Every write locks the assembly row
+ * assembly type (`calendar_rules`), always in the call an assembly starts
+ * in (sessionCall). The sectorials and guests in the room are written down
+ * too, for the record, but never count. Every write locks the assembly row
  * first and records a `headcount` event, so the Mesa's devices refetch.
  * The latest count is the base of majorities on "present" (votesBase).
  */
@@ -41,7 +46,7 @@ import { recordEvent } from "./events";
 type HeadcountRow = typeof headcounts.$inferSelect;
 type MemberColumns = Pick<
   typeof members.$inferSelect,
-  "id" | "acronym" | "name" | "kind"
+  "id" | "acronym" | "name" | "kind" | "university"
 >;
 
 const MEMBER_COLUMNS = {
@@ -49,7 +54,18 @@ const MEMBER_COLUMNS = {
   acronym: members.acronym,
   name: members.name,
   kind: members.kind,
+  university: members.university,
 } as const;
+
+function toHeadcountMember(member: MemberColumns): HeadcountMemberDto {
+  return {
+    id: member.id,
+    acronym: member.acronym,
+    name: member.name,
+    kind: member.kind,
+    university: member.university,
+  };
+}
 
 function fail(statusCode: number, message: string, data?: unknown): never {
   throw createError({ statusCode, message, data });
@@ -62,13 +78,36 @@ function assertCountable(assembly: Pick<AssemblyRow, "status">): void {
   }
 }
 
-/** The members with a vote now: the active asociados, by acronym. */
-async function eligibleMembers(executor: Executor): Promise<MemberColumns[]> {
-  return executor
+/**
+ * The members a new count lists, in the order of the roll call: the active
+ * asociados (with a vote), then the active sectorials and guests (without).
+ */
+async function rollCallMembers(executor: Executor): Promise<MemberColumns[]> {
+  const rows = await executor
     .select(MEMBER_COLUMNS)
     .from(members)
-    .where(and(eq(members.kind, "asociado"), eq(members.active, true)))
-    .orderBy(asc(members.acronym));
+    .where(
+      and(
+        inArray(members.kind, [...ROLL_CALL_KINDS]),
+        eq(members.active, true),
+      ),
+    );
+  return rollCallOrder(rows);
+}
+
+/** The ids a count may list: who votes and who only attends. */
+interface RollCallSets {
+  voters: Set<string>;
+  attendees: Set<string>;
+}
+
+function rollCallSets(listed: readonly MemberColumns[]): RollCallSets {
+  const sets: RollCallSets = { voters: new Set(), attendees: new Set() };
+  for (const member of listed) {
+    if (votesInHeadcount(member.kind)) sets.voters.add(member.id);
+    else sets.attendees.add(member.id);
+  }
+  return sets;
 }
 
 async function quorumRules(
@@ -81,14 +120,17 @@ async function quorumRules(
   );
 }
 
+interface StoredEntry {
+  memberId: string;
+  mark: HeadcountDto["entries"][number]["mark"];
+  delegateMemberId: string | null;
+  voting: boolean;
+}
+
 function toHeadcountDto(
   row: HeadcountRow,
-  entries: {
-    memberId: string;
-    mark: HeadcountDto["entries"][number]["mark"];
-    delegateMemberId: string | null;
-  }[],
-  refs: Map<string, MemberRef>,
+  entries: StoredEntry[],
+  refs: Map<string, HeadcountMemberDto>,
 ): HeadcountDto {
   return {
     id: row.id,
@@ -97,6 +139,7 @@ function toHeadcountDto(
     inRoom: row.inRoom,
     delegated: row.delegated,
     present: row.present,
+    attending: entries.filter((entry) => !entry.voting).length,
     required: row.required,
     quorum: row.present >= row.required,
     note: row.note,
@@ -112,6 +155,7 @@ function toHeadcountDto(
           delegate: entry.delegateMemberId
             ? (refs.get(entry.delegateMemberId) ?? null)
             : null,
+          voting: entry.voting,
         },
       ];
     }),
@@ -119,13 +163,32 @@ function toHeadcountDto(
 }
 
 /**
+ * The order of a count's entries: those it counted with a vote first (a
+ * member that changed kind since stays where the count had it), then the
+ * roll-call order.
+ */
+function entryOrder(
+  refs: Map<string, HeadcountMemberDto>,
+): (a: StoredEntry, b: StoredEntry) => number {
+  return (a, b) => {
+    if (a.voting !== b.voting) return a.voting ? -1 : 1;
+    const first = refs.get(a.memberId);
+    const second = refs.get(b.memberId);
+    return first && second ? compareRollCall(first, second) : 0;
+  };
+}
+
+/**
  * GET .../headcounts: every count of the assembly, newest first, with the
- * asociados that have a vote now and the quorum rules of its type. Public
- * to everyone who sees the assembly, for transparency: who was in the room,
+ * quorum rules of its type and, for the Mesa (canModerate), the members a
+ * new count lists (roll-call order; empty for anyone else, since the guests
+ * are mostly people). Entries follow the roll-call order too. Public to
+ * everyone who sees the assembly, for transparency: who was in the room,
  * the delegations and the quorum are shown in the live view and on the
  * projection.
  */
 export async function loadHeadcounts(
+  actor: Actor,
   assembly: AssemblyRow,
 ): Promise<HeadcountsDto> {
   const rows = await db
@@ -154,18 +217,21 @@ export async function loadHeadcounts(
       ),
     ),
   ];
-  const [counted, eligible, rules] = await Promise.all([
+  const [counted, listed, rules] = await Promise.all([
     memberIds.length > 0
       ? db
           .select(MEMBER_COLUMNS)
           .from(members)
           .where(inArray(members.id, memberIds))
       : Promise.resolve([] as MemberColumns[]),
-    eligibleMembers(db),
+    rollCallMembers(db),
     quorumRules(assembly, db),
   ]);
-  const refs = new Map<string, MemberRef>(
-    [...counted, ...eligible].map((member) => [member.id, toMemberRef(member)]),
+  const refs = new Map<string, HeadcountMemberDto>(
+    [...counted, ...listed].map((member) => [
+      member.id,
+      toHeadcountMember(member),
+    ]),
   );
   const byHeadcount = new Map<string, typeof entries>();
   for (const entry of entries) {
@@ -173,31 +239,25 @@ export async function loadHeadcounts(
     list.push(entry);
     byHeadcount.set(entry.headcountId, list);
   }
+  const order = entryOrder(refs);
   const dtos = rows.map((row) =>
-    toHeadcountDto(
-      row,
-      (byHeadcount.get(row.id) ?? []).sort((a, b) =>
-        (refs.get(a.memberId)?.acronym ?? "").localeCompare(
-          refs.get(b.memberId)?.acronym ?? "",
-        ),
-      ),
-      refs,
-    ),
+    toHeadcountDto(row, (byHeadcount.get(row.id) ?? []).sort(order), refs),
   );
   return {
     headcounts: dtos,
     latest: dtos[0] ?? null,
-    members: eligible.map(toMemberRef),
+    members: canModerate(actor) ? listed.map(toHeadcountMember) : [],
     quorum: rules,
   };
 }
 
 /**
- * Validates the marks against the members with a vote and counts them.
- * 422 `{ problems: [{ memberId, problem }] }` when the form is wrong.
+ * Validates the marks against who may vote and who may only attend, and
+ * counts them. 422 `{ problems: [{ memberId, problem }] }` when the form is
+ * wrong.
  */
-function tallyOrFail(body: HeadcountBody, eligible: ReadonlySet<string>) {
-  const tally = tallyHeadcount(body.entries, eligible);
+function tallyOrFail(body: HeadcountBody, sets: RollCallSets) {
+  const tally = tallyHeadcount(body.entries, sets.voters, sets.attendees);
   if (tally.problems.size > 0) {
     fail(422, "El recuento no es válido", {
       problems: [...tally.problems].map(([memberId, problem]) => ({
@@ -209,16 +269,11 @@ function tallyOrFail(body: HeadcountBody, eligible: ReadonlySet<string>) {
   return tally;
 }
 
-function assertCall(rules: QuorumRules, call: QuorumCall): void {
-  if (call === "second" && !rules.secondCall) {
-    fail(422, "Este tipo de asamblea solo tiene una convocatoria");
-  }
-}
-
 async function writeEntries(
   tx: Executor,
   headcountId: string,
   body: HeadcountBody,
+  voters: ReadonlySet<string>,
 ): Promise<void> {
   if (body.entries.length === 0) return;
   await tx.insert(headcountEntries).values(
@@ -228,6 +283,7 @@ async function writeEntries(
       mark: entry.mark,
       delegateMemberId:
         entry.mark === "delegated" ? (entry.delegateId ?? null) : null,
+      voting: voters.has(entry.memberId),
     })),
   );
 }
@@ -250,8 +306,9 @@ type CountFigures = Pick<
 
 /**
  * POST .../headcounts (session:moderate): stores a new count of the active
- * asociados, checked against the quorum of the call under the rules in
- * force. Refused in a draft or closed assembly.
+ * asociados, with the sectorials and guests in the room, checked against
+ * the quorum of the session's call (sessionCall) under the rules in force.
+ * Refused in a draft or closed assembly.
  */
 export async function recordHeadcount(
   actor: Actor,
@@ -263,22 +320,19 @@ export async function recordHeadcount(
     const locked = await lockAssembly(tx, assembly.id);
     assertCountable(locked);
     const rules = await quorumRules(locked, tx);
-    assertCall(rules, body.call);
-    const eligible = await eligibleMembers(tx);
-    const tally = tallyOrFail(
-      body,
-      new Set(eligible.map((member) => member.id)),
-    );
+    const call = sessionCall(rules);
+    const sets = rollCallSets(await rollCallMembers(tx));
+    const tally = tallyOrFail(body, sets);
     const required = quorumRequired(
-      eligible.length,
-      quorumThreshold(rules, body.call),
+      sets.voters.size,
+      quorumThreshold(rules, call),
     );
     const [created] = await tx
       .insert(headcounts)
       .values({
         assemblyId: assembly.id,
-        call: body.call,
-        eligible: eligible.length,
+        call,
+        eligible: sets.voters.size,
         inRoom: tally.inRoom,
         delegated: tally.delegated,
         present: tally.present,
@@ -287,7 +341,7 @@ export async function recordHeadcount(
         takenByUserId: actor.user.id,
       })
       .returning();
-    await writeEntries(tx, created!.id, body);
+    await writeEntries(tx, created!.id, body, sets.voters);
     await recordEvent(tx, {
       assemblyId: assembly.id,
       entityType: "headcount",
@@ -297,14 +351,16 @@ export async function recordHeadcount(
       actor,
     });
   });
-  return loadHeadcounts(assembly);
+  return loadHeadcounts(actor, assembly);
 }
 
 /**
  * PUT .../headcounts/[headcount] (session:moderate): corrects a count. The
- * members it may list are the asociados with a vote now plus those it
- * already listed; its `eligible` stays that of the moment it was taken, and
- * so does `required` unless the call changes. Optimistic lock on
+ * members it may list are those a new count lists plus those it already
+ * listed, each as the count had it: a member it counted with a vote keeps
+ * it, and one it listed without a vote never gets one, so a correction never
+ * turns a sectorial or a guest into a vote. Its `call`, `eligible` and
+ * `required` stay those of the moment it was taken. Optimistic lock on
  * `updatedAt` (409 when stale).
  */
 export async function updateHeadcount(
@@ -333,29 +389,28 @@ export async function updateHeadcount(
     ) {
       fail(409, "El recuento ha cambiado. Recarga la página");
     }
-    const rules = await quorumRules(locked, tx);
-    if (body.call !== row.call) assertCall(rules, body.call);
 
     const listed = await tx
-      .select({ memberId: headcountEntries.memberId })
+      .select({
+        memberId: headcountEntries.memberId,
+        voting: headcountEntries.voting,
+      })
       .from(headcountEntries)
       .where(eq(headcountEntries.headcountId, row.id));
-    const eligible = new Set([
-      ...(await eligibleMembers(tx)).map((member) => member.id),
-      ...listed.map((entry) => entry.memberId),
-    ]);
-    const tally = tallyOrFail(body, eligible);
-    const required =
-      body.call === row.call
-        ? row.required
-        : quorumRequired(row.eligible, quorumThreshold(rules, body.call));
+    const sets = rollCallSets(await rollCallMembers(tx));
+    for (const entry of listed) {
+      // As the count had it: neither a vote won nor a vote lost since.
+      sets.voters.delete(entry.memberId);
+      sets.attendees.delete(entry.memberId);
+      if (entry.voting) sets.voters.add(entry.memberId);
+      else sets.attendees.add(entry.memberId);
+    }
+    const tally = tallyOrFail(body, sets);
 
     const next = {
-      call: body.call,
       inRoom: tally.inRoom,
       delegated: tally.delegated,
       present: tally.present,
-      required,
       note: body.note ?? null,
     };
     const [updated] = await tx
@@ -366,7 +421,7 @@ export async function updateHeadcount(
     await tx
       .delete(headcountEntries)
       .where(eq(headcountEntries.headcountId, row.id));
-    await writeEntries(tx, row.id, body);
+    await writeEntries(tx, row.id, body, sets.voters);
     await recordEvent(tx, {
       assemblyId: assembly.id,
       entityType: "headcount",
@@ -376,13 +431,13 @@ export async function updateHeadcount(
         ...countPayload(updated!),
         // The note is the Mesa's label for the count, not a correction note.
         changes: diffChanges(row, next, {
-          keys: ["call", "inRoom", "delegated", "present", "required", "note"],
+          keys: ["inRoom", "delegated", "present", "note"],
         }),
       },
       actor,
     });
   });
-  return loadHeadcounts(assembly);
+  return loadHeadcounts(actor, assembly);
 }
 
 /** The count in force: the latest one taken in the assembly. */

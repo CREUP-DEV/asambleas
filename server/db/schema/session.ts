@@ -7,6 +7,7 @@ import {
   index,
   jsonb,
   primaryKey,
+  boolean,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { cuid } from "./common";
@@ -87,8 +88,10 @@ export const headcounts = pgTable(
 
 /**
  * Who a headcount counted: one row per asociado in the room or represented
- * by a delegation (absent ones have none). `delegateMemberId` is the member
- * in the room that votes for a delegated one.
+ * by a delegation, and per sectorial or guest in the room (absent ones have
+ * none). `delegateMemberId` is the member in the room that votes for a
+ * delegated one. `voting` says the member had a vote when the count was
+ * taken, so a correction never turns an attendee into a vote.
  */
 export const headcountEntries = pgTable(
   "headcount_entries",
@@ -103,6 +106,7 @@ export const headcountEntries = pgTable(
     delegateMemberId: text("delegate_member_id").references(() => members.id, {
       onDelete: "set null",
     }),
+    voting: boolean("voting").notNull().default(true),
   },
   (table) => [primaryKey({ columns: [table.headcountId, table.memberId] })],
 );

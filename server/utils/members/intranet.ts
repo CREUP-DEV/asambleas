@@ -5,14 +5,15 @@ import { logError, logWarn } from "../core/logger";
 import {
   intranetRosterResponseSchema,
   type IntranetRosterEntry,
-  type RosterKind,
+  type RosterListKind,
 } from "./roster";
 
 /**
  * Client for the CREUP intranet API (docs/intranet.md, section 4.3; the
  * private group is `/api/asambleas/v1`):
- * - `GET {base}/usuarios/asociados` and `GET {base}/usuarios/sectoriales`
- *   return `{ data: [...], generated_at }`;
+ * - `GET {base}/usuarios/asociados`, `.../sectoriales`, `.../cea` (one
+ *   account per place in the CEA) and `.../invitados` (Invitado and
+ *   Desasociado accounts) return `{ data: [...], generated_at }`;
  * - `POST {base}/user/role` returns `{ id, role, name, initials, university }`
  *   for an email, or 404 `{"error":"not_found"}` when the intranet has no
  *   such account (lookupIntranetRole).
@@ -23,9 +24,11 @@ import {
 
 export const INTRANET_TIMEOUT_MS = 10_000;
 
-const ROSTER_PATHS: Record<RosterKind, string> = {
+const ROSTER_PATHS: Record<RosterListKind, string> = {
   asociado: "usuarios/asociados",
   sectorial: "usuarios/sectoriales",
+  executive: "usuarios/cea",
+  guest: "usuarios/invitados",
 };
 
 // Configuration ---------------------------------------------------------------
@@ -359,7 +362,7 @@ export class IntranetUnavailableError extends Error {
 /** Fetches one roster list. Throws IntranetUnavailableError on any failure. */
 export async function fetchIntranetRoster(
   base: string,
-  kind: RosterKind,
+  kind: RosterListKind,
 ): Promise<IntranetRosterEntry[]> {
   const path = ROSTER_PATHS[kind];
   let response: Response;

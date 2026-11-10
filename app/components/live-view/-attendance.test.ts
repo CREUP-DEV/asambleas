@@ -1,35 +1,64 @@
 import { describe, expect, it } from "vitest";
 import type {
   HeadcountDto,
+  HeadcountMemberDto,
   HeadcountsDto,
-  MemberRef,
 } from "~~/shared/types/api";
+import type { MemberKind } from "~~/shared/constants/domain";
 import { affectsHeadcounts, liveAttendance } from "./-attendance";
 
-const member = (id: string): MemberRef => ({
+const member = (
+  id: string,
+  kind: MemberKind = "asociado",
+): HeadcountMemberDto => ({
   id,
   acronym: id.toUpperCase(),
   name: `Consejo ${id}`,
-  kind: "asociado",
+  kind,
+  university: null,
 });
 
 const count = (id: string, present: number): HeadcountDto => ({
   id,
-  call: "first",
+  call: "second",
   eligible: 40,
   inRoom: present - 1,
   delegated: 1,
   present,
+  attending: 2,
   required: 20,
   quorum: present >= 20,
   note: null,
   takenAt: "2026-11-19T09:00:00.000Z",
   updatedAt: "2026-11-19T09:00:00.000Z",
+  // In the order of the roll call, as the server sends them.
   entries: [
-    { member: member("b"), mark: "present", delegate: null },
-    { member: member("a"), mark: "present", delegate: null },
-    { member: member("c"), mark: "delegated", delegate: member("a") },
-    { member: member("d"), mark: "delegated", delegate: member("e") },
+    { member: member("b"), mark: "present", delegate: null, voting: true },
+    { member: member("a"), mark: "present", delegate: null, voting: true },
+    {
+      member: member("c"),
+      mark: "delegated",
+      delegate: member("a"),
+      voting: true,
+    },
+    {
+      member: member("d"),
+      mark: "delegated",
+      delegate: member("e"),
+      voting: true,
+    },
+    {
+      member: member("s", "sectorial"),
+      mark: "present",
+      delegate: null,
+      voting: false,
+    },
+    {
+      member: member("g", "guest"),
+      mark: "present",
+      delegate: null,
+      voting: false,
+    },
   ],
 });
 
@@ -64,17 +93,25 @@ describe("liveAttendance", () => {
     expect(view.majorities).toBeNull();
   });
 
-  it("lists who is in the room and which delegations count", () => {
+  it("lists who is in the room, in roll-call order, and which delegations count", () => {
     const view = liveAttendance(dto([count("h1", 30)]), {
       denominator: "present",
     })!;
-    expect(view.inRoom.map((item) => item.id)).toEqual(["a", "b"]);
+    expect(view.inRoom.map((item) => item.id)).toEqual(["b", "a"]);
     expect(
       view.delegations.map((item) => [item.from.id, item.to.id, item.counts]),
     ).toEqual([
       ["c", "a", true],
       ["d", "e", false],
     ]);
+  });
+
+  it("lists the sectorials and guests in the room apart, without a vote", () => {
+    const view = liveAttendance(dto([count("h1", 30)]), {
+      denominator: "present",
+    })!;
+    expect(view.attending.map((item) => item.id)).toEqual(["s", "g"]);
+    expect(view.inRoom.map((item) => item.id)).not.toContain("s");
   });
 
   it("refreshes on headcount events and polls only", () => {

@@ -27,6 +27,7 @@ const KIND_COLORS: Record<
   sectorial: "info",
   executive: "primary",
   other: "neutral",
+  guest: "neutral",
 };
 
 const color = computed(() =>

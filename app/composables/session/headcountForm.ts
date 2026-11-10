@@ -1,16 +1,23 @@
 import type {
   HeadcountDto,
   HeadcountEntryInput,
-  MemberRef,
+  HeadcountMemberDto,
 } from "~~/shared/types/api";
-import type { QuorumCall } from "~~/shared/utils/headcount";
+import { compareRollCall, votesInHeadcount } from "~~/shared/utils/headcount";
 
 /**
- * The Mesa's headcount form, as pure functions: one checkbox per asociado
- * with a vote (in the room or not) and, for one that is not, the member it
- * delegates its vote to. A delegation counts only while its receiver is in
- * the room; the server counts and checks it again (tallyHeadcount).
+ * The Mesa's headcount form, as pure functions: one checkbox per member in
+ * the order of the roll call (asociados, sectorials, guests). An asociado
+ * with a vote that is not in the room may delegate it to another one; a
+ * delegation counts only while its receiver is in the room. Sectorials and
+ * guests are only marked in the room: they never vote, delegate nor count.
+ * The server counts and checks it again (tallyHeadcount).
  */
+
+/** A member on the form, and whether it votes in this count. */
+export interface FormMember extends HeadcountMemberDto {
+  voting: boolean;
+}
 
 export interface FormRow {
   present: boolean;
@@ -25,21 +32,55 @@ export interface HeadcountDraft {
   /** The count being corrected, or null for a new one. */
   targetId: string | null;
   form: HeadcountForm;
-  call: QuorumCall;
   note: string;
   savedAt: string;
+}
+
+/** Voters first, then the roll-call order. */
+function compareFormMembers(a: FormMember, b: FormMember): number {
+  if (a.voting !== b.voting) return a.voting ? -1 : 1;
+  return compareRollCall(a, b);
+}
+
+/**
+ * The members of the form: those a new count lists and, when `target` is
+ * a count being corrected, those it listed that are no longer active, since
+ * the count is a snapshot of its own moment. A corrected count keeps who
+ * voted in it: a member it counted with a vote keeps it, and one it listed
+ * without a vote never gets one.
+ */
+export function headcountFormMembers(
+  members: readonly HeadcountMemberDto[],
+  target: HeadcountDto | null,
+): FormMember[] {
+  const listed = new Map(
+    (target?.entries ?? []).map((entry) => [entry.member.id, entry]),
+  );
+  const known = new Set(members.map((member) => member.id));
+  const extra = (target?.entries ?? [])
+    .map((entry) => entry.member)
+    .filter((member) => !known.has(member.id));
+  return [...members, ...extra]
+    .map((member) => ({
+      ...member,
+      voting: listed.get(member.id)?.voting ?? votesInHeadcount(member.kind),
+    }))
+    .sort(compareFormMembers);
 }
 
 /**
  * A form for `members`, filled from `from` (the count being corrected, or
  * the latest one, since few people move between counts). Members `from`
  * does not list start out of the room; delegations to members no longer
- * listed are dropped.
+ * listed, or between members that do not vote, are dropped.
  */
 export function headcountFormFrom(
-  members: readonly MemberRef[],
+  members: readonly FormMember[],
   from: HeadcountDto | null,
 ): HeadcountForm {
+  const voters = new Set(
+    members.filter((member) => member.voting).map((member) => member.id),
+  );
   const ids = new Set(members.map((member) => member.id));
   const form: HeadcountForm = Object.fromEntries(
     members.map((member) => [member.id, { present: false, delegateId: null }]),
@@ -51,28 +92,11 @@ export function headcountFormFrom(
       continue;
     }
     const delegateId = entry.delegate?.id ?? null;
-    if (delegateId && ids.has(delegateId)) {
+    if (delegateId && voters.has(entry.member.id) && voters.has(delegateId)) {
       form[entry.member.id] = { present: false, delegateId };
     }
   }
   return form;
-}
-
-/**
- * Members of a corrected count that are no longer active asociados: they
- * stay on its form, since the count is a snapshot of its own moment.
- */
-export function headcountFormMembers(
-  members: readonly MemberRef[],
-  from: HeadcountDto | null,
-): MemberRef[] {
-  const known = new Set(members.map((member) => member.id));
-  const extra = (from?.entries ?? [])
-    .map((entry) => entry.member)
-    .filter((member) => !known.has(member.id));
-  return [...members, ...extra].sort((a, b) =>
-    a.acronym.localeCompare(b.acronym),
-  );
 }
 
 /** What the server receives: members neither present nor delegating are left out. */
@@ -101,7 +125,7 @@ export function delegationsReceived(form: HeadcountForm): Map<string, string> {
  * Members that may receive `memberId`'s delegation: any other member that
  * neither delegates its own vote nor receives another delegation, those in
  * the room first (a delegation to one out of the room does not count yet).
- * `order` is the listing order of the form.
+ * `order` holds the members with a vote, in the order of the form.
  */
 export function delegateOptions(
   form: HeadcountForm,

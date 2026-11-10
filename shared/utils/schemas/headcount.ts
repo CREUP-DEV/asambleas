@@ -1,6 +1,6 @@
 import { z } from "zod/v4";
 import type { HeadcountBody, HeadcountUpdateBody } from "../../types/api";
-import { ATTENDANCE_MARKS, QUORUM_CALLS } from "../headcount";
+import { ATTENDANCE_MARKS } from "../headcount";
 import { normalizeText } from "./content";
 
 /**
@@ -33,7 +33,6 @@ const entrySchema = z.strictObject({
 
 /** POST /api/assemblies/[assembly]/headcounts (HeadcountBody). */
 export const headcountBodySchema = z.strictObject({
-  call: z.enum(QUORUM_CALLS),
   entries: z.array(entrySchema).max(HEADCOUNT_MAX_ENTRIES),
   note: noteSchema,
 });
