@@ -58,6 +58,56 @@ never say "Comisión Ejecutiva" alone.
 A user acts for the member in `users.memberId`. Users with moderation
 permissions may act on behalf of any member; every such action records both.
 
+### Who sees the executive areas
+
+Everyone knows the CEA presents a document or an amendment; which of its
+areas does is for the CEA and those who run the assembly. The rule is one
+predicate, `canSeeExecutiveMembers` (`server/utils/domain/visibility.ts`):
+an account sees the areas when its role is Admin, Secretaría, Presidencia,
+Moderador (the Mesa gives them the floor) or CEA, when it holds a management
+permission (`document:manage`, `amendment:review`, `amendment:manage`,
+`assembly:manage`, `session:moderate`, `member:manage`,
+`user:manage_roles`), or when it acts for an area itself
+(`Actor.memberKind`). Everyone else (Asociado, Sectorial, Invitado) gets one
+generic presenter instead of any area:
+`{ id: GENERIC_EXECUTIVE_MEMBER_ID, acronym: "CEA", name: "Comisión Ejecutiva Ampliada", kind: "executive" }`.
+Members of the other kinds read the same for everyone.
+
+- It is done in the server, in the answer, never by hiding things on
+  screen. Every place a member leaves the server goes through the helpers
+  of `visibility.ts`: `redactMember`, `redactMembers` (several areas
+  collapse into one entry), `redactPresenters`, `redactAuthors`
+  (`mainAuthorId` follows its author), `redactAcceptances` (the areas answer
+  as one party), `redactEventActor` (the person who acted for an area is not
+  named either, since the name says which area), `redactPayloadMembers`
+  (member ids in event and audit payloads, with the mask of
+  `loadExecutiveMask`), `collapseExecutive` (the members list) and
+  `visibleAcronym` (the PDFs, built with the requester's actor). A new
+  answer that carries a member uses them. In a list in acronym order (the
+  co-presenters, the members list, the presenters of a PDF) the generic
+  entry goes where "CEA" sorts (`placeGenericByAcronym`), never where the
+  area was, which would narrow down which area it is.
+- The generic id is a constant with the shape of an entity id and is never
+  a `members` row. The server never reads it as a member: in a body it only
+  stands for the areas already on the document or amendment.
+- An account that does not see the areas neither adds nor removes one
+  (`planListedMembers`, `planNamedMember` in
+  `server/utils/domain/executiveMembers.ts`): naming an area that is not
+  already there, by its id or by the generic one, answers 422
+  `executive_member`, and the areas already there stay whatever its list
+  says, since it reads them all as one and could not tell which it drops.
+  The generic id as main author or main presenter, with several areas
+  there and none of them in that place, answers 422 `executive_main`.
+  The CEA itself or the Secretaría add and remove areas. Parties of a
+  transactional come from the database, so such an account still proposes
+  one over an area's amendment.
+- Amendment codes never name the area: an amendment whose main author is an
+  area is coded `CEA n` for everyone, numbered per document across all the
+  areas (`amendmentCodePrefix`). Migration `0017` renumbered the existing
+  ones and rewrote the codes kept in event payloads; an older code that
+  named an area and has no amendment to follow (deleted since, or no longer
+  an area's) was removed from them.
+
 ## Documents
 
 `documents` keep their place in the agenda tree and gain:
@@ -253,7 +303,9 @@ strike and a rewrite, and never colour alone.
   `transactional`.
 - Authors: `amendment_authors` (member ids; joint amendments have several).
 - Numbering: `number` per document, assigned on submission without gaps, and a
-  per-member counter, shown as `12 · CEUM 4`. Transactionals are `T1`, `T2`...
+  per-member counter, shown as `12 · CEUM 4`. The executive areas share one
+  counter and the prefix `CEA` (`12 · CEA 4`), so a code never names the
+  area. Transactionals are `T1`, `T2`...
 - `submittedAt` is set by the server. `late` is computed from the window, never
   typed by hand.
 - `status`: `draft`, `submitted`, `inadmissible`, `withdrawn`, `transacted`

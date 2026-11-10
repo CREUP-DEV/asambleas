@@ -2,7 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { users } from "../../db/schema";
 import { getEffectivePermissions, isAdmin } from "../auth/rbac";
-import type { Actor } from "../domain/actor";
+import { loadMemberKind, type Actor } from "../domain/actor";
 import type { PermissionKey } from "~~/shared/constants/permissions";
 
 /**
@@ -39,6 +39,8 @@ export async function loadExportActor(userId: string): Promise<Actor | null> {
   return {
     user,
     memberId: user.memberId,
+    // The PDF hides the executive areas from a requester who may not see them.
+    memberKind: await loadMemberKind(user.memberId),
     isAdmin: admin,
     permissions,
     can: (key) => admin || permissions.includes(key),

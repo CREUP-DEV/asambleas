@@ -77,6 +77,38 @@ export function errorMessageKey(error: unknown): string | null {
   return typeof key === "string" && key.length > 0 ? key : null;
 }
 
+/**
+ * Refusals the server names with a code in `data.reason` instead of an i18n
+ * key, and the message that explains each. Only the ones any form may get:
+ * the rest are worded by the form that causes them.
+ */
+const REASON_KEYS: Record<string, string> = {
+  // An account that does not see the executive areas named the CEA.
+  executive_member: "common.errors.executiveMember",
+  // It chose the CEA as main author or presenter and the server cannot tell
+  // which area that is.
+  executive_main: "common.errors.executiveMain",
+};
+
+/**
+ * The i18n key for the `data.reason` of a failed request (same nesting as
+ * errorMessageKey), or null when it has none or it is not in REASON_KEYS.
+ */
+export function errorReasonKey(error: unknown): string | null {
+  if (!error || typeof error !== "object") return null;
+  const data = (error as { data?: unknown }).data;
+  if (!data || typeof data !== "object") return null;
+  const body = data as { reason?: unknown; data?: unknown };
+  const nested =
+    body.data && typeof body.data === "object"
+      ? (body.data as { reason?: unknown }).reason
+      : undefined;
+  const reason = typeof nested === "string" ? nested : body.reason;
+  return typeof reason === "string" && Object.hasOwn(REASON_KEYS, reason)
+    ? REASON_KEYS[reason]!
+    : null;
+}
+
 /** i18n key (and server `data.messageKey`) of the stale-identity 409. */
 export const IDENTITY_CHANGED_KEY = "auth.identityChanged";
 
@@ -194,7 +226,8 @@ export function useApi() {
    * without it, the status message is the title. Server messages are never
    * shown: they are untranslated, and on 5xx they are internal. An i18n key
    * the server sent with a 4xx (`data.messageKey`) explains it better than
-   * the status, when this locale has it. The identity-changed 409 was
+   * the status, when this locale has it; so does the message of a refusal
+   * it named in `data.reason` (errorReasonKey). The identity-changed 409 was
    * already said by `send`, which reloads the page: nothing more shows.
    */
   function notifyError(error: unknown, fallbackKey?: string): number | null {
@@ -202,7 +235,9 @@ export function useApi() {
     const status = errorStatus(error);
     if (isIdentityChanged(error)) return status;
     const messageKey =
-      status !== null && status < 500 ? errorMessageKey(error) : null;
+      status !== null && status < 500
+        ? (errorMessageKey(error) ?? errorReasonKey(error))
+        : null;
     const statusKey =
       messageKey && i18n.te(messageKey)
         ? messageKey

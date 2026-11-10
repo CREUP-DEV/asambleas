@@ -20,6 +20,7 @@ import type {
   MeWorkProponentDto,
   MeWorkReviewDto,
 } from "~~/shared/types/api";
+import { compareAmendmentCodes } from "~/composables/amendment/workspace";
 
 /** Something the user has to do, in the order it is most urgent. */
 export type HomeWorkTaskKind =
@@ -261,7 +262,7 @@ export function homeWorkTasks(work: MeWorkDto, now: number): HomeWorkTask[] {
     return (
       a.assembly.label.localeCompare(b.assembly.label) ||
       a.document.title.localeCompare(b.document.title) ||
-      (a.amendment?.code ?? "").localeCompare(b.amendment?.code ?? "") ||
+      compareAmendmentCodes(a.amendment?.code, b.amendment?.code) ||
       a.key.localeCompare(b.key)
     );
   });
@@ -363,7 +364,7 @@ export function homeWorkUpdates(work: MeWorkDto): HomeWorkUpdate[] {
       a.assembly.label.localeCompare(b.assembly.label) ||
       a.document.title.localeCompare(b.document.title) ||
       (a.amendment ? 1 : 0) - (b.amendment ? 1 : 0) ||
-      (a.amendment?.code ?? "").localeCompare(b.amendment?.code ?? "") ||
+      compareAmendmentCodes(a.amendment?.code, b.amendment?.code) ||
       a.key.localeCompare(b.key),
   );
 }

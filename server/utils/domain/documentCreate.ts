@@ -21,6 +21,7 @@ import {
   uniqueDocumentSlug,
 } from "./documents";
 import { recordEvent } from "./events";
+import { resolveBodyMembers } from "./executiveMembers";
 import {
   planPresenters,
   PRESENTERS_MESSAGES,
@@ -133,12 +134,20 @@ async function planDocument(
   // Members always present it, alone or with co-presenters. Managers pick
   // the presenters; the main one defaults to their own member and an
   // explicit null leaves it empty (with no co-presenters).
+  // An account that does not see the executive areas cannot add one, and
+  // the generic "CEA" id is never a member (422 `executive_member`).
+  const named = await resolveBodyMembers(actor, {
+    listed: input.coProponentMemberIds,
+    named: input.proponentMemberId,
+    current: [],
+    currentMain: null,
+  });
   const presenters = planPresenters({
     manager,
     actorMemberId: actor.memberId,
     current: null,
-    proponentMemberId: input.proponentMemberId,
-    coProponentMemberIds: input.coProponentMemberIds,
+    proponentMemberId: named.named,
+    coProponentMemberIds: named.listed,
   });
   if (typeof presenters === "string") {
     fail(422, PRESENTERS_MESSAGES[presenters]);

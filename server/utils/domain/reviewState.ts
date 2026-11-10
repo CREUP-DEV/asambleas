@@ -683,7 +683,9 @@ export function submissionLate(
  * Numbering an amendment keeps when it is presented again after a
  * correction: its number per document always, and its per-member sequence
  * (and code) while the presenting member is the same. Null means a new one
- * is assigned, as on a first presentation.
+ * is assigned, as on a first presentation. `codePrefix` is what the code of
+ * the presenting member starts with (amendmentCodePrefix): its acronym, or
+ * "CEA" for every executive area, which share one sequence.
  */
 export function numberingToKeep(
   previous: {
@@ -691,11 +693,11 @@ export function numberingToKeep(
     memberSeq: number | null;
     code: string | null;
   },
-  presentingAcronym: string,
+  codePrefix: string,
 ): { number: number | null; memberSeq: number | null } {
   const sameMember =
     previous.memberSeq !== null &&
-    previous.code === `${presentingAcronym} ${previous.memberSeq}`;
+    previous.code === `${codePrefix} ${previous.memberSeq}`;
   return {
     number: previous.number,
     memberSeq: sameMember ? previous.memberSeq : null,

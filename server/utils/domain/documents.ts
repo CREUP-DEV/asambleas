@@ -61,6 +61,7 @@ import {
 } from "./agendaWrites";
 import { diffChanges, sortedIds } from "./changes";
 import { recordEvent } from "./events";
+import { loadExecutiveMask, resolveBodyMembers } from "./executiveMembers";
 import { withHeadcount } from "./headcounts";
 import {
   impersonatedByFor,
@@ -89,6 +90,9 @@ import {
   isDocumentProponent,
   redactCorrectionNote,
   redactDocumentChanges,
+  redactEventActor,
+  redactPayloadMembers,
+  redactPresenters,
   seesAllPresentedAmendments,
   type AmendmentVisibilityContext,
   type DocumentPresenters,
@@ -849,8 +853,8 @@ export async function buildDocumentSummaries(
   return rows.map(({ proponent, ...document }) => {
     const co = coProponents.get(document.id) ?? [];
     return toDocumentSummaryDto(document, {
-      proponent: memberRefOrNull(proponent),
-      coProponents: co,
+      // An executive area reads as "CEA" to whoever may not see the areas.
+      ...redactPresenters(actor, memberRefOrNull(proponent), co),
       amendmentCount: counts.get(document.id) ?? 0,
       hasAmendments: amended ? amended.has(document.id) : null,
       window: documentWindow(
@@ -957,8 +961,7 @@ export async function loadDocumentDto(
     assembly,
     document,
     milestones,
-    proponent: memberRefOrNull(proponent),
-    coProponents,
+    ...redactPresenters(actor, memberRefOrNull(proponent), coProponents),
     amendmentCount: counts.get(document.id) ?? 0,
     hasAmendments: anyAmendment,
     hasContent: content.has(document.id),
@@ -1448,6 +1451,30 @@ export async function updateDocument(
   const { actor, assembly } = ctx;
   requireDocumentEditor(actor, ctx.document);
   const manager = canManageDocuments(actor);
+
+  // An account that does not see the executive areas neither adds nor
+  // removes one, and the generic "CEA" id is never a member.
+  const named = await resolveBodyMembers(actor, {
+    listed: body.coProponentMemberIds,
+    named: body.proponentMemberId,
+    current: [
+      ...(ctx.document.proponentMemberId
+        ? [ctx.document.proponentMemberId]
+        : []),
+      ...ctx.document.coProponentMemberIds,
+    ],
+    currentMain: ctx.document.proponentMemberId,
+    listedCurrent: ctx.document.coProponentMemberIds,
+  });
+  body = {
+    ...body,
+    ...(named.listed !== undefined
+      ? { coProponentMemberIds: named.listed }
+      : {}),
+    ...(body.proponentMemberId !== undefined
+      ? { proponentMemberId: named.named }
+      : {}),
+  };
 
   const pending = changedFields(ctx.document, body);
   if (
@@ -2846,6 +2873,9 @@ export async function loadDocumentHistory(
     document,
   );
   const documentNotes = canSeeDocumentCorrection(actor, document);
+  // Payloads name members by id: the areas read as one for those who may
+  // not see them.
+  const mask = await loadExecutiveMask(actor);
 
   const scope = [
     and(eq(events.entityType, "document"), eq(events.entityId, document.id)),
@@ -2897,23 +2927,32 @@ export async function loadDocumentHistory(
     type: row.type,
     entityType: row.entityType,
     entityId: row.entityId,
-    payload: redactCorrectionNote(
-      row.type,
-      row.entityType === "amendment"
-        ? (row.payload ?? {})
-        : redactDocumentChanges(row.type, row.payload ?? {}, documentNotes),
-      row.entityType === "amendment" ? notes.has(row.entityId) : documentNotes,
+    payload: redactPayloadMembers(
+      mask,
+      redactCorrectionNote(
+        row.type,
+        row.entityType === "amendment"
+          ? (row.payload ?? {})
+          : redactDocumentChanges(row.type, row.payload ?? {}, documentNotes),
+        row.entityType === "amendment"
+          ? notes.has(row.entityId)
+          : documentNotes,
+      ),
     ),
-    actorName: row.actorName,
-    actorMember:
-      row.memberId && row.memberAcronym && row.memberName && row.memberKind
-        ? {
-            id: row.memberId,
-            acronym: row.memberAcronym,
-            name: row.memberName,
-            kind: row.memberKind,
-          }
-        : null,
+    // Neither the area nor the person who acted for it, for those who may
+    // not see the areas.
+    ...redactEventActor(actor, {
+      actorName: row.actorName,
+      actorMember:
+        row.memberId && row.memberAcronym && row.memberName && row.memberKind
+          ? {
+              id: row.memberId,
+              acronym: row.memberAcronym,
+              name: row.memberName,
+              kind: row.memberKind,
+            }
+          : null,
+    }),
     impersonatedBy: impersonatedByFor(actor, row, impersonators),
     createdAt: row.createdAt.toISOString(),
   }));

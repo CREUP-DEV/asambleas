@@ -49,22 +49,68 @@ The usual AGENTS.md handler order applies:
 
 ## Members and me
 
-| Method | Path                                | Who                       | Notes                                                                                                                                     |
-| ------ | ----------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/me`                           | any                       | `MeDto`. `permissions` are the role's plus the user's own grants (see "Permissions" below).                                               |
-| GET    | `/api/me/work`                      | any                       | `MeWorkDto`, see "Review and work" below.                                                                                                 |
-| GET    | `/api/members`                      | any                       | `MemberDto[]`, active first, by acronym. `?all=1` also returns inactive members.                                                          |
-| POST   | `/api/members`                      | `member:manage`           | Creates a member manually, typically an executive area.                                                                                   |
-| PUT    | `/api/members/[id]`                 | `member:manage`           | Edits name, kind or active, with `updatedAt`.                                                                                             |
-| POST   | `/api/members/sync`                 | `member:manage`           | Optional body `MemberSyncBody`. Syncs the intranet roster. Returns `MemberSyncResult`; 409 when it needs confirmation, see "Roster sync". |
-| GET    | `/api/admin/users`                  | `user:manage_roles`       | Paginated `AdminUserDto` rows, each with `member`, `extraPermissions` and its access state. See "Users list".                             |
-| PUT    | `/api/admin/users/[id]/role`        | `user:manage_roles`       | Body `{ roleId }`. Only an Admin gives or takes Admin, Secretaría or Presidencia.                                                         |
-| PUT    | `/api/admin/users/[id]/member`      | `user:manage_roles`       | Body `{ memberId: string \| null }`. Links an account to a member, see below.                                                             |
-| PUT    | `/api/admin/users/[id]/permissions` | `user:manage_roles`       | Body `{ permissions: PermissionKey[] }`. Sets the user's own grants, see "Permissions".                                                   |
-| GET    | `/api/admin/roles`                  | see notes                 | The roles. `user:manage_roles` or `role:manage_permissions`.                                                                              |
-| GET    | `/api/admin/roles/[id]/permissions` | see notes                 | What a role grants. `user:manage_roles` or `role:manage_permissions`.                                                                     |
-| PUT    | `/api/admin/roles/[id]/permissions` | `role:manage_permissions` | Body `{ permissionKeys }`. Not on the Admin role, see "Admin section".                                                                    |
-| GET    | `/api/admin/permissions`            | see notes                 | The permission catalog. `user:manage_roles` or `role:manage_permissions`.                                                                 |
+| Method | Path                                | Who                       | Notes                                                                                                                                         |
+| ------ | ----------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/me`                           | any                       | `MeDto`. `permissions` are the role's plus the user's own grants (see "Permissions" below).                                                   |
+| GET    | `/api/me/work`                      | any                       | `MeWorkDto`, see "Review and work" below.                                                                                                     |
+| GET    | `/api/members`                      | any                       | `MemberDto[]`, active first, by acronym. `?all=1` also returns inactive members. One generic entry instead of the executive areas, see below. |
+| POST   | `/api/members`                      | `member:manage`           | Creates a member manually, typically an executive area.                                                                                       |
+| PUT    | `/api/members/[id]`                 | `member:manage`           | Edits name, kind or active, with `updatedAt`.                                                                                                 |
+| POST   | `/api/members/sync`                 | `member:manage`           | Optional body `MemberSyncBody`. Syncs the intranet roster. Returns `MemberSyncResult`; 409 when it needs confirmation, see "Roster sync".     |
+| GET    | `/api/admin/users`                  | `user:manage_roles`       | Paginated `AdminUserDto` rows, each with `member`, `extraPermissions` and its access state. See "Users list".                                 |
+| PUT    | `/api/admin/users/[id]/role`        | `user:manage_roles`       | Body `{ roleId }`. Only an Admin gives or takes Admin, Secretaría or Presidencia.                                                             |
+| PUT    | `/api/admin/users/[id]/member`      | `user:manage_roles`       | Body `{ memberId: string \| null }`. Links an account to a member, see below.                                                                 |
+| PUT    | `/api/admin/users/[id]/permissions` | `user:manage_roles`       | Body `{ permissions: PermissionKey[] }`. Sets the user's own grants, see "Permissions".                                                       |
+| GET    | `/api/admin/roles`                  | see notes                 | The roles. `user:manage_roles` or `role:manage_permissions`.                                                                                  |
+| GET    | `/api/admin/roles/[id]/permissions` | see notes                 | What a role grants. `user:manage_roles` or `role:manage_permissions`.                                                                         |
+| PUT    | `/api/admin/roles/[id]/permissions` | `role:manage_permissions` | Body `{ permissionKeys }`. Not on the Admin role, see "Admin section".                                                                        |
+| GET    | `/api/admin/permissions`            | see notes                 | The permission catalog. `user:manage_roles` or `role:manage_permissions`.                                                                     |
+
+**Executive areas (`MemberRef`).** Wherever an answer carries a member
+(`MemberRef`, `MemberDto`, a bare member id such as `mainAuthorId` or the
+ids in an event payload), an executive area is itself only for the accounts
+that see the areas: Admin, Secretaría, Presidencia, Moderador and CEA, the
+holders of `document:manage`, `amendment:review`, `amendment:manage`,
+`assembly:manage`, `session:moderate`, `member:manage` or
+`user:manage_roles`, and the accounts that act for an area. Everyone else
+gets the generic presenter
+`{ id: GENERIC_EXECUTIVE_MEMBER_ID, acronym: "CEA", name: "Comisión Ejecutiva Ampliada", kind: "executive" }`
+(`shared/constants/domain.ts`) instead, once per list:
+
+- documents: `proponent` and `coProponents` (not repeated among the
+  co-presenters when the main presenter is an area);
+- amendments: `authors`, `mainAuthorId` and `acceptances` (the areas answer
+  as one party: rejected if any did, pending while any is);
+- both histories: `actorMember`, and `actorName` is null when the member
+  acted for is an area; member ids in `payload` become the generic id;
+- `/api/me/work`: `acceptances[].proposedBy`, `news[].by` and every document
+  and amendment in it;
+- `/api/me/activity`: `actor.member`, and `actor.id` and `actor.name` are
+  the generic id and name unless the act is the account's own; member ids
+  in `payload`; a member target that is an area has the generic id, the
+  label `CEA` and an empty payload;
+- speaking turns: `member`, and `speaker` is null for an area's turn;
+- `GET /api/members`: one generic `MemberDto` instead of all the areas
+  (`active` while any area is; it cannot be edited), placed where "CEA"
+  sorts, as among the co-presenters of a document;
+- PDF exports name the area as `CEA`, according to who requested them.
+
+`MeDto.member` is always the account's real member. The generic id is not a
+member. In a body (`proponentMemberId`, `coProponentMemberIds`,
+`authorMemberIds`, `mainAuthorMemberId`) the rule is:
+
+- an account that does not see the areas cannot add one, by its real id or
+  by the generic one: 422 with `data: { reason: "executive_member" }`
+  (`EXECUTIVE_MEMBER_REFUSED_REASON`). It cannot remove one either: the
+  areas already on the document or amendment stay whatever its list says.
+  The generic id is accepted only as a stand-in for them (in a list), or
+  for the area that is main presenter or main author, or the only area
+  there (as the main one); otherwise 422 `executive_member`. As the main
+  one with several areas there and none of them in that place, it cannot
+  say which: 422 with `data: { reason: "executive_main" }`
+  (`EXECUTIVE_MAIN_REFUSED_REASON`), since nothing was added;
+- an account that sees the areas names them by their real ids; the generic
+  id gets the same 422.
 
 **Intranet.** Every call to the intranet API (role sync, `POST /user/role`,
 and the roster sync, `GET /usuarios/asociados` and `/usuarios/sectoriales`)
@@ -667,7 +713,8 @@ All paths are under `/api/assemblies/[assembly]/documents/[document]/amendments`
 
 **Main author.** An amendment with co-authors has a main author
 (`AmendmentDto.mainAuthorId`, listed first in `authors`), stored as the
-presenting member: it drives the code (`CEUM 4`) and alone answers the
+presenting member: it drives the code (`CEUM 4`, or `CEA 4` for any
+executive area) and alone answers the
 transactionals proposed over the amendment. With a single author it is that
 author; a transactional the Mesa drafts for nobody has none (null).
 
@@ -715,7 +762,10 @@ author; a transactional the Mesa drafts for nobody has none (null).
   main author within the document). An amendment sent back for correction
   keeps its `number`, and its `memberSeq` while the same member presents it,
   so numbering has no gaps. Deleting such a draft leaves its number unused.
-- It sets `code` to `"{ACRONYM} {memberSeq}"`.
+- It sets `code` to `"{ACRONYM} {memberSeq}"`. When the main author is an
+  executive area the code is `"CEA {memberSeq}"` for everyone, and
+  `memberSeq` counts the amendments of all the areas to the document
+  together (`amendmentCodePrefix`), so the code never names the area.
 - It never admits: `admission` stays `pending` and `validatedAt` and
   `publishedAt` stay null until the Secretaría validates it (see below).
 - It creates the `amendment_positions` row as `pending`.

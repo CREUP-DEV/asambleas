@@ -507,10 +507,11 @@ const formatCardsUi = { fieldset: "grid gap-2 sm:grid-cols-2" };
 const majorityCardsUi = { fieldset: "flex-wrap gap-2" };
 /**
  * The members that may present a document of the kind chosen: a sectorial
- * is not offered for an internal motion (memberMayPresent).
+ * is not offered for an internal motion (memberMayPresent), and the generic
+ * "CEA" never is (it is not a member).
  */
 const presentableMembers = computed<MemberDto[]>(() =>
-  members.value.filter(
+  addableMembers(members.value).filter(
     (candidate) => !state.kind || memberMayPresent(state.kind, candidate.kind),
   ),
 );

@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { PgDialect } from "drizzle-orm/pg-core";
 import type { SQL } from "drizzle-orm";
 import { AUDIT_ACTION_VALUES, EVENT_TYPES } from "~~/shared/constants/activity";
-import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
+import {
+  DEFAULT_ASSEMBLY_SETTINGS,
+  GENERIC_EXECUTIVE_MEMBER,
+  GENERIC_EXECUTIVE_MEMBER_ID,
+} from "~~/shared/constants/domain";
 import {
   PERMISSION_KEYS,
   type PermissionKey,
@@ -1493,5 +1497,142 @@ describe("collectActivityIds", () => {
     expect([...ids.members]).toEqual([MEMBER]);
     expect([...ids.impersonations]).toEqual(["imp1"]);
     expect([...ids.assemblies]).toEqual(["asm"]);
+  });
+});
+
+// Executive areas ----------------------------------------------------------------------
+
+describe("executive areas in Mi actividad", () => {
+  const AREA = "areaaaaaaaaaaaaaaaaaaaaa";
+  const OTHER_AREA = "areabbbbbbbbbbbbbbbbbbbb";
+
+  function withAreas(): Lookups {
+    const data = lookups();
+    data.members.set(AREA, {
+      id: AREA,
+      acronym: "VPU",
+      name: "Vicepresidencia de Universidades",
+      kind: "executive",
+    });
+    data.members.set(OTHER_AREA, {
+      id: OTHER_AREA,
+      acronym: "TES",
+      name: "Tesorería",
+      kind: "executive",
+    });
+    return data;
+  }
+
+  /** An area answered the amendment of the viewer's member. */
+  const answered: Partial<Row> = {
+    action: "amendment_approved",
+    actorUserId: OTHER,
+    actorMemberId: AREA,
+    targetType: "amendment",
+    targetId: "mine",
+    payload: { method: "proponent" },
+  };
+
+  it("names neither the area nor the person who acted for it", () => {
+    const item = meItem(
+      makeActor({ memberId: MEMBER }),
+      "member",
+      answered,
+      withAreas(),
+    );
+    expect(item?.actor).toEqual({
+      id: GENERIC_EXECUTIVE_MEMBER_ID,
+      name: GENERIC_EXECUTIVE_MEMBER.name,
+      member: { ...GENERIC_EXECUTIVE_MEMBER },
+    });
+    expect(JSON.stringify(item)).not.toContain("VPU");
+    expect(JSON.stringify(item)).not.toContain("Luis");
+    expect(JSON.stringify(item)).not.toContain(AREA);
+  });
+
+  it("shows both to those who see the areas", () => {
+    const item = meItem(
+      makeActor({
+        memberId: MEMBER,
+        permissions: [PERMISSION_KEYS.AMENDMENT_REVIEW],
+      }),
+      "member",
+      answered,
+      withAreas(),
+    );
+    expect(item?.actor).toEqual({
+      id: OTHER,
+      name: "Luis",
+      member: {
+        id: AREA,
+        acronym: "VPU",
+        name: "Vicepresidencia de Universidades",
+        kind: "executive",
+      },
+    });
+  });
+
+  it("keeps the viewer's own name on its own acts", () => {
+    const item = meItem(
+      makeActor({ memberId: MEMBER }),
+      "by",
+      { ...answered, actorUserId: ME },
+      withAreas(),
+    );
+    expect(item?.actor).toEqual({
+      id: ME,
+      name: "Ana",
+      member: { ...GENERIC_EXECUTIVE_MEMBER },
+    });
+  });
+
+  it("replaces the areas a payload names, also those only the full mask knows", () => {
+    const item = toMeActivityItem(
+      makeActor({ memberId: MEMBER }),
+      "by",
+      row({
+        kind: "audit",
+        action: "user.member_link",
+        assemblyId: null,
+        targetType: "user",
+        targetId: ME,
+        payload: {
+          before: { memberId: AREA },
+          after: { memberId: "areacccccccccccccccccccc" },
+        },
+      }),
+      withAreas(),
+      new Date(),
+      new Set([AREA, OTHER_AREA, "areacccccccccccccccccccc"]),
+    );
+    expect(item?.payload).toEqual({
+      before: {
+        memberId: GENERIC_EXECUTIVE_MEMBER_ID,
+        member: { ...GENERIC_EXECUTIVE_MEMBER },
+      },
+      after: { memberId: GENERIC_EXECUTIVE_MEMBER_ID, member: null },
+    });
+  });
+
+  it("says nothing of what an area was and became", () => {
+    const item = meItem(
+      makeActor({ memberId: MEMBER }),
+      "by",
+      {
+        kind: "audit",
+        action: "member.update",
+        assemblyId: null,
+        targetType: "member",
+        targetId: AREA,
+        payload: {
+          before: { acronym: "VPU", name: "Vicepresidencia" },
+          after: { acronym: "VPUN", name: "Vicepresidencia de Universidades" },
+        },
+      },
+      withAreas(),
+    );
+    expect(item?.target.id).toBe(GENERIC_EXECUTIVE_MEMBER_ID);
+    expect(item?.target.label).toBe("CEA");
+    expect(item?.payload).toEqual({});
   });
 });

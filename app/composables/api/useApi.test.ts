@@ -3,6 +3,7 @@ import { createError } from "h3";
 import {
   IDENTITY_CHANGED_KEY,
   errorMessageKey,
+  errorReasonKey,
   errorStatus,
   isConflict,
   isIdentityChanged,
@@ -38,6 +39,31 @@ describe("errorMessageKey", () => {
     expect(errorMessageKey(new Error("network"))).toBeNull();
     expect(errorMessageKey(null)).toBeNull();
     expect(errorMessageKey("409")).toBeNull();
+  });
+});
+
+describe("errorReasonKey", () => {
+  it("words the refusal of the CEA, from a fetch error and an H3Error", () => {
+    expect(
+      errorReasonKey(fetchError(422, { reason: "executive_member" })),
+    ).toBe("common.errors.executiveMember");
+    expect(
+      errorReasonKey(
+        createError({ statusCode: 422, data: { reason: "executive_member" } }),
+      ),
+    ).toBe("common.errors.executiveMember");
+    expect(errorReasonKey(fetchError(422, { reason: "executive_main" }))).toBe(
+      "common.errors.executiveMain",
+    );
+  });
+
+  it("is null for other reasons and for none", () => {
+    expect(errorReasonKey(fetchError(422, { reason: "file_kind" }))).toBeNull();
+    expect(errorReasonKey(fetchError(422, { reason: "toString" }))).toBeNull();
+    expect(errorReasonKey(fetchError(422, { reason: 3 }))).toBeNull();
+    expect(errorReasonKey(fetchError(422))).toBeNull();
+    expect(errorReasonKey(new Error("network"))).toBeNull();
+    expect(errorReasonKey(null)).toBeNull();
   });
 });
 

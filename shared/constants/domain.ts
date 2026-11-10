@@ -42,6 +42,34 @@ export const MEMBER_KINDS = [
 ] as const;
 export type MemberKind = (typeof MEMBER_KINDS)[number];
 
+/**
+ * The id of the generic presenter the server returns instead of an executive
+ * area to accounts that may not see the areas (canSeeExecutiveMembers). It is
+ * never the id of a `members` row: it has the shape of an entity id so bodies
+ * that carry it validate, and the server refuses it or reads it as "the areas
+ * already there", never as a member.
+ */
+export const GENERIC_EXECUTIVE_MEMBER_ID = "ceagenericexecutivemember";
+
+/** The generic presenter itself (a MemberRef). Content, not UI: never translated. */
+export const GENERIC_EXECUTIVE_MEMBER = {
+  id: GENERIC_EXECUTIVE_MEMBER_ID,
+  acronym: "CEA",
+  name: "Comisión Ejecutiva Ampliada",
+  kind: "executive",
+} as const satisfies {
+  id: string;
+  acronym: string;
+  name: string;
+  kind: MemberKind;
+};
+
+/**
+ * Amendments whose main author is an executive area are coded "CEA n" for
+ * everyone, numbered per document across all the areas.
+ */
+export const EXECUTIVE_AMENDMENT_CODE_PREFIX = "CEA";
+
 export const MEMBER_SOURCES = ["intranet", "manual"] as const;
 export type MemberSource = (typeof MEMBER_SOURCES)[number];
 

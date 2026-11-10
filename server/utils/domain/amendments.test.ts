@@ -60,6 +60,7 @@ const {
   computeApprovalWarnings,
   evaluateVoteInput,
   insertedBlockIds,
+  amendmentCodePrefix,
   nextTransactionalCode,
   prepareAmendmentOps,
   reIdInsertedBlocks,
@@ -310,6 +311,27 @@ describe("canProposeTransactional", () => {
         isParty: false,
       }),
     ).toBe(true);
+  });
+});
+
+describe("amendmentCodePrefix", () => {
+  it("codes a council's or a sectorial's amendments with its acronym", () => {
+    expect(amendmentCodePrefix({ acronym: "CEUM", kind: "asociado" })).toBe(
+      "CEUM",
+    );
+    expect(amendmentCodePrefix({ acronym: "CEET", kind: "sectorial" })).toBe(
+      "CEET",
+    );
+    expect(amendmentCodePrefix({ acronym: "INV", kind: "other" })).toBe("INV");
+  });
+
+  it("codes every executive area's amendments as CEA, never with its acronym", () => {
+    expect(amendmentCodePrefix({ acronym: "VPU", kind: "executive" })).toBe(
+      "CEA",
+    );
+    expect(amendmentCodePrefix({ acronym: "TES", kind: "executive" })).toBe(
+      "CEA",
+    );
   });
 });
 

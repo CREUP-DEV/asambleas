@@ -149,7 +149,11 @@ function text(value: unknown): string | null {
 function memberAcronym(event: EventDto, id: string | null): string | null {
   if (!id) return null;
   if (event.actorMember?.id === id) return event.actorMember.acronym;
-  return props.members.find((member) => member.id === id)?.acronym ?? null;
+  return (
+    props.members.find((member) => member.id === id)?.acronym ??
+    // The generic "CEA" may stand for an area no longer among `members`.
+    genericExecutiveAcronym(id)
+  );
 }
 
 /** A transactional closed because a main author rejected it. */
@@ -271,7 +275,8 @@ function positionDetail(payload: Record<string, unknown>): string | null {
   const memberId = text(payload.memberId);
   const member =
     (memberId
-      ? props.members.find((item) => item.id === memberId)?.acronym
+      ? (props.members.find((item) => item.id === memberId)?.acronym ??
+        genericExecutiveAcronym(memberId))
       : null) ?? t("amendment.position.thePresenter");
   return t(`amendment.position.answersByMesa.${position}`, { member });
 }
