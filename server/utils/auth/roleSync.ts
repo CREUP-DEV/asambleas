@@ -88,11 +88,18 @@ function logLookup(
   }
 }
 
-/** Intranet types (`users.type`) that grant a platform role; any other gives Otro. */
+/**
+ * Intranet types (`users.type`) that grant a platform role; any other gives
+ * Otro. "CAS" is no Intranet type: the role lookup answers it for the
+ * Coordinación del CAS, a CEA account there.
+ */
 const EXTERNAL_ROLES: ReadonlyMap<string, string> = new Map<string, string>([
   ["Asociado", SYSTEM_ROLES.ASOCIADO],
   ["Sectorial", SYSTEM_ROLES.SECTORIAL],
   ["CEA", SYSTEM_ROLES.CEA],
+  ["CAS", SYSTEM_ROLES.CAS],
+  ["CAI", SYSTEM_ROLES.CAI],
+  ["CdG", SYSTEM_ROLES.CDG],
 ]);
 
 /**
@@ -105,20 +112,24 @@ const SYNCED_ROLES: ReadonlySet<string> = new Set([
   SYSTEM_ROLES.ASOCIADO,
   SYSTEM_ROLES.SECTORIAL,
   SYSTEM_ROLES.CEA,
+  SYSTEM_ROLES.CAS,
+  SYSTEM_ROLES.CAI,
+  SYSTEM_ROLES.CDG,
 ]);
 
 /**
  * Roles given here by hand that role sync only raises: a guest (Invitado)
- * whose intranet type becomes Asociado, Sectorial or CEA takes that role,
- * and keeps Invitado otherwise. Sync never gives one.
+ * whose intranet type becomes one with a role (Asociado, Sectorial, CEA,
+ * CAS, CAI, CdG) takes that role, and keeps Invitado otherwise. Sync never
+ * gives one.
  */
 const RAISED_ONLY_ROLES: ReadonlySet<string> = new Set([SYSTEM_ROLES.INVITADO]);
 
 /**
  * Role to assign after a successful sync, or null to keep the current one:
- * a new user gets the role of their intranet type (Asociado, Sectorial,
- * CEA) or Otro; an Otro, Asociado, Sectorial or CEA user follows their type
- * when it changes; an Invitado takes the role of a member type and keeps
+ * a new user gets the role of their intranet type (EXTERNAL_ROLES) or Otro;
+ * a user with a synced role (SYNCED_ROLES) follows their type when it
+ * changes; an Invitado takes the role of a type with one and keeps
  * Invitado otherwise (RAISED_ONLY_ROLES); everyone else keeps their role.
  */
 export function resolveTargetRole(

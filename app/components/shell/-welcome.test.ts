@@ -19,6 +19,7 @@ const AUDIENCES: WelcomeAudience[] = [
   "secretariat",
   "mesa",
   "cea",
+  "cas",
   "asociado",
   "sectorial",
   "guest",
@@ -113,6 +114,7 @@ describe("welcomeAudience", () => {
     const of = (role: string) =>
       welcomeAudience(account({ role, permissions: PRESENTER }));
     expect(of("CEA")).toBe("cea");
+    expect(of("CAS")).toBe("cas");
     expect(of("Sectorial")).toBe("sectorial");
     expect(of("Asociado")).toBe("asociado");
     expect(of("Rol nuevo")).toBe("asociado");
@@ -128,6 +130,16 @@ describe("welcomeAudience", () => {
         }),
       ),
     ).toBe("cea");
+    // The Coordinación del CAS acts for the member CAS, of kind "other".
+    expect(
+      welcomeAudience(
+        account({
+          role: "CAS",
+          permissions: PRESENTER,
+          member: { kind: "other" },
+        }),
+      ),
+    ).toBe("cas");
   });
 
   it("treats an account that can do nothing as a guest", () => {

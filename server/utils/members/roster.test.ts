@@ -655,6 +655,35 @@ describe("planRosterSync with the CEA list", () => {
     expect(plan.manualConflicts).toEqual(["CAS"]);
   });
 
+  it("lets the CAS list adopt the manual member CAS", () => {
+    const cas: RosterMember = {
+      ...listed("CAS", 102, "Comité de Asuntos Sectoriales"),
+      kind: "other",
+    };
+    const plan = planRosterSync(
+      [cas],
+      [
+        existing({
+          id: "m-cas",
+          acronym: "CAS",
+          kind: "other",
+          source: "manual",
+        }),
+        existing({
+          id: "m-mesa",
+          acronym: "MESA",
+          kind: "other",
+          source: "manual",
+        }),
+      ],
+      ["asociado", "sectorial", "executive", "other"],
+    );
+    expect(plan.update).toEqual([{ id: "m-cas", adopt: true, values: cas }]);
+    // Any other manual member stays as it is.
+    expect(plan.deactivate).toEqual([]);
+    expect(plan.manualConflicts).toEqual([]);
+  });
+
   it("deactivates no office when the Intranet did not give the list", () => {
     const plan = planRosterSync(
       [],

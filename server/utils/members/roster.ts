@@ -25,11 +25,13 @@ import { acronymKey } from "./dto";
  * account being recreated with a new id). Initials only identify a stored
  * member that has neither, so they never hand a member to another account.
  *
- * Three lists: asociados, sectorials and the CEA's places (one account per
- * office, which outlives whoever holds it), all synced the same way. The
- * first two are required: without either the sync fails. The CEA list is
- * optional, since an Intranet without that route may not offer it: the
- * sync then leaves the offices untouched (OPTIONAL_ROSTER_KINDS).
+ * Four lists: asociados, sectorials, the CEA's places (one account per
+ * office, which outlives whoever holds it) and the CAS (the account of its
+ * coordination, an "other" member named after the committee), all synced
+ * the same way. The first two are required: without either the sync fails.
+ * The CEA and CAS lists are optional, since an Intranet without those
+ * routes may not offer them: the sync then leaves those members untouched
+ * (OPTIONAL_ROSTER_KINDS).
  */
 
 const optionalText = z
@@ -81,19 +83,24 @@ export const intranetRosterResponseSchema = z.object({
 
 export type IntranetRosterEntry = z.output<typeof intranetRosterEntrySchema>;
 
-/** The member kinds planRosterSync matches by Intranet id, then email. */
+/**
+ * The member kinds planRosterSync matches by Intranet id, then email. The
+ * only "other" members the Intranet lists are the CAS (`/usuarios/cas`):
+ * the manual ones are never touched.
+ */
 export type RosterKind = Extract<
   MemberKind,
-  "asociado" | "sectorial" | "executive"
+  "asociado" | "sectorial" | "executive" | "other"
 >;
 
 /** Every list the sync fetches. */
 export type RosterListKind = RosterKind;
 
 /** Lists the sync does without when the Intranet cannot give them. */
-export type OptionalRosterKind = Extract<RosterListKind, "executive">;
+export type OptionalRosterKind = Extract<RosterListKind, "executive" | "other">;
 export const OPTIONAL_ROSTER_KINDS = [
   "executive",
+  "other",
 ] as const satisfies readonly OptionalRosterKind[];
 
 /**
@@ -215,8 +222,9 @@ export interface RosterSyncPlan {
     id: string;
     values: RosterMember;
     /**
-     * A manual executive office the CEA list names: it becomes an intranet
-     * member (offices used to be created by hand or at a sign-in).
+     * A manual executive office the CEA list names, or a manual "other"
+     * member the CAS list names: it becomes an intranet member (offices used
+     * to be created by hand or at a sign-in).
      */
     adopt?: true;
   }[];
@@ -256,7 +264,8 @@ export interface RosterSyncPlan {
  *    or email never clears a stored one.
  * Manual members are never touched, even when the roster lists their
  * acronym or id, except a manual executive office the CEA list names by
- * its acronym: it is adopted (`adopt`) and syncs from then on. No plan
+ * its acronym, or a manual "other" member the CAS list names: it is adopted
+ * (`adopt`) and syncs from then on. No plan
  * leaves two members with the same acronym: a rename onto an acronym
  * another member keeps is not applied (the member keeps its own) and such
  * an entry is not created. Only members of a kind in `synced` (the lists
@@ -335,8 +344,8 @@ export function planRosterSync(
       toCreate.push(entry);
     } else if (
       holder.source === "manual" &&
-      holder.kind === "executive" &&
-      entry.kind === "executive"
+      holder.kind === entry.kind &&
+      ADOPTABLE_KINDS.has(entry.kind)
     ) {
       matchOf.set(entry, holder);
       claimed.set(holder.id, entry);
@@ -459,6 +468,9 @@ export function planRosterSync(
 
   return plan;
 }
+
+/** The kinds whose manual members a list adopts by acronym. */
+const ADOPTABLE_KINDS = new Set<RosterKind>(["executive", "other"]);
 
 /** Two identities that are both known and differ. */
 function contradicts<T>(stored: T | null, listed: T | null): boolean {

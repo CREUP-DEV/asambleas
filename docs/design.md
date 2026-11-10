@@ -40,8 +40,10 @@ never say "Comisión Ejecutiva" alone.
   to a client, an audit row or a log), `name`, `university`, `region`,
   `source` (`intranet`, `manual`), `active`.
 - The intranet exposes the roster: `GET {NUXT_INTRANET_API_URL}/usuarios/asociados`,
-  `/usuarios/sectoriales` and `/usuarios/cea` (one account per place in the
-  CEA) return
+  `/usuarios/sectoriales`, `/usuarios/cea` (one account per place in the
+  CEA) and `/usuarios/cas` (the Coordinación del CAS, the responsible of
+  the committee with the acronym `CAS` in the Intranet's committee
+  management, under the committee's name: initials `CAS`) return
   `{ data: [{ id, email, denomination, initials, university, autonomous_community }] }`
   (a university only for councils; an older Intranet sends no `email`).
   The roster sync matches an asociado, a sectorial or an office by
@@ -53,9 +55,12 @@ never say "Comisión Ejecutiva" alone.
   documents to a new one with the same acronym, which is not created
   while the old one keeps it. Offices sync like the rest, so the
   Secretaría can assign them documents before anyone signs in; a manual
-  office the CEA list names is adopted. Without the CEA list (an Intranet
-  without that route) the sync goes on and leaves the offices as they
-  were. An acronym listed twice or held by another member, and an
+  office the CEA list names is adopted. The CAS list gives the member
+  `CAS` (kind `other`), which adopts a manual `other` member `CAS`; the
+  Coordinación del CAS leaves the CEA list for it, so the office it was
+  becomes that member (same Intranet id). Without the CEA or the CAS list
+  (an Intranet without that route) the sync goes on and leaves those
+  members as they were. An acronym listed twice or held by another member, and an
   account without initials, are not synced, and the sync says so
   (`MemberSyncResult.ignored`, shown on the members page and kept in the
   `members.sync` audit row). It runs by hand from Miembros and daily at 05:00 Europe/Madrid (a
@@ -526,8 +531,10 @@ its vote to another. The active sectorials are marked too, only as in the
 room: they never vote, delegate, receive a delegation nor count for quorum
 or `present`, and each entry stores whether it had a vote
 (`headcount_entries.voting`), so a correction never turns one into a vote.
-So are the guests: the accounts given the role `Invitado` here, by hand
-(`headcount_guests`, with the account's name at the count, so the record
+So are the guests: the accounts given the role `Invitado` here, by hand,
+and the members of the Comité de Asuntos Internacionales and the Comité de
+Garantías (roles `CAI` and `CdG`, from their intranet types;
+`HEADCOUNT_GUEST_ROLES`) (`headcount_guests`, with the account's name at the count, so the record
 survives a rename or a deletion). Every other account has the role `Otro`,
 which only reads and appears in no count. The list of guests a new count
 offers reaches only the Mesa; who was in the room is public, without
@@ -593,9 +600,11 @@ carries the same figures on one line during the session.
 
 Every document and every amendment is presented by the user who wrote it,
 acting for their member: a council (Asociado accounts), a sectorial
-(Sectorial accounts, which never present an internal motion), or a CEA
+(Sectorial accounts, which never present an internal motion), a CEA
 office (CEA accounts, intranet type `CEA`, linked to an `executive` member by
-their intranet initials). Nothing a member presents is visible to the rest of
+their intranet id) or the CAS (the Coordinación del CAS, role `CAS`, linked
+to the `other` member `CAS`, which never presents an internal motion
+either). Nothing a member presents is visible to the rest of
 the assembly until the Secretaría has checked it.
 
 **Documents.** A presenter writes or uploads the draft and presents it
@@ -924,10 +933,12 @@ The existing keys stay, plus:
 - `session:moderate`: Mesa actions such as live state, admissions, votes,
   decisions and transactionals on behalf of parties.
 
-The default `Moderador` role gets `session:moderate`. The `CEA` and
-`Sectorial` roles (synced from the intranet types `CEA` and `Sectorial`) get
-`document:create` and `amendment:create`, like `Asociado`. Sectorials present
-everything but internal motions; they may amend one. That is a rule of the
+The default `Moderador` role gets `session:moderate`. The `CEA`, `CAS` and
+`Sectorial` roles (synced from the intranet types `CEA` and `Sectorial`, and
+from the role lookup's `CAS` for the Coordinación del CAS) get
+`document:create` and `amendment:create`, like `Asociado`; `CAI` and `CdG`
+(intranet types `CAI` and `CdG`) get nothing, like `Invitado`. Sectorials
+and the CAS present everything but internal motions; they may amend one. That is a rule of the
 member, not a permission: it follows the member a document is presented for
 (`memberMayPresent`), so it binds managers and accounts linked by hand too.
 Validating documents needs `document:manage`; validating and

@@ -11,8 +11,9 @@ import {
 /**
  * Client for the CREUP intranet API (docs/intranet.md, section 4.3; the
  * private group is `/api/asambleas/v1`):
- * - `GET {base}/usuarios/asociados`, `.../sectoriales` and `.../cea` (one
- *   account per place in the CEA) return `{ data: [...], generated_at }`;
+ * - `GET {base}/usuarios/asociados`, `.../sectoriales`, `.../cea` (one
+ *   account per place in the CEA) and `.../cas` (the Coordinación del CAS,
+ *   under the committee's name) return `{ data: [...], generated_at }`;
  * - `POST {base}/user/role` returns `{ id, role, name, initials, university }`
  *   for an email, or 404 `{"error":"not_found"}` when the intranet has no
  *   such account (lookupIntranetRole).
@@ -27,6 +28,7 @@ const ROSTER_PATHS: Record<RosterListKind, string> = {
   asociado: "usuarios/asociados",
   sectorial: "usuarios/sectoriales",
   executive: "usuarios/cea",
+  other: "usuarios/cas",
 };
 
 // Configuration ---------------------------------------------------------------

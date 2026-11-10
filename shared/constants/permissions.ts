@@ -72,7 +72,11 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     PERMISSION_KEYS.DOCUMENT_CREATE,
     PERMISSION_KEYS.AMENDMENT_CREATE,
   ],
+  // The Coordinación del CAS; internal motions are barred by member kind.
+  CAS: [PERMISSION_KEYS.DOCUMENT_CREATE, PERMISSION_KEYS.AMENDMENT_CREATE],
   Moderador: [PERMISSION_KEYS.SESSION_MODERATE],
   Invitado: [],
+  CAI: [],
+  CdG: [],
   Otro: [],
 };

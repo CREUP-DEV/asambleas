@@ -15,11 +15,11 @@ import { SYSTEM_ROLES } from "~~/shared/constants/roles";
  * name of its role, so a custom role or a per-user grant reads right:
  * - `secretariat`: validates and organises (Admin, Secretaría, Presidencia);
  * - `mesa`: runs the session (Moderador);
- * - `cea`, `asociado`, `sectorial`: present documents and amendments;
+ * - `cea`, `cas`, `asociado`, `sectorial`: present documents and amendments;
  * - `guest`: reads only.
  */
 export type WelcomeAudience =
-  "secretariat" | "mesa" | "cea" | "asociado" | "sectorial" | "guest";
+  "secretariat" | "mesa" | "cea" | "cas" | "asociado" | "sectorial" | "guest";
 
 /** What the welcome needs of GET /api/me. */
 export interface WelcomeAccount {
@@ -54,6 +54,7 @@ function presenterAudience(account: WelcomeAccount): WelcomeAudience {
       return "asociado";
   }
   if (account.role === SYSTEM_ROLES.CEA) return "cea";
+  if (account.role === SYSTEM_ROLES.CAS) return "cas";
   if (account.role === SYSTEM_ROLES.SECTORIAL) return "sectorial";
   return "asociado";
 }
@@ -91,6 +92,7 @@ const AUDIENCE_ICONS: Record<WelcomeAudience, string> = {
   secretariat: "i-lucide-clipboard-check",
   mesa: "i-lucide-mic",
   cea: "i-lucide-briefcase",
+  cas: "i-lucide-network",
   asociado: "i-lucide-graduation-cap",
   sectorial: "i-lucide-users",
   guest: "i-lucide-eye",

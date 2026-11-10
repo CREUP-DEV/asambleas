@@ -2014,7 +2014,8 @@
         }
       },
       "syncSkipped": {
-        "executive": "The CEA offices could not be read from the Intranet: they were left as they were."
+        "executive": "The CEA offices could not be read from the Intranet: they were left as they were.",
+        "other": "The CAS could not be read from the Intranet: it was left as it was."
       },
       "syncIgnored": {
         "title": "Some acronyms were not synced",
@@ -2328,7 +2329,10 @@
       "none": "No role",
       "cea": "Extended Executive Committee (CEA)",
       "presidencia": "Presidency",
-      "otro": "Other"
+      "otro": "Other",
+      "cas": "Sectoral Affairs Committee (CAS)",
+      "cai": "International Affairs Committee (CAI)",
+      "cdg": "Guarantees Committee (CdG)"
     },
     "memberKinds": {
       "asociado": "Member council",
@@ -2362,6 +2366,7 @@
           "secretariat": "Here you find the agenda, the documents and the amendments of each assembly. You organise them: you create assemblies, check what members submit and publish it.",
           "mesa": "Here you find the agenda, the documents and the amendments of each assembly. You run the session: speaking turns, headcounts and votes.",
           "cea": "Here you find the agenda, the documents and the amendments of each assembly. You submit documents and amendments for your CEA office.",
+          "cas": "Here are the agenda, the documents and the amendments of each assembly. You present documents and amendments on behalf of the Sectoral Affairs Committee (CAS). There is only one thing you cannot present: an internal motion. You can still amend one.",
           "asociado": "Here you find the agenda, the documents and the amendments of each assembly. You submit documents and amendments for your council.",
           "sectorial": "Here you find the agenda, the documents and the amendments of each assembly. You submit documents and amendments for your sectorial. The one thing you cannot submit is an internal motion. You can still amend one.",
           "guest": "Here you find the agenda, the documents and the amendments of each assembly. You can read everything, but you cannot submit or change anything."
