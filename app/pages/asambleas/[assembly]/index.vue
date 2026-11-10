@@ -29,10 +29,8 @@ import { formatDateTime } from "~/utils/format";
  *    opens its own page).
  * 3. Beside it on large screens, under it on phones, the calendar: the next
  *    milestone and its countdown in the header, then every milestone (with
- *    its warnings for managers).
- *
- * The key figures stay one click away in a folded section under them
- * (HomeFold).
+ *    its warnings for managers). The key figures follow it in the same
+ *    column, as one quiet list.
  * The managers' alerts (calendar warnings, an overdue final agenda) are
  * notices, not blocks, and stay on top.
  */
@@ -548,98 +546,105 @@ const warnedKeys = computed(() =>
         </template>
       </UCard>
 
-      <!-- 3. The calendar: what comes next, then every milestone -->
-      <UCard
-        as="section"
-        aria-labelledby="overview-calendar-title"
-        data-testid="overview-calendar"
-      >
-        <template #header>
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <h3
-              id="overview-calendar-title"
-              class="text-highlighted font-semibold"
-            >
-              {{ t("assembly.overview.calendarTitle") }}
-            </h3>
-            <span
-              v-if="assembly.nextMilestone"
-              class="text-muted flex flex-wrap items-center gap-1 text-sm"
-            >
-              {{ t(`calendar.milestones.${assembly.nextMilestone.key}`) }}
-              <CommonCountdown
-                :to="assembly.nextMilestone.at"
-                icon="i-lucide-hourglass"
-                :urgent-hours="72"
-              />
-            </span>
-            <span v-else class="text-muted text-sm">
-              {{ t("assembly.overview.next.none") }}
-            </span>
-          </div>
-        </template>
-        <CalendarMilestoneTimeline
-          :milestones="assembly.milestones"
-          :start-date="assembly.startDate"
-          :warned-keys="assembly.can.manage ? warnedKeys : []"
-        />
-        <template #footer>
-          <UButton
-            variant="link"
-            trailing-icon="i-lucide-arrow-right"
-            :label="
-              assembly.can.manage
-                ? t('assembly.overview.editCalendar')
-                : t('assembly.overview.next.open')
-            "
-            :to="sectionPath('calendario')"
-            class="px-0"
+      <!-- 3. The calendar: what comes next, then every milestone; the
+           figures under it -->
+      <div class="min-w-0 space-y-6">
+        <UCard
+          as="section"
+          aria-labelledby="overview-calendar-title"
+          data-testid="overview-calendar"
+        >
+          <template #header>
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h3
+                id="overview-calendar-title"
+                class="text-highlighted font-semibold"
+              >
+                {{ t("assembly.overview.calendarTitle") }}
+              </h3>
+              <span
+                v-if="assembly.nextMilestone"
+                class="text-muted flex flex-wrap items-center gap-1 text-sm"
+              >
+                {{ t(`calendar.milestones.${assembly.nextMilestone.key}`) }}
+                <CommonCountdown
+                  :to="assembly.nextMilestone.at"
+                  icon="i-lucide-hourglass"
+                  :urgent-hours="72"
+                />
+              </span>
+              <span v-else class="text-muted text-sm">
+                {{ t("assembly.overview.next.none") }}
+              </span>
+            </div>
+          </template>
+          <CalendarMilestoneTimeline
+            :milestones="assembly.milestones"
+            :start-date="assembly.startDate"
+            :warned-keys="assembly.can.manage ? warnedKeys : []"
           />
-        </template>
-      </UCard>
-    </div>
+          <template #footer>
+            <UButton
+              variant="link"
+              trailing-icon="i-lucide-arrow-right"
+              :label="
+                assembly.can.manage
+                  ? t('assembly.overview.editCalendar')
+                  : t('assembly.overview.next.open')
+              "
+              :to="sectionPath('calendario')"
+              class="px-0"
+            />
+          </template>
+        </UCard>
 
-    <!-- The rest, folded: one click away -->
-    <div class="space-y-3" data-testid="overview-more">
-      <!-- Key figures -->
-      <HomeFold
-        id="overview-figures"
-        :title="t('assembly.overview.statsLabel')"
-        icon="i-lucide-chart-no-axes-column"
-        :heading-level="3"
-      >
-        <div
-          v-if="agendaPending && !agenda"
-          class="flex flex-wrap gap-x-6 gap-y-2"
-          role="status"
+        <!-- Key figures -->
+        <UCard
+          as="section"
+          aria-labelledby="overview-figures-title"
+          data-testid="overview-figures"
         >
-          <span class="sr-only">{{ t("assembly.overview.loading") }}</span>
-          <USkeleton
-            v-for="index in 3"
-            :key="index"
-            aria-hidden="true"
-            class="h-6 w-36"
-          />
-        </div>
-        <ul
-          v-else
-          class="text-muted flex flex-wrap items-baseline gap-x-6 gap-y-2 text-sm"
-        >
-          <li
-            v-for="figure in figures"
-            :key="figure.key"
-            class="flex items-baseline gap-1.5"
-          >
-            <span class="text-highlighted text-lg font-semibold tabular-nums">
-              {{ figure.value }}
-            </span>
-            <span>{{ figure.label }}</span>
-            <span v-if="figure.hint" class="text-dimmed"
-              >({{ figure.hint }})</span
+          <template #header>
+            <h3
+              id="overview-figures-title"
+              class="text-highlighted flex items-center gap-2 font-semibold"
             >
-          </li>
-        </ul>
-      </HomeFold>
+              <UIcon
+                name="i-lucide-chart-no-axes-column"
+                class="text-primary size-5 shrink-0"
+                aria-hidden="true"
+              />
+              {{ t("assembly.overview.statsLabel") }}
+            </h3>
+          </template>
+          <div v-if="agendaPending && !agenda" class="space-y-2" role="status">
+            <span class="sr-only">{{ t("assembly.overview.loading") }}</span>
+            <USkeleton
+              v-for="index in 3"
+              :key="index"
+              aria-hidden="true"
+              class="h-6 w-full"
+            />
+          </div>
+          <ul v-else class="text-muted space-y-2 text-sm">
+            <li
+              v-for="figure in figures"
+              :key="figure.key"
+              class="flex flex-wrap items-baseline gap-x-1.5"
+            >
+              <span
+                class="text-highlighted min-w-8 text-lg font-semibold tabular-nums"
+              >
+                {{ figure.value }}
+              </span>
+              <span>{{ figure.label }}</span>
+              <span v-if="figure.hint" class="text-dimmed"
+                >({{ figure.hint }})</span
+              >
+            </li>
+          </ul>
+        </UCard>
+      </div>
     </div>
   </div>
 </template>
