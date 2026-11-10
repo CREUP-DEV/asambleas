@@ -16,7 +16,9 @@ import {
  * names in a popover (a tap opens it too, unlike a tooltip). Inside a row
  * whose title link covers it, keep this component above the link
  * (`relative z-[1]`), as the agenda row does. `showName` adds the full name
- * of a member presenting it alone (with co-presenters only acronyms fit).
+ * of a member presenting it alone (with co-presenters only acronyms fit);
+ * with `labelled` the name alone replaces the badge and the visible
+ * "Presenta" (kept for screen readers).
  * Renders nothing without a main presenter: callers say so themselves.
  */
 const props = withDefaults(
@@ -76,10 +78,22 @@ const parts = computed<Part[]>(() => {
     v-if="main && others.length === 0"
     class="inline-flex max-w-full min-w-0 items-center gap-1.5"
   >
-    <span v-if="labelled" class="text-muted text-sm">
-      {{ t("document.header.proponent") }}
+    <!-- The name alone ("Presenta" only for screen readers): beside the
+         title it says who presents it without a label -->
+    <span
+      v-if="labelled && showName"
+      class="text-default min-w-0 text-sm font-medium"
+      data-testid="document-presenter-name"
+    >
+      <span class="sr-only">{{ t("document.header.proponent") }} </span>
+      {{ memberNameRepeatsAcronym(main) ? main.acronym : main.name }}
     </span>
-    <CommonMemberBadge :member="main" :size="size" :show-name="showName" />
+    <template v-else>
+      <span v-if="labelled" class="text-muted text-sm">
+        {{ t("document.header.proponent") }}
+      </span>
+      <CommonMemberBadge :member="main" :size="size" :show-name="showName" />
+    </template>
   </span>
 
   <i18n-t

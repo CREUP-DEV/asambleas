@@ -23,8 +23,13 @@ const props = withDefaults(
     audience?: DocumentAudience;
     /** Buttons for the next step (e.g. "Volver a enviar"). */
     actions?: ButtonProps[];
+    /**
+     * The screen shows the text itself (the editor): "no text yet" says
+     * nothing it does not, so it is left out unless a deadline goes with it.
+     */
+    textOnScreen?: boolean;
   }>(),
-  { audience: undefined, actions: undefined },
+  { audience: undefined, actions: undefined, textOnScreen: false },
 );
 
 const { t, locale } = useI18n();
@@ -34,7 +39,15 @@ const progress = useDocumentProgress(
   () => props.audience,
 );
 
-const visible = computed(() => isPendingProgress(progress.value.state));
+const visible = computed(
+  () =>
+    isPendingProgress(progress.value.state) &&
+    !(
+      props.textOnScreen &&
+      progress.value.state === "expected" &&
+      progress.value.dueAt === null
+    ),
+);
 const voice = computed(() =>
   progress.value.audience === "presenter" ? "presenter" : "manager",
 );

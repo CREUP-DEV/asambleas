@@ -667,7 +667,7 @@
       "notFoundDescription": "No existe o no tienes acceso a él.",
       "retry": "Reintentar",
       "backToWorkspace": "Ver documento",
-      "backToAgenda": "Volver al orden del día",
+      "pdfPreview": "Vista previa en PDF",
       "noLongerEditable": "Este documento ya no se puede editar",
       "leaveConfirm": "Tienes cambios sin guardar. ¿Quieres salir de todas formas?",
       "submittedTitle": "Presentado y pendiente de publicación",
@@ -720,11 +720,11 @@
       "wordCard": {
         "title": "¿Tienes el documento en Word?",
         "description": "Súbelo y su texto aparecerá aquí. Podrás revisarlo antes de guardarlo.",
-        "orWrite": "O escríbelo directamente en el recuadro de abajo."
+        "orWrite": "O escríbelo directamente en el recuadro de abajo.",
+        "close": "Cerrar: podrás subir el Word desde el botón de arriba del texto"
       },
       "sendNeedsText": "Primero añade el texto en el paso 2.",
       "sendNeedsPdf": "Primero sube el PDF en el paso 2.",
-      "backToHome": "Volver al inicio",
       "returningToHome": "Volviendo al inicio",
       "saveAndAddAnother": "Guardar y añadir otro",
       "savedForLater": "Documento guardado"
@@ -822,7 +822,6 @@
     },
     "metadata": {
       "heading": "Datos del documento",
-      "hide": "Ocultar los datos",
       "unsavedHint": "Hay cambios sin guardar en los datos.",
       "title": "Título",
       "summary": "Resumen",
@@ -2818,8 +2817,8 @@
       "fileNotAmendable": "Los documentos en PDF no admiten enmiendas.",
       "voted": "Se vota",
       "majority": "Mayoría necesaria",
-      "create": "Añadir documento",
-      "createAndUpload": "Crear y subir el texto",
+      "create": "Crear",
+      "createAndUpload": "Crear y abrir",
       "createAndUploadPdf": "Crear y subir el PDF",
       "created": "Documento creado",
       "error": "No se ha podido crear el documento",

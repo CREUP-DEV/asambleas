@@ -432,15 +432,16 @@ html {
 
   /*
    * In a wide editor the text keeps a comfortable measure (about 90
-   * characters, near a line of the PDF), centred, and tables keep it too;
-   * only a table of six columns or more (a balance sheet, landscape in Word)
-   * takes the whole width.
+   * characters, near a line of the PDF), starting where the toolbar does
+   * (centred, it began far from the edge it is read from), and tables keep
+   * it too; only a table of six columns or more (a balance sheet, landscape
+   * in Word) takes the whole width.
    */
   .content-editor.ProseMirror > :not(.tableWrapper),
   .content-editor.ProseMirror
     > .tableWrapper:not(:has(> table > tbody > tr > :nth-child(6))) {
     max-width: 52rem;
-    margin-inline: auto;
+    margin-inline: 0 auto;
   }
 
   :is(.rich-text, .content-editor) table {

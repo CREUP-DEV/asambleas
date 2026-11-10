@@ -14,7 +14,9 @@ import { formatTime } from "~/utils/format";
  * reorders keys, so blocks themselves are never compared with the server).
  *
  * While the stored draft is empty, uploading a Word file is offered as the
- * main way in, above the editor (writing directly stays possible).
+ * main way in, above the editor (writing directly stays possible). The card
+ * closes by hand or when writing starts; the compact Word button beside the
+ * counts stays.
  *
  * Emits `saved` with the updated document (store it) and `stale` when the
  * document must be refetched (save conflict, text frozen meanwhile).
@@ -277,15 +279,45 @@ const statusText = computed(() => {
 
 const headingId = useId();
 
-/**
- * Nothing stored yet: offer the Word upload as the main way in. Based on the
- * stored copy, so the card does not vanish (and move the editor) while the
- * user types; it goes once the first text is saved.
- */
+/** Nothing stored yet: offer the Word upload as the main way in. */
 const storedEmpty = computed(
   () => (props.document.workingVersion?.blocks.length ?? 0) === 0,
 );
-const showWordCard = computed(() => storedEmpty.value && !recovery.value);
+/**
+ * Closed by hand, or once the person starts writing, so it does not stand
+ * between them and the editor: the compact Word button beside the counts
+ * takes its place. For this visit.
+ */
+const wordCardClosed = ref(false);
+watch(
+  () => blocks.value.length > 0,
+  (writing) => {
+    if (writing) wordCardClosed.value = true;
+  },
+);
+/** The card's own height, so the fold has somewhere to start from. */
+function pinHeight(element: Element): void {
+  const card = element as HTMLElement;
+  card.style.height = `${card.offsetHeight}px`;
+}
+
+/** Folds the card to nothing, with the gap and padding it takes. */
+function foldAway(element: Element): void {
+  const card = element as HTMLElement;
+  void card.offsetHeight; // start from the pinned height
+  Object.assign(card.style, {
+    height: "0px",
+    paddingTop: "0px",
+    paddingBottom: "0px",
+    marginTop: "0px",
+    marginBottom: "0px",
+    borderWidth: "0px",
+  });
+}
+
+const showWordCard = computed(
+  () => storedEmpty.value && !recovery.value && !wordCardClosed.value,
+);
 
 defineExpose({
   save,
@@ -325,12 +357,8 @@ defineExpose({
       </div>
     </div>
 
-    <p
-      class="text-xs"
-      :class="unsaved ? 'text-warning' : 'text-muted'"
-      role="status"
-      aria-live="polite"
-    >
+    <!-- For screen readers: the toolbar shows it ("Guardado" or "Guardar") -->
+    <p class="sr-only" role="status" aria-live="polite">
       {{ statusText }}
     </p>
 
@@ -353,38 +381,58 @@ defineExpose({
       role="alert"
     />
 
-    <div
-      v-if="showWordCard"
-      class="border-default bg-elevated/40 flex flex-col items-center gap-3 rounded-lg border border-dashed p-4 text-center sm:p-6"
-      data-testid="word-upload-card"
+    <!-- Closing folds it away (height, gap and fade), so the editor slides
+         up instead of jumping; instant with reduced motion -->
+    <Transition
+      leave-active-class="overflow-hidden motion-safe:transition-[height,opacity,margin,padding] motion-safe:duration-300 motion-safe:ease-out"
+      leave-to-class="opacity-0"
+      @before-leave="pinHeight"
+      @leave="foldAway"
     >
-      <UIcon
-        name="i-lucide-file-type"
-        class="text-primary size-8"
-        aria-hidden="true"
-      />
-      <div class="space-y-1">
-        <p class="text-highlighted font-medium">
-          {{ t("document.authoring.wordCard.title") }}
-        </p>
-        <p class="text-muted max-w-prose text-sm">
-          {{ t("document.authoring.wordCard.description") }}
+      <div
+        v-if="showWordCard"
+        class="border-default bg-elevated/40 relative flex flex-col items-center gap-3 rounded-lg border border-dashed p-4 text-center sm:p-6"
+        data-testid="word-upload-card"
+      >
+        <UTooltip :text="t('document.authoring.wordCard.close')">
+          <UButton
+            color="neutral"
+            variant="ghost"
+            size="sm"
+            icon="i-lucide-x"
+            class="absolute end-2 top-2"
+            :aria-label="t('document.authoring.wordCard.close')"
+            @click="wordCardClosed = true"
+          />
+        </UTooltip>
+        <UIcon
+          name="i-lucide-file-type"
+          class="text-primary size-8"
+          aria-hidden="true"
+        />
+        <div class="space-y-1">
+          <p class="text-highlighted font-medium">
+            {{ t("document.authoring.wordCard.title") }}
+          </p>
+          <p class="text-muted max-w-prose text-sm">
+            {{ t("document.authoring.wordCard.description") }}
+          </p>
+        </div>
+        <DocumentDocxImport
+          prominent
+          :document-api="documentApi"
+          :document-title="document.title"
+          :document-kind="document.kind"
+          :current-count="blocks.length"
+          :unsaved="unsaved"
+          :disabled="disabled || saving"
+          @import="onImport"
+        />
+        <p class="text-muted text-xs">
+          {{ t("document.authoring.wordCard.orWrite") }}
         </p>
       </div>
-      <DocumentDocxImport
-        prominent
-        :document-api="documentApi"
-        :document-title="document.title"
-        :document-kind="document.kind"
-        :current-count="blocks.length"
-        :unsaved="unsaved"
-        :disabled="disabled || saving"
-        @import="onImport"
-      />
-      <p class="text-muted text-xs">
-        {{ t("document.authoring.wordCard.orWrite") }}
-      </p>
-    </div>
+    </Transition>
 
     <DocumentRecoveryPanel
       v-if="recovery"
