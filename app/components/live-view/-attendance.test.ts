@@ -20,7 +20,6 @@ const member = (
 
 const count = (id: string, present: number): HeadcountDto => ({
   id,
-  call: "second",
   eligible: 40,
   inRoom: present - 1,
   delegated: 1,
@@ -53,23 +52,16 @@ const count = (id: string, present: number): HeadcountDto => ({
       delegate: null,
       voting: false,
     },
-    {
-      member: member("g", "guest"),
-      mark: "present",
-      delegate: null,
-      voting: false,
-    },
   ],
+  guests: [{ userId: "u1", name: "Ana Invitada" }],
 });
 
 const dto = (counts: HeadcountDto[]): HeadcountsDto => ({
   headcounts: counts,
   latest: counts[0] ?? null,
   members: [],
-  quorum: {
-    firstCall: { numerator: 1, denominator: 2, strict: false },
-    secondCall: null,
-  },
+  guests: [],
+  quorum: { numerator: 1, denominator: 2, strict: false },
 });
 
 describe("liveAttendance", () => {
@@ -110,7 +102,8 @@ describe("liveAttendance", () => {
     const view = liveAttendance(dto([count("h1", 30)]), {
       denominator: "present",
     })!;
-    expect(view.attending.map((item) => item.id)).toEqual(["s", "g"]);
+    expect(view.attending.map((item) => item.id)).toEqual(["s"]);
+    expect(view.guests).toEqual(["Ana Invitada"]);
     expect(view.inRoom.map((item) => item.id)).not.toContain("s");
   });
 

@@ -29,8 +29,10 @@ export interface LiveAttendance {
   majorities: { absolute: number; twoThirds: number } | null;
   /** Members with a vote in the room, in the order of the roll call. */
   inRoom: MemberRef[];
-  /** Sectorials and guests in the room, who neither vote nor count. */
+  /** Sectorials in the room, who neither vote nor count. */
   attending: MemberRef[];
+  /** Guests (accounts with the role Invitado) in the room, by name. */
+  guests: string[];
   delegations: LiveDelegation[];
   /** The counts before the latest, newest first. */
   earlier: HeadcountDto[];
@@ -74,6 +76,7 @@ export function liveAttendance(
         : null,
     inRoom,
     attending,
+    guests: latest.guests.map((guest) => guest.name),
     delegations,
     earlier: (dto?.headcounts ?? []).filter((count) => count.id !== latest.id),
   };

@@ -144,10 +144,7 @@ import {
   FILE_FORMAT_REFUSED_REASON,
   fileFormatRefused,
 } from "~~/shared/utils/documentFormat";
-import {
-  barredPresenters,
-  memberPresents,
-} from "~~/shared/utils/presenterKinds";
+import { barredPresenters } from "~~/shared/utils/presenterKinds";
 import { slugify } from "~~/shared/utils/slug";
 import { computeVoteOutcome } from "~~/shared/utils/votes";
 
@@ -1032,40 +1029,28 @@ export async function requireMembers(
 
 /**
  * Every presenter (main or co-presenter) may present a document of this kind
- * (memberMayPresent): a sectorial never presents an internal motion, and a
- * guest never presents anything. Applies to managers too, since the rule is
- * the member's, not the account's. `kept` are the presenters the document
- * already has: one that has since become a guest (a council that left the
- * association) stays, so the document can still be edited, but no guest is
- * ever added.
+ * (memberMayPresent): a sectorial never presents an internal motion. Applies
+ * to managers too, since the rule is the member's, not the account's.
  */
 export async function requirePresentersMayPresent(
   kind: DocumentKind,
   memberIds: readonly (string | null)[],
   executor: Executor = db,
-  kept: readonly (string | null)[] = [],
 ): Promise<void> {
   const ids = [...new Set(memberIds.filter((id): id is string => !!id))];
   if (ids.length === 0) return;
   const rows = await executor
-    .select({ id: members.id, acronym: members.acronym, kind: members.kind })
+    .select({ acronym: members.acronym, kind: members.kind })
     .from(members)
     .where(inArray(members.id, ids));
-  const barred = barredPresenters(
-    kind,
-    rows,
-    new Set(kept.filter((id): id is string => !!id)),
-  );
+  const barred = barredPresenters(kind, rows);
   if (barred.length > 0) {
-    const acronyms = barred
-      .map((member) => member.acronym)
-      .sort()
-      .join(", ");
     fail(
       422,
-      barred.some((member) => !memberPresents(member.kind))
-        ? `Los invitados no presentan documentos: ${acronyms} no puede estar entre quienes lo presentan`
-        : `Las sectoriales no pueden presentar mociones internas: ${acronyms} no puede estar entre quienes la presentan`,
+      `Las sectoriales no pueden presentar mociones internas: ${barred
+        .map((member) => member.acronym)
+        .sort()
+        .join(", ")} no puede estar entre quienes la presentan`,
       { reason: "presenter_kind" },
     );
   }
@@ -1668,7 +1653,6 @@ export async function updateDocument(
         patch.kind ?? current.kind,
         [final.proponentMemberId, ...final.coProponentMemberIds],
         tx,
-        [current.proponentMemberId, ...current.coProponentMemberIds],
       );
     }
     if (manager) {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
-import { SYSTEM_ROLES } from "~~/shared/constants/roles";
+import { isReadOnlyRole } from "~~/shared/constants/roles";
 import type {
   AssemblyListDto,
   AssemblySummaryDto,
@@ -36,7 +36,7 @@ import {
  * and the upcoming assemblies. The rest stays one click away in folded
  * sections under them (HomeFold): the news, the user's documents and
  * amendments, their account and the administration shortcuts, which open
- * by permission as the admin pages do. A guest (Invitado) with nothing to
+ * by permission as the admin pages do. A read-only account (Otro, Invitado) with nothing to
  * do reads one sentence saying the account can only read, instead of an
  * empty "Te toca".
  */
@@ -120,7 +120,8 @@ const nothingToDo = computed(
  */
 const readOnly = computed(
   () =>
-    me.value?.role === SYSTEM_ROLES.INVITADO &&
+    !!me.value &&
+    isReadOnlyRole(me.value.role) &&
     welcomeAudience(me.value) === "guest" &&
     !member.value &&
     nothingToDo.value,

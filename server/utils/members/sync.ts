@@ -27,8 +27,6 @@ import {
   planRosterSync,
   type IntranetRosterEntry,
   type OptionalRosterKind,
-  type RosterKind,
-  withoutReservedAcronyms,
 } from "./roster";
 
 /**
@@ -87,9 +85,9 @@ const ROSTER_SYNC_LOCK = "members_roster_sync";
 const renamePlaceholder = (memberId: string) => `~roster-sync~${memberId}`;
 
 /**
- * Fetches an optional list (the CEA's places, the guests). One the Intranet
- * cannot give, for example because it does not have the route yet, is
- * logged and left out: the sync leaves that kind as it was.
+ * Fetches an optional list (the CEA's places). One the Intranet cannot
+ * give, for example because it does not have the route yet, is logged and
+ * left out: the sync leaves that kind as it was.
  */
 async function fetchOptionalRoster(
   base: string,
@@ -111,14 +109,16 @@ async function fetchOptionalRoster(
 }
 
 /**
- * Syncs the members from the intranet rosters: asociados, sectorials and
- * guests (Invitado and Desasociado accounts, who attend but never present),
- * and the CEA's offices.
+ * Syncs the members from the intranet rosters: asociados, sectorials and the
+ * CEA's offices.
  *
  * Every list is fetched before anything is written: a failed or partial
  * fetch must never deactivate the members it did not return. Without the
- * asociados or the sectorials the sync fails; without the CEA list or the
- * guests it goes on and leaves that kind as it was (`skipped`). Members are
+ * asociados or the sectorials the sync fails; without the CEA list it goes
+ * on and leaves the offices as they were (`skipped`). What it could not
+ * sync is in `MemberSyncResult.ignored` (an acronym listed twice or held by
+ * another member, an account without initials), for the members page to
+ * warn. Members are
  * matched by their Intranet id, then by acronym (the intranet's `initials`,
  * case-insensitively): planRosterSync. Manual members are never touched.
  * The CEA list only adds offices (planExecutiveSync): they stay manual
@@ -174,13 +174,11 @@ export async function syncIntranetRoster(options: {
   let asociados;
   let sectoriales;
   let executives: IntranetRosterEntry[] | null;
-  let guests: IntranetRosterEntry[] | null;
   try {
-    [asociados, sectoriales, executives, guests] = await Promise.all([
+    [asociados, sectoriales, executives] = await Promise.all([
       fetchIntranetRoster(base, "asociado"),
       fetchIntranetRoster(base, "sectorial"),
       fetchOptionalRoster(base, "executive", trigger),
-      fetchOptionalRoster(base, "guest", trigger),
     ]);
   } catch (error) {
     if (error instanceof IntranetUnavailableError) {
@@ -194,23 +192,11 @@ export async function syncIntranetRoster(options: {
   }
 
   const skipped = OPTIONAL_ROSTER_KINDS.filter(
-    (kind) => (kind === "executive" ? executives : guests) === null,
+    (kind) => kind === "executive" && executives === null,
   );
-  const synced: RosterKind[] = guests
-    ? ["asociado", "sectorial", "guest"]
-    : ["asociado", "sectorial"];
-  // Guests come last: an acronym a council or a sectorial holds stays theirs.
   const roster = normalizeRoster([
     { kind: "asociado", entries: asociados },
     { kind: "sectorial", entries: sectoriales },
-    ...(guests
-      ? [
-          {
-            kind: "guest" as const,
-            entries: withoutReservedAcronyms(guests, executives ?? []),
-          },
-        ]
-      : []),
   ]);
   if (
     roster.skipped > 0 ||
@@ -250,7 +236,7 @@ export async function syncIntranetRoster(options: {
       .from(members)
       .for("update");
 
-    const plan = planRosterSync(roster.members, existing, synced);
+    const plan = planRosterSync(roster.members, existing);
     const large = findLargeDeactivations(existing, plan.deactivate);
     if (
       large.length > 0 &&
@@ -414,6 +400,19 @@ export async function syncIntranetRoster(options: {
       updated: plan.update.length + executivePlan.rename.length,
       deactivated: plan.deactivate.length,
       skipped,
+      ignored: {
+        // Listed twice, or held by another member: not synced.
+        acronyms: [
+          ...new Set([
+            ...roster.duplicates,
+            ...executivePlan.duplicates,
+            ...plan.manualConflicts,
+            ...plan.acronymConflicts,
+            ...executivePlan.conflicts,
+          ]),
+        ].sort((a, b) => a.localeCompare(b, "es")),
+        withoutInitials: roster.skipped,
+      },
     };
 
     await recordAudit(tx, {
@@ -425,6 +424,7 @@ export async function syncIntranetRoster(options: {
         ...result,
         unchanged: plan.unchanged.length,
         skipped,
+        ignored: result.ignored,
         manualConflicts: plan.manualConflicts,
         acronymConflicts: [
           ...plan.acronymConflicts,

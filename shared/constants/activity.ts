@@ -61,8 +61,9 @@ export const AUDIT_ACTIONS = {
    * Roster sync summary: POST /api/members/sync (actor the account that ran
    * it) or the scheduled job (actor null). Source intranet. Target
    * members/"intranet"; after {created, updated, deactivated, unchanged,
-   * skipped (the lists the Intranet could not give), manualConflicts,
-   * batchId}.
+   * skipped (the lists the Intranet could not give), ignored (acronyms
+   * listed twice or held by another member, accounts without initials),
+   * manualConflicts, batchId}.
    */
   MEMBERS_SYNC: "members.sync",
   /**
@@ -121,10 +122,10 @@ export const AUDIT_ACTIONS = {
    * The account lost access because the Intranet deleted it: an
    * authenticated role lookup answered 404 {"error":"not_found"} for an
    * account the Intranet knew before. In one transaction its sessions are
-   * deleted, its member link cleared, its role set to Invitado and the open
+   * deleted, its member link cleared, its role set to Otro and the open
    * impersonations of it closed (revoked). Source intranet; actor null;
    * target user; before {roleName, memberId, accessRevokedReason: null};
-   * after {roleName: "Invitado", memberId: null, accessRevokedReason:
+   * after {roleName: "Otro", memberId: null, accessRevokedReason:
    * "intranet_deleted", sessionsEnded, impersonationsEnded}.
    */
   USER_ACCESS_REVOKED: "user.access_revoked",

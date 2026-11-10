@@ -31,9 +31,13 @@ const entrySchema = z.strictObject({
   delegateId: entityId.nullable().optional(),
 });
 
+/** An account id (better-auth). */
+const accountId = z.string().regex(/^[a-zA-Z0-9]{32}$/);
+
 /** POST /api/assemblies/[assembly]/headcounts (HeadcountBody). */
 export const headcountBodySchema = z.strictObject({
   entries: z.array(entrySchema).max(HEADCOUNT_MAX_ENTRIES),
+  guests: z.array(accountId).max(HEADCOUNT_MAX_ENTRIES).optional(),
   note: noteSchema,
 });
 

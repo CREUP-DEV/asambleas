@@ -4,41 +4,23 @@ import type { MemberKind } from "../constants/domain";
  * Headcounts the Mesa takes during the session (docs/design.md,
  * "Headcounts and quorum"): who is in the room among the members with a
  * vote (the active asociados), who votes through another member's
- * delegation, and which sectorials and guests attend, who never vote nor
- * count for quorum. Pure functions shared by the server, which stores the
- * count, and the Mesa's form, which previews it.
+ * delegation, and which sectorials and guests (accounts with the role
+ * Invitado) attend, who never vote nor count for quorum. Pure functions
+ * shared by the server, which stores the count, and the Mesa's form, which
+ * previews it.
  */
 
 /**
- * The share of the members with a vote that makes quorum: at least
- * `numerator / denominator` of them, or more than that when `strict`.
+ * The quorum of an assembly type, stored with its calendar rules
+ * (`calendar_rules`, edited at /admin/calendario): at least
+ * `numerator / denominator` of the members with a vote, or more than that
+ * when `strict`. One per type: a session always opens in second call when
+ * the type has two, so the first call's quorum is never used.
  */
 export interface QuorumThreshold {
   numerator: number;
   denominator: number;
   strict: boolean;
-}
-
-/**
- * The quorum of an assembly type, stored with its calendar rules
- * (`calendar_rules`, edited at /admin/calendario). `secondCall` is null for
- * a type convened in a single call.
- */
-export interface QuorumRules {
-  firstCall: QuorumThreshold;
-  secondCall: QuorumThreshold | null;
-}
-
-export const QUORUM_CALLS = ["first", "second"] as const;
-export type QuorumCall = (typeof QUORUM_CALLS)[number];
-
-/**
- * The call every headcount is taken under. An assembly always starts in
- * second call, so a type with two calls counts on the second one's quorum;
- * a type convened in a single call, on that one.
- */
-export function sessionCall(rules: QuorumRules): QuorumCall {
-  return rules.secondCall ? "second" : "first";
 }
 
 /** Members needed for quorum out of `eligible` members with a vote. */
@@ -51,24 +33,14 @@ export function quorumRequired(
   return Math.ceil(share / threshold.denominator);
 }
 
-/** The threshold of a call; a type with a single call always uses the first. */
-export function quorumThreshold(
-  rules: QuorumRules,
-  call: QuorumCall,
-): QuorumThreshold {
-  return call === "second" && rules.secondCall
-    ? rules.secondCall
-    : rules.firstCall;
-}
-
 /**
- * Who a headcount lists, in the order the roll is called: the asociados,
- * who vote, then the sectorials and the guests, who only attend.
+ * The members a headcount lists, in the order the roll is called: the
+ * asociados, who vote, then the sectorials, who only attend. The guests
+ * (accounts, not members) come last (compareGuests).
  */
 export const ROLL_CALL_KINDS = [
   "asociado",
   "sectorial",
-  "guest",
 ] as const satisfies readonly MemberKind[];
 
 /** The members with a vote: the asociados. */
@@ -100,8 +72,8 @@ function rollCallRank(kind: MemberKind): number {
 
 /**
  * The order of the roll call, the one exception to orderMembers: asociados,
- * sectorials and guests, each in reverse alphabetical order of its
- * denomination and university, as the Secretaría calls them.
+ * then sectorials, each in reverse alphabetical order of its denomination
+ * and university, as the Secretaría calls them.
  */
 export function compareRollCall(a: RollCallMember, b: RollCallMember): number {
   return (
@@ -118,6 +90,14 @@ export function rollCallOrder<T extends RollCallMember>(
   members: readonly T[],
 ): T[] {
   return [...members].sort(compareRollCall);
+}
+
+/** Guests in the roll call, after the members: reverse alphabetical by name. */
+export function compareGuests(
+  a: { name: string },
+  b: { name: string },
+): number {
+  return b.name.localeCompare(a.name, "es", { sensitivity: "base" });
 }
 
 /**
@@ -137,9 +117,9 @@ export interface AttendanceEntry {
 export const HEADCOUNT_PROBLEMS = [
   /** A member is listed twice. */
   "duplicate",
-  /** A member is no longer an active asociado, sectorial nor guest. */
+  /** A member is no longer an active asociado nor sectorial. */
   "not_eligible",
-  /** A sectorial or a guest delegates, though it has no vote. */
+  /** A sectorial delegates, though it has no vote. */
   "no_vote",
   /** A delegation names no member with a vote, or the member itself. */
   "delegate_missing",
@@ -151,7 +131,7 @@ export type HeadcountProblem = (typeof HEADCOUNT_PROBLEMS)[number];
 export interface HeadcountTally {
   /** Members with a vote in the room. */
   inRoom: number;
-  /** Sectorials and guests in the room: they never count. */
+  /** Sectorials in the room: they never count. */
   attending: number;
   /** Delegated votes that count: their receiver is in the room. */
   delegated: number;
@@ -173,9 +153,9 @@ export interface HeadcountTally {
  * delegation is kept (it counts again once that member is back) but adds
  * nothing. Each member receives at most one delegation (Estatutos art.
  * 17.1, RFAG art. 8.5). `eligible` holds the ids of the members with a vote
- * (active asociados); `attendees`, those of the sectorials and guests that
- * may be marked in the room, who add nothing to quorum nor to `present`,
- * never delegate and never receive a delegation.
+ * (active asociados); `attendees`, those of the sectorials that may be
+ * marked in the room, who add nothing to quorum nor to `present`, never
+ * delegate and never receive a delegation.
  */
 export function tallyHeadcount(
   entries: readonly AttendanceEntry[],

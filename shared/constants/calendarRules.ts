@@ -1,7 +1,7 @@
 import type { AssemblyType } from "./assemblyTypes";
 import { PERMISSION_KEYS } from "./permissions";
 import type { CalendarRules } from "../utils/calendar";
-import type { QuorumRules } from "../utils/headcount";
+import type { QuorumThreshold } from "../utils/headcount";
 
 /**
  * Who reads and edits the calendar rules of the assembly types (GET and
@@ -42,9 +42,10 @@ export const CALENDAR_RULES_PERMISSION = PERMISSION_KEYS.ASSEMBLY_MANAGE;
  *
  * Quorum is counted on the members of the association, the active
  * asociados at the time of the count, delegated votes included (RRI art.
- * 19.3):
- * - AGO: at least half in the first call (Estatutos art. 14.1, RFAG art.
- *   9.1, RRI art. 10.3), at least a third in the second;
+ * 19.3). A session always opens in second call, so only that quorum is
+ * kept:
+ * - AGO: at least a third in the second call (Estatutos art. 14.1, RFAG
+ *   art. 9.1, RRI art. 10.3);
  * - AGE and AGET: a single call, more than half (Estatutos art. 14.2, which
  *   prevails over the "como mínimo" of RRI art. 10.4 and RFAG art. 9.2).
  * The Presidencia and the Secretaría Ejecutiva, or whoever stands in for
@@ -77,10 +78,7 @@ export const INITIAL_CALENDAR_RULES: Record<AssemblyType, CalendarRules> = {
     },
     documentsWithConvocationBelow: null,
     regulationWindowDays: 12,
-    quorum: {
-      firstCall: { numerator: 1, denominator: 2, strict: false },
-      secondCall: { numerator: 1, denominator: 3, strict: false },
-    },
+    quorum: { numerator: 1, denominator: 3, strict: false },
   },
   AGE: {
     defaults: {
@@ -102,10 +100,7 @@ export const INITIAL_CALENDAR_RULES: Record<AssemblyType, CalendarRules> = {
     },
     documentsWithConvocationBelow: { days: 5 },
     regulationWindowDays: 12,
-    quorum: {
-      firstCall: { numerator: 1, denominator: 2, strict: true },
-      secondCall: null,
-    },
+    quorum: { numerator: 1, denominator: 2, strict: true },
   },
   AGET: {
     defaults: {
@@ -126,10 +121,7 @@ export const INITIAL_CALENDAR_RULES: Record<AssemblyType, CalendarRules> = {
     },
     documentsWithConvocationBelow: { days: 5 },
     regulationWindowDays: 12,
-    quorum: {
-      firstCall: { numerator: 1, denominator: 2, strict: true },
-      secondCall: null,
-    },
+    quorum: { numerator: 1, denominator: 2, strict: true },
   },
 };
 
@@ -140,6 +132,6 @@ export const INITIAL_CALENDAR_RULES: Record<AssemblyType, CalendarRules> = {
 export function quorumRulesOf(
   type: AssemblyType,
   rules: CalendarRules,
-): QuorumRules {
+): QuorumThreshold {
   return rules.quorum ?? INITIAL_CALENDAR_RULES[type].quorum!;
 }

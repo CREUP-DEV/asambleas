@@ -247,6 +247,29 @@ async function runSync(
         icon: "i-lucide-triangle-alert",
       });
     }
+    // What the Intranet listed and could not be stored: say so, never hide it.
+    const ignored = result.ignored;
+    if (ignored && ignored.acronyms.length > 0) {
+      toast.add({
+        title: t("admin.members.syncIgnored.title"),
+        description: t("admin.members.syncIgnored.acronyms", {
+          acronyms: ignored.acronyms.join(", "),
+        }),
+        color: "warning",
+        icon: "i-lucide-triangle-alert",
+      });
+    }
+    if (ignored && ignored.withoutInitials > 0) {
+      toast.add({
+        title: t(
+          "admin.members.syncIgnored.withoutInitials",
+          { count: ignored.withoutInitials },
+          ignored.withoutInitials,
+        ),
+        color: "warning",
+        icon: "i-lucide-triangle-alert",
+      });
+    }
     await refresh();
   } catch (error) {
     const kinds = blockedSyncKinds(error);

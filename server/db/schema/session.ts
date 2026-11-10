@@ -8,6 +8,7 @@ import {
   jsonb,
   primaryKey,
   boolean,
+  uniqueIndex,
 } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { cuid } from "./common";
@@ -24,10 +25,7 @@ import {
   VOTE_SUBJECTS,
   SPEAKING_TURN_STATUSES,
 } from "../../../shared/constants/domain";
-import {
-  ATTENDANCE_MARKS,
-  QUORUM_CALLS,
-} from "../../../shared/utils/headcount";
+import { ATTENDANCE_MARKS } from "../../../shared/utils/headcount";
 import { majorityEnum } from "./document";
 
 export const voteMethodEnum = pgEnum("vote_method", VOTE_METHODS);
@@ -39,7 +37,6 @@ export const speakingTurnStatusEnum = pgEnum(
   SPEAKING_TURN_STATUSES,
 );
 export const decisionMethodEnum = pgEnum("decision_method", DECISION_METHODS);
-export const quorumCallEnum = pgEnum("quorum_call", QUORUM_CALLS);
 export const attendanceMarkEnum = pgEnum("attendance_mark", ATTENDANCE_MARKS);
 
 /**
@@ -57,8 +54,6 @@ export const headcounts = pgTable(
     assemblyId: text("assembly_id")
       .notNull()
       .references(() => assemblies.id, { onDelete: "cascade" }),
-    /** The call whose quorum applies (an AGE has only the first). */
-    call: quorumCallEnum("call").notNull().default("first"),
     /** Active asociados when the count was taken. */
     eligible: integer("eligible").notNull(),
     /** Members in the room. */
@@ -88,10 +83,10 @@ export const headcounts = pgTable(
 
 /**
  * Who a headcount counted: one row per asociado in the room or represented
- * by a delegation, and per sectorial or guest in the room (absent ones have
- * none). `delegateMemberId` is the member in the room that votes for a
- * delegated one. `voting` says the member had a vote when the count was
- * taken, so a correction never turns an attendee into a vote.
+ * by a delegation, and per sectorial in the room (absent ones have none).
+ * `delegateMemberId` is the member in the room that votes for a delegated
+ * one. `voting` says the member had a vote when the count was taken, so a
+ * correction never turns a sectorial into a vote.
  */
 export const headcountEntries = pgTable(
   "headcount_entries",
@@ -109,6 +104,32 @@ export const headcountEntries = pgTable(
     voting: boolean("voting").notNull().default(true),
   },
   (table) => [primaryKey({ columns: [table.headcountId, table.memberId] })],
+);
+
+/**
+ * The guests a headcount found in the room: accounts with the role
+ * Invitado, given here by hand. They never vote nor count. `name` is the
+ * account's name at the count, so the record reads the same if the account
+ * is renamed or deleted (`userId` then goes null).
+ */
+export const headcountGuests = pgTable(
+  "headcount_guests",
+  {
+    id: text("id").primaryKey().$defaultFn(cuid),
+    headcountId: text("headcount_id")
+      .notNull()
+      .references(() => headcounts.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    name: text("name").notNull(),
+  },
+  (table) => [
+    uniqueIndex("headcount_guests_user_unique").on(
+      table.headcountId,
+      table.userId,
+    ),
+  ],
 );
 
 /** A vote recorded by the Mesa: counts, majority and the computed result. */

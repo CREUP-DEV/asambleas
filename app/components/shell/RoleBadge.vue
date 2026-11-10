@@ -9,6 +9,7 @@ const ROLE_KEYS: Record<string, string> = {
   [SYSTEM_ROLES.CEA]: "shell.roles.cea",
   [SYSTEM_ROLES.ASOCIADO]: "shell.roles.asociado",
   [SYSTEM_ROLES.SECTORIAL]: "shell.roles.sectorial",
+  [SYSTEM_ROLES.OTRO]: "shell.roles.otro",
   [SYSTEM_ROLES.INVITADO]: "shell.roles.invitado",
 };
 

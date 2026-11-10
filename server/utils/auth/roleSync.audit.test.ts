@@ -121,9 +121,9 @@ describe("syncUserRole traceability", () => {
     });
   });
 
-  it("does not call an Invitado fallback an initial Admin", async () => {
+  it("does not call an Otro fallback an initial Admin", async () => {
     // The Admin role row is missing (database not seeded): the new account
-    // falls back to Invitado.
+    // falls back to Otro.
     vi.stubEnv("NUXT_ROLE_API_URL", "");
     tx.query.roles.findFirst.mockResolvedValueOnce(
       undefined as unknown as { id: string },
@@ -144,7 +144,7 @@ describe("syncUserRole traceability", () => {
     expect(auditCall(AUDIT_ACTIONS.USER_INITIAL_ADMIN)).toBeUndefined();
     expect(auditCall(AUDIT_ACTIONS.USER_ROLE_SYNC)).toMatchObject({
       before: { roleName: null },
-      after: { roleName: SYSTEM_ROLES.INVITADO },
+      after: { roleName: SYSTEM_ROLES.OTRO },
     });
   });
 
@@ -174,7 +174,7 @@ describe("syncUserRole traceability", () => {
         memberId: "m1",
       },
       after: {
-        roleName: SYSTEM_ROLES.INVITADO,
+        roleName: SYSTEM_ROLES.OTRO,
         externalRole: "Alumni",
         externalName: "Persona",
         externalInitials: null,
@@ -184,7 +184,7 @@ describe("syncUserRole traceability", () => {
     });
   });
 
-  it("moves a sectorial Invitado to Sectorial and links it again", async () => {
+  it("moves a sectorial Otro to Sectorial and links it again", async () => {
     vi.stubEnv("NUXT_ROLE_API_URL", "https://intranet.test/user/role");
     answer({ id: 41, role: "Sectorial", name: "AEEE", initials: "AEEE" });
     freshUser = {
@@ -196,14 +196,14 @@ describe("syncUserRole traceability", () => {
       externalName: "AEEE",
       externalInitials: "AEEE",
       university: null,
-      role: { name: SYSTEM_ROLES.INVITADO },
+      role: { name: SYSTEM_ROLES.OTRO },
     };
     linkUserToIntranetMember.mockClear();
 
     expect(await syncUserRole("u3")).toBe("ok");
     expect(updates[0]).toMatchObject({ roleId: "role-new", memberId: null });
     expect(auditCall(AUDIT_ACTIONS.USER_ROLE_SYNC)).toMatchObject({
-      before: { roleName: SYSTEM_ROLES.INVITADO, memberId: "m-aeee" },
+      before: { roleName: SYSTEM_ROLES.OTRO, memberId: "m-aeee" },
       after: { roleName: SYSTEM_ROLES.SECTORIAL, memberId: null },
     });
     // The member link comes back after the role transaction.

@@ -2016,8 +2016,12 @@
         }
       },
       "syncSkipped": {
-        "executive": "No se han podido leer los cargos de la CEA de la Intranet: se han dejado como estaban.",
-        "guest": "No se han podido leer los invitados de la Intranet: se han dejado como estaban."
+        "executive": "No se han podido leer los cargos de la CEA de la Intranet: se han dejado como estaban."
+      },
+      "syncIgnored": {
+        "title": "Hay siglas que no se han sincronizado",
+        "acronyms": "{acronyms}: están repetidas en la Intranet o ya las usa otro miembro. Corrígelas en la Intranet y vuelve a sincronizar.",
+        "withoutInitials": "Ninguna cuenta sin siglas | 1 cuenta de la Intranet no tiene siglas y no se ha sincronizado | {count} cuentas de la Intranet no tienen siglas y no se han sincronizado"
       }
     },
     "impersonationReadOnly": "Mientras actúas como otra cuenta no puedes cambiar usuarios, roles, miembros ni plazos del reglamento. Vuelve a tu cuenta para hacerlo.",
@@ -2062,10 +2066,7 @@
       "documentsWithConvocationUnit": "Antelación por debajo de la cual la documentación va con la convocatoria: unidad",
       "quorum": {
         "title": "Quórum",
-        "hint": "Parte de los asociados con derecho a voto, contando las delegaciones, que tiene que haber en cada recuento de la Mesa.",
-        "hasSecondCall": "Tiene segunda convocatoria",
-        "firstCall": "Primera convocatoria",
-        "secondCall": "Segunda convocatoria",
+        "hint": "Parte de los asociados con derecho a voto, contando las delegaciones, que tiene que haber en cada recuento de la Mesa. Es el de segunda convocatoria, en la que empieza siempre la sesión, o el de la única si el tipo solo tiene una.",
         "atLeast": "Al menos",
         "moreThan": "Más de",
         "comparison": "Al menos o más de",
@@ -2329,14 +2330,14 @@
       "invitado": "Invitado",
       "none": "Sin rol",
       "cea": "Comisión Ejecutiva Ampliada (CEA)",
-      "presidencia": "Presidencia"
+      "presidencia": "Presidencia",
+      "otro": "Otro"
     },
     "memberKinds": {
       "asociado": "Consejo asociado",
       "sectorial": "Sectorial",
       "executive": "Cargo de la CEA",
-      "other": "Otro",
-      "guest": "Invitado"
+      "other": "Otro"
     },
     "toastRegion": "Notificaciones (F8)",
     "impersonation": {

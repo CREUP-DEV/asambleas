@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { HeadcountDto, HeadcountMemberDto } from "~~/shared/types/api";
 import type { MemberKind } from "~~/shared/constants/domain";
 import {
+  guestFormFrom,
+  guestIdsOf,
+  headcountFormGuests,
   delegateOptions,
   headcountEntriesOf,
   headcountFormFrom,
@@ -28,7 +31,6 @@ const members = ["c", "b", "a"].map((id) => member(id));
 
 const previous: HeadcountDto = {
   id: "h1",
-  call: "second",
   eligible: 4,
   inRoom: 2,
   delegated: 1,
@@ -49,6 +51,7 @@ const previous: HeadcountDto = {
     },
     { member: member("x"), mark: "present", delegate: null, voting: true },
   ],
+  guests: [{ userId: "u-ana", name: "Ana" }],
 };
 
 const formMembers = headcountFormMembers(members, null);
@@ -74,10 +77,9 @@ describe("headcount form", () => {
     ).toEqual(["x", "c", "b", "a"]);
   });
 
-  it("lists asociados, then sectorials, then guests, each in reverse alphabetical order", () => {
+  it("lists asociados, then sectorials, each in reverse alphabetical order", () => {
     const list = headcountFormMembers(
       [
-        member("g1", "guest", "Asociación de antiguos"),
         member("s1", "sectorial", "Asociación de Química"),
         member("s2", "sectorial", "Reunión de Informática"),
         {
@@ -98,7 +100,6 @@ describe("headcount form", () => {
       ["c1", true],
       ["s2", false],
       ["s1", false],
-      ["g1", false],
     ]);
   });
 
@@ -106,9 +107,9 @@ describe("headcount form", () => {
     const target: HeadcountDto = {
       ...previous,
       entries: [
-        // A guest now that voted then, and an asociado now listed without a vote.
+        // A sectorial now that voted then, and an asociado now listed without a vote.
         {
-          member: member("old", "guest"),
+          member: member("old", "sectorial"),
           mark: "present",
           delegate: null,
           voting: true,
@@ -173,5 +174,36 @@ describe("headcount form", () => {
     expect(form.c).toEqual({ present: false, delegateId: "a" });
     form = setHeadcountPresent(form, "c", true);
     expect(form.c).toEqual({ present: true, delegateId: null });
+  });
+
+  it("lists the guests by name, a corrected count's own among them", () => {
+    const guests = headcountFormGuests(
+      [
+        { userId: "u-ana", name: "Ana" },
+        { userId: "u-zoe", name: "Zoe" },
+      ],
+      {
+        ...previous,
+        guests: [
+          { userId: "u-old", name: "Berta" },
+          // A deleted account is not offered: its entry stays.
+          { userId: null, name: "Borrada" },
+        ],
+      },
+    );
+    expect(guests.map((guest) => guest.name)).toEqual(["Zoe", "Berta", "Ana"]);
+  });
+
+  it("starts the guests from the previous count", () => {
+    const guests = headcountFormGuests(
+      [
+        { userId: "u-ana", name: "Ana" },
+        { userId: "u-zoe", name: "Zoe" },
+      ],
+      null,
+    );
+    const form = guestFormFrom(guests, previous);
+    expect(form).toEqual({ "u-zoe": false, "u-ana": true });
+    expect(guestIdsOf(form)).toEqual(["u-ana"]);
   });
 });

@@ -1,21 +1,21 @@
 <script setup lang="ts">
 import type { HeadcountDto } from "~~/shared/types/api";
-import {
-  quorumRequired,
-  quorumThreshold,
-  sessionCall,
-  tallyHeadcount,
-} from "~~/shared/utils/headcount";
+import { quorumRequired, tallyHeadcount } from "~~/shared/utils/headcount";
 import { HEADCOUNT_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/headcount";
 import {
   delegateOptions,
   delegationsReceived,
+  guestFormFrom,
+  guestIdsOf,
   headcountEntriesOf,
   headcountFormFrom,
+  headcountFormGuests,
   headcountFormMembers,
   setHeadcountDelegate,
   setHeadcountPresent,
+  type FormGuest,
   type FormMember,
+  type GuestForm,
   type HeadcountDraft,
   type HeadcountForm,
 } from "~/composables/session/headcountForm";
@@ -25,9 +25,9 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * Headcounts of the members with a vote (the active asociados): the Mesa
  * takes one at the start of each day, after a break or whenever it decides.
  * The latest one is the base of majorities on the members present, and it
- * says whether there is quorum under the rules of the assembly type, always
- * in second call when the type has one (an assembly always starts in it).
- * The sectorials and guests in the room are written down too, for the
+ * says whether there is quorum under the threshold of the assembly type
+ * (the call a session opens in). The sectorials and the guests (accounts
+ * with the role Invitado) in the room are written down too, for the
  * record: they never vote, delegate nor count.
  *
  * The form is built for speed and follows the roll call (asociados,
@@ -125,6 +125,7 @@ const open = ref(false);
 /** The count being corrected; null for a new one. */
 const editing = ref<HeadcountDto | null>(null);
 const form = ref<HeadcountForm>({});
+const guestForm = ref<GuestForm>({});
 const note = ref("");
 const filter = ref("");
 /** The form came back from a draft (the Mesa may start over). */
@@ -133,7 +134,11 @@ const restored = ref(false);
 const baseline = ref<string | null>(null);
 
 function snapshot(): string {
-  return JSON.stringify({ form: form.value, note: note.value });
+  return JSON.stringify({
+    form: form.value,
+    guests: guestForm.value,
+    note: note.value,
+  });
 }
 
 const formMembers = computed<FormMember[]>(() =>
@@ -157,10 +162,14 @@ const attendees = computed(
 const byId = computed(
   () => new Map(formMembers.value.map((member) => [member.id, member])),
 );
+const formGuests = computed<FormGuest[]>(() =>
+  headcountFormGuests(dto.value?.guests ?? [], editing.value),
+);
 
 function freshForm(target: HeadcountDto | null): void {
   const from = target ?? latest.value;
   form.value = headcountFormFrom(formMembers.value, from);
+  guestForm.value = guestFormFrom(formGuests.value, from);
   note.value = target?.note ?? "";
   restored.value = false;
   baseline.value = snapshot();
@@ -190,6 +199,13 @@ function start(target: HeadcountDto | null): void {
       }
     }
     form.value = base;
+    // Guests no longer listed drop out; new ones start out of the room.
+    guestForm.value = Object.fromEntries(
+      formGuests.value.map((guest) => [
+        guest.userId,
+        saved.guests?.[guest.userId] ?? false,
+      ]),
+    );
     note.value = saved.note ?? "";
     restored.value = true;
   }
@@ -203,7 +219,7 @@ function startOver(): void {
 
 // Every change while the form is open is kept as the draft.
 watch(
-  [form, note],
+  [form, guestForm, note],
   () => {
     if (!open.value) return;
     if (snapshot() === baseline.value) {
@@ -213,6 +229,7 @@ watch(
     writeDraft({
       targetId: editing.value?.id ?? null,
       form: form.value,
+      guests: guestForm.value,
       note: note.value,
       savedAt: new Date().toISOString(),
     });
@@ -223,39 +240,37 @@ watch(
 const tally = computed(() =>
   tallyHeadcount(headcountEntriesOf(form.value), voters.value, attendees.value),
 );
+/** Sectorials and guests in the room: written down, never counted. */
+const attending = computed(
+  () => tally.value.attending + guestIdsOf(guestForm.value).length,
+);
 const received = computed(() => delegationsReceived(form.value));
 const eligible = computed(() =>
   editing.value ? editing.value.eligible : voters.value.size,
 );
-/** A correction keeps its threshold; a new count, the session's call. */
+/** A correction keeps its threshold; a new count, the type's. */
 const required = computed(() => {
   if (editing.value) return editing.value.required;
-  return rules.value
-    ? quorumRequired(
-        eligible.value,
-        quorumThreshold(rules.value, sessionCall(rules.value)),
-      )
-    : 0;
+  return rules.value ? quorumRequired(eligible.value, rules.value) : 0;
 });
 const quorumMet = computed(() => tally.value.present >= required.value);
 
-type RollCallGroup = "asociado" | "sectorial" | "guest";
+type RollCallGroup = "asociado" | "sectorial";
 
-/**
- * The group a member is called in: with a vote, or as a sectorial; any
- * other member without a vote goes with the guests.
- */
+/** The group a member is called in: with a vote, or without. */
 function groupOf(member: FormMember): RollCallGroup {
-  if (member.voting) return "asociado";
-  return member.kind === "sectorial" ? "sectorial" : "guest";
+  return member.voting ? "asociado" : "sectorial";
 }
 
+const query = computed(() =>
+  filter.value.trim().toLocaleLowerCase(locale.value),
+);
+
 const shown = computed(() => {
-  const query = filter.value.trim().toLocaleLowerCase(locale.value);
-  const matching = query
+  const matching = query.value
     ? formMembers.value.filter((member) =>
         [member.acronym, member.name, member.university ?? ""].some((value) =>
-          value.toLocaleLowerCase(locale.value).includes(query),
+          value.toLocaleLowerCase(locale.value).includes(query.value),
         ),
       )
     : formMembers.value;
@@ -268,6 +283,18 @@ const shown = computed(() => {
   }
   return groups;
 });
+
+const shownGuests = computed(() =>
+  query.value
+    ? formGuests.value.filter((guest) =>
+        guest.name.toLocaleLowerCase(locale.value).includes(query.value),
+      )
+    : formGuests.value,
+);
+
+function toggleGuest(userId: string, value: boolean | "indeterminate") {
+  guestForm.value = { ...guestForm.value, [userId]: value === true };
+}
 
 /** What a member is called: its denomination and, if any, its university. */
 function denomination(member: FormMember): string | undefined {
@@ -333,6 +360,7 @@ async function save(): Promise<void> {
   if (!canSave.value) return;
   const body = {
     entries: headcountEntriesOf(form.value),
+    guests: guestIdsOf(guestForm.value),
     note: note.value.trim() || null,
   };
   const ok = editing.value
@@ -519,7 +547,10 @@ async function save(): Promise<void> {
             />
           </div>
 
-          <p v-if="formMembers.length === 0" class="text-muted text-sm">
+          <p
+            v-if="formMembers.length === 0 && formGuests.length === 0"
+            class="text-muted text-sm"
+          >
             {{ t("session.headcount.noMembers") }}
           </p>
           <div
@@ -624,6 +655,32 @@ async function save(): Promise<void> {
                 </li>
               </ul>
             </section>
+            <section
+              v-if="shownGuests.length > 0"
+              aria-labelledby="headcount-group-guest"
+            >
+              <h3
+                id="headcount-group-guest"
+                class="bg-elevated text-highlighted border-default sticky top-0 z-10 border-b px-3 py-1.5 text-xs font-semibold"
+              >
+                {{ t("session.headcount.groups.guest") }}
+              </h3>
+              <ul class="divide-default divide-y">
+                <li
+                  v-for="guest in shownGuests"
+                  :key="guest.userId"
+                  class="px-3 py-2"
+                >
+                  <UCheckbox
+                    :model-value="guestForm[guest.userId] ?? false"
+                    :label="guest.name"
+                    @update:model-value="
+                      (value) => toggleGuest(guest.userId, value)
+                    "
+                  />
+                </li>
+              </ul>
+            </section>
           </div>
 
           <div
@@ -653,13 +710,13 @@ async function save(): Promise<void> {
             </div>
             <p class="text-muted text-xs tabular-nums">
               {{ t("session.headcount.requiredOnly", { required }) }}
-              <template v-if="tally.attending > 0">
+              <template v-if="attending > 0">
                 ·
                 {{
                   t(
                     "session.headcount.attending",
-                    { count: tally.attending },
-                    tally.attending,
+                    { count: attending },
+                    attending,
                   )
                 }}
               </template>

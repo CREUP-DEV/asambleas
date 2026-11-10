@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { SYSTEM_ROLES } from "~~/shared/constants/roles";
+import { isReadOnlyRole } from "~~/shared/constants/roles";
 import type { MeWorkDto } from "~~/shared/types/api";
 import {
   homeWorkForAssembly,
@@ -23,7 +23,7 @@ import { formatDateTime } from "~/utils/format";
  *    or with the modal open on the next item. Then, for the Secretaría, what
  *    waits for its review, and the user's tasks. Anyone acting for a member
  *    always sees their tasks card, even with nothing in it, so they know
- *    where requests will show up; a guest (Invitado) reads one sentence
+ *    where requests will show up; a read-only account (Otro, Invitado) reads one sentence
  *    saying the account can only read.
  * 2. "Lo siguiente": the next milestone of the calendar, one line that
  *    opens the calendar.
@@ -133,7 +133,8 @@ const showMine = computed(
 const isGuest = computed(() => {
   const account = me.value;
   return (
-    account?.role === SYSTEM_ROLES.INVITADO &&
+    !!account &&
+    isReadOnlyRole(account.role) &&
     welcomeAudience(account) === "guest"
   );
 });

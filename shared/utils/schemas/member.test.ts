@@ -75,14 +75,10 @@ describe("memberSyncBodySchema", () => {
 
 describe("memberListQuerySchema", () => {
   it("takes the list of the amendment composers and nothing else", () => {
-    expect(memberListQuerySchema.parse({})).toEqual({
-      all: false,
-      guests: false,
-    });
+    expect(memberListQuerySchema.parse({})).toEqual({ all: false });
     expect(
       memberListQuerySchema.parse({ for: MEMBER_LIST_FOR_AMENDMENT }),
-    ).toEqual({ all: false, guests: false, for: "amendment" });
-    expect(memberListQuerySchema.parse({ guests: "1" }).guests).toBe(true);
+    ).toEqual({ all: false, for: "amendment" });
     expect(memberListQuerySchema.safeParse({ for: "document" }).success).toBe(
       false,
     );

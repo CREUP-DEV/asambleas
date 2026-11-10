@@ -106,7 +106,9 @@ const ROLE_DESCRIPTIONS: Record<string, string> = {
   [SYSTEM_ROLES.ASOCIADO]: "Presenta documentos y enmiendas",
   [SYSTEM_ROLES.SECTORIAL]:
     "Presenta documentos y enmiendas, salvo mociones internas",
-  [SYSTEM_ROLES.INVITADO]: "Solo lectura de contenido publicado",
+  [SYSTEM_ROLES.OTRO]: "Solo lectura de contenido publicado",
+  [SYSTEM_ROLES.INVITADO]:
+    "Solo lectura de contenido publicado; la Mesa anota su asistencia en los recuentos",
 };
 
 async function seedRbac(db: Db): Promise<void> {
