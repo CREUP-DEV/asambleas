@@ -55,6 +55,18 @@ const routeRules = {
       },
     },
   },
+  // Uploaded PDFs are shown inside the document page (DocumentPdfViewer):
+  // only this route may be framed, and only by the platform itself.
+  "/api/uploads/documents/**": {
+    security: {
+      headers: {
+        contentSecurityPolicy: {
+          "frame-ancestors": ["'self'"],
+        },
+        xFrameOptions: "SAMEORIGIN",
+      },
+    },
+  },
   "/_nuxt/**": {
     headers: {
       "Cache-Control": "public, max-age=31536000, immutable",
@@ -152,7 +164,9 @@ export default defineNuxtConfig({
         ],
         "font-src": ["'self'", "data:"],
         "connect-src": ["'self'"],
-        "frame-src": ["'none'"],
+        // The document page frames its uploaded PDF; every other page still
+        // refuses to be framed (frame-ancestors).
+        "frame-src": ["'self'"],
         "frame-ancestors": ["'none'"],
         "object-src": ["'none'"],
         "base-uri": ["'self'"],

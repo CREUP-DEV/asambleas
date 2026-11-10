@@ -192,23 +192,12 @@ watch(popoverOpen, (open) => {
         </template>
       </DocumentHeader>
 
-      <CommonEmptyState
+      <DocumentPdfViewer
         v-if="document.format === 'file'"
-        icon="i-lucide-file-text"
-        :title="t('workspace.text.file')"
+        :url="document.fileUrl"
+        :title="document.title"
         :description="t('workspace.text.fileDescription')"
-        variant="outline"
-      >
-        <template v-if="document.fileUrl" #action>
-          <UButton
-            :to="document.fileUrl"
-            external
-            target="_blank"
-            icon="i-lucide-external-link"
-            :label="t('workspace.text.openPdf')"
-          />
-        </template>
-      </CommonEmptyState>
+      />
 
       <CommonEmptyState
         v-else-if="!isPublished || !consolidation"

@@ -3101,6 +3101,8 @@
       "file": "Documento en PDF",
       "fileDescription": "Este documento se ha subido como PDF y no admite enmiendas en la plataforma.",
       "openPdf": "Ver el PDF",
+      "openPdfTab": "Abrir en una pestaña nueva",
+      "pdfFrame": "PDF de «{title}»",
       "unpublished": "Documento sin publicar",
       "unpublishedDescription": "Se podrán presentar enmiendas cuando Secretaría lo publique.",
       "empty": "El documento todavía no tiene texto",
