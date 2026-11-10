@@ -52,13 +52,16 @@ describe("newLinkedMember", () => {
     university: "Universidad de Murcia",
   };
 
-  it("creates councils from the intranet data", () => {
-    expect(newLinkedMember("asociado", "CEUM", identity, now)).toEqual({
+  it("creates councils from the intranet data, with the account's email", () => {
+    expect(
+      newLinkedMember("asociado", "CEUM", identity, now, "ceum@um.es"),
+    ).toEqual({
       kind: "asociado",
       acronym: "CEUM",
       name: "Consejo de Estudiantes",
       university: "Universidad de Murcia",
       intranetId: null,
+      email: "ceum@um.es",
       source: "intranet",
       active: true,
       syncedAt: now,
@@ -119,6 +122,18 @@ describe("acronymHeldByAnotherAccount", () => {
     expect(acronymHeldByAnotherAccount(412, 412)).toBe(false);
     expect(acronymHeldByAnotherAccount(412, null)).toBe(false);
     expect(acronymHeldByAnotherAccount(null, 413)).toBe(false);
+  });
+
+  it("refuses it as well when both emails are known and differ", () => {
+    expect(
+      acronymHeldByAnotherAccount(null, null, "a@uni.es", "b@uni.es"),
+    ).toBe(true);
+    expect(
+      acronymHeldByAnotherAccount(null, null, "a@uni.es", "a@uni.es"),
+    ).toBe(false);
+    expect(acronymHeldByAnotherAccount(null, null, "a@uni.es", null)).toBe(
+      false,
+    );
   });
 });
 

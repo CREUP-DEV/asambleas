@@ -35,17 +35,23 @@ never say "Comisión Ejecutiva" alone.
 
 - `members`: `kind` (`asociado`, `sectorial`, `executive`, `other`),
   `acronym` (unique, canonical), `intranet_id` (the intranet's `users.id`,
-  unique when set: partial index `members_intranet_id_unique`), `name`,
-  `university`, `region`, `source` (`intranet`, `manual`), `active`.
+  unique when set: partial index `members_intranet_id_unique`), `email`
+  (that account's sign-in address, lowercased, unique when set; never sent
+  to a client, an audit row or a log), `name`, `university`, `region`,
+  `source` (`intranet`, `manual`), `active`.
 - The intranet exposes the roster: `GET {NUXT_INTRANET_API_URL}/usuarios/asociados`,
   `/usuarios/sectoriales` and `/usuarios/cea` (one account per place in the
   CEA) return
-  `{ data: [{ id, denomination, initials, university, autonomous_community }] }`
-  (a university only for councils).
+  `{ data: [{ id, email, denomination, initials, university, autonomous_community }] }`
+  (a university only for councils; an older Intranet sends no `email`).
   The roster sync matches an asociado, a sectorial or an office by
-  `intranet_id` first, then by `initials` = `acronym`, so a change of
-  acronym updates the member instead of creating another, and deactivates
-  those the Intranet no longer lists. Offices sync like the rest, so the
+  `intranet_id` first, so a change of acronym updates the member instead
+  of creating another, then by `email`, so an account recreated with a new
+  id keeps its member, and deactivates those the Intranet no longer lists.
+  Initials only match a member that stores no other id or email (members
+  from before, manual offices): a council that leaves never hands its
+  documents to a new one with the same acronym, which is not created
+  while the old one keeps it. Offices sync like the rest, so the
   Secretaría can assign them documents before anyone signs in; a manual
   office the CEA list names is adopted. Without the CEA list (an Intranet
   without that route) the sync goes on and leaves the offices as they
@@ -62,7 +68,8 @@ never say "Comisión Ejecutiva" alone.
 - In the intranet an `Asociado` account _is_ the member, and
   `POST /user/role` returns its `id` (stored in `users.intranet_id`) and the
   same `initials`. Role sync therefore links the `users.memberId` of Asociado
-  and Sectorial accounts by `intranet_id`, then by acronym, creating the
+  and Sectorial accounts by `intranet_id`, then by email, then by acronym
+  (refused when the member stores another account's id or email), creating the
   member if the roster has not been synced yet. CEA accounts link to their
   executive office the same way: the account is the office's place, which
   outlives whoever holds it.

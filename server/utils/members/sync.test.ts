@@ -12,12 +12,14 @@ interface StoredMember {
   university: string | null;
   region: string | null;
   intranetId: number | null;
+  email: string | null;
   source: string;
   active: boolean;
 }
 
 interface RosterRow {
   id?: number | null;
+  email?: string | null;
   initials: string;
   denomination: string | null;
   university?: string | null;
@@ -32,6 +34,7 @@ const stored = (
   university: null,
   region: null,
   intranetId: null,
+  email: null,
   source: "intranet",
   active: true,
   ...overrides,
@@ -536,7 +539,12 @@ describe("syncIntranetRoster CEA offices", () => {
       sectorial: [],
       executive: [
         { id: 100, initials: "PRES", denomination: "Presidencia" },
-        { id: 102, initials: "SE", denomination: "Secretaría Ejecutiva" },
+        {
+          id: 102,
+          email: "se@creup.es",
+          initials: "SE",
+          denomination: "Secretaría Ejecutiva",
+        },
         { id: 91, initials: "TES", denomination: "Tesorería" },
       ],
     };
@@ -564,5 +572,7 @@ describe("syncIntranetRoster CEA offices", () => {
       action: AUDIT_ACTIONS.MEMBER_SYNC_DEACTIVATE,
       targetId: "m-old",
     });
+    // The email is stored, never written to an audit row.
+    expect(JSON.stringify(rows)).not.toContain("se@creup.es");
   });
 });

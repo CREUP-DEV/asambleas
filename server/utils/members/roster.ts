@@ -19,7 +19,11 @@ import { acronymKey } from "./dto";
  * The intranet serializes nullable columns: `initials` and `denomination` may
  * be null, and `/usuarios/sectoriales` has no `university` nor
  * `autonomous_community` keys at all. `id` is the Intranet `users.id`; the
- * public listings of the website send none.
+ * public listings of the website send none, nor an `email`.
+ *
+ * Who an entry is: its Intranet id, then its email (which survives the
+ * account being recreated with a new id). Initials only identify a stored
+ * member that has neither, so they never hand a member to another account.
  *
  * Three lists: asociados, sectorials and the CEA's places (one account per
  * office, which outlives whoever holds it), all synced the same way. The
@@ -37,6 +41,24 @@ const optionalText = z
     return text === "" ? null : text;
   });
 
+/** Longest address SMTP allows (RFC 5321). */
+const EMAIL_MAX_LENGTH = 254;
+
+/**
+ * The account's sign-in email, lowercased. Anything that does not look like
+ * one is null rather than invalidating the list: it only helps matching.
+ */
+const optionalEmail = z
+  .unknown()
+  .optional()
+  .transform((value) => {
+    if (typeof value !== "string") return null;
+    const email = value.trim().toLowerCase();
+    return email.length <= EMAIL_MAX_LENGTH && /^[^\s@]+@[^\s@]+$/.test(email)
+      ? email
+      : null;
+  });
+
 export const intranetRosterEntrySchema = z.object({
   /**
    * The Intranet account. Missing or null on the public listings; anything
@@ -44,6 +66,7 @@ export const intranetRosterEntrySchema = z.object({
    * whole list, so the sync writes nothing.
    */
   id: intranetIdSchema.nullish().transform((value) => value ?? null),
+  email: optionalEmail,
   order: z.number().nullish(),
   denomination: optionalText,
   initials: optionalText,
@@ -58,7 +81,7 @@ export const intranetRosterResponseSchema = z.object({
 
 export type IntranetRosterEntry = z.output<typeof intranetRosterEntrySchema>;
 
-/** The member kinds planRosterSync matches by Intranet id, then acronym. */
+/** The member kinds planRosterSync matches by Intranet id, then email. */
 export type RosterKind = Extract<
   MemberKind,
   "asociado" | "sectorial" | "executive"
@@ -91,6 +114,11 @@ export interface RosterMember {
   region: string | null;
   /** The Intranet account (`users.id`), or null when the roster sends none. */
   intranetId: number | null;
+  /**
+   * That account's sign-in email, lowercased, or null when the roster sends
+   * none. Never put in an audit row, a log or a response.
+   */
+  email: string | null;
 }
 
 const ACRONYM_MAX_LENGTH = 20;
@@ -103,7 +131,8 @@ const clip = (value: string | null, max: number) =>
 /**
  * Turns the intranet lists into one roster keyed by acronym. Rows without
  * initials cannot be stored and are skipped. An acronym or an Intranet id
- * listed twice keeps its first appearance (asociados come first).
+ * listed twice keeps its first appearance (asociados come first); an email
+ * listed twice is kept only on its first appearance.
  */
 export function normalizeRoster(
   lists: { kind: RosterKind; entries: IntranetRosterEntry[] }[],
@@ -115,6 +144,7 @@ export function normalizeRoster(
 } {
   const byKey = new Map<string, RosterMember>();
   const seenIds = new Set<number>();
+  const seenEmails = new Set<string>();
   const duplicates: string[] = [];
   const duplicateIds: number[] = [];
   let skipped = 0;
@@ -138,6 +168,11 @@ export function normalizeRoster(
         }
         seenIds.add(entry.id);
       }
+      const email =
+        entry.email !== null && !seenEmails.has(entry.email)
+          ? entry.email
+          : null;
+      if (email) seenEmails.add(email);
       byKey.set(key, {
         kind: list.kind,
         acronym,
@@ -145,6 +180,7 @@ export function normalizeRoster(
         university: clip(entry.university, DETAIL_MAX_LENGTH),
         region: clip(entry.autonomous_community, DETAIL_MAX_LENGTH),
         intranetId: entry.id,
+        email,
       });
     }
   }
@@ -160,6 +196,7 @@ export interface ExistingMember {
   university: string | null;
   region: string | null;
   intranetId: number | null;
+  email: string | null;
   source: MemberSource;
   active: boolean;
 }
@@ -171,7 +208,8 @@ export interface RosterSyncPlan {
    * Intranet members whose data changed or that come back to the roster.
    * `values.acronym` is the member's current one when the roster's is held
    * by another member (acronymConflicts, manualConflicts), and
-   * `values.intranetId` keeps the stored id when the roster sends none.
+   * `values.intranetId` and `values.email` keep the stored ones when the
+   * roster sends none (or the email is another member's).
    */
   update: {
     id: string;
@@ -195,8 +233,8 @@ export interface RosterSyncPlan {
    */
   acronymConflicts: string[];
   /**
-   * Members matched by acronym whose stored Intranet id the roster replaces:
-   * the old account is no longer listed and a new one uses the acronym.
+   * Members matched by email whose stored Intranet id the roster replaces:
+   * the account was recreated in the Intranet with the same address.
    */
   replacedIds: { id: string; acronym: string; from: number; to: number }[];
 }
@@ -205,11 +243,17 @@ export interface RosterSyncPlan {
  * Compares the roster with the stored members:
  * 1. an entry with an Intranet id takes the member stored with that id, so
  *    a change of acronym updates the member instead of creating another;
- * 2. any other entry takes the member with its acronym (case-insensitive),
- *    unless that member was taken in step 1 (it is being renamed away under
- *    its own id: the entry is then created). The entry's id is stored on
- *    the member; one the roster no longer lists is replaced (replacedIds),
- *    and an entry without id never clears a stored one.
+ * 2. then an entry with an email takes the member stored with that email:
+ *    the account was recreated, and its new id replaces the stored one
+ *    (replacedIds);
+ * 3. any other entry takes the member with its acronym (case-insensitive)
+ *    only when that member has no identity the entry contradicts (another
+ *    Intranet id or another email): members stored before the Intranet sent
+ *    either, and manual offices. A member with another identity is never
+ *    handed to the entry, which is then not created while the acronym is
+ *    taken (acronymConflicts). Nor is a member taken in an earlier step (it
+ *    is being renamed away: the entry is then created). An entry without id
+ *    or email never clears a stored one.
  * Manual members are never touched, even when the roster lists their
  * acronym or id, except a manual executive office the CEA list names by
  * its acronym: it is adopted (`adopt`) and syncs from then on. No plan
@@ -235,10 +279,14 @@ export function planRosterSync(
   };
 
   const byIntranetId = new Map<number, ExistingMember>();
+  const byEmail = new Map<string, ExistingMember>();
   const byKey = new Map<string, ExistingMember>();
   for (const member of existing) {
     if (member.intranetId !== null && !byIntranetId.has(member.intranetId)) {
       byIntranetId.set(member.intranetId, member);
+    }
+    if (member.email !== null && !byEmail.has(member.email)) {
+      byEmail.set(member.email, member);
     }
     const key = acronymKey(member.acronym);
     if (!byKey.has(key)) byKey.set(key, member);
@@ -247,28 +295,43 @@ export function planRosterSync(
   // Which stored member each entry stands for: by Intranet id first.
   const matchOf = new Map<RosterMember, ExistingMember>();
   const claimed = new Map<string, RosterMember>();
-  const pending: RosterMember[] = [];
-  for (const entry of roster) {
-    const member =
-      entry.intranetId === null
-        ? undefined
-        : byIntranetId.get(entry.intranetId);
-    if (!member) {
-      pending.push(entry);
-    } else if (member.source === "manual") {
-      plan.manualConflicts.push(member.acronym);
-    } else {
-      matchOf.set(entry, member);
-      claimed.set(member.id, entry);
+  const take = (
+    entries: RosterMember[],
+    find: (entry: RosterMember) => ExistingMember | undefined,
+  ): RosterMember[] => {
+    const left: RosterMember[] = [];
+    for (const entry of entries) {
+      const member = find(entry);
+      if (!member || claimed.has(member.id)) {
+        left.push(entry);
+      } else if (member.source === "manual") {
+        plan.manualConflicts.push(member.acronym);
+      } else {
+        matchOf.set(entry, member);
+        claimed.set(member.id, entry);
+      }
     }
-  }
+    return left;
+  };
+  const byId = take(roster, (entry) =>
+    entry.intranetId === null ? undefined : byIntranetId.get(entry.intranetId),
+  );
+  // Then by email, among the members step 1 left.
+  const pending = take(byId, (entry) =>
+    entry.email === null ? undefined : byEmail.get(entry.email),
+  );
 
-  // Then by acronym, among the members step 1 left.
+  // Then by acronym, only a member with no identity the entry contradicts.
   const toCreate: RosterMember[] = [];
   const adopted = new Set<string>();
   for (const entry of pending) {
     const holder = byKey.get(acronymKey(entry.acronym));
-    if (!holder || claimed.has(holder.id)) {
+    if (
+      !holder ||
+      claimed.has(holder.id) ||
+      contradicts(holder.intranetId, entry.intranetId) ||
+      contradicts(holder.email, entry.email)
+    ) {
       toCreate.push(entry);
     } else if (
       holder.source === "manual" &&
@@ -325,6 +388,20 @@ export function planRosterSync(
     }
   }
 
+  // Every email stays on one member: one another member stores is not
+  // moved (the unique index would refuse it), and no entry is created with it.
+  const takenEmails = new Set(
+    existing.flatMap((member) => (member.email ? [member.email] : [])),
+  );
+  const emailFor = (entry: RosterMember, current: ExistingMember | null) => {
+    if (entry.email === null || entry.email === current?.email) {
+      return current?.email ?? entry.email;
+    }
+    if (takenEmails.has(entry.email)) return current?.email ?? null;
+    takenEmails.add(entry.email);
+    return entry.email;
+  };
+
   for (const entry of roster) {
     const current = matchOf.get(entry);
     if (!current) continue;
@@ -332,6 +409,7 @@ export function planRosterSync(
       ...entry,
       acronym: blocked.has(current.id) ? current.acronym : entry.acronym,
       intranetId: entry.intranetId ?? current.intranetId,
+      email: emailFor(entry, current),
     };
     if (
       entry.intranetId !== null &&
@@ -354,7 +432,8 @@ export function planRosterSync(
       current.name !== values.name ||
       current.university !== values.university ||
       current.region !== values.region ||
-      current.intranetId !== values.intranetId;
+      current.intranetId !== values.intranetId ||
+      current.email !== values.email;
     if (differs) {
       plan.update.push(
         adopt ? { id: current.id, values, adopt } : { id: current.id, values },
@@ -367,7 +446,7 @@ export function planRosterSync(
     if (takenKeys.has(acronymKey(entry.acronym))) {
       plan.acronymConflicts.push(entry.acronym);
     } else {
-      plan.create.push(entry);
+      plan.create.push({ ...entry, email: emailFor(entry, null) });
     }
   }
 
@@ -379,6 +458,11 @@ export function planRosterSync(
   }
 
   return plan;
+}
+
+/** Two identities that are both known and differ. */
+function contradicts<T>(stored: T | null, listed: T | null): boolean {
+  return stored !== null && listed !== null && stored !== listed;
 }
 
 // Safeguard -------------------------------------------------------------------

@@ -18,6 +18,7 @@ const existing = (overrides: Partial<ExistingMember>): ExistingMember => ({
   university: "Universidad de Murcia",
   region: "Región de Murcia",
   intranetId: null,
+  email: null,
   source: "intranet",
   active: true,
   ...overrides,
@@ -30,6 +31,7 @@ const entry = (overrides: Partial<RosterMember>): RosterMember => ({
   university: "Universidad de Murcia",
   region: "Región de Murcia",
   intranetId: null,
+  email: null,
   ...overrides,
 });
 
@@ -41,6 +43,7 @@ const listed = (member: ExistingMember): RosterMember => ({
   university: member.university,
   region: member.region,
   intranetId: member.intranetId,
+  email: member.email,
 });
 
 describe("intranetRosterResponseSchema", () => {
@@ -98,6 +101,7 @@ describe("normalizeRoster", () => {
         entries: [
           {
             id: 10,
+            email: null,
             order: 1,
             denomination: "Consejo A",
             initials: "CEUM",
@@ -106,6 +110,7 @@ describe("normalizeRoster", () => {
           },
           {
             id: 11,
+            email: null,
             order: 2,
             denomination: "Sin siglas",
             initials: null,
@@ -119,6 +124,7 @@ describe("normalizeRoster", () => {
         entries: [
           {
             id: 12,
+            email: null,
             order: 1,
             denomination: "Duplicado",
             initials: "ceum",
@@ -127,6 +133,7 @@ describe("normalizeRoster", () => {
           },
           {
             id: null,
+            email: null,
             order: 2,
             denomination: null,
             initials: "CEEM",
@@ -147,6 +154,7 @@ describe("normalizeRoster", () => {
         university: "UM",
         region: "Murcia",
         intranetId: 10,
+        email: null,
       },
       {
         kind: "sectorial",
@@ -155,12 +163,14 @@ describe("normalizeRoster", () => {
         university: null,
         region: null,
         intranetId: null,
+        email: null,
       },
     ]);
   });
 
   it("keeps the first row of a repeated Intranet id", () => {
     const row = {
+      email: null,
       order: null,
       denomination: null,
       university: null,
@@ -173,6 +183,42 @@ describe("normalizeRoster", () => {
     expect(roster.members.map((member) => member.acronym)).toEqual(["A"]);
     expect(roster.duplicateIds).toEqual([7]);
     expect(roster.duplicates).toEqual([]);
+  });
+
+  it("keeps an email lowercased, once, and drops what is not one", () => {
+    const row = {
+      order: null,
+      denomination: null,
+      university: null,
+      autonomous_community: null,
+    };
+    const roster = normalizeRoster([
+      {
+        kind: "asociado",
+        entries: [
+          { ...row, id: 1, initials: "A", email: "consejo@uni.es" },
+          { ...row, id: 2, initials: "B", email: "consejo@uni.es" },
+        ],
+      },
+    ]);
+    expect(roster.members.map((member) => member.email)).toEqual([
+      "consejo@uni.es",
+      null,
+    ]);
+    const parsed = intranetRosterResponseSchema.parse({
+      data: [
+        { id: 1, initials: "A", email: " CdEUB@UB.edu " },
+        { id: 2, initials: "B", email: "no es un correo" },
+        { id: 3, initials: "C", email: 7 },
+        { id: 4, initials: "D" },
+      ],
+    });
+    expect(parsed.data.map((entry) => entry.email)).toEqual([
+      "cdeub@ub.edu",
+      null,
+      null,
+      null,
+    ]);
   });
 });
 
@@ -280,20 +326,74 @@ describe("planRosterSync", () => {
     expect(plan.update).toEqual([]);
   });
 
-  it("reuses a member whose account left when a new account takes its acronym", () => {
+  it("never hands a member to another account that takes its acronym", () => {
+    // The council that left keeps its documents: the new one waits until
+    // its acronym is free, and the members page warns.
     const member = existing({ intranetId: 5 });
     const plan = planRosterSync(
       [{ ...listed(member), intranetId: 9 }],
       [member],
     );
+    expect(plan.update).toEqual([]);
+    expect(plan.replacedIds).toEqual([]);
+    expect(plan.deactivate).toEqual(["m1"]);
+    expect(plan.create).toEqual([]);
+    expect(plan.acronymConflicts).toEqual(["CEUM"]);
+  });
+
+  it("never hands a member to another email by its acronym", () => {
+    const member = existing({ email: "viejo@uni.es" });
+    const plan = planRosterSync(
+      [{ ...listed(member), email: "nuevo@uni.es" }],
+      [member],
+    );
+    expect(plan.update).toEqual([]);
+    expect(plan.acronymConflicts).toEqual(["CEUM"]);
+  });
+
+  it("follows an account recreated with a new id through its email", () => {
+    const member = existing({ intranetId: 5, email: "ceum@um.es" });
+    const plan = planRosterSync(
+      [{ ...listed(member), acronym: "CEUMU", intranetId: 9 }],
+      [member],
+    );
     expect(plan.update).toEqual([
-      { id: "m1", values: { ...listed(member), intranetId: 9 } },
+      {
+        id: "m1",
+        values: { ...listed(member), acronym: "CEUMU", intranetId: 9 },
+      },
     ]);
     expect(plan.replacedIds).toEqual([
       { id: "m1", acronym: "CEUM", from: 5, to: 9 },
     ]);
     expect(plan.deactivate).toEqual([]);
-    expect(plan.create).toEqual([]);
+  });
+
+  it("stores the email the roster sends, once per member", () => {
+    const first = existing({ id: "m1", intranetId: 1 });
+    const second = existing({
+      id: "m2",
+      acronym: "CEUB",
+      intranetId: 2,
+      email: "comun@uni.es",
+    });
+    const plan = planRosterSync(
+      [
+        { ...listed(first), email: "comun@uni.es" },
+        { ...listed(second), email: "ceub@ub.edu" },
+        entry({ acronym: "NEW", intranetId: 3, email: "ceub@ub.edu" }),
+      ],
+      [first, second],
+    );
+    // m1 cannot take an address m2 still stores, nor the new entry one m2
+    // takes now.
+    expect(plan.unchanged).toEqual(["m1"]);
+    expect(plan.update).toEqual([
+      { id: "m2", values: { ...listed(second), email: "ceub@ub.edu" } },
+    ]);
+    expect(plan.create).toEqual([
+      entry({ acronym: "NEW", intranetId: 3, email: null }),
+    ]);
   });
 
   it("creates the entry that takes the acronym of a member renamed under its id", () => {
@@ -509,6 +609,7 @@ describe("planRosterSync with the CEA list", () => {
     university: null,
     region: null,
     intranetId,
+    email: null,
   });
 
   it("adopts a manual office the list names and deactivates one it dropped", () => {

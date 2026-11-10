@@ -31,11 +31,18 @@ export const members = pgTable(
     university: text("university"),
     region: text("region"),
     /**
-     * The Intranet account of an asociado or sectorial (its `users.id`), from
-     * the roster: it survives a change of acronym. Null for manual members
-     * and executive areas (a CEA account's id is a person, not an area).
+     * The Intranet account of an asociado, a sectorial or a CEA office (its
+     * `users.id`, a CEA account being the office's place), from the roster:
+     * it survives a change of acronym. Null for manual members.
      */
     intranetId: integer("intranet_id"),
+    /**
+     * That account's sign-in email, lowercased, from the roster: it survives
+     * the account being recreated with a new id, and links the platform
+     * account that signs in with it. Never sent to a client, an audit row
+     * nor a log.
+     */
+    email: text("email"),
     source: memberSourceEnum("source").notNull().default("manual"),
     active: boolean("active").notNull().default(true),
     syncedAt: timestamp("synced_at", { withTimezone: true, mode: "date" }),
@@ -52,6 +59,9 @@ export const members = pgTable(
     uniqueIndex("members_intranet_id_unique")
       .on(table.intranetId)
       .where(sql`${table.intranetId} is not null`),
+    uniqueIndex("members_email_unique")
+      .on(table.email)
+      .where(sql`${table.email} is not null`),
     index("idx_members_kind").on(table.kind),
   ],
 );
