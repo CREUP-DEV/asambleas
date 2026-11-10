@@ -1,5 +1,5 @@
 import { createError } from "h3";
-import { and, count, eq, inArray, isNull, ne, sql } from "drizzle-orm";
+import { and, count, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import {
   agendaItems,
   assemblies,
@@ -12,7 +12,9 @@ import { diffChanges } from "./changes";
 import { recordEvent, type Executor } from "./events";
 import {
   autoItemRemovable,
+  deletedTitleWithheld,
   followsDocumentTitle,
+  keepsDocumentTitle,
 } from "~~/shared/utils/agendaSubmissions";
 
 /**
@@ -180,22 +182,34 @@ export async function findRemovableAutoItem(
  * The automatic sub-item of a document that moved away but stays because
  * it holds something else (findRemovableAutoItem answered null) becomes an
  * ordinary item: it no longer counts as that document's, for the deadline
- * of what hangs from it, the agenda or the history. Records
- * `agenda_item_updated` with `auto: true`, the last event of the item tied
- * to the document. Needs lockAssembly.
+ * of what hangs from it, its title, the pickers or its removal. It may
+ * still carry the document's title, so it keeps the document in
+ * `hiddenWithDocumentId`: readers leave it out, or send it without its
+ * title, for whoever cannot see that document (titleDocumentId), and its
+ * later events name the document so the history does the same. The link
+ * goes when the document is deleted (withholdItemTitles) or a manager gives
+ * the item a new title. One a manager had already renamed (`titleCustom`)
+ * carries the manager's title, not the document's, so it keeps no link and
+ * everyone reads it (keepsDocumentTitle). Records `agenda_item_updated` with
+ * `auto: true`. Needs lockAssembly.
  */
 export async function unbindAutoItem(
   tx: Executor,
   input: {
     assemblyId: string;
-    item: Pick<AgendaItemRow, "id">;
+    item: Pick<AgendaItemRow, "id" | "titleCustom">;
     documentId: string;
     actor: Actor;
   },
 ): Promise<void> {
   await tx
     .update(agendaItems)
-    .set({ generatedForDocumentId: null })
+    .set({
+      generatedForDocumentId: null,
+      hiddenWithDocumentId: keepsDocumentTitle(input.item)
+        ? input.documentId
+        : null,
+    })
     .where(eq(agendaItems.id, input.item.id));
   await recordEvent(tx, {
     assemblyId: input.assemblyId,
@@ -205,6 +219,79 @@ export async function unbindAutoItem(
     payload: { auto: true, documentId: input.documentId },
     actor: input.actor,
   });
+}
+
+/**
+ * Before a document is deleted: the items that carry its title and stay
+ * (its automatic sub-item when it holds something else, or the one kept
+ * after the document moved away) lose their link with the row, so unless
+ * the document was public they are marked `titleWithheld`: only document
+ * managers read their title and description until one of them gives the
+ * item a new title. One a manager had already renamed (`titleCustom`) is
+ * left alone: its title is the manager's. `exceptItemId` is the automatic
+ * sub-item that goes with the document. Records `agenda_item_updated` on each. Needs lockAssembly.
+ */
+export async function withholdItemTitles(
+  tx: Executor,
+  input: {
+    assemblyId: string;
+    document: { id: string; status: string };
+    exceptItemId: string | null;
+    actor: Actor;
+  },
+): Promise<void> {
+  if (!deletedTitleWithheld(input.document.status)) return;
+  const rows = await tx
+    .update(agendaItems)
+    .set({ titleWithheld: true })
+    .where(
+      and(
+        eq(agendaItems.assemblyId, input.assemblyId),
+        eq(agendaItems.titleCustom, false),
+        or(
+          eq(agendaItems.generatedForDocumentId, input.document.id),
+          eq(agendaItems.hiddenWithDocumentId, input.document.id),
+        ),
+        input.exceptItemId ? ne(agendaItems.id, input.exceptItemId) : undefined,
+      ),
+    )
+    .returning({ id: agendaItems.id });
+  for (const row of rows) {
+    await recordEvent(tx, {
+      assemblyId: input.assemblyId,
+      entityType: "agenda_item",
+      entityId: row.id,
+      type: "agenda_item_updated",
+      payload: {
+        auto: true,
+        documentId: input.document.id,
+        titleWithheld: true,
+      },
+      actor: input.actor,
+    });
+  }
+}
+
+/**
+ * What the events of an item say about the title it carries, so the history
+ * shows them only to those who may read it: `auto` on an automatic
+ * sub-item, the `documentId` also on one that stayed after its document
+ * moved away, and `titleWithheld` on one whose document was deleted before
+ * it was public.
+ */
+export function titleDocumentPayload(
+  item: Pick<
+    AgendaItemRow,
+    "generatedForDocumentId" | "hiddenWithDocumentId" | "titleWithheld"
+  >,
+): { auto?: true; documentId?: string; titleWithheld?: true } {
+  if (item.generatedForDocumentId !== null) {
+    return { auto: true, documentId: item.generatedForDocumentId };
+  }
+  if (item.hiddenWithDocumentId !== null) {
+    return { documentId: item.hiddenWithDocumentId };
+  }
+  return item.titleWithheld ? { titleWithheld: true } : {};
 }
 
 /**

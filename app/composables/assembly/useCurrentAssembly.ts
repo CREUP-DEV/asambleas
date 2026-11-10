@@ -1,5 +1,6 @@
 import type { ComputedRef, InjectionKey, Ref } from "vue";
 import type { AgendaDto, AssemblyDto, LiveEventDto } from "~~/shared/types/api";
+import { agendaWithTitles } from "~/utils/agendaTitles";
 import { APP_TIME_ZONE, intlLocale, toDate } from "~/utils/format";
 import type { DateInput } from "~/utils/format";
 import { keepLastGoodData, useStaleDataNotice } from "../fetch/lastGoodData";
@@ -227,13 +228,16 @@ export function useCurrentAssembly(): CurrentAssemblyContext {
  */
 export function useAssemblyAgenda() {
   const { assembly, apiBase, onLive } = useCurrentAssembly();
+  const { t } = useI18n();
   const result = useFetch<AgendaDto>(() => `${apiBase.value}/agenda`, {
     key: computed(() => `assembly-agenda-${assembly.value?.id ?? "none"}`),
     dedupe: "defer",
   });
-  const { data, stale } = keepLastGoodData(result, {
+  const { data: fetched, stale } = keepLastGoodData(result, {
     resetOn: () => assembly.value?.id,
   });
+  // An item sent without its title gets a neutral one (titleHidden).
+  const data = agendaWithTitles(fetched, () => t("agenda.hiddenTitle"));
   useStaleDataNotice(stale);
   onLive((events) => {
     if (shouldRefetchAgenda(events)) void result.refresh();

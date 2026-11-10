@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { GENERIC_EXECUTIVE_MEMBER_ID } from "~~/shared/constants/domain";
 import {
+  AMENDMENT_AUTHORS_QUERY,
   addableMembers,
+  executiveMembersOf,
   genericExecutiveAcronym,
   isGenericExecutiveMember,
-  keptGenericExecutive,
+  seededGenericExecutive,
   withFixedGenericExecutive,
 } from "./executiveMembers";
 
@@ -58,12 +60,31 @@ describe("withFixedGenericExecutive", () => {
   });
 });
 
-describe("keptGenericExecutive", () => {
-  it("keeps only the generic CEA", () => {
+describe("seededGenericExecutive", () => {
+  it("offers only the generic CEA a draft already has", () => {
     expect(
-      keptGenericExecutive([COUNCIL.id, GENERIC_EXECUTIVE_MEMBER_ID]),
+      seededGenericExecutive([COUNCIL.id, GENERIC_EXECUTIVE_MEMBER_ID]),
     ).toEqual([GENERIC_EXECUTIVE_MEMBER_ID]);
-    expect(keptGenericExecutive([COUNCIL.id])).toEqual([]);
+    expect(seededGenericExecutive([COUNCIL.id])).toEqual([]);
+  });
+});
+
+describe("executiveMembersOf", () => {
+  it("keeps the real executive areas, never the generic CEA", () => {
+    const area = { id: "area", acronym: "VDT", kind: "executive" };
+    expect(
+      executiveMembersOf([
+        { ...COUNCIL, kind: "council" },
+        area,
+        { ...GENERIC, kind: "executive" },
+      ]),
+    ).toEqual([area]);
+  });
+});
+
+describe("AMENDMENT_AUTHORS_QUERY", () => {
+  it("asks for the list of the amendment composers", () => {
+    expect(AMENDMENT_AUTHORS_QUERY).toEqual({ for: "amendment" });
   });
 });
 

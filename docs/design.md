@@ -27,8 +27,9 @@ enters counts), credentials and per-person attendance, minutes.
 ## Members
 
 Amendments and documents are presented by **members** (student councils,
-sectorials, executive areas), not by people. An executive area is an area of
-the Comisión Ejecutiva Ampliada: the interface calls it "Área de la CEA" and
+sectorials, executive offices), not by people. An executive office is a single-person office ("cargo unipersonal", such as
+PRES or SE) of the Comisión Ejecutiva Ampliada: the interface calls it
+"Cargo de la CEA", never an area, and
 the `CEA` role "Comisión Ejecutiva Ampliada (CEA)". Interface and PDF texts
 never say "Comisión Ejecutiva" alone.
 
@@ -47,66 +48,90 @@ never say "Comisión Ejecutiva" alone.
   active member of a kind, or more than max(3, 30%) of them, is not applied
   unless the request confirms those counts (`confirmedKinds`; a retry that
   would deactivate more asks again): it records `members.sync_blocked`, and
-  the daily run never confirms. Executive areas are created manually.
+  the daily run never confirms. Executive offices are created manually.
 - In the intranet an `Asociado` account _is_ the member, and
   `POST /user/role` returns its `id` (stored in `users.intranet_id`) and the
   same `initials`. Role sync therefore links the `users.memberId` of Asociado
   and Sectorial accounts by `intranet_id`, then by acronym, creating the
   member if the roster has not been synced yet. CEA accounts link to their
-  executive area by initials only, since their `id` is a person's.
+  executive office by initials only, since their `id` is a person's.
 
 A user acts for the member in `users.memberId`. Users with moderation
 permissions may act on behalf of any member; every such action records both.
 
-### Who sees the executive areas
+### Who sees the executive offices
 
 Everyone knows the CEA presents a document or an amendment; which of its
-areas does is for the CEA and those who run the assembly. The rule is one
+offices does is for the CEA and those who run the assembly. The rule is one
 predicate, `canSeeExecutiveMembers` (`server/utils/domain/visibility.ts`):
-an account sees the areas when its role is Admin, Secretaría, Presidencia,
+an account sees the offices when its role is Admin, Secretaría, Presidencia,
 Moderador (the Mesa gives them the floor) or CEA, when it holds a management
 permission (`document:manage`, `amendment:review`, `amendment:manage`,
 `assembly:manage`, `session:moderate`, `member:manage`,
-`user:manage_roles`), or when it acts for an area itself
+`user:manage_roles`), or when it acts for an office itself
 (`Actor.memberKind`). Everyone else (Asociado, Sectorial, Invitado) gets one
-generic presenter instead of any area:
+generic presenter instead of any office:
 `{ id: GENERIC_EXECUTIVE_MEMBER_ID, acronym: "CEA", name: "Comisión Ejecutiva Ampliada", kind: "executive" }`.
 Members of the other kinds read the same for everyone.
 
 - It is done in the server, in the answer, never by hiding things on
   screen. Every place a member leaves the server goes through the helpers
-  of `visibility.ts`: `redactMember`, `redactMembers` (several areas
+  of `visibility.ts`: `redactMember`, `redactMembers` (several offices
   collapse into one entry), `redactPresenters`, `redactAuthors`
-  (`mainAuthorId` follows its author), `redactAcceptances` (the areas answer
-  as one party), `redactEventActor` (the person who acted for an area is not
-  named either, since the name says which area), `redactPayloadMembers`
+  (`mainAuthorId` follows its author), `redactAcceptances` (the offices answer
+  as one party), `redactEventActor` (the person who acted for an office is not
+  named either, since the name says which office), `redactPayloadMembers`
   (member ids in event and audit payloads, with the mask of
   `loadExecutiveMask`), `collapseExecutive` (the members list) and
   `visibleAcronym` (the PDFs, built with the requester's actor). A new
   answer that carries a member uses them. In a list in acronym order (the
   co-presenters, the members list, the presenters of a PDF) the generic
   entry goes where "CEA" sorts (`placeGenericByAcronym`), never where the
-  area was, which would narrow down which area it is.
+  office was, which would narrow down which office it is.
 - The generic id is a constant with the shape of an entity id and is never
   a `members` row. The server never reads it as a member: in a body it only
-  stands for the areas already on the document or amendment.
-- An account that does not see the areas neither adds nor removes one
-  (`planListedMembers`, `planNamedMember` in
-  `server/utils/domain/executiveMembers.ts`): naming an area that is not
-  already there, by its id or by the generic one, answers 422
-  `executive_member`, and the areas already there stay whatever its list
+  stands for the offices already on the document or amendment.
+- On a document, an account that does not see the offices neither adds nor
+  removes one (`planListedMembers`, `planNamedMember` in
+  `server/utils/domain/executiveMembers.ts`): naming an office by its real
+  id, there or not, or the generic one with no office there, answers 422
+  `executive_member`, and the offices already there stay whatever its list
   says, since it reads them all as one and could not tell which it drops.
-  The generic id as main author or main presenter, with several areas
-  there and none of them in that place, answers 422 `executive_main`.
-  The CEA itself or the Secretaría add and remove areas. Parties of a
-  transactional come from the database, so such an account still proposes
-  one over an area's amendment.
-- Amendment codes never name the area: an amendment whose main author is an
-  area is coded `CEA n` for everyone, numbered per document across all the
-  areas (`amendmentCodePrefix`). Migration `0017` renumbered the existing
+  The generic id as main presenter, with several offices there and none of
+  them in that place, answers 422 `executive_main`. The CEA itself or the
+  Secretaría add and remove offices.
+- Amendments and transactionals are the exception, because the CEA
+  presents them too and any member may present one with it. Only to
+  compose one, an account that presents amendments for a member reads the
+  real offices (`GET /api/members?for=amendment`,
+  `canNameExecutiveAuthors`: members only, never who acts for them) and
+  names them by their real ids as co-authors or as the main author
+  (`planAmendmentAuthors`, `planAmendmentMainAuthor`). What it reads
+  afterwards is the generic "CEA" again, its own draft included: there the
+  generic entry stands for every office among the authors, so keeping it
+  keeps them all and taking it out takes them all out, and it may add
+  others without learning which were there. The generic id as main author
+  means the office that already is, or the first of the ones behind the
+  generic entry, and a real office id as main author counts only when the
+  same body lists it among the authors (422 `executive_author_main`
+  otherwise). Since that account knows every real id, no answer to these
+  bodies depends on which offices the amendment already has, only on how
+  the body names them; for the same reason a list of member ids in a
+  payload always carries the generic id last (`redactPayloadMembers`).
+  Parties of a transactional come from the database, so such an
+  account still proposes one over an office's amendment.
+- If an amendment was presented wrong, whoever reviews amendments
+  (`amendment:review`) corrects its authors and its main author while it
+  is presented and undecided (`changeAmendmentAuthors`,
+  `amendment_authors_changed`). The code follows the new main author as
+  after a correction (`numberingToKeep`), so it never names an office, and
+  a code given up is never handed to another amendment (`nextMemberSeq`).
+- Amendment codes never name the office: an amendment whose main author is an
+  office is coded `CEA n` for everyone, numbered per document across all the
+  offices (`amendmentCodePrefix`). Migration `0017` renumbered the existing
   ones and rewrote the codes kept in event payloads; an older code that
-  named an area and has no amendment to follow (deleted since, or no longer
-  an area's) was removed from them.
+  named an office and has no amendment to follow (deleted since, or no longer
+  an office's) was removed from them.
 
 ## Documents
 
@@ -316,9 +341,9 @@ strike and a rewrite, and never colour alone.
   `transactional`.
 - Authors: `amendment_authors` (member ids; joint amendments have several).
 - Numbering: `number` per document, assigned on submission without gaps, and a
-  per-member counter, shown as `12 · CEUM 4`. The executive areas share one
+  per-member counter, shown as `12 · CEUM 4`. The executive offices share one
   counter and the prefix `CEA` (`12 · CEA 4`), so a code never names the
-  area. Transactionals are `T1`, `T2`...
+  office. Transactionals are `T1`, `T2`...
 - `submittedAt` is set by the server. `late` is computed from the window, never
   typed by hand.
 - `status`: `draft`, `submitted`, `inadmissible`, `withdrawn`, `transacted`
@@ -428,8 +453,18 @@ data, the agenda and the milestones as a print view and a PDF.
   under one gets its own automatic sub-item (`generatedForDocumentId`),
   titled like the document. The sub-item follows the document's title until
   a manager renames it (`titleCustom`) and goes when the document is deleted
-  or moved away, unless it holds something else by then. A viewer who cannot
-  see the document (another member's draft) does not get its sub-item. A
+  or moved away, unless it holds something else by then; kept after a move,
+  it is an ordinary item that remembers the document
+  (`hiddenWithDocumentId`) until the document is deleted or a manager
+  renames the item, unless a manager had already renamed it. Either way the
+  item may carry the document's title, so a viewer who cannot see the
+  document (another member's draft) does not get the item, or gets it
+  without its title when something that viewer sees hangs from it, until
+  the document is published. If the document is deleted before it was
+  public, the items that carried its title and stay keep it withheld
+  (`titleWithheld`): only document managers read it until one of them
+  renames the item. A title a manager wrote (`titleCustom`) is never
+  hidden once the item is no longer the document's. A
   document in an automatic sub-item is not "expected" for that reason alone:
   `documents_close` binds it like any document a member chose to present.
 - Deleting an agenda item removes its sub-items and every document under
@@ -517,7 +552,7 @@ carries the same figures on one line during the session.
 Every document and every amendment is presented by the user who wrote it,
 acting for their member: a council (Asociado accounts), a sectorial
 (Sectorial accounts, which never present an internal motion), or a CEA
-area (CEA accounts, intranet type `CEA`, linked to an `executive` member by
+office (CEA accounts, intranet type `CEA`, linked to an `executive` member by
 their intranet initials). Nothing a member presents is visible to the rest of
 the assembly until the Secretaría has checked it.
 
@@ -907,7 +942,7 @@ one idea each, with a drawing made of icons.
 The wording follows what the account can do, not the name of its role
 (`welcomeAudience` in `app/components/shell/-welcome.ts`): whoever manages
 assemblies, documents or amendments reads the Secretaría's text, whoever only
-moderates the Mesa's, a presenter the text of the member it acts for (area of
+moderates the Mesa's, a presenter the text of the member it acts for (office of
 the CEA, council or sectorial) and anyone else the guest's. Closing it at any
 step records that the account saw it (`users.onboarding_seen_at`,
 `POST /api/me/onboarding`, `user.onboarding_seen`), so it is per account, not

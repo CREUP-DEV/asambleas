@@ -180,6 +180,16 @@ const autoHint = computed(() => {
     : t("agenda.container.autoHint");
 });
 
+/**
+ * The item carries a title this account may not read (`titleHidden`): the
+ * server keeps its title and description whatever is sent, so both fields
+ * are locked and say why.
+ */
+const titleLocked = computed(() => props.item?.titleHidden === true);
+const titleHelp = computed(() =>
+  titleLocked.value ? t("agenda.form.titleHiddenHelp") : autoHint.value,
+);
+
 const editing = computed(() => Boolean(props.item));
 const title = computed(() =>
   editing.value
@@ -262,14 +272,15 @@ async function onSubmit(event: FormSubmitEvent<ItemForm>) {
       >
         <UFormField
           :label="t('agenda.form.title')"
-          :help="autoHint"
+          :help="titleHelp"
           name="title"
           required
         >
           <UInput
             v-model="state.title"
             :maxlength="AGENDA_TITLE_MAX_LENGTH"
-            autofocus
+            :disabled="titleLocked"
+            :autofocus="!titleLocked"
             class="w-full"
           />
         </UFormField>
@@ -284,6 +295,7 @@ async function onSubmit(event: FormSubmitEvent<ItemForm>) {
             autoresize
             :maxrows="10"
             :maxlength="AGENDA_DESCRIPTION_MAX_LENGTH"
+            :disabled="titleLocked"
             class="w-full"
           />
         </UFormField>

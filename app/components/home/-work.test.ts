@@ -417,6 +417,19 @@ describe("home work", () => {
       );
     });
 
+    it("says the Secretaría changed who presents the amendment", () => {
+      expect(
+        words(
+          homeWorkNewsItem(
+            news("n", { ...mine, type: "amendment_authors_changed" }),
+          ),
+        ),
+      ).toMatchObject({
+        sentence: "home.news.amendment.authorsChanged",
+        tone: "neutral",
+      });
+    });
+
     it("says what the main presenter answered", () => {
       expect(words(homeWorkNewsItem(news("n", mine)))).toEqual({
         sentence: "home.news.position.accept",

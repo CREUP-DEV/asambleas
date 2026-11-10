@@ -2,15 +2,27 @@ import {
   GENERIC_EXECUTIVE_MEMBER,
   GENERIC_EXECUTIVE_MEMBER_ID,
 } from "~~/shared/constants/domain";
+import { MEMBER_LIST_FOR_AMENDMENT } from "~~/shared/utils/schemas/member";
 
 /**
  * The generic "CEA" the server answers instead of an executive area to an
  * account that may not see the areas (docs/design.md, "Who sees the
  * executive areas"). It is a stand-in, never a member: it names the areas
- * already on a document or an amendment and filters by them, but nobody adds
- * it or removes it (the server refuses the first with 422 `executive_member`
- * and ignores the second).
+ * already on a document or an amendment and filters by them, and nobody
+ * adds it (422 `executive_member`). On a document nobody removes it either
+ * (the server keeps the areas whatever is sent). On an amendment draft it
+ * stands for every area among the authors: sent back they stay, left out
+ * they all go.
  */
+
+/**
+ * The query of GET /api/members for the composers of amendments and
+ * transactionals, and only for them: the one list where an account that
+ * does not see the executive areas gets them, to name them as authors.
+ */
+export const AMENDMENT_AUTHORS_QUERY = {
+  for: MEMBER_LIST_FOR_AMENDMENT,
+} as const;
 
 /** Whether the id is the generic "CEA", not a member. */
 export function isGenericExecutiveMember(
@@ -45,14 +57,23 @@ export function withFixedGenericExecutive(
 }
 
 /**
- * The co-authors to send when the author says it presents the amendment
- * alone: none, except the generic "CEA" already among them, which only the
- * CEA or the Secretaría take out.
+ * The generic "CEA" a stored amendment draft has among its authors, as the
+ * list to offer it in its picker (empty without it): it names the areas
+ * already there, and taking it out takes them all out.
  */
-export function keptGenericExecutive(ids: readonly string[]): string[] {
+export function seededGenericExecutive(ids: readonly string[]): string[] {
   return ids.includes(GENERIC_EXECUTIVE_MEMBER_ID)
     ? [GENERIC_EXECUTIVE_MEMBER_ID]
     : [];
+}
+
+/** The executive areas of a member list, to offer them apart. */
+export function executiveMembersOf<T extends { id: string; kind: string }>(
+  members: readonly T[],
+): T[] {
+  return addableMembers(members).filter(
+    (member) => member.kind === "executive",
+  );
 }
 
 /** "CEA" for the generic id, which no member list names; null otherwise. */

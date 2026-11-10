@@ -6,7 +6,13 @@ import {
   type ProponentPosition,
   type RelationKind,
 } from "~~/shared/constants/domain";
-import type { DecisionDto, EventDto, MemberRef } from "~~/shared/types/api";
+import type {
+  DecisionDto,
+  EventDto,
+  MemberDto,
+  MemberRef,
+} from "~~/shared/types/api";
+import { authorsChangeSide } from "~~/shared/utils/amendmentAuthors";
 
 /**
  * Immutable history of one amendment (GET .../amendments/{id}/history) as a
@@ -27,7 +33,10 @@ import type { DecisionDto, EventDto, MemberRef } from "~~/shared/types/api";
  * behalf says so ("La Mesa, en nombre de CEUM, la aceptó"). Events carry
  * only the member's id: `members` (the transactional's parties, the
  * authors and the document's presenters) names it, and `labelOf` names the
- * amendments they point to. What an Admin did while acting as an account
+ * amendments they point to. A correction of who presents it names the
+ * members before and after, who may no longer be among `members`: the
+ * member list is then read once (the generic "CEA" for a viewer who does
+ * not see the CEA offices). What an Admin did while acting as an account
  * says so to that account and to Admins (`impersonatedBy`).
  */
 const props = withDefaults(
@@ -99,6 +108,29 @@ async function loadDecisions(list: EventDto[]): Promise<void> {
   }
 }
 
+/**
+ * Every member, inactive ones included, read once when an event names
+ * members the amendment may no longer have (amendment_authors_changed).
+ */
+const allMembers = shallowRef<MemberRef[]>([]);
+let membersRequested = false;
+
+async function loadMembers(list: EventDto[]): Promise<void> {
+  if (
+    membersRequested ||
+    !list.some((event) => event.type === "amendment_authors_changed")
+  ) {
+    return;
+  }
+  membersRequested = true;
+  try {
+    allMembers.value = await api.get<MemberDto[]>("/api/members", { all: 1 });
+  } catch {
+    // The entry still says who changed it and when; the names are a bonus.
+    membersRequested = false;
+  }
+}
+
 async function load(): Promise<void> {
   const current = ++request;
   loading.value = true;
@@ -108,6 +140,7 @@ async function load(): Promise<void> {
     if (current === request) {
       events.value = result;
       void loadDecisions(result);
+      void loadMembers(result);
     }
   } catch {
     if (current === request) failed.value = true;
@@ -127,6 +160,7 @@ const ICONS: Record<string, string> = {
   amendment_published: "i-lucide-eye",
   amendment_correction_requested: "i-lucide-message-square-warning",
   amendment_reclassified: "i-lucide-tags",
+  amendment_authors_changed: "i-lucide-user-pen",
   amendment_admitted: "i-lucide-badge-check",
   amendment_inadmissible: "i-lucide-ban",
   amendment_withdrawn: "i-lucide-undo-2",
@@ -151,9 +185,23 @@ function memberAcronym(event: EventDto, id: string | null): string | null {
   if (event.actorMember?.id === id) return event.actorMember.acronym;
   return (
     props.members.find((member) => member.id === id)?.acronym ??
+    allMembers.value.find((member) => member.id === id)?.acronym ??
     // The generic "CEA" may stand for an area no longer among `members`.
     genericExecutiveAcronym(id)
   );
+}
+
+/** "CEUM (principal), UGR": one side of a correction of who presents it. */
+function authorsSide(event: EventDto, side: unknown): string | null {
+  const named = authorsChangeSide(side, (id) => memberAcronym(event, id));
+  if (!named) return null;
+  const [first, ...rest] = named.names;
+  return [
+    named.main
+      ? t("amendment.authorsChange.mainAuthor", { member: first })
+      : first,
+    ...rest,
+  ].join(", ");
 }
 
 /** A transactional closed because a main author rejected it. */
@@ -397,6 +445,22 @@ function detailOf(event: EventDto): string | null {
       return to === "formal" || to === "partial"
         ? t(`amendment.reclassify.changed.${to}`)
         : null;
+    }
+    case "amendment_authors_changed": {
+      const code = text(payload.code);
+      const previous = text(payload.previousCode);
+      const codeChanged =
+        code && previous
+          ? t("amendment.authorsChange.codeChanged", {
+              from: previous,
+              to: code,
+            })
+          : null;
+      const from = authorsSide(event, payload.from);
+      const to = authorsSide(event, payload.to);
+      if (!from || !to) return codeChanged;
+      const members = t("amendment.authorsChange.changed", { from, to });
+      return codeChanged ? `${members} ${codeChanged}` : members;
     }
     case "amendment_validated":
       return payload.publish === true

@@ -13,12 +13,16 @@ import { formatDateTime } from "~/utils/format";
  *   the final agenda has passed and the agenda is still provisional (agenda
  *   page and assembly overview).
  *
- * Both write through PUT /calendar with no milestones, which records
+ * - `menu`: nothing but the confirmation; the page puts the entry in its
+ *   own "Más" menu and opens it with the exposed `ask`.
+ *
+ * All write through PUT /calendar with no milestones, which records
  * `agenda_finalized` or `agenda_reopened`.
  */
-const props = withDefaults(defineProps<{ as?: "button" | "reminder" }>(), {
-  as: "button",
-});
+const props = withDefaults(
+  defineProps<{ as?: "button" | "reminder" | "menu" }>(),
+  { as: "button" },
+);
 
 const { t, locale } = useI18n();
 const toast = useToast();
@@ -78,6 +82,8 @@ async function confirm() {
     saving.value = false;
   }
 }
+
+defineExpose({ ask });
 </script>
 
 <template>
@@ -105,7 +111,7 @@ async function confirm() {
     </template>
 
     <UAlert
-      v-else-if="overdueSince"
+      v-else-if="props.as === 'reminder' && overdueSince"
       color="warning"
       variant="subtle"
       icon="i-lucide-calendar-clock"

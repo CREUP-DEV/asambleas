@@ -29,6 +29,11 @@ export interface AgendaRow {
   title: string;
   description: string | null;
   order: number;
+  /**
+   * The item carries the title of a document that is not published: the
+   * PDF prints a neutral label in its place.
+   */
+  titleHidden?: boolean;
 }
 
 export interface AgendaDocumentRow {
@@ -87,7 +92,8 @@ export function buildAgendaTree(
     documentOrder.push(...itemDocuments.map((document) => document.id));
     return {
       numbering: number,
-      title: item.title,
+      title: item.titleHidden ? "" : item.title,
+      ...(item.titleHidden ? { titleHidden: true } : {}),
       description: item.description,
       documents: itemDocuments.map((document) => ({
         title: document.title,

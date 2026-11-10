@@ -11,6 +11,7 @@ import {
 import type {
   AcceptanceBody,
   AdmissionBody,
+  AmendmentAuthorsBody,
   AmendmentDraftBody,
   AmendmentUpdateBody,
   OutcomeBody,
@@ -222,9 +223,17 @@ export const reclassifyBodySchema = z.object({
   updatedAt: updatedAtSchema,
 });
 
+/** Body of POST .../amendments/[amendment]/authors (AmendmentAuthorsBody). */
+export const amendmentAuthorsBodySchema = z.object({
+  authorMemberIds: uniqueIds(MAX_AUTHORS, 1),
+  mainAuthorMemberId: entityIdSchema,
+  updatedAt: updatedAtSchema,
+});
+
 // Compile-time checks: every parsed body is assignable to its API type.
 type Assignable<T, U extends T> = U;
 export type _AmendmentSchemaChecks = [
+  Assignable<AmendmentAuthorsBody, z.output<typeof amendmentAuthorsBodySchema>>,
   Assignable<ReclassifyBody, z.output<typeof reclassifyBodySchema>>,
   Assignable<VoteInput, z.output<typeof voteInputSchema>>,
   Assignable<AmendmentDraftBody, z.output<typeof amendmentDraftBodySchema>>,

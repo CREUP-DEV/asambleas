@@ -295,7 +295,7 @@ const reviewIsPrimary = computed(
     !composing.value,
 );
 
-/** "Proponer una transaccional": a visible button while there is something to combine. */
+/** "Proponer una transaccional", in "Más" while there is something to combine. */
 const showTransactEntry = computed(
   () =>
     canTransact.value &&
@@ -303,36 +303,89 @@ const showTransactEntry = computed(
     transactionalCandidates.value.length > 0,
 );
 
-/** Secondary links of the header, in its "Más" menu. */
-const moreItems = computed(() => {
-  const items: {
-    label: string;
-    icon: string;
-    to?: string;
-    onSelect?: () => void;
-  }[] = [];
+/**
+ * The text as a PDF: the published one, or the draft for managers
+ * (canExportWorkingDraft).
+ */
+const canExportClean = computed(
+  () =>
+    isStructured.value &&
+    Boolean(document.value?.can.manage || document.value?.baseVersion),
+);
+const cleanExport = useTemplateRef<{ start: () => Promise<void> }>(
+  "cleanExport",
+);
+
+interface MoreItem {
+  type?: "label";
+  label: string;
+  description?: string;
+  icon?: string;
+  to?: string;
+  onSelect?: () => void;
+}
+
+/**
+ * Everything but the one action of the page, in its "Más" menu: the review
+ * when nothing waits there, the PDF, the record, and the less usual ways to
+ * amend, each with what it does.
+ */
+const moreItems = computed<MoreItem[][]>(() => {
+  const work: MoreItem[] = [];
+  if (showReviewEntry.value && !reviewIsPrimary.value) {
+    work.push({
+      label: t("workspace.proponentReview.action"),
+      icon: "i-lucide-list-checks",
+      to: documentPath("revisar"),
+    });
+  }
   if (showAnswersEntry.value) {
-    items.push({
+    work.push({
       label: t("workspace.more.answers"),
       icon: "i-lucide-list-checks",
       to: documentPath("revisar"),
     });
   }
+  if (showTransactEntry.value) {
+    work.push({
+      label: t("workspace.more.transactional"),
+      icon: "i-lucide-git-merge",
+      onSelect: () => startTransactional([]),
+    });
+  }
+
+  const text: MoreItem[] = [];
   if (isPublished.value) {
-    items.push({
+    text.push({
       label: t("workspace.more.consolidated"),
       icon: "i-lucide-file-check",
       to: documentPath("consolidado"),
     });
   }
+  if (canExportClean.value) {
+    text.push({
+      label: t("workspace.export.clean"),
+      icon: "i-lucide-file-text",
+      onSelect: () => void cleanExport.value?.start(),
+    });
+  }
   if (canEditRecord.value) {
-    items.push({
+    text.push({
       label: t("workspace.editRecord"),
       icon: "i-lucide-file-cog",
       to: documentPath("editar"),
     });
   }
-  return items;
+
+  const ways: MoreItem[] =
+    canAmend.value && isStructured.value && !composing.value
+      ? [
+          { type: "label", label: t("workspace.cta.otherWays") },
+          ...otherWays.value,
+        ]
+      : [];
+
+  return [work, text, ways].filter((group) => group.length > 0);
 });
 
 function blockReference(blockId: string | null | undefined): string | null {
@@ -666,14 +719,21 @@ function onComposerSubmitted(amendment: AmendmentDto): void {
 }
 
 /**
- * The other ways to amend, as links under the main button, each with a
- * sentence that says what it does.
+ * The other ways to amend, in the menu of one button next to the main one,
+ * each with a sentence that says what it does.
  */
+const OTHER_WAY_ICONS = {
+  global: "i-lucide-replace-all",
+  return: "i-lucide-undo-2",
+  alternative: "i-lucide-file-pen-line",
+} as const;
+
 const otherWays = computed(() =>
   (["global", "return", "alternative"] as const).map((mode) => ({
-    mode,
     label: t(`workspace.cta.${mode}`),
-    hint: t(`workspace.cta.${mode}Hint`),
+    description: t(`workspace.cta.${mode}Hint`),
+    icon: OTHER_WAY_ICONS[mode],
+    onSelect: () => openComposer({ mode }),
   })),
 );
 
@@ -1090,14 +1150,12 @@ const filteredBlockLabel = computed(() =>
       >
         <div class="flex flex-col items-start gap-1.5 sm:items-end">
           <div class="flex flex-wrap items-center gap-2">
-            <!-- The presenter's review: primary while something waits for
-                 the presenter, secondary for the Mesa. -->
+            <!-- The presenter's review, only while something waits for the
+                 presenter; otherwise it is in "Más". -->
             <UButton
-              v-if="showReviewEntry"
+              v-if="reviewIsPrimary"
               :to="documentPath('revisar')"
               icon="i-lucide-list-checks"
-              :color="reviewIsPrimary ? 'primary' : 'neutral'"
-              :variant="reviewIsPrimary ? 'solid' : 'outline'"
               :label="t('workspace.proponentReview.action')"
               :aria-label="
                 reviewBacklog.total > 0
@@ -1112,8 +1170,8 @@ const filteredBlockLabel = computed(() =>
               <template v-if="reviewBacklog.total > 0" #trailing>
                 <UBadge
                   :label="String(reviewBacklog.total)"
-                  :color="reviewIsPrimary ? 'neutral' : 'primary'"
-                  :variant="reviewIsPrimary ? 'solid' : 'subtle'"
+                  color="neutral"
+                  variant="solid"
                   size="sm"
                   class="tabular-nums"
                   aria-hidden="true"
@@ -1141,30 +1199,27 @@ const filteredBlockLabel = computed(() =>
                   : t('workspace.editDraft')
               "
             />
-            <!-- The text as a PDF: the published one, or the draft for
-                 managers (canExportWorkingDraft). -->
+            <!-- Asked for from "Más"; it shows only once the PDF is on its
+                 way, and then offers the download. -->
             <ExportButton
-              v-if="
-                isStructured &&
-                (document.can.manage || Boolean(document.baseVersion))
-              "
+              v-if="canExportClean"
+              ref="cleanExport"
               :assembly="assembly.id"
               :document="document.id"
               variant="clean"
               button-variant="outline"
-            />
-            <UButton
-              v-if="showTransactEntry"
-              icon="i-lucide-git-merge"
-              color="neutral"
-              variant="outline"
-              :label="t('workspace.more.transactional')"
-              @click="startTransactional([])"
+              hide-idle
             />
             <UDropdownMenu
               v-if="moreItems.length > 0"
               :items="moreItems"
               :content="{ align: 'end' }"
+              :ui="{
+                content: 'w-80 max-w-[calc(100vw-2rem)]',
+                item: 'items-start',
+                itemLabel: 'whitespace-normal',
+                itemDescription: 'whitespace-normal text-muted',
+              }"
             >
               <UButton
                 icon="i-lucide-ellipsis"
@@ -1175,28 +1230,6 @@ const filteredBlockLabel = computed(() =>
               />
             </UDropdownMenu>
           </div>
-          <!-- The other ways to amend, each with what it does. -->
-          <ul
-            v-if="canAmend && isStructured && !composing"
-            class="flex max-w-xl flex-col gap-0.5 sm:items-end"
-            :aria-label="t('workspace.cta.otherWays')"
-          >
-            <li
-              v-for="way in otherWays"
-              :key="way.mode"
-              class="text-muted text-xs sm:text-end"
-            >
-              <UButton
-                color="primary"
-                variant="link"
-                size="xs"
-                class="p-0 align-baseline"
-                :label="way.label"
-                @click="openComposer({ mode: way.mode })"
-              />
-              {{ way.hint }}
-            </li>
-          </ul>
         </div>
       </DocumentHeader>
 
@@ -1206,8 +1239,6 @@ const filteredBlockLabel = computed(() =>
       >
         {{ document.summary }}
       </p>
-
-      <AmendmentWindowBanner :document="document" />
 
       <!-- Uploaded PDF -->
       <CommonEmptyState

@@ -3,6 +3,7 @@ import { createId } from "@paralleldrive/cuid2";
 import type {
   AmendmentDto,
   DocumentDto,
+  MemberDto,
   MemberRef,
   TransactionalBody,
 } from "~~/shared/types/api";
@@ -84,7 +85,7 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const api = useApi();
 const toast = useToast();
-const { member } = useMe();
+const { member, seesExecutiveMembers } = useMe();
 const formId = useId();
 const { join } = useTransactionalProgressText();
 
@@ -325,14 +326,54 @@ function onAuthorsChange(value: unknown): void {
   authorsTouched.value = true;
 }
 
-/** With several proposers, the Mesa names the main author. */
+/**
+ * A member may present it together with executive areas (the CEA presents
+ * transactionals too). The composer's own list: the one place where an
+ * account that does not see the areas reads them; once sent, it reads the
+ * generic "CEA" like everywhere else.
+ */
+const { data: authorMembers } = useLazyFetch<MemberDto[]>("/api/members", {
+  key: "amendment-composer-members",
+  query: AMENDMENT_AUTHORS_QUERY,
+  server: false,
+  default: () => [],
+});
+const executiveItems = computed(() =>
+  isMesa.value
+    ? []
+    : executiveMembersOf(authorMembers.value ?? [])
+        .filter((item) => item.active && item.id !== member.value?.id)
+        .map((item) => ({ label: memberLabel(item), value: item.id })),
+);
+const executiveAuthorIds = ref<string[]>([]);
+const executiveOpen = ref(false);
+
+/** Everyone presenting it: the Mesa's picks, or the member and its areas. */
+const presentingIds = computed(() =>
+  isMesa.value
+    ? authorIds.value
+    : executiveAuthorIds.value.length > 0 && member.value
+      ? [member.value.id, ...executiveAuthorIds.value]
+      : [],
+);
+
+/** With several proposers, one is named the main author. */
 const mainAuthorId = ref<string | undefined>(undefined);
+watch(executiveAuthorIds, (ids) => {
+  // The member itself until it says otherwise.
+  if (ids.length > 0 && !mainAuthorId.value) {
+    mainAuthorId.value = member.value?.id;
+  }
+});
 const mainAuthor = computed(() =>
-  composerMainAuthor(isMesa.value ? authorIds.value : [], mainAuthorId.value),
+  composerMainAuthor(presentingIds.value, mainAuthorId.value),
 );
 const mainAuthorItems = computed(() =>
-  authorIds.value.map((id) => {
-    const party = parties.value.find((item) => item.id === id);
+  presentingIds.value.map((id) => {
+    const party =
+      parties.value.find((item) => item.id === id) ??
+      (authorMembers.value ?? []).find((item) => item.id === id) ??
+      (member.value?.id === id ? member.value : undefined);
     return {
       label: party ? memberLabel(party) : id,
       value: id,
@@ -439,6 +480,7 @@ async function send(): Promise<void> {
   }
   if (mainAuthor.value.missing) {
     optionsOpen.value = true;
+    executiveOpen.value = true;
     await nextTick();
     mainAuthorBox.value
       ?.querySelector<HTMLElement>('[role="radio"], input, button')
@@ -454,13 +496,19 @@ async function send(): Promise<void> {
       ops: ops.value,
       justification: justification.value.trim(),
       submit: true,
-      // Members present it themselves; the Mesa names the parties.
+      // Members present it themselves, with the executive areas they name;
+      // the Mesa names the parties.
       ...(isMesa.value
         ? {
             authorMemberIds: authorIds.value,
             mainAuthorMemberId: mainAuthor.value.value,
           }
-        : {}),
+        : executiveAuthorIds.value.length > 0
+          ? {
+              authorMemberIds: executiveAuthorIds.value,
+              mainAuthorMemberId: mainAuthor.value.value,
+            }
+          : {}),
     };
     const result = await api.send<AmendmentDto>(
       `${props.amendmentsUrl}/transactional`,
@@ -975,6 +1023,76 @@ const stepBadge =
                 "
               >
                 <!-- The visible label is the field's; the legend names the group. -->
+                <URadioGroup
+                  v-model="mainAuthorId"
+                  :items="mainAuthorItems"
+                  :legend="t('amendment.composer.mainAuthor')"
+                  :ui="{ legend: 'sr-only' }"
+                  aria-required="true"
+                  size="sm"
+                />
+              </UFormField>
+            </div>
+          </div>
+        </template>
+      </UCollapsible>
+
+      <!-- A member may present it together with offices of the CEA. -->
+      <UCollapsible
+        v-else-if="executiveItems.length > 0"
+        v-model:open="executiveOpen"
+      >
+        <UButton
+          color="neutral"
+          variant="link"
+          size="sm"
+          class="px-0"
+          :icon="
+            executiveOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
+          "
+          :label="t('transactional.composer.executiveOptions')"
+        />
+        <template #content>
+          <div class="border-default mt-2 rounded-md border p-3 sm:p-4">
+            <UFormField
+              :label="t('transactional.composer.executiveAuthors')"
+              :help="
+                seesExecutiveMembers
+                  ? t('transactional.composer.executiveAuthorsOptional')
+                  : t('transactional.composer.executiveAuthorsHint')
+              "
+            >
+              <USelectMenu
+                v-model="executiveAuthorIds"
+                :items="executiveItems"
+                value-key="value"
+                multiple
+                class="w-full"
+                :placeholder="
+                  t('transactional.composer.executiveAuthorsPlaceholder')
+                "
+                :aria-label="
+                  selectMenuLabel(
+                    t('transactional.composer.executiveAuthors'),
+                    executiveItems,
+                    executiveAuthorIds,
+                    t('transactional.composer.executiveAuthorsPlaceholder'),
+                  )
+                "
+                :search-input="labelledSearch(t('common.search'))"
+              />
+            </UFormField>
+            <div v-if="mainAuthor.required" ref="mainAuthorBox" class="mt-4">
+              <UFormField
+                :label="t('amendment.composer.mainAuthor')"
+                required
+                :help="t('transactional.composer.mainAuthorHint')"
+                :error="
+                  attempted && mainAuthor.missing
+                    ? t('amendment.composer.mainAuthorRequired')
+                    : undefined
+                "
+              >
                 <URadioGroup
                   v-model="mainAuthorId"
                   :items="mainAuthorItems"

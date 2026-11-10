@@ -6,6 +6,7 @@ import { db } from "../../db";
 import { members } from "../../db/schema";
 import { requireActor } from "../../utils/domain/actor";
 import {
+  canNameExecutiveAuthors,
   collapseExecutive,
   placeGenericByAcronym,
 } from "../../utils/domain/visibility";
@@ -18,6 +19,12 @@ import {
  * Active members first, by acronym. `?all=1` also returns inactive ones.
  * An account that may not see the executive areas gets one generic "CEA"
  * entry instead of them (canSeeExecutiveMembers).
+ *
+ * `?for=amendment` is the one exception, for the composers of amendments
+ * and transactionals only: an account that presents amendments
+ * (canNameExecutiveAuthors) gets the active members with the real areas,
+ * to name them as authors. It carries members, never who acts for them,
+ * and what that account reads back afterwards is the generic "CEA" again.
  */
 export default defineEventHandler(async (event): Promise<MemberDto[]> => {
   const actor = await requireActor(event);
@@ -26,11 +33,16 @@ export default defineEventHandler(async (event): Promise<MemberDto[]> => {
     throw createError({ statusCode: 400, message: "Parámetros no válidos" });
   }
 
+  const forAmendment =
+    query.data.for !== undefined && canNameExecutiveAuthors(actor);
   const rows = await db
     .select()
     .from(members)
-    .where(query.data.all ? undefined : eq(members.active, true))
+    .where(
+      query.data.all && !forAmendment ? undefined : eq(members.active, true),
+    )
     .orderBy(desc(members.active), asc(members.acronym));
+  if (forAmendment) return rows.map(toMemberDto);
 
   // The generic entry goes where "CEA" sorts, not where the first area was.
   return placeGenericByAcronym(

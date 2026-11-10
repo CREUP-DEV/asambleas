@@ -6,6 +6,7 @@ import type {
 } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
 import { blockLabels } from "~~/shared/utils/content/render";
+import { canChangeAmendmentAuthors } from "~~/shared/utils/amendmentAuthors";
 import { canReclassifyAmendment } from "~~/shared/utils/amendmentReclassify";
 import { firstTouchedBlockId } from "~~/shared/utils/content/ops";
 import {
@@ -329,6 +330,15 @@ const canReclassify = computed(
   () =>
     props.amendment.can.review &&
     canReclassifyAmendment(props.amendment, Boolean(props.document.finalVote)),
+);
+/** Those who review amendments may correct who presents it. */
+const canChangeAuthors = computed(
+  () =>
+    props.amendment.can.review &&
+    canChangeAmendmentAuthors(
+      props.amendment,
+      Boolean(props.document.finalVote),
+    ),
 );
 /** The viewer answers it (the main presenter, or the Mesa for it). */
 const positionTurn = computed(
@@ -749,6 +759,14 @@ async function remove(): Promise<void> {
 
     <AmendmentReclassify
       v-if="canReclassify"
+      :amendment="amendment"
+      :url="url"
+      @updated="emit('updated', $event)"
+      @conflict="emit('changed')"
+    />
+
+    <AmendmentAuthorsChange
+      v-if="canChangeAuthors"
       :amendment="amendment"
       :url="url"
       @updated="emit('updated', $event)"

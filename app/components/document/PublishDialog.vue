@@ -140,11 +140,7 @@ const contentCheck = computed<Check>(() => {
     ? {
         key: "content",
         state: "ok",
-        title: t(
-          "document.publish.checks.textReady",
-          { count: textBlocks.value },
-          textBlocks.value,
-        ),
+        title: t("document.publish.checks.textReady"),
       }
     : {
         key: "content",

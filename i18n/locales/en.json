@@ -83,6 +83,8 @@
       "server": "Server error. Try again in a few minutes.",
       "network": "Cannot reach the server. Check your connection.",
       "executiveMain": "You cannot choose the CEA as the main one. Ask the CEA or the Secretaría to do it.",
+      "executiveAuthor": "“CEA” only keeps the CEA offices already presenting it. To add one, choose the office by its name.",
+      "executiveAuthorMain": "For a CEA office to be the main author, tick it among those presenting it too.",
       "executiveMember": "You cannot add the CEA. Ask the CEA or the Secretaría to do it.",
       "unknown": "The operation could not be completed."
     },
@@ -140,7 +142,9 @@
       "linkUrl": "Link address",
       "applyLink": "Apply link",
       "removeLink": "Remove link",
-      "invalidLink": "Only http, https and email links are allowed.",
+      "invalidLink": "That address cannot be a link: only web pages (http or https) and email addresses are allowed.",
+      "pastedLinksSkipped": "Some links were pasted as plain text",
+      "pastedLinksSkippedDescription": "Only links to web pages (http or https) and email addresses are kept.",
       "heading": "Heading",
       "subheading": "Subheading",
       "heading3": "Section",
@@ -903,7 +907,7 @@
         "info": "Information"
       },
       "checks": {
-        "textReady": "The document has text ({count} paragraph) | The document has text ({count} paragraphs and headings)",
+        "textReady": "The document has text",
         "textEmpty": "The document has no text",
         "textUnsaved": "Changes to the text will be saved before continuing",
         "fileReady": "PDF uploaded: {name}",
@@ -1299,7 +1303,7 @@
       "error": "The amendments could not be loaded",
       "empty": "No amendments yet",
       "emptyDescription": "Published amendments will appear here, in text order.",
-      "emptyCanAmend": "Press “Present an amendment” and choose the paragraph you want to change.",
+      "emptyCanAmend": "Press “Present an amendment” and change the document's text to read as you want it.",
       "emptyFiltered": "No amendment matches the filters",
       "transactGroup": "Combine into a transactional amendment"
     },
@@ -1543,7 +1547,8 @@
         "amendment_validated": "Validated by the Secretariat",
         "amendment_published": "Published",
         "amendment_correction_requested": "The Secretariat asked for a correction",
-        "amendment_reclassified": "The Secretariat changed the kind of amendment"
+        "amendment_reclassified": "The Secretariat changed the kind of amendment",
+        "amendment_authors_changed": "The Secretariat changed who presents it"
       },
       "admissionMethods": {
         "mesa": "By decision of the presiding board",
@@ -1688,7 +1693,8 @@
         "othersHint": "You present it together.",
         "members": "Who do you present it with?",
         "placeholder": "Choose the members",
-        "ceaKept": "The CEA presents it too. Only the CEA or the Secretaría can take it out.",
+        "ceaKept": "“CEA” stands for the CEA offices already presenting it; they are not ticked one by one. If you remove it, all of them stop presenting it. The offices you add will show as “CEA” too.",
+        "ceaAdded": "The CEA offices you add will show as “CEA” once saved.",
         "onBehalfToggle": "Present it on behalf of another member"
       },
       "why": {
@@ -1746,6 +1752,24 @@
       "awaitingSentence": "It is waiting for the assembly to decide whether to consider it. Until then it is neither debated nor voted on."
     },
     "lateAdmitted": "Late · admitted",
+    "authorsChange": {
+      "label": "Who presents the amendment",
+      "current": "Presented by {members}. If it was presented wrong, you can change it.",
+      "action": "Change who presents it",
+      "title": "Change who presents it",
+      "description": "Correct who signs this amendment if it was presented wrong. It stays in the history and its authors will see it in their news.",
+      "authors": "Presented by",
+      "authorsPlaceholder": "Choose the members",
+      "authorsRequired": "Choose at least one member.",
+      "mainAuthorHint": "The main author answers transactionals and gives the amendment its code. If it changes, the code of the amendment may change.",
+      "save": "Save the change",
+      "done": "Who presents it has been changed",
+      "doneCode": "Who presents it has been changed. It is now {code}.",
+      "failed": "Who presents it could not be changed",
+      "codeChanged": "Its code changes from {from} to {to}.",
+      "changed": "It was presented by {from}. Now it is presented by {to}.",
+      "mainAuthor": "{member} (main author)"
+    },
     "reclassify": {
       "label": "Kind of amendment",
       "current": {
@@ -1927,7 +1951,7 @@
     "save": "Save",
     "members": {
       "title": "Members",
-      "description": "Member councils, sectoral bodies and Extended Executive Committee areas that present documents and amendments. Councils and sectoral bodies are synced from the intranet; CEA areas are added here.",
+      "description": "Member councils, sectoral bodies and Extended Executive Committee offices that present documents and amendments. Councils and sectoral bodies are synced from the intranet; CEA offices are added here.",
       "sync": "Sync with the intranet",
       "syncing": "Syncing with the intranet…",
       "syncDoneTitle": "Sync complete",
@@ -1935,7 +1959,7 @@
       "syncFailed": "The intranet sync failed",
       "create": "New member",
       "createTitle": "New member",
-      "createDescription": "For CEA areas and other members that do not come from the intranet.",
+      "createDescription": "For CEA offices and other members that do not come from the intranet.",
       "createAction": "Create member",
       "created": "{acronym} created",
       "updated": "{acronym} updated",
@@ -2163,6 +2187,7 @@
         "AGET": "Telematic Extraordinary General Assembly"
       },
       "agendaTitle": "Agenda",
+      "agendaHiddenTitle": "Item of an unpublished document",
       "agendaEmpty": "The agenda is still empty.",
       "noPublishedDocuments": "No documents have been published yet.",
       "fileDocument": "PDF document ({file}). See it on the platform.",
@@ -2306,7 +2331,7 @@
     "memberKinds": {
       "asociado": "Member council",
       "sectorial": "Sectoral body",
-      "executive": "CEA area",
+      "executive": "CEA office",
       "other": "Other"
     },
     "toastRegion": "Notifications (F8)",
@@ -2334,7 +2359,7 @@
         "body": {
           "secretariat": "Here you find the agenda, the documents and the amendments of each assembly. You organise them: you create assemblies, check what members submit and publish it.",
           "mesa": "Here you find the agenda, the documents and the amendments of each assembly. You run the session: speaking turns, headcounts and votes.",
-          "cea": "Here you find the agenda, the documents and the amendments of each assembly. You submit documents and amendments for your CEA area.",
+          "cea": "Here you find the agenda, the documents and the amendments of each assembly. You submit documents and amendments for your CEA office.",
           "asociado": "Here you find the agenda, the documents and the amendments of each assembly. You submit documents and amendments for your council.",
           "sectorial": "Here you find the agenda, the documents and the amendments of each assembly. You submit documents and amendments for your sectorial. The one thing you cannot submit is an internal motion. You can still amend one.",
           "guest": "Here you find the agenda, the documents and the amendments of each assembly. You can read everything, but you cannot submit or change anything."
@@ -2407,7 +2432,7 @@
     "member": {
       "title": "Your user",
       "actingFor": "You present documents and amendments on behalf of this user.",
-      "none": "Your account is not linked to any member. If you represent a council, a sectoral body or an area, ask the Secretariat to check it.",
+      "none": "Your account is not linked to any member. If you represent a council, a sectoral body or a CEA office, ask the Secretariat to check it.",
       "role": "Platform role"
     },
     "admin": {
@@ -2536,6 +2561,7 @@
         "correction": "The Secretariat asks you to correct {amendment}. Send it again once it is ready.",
         "reclassifiedFormal": "The Secretariat changed {amendment} to an amendment of form.",
         "reclassifiedContent": "The Secretariat changed {amendment} to an amendment of content.",
+        "authorsChanged": "The Secretariat changed who presents {amendment}.",
         "admitted": "The assembly decided to treat {amendment}: it will be debated.",
         "inadmissible": "Not admitted: {amendment} will not be debated.",
         "approved": "Approved: {amendment} goes into the text.",
@@ -2628,7 +2654,9 @@
     }
   },
   "agenda": {
+    "more": "More",
     "title": "Agenda",
+    "hiddenTitle": "Item of an unpublished document",
     "final": "Final",
     "provisional": "Provisional agenda",
     "itemsCount": "No items | {count} item | {count} items",
@@ -2736,6 +2764,7 @@
       "parentHint": "Inside item {number}: {title}",
       "hint": "Items are numbered automatically by their position.",
       "titleRequired": "Enter the item title",
+      "titleHiddenHelp": "This item carries the title of a document you cannot see, so you cannot change its title or description here.",
       "tooLong": "At most {max} characters",
       "create": "Create item",
       "saveError": "The item could not be saved"
@@ -3080,18 +3109,6 @@
       "unpublishedDescription": "Amendments can be submitted once the Secretariat publishes it.",
       "empty": "The document has no text yet",
       "filePending": "This document will be provided as a PDF and cannot be amended on the platform. The PDF has not been uploaded yet."
-    },
-    "window": {
-      "open": "Amendment window open",
-      "closes": "Closes",
-      "openUnbounded": "Amendments can be submitted",
-      "openUnboundedDescription": "No closing date has been set.",
-      "upcoming": "The amendment window is not open yet",
-      "opens": "Opens",
-      "closed": "Amendment window closed",
-      "closedLate": "If you present a new amendment now, it will be late and the Mesa will decide whether to admit it.",
-      "closedSince": "Closed",
-      "voted": "The text has been voted on: it takes no more amendments."
     },
     "consolidatedView": {
       "text": "Consolidated text",
@@ -4014,7 +4031,7 @@
     "editingOn": "You can change the deadlines now.",
     "editingOff": "You have finished editing the deadlines.",
     "emptyTitle": "No documents yet",
-    "emptyDescription": "Add the documents you expect from each member, such as each CEA area's report, with their internal deadline. They will find them on their home page to prepare them.",
+    "emptyDescription": "Add the documents you expect from each member, such as each CEA office's report, with their internal deadline. They will find them on their home page to prepare them.",
     "noAgendaTitle": "There is no agenda yet",
     "noAgendaDescription": "Every document goes under an agenda item. Create the items first.",
     "toAgenda": "Go to the agenda",
@@ -4256,6 +4273,11 @@
       "justificationHelp": "Required. The presenters of the amendments it combines will read it.",
       "justificationPlaceholder": "Say what agreement it reflects and why",
       "authorsOptions": "More options: who presents it",
+      "executiveOptions": "More options: present it with a CEA office",
+      "executiveAuthors": "CEA offices presenting it with you",
+      "executiveAuthorsHint": "Optional. Once sent, they will show as “CEA”.",
+      "executiveAuthorsOptional": "Optional.",
+      "executiveAuthorsPlaceholder": "Choose the CEA offices",
       "authors": "Presented by",
       "authorsHint": "By default, the presenters of the amendments it combines.",
       "authorsPlaceholder": "Choose who presents it",
@@ -4859,6 +4881,7 @@
       "amendment_withdrawn": "Amendment withdrawn",
       "amendment_correction_requested": "@:amendment.history.events.amendment_correction_requested",
       "amendment_reclassified": "@:amendment.history.events.amendment_reclassified",
+      "amendment_authors_changed": "@:amendment.history.events.amendment_authors_changed",
       "amendment_validated": "Amendment validated by the Secretariat",
       "amendment_published": "Amendment published",
       "amendment_admitted": "Amendment admitted",

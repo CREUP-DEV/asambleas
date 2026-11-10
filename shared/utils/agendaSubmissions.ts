@@ -109,35 +109,99 @@ export function autoItemRemovable(
 }
 
 /**
- * The agenda items a viewer gets. The automatic sub-item of a document the
- * viewer cannot see (another member's draft) carries that document's title,
- * so it is left out with it, unless it holds a document the viewer does see
- * or has sub-items that stay.
+ * Whether an automatic sub-item that stops being its document's (the
+ * document moved away or was deleted, and the item stays) still carries the
+ * document's title: not once a manager gave it its own (`titleCustom`).
+ * Only then does it stay hidden with the document.
  */
-export function visibleAgendaItems<
-  T extends {
-    id: string;
-    parentId: string | null;
-    generatedForDocumentId: string | null;
-  },
->(
-  items: readonly T[],
-  visibleDocuments: readonly { id: string; agendaItemId: string }[],
-): T[] {
+export function keepsDocumentTitle(item: { titleCustom: boolean }): boolean {
+  return !item.titleCustom;
+}
+
+/** What the visibility rules read of an agenda item. */
+export interface TitleSource {
+  generatedForDocumentId: string | null;
+  hiddenWithDocumentId: string | null;
+  /**
+   * The item carries the title of a document deleted before everyone could
+   * see it: only document managers read it (`seesWithheld`).
+   */
+  titleWithheld?: boolean;
+}
+
+/**
+ * The document whose title the item may carry: the one it is the automatic
+ * sub-item of, or the one it was the sub-item of before that document moved
+ * away and the item stayed as an ordinary one (`hiddenWithDocumentId`).
+ * Null for an item written by hand, and again once that document is
+ * deleted or a manager gives the kept item a new title. Whoever cannot see
+ * that document never reads the item's title.
+ */
+export function titleDocumentId(item: TitleSource): string | null {
+  return item.generatedForDocumentId ?? item.hiddenWithDocumentId;
+}
+
+/**
+ * Whether the item's title is someone's to hide: a document's
+ * (titleDocumentId) or a withheld one.
+ */
+export function carriesGuardedTitle(item: TitleSource): boolean {
+  return titleDocumentId(item) !== null || item.titleWithheld === true;
+}
+
+/**
+ * Whether deleting a document in this status leaves its title withheld on
+ * the items that carried it: it was not public (canSeeDocument).
+ */
+export function deletedTitleWithheld(status: string): boolean {
+  return status !== "published" && status !== "postponed";
+}
+
+type ViewerItem = TitleSource & { id: string; parentId: string | null };
+type ViewerDocument = { id: string; agendaItemId: string };
+
+/**
+ * The items whose title a viewer must not read: those that carry the title
+ * of a document (titleDocumentId) the viewer cannot see, another member's
+ * draft, and those whose title is withheld (`titleWithheld`) unless the
+ * viewer manages documents (`seesWithheld`).
+ */
+export function hiddenTitleItemIds(
+  items: readonly ViewerItem[],
+  visibleDocuments: readonly { id: string }[],
+  seesWithheld = false,
+): Set<string> {
   const documentIds = new Set(visibleDocuments.map((document) => document.id));
+  const hidden = new Set<string>();
+  for (const item of items) {
+    const documentId = titleDocumentId(item);
+    if (
+      (documentId !== null && !documentIds.has(documentId)) ||
+      (item.titleWithheld === true && !seesWithheld)
+    ) {
+      hidden.add(item.id);
+    }
+  }
+  return hidden;
+}
+
+/**
+ * The agenda items a viewer gets. An item whose title the viewer must not
+ * read (hiddenTitleItemIds) is left out, unless it holds a document the
+ * viewer does see or has sub-items that stay: then it is kept, and the
+ * caller sends it without its title (hiddenTitleItemIds again, on the
+ * items returned).
+ */
+export function visibleAgendaItems<T extends ViewerItem>(
+  items: readonly T[],
+  visibleDocuments: readonly ViewerDocument[],
+  seesWithheld = false,
+): T[] {
   const itemsWithDocuments = new Set(
     visibleDocuments.map((document) => document.agendaItemId),
   );
-  const hidden = new Set(
-    items
-      .filter(
-        (item) =>
-          item.generatedForDocumentId !== null &&
-          !documentIds.has(item.generatedForDocumentId) &&
-          !itemsWithDocuments.has(item.id),
-      )
-      .map((item) => item.id),
-  );
+  const hidden = hiddenTitleItemIds(items, visibleDocuments, seesWithheld);
+  for (const id of itemsWithDocuments) hidden.delete(id);
   if (hidden.size === 0) return [...items];
   // A hidden candidate with a sub-item that stays is kept: taking it out
   // would leave that sub-item without its parent.

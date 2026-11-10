@@ -59,6 +59,14 @@ export function useMe() {
     () => me.value?.impersonation ?? null,
   );
 
+  /**
+   * Whether the account reads the CEA offices as they are; otherwise the
+   * server shows it the generic "CEA" everywhere.
+   */
+  const seesExecutiveMembers = computed(
+    () => me.value?.seesExecutiveMembers ?? false,
+  );
+
   function can(permission: PermissionKey): boolean {
     if (!me.value) return false;
     return me.value.isAdmin || me.value.permissions.includes(permission);
@@ -116,6 +124,7 @@ export function useMe() {
     loaded: readonly(loaded),
     isAdmin,
     member,
+    seesExecutiveMembers,
     permissions,
     impersonation,
     can,

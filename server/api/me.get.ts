@@ -4,6 +4,7 @@ import type { MeDto, MeImpersonationDto } from "~~/shared/types/api";
 import { db } from "../db";
 import { members, users } from "../db/schema";
 import { requireActor } from "../utils/domain/actor";
+import { canSeeExecutiveMembers } from "../utils/domain/visibility";
 import { toMemberRef } from "../utils/members/dto";
 
 export default defineEventHandler(async (event): Promise<MeDto> => {
@@ -41,6 +42,7 @@ export default defineEventHandler(async (event): Promise<MeDto> => {
     permissions: [...actor.permissions],
     isAdmin: actor.isAdmin,
     member: member ? toMemberRef(member) : null,
+    seesExecutiveMembers: canSeeExecutiveMembers(actor),
     onboardingSeen: Boolean(account?.onboardingSeenAt),
     impersonation,
   };

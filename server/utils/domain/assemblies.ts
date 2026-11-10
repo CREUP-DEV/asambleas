@@ -39,7 +39,8 @@ import {
   toVoteDto,
 } from "./documents";
 import { lockAssembly } from "./agendaWrites";
-import { coPresentedBy } from "./presenters";
+import { coPresentedBy, withCoProponentIds } from "./presenters";
+import { canSeeDocument } from "./visibility";
 import {
   MILESTONE_KEYS,
   REGULATION_DOCUMENT_KINDS,
@@ -68,7 +69,9 @@ import {
 } from "~~/shared/utils/calendar";
 import { loadCalendarRules } from "./calendarRules";
 import {
+  hiddenTitleItemIds,
   isAutoItem,
+  titleDocumentId,
   visibleAgendaItems,
 } from "~~/shared/utils/agendaSubmissions";
 import {
@@ -471,20 +474,54 @@ export function assertDateRange(start: Date, end: Date): void {
 
 // Agenda ------------------------------------------------------------------------
 
-export function toAgendaItemDto(row: AgendaItemRow): AgendaItemDto {
+/**
+ * `titleHidden`: the viewer must not read the item's title
+ * (hiddenTitleItemIds): it is sent without it, without its description and
+ * without the document it was created for. Document managers always get
+ * them.
+ */
+export function toAgendaItemDto(
+  row: AgendaItemRow,
+  titleHidden = false,
+): AgendaItemDto {
   return {
     id: row.id,
     parentId: row.parentId,
-    title: row.title,
-    description: row.description,
+    title: titleHidden ? "" : row.title,
+    titleHidden,
+    description: titleHidden ? null : row.description,
     order: row.order,
     acceptsSubmissions: row.acceptsSubmissions,
     submissionKinds: row.submissionKinds,
     auto: isAutoItem(row),
-    generatedForDocumentId: row.generatedForDocumentId,
+    generatedForDocumentId: titleHidden ? null : row.generatedForDocumentId,
     titleCustom: row.titleCustom,
     updatedAt: row.updatedAt.toISOString(),
   };
+}
+
+/**
+ * Whether the actor may read the title and the description of one item, as
+ * loadAgendaDto decides it for the list: the item carries no document's
+ * title, or the actor sees that document; a withheld title is the document
+ * managers'.
+ */
+export async function canReadItemTitle(
+  actor: Actor,
+  item: AgendaItemRow,
+  executor: Executor = db,
+): Promise<boolean> {
+  if (canManageDocuments(actor)) return true;
+  if (item.titleWithheld) return false;
+  const documentId = titleDocumentId(item);
+  if (documentId === null) return true;
+  const [row] = await executor
+    .select()
+    .from(documents)
+    .where(eq(documents.id, documentId));
+  if (!row) return true;
+  const [document] = await withCoProponentIds([row], executor);
+  return document !== undefined && canSeeDocument(actor, document);
 }
 
 /** Every item of the assembly, flat, in display order within each parent. */
@@ -511,9 +548,21 @@ export async function loadAgendaDto(
     loadAgendaItems(assembly.id),
     loadDocumentSummaries(assembly, actor),
   ]);
+  // Without the items that carry the title of a document the actor cannot
+  // see (an automatic sub-item, or one kept after its document moved away);
+  // one that stays because of what it holds goes without its title.
+  // A title withheld after its document was deleted is the managers'.
+  const seesWithheld = canManageDocuments(actor);
+  const visible = visibleAgendaItems(items, documentSummaries, seesWithheld);
+  const hiddenTitles = hiddenTitleItemIds(
+    visible,
+    documentSummaries,
+    seesWithheld,
+  );
   return {
-    // Without the automatic sub-items of documents the actor cannot see.
-    items: visibleAgendaItems(items, documentSummaries).map(toAgendaItemDto),
+    items: visible.map((item) =>
+      toAgendaItemDto(item, hiddenTitles.has(item.id)),
+    ),
     documents: documentSummaries,
   };
 }

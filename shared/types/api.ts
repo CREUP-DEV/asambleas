@@ -155,6 +155,13 @@ export interface MeDto {
   isAdmin: boolean;
   member: MemberRef | null;
   /**
+   * Whether the account sees the CEA offices as they are
+   * (canSeeExecutiveMembers). When false, every answer shows it the generic
+   * "CEA" instead; the composers of amendments use it to say that the
+   * offices it names will read as "CEA".
+   */
+  seesExecutiveMembers: boolean;
+  /**
    * Whether the account already closed the welcome (users.onboarding_seen_at,
    * POST /api/me/onboarding). While false, the welcome opens by itself on
    * the first page of the dashboard; never while an Admin acts as the account.
@@ -423,7 +430,20 @@ export interface CalendarBody {
 export interface AgendaItemDto {
   id: string;
   parentId: string | null;
+  /** Empty when `titleHidden`. */
   title: string;
+  /**
+   * The item carries the title of a document the viewer cannot see yet
+   * (another member's draft), as its automatic sub-item or as the one it
+   * was before that document moved away, and stays in the list only
+   * because of what it holds: the server sends no title and clients show a
+   * neutral label (`agendaWithTitles`), nor `description` nor
+   * `generatedForDocumentId`. False again once the document is published,
+   * or deleted after it was public; a document deleted before that leaves
+   * the title withheld for all but document managers until one of them
+   * renames the item.
+   */
+  titleHidden: boolean;
   description: string | null;
   order: number;
   /** Members present documents under this item (a "container" item). */
@@ -850,6 +870,21 @@ export interface AdmissionBody {
 export interface ReclassifyBody {
   /** The kind it becomes: the other one of the two. */
   kind: "formal" | "partial";
+  updatedAt: IsoDate;
+}
+
+/**
+ * POST .../amendments/[amendment]/authors (amendment:review): corrects who
+ * presents a presented, undecided amendment or transactional, in case it
+ * was presented wrong. The lists replace the stored ones. Returns
+ * AmendmentDto, with a new code when the main author changes to a member
+ * with another code prefix.
+ */
+export interface AmendmentAuthorsBody {
+  /** Every author, the main one included. At least one. */
+  authorMemberIds: string[];
+  /** One of `authorMemberIds`. */
+  mainAuthorMemberId: string;
   updatedAt: IsoDate;
 }
 

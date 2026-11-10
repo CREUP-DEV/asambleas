@@ -5,13 +5,16 @@ import {
   AGENDA_DELETE_AMENDMENTS_CODE,
   AGENDA_DELETE_LIVE_CODE,
   agendaDeleteBlocker,
-  isAutoItem,
+  carriesGuardedTitle,
 } from "~~/shared/utils/agendaSubmissions";
 import { agendaItemDeleteQuerySchema } from "~~/shared/utils/schemas/assembly";
 import { db } from "../../../../db";
 import { agendaItems, liveState, speakingTurns } from "../../../../db/schema";
 import { requireActor, requireCan } from "../../../../utils/domain/actor";
-import { lockAssembly } from "../../../../utils/domain/agendaWrites";
+import {
+  lockAssembly,
+  titleDocumentPayload,
+} from "../../../../utils/domain/agendaWrites";
 import {
   agendaSubtree,
   confirmFinalRootChange,
@@ -161,8 +164,8 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
       }
 
       // The item itself first, then what hung from it. Its event lists the
-      // sub-items written by hand; an automatic one carries the title of a
-      // document, so it says it only in its own event, which the history
+      // sub-items written by hand; one that carries the title of a document
+      // (titleDocumentId) says it only in its own event, which the history
       // shows to those who could see that document.
       const entries = agendaSubtreeEntries(items, item.id);
       const byId = new Map(items.map((candidate) => [candidate.id, candidate]));
@@ -183,13 +186,11 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
               ? entries.filter(
                   (candidate) =>
                     candidate.id === item.id ||
-                    !isAutoItem(byId.get(candidate.id)!),
+                    !carriesGuardedTitle(byId.get(candidate.id)!),
                 )
               : [entry],
             ...(isRoot ? { deletedDocuments: held.length } : { cascade: true }),
-            ...(isAutoItem(row)
-              ? { auto: true, documentId: row.generatedForDocumentId }
-              : {}),
+            ...titleDocumentPayload(row),
             ...(isRoot && afterFinal ? { afterFinal: true } : {}),
           },
           actor,

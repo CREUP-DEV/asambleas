@@ -88,6 +88,11 @@ const REASON_KEYS: Record<string, string> = {
   // It chose the CEA as main author or presenter and the server cannot tell
   // which area that is.
   executive_main: "common.errors.executiveMain",
+  // On an amendment or a transactional, where it names the CEA offices
+  // itself: the generic "CEA" with no office behind it, and an office as
+  // main author that the same request does not list among the authors.
+  executive_author: "common.errors.executiveAuthor",
+  executive_author_main: "common.errors.executiveAuthorMain",
 };
 
 /**

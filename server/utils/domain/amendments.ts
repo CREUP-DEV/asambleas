@@ -53,6 +53,7 @@ import type {
   AcceptanceBody,
   AcceptanceDto,
   AdmissionBody,
+  AmendmentAuthorsBody,
   AmendmentCapabilities,
   AmendmentDraftBody,
   AmendmentDto,
@@ -76,6 +77,10 @@ import type {
   VoteInput,
 } from "../../../shared/types/api";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
+import {
+  authorsChange,
+  formerMemberSeq,
+} from "../../../shared/utils/amendmentAuthors";
 import { reclassifyTarget } from "../../../shared/utils/amendmentReclassify";
 import {
   amendmentWindow,
@@ -119,7 +124,11 @@ import {
   shareLockAssembly,
 } from "./documents";
 import { recordEvent } from "./events";
-import { loadExecutiveMask, resolveBodyMembers } from "./executiveMembers";
+import {
+  loadExecutiveMask,
+  loadExecutiveMemberIds,
+  resolveAmendmentBodyMembers,
+} from "./executiveMembers";
 import { withHeadcount } from "./headcounts";
 import { assertOpImagesBelong } from "./documentImages";
 import {
@@ -475,7 +484,10 @@ export function requestedDraftAuthorIds(input: {
  * Authors a non-moderator may not add to a transactional: anyone but the
  * actor's member, its current authors and the members involved (the authors
  * of the amendments it replaces and the document's main presenter), as when
- * it is created.
+ * it is created. An executive area always passes (`executiveIds`), whoever
+ * asks: an account that does not see the areas names them by their real
+ * ids, and refusing the ones that are not involved would tell it which area
+ * presented what it groups.
  */
 export function unauthorizedTransactionalAuthors(
   nextAuthorIds: string[],
@@ -483,6 +495,7 @@ export function unauthorizedTransactionalAuthors(
     actorMemberId: string | null;
     currentAuthorIds: string[];
     partyMemberIds: (string | null)[];
+    executiveIds?: ReadonlySet<string>;
   },
 ): string[] {
   const allowed = new Set<string | null>([
@@ -490,7 +503,9 @@ export function unauthorizedTransactionalAuthors(
     ...input.currentAuthorIds,
     ...input.partyMemberIds,
   ]);
-  return nextAuthorIds.filter((id) => !allowed.has(id));
+  return nextAuthorIds.filter(
+    (id) => !allowed.has(id) && !input.executiveIds?.has(id),
+  );
 }
 
 export interface CapabilityInput {
@@ -1835,10 +1850,10 @@ export async function createAmendmentDraft(
     fail(403, "No tienes permiso para presentar enmiendas");
   }
   assertAmendable(ctx);
-  // An account that does not see the executive areas cannot add one as a
-  // co-author, and the generic "CEA" id is never a member (422
-  // `executive_member`).
-  const named = await resolveBodyMembers(actor, {
+  // An account that does not see the executive areas names them by their
+  // real ids (it reads their list only to compose this); the generic "CEA"
+  // id is never a member (422 `executive_author`).
+  const named = await resolveAmendmentBodyMembers(actor, {
     listed: body.authorMemberIds,
     named: body.mainAuthorMemberId,
     current: [],
@@ -1925,10 +1940,11 @@ export async function updateAmendmentDraft(
   assertAmendable(ctx);
 
   const currentAuthorIds = amendment.authors.map((author) => author.memberId);
-  // An account that does not see the executive areas neither adds nor
-  // removes one: the areas among the authors stay, and the generic "CEA" id
-  // only stands for them (422 `executive_member` otherwise).
-  const named = await resolveBodyMembers(actor, {
+  // For an account that does not see the executive areas the generic "CEA"
+  // id stands for the areas among the authors, all of them: they stay with
+  // it and go without it, and it adds others by their real ids
+  // (planAmendmentAuthors).
+  const named = await resolveAmendmentBodyMembers(actor, {
     listed: input.authorMemberIds,
     named: input.mainAuthorMemberId,
     current: currentAuthorIds,
@@ -1996,6 +2012,7 @@ export async function updateAmendmentDraft(
         ...involvedMemberIds(amendment),
         document.proponentMemberId,
       ],
+      executiveIds: await loadExecutiveMemberIds(),
     }).length > 0
   ) {
     fail(
@@ -2166,12 +2183,46 @@ async function nextNumber(tx: Tx, documentId: string): Promise<number> {
 /**
  * The next number of the member's amendments to the document. The executive
  * areas share one sequence ("CEA n"), whichever of them presents.
+ *
+ * A code an amendment gave up when the Secretaría corrected its main author
+ * (the `previousCode` of its `amendment_authors_changed` events) is never
+ * handed to another amendment: `retired.prefix` is the prefix of the
+ * sequence, and those numbers count as taken. Only the amendment that held
+ * one (`retired.returningAmendmentId`) gets it back, when a later
+ * correction returns it to that sequence.
  */
 async function nextMemberSeq(
   tx: Tx,
   documentId: string,
   member: { id: string; kind: MemberKind },
+  retired: { prefix: string; returningAmendmentId?: string },
 ): Promise<number> {
+  const former = await tx
+    .select({
+      amendmentId: events.entityId,
+      payload: events.payload,
+    })
+    .from(events)
+    .innerJoin(amendments, eq(amendments.id, events.entityId))
+    .where(
+      and(
+        eq(amendments.documentId, documentId),
+        eq(events.entityType, "amendment"),
+        eq(events.type, "amendment_authors_changed"),
+      ),
+    )
+    .orderBy(desc(events.createdAt));
+  let retiredMax = 0;
+  for (const event of former) {
+    const seq = formerMemberSeq(
+      (event.payload as { previousCode?: unknown }).previousCode,
+      retired.prefix,
+    );
+    if (seq === null) continue;
+    // Its own former code in this sequence, the latest one.
+    if (event.amendmentId === retired.returningAmendmentId) return seq;
+    retiredMax = Math.max(retiredMax, seq);
+  }
   const [row] = await tx
     .select({ value: sql<number>`coalesce(max(${amendments.memberSeq}), 0)` })
     .from(amendments)
@@ -2184,7 +2235,7 @@ async function nextMemberSeq(
           : sql`${amendments.meta}->>'presentingMemberId' = ${member.id}`,
       ),
     );
-  return Number(row?.value ?? 0) + 1;
+  return Math.max(Number(row?.value ?? 0), retiredMax) + 1;
 }
 
 export async function submitAmendment(
@@ -2296,7 +2347,10 @@ export async function submitAmendment(
       const number = kept.number ?? (await nextNumber(tx, document.id));
       const memberSeq =
         kept.memberSeq ??
-        (await nextMemberSeq(tx, document.id, presenting!.member));
+        (await nextMemberSeq(tx, document.id, presenting!.member, {
+          prefix,
+          returningAmendmentId: amendment.id,
+        }));
       const code = `${prefix} ${memberSeq}`;
       const late = submissionLate(amendment, isLateSubmission(ctx.window, now));
       // Never admitted here: the Secretaría validates it first (and admits
@@ -3133,6 +3187,159 @@ export async function reclassifyAmendment(
   return amendmentDto(ctx, amendment.id);
 }
 
+/**
+ * The Secretaría (amendment:review; the Mesa alone cannot) corrects who
+ * presents a presented, undecided amendment or transactional, in case it
+ * was presented wrong: the authors and the main author are replaced by the
+ * ones the body names (docs/api.md, "Correcting who presents an
+ * amendment").
+ * - Members added must be active; an executive area is named by its real
+ *   id (those who review amendments see the areas).
+ * - The number in the document stays. The code follows the main author as
+ *   when a corrected draft is presented again (numberingToKeep): kept while
+ *   its prefix is the same (also from one area to another, both "CEA n"),
+ *   otherwise the next of the new main author's sequence. A transactional
+ *   keeps its "T n".
+ * - The main author of an amendment is a party of the transactionals over
+ *   it, so it cannot change while one of them is still open (409). That
+ *   holds for a transactional too, which others may build on once it
+ *   replaced its parents.
+ * Optimistic lock on the amendment; the event carries the authors before
+ * and after, and the codes when the code changes.
+ */
+export async function changeAmendmentAuthors(
+  ctx: AmendmentContext,
+  body: AmendmentAuthorsBody,
+): Promise<AmendmentDto> {
+  const { actor, amendment, document } = ctx;
+  assertReviewer(actor);
+  if (amendment.status !== "submitted") {
+    fail(
+      409,
+      "Solo se puede cambiar quién presenta una enmienda presentada y sin decidir",
+    );
+  }
+  assertNotFinal(ctx);
+
+  const currentIds = amendment.authors.map((author) => author.memberId);
+  const currentMain = loadedMainAuthor(amendment);
+  // The generic "CEA" id is never a member (422 `executive_author`).
+  const named = await resolveAmendmentBodyMembers(actor, {
+    listed: body.authorMemberIds,
+    named: body.mainAuthorMemberId,
+    current: currentIds,
+    currentMain,
+  });
+  const nextIds = unique(named.listed);
+  const nextMain = mainAuthorOrFail(pickMainAuthor(nextIds, named.named))!;
+  const change = authorsChange({ currentIds, currentMain, nextIds, nextMain });
+  if (!change) fail(422, "Quienes la presentan ya son esos");
+  await assertMembers(change.added, true);
+
+  const transactional = amendment.kind === "transactional";
+  await db.transaction(async (tx) => {
+    // Exclusive: a new code takes the next number of a member's sequence.
+    await lockDocument(tx, document.id);
+    if (change.mainChanged) {
+      const [pending] = await tx
+        .select({ id: amendments.id })
+        .from(amendmentSources)
+        .innerJoin(
+          amendments,
+          eq(amendments.id, amendmentSources.transactionalId),
+        )
+        .where(
+          and(
+            eq(amendmentSources.sourceId, amendment.id),
+            inArray(amendments.status, ["draft", "submitted"]),
+          ),
+        )
+        .limit(1);
+      if (pending) {
+        fail(
+          409,
+          "Hay una transaccional pendiente sobre esta enmienda y su autor principal tiene que aceptarla. Ciérrala antes de cambiar el autor principal",
+        );
+      }
+    }
+
+    // Only a new main author moves the code: with the same one it stays as
+    // it was presented, also if the member's acronym changed since.
+    let numbering: { memberSeq: number; code: string } | null = null;
+    if (!transactional && change.mainChanged) {
+      const [main] = await tx
+        .select({
+          id: members.id,
+          acronym: members.acronym,
+          kind: members.kind,
+        })
+        .from(members)
+        .where(eq(members.id, nextMain));
+      const prefix = amendmentCodePrefix(main!);
+      const memberSeq =
+        numberingToKeep(amendment, prefix).memberSeq ??
+        (await nextMemberSeq(tx, document.id, main!, {
+          prefix,
+          returningAmendmentId: amendment.id,
+        }));
+      numbering = { memberSeq, code: `${prefix} ${memberSeq}` };
+    }
+    const codeChanged = numbering !== null && numbering.code !== amendment.code;
+
+    const updated = await tx
+      .update(amendments)
+      .set({
+        ...(numbering ?? {}),
+        meta: {
+          ...readMeta(amendment),
+          presentingMemberId: nextMain,
+        } as StoredAmendmentMeta,
+      })
+      .where(
+        and(
+          eq(amendments.id, amendment.id),
+          eq(amendments.status, "submitted"),
+          buildOptimisticLockCondition(amendments.updatedAt, body.updatedAt),
+        ),
+      )
+      .returning({ id: amendments.id });
+    if (updated.length === 0)
+      fail(409, "La enmienda ha cambiado. Recarga la página");
+
+    await tx
+      .delete(amendmentAuthors)
+      .where(eq(amendmentAuthors.amendmentId, amendment.id));
+    await tx
+      .insert(amendmentAuthors)
+      .values(
+        nextIds.map((memberId) => ({ amendmentId: amendment.id, memberId })),
+      );
+
+    await recordEvent(tx, {
+      assemblyId: ctx.assembly.id,
+      documentId: document.id,
+      entityType: "amendment",
+      entityId: amendment.id,
+      type: "amendment_authors_changed",
+      // Member ids only: readers mask the executive areas
+      // (redactPayloadMembers).
+      payload: {
+        from: {
+          authorMemberIds: [...currentIds].sort(),
+          mainAuthorId: currentMain,
+        },
+        to: { authorMemberIds: [...nextIds].sort(), mainAuthorId: nextMain },
+        ...(codeChanged
+          ? { code: numbering!.code, previousCode: amendment.code }
+          : {}),
+      },
+      actor,
+    });
+  });
+
+  return amendmentDto(ctx, amendment.id);
+}
+
 // Position -------------------------------------------------------------------
 
 /**
@@ -3794,9 +4001,9 @@ export async function createTransactionalAmendment(
   );
   // The parties come from the database, so proposing one over an area's
   // amendment needs nothing from the body. Its co-authors do: an account
-  // that does not see the executive areas cannot name one (422
-  // `executive_member`).
-  const named = await resolveBodyMembers(actor, {
+  // that does not see the executive areas names them by their real ids,
+  // never by the generic "CEA" one (422 `executive_author`).
+  const named = await resolveAmendmentBodyMembers(actor, {
     listed: body.authorMemberIds,
     named: body.mainAuthorMemberId,
     current: [],
@@ -3827,12 +4034,22 @@ export async function createTransactionalAmendment(
   } else {
     // Co-authors among those involved: the authors of what it groups and
     // the document's main presenter.
-    const involved = new Set([...sourceAuthorIds, document.proponentMemberId]);
+    // Any executive area may also be named: see
+    // unauthorizedTransactionalAuthors.
     authorIds = unique([
       ...(actor.memberId ? [actor.memberId] : []),
       ...(named.listed ?? []),
     ]);
-    if (authorIds.some((id) => id !== actor.memberId && !involved.has(id))) {
+    if (
+      unauthorizedTransactionalAuthors(authorIds, {
+        actorMemberId: actor.memberId,
+        currentAuthorIds: [],
+        partyMemberIds: [...sourceAuthorIds, document.proponentMemberId],
+        executiveIds: named.listed?.length
+          ? await loadExecutiveMemberIds()
+          : undefined,
+      }).length > 0
+    ) {
       fail(
         403,
         "Solo las partes de la transaccional pueden figurar como autoras",
@@ -3842,10 +4059,8 @@ export async function createTransactionalAmendment(
   await assertMembers(authorIds, false);
   const mainAuthorId = mainAuthorOrFail(pickMainAuthor(authorIds, named.named));
 
-  const parties = buildAcceptanceParties(
-    sources.map(loadedMainAuthor),
-    actor.memberId,
-  );
+  const sourceMainAuthors = sources.map(loadedMainAuthor);
+  const parties = buildAcceptanceParties(sourceMainAuthors, actor.memberId);
   const allAccepted = parties.every((party) => party.accepted);
   const submit = body.submit ?? true;
   // Proposed by the Mesa in session: validated, admitted and published at
@@ -3870,6 +4085,31 @@ export async function createTransactionalAmendment(
       competitors.ids,
       true,
     );
+    // The parties are the main authors read before the lock; the Secretaría
+    // may have corrected one since (changeAmendmentAuthors, which takes the
+    // same lock and would not have seen this transactional).
+    const lockedMainAuthors = new Map(
+      (
+        await findAmendments(
+          tx,
+          and(
+            eq(amendments.documentId, document.id),
+            inArray(amendments.id, body.sourceIds),
+          ),
+        )
+      ).map((source) => [source.id, loadedMainAuthor(source)]),
+    );
+    if (
+      sources.some(
+        (source, index) =>
+          lockedMainAuthors.get(source.id) !== sourceMainAuthors[index],
+      )
+    ) {
+      fail(
+        409,
+        "Ha cambiado quién presenta alguna de las enmiendas. Recarga la página",
+      );
+    }
     const { ops, errors } = prepareAmendmentOps({
       kind: "transactional",
       ops: body.ops,

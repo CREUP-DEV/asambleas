@@ -63,11 +63,18 @@ export const memberUpdateBodySchema = z.object({
   updatedAt: z.iso.datetime({ offset: true }),
 });
 
+/**
+ * `for=amendment`: the list an amendment or transactional composer offers
+ * as authors, with the real executive areas (MEMBER_LIST_FOR_AMENDMENT).
+ */
+export const MEMBER_LIST_FOR_AMENDMENT = "amendment";
+
 export const memberListQuerySchema = z.object({
   all: z
     .enum(["1", "0", "true", "false"])
     .optional()
     .transform((value) => value === "1" || value === "true"),
+  for: z.literal(MEMBER_LIST_FOR_AMENDMENT).optional(),
 });
 
 export type MemberCreateBody = z.input<typeof memberCreateBodySchema>;

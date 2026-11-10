@@ -78,6 +78,56 @@ const documentsByItem = computed(() => {
 
 const manage = computed(() => Boolean(assembly.value?.can.manage));
 const agendaFinal = computed(() => Boolean(assembly.value?.agendaFinalizedAt));
+
+interface MoreItem {
+  label: string;
+  icon: string;
+  to?: string;
+  onSelect?: () => void;
+}
+const finalAction = useTemplateRef<{ ask: (final: boolean) => void }>(
+  "finalAction",
+);
+/**
+ * What the header keeps out of its first plane: the convocation and, for
+ * managers, marking the agenda as final or reopening it. An empty agenda is
+ * not marked as final, but a final one that lost its items can be reopened.
+ */
+const moreItems = computed<MoreItem[]>(() => {
+  const list: MoreItem[] = [];
+  if (!organizing.value) {
+    list.push({
+      label: t("agenda.seeConvocation"),
+      icon: "i-lucide-scroll-text",
+      to: sectionPath("convocatoria"),
+    });
+  }
+  if (manage.value && (tree.value.length > 0 || agendaFinal.value)) {
+    list.push(
+      agendaFinal.value
+        ? {
+            label: t("agenda.finalAgenda.reopen"),
+            icon: "i-lucide-lock-open",
+            onSelect: () => finalAction.value?.ask(false),
+          }
+        : {
+            label: t("agenda.finalAgenda.mark"),
+            icon: "i-lucide-lock",
+            onSelect: () => finalAction.value?.ask(true),
+          },
+    );
+  }
+  return list;
+});
+/** A lone entry as a button of its own. */
+function moreButton(item: MoreItem) {
+  return {
+    label: item.label,
+    icon: item.icon,
+    to: item.to,
+    onClick: item.onSelect,
+  };
+}
 const canCreateDocument = computed(() =>
   me.can(PERMISSION_KEYS.DOCUMENT_MANAGE),
 );
@@ -572,22 +622,11 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
           @click="addDocument.openFor(null)"
         />
         <UButton
-          v-if="!organizing"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-scroll-text"
-          :label="t('agenda.seeConvocation')"
-          :to="sectionPath('convocatoria')"
-        />
-        <UButton
           v-if="manage && organizing"
           icon="i-lucide-plus"
           :label="t('agenda.addItem')"
           @click="openCreate(null)"
         />
-        <!-- An empty agenda is not marked as final, but a final one that
-             lost its items can still be reopened -->
-        <AgendaFinalAction v-if="tree.length > 0 || agendaFinal" />
         <UButton
           v-if="canOrganize && tree.length > 0"
           :color="organizing ? 'primary' : 'neutral'"
@@ -598,6 +637,28 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
           "
           @click="toggleOrganizing"
         />
+        <!-- The rest, out of the first plane: one entry shows as itself,
+             several fold into "Más". -->
+        <UButton
+          v-if="moreItems.length === 1 && moreItems[0]"
+          color="neutral"
+          variant="outline"
+          v-bind="moreButton(moreItems[0])"
+        />
+        <UDropdownMenu
+          v-else-if="moreItems.length > 1"
+          :items="moreItems"
+          :content="{ align: 'end' }"
+        >
+          <UButton
+            icon="i-lucide-ellipsis"
+            trailing-icon="i-lucide-chevron-down"
+            color="neutral"
+            variant="outline"
+            :label="t('agenda.more')"
+          />
+        </UDropdownMenu>
+        <AgendaFinalAction ref="finalAction" as="menu" />
       </div>
     </div>
 

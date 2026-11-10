@@ -80,6 +80,7 @@ import {
   formatAssemblyLabel,
   parseAssemblySlug,
 } from "~~/shared/utils/slug";
+import { deletedTitleWithheld } from "~~/shared/utils/agendaSubmissions";
 import {
   endImpersonations,
   toImpersonationDto,
@@ -951,6 +952,9 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   amendment_withdrawn: ["by", "sourceCode", "sourceStatus"],
   amendment_correction_requested: ["note"],
   amendment_reclassified: ["from", "to"],
+  // The authors before and after stay with Admins and with the amendment's
+  // own history, which masks the executive areas.
+  amendment_authors_changed: ["code", "previousCode"],
   amendment_validated: ["publish", "admission", "method"],
   amendment_published: [],
   amendment_admitted: ["method", "voteResult", "validated"],
@@ -1234,6 +1238,8 @@ export interface DeletedInfo {
   userIds: string[];
   /** Its title or code, when an event kept it. */
   label: string | null;
+  /** A document everyone could see when it was deleted (its last status). */
+  wasPublic: boolean;
 }
 
 /** What a page of rows names, loaded in batch. */
@@ -1325,7 +1331,7 @@ export function collectActivityIds(rows: RawActivityRow[]): ActivityIds {
           break;
         case "agenda_item": {
           ids.agendaItems.add(row.targetId);
-          // An automatic sub-item is seen with its document.
+          // An item that carries a document's title is seen with it.
           const documentId = autoItemDocumentId(payload);
           if (documentId) ids.documents.add(documentId);
           break;
@@ -1576,8 +1582,13 @@ async function loadDeletedInfo(
       memberIds: [],
       userIds: [],
       label: null,
+      wasPublic: false,
     };
     const payload = row.payload ?? {};
+    if (row.type === "document_deleted") {
+      const status = text(payload.status);
+      entry.wasPublic = status !== null && !deletedTitleWithheld(status);
+    }
     const insiders = insidersOfPayload(payload);
     entry.memberIds.push(...insiders.memberIds);
     entry.userIds.push(...insiders.userIds);
@@ -1705,11 +1716,13 @@ interface TargetView {
 }
 
 /**
- * The document behind an event of an automatic agenda sub-item (`auto` in
- * its payload, written by bindAutoItem and the other agenda writers).
+ * The document behind an event of an agenda item that carries a document's
+ * title: an automatic sub-item, or one that stayed after its document moved
+ * away (titleDocumentPayload and the other agenda writers put its
+ * `documentId` in the payload).
  */
 function autoItemDocumentId(payload: Record<string, unknown>): string | null {
-  return payload.auto === true ? text(payload.documentId) : null;
+  return text(payload.documentId);
 }
 
 function assemblyRef(assembly: AssemblyInfo) {
@@ -1833,22 +1846,31 @@ function eventTarget(
     case "agenda_item": {
       const label =
         lookups.agendaItems.get(row.targetId) ?? text(payload.title);
-      // An automatic sub-item carries the title of its document (a draft's
-      // is its presenters'): its events show to those who see the document.
+      // An automatic sub-item, or one kept after its document moved away,
+      // carries the title of that document (a draft's is its presenters'):
+      // its events show to those who see the document. Once the document
+      // is deleted they show to everyone if it was public by then, as the
+      // item itself does; otherwise to those who could see it. A title
+      // withheld since then is the document managers'.
       const documentId = autoItemDocumentId(payload);
-      if (!actor || !documentId) return { ...base, visible: true, label };
+      if (!actor) return { ...base, visible: true, label };
+      if (!documentId) {
+        return {
+          ...base,
+          label,
+          visible: payload.titleWithheld !== true || canManageDocuments(actor),
+        };
+      }
       const document = lookups.documents.get(documentId);
+      const deleted = lookups.deleted.get(`document:${documentId}`);
       return {
         ...base,
         label,
         visible: document
           ? canSeeDocument(actor, document)
-          : canManageDocuments(actor) ||
-            isDeletedInsider(
-              actor,
-              lookups.deleted.get(`document:${documentId}`),
-              {},
-            ),
+          : deleted?.wasPublic === true ||
+            canManageDocuments(actor) ||
+            isDeletedInsider(actor, deleted, {}),
       };
     }
     case "document": {

@@ -1229,6 +1229,7 @@ describe("toMeActivityItem", () => {
       memberIds: [MEMBER],
       userIds: [],
       label: "Informe",
+      wasPublic: false,
     });
     const deletion = {
       action: "document_deleted",
@@ -1379,6 +1380,7 @@ describe("toAdminActivityItem", () => {
       memberIds: [],
       userIds: [],
       label: "CEUA 9",
+      wasPublic: false,
     });
     const item = toAdminActivityItem(
       row({
@@ -1454,9 +1456,82 @@ describe("automatic agenda sub-items", () => {
         targetType: "agenda_item",
         targetId: "item",
         actorUserId: OTHER,
-        payload: { title: "Informes", documentId: "draftdoc" },
+        payload: { title: "Informes" },
       })?.target.available,
     ).toBe(true);
+  });
+
+  it("keep hiding one that stayed after its document moved away", () => {
+    // No longer automatic, but it may still carry the draft's title.
+    const renamed = (documentId: string) => ({
+      action: "agenda_item_updated",
+      targetType: "agenda_item",
+      targetId: "item",
+      actorUserId: OTHER,
+      payload: {
+        changes: { description: { from: null, to: "Notas" } },
+        documentId,
+      },
+    });
+    const viewer = makeActor({ memberId: MEMBER });
+    expect(meItem(viewer, "member", renamed("draftdoc"))).toBeNull();
+    // Once the document is published everyone sees its events.
+    expect(meItem(viewer, "member", renamed("doc"))?.target.available).toBe(
+      true,
+    );
+    const presenter = makeActor({ memberId: OTHER_MEMBER });
+    const item = meItem(presenter, "member", renamed("draftdoc"))!;
+    expect(item.target.available).toBe(true);
+    expect(item.payload).not.toHaveProperty("documentId");
+  });
+
+  it("follow the document's last status once it is deleted", () => {
+    const moved = {
+      action: "agenda_item_updated",
+      targetType: "agenda_item",
+      targetId: "item",
+      actorUserId: OTHER,
+      payload: { changes: {}, documentId: "gone" },
+    };
+    const viewer = makeActor({ memberId: MEMBER });
+    const draft = lookups();
+    draft.deleted.set("document:gone", {
+      memberIds: [OTHER_MEMBER],
+      userIds: [],
+      label: "Borrador",
+      wasPublic: false,
+    });
+    expect(meItem(viewer, "member", moved, draft)).toBeNull();
+    const published = lookups();
+    published.deleted.set("document:gone", {
+      memberIds: [OTHER_MEMBER],
+      userIds: [],
+      label: "Informe",
+      wasPublic: true,
+    });
+    expect(meItem(viewer, "member", moved, published)?.target.available).toBe(
+      true,
+    );
+  });
+
+  it("keep a withheld title for document managers", () => {
+    const renamed = {
+      action: "agenda_item_updated",
+      targetType: "agenda_item",
+      targetId: "item",
+      actorUserId: OTHER,
+      payload: {
+        changes: { title: { from: "Borrador", to: "Varios" } },
+        titleWithheld: true,
+      },
+    };
+    expect(
+      meItem(makeActor({ memberId: MEMBER }), "member", renamed),
+    ).toBeNull();
+    const manager = makeActor({
+      permissions: [PERMISSION_KEYS.DOCUMENT_MANAGE],
+    });
+    expect(meItem(manager, "member", renamed)?.target.available).toBe(true);
   });
 
   it("load the document their events name", () => {

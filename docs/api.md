@@ -49,69 +49,118 @@ The usual AGENTS.md handler order applies:
 
 ## Members and me
 
-| Method | Path                                | Who                       | Notes                                                                                                                                         |
-| ------ | ----------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/me`                           | any                       | `MeDto`. `permissions` are the role's plus the user's own grants (see "Permissions" below).                                                   |
-| GET    | `/api/me/work`                      | any                       | `MeWorkDto`, see "Review and work" below.                                                                                                     |
-| POST   | `/api/me/onboarding`                | any, never impersonating  | No body. Marks the welcome as seen. Returns `MeOnboardingResult`. See "Welcome" below.                                                        |
-| GET    | `/api/members`                      | any                       | `MemberDto[]`, active first, by acronym. `?all=1` also returns inactive members. One generic entry instead of the executive areas, see below. |
-| POST   | `/api/members`                      | `member:manage`           | Creates a member manually, typically an executive area.                                                                                       |
-| PUT    | `/api/members/[id]`                 | `member:manage`           | Edits name, kind or active, with `updatedAt`.                                                                                                 |
-| POST   | `/api/members/sync`                 | `member:manage`           | Optional body `MemberSyncBody`. Syncs the intranet roster. Returns `MemberSyncResult`; 409 when it needs confirmation, see "Roster sync".     |
-| GET    | `/api/admin/users`                  | `user:manage_roles`       | Paginated `AdminUserDto` rows, each with `member`, `extraPermissions` and its access state. See "Users list".                                 |
-| PUT    | `/api/admin/users/[id]/role`        | `user:manage_roles`       | Body `{ roleId }`. Only an Admin gives or takes Admin, Secretaría or Presidencia.                                                             |
-| PUT    | `/api/admin/users/[id]/member`      | `user:manage_roles`       | Body `{ memberId: string \| null }`. Links an account to a member, see below.                                                                 |
-| PUT    | `/api/admin/users/[id]/permissions` | `user:manage_roles`       | Body `{ permissions: PermissionKey[] }`. Sets the user's own grants, see "Permissions".                                                       |
-| GET    | `/api/admin/roles`                  | see notes                 | The roles. `user:manage_roles` or `role:manage_permissions`.                                                                                  |
-| GET    | `/api/admin/roles/[id]/permissions` | see notes                 | What a role grants. `user:manage_roles` or `role:manage_permissions`.                                                                         |
-| PUT    | `/api/admin/roles/[id]/permissions` | `role:manage_permissions` | Body `{ permissionKeys }`. Not on the Admin role, see "Admin section".                                                                        |
-| GET    | `/api/admin/permissions`            | see notes                 | The permission catalog. `user:manage_roles` or `role:manage_permissions`.                                                                     |
+| Method | Path                                | Who                       | Notes                                                                                                                                                                         |
+| ------ | ----------------------------------- | ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/me`                           | any                       | `MeDto`. `permissions` are the role's plus the user's own grants (see "Permissions" below).                                                                                   |
+| GET    | `/api/me/work`                      | any                       | `MeWorkDto`, see "Review and work" below.                                                                                                                                     |
+| POST   | `/api/me/onboarding`                | any, never impersonating  | No body. Marks the welcome as seen. Returns `MeOnboardingResult`. See "Welcome" below.                                                                                        |
+| GET    | `/api/members`                      | any                       | `MemberDto[]`, active first, by acronym. `?all=1` also returns inactive members. One generic entry instead of the executive offices, except with `?for=amendment`; see below. |
+| POST   | `/api/members`                      | `member:manage`           | Creates a member manually, typically an executive office.                                                                                                                     |
+| PUT    | `/api/members/[id]`                 | `member:manage`           | Edits name, kind or active, with `updatedAt`.                                                                                                                                 |
+| POST   | `/api/members/sync`                 | `member:manage`           | Optional body `MemberSyncBody`. Syncs the intranet roster. Returns `MemberSyncResult`; 409 when it needs confirmation, see "Roster sync".                                     |
+| GET    | `/api/admin/users`                  | `user:manage_roles`       | Paginated `AdminUserDto` rows, each with `member`, `extraPermissions` and its access state. See "Users list".                                                                 |
+| PUT    | `/api/admin/users/[id]/role`        | `user:manage_roles`       | Body `{ roleId }`. Only an Admin gives or takes Admin, Secretaría or Presidencia.                                                                                             |
+| PUT    | `/api/admin/users/[id]/member`      | `user:manage_roles`       | Body `{ memberId: string \| null }`. Links an account to a member, see below.                                                                                                 |
+| PUT    | `/api/admin/users/[id]/permissions` | `user:manage_roles`       | Body `{ permissions: PermissionKey[] }`. Sets the user's own grants, see "Permissions".                                                                                       |
+| GET    | `/api/admin/roles`                  | see notes                 | The roles. `user:manage_roles` or `role:manage_permissions`.                                                                                                                  |
+| GET    | `/api/admin/roles/[id]/permissions` | see notes                 | What a role grants. `user:manage_roles` or `role:manage_permissions`.                                                                                                         |
+| PUT    | `/api/admin/roles/[id]/permissions` | `role:manage_permissions` | Body `{ permissionKeys }`. Not on the Admin role, see "Admin section".                                                                                                        |
+| GET    | `/api/admin/permissions`            | see notes                 | The permission catalog. `user:manage_roles` or `role:manage_permissions`.                                                                                                     |
 
-**Executive areas (`MemberRef`).** Wherever an answer carries a member
+**Executive offices (`MemberRef`).** Wherever an answer carries a member
 (`MemberRef`, `MemberDto`, a bare member id such as `mainAuthorId` or the
-ids in an event payload), an executive area is itself only for the accounts
-that see the areas: Admin, Secretaría, Presidencia, Moderador and CEA, the
+ids in an event payload), an executive office is itself only for the accounts
+that see the offices: Admin, Secretaría, Presidencia, Moderador and CEA, the
 holders of `document:manage`, `amendment:review`, `amendment:manage`,
 `assembly:manage`, `session:moderate`, `member:manage` or
-`user:manage_roles`, and the accounts that act for an area. Everyone else
+`user:manage_roles`, and the accounts that act for an office. Everyone else
 gets the generic presenter
 `{ id: GENERIC_EXECUTIVE_MEMBER_ID, acronym: "CEA", name: "Comisión Ejecutiva Ampliada", kind: "executive" }`
 (`shared/constants/domain.ts`) instead, once per list:
 
 - documents: `proponent` and `coProponents` (not repeated among the
-  co-presenters when the main presenter is an area);
-- amendments: `authors`, `mainAuthorId` and `acceptances` (the areas answer
+  co-presenters when the main presenter is an office);
+- amendments: `authors`, `mainAuthorId` and `acceptances` (the offices answer
   as one party: rejected if any did, pending while any is);
 - both histories: `actorMember`, and `actorName` is null when the member
-  acted for is an area; member ids in `payload` become the generic id;
+  acted for is an office; member ids in `payload` become the generic id;
 - `/api/me/work`: `acceptances[].proposedBy`, `news[].by` and every document
   and amendment in it;
 - `/api/me/activity`: `actor.member`, and `actor.id` and `actor.name` are
   the generic id and name unless the act is the account's own; member ids
-  in `payload`; a member target that is an area has the generic id, the
+  in `payload`; a member target that is an office has the generic id, the
   label `CEA` and an empty payload;
-- speaking turns: `member`, and `speaker` is null for an area's turn;
-- `GET /api/members`: one generic `MemberDto` instead of all the areas
-  (`active` while any area is; it cannot be edited), placed where "CEA"
+- speaking turns: `member`, and `speaker` is null for an office's turn;
+- `GET /api/members`: one generic `MemberDto` instead of all the offices
+  (`active` while any office is; it cannot be edited), placed where "CEA"
   sorts, as among the co-presenters of a document;
-- PDF exports name the area as `CEA`, according to who requested them.
+- PDF exports name the office as `CEA`, according to who requested them.
 
-`MeDto.member` is always the account's real member. The generic id is not a
-member. In a body (`proponentMemberId`, `coProponentMemberIds`,
-`authorMemberIds`, `mainAuthorMemberId`) the rule is:
+The one exception is `GET /api/members?for=amendment`
+(`MEMBER_LIST_FOR_AMENDMENT`), the list the composers of amendments and
+transactionals offer as authors, and nothing else uses: an account that
+presents amendments for a member (`amendment:create` and a member,
+`canNameExecutiveAuthors`) gets the active members with the real offices,
+acronym and name, so it can present one together with them. It carries
+members only, never who acts for an office, and `all` is ignored. Any other
+account gets the usual list. What that account reads afterwards, its own
+draft included, is the generic presenter again.
 
-- an account that does not see the areas cannot add one, by its real id or
+`MeDto.member` is always the account's real member, and
+`MeDto.seesExecutiveMembers` says whether the account reads the offices as
+they are (`canSeeExecutiveMembers`). The generic id is not a
+member. In the body of a document (`proponentMemberId`,
+`coProponentMemberIds`; `resolveBodyMembers`) the rule is:
+
+- an account that does not see the offices cannot add one, by its real id or
   by the generic one: 422 with `data: { reason: "executive_member" }`
   (`EXECUTIVE_MEMBER_REFUSED_REASON`). It cannot remove one either: the
-  areas already on the document or amendment stay whatever its list says.
+  offices already on the document stay whatever its list says.
+  A real office id gets that 422 whether or not the office is on the
+  document, so the answer never tells which office stands behind the
+  generic presenter (such an account may know the ids from
+  `?for=amendment`).
   The generic id is accepted only as a stand-in for them (in a list), or
-  for the area that is main presenter or main author, or the only area
-  there (as the main one); otherwise 422 `executive_member`. As the main
-  one with several areas there and none of them in that place, it cannot
-  say which: 422 with `data: { reason: "executive_main" }`
+  for the office that is main presenter, or the only office there (as the main
+  one); otherwise 422 `executive_member`. As the main one with several
+  offices there and none of them in that place, it cannot say which: 422
+  with `data: { reason: "executive_main" }`
   (`EXECUTIVE_MAIN_REFUSED_REASON`), since nothing was added;
-- an account that sees the areas names them by their real ids; the generic
+- an account that sees the offices names them by their real ids; the generic
   id gets the same 422.
+
+The CEA presents amendments and transactionals too, and any member may
+present one with it, so in the body of an amendment or a transactional
+(`authorMemberIds`, `mainAuthorMemberId`; `resolveAmendmentBodyMembers`)
+an account that does not see the offices names any office by its real id, as a
+co-author or as the main author, taken from `GET /api/members?for=amendment`:
+
+- the answer shows them as the generic presenter, so when that account
+  edits its draft again it cannot tell which offices are there. The generic
+  id in `authorMemberIds` stands for all of them: sent back they stay,
+  left out they all go (the ones the list names by their real id stay),
+  and others are added next to it by their real ids. With no office on the
+  draft, and on a create, the generic id is 422 with
+  `data: { reason: "executive_author" }`
+  (`EXECUTIVE_AUTHOR_REFUSED_REASON`);
+- a real office id as `mainAuthorMemberId` is taken only when the same body
+  lists it in `authorMemberIds`; otherwise 422 with
+  `data: { reason: "executive_author_main" }`
+  (`EXECUTIVE_AUTHOR_MAIN_REFUSED_REASON`), whether or not that office is
+  already an author;
+- the generic id as `mainAuthorMemberId` means one of the offices that stay
+  behind the generic entry: the one that is the main author now, otherwise
+  the first of them (several are no error); with none behind it, the first
+  office the list names, and with none at all 422 `executive_author`;
+- no answer depends on which offices the amendment already has, only on how
+  the body names them: that account knows every real id, so a different
+  answer for the office that is there would tell which one it is;
+- an account that sees the offices names them by their real ids; the generic
+  id gets 422 `executive_author`;
+- a member that proposes a transactional may name any office as a co-author,
+  party or not (the other co-authors must be parties);
+- once presented, whoever reviews amendments corrects who presents it (see
+  "Correcting who presents an amendment").
 
 **Intranet.** Every call to the intranet API (role sync, `POST /user/role`,
 and the roster sync, `GET /usuarios/asociados` and `/usuarios/sectoriales`)
@@ -261,7 +310,7 @@ links `users.memberId`:
   as an intranet member with the account's id, and the next roster sync
   fills it in.
 - `CEA` accounts (role shown as "Comisión Ejecutiva Ampliada (CEA)") act for
-  their executive area (shown as "Área de la CEA"). A missing area is created as a
+  their executive office (shown as "Cargo de la CEA"). A missing office is created as a
   manual `executive` member named after its acronym (the intranet name may be
   the person's), so the roster sync never deactivates it; an admin renames
   it. CEA accounts link by initials only, since their intranet id is a
@@ -271,7 +320,7 @@ links `users.memberId`:
 - A CEA account that already acts for a member keeps it while its intranet
   initials stay the same, so a link an admin set by hand is not undone at
   the next sign-in. When the initials change (the cargo moved to another
-  area), it is linked again by them. Asociado and Sectorial accounts always
+  office), it is linked again by them. Asociado and Sectorial accounts always
   follow their id or their initials.
 - An account stops acting for its member (`memberId` becomes null, in the
   same transaction as the role change) when it has a synced role (`Invitado`,
@@ -290,7 +339,7 @@ Whoever holds `user:manage_roles` links an account by hand with
 `PUT /api/admin/users/[id]/member` (only an Admin its own account, 403
 otherwise, see "Admin section"):
 when its initials are missing, or when a CEA account's initials are the
-person's rather than the area's (the sync then created an `executive` member
+person's rather than the office's (the sync then created an `executive` member
 named after them, which the admin can deactivate). The member must exist
 (404) and be active (422); `null` unlinks it. The change is written to the
 audit log (`user.member_link`). It returns the user row as
@@ -351,7 +400,7 @@ asociados with a vote, "at least" or, with `strict`, "more than";
 
 | Method | Path                                                 | Who               | Notes                                                                                                                                                                                                                                                                    |
 | ------ | ---------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| GET    | `/api/assemblies/[assembly]/agenda`                  | visible           | `AgendaDto`: flat items plus the documents the actor can see. Automatic sub-items of documents the actor cannot see are left out.                                                                                                                                        |
+| GET    | `/api/assemblies/[assembly]/agenda`                  | visible           | `AgendaDto`: flat items plus the documents the actor can see. Items that carry the title of a document the actor cannot see are left out, or sent with `titleHidden` (see "Automatic sub-items").                                                                        |
 | POST   | `/api/assemblies/[assembly]/agenda`                  | `assembly:manage` | `AgendaItemBody` (`title`, `parentId`, `description`, `acceptsSubmissions`, `submissionKinds`, `confirmFinal`). Returns `AgendaItemDto`.                                                                                                                                 |
 | PUT    | `/api/assemblies/[assembly]/agenda/[item]`           | `assembly:manage` | `AgendaItemBody` with `updatedAt`. Returns `AgendaItemDto`. A new title on an automatic sub-item sets `titleCustom`.                                                                                                                                                     |
 | DELETE | `/api/assemblies/[assembly]/agenda/[item]`           | `assembly:manage` | Deletes the item with its sub-items and every document under them. 409 `agenda_item_amendments` while any of those documents has an amendment of any status; 409 `agenda_item_live` during the session while one of them is being debated. See "Deleting an item" below. |
@@ -398,7 +447,14 @@ true` and `generatedForDocumentId`. The sub-item:
   `titleCustom`); from then on it keeps its own;
 - is deleted when its document is deleted or moved to another item, unless it
   holds another document or a sub-item by then; kept that way after a move,
-  it becomes an ordinary item (`auto` false, `generatedForDocumentId` null).
+  it becomes an ordinary item (`auto` false, `generatedForDocumentId` null):
+  its title no longer follows the document's, it takes other documents and
+  it never goes with the document. It may still carry the document's title,
+  so the server remembers the document (`agenda_items.hiddenWithDocumentId`,
+  not in the DTO) and keeps hiding the item as below until the document is
+  published, the document is deleted or a manager gives the item a new
+  title. An item a manager had already renamed (`titleCustom`) carries the
+  manager's title, so it keeps no link and everyone reads it at once.
   Moving the document to the item its sub-item hangs from changes nothing,
   whatever the sub-item holds. The session keeps going on its parent (the
   projection and the open speaking turns move there);
@@ -412,13 +468,37 @@ true` and `generatedForDocumentId`. The sub-item:
 - is left out of `AgendaDto.items` for a viewer who cannot see its document
   (another member's draft), since it carries that document's title, unless
   it holds a document the viewer sees or a sub-item (`visibleAgendaItems`).
-  The assembly export leaves out those of unpublished documents. Numbering
-  computed from the items can therefore differ between viewers until the
-  documents are published.
+  Kept for that reason, it is sent without its title: `title` is empty and
+  `titleHidden` true (`hiddenTitleItemIds`), and clients show a neutral
+  label ("Punto de un documento sin publicar"). A masked item also comes without `description` and
+  `generatedForDocumentId`. The same goes for the item
+  kept after its document moved away, and for one whose document was
+  deleted before it was public (a draft, or one under review): the delete
+  marks the items that carried its title and stay as withheld
+  (`agenda_items.titleWithheld`, never one with `titleCustom`), and only
+  document managers read their title and description until one of them
+  gives the item a new title. PUT `[item]` answers with the same mask: an
+  account with `assembly:manage` that may not read the title (no
+  `document:manage`, not a presenter) changes the rest of the item, and
+  what it sends as title and description is ignored. The assembly export
+  does the same with the items of documents that are not public (a
+  postponed one is public, as in the platform, though it is not printed)
+  and with withheld titles, for every requester, and a
+  document's export never prints such a title of the item it hangs from.
+  Numbering computed from the items can therefore differ between viewers
+  until the documents are published.
 
 Its events are `agenda_item_created`, `agenda_item_updated` (the title
 following the document) and `agenda_item_deleted`, each with `auto: true` and
 the `documentId`; the activity shows them to those who can see that document.
+The later events of an item kept after its document moved away (a manager's
+PUT, its delete) carry the `documentId` without `auto`, are shown the same
+way, and the delete of an item above it leaves it out of `deletedItems`.
+Once the document is deleted, the events that name it are shown to everyone
+if it was public by then (the `status` of its `document_deleted`), and
+otherwise to document managers and those who could see it. The events of an
+item whose title is withheld carry `titleWithheld: true` and are the document
+managers'.
 
 **Deleting an item.** DELETE removes the item, its sub-items and every
 document under them, in one transaction. Only amendments keep it: while any
@@ -693,6 +773,7 @@ All paths are under `/api/assemblies/[assembly]/documents/[document]/amendments`
 | POST   | `/publish`                | `amendment:review`                                   | `PublishAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                               |
 | POST   | `/[amendment]/correction` | `amendment:review`                                   | `CorrectionBody`. See validation below. Returns `AmendmentDto`.                                               |
 | POST   | `/[amendment]/reclassify` | `amendment:review`                                   | `ReclassifyBody`. See reclassifying below. Returns `AmendmentDto`.                                            |
+| POST   | `/[amendment]/authors`    | `amendment:review`                                   | `AmendmentAuthorsBody`. See correcting who presents an amendment below. Returns `AmendmentDto`.               |
 | POST   | `/admission`              | `amendment:review` or moderator                      | See admission rules below.                                                                                    |
 | PUT    | `/[amendment]/position`   | main presenter or moderator                          | `PositionBody`. See the main presenter's answer below.                                                        |
 | POST   | `/[amendment]/outcome`    | moderator                                            | See outcome rules below.                                                                                      |
@@ -724,7 +805,7 @@ All paths are under `/api/assemblies/[assembly]/documents/[document]/amendments`
 **Main author.** An amendment with co-authors has a main author
 (`AmendmentDto.mainAuthorId`, listed first in `authors`), stored as the
 presenting member: it drives the code (`CEUM 4`, or `CEA 4` for any
-executive area) and alone answers the
+executive office) and alone answers the
 transactionals proposed over the amendment. With a single author it is that
 author; a transactional the Mesa drafts for nobody has none (null).
 
@@ -773,9 +854,9 @@ author; a transactional the Mesa drafts for nobody has none (null).
   keeps its `number`, and its `memberSeq` while the same member presents it,
   so numbering has no gaps. Deleting such a draft leaves its number unused.
 - It sets `code` to `"{ACRONYM} {memberSeq}"`. When the main author is an
-  executive area the code is `"CEA {memberSeq}"` for everyone, and
-  `memberSeq` counts the amendments of all the areas to the document
-  together (`amendmentCodePrefix`), so the code never names the area.
+  executive office the code is `"CEA {memberSeq}"` for everyone, and
+  `memberSeq` counts the amendments of all the offices to the document
+  together (`amendmentCodePrefix`), so the code never names the office.
 - It never admits: `admission` stays `pending` and `validatedAt` and
   `publishedAt` stay null until the Secretaría validates it (see below).
 - It creates the `amendment_positions` row as `pending`.
@@ -828,6 +909,36 @@ admission }`, `publish` being what happened to that amendment, plus
   the amendment changes. Records `amendment_reclassified`
   (`{ from, to }`), shown in the amendment's history and in its authors'
   news.
+- Correcting who presents an amendment: `POST .../[amendment]/authors`
+  (`amendment:review` or `amendment:manage`; `session:moderate` alone
+  answers 403. `AmendmentAuthorsBody`: `authorMemberIds`, at least one,
+  `mainAuthorMemberId`, one of them, and the amendment's `updatedAt` for
+  the optimistic lock) replaces the authors and the main author of a
+  `submitted` amendment or transactional, in case it was presented wrong
+  (`changeAmendmentAuthors`). A draft is its authors' to edit; a draft, a
+  decided amendment and a voted document return 409, and a body that
+  changes nothing 422. Members added must be active; offices are named by
+  their real ids (reviewers see them). The number in the document stays.
+  The code follows the main author as when a corrected draft is presented
+  again (`numberingToKeep`): kept while its prefix is the same, also from
+  one office to another (both `CEA n`), otherwise the next of the new main
+  author's sequence. The code only moves when the main author changes. A
+  code given up this way is never handed to another amendment (the
+  `previousCode` of these events counts as taken in its sequence,
+  `nextMemberSeq`); only the same amendment gets it back if a later
+  correction returns it to that sequence. A transactional
+  keeps its `T n`. The main author is a party of the transactionals over
+  the amendment (or over the transactional, once it replaced its parents),
+  so it cannot change while one of them is a draft or presented (409); its
+  co-authors can. Proposing a transactional re-checks the main authors of
+  its parents under the document lock (409 if one changed meanwhile).
+  Records
+  `amendment_authors_changed`
+  (`{ from: { authorMemberIds, mainAuthorId }, to: { ... }, code?, previousCode? }`,
+  the codes only when the code changes), shown in the amendment's history
+  with the members before and after (member ids masked as everywhere, the
+  generic id always last in a list) and in the news of its authors after
+  the change. A member taken out is not told.
 - `reviewState` on `AmendmentDto` tells where it stands:
   - `correction_requested`: a draft the Secretaría sent back;
   - `published`: `publishedAt` is set, whatever its status;
@@ -989,7 +1100,7 @@ propose one over published amendments, before or during the session
 (docs/design.md, "Transactionals").
 
 - Who: any account with `amendment:create` that acts for a member (a council,
-  sectorial or CEA area), the document's main presenter, the authors of the
+  sectorial or CEA office), the document's main presenter, the authors of the
   amendments it groups, or a moderator. An account without a member gets
   403 with the next step (ask the Secretaría to link it).
 - The sources must belong to the document (404 otherwise, also for a source
@@ -1187,7 +1298,8 @@ managers and the Mesa), soonest first:
   - for the authors of an amendment, what was settled about it:
     `amendment_validated`, `amendment_published`,
     `amendment_correction_requested`, `amendment_reclassified` (the value
-    is the kind it became), `amendment_admitted`,
+    is the kind it became), `amendment_authors_changed` (the value is
+    its new code, when it changed), `amendment_admitted`,
     `amendment_inadmissible`, `amendment_approved`, `amendment_rejected`,
     `amendment_withdrawn`, `amendment_lapsed` (with
     `reason: "sources_transacted"` for a transactional closed because

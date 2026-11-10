@@ -11,16 +11,18 @@ Criterios que aplico en todo el plan:
 
 ## Decisiones ya tomadas contigo
 
-| Tema                          | Decisión                                                                                                                                                                           |
-| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Miembros de la CEA            | No se crea ningún miembro "CEA" fijo ni se cambia el modelo ahora. Secretaría asigna a las áreas que existan. El modelo de áreas queda para después (la Intranet no lista la CEA). |
-| Quién ve el área de la CEA    | CEA y roles superiores ven el área real. Asociados, Sectoriales e Invitados ven solo "CEA".                                                                                        |
-| Código de enmiendas de la CEA | "CEA n" para todo el mundo, numeradas juntas sea cual sea el área.                                                                                                                 |
-| ODD definitivo                | Botón visible en la página del ODD. Secretaría puede seguir editando después.                                                                                                      |
-| Presentar enmienda            | Botón que abre el documento entero en un editor, colocado donde estaba leyendo la persona. Todo lo que cambie es una única enmienda con una única justificación.                   |
-| Ver enmiendas                 | Una a una, con Anterior y Siguiente.                                                                                                                                               |
-| PDF en tipos enmendables      | Solo Secretaría. Los miembros los presentan como texto; el servidor también lo impide.                                                                                             |
-| Onboarding                    | Bienvenida de 4 o 5 pasos la primera vez, guardada en la cuenta y reabrible desde "Ayuda".                                                                                         |
+| Tema                          | Decisión                                                                                                                                                                                                                                                                                                         |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Miembros de la CEA            | No se crea ningún miembro "CEA" fijo ni se cambia el modelo ahora. Secretaría asigna a los cargos que existan. El modelo de cargos queda para después (la Intranet no lista la CEA).                                                                                                                             |
+| Quién ve el cargo de la CEA   | CEA y roles superiores ven el cargo real. Asociados, Sectoriales e Invitados ven solo "CEA".                                                                                                                                                                                                                     |
+| Código de enmiendas de la CEA | "CEA n" para todo el mundo, numeradas juntas sea cual sea el cargo.                                                                                                                                                                                                                                              |
+| Enmiendas con la CEA          | La CEA presenta enmiendas y transaccionales. Quien no ve sus cargos sí ve la lista real solo al componer una, para elegirlos como cofirmantes o autor principal; después vuelve a ver solo "CEA". En su borrador, "CEA" representa a todos los cargos que ya la firman: si la quita, se quitan todos.            |
+| Corregir quién presenta       | Secretaría puede cambiar los firmantes y el autor principal de una enmienda ya presentada y sin decidir. El número se conserva y el código sigue al nuevo autor principal (siempre "CEA n" si es un cargo de la CEA). No se puede cambiar el autor principal mientras haya una transaccional abierta sobre ella. |
+| ODD definitivo                | Botón visible en la página del ODD. Secretaría puede seguir editando después.                                                                                                                                                                                                                                    |
+| Presentar enmienda            | Botón que abre el documento entero en un editor, colocado donde estaba leyendo la persona. Todo lo que cambie es una única enmienda con una única justificación.                                                                                                                                                 |
+| Ver enmiendas                 | Una a una, con Anterior y Siguiente.                                                                                                                                                                                                                                                                             |
+| PDF en tipos enmendables      | Solo Secretaría. Los miembros los presentan como texto; el servidor también lo impide.                                                                                                                                                                                                                           |
+| Onboarding                    | Bienvenida de 4 o 5 pasos la primera vez, guardada en la cuenta y reabrible desde "Ayuda".                                                                                                                                                                                                                       |
 
 ## 1. Navegación: migas de pan y volver atrás
 
@@ -83,7 +85,7 @@ Servidor: `assertRootsUnlocked` pasa de rechazar a exigir `confirmFinal` en la p
 **Propuesta.**
 
 - **Puntos contenedor.** Secretaría marca un punto como "Aquí los miembros presentan" y elige qué tipos (resoluciones, mociones internas...). Sustituye al interruptor actual.
-- **Subpunto automático.** Cuando un miembro presenta un documento en un punto contenedor, se crea en el mismo paso un subpunto con el título del documento y el documento dentro. El subpunto lleva el título del documento y lo sigue si cambia, hasta que Secretaría le ponga otro a mano; desde entonces conserva el suyo. Si el documento se elimina, el subpunto desaparece.
+- **Subpunto automático.** Cuando un miembro presenta un documento en un punto contenedor, se crea en el mismo paso un subpunto con el título del documento y el documento dentro. El subpunto lleva el título del documento y lo sigue si cambia, hasta que Secretaría le ponga otro a mano; desde entonces conserva el suyo. Si el documento se elimina, el subpunto desaparece. Mientras el documento no esté publicado, quien no puede verlo tampoco ve el subpunto; si el subpunto se queda porque contiene otra cosa, lo ve como "Punto de un documento sin publicar", también cuando el documento se movió a otro punto o se eliminó sin llegar a publicarse, hasta que Secretaría le ponga un título propio.
 - **Añadir varios documentos.** En la página de un punto, Secretaría tiene "Añadir documentos": una lista donde escribe en cada línea título, tipo y quién presenta, y puede soltar un PDF en cada una. Al guardar se crean todos, cada uno con su subpunto si el punto es contenedor. Sin salir de la página.
 - Una sectorial sigue sin poder presentar una moción interna por esta vía.
 
@@ -171,24 +173,25 @@ Detalles técnicos:
   - Mover párrafos de sitio sigue siendo quitar y añadir, y el color de las celdas sigue sin ser enmendable.
 - En móvil el documento entero en un editor puede ir justo con textos de 30 páginas; lo comprobaré con un documento real antes de cerrar el diseño.
 
-## 5. Quién ve el área de la CEA
+## 5. Quién ve el cargo de la CEA
 
-**Hoy.** Todo el mundo ve el área. No hay ningún punto único donde se decida: el presentador sale por documentos, enmiendas, transaccionales, historial, novedades, actividad, turnos de palabra, lista de miembros y PDF.
+**Hoy.** Todo el mundo ve el cargo. No hay ningún punto único donde se decida: el presentador sale por documentos, enmiendas, transaccionales, historial, novedades, actividad, turnos de palabra, lista de miembros y PDF.
 
 **Propuesta.**
 
-- **Regla.** Ven el área real: Admin, Secretaría, Presidencia, Moderador (la Mesa la necesita para dar la palabra) y las cuentas CEA. El resto recibe del servidor un presentador genérico "CEA · Comisión Ejecutiva Ampliada" en lugar del área. Se hace en el servidor, no ocultando en pantalla.
-- **Dónde se aplica:** presentador y copresentadores de documentos, firmantes de enmiendas, partes de transaccionales, historial (también el nombre de la persona que actuó por el área), novedades, tareas, actividad, turnos de palabra, la lista de miembros de los selectores y los PDF, que se generan según quien los pide.
-- **Códigos.** Las enmiendas de cualquier área pasan a "CEA n" para todos, numeradas por documento. Migración para las ya existentes.
+- **Regla.** Ven el cargo real: Admin, Secretaría, Presidencia, Moderador (la Mesa lo necesita para dar la palabra) y las cuentas CEA. El resto recibe del servidor un presentador genérico "CEA · Comisión Ejecutiva Ampliada" en lugar del cargo. Se hace en el servidor, no ocultando en pantalla.
+- **Dónde se aplica:** presentador y copresentadores de documentos, firmantes de enmiendas, partes de transaccionales, historial (también el nombre de la persona que actuó por el cargo), novedades, tareas, actividad, turnos de palabra, la lista de miembros de los selectores y los PDF, que se generan según quien los pide.
+- **Códigos.** Las enmiendas de cualquier cargo pasan a "CEA n" para todos, numeradas por documento. Migración para las ya existentes.
 - Los documentos de Asociados y Sectoriales no cambian: todo el mundo sigue viendo quién los presenta.
-- **Selectores.** Quien no ve las áreas no puede añadir a la CEA como cofirmante ni copresentadora: no aparece en sus selectores y el servidor lo rechaza. Lo hace la propia CEA o Secretaría.
+- **Selectores.** Quien no ve los cargos no puede añadir a la CEA como copresentadora de un documento: no aparece en sus selectores y el servidor lo rechaza. Lo hace la propia CEA o Secretaría.
+- **Enmiendas y transaccionales (corregido).** La CEA también las presenta, y cualquier miembro puede presentar una con ella. Solo al componer una enmienda o una transaccional, quien no ve los cargos de la CEA recibe la lista real (siglas y nombre, nunca las personas) para elegirlos como cofirmantes o autor principal. Una vez guardada vuelve a ver solo "CEA", también en su propio borrador: ahí "CEA" representa a todos los cargos que ya la firman (si la quita, se quitan todos) y puede añadir otros. Si elige "CEA" como autor principal, lo es el cargo que ya lo era o, si no, el primero de los que ya la firman. Ninguna respuesta del servidor depende de qué cargos tiene ya la enmienda, para que no se pueda averiguar cuál es. Pendiente de confirmar: que la entrada "CEA" de un borrador se pueda quitar (así está hecho) o quede fija como en los documentos. Si se presentó mal, Secretaría cambia quién la presenta desde la propia enmienda ("Cambiar quién la presenta").
 
-Sobre el fallo de producción: no es un filtro roto. Las áreas solo existen cuando una cuenta CEA inicia sesión o cuando Secretaría las da de alta en Administración › Miembros, y en producción no ha pasado ninguna de las dos cosas. Según lo decidido no se cambia; en cuanto entren las cuentas CEA aparecerán. Las áreas se crean con las iniciales de la cuenta, así que conviene que Secretaría revise sus nombres.
+Sobre el fallo de producción: no es un filtro roto. Los cargos solo existen cuando una cuenta CEA inicia sesión o cuando Secretaría los da de alta en Administración › Miembros, y en producción no ha pasado ninguna de las dos cosas. Según lo decidido no se cambia; en cuanto entren las cuentas CEA aparecerán. Los cargos se crean con las iniciales de la cuenta, así que conviene que Secretaría revise sus nombres.
 
 ## 6. Nombres
 
 - `Comisión Ejecutiva (CEA)` pasa a `Comisión Ejecutiva Ampliada (CEA)` (nombre del rol).
-- `Área ejecutiva` pasa a `Área de la CEA`; en la primera mención de cada pantalla, `Área de la Comisión Ejecutiva Ampliada`.
+- `Área ejecutiva` pasa a `Cargo de la CEA` (corregido: son cargos unipersonales de la CEA, no áreas); en inglés, `CEA office`. Ningún texto visible dice «área».
 - Afecta a 6 claves en cada idioma, al texto del rol en el seed, a un test y a la documentación (`AGENTS.md`, `docs/design.md`, `docs/api.md`).
 - En inglés propongo `Extended Executive Committee (CEA)`.
 - La plataforma no distingue la Comisión Ejecutiva de la Ampliada: todos los textos de la interfaz y de los PDF dicen "Comisión Ejecutiva Ampliada" (por ejemplo, "Informe de la Comisión Ejecutiva Ampliada"). "Informe ejecutivo" se queda como nombre corto del tipo.
@@ -240,13 +243,13 @@ Ya funciona así en el código actual: busca en el servidor 300 ms después de d
 
 ## 10. Lo que ve cada rol
 
-| Rol                    | Inicio                                                                                       | Menú en una asamblea                           |
-| ---------------------- | -------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| Secretaría y similares | Lo que hay que validar, sus tareas, novedades. Atajos de administración plegados.            | Agrupado en Asamblea, Secretaría y Mesa.       |
-| CEA                    | "Te toca": documentos esperados, correcciones, enmiendas por responder. Ve las áreas reales. | Resumen, directo, ODD, documentos, calendario. |
-| Asociado               | "Te toca": lo mismo para su consejo. Ve "CEA" sin área.                                      | Igual.                                         |
-| Sectorial              | Como Asociado; no se le ofrecen mociones internas.                                           | Igual.                                         |
-| Invitado               | Próximas asambleas y un texto que explica que solo puede consultar.                          | Igual; conserva todo lo que ve hoy.            |
+| Rol                    | Inicio                                                                                        | Menú en una asamblea                           |
+| ---------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| Secretaría y similares | Lo que hay que validar, sus tareas, novedades. Atajos de administración plegados.             | Agrupado en Asamblea, Secretaría y Mesa.       |
+| CEA                    | "Te toca": documentos esperados, correcciones, enmiendas por responder. Ve los cargos reales. | Resumen, directo, ODD, documentos, calendario. |
+| Asociado               | "Te toca": lo mismo para su consejo. Ve "CEA" sin cargo.                                      | Igual.                                         |
+| Sectorial              | Como Asociado; no se le ofrecen mociones internas.                                            | Igual.                                         |
+| Invitado               | Próximas asambleas y un texto que explica que solo puede consultar.                           | Igual; conserva todo lo que ve hoy.            |
 
 Además, el inicio y el resumen de la asamblea enseñan como mucho tres bloques en primer plano (lo que te toca, lo siguiente del calendario y el ODD); cifras y calendario completo quedan tras su enlace. Revisaré cada vista con las cuentas de la simulación de la 77.ª AGO, una por rol.
 
@@ -254,7 +257,7 @@ Además, el inicio y el resumen de la asamblea enseñan como mucho tres bloques 
 
 Dime si alguna no te convence:
 
-- Moderador ve el área real de la CEA.
+- Moderador ve el cargo real de la CEA.
 - "Tiene enmiendas", para impedir eliminar un punto, cuenta cualquier enmienda, también borradores y retiradas: borrar el documento se llevaría el trabajo de otros.
 - La elección forma o contenido es obligatoria y no viene marcada.
 - Los colores suaves sustituyen a los actuales para todos; no añado una tercera opción de accesibilidad.
@@ -280,7 +283,7 @@ Cada fase es independiente y se puede desplegar sola.
 | 1    | Nombres (6), migas y menú (1), plegar subpuntos y fila compacta (2.1), botón de ODD definitivo y edición posterior (2.3), colores suaves del cambio (4.1), formato y tipo a la vista (3), regla de PDF. | No                               |
 | 2    | Página de punto (2.2), puntos contenedor con subpunto automático y subida en serie (2.4), eliminar con contenido (2.5).                                                                                 | Sí: tipos admitidos por punto    |
 | 3    | Lectura de enmiendas una a una y reclasificación (4.1); motor ampliado para enmendar formato y nuevo editor para presentarlas (4.2).                                                                    | No                               |
-| 4    | Ocultar el área de la CEA y códigos "CEA n" (5).                                                                                                                                                        | Sí: renumerar códigos existentes |
+| 4    | Ocultar el cargo de la CEA y códigos "CEA n" (5).                                                                                                                                                       | Sí: renumerar códigos existentes |
 | 5    | Bienvenida, ayuda y preferencias (7), colores de tabla (9), repaso por rol (10).                                                                                                                        | Sí: marca de bienvenida vista    |
 
 Cada fase termina con la lista de verificación de `AGENTS.md`, textos en español e inglés, y `docs/design.md`, `docs/api.md` y `AGENTS.md` actualizados donde cambien las reglas.

@@ -55,6 +55,7 @@ definePageMeta({
 });
 
 const route = useRoute();
+const routeBaseName = useRouteBaseName();
 const { t, locale } = useI18n();
 const localePath = useLocalePath();
 const toast = useToast();
@@ -138,6 +139,12 @@ async function retryRefresh() {
 }
 
 const isPrintView = computed(() => Boolean(route.meta.print));
+/** A page of one document (its text, its review, its editor). */
+const onDocumentPage = computed(() => Boolean(route.params.document));
+/** The overview, which has its own block with the next deadline. */
+const onOverview = computed(
+  () => routeBaseName(route) === "asambleas-assembly",
+);
 
 // Validation inbox --------------------------------------------------------------
 //
@@ -554,7 +561,12 @@ watch(() => route.path, revealActiveSection);
             </dt>
             <dd class="truncate">{{ assembly.location }}</dd>
           </div>
-          <div v-if="assembly.nextMilestone" class="flex items-center gap-1.5">
+          <!-- Not on a document's pages (they show that document's own
+               deadline) nor on the overview (it has its own block). -->
+          <div
+            v-if="assembly.nextMilestone && !onDocumentPage && !onOverview"
+            class="flex items-center gap-1.5"
+          >
             <dt class="flex">
               <UIcon
                 name="i-lucide-hourglass"
@@ -572,9 +584,11 @@ watch(() => route.path, revealActiveSection);
           </div>
         </dl>
 
-        <!-- The status actions on phones, where the header has no room for their text. -->
+        <!-- The status actions on phones, where the header has no room for
+             their text. Only on the overview: the other sections keep to
+             their own subject. -->
         <div
-          v-if="forwardTransitions.length > 0"
+          v-if="forwardTransitions.length > 0 && onOverview"
           class="flex flex-wrap gap-2 sm:hidden"
         >
           <UButton
