@@ -1021,18 +1021,82 @@ const wideCompare = computed(
     !composing.value &&
     !detailOpen.value,
 );
+/**
+ * The amendments list hidden by the reader on a wide screen, so the text
+ * takes the whole workspace. Remembered per browser, like the home folds.
+ * Opening an amendment (a card, a mark in the text, a link) brings it back.
+ */
+const AMENDMENTS_HIDDEN_KEY = "document-workspace-amendments-hidden";
+const amendmentsHidden = ref(false);
+
+onMounted(() => {
+  try {
+    amendmentsHidden.value =
+      window.localStorage.getItem(AMENDMENTS_HIDDEN_KEY) === "1";
+  } catch {
+    // No storage (private mode, blocked): the list starts shown.
+  }
+});
+
+function setAmendmentsHidden(hidden: boolean): void {
+  if (amendmentsHidden.value === hidden) return;
+  amendmentsHidden.value = hidden;
+  try {
+    window.localStorage.setItem(AMENDMENTS_HIDDEN_KEY, hidden ? "1" : "0");
+  } catch {
+    // Not remembered; the list still hides and shows.
+  }
+}
+
+/** Hiding the list closes the amendment open in it too. */
+function toggleAmendments(): void {
+  if (amendmentsHidden.value) {
+    setAmendmentsHidden(false);
+    return;
+  }
+  detailOpen.value = false;
+  setAmendmentsHidden(true);
+}
+
+watch(detailOpen, (open) => {
+  if (open) setAmendmentsHidden(false);
+});
+
+/** The list hidden by the reader, while nothing in it asks to be seen. */
+const listHidden = computed(
+  () => isDesktop.value && amendmentsHidden.value && !composing.value,
+);
+/** The text alone in the workspace: "Original y resultado", or the list hidden. */
+const textOnly = computed(() => wideCompare.value || listHidden.value);
+/** The hide/show button, on wide screens and outside "Original y resultado". */
+const showAmendmentsToggle = computed(
+  () => isDesktop.value && !wideCompare.value && !composing.value,
+);
+
 const textPanelClass = computed(() =>
   [
     mobilePane.value === "text" ? "flex" : "hidden lg:flex",
-    wideCompare.value ? "lg:w-full lg:not-last:border-e-0" : "",
+    textOnly.value ? "lg:w-full lg:not-last:border-e-0" : "",
   ].join(" "),
 );
 const amendmentsPanelClass = computed(() =>
   [
     mobilePane.value === "amendments" ? "flex" : "hidden lg:flex",
-    wideCompare.value ? "lg:hidden" : "",
+    textOnly.value ? "lg:hidden" : "",
   ].join(" "),
 );
+/**
+ * Alone and wide, the text keeps the editor's measure (`main.css`) instead
+ * of running edge to edge; the two columns of "Original y resultado" need
+ * the whole width.
+ */
+const textPanelUi = computed(() => ({
+  ...panelUi,
+  body:
+    listHidden.value && textMode.value !== "compare"
+      ? `${panelUi.body} *:max-w-[52rem]`
+      : panelUi.body,
+}));
 
 /**
  * The open amendment in the address (`?enmienda=<id>`), so its link can be
@@ -1069,6 +1133,7 @@ function onMarkerClick(blockId: string): void {
   listTab.value = "all";
   detailOpen.value = false;
   mobilePane.value = "amendments";
+  setAmendmentsHidden(false);
 }
 
 // Text views -----------------------------------------------------------------------
@@ -1437,12 +1502,12 @@ const filteredBlockLabel = computed(() =>
           <!-- Text -->
           <UDashboardPanel
             id="document-workspace-text"
-            :resizable="!wideCompare"
+            :resizable="!textOnly"
             :default-size="58"
             :min-size="35"
             :max-size="72"
             :class="textPanelClass"
-            :ui="panelUi"
+            :ui="textPanelUi"
           >
             <template #header>
               <UDashboardToolbar
@@ -1468,12 +1533,45 @@ const filteredBlockLabel = computed(() =>
                     @update:model-value="onTextMode"
                   />
                 </template>
-                <template v-if="showAcceptedSwitch" #right>
+                <template
+                  v-if="showAcceptedSwitch || showAmendmentsToggle"
+                  #right
+                >
                   <USwitch
+                    v-if="showAcceptedSwitch"
                     v-model="includeAccepted"
                     size="sm"
                     :label="t('workspace.includeAccepted')"
                   />
+                  <UButton
+                    v-if="showAmendmentsToggle"
+                    color="neutral"
+                    variant="ghost"
+                    size="sm"
+                    :icon="
+                      listHidden
+                        ? 'i-lucide-panel-right-open'
+                        : 'i-lucide-panel-right-close'
+                    "
+                    :label="
+                      listHidden
+                        ? t('workspace.panes.show')
+                        : t('workspace.panes.hide')
+                    "
+                    :aria-expanded="!listHidden"
+                    aria-controls="dashboard-panel-document-workspace-amendments"
+                    data-testid="amendments-toggle"
+                    @click="toggleAmendments"
+                  >
+                    <template v-if="listHidden" #trailing>
+                      <UBadge
+                        :label="String(list.listed.value.length)"
+                        color="neutral"
+                        variant="subtle"
+                        size="sm"
+                      />
+                    </template>
+                  </UButton>
                 </template>
               </UDashboardToolbar>
             </template>
