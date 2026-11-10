@@ -133,6 +133,7 @@ export const ACTIVITY_ACTION_ICONS = {
   amendment_withdrawn: "i-lucide-undo-2",
   amendment_correction_requested: "i-lucide-message-square-warning",
   amendment_reclassified: "i-lucide-tags",
+  amendment_authors_changed: "i-lucide-user-pen",
   amendment_validated: "i-lucide-badge-check",
   amendment_published: "i-lucide-eye",
   amendment_admitted: "i-lucide-badge-check",

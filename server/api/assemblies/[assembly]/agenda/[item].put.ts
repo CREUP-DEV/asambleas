@@ -14,9 +14,11 @@ import { requireActor, requireCan } from "../../../../utils/domain/actor";
 import {
   lockAssembly,
   nextSiblingOrder,
+  titleDocumentPayload,
 } from "../../../../utils/domain/agendaWrites";
 import {
   agendaSubtree,
+  canReadItemTitle,
   confirmFinalRootChange,
   loadAgendaItems,
   readAssemblyBody,
@@ -39,7 +41,14 @@ import { buildOptimisticLockCondition } from "../../../../utils/optimisticLock";
  * `submissionKinds` left out keeps the stored kinds; they are emptied when
  * the item stops accepting submissions. A new title given to an automatic
  * sub-item makes it its own (`titleCustom`): it no longer follows the title
- * of its document.
+ * of its document. A new title given to an item that stayed after its
+ * document moved away or was deleted makes it an ordinary one
+ * (`hiddenWithDocumentId` and `titleWithheld` cleared).
+ *
+ * An account that may not read the item's title (canReadItemTitle:
+ * `assembly:manage` without `document:manage`, on an item that carries the
+ * title of a draft) gets it without title or description, so what it sends
+ * for both is ignored and the answer hides them again.
  */
 export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
   const actor = await requireActor(event);
@@ -52,7 +61,11 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
     assembly.id,
     getRouterParam(event, "item"),
   );
-  const body = await readAssemblyBody(event, agendaItemUpdateBodySchema);
+  const parsed = await readAssemblyBody(event, agendaItemUpdateBodySchema);
+  const readsTitle = await canReadItemTitle(actor, item);
+  const body = readsTitle
+    ? parsed
+    : { ...parsed, title: item.title, description: undefined };
 
   const newParentId =
     body.parentId === undefined ? item.parentId : body.parentId;
@@ -64,10 +77,16 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
   );
   // The body's title is normalized (agendaItemBodySchema); the stored one
   // of an automatic sub-item is its document's, as written.
-  const titleCustom =
-    item.titleCustom ||
-    (isAutoItem(item) &&
-      body.title !== normalizeText(item.title).replace(/\s+/g, " ").trim());
+  const renamed =
+    readsTitle &&
+    body.title !== normalizeText(item.title).replace(/\s+/g, " ").trim();
+  const titleCustom = item.titleCustom || (isAutoItem(item) && renamed);
+  // With a title of its own, an item kept after its document moved away or
+  // was deleted no longer carries that document's title.
+  const releases =
+    renamed &&
+    (item.hiddenWithDocumentId !== null || item.titleWithheld) &&
+    !isAutoItem(item);
 
   try {
     const updated = await db.transaction(async (tx) => {
@@ -111,6 +130,9 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
           acceptsSubmissions,
           submissionKinds,
           titleCustom,
+          ...(releases
+            ? { hiddenWithDocumentId: null, titleWithheld: false }
+            : {}),
           ...(moved ? { parentId: newParentId, order } : {}),
         })
         .where(
@@ -147,18 +169,17 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
             ],
           }),
           ...(afterFinal ? { afterFinal: true } : {}),
-          // An automatic sub-item carries its document's title: the history
+          // An item that carries a document's title (an automatic sub-item,
+          // or one that stayed after its document moved away): the history
           // shows its events only to those who see that document.
-          ...(isAutoItem(item)
-            ? { auto: true, documentId: item.generatedForDocumentId }
-            : {}),
+          ...titleDocumentPayload(item),
         },
         actor,
       });
       return row;
     });
 
-    return toAgendaItemDto(updated);
+    return toAgendaItemDto(updated, !readsTitle);
   } catch (error) {
     throwAssemblyMutationError("agenda.update", error, event);
   }

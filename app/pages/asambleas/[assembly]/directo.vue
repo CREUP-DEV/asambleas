@@ -10,6 +10,7 @@ import type {
 } from "~~/shared/types/api";
 import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
 import { errorStatus } from "~/composables/api/useApi";
+import { agendaWithTitles } from "~/utils/agendaTitles";
 import { isDocumentLiveBatch } from "~/composables/document/useDocument";
 import {
   keepLastGoodData,
@@ -139,10 +140,12 @@ const {
   failed: speakersFailed,
 } = keepLastGoodData(speakersFetch, { isGone });
 const {
-  data: agenda,
+  data: fetchedAgenda,
   stale: agendaStale,
   failed: agendaFailed,
 } = keepLastGoodData(agendaFetch, { isGone });
+// An item sent without its title gets a neutral one (titleHidden).
+const agenda = agendaWithTitles(fetchedAgenda, () => t("agenda.hiddenTitle"));
 const {
   data: headcountsDto,
   stale: headcountsStale,

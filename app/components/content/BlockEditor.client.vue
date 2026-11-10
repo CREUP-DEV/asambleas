@@ -11,6 +11,11 @@ import {
   type EditorNode,
 } from "~~/shared/utils/content/editor";
 import { isSafeHref } from "~~/shared/utils/content/render";
+import {
+  isEditorLinkAllowed,
+  normalizeHref,
+  stripUnsafeLinks,
+} from "~/utils/editor/links";
 import { BlockIdExtension } from "~/utils/editor/blockIdExtension";
 import { ListMarkerExtension } from "~/utils/editor/listMarkerExtension";
 import { TableIdsExtension } from "~/utils/editor/tableIdsExtension";
@@ -1032,7 +1037,21 @@ function handleDrop(
   return true;
 }
 
-function transformPastedHTML(html: string): string {
+/** Said once per editor: pasted links content would not keep. */
+let linksRefusedTold = false;
+
+function transformPastedHTML(pasted: string): string {
+  // Links to anything but a web page or an email paste as plain text.
+  const html = stripUnsafeLinks(pasted);
+  if (html !== pasted && !linksRefusedTold) {
+    linksRefusedTold = true;
+    toast.add({
+      title: t("common.editor.pastedLinksSkipped"),
+      description: t("common.editor.pastedLinksSkippedDescription"),
+      icon: "i-lucide-unlink",
+      color: "warning",
+    });
+  }
   // The platform's own pictures (data-asset) paste as they are; others are
   // left out by the schema, which is said once.
   if (!/<img\b(?![^>]*\bdata-asset=)/i.test(html)) return html;
@@ -1085,6 +1104,16 @@ function confirmAlt(): void {
 
 // Link popover ---------------------------------------------------------------
 
+/**
+ * Only what content keeps (http, https, mailto) ever becomes a link: typed,
+ * pasted or set in the dialog (`isEditorLinkAllowed`).
+ */
+const linkOptions = {
+  openOnClick: false,
+  defaultProtocol: "https",
+  isAllowedUri: (url: string) => isEditorLinkAllowed(url),
+};
+
 const linkOpen = ref(false);
 const linkHref = ref("");
 const linkInvalid = ref(false);
@@ -1104,13 +1133,6 @@ watch(linkOpen, (open) => {
   linkHref.value = typeof current === "string" ? current : "";
   linkInvalid.value = false;
 });
-
-function normalizeHref(value: string): string {
-  const href = value.trim();
-  if (!href || /^[a-z][a-z0-9+.-]*:/i.test(href)) return href;
-  if (/^[^\s/@]+@[^\s/@]+\.[^\s/@]+$/.test(href)) return `mailto:${href}`;
-  return `https://${href}`;
-}
 
 function applyLink(): void {
   const instance = editor.value;
@@ -1183,7 +1205,7 @@ defineExpose({
             codeBlock: false,
             horizontalRule: false,
             heading: { levels: [1, 2, 3, 4] },
-            link: { openOnClick: false, defaultProtocol: 'https' },
+            link: linkOptions,
           }"
           :image="false"
           :editor-props="editorProps"

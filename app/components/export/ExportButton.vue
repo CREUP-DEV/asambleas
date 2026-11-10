@@ -26,6 +26,11 @@ const props = withDefaults(
     size?: "xs" | "sm" | "md" | "lg" | "xl";
     color?: "primary" | "secondary" | "neutral";
     buttonVariant?: "solid" | "outline" | "soft" | "subtle" | "ghost" | "link";
+    /**
+     * Started from elsewhere (a menu item calling `start`): nothing shows
+     * until the export is asked for.
+     */
+    hideIdle?: boolean;
   }>(),
   {
     assembly: undefined,
@@ -36,6 +41,7 @@ const props = withDefaults(
     size: "sm",
     color: "neutral",
     buttonVariant: "soft",
+    hideIdle: false,
   },
 );
 
@@ -205,6 +211,8 @@ onBeforeUnmount(() => {
   generation += 1;
   stopPolling();
 });
+
+defineExpose({ start });
 </script>
 
 <template>
@@ -221,7 +229,7 @@ onBeforeUnmount(() => {
       :label="t('export.download')"
     />
     <UButton
-      v-else
+      v-else-if="!hideIdle || state !== 'idle'"
       :icon="state === 'failed' ? 'i-lucide-rotate-ccw' : 'i-lucide-file-text'"
       :color="state === 'failed' ? 'error' : color"
       :variant="buttonVariant"
@@ -237,8 +245,9 @@ onBeforeUnmount(() => {
       "
       @click="start"
     />
+    <!-- Started from a menu, the menu asks for it again. -->
     <UButton
-      v-if="state === 'done'"
+      v-if="state === 'done' && !hideIdle"
       icon="i-lucide-refresh-cw"
       color="neutral"
       variant="ghost"

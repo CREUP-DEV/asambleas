@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { MemberSyncBody } from "../../types/api";
-import { memberSyncBodySchema } from "./member";
+import {
+  MEMBER_LIST_FOR_AMENDMENT,
+  memberListQuerySchema,
+  memberSyncBodySchema,
+} from "./member";
 
 describe("memberSyncBodySchema", () => {
   const none = { confirmDeactivation: false, confirmedKinds: [] };
@@ -66,5 +70,17 @@ describe("memberSyncBodySchema", () => {
       ).toBe(false);
     }
     expect(memberSyncBodySchema.safeParse("confirm").success).toBe(false);
+  });
+});
+
+describe("memberListQuerySchema", () => {
+  it("takes the list of the amendment composers and nothing else", () => {
+    expect(memberListQuerySchema.parse({})).toEqual({ all: false });
+    expect(
+      memberListQuerySchema.parse({ for: MEMBER_LIST_FOR_AMENDMENT }),
+    ).toEqual({ all: false, for: "amendment" });
+    expect(memberListQuerySchema.safeParse({ for: "document" }).success).toBe(
+      false,
+    );
   });
 });

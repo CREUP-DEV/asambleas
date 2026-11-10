@@ -58,6 +58,7 @@ import {
   removeAutoItem,
   syncAutoItemTitle,
   unbindAutoItem,
+  withholdItemTitles,
 } from "./agendaWrites";
 import { diffChanges, sortedIds } from "./changes";
 import { recordEvent } from "./events";
@@ -2145,7 +2146,8 @@ export interface DeletedDocumentFiles {
  * versions, co-presenters and images (cascade), and `document_deleted`
  * closes its history. Its automatic sub-item, if it has one left empty,
  * goes too unless `keepAgendaItem` (the agenda delete removes the items
- * itself).
+ * itself). An item that carries its title and stays keeps it withheld
+ * unless the document was public (withholdItemTitles).
  *
  * The caller checks whether the document may go (deleteBlocker, or the
  * amendments rule of the agenda delete) and holds the assembly lock
@@ -2179,6 +2181,16 @@ export async function removeDocument(
     .where(
       and(eq(votes.subjectType, "document"), eq(votes.subjectId, document.id)),
     );
+  // Before the row goes and its foreign keys clear the links.
+  await withholdItemTitles(tx, {
+    assemblyId,
+    document,
+    // With keepAgendaItem the caller deletes the item it hangs from.
+    exceptItemId: input.keepAgendaItem
+      ? document.agendaItemId
+      : (autoItem?.id ?? null),
+    actor,
+  });
   await tx.delete(documents).where(eq(documents.id, document.id));
   await recordEvent(tx, {
     assemblyId,

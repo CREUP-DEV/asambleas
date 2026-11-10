@@ -124,7 +124,7 @@ La revisión tiene dos capas.
 
 **Capa política.**
 
-- El proponente, normalmente un área de la CEA, marca cada enmienda como Aceptar, Rechazar, Transaccionar o Decae.
+- El proponente, normalmente un cargo de la CEA, marca cada enmienda como Aceptar, Rechazar, Transaccionar o Decae.
 - Lo hace en hojas privadas: «ENMIENDAS 78 AGO», «78 AGO - Enmiendas VPU», «esmenas», «Enmiendas Normativa» y la hoja de control de la 79 AGO.
 - Las posiciones cambian sin dejar rastro público (CEUAM 9 pasó de Rechazada a Aceptada).
 - En la 34 AGE, una misma oficina fue a la vez proponente, revisora de la admisión, co-moderadora y redactora del acta.

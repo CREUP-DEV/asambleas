@@ -7,10 +7,15 @@ import {
   autoItemRemovable,
   BULK_DOCUMENTS_MAX,
   followsDocumentTitle,
+  keepsDocumentTitle,
+  carriesGuardedTitle,
+  deletedTitleWithheld,
+  hiddenTitleItemIds,
   isAutoItem,
   itemAcceptsKind,
   normalizeSubmissionKinds,
   SUBMISSION_KIND_REFUSED_REASON,
+  titleDocumentId,
   visibleAgendaItems,
 } from "./agendaSubmissions";
 import { agendaItemBodySchema } from "./schemas/assembly";
@@ -138,7 +143,8 @@ describe("visibleAgendaItems", () => {
     id: string,
     parentId: string | null,
     generatedForDocumentId: string | null = null,
-  ) => ({ id, parentId, generatedForDocumentId });
+    hiddenWithDocumentId: string | null = null,
+  ) => ({ id, parentId, generatedForDocumentId, hiddenWithDocumentId });
   const ids = (rows: { id: string }[]) => rows.map((row) => row.id);
   const items = [
     item("root", null),
@@ -188,6 +194,107 @@ describe("visibleAgendaItems", () => {
       item("b", "a", "d2"),
     ];
     expect(ids(visibleAgendaItems(chain, []))).toEqual(["root"]);
+  });
+});
+
+describe("an item kept after its document moved away", () => {
+  const item = (
+    id: string,
+    parentId: string | null,
+    hiddenWithDocumentId: string | null = null,
+  ) => ({ id, parentId, generatedForDocumentId: null, hiddenWithDocumentId });
+  const ids = (rows: { id: string }[]) => rows.map((row) => row.id);
+  // "kept" was the automatic sub-item of d1, which moved to "other".
+  const items = [
+    item("root", null),
+    item("kept", "root", "d1"),
+    item("child", "kept"),
+    item("other", "root"),
+  ];
+  const d1 = { id: "d1", agendaItemId: "other" };
+
+  it("is an ordinary item that still names the document of its title", () => {
+    expect(isAutoItem(items[1]!)).toBe(false);
+    expect(titleDocumentId(items[1]!)).toBe("d1");
+    expect(titleDocumentId(items[0]!)).toBeNull();
+    expect(
+      titleDocumentId({
+        generatedForDocumentId: "d2",
+        hiddenWithDocumentId: null,
+      }),
+    ).toBe("d2");
+  });
+
+  it("shows with its title to whoever sees the document", () => {
+    expect(ids(visibleAgendaItems(items, [d1]))).toEqual([
+      "root",
+      "kept",
+      "child",
+      "other",
+    ]);
+    expect([...hiddenTitleItemIds(items, [d1])]).toEqual([]);
+  });
+
+  it("stays without its title for whoever cannot see the document", () => {
+    const kept = visibleAgendaItems(items, []);
+    expect(ids(kept)).toEqual(["root", "kept", "child", "other"]);
+    expect([...hiddenTitleItemIds(kept, [])]).toEqual(["kept"]);
+  });
+
+  it("is left out when nothing the viewer sees hangs from it", () => {
+    const alone = items.filter((entry) => entry.id !== "child");
+    expect(ids(visibleAgendaItems(alone, []))).toEqual(["root", "other"]);
+    // A document the viewer sees keeps it, still without its title.
+    const withDocument = [{ id: "d5", agendaItemId: "kept" }];
+    const kept = visibleAgendaItems(alone, withDocument);
+    expect(ids(kept)).toEqual(["root", "kept", "other"]);
+    expect([...hiddenTitleItemIds(kept, withDocument)]).toEqual(["kept"]);
+  });
+
+  it("is a plain item again once a public document is deleted", () => {
+    // The foreign key clears the link, and nothing is withheld.
+    expect(deletedTitleWithheld("published")).toBe(false);
+    expect(deletedTitleWithheld("postponed")).toBe(false);
+    const cleared = items.map((entry) => ({
+      ...entry,
+      hiddenWithDocumentId: null,
+    }));
+    expect(ids(visibleAgendaItems(cleared, []))).toHaveLength(4);
+    expect(hiddenTitleItemIds(cleared, []).size).toBe(0);
+    expect(carriesGuardedTitle(cleared[1]!)).toBe(false);
+  });
+
+  it("keeps its title withheld once a document nobody saw is deleted", () => {
+    for (const status of ["draft", "submitted", "withdrawn"]) {
+      expect(deletedTitleWithheld(status)).toBe(true);
+    }
+    // The link is gone; the mark stays until a manager renames the item.
+    const withheld = items.map((entry) =>
+      entry.id === "kept"
+        ? { ...entry, hiddenWithDocumentId: null, titleWithheld: true }
+        : entry,
+    );
+    expect(carriesGuardedTitle(withheld[1]!)).toBe(true);
+    const kept = visibleAgendaItems(withheld, []);
+    expect(ids(kept)).toEqual(["root", "kept", "child", "other"]);
+    expect([...hiddenTitleItemIds(kept, [])]).toEqual(["kept"]);
+    // Document managers read it.
+    expect(hiddenTitleItemIds(withheld, [], true).size).toBe(0);
+    // Left out for the rest once nothing hangs from it.
+    const alone = withheld.filter((entry) => entry.id !== "child");
+    expect(ids(visibleAgendaItems(alone, []))).toEqual(["root", "other"]);
+    expect(ids(visibleAgendaItems(alone, [], true))).toHaveLength(3);
+  });
+
+  it("hides the title of an automatic sub-item kept for its sub-items", () => {
+    const auto = [
+      item("root", null),
+      { ...item("auto", "root"), generatedForDocumentId: "d2" },
+      item("child", "auto"),
+    ];
+    const kept = visibleAgendaItems(auto, []);
+    expect(ids(kept)).toEqual(["root", "auto", "child"]);
+    expect([...hiddenTitleItemIds(kept, [])]).toEqual(["auto"]);
   });
 });
 
@@ -283,5 +390,15 @@ describe("bulkDocumentsSchema", () => {
       bulkDocumentsSchema.safeParse({ documents: [{ ...row, kind: "poem" }] })
         .success,
     ).toBe(false);
+  });
+});
+
+describe("keepsDocumentTitle", () => {
+  it("holds while the item is titled like its document", () => {
+    expect(keepsDocumentTitle({ titleCustom: false })).toBe(true);
+  });
+
+  it("ends once a manager gave the item its own title", () => {
+    expect(keepsDocumentTitle({ titleCustom: true })).toBe(false);
   });
 });

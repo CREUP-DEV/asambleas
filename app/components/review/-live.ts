@@ -37,6 +37,8 @@ export const REVIEW_LIVE_TYPES: ReadonlySet<string> = new Set([
   "amendment_correction_requested",
   // The inbox shows the kind of each amendment.
   "amendment_reclassified",
+  // And who presents it.
+  "amendment_authors_changed",
   "amendment_withdrawn",
   // The Mesa can declare lapsed a late one still waiting for the assembly.
   "amendment_lapsed",

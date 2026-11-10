@@ -308,6 +308,20 @@ export function canSeeExecutiveMembers(actor: Actor): boolean {
   return actor.memberKind === "executive";
 }
 
+/**
+ * Whether the actor may read the real executive areas to name them as
+ * authors of an amendment or a transactional it composes (GET
+ * /api/members?for=amendment): whoever sees them anyway, and an account
+ * that presents amendments for a member. Only that list: everything it
+ * reads afterwards, its own draft included, shows the generic "CEA".
+ */
+export function canNameExecutiveAuthors(actor: Actor): boolean {
+  return (
+    canSeeExecutiveMembers(actor) ||
+    (actor.can(PERMISSION_KEYS.AMENDMENT_CREATE) && actor.memberId !== null)
+  );
+}
+
 /** The generic presenter shown instead of an executive area. */
 export function genericExecutiveMember(): MemberRef {
   return { ...GENERIC_EXECUTIVE_MEMBER };
@@ -508,12 +522,14 @@ function maskValue(mask: ReadonlySet<string>, value: unknown): unknown {
   }
   if (Array.isArray(value)) {
     const mapped = value.map((entry) => maskValue(mask, entry));
-    // Several areas in a list of ids read as one generic entry.
-    return mapped.filter(
-      (entry, index) =>
-        entry !== GENERIC_EXECUTIVE_MEMBER_ID ||
-        mapped.indexOf(GENERIC_EXECUTIVE_MEMBER_ID) === index,
-    );
+    if (!mapped.includes(GENERIC_EXECUTIVE_MEMBER_ID)) return mapped;
+    // Several areas in a list of ids read as one generic entry, always the
+    // last one: id lists are stored sorted, and the place of an area among
+    // the real ids around it would narrow down which area it is.
+    return [
+      ...mapped.filter((entry) => entry !== GENERIC_EXECUTIVE_MEMBER_ID),
+      GENERIC_EXECUTIVE_MEMBER_ID,
+    ];
   }
   if (value && typeof value === "object") {
     return Object.fromEntries(

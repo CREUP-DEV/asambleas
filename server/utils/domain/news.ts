@@ -81,6 +81,7 @@ export const NEWS_OUTCOME_TYPES = [
   "amendment_published",
   "amendment_correction_requested",
   "amendment_reclassified",
+  "amendment_authors_changed",
   "amendment_admitted",
   "amendment_inadmissible",
   "amendment_approved",
@@ -189,6 +190,8 @@ export function newsValue(
       return text(payload.admission);
     case "amendment_reclassified":
       return text(payload.to);
+    case "amendment_authors_changed":
+      return text(payload.code);
     case "amendment_approved":
       return text(payload.method);
     case "amendment_transacted":

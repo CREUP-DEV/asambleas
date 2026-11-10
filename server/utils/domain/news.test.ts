@@ -104,6 +104,22 @@ describe("newsValue", () => {
     expect(NEWS_OUTCOME_TYPES).toContain("amendment_reclassified");
   });
 
+  it("says the new code when the Secretaría corrects who presents it", () => {
+    const authors = { authorMemberIds: ["a"], mainAuthorId: "a" };
+    expect(
+      newsValue("amendment_authors_changed", {
+        from: authors,
+        to: { authorMemberIds: ["b"], mainAuthorId: "b" },
+        code: "CEUM 2",
+        previousCode: "CEA 1",
+      }),
+    ).toBe("CEUM 2");
+    expect(
+      newsValue("amendment_authors_changed", { from: authors, to: authors }),
+    ).toBeNull();
+    expect(NEWS_OUTCOME_TYPES).toContain("amendment_authors_changed");
+  });
+
   it("leaves it out when the type says it all", () => {
     expect(newsValue("amendment_published", {})).toBeNull();
     expect(newsValue("position_changed", {})).toBeNull();

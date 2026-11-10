@@ -83,6 +83,8 @@
       "server": "Error del servidor. Inténtalo de nuevo en unos minutos.",
       "network": "No hay conexión con el servidor. Comprueba tu red.",
       "executiveMain": "No puedes elegir a la CEA como principal. Pídeselo a la CEA o a la Secretaría.",
+      "executiveAuthor": "«CEA» solo mantiene los cargos de la CEA que ya la presentan. Para añadir uno, elige el cargo por su nombre.",
+      "executiveAuthorMain": "Para que un cargo de la CEA sea el autor principal, márcalo también entre quienes la presentan.",
       "executiveMember": "No puedes añadir a la CEA. Pídeselo a la CEA o a la Secretaría.",
       "unknown": "No se ha podido completar la operación."
     },
@@ -140,7 +142,9 @@
       "linkUrl": "Dirección del enlace",
       "applyLink": "Aplicar enlace",
       "removeLink": "Quitar enlace",
-      "invalidLink": "Solo se admiten enlaces http, https o de correo electrónico.",
+      "invalidLink": "Esa dirección no sirve como enlace: solo se admiten páginas web (http o https) y correos electrónicos.",
+      "pastedLinksSkipped": "Algunos enlaces se han pegado como texto",
+      "pastedLinksSkippedDescription": "Solo se conservan los enlaces a páginas web (http o https) y a correos electrónicos.",
       "heading": "Título",
       "subheading": "Subtítulo",
       "heading3": "Apartado",
@@ -903,7 +907,7 @@
         "info": "Información"
       },
       "checks": {
-        "textReady": "El documento tiene texto ({count} párrafo) | El documento tiene texto ({count} párrafos y títulos)",
+        "textReady": "El documento tiene texto",
         "textEmpty": "El documento no tiene texto",
         "textUnsaved": "Los cambios del texto se guardarán antes de continuar",
         "fileReady": "PDF subido: {name}",
@@ -1299,7 +1303,7 @@
       "error": "No se han podido cargar las enmiendas",
       "empty": "Todavía no hay enmiendas",
       "emptyDescription": "Aquí aparecerán, en el orden del texto, las enmiendas que se publiquen.",
-      "emptyCanAmend": "Pulsa «Presentar una enmienda» y elige el párrafo que quieres cambiar.",
+      "emptyCanAmend": "Pulsa «Presentar enmienda» y cambia el texto del documento como quieres que quede.",
       "emptyFiltered": "Ninguna enmienda coincide con los filtros",
       "transactGroup": "Combinar en una transaccional"
     },
@@ -1543,7 +1547,8 @@
         "amendment_validated": "Validada por Secretaría",
         "amendment_published": "Publicada",
         "amendment_correction_requested": "Secretaría pidió una corrección",
-        "amendment_reclassified": "Secretaría cambió el tipo de enmienda"
+        "amendment_reclassified": "Secretaría cambió el tipo de enmienda",
+        "amendment_authors_changed": "Secretaría cambió quién la presenta"
       },
       "admissionMethods": {
         "mesa": "Por decisión de la Mesa",
@@ -1688,7 +1693,8 @@
         "othersHint": "La presentáis juntos.",
         "members": "¿Con quién la presentas?",
         "placeholder": "Elige los miembros",
-        "ceaKept": "La CEA también la presenta. Solo la CEA o la Secretaría pueden quitarla.",
+        "ceaKept": "«CEA» son los cargos de la CEA que ya la presentan; no aparecen marcados uno a uno. Si la quitas, dejan de presentarla todos. Los cargos que añadas también figurarán como «CEA».",
+        "ceaAdded": "Los cargos de la CEA que añadas figurarán como «CEA» una vez guardada.",
         "onBehalfToggle": "Presentarla en nombre de otro miembro"
       },
       "why": {
@@ -1746,6 +1752,24 @@
       "awaitingSentence": "Está pendiente de que la asamblea decida tratarla. Hasta entonces no se debate ni se vota."
     },
     "lateAdmitted": "Fuera de plazo · admitida",
+    "authorsChange": {
+      "label": "Quién presenta la enmienda",
+      "current": "La presenta {members}. Si se presentó mal, puedes cambiarlo.",
+      "action": "Cambiar quién la presenta",
+      "title": "Cambiar quién la presenta",
+      "description": "Corrige quién firma esta enmienda si se presentó mal. Queda en el historial y quien la firma lo verá en sus novedades.",
+      "authors": "La presentan",
+      "authorsPlaceholder": "Elige los miembros",
+      "authorsRequired": "Elige al menos un miembro.",
+      "mainAuthorHint": "El autor principal responde a las transaccionales y da el código a la enmienda. Si cambia, la enmienda puede cambiar de código.",
+      "save": "Guardar el cambio",
+      "done": "Se ha cambiado quién la presenta",
+      "doneCode": "Se ha cambiado quién la presenta. Ahora es {code}.",
+      "failed": "No se ha podido cambiar quién la presenta",
+      "codeChanged": "Su código pasa de {from} a {to}.",
+      "changed": "Antes la presentaba {from}. Ahora la presenta {to}.",
+      "mainAuthor": "{member} (principal)"
+    },
     "reclassify": {
       "label": "Tipo de enmienda",
       "current": {
@@ -1927,7 +1951,7 @@
     "save": "Guardar",
     "members": {
       "title": "Miembros",
-      "description": "Consejos asociados, sectoriales y áreas de la Comisión Ejecutiva Ampliada que presentan documentos y enmiendas. Asociados y sectoriales se sincronizan con la intranet; las áreas de la CEA se dan de alta aquí.",
+      "description": "Consejos asociados, sectoriales y cargos de la Comisión Ejecutiva Ampliada que presentan documentos y enmiendas. Asociados y sectoriales se sincronizan con la intranet; los cargos de la CEA se dan de alta aquí.",
       "sync": "Sincronizar con la intranet",
       "syncing": "Sincronizando con la intranet…",
       "syncDoneTitle": "Sincronización completada",
@@ -1935,7 +1959,7 @@
       "syncFailed": "No se ha podido sincronizar con la intranet",
       "create": "Nuevo miembro",
       "createTitle": "Nuevo miembro",
-      "createDescription": "Para áreas de la CEA y otros miembros que no vienen de la intranet.",
+      "createDescription": "Para cargos de la CEA y otros miembros que no vienen de la intranet.",
       "createAction": "Crear miembro",
       "created": "{acronym} creado",
       "updated": "{acronym} actualizado",
@@ -2163,6 +2187,7 @@
         "AGET": "Asamblea General Extraordinaria Telemática"
       },
       "agendaTitle": "Orden del día",
+      "agendaHiddenTitle": "Punto de un documento sin publicar",
       "agendaEmpty": "El orden del día aún está vacío.",
       "noPublishedDocuments": "Aún no hay documentos publicados.",
       "fileDocument": "Documento en PDF ({file}). Consúltalo en la plataforma.",
@@ -2306,7 +2331,7 @@
     "memberKinds": {
       "asociado": "Consejo asociado",
       "sectorial": "Sectorial",
-      "executive": "Área de la CEA",
+      "executive": "Cargo de la CEA",
       "other": "Otro"
     },
     "toastRegion": "Notificaciones (F8)",
@@ -2334,7 +2359,7 @@
         "body": {
           "secretariat": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú las organizas: creas asambleas, revisas lo que presentan los miembros y lo publicas.",
           "mesa": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú llevas la sesión: los turnos de palabra, los recuentos y las votaciones.",
-          "cea": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú presentas documentos y enmiendas en nombre de tu área de la CEA.",
+          "cea": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú presentas documentos y enmiendas en nombre de tu cargo de la CEA.",
           "asociado": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú presentas documentos y enmiendas en nombre de tu consejo.",
           "sectorial": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú presentas documentos y enmiendas en nombre de tu sectorial. Solo hay una cosa que no puedes presentar: una moción interna. Sí puedes enmendarla.",
           "guest": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú puedes leerlo todo, pero no presentar ni cambiar nada."
@@ -2407,7 +2432,7 @@
     "member": {
       "title": "Tu usuario",
       "actingFor": "Presentas documentos y enmiendas en nombre de este usuario.",
-      "none": "Tu cuenta no está vinculada a ningún miembro. Si representas a un consejo, una sectorial o un área, pide a Secretaría que lo revise.",
+      "none": "Tu cuenta no está vinculada a ningún miembro. Si representas a un consejo, una sectorial o un cargo de la CEA, pide a Secretaría que lo revise.",
       "role": "Rol en la plataforma"
     },
     "admin": {
@@ -2536,6 +2561,7 @@
         "correction": "Secretaría te pide que corrijas {amendment}. Cuando la tengas, vuelve a enviarla.",
         "reclassifiedFormal": "Secretaría ha pasado {amendment} a enmienda de forma.",
         "reclassifiedContent": "Secretaría ha pasado {amendment} a enmienda de contenido.",
+        "authorsChanged": "Secretaría ha cambiado quién presenta {amendment}.",
         "admitted": "La asamblea ha decidido tratar {amendment}: se debatirá.",
         "inadmissible": "No se ha admitido {amendment}: no se debatirá.",
         "approved": "Se ha aprobado {amendment}: su cambio pasa al texto.",
@@ -2628,7 +2654,9 @@
     }
   },
   "agenda": {
+    "more": "Más",
     "title": "Orden del día",
+    "hiddenTitle": "Punto de un documento sin publicar",
     "final": "Definitivo",
     "provisional": "Orden del día provisional",
     "itemsCount": "Sin puntos | {count} punto | {count} puntos",
@@ -2736,6 +2764,7 @@
       "parentHint": "Dentro del punto {number}: {title}",
       "hint": "Los puntos se numeran automáticamente según su posición.",
       "titleRequired": "Escribe el título del punto",
+      "titleHiddenHelp": "Este punto lleva el título de un documento que no puedes ver, así que aquí no puedes cambiar su título ni su descripción.",
       "tooLong": "Como máximo {max} caracteres",
       "create": "Crear punto",
       "saveError": "No se ha podido guardar el punto"
@@ -3080,18 +3109,6 @@
       "unpublishedDescription": "Se podrán presentar enmiendas cuando Secretaría lo publique.",
       "empty": "El documento todavía no tiene texto",
       "filePending": "Este documento se entregará en PDF y no admite enmiendas en la plataforma. Aún no se ha subido el PDF."
-    },
-    "window": {
-      "open": "Plazo de enmiendas abierto",
-      "closes": "Cierra",
-      "openUnbounded": "Se pueden presentar enmiendas",
-      "openUnboundedDescription": "No hay fecha de cierre fijada.",
-      "upcoming": "El plazo de enmiendas aún no se ha abierto",
-      "opens": "Se abre",
-      "closed": "Plazo de enmiendas cerrado",
-      "closedLate": "Si presentas una enmienda nueva ahora, llegará fuera de plazo y la Mesa decidirá si la admite.",
-      "closedSince": "Cerró",
-      "voted": "El texto ya se ha votado: no admite más enmiendas."
     },
     "consolidatedView": {
       "text": "Texto consolidado",
@@ -4014,7 +4031,7 @@
     "editingOn": "Ya puedes cambiar los plazos.",
     "editingOff": "Has terminado de editar los plazos.",
     "emptyTitle": "Aún no hay documentos",
-    "emptyDescription": "Añade los documentos que esperas de cada miembro, como el informe de cada área de la CEA, con su plazo interno. Les aparecerán en su inicio para que los preparen.",
+    "emptyDescription": "Añade los documentos que esperas de cada miembro, como el informe de cada cargo de la CEA, con su plazo interno. Les aparecerán en su inicio para que los preparen.",
     "noAgendaTitle": "Aún no hay orden del día",
     "noAgendaDescription": "Cada documento va en un punto del orden del día. Crea primero los puntos.",
     "toAgenda": "Ir al orden del día",
@@ -4256,6 +4273,11 @@
       "justificationHelp": "Es obligatoria. La leerán quienes presentaron las enmiendas que combina.",
       "justificationPlaceholder": "Cuenta qué acuerdo recoge y por qué",
       "authorsOptions": "Más opciones: quién la presenta",
+      "executiveOptions": "Más opciones: presentarla con un cargo de la CEA",
+      "executiveAuthors": "Cargos de la CEA que la presentan contigo",
+      "executiveAuthorsHint": "Opcional. Una vez enviada, figurarán como «CEA».",
+      "executiveAuthorsOptional": "Opcional.",
+      "executiveAuthorsPlaceholder": "Elige los cargos de la CEA",
       "authors": "La presentan",
       "authorsHint": "Por defecto, quienes presentaron las enmiendas que combina.",
       "authorsPlaceholder": "Elige quién la presenta",
@@ -4859,6 +4881,7 @@
       "amendment_withdrawn": "Enmienda retirada",
       "amendment_correction_requested": "@:amendment.history.events.amendment_correction_requested",
       "amendment_reclassified": "@:amendment.history.events.amendment_reclassified",
+      "amendment_authors_changed": "@:amendment.history.events.amendment_authors_changed",
       "amendment_validated": "Enmienda validada por Secretaría",
       "amendment_published": "Enmienda publicada",
       "amendment_admitted": "Enmienda admitida",

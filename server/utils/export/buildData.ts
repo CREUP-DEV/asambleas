@@ -13,10 +13,14 @@ import {
 } from "../../db/schema";
 import type { MemberKind } from "../../../shared/constants/domain";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
-import { visibleAgendaItems } from "../../../shared/utils/agendaSubmissions";
+import {
+  hiddenTitleItemIds,
+  titleDocumentId,
+  visibleAgendaItems,
+} from "../../../shared/utils/agendaSubmissions";
 import { consolidate } from "../../../shared/utils/content/consolidate";
 import { formatAssemblyLabel } from "../../../shared/utils/slug";
-import type { Actor } from "../domain/actor";
+import { canManageDocuments, type Actor } from "../domain/actor";
 import { loadAmendmentVisibility } from "../domain/documents";
 import { getImageDir, imageFileName } from "../domain/documentImages";
 import { logError } from "../core/logger";
@@ -133,6 +137,8 @@ async function loadAgenda(assemblyId: string) {
       description: agendaItems.description,
       order: agendaItems.order,
       generatedForDocumentId: agendaItems.generatedForDocumentId,
+      hiddenWithDocumentId: agendaItems.hiddenWithDocumentId,
+      titleWithheld: agendaItems.titleWithheld,
     })
     .from(agendaItems)
     .where(eq(agendaItems.assemblyId, assemblyId));
@@ -380,6 +386,22 @@ export async function buildDocumentExportData(
   ]);
   const agenda = buildAgendaTree(agendaRows);
   const agendaTitles = new Map(agendaRows.map((row) => [row.id, row.title]));
+  // The item it hangs from may carry the title of another document (it was
+  // that one's automatic sub-item): never print it for a requester who
+  // cannot see that document.
+  const item = agendaRows.find((row) => row.id === document.agendaItemId);
+  const titleOf = item ? titleDocumentId(item) : null;
+  if (item && titleOf && titleOf !== document.id) {
+    const other = await db.query.documents.findFirst({
+      where: eq(documents.id, titleOf),
+    });
+    const [source] = other ? await withCoProponentIds([other]) : [];
+    if (source && !canSeeDocument(actor, source)) agendaTitles.delete(item.id);
+  }
+  // Nor a title withheld since its document was deleted.
+  if (item?.titleWithheld && !canManageDocuments(actor)) {
+    agendaTitles.delete(item.id);
+  }
   const images = await loadExportImages([document.id], body.blocks);
 
   return {
@@ -411,7 +433,7 @@ export async function buildAssemblyExportData(
   const actor = await requireExportActor(job.requestedBy);
   const assembly = await requireExportAssembly(actor, job.assemblyId);
 
-  const [allAgendaRows, documentRows] = await Promise.all([
+  const [allAgendaRows, documentRows, postponedRows] = await Promise.all([
     loadAgenda(assembly.id),
     db.query.documents.findMany({
       where: and(
@@ -421,9 +443,30 @@ export async function buildAssemblyExportData(
       with: { proponent: { columns: { acronym: true, kind: true } } },
       orderBy: [asc(documents.createdAt), asc(documents.id)],
     }),
+    db
+      .select({ id: documents.id, agendaItemId: documents.agendaItemId })
+      .from(documents)
+      .where(
+        and(
+          eq(documents.assemblyId, assembly.id),
+          eq(documents.status, "postponed"),
+        ),
+      ),
   ]);
-  // The automatic sub-item of an unpublished document carries its title.
-  const agendaRows = visibleAgendaItems(allAgendaRows, documentRows);
+  // A postponed document is not printed, but everyone reads it in the
+  // platform (canSeeDocument), so the items that carry its title keep it.
+  const publicDocuments = [...documentRows, ...postponedRows];
+  // An item that carries the title of a document that is not public (its
+  // automatic sub-item, or one kept after it moved away or was deleted) is
+  // left out, or printed without that title when it holds something
+  // published. The same for every requester, managers included.
+  const keptRows = visibleAgendaItems(allAgendaRows, publicDocuments);
+  const hiddenTitles = hiddenTitleItemIds(keptRows, publicDocuments);
+  const agendaRows = keptRows.map((row) =>
+    hiddenTitles.has(row.id)
+      ? { ...row, title: "", description: null, titleHidden: true }
+      : row,
+  );
 
   const agenda = buildAgendaTree(agendaRows, documentRows);
   const agendaTitles = new Map(agendaRows.map((row) => [row.id, row.title]));

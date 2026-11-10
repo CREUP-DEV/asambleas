@@ -382,6 +382,23 @@ describe("buildAgendaTree", () => {
     expect(tree.numbering.get("a")).toBe("2");
     expect(tree.numbering.get("b")).toBe("2.1");
   });
+
+  it("never carries the title of an item marked as hidden", () => {
+    const tree = buildAgendaTree([
+      {
+        id: "a",
+        parentId: null,
+        title: "Borrador ajeno",
+        description: null,
+        order: 0,
+        titleHidden: true,
+      },
+      { id: "b", parentId: "a", title: "B", description: null, order: 0 },
+    ]);
+    expect(tree.nodes[0]).toMatchObject({ title: "", titleHidden: true });
+    expect(tree.nodes[0]!.children[0]).toMatchObject({ title: "B" });
+    expect(tree.nodes[0]!.children[0]).not.toHaveProperty("titleHidden");
+  });
 });
 
 describe("presentersLabel", () => {

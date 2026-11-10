@@ -66,6 +66,7 @@ import {
   type SessionAgendaTarget,
   type SessionAmendmentStage,
 } from "./sessionModel";
+import { agendaWithTitles } from "~/utils/agendaTitles";
 import { useHeadcounts } from "./useSessionHeadcounts";
 import { useSessionSpeakers } from "./useSessionSpeakers";
 
@@ -171,9 +172,12 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     error: agendaError,
     refresh: refreshAgenda,
   } = agendaFetch;
-  const { data: agenda, stale: agendaStale } = keepLastGoodData(agendaFetch, {
-    resetOn: param,
-  });
+  const { data: fetchedAgenda, stale: agendaStale } = keepLastGoodData(
+    agendaFetch,
+    { resetOn: param },
+  );
+  // An item sent without its title gets a neutral one (titleHidden).
+  const agenda = agendaWithTitles(fetchedAgenda, () => t("agenda.hiddenTitle"));
 
   const liveFetch = useAsyncData(
     () => `session-live-${param.value}`,

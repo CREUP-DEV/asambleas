@@ -164,7 +164,7 @@ export const PRESENTERS_MESSAGES: Record<PresentersError, string> = {
   main_required:
     "Indica quién presenta principalmente el documento: es quien responde a las enmiendas",
   own_member_required:
-    "Tu consejo o área tiene que seguir entre quienes presentan el documento",
+    "Tu consejo, sectorial o cargo de la CEA tiene que seguir entre quienes presentan el documento",
   main_only:
     "Solo quien presenta principalmente el documento o la Secretaría pueden cambiar quién lo presenta principalmente",
 };

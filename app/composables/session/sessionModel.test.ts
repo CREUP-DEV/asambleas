@@ -478,6 +478,7 @@ describe("session model", () => {
       submissionKinds: [],
       auto: false,
       generatedForDocumentId: null,
+      titleHidden: false,
       titleCustom: false,
       updatedAt: "",
     });
@@ -1487,6 +1488,7 @@ describe("session model", () => {
         submissionKinds: [],
         auto: false,
         generatedForDocumentId: null,
+        titleHidden: false,
         titleCustom: false,
         updatedAt: "",
       });

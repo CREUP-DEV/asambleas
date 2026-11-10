@@ -888,6 +888,15 @@ describe("unauthorizedTransactionalAuthors", () => {
       unauthorizedTransactionalAuthors(["me", "stranger", "a1"], input),
     ).toEqual(["stranger"]);
   });
+
+  it("always lets an executive area through, party or not", () => {
+    expect(
+      unauthorizedTransactionalAuthors(["me", "area", "stranger"], {
+        ...input,
+        executiveIds: new Set(["area"]),
+      }),
+    ).toEqual(["stranger"]);
+  });
 });
 
 describe("visibility", () => {

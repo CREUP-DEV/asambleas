@@ -115,8 +115,8 @@ migrar hay que quitar `NUXT_ROLE_API_URL` (sección 8, paso 2).
   - Enlaza la cuenta con su miembro (`server/utils/members/link.ts`):
     `Asociado` con su consejo y `Sectorial` con su sectorial, primero por `id`
     (`users.intranet_id` igual a `members.intranet_id`) y si no por
-    `initials`; `CEA` con un área ejecutiva solo por `initials` (el `id` de
-    una cuenta CEA es una persona, no un área), que crea con las siglas como
+    `initials`; `CEA` con un cargo de la CEA solo por `initials` (el `id` de
+    una cuenta CEA es una persona, no un cargo), que crea con las siglas como
     nombre si no existe. Un miembro encontrado por siglas cuyo `intranet_id`
     es de otra cuenta no se enlaza (aviso en el log).
   - `Admin`, `Secretaria`, `Presidencia` y `Moderador` nunca cambian por la
@@ -223,7 +223,7 @@ migrar hay que quitar `NUXT_ROLE_API_URL` (sección 8, paso 2).
   - nunca deja dos miembros con las mismas siglas: si un miembro pasa a unas
     siglas que otro conserva, se queda con las suyas y se avisa
     (`acronymConflicts` en `members.sync`);
-  - nunca toca miembros creados a mano (las áreas ejecutivas que crea la
+  - nunca toca miembros creados a mano (los cargos de la CEA que crea la
     consulta de rol son manuales);
   - reactiva los miembros de origen Intranet que vuelven a aparecer y
     **desactiva todo miembro de origen Intranet que no aparezca en la lista**;
@@ -1507,8 +1507,8 @@ Pendientes:
 Cada punto quita trabajo manual en la plataforma; los marcados con (P)
 necesitan además cambios en la plataforma.
 
-1. **Áreas ejecutivas (P).** Hoy la plataforma crea un área por cada cuenta
-   CEA, con las siglas como nombre, y Administración la renombra a mano.
+1. **Áreas ejecutivas (P).** Hoy la plataforma crea un cargo de la CEA por cada cuenta
+   CEA, con las siglas como nombre, y Administración lo renombra a mano.
    `executive_areas` no tiene siglas. Propuesta:
    - `GET /api/asambleas/v1/areas-ejecutivas`: áreas del mandato vigente con
      `id`, `name` (es), `order` y sus cuentas CEA

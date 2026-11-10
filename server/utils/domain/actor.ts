@@ -118,7 +118,7 @@ export function canReviewAmendments(actor: Actor): boolean {
  * /api/admin/users/[id]/member through an admin).
  */
 export const UNLINKED_ACCOUNT_MESSAGE =
-  "Tu cuenta no está vinculada a ningún miembro. Pide a la Secretaría que la vincule a tu consejo o área.";
+  "Tu cuenta no está vinculada a ningún miembro. Pide a la Secretaría que la vincule a tu consejo, sectorial o cargo de la CEA.";
 
 /** Whether the actor speaks for any of the given members. */
 export function actsFor(

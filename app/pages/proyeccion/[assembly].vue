@@ -21,6 +21,7 @@ import {
   buildSessionAgendaRows,
   sessionConnectionState,
 } from "~/composables/session/sessionModel";
+import { agendaWithTitles } from "~/utils/agendaTitles";
 import { formatTime } from "~/utils/format";
 import {
   affectsAgenda,
@@ -119,12 +120,14 @@ const agendaFetch = await useAsyncData(
   () => api.get<AgendaDto>(`${assemblyUrl.value}/agenda`),
 );
 const {
-  data: agenda,
+  data: fetchedAgenda,
   stale: agendaStale,
   failed: agendaFailed,
 } = keepLastGoodData(agendaFetch, {
   isGone,
 });
+// An item sent without its title gets a neutral one (titleHidden).
+const agenda = agendaWithTitles(fetchedAgenda, () => t("agenda.hiddenTitle"));
 const refreshAgenda = agendaFetch.refresh;
 
 // Speaking turns. A 404 (no such endpoint, or hidden) shows nothing.

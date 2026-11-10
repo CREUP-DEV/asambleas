@@ -146,6 +146,8 @@ export interface DocumentExportData {
 export interface ExportAgendaNode {
   numbering: string;
   title: string;
+  /** Printed as `agendaHiddenTitle`: the title is an unpublished document's. */
+  titleHidden?: boolean;
   description: string | null;
   documents: { title: string; reference: string | null; kind: DocumentKind }[];
   children: ExportAgendaNode[];
@@ -798,7 +800,7 @@ function agendaContent(
     content.push({
       text: [
         { text: `${node.numbering}. `, bold: true, color: CREUP_RED },
-        node.title,
+        node.titleHidden ? t("agendaHiddenTitle") : node.title,
       ],
       style: "agendaItem",
       bold: depth === 0,

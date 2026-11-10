@@ -111,7 +111,7 @@ const emit = defineEmits<{
 const { t } = useI18n();
 const api = useApi();
 const toast = useToast();
-const { member, can } = useMe();
+const { member, can, seesExecutiveMembers } = useMe();
 const uid = useId();
 const isDesktop = useMediaQuery("(min-width: 1024px)");
 
@@ -189,25 +189,29 @@ const editingOthers = !isNew && authorSeed.keptMemberId === null;
 /** "Con otros miembros": the picker shows and its members count. */
 const withOthers = ref(coAuthorIds.value.length > 0);
 /**
- * The generic "CEA" stands for executive areas this account does not see.
- * When the draft has it, it stays: only the CEA or the Secretaría take an
- * area out (the server keeps them whatever is sent).
+ * The generic "CEA" stands for the executive areas already on the draft,
+ * which this account does not see: sent back they all stay, and taking it
+ * out (or presenting it alone) takes them all out. The areas this account
+ * adds go by their real ids.
  */
-const genericCoAuthorKept = authorSeed.coAuthorIds.some(
-  isGenericExecutiveMember,
-);
-watch(coAuthorIds, (ids) => {
-  if (genericCoAuthorKept && !ids.some(isGenericExecutiveMember)) {
-    coAuthorIds.value = [
-      ...ids,
-      ...keptGenericExecutive(authorSeed.coAuthorIds),
-    ];
+const genericCoAuthorIds = seededGenericExecutive(authorSeed.coAuthorIds);
+/**
+ * Said under the picker to an account that does not see the CEA offices:
+ * the ones it adds read as "CEA" once saved, and on a stored draft the
+ * "CEA" entry already covers the ones there (they are not ticked one by
+ * one).
+ */
+const coAuthorsHelp = computed(() => {
+  if (genericCoAuthorIds.length > 0) {
+    return t("amendment.composer.who.ceaKept");
   }
+  if (seesExecutiveMembers.value) return undefined;
+  return (members.value ?? []).some((item) => item.kind === "executive")
+    ? t("amendment.composer.who.ceaAdded")
+    : undefined;
 });
 const sentCoAuthorIds = computed(() =>
-  editingOthers || withOthers.value
-    ? coAuthorIds.value
-    : keptGenericExecutive(coAuthorIds.value),
+  editingOthers || withOthers.value ? coAuthorIds.value : [],
 );
 
 // Operations -----------------------------------------------------------------
@@ -464,10 +468,13 @@ const mainAuthor = computed(() =>
 );
 const mainAuthorBox = useTemplateRef<HTMLElement>("mainAuthorBox");
 
+// The composer's own list: the one place where an account that does not
+// see the executive areas reads them, to name them as authors.
 const { data: members, status: membersStatus } = useLazyFetch<MemberDto[]>(
   "/api/members",
   {
     key: "amendment-composer-members",
+    query: AMENDMENT_AUTHORS_QUERY,
     server: false,
     default: () => [],
   },
@@ -486,17 +493,17 @@ const memberItems = computed(() =>
 /**
  * Everyone but the actor's member (always kept) and, on a new amendment,
  * the presenting one (always included). A generic "CEA" the draft already
- * has is listed so it is named, but cannot be taken out.
+ * has is listed first, so it is named and can be taken out or put back.
  */
 const coAuthorItems = computed(() => {
   const presenting = isNew ? onBehalfOfMemberId.value : undefined;
   const items = memberItems.value.filter(
     (item) => item.value !== member.value?.id && item.value !== presenting,
   );
-  const kept = keptGenericExecutive(coAuthorIds.value).map((id) => ({
+  const kept = genericCoAuthorIds.map((id) => ({
     label: memberName(id),
     value: id,
-    disabled: true,
+    disabled: false,
   }));
   return [...kept, ...items];
 });
@@ -1356,11 +1363,7 @@ const questionClass = "text-highlighted text-sm font-semibold";
                   ? t('amendment.detail.authors')
                   : t('amendment.composer.who.members')
               "
-              :help="
-                genericCoAuthorKept
-                  ? t('amendment.composer.who.ceaKept')
-                  : undefined
-              "
+              :help="coAuthorsHelp"
             >
               <USelectMenu
                 v-model="coAuthorIds"
@@ -1461,7 +1464,11 @@ const questionClass = "text-highlighted text-sm font-semibold";
                 ? t('amendment.composer.justificationRequired')
                 : undefined
             "
-            :help="t('amendment.composer.why.help')"
+            :help="
+              justificationMissing
+                ? t('amendment.composer.why.help')
+                : undefined
+            "
           >
             <template #label>
               <span :class="questionClass">
