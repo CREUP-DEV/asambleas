@@ -178,7 +178,7 @@ const createOpen = ref(false);
               :items="statusItems"
               :aria-label="t('assemblies.filters.status')"
               icon="i-lucide-circle-dot"
-              class="w-44"
+              class="w-56"
             />
             <UButton
               v-if="hasFilters"
