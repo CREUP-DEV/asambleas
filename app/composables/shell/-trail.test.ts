@@ -117,22 +117,12 @@ describe("breadcrumbTrail", () => {
     );
   });
 
-  it("puts the admin pages under the administration", () => {
-    expect(breadcrumbTrail("/admin")).toEqual({
-      steps: [{ kind: "admin", path: "/admin" }],
-      exact: true,
-    });
+  it("gives the admin pages no trail: the sidebar names the section", () => {
+    expect(breadcrumbTrail("/admin")).toEqual({ steps: [], exact: false });
     expect(breadcrumbTrail("/admin/usuarios")).toEqual({
-      steps: [
-        { kind: "admin", path: "/admin" },
-        { kind: "adminPage", path: "/admin/usuarios", page: "users" },
-      ],
-      exact: true,
+      steps: [],
+      exact: false,
     });
-    expect(breadcrumbTrail("/admin/calendario").steps[1]).toMatchObject({
-      page: "calendarRules",
-    });
-    expect(breadcrumbTrail("/admin/otra").exact).toBe(false);
   });
 
   it("names the personal activity page", () => {

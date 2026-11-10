@@ -196,10 +196,6 @@ export function useBreadcrumbs() {
           ? truncateLabel(own.label)
           : t("shell.breadcrumb.agendaItem");
       }
-      case "admin":
-        return t("shell.nav.admin");
-      case "adminPage":
-        return t(`shell.nav.${step.page}`);
       case "myActivity":
         return t("shell.user.activity");
     }

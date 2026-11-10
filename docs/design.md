@@ -945,8 +945,9 @@ One authenticated shell built on Nuxt UI dashboard components
 identity. The sidebar becomes a drawer on mobile.
 
 Every page of the shell shows a breadcrumb row under its navbar
-(`ShellBreadcrumbs`): `Asambleas › 80.ª AGO › Documentos › R-3 › Editar`,
-`Administración › Usuarios`. The last crumb is the page on show; below `lg` the
+(`ShellBreadcrumbs`): `Asambleas › 80.ª AGO › Documentos › R-3 › Editar`.
+The administration pages have none: they hang straight from the sidebar,
+which names the section, and their navbar names the page. The last crumb is the page on show; below `lg` the
 row is a single link to the level above. The trail comes from the route
 (`app/composables/shell/-trail.ts`), so pages do not link "back" up the
 hierarchy themselves. Every agenda item and sub-item has its own page

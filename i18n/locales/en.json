@@ -2421,7 +2421,6 @@
     "loadFailed": "The assemblies could not be loaded",
     "retry": "Try again",
     "loading": "Loading assemblies",
-    "aside": "Your account",
     "live": {
       "title": "In session now",
       "follow": "Follow the session",
@@ -2433,12 +2432,6 @@
       "all": "See all",
       "empty": "No upcoming assemblies",
       "emptyDescription": "When an assembly is convened, it will show up here with its deadlines."
-    },
-    "member": {
-      "title": "Your user",
-      "actingFor": "You present documents and amendments on behalf of this user.",
-      "none": "Your account is not linked to any member. If you represent a council, a sectoral body or a CEA office, ask the Secretariat to check it.",
-      "role": "Platform role"
     },
     "admin": {
       "title": "Administration",

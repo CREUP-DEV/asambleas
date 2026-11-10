@@ -1057,7 +1057,7 @@ async function onDeleted(): Promise<void> {
         <aside
           v-show="dataPanel"
           id="document-data-panel"
-          class="min-w-0 space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-2rem)] lg:overflow-y-auto"
+          class="min-w-0 space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-var(--shell-banner-height,0px)-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-2rem)] lg:overflow-y-auto"
         >
           <UCard :ui="{ body: 'p-4 sm:p-5' }">
             <template #header>

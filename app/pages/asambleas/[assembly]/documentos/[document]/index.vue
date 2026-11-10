@@ -1446,7 +1446,7 @@ const filteredBlockLabel = computed(() =>
         <div
           v-show="!composer"
           ref="workspaceBox"
-          class="border-default flex flex-col overflow-hidden rounded-lg border lg:h-[calc(100dvh-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-3rem)] lg:min-h-[32rem] lg:flex-row"
+          class="border-default flex flex-col overflow-hidden rounded-lg border lg:h-[calc(100dvh-var(--shell-banner-height,0px)-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-3rem)] lg:min-h-[32rem] lg:flex-row"
         >
           <!-- Text -->
           <UDashboardPanel

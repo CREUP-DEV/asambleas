@@ -8,9 +8,6 @@ import {
  * are added by useBreadcrumbs; this part is pure.
  */
 
-export type AdminPage =
-  "users" | "roles" | "members" | "calendarRules" | "activity";
-
 export type DocumentView = "edit" | "answers" | "consolidated";
 
 export type TrailStep =
@@ -27,8 +24,6 @@ export type TrailStep =
    * adds them from what the page registers.
    */
   | { kind: "agendaItem"; path: string; param: string }
-  | { kind: "admin"; path: string }
-  | { kind: "adminPage"; path: string; page: AdminPage }
   | { kind: "myActivity"; path: string };
 
 export interface Trail {
@@ -41,14 +36,6 @@ export interface Trail {
    */
   exact: boolean;
 }
-
-const ADMIN_PAGES: Record<string, AdminPage> = {
-  usuarios: "users",
-  roles: "roles",
-  miembros: "members",
-  calendario: "calendarRules",
-  actividad: "activity",
-};
 
 const DOCUMENT_VIEWS: Record<string, DocumentView> = {
   editar: "edit",
@@ -99,14 +86,8 @@ export function breadcrumbTrail(path: string): Trail {
     return done(1);
   }
 
-  if (root === "admin") {
-    steps.push({ kind: "admin", path: pathTo(1) });
-    const page = second ? ADMIN_PAGES[second] : undefined;
-    if (!page) return done(1);
-    steps.push({ kind: "adminPage", path: pathTo(2), page });
-    return done(2);
-  }
-
+  // The administration pages have no trail: they hang straight from the
+  // sidebar, which names the section, and their navbar names the page.
   if (root !== "asambleas") return { steps: [], exact: false };
 
   steps.push({ kind: "assemblies", path: pathTo(1) });
