@@ -95,8 +95,13 @@ export function matchesTrackingFilter(
 
 export interface TrackingGroup<T> {
   itemId: string;
-  /** Hierarchical agenda number ("2.1"), or "" for an unknown item. */
-  number: string;
+  /**
+   * Hierarchical agenda number ("2.1"). Null for an unknown item, and for
+   * one that is not in the agenda for everyone yet (`unlisted`).
+   */
+  number: string | null;
+  /** The item has no number because not everyone receives it yet. */
+  unlisted: boolean;
   title: string;
   documents: T[];
 }
@@ -104,7 +109,7 @@ export interface TrackingGroup<T> {
 type AgendaItemLike = Pick<
   AgendaItemDto,
   "id" | "parentId" | "order" | "title"
->;
+> & { unlisted?: boolean };
 
 /**
  * Documents under their agenda item, in agenda order. Items without
@@ -128,13 +133,20 @@ export function groupByAgendaItem<T extends { agendaItemId: string }>(
     groups.push({
       itemId: node.item.id,
       number: node.number,
+      unlisted: node.number === null,
       title: node.item.title,
       documents: list,
     });
     byItem.delete(node.item.id);
   }
   for (const [itemId, list] of byItem) {
-    groups.push({ itemId, number: "", title: "", documents: list });
+    groups.push({
+      itemId,
+      number: null,
+      unlisted: false,
+      title: "",
+      documents: list,
+    });
   }
   return groups;
 }

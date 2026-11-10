@@ -144,7 +144,8 @@ export interface DocumentExportData {
 }
 
 export interface ExportAgendaNode {
-  numbering: string;
+  /** Null for an item that is not in the agenda for everyone: no number. */
+  numbering: string | null;
   title: string;
   /** Printed as `agendaHiddenTitle`: the title is an unpublished document's. */
   titleHidden?: boolean;
@@ -799,7 +800,9 @@ function agendaContent(
   for (const node of nodes) {
     content.push({
       text: [
-        { text: `${node.numbering}. `, bold: true, color: CREUP_RED },
+        ...(node.numbering !== null
+          ? [{ text: `${node.numbering}. `, bold: true, color: CREUP_RED }]
+          : []),
         node.titleHidden ? t("agendaHiddenTitle") : node.title,
       ],
       style: "agendaItem",

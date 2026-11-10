@@ -495,7 +495,12 @@ data, the agenda and the milestones as a print view and a PDF.
   public, the items that carried its title and stay keep it withheld
   (`titleWithheld`): only document managers read it until one of them
   renames the item. A title a manager wrote (`titleCustom`) is never
-  hidden once the item is no longer the document's. A
+  hidden once the item is no longer the document's. Agenda numbers are not
+  stored, and everyone reads the same one for the same item: the numbers
+  are those of an account that sees only what is public, so an item such
+  an account does not receive (`AgendaItemDto.unlisted`) has no number for
+  those who do receive it, shows as "Sin publicar" and never shifts its
+  siblings (`numberAgendaItems`). A
   document in an automatic sub-item is not "expected" for that reason alone:
   `documents_close` binds it like any document a member chose to present.
 - Deleting an agenda item removes its sub-items and every document under

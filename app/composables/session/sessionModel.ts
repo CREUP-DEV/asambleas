@@ -30,6 +30,10 @@ import {
   compareAmendmentCodes,
 } from "~/composables/amendment/workspace";
 import { cellFillOf } from "~~/shared/constants/cellFills";
+import {
+  agendaChildGroups,
+  numberAgendaItems,
+} from "~~/shared/utils/agendaNumbering";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { copyShape } from "~~/shared/utils/content/lists";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
@@ -1670,32 +1674,25 @@ export function sessionCleanVote(vote: VoteInput): VoteInput {
 export interface SessionAgendaRow {
   item: AgendaItemDto;
   depth: number;
-  /** Visible numbering, e.g. "2.1". */
-  number: string;
+  /**
+   * Visible numbering, e.g. "2.1". Null for an item that is not in the
+   * agenda for everyone yet (`unlisted`).
+   */
+  number: string | null;
   documents: DocumentSummaryDto[];
 }
 
 /**
- * The agenda tree flattened depth-first, with its numbering and the
- * documents of each item. Items whose parent is missing are treated as roots,
- * and cycles are cut.
+ * The agenda tree flattened depth-first, with its numbering (the shared
+ * rule, numberAgendaItems) and the documents of each item. Items whose
+ * parent is missing or caught in a cycle are treated as roots.
  */
 export function buildSessionAgendaRows(
   items: AgendaItemDto[],
   documents: DocumentSummaryDto[],
 ): SessionAgendaRow[] {
-  const ids = new Set(items.map((item) => item.id));
-  const children = new Map<string | null, AgendaItemDto[]>();
-  for (const item of items) {
-    const parent =
-      item.parentId && ids.has(item.parentId) ? item.parentId : null;
-    const list = children.get(parent) ?? [];
-    list.push(item);
-    children.set(parent, list);
-  }
-  for (const list of children.values()) {
-    list.sort((a, b) => a.order - b.order || a.title.localeCompare(b.title));
-  }
+  const children = agendaChildGroups(items);
+  const numbers = numberAgendaItems(items);
   const docsByItem = new Map<string, DocumentSummaryDto[]>();
   for (const document of documents) {
     const list = docsByItem.get(document.agendaItemId) ?? [];
@@ -1704,21 +1701,17 @@ export function buildSessionAgendaRows(
   }
 
   const rows: SessionAgendaRow[] = [];
-  const visited = new Set<string>();
-  const walk = (parent: string | null, depth: number, prefix: string) => {
-    (children.get(parent) ?? []).forEach((item, i) => {
-      if (visited.has(item.id)) return;
-      visited.add(item.id);
-      const number = prefix ? `${prefix}.${i + 1}` : `${i + 1}`;
+  const walk = (parent: string | null, depth: number) => {
+    for (const item of children.get(parent) ?? []) {
       rows.push({
         item,
         depth,
-        number,
+        number: numbers.get(item.id) ?? null,
         documents: docsByItem.get(item.id) ?? [],
       });
-      walk(item.id, depth + 1, number);
-    });
+      walk(item.id, depth + 1);
+    }
   };
-  walk(null, 0, "");
+  walk(null, 0);
   return rows;
 }

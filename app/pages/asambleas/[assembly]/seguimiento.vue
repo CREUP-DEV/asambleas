@@ -294,9 +294,10 @@ async function onDeadlineSaved() {
               class="text-muted text-sm font-semibold"
             >
               <template v-if="group.title">
-                <span v-if="group.number" class="tabular-nums">
-                  {{ group.number }}.
-                </span>
+                <AgendaItemNumber
+                  v-if="group.number || group.unlisted"
+                  :number="group.number"
+                />
                 {{ group.title }}
               </template>
               <template v-else>{{ t("tracking.unknownItem") }}</template>

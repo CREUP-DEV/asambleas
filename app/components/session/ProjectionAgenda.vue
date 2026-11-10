@@ -62,7 +62,7 @@ function rowClass(row: SessionAgendaRow): string[] {
         :class="rowClass(group.head)"
         :aria-current="group.head.item.id === currentId ? 'step' : undefined"
       >
-        <span class="tabular-nums">{{ group.head.number }}.</span>
+        <AgendaItemNumber :number="group.head.number" />
         {{ group.head.item.title }}
       </div>
       <ol
@@ -76,7 +76,7 @@ function rowClass(row: SessionAgendaRow): string[] {
           :class="rowClass(row)"
           :aria-current="row.item.id === currentId ? 'step' : undefined"
         >
-          <span class="tabular-nums">{{ row.number }}.</span>
+          <AgendaItemNumber :number="row.number" />
           {{ row.item.title }}
         </li>
       </ol>

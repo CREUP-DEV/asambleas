@@ -454,7 +454,11 @@ const agendaItems = computed(() => {
   return flattenAgendaTree(buildAgendaTree(items))
     .filter(({ item }) => !item.auto || item.id === initial.value.agendaItemId)
     .map(({ item }) => ({
-      label: `${numbers.get(item.id)}. ${item.title}`,
+      label: numberedAgendaTitle(
+        numbers.get(item.id),
+        item.title,
+        t("agenda.unlisted.inText"),
+      ),
       value: item.id,
       disabled:
         !manager.value &&

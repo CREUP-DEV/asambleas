@@ -124,7 +124,14 @@ const amendmentLink = computed(() =>
       <!-- Agenda item and document -->
       <div class="flex flex-col gap-1">
         <p v-if="row" class="text-muted text-sm">
-          {{ t("liveView.now.item", { number: row.number }) }}
+          {{
+            t("liveView.now.item", {
+              number: agendaNumberInText(
+                row.number,
+                t("agenda.unlisted.inText"),
+              ),
+            })
+          }}
           <span class="text-default">{{ row.item.title }}</span>
         </p>
         <p

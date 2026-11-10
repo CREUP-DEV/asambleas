@@ -10,6 +10,10 @@ import type {
   AmendmentOp,
   ConsolidationConflict,
 } from "../../../shared/types/content";
+import {
+  agendaChildGroups,
+  numberAgendaItems,
+} from "../../../shared/utils/agendaNumbering";
 import type {
   ExportAgendaNode,
   ExportAnnexRow,
@@ -34,6 +38,11 @@ export interface AgendaRow {
    * PDF prints a neutral label in its place.
    */
   titleHidden?: boolean;
+  /**
+   * Someone who sees only what is public does not receive the item
+   * (unlistedAgendaItemIds): it has no number.
+   */
+  unlisted?: boolean;
 }
 
 export interface AgendaDocumentRow {
@@ -46,33 +55,24 @@ export interface AgendaDocumentRow {
 
 export interface AgendaTree {
   nodes: ExportAgendaNode[];
-  /** Hierarchical number of every item, e.g. "3.1". */
-  numbering: Map<string, string>;
+  /** Hierarchical number of every item, e.g. "3.1"; null for an unlisted one. */
+  numbering: Map<string, string | null>;
   /** Document ids in agenda order (depth first). */
   documentOrder: string[];
 }
 
 /**
- * Builds the agenda tree with hierarchical numbering. Items whose parent is
- * missing are treated as roots, and a cycle never loops: every item is
- * placed once. Documents keep the order they are given in within an item.
+ * Builds the agenda tree with its numbers, the ones every screen shows
+ * (numberAgendaItems): an item marked `unlisted` has none. Items whose
+ * parent is missing or caught in a parent cycle are roots, each placed
+ * once. Documents keep the order they are given in within an item.
  */
 export function buildAgendaTree(
   items: AgendaRow[],
   documents: AgendaDocumentRow[] = [],
 ): AgendaTree {
-  const ids = new Set(items.map((item) => item.id));
-  const children = new Map<string | null, AgendaRow[]>();
-  for (const item of items) {
-    const parent =
-      item.parentId && ids.has(item.parentId) ? item.parentId : null;
-    const list = children.get(parent) ?? [];
-    list.push(item);
-    children.set(parent, list);
-  }
-  for (const list of children.values()) {
-    list.sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
-  }
+  const children = agendaChildGroups(items);
+  const numbering = numberAgendaItems(items);
 
   const documentsByItem = new Map<string, AgendaDocumentRow[]>();
   for (const document of documents) {
@@ -81,44 +81,25 @@ export function buildAgendaTree(
     documentsByItem.set(document.agendaItemId, list);
   }
 
-  const numbering = new Map<string, string>();
   const documentOrder: string[] = [];
-  const placed = new Set<string>();
-
-  const place = (item: AgendaRow, number: string): ExportAgendaNode => {
-    placed.add(item.id);
-    numbering.set(item.id, number);
-    const itemDocuments = documentsByItem.get(item.id) ?? [];
-    documentOrder.push(...itemDocuments.map((document) => document.id));
-    return {
-      numbering: number,
-      title: item.titleHidden ? "" : item.title,
-      ...(item.titleHidden ? { titleHidden: true } : {}),
-      description: item.description,
-      documents: itemDocuments.map((document) => ({
-        title: document.title,
-        reference: document.reference,
-        kind: document.kind,
-      })),
-      children: walk(item.id, number),
-    };
-  };
-
-  function walk(parentId: string | null, prefix: string): ExportAgendaNode[] {
-    const nodes: ExportAgendaNode[] = [];
-    for (const item of children.get(parentId) ?? []) {
-      if (placed.has(item.id)) continue;
-      const position = String(nodes.length + 1);
-      nodes.push(place(item, prefix ? `${prefix}.${position}` : position));
-    }
-    return nodes;
-  }
-
-  const nodes = walk(null, "");
-  // Items caught in a parent cycle never hang from a root: they become roots.
-  for (const item of [...items].sort((a, b) => a.order - b.order)) {
-    if (!placed.has(item.id)) nodes.push(place(item, String(nodes.length + 1)));
-  }
+  const walk = (parentId: string | null): ExportAgendaNode[] =>
+    (children.get(parentId) ?? []).map((item) => {
+      const itemDocuments = documentsByItem.get(item.id) ?? [];
+      documentOrder.push(...itemDocuments.map((document) => document.id));
+      return {
+        numbering: numbering.get(item.id) ?? null,
+        title: item.titleHidden ? "" : item.title,
+        ...(item.titleHidden ? { titleHidden: true } : {}),
+        description: item.description,
+        documents: itemDocuments.map((document) => ({
+          title: document.title,
+          reference: document.reference,
+          kind: document.kind,
+        })),
+        children: walk(item.id),
+      };
+    });
+  const nodes = walk(null);
 
   const known = new Set(documentOrder);
   for (const document of documents) {

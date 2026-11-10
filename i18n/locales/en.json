@@ -2698,6 +2698,12 @@
       "deleteNote": "The agenda is already final. The deletion will be noted in the history.",
       "organizeHint": "The agenda is already final. To change a main item you will have to confirm it. Sub-items change without confirming."
     },
+    "unlisted": {
+      "label": "Not published",
+      "hint": "Not in the agenda for everyone yet. It gets a number once its document is published or, if it no longer has one, once it is given a new title.",
+      "inText": "(not published)",
+      "moved": "“{title}” was moved. It still has no number because it is not in the agenda for everyone yet"
+    },
     "loading": "Loading the agenda",
     "loadError": "The agenda could not be loaded",
     "retry": "Try again",
@@ -2898,11 +2904,11 @@
       "noDescription": "Only the Secretariat adds documents, one or several, straight to the item. No sub-items are created.",
       "yesDescription": "Each document added becomes a sub-item of its own, with its title. Members submit until the deadline for documents.",
       "kinds": "Which types they can submit",
+      "kindsHelp": "With none chosen, they can submit any type.",
       "allKinds": "All types",
       "autoHint": "This item follows the title of its document. If you change it here, it stops following it.",
       "autoCustomHint": "This item no longer follows the title of its document, because it was changed here.",
       "newDocumentHint": "The document will appear as a sub-item of its own under this item.",
-      "kindsHelp": "With none chosen, they can submit any type.",
       "takesAll": "Members submit documents here",
       "takesKinds": "Members submit here: {kinds}",
       "kindRefused": "This item does not take that type of document."

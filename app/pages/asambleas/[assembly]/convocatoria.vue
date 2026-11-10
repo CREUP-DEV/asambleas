@@ -49,8 +49,12 @@ const dateRange = computed(() =>
 
 // Agenda ------------------------------------------------------------------------
 
+// The call is the same for everyone: an item that is not in the agenda for
+// everyone yet (no number) is left out of it.
 const rows = computed(() =>
-  flattenAgendaTree(buildAgendaTree(agenda.value?.items ?? [])),
+  flattenAgendaTree(buildAgendaTree(agenda.value?.items ?? [])).filter(
+    (row) => row.number !== null,
+  ),
 );
 
 const PUBLIC_DOCUMENT_STATUSES = new Set(["published", "postponed"]);

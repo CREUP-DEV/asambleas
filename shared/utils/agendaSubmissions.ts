@@ -1,4 +1,4 @@
-import type { DocumentKind } from "../constants/domain";
+import type { DocumentKind, DocumentStatus } from "../constants/domain";
 
 /**
  * Agenda items where members present documents ("container" items), and the
@@ -154,7 +154,21 @@ export function carriesGuardedTitle(item: TitleSource): boolean {
  * the items that carried it: it was not public (canSeeDocument).
  */
 export function deletedTitleWithheld(status: string): boolean {
-  return status !== "published" && status !== "postponed";
+  return !isPublicDocumentStatus(status);
+}
+
+/**
+ * The statuses in which everyone who sees the assembly reads a document
+ * (canSeeDocument).
+ */
+export const PUBLIC_DOCUMENT_STATUSES = [
+  "published",
+  "postponed",
+] as const satisfies readonly DocumentStatus[];
+
+/** Whether a document in this status is public (PUBLIC_DOCUMENT_STATUSES). */
+export function isPublicDocumentStatus(status: string): boolean {
+  return (PUBLIC_DOCUMENT_STATUSES as readonly string[]).includes(status);
 }
 
 type ViewerItem = TitleSource & { id: string; parentId: string | null };

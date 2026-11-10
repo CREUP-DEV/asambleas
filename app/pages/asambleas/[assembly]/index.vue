@@ -494,9 +494,10 @@ const warnedKeys = computed(() =>
               class="text-default hover:text-primary focus-visible:outline-primary min-w-0 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2"
               :class="row.depth === 0 ? 'font-medium' : 'text-sm'"
             >
-              <span class="text-primary me-1.5 tabular-nums"
-                >{{ row.number }}.</span
-              >
+              <AgendaItemNumber
+                :number="row.number"
+                class="text-primary me-1.5"
+              />
               <span class="break-words">{{ row.item.title }}</span>
             </NuxtLink>
             <span

@@ -13,8 +13,10 @@ import {
 } from "../../db/schema";
 import type { MemberKind } from "../../../shared/constants/domain";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
+import { unlistedAgendaItemIds } from "../../../shared/utils/agendaNumbering";
 import {
   hiddenTitleItemIds,
+  PUBLIC_DOCUMENT_STATUSES,
   titleDocumentId,
   visibleAgendaItems,
 } from "../../../shared/utils/agendaSubmissions";
@@ -142,6 +144,19 @@ async function loadAgenda(assemblyId: string) {
     })
     .from(agendaItems)
     .where(eq(agendaItems.assemblyId, assemblyId));
+}
+
+/** The documents everyone reads, with the item each hangs from. */
+function loadPublicDocuments(assemblyId: string) {
+  return db
+    .select({ id: documents.id, agendaItemId: documents.agendaItemId })
+    .from(documents)
+    .where(
+      and(
+        eq(documents.assemblyId, assemblyId),
+        inArray(documents.status, PUBLIC_DOCUMENT_STATUSES),
+      ),
+    );
 }
 
 type AcronymMember = { acronym: string; kind: MemberKind };
@@ -376,15 +391,24 @@ export async function buildDocumentExportData(
   const refusal = exportRefusal(actor, document, job.variant);
   if (refusal) throw new ExportRejectedError(EXPORT_REFUSAL_MESSAGES[refusal]);
 
-  const [agendaRows, finalVotes, coProponents, body] = await Promise.all([
-    loadAgenda(assembly.id),
-    loadVotes([document.finalVoteId]),
-    loadCoProponents([document.id]),
-    job.variant === "annotated"
-      ? annotatedBody(actor, assembly, document)
-      : cleanBody(actor, document),
-  ]);
-  const agenda = buildAgendaTree(agendaRows);
+  const [agendaRows, publicDocuments, finalVotes, coProponents, body] =
+    await Promise.all([
+      loadAgenda(assembly.id),
+      loadPublicDocuments(assembly.id),
+      loadVotes([document.finalVoteId]),
+      loadCoProponents([document.id]),
+      job.variant === "annotated"
+        ? annotatedBody(actor, assembly, document)
+        : cleanBody(actor, document),
+    ]);
+  // The number everyone reads for its item: none while the item is not in
+  // the agenda for everyone (the document is not public yet).
+  const unlisted = unlistedAgendaItemIds(agendaRows, publicDocuments);
+  const agenda = buildAgendaTree(
+    agendaRows.map((row) =>
+      unlisted.has(row.id) ? { ...row, unlisted: true } : row,
+    ),
+  );
   const agendaTitles = new Map(agendaRows.map((row) => [row.id, row.title]));
   // The item it hangs from may carry the title of another document (it was
   // that one's automatic sub-item): never print it for a requester who

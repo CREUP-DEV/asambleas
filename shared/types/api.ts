@@ -454,6 +454,17 @@ export interface AgendaItemDto {
    * renames the item.
    */
   titleHidden: boolean;
+  /**
+   * A plain attendee, someone who sees only the public documents, does not
+   * receive this item: it is the automatic sub-item of a document that is
+   * not public yet (or an item that still carries such a title) and holds
+   * nothing public. The viewer gets it because it sees that document. It
+   * has no number (`numberAgendaItems`) and never shifts the numbers of its
+   * siblings, so everyone reads the same number for the same item; clients
+   * mark it as not published. False for everyone once the document is
+   * published, and always for an account that sees only what is public.
+   */
+  unlisted: boolean;
   description: string | null;
   order: number;
   /** Members present documents under this item (a "container" item). */
