@@ -5,8 +5,8 @@ import {
   addableMembers,
   executiveMembersOf,
   genericExecutiveAcronym,
+  hidesExecutiveAuthors,
   isGenericExecutiveMember,
-  seededGenericExecutive,
   withFixedGenericExecutive,
 } from "./executiveMembers";
 
@@ -60,12 +60,15 @@ describe("withFixedGenericExecutive", () => {
   });
 });
 
-describe("seededGenericExecutive", () => {
-  it("offers only the generic CEA a draft already has", () => {
-    expect(
-      seededGenericExecutive([COUNCIL.id, GENERIC_EXECUTIVE_MEMBER_ID]),
-    ).toEqual([GENERIC_EXECUTIVE_MEMBER_ID]);
-    expect(seededGenericExecutive([COUNCIL.id])).toEqual([]);
+describe("hidesExecutiveAuthors", () => {
+  it("is true when the generic CEA is among the authors", () => {
+    expect(hidesExecutiveAuthors([COUNCIL, GENERIC])).toBe(true);
+    expect(hidesExecutiveAuthors([GENERIC])).toBe(true);
+  });
+
+  it("is false when every author is a real member", () => {
+    expect(hidesExecutiveAuthors([COUNCIL, SECTORIAL])).toBe(false);
+    expect(hidesExecutiveAuthors([])).toBe(false);
   });
 });
 

@@ -3,6 +3,7 @@ import { createId } from "@paralleldrive/cuid2";
 import type { Editor } from "@tiptap/core";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type {
+  AmendmentComposerAuthorsDto,
   AmendmentDraftBody,
   AmendmentDto,
   DocumentDto,
@@ -11,6 +12,7 @@ import type {
 } from "~~/shared/types/api";
 import type { AmendmentOp, Block } from "~~/shared/types/content";
 import { blocksToEditor, editorToBlocks } from "~~/shared/utils/content/editor";
+import { orderMembers } from "~~/shared/utils/memberOrder";
 import {
   globalReplaceOps,
   touchedBlockIds,
@@ -90,11 +92,19 @@ const props = withDefaults(
     startBlockId?: string | null;
     /** Draft being edited (its latest version, kept fresh by the parent). */
     draft?: AmendmentDto | null;
+    /**
+     * The draft's real authors, read by the parent before the composer
+     * opens when `draft` names offices of the CEA only as the generic
+     * "CEA": here they show one by one. Null when `draft.authors` are the
+     * real ones already.
+     */
+    draftAuthors?: AmendmentComposerAuthorsDto | null;
   }>(),
   {
     mode: "document",
     startBlockId: null,
     draft: null,
+    draftAuthors: null,
   },
 );
 
@@ -163,11 +173,14 @@ const updatedAt = ref<string | null>(props.draft?.updatedAt ?? null);
 const canActOnBehalf = computed(() => props.document.can.moderate);
 /** A new amendment: no stored draft when the composer opened. */
 const isNew = !props.draft;
-const seedAuthors = props.draft?.authors ?? [];
+// The real authors when the draft's own are redacted: whoever edits a
+// draft sees which offices of the CEA present it, and which is the main
+// author.
+const seedAuthors = props.draftAuthors?.authors ?? props.draft?.authors ?? [];
 const authorSeed = composerAuthorSeed(
   seedAuthors.map((author) => author.id),
   member.value?.id ?? null,
-  props.draft?.mainAuthorId ?? null,
+  (props.draftAuthors ?? props.draft)?.mainAuthorId ?? null,
 );
 /**
  * Picked by a moderator only. A stored draft keeps its presenting member
@@ -189,25 +202,15 @@ const editingOthers = !isNew && authorSeed.keptMemberId === null;
 /** "Con otros miembros": the picker shows and its members count. */
 const withOthers = ref(coAuthorIds.value.length > 0);
 /**
- * The generic "CEA" stands for the executive areas already on the draft,
- * which this account does not see: sent back they all stay, and taking it
- * out (or presenting it alone) takes them all out. The areas this account
- * adds go by their real ids.
- */
-const genericCoAuthorIds = seededGenericExecutive(authorSeed.coAuthorIds);
-/**
  * Said under the picker to an account that does not see the CEA offices:
- * the ones it adds read as "CEA" once saved, and on a stored draft the
- * "CEA" entry already covers the ones there (they are not ticked one by
- * one).
+ * it names them here one by one, and everywhere else they read as "CEA".
  */
 const coAuthorsHelp = computed(() => {
-  if (genericCoAuthorIds.length > 0) {
-    return t("amendment.composer.who.ceaKept");
-  }
   if (seesExecutiveMembers.value) return undefined;
-  return (members.value ?? []).some((item) => item.kind === "executive")
-    ? t("amendment.composer.who.ceaAdded")
+  return [...(members.value ?? []), ...seedAuthors].some(
+    (item) => item.kind === "executive",
+  )
+    ? t("amendment.composer.who.ceaOutside")
     : undefined;
 });
 const sentCoAuthorIds = computed(() =>
@@ -468,8 +471,9 @@ const mainAuthor = computed(() =>
 );
 const mainAuthorBox = useTemplateRef<HTMLElement>("mainAuthorBox");
 
-// The composer's own list: the one place where an account that does not
-// see the executive areas reads them, to name them as authors.
+// The composer's own list: with the draft's real authors (`draftAuthors`),
+// the one place where an account that does not see the executive offices
+// reads them, to name them as authors.
 const { data: members, status: membersStatus } = useLazyFetch<MemberDto[]>(
   "/api/members",
   {
@@ -480,32 +484,39 @@ const { data: members, status: membersStatus } = useLazyFetch<MemberDto[]>(
   },
 );
 
-/** Never the generic "CEA": it is not a member anyone can add. */
-const memberItems = computed(() =>
-  addableMembers(members.value ?? [])
-    .filter((item) => item.active)
-    .map((item) => ({
+/**
+ * Never the generic "CEA": it is not a member anyone can add. The draft's
+ * own authors are always there, so they show ticked and can be taken out:
+ * an account whose list carries no offices (it may not name them) still
+ * reads the ones on the draft it edits.
+ */
+const memberItems = computed(() => {
+  const listed = addableMembers(members.value ?? []).filter(
+    (item) => item.active,
+  );
+  const listedIds = new Set(listed.map((item) => item.id));
+  const kept = addableMembers(seedAuthors).filter(
+    (author) => !listedIds.has(author.id),
+  );
+  // Its own kind first: an asociado looks among the asociados, a sectorial
+  // among the sectorials and an office among the offices.
+  return orderMembers([...listed, ...kept], member.value?.kind ?? null).map(
+    (item) => ({
       label: memberLabel(item),
       value: item.id,
       disabled: false,
-    })),
-);
+    }),
+  );
+});
 /**
  * Everyone but the actor's member (always kept) and, on a new amendment,
- * the presenting one (always included). A generic "CEA" the draft already
- * has is listed first, so it is named and can be taken out or put back.
+ * the presenting one (always included).
  */
 const coAuthorItems = computed(() => {
   const presenting = isNew ? onBehalfOfMemberId.value : undefined;
-  const items = memberItems.value.filter(
+  return memberItems.value.filter(
     (item) => item.value !== member.value?.id && item.value !== presenting,
   );
-  const kept = genericCoAuthorIds.map((id) => ({
-    label: memberName(id),
-    value: id,
-    disabled: false,
-  }));
-  return [...kept, ...items];
 });
 
 /** Members by id, to name them. */

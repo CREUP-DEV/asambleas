@@ -57,13 +57,13 @@ describe("errorReasonKey", () => {
     );
   });
 
-  it("words the refusals of the CEA offices on an amendment", () => {
+  it("words the refusal of the generic CEA on an amendment", () => {
     expect(
       errorReasonKey(fetchError(422, { reason: "executive_author" })),
     ).toBe("common.errors.executiveAuthor");
     expect(
       errorReasonKey(fetchError(422, { reason: "executive_author_main" })),
-    ).toBe("common.errors.executiveAuthorMain");
+    ).toBeNull();
   });
 
   it("is null for other reasons and for none", () => {

@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import type { OutlineEntry } from "~/components/content/ContentView.vue";
-import type { AmendmentDto } from "~~/shared/types/api";
+import type {
+  AmendmentComposerAuthorsDto,
+  AmendmentDto,
+} from "~~/shared/types/api";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import {
   firstTouchedBlockId,
@@ -107,6 +110,11 @@ interface ComposerState {
   /** Base block the editor opens at: where the reader was. */
   startBlockId: string | null;
   draftId: string | null;
+  /**
+   * The draft's real authors, when the viewer reads offices of the CEA
+   * among them as the generic "CEA" (`loadDraftAuthors`); null otherwise.
+   */
+  draftAuthors: AmendmentComposerAuthorsDto | null;
 }
 
 interface TransactionalState {
@@ -116,6 +124,7 @@ interface TransactionalState {
 }
 
 const { t } = useI18n();
+const api = useApi();
 const route = useRoute();
 const router = useRouter();
 const { member } = useMe();
@@ -599,8 +608,30 @@ function openComposer(options: Partial<Omit<ComposerState, "key">>): void {
     mode: "document",
     startBlockId: null,
     draftId: null,
+    draftAuthors: null,
     ...options,
   };
+}
+
+/**
+ * The real authors of a draft whose own name offices of the CEA only as
+ * the generic "CEA": whoever edits a draft sees them one by one in the
+ * composer, and only there. Null when the draft's authors are the real
+ * ones already; undefined when the read was refused (said in a toast), and
+ * the composer then stays closed, since saving would drop those offices.
+ */
+async function loadDraftAuthors(
+  amendment: AmendmentDto,
+): Promise<AmendmentComposerAuthorsDto | null | undefined> {
+  if (!hidesExecutiveAuthors(amendment.authors)) return null;
+  try {
+    return await api.get<AmendmentComposerAuthorsDto>(
+      `${amendmentsUrl.value}/${amendment.id}/authors`,
+    );
+  } catch (error) {
+    api.notifyError(error, "amendment.composer.authorsFailed");
+    return undefined;
+  }
 }
 
 /** "Proponer una transaccional", on these amendments or picking them there. */
@@ -701,7 +732,15 @@ async function reloadComposer(): Promise<void> {
     }
     return;
   }
-  composer.value = { ...current, key: (composerSeq += 1) };
+  const draftAuthors = stored ? await loadDraftAuthors(stored) : null;
+  // Closed, or another composer opened, while the authors were read.
+  if (composer.value?.key !== key) return;
+  if (draftAuthors === undefined) {
+    composer.value = null;
+    void focusAfterComposer();
+    return;
+  }
+  composer.value = { ...current, draftAuthors, key: (composerSeq += 1) };
 }
 
 function onComposerSaved(amendment: AmendmentDto): void {
@@ -929,8 +968,27 @@ onMounted(() => {
   });
 });
 
-function onDetailEdit(amendment: AmendmentDto): void {
-  openComposer({ draftId: amendment.id });
+/** The draft whose authors "Editar" is reading, so a second click waits. */
+let editOpening: string | null = null;
+let editSeq = 0;
+
+async function onDetailEdit(amendment: AmendmentDto): Promise<void> {
+  if (editOpening === amendment.id) return;
+  const seq = (editSeq += 1);
+  editOpening = amendment.id;
+  let draftAuthors: AmendmentComposerAuthorsDto | null | undefined;
+  try {
+    draftAuthors = await loadDraftAuthors(amendment);
+  } finally {
+    if (editSeq === seq) editOpening = null;
+  }
+  // While the authors were read the reader opened a composer, asked to edit
+  // another draft or moved to another amendment: leave that alone.
+  if (editSeq !== seq || composing.value || selectedId.value !== amendment.id) {
+    return;
+  }
+  if (draftAuthors === undefined) return;
+  openComposer({ draftId: amendment.id, draftAuthors });
 }
 
 const showDesktopDetail = computed(
@@ -1350,6 +1408,7 @@ const filteredBlockLabel = computed(() =>
           :mode="composer.mode"
           :start-block-id="composer.startBlockId"
           :draft="composerDraft"
+          :draft-authors="composer.draftAuthors"
           @close="closeComposer"
           @saved="onComposerSaved"
           @submitted="onComposerSubmitted"

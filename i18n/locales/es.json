@@ -83,8 +83,7 @@
       "server": "Error del servidor. Inténtalo de nuevo en unos minutos.",
       "network": "No hay conexión con el servidor. Comprueba tu red.",
       "executiveMain": "No puedes elegir a la CEA como principal. Pídeselo a la CEA o a la Secretaría.",
-      "executiveAuthor": "«CEA» solo mantiene los cargos de la CEA que ya la presentan. Para añadir uno, elige el cargo por su nombre.",
-      "executiveAuthorMain": "Para que un cargo de la CEA sea el autor principal, márcalo también entre quienes la presentan.",
+      "executiveAuthor": "«CEA» no es un miembro. Elige el cargo de la CEA por su nombre.",
       "executiveMember": "No puedes añadir a la CEA. Pídeselo a la CEA o a la Secretaría.",
       "unknown": "No se ha podido completar la operación."
     },
@@ -1643,6 +1642,7 @@
       "submit": "Enviar",
       "saved": "Borrador guardado",
       "saveFailed": "No se ha podido guardar la enmienda",
+      "authorsFailed": "No se ha podido abrir el borrador: no se ha podido leer quién lo presenta",
       "submitted": "Enmienda enviada a Secretaría",
       "submittedLate": "Ha llegado fuera de plazo: Secretaría la revisará y la Mesa decidirá si la admite.",
       "submitFailed": "No se ha podido presentar la enmienda",
@@ -1693,8 +1693,7 @@
         "othersHint": "La presentáis juntos.",
         "members": "¿Con quién la presentas?",
         "placeholder": "Elige los miembros",
-        "ceaKept": "«CEA» son los cargos de la CEA que ya la presentan; no aparecen marcados uno a uno. Si la quitas, dejan de presentarla todos. Los cargos que añadas también figurarán como «CEA».",
-        "ceaAdded": "Los cargos de la CEA que añadas figurarán como «CEA» una vez guardada.",
+        "ceaOutside": "Fuera de este editor, los cargos de la CEA figuran como «CEA».",
         "onBehalfToggle": "Presentarla en nombre de otro miembro"
       },
       "why": {
@@ -4275,7 +4274,7 @@
       "authorsOptions": "Más opciones: quién la presenta",
       "executiveOptions": "Más opciones: presentarla con un cargo de la CEA",
       "executiveAuthors": "Cargos de la CEA que la presentan contigo",
-      "executiveAuthorsHint": "Opcional. Una vez enviada, figurarán como «CEA».",
+      "executiveAuthorsHint": "Opcional. Fuera de este editor figuran como «CEA».",
       "executiveAuthorsOptional": "Opcional.",
       "executiveAuthorsPlaceholder": "Elige los cargos de la CEA",
       "authors": "La presentan",

@@ -68,8 +68,10 @@ export type IsoDate = string;
  * the accounts that see the areas (the CEA, the Secretaría, the Presidencia,
  * the Mesa, managers and Admins); everyone else gets GENERIC_EXECUTIVE_MEMBER
  * instead (id GENERIC_EXECUTIVE_MEMBER_ID, "CEA"), once per list. That id is
- * not a member: a body may carry it only as a stand-in for the areas already
- * there (422 `executive_member` otherwise). docs/api.md, "Executive areas".
+ * not a member: the body of a document may carry it only as a stand-in for
+ * the areas already there (422 `executive_member` otherwise), and the body
+ * of an amendment never (422 `executive_author`). docs/api.md, "Executive
+ * areas".
  */
 export interface MemberRef {
   id: string;
@@ -871,6 +873,20 @@ export interface ReclassifyBody {
   /** The kind it becomes: the other one of the two. */
   kind: "formal" | "partial";
   updatedAt: IsoDate;
+}
+
+/**
+ * GET .../amendments/[amendment]/authors: the real authors of a draft, for
+ * its composer only. Answered to whoever may edit the draft, under the
+ * checks of the PUT (an author, a draft, a document that still takes
+ * amendments). It is the one answer about an
+ * amendment where such an account reads the offices instead of the generic
+ * "CEA" (MemberRef); it carries members, never who acted for them.
+ */
+export interface AmendmentComposerAuthorsDto {
+  /** Presenting members as they are, the main author first. */
+  authors: MemberRef[];
+  mainAuthorId: string | null;
 }
 
 /**
