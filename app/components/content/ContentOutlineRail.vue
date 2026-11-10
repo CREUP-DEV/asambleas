@@ -8,7 +8,8 @@ import type { OutlineEntry } from "./ContentView.vue";
  * rest grey. Hovering the marks (which stretch), or reaching them with the
  * keyboard, unfolds the headings beside them (ContentOutlineList); a click
  * opens or closes them too, and the down arrow moves into them. It covers no
- * text until it unfolds; motion stays off when the system asks for less.
+ * text until it unfolds; motion stays off when the system asks for less. A
+ * long index shows only the marks around the section being read.
  */
 const props = defineProps<{
   items: OutlineEntry[];
@@ -36,6 +37,36 @@ const activeIndex = computed(() =>
 );
 
 const TICK_WIDTHS = ["w-3.5", "w-3", "w-2.5", "w-2"];
+
+/**
+ * A long index shows a window of marks around the section being read, so
+ * it never runs down half the margin: the window slides as the reading
+ * moves, and fades at an end that has more marks beyond it.
+ */
+const WINDOW = 12;
+/** The height of each mark's slot, in px (`h-[7px]` below). */
+const PITCH = 7;
+const FADE = "1rem";
+
+const windowStart = computed(() => {
+  const extra = props.items.length - WINDOW;
+  if (extra <= 0) return 0;
+  const centred = Math.max(activeIndex.value, 0) - Math.floor(WINDOW / 2);
+  return Math.min(Math.max(centred, 0), extra);
+});
+
+const windowStyle = computed(() => {
+  if (props.items.length <= WINDOW) return undefined;
+  const top = windowStart.value > 0 ? "transparent" : "black";
+  const bottom =
+    windowStart.value + WINDOW < props.items.length ? "transparent" : "black";
+  const mask = `linear-gradient(to bottom, ${top}, black ${FADE}, black calc(100% - ${FADE}), ${bottom})`;
+  return {
+    height: `${WINDOW * PITCH}px`,
+    maskImage: mask,
+    WebkitMaskImage: mask,
+  };
+});
 
 /** A mark's look: read, being read (longest) or still ahead. */
 function tickClass(index: number, depth: number): string[] {
@@ -136,19 +167,32 @@ onBeforeUnmount(() => {
     <button
       ref="trigger"
       type="button"
-      class="group focus-visible:outline-primary flex flex-col gap-[5px] rounded-sm px-0.5 py-1 focus-visible:outline-2"
+      class="group focus-visible:outline-primary block rounded-sm px-0.5 py-1 focus-visible:outline-2"
       :aria-label="t('common.content.outline.label')"
       :aria-expanded="open"
       @click="toggle"
       @focus="onTriggerFocus"
     >
-      <span
-        v-for="(tick, index) in depths"
-        :key="tick.id"
-        aria-hidden="true"
-        class="block origin-left rounded-full transition-[width,height,background-color,transform] duration-300 ease-out group-hover:scale-x-125 motion-reduce:transition-none"
-        :class="tickClass(index, tick.depth)"
-      />
+      <!-- As wide as the longest mark stretched on hover (w-4 × 1.25), and
+           taking only that mark's room. -->
+      <span class="-me-1 block w-5 overflow-hidden" :style="windowStyle">
+        <span
+          class="flex flex-col transition-transform duration-500 ease-out motion-reduce:transition-none"
+          :style="{ transform: `translateY(-${windowStart * PITCH}px)` }"
+        >
+          <span
+            v-for="(tick, index) in depths"
+            :key="tick.id"
+            aria-hidden="true"
+            class="flex h-[7px] items-center"
+          >
+            <span
+              class="block origin-left rounded-full transition-[width,height,background-color,transform] duration-300 ease-out group-hover:scale-x-125 motion-reduce:transition-none"
+              :class="tickClass(index, tick.depth)"
+            />
+          </span>
+        </span>
+      </span>
     </button>
 
     <Transition

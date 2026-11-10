@@ -3113,7 +3113,10 @@
     "compare": {
       "original": "Original text",
       "consolidated": "Consolidated text (provisional)",
-      "final": "Voted consolidated text"
+      "final": "Voted consolidated text",
+      "diff": "Marked changes",
+      "diffConsolidated": "From the original text to the provisional consolidated text, with the changes marked.",
+      "diffFinal": "From the original text to the voted consolidated text, with the changes marked."
     },
     "text": {
       "file": "PDF document",

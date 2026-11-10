@@ -449,7 +449,7 @@ const modeItems = computed(() =>
 
 function onTextMode(mode: string | number): void {
   // Side by side takes the whole width: the detail would hide it.
-  if (mode === "compare") detailOpen.value = false;
+  if (mode === "compare" && !compareDiff.value) detailOpen.value = false;
 }
 
 /** "Incluir las aceptadas" only changes the two views of the result. */
@@ -543,8 +543,10 @@ function toggleReviewFilter(filter: AmendmentReviewFilter): void {
 const panelUi = {
   root: "min-h-0 lg:min-h-0",
   // The body is the containing block of absolute descendants (sr-only text),
-  // so they never stretch the panel group and make it scroll on focus.
-  body: "relative gap-4 p-4 sm:p-5 overflow-visible lg:overflow-y-auto",
+  // so they never stretch the panel group and make it scroll on focus. Its
+  // children never shrink: a long text overflows this column, and a box
+  // that clips (an alert) would be squeezed and cut instead.
+  body: "relative gap-4 p-4 sm:p-5 overflow-visible lg:overflow-y-auto *:shrink-0",
 };
 
 // Composers ----------------------------------------------------------------------
@@ -1017,9 +1019,21 @@ const mobileDetailOpen = computed({
 const wideCompare = computed(
   () =>
     isDesktop.value &&
-    textMode.value === "compare" &&
+    compareColumns.value &&
     !composing.value &&
     !detailOpen.value,
+);
+
+/**
+ * "Comparar" as one text with the changes marked on it (struck and added)
+ * instead of the two columns. Remembered per browser.
+ */
+const compareDiff = useLocalStorage<boolean>("document-compare-diff", false, {
+  initOnMounted: true,
+});
+/** "Comparar" in its two columns, original and result. */
+const compareColumns = computed(
+  () => textMode.value === "compare" && !compareDiff.value,
 );
 /**
  * The amendments list hidden by the reader on a wide screen, so the text
@@ -1093,7 +1107,7 @@ const amendmentsPanelClass = computed(() =>
 const textPanelUi = computed(() => ({
   ...panelUi,
   body:
-    listHidden.value && textMode.value !== "compare"
+    listHidden.value && !compareColumns.value
       ? `${panelUi.body} *:max-w-[52rem]`
       : panelUi.body,
 }));
@@ -1534,9 +1548,20 @@ const filteredBlockLabel = computed(() =>
                   />
                 </template>
                 <template
-                  v-if="showAcceptedSwitch || showAmendmentsToggle"
+                  v-if="
+                    showAcceptedSwitch ||
+                    showAmendmentsToggle ||
+                    textMode === 'compare'
+                  "
                   #right
                 >
+                  <USwitch
+                    v-if="textMode === 'compare'"
+                    v-model="compareDiff"
+                    size="sm"
+                    :label="t('workspace.compare.diff')"
+                    data-testid="compare-diff"
+                  />
                   <USwitch
                     v-if="showAcceptedSwitch"
                     v-model="includeAccepted"
@@ -1736,6 +1761,22 @@ const filteredBlockLabel = computed(() =>
                   :focus="selectedId"
                   interactive
                   @amendment-click="selectAmendment($event, { fromText: true })"
+                />
+              </template>
+
+              <!-- One text, the changes marked on it -->
+              <template v-else-if="textMode === 'compare' && compareDiff">
+                <p class="text-muted text-sm">
+                  {{
+                    finalText
+                      ? t("workspace.compare.diffFinal")
+                      : t("workspace.compare.diffConsolidated")
+                  }}
+                </p>
+                <ContentView
+                  ref="textView"
+                  :annotated="consolidation?.annotated ?? []"
+                  mode="diff"
                 />
               </template>
 
