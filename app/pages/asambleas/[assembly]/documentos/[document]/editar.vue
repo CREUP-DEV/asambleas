@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AssemblyDto, DocumentDto } from "~~/shared/types/api";
 import { errorStatus } from "~/composables/api/useApi";
 import {
@@ -39,8 +40,8 @@ import {
  * Anyone else is sent to the document workspace.
  *
  * Opened right after adding the document on the home page or the agenda
- * (`?desde=inicio`, `?desde=orden-del-dia`), the header leads back there
- * and offers "Guardar y añadir otro", the dialog offers "Publicar y añadir
+ * (`?desde=inicio`, `?desde=orden-del-dia`), the header offers "Guardar y
+ * añadir otro" (the way back is the breadcrumb row), the dialog offers "Publicar y añadir
  * otro" ("Enviar y presentar otro"), and publishing or deleting returns
  * there (the agenda organized, at the item); the success toast links to the
  * document instead. "… y añadir otro" comes back with the new-document
@@ -124,17 +125,11 @@ const addAnotherTarget = computed(() =>
     document.value?.agendaItemId ?? "",
   ),
 );
-/** i18n keys of the way back ("Volver al orden del día", "Volver al inicio"). */
+/** i18n keys of the state shown while going back there. */
 const originLabels = computed(() =>
   origin.value === "home"
-    ? {
-        back: "document.authoring.backToHome",
-        returning: "document.authoring.returningToHome",
-      }
-    : {
-        back: "document.authoring.backToAgenda",
-        returning: "document.authoring.returningToAgenda",
-      },
+    ? { returning: "document.authoring.returningToHome" }
+    : { returning: "document.authoring.returningToAgenda" },
 );
 
 useHead({
@@ -210,20 +205,38 @@ const textDirty = ref(false);
 const metadataDirty = ref(false);
 
 /**
- * The Secretaría's data panel beside the text: closed, the editor takes the
- * full width. The form stays mounted either way (publishing saves it), and
- * opens itself when it has something to show. Remembered per browser.
+ * The Secretaría's data drawer: the editor keeps the full width, and the
+ * data open over it when needed. The form stays mounted while closed
+ * (publishing saves it), and the drawer opens itself when the form has
+ * something to show.
  */
-const dataPanel = useCookie<boolean>("asambleas-editor-data-panel", {
-  default: () => false,
-  maxAge: 60 * 60 * 24 * 365,
-  sameSite: "lax",
-});
+const dataPanel = ref(false);
 
-/** The Secretaría's editor is on the page: the PDF export goes beside it. */
-const editorHere = computed(
-  () => !guided.value && isStructured.value && textEditable.value,
+const pdfExport = useTemplateRef<{ start: () => Promise<void> }>("pdfExport");
+/** A draft is previewed; a published text is exported as it stands. */
+const pdfExportLabel = computed(() =>
+  textEditable.value
+    ? t("document.authoring.pdfPreview")
+    : t("export.exportPdf"),
 );
+
+/** First in the Secretaría's "Más acciones": seeing and printing it. */
+const menuItems = computed<DropdownMenuItem[]>(() => [
+  {
+    label: t("document.authoring.backToWorkspace"),
+    icon: "i-lucide-file-text",
+    to: workspacePath.value,
+  },
+  ...(isStructured.value
+    ? [
+        {
+          label: pdfExportLabel.value,
+          icon: "i-lucide-printer",
+          onSelect: () => void pdfExport.value?.start(),
+        },
+      ]
+    : []),
+]);
 
 /** Opens the data panel so the form can show what is wrong. */
 async function showData(): Promise<void> {
@@ -629,25 +642,21 @@ async function onDeleted(): Promise<void> {
     </div>
 
     <template v-else>
+      <!-- The way back is the breadcrumb row; the Secretaría finds
+           "Ver documento" in its "Más acciones" menu -->
       <DocumentHeader
         :document="document"
         :assembly="assembly"
         :progress="false"
         :show-answerer="!(guided && partners)"
+        :show-kind="false"
       >
         <UButton
-          v-if="fromOrigin"
-          :to="originReturnPath"
-          color="neutral"
-          variant="ghost"
-          icon="i-lucide-arrow-left"
-          :label="t(originLabels.back)"
-        />
-        <UButton
+          v-if="!manager"
           :to="workspacePath"
           color="neutral"
           variant="ghost"
-          :icon="fromOrigin ? 'i-lucide-file-text' : 'i-lucide-arrow-left'"
+          icon="i-lucide-file-text"
           :label="t('document.authoring.backToWorkspace')"
         />
         <!-- Adding several in a row: keep this one as it is and go on -->
@@ -695,13 +704,16 @@ async function onDeleted(): Promise<void> {
           v-model:open="dataPanel"
           :dirty="metadataDirty"
         />
-        <!-- Managers export the draft to check how it prints (beside the
-             text when the editor is here) -->
+        <!-- Managers export the text to check how it prints: started from
+             "Más acciones", it shows only while it runs and to download -->
         <ExportButton
-          v-if="manager && isStructured && !editorHere"
+          v-if="manager && isStructured"
+          ref="pdfExport"
+          hide-idle
           :assembly="assembly.id"
           :document="document.id"
           variant="clean"
+          :label="pdfExportLabel"
           button-variant="outline"
         />
         <DocumentManageActions
@@ -711,6 +723,7 @@ async function onDeleted(): Promise<void> {
           :document-api="documentApi"
           :disabled="acting"
           :publishable="canPublish && !publishPrimary"
+          :leading-items="menuItems"
           @updated="storeDocument"
           @stale="refetch"
           @deleted="onDeleted"
@@ -748,6 +761,7 @@ async function onDeleted(): Promise<void> {
       <DocumentProgressBanner
         :document="document"
         :audience="guided ? 'presenter' : 'manager'"
+        :text-on-screen="textEditable"
       />
       <UAlert
         v-if="
@@ -822,9 +836,10 @@ async function onDeleted(): Promise<void> {
                 : t("document.authoring.steps.pdf")
             }}
           </h3>
-          <!-- Text or PDF, in view while it can still change -->
+          <!-- A PDF says so above it; a text offers the switch beside the
+               editor's buttons -->
           <DocumentFormatSwitch
-            v-if="textEditable"
+            v-if="textEditable && !isStructured"
             :document="document"
             :document-api="documentApi"
             :disabled="busy"
@@ -843,7 +858,19 @@ async function onDeleted(): Promise<void> {
             labelledby="document-step-text"
             @saved="storeDocument"
             @stale="refetch"
-          />
+          >
+            <template #actions>
+              <DocumentFormatSwitch
+                compact
+                :document="document"
+                :document-api="documentApi"
+                :disabled="busy"
+                :pending="textDirty || metadataDirty"
+                @updated="storeDocument"
+                @stale="refetch"
+              />
+            </template>
+          </DocumentDraftEditor>
           <DocumentFileUpload
             v-else
             :document="document"
@@ -947,18 +974,13 @@ async function onDeleted(): Promise<void> {
         </section>
       </div>
 
-      <!-- Secretaría: text and data side by side -->
-      <div
-        v-else
-        class="grid items-start gap-6"
-        :class="{
-          'lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)]': dataPanel,
-        }"
-      >
+      <!-- Secretaría: the text across the page, the data in a drawer -->
+      <div v-else>
         <div class="min-w-0 space-y-4">
-          <!-- Text or PDF, in view while it can still change -->
+          <!-- A PDF says so above it; a text offers the switch beside the
+               editor's buttons -->
           <DocumentFormatSwitch
-            v-if="textEditable"
+            v-if="textEditable && !isStructured"
             :document="document"
             :document-api="documentApi"
             :disabled="busy"
@@ -977,12 +999,15 @@ async function onDeleted(): Promise<void> {
             @saved="storeDocument"
             @stale="refetch"
           >
-            <template v-if="manager" #actions>
-              <ExportButton
-                :assembly="assembly.id"
-                :document="document.id"
-                variant="clean"
-                button-variant="outline"
+            <template #actions>
+              <DocumentFormatSwitch
+                compact
+                :document="document"
+                :document-api="documentApi"
+                :disabled="busy"
+                :pending="textDirty || metadataDirty"
+                @updated="storeDocument"
+                @stale="refetch"
               />
             </template>
           </DocumentDraftEditor>
@@ -1052,41 +1077,28 @@ async function onDeleted(): Promise<void> {
           </section>
         </div>
 
-        <!-- Kept mounted while closed: publishing saves and checks it. Fixed
-             in view as the text scrolls, scrolling on its own if taller. -->
-        <aside
-          v-show="dataPanel"
-          id="document-data-panel"
-          class="min-w-0 space-y-4 lg:sticky lg:top-4 lg:max-h-[calc(100dvh-var(--shell-banner-height,0px)-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-2rem)] lg:overflow-y-auto"
+        <!-- Kept mounted while closed: publishing saves and checks it, and
+             what was typed in it survives closing the drawer. -->
+        <USlideover
+          v-model:open="dataPanel"
+          :title="t('document.metadata.heading')"
+          :unmount-on-hide="false"
         >
-          <UCard :ui="{ body: 'p-4 sm:p-5' }">
-            <template #header>
-              <div class="flex items-center justify-between gap-2">
-                <h3 class="text-highlighted text-base font-semibold">
-                  {{ t("document.metadata.heading") }}
-                </h3>
-                <UButton
-                  color="neutral"
-                  variant="ghost"
-                  size="sm"
-                  icon="i-lucide-x"
-                  :aria-label="t('document.metadata.hide')"
-                  @click="dataPanel = false"
-                />
-              </div>
-            </template>
-            <!-- Publishing saves the data first: then it is the main action -->
-            <DocumentMetadataForm
-              ref="metadataForm"
-              v-model:dirty="metadataDirty"
-              :document="document"
-              :assembly="assembly"
-              :secondary-save="publishPrimary"
-              @saved="storeDocument"
-              @stale="refetch"
-            />
-          </UCard>
-        </aside>
+          <template #body>
+            <div id="document-data-panel">
+              <!-- Publishing saves the data first: then it is the main action -->
+              <DocumentMetadataForm
+                ref="metadataForm"
+                v-model:dirty="metadataDirty"
+                :document="document"
+                :assembly="assembly"
+                :secondary-save="publishPrimary"
+                @saved="storeDocument"
+                @stale="refetch"
+              />
+            </div>
+          </template>
+        </USlideover>
       </div>
 
       <DocumentPublishDialog

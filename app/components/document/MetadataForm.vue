@@ -983,7 +983,16 @@ defineExpose({ reset: resetForm, check, save });
             (value: string | undefined) =>
               (state.proponentMemberId = value ?? state.proponentMemberId)
           "
-        />
+        >
+          <template #default="{ modelValue, ui }">
+            <CommonMenuValue
+              :items="memberItems"
+              :value="modelValue"
+              :placeholder="t('document.metadata.proponentPlaceholder')"
+              :ui="ui"
+            />
+          </template>
+        </USelectMenu>
       </UFormField>
 
       <DocumentPresentersField

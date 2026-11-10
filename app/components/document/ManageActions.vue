@@ -37,8 +37,10 @@ const props = withDefaults(
     disabled?: boolean;
     /** Offer "Publicar ahora" (the parent opens its publish dialog). */
     publishable?: boolean;
+    /** The page's own entries, first in the menu ("Ver documento"). */
+    leadingItems?: DropdownMenuItem[];
   }>(),
-  { disabled: false, publishable: false },
+  { disabled: false, publishable: false, leadingItems: () => [] },
 );
 
 const emit = defineEmits<{
@@ -168,7 +170,9 @@ const items = computed<DropdownMenuItem[][]>(() => {
           },
         ]
       : [];
-  return [statusItems, dangerItems].filter((group) => group.length > 0);
+  return [props.leadingItems, statusItems, dangerItems].filter(
+    (group) => group.length > 0,
+  );
 });
 
 /**

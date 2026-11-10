@@ -667,7 +667,7 @@
       "notFoundDescription": "It does not exist or you do not have access to it.",
       "retry": "Try again",
       "backToWorkspace": "View document",
-      "backToAgenda": "Back to the agenda",
+      "pdfPreview": "PDF preview",
       "noLongerEditable": "This document can no longer be edited",
       "leaveConfirm": "You have unsaved changes. Leave anyway?",
       "submittedTitle": "Submitted, awaiting publication",
@@ -720,11 +720,11 @@
       "wordCard": {
         "title": "Do you have the document in Word?",
         "description": "Upload it and its text will appear here. You can review it before it is saved.",
-        "orWrite": "Or write it directly in the box below."
+        "orWrite": "Or write it directly in the box below.",
+        "close": "Close: you can still upload the Word file from the button above the text"
       },
       "sendNeedsText": "First add the text in step 2.",
       "sendNeedsPdf": "First upload the PDF in step 2.",
-      "backToHome": "Back to the overview",
       "returningToHome": "Returning to the overview",
       "saveAndAddAnother": "Save and add another",
       "savedForLater": "Document saved"
@@ -822,7 +822,6 @@
     },
     "metadata": {
       "heading": "Document details",
-      "hide": "Hide the data",
       "unsavedHint": "The data has unsaved changes.",
       "title": "Title",
       "summary": "Summary",
@@ -2818,8 +2817,8 @@
       "fileNotAmendable": "PDF documents cannot be amended.",
       "voted": "Put to a vote",
       "majority": "Required majority",
-      "create": "Add document",
-      "createAndUpload": "Create and upload the text",
+      "create": "Create",
+      "createAndUpload": "Create and open",
       "createAndUploadPdf": "Create and upload the PDF",
       "created": "Document created",
       "error": "The document could not be created",

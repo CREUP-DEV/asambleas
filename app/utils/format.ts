@@ -233,9 +233,16 @@ export function memberDescription(
  */
 export function memberMenuItem(
   member: MemberNames & { id: string; university?: string | null },
-): { label: string; description: string | undefined; value: string } {
+): {
+  label: string;
+  description: string | undefined;
+  value: string;
+  /** Shown once chosen ("VGC · Vocalía de …", MenuValue). */
+  chosen: string;
+} {
   return {
     label: member.acronym,
+    chosen: memberLabel(member),
     description: memberDescription(member),
     value: member.id,
   };

@@ -948,7 +948,16 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
                 (value: string | undefined) =>
                   (state.proponent = value ?? NO_PROPONENT)
               "
-            />
+            >
+              <template #default="{ modelValue, ui }">
+                <CommonMenuValue
+                  :items="memberItems"
+                  :value="modelValue"
+                  :placeholder="t('agenda.newDocument.proponentPlaceholder')"
+                  :ui="ui"
+                />
+              </template>
+            </USelectMenu>
           </UFormField>
           <UFormField
             :label="t('agenda.newDocument.dueAt')"

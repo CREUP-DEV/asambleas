@@ -648,7 +648,18 @@ function editorPath(document: BulkCreatedDocumentDto): string {
                     "
                     class="w-full"
                     @update:model-value="onProponent(row, $event)"
-                  />
+                  >
+                    <template #default="{ modelValue, ui }">
+                      <CommonMenuValue
+                        :items="memberItems(row)"
+                        :value="modelValue"
+                        :placeholder="
+                          t('agenda.newDocument.proponentPlaceholder')
+                        "
+                        :ui="ui"
+                      />
+                    </template>
+                  </USelectMenu>
                 </UFormField>
               </div>
 

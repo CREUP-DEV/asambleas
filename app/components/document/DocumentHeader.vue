@@ -14,7 +14,8 @@ import { toDate } from "~/utils/format";
 
 /**
  * Title block of a document screen: kind and reference, the title, status,
- * who presents it ("Presenta CEUM con UPV", the main presenter first) and
+ * who presents it ("Presenta CEUM con UPV", the main presenter first; one
+ * presenting it alone by its full name only) and
  * the amendment window countdown. When several members present a document
  * that takes amendments, a calm line says which one answers them
  * (`showAnswerer`; the editor turns it off where its own note already says
@@ -46,6 +47,8 @@ const props = withDefaults(
     editTo?: string | null;
     /** Say which presenter answers the amendments, with co-presenters. */
     showAnswerer?: boolean;
+    /** Name the kind above the title (the editor leaves it out). */
+    showKind?: boolean;
   }>(),
   {
     showAssembly: false,
@@ -53,6 +56,7 @@ const props = withDefaults(
     progress: true,
     editTo: null,
     showAnswerer: true,
+    showKind: true,
   },
 );
 
@@ -73,6 +77,15 @@ const assemblyPath = computed(() =>
 );
 
 const kindLabel = computed(() => t(`document.kinds.${props.document.kind}`));
+
+/** What the line above the title holds (none: no line). */
+const eyebrow = computed(() =>
+  [
+    props.showAssembly && "assembly",
+    props.showKind && "kind",
+    props.document.reference && "reference",
+  ].filter(Boolean),
+);
 
 // Status --------------------------------------------------------------------
 
@@ -162,6 +175,7 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
   >
     <div class="min-w-0 flex-1 space-y-1.5">
       <p
+        v-if="eyebrow.length > 0"
         class="text-muted flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm"
       >
         <template v-if="showAssembly">
@@ -171,11 +185,11 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
           >
             {{ assembly.label }}
           </NuxtLink>
-          <span aria-hidden="true">·</span>
+          <span v-if="eyebrow.length > 1" aria-hidden="true">·</span>
         </template>
-        <span>{{ kindLabel }}</span>
+        <span v-if="showKind">{{ kindLabel }}</span>
         <template v-if="document.reference">
-          <span aria-hidden="true">·</span>
+          <span v-if="showKind" aria-hidden="true">·</span>
           <span class="text-default font-medium tabular-nums">
             <span class="sr-only">{{ t("document.header.reference") }}: </span>
             {{ document.reference }}
@@ -207,7 +221,7 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
           icon="i-lucide-file-text"
           :label="t('document.formats.file')"
         />
-        <DocumentPresenters :document="document" labelled />
+        <DocumentPresenters :document="document" labelled show-name />
 
         <CommonCountdown
           v-if="windowState === 'open' && closesAt"

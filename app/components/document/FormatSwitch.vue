@@ -5,8 +5,9 @@ import type { DocumentDto, DocumentUpdateBody } from "~~/shared/types/api";
 /**
  * Switches an unpublished document between text on the platform and an
  * uploaded PDF (PUT .../documents/[document] with `format`). It sits above
- * the text or the PDF, says which one the document uses and offers the
- * other after a confirmation that says what changes: a PDF takes no
+ * the PDF, says that the document uses one and offers the text; beside the
+ * editor's buttons it is the button alone (`compact`). It offers the
+ * other format after a confirmation that says what changes: a PDF takes no
  * amendments, and the draft text or the PDF already uploaded stays for a
  * switch back.
  *
@@ -26,8 +27,13 @@ const props = withDefaults(
     disabled?: boolean;
     /** The page holds unsaved changes. */
     pending?: boolean;
+    /**
+     * The button alone, among the editor's own buttons: the editor already
+     * shows that the document is a text.
+     */
+    compact?: boolean;
   }>(),
-  { disabled: false, pending: false },
+  { disabled: false, pending: false, compact: false },
 );
 
 const emit = defineEmits<{
@@ -92,10 +98,33 @@ async function confirm(): Promise<void> {
 <template>
   <div
     v-if="offered"
-    class="border-default bg-elevated/50 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md border px-3 py-2 text-sm"
+    :class="
+      compact
+        ? 'inline-flex'
+        : 'border-default bg-elevated/50 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md border px-3 py-2 text-sm'
+    "
     data-testid="document-format-switch"
   >
-    <p class="text-default flex min-w-0 items-start gap-2">
+    <!-- Compact: why it waits is the tooltip (a disabled button takes no
+         pointer, so the tooltip hangs from its wrapper) -->
+    <UTooltip
+      v-if="compact"
+      :text="t('document.formatSwitch.saveFirst')"
+      :disabled="!pending"
+    >
+      <span class="inline-flex">
+        <UButton
+          color="neutral"
+          variant="outline"
+          size="sm"
+          icon="i-lucide-file-up"
+          :label="t(`document.formatSwitch.to.${target}`)"
+          :disabled="disabled || pending || saving"
+          @click="open = true"
+        />
+      </span>
+    </UTooltip>
+    <p v-else class="text-default flex min-w-0 items-start gap-2">
       <UIcon
         :name="isFile ? 'i-lucide-file-type' : 'i-lucide-file-text'"
         class="text-muted mt-0.5 size-4 shrink-0"
@@ -109,6 +138,7 @@ async function confirm(): Promise<void> {
       </span>
     </p>
     <UButton
+      v-if="!compact"
       color="neutral"
       variant="outline"
       size="sm"
