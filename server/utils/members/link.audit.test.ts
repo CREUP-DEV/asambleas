@@ -127,6 +127,60 @@ describe("linkUserToIntranetMember traceability", () => {
     });
   });
 
+  it("links by email an account recreated with a new id", async () => {
+    selects.push(
+      [{ memberId: null, email: " CEUNEW@Uni.es" }],
+      [],
+      [
+        {
+          id: "m-ceunew",
+          kind: "asociado",
+          intranetId: 300,
+          email: "ceunew@uni.es",
+        },
+      ],
+    );
+    updated = [{ id: "u1" }];
+
+    expect(await linkUserToIntranetMember("u1", { ...asociado, id: 412 })).toBe(
+      "m-ceunew",
+    );
+  });
+
+  it("creates the member with the account's email", async () => {
+    selects.push([{ memberId: null, email: "CEUNEW@uni.es" }], [], [], []);
+    inserted = [{ id: "m-new" }];
+    updated = [{ id: "u1" }];
+
+    expect(await linkUserToIntranetMember("u1", { ...asociado, id: 412 })).toBe(
+      "m-new",
+    );
+    // The email is stored on the member, never in its audit row.
+    expect(audits()[0]).toMatchObject({ action: AUDIT_ACTIONS.MEMBER_CREATE });
+    expect(JSON.stringify(audits())).not.toContain("ceunew@uni.es");
+  });
+
+  it("never links by acronym to a member of another email", async () => {
+    selects.push(
+      [{ memberId: null, email: "nuevo@uni.es" }],
+      [],
+      [],
+      [
+        {
+          id: "m-other",
+          kind: "asociado",
+          intranetId: null,
+          email: "viejo@uni.es",
+        },
+      ],
+    );
+
+    expect(
+      await linkUserToIntranetMember("u1", { ...asociado, id: 412 }),
+    ).toBeNull();
+    expect(recordAudit).not.toHaveBeenCalled();
+  });
+
   it("never links by acronym to a member of another intranet account", async () => {
     selects.push(
       [{ memberId: null }],

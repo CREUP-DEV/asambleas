@@ -236,6 +236,7 @@ export async function syncIntranetRoster(options: {
         university: members.university,
         region: members.region,
         intranetId: members.intranetId,
+        email: members.email,
         source: members.source,
         active: members.active,
       })
@@ -414,7 +415,7 @@ export async function syncIntranetRoster(options: {
     }
     if (plan.replacedIds.length > 0) {
       logWarn("members.sync", {
-        reason: "intranet id replaced: a new account uses the acronym",
+        reason: "intranet id replaced: the account was recreated",
         members: plan.replacedIds.map(({ acronym, from, to }) => ({
           acronym,
           from,

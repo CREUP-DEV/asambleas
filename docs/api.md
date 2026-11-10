@@ -212,8 +212,12 @@ invalid one answers 400. It answers 503 without a usable
 writing nothing. The CEA list (`/usuarios/cea`) is optional: when it fails,
 the sync goes on without it and leaves the offices as they were, and
 `MemberSyncResult.skipped` names it (the members page warns). Asociados,
-sectorials and offices are matched by `intranet_id`, then by acronym, and
-deactivated once the Intranet no longer lists them. What the Intranet
+sectorials and offices are matched by `intranet_id`, then by `email` (an
+account recreated in the Intranet keeps its address), and deactivated once
+the Intranet no longer lists them. The acronym only matches a member that
+stores neither, or the same ones: it never hands a member to another account,
+and a new one whose acronym another member keeps is not created (it goes to
+`ignored`). What the Intranet
 lists and the sync cannot store is in `MemberSyncResult.ignored`
 `{ acronyms, withoutInitials }`: acronyms listed twice (the first one is
 kept) or held by another member, and accounts without initials. The members
@@ -319,15 +323,16 @@ links `users.memberId`:
 
 - `Asociado` and `Sectorial` accounts are the member itself: the member of
   that kind with the account's intranet id (`users.intranet_id` =
-  `members.intranet_id`), else the one with its `initials` (the member's
-  acronym). A member found by acronym whose `intranet_id` belongs to another
-  account is not linked, and a warning is logged. A missing member is created
-  as an intranet member with the account's id, and the next roster sync
-  fills it in.
+  `members.intranet_id`), else the one with its email (`users.email` =
+  `members.email`, the address the Intranet looked it up by), else the one
+  with its `initials` (the member's acronym). A member found by acronym whose
+  `intranet_id` or `email` belongs to another account is not linked, and a
+  warning is logged. A missing member is created as an intranet member with
+  the account's id and email, and the next roster sync fills it in.
 - `CEA` accounts (role shown as "Comisión Ejecutiva Ampliada (CEA)") are the
   place of their executive office (its kind labelled "CEA"), which outlives
   whoever holds it, and link like the others: by intranet id, then by
-  initials. A missing office is created as an intranet member with the
+  email, then by initials. A missing office is created as an intranet member with the
   account's id, named after its acronym (the account carries its holder's
   name) until the next roster sync names it. A CEA account is never linked
   to a council or a sectorial that shares its initials.
