@@ -337,10 +337,16 @@ useRetryFailed(
 
 // Derived ------------------------------------------------------------------------
 
+// Only the agenda everyone has: the projector is usually opened on a Mesa or
+// Secretaría account, which also receives the items that are not public yet
+// (no number: unlisted, or under an unlisted one). The room never reads
+// those, except the one the Mesa itself puts on screen.
 const rows = computed(() =>
   buildSessionAgendaRows(
     agenda.value?.items ?? [],
     agenda.value?.documents ?? [],
+  ).filter(
+    (row) => row.number !== null || row.item.id === live.value?.agendaItemId,
   ),
 );
 const currentRow = computed(
