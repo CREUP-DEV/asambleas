@@ -1,5 +1,5 @@
 import { createError } from "h3";
-import { and, eq, inArray, isNull, or, sql } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "../../db";
 import {
   agendaItems,
@@ -25,6 +25,7 @@ import { recordEvent } from "./events";
 import {
   planTurnUpdate,
   sortTurns,
+  speakerHistory,
   turnEventType,
   turnsForActor,
   waitingQueue,
@@ -163,7 +164,28 @@ export async function loadSpeakers(
   return {
     visible: live.visible,
     turns: turns.map((turn) => toTurnDto(actor, byId.get(turn.id)!)),
+    ...(moderate
+      ? { history: speakerHistory(await loadTurnHistory(assemblyId)) }
+      : {}),
   };
+}
+
+/** Every turn of the assembly with a member, for speakerHistory (the Mesa). */
+function loadTurnHistory(assemblyId: string) {
+  return db
+    .select({
+      memberId: speakingTurns.memberId,
+      speaker: speakingTurns.speaker,
+      status: speakingTurns.status,
+      createdAt: speakingTurns.createdAt,
+    })
+    .from(speakingTurns)
+    .where(
+      and(
+        eq(speakingTurns.assemblyId, assemblyId),
+        isNotNull(speakingTurns.memberId),
+      ),
+    );
 }
 
 /** Waiting and speaking turns of the assembly, read under the assembly lock. */

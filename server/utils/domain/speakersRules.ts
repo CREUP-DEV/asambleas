@@ -185,6 +185,63 @@ export function sortTurns<T extends ListedTurn>(turns: T[]): T[] {
 }
 
 /** Event type recorded for a turn change, from the plan and the fields that changed. */
+/** The people suggested for a member: at most this many. */
+export const SPEAKER_SUGGESTIONS_MAX = 10;
+
+/**
+ * What each member has done with the floor in the assembly: the turns it
+ * spoke in (speaking or done; one cancelled or still waiting does not
+ * count) and the names written down for it, the latest first, each once
+ * whatever its case, at most SPEAKER_SUGGESTIONS_MAX. Turns without a member
+ * are left out. Members in the order they first appear.
+ */
+export function speakerHistory(
+  turns: readonly {
+    memberId: string | null;
+    speaker: string | null;
+    status: SpeakingTurnStatus;
+    createdAt: Date;
+  }[],
+): { memberId: string; spoken: number; speakers: string[] }[] {
+  const latestFirst = [...turns].sort(
+    (a, b) => b.createdAt.getTime() - a.createdAt.getTime(),
+  );
+  const byMember = new Map<
+    string,
+    { memberId: string; spoken: number; speakers: string[]; seen: Set<string> }
+  >();
+  for (const turn of latestFirst) {
+    if (!turn.memberId) continue;
+    let entry = byMember.get(turn.memberId);
+    if (!entry) {
+      entry = {
+        memberId: turn.memberId,
+        spoken: 0,
+        speakers: [],
+        seen: new Set(),
+      };
+      byMember.set(turn.memberId, entry);
+    }
+    if (turn.status === "speaking" || turn.status === "done") entry.spoken += 1;
+    const name = turn.speaker?.trim();
+    const key = name?.toLocaleLowerCase("es");
+    if (
+      name &&
+      key &&
+      !entry.seen.has(key) &&
+      entry.speakers.length < SPEAKER_SUGGESTIONS_MAX
+    ) {
+      entry.seen.add(key);
+      entry.speakers.push(name);
+    }
+  }
+  return [...byMember.values()].map(({ memberId, spoken, speakers }) => ({
+    memberId,
+    spoken,
+    speakers,
+  }));
+}
+
 export function turnEventType(input: {
   from: SpeakingTurnStatus;
   to: SpeakingTurnStatus;

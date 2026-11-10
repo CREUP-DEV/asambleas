@@ -125,11 +125,7 @@ const coItems = computed(() => {
     .filter((id) => !listed.some((member) => member.id === id))
     .map((id) => byId.value.get(id))
     .filter((member): member is MemberRef => Boolean(member));
-  return [...missing, ...listed].map((member) => ({
-    label: member.acronym,
-    description: memberNameRepeatsAcronym(member) ? undefined : member.name,
-    value: member.id,
-  }));
+  return [...missing, ...listed].map(memberMenuItem);
 });
 
 const choice = computed(() => ({
@@ -204,7 +200,8 @@ function onMainChange(value: unknown): void {
               :items="coItems"
               value-key="value"
               multiple
-              :filter-fields="['label', 'description']"
+              :ui="MEMBER_MENU_UI"
+              :filter-fields="MEMBER_MENU_FILTER_FIELDS"
               :loading="loading"
               :disabled="disabled"
               :placeholder="t('document.presenters.coPlaceholder')"

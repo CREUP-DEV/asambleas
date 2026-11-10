@@ -91,7 +91,15 @@ describe("planPresenters on create", () => {
     ).toEqual({ proponentMemberId: "a", coProponentMemberIds: ["b"] });
     expect(
       create({ manager: true, actorMemberId: null, proponentMemberId: null }),
-    ).toEqual({ proponentMemberId: null, coProponentMemberIds: [] });
+    ).toBe("presenter_required");
+    // Without a member of its own, a manager names one.
+    expect(create({ manager: true, actorMemberId: null })).toBe(
+      "presenter_required",
+    );
+    expect(create({ manager: true, actorMemberId: "se" })).toEqual({
+      proponentMemberId: "se",
+      coProponentMemberIds: [],
+    });
     expect(
       create({
         manager: true,
@@ -180,6 +188,18 @@ describe("planPresenters on update", () => {
     });
     expect(update(current, { manager: true, proponentMemberId: null })).toBe(
       "main_required",
+    );
+  });
+
+  it("never clears the presenter, and keeps a document from before as it was", () => {
+    const alone = { proponentMemberId: "a", coProponentMemberIds: [] };
+    expect(update(alone, { manager: true, proponentMemberId: null })).toBe(
+      "presenter_required",
+    );
+    const nobody = { proponentMemberId: null, coProponentMemberIds: [] };
+    expect(update(nobody, { manager: true })).toEqual(nobody);
+    expect(update(nobody, { manager: true, proponentMemberId: "a" })).toEqual(
+      alone,
     );
   });
 });

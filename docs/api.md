@@ -546,8 +546,10 @@ beforehand whether the delete is blocked.
 dueAt? }] }`, 1 to 30 rows (`BULK_DOCUMENTS_MAX`). It creates them all or
 none: each one an empty draft with the defaults of its kind, with its
 automatic sub-item when the item accepts submissions and hanging from the
-item itself otherwise. A row without `proponentMemberId` (or with null) has
-no presenter; it never defaults to the manager's own member. The rules of a
+item itself otherwise. Every row names its presenter: a row without
+`proponentMemberId` takes the manager's own member, and with neither the row
+is refused (422). The form starts every row with the manager's own member.
+The rules of a
 single create apply to each row (`presenter_kind`, a member that does not
 exist or is inactive); the error of a row carries `data.index`, its position
 in the request. It answers 201 with `BulkDocumentsDto`: `{ documents: [{ id,
@@ -612,12 +614,15 @@ carry `proponentMemberId` and `coProponentMemberIds` (never the main
 presenter; up to 20, no repeats). The rules (`planPresenters` in
 `server/utils/domain/presenters.ts`):
 
+- a document is always presented by someone (`presenter_required`, 422): a
+  create names a presenter, and an update never clears it (`null`). A
+  document stored without one, from before this rule, keeps none until
+  someone is named;
 - with co-presenters there must be a main presenter: 422 otherwise;
 - managers set any members (they must exist and be active, 422; a
   presenter set earlier stays even if the roster sync deactivates it). On
-  create the main
-  presenter defaults to their own member, and an explicit `null` leaves it
-  empty when there are no co-presenters;
+  create the main presenter defaults to their own member; a manager without
+  a member names one;
 - a member creating its own document is always one of its presenters: its
   member joins the co-presenters unless it is the main presenter. With
   co-presenters it names the main presenter (422 when it names none). The
@@ -1476,7 +1481,13 @@ the queue (`speaking_turns`). Schemas: `shared/utils/schemas/speakers.ts`.
   `live_state.speakersVisible` is true, and `turns: []` otherwise. `visible`
   is always the current flag. Order: who has the floor, then the queue by
   `position`, then the finished and cancelled turns in the order they
-  happened.
+  happened. The Mesa also gets `history` (`SpeakerHistoryDto[]`,
+  `speakerHistory` in `server/utils/domain/speakersRules.ts`): for each
+  member with a turn in the assembly, how many it spoke in (`speaking` or
+  `done`) and up to 10 names written down for it, the latest first. The
+  form puts those who spoke most first and suggests those names; it offers
+  the councils and sectorials in the room at the latest headcount (marked
+  present), and the other members always.
 - **Adding.** A turn needs a `memberId` (an active member, 422 otherwise),
   a `speaker` name (one line, up to 120 characters) or both (422 with
   neither). `agendaItemId` defaults to the item in debate; one given must

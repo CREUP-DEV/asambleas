@@ -5,6 +5,8 @@ import {
   moveInQueue,
   planTurnUpdate,
   sortTurns,
+  speakerHistory,
+  SPEAKER_SUGGESTIONS_MAX,
   turnEventType,
   turnsForActor,
   waitingQueue,
@@ -252,5 +254,46 @@ describe("turnEventType", () => {
     expect(
       turnEventType({ from: "waiting", to: "waiting", moved: false }),
     ).toBe("speaking_turn_updated");
+  });
+});
+
+describe("speakerHistory", () => {
+  const row = (
+    memberId: string | null,
+    status: SpeakingTurnStatus,
+    speaker: string | null,
+    at: number,
+  ) => ({ memberId, status, speaker, createdAt: minute(at) });
+
+  it("counts the turns a member spoke in, and its names latest first", () => {
+    expect(
+      speakerHistory([
+        row("a", "done", "Ana López", 1),
+        row("a", "done", "Luis Pérez", 2),
+        row("a", "speaking", "ana lópez", 3),
+        row("a", "cancelled", "Marta", 4),
+        row("a", "waiting", null, 5),
+        row("b", "waiting", "Pau", 6),
+        row(null, "done", "Sin miembro", 7),
+      ]),
+    ).toEqual([
+      // "b" was written down last: members in the order they first appear,
+      // latest first.
+      { memberId: "b", spoken: 0, speakers: ["Pau"] },
+      {
+        memberId: "a",
+        spoken: 3,
+        speakers: ["Marta", "ana lópez", "Luis Pérez"],
+      },
+    ]);
+  });
+
+  it("suggests a bounded number of names", () => {
+    const many = Array.from({ length: SPEAKER_SUGGESTIONS_MAX + 5 }, (_, n) =>
+      row("a", "done", `Persona ${n}`, n),
+    );
+    const [entry] = speakerHistory(many);
+    expect(entry?.speakers).toHaveLength(SPEAKER_SUGGESTIONS_MAX);
+    expect(entry?.speakers[0]).toBe(`Persona ${SPEAKER_SUGGESTIONS_MAX + 4}`);
   });
 });

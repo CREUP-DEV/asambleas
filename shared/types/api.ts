@@ -1200,6 +1200,21 @@ export interface SpeakingTurnDto {
 export interface SpeakersDto {
   visible: boolean;
   turns: SpeakingTurnDto[];
+  /**
+   * Only for the Mesa: what each member has done with the floor so far in
+   * the assembly, to put those who speak most first and suggest the names
+   * already written for them. Absent for anyone else.
+   */
+  history?: SpeakerHistoryDto[];
+}
+
+/** One member's turns in the whole assembly (SpeakersDto.history). */
+export interface SpeakerHistoryDto {
+  memberId: string;
+  /** Turns it had the floor in (speaking or done). */
+  spoken: number;
+  /** The people written down for it, the latest first, each once. */
+  speakers: string[];
 }
 
 /** POST /api/assemblies/[assembly]/speakers (session:moderate): add to the queue. */

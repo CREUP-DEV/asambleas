@@ -131,7 +131,10 @@ const { member } = useMe();
 
 const TITLE_MAX = 300;
 const SUMMARY_MAX = 5_000;
-/** Sentinel for "no proponent" in the member select. */
+/**
+ * Sentinel for "nobody chosen yet" in the member select: never offered, and
+ * the form refuses it (a document is always presented by someone).
+ */
 const NO_PROPONENT = "__none__";
 
 const isManager = computed(() => props.mode === "manager");
@@ -168,6 +171,11 @@ const schema = computed(() =>
  * field is invalid), so every error shows on the first try.
  */
 function validatePresenters(current: Partial<DocumentFormState>): FormError[] {
+  if (isManager.value && (current.proponent ?? NO_PROPONENT) === NO_PROPONENT) {
+    return [
+      { name: "proponent", message: t("agenda.newDocument.proponentRequired") },
+    ];
+  }
   const missing = mainPresenterMissing(
     choiceOf({
       proponent: current.proponent ?? NO_PROPONENT,
@@ -523,13 +531,9 @@ const presentableMembers = computed<MemberDto[]>(() =>
 );
 
 const memberItems = computed(() => [
-  { label: t("agenda.newDocument.noProponent"), value: NO_PROPONENT },
   ...presentableMembers.value
     .filter((candidate) => candidate.active || candidate.id === state.proponent)
-    .map((candidate) => ({
-      label: memberLabel(candidate),
-      value: candidate.id,
-    })),
+    .map(memberMenuItem),
 ]);
 
 /** The presenter's three steps; this modal is the first one. */
@@ -918,21 +922,32 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
             :help="proponentHelp"
           >
             <USelectMenu
-              v-model="state.proponent"
+              :model-value="
+                state.proponent === NO_PROPONENT ? undefined : state.proponent
+              "
               :items="memberItems"
               value-key="value"
+              :ui="MEMBER_MENU_UI"
+              :filter-fields="MEMBER_MENU_FILTER_FIELDS"
               :loading="membersLoading"
+              :placeholder="t('agenda.newDocument.proponentPlaceholder')"
               :aria-label="
                 selectMenuLabel(
                   t('agenda.newDocument.proponent'),
                   memberItems,
-                  state.proponent,
+                  state.proponent === NO_PROPONENT
+                    ? undefined
+                    : state.proponent,
                 )
               "
               :search-input="
                 labelledSearch(t('agenda.newDocument.searchMember'))
               "
               class="w-full"
+              @update:model-value="
+                (value: string | undefined) =>
+                  (state.proponent = value ?? NO_PROPONENT)
+              "
             />
           </UFormField>
           <UFormField

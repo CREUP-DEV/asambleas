@@ -15,7 +15,7 @@ function row(extra: Partial<BulkRow> = {}): BulkRow {
     key: 1,
     title: "",
     kind: undefined,
-    proponentMemberId: null,
+    proponentMemberId: "m1",
     format: "structured",
     file: null,
     ...extra,
@@ -62,6 +62,18 @@ describe("bulkRowsToSend", () => {
 });
 
 describe("bulkRowProblems", () => {
+  it("needs someone to present each document", () => {
+    expect(
+      bulkRowProblems(
+        row({
+          title: "Resolución",
+          kind: "resolution",
+          proponentMemberId: null,
+        }),
+      ),
+    ).toEqual({ proponent: "required" });
+  });
+
   it("finds nothing in a complete row", () => {
     expect(
       bulkRowProblems(row({ title: "Resolución", kind: "resolution" })),

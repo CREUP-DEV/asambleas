@@ -537,20 +537,12 @@ const ownPresenter = computed(() =>
 );
 
 const memberItems = computed(() => {
-  const list = presentableMembers.value.map((member) => ({
-    label: member.acronym,
-    description: memberNameRepeatsAcronym(member) ? undefined : member.name,
-    value: member.id,
-  }));
+  const list = presentableMembers.value.map(memberMenuItem);
   // Current presenters stay pickable even if inactive: one may become
   // "Quién lo presenta" by being chosen to answer the amendments.
   const missing = documentPresenterMembers(props.document)
     .filter((current) => !list.some((item) => item.value === current.id))
-    .map((current) => ({
-      label: current.acronym,
-      description: memberNameRepeatsAcronym(current) ? undefined : current.name,
-      value: current.id,
-    }));
+    .map(memberMenuItem);
   return [...missing, ...list];
 });
 
@@ -968,11 +960,13 @@ defineExpose({ reset: resetForm, check, save });
         :label="t('document.metadata.proponent')"
         :help="droppedHelp"
       >
+        <!-- Never cleared: a document is always presented by someone. -->
         <USelectMenu
-          v-model="state.proponentMemberId"
+          :model-value="state.proponentMemberId ?? undefined"
           :items="memberItems"
           value-key="value"
-          :filter-fields="['label', 'description']"
+          :ui="MEMBER_MENU_UI"
+          :filter-fields="MEMBER_MENU_FILTER_FIELDS"
           :loading="membersStatus === 'pending'"
           :placeholder="t('document.metadata.proponentPlaceholder')"
           :aria-label="
@@ -984,8 +978,11 @@ defineExpose({ reset: resetForm, check, save });
             )
           "
           :search-input="labelledSearch(t('document.metadata.searchMember'))"
-          clear
           class="w-full"
+          @update:model-value="
+            (value: string | undefined) =>
+              (state.proponentMemberId = value ?? state.proponentMemberId)
+          "
         />
       </UFormField>
 

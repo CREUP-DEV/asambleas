@@ -212,3 +212,40 @@ export function memberLabel(member: MemberNames): string {
     ? member.acronym
     : `${member.acronym} · ${member.name.trim()}`;
 }
+
+/**
+ * What a member is called under its acronym in a menu, as the headcount
+ * names it: its denomination (unless it repeats the acronym) and, if any,
+ * its university. "Consejo de Estudiantes · Universidad de Murcia".
+ */
+export function memberDescription(
+  member: MemberNames & { university?: string | null },
+): string | undefined {
+  const name = memberNameRepeatsAcronym(member) ? "" : member.name.trim();
+  const full = [name, member.university?.trim()].filter(Boolean).join(" · ");
+  return full || undefined;
+}
+
+/**
+ * A member as an item of a menu that picks members (who presents a
+ * document, the authors of an amendment): its acronym, then its whole
+ * denomination and university below, never cut (MEMBER_MENU_UI).
+ */
+export function memberMenuItem(
+  member: MemberNames & { id: string; university?: string | null },
+): { label: string; description: string | undefined; value: string } {
+  return {
+    label: member.acronym,
+    description: memberDescription(member),
+    value: member.id,
+  };
+}
+
+/** Menu items that wrap instead of cutting a long name (`ui` of the menu). */
+export const MEMBER_MENU_UI = {
+  itemLabel: "whitespace-normal break-words",
+  itemDescription: "whitespace-normal break-words text-muted",
+} as const;
+
+/** The fields a member menu searches: the acronym, the name, the university. */
+export const MEMBER_MENU_FILTER_FIELDS = ["label", "description"];

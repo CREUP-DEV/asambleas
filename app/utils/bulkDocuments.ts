@@ -22,7 +22,10 @@ export interface BulkRow<F extends BulkFile = BulkFile> {
   key: number;
   title: string;
   kind: DocumentKind | undefined;
-  /** The member presenting it; null: nobody (the Secretaría prepares it). */
+  /**
+   * The member presenting it (the manager's own member by default); null
+   * while none is chosen, which keeps the row from being sent.
+   */
   proponentMemberId: string | null;
   format: DocumentFormat;
   /** The PDF to upload once the document exists (`file` format only). */
@@ -32,6 +35,7 @@ export interface BulkRow<F extends BulkFile = BulkFile> {
 export interface BulkRowProblems {
   title?: "required" | "tooLong";
   kind?: "required";
+  proponent?: "required";
   file?: "invalidType" | "tooLarge";
 }
 
@@ -66,6 +70,7 @@ export function bulkRowProblems(row: BulkRow): BulkRowProblems {
   if (!title) problems.title = "required";
   else if (title.length > BULK_TITLE_MAX) problems.title = "tooLong";
   if (!row.kind) problems.kind = "required";
+  if (!row.proponentMemberId) problems.proponent = "required";
   const file = row.format === "file" && row.file ? row.file : null;
   const fileProblem = file ? bulkFileProblem(file) : undefined;
   if (fileProblem) problems.file = fileProblem;

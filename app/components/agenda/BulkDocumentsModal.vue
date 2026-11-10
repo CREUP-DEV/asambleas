@@ -79,9 +79,6 @@ const { t } = useI18n();
 const api = useApi();
 const toast = useToast();
 
-/** Sentinel for "nobody presents it" in the member select. */
-const NO_PROPONENT = "__none__";
-
 type Row = BulkRow<File>;
 
 // Rows --------------------------------------------------------------------------
@@ -97,13 +94,20 @@ function proposal() {
     : fromTitle;
 }
 
+const { member: myMember } = useMe();
+
+/** Who presents a new row by default: the manager's own member, if any. */
+function defaultProponent(): string | null {
+  return myMember.value?.id ?? null;
+}
+
 function firstRow(): Row {
   const proposed = proposal();
   return {
     key: nextKey++,
     title: proposed.title ?? "",
     kind: proposed.kind ?? undefined,
-    proponentMemberId: null,
+    proponentMemberId: defaultProponent(),
     format: "structured",
     file: null,
   };
@@ -121,7 +125,7 @@ async function addRow(): Promise<void> {
     key: nextKey++,
     title: "",
     kind: last?.kind ?? proposal().kind ?? undefined,
-    proponentMemberId: null,
+    proponentMemberId: last?.proponentMemberId ?? defaultProponent(),
     format: last?.format ?? "structured",
     file: null,
   };
@@ -152,7 +156,7 @@ const dirty = computed(
     rows.value.some(
       (row) =>
         row.file !== null ||
-        row.proponentMemberId !== null ||
+        row.proponentMemberId !== defaultProponent() ||
         row.title.trim() !== startTitle.value.trim(),
     ),
 );
@@ -186,7 +190,6 @@ const formatItems = computed(() =>
 );
 const formatUi = { fieldset: "flex-wrap gap-2" };
 
-const { member: myMember } = useMe();
 const members = ref<MemberDto[]>([]);
 const membersLoading = ref(false);
 const membersFailed = ref(false);
@@ -218,16 +221,12 @@ function mayPresent(row: Row, candidate: MemberDto): boolean {
   );
 }
 
-/** Active members that may present the row's kind, after "nobody". */
+/** Active members that may present the row's kind. */
 function memberItems(row: Row) {
   return [
-    { label: t("agenda.newDocument.noProponent"), value: NO_PROPONENT },
     ...members.value
       .filter((candidate) => mayPresent(row, candidate))
-      .map((candidate) => ({
-        label: memberLabel(candidate),
-        value: candidate.id,
-      })),
+      .map(memberMenuItem),
   ];
 }
 
@@ -241,7 +240,7 @@ function onKind(row: Row, kind: DocumentKind | undefined): void {
 }
 
 function onProponent(row: Row, value: string | undefined): void {
-  row.proponentMemberId = !value || value === NO_PROPONENT ? null : value;
+  row.proponentMemberId = value || null;
   if (refusedKey.value === row.key) refusedKey.value = null;
 }
 
@@ -293,7 +292,10 @@ function fileError(row: Row): string | undefined {
   return problem ? t(`document.file.${problem}`) : undefined;
 }
 function proponentError(row: Row): string | undefined {
-  return refusedKey.value === row.key ? t("agenda.bulk.rowRefused") : undefined;
+  if (refusedKey.value === row.key) return t("agenda.bulk.rowRefused");
+  return problems.value.get(row.key)?.proponent
+    ? t("agenda.newDocument.proponentRequired")
+    : undefined;
 }
 
 /** How many documents "Crear" will create. */
@@ -627,15 +629,18 @@ function editorPath(document: BulkCreatedDocumentDto): string {
                   "
                 >
                   <USelectMenu
-                    :model-value="row.proponentMemberId ?? NO_PROPONENT"
+                    :model-value="row.proponentMemberId ?? undefined"
                     :items="memberItems(row)"
                     value-key="value"
+                    :ui="MEMBER_MENU_UI"
+                    :filter-fields="MEMBER_MENU_FILTER_FIELDS"
                     :loading="membersLoading"
+                    :placeholder="t('agenda.newDocument.proponentPlaceholder')"
                     :aria-label="
                       selectMenuLabel(
                         t('agenda.newDocument.proponent'),
                         memberItems(row),
-                        row.proponentMemberId ?? NO_PROPONENT,
+                        row.proponentMemberId ?? undefined,
                       )
                     "
                     :search-input="

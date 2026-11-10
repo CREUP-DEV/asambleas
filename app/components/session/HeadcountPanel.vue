@@ -311,6 +311,12 @@ function togglePresent(memberId: string, value: boolean | "indeterminate") {
   form.value = setHeadcountPresent(form.value, memberId, value === true);
 }
 
+/** Who a member that may receive a delegation is, under its acronym. */
+function delegateDescription(id: string): string | undefined {
+  const delegate = byId.value.get(id);
+  return delegate ? denomination(delegate) : undefined;
+}
+
 /** The menu item that clears a delegation (reka-ui refuses an empty value). */
 const NO_DELEGATION = "none";
 
@@ -323,7 +329,7 @@ function delegateItems(memberId: string) {
         ? acronym(id)
         : t("session.headcount.delegateOut", { member: acronym(id) }),
       value: id,
-      name: byId.value.get(id)?.name ?? "",
+      description: delegateDescription(id),
     })),
   ];
 }
@@ -579,7 +585,7 @@ async function save(): Promise<void> {
                     :label="member.acronym"
                     :description="denomination(member)"
                     class="min-w-0 flex-1"
-                    :ui="{ description: 'truncate' }"
+                    :ui="{ description: 'break-words' }"
                     @update:model-value="
                       (value) => togglePresent(member.id, value)
                     "
@@ -589,7 +595,8 @@ async function save(): Promise<void> {
                     :model-value="form[member.id]?.delegateId ?? undefined"
                     :items="delegateItems(member.id)"
                     value-key="value"
-                    :filter-fields="['label', 'name']"
+                    :ui="MEMBER_MENU_UI"
+                    :filter-fields="MEMBER_MENU_FILTER_FIELDS"
                     :search-input="
                       labelledSearch(t('session.headcount.searchDelegate'))
                     "
