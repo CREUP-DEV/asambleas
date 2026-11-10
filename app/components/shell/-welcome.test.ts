@@ -210,23 +210,21 @@ describe("welcomeSteps", () => {
 });
 
 describe("welcomePending", () => {
-  it("is pending until the account closes the welcome", () => {
-    expect(welcomePending({ onboardingSeen: false, impersonation: null })).toBe(
-      true,
-    );
-    expect(welcomePending({ onboardingSeen: true, impersonation: null })).toBe(
-      false,
-    );
+  const account = { impersonation: null };
+
+  it("is pending until this browser closes the welcome", () => {
+    expect(welcomePending({ seen: false, account })).toBe(true);
+    expect(welcomePending({ seen: true, account })).toBe(false);
   });
 
   it("is never pending while an Admin acts as the account", () => {
     expect(
-      welcomePending({ onboardingSeen: false, impersonation: { id: "i1" } }),
+      welcomePending({ seen: false, account: { impersonation: { id: "i1" } } }),
     ).toBe(false);
   });
 
-  it("is not pending without an account", () => {
-    expect(welcomePending(null)).toBe(false);
-    expect(welcomePending(undefined)).toBe(false);
+  it("is not pending before the account is known", () => {
+    expect(welcomePending({ seen: false, account: null })).toBe(false);
+    expect(welcomePending({ seen: false, account: undefined })).toBe(false);
   });
 });

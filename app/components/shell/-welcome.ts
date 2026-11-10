@@ -162,18 +162,29 @@ export function welcomeSteps(audience: WelcomeAudience): WelcomeStep[] {
   ];
 }
 
+/**
+ * Where this browser keeps that the welcome was closed. Per browser, not
+ * per account: an account may be shared by several people (a council's
+ * account is the council), and each one should see the welcome once on
+ * their own device, like the language, the theme and the content
+ * preferences.
+ */
+export const WELCOME_SEEN_STORAGE_KEY = "creup:welcome-seen";
+
 /** What decides whether the welcome opens by itself and is recorded. */
 export interface WelcomeState {
-  onboardingSeen: boolean;
-  impersonation: unknown;
+  /** This browser already closed the welcome. */
+  seen: boolean;
+  /** The account the page acts as; null before it is known. */
+  account: { impersonation: unknown } | null | undefined;
 }
 
 /**
- * Whether the account still has to see the welcome: it opens by itself,
- * and closing it is recorded (POST /api/me/onboarding). Never while an
- * Admin acts as the account: the Admin is not the one who has to see it,
- * and what the Admin closes must not count for the account.
+ * Whether the welcome opens by itself and closing it is recorded in this
+ * browser: once the account is known, until this browser closes it. Never
+ * while an Admin acts as an account: the Admin is not the one who has to
+ * see it, and what the Admin closes must not count for that browser.
  */
-export function welcomePending(me: WelcomeState | null | undefined): boolean {
-  return Boolean(me && !me.onboardingSeen && !me.impersonation);
+export function welcomePending(state: WelcomeState): boolean {
+  return Boolean(state.account && !state.seen && !state.account.impersonation);
 }

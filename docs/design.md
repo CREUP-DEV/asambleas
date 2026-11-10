@@ -979,9 +979,11 @@ The wording follows what the account can do, not the name of its role
 assemblies, documents or amendments reads the Secretaría's text, whoever only
 moderates the Mesa's, a presenter the text of the member it acts for (office of
 the CEA, council or sectorial) and anyone else the guest's. Closing it at any
-step records that the account saw it (`users.onboarding_seen_at`,
-`POST /api/me/onboarding`, `user.onboarding_seen`), so it is per account, not
-per browser, and never opens by itself again. "Ayuda", a button of its own in
+step records in the browser that it was seen (`localStorage`), so it never
+opens by itself there again. It is per browser, not per account, like the
+language, the theme and the content preferences: an account may be shared by
+several people (a council's account is the council), and each one should see
+the welcome once on their own device. "Ayuda", a button of its own in
 the sidebar footer, opens it again at any time. While an Admin acts as another
 account the welcome never opens by itself and nothing is recorded.
 

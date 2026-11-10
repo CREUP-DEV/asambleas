@@ -56,8 +56,10 @@ export const users = pgTable(
       "access_revoked_reason",
     ).$type<AccessRevokedReason>(),
     /**
-     * When the account closed the welcome (POST /api/me/onboarding); null
-     * until then, so the welcome opens by itself on the next visit.
+     * No longer read nor written: whether the welcome was seen is kept per
+     * browser now. Kept one release, because better-auth reads every column
+     * of the row: the previous release, and a rollback to it, still select
+     * it. Drop it in a later migration.
      */
     onboardingSeenAt: timestamp("onboarding_seen_at", {
       withTimezone: true,

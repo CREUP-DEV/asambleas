@@ -153,10 +153,11 @@ export const AUDIT_ACTIONS = {
    */
   USERS_ACCESS_RECHECK_BLOCKED: "users.access_recheck_blocked",
   /**
-   * POST /api/me/onboarding: the account closed the welcome for the first
-   * time (users.onboarding_seen_at). Never written while an Admin acts as
-   * the account. Target user (the account itself); before {onboardingSeen:
-   * false}; after {onboardingSeen: true}.
+   * No longer written: the welcome is now kept per browser. Older rows
+   * recorded that the account closed it for the first time (the endpoint
+   * POST /api/me/onboarding is gone, and users.onboarding_seen_at is no
+   * longer used). Target user; before {onboardingSeen: false}; after
+   * {onboardingSeen: true}.
    */
   USER_ONBOARDING_SEEN: "user.onboarding_seen",
   /**
