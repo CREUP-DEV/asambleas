@@ -88,7 +88,13 @@ const BARRIERS = new Set([
  * says why; the test fails if one of them starts recording (drop it then)
  * or stops existing.
  */
-const NON_RECORDING_MUTATIONS: Readonly<Record<string, string>> = {};
+const NON_RECORDING_MUTATIONS: Readonly<Record<string, string>> = {
+  // Heartbeat of an open draft editor: who is editing lives only in
+  // memory (server/utils/live/presence.ts) and expires in seconds. Recording
+  // each beat would fill the history and wake every live listener.
+  "server/api/assemblies/[assembly]/documents/[document]/presence.post.ts":
+    "presence heartbeat, memory only",
+};
 
 interface ModuleInfo {
   /** Local name -> the module file and the name it exports. */

@@ -694,6 +694,13 @@
       "remoteTitle": "Someone else has saved changes to the text",
       "remoteDescription": "Your changes are not saved yet. Saving now would cause a conflict: load the saved version and your text will be kept so you can recover it.",
       "loadRemote": "Load the saved version",
+      "presence": {
+        "editing": "{names} is also editing this draft. | {names} are also editing this draft.",
+        "editingUnsaved": "{names} is also editing this draft and has unsaved changes. | {names} are also editing this draft and have unsaved changes.",
+        "sameAccount": "another session on your account",
+        "fromMember": "someone from {member}",
+        "someone": "someone else"
+      },
       "imported": "Text imported and saved",
       "frozen": {
         "notice": "The text has been published and can no longer be edited. You can still change the document's details and status.",
