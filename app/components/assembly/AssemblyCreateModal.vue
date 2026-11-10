@@ -15,7 +15,8 @@ import { assemblyPath } from "~/components/shell/Navigation.vue";
 import { intlLocale } from "~/utils/format";
 
 /**
- * Creates an assembly (`assembly:create`). Dates are typed as Madrid wall
+ * Creates an assembly (`assembly:create`). The type is chosen from cards
+ * that are all in view, not a dropdown. Dates are typed as Madrid wall
  * time, whatever the device's time zone, and sent as ISO instants. On
  * success it emits `created` and, unless `navigate` is false, opens it.
  */
@@ -57,12 +58,15 @@ const numberTouched = ref(false);
 const suggesting = ref(false);
 let suggestionToken = 0;
 
+// The types as cards, all in view: the acronym and what it stands for.
 const typeItems = computed(() =>
   ALL_ASSEMBLY_TYPES.map((type) => ({
-    label: `${type} · ${t(`assemblies.types.${type}`)}`,
+    label: type,
+    description: t(`assemblies.types.${type}`),
     value: type,
   })),
 );
+const typeCardsUi = { fieldset: "grid gap-2 sm:grid-cols-3" };
 
 function reset(): void {
   Object.assign(state, {
@@ -243,27 +247,36 @@ async function submit(): Promise<void> {
         class="space-y-4"
         @submit="submit"
       >
-        <div class="grid gap-4 sm:grid-cols-[1fr_9rem]">
-          <UFormField :label="t('assemblies.create.type')" name="type" required>
-            <USelect v-model="state.type" :items="typeItems" class="w-full" />
-          </UFormField>
-
-          <UFormField
-            :label="t('assemblies.create.number')"
-            name="number"
+        <!-- The group names itself (legend): a form field's label cannot
+             point at a radio group. -->
+        <UFormField name="type">
+          <URadioGroup
+            v-model="state.type"
+            :legend="t('assemblies.create.type')"
             required
-            :help="suggesting ? t('assemblies.create.suggesting') : undefined"
-          >
-            <UInputNumber
-              :model-value="state.number"
-              :min="1"
-              :max="9999"
-              :format-options="{ useGrouping: false }"
-              class="w-full"
-              @update:model-value="onNumberInput"
-            />
-          </UFormField>
-        </div>
+            :items="typeItems"
+            value-key="value"
+            variant="card"
+            :ui="typeCardsUi"
+            class="w-full"
+          />
+        </UFormField>
+
+        <UFormField
+          :label="t('assemblies.create.number')"
+          name="number"
+          required
+          :help="suggesting ? t('assemblies.create.suggesting') : undefined"
+        >
+          <UInputNumber
+            :model-value="state.number"
+            :min="1"
+            :max="9999"
+            :format-options="{ useGrouping: false }"
+            class="w-full sm:w-36"
+            @update:model-value="onNumberInput"
+          />
+        </UFormField>
 
         <div class="grid gap-4 sm:grid-cols-2">
           <UFormField

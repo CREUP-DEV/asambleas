@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DocumentDto } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
+import { cellFillOf } from "~~/shared/constants/cellFills";
 import { formatTime } from "~/utils/format";
 
 /**
@@ -69,7 +70,8 @@ function canonical(blocks: Block[]): string {
             block.cell.row,
             block.cell.cell,
             block.cell.header ?? false,
-            block.cell.shade ?? false,
+            // `shade` (earlier content) and the fill "beige" are the same.
+            cellFillOf(block.cell) ?? null,
             block.cell.colspan ?? 1,
             block.cell.rowspan ?? 1,
           ]

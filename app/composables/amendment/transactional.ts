@@ -19,6 +19,7 @@ import type {
   MemberRef,
 } from "~~/shared/types/api";
 import type { AmendmentInput, Block } from "~~/shared/types/content";
+import { cellFillOf } from "~~/shared/constants/cellFills";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { copyShape } from "~~/shared/utils/content/lists";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
@@ -221,6 +222,22 @@ export function transactionalComposerSeed(
   };
 }
 
+/**
+ * A cell as the comparison reads it: `shade` (content from before the
+ * palette) and the fill "beige" are the same, as the editor returns them.
+ */
+function cellContent(cell: NonNullable<Block["cell"]>): unknown[] {
+  return [
+    cell.table,
+    cell.row,
+    cell.cell,
+    cell.header ?? false,
+    cellFillOf(cell) ?? null,
+    cell.colspan ?? 1,
+    cell.rowspan ?? 1,
+  ];
+}
+
 function blockContent(block: Block): string {
   return JSON.stringify([
     block.type,
@@ -229,7 +246,7 @@ function blockContent(block: Block): string {
     block.list ?? null,
     block.marker ?? null,
     block.start ?? null,
-    block.cell ?? null,
+    block.cell ? cellContent(block.cell) : null,
     block.align ?? null,
     block.marks,
   ]);

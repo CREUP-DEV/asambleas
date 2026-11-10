@@ -711,7 +711,7 @@ describe("convertDocx structure", { timeout: 30_000 }, () => {
     ]);
   });
 
-  it("marks headers by a dark fill and shades cells on a light one, not by bold", async () => {
+  it("marks headers by a dark fill, not by bold, and gives each fill its nearest palette colour", async () => {
     const filled = (fill: string, content: string) =>
       `<w:tc><w:tcPr><w:shd w:val="clear" w:fill="${fill}"/></w:tcPr>${content}</w:tc>`;
     const result = await convert(
@@ -730,6 +730,15 @@ describe("convertDocx structure", { timeout: 30_000 }, () => {
             filled("a6a6a6", p(null, "Subtotal")),
             filled("a6a6a6", p(null, "20")),
           ),
+          // Colours off the palette take the nearest one; white is no fill.
+          row(
+            filled("1F3864", p(null, "azul")),
+            filled("E2EFD9", p(null, "claro")),
+          ),
+          row(
+            filled("FFFFFF", p(null, "blanco")),
+            filled("auto", p(null, "auto")),
+          ),
         ) +
           // Without fills, a cell all in bold still reads as a header.
           table(row(cell(p(null, "Bold", true)), cell(p(null, "x")))),
@@ -739,19 +748,26 @@ describe("convertDocx structure", { timeout: 30_000 }, () => {
       result.blocks.map((block) => [
         block.text,
         block.cell?.header ?? false,
-        block.cell?.shade ?? false,
+        block.cell?.fill ?? null,
       ]),
     ).toEqual([
-      ["Concepto", true, false],
-      ["", true, false],
-      // The light fill keeps as a shaded cell.
-      ["1. Ingresos", false, true],
-      ["10", false, true],
-      ["Subtotal", true, false],
-      ["20", true, false],
-      ["Bold", true, false],
-      ["x", false, false],
+      ["Concepto", true, "burgundy"],
+      ["", true, "burgundy"],
+      // A light fill keeps its colour and makes no header.
+      ["1. Ingresos", false, "beige"],
+      ["10", false, "beige"],
+      // Dark enough to be a header, in its own colour.
+      ["Subtotal", true, "lightGrey"],
+      ["20", true, "lightGrey"],
+      ["azul", true, "blue"],
+      ["claro", false, "beige"],
+      ["blanco", false, null],
+      ["auto", false, null],
+      ["Bold", true, null],
+      ["x", false, null],
     ]);
+    // Imported content never writes the earlier `shade`.
+    expect(result.blocks.some((block) => block.cell?.shade)).toBe(false);
   });
 
   it("leaves out a table of contents", async () => {

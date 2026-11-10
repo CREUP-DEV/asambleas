@@ -1030,6 +1030,7 @@ export const AUDIT_PAYLOAD_KEYS: Record<AuditAction, readonly string[]> = {
   "user.intranet_missing": ["roleName"],
   // Counts only: which accounts the Intranet missed is never stored here.
   "users.access_recheck_blocked": ["reason", "checked", "notFound"],
+  "user.onboarding_seen": [],
   "auth.sign_in": ["roleSync"],
   "auth.sign_out": [],
   "auth.session_ended": [],

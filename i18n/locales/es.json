@@ -164,13 +164,19 @@
         "addColumnAfter": "Añadir columna a la derecha",
         "deleteColumn": "Eliminar columna",
         "fill": {
-          "label": "Fondo de celda",
-          "none": "Sin fondo",
-          "light": "Claro",
-          "dark": "Burdeos (encabezado)"
+          "label": "Color de la celda",
+          "none": "Sin color",
+          "burgundy": "Burdeos",
+          "blue": "Azul",
+          "beige": "Beis",
+          "darkGrey": "Gris oscuro",
+          "lightGrey": "Gris claro",
+          "green": "Verde",
+          "purple": "Morado"
         },
         "toggleHeaderRow": "Fila de encabezado",
         "toggleHeaderColumn": "Columna de encabezado",
+        "toggleHeaderCell": "Celda de encabezado",
         "mergeCells": "Combinar celdas",
         "splitCell": "Dividir celda",
         "deleteTable": "Eliminar tabla"
@@ -457,7 +463,18 @@
       "addDocument": {
         "title": "Plazo de presentación de documentos abierto",
         "until": "Hasta el {date}."
-      }
+      },
+      "todo": {
+        "title": "Te toca",
+        "empty": "No tienes nada pendiente",
+        "readOnly": "Tu cuenta es de invitado. Puedes consultar esta asamblea, sus documentos y sus enmiendas, pero no puedes presentar nada."
+      },
+      "next": {
+        "title": "Lo siguiente",
+        "none": "No quedan plazos por delante en el calendario.",
+        "open": "Ver el calendario"
+      },
+      "fullCalendar": "Calendario completo"
     },
     "settingsPage": {
       "title": "Ajustes",
@@ -1858,6 +1875,10 @@
         "targetRevoked": "Esta cuenta ya no tiene acceso porque la intranet la ha borrado, así que su rol no se puede cambiar."
       },
       "search": "Buscar por nombre, correo o siglas",
+      "searching": "Buscando usuarios",
+      "noResults": "No hay ningún usuario que coincida con «{search}»",
+      "noResultsHelp": "Prueba con otra parte del nombre, del correo o de las siglas.",
+      "clearSearch": "Borrar la búsqueda",
       "editAction": "Editar",
       "editFor": "Editar a {user}",
       "moreActionsFor": "Más acciones de {user}",
@@ -2251,11 +2272,7 @@
     },
     "user": {
       "menu": "Menú de usuario de {name}",
-      "accessibility": "Preferencias de accesibilidad",
-      "accessibilityDescription": "Tipo de letra y marcas de cambios para el texto de documentos y enmiendas.",
       "done": "Hecho",
-      "language": "Idioma",
-      "theme": "Tema",
       "themes": {
         "system": "Según el sistema",
         "light": "Claro",
@@ -2263,6 +2280,17 @@
       },
       "signOut": "Cerrar sesión",
       "activity": "Mi actividad"
+    },
+    "preferences": {
+      "title": "Preferencias",
+      "description": "Idioma, tema y cómo se ve el texto de documentos y enmiendas. Cada cambio se aplica al momento.",
+      "language": "Idioma",
+      "theme": "Tema",
+      "contentHint": "Lo siguiente solo cambia el texto de documentos y enmiendas."
+    },
+    "help": {
+      "open": "Ayuda",
+      "label": "Ayuda: abrir la guía de bienvenida"
     },
     "roles": {
       "admin": "Administrador",
@@ -2288,6 +2316,66 @@
       "details": "Todo lo que hagas queda registrado. Termina a las {time}.",
       "stop": "Volver a mi cuenta",
       "stopFailed": "No se ha podido volver a tu cuenta"
+    }
+  },
+  "onboarding": {
+    "title": "Bienvenida",
+    "progress": "Paso {step} de {total}",
+    "stepsLabel": "Pasos de la bienvenida",
+    "goToStep": "Ir al paso {step}",
+    "next": "Siguiente",
+    "back": "Atrás",
+    "skip": "Saltar",
+    "finish": "Empezar",
+    "yourRole": "Tu rol:",
+    "steps": {
+      "role": {
+        "title": "Aquí se preparan las asambleas de CREUP",
+        "body": {
+          "secretariat": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú las organizas: creas asambleas, revisas lo que presentan los miembros y lo publicas.",
+          "mesa": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú llevas la sesión: los turnos de palabra, los recuentos y las votaciones.",
+          "cea": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú presentas documentos y enmiendas en nombre de tu área de la CEA.",
+          "asociado": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú presentas documentos y enmiendas en nombre de tu consejo.",
+          "sectorial": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú presentas documentos y enmiendas en nombre de tu sectorial. Solo hay una cosa que no puedes presentar: una moción interna. Sí puedes enmendarla.",
+          "guest": "Aquí están el orden del día, los documentos y las enmiendas de cada asamblea. Tú puedes leerlo todo, pero no presentar ni cambiar nada."
+        }
+      },
+      "find": {
+        "tasks": {
+          "title": "En Inicio ves lo que te toca",
+          "body": "La página «Inicio» te dice qué tienes pendiente. Para entrar en una asamblea, pulsa «Asambleas» en el menú y elige una."
+        },
+        "guest": {
+          "title": "En Inicio ves las próximas asambleas",
+          "body": "Para entrar en una asamblea, pulsa su nombre en «Inicio» o pulsa «Asambleas» en el menú y elige una."
+        }
+      },
+      "work": {
+        "present": {
+          "title": "Cómo presentar un documento o una enmienda",
+          "body": "Entra en la asamblea y abre «Orden del día». Para un documento, pulsa «Presentar documento» en su punto. Para una enmienda, abre el documento y pulsa «Presentar enmienda»."
+        },
+        "manage": {
+          "title": "Cómo validar y organizar",
+          "body": "Lo que presentan los miembros te llega a «Validación», dentro de cada asamblea. Ahí lo revisas y lo publicas. Los puntos de la asamblea se ordenan en «Orden del día»."
+        },
+        "moderate": {
+          "title": "Cómo llevar la sesión",
+          "body": "Entra en la asamblea y abre «Sesión». Ahí llevas los turnos de palabra, los recuentos y las votaciones."
+        },
+        "read": {
+          "title": "Cómo leer los documentos",
+          "body": "Entra en la asamblea y abre «Orden del día» o «Documentos». Pulsa un documento para leerlo entero."
+        }
+      },
+      "back": {
+        "title": "Cómo volver atrás y dónde está la ayuda",
+        "body": "Arriba de cada página ves dónde estás. Pulsa cualquier paso de esa fila para volver atrás. Esta guía se abre otra vez con «Ayuda», abajo en el menú."
+      },
+      "preferences": {
+        "title": "Ponlo a tu gusto",
+        "body": "Elige aquí mismo. Puedes cambiarlo cuando quieras en «Preferencias», en el menú con tu nombre."
+      }
     }
   },
   "home": {
@@ -2329,13 +2417,20 @@
       "members": "Miembros"
     },
     "todo": {
-      "title": "Lo que tienes que hacer",
+      "title": "Te toca",
       "count": "1 tarea pendiente | {count} tareas pendientes",
       "loading": "Cargando lo que tienes pendiente",
       "loadFailed": "No se ha podido cargar lo que tienes pendiente",
-      "emptyTitle": "Estás al día",
-      "emptyDescription": "No tienes nada pendiente. Si Secretaría te pide un documento o una corrección, lo verás aquí.",
-      "emptyNoMember": "No tienes nada pendiente. Para presentar documentos o enmiendas, tu cuenta tiene que estar vinculada a un miembro."
+      "emptyTitle": "No tienes nada pendiente",
+      "emptyDescription": "Si Secretaría te pide un documento o una corrección, lo verás aquí.",
+      "emptyNoMember": "Para presentar documentos o enmiendas, tu cuenta tiene que estar vinculada a un miembro."
+    },
+    "readOnly": "Tu cuenta es de invitado. Puedes consultar las asambleas, sus documentos y sus enmiendas, pero no puedes presentar nada.",
+    "next": {
+      "title": "Lo siguiente",
+      "when": "{assembly}, el {date}",
+      "calendar": "Ver el calendario",
+      "calendarOf": "Ver el calendario de la {assembly}"
     },
     "mine": {
       "title": "Tus documentos y enmiendas",
@@ -4788,7 +4883,8 @@
         "initial_admin": "Rol de administrador inicial asignado",
         "access_revoked": "La cuenta perdió el acceso porque ya no existe en la intranet",
         "access_restored": "La cuenta recuperó el acceso porque vuelve a existir en la intranet",
-        "intranet_missing": "La intranet ya no tiene la cuenta, pero conserva su rol"
+        "intranet_missing": "La intranet ya no tiene la cuenta, pero conserva su rol",
+        "onboarding_seen": "Bienvenida vista por primera vez"
       },
       "permissions": {
         "set": "Permisos de un rol cambiados"

@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import type {
   AssemblyListDto,
   AssemblySummaryDto,
   MeWorkDto,
 } from "~~/shared/types/api";
 import {
+  homeNextDeadline,
   homeWorkNews,
   homeWorkReviewPending,
   homeWorkTasks,
   homeWorkUpdates,
 } from "~/components/home/-work";
 import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
+import { welcomeAudience } from "~/components/shell/-welcome";
 import {
   assemblyPath,
   projectionPath,
@@ -25,9 +28,17 @@ import {
  * presenter's answer, a main author's answer to a transactional, the
  * Secretaría or the assembly), where their documents and amendments stand,
  * the Secretaría's pending review per assembly, a live-session banner that
- * leads to the live view and the upcoming assemblies. It leads with the
- * work and stays calm: few cards, one sentence per item. The admin
- * shortcuts open by permission, as the admin pages do.
+ * leads to the live view and the upcoming assemblies.
+ *
+ * At most three blocks stand in first plane, for every role: "Te toca"
+ * (the Secretaría's pending review and the user's tasks), "Lo siguiente"
+ * (the next deadline of the calendar, one line that opens that calendar)
+ * and the upcoming assemblies. The rest stays one click away in folded
+ * sections under them (HomeFold): the news, the user's documents and
+ * amendments, their account and the administration shortcuts, which open
+ * by permission as the admin pages do. A guest (Invitado) with nothing to
+ * do reads one sentence saying the account can only read, instead of an
+ * empty "Te toca".
  */
 
 const { t, locale } = useI18n();
@@ -102,6 +113,26 @@ const workLoading = computed(
 const nothingToDo = computed(
   () => tasks.value.length === 0 && review.value.length === 0,
 );
+/**
+ * A guest account with nothing to do: it can only read, and the page says
+ * so in one sentence. A guest given a permission of its own (the welcome's
+ * rule, welcomeAudience), or linked to a member, gets the normal "Te toca".
+ */
+const readOnly = computed(
+  () =>
+    me.value?.role === SYSTEM_ROLES.INVITADO &&
+    welcomeAudience(me.value) === "guest" &&
+    !member.value &&
+    nothingToDo.value,
+);
+
+// What comes next in the calendar ------------------------------------------
+
+/** The assembly whose next deadline comes first, if any is ahead. */
+const nextDeadline = computed(() =>
+  homeNextDeadline(assemblies.value, now.value),
+);
+
 // With an assembly in session, following it is the screen's main action:
 // the work below keeps secondary buttons.
 const workIsPrimary = computed(() => inSession.value.length === 0);
@@ -179,7 +210,7 @@ const adminLinks = computed(() =>
     </template>
 
     <template #body>
-      <div class="mx-auto flex w-full max-w-6xl flex-col gap-6 lg:gap-8">
+      <div class="mx-auto flex w-full max-w-4xl flex-col gap-6 lg:gap-8">
         <header>
           <h2 class="text-highlighted text-2xl font-bold sm:text-3xl">
             {{ greeting }}
@@ -245,260 +276,314 @@ const adminLinks = computed(() =>
           </div>
         </section>
 
-        <div class="grid gap-6 lg:grid-cols-3 lg:gap-8">
-          <div class="flex min-w-0 flex-col gap-8 lg:col-span-2">
-            <!-- What to do -->
-            <section
-              aria-labelledby="home-todo-title"
-              class="flex flex-col gap-3"
+        <!-- 1. What the user has to do -->
+        <p
+          v-if="readOnly && !workLoading && !(workError && !work)"
+          class="border-default text-default flex items-start gap-3 rounded-lg border p-4 text-sm"
+          data-testid="home-read-only"
+        >
+          <UIcon
+            name="i-lucide-eye"
+            class="text-muted mt-0.5 size-4 shrink-0"
+            aria-hidden="true"
+          />
+          <span>{{ t("home.readOnly") }}</span>
+        </p>
+
+        <section
+          v-else
+          aria-labelledby="home-todo-title"
+          class="flex flex-col gap-3"
+        >
+          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h2
+              id="home-todo-title"
+              class="text-highlighted text-lg font-semibold"
             >
-              <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <h2
-                  id="home-todo-title"
-                  class="text-highlighted text-lg font-semibold"
-                >
-                  {{ t("home.todo.title") }}
-                </h2>
-                <p
-                  v-if="tasks.length > 0"
-                  class="text-muted text-sm"
-                  role="status"
-                >
-                  {{
-                    t("home.todo.count", { count: tasks.length }, tasks.length)
-                  }}
-                </p>
-              </div>
-
-              <div
-                v-if="workLoading"
-                class="ring-default space-y-4 rounded-lg p-4 ring"
-                role="status"
-              >
-                <span class="sr-only">{{ t("home.todo.loading") }}</span>
-                <div v-for="n in 2" :key="n" class="flex gap-3">
-                  <USkeleton
-                    aria-hidden="true"
-                    class="size-8 shrink-0 rounded-full"
-                  />
-                  <div class="flex-1 space-y-2">
-                    <USkeleton aria-hidden="true" class="h-4 w-1/2" />
-                    <USkeleton aria-hidden="true" class="h-4 w-3/4" />
-                  </div>
-                </div>
-              </div>
-
-              <UAlert
-                v-else-if="workError && !work"
-                color="error"
-                variant="subtle"
-                icon="i-lucide-circle-alert"
-                :title="t('home.todo.loadFailed')"
-                :actions="[
-                  {
-                    label: t('home.retry'),
-                    color: 'error',
-                    variant: 'outline',
-                    onClick: () => refreshWork(),
-                  },
-                ]"
-              />
-
-              <template v-else>
-                <ul
-                  v-if="review.length > 0"
-                  class="grid gap-4"
-                  :class="review.length > 1 ? 'sm:grid-cols-2' : ''"
-                >
-                  <li v-for="(entry, index) in review" :key="entry.assembly.id">
-                    <HomeReviewCard
-                      :review="entry"
-                      :heading-level="3"
-                      :primary="workIsPrimary && index === 0"
-                    />
-                  </li>
-                </ul>
-
-                <UCard v-if="tasks.length > 0">
-                  <HomeTaskList
-                    :tasks="tasks"
-                    :primary="workIsPrimary && review.length === 0"
-                  />
-                </UCard>
-
-                <CommonEmptyState
-                  v-if="nothingToDo"
-                  icon="i-lucide-circle-check-big"
-                  :title="t('home.todo.emptyTitle')"
-                  :description="
-                    member
-                      ? t('home.todo.emptyDescription')
-                      : t('home.todo.emptyNoMember')
-                  "
-                  variant="outline"
-                />
-              </template>
-            </section>
-
-            <!-- What others decided about the user's work -->
-            <section
-              v-if="news.length > 0"
-              aria-labelledby="home-news-title"
-              class="flex flex-col gap-3"
-            >
-              <h2
-                id="home-news-title"
-                class="text-highlighted text-lg font-semibold"
-              >
-                {{ t("home.news.title") }}
-              </h2>
-              <UCard>
-                <HomeNewsList :news="news" />
-              </UCard>
-            </section>
-
-            <!-- Where the rest stands -->
-            <section
-              v-if="updates.length > 0"
-              aria-labelledby="home-mine-title"
-              class="flex flex-col gap-3"
-            >
-              <h2
-                id="home-mine-title"
-                class="text-highlighted text-lg font-semibold"
-              >
-                {{ t("home.mine.title") }}
-              </h2>
-              <UCard>
-                <HomeUpdateList :updates="updates" />
-              </UCard>
-            </section>
-
-            <!-- Upcoming assemblies -->
-            <section
-              aria-labelledby="home-upcoming-title"
-              class="flex flex-col gap-3"
-            >
-              <div class="flex items-center justify-between gap-3">
-                <h2
-                  id="home-upcoming-title"
-                  class="text-highlighted text-lg font-semibold"
-                >
-                  {{ t("home.upcoming.title") }}
-                </h2>
-                <UButton
-                  :to="localePath('/asambleas')"
-                  color="neutral"
-                  variant="link"
-                  trailing-icon="i-lucide-arrow-right"
-                >
-                  {{ t("home.upcoming.all") }}
-                </UButton>
-              </div>
-
-              <UAlert
-                v-if="error"
-                color="error"
-                variant="subtle"
-                icon="i-lucide-circle-alert"
-                :title="t('home.loadFailed')"
-                :actions="[
-                  {
-                    label: t('home.retry'),
-                    color: 'error',
-                    variant: 'outline',
-                    onClick: () => refresh(),
-                  },
-                ]"
-              />
-
-              <ul
-                v-else-if="loading"
-                class="grid gap-4 sm:grid-cols-2"
-                :aria-label="t('home.loading')"
-                aria-busy="true"
-              >
-                <li
-                  v-for="n in 2"
-                  :key="n"
-                  class="ring-default space-y-3 rounded-lg p-5 ring"
-                >
-                  <div class="flex justify-between gap-3">
-                    <USkeleton aria-hidden="true" class="h-6 w-28" />
-                    <USkeleton aria-hidden="true" class="h-5 w-20" />
-                  </div>
-                  <USkeleton aria-hidden="true" class="h-4 w-48" />
-                  <USkeleton aria-hidden="true" class="h-4 w-40" />
-                </li>
-              </ul>
-
-              <CommonEmptyState
-                v-else-if="upcoming.length === 0"
-                icon="i-lucide-calendar-off"
-                :title="t('home.upcoming.empty')"
-                :description="t('home.upcoming.emptyDescription')"
-                variant="outline"
-                size="sm"
-              />
-
-              <ul v-else class="grid gap-4 sm:grid-cols-2">
-                <li v-for="assembly in upcoming" :key="assembly.id">
-                  <AssemblyCard :assembly="assembly" :heading-level="3" />
-                </li>
-              </ul>
-            </section>
+              {{ t("home.todo.title") }}
+            </h2>
+            <p v-if="tasks.length > 0" class="text-muted text-sm" role="status">
+              {{ t("home.todo.count", { count: tasks.length }, tasks.length) }}
+            </p>
           </div>
 
-          <aside class="flex flex-col gap-4" :aria-label="t('home.aside')">
-            <UCard>
-              <template #header>
-                <h2 class="text-highlighted font-semibold">
-                  {{ t("home.member.title") }}
-                </h2>
-              </template>
+          <div
+            v-if="workLoading"
+            class="ring-default space-y-4 rounded-lg p-4 ring"
+            role="status"
+          >
+            <span class="sr-only">{{ t("home.todo.loading") }}</span>
+            <div v-for="n in 2" :key="n" class="flex gap-3">
+              <USkeleton
+                aria-hidden="true"
+                class="size-8 shrink-0 rounded-full"
+              />
+              <div class="flex-1 space-y-2">
+                <USkeleton aria-hidden="true" class="h-4 w-1/2" />
+                <USkeleton aria-hidden="true" class="h-4 w-3/4" />
+              </div>
+            </div>
+          </div>
 
-              <div v-if="member" class="flex flex-col gap-3">
+          <UAlert
+            v-else-if="workError && !work"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            :title="t('home.todo.loadFailed')"
+            :actions="[
+              {
+                label: t('home.retry'),
+                color: 'error',
+                variant: 'outline',
+                onClick: () => refreshWork(),
+              },
+            ]"
+          />
+
+          <template v-else>
+            <ul
+              v-if="review.length > 0"
+              class="grid gap-4"
+              :class="review.length > 1 ? 'sm:grid-cols-2' : ''"
+            >
+              <li v-for="(entry, index) in review" :key="entry.assembly.id">
+                <HomeReviewCard
+                  :review="entry"
+                  :heading-level="3"
+                  :primary="workIsPrimary && index === 0"
+                />
+              </li>
+            </ul>
+
+            <UCard v-if="tasks.length > 0">
+              <HomeTaskList
+                :tasks="tasks"
+                :primary="workIsPrimary && review.length === 0"
+              />
+            </UCard>
+
+            <CommonEmptyState
+              v-if="nothingToDo"
+              icon="i-lucide-circle-check-big"
+              :title="t('home.todo.emptyTitle')"
+              :description="
+                member
+                  ? t('home.todo.emptyDescription')
+                  : t('home.todo.emptyNoMember')
+              "
+              variant="outline"
+              size="sm"
+            />
+          </template>
+        </section>
+
+        <!-- 2. What comes next in the calendar: one line -->
+        <section
+          v-if="nextDeadline?.nextMilestone"
+          aria-labelledby="home-next-title"
+          class="flex flex-col gap-3"
+        >
+          <h2
+            id="home-next-title"
+            class="text-highlighted text-lg font-semibold"
+          >
+            {{ t("home.next.title") }}
+          </h2>
+          <div
+            class="border-default flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"
+            data-testid="home-next-deadline"
+          >
+            <div class="flex min-w-0 items-start gap-3">
+              <UIcon
+                name="i-lucide-calendar-clock"
+                class="text-primary mt-0.5 size-5 shrink-0"
+                aria-hidden="true"
+              />
+              <div class="min-w-0 space-y-0.5">
+                <p class="text-highlighted font-medium">
+                  {{
+                    t(`calendar.milestones.${nextDeadline.nextMilestone.key}`)
+                  }}
+                </p>
+                <p
+                  class="text-muted flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm"
+                >
+                  <span>
+                    {{
+                      t("home.next.when", {
+                        assembly: nextDeadline.label,
+                        date: formatDateTime(nextDeadline.nextMilestone.at, {
+                          style: "long",
+                          locale,
+                        }),
+                      })
+                    }}
+                  </span>
+                  <CommonCountdown
+                    :to="nextDeadline.nextMilestone.at"
+                    :urgent-hours="72"
+                    icon="i-lucide-hourglass"
+                  />
+                </p>
+              </div>
+            </div>
+            <UButton
+              :to="localePath(assemblyPath(nextDeadline.slug, 'calendar'))"
+              color="neutral"
+              variant="outline"
+              trailing-icon="i-lucide-arrow-right"
+              :label="t('home.next.calendar')"
+              :aria-label="
+                t('home.next.calendarOf', { assembly: nextDeadline.label })
+              "
+            />
+          </div>
+        </section>
+
+        <!-- 3. Upcoming assemblies -->
+        <section
+          aria-labelledby="home-upcoming-title"
+          class="flex flex-col gap-3"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <h2
+              id="home-upcoming-title"
+              class="text-highlighted text-lg font-semibold"
+            >
+              {{ t("home.upcoming.title") }}
+            </h2>
+            <UButton
+              :to="localePath('/asambleas')"
+              color="neutral"
+              variant="link"
+              trailing-icon="i-lucide-arrow-right"
+            >
+              {{ t("home.upcoming.all") }}
+            </UButton>
+          </div>
+
+          <UAlert
+            v-if="error"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            :title="t('home.loadFailed')"
+            :actions="[
+              {
+                label: t('home.retry'),
+                color: 'error',
+                variant: 'outline',
+                onClick: () => refresh(),
+              },
+            ]"
+          />
+
+          <ul
+            v-else-if="loading"
+            class="grid gap-4 sm:grid-cols-2"
+            :aria-label="t('home.loading')"
+            aria-busy="true"
+          >
+            <li
+              v-for="n in 2"
+              :key="n"
+              class="ring-default space-y-3 rounded-lg p-5 ring"
+            >
+              <div class="flex justify-between gap-3">
+                <USkeleton aria-hidden="true" class="h-6 w-28" />
+                <USkeleton aria-hidden="true" class="h-5 w-20" />
+              </div>
+              <USkeleton aria-hidden="true" class="h-4 w-48" />
+              <USkeleton aria-hidden="true" class="h-4 w-40" />
+            </li>
+          </ul>
+
+          <CommonEmptyState
+            v-else-if="upcoming.length === 0"
+            icon="i-lucide-calendar-off"
+            :title="t('home.upcoming.empty')"
+            :description="t('home.upcoming.emptyDescription')"
+            variant="outline"
+            size="sm"
+          />
+
+          <ul v-else class="grid gap-4 sm:grid-cols-2">
+            <li v-for="assembly in upcoming" :key="assembly.id">
+              <AssemblyCard :assembly="assembly" :heading-level="3" />
+            </li>
+          </ul>
+        </section>
+
+        <!-- The rest, folded: one click away -->
+        <div class="flex flex-col gap-3" data-testid="home-more">
+          <!-- What others decided about the user's work -->
+          <HomeFold
+            v-if="news.length > 0"
+            id="news"
+            :title="t('home.news.title')"
+            icon="i-lucide-bell"
+            :count="news.length"
+          >
+            <HomeNewsList :news="news" />
+          </HomeFold>
+
+          <!-- Where the rest stands -->
+          <HomeFold
+            v-if="updates.length > 0"
+            id="mine"
+            :title="t('home.mine.title')"
+            icon="i-lucide-files"
+            :count="updates.length"
+          >
+            <HomeUpdateList :updates="updates" />
+          </HomeFold>
+
+          <HomeFold id="account" :title="t('home.aside')" icon="i-lucide-user">
+            <div class="flex flex-col gap-3">
+              <h3 class="sr-only">{{ t("home.member.title") }}</h3>
+              <template v-if="member">
                 <CommonMemberBadge :member="member" size="lg" show-name />
                 <p class="text-muted text-sm">
                   {{ t("home.member.actingFor") }}
                 </p>
-              </div>
+              </template>
               <p v-else class="text-muted text-sm">
                 {{ t("home.member.none") }}
               </p>
+              <p
+                v-if="roleLabel"
+                class="flex flex-wrap items-center gap-2 text-sm"
+              >
+                <span class="text-muted">{{ t("home.member.role") }}</span>
+                <ShellRoleBadge :role="me?.role" />
+              </p>
+            </div>
+          </HomeFold>
 
-              <template v-if="roleLabel" #footer>
-                <div class="flex items-center justify-between gap-2 text-sm">
-                  <span class="text-muted">{{ t("home.member.role") }}</span>
-                  <ShellRoleBadge :role="me?.role" />
-                </div>
-              </template>
-            </UCard>
-
-            <UCard v-if="adminLinks.length > 0">
-              <template #header>
-                <h2 class="text-highlighted font-semibold">
-                  {{ t("home.admin.title") }}
-                </h2>
-              </template>
-              <ul class="-my-1 flex flex-col">
-                <li v-for="link in adminLinks" :key="link.key">
-                  <UButton
-                    :to="link.to"
-                    :icon="link.icon"
-                    color="neutral"
-                    variant="ghost"
-                    trailing-icon="i-lucide-chevron-right"
-                    block
-                    class="justify-start"
-                    :ui="{ trailingIcon: 'ms-auto' }"
-                  >
-                    {{ link.label }}
-                  </UButton>
-                </li>
-              </ul>
-            </UCard>
-          </aside>
+          <HomeFold
+            v-if="adminLinks.length > 0"
+            id="admin"
+            :title="t('home.admin.title')"
+            icon="i-lucide-settings"
+          >
+            <ul class="flex flex-col">
+              <li v-for="link in adminLinks" :key="link.key">
+                <UButton
+                  :to="link.to"
+                  :icon="link.icon"
+                  color="neutral"
+                  variant="ghost"
+                  trailing-icon="i-lucide-chevron-right"
+                  block
+                  class="justify-start"
+                  :ui="{ trailingIcon: 'ms-auto' }"
+                >
+                  {{ link.label }}
+                </UButton>
+              </li>
+            </ul>
+          </HomeFold>
         </div>
       </div>
     </template>

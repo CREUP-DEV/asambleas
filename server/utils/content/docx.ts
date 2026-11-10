@@ -610,11 +610,12 @@ function alignmentRun(documents) {
 // "Table of Contents" gallery) is left out: its entries are the headings
 // again, with page numbers that mean nothing on the platform, which shows
 // its own index. A filled table cell starts with a hidden run (docx-cell)
-// saying how: "dark" (a header row, a subtotal), which prepareImportedHtml
-// turns into a header cell, since templates mark headers by colour and bold
-// alone would make a header of every bold line of a statement; or "light",
-// a shaded cell. mammoth reads a cell's properties right before it makes the
-// cell, so the fill read is handed straight to it.
+// saying how, and in which colour ("dark:792225"): "dark" (a header row, a
+// subtotal), which prepareImportedHtml turns into a header cell, since
+// templates mark headers by colour and bold alone would make a header of
+// every bold line of a statement; or "light". The colour becomes the nearest
+// one of the platform's palette there. mammoth reads a cell's properties
+// right before it makes the cell, so the fill read is handed straight to it.
 function cellFills(nodes, documents) {
   const first = nodes.Element.prototype.first;
   const makeCell = documents.TableCell;
@@ -651,8 +652,9 @@ function isContents(sdt) {
   const value = gallery && gallery.attributes["w:val"];
   return typeof value === "string" && value.toLowerCase() === "table of contents";
 }
-// A cell's fill by its relative luminance: "dark" below mid grey, "light"
-// for any other colour short of white, null for none.
+// A cell's fill by its relative luminance, with its colour: "dark:rrggbb"
+// below mid grey, "light:rrggbb" for any other colour short of white, null
+// for none.
 function fillOf(properties) {
   const shading = properties && properties.first("w:shd");
   const fill = shading && shading.attributes["w:fill"];
@@ -662,8 +664,8 @@ function fillOf(properties) {
     return value <= 0.04045 ? value / 12.92 : Math.pow((value + 0.055) / 1.055, 2.4);
   };
   const luminance = 0.2126 * channel(0) + 0.7152 * channel(2) + 0.0722 * channel(4);
-  if (luminance < 0.4) return "dark";
-  return luminance < 0.97 ? "light" : null;
+  if (luminance < 0.4) return "dark:" + fill.toLowerCase();
+  return luminance < 0.97 ? "light:" + fill.toLowerCase() : null;
 }
 // Text formatted as all caps is shown in capitals: write it so.
 function upperCaseRun(run) {

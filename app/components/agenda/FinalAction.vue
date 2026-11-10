@@ -6,7 +6,8 @@ import { formatDateTime } from "~/utils/format";
  * Marks the agenda as final (ODD definitivo) or reopens it as provisional,
  * for managers, after a confirmation that says what each means.
  *
- * - `button`: "Marcar como definitivo" while the agenda is provisional and
+ * - `button`: "Marcar como definitivo" (outline, so it never competes with
+ *   the header's primary action) while the agenda is provisional and
  *   "Reabrir como provisional" once it is final (agenda page header).
  * - `reminder`: an alert with the same button, only when the planned date of
  *   the final agenda has passed and the agenda is still provisional (agenda
@@ -82,8 +83,11 @@ async function confirm() {
 <template>
   <template v-if="manage">
     <template v-if="props.as === 'button'">
+      <!-- Outline: the header's one solid action is adding a document -->
       <UButton
         v-if="!isFinal"
+        color="neutral"
+        variant="outline"
         icon="i-lucide-lock"
         :label="t('agenda.finalAgenda.mark')"
         data-testid="agenda-mark-final"

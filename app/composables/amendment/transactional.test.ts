@@ -338,6 +338,20 @@ describe("transactional sources", () => {
     expect(transactionalSameBlocks([p("x", "Hola")], [p("x", "Adiós")])).toBe(
       false,
     );
+    // A cell shaded before the palette comes back from the editor as beige.
+    const at = { table: "t", row: "r", cell: "c" };
+    expect(
+      transactionalSameBlocks(
+        [{ ...p("x", "Hola"), cell: { ...at, shade: true } }],
+        [{ ...p("x", "Hola"), cell: { ...at, fill: "beige" } }],
+      ),
+    ).toBe(true);
+    expect(
+      transactionalSameBlocks(
+        [{ ...p("x", "Hola"), cell: { ...at, fill: "blue" } }],
+        [{ ...p("x", "Hola"), cell: { ...at, fill: "beige" } }],
+      ),
+    ).toBe(false);
   });
 });
 

@@ -10,11 +10,22 @@ import { useImpersonationBannerOffset } from "~/components/shell/ImpersonationBa
  * The dashboard is fixed to the viewport; while an Admin acts as another
  * account it starts below the impersonation banner (app.vue), so the banner
  * never covers the navbars.
+ *
+ * It also holds the welcome (ShellWelcome), which opens by itself on an
+ * account's first visit, and "Ayuda" in the sidebar footer, which opens it
+ * again. The welcome is client only: nothing of it is server-rendered.
  */
 const { t } = useI18n();
 const bannerOffset = useImpersonationBannerOffset();
 
 const sidebarOpen = ref(false);
+const welcomeOpen = ref(false);
+
+/** On phones the sidebar is a drawer: it closes so the welcome is on top. */
+function openHelp(): void {
+  sidebarOpen.value = false;
+  welcomeOpen.value = true;
+}
 
 useHead({
   titleTemplate: (titleChunk) =>
@@ -41,9 +52,9 @@ useHead({
       class="print:static print:block print:overflow-visible"
       :style="bannerOffset !== '0px' ? { top: bannerOffset } : undefined"
     >
-      <!-- The banner landmark holds the brand, the navigation and the user
-           menu (preferences, language, sign out). On phones the drawer is a
-           dialog instead. -->
+      <!-- The banner landmark holds the brand, the navigation, "Ayuda" and
+           the user menu (activity, preferences, sign out). On phones the
+           drawer is a dialog instead. -->
       <UDashboardSidebar
         id="main"
         v-model:open="sidebarOpen"
@@ -71,7 +82,27 @@ useHead({
         </template>
 
         <template #footer="{ collapsed }">
-          <ShellUserMenu :collapsed="collapsed" />
+          <div class="flex w-full min-w-0 flex-col gap-1">
+            <UTooltip
+              :text="t('shell.help.open')"
+              :disabled="!collapsed"
+              :content="{ side: 'right' }"
+            >
+              <UButton
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-life-buoy"
+                :block="!collapsed"
+                :square="collapsed"
+                :label="collapsed ? undefined : t('shell.help.open')"
+                :aria-label="t('shell.help.label')"
+                class="justify-start gap-2.5"
+                :class="collapsed ? 'justify-center' : ''"
+                @click="openHelp"
+              />
+            </UTooltip>
+            <ShellUserMenu :collapsed="collapsed" />
+          </div>
         </template>
       </UDashboardSidebar>
 
@@ -92,5 +123,9 @@ useHead({
     </UDashboardGroup>
 
     <ShellSessionBanner class="print:hidden" />
+
+    <ClientOnly>
+      <ShellWelcome v-model:open="welcomeOpen" />
+    </ClientOnly>
   </div>
 </template>

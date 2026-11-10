@@ -4,8 +4,8 @@ import { roleLabelKey } from "./RoleBadge.vue";
 
 /**
  * Sidebar footer: who is signed in (avatar, name, member acronym, role) and
- * a menu with the account's activity, accessibility preferences, language,
- * colour mode and sign out. While an Admin acts as another account it shows
+ * a menu with the account's activity, "Preferencias" (one dialog with
+ * language, theme and content accessibility: ShellPreferences) and sign out. While an Admin acts as another account it shows
  * that account, and "Volver a mi cuenta" replaces signing out.
  *
  * The button truncates a long name; the menu wraps every line instead, so
@@ -18,8 +18,6 @@ const localePath = useLocalePath();
 const { me, member, impersonation } = useMe();
 const { signOut, stopImpersonating } = useAuth();
 const { notifyError } = useApi();
-const { localeMenuItems } = useLocaleSwitcher();
-const colorMode = useColorMode();
 
 const preferencesOpen = ref(false);
 const signingOut = ref(false);
@@ -66,12 +64,6 @@ const avatar = computed(() => ({
   text: initials.value || undefined,
 }));
 
-const COLOR_MODES = [
-  { value: "system", icon: "i-lucide-monitor" },
-  { value: "light", icon: "i-lucide-sun" },
-  { value: "dark", icon: "i-lucide-moon" },
-] as const;
-
 async function handleSignOut(): Promise<void> {
   if (signingOut.value) return;
   signingOut.value = true;
@@ -112,30 +104,11 @@ const items = computed<DropdownMenuItem[][]>(() => [
   ],
   [
     {
-      label: t("shell.user.accessibility"),
-      icon: "i-lucide-accessibility",
+      label: t("shell.preferences.title"),
+      icon: "i-lucide-settings-2",
       onSelect: () => {
         preferencesOpen.value = true;
       },
-    },
-    {
-      label: t("shell.user.language"),
-      icon: "i-lucide-languages",
-      children: localeMenuItems.value,
-    },
-    {
-      label: t("shell.user.theme"),
-      icon: "i-lucide-sun-moon",
-      children: COLOR_MODES.map((mode) => ({
-        label: t(`shell.user.themes.${mode.value}`),
-        icon: mode.icon,
-        type: "checkbox" as const,
-        checked: colorMode.preference === mode.value,
-        onSelect: (event: Event) => {
-          event.preventDefault();
-          colorMode.preference = mode.value;
-        },
-      })),
     },
   ],
   [
@@ -203,12 +176,12 @@ const items = computed<DropdownMenuItem[][]>(() => [
 
     <UModal
       v-model:open="preferencesOpen"
-      :title="t('shell.user.accessibility')"
-      :description="t('shell.user.accessibilityDescription')"
+      :title="t('shell.preferences.title')"
+      :description="t('shell.preferences.description')"
       :content="preferencesContent"
     >
       <template #body>
-        <AccessibilityPreferences />
+        <ShellPreferences />
       </template>
       <template #footer="{ close }">
         <div class="flex w-full justify-end">

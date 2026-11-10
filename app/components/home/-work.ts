@@ -725,3 +725,33 @@ export function homeWorkNewsLink(
   const query = homeWorkAmendmentQuery(item.amendment);
   return item.target === "review" ? `/revisar${query}` : query;
 }
+
+// Calendar -----------------------------------------------------------------------
+
+/** What the home page needs of an assembly to say what comes next. */
+export interface HomeDeadlineAssembly {
+  status: string;
+  nextMilestone: { at: string } | null;
+}
+
+/**
+ * The assembly whose next calendar milestone comes first, among those not
+ * closed: the one line of "Lo siguiente" on the home page. Milestones
+ * already past (a list loaded a while ago) are left out; null when nothing
+ * is ahead.
+ */
+export function homeNextDeadline<T extends HomeDeadlineAssembly>(
+  assemblies: readonly T[],
+  now: number,
+): T | null {
+  let best: T | null = null;
+  let bestAt = Number.POSITIVE_INFINITY;
+  for (const assembly of assemblies) {
+    if (assembly.status === "closed") continue;
+    const at = time(assembly.nextMilestone?.at ?? null);
+    if (at === null || at < now || at >= bestAt) continue;
+    best = assembly;
+    bestAt = at;
+  }
+  return best;
+}

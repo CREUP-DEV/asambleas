@@ -14,6 +14,7 @@ import {
   homeWorkAmendmentTask,
   homeWorkDocumentTask,
   homeWorkAmendmentQuery,
+  homeNextDeadline,
   homeWorkForAssembly,
   homeWorkNews,
   homeWorkNewsDeduped,
@@ -807,5 +808,32 @@ describe("home work", () => {
     expect(homeWorkAmendmentQuery(null)).toBe("");
     expect(homeWorkAmendmentQuery({ id: "abc123" })).toBe("?enmienda=abc123");
     expect(homeWorkAmendmentQuery({ id: "a b&c" })).toBe("?enmienda=a%20b%26c");
+  });
+});
+
+describe("homeNextDeadline", () => {
+  const now = new Date("2026-11-10T10:00:00Z").getTime();
+  const entry = (id: string, status: string, at: string | null) => ({
+    id,
+    status,
+    nextMilestone: at ? { at } : null,
+  });
+
+  it("picks the assembly whose next milestone comes first", () => {
+    const list = [
+      entry("late", "convened", "2026-12-01T10:00:00Z"),
+      entry("soon", "draft", "2026-11-12T10:00:00Z"),
+      entry("none", "convened", null),
+    ];
+    expect(homeNextDeadline(list, now)?.id).toBe("soon");
+  });
+
+  it("leaves out closed assemblies and milestones already past", () => {
+    const list = [
+      entry("closed", "closed", "2026-11-11T10:00:00Z"),
+      entry("past", "convened", "2026-11-09T10:00:00Z"),
+    ];
+    expect(homeNextDeadline(list, now)).toBeNull();
+    expect(homeNextDeadline([], now)).toBeNull();
   });
 });

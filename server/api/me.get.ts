@@ -2,7 +2,7 @@ import { defineEventHandler } from "h3";
 import { eq } from "drizzle-orm";
 import type { MeDto, MeImpersonationDto } from "~~/shared/types/api";
 import { db } from "../db";
-import { members } from "../db/schema";
+import { members, users } from "../db/schema";
 import { requireActor } from "../utils/domain/actor";
 import { toMemberRef } from "../utils/members/dto";
 
@@ -14,6 +14,11 @@ export default defineEventHandler(async (event): Promise<MeDto> => {
         columns: { id: true, acronym: true, name: true, kind: true },
       })
     : undefined;
+  const [account] = await db
+    .select({ onboardingSeenAt: users.onboardingSeenAt })
+    .from(users)
+    .where(eq(users.id, actor.user.id))
+    .limit(1);
 
   // While an Admin acts as this account, everything above is the account's
   // and this names the Admin (never their email) for the banner.
@@ -36,6 +41,7 @@ export default defineEventHandler(async (event): Promise<MeDto> => {
     permissions: [...actor.permissions],
     isAdmin: actor.isAdmin,
     member: member ? toMemberRef(member) : null,
+    onboardingSeen: Boolean(account?.onboardingSeenAt),
     impersonation,
   };
 });
