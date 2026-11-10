@@ -9,8 +9,8 @@ import {
 /**
  * The welcome: five short steps, one idea each, worded for what the
  * account can do (-welcome.ts), ending with the preferences. It opens by
- * itself the first time an account reaches the dashboard and again from
- * "Ayuda" in the sidebar.
+ * itself the first time this browser reaches the dashboard and again from
+ * "Ayuda" in the user menu.
  *
  * Closing it, at any step and however it closes, records in this browser
  * that it was seen (WELCOME_SEEN_STORAGE_KEY), so it never opens by itself

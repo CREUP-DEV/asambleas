@@ -473,11 +473,9 @@
         "readOnly": "Tu cuenta es de invitado. Puedes consultar esta asamblea, sus documentos y sus enmiendas, pero no puedes presentar nada."
       },
       "next": {
-        "title": "Lo siguiente",
         "none": "No quedan plazos por delante en el calendario.",
         "open": "Ver el calendario"
-      },
-      "fullCalendar": "Calendario completo"
+      }
     },
     "settingsPage": {
       "title": "Ajustes",
@@ -2318,8 +2316,7 @@
       "contentHint": "Lo siguiente solo cambia el texto de documentos y enmiendas."
     },
     "help": {
-      "open": "Ayuda",
-      "label": "Ayuda: abrir la guía de bienvenida"
+      "open": "Ayuda"
     },
     "roles": {
       "admin": "Administrador",
@@ -2400,7 +2397,7 @@
       },
       "back": {
         "title": "Cómo volver atrás y dónde está la ayuda",
-        "body": "Arriba de cada página ves dónde estás. Pulsa cualquier paso de esa fila para volver atrás. Esta guía se abre otra vez con «Ayuda», abajo en el menú."
+        "body": "Arriba de cada página ves dónde estás. Pulsa cualquier paso de esa fila para volver atrás. Esta guía se abre otra vez con «Ayuda», en el menú de tu perfil, abajo a la izquierda."
       },
       "preferences": {
         "title": "Ponlo a tu gusto",

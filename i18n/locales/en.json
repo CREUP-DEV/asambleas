@@ -473,11 +473,9 @@
         "readOnly": "Your account is a guest account. You can read this assembly, its documents and its amendments, but you cannot present anything."
       },
       "next": {
-        "title": "Coming next",
         "none": "No deadlines are left in the calendar.",
         "open": "Open the calendar"
-      },
-      "fullCalendar": "Full calendar"
+      }
     },
     "settingsPage": {
       "title": "Settings",
@@ -2318,8 +2316,7 @@
       "contentHint": "What follows only changes the text of documents and amendments."
     },
     "help": {
-      "open": "Help",
-      "label": "Help: open the welcome guide"
+      "open": "Help"
     },
     "roles": {
       "admin": "Administrator",
@@ -2400,7 +2397,7 @@
       },
       "back": {
         "title": "How to go back and where the help is",
-        "body": "The top of every page shows where you are. Press any step of that row to go back. This guide opens again with \"Help\", at the bottom of the menu."
+        "body": "The top of every page shows where you are. Press any step of that row to go back. This guide opens again with \"Help\", in your profile menu at the bottom left."
       },
       "preferences": {
         "title": "Make it yours",

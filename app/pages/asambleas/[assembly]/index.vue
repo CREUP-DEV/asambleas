@@ -25,13 +25,14 @@ import { formatDateTime } from "~/utils/format";
  *    always sees their tasks card, even with nothing in it, so they know
  *    where requests will show up; a read-only account (Otro, Invitado) reads one sentence
  *    saying the account can only read.
- * 2. "Lo siguiente": the next milestone of the calendar, one line that
- *    opens the calendar.
- * 3. The agenda summary with documents and amendment counts (each item
+ * 2. The agenda summary with documents and amendment counts (each item
  *    opens its own page).
+ * 3. Beside it on large screens, under it on phones, the calendar: the next
+ *    milestone and its countdown in the header, then every milestone (with
+ *    its warnings for managers).
  *
- * The key figures and the full calendar timeline (with its warnings for
- * managers) stay one click away in folded sections under them (HomeFold).
+ * The key figures stay one click away in a folded section under them
+ * (HomeFold).
  * The managers' alerts (calendar warnings, an overdue final agenda) are
  * notices, not blocks, and stay on top.
  */
@@ -417,183 +418,186 @@ const warnedKeys = computed(() =>
       @created="onDocumentCreated"
     />
 
-    <!-- 2. What comes next in the calendar: one line -->
-    <section
-      class="border-default flex flex-wrap items-center justify-between gap-3 rounded-lg border p-4"
-      aria-labelledby="overview-next-title"
-      data-testid="overview-next"
-    >
-      <div class="flex min-w-0 items-start gap-3">
-        <UIcon
-          name="i-lucide-calendar-clock"
-          class="text-primary size-5 shrink-0"
-          aria-hidden="true"
-        />
-        <div class="min-w-0 space-y-0.5">
-          <h3 id="overview-next-title" class="text-muted text-sm font-medium">
-            {{ t("assembly.overview.next.title") }}
-          </h3>
-          <template v-if="assembly.nextMilestone">
-            <p class="text-highlighted font-medium">
-              {{ t(`calendar.milestones.${assembly.nextMilestone.key}`) }}
-            </p>
-            <p
-              class="text-muted flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm"
+    <!-- 2. Agenda summary and, beside it, the calendar -->
+    <div class="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+      <UCard as="section" aria-labelledby="overview-agenda-title">
+        <template #header>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3
+              id="overview-agenda-title"
+              class="text-highlighted font-semibold"
             >
-              <span>
+              {{ t("assembly.overview.agendaTitle") }}
+            </h3>
+            <UBadge
+              :color="assembly.agendaFinalizedAt ? 'success' : 'neutral'"
+              variant="subtle"
+              size="sm"
+              :label="
+                assembly.agendaFinalizedAt
+                  ? t('agenda.final')
+                  : t('agenda.provisional')
+              "
+            />
+          </div>
+        </template>
+
+        <div v-if="agendaPending && !agenda" class="space-y-2" role="status">
+          <span class="sr-only">{{ t("agenda.loading") }}</span>
+          <USkeleton
+            v-for="index in 5"
+            :key="index"
+            aria-hidden="true"
+            class="h-8 w-full"
+          />
+        </div>
+        <UAlert
+          v-else-if="agendaError && !agenda"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          :title="t('agenda.loadError')"
+          :actions="[
+            {
+              label: t('agenda.retry'),
+              color: 'neutral',
+              variant: 'outline',
+              onClick: () => {
+                void refreshAgenda();
+              },
+            },
+          ]"
+        />
+        <CommonEmptyState
+          v-else-if="rows.length === 0"
+          icon="i-lucide-list-tree"
+          :title="t('agenda.emptyTitle')"
+          :description="t('agenda.emptyDescription')"
+          size="sm"
+        >
+          <template v-if="assembly.can.manage" #action>
+            <UButton
+              size="sm"
+              icon="i-lucide-plus"
+              :label="t('agenda.addItem')"
+              :to="sectionPath('orden-del-dia')"
+            />
+          </template>
+        </CommonEmptyState>
+        <ol v-else class="divide-default -my-2 divide-y">
+          <li
+            v-for="row in rows"
+            :key="row.item.id"
+            class="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 py-2"
+            :style="{ paddingInlineStart: `${row.depth * 1.25}rem` }"
+          >
+            <NuxtLink
+              :to="agendaItemPath(sectionPath(), row.item.id)"
+              class="text-default hover:text-primary focus-visible:outline-primary min-w-0 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2"
+              :class="row.depth === 0 ? 'font-medium' : 'text-sm'"
+            >
+              <span class="text-primary me-1.5 tabular-nums"
+                >{{ row.number }}.</span
+              >
+              <span class="break-words">{{ row.item.title }}</span>
+            </NuxtLink>
+            <span
+              v-if="totalsFor(row.item.id).documents > 0"
+              class="text-muted flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums"
+            >
+              <span class="inline-flex items-center gap-1">
+                <UIcon
+                  name="i-lucide-file"
+                  class="size-3.5 shrink-0"
+                  aria-hidden="true"
+                />
                 {{
-                  formatDateTime(assembly.nextMilestone.at, {
-                    style: "long",
-                    locale,
-                  })
+                  t(
+                    "assembly.overview.documentCount",
+                    { count: totalsFor(row.item.id).documents },
+                    totalsFor(row.item.id).documents,
+                  )
                 }}
               </span>
+              <span class="inline-flex items-center gap-1">
+                <UIcon
+                  name="i-lucide-message-square-diff"
+                  class="size-3.5 shrink-0"
+                  aria-hidden="true"
+                />
+                {{
+                  t(
+                    "assembly.overview.amendmentCount",
+                    { count: totalsFor(row.item.id).amendments },
+                    totalsFor(row.item.id).amendments,
+                  )
+                }}
+              </span>
+            </span>
+          </li>
+        </ol>
+
+        <template #footer>
+          <UButton
+            variant="link"
+            trailing-icon="i-lucide-arrow-right"
+            :label="t('assembly.overview.openAgenda')"
+            :to="sectionPath('orden-del-dia')"
+            class="px-0"
+          />
+        </template>
+      </UCard>
+
+      <!-- 3. The calendar: what comes next, then every milestone -->
+      <UCard
+        as="section"
+        aria-labelledby="overview-calendar-title"
+        data-testid="overview-calendar"
+      >
+        <template #header>
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <h3
+              id="overview-calendar-title"
+              class="text-highlighted font-semibold"
+            >
+              {{ t("assembly.overview.calendarTitle") }}
+            </h3>
+            <span
+              v-if="assembly.nextMilestone"
+              class="text-muted flex flex-wrap items-center gap-1 text-sm"
+            >
+              {{ t(`calendar.milestones.${assembly.nextMilestone.key}`) }}
               <CommonCountdown
                 :to="assembly.nextMilestone.at"
                 icon="i-lucide-hourglass"
                 :urgent-hours="72"
               />
-            </p>
-          </template>
-          <p v-else class="text-default text-sm">
-            {{ t("assembly.overview.next.none") }}
-          </p>
-        </div>
-      </div>
-      <UButton
-        color="neutral"
-        variant="outline"
-        trailing-icon="i-lucide-arrow-right"
-        :label="t('assembly.overview.next.open')"
-        :to="sectionPath('calendario')"
-      />
-    </section>
-
-    <!-- 3. Agenda summary -->
-    <UCard as="section" aria-labelledby="overview-agenda-title">
-      <template #header>
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <h3 id="overview-agenda-title" class="text-highlighted font-semibold">
-            {{ t("assembly.overview.agendaTitle") }}
-          </h3>
-          <UBadge
-            :color="assembly.agendaFinalizedAt ? 'success' : 'neutral'"
-            variant="subtle"
-            size="sm"
-            :label="
-              assembly.agendaFinalizedAt
-                ? t('agenda.final')
-                : t('agenda.provisional')
-            "
-          />
-        </div>
-      </template>
-
-      <div v-if="agendaPending && !agenda" class="space-y-2" role="status">
-        <span class="sr-only">{{ t("agenda.loading") }}</span>
-        <USkeleton
-          v-for="index in 5"
-          :key="index"
-          aria-hidden="true"
-          class="h-8 w-full"
+            </span>
+            <span v-else class="text-muted text-sm">
+              {{ t("assembly.overview.next.none") }}
+            </span>
+          </div>
+        </template>
+        <CalendarMilestoneTimeline
+          :milestones="assembly.milestones"
+          :start-date="assembly.startDate"
+          :warned-keys="assembly.can.manage ? warnedKeys : []"
         />
-      </div>
-      <UAlert
-        v-else-if="agendaError && !agenda"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-circle-alert"
-        :title="t('agenda.loadError')"
-        :actions="[
-          {
-            label: t('agenda.retry'),
-            color: 'neutral',
-            variant: 'outline',
-            onClick: () => {
-              void refreshAgenda();
-            },
-          },
-        ]"
-      />
-      <CommonEmptyState
-        v-else-if="rows.length === 0"
-        icon="i-lucide-list-tree"
-        :title="t('agenda.emptyTitle')"
-        :description="t('agenda.emptyDescription')"
-        size="sm"
-      >
-        <template v-if="assembly.can.manage" #action>
+        <template #footer>
           <UButton
-            size="sm"
-            icon="i-lucide-plus"
-            :label="t('agenda.addItem')"
-            :to="sectionPath('orden-del-dia')"
+            variant="link"
+            trailing-icon="i-lucide-arrow-right"
+            :label="
+              assembly.can.manage
+                ? t('assembly.overview.editCalendar')
+                : t('assembly.overview.next.open')
+            "
+            :to="sectionPath('calendario')"
+            class="px-0"
           />
         </template>
-      </CommonEmptyState>
-      <ol v-else class="divide-default -my-2 divide-y">
-        <li
-          v-for="row in rows"
-          :key="row.item.id"
-          class="flex flex-wrap items-start justify-between gap-x-3 gap-y-1 py-2"
-          :style="{ paddingInlineStart: `${row.depth * 1.25}rem` }"
-        >
-          <NuxtLink
-            :to="agendaItemPath(sectionPath(), row.item.id)"
-            class="text-default hover:text-primary focus-visible:outline-primary min-w-0 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2"
-            :class="row.depth === 0 ? 'font-medium' : 'text-sm'"
-          >
-            <span class="text-primary me-1.5 tabular-nums"
-              >{{ row.number }}.</span
-            >
-            <span class="break-words">{{ row.item.title }}</span>
-          </NuxtLink>
-          <span
-            v-if="totalsFor(row.item.id).documents > 0"
-            class="text-muted flex flex-wrap items-center gap-x-3 gap-y-1 text-xs tabular-nums"
-          >
-            <span class="inline-flex items-center gap-1">
-              <UIcon
-                name="i-lucide-file"
-                class="size-3.5 shrink-0"
-                aria-hidden="true"
-              />
-              {{
-                t(
-                  "assembly.overview.documentCount",
-                  { count: totalsFor(row.item.id).documents },
-                  totalsFor(row.item.id).documents,
-                )
-              }}
-            </span>
-            <span class="inline-flex items-center gap-1">
-              <UIcon
-                name="i-lucide-message-square-diff"
-                class="size-3.5 shrink-0"
-                aria-hidden="true"
-              />
-              {{
-                t(
-                  "assembly.overview.amendmentCount",
-                  { count: totalsFor(row.item.id).amendments },
-                  totalsFor(row.item.id).amendments,
-                )
-              }}
-            </span>
-          </span>
-        </li>
-      </ol>
-
-      <template #footer>
-        <UButton
-          variant="link"
-          trailing-icon="i-lucide-arrow-right"
-          :label="t('assembly.overview.openAgenda')"
-          :to="sectionPath('orden-del-dia')"
-          class="px-0"
-        />
-      </template>
-    </UCard>
+      </UCard>
+    </div>
 
     <!-- The rest, folded: one click away -->
     <div class="space-y-3" data-testid="overview-more">
@@ -635,28 +639,6 @@ const warnedKeys = computed(() =>
             >
           </li>
         </ul>
-      </HomeFold>
-
-      <!-- The whole calendar -->
-      <HomeFold
-        id="overview-calendar"
-        :title="t('assembly.overview.fullCalendar')"
-        icon="i-lucide-calendar-days"
-        :heading-level="3"
-      >
-        <CalendarMilestoneTimeline
-          :milestones="assembly.milestones"
-          :start-date="assembly.startDate"
-          :warned-keys="assembly.can.manage ? warnedKeys : []"
-        />
-        <UButton
-          v-if="assembly.can.manage"
-          variant="link"
-          trailing-icon="i-lucide-arrow-right"
-          :label="t('assembly.overview.editCalendar')"
-          :to="sectionPath('calendario')"
-          class="mt-3 px-0"
-        />
       </HomeFold>
     </div>
   </div>
