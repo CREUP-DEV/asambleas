@@ -70,6 +70,7 @@ const sections = computed(() =>
           <UDashboardSidebarCollapse />
         </template>
       </UDashboardNavbar>
+      <ShellBreadcrumbs />
     </template>
 
     <template #body>

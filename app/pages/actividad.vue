@@ -143,6 +143,7 @@ const panelTitleId = useId();
           <UDashboardSidebarCollapse />
         </template>
       </UDashboardNavbar>
+      <ShellBreadcrumbs />
     </template>
 
     <template #body>

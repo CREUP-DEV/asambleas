@@ -102,7 +102,6 @@ const place = computed(() => {
         :id="amendment.id"
         :base="base"
         :ops="amendment.ops"
-        :focus="amendment.id"
         :context="withContext ? 1 : 0"
       >
         <template v-if="amendment.kind === 'totality_return'" #note>

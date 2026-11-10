@@ -3,6 +3,7 @@ import { z } from "zod/v4";
 import type { FormSubmitEvent } from "@nuxt/ui";
 import {
   DOCUMENT_FORMATS,
+  DOCUMENT_KIND_DEFAULTS,
   DOCUMENT_KINDS,
   MEMBER_KINDS,
   type DocumentFormat,
@@ -27,7 +28,8 @@ import {
  * home page and fills it in. Nothing opens afterwards: the panel shows it.
  *
  * The type's rules (amendments, vote) come from its defaults; only the
- * format is offered, folded away under "Más opciones".
+ * format is offered, as two cards in view (text on the platform or an
+ * uploaded PDF).
  */
 const props = defineProps<{
   /** "/api/assemblies/<id>" */
@@ -90,7 +92,6 @@ const dueInPast = computed(
   () => state.dueAt !== null && new Date(state.dueAt).getTime() <= now.value,
 );
 const saving = ref(false);
-const moreOpen = ref(false);
 
 // Members, loaded on first open.
 const members = ref<MemberDto[]>([]);
@@ -116,7 +117,6 @@ watch(
   (isOpen) => {
     if (!isOpen) return;
     Object.assign(state, initialState());
-    moreOpen.value = false;
     void loadMembers();
   },
   { immediate: true },
@@ -179,13 +179,24 @@ const memberOptions = computed<MemberOption[][]>(() =>
     .filter((group) => group.length > 0),
 );
 
+/**
+ * Text or PDF, two cards (as in "Añadir documento"). A text says it can be
+ * amended only when the type takes amendments.
+ */
 const formatOptions = computed(() =>
   DOCUMENT_FORMATS.map((format: DocumentFormat) => ({
-    label: t(`agenda.formats.${format}`),
-    description: t(`agenda.formatDescriptions.${format}`),
+    label: t(`agenda.newDocument.formatCards.${format}`),
+    description:
+      format === "structured" &&
+      state.kind &&
+      !DOCUMENT_KIND_DEFAULTS[state.kind].amendable
+        ? t("agenda.newDocument.formatCards.structuredPlain")
+        : t(`agenda.newDocument.formatCards.${format}Description`),
     value: format,
   })),
 );
+/** Side by side from `sm` up. */
+const formatCardsUi = { fieldset: "grid gap-2 sm:grid-cols-2" };
 
 async function onSubmit(event: FormSubmitEvent<ExpectedForm>) {
   const data = event.data;
@@ -337,29 +348,17 @@ async function onSubmit(event: FormSubmitEvent<ExpectedForm>) {
           </p>
         </UFormField>
 
-        <UCollapsible v-model:open="moreOpen" class="space-y-3">
-          <UButton
-            color="neutral"
-            variant="link"
-            class="px-0"
-            :trailing-icon="
-              moreOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
-            "
-            :label="t('tracking.expected.more')"
+        <!-- Text or PDF, in view: it decides whether it can be amended -->
+        <UFormField :label="t('tracking.expected.format')" name="format">
+          <URadioGroup
+            v-model="state.format"
+            :items="formatOptions"
+            value-key="value"
+            variant="card"
+            :ui="formatCardsUi"
+            class="w-full"
           />
-          <template #content>
-            <UFormField :label="t('tracking.expected.format')" name="format">
-              <URadioGroup
-                v-model="state.format"
-                :items="formatOptions"
-                value-key="value"
-                orientation="vertical"
-                variant="card"
-                class="w-full"
-              />
-            </UFormField>
-          </template>
-        </UCollapsible>
+        </UFormField>
       </UForm>
     </template>
     <template #footer>

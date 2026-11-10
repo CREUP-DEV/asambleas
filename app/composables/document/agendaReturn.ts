@@ -28,6 +28,11 @@ export function agendaItemAnchor(id: string): string {
   return `agenda-item-${id}`;
 }
 
+/** The page of one agenda item or sub-item, keyed by its id. */
+export function agendaItemPath(hubPath: string, itemId: string): string {
+  return `${hubPath}/orden-del-dia/${encodeURIComponent(itemId)}`;
+}
+
 function firstValue(value: unknown): unknown {
   return Array.isArray(value) ? value[0] : value;
 }

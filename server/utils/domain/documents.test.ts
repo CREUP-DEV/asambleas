@@ -30,6 +30,7 @@ const {
   deleteBlocker,
   isExpectedDocument,
   presentationClosed,
+  requireNotOthersAutoItem,
   toDocumentSummaryDto,
 } = await import("./documents");
 
@@ -148,11 +149,35 @@ describe("assertStatusChange", () => {
   });
 });
 
+describe("requireNotOthersAutoItem", () => {
+  it("refuses the automatic sub-item of another document, for anyone", () => {
+    expect(() =>
+      requireNotOthersAutoItem({ generatedForDocumentId: "d1" }, "d2"),
+    ).toThrow(expect.objectContaining({ statusCode: 422 }));
+    // Creating a document: no automatic sub-item is its own yet.
+    expect(() =>
+      requireNotOthersAutoItem({ generatedForDocumentId: "d1" }, null),
+    ).toThrow(expect.objectContaining({ data: { reason: "auto_item" } }));
+  });
+
+  it("lets a document into an ordinary item or back into its own", () => {
+    expect(() =>
+      requireNotOthersAutoItem({ generatedForDocumentId: null }, "d1"),
+    ).not.toThrow();
+    expect(() =>
+      requireNotOthersAutoItem({ generatedForDocumentId: "d1" }, "d1"),
+    ).not.toThrow();
+  });
+});
+
 describe("presentationClosed", () => {
   const milestones = { documents_close: new Date("2026-11-02T10:00:00Z") };
   const after = new Date("2026-11-03T10:00:00Z");
-  const open = { acceptsSubmissions: true };
-  const reserved = { acceptsSubmissions: false };
+  const open = { acceptsSubmissions: true, generatedForDocumentId: null };
+  const reserved = { acceptsSubmissions: false, generatedForDocumentId: null };
+  // The automatic sub-item of a document presented under an item that
+  // accepts submissions: it takes none itself.
+  const automatic = { acceptsSubmissions: false, generatedForDocumentId: "d1" };
 
   it("reopens presentation after a correction request, past the deadline", () => {
     expect(
@@ -209,6 +234,41 @@ describe("presentationClosed", () => {
     ).toBe(false);
     expect(isExpectedDocument({ dueAt: null }, open)).toBe(false);
   });
+
+  it("never treats a document in an automatic sub-item as expected", () => {
+    // A member presented it under a container: documents_close binds it,
+    // although its own sub-item takes no submissions.
+    expect(isExpectedDocument({ dueAt: null }, automatic)).toBe(false);
+    expect(
+      presentationClosed(
+        { dueAt: null, correctionRequestedAt: null },
+        automatic,
+        milestones,
+        at,
+      ),
+    ).toBe(false);
+    expect(
+      presentationClosed(
+        { dueAt: null, correctionRequestedAt: null },
+        automatic,
+        milestones,
+        after,
+      ),
+    ).toBe(true);
+  });
+
+  it("keeps the internal deadline of a document in an automatic sub-item", () => {
+    // The Secretaría added it there with a deadline of its own.
+    expect(isExpectedDocument({ dueAt: at }, automatic)).toBe(true);
+    expect(
+      presentationClosed(
+        { dueAt: at, correctionRequestedAt: null },
+        automatic,
+        milestones,
+        after,
+      ),
+    ).toBe(false);
+  });
 });
 
 describe("assemblySettings", () => {
@@ -258,6 +318,7 @@ describe("toDocumentSummaryDto", () => {
     proponent: null,
     coProponents: [],
     amendmentCount: 0,
+    hasAmendments: null,
     window: { opensAt: null, closesAt: null, open: false },
     hasContent: false,
   };

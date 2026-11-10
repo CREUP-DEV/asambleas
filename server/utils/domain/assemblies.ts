@@ -7,7 +7,6 @@ import {
   desc,
   eq,
   inArray,
-  isNull,
   ne,
   notInArray,
   or,
@@ -39,6 +38,7 @@ import {
   loadDocumentSummaries,
   toVoteDto,
 } from "./documents";
+import { lockAssembly } from "./agendaWrites";
 import { coPresentedBy } from "./presenters";
 import {
   MILESTONE_KEYS,
@@ -67,7 +67,14 @@ import {
   type Milestones,
 } from "~~/shared/utils/calendar";
 import { loadCalendarRules } from "./calendarRules";
-import { ASSEMBLY_LIST_PAGE_SIZE } from "~~/shared/utils/schemas/assembly";
+import {
+  isAutoItem,
+  visibleAgendaItems,
+} from "~~/shared/utils/agendaSubmissions";
+import {
+  AGENDA_FINAL_CONFLICT_CODE,
+  ASSEMBLY_LIST_PAGE_SIZE,
+} from "~~/shared/utils/schemas/assembly";
 import { buildAssemblySlug, formatAssemblyLabel } from "~~/shared/utils/slug";
 
 /**
@@ -78,16 +85,6 @@ import { buildAssemblySlug, formatAssemblyLabel } from "~~/shared/utils/slug";
 
 export type AssemblyRow = typeof assemblies.$inferSelect;
 export type AgendaItemRow = typeof agendaItems.$inferSelect;
-
-/**
- * Document statuses that keep an agenda item from being deleted. A document
- * whose text is frozen (see isTextFrozen) also keeps it, whatever its status.
- */
-export const AGENDA_PROTECTED_DOCUMENT_STATUSES = [
-  "submitted",
-  "published",
-  "postponed",
-] as const;
 
 const VISIBLE_DOCUMENT_STATUSES = ["published", "postponed"] as const;
 
@@ -136,30 +133,6 @@ export function throwAssemblyMutationError(
   if (error && typeof error === "object" && "statusCode" in error) throw error;
   if (isUniqueConstraintViolation(error)) fail(409, uniqueMessage);
   throwMutationError(scope, error, event);
-}
-
-/**
- * Serializes concurrent writes on the same assembly (agenda, calendar, live
- * state). The lock is the first one its transaction takes; the order and
- * strengths every transaction follows are under "Row locks" in documents.ts
- * (shareLockAssembly). NO KEY UPDATE conflicts with itself and with the share
- * lock of the vote, projection and document move paths (so an agenda delete
- * and a document moving into its items serialize), but not with the FOR KEY
- * SHARE that every event, vote or document insert takes on the assembly, so
- * those never wait here. None of the callers deletes the row or changes its key (id,
- * type, number).
- */
-export async function lockAssembly(
-  tx: Executor,
-  assemblyId: string,
-): Promise<AssemblyRow> {
-  const [row] = await tx
-    .select()
-    .from(assemblies)
-    .where(eq(assemblies.id, assemblyId))
-    .for("no key update");
-  if (!row) fail(404, "Asamblea no encontrada");
-  return row;
 }
 
 export async function findAssemblyByTypeNumber(
@@ -506,6 +479,10 @@ export function toAgendaItemDto(row: AgendaItemRow): AgendaItemDto {
     description: row.description,
     order: row.order,
     acceptsSubmissions: row.acceptsSubmissions,
+    submissionKinds: row.submissionKinds,
+    auto: isAutoItem(row),
+    generatedForDocumentId: row.generatedForDocumentId,
+    titleCustom: row.titleCustom,
     updatedAt: row.updatedAt.toISOString(),
   };
 }
@@ -534,46 +511,41 @@ export async function loadAgendaDto(
     loadAgendaItems(assembly.id),
     loadDocumentSummaries(assembly, actor),
   ]);
-  return { items: items.map(toAgendaItemDto), documents: documentSummaries };
+  return {
+    // Without the automatic sub-items of documents the actor cannot see.
+    items: visibleAgendaItems(items, documentSummaries).map(toAgendaItemDto),
+    documents: documentSummaries,
+  };
 }
 
-/** Once the agenda is final (ODD definitivo), root items are locked. */
+/** Whether the agenda is final (ODD definitivo). */
 export function isAgendaFinal(
   assembly: Pick<AssemblyRow, "agendaFinalizedAt">,
 ): boolean {
   return assembly.agendaFinalizedAt !== null;
 }
 
-export function assertRootsUnlocked(
+/**
+ * Gate of every change to the root items (create, move, rename, delete).
+ * While the agenda is provisional the change just goes ahead (false). Once
+ * it is final the request must say `confirmFinal: true`: without it the
+ * answer is 409 with `data.code` "agenda_final", so the client asks and
+ * retries; with it the change goes ahead and the result is true, which the
+ * caller writes into its event as `afterFinal`. Sub-items never come here.
+ */
+export function confirmFinalRootChange(
   assembly: Pick<AssemblyRow, "agendaFinalizedAt">,
-): void {
-  if (isAgendaFinal(assembly)) {
+  confirmFinal: boolean | undefined,
+): boolean {
+  if (!isAgendaFinal(assembly)) return false;
+  if (confirmFinal !== true) {
     fail(
       409,
-      "El orden del día es definitivo: no se pueden crear, eliminar ni mover puntos principales",
+      "El orden del día ya es definitivo: confirma el cambio de puntos principales",
+      { code: AGENDA_FINAL_CONFLICT_CODE },
     );
   }
-}
-
-/** Next `order` among the children of `parentId` (null = root items). */
-export async function nextSiblingOrder(
-  executor: Executor,
-  assemblyId: string,
-  parentId: string | null,
-): Promise<number> {
-  const [row] = await executor
-    .select({ last: sql<number | null>`max(${agendaItems.order})` })
-    .from(agendaItems)
-    .where(
-      and(
-        eq(agendaItems.assemblyId, assemblyId),
-        parentId
-          ? eq(agendaItems.parentId, parentId)
-          : isNull(agendaItems.parentId),
-      ),
-    );
-  const last = row?.last;
-  return last === null || last === undefined ? 0 : Number(last) + 1;
+  return true;
 }
 
 /**
@@ -639,43 +611,6 @@ export function rootSequence(items: OrderedItem[]): string[] {
         a.id.localeCompare(b.id),
     )
     .map((item) => item.id);
-}
-
-/**
- * Whether any document under these items blocks deleting them: one that is
- * submitted, published or postponed, or one that was ever published (it has a
- * base version or a publication date). Deleting the item would cascade to
- * such a document with its versions, reference and amendments, which
- * deleteDocument refuses for the same reason (isTextFrozen).
- */
-export async function hasProtectedDocuments(
-  executor: Executor,
-  agendaItemIds: string[],
-): Promise<boolean> {
-  if (agendaItemIds.length === 0) return false;
-  // Locks every document under the items, after the assembly ("Row locks" in
-  // documents.ts): the cascade deletes the unprotected ones, and a draft
-  // submitted meanwhile is read with its new status once that commits. A
-  // document moved into these items is not matched here; the move holds the
-  // assembly share lock (updateDocument), so it commits before lockAssembly
-  // returns or starts after this transaction ends.
-  const rows = await executor
-    .select({
-      status: documents.status,
-      publishedAt: documents.publishedAt,
-      baseVersionId: documents.baseVersionId,
-    })
-    .from(documents)
-    .where(inArray(documents.agendaItemId, agendaItemIds))
-    .for("update");
-  const protectedStatuses: readonly string[] =
-    AGENDA_PROTECTED_DOCUMENT_STATUSES;
-  return rows.some(
-    (row) =>
-      protectedStatuses.includes(row.status) ||
-      row.publishedAt !== null ||
-      row.baseVersionId !== null,
-  );
 }
 
 // Decisions ---------------------------------------------------------------------

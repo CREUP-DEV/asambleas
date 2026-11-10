@@ -873,10 +873,17 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   calendar_updated: ["updated", "removed", "changes"],
   agenda_finalized: [],
   agenda_reopened: [],
-  agenda_item_created: ["title"],
-  agenda_item_updated: ["changes"],
-  agenda_item_deleted: ["title", "deletedItems"],
-  agenda_reordered: ["moves"],
+  agenda_item_created: ["title", "afterFinal", "auto"],
+  agenda_item_updated: ["changes", "afterFinal", "auto"],
+  agenda_item_deleted: [
+    "title",
+    "deletedItems",
+    "deletedDocuments",
+    "afterFinal",
+    "auto",
+    "cascade",
+  ],
+  agenda_reordered: ["moves", "afterFinal"],
   live_changed: ["changed", "speakersVisible"],
   speakers_visibility_changed: ["visible", "reason"],
   speaking_turn_added: ["position"],
@@ -1304,9 +1311,13 @@ export function collectActivityIds(rows: RawActivityRow[]): ActivityIds {
         case "amendment":
           ids.amendments.add(row.targetId);
           break;
-        case "agenda_item":
+        case "agenda_item": {
           ids.agendaItems.add(row.targetId);
+          // An automatic sub-item is seen with its document.
+          const documentId = autoItemDocumentId(payload);
+          if (documentId) ids.documents.add(documentId);
           break;
+        }
         case "decision":
           ids.decisions.add(row.targetId);
           for (const id of texts(payload.subjectIds)) ids.amendments.add(id);
@@ -1681,6 +1692,14 @@ interface TargetView {
   payload: Record<string, unknown>;
 }
 
+/**
+ * The document behind an event of an automatic agenda sub-item (`auto` in
+ * its payload, written by bindAutoItem and the other agenda writers).
+ */
+function autoItemDocumentId(payload: Record<string, unknown>): string | null {
+  return payload.auto === true ? text(payload.documentId) : null;
+}
+
 function assemblyRef(assembly: AssemblyInfo) {
   return {
     id: assembly.id,
@@ -1799,12 +1818,27 @@ function eventTarget(
         visible: true,
         label: assembly ? formatAssemblyLabel(assembly) : null,
       };
-    case "agenda_item":
+    case "agenda_item": {
+      const label =
+        lookups.agendaItems.get(row.targetId) ?? text(payload.title);
+      // An automatic sub-item carries the title of its document (a draft's
+      // is its presenters'): its events show to those who see the document.
+      const documentId = autoItemDocumentId(payload);
+      if (!actor || !documentId) return { ...base, visible: true, label };
+      const document = lookups.documents.get(documentId);
       return {
         ...base,
-        visible: true,
-        label: lookups.agendaItems.get(row.targetId) ?? text(payload.title),
+        label,
+        visible: document
+          ? canSeeDocument(actor, document)
+          : canManageDocuments(actor) ||
+            isDeletedInsider(
+              actor,
+              lookups.deleted.get(`document:${documentId}`),
+              {},
+            ),
       };
+    }
     case "document": {
       const document = lookups.documents.get(row.targetId) ?? null;
       if (document) {

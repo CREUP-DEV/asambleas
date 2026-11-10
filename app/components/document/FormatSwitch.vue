@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { DOCUMENT_KIND_DEFAULTS } from "~~/shared/constants/domain";
+import { mayUseFileFormat } from "~~/shared/utils/documentFormat";
 import type { DocumentDto, DocumentUpdateBody } from "~~/shared/types/api";
 
 /**
@@ -11,13 +11,10 @@ import type { DocumentDto, DocumentUpdateBody } from "~~/shared/types/api";
  * switch back.
  *
  * Presenters are offered a PDF only for types that take no amendments (as
- * when they create it); going back to text is always possible. With
- * `pending` (unsaved changes on the page) the switch waits for them to be
- * saved, so it never overwrites them or trips the optimistic lock.
- *
- * With `inline` it is only the button (and the reminder to save first), for
- * the folded "Formato" field of the metadata form, which already says which
- * format the document uses.
+ * when they create it, and as the server enforces: mayUseFileFormat); going
+ * back to text is always possible. With `pending` (unsaved changes on the
+ * page) the switch waits for them to be saved, so it never overwrites them
+ * or trips the optimistic lock.
  *
  * Emits `updated` with the stored document and `stale` after a conflict.
  */
@@ -29,10 +26,8 @@ const props = withDefaults(
     disabled?: boolean;
     /** The page holds unsaved changes. */
     pending?: boolean;
-    /** Only the button, inside a field that names the current format. */
-    inline?: boolean;
   }>(),
-  { disabled: false, pending: false, inline: false },
+  { disabled: false, pending: false },
 );
 
 const emit = defineEmits<{
@@ -51,8 +46,7 @@ const target = computed(() => (isFile.value ? "structured" : "file"));
 const offered = computed(
   () =>
     isFile.value ||
-    props.document.can.manage ||
-    !DOCUMENT_KIND_DEFAULTS[props.document.kind].amendable,
+    mayUseFileFormat(props.document.kind, props.document.can.manage),
 );
 
 /** Something of the current format would be set aside by the switch. */
@@ -98,25 +92,18 @@ async function confirm(): Promise<void> {
 <template>
   <div
     v-if="offered"
-    :class="
-      inline
-        ? 'flex flex-col items-start gap-1 text-sm'
-        : 'border-default flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md border border-dashed px-3 py-2 text-sm'
-    "
+    class="border-default bg-elevated/50 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 rounded-md border px-3 py-2 text-sm"
     data-testid="document-format-switch"
   >
-    <p v-if="inline && pending" class="text-muted text-xs">
-      {{ t("document.formatSwitch.saveFirst") }}
-    </p>
-    <p v-if="!inline" class="text-muted flex min-w-0 items-start gap-2">
+    <p class="text-default flex min-w-0 items-start gap-2">
       <UIcon
         :name="isFile ? 'i-lucide-file-type' : 'i-lucide-file-text'"
-        class="mt-0.5 size-4 shrink-0"
+        class="text-muted mt-0.5 size-4 shrink-0"
         aria-hidden="true"
       />
       <span>
         {{ t(`document.formatSwitch.current.${document.format}`) }}
-        <span v-if="pending" class="block text-xs">
+        <span v-if="pending" class="text-muted block text-xs">
           {{ t("document.formatSwitch.saveFirst") }}
         </span>
       </span>
@@ -124,7 +111,7 @@ async function confirm(): Promise<void> {
     <UButton
       color="neutral"
       variant="outline"
-      :size="inline ? 'xs' : 'sm'"
+      size="sm"
       :icon="isFile ? 'i-lucide-file-text' : 'i-lucide-file-up'"
       :label="t(`document.formatSwitch.to.${target}`)"
       :disabled="disabled || pending || saving"

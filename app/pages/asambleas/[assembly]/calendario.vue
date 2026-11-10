@@ -12,8 +12,9 @@ import { MILESTONE_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/assembly";
 /**
  * Calendar editor: one date-time per milestone (Europe/Madrid), a note, the
  * default deadlines of the assembly type (its calendar rules, edited in
- * /admin/calendario), live warnings from checkCalendar, and the "final
- * agenda" switch. Read-only for non-managers.
+ * /admin/calendario) and live warnings from checkCalendar. Read-only for
+ * non-managers. The agenda is marked as final on the agenda page
+ * (AgendaFinalAction), not here.
  */
 
 const { t, locale } = useI18n();
@@ -34,7 +35,6 @@ interface MilestoneForm {
 
 type CalendarForm = {
   milestones: Record<MilestoneKey, MilestoneForm>;
-  agendaFinal: boolean;
 };
 
 function formFrom(value: AssemblyDto | null): CalendarForm {
@@ -47,7 +47,7 @@ function formFrom(value: AssemblyDto | null): CalendarForm {
       note: milestone.note ?? "",
     };
   }
-  return { milestones, agendaFinal: Boolean(value?.agendaFinalizedAt) };
+  return { milestones };
 }
 
 function sameInstant(a: string | null, b: string | null): boolean {
@@ -71,12 +71,7 @@ const changedKeys = computed(() =>
     );
   }),
 );
-const agendaFinalChanged = computed(
-  () => saved.value.agendaFinal !== form.agendaFinal,
-);
-const changeCount = computed(
-  () => changedKeys.value.length + (agendaFinalChanged.value ? 1 : 0),
-);
+const changeCount = computed(() => changedKeys.value.length);
 const dirty = computed(() => changeCount.value > 0);
 
 function resetForm(value: AssemblyDto | null) {
@@ -88,13 +83,7 @@ function resetForm(value: AssemblyDto | null) {
 
 // Changes from elsewhere: adopt them when the form is clean, warn otherwise.
 watch(
-  () =>
-    assembly.value
-      ? JSON.stringify([
-          assembly.value.milestones,
-          assembly.value.agendaFinalizedAt,
-        ])
-      : "",
+  () => (assembly.value ? JSON.stringify(assembly.value.milestones) : ""),
   (next, previous) => {
     if (next === previous || saving.value) return;
     if (dirty.value) remoteChanged.value = true;
@@ -237,7 +226,6 @@ async function save() {
         note: milestone.at ? milestone.note.trim() || null : null,
       };
     }),
-    ...(agendaFinalChanged.value ? { agendaFinal: form.agendaFinal } : {}),
   };
   saving.value = true;
   try {
@@ -439,31 +427,6 @@ const fieldId = (key: MilestoneKey, field: "at" | "note" | "label") =>
             </div>
           </li>
         </ul>
-      </UCard>
-
-      <UCard>
-        <USwitch
-          v-model="form.agendaFinal"
-          :disabled="saving"
-          :label="t('calendar.agendaFinal')"
-          :description="
-            form.agendaFinal
-              ? t('calendar.agendaFinalOn')
-              : t('calendar.agendaFinalOff')
-          "
-        />
-        <p
-          v-if="assembly.agendaFinalizedAt && form.agendaFinal"
-          class="text-muted mt-2 text-xs"
-        >
-          {{
-            t("calendar.agendaFinalizedAt", {
-              date: formatDateTime(assembly.agendaFinalizedAt, {
-                locale,
-              }),
-            })
-          }}
-        </p>
       </UCard>
 
       <div

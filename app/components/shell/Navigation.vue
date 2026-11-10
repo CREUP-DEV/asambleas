@@ -3,51 +3,24 @@ import { CALENDAR_RULES_PERMISSION } from "~~/shared/constants/calendarRules";
 import type { NavigationMenuItem } from "@nuxt/ui";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { AssemblyDto } from "~~/shared/types/api";
-import {
-  REVIEW_BADGE_STATE_KEY,
-  type ReviewBadgeState,
-} from "~/components/review/-queue";
 
 /**
- * Routes of the assembly sections. Pages under app/pages/asambleas/[assembly]/
- * and app/pages/proyeccion/[assembly].vue must live at these paths, since the
- * sidebar links to them.
+ * Routes of the assembly sections, kept with the list of sections in
+ * `-sections.ts` and exported here for the components that link to them.
  */
-export const ASSEMBLY_SECTION_SEGMENTS = {
-  overview: "",
-  live: "directo",
-  agenda: "orden-del-dia",
-  documents: "documentos",
-  validation: "validacion",
-  tracking: "seguimiento",
-  calendar: "calendario",
-  convocation: "convocatoria",
-  session: "sesion",
-  settings: "ajustes",
-} as const;
-
-export type AssemblySection = keyof typeof ASSEMBLY_SECTION_SEGMENTS;
-
-/** Unlocalized path of an assembly section: `/asambleas/80-ago/sesion`. */
-export function assemblyPath(
-  slug: string,
-  section: AssemblySection = "overview",
-): string {
-  const segment = ASSEMBLY_SECTION_SEGMENTS[section];
-  const base = `/asambleas/${encodeURIComponent(slug)}`;
-  return segment ? `${base}/${segment}` : base;
-}
-
-/** Unlocalized path of the chrome-free projection view. */
-export function projectionPath(slug: string): string {
-  return `/proyeccion/${encodeURIComponent(slug)}`;
-}
+export {
+  ASSEMBLY_SECTION_SEGMENTS,
+  assemblyPath,
+  projectionPath,
+  type AssemblySection,
+} from "~/composables/assembly/-sections";
 </script>
 
 <script setup lang="ts">
 /**
  * Sidebar navigation: main sections, the contextual block of the assembly
- * being viewed and the administration group, each gated by permissions.
+ * being viewed (useAssemblySections) and the administration group, each
+ * gated by permissions.
  *
  * "En directo" (the attendees' live view) is listed for everyone at any
  * time, right after the overview: the page itself says when the session
@@ -80,12 +53,6 @@ function isWithin(path: string): boolean {
   );
 }
 
-/** The Secretaría's pending count, kept by the assembly hub. */
-const reviewBadge = useState<ReviewBadgeState | null>(
-  REVIEW_BADGE_STATE_KEY,
-  () => null,
-);
-
 /** The stored assembly, only while the route is inside that assembly. */
 const assembly = computed<AssemblyDto | null>(() => {
   const stored = currentAssembly.value;
@@ -116,131 +83,23 @@ const mainItems = computed<NavigationMenuItem[]>(() => {
   ];
 });
 
+/**
+ * The assembly's sections, from the list the phone toolbar of the hub uses
+ * too. Whoever has a section of the Secretaría or the Mesa sees them under
+ * three small titles; everyone else gets one list.
+ */
+const { groups: sectionGroups } = useAssemblySections(assembly);
+
 const assemblyItems = computed<NavigationMenuItem[]>(() => {
   const current = assembly.value;
   if (!current) return [];
-  const path = (section: AssemblySection) =>
-    localePath(assemblyPath(current.slug, section));
-  const overview = path("overview");
-
   const items: NavigationMenuItem[] = [
-    { type: "label", label: current.label },
-    {
-      label: t("shell.assembly.overview"),
-      icon: "i-lucide-layout-dashboard",
-      to: overview,
-      exact: true,
-      active: currentPath.value === normalize(overview),
-    },
-    {
-      label: t("shell.assembly.live"),
-      icon: "i-lucide-radio",
-      to: path("live"),
-      active: isWithin(path("live")),
-      ...(current.status === "in_session"
-        ? {
-            badge: {
-              label: t("shell.assembly.liveNow"),
-              color: "error" as const,
-              variant: "soft" as const,
-            },
-            "aria-label": t("shell.assembly.liveInSession"),
-          }
-        : {}),
-    },
-    {
-      label: t("shell.assembly.agenda"),
-      icon: "i-lucide-list-tree",
-      to: path("agenda"),
-      active: isWithin(path("agenda")),
-    },
-    {
-      label: t("shell.assembly.documents"),
-      icon: "i-lucide-files",
-      to: path("documents"),
-      active: isWithin(path("documents")),
-    },
+    { type: "label", label: current.label, class: "text-highlighted" },
   ];
-
-  const validateDocuments = can(PERMISSION_KEYS.DOCUMENT_MANAGE);
-  if (validateDocuments || can(PERMISSION_KEYS.AMENDMENT_REVIEW)) {
-    const pending =
-      reviewBadge.value?.assemblyId === current.id
-        ? reviewBadge.value.count
-        : 0;
-    items.push({
-      label: t("shell.assembly.validation"),
-      icon: "i-lucide-inbox",
-      to: path("validation"),
-      active: isWithin(path("validation")),
-      ...(pending > 0
-        ? {
-            badge: {
-              label: String(pending),
-              color: "warning" as const,
-              variant: "solid" as const,
-            },
-            "aria-label": t(
-              "shell.assembly.validationPending",
-              { count: pending },
-              pending,
-            ),
-          }
-        : {}),
-    });
+  for (const group of sectionGroups.value) {
+    if (group.label) items.push({ type: "label", label: group.label });
+    items.push(...group.items);
   }
-  if (validateDocuments) {
-    items.push({
-      label: t("shell.assembly.tracking"),
-      icon: "i-lucide-list-checks",
-      to: path("tracking"),
-      active: isWithin(path("tracking")),
-    });
-  }
-
-  items.push(
-    {
-      label: t("shell.assembly.calendar"),
-      icon: "i-lucide-calendar-days",
-      to: path("calendar"),
-      active: isWithin(path("calendar")),
-    },
-    {
-      label: t("shell.assembly.convocation"),
-      icon: "i-lucide-scroll-text",
-      to: path("convocation"),
-      active: isWithin(path("convocation")),
-    },
-  );
-
-  if (current.can.moderate) {
-    items.push({
-      label: t("shell.assembly.session"),
-      icon: "i-lucide-gavel",
-      to: path("session"),
-      active: isWithin(path("session")),
-    });
-  }
-
-  items.push({
-    label: t("shell.assembly.projection"),
-    icon: "i-lucide-presentation",
-    to: localePath(projectionPath(current.slug)),
-    target: "_blank",
-    active: false,
-    trailingIcon: "i-lucide-external-link",
-    "aria-label": t("shell.assembly.projectionNewTab"),
-  });
-
-  if (current.can.manage) {
-    items.push({
-      label: t("shell.assembly.settings"),
-      icon: "i-lucide-settings",
-      to: path("settings"),
-      active: isWithin(path("settings")),
-    });
-  }
-
   return items;
 });
 

@@ -16,11 +16,12 @@ import type {
   DocumentDto,
   MemberDto,
 } from "~~/shared/types/api";
+import { SUBMISSION_KIND_REFUSED_REASON } from "~~/shared/utils/agendaSubmissions";
+import { mayUseFileFormat } from "~~/shared/utils/documentFormat";
 import { memberMayPresent } from "~~/shared/utils/presenterKinds";
 import {
-  kindSelectItems,
+  memberSubmissionKinds,
   presenterKindGroups,
-  type KindSelectItem,
 } from "~/composables/document/documentKinds";
 import {
   choicePresenterIds,
@@ -53,22 +54,29 @@ import {
  *   ("Añadir documento" on an item) and stays changeable, so the buttons at
  *   the top of the home page and of the agenda open the same modal with no
  *   item yet.
+ * - Under an item where members present documents, the document gets a
+ *   sub-item of its own (the server creates it), which the form says. Such
+ *   an item may name the kinds it takes: members are offered only those
+ *   (one kind alone comes chosen). Automatic sub-items are never offered.
  * - The type and the title are proposed from the item (proposeFromItem):
  *   "Aprobación, si procede, del Posicionamiento sobre X" gives a
  *   positioning titled "Posicionamiento sobre X". Choosing another item
- *   proposes again what the user has not changed. The type is a searchable
- *   menu.
+ *   proposes again what the user has not changed.
  * - Members ("Presentar documento") go through the first step of a short
  *   guided flow: what it is (type, title, short summary) and, for types that
- *   take no amendments, whether the text comes as a PDF. The types their
- *   member usually presents come first (a CEA area's reports and plans, a
- *   council's positionings and resolutions), the rest under "Otros tipos". The draft is
- *   created and the editor opens on step 2 (the text) and step 3 (send it to
- *   the Secretaría).
- * - Managers also choose who presents it and the internal deadline, so the
- *   Secretaría can create in advance the documents it expects; the rules of
- *   the type (format, amendments, vote, what an accepted amendment becomes)
- *   stay under "Opciones avanzadas", with the type's defaults preselected.
+ *   take no amendments, whether the text comes as a PDF (a type that takes
+ *   amendments is always text, which the server enforces too). The types
+ *   their member usually presents are cards (a CEA area's reports and plans,
+ *   a council's positionings and resolutions), with a last card "Otro tipo"
+ *   for the rest (DocumentKindPicker). The draft is created and the editor
+ *   opens on step 2 (the text) and step 3 (send it to the Secretaría).
+ * - Managers choose the type from a searchable menu, and whether it is text
+ *   on the platform or an uploaded PDF from two cards in view. They also
+ *   choose who presents it and the internal deadline, so the Secretaría can
+ *   create in advance the documents it expects. The rules of the type
+ *   (amendments, vote, majority) show as one line with "Cambiar"; the
+ *   controls stay under "Más opciones", with the type's defaults
+ *   preselected.
  *   A document expected from a member stays on the agenda ("Crear"), unless
  *   the Secretaría already has its text ("Crear y subir el texto"); one with
  *   no presenter, or presented by the manager's own member, opens the
@@ -92,12 +100,16 @@ const props = defineProps<{
   /**
    * Agenda items in agenda order with their number ("3.2"). `hasDocuments`:
    * the item already shows documents, so no title is proposed from it.
+   * `submissionKinds`: the kinds it takes from members (none: every kind).
+   * `auto`: the sub-item of one document, never offered.
    */
   items: {
     id: string;
     title: string;
     number: string;
     acceptsSubmissions: boolean;
+    submissionKinds?: DocumentKind[];
+    auto?: boolean;
     hasDocuments: boolean;
   }[];
   /** The item to start on, if any. */
@@ -178,30 +190,49 @@ type DocumentFormState = Omit<DocumentForm, "kind"> & {
   kind: DocumentKind | undefined;
 };
 
-/** The items the user may present under (members: those that take them). */
+type AgendaItemOption = (typeof props.items)[number];
+
+/** The kinds the user's member may present under an item (members). */
+function kindsTakenBy(item: AgendaItemOption): DocumentKind[] {
+  return memberSubmissionKinds(
+    {
+      acceptsSubmissions: item.acceptsSubmissions,
+      submissionKinds: item.submissionKinds ?? [],
+    },
+    member.value?.kind,
+  );
+}
+
+/**
+ * The items the user may present under: managers anywhere but the automatic
+ * sub-item of another document, members where the item takes a kind their
+ * member may present.
+ */
 const pickableItems = computed(() =>
-  props.items.filter((item) => isManager.value || item.acceptsSubmissions),
+  props.items.filter((item) =>
+    isManager.value ? !item.auto : kindsTakenBy(item).length > 0,
+  ),
 );
 
 /**
  * Type and title proposed from an item (none without an item). A presenter
  * is never proposed a type its member may not present (a sectorial under the
- * internal motions' item): the type stays empty for them to choose.
+ * internal motions' item) or the item does not take: the type stays empty
+ * for them to choose.
  */
 function proposalFor(itemId: string): ItemProposal {
   const item = props.items.find((candidate) => candidate.id === itemId);
   if (!item) return { kind: null, title: null };
   const proposal = proposeFromItem(item);
-  const own = member.value?.kind;
-  if (
-    proposal.kind &&
-    !isManager.value &&
-    own &&
-    !memberMayPresent(proposal.kind, own)
-  ) {
-    return { ...proposal, kind: null };
-  }
-  return proposal;
+  if (isManager.value) return proposal;
+  // Members: only a kind the item takes from their member, and the only
+  // one when there is no other.
+  const taken = kindsTakenBy(item);
+  const [only] = taken;
+  if (taken.length === 1 && only) return { ...proposal, kind: only };
+  return proposal.kind && !taken.includes(proposal.kind)
+    ? { ...proposal, kind: null }
+    : proposal;
 }
 
 function startItemId(): string {
@@ -268,7 +299,19 @@ watch(
     }
     if (state.title === (previous.title ?? "")) state.title = next.title ?? "";
     lastProposal.value = next;
+    // Members: a type the new item does not take is not kept.
+    if (!isManager.value && state.kind) {
+      const item = selectedItem.value;
+      if (item && !kindsTakenBy(item).includes(state.kind)) {
+        state.kind = next.kind ?? undefined;
+      }
+    }
   },
+);
+
+/** The item chosen, if any. */
+const selectedItem = computed(
+  () => props.items.find((item) => item.id === state.agendaItemId) ?? null,
 );
 
 /** Numbered, searchable items; long titles wrap. */
@@ -284,6 +327,17 @@ const itemSelectUi = {
 };
 const saving = ref(false);
 const advancedOpen = ref(false);
+const advancedTriggerId = useId();
+
+/**
+ * "Cambiar" in the rules summary opens the controls and leaves the dialog as
+ * it does: focus goes to the trigger of the section it opened.
+ */
+async function openAdvanced(): Promise<void> {
+  advancedOpen.value = true;
+  await nextTick();
+  document.getElementById(advancedTriggerId)?.focus();
+}
 
 // Members for the proponent select (managers, on open) and the co-presenters
 // (members, when they unfold that section).
@@ -322,9 +376,12 @@ const kindDefaults = computed(() =>
   state.kind ? DOCUMENT_KIND_DEFAULTS[state.kind] : null,
 );
 
-/** A PDF can only be offered for types that take no amendments. */
-const pdfAllowed = computed(
-  () => isManager.value || kindDefaults.value?.amendable === false,
+/**
+ * Members are offered a PDF only for types that take no amendments (the
+ * server refuses it otherwise); with no type yet, no choice either.
+ */
+const pdfAllowed = computed(() =>
+  state.kind ? mayUseFileFormat(state.kind, isManager.value) : isManager.value,
 );
 
 // A new kind resets the rules to its defaults (and a PDF it cannot take).
@@ -401,27 +458,33 @@ function onMainPick(id: string | null): void {
 /** Members to name in the presenters' choice even before the list loads. */
 const knownMembers = computed(() => (member.value ? [member.value] : []));
 
-/** Always grouped (managers get one group), as the searchable menu wants. */
-const kindItems = computed<KindSelectItem[][]>(() => {
-  const label = (kind: DocumentKind) => t(`agenda.documentKinds.${kind}`);
-  if (isManager.value) {
-    return [
-      DOCUMENT_KINDS.map((kind) => ({ label: label(kind), value: kind })),
-    ];
-  }
-  return kindSelectItems(
-    presenterKindGroups({ memberKind: member.value?.kind }),
-    label,
-    {
-      common: t("document.kindGroups.common"),
-      others: t("document.kindGroups.others"),
-    },
-  );
-});
+/** Managers: every type, in a searchable menu. */
+const kindItems = computed(() =>
+  DOCUMENT_KINDS.map((kind: DocumentKind) => ({
+    label: t(`agenda.documentKinds.${kind}`),
+    value: kind,
+  })),
+);
+/** Members: the types their member usually presents, as cards. */
+const memberKindGroups = computed(() =>
+  presenterKindGroups({
+    memberKind: member.value?.kind,
+    accepted: selectedItem.value?.acceptsSubmissions
+      ? selectedItem.value.submissionKinds
+      : null,
+  }),
+);
+/**
+ * Managers: text or PDF, two cards. A text says it can be amended only when
+ * the type takes amendments.
+ */
 const formatItems = computed(() =>
   DOCUMENT_FORMATS.map((format: DocumentFormat) => ({
-    label: t(`agenda.formats.${format}`),
-    description: t(`agenda.formatDescriptions.${format}`),
+    label: t(`agenda.newDocument.formatCards.${format}`),
+    description:
+      format === "structured" && kindDefaults.value?.amendable === false
+        ? t("agenda.newDocument.formatCards.structuredPlain")
+        : t(`agenda.newDocument.formatCards.${format}Description`),
     value: format,
   })),
 );
@@ -439,6 +502,9 @@ const majorityItems = computed(() =>
     value: majority,
   })),
 );
+/** Cards side by side, wrapping where they do not fit. */
+const formatCardsUi = { fieldset: "grid gap-2 sm:grid-cols-2" };
+const majorityCardsUi = { fieldset: "flex-wrap gap-2" };
 /**
  * The members that may present a document of the kind chosen: a sectorial
  * is not offered for an internal motion (memberMayPresent).
@@ -524,6 +590,13 @@ function opensEditor(created: DocumentDto): boolean {
   );
 }
 
+/** The server refused the type: the item does not take it (422). */
+function refusedKind(error: unknown): boolean {
+  const body = (error as { data?: { data?: { reason?: unknown } } } | null)
+    ?.data;
+  return body?.data?.reason === SUBMISSION_KIND_REFUSED_REASON;
+}
+
 async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
   const data = event.data;
   const presenters = presenterFields(choiceOf(data));
@@ -601,7 +674,16 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
       ],
     });
   } catch (error) {
-    api.notifyError(error, "agenda.newDocument.error");
+    if (refusedKind(error)) {
+      toast.add({
+        title: t("agenda.newDocument.error"),
+        description: t("agenda.container.kindRefused"),
+        color: "error",
+        icon: "i-lucide-circle-alert",
+      });
+    } else {
+      api.notifyError(error, "agenda.newDocument.error");
+    }
   } finally {
     saving.value = false;
   }
@@ -675,6 +757,11 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
       >
         <UFormField
           :label="t('agenda.newDocument.item')"
+          :help="
+            selectedItem?.acceptsSubmissions
+              ? t('agenda.container.newDocumentHint')
+              : undefined
+          "
           name="agendaItemId"
           required
         >
@@ -698,7 +785,15 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
         </UFormField>
 
         <UFormField :label="t('agenda.newDocument.kind')" name="kind" required>
+          <DocumentKindPicker
+            v-if="!isManager"
+            v-model="state.kind"
+            :groups="memberKindGroups"
+            labels="agenda.documentKinds"
+            :disabled="saving"
+          />
           <USelectMenu
+            v-else
             v-model="state.kind"
             :items="kindItems"
             value-key="value"
@@ -792,8 +887,24 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
           />
         </template>
 
+        <!-- Managers: text or PDF, in view -->
+        <UFormField
+          v-if="isManager"
+          :label="t('agenda.newDocument.format')"
+          name="format"
+        >
+          <URadioGroup
+            v-model="state.format"
+            :items="formatItems"
+            value-key="value"
+            variant="card"
+            :ui="formatCardsUi"
+            class="w-full"
+          />
+        </UFormField>
+
         <!-- Managers: who presents it and by when -->
-        <div v-else class="grid gap-4 sm:grid-cols-2">
+        <div v-if="isManager" class="grid gap-4 sm:grid-cols-2">
           <UFormField
             :label="t('agenda.newDocument.proponent')"
             name="proponent"
@@ -854,8 +965,18 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
           @load="loadMembers"
         />
 
+        <!-- Managers: the rules in one line; the controls stay folded -->
+        <DocumentRulesSummary
+          v-if="isManager && state.kind"
+          :amendable="state.format !== 'file' && state.amendable"
+          :voted="state.voted"
+          :majority="state.majority"
+          :open="advancedOpen"
+          @change="openAdvanced"
+        />
         <UCollapsible v-if="isManager" v-model:open="advancedOpen">
           <UButton
+            :id="advancedTriggerId"
             color="neutral"
             variant="link"
             size="sm"
@@ -870,16 +991,6 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
               <p class="text-muted text-xs">
                 {{ t("agenda.newDocument.rulesHelp") }}
               </p>
-              <UFormField :label="t('agenda.newDocument.format')" name="format">
-                <URadioGroup
-                  v-model="state.format"
-                  :items="formatItems"
-                  value-key="value"
-                  orientation="vertical"
-                  variant="card"
-                  class="w-full"
-                />
-              </UFormField>
               <USwitch
                 v-model="state.amendable"
                 :disabled="state.format === 'file'"
@@ -904,11 +1015,14 @@ async function onSubmit(event: FormSubmitEvent<DocumentForm>) {
                 :label="t('agenda.newDocument.majority')"
                 name="majority"
               >
-                <USelect
+                <URadioGroup
                   v-model="state.majority"
                   :items="majorityItems"
                   value-key="value"
-                  class="w-full sm:w-64"
+                  orientation="horizontal"
+                  variant="card"
+                  size="sm"
+                  :ui="majorityCardsUi"
                 />
               </UFormField>
             </div>

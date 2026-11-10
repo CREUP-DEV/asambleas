@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import type { NavigationMenuItem } from "@nuxt/ui";
 import {
   ASSEMBLY_STATUSES,
   ASSEMBLY_STATUS_TRANSITIONS,
@@ -56,7 +55,6 @@ definePageMeta({
 });
 
 const route = useRoute();
-const router = useRouter();
 const { t, locale } = useI18n();
 const localePath = useLocalePath();
 const toast = useToast();
@@ -127,7 +125,7 @@ const current = provideCurrentAssembly({
     void navigateTo(localePath("/asambleas"));
   },
 });
-const { assembly, sectionPath, live, stale } = current;
+const { assembly, live, stale } = current;
 
 const retrying = ref(false);
 async function retryRefresh() {
@@ -328,163 +326,9 @@ async function confirmTransition() {
 
 // Sections ------------------------------------------------------------------
 
-interface Section {
-  key: string;
-  path: string;
-  icon: string;
-  visible: (value: AssemblyDto) => boolean;
-}
-
-// Settings must stay last: the projection link is inserted before it.
-
-const SECTIONS: Section[] = [
-  {
-    key: "overview",
-    path: "",
-    icon: "i-lucide-layout-dashboard",
-    visible: () => true,
-  },
-  // The attendees' live view, for everyone at any time: before and after
-  // the session it says so (see the page), so links to it never break.
-  {
-    key: "live",
-    path: "directo",
-    icon: "i-lucide-radio",
-    visible: () => true,
-  },
-  {
-    key: "agenda",
-    path: "orden-del-dia",
-    icon: "i-lucide-list-tree",
-    visible: () => true,
-  },
-  {
-    key: "documents",
-    path: "documentos",
-    icon: "i-lucide-files",
-    visible: () => true,
-  },
-  {
-    key: "validation",
-    path: "validacion",
-    icon: "i-lucide-inbox",
-    visible: () => canReview.value,
-  },
-  {
-    key: "tracking",
-    path: "seguimiento",
-    icon: "i-lucide-list-checks",
-    visible: () => canValidateDocuments.value,
-  },
-  {
-    key: "calendar",
-    path: "calendario",
-    icon: "i-lucide-calendar-clock",
-    visible: (value) => value.can.manage,
-  },
-  {
-    key: "convocation",
-    path: "convocatoria",
-    icon: "i-lucide-scroll-text",
-    visible: () => true,
-  },
-  {
-    key: "session",
-    path: "sesion",
-    icon: "i-lucide-gavel",
-    visible: (value) => value.can.moderate,
-  },
-  {
-    key: "settings",
-    path: "ajustes",
-    icon: "i-lucide-settings",
-    visible: (value) => value.can.manage,
-  },
-];
-
-/** Child route paths of this hub, so sections without a page are skipped. */
-const childPaths = computed(() => {
-  const record = route.matched.find((candidate) =>
-    candidate.children?.some((child) => child.path === "orden-del-dia"),
-  );
-  const paths = new Set<string>();
-  for (const child of record?.children ?? []) {
-    paths.add(child.path.replace(/\/$/, ""));
-  }
-  return paths;
-});
-
-/** The projection lives outside the hub (/proyeccion/<slug>), chrome-free. */
-const hasProjectionPage = router
-  .getRoutes()
-  .some((record) => /\/proyeccion\/:assembly/.test(record.path));
-
-const sectionItems = computed<NavigationMenuItem[]>(() => {
-  const value = assembly.value;
-  if (!value) return [];
-  const items: NavigationMenuItem[] = SECTIONS.filter(
-    (section) =>
-      section.visible(value) &&
-      (section.path === "" ||
-        childPaths.value.size === 0 ||
-        childPaths.value.has(section.path)),
-  ).map((section) => {
-    const to = sectionPath(section.path);
-    const pendingCount =
-      section.key === "validation" && reviewCount.value > 0
-        ? reviewCount.value
-        : 0;
-    const liveNow = section.key === "live" && value.status === "in_session";
-    return {
-      label: t(`assembly.sections.${section.key}`),
-      icon: section.icon,
-      to,
-      ...(liveNow
-        ? {
-            badge: {
-              label: t("assembly.sections.liveNow"),
-              color: "error" as const,
-              variant: "soft" as const,
-            },
-            "aria-label": t("assembly.sections.liveInSession"),
-          }
-        : {}),
-      ...(pendingCount > 0
-        ? {
-            badge: {
-              label: String(pendingCount),
-              color: "warning" as const,
-              variant: "solid" as const,
-            },
-            "aria-label": t(
-              "assembly.sections.validationPending",
-              { count: pendingCount },
-              pendingCount,
-            ),
-          }
-        : {}),
-      exact: section.path === "",
-      // A document (documentos/<slug>/...) is a sibling route of the list,
-      // not a child, so the router alone would not mark Documents active.
-      active:
-        section.path === ""
-          ? route.path === to
-          : route.path === to || route.path.startsWith(`${to}/`),
-    };
-  });
-  if (hasProjectionPage && value.can.moderate) {
-    // Opens on its own window, typically on the projector.
-    items.splice(items.length - (value.can.manage ? 1 : 0), 0, {
-      label: t("assembly.sections.projection"),
-      icon: "i-lucide-presentation",
-      to: localePath(`/proyeccion/${encodeURIComponent(value.slug)}`),
-      target: "_blank",
-      trailingIcon: "i-lucide-external-link",
-      "aria-label": t("shell.assembly.projectionNewTab"),
-    });
-  }
-  return items;
-});
+// The same list the sidebar shows (useAssemblySections), without its group
+// titles: the bar is a single row.
+const { items: sectionItems } = useAssemblySections(assembly);
 
 /**
  * On phones the section bar scrolls: keep the open section in view. The ref
@@ -621,10 +465,15 @@ watch(() => route.path, revealActiveSection);
         </template>
       </UDashboardNavbar>
 
+      <!-- Where this page is. Section pages register nothing: the trail
+           comes from the route, and a document page adds its own name. -->
+      <ShellBreadcrumbs />
+
       <!-- On large screens the sidebar lists these same sections; repeating
            them here only crowded the header. Phones keep them, since the
            sidebar is a drawer there. Child pages that size themselves to the
-           viewport (session console, document workspace) assume this. -->
+           viewport (session console, document workspace) assume this, and
+           take the breadcrumb row off with `--shell-breadcrumb-height`. -->
       <UDashboardToolbar v-if="assembly" ref="sectionToolbar" class="lg:hidden">
         <UNavigationMenu
           :items="sectionItems"

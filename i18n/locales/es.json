@@ -359,21 +359,7 @@
       "staleDescription": "No se ha podido actualizar la asamblea. Se muestran los últimos datos cargados. Pulsa para reintentarlo."
     },
     "sections": {
-      "label": "Secciones de la asamblea",
-      "overview": "Resumen",
-      "agenda": "Orden del día",
-      "documents": "Documentos",
-      "calendar": "Calendario",
-      "convocation": "Convocatoria",
-      "session": "Sesión",
-      "projection": "Proyección",
-      "settings": "Ajustes",
-      "validation": "Validación",
-      "tracking": "Seguimiento",
-      "validationPending": "Validación: {count} por validar | Validación: {count} por validar",
-      "live": "En directo",
-      "liveNow": "Ahora",
-      "liveInSession": "En directo: la sesión está en marcha"
+      "label": "Secciones de la asamblea"
     },
     "transitions": {
       "draft_convened": {
@@ -634,7 +620,6 @@
       "notFound": "Documento no encontrado",
       "notFoundDescription": "No existe o no tienes acceso a él.",
       "retry": "Reintentar",
-      "backToDocuments": "Volver a los documentos",
       "backToWorkspace": "Ver documento",
       "backToAgenda": "Volver al orden del día",
       "noLongerEditable": "Este documento ya no se puede editar",
@@ -798,8 +783,6 @@
       "summaryDescription": "Unas líneas para la lista de documentos y la convocatoria.",
       "optional": "Opcional",
       "kind": "Tipo de documento",
-      "format": "Formato",
-      "formatHelp": "Se puede cambiar mientras no esté publicado.",
       "agendaItem": "Punto del orden del día",
       "agendaUnavailable": "No se ha podido cargar el orden del día",
       "proponent": "Quién lo presenta",
@@ -839,7 +822,7 @@
       "agendaItemHelp": "Cámbialo solo si el documento corresponde a otro punto.",
       "dueAt": "Fecha límite interna",
       "dueAtDescription": "Hasta cuándo tiene quien lo presenta para enviarlo a Secretaría.",
-      "advanced": "Opciones avanzadas",
+      "advanced": "Más opciones",
       "invalid": "Revisa los datos del documento"
     },
     "submit": {
@@ -1037,9 +1020,19 @@
       "working": "Validando y publicando el documento...",
       "success": "Documento validado y publicado"
     },
-    "kindGroups": {
-      "common": "Los más habituales",
-      "others": "Otros tipos"
+    "kindPicker": {
+      "other": "Otro tipo",
+      "otherDescription": "Ver más tipos",
+      "otherLabel": "Otro tipo de documento"
+    },
+    "rules": {
+      "label": "Reglas:",
+      "amendable": "Se puede enmendar",
+      "notAmendable": "No se puede enmendar",
+      "voted": "Se vota",
+      "notVoted": "No se vota",
+      "change": "Cambiar",
+      "changeLabel": "Cambiar las reglas del documento"
     },
     "presenters": {
       "fold": {
@@ -1563,7 +1556,7 @@
       "editorHint": "Cambia, borra o añade lo que quieras. Lo que no toques se queda como está.",
       "deleteHint": "Esto es lo que se quitaría del texto.",
       "find": "Término actual",
-      "findPlaceholder": "p. ej. Comisión Ejecutiva",
+      "findPlaceholder": "p. ej. Comisión Ejecutiva Ampliada",
       "replace": "Nuevo término",
       "replacePlaceholder": "Déjalo vacío para suprimirlo",
       "globalHint": "Escribe el término para ver cuántas veces aparece.",
@@ -1832,7 +1825,7 @@
     "save": "Guardar",
     "members": {
       "title": "Miembros",
-      "description": "Consejos asociados, sectoriales y áreas ejecutivas que presentan documentos y enmiendas. Asociados y sectoriales se sincronizan con la intranet; las áreas ejecutivas se dan de alta aquí.",
+      "description": "Consejos asociados, sectoriales y áreas de la Comisión Ejecutiva Ampliada que presentan documentos y enmiendas. Asociados y sectoriales se sincronizan con la intranet; las áreas de la CEA se dan de alta aquí.",
       "sync": "Sincronizar con la intranet",
       "syncing": "Sincronizando con la intranet…",
       "syncDoneTitle": "Sincronización completada",
@@ -1840,7 +1833,7 @@
       "syncFailed": "No se ha podido sincronizar con la intranet",
       "create": "Nuevo miembro",
       "createTitle": "Nuevo miembro",
-      "createDescription": "Para áreas ejecutivas y otros miembros que no vienen de la intranet.",
+      "createDescription": "Para áreas de la CEA y otros miembros que no vienen de la intranet.",
       "createAction": "Crear miembro",
       "created": "{acronym} creado",
       "updated": "{acronym} actualizado",
@@ -2045,7 +2038,7 @@
         "positioning": "Posicionamiento",
         "resolution": "Resolución",
         "internal_motion": "Moción interna",
-        "executive_report": "Informe de la Comisión Ejecutiva",
+        "executive_report": "Informe de la Comisión Ejecutiva Ampliada",
         "regulation": "Reglamento",
         "statutes": "Estatutos",
         "budget": "Presupuesto",
@@ -2146,6 +2139,23 @@
       "liveNow": "Ahora",
       "liveInSession": "En directo: la sesión está en marcha"
     },
+    "assemblyGroups": {
+      "assembly": "Asamblea",
+      "secretariat": "Secretaría",
+      "mesa": "Mesa"
+    },
+    "breadcrumb": {
+      "label": "Dónde estás",
+      "backTo": "Volver a {label}",
+      "assembly": "Asamblea",
+      "agendaItem": "Punto",
+      "document": "Documento",
+      "views": {
+        "edit": "Editar",
+        "answers": "Respuestas",
+        "consolidated": "Texto consolidado"
+      }
+    },
     "live": {
       "region": "Asamblea en sesión",
       "single": "En sesión: {assembly}",
@@ -2177,13 +2187,13 @@
       "sectorial": "Sectorial",
       "invitado": "Invitado",
       "none": "Sin rol",
-      "cea": "Comisión Ejecutiva (CEA)",
+      "cea": "Comisión Ejecutiva Ampliada (CEA)",
       "presidencia": "Presidencia"
     },
     "memberKinds": {
       "asociado": "Consejo asociado",
       "sectorial": "Sectorial",
-      "executive": "Área ejecutiva",
+      "executive": "Área de la CEA",
       "other": "Otro"
     },
     "toastRegion": "Notificaciones (F8)",
@@ -2444,10 +2454,33 @@
     "seeConvocation": "Ver convocatoria",
     "addItem": "Añadir punto",
     "addFirstItem": "Añadir el primer punto",
-    "rootsLockedShort": "El orden del día es definitivo: no se pueden añadir puntos principales",
-    "rootsLockedTitle": "Orden del día definitivo",
-    "rootsLockedDescription": "Los puntos principales no se pueden crear, mover ni eliminar. Los subpuntos sí.",
-    "reopenInCalendar": "Reabrir en el calendario",
+    "fold": {
+      "show": "Mostrar el subpunto | Mostrar los {count} subpuntos",
+      "hide": "Ocultar el subpunto | Ocultar los {count} subpuntos",
+      "of": "{action} del punto {number}: {title}",
+      "expandAll": "Desplegar todo",
+      "collapseAll": "Plegar todo",
+      "expandedAll": "Se muestran todos los subpuntos",
+      "collapsedAll": "Se han ocultado todos los subpuntos"
+    },
+    "finalAgenda": {
+      "mark": "Marcar como definitivo",
+      "reopen": "Reabrir como provisional",
+      "markTitle": "¿Marcar el orden del día como definitivo?",
+      "markDescription": "Definitivo quiere decir que este es el orden del día que se tratará en la asamblea. Si después cambias un punto principal, tendrás que confirmarlo y quedará anotado en el historial.",
+      "reopenTitle": "¿Reabrir el orden del día como provisional?",
+      "reopenDescription": "El orden del día volverá a ser provisional y los puntos principales se podrán cambiar sin confirmar.",
+      "marked": "El orden del día ya es definitivo",
+      "reopened": "El orden del día vuelve a ser provisional",
+      "error": "No se ha podido cambiar el estado del orden del día",
+      "overdueTitle": "El orden del día sigue siendo provisional",
+      "overdueDescription": "La fecha prevista para el orden del día definitivo era el {date}. Cuando esté cerrado, márcalo como definitivo.",
+      "confirmChangeTitle": "El orden del día ya es definitivo",
+      "confirmChangeDescription": "¿Cambiarlo igualmente? El cambio quedará anotado en el historial.",
+      "confirmChange": "Cambiar igualmente",
+      "deleteNote": "El orden del día ya es definitivo. La eliminación quedará anotada en el historial.",
+      "organizeHint": "El orden del día ya es definitivo. Para cambiar un punto principal tendrás que confirmarlo. Los subpuntos se cambian sin confirmar."
+    },
     "loading": "Cargando el orden del día",
     "loadError": "No se ha podido cargar el orden del día",
     "retry": "Reintentar",
@@ -2456,7 +2489,6 @@
     "emptyManagerDescription": "Añade los puntos del orden del día. Después podrás crear subpuntos y documentos en cada uno.",
     "acceptsSubmissions": "Admite documentos de los miembros",
     "acceptsSubmissionsHelp": "Los miembros podrán presentar documentos en este punto hasta el cierre del plazo de documentos.",
-    "lockedRoot": "Punto principal bloqueado: el orden del día es definitivo",
     "documentsOf": "Documentos del punto {number}: {title}",
     "submissionsClosedAssembly": "La asamblea ha finalizado: ya no se pueden presentar documentos.",
     "submissionsDeadlinePassed": "El plazo para presentar documentos nuevos ha terminado.",
@@ -2470,13 +2502,30 @@
     "updated": "Punto actualizado: {title}",
     "createdToast": "Punto creado",
     "updatedToast": "Punto actualizado",
-    "deleted": "Punto eliminado: {title}",
     "deletedToast": "Punto eliminado",
     "deleteTitle": "¿Eliminar el punto?",
     "deleteDescription": "Vas a eliminar el punto {number}: {title}.",
-    "deleteChildren": "También se eliminará su subpunto. | También se eliminarán sus {count} subpuntos.",
-    "deleteDocuments": "Se eliminará el borrador de documento que contiene. | Se eliminarán los {count} borradores de documento que contiene.",
     "deleteIrreversible": "Esta acción no se puede deshacer.",
+    "item": {
+      "notFound": "Este punto no existe o no tienes acceso a él.",
+      "gone": {
+        "title": "Este punto ya no está en el orden del día",
+        "back": "Ir al orden del día"
+      },
+      "open": "Ver el punto",
+      "openOf": "Ver el punto {number}: {title}",
+      "documents": "Documentos",
+      "noDocuments": "Este punto no tiene documentos.",
+      "noOwnDocuments": "Los documentos están en sus subpuntos.",
+      "subItems": "Subpuntos",
+      "submissions": {
+        "any": "Los miembros presentan aquí sus documentos.",
+        "kinds": "Los miembros presentan aquí: {kinds}."
+      },
+      "neighbours": "Punto anterior y siguiente",
+      "previous": "Anterior",
+      "next": "Siguiente"
+    },
     "move": {
       "group": "Mover el punto",
       "up": "Subir el punto {number}: {title}",
@@ -2489,11 +2538,8 @@
       "outdentShort": "Subir de nivel"
     },
     "actions": {
-      "edit": "Editar punto",
       "addSubItem": "Añadir subpunto",
       "newDocument": "Añadir documento",
-      "delete": "Eliminar punto",
-      "menu": "Acciones del punto {number}: {title}",
       "submitDocument": "Presentar documento",
       "newDocumentIn": "Añadir documento al punto {number}: {title}",
       "submitDocumentIn": "Presentar documento en el punto {number}: {title}"
@@ -2540,10 +2586,6 @@
       "structured": "Texto en la plataforma",
       "file": "Archivo PDF"
     },
-    "formatDescriptions": {
-      "structured": "Se redacta o importa en la plataforma y admite enmiendas sobre el texto.",
-      "file": "Se sube un PDF. No admite enmiendas."
-    },
     "majorities": {
       "simple": "Mayoría simple",
       "absolute": "Mayoría absoluta",
@@ -2583,7 +2625,14 @@
       "optional": "Opcional",
       "dueAtHelp": "Hasta cuándo tiene quien lo presenta para enviarlo a Secretaría.",
       "dueAtHelpMember": "Hasta cuándo tiene {member} para enviarlo. Lo verá en su página de inicio. | Hasta cuándo tienen {member} para enviarlo. Lo verán en su página de inicio.",
-      "advanced": "Opciones avanzadas",
+      "advanced": "Más opciones",
+      "formatCards": {
+        "structured": "Texto en la plataforma",
+        "structuredDescription": "Se puede enmendar.",
+        "structuredPlain": "Se escribe aquí o se importa de Word.",
+        "file": "PDF subido",
+        "fileDescription": "No se puede enmendar."
+      },
       "expectedFrom": "{member} lo verá en su página de inicio para prepararlo. | {member} lo verán en su página de inicio para prepararlo.",
       "openDocument": "Abrir",
       "presentingAs": "Lo presentas en nombre de",
@@ -2616,6 +2665,66 @@
       "hintDocuments": "Estás organizando los documentos: añade en cada punto los documentos que esperas.",
       "enabled": "Organización activada: cada punto muestra sus controles para moverlo, editarlo o eliminarlo.",
       "disabled": "Organización terminada: el orden del día vuelve a la vista normal."
+    },
+    "manage": {
+      "group": "Gestionar el punto {number}: {title}",
+      "addDocuments": "Añadir varios documentos",
+      "editOf": "Editar el punto {number}: {title}",
+      "addSubItemOf": "Añadir subpunto al punto {number}: {title}",
+      "addDocumentsOf": "Añadir varios documentos al punto {number}: {title}",
+      "deleteOf": "Eliminar el punto {number}: {title}"
+    },
+    "container": {
+      "question": "¿Los miembros presentan documentos aquí?",
+      "noDescription": "Solo Secretaría añade documentos a este punto.",
+      "yesDescription": "Hasta que cierre el plazo de documentos.",
+      "kinds": "Qué tipos pueden presentar",
+      "allKinds": "Todos los tipos",
+      "moreKinds": "Ver más tipos",
+      "fewerKinds": "Ver menos tipos",
+      "ownItem": "Cada documento que se presente tendrá su propio subpunto, con el título del documento.",
+      "autoHint": "Este punto sigue el título de su documento. Si lo cambias aquí, deja de seguirlo.",
+      "autoCustomHint": "Este punto ya no sigue el título de su documento, porque se cambió aquí.",
+      "newDocumentHint": "El documento aparecerá como un subpunto propio dentro de este punto.",
+      "takesAll": "Los miembros presentan documentos aquí",
+      "takesKinds": "Los miembros presentan aquí: {kinds}",
+      "kindRefused": "Este punto no admite ese tipo de documento."
+    },
+    "bulk": {
+      "title": "Añadir varios documentos",
+      "intro": "Escribe un documento en cada línea. Se crean todos a la vez, como borradores.",
+      "containerHint": "Cada uno tendrá su propio subpunto dentro de este punto.",
+      "row": "Documento {n}",
+      "removeRow": "Quitar",
+      "removeRowN": "Quitar el documento {n}",
+      "addRow": "Añadir otra línea",
+      "maxRows": "Como máximo {max} documentos cada vez.",
+      "file": "PDF del documento",
+      "fileLabel": "Suelta aquí el PDF o haz clic para elegirlo",
+      "fileDescription": "Hasta 20 MB. También se puede subir después.",
+      "submit": "Crear el documento | Crear {count} documentos",
+      "created": "Se ha creado el documento | Se han creado {count} documentos",
+      "error": "No se han podido crear los documentos",
+      "rowRefused": "Revisa quién presenta este documento: no puede presentar ese tipo o ya no está activo.",
+      "fixRows": "Revisa las líneas marcadas.",
+      "uploading": "Subiendo los PDF: {done} de {total}",
+      "uploadFailedTitle": "Los documentos se han creado, pero falta algún PDF",
+      "uploadFailedDescription": "No se ha podido subir el PDF de estos documentos. Puedes reintentarlo ahora o subirlo después desde cada documento.",
+      "openDocument": "Abrir el documento",
+      "retry": "Reintentar la subida"
+    },
+    "delete": {
+      "subItems": "{count} subpunto | {count} subpuntos",
+      "documents": "{count} documento | {count} documentos",
+      "both": "Se eliminarán {subItems} y {documents}.",
+      "one": "Se eliminará {what}. | Se eliminarán {what}.",
+      "onlyItem": "Solo se eliminará este punto: no tiene subpuntos ni documentos.",
+      "documentsList": "Documentos que se eliminarán:",
+      "more": "y {count} más",
+      "blockedTitle": "Este punto no se puede eliminar",
+      "blockedAmendments": "Un documento de este punto o de sus subpuntos tiene enmiendas. | {count} documentos de este punto o de sus subpuntos tienen enmiendas.",
+      "blockedHelp": "Las enmiendas son trabajo de otros miembros y no se borran. Mueve antes esos documentos a otro punto.",
+      "blockedLive": "Ahora mismo se está tratando en la sesión este punto, un subpunto o uno de sus documentos. Inténtalo cuando la Mesa pase a otro punto."
     }
   },
   "calendar": {
@@ -2639,10 +2748,6 @@
     "defaultsApplied": "No hay plazos por defecto para este tipo de asamblea | Se ha aplicado 1 plazo por defecto. Guarda para confirmarlo. | Se han aplicado {count} plazos por defecto. Guarda para confirmarlos.",
     "defaultsConfirmTitle": "¿Aplicar los plazos por defecto?",
     "defaultsConfirmDescription": "Se sustituirán las fechas que ya has fijado por las que marca el reglamento para este tipo de asamblea. No se guardará nada hasta que pulses Guardar.",
-    "agendaFinal": "Marcar el orden del día como definitivo",
-    "agendaFinalOn": "Los puntos principales quedan bloqueados: no se pueden crear, mover ni eliminar.",
-    "agendaFinalOff": "El orden del día es provisional y se puede reorganizar por completo.",
-    "agendaFinalizedAt": "Definitivo desde el {date}",
     "unsaved": "No hay cambios | 1 cambio sin guardar | {count} cambios sin guardar",
     "unsavedConfirm": "Hay cambios sin guardar en el calendario. ¿Salir sin guardarlos?",
     "saved": "Calendario guardado",
@@ -2742,7 +2847,6 @@
     "loadError": "No se ha podido cargar el documento",
     "loadErrorDescription": "Comprueba la conexión e inténtalo de nuevo.",
     "retry": "Reintentar",
-    "backToDocuments": "Volver a los documentos",
     "editDraft": "Editar borrador",
     "consolidatedPage": "Texto consolidado",
     "detailDescription": "Detalle de la enmienda",
@@ -2828,7 +2932,6 @@
       "voted": "El texto ya se ha votado: no admite más enmiendas."
     },
     "consolidatedView": {
-      "back": "Volver al espacio de trabajo",
       "text": "Texto consolidado",
       "legend": "Pulsa un fragmento subrayado para ver la enmienda de la que procede.",
       "storedOnly": "La votación final usó un orden de aplicación propio: se muestra el texto guardado, sin procedencia.",
@@ -3565,7 +3668,6 @@
     "emptyDescription": "No hay nada esperando tu validación. Cuando alguien envíe un documento o una enmienda, aparecerá aquí.",
     "forbiddenTitle": "No tienes acceso a la validación",
     "forbiddenDescription": "Solo la Secretaría valida los documentos y las enmiendas que se presentan.",
-    "backToOverview": "Volver al resumen",
     "toTracking": "Ver el seguimiento",
     "presentedBy": "Lo presenta",
     "noPresenter": "Sin asignar",
@@ -3803,7 +3905,6 @@
       "documentTitleHelp": "Quien lo presenta podrá cambiarlo.",
       "deadline": "Plazo interno",
       "deadlineHelp": "Hasta cuándo tiene para enviarlo a la Secretaría. Hora peninsular.",
-      "more": "Más opciones",
       "format": "Cómo se entregará",
       "create": "Añadir documento",
       "created": "Documento esperado añadido",
@@ -4465,6 +4566,10 @@
       "changed": "Ha cambiado: {field}",
       "subItems": "Con sus subpuntos: {list}",
       "moved": "Se ha movido {count} punto | Se han movido {count} puntos",
+      "afterFinal": "Cambio hecho con el orden del día ya definitivo",
+      "autoItem": "Es el subpunto propio de un documento",
+      "cascade": "Se eliminó con el punto del que colgaba",
+      "deletedDocuments": "Con {count} documento | Con {count} documentos",
       "quoted": "«{text}»"
     },
     "endReasons": {
@@ -4681,6 +4786,7 @@
           "title": "Título",
           "description": "Descripción",
           "acceptsSubmissions": "Admite documentos de los miembros",
+          "submissionKinds": "Tipos de documento que admite",
           "parentId": "Lugar en el orden del día"
         },
         "document": {

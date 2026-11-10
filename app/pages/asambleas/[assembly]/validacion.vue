@@ -390,17 +390,7 @@ async function confirmBulkPublish() {
       :title="t('review.forbiddenTitle')"
       :description="t('review.forbiddenDescription')"
       variant="outline"
-    >
-      <template #action>
-        <UButton
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-arrow-left"
-          :label="t('review.backToOverview')"
-          :to="sectionPath()"
-        />
-      </template>
-    </CommonEmptyState>
+    />
 
     <template v-else>
       <div class="flex flex-wrap items-start justify-between gap-3">

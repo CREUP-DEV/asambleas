@@ -328,6 +328,38 @@ describe("activityDetails", () => {
         }),
       ),
     ).toEqual([{ type: "subItems", titles: ["Informe de la CE"] }]);
+    // What a delete took with it, and the marks of automatic sub-items.
+    expect(
+      activityDetails(
+        item({
+          action: "agenda_item_deleted",
+          target: target({ type: "agenda_item" }),
+          payload: {
+            title: "Resoluciones",
+            deletedItems: [{ title: "Resoluciones" }],
+            deletedDocuments: 4,
+          },
+        }),
+      ),
+    ).toEqual([{ type: "deletedDocuments", count: 4 }]);
+    expect(
+      activityDetails(
+        item({
+          action: "agenda_item_deleted",
+          target: target({ type: "agenda_item" }),
+          payload: { title: "Moción", auto: true, cascade: true },
+        }),
+      ),
+    ).toEqual([{ type: "autoItem" }, { type: "cascade" }]);
+    expect(
+      activityDetails(
+        item({
+          action: "agenda_item_created",
+          target: target({ type: "agenda_item" }),
+          payload: { title: "Moción", auto: true },
+        }),
+      ),
+    ).toEqual([{ type: "autoItem" }]);
     expect(
       activityDetails(
         item({ action: "agenda_reordered", payload: { moved: 3 } }),
@@ -338,6 +370,35 @@ describe("activityDetails", () => {
         item({ action: "agenda_reordered", payload: { moves: [{}, {}] } }),
       ),
     ).toEqual([{ type: "moved", count: 2 }]);
+  });
+
+  it("marks a root agenda change made after the final agenda", () => {
+    expect(
+      activityDetails(
+        item({
+          action: "agenda_item_created",
+          target: target({ type: "agenda_item" }),
+          payload: { title: "Ruegos", afterFinal: true },
+        }),
+      ),
+    ).toEqual([{ type: "afterFinal" }]);
+    expect(
+      activityDetails(
+        item({
+          action: "agenda_reordered",
+          payload: { moved: 2, afterFinal: true },
+        }),
+      ),
+    ).toEqual([{ type: "moved", count: 2 }, { type: "afterFinal" }]);
+    expect(
+      activityDetails(
+        item({
+          action: "agenda_item_created",
+          target: target({ type: "agenda_item" }),
+          payload: { title: "Ruegos" },
+        }),
+      ),
+    ).toEqual([]);
   });
 
   it("reads role, member and intranet changes of role sync", () => {

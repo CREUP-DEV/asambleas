@@ -130,13 +130,25 @@ html {
  * render.ts and app/components/content/*). Diff colours follow the semantic
  * success/error scales, so they track the theme; provenance colours are a
  * fixed set of six that stay distinguishable in both colour modes.
+ *
+ * Diffs are soft: changed text keeps the colour of the text around it, on a
+ * very pale tint, and the hue sits on the underline or the strike. Measured
+ * (WCAG, with the default green, red and slate scales):
+ * - light: text on the green tint 9.4:1, underline 4.5:1; removed text
+ *   (neutral-600; the muted neutral-500 would be 4.4:1) on the red tint
+ *   6.9:1, strike 4.4:1;
+ * - dark: text on the green tint 11.5:1, underline 8.0:1; removed text on
+ *   the red tint 6.1:1 (5.1:1 on an elevated surface), strike 5.5:1.
  */
 :root {
-  --cx-ins-fg: var(--ui-color-success-800);
   --cx-ins-bg: var(--ui-color-success-100);
-  --cx-del-fg: var(--ui-color-error-700);
+  --cx-ins-line: var(--ui-color-success-700);
+  --cx-del-fg: var(--ui-color-neutral-600);
   --cx-del-bg: var(--ui-color-error-50);
-  --cx-ring: var(--ui-primary);
+  --cx-del-line: var(--ui-color-error-600);
+  /* Only where several amendments show together: a thin, quiet ring. */
+  --cx-ring: color-mix(in oklab, var(--ui-primary) 60%, transparent);
+  --cx-ring-width: 1px;
   --cx-selected-bg: color-mix(in oklab, var(--ui-primary) 9%, transparent);
   --cx-hover-bg: color-mix(in oklab, var(--ui-text) 5%, transparent);
   --cx-prov-0: #1d4ed8;
@@ -159,14 +171,15 @@ html {
 }
 
 .dark {
-  --cx-ins-fg: var(--ui-color-success-300);
   --cx-ins-bg: color-mix(
     in oklab,
-    var(--ui-color-success-500) 20%,
+    var(--ui-color-success-500) 14%,
     transparent
   );
-  --cx-del-fg: var(--ui-color-error-300);
-  --cx-del-bg: color-mix(in oklab, var(--ui-color-error-500) 16%, transparent);
+  --cx-ins-line: var(--ui-color-success-400);
+  --cx-del-fg: var(--ui-color-neutral-400);
+  --cx-del-bg: color-mix(in oklab, var(--ui-color-error-500) 14%, transparent);
+  --cx-del-line: var(--ui-color-error-400);
   --cx-selected-bg: color-mix(in oklab, var(--ui-primary) 16%, transparent);
   --content-heading: var(--color-creup-red-300);
   --content-cell-shade: color-mix(
@@ -185,6 +198,7 @@ html {
 /* Marks mode carries no hue: emphasis rings use the text colour. */
 .diff-marks {
   --cx-ring: var(--ui-text-highlighted);
+  --cx-ring-width: 2px;
 }
 
 /* Ordered list markers followed by a parenthesis: "1)", "a)", "i)". */
@@ -587,20 +601,40 @@ html {
     -webkit-print-color-adjust: exact;
   }
 
-  /* Underlined too, so insertions never rely on colour alone. */
+  /*
+   * Added text keeps the colour of the text around it, on a pale tint, with
+   * a thin underline: it never relies on colour alone.
+   */
   .cx-ins {
-    color: var(--cx-ins-fg);
+    color: var(--cx-ins-fg, inherit);
     background-color: var(--cx-ins-bg);
     text-decoration-line: underline;
-    text-decoration-thickness: 0.1em;
+    text-decoration-color: var(--cx-ins-line);
+    text-decoration-thickness: 0.07em;
     text-underline-offset: 0.2em;
   }
 
+  /* Removed text is dimmed and struck through on a pale tint. */
   .cx-del {
     color: var(--cx-del-fg);
     background-color: var(--cx-del-bg);
     text-decoration-line: line-through;
-    text-decoration-thickness: 0.09em;
+    text-decoration-color: var(--cx-del-line);
+    text-decoration-thickness: 0.07em;
+  }
+
+  /*
+   * The level 1 bar and the table header cells are burgundy with white text
+   * in both colour modes: a change inside them takes the light palette and
+   * dark text on its tint.
+   */
+  .rich-text :is(h2, .cx-heading-2, th) {
+    --cx-ins-fg: var(--ui-color-neutral-900);
+    --cx-ins-bg: var(--ui-color-success-100);
+    --cx-ins-line: var(--ui-color-success-700);
+    --cx-del-fg: var(--ui-color-neutral-600);
+    --cx-del-bg: var(--ui-color-error-50);
+    --cx-del-line: var(--ui-color-error-600);
   }
 
   .diff-marks .cx-ins {
@@ -627,11 +661,11 @@ html {
   }
 
   .cx-block-inserted {
-    border-inline-start-color: var(--cx-ins-fg);
+    border-inline-start-color: var(--cx-ins-line);
   }
 
   .cx-block-deleted {
-    border-inline-start-color: var(--cx-del-fg);
+    border-inline-start-color: var(--cx-del-line);
     border-inline-start-style: dashed;
   }
 
@@ -692,10 +726,13 @@ html {
     --cx-prov-color: var(--cx-prov-5);
   }
 
-  /* The amendment in focus stands out with a ring, never with hue alone. */
+  /*
+   * Where several amendments show together, the one in focus stands out with
+   * a ring, never with hue alone. A single amendment's diff passes no focus.
+   */
   .cx-focus {
     border-radius: 0.125rem;
-    box-shadow: 0 0 0 2px var(--cx-ring);
+    box-shadow: 0 0 0 var(--cx-ring-width) var(--cx-ring);
     box-decoration-break: clone;
     -webkit-box-decoration-break: clone;
   }
@@ -944,6 +981,11 @@ html {
   :root,
   .dark {
     --content-heading: var(--color-creup-red-900);
+    --cx-ins-bg: var(--ui-color-success-100);
+    --cx-ins-line: var(--ui-color-success-700);
+    --cx-del-fg: var(--ui-color-neutral-600);
+    --cx-del-bg: var(--ui-color-error-50);
+    --cx-del-line: var(--ui-color-error-600);
   }
 
   .rich-text {

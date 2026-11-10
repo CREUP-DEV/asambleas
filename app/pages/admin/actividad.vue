@@ -146,6 +146,7 @@ const sectionTitleId = useId();
           <UDashboardSidebarCollapse />
         </template>
       </UDashboardNavbar>
+      <ShellBreadcrumbs />
       <UDashboardToolbar>
         <template #left>
           <UTabs

@@ -430,6 +430,7 @@ async function submit(event: FormSubmitEvent<MemberFormState>): Promise<void> {
           </UButton>
         </template>
       </UDashboardNavbar>
+      <ShellBreadcrumbs />
 
       <UDashboardToolbar>
         <template #left>

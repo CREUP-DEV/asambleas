@@ -1,7 +1,11 @@
 import { z } from "zod/v4";
 import { ALL_ASSEMBLY_TYPES } from "../../constants/assemblyTypes";
 import type { AssemblyType } from "../../constants/assemblyTypes";
-import { ASSEMBLY_STATUSES, MILESTONE_KEYS } from "../../constants/domain";
+import {
+  ASSEMBLY_STATUSES,
+  DOCUMENT_KINDS,
+  MILESTONE_KEYS,
+} from "../../constants/domain";
 import type {
   AgendaItemBody,
   AgendaReorderBody,
@@ -124,12 +128,35 @@ export const assemblyListQuerySchema = z.object({
 
 // Agenda -----------------------------------------------------------------
 
+/**
+ * `data.code` of the 409 a change to the root items gets once the agenda is
+ * final and the request does not say `confirmFinal: true`. The client asks
+ * and sends the request again with it.
+ */
+export const AGENDA_FINAL_CONFLICT_CODE = "agenda_final";
+
 export const agendaItemBodySchema = z.object({
   parentId: assemblyEntityId.nullable().optional(),
   title: singleLine(AGENDA_TITLE_MAX_LENGTH),
   description: multiLine(AGENDA_DESCRIPTION_MAX_LENGTH).nullable().optional(),
   acceptsSubmissions: z.boolean().optional(),
+  submissionKinds: z
+    .array(z.enum(DOCUMENT_KINDS))
+    .max(DOCUMENT_KINDS.length)
+    .refine((kinds) => new Set(kinds).size === kinds.length, {
+      message: "duplicate_kind",
+    })
+    .optional(),
   updatedAt: isoDateTime.optional(),
+  confirmFinal: z.boolean().optional(),
+});
+
+/** DELETE of an item has no body: the confirmation travels in the query. */
+export const agendaItemDeleteQuerySchema = z.object({
+  confirmFinal: z
+    .enum(["true", "false"])
+    .optional()
+    .transform((value) => value === "true"),
 });
 
 /** PUT on an existing item: `updatedAt` is required for optimistic locking. */
@@ -154,6 +181,7 @@ export const agendaReorderBodySchema = z.object({
         message: "duplicate_id",
       },
     ),
+  confirmFinal: z.boolean().optional(),
 });
 
 // Live session -----------------------------------------------------------

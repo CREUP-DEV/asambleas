@@ -30,6 +30,7 @@ import {
   amendments,
   assemblies,
   assemblyMilestones,
+  documentImages,
   documents,
   documentVersions,
   events,
@@ -42,12 +43,22 @@ import { getUploadDir } from "../core/uploadPaths";
 import { logError } from "../core/logger";
 import { assertOptimisticLock } from "../optimisticLock";
 import {
+  canManageAssemblies,
   canManageDocuments,
   canModerate,
   requireActor,
   type Actor,
 } from "./actor";
 import { applyAcceptedAmendmentsRule } from "./acceptedRule";
+import {
+  bindAutoItem,
+  findRemovableAutoItem,
+  insertAutoItem,
+  lockAssembly,
+  removeAutoItem,
+  syncAutoItemTitle,
+  unbindAutoItem,
+} from "./agendaWrites";
 import { diffChanges, sortedIds } from "./changes";
 import { recordEvent } from "./events";
 import { withHeadcount } from "./headcounts";
@@ -116,8 +127,18 @@ import {
   type AmendmentWindow,
   type Milestones,
 } from "~~/shared/utils/calendar";
+import {
+  AUTO_ITEM_REFUSED_REASON,
+  isAutoItem,
+  itemAcceptsKind,
+  SUBMISSION_KIND_REFUSED_REASON,
+} from "~~/shared/utils/agendaSubmissions";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { hashContent } from "~~/shared/utils/diff";
+import {
+  FILE_FORMAT_REFUSED_REASON,
+  fileFormatRefused,
+} from "~~/shared/utils/documentFormat";
 import { barredPresenters } from "~~/shared/utils/presenterKinds";
 import { slugify } from "~~/shared/utils/slug";
 import { computeVoteOutcome } from "~~/shared/utils/votes";
@@ -129,6 +150,7 @@ import { computeVoteOutcome } from "~~/shared/utils/votes";
  */
 
 type AssemblyRow = typeof assemblies.$inferSelect;
+type AgendaItemRow = typeof agendaItems.$inferSelect;
 export type DocumentRow = typeof documents.$inferSelect;
 /** A document row with its co-presenters, as resolveDocument returns it. */
 export type PresentedDocumentRow = DocumentRow & {
@@ -260,17 +282,27 @@ export function documentsDeadlinePassed(
   return Boolean(close && now > close);
 }
 
+/** What the presentation rules read of the agenda item a document hangs from. */
+export interface PresentationItem {
+  acceptsSubmissions: boolean;
+  /** Set on an automatic sub-item (isAutoItem). */
+  generatedForDocumentId: string | null;
+}
+
 /**
  * Whether the Secretaría expects this document from its member rather than
  * the member choosing to present it: it has an internal deadline (`dueAt`),
  * or it hangs from an agenda item that does not accept submissions, where
- * only a manager could have created it (a CEA report, say).
+ * only a manager could have created it (a CEA report, say). An automatic
+ * sub-item takes no submissions itself but exists because a document was
+ * presented under an item that does, so it never makes a document expected.
  */
 export function isExpectedDocument(
   document: Pick<DocumentRow, "dueAt">,
-  item: { acceptsSubmissions: boolean },
+  item: PresentationItem,
 ): boolean {
-  return document.dueAt !== null || !item.acceptsSubmissions;
+  if (document.dueAt !== null) return true;
+  return !item.acceptsSubmissions && !isAutoItem(item);
 }
 
 /**
@@ -282,7 +314,7 @@ export function isExpectedDocument(
  */
 export function presentationClosed(
   document: Pick<DocumentRow, "dueAt" | "correctionRequestedAt">,
-  item: { acceptsSubmissions: boolean },
+  item: PresentationItem,
   milestones: Milestones,
   now = new Date(),
 ): boolean {
@@ -497,6 +529,11 @@ export function toDocumentSummaryDto(
     proponent: MemberRef | null;
     coProponents: MemberRef[];
     amendmentCount: number;
+    /**
+     * Any amendment row at all, drafts included; null for an actor who is
+     * not told (see DocumentSummaryDto.hasAmendments).
+     */
+    hasAmendments: boolean | null;
     window: AmendmentWindowDto;
     hasContent: boolean;
     /** The actor may read the correction note (canSeeDocumentCorrection). */
@@ -519,6 +556,7 @@ export function toDocumentSummaryDto(
     voted: document.voted,
     majority: document.majority,
     amendmentCount: extra.amendmentCount,
+    hasAmendments: extra.hasAmendments,
     window: extra.window,
     publishedAt: toIso(document.publishedAt),
     submittedAt: toIso(document.submittedAt),
@@ -562,6 +600,7 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
       proponent: input.proponent,
       coProponents: input.coProponents,
       amendmentCount: input.amendmentCount,
+      hasAmendments: seesAmendmentExistence(actor) ? input.hasAmendments : null,
       window: documentWindow(document, milestones, now),
       hasContent: input.hasContent,
       showCorrection: canSeeDocumentCorrection(actor, document),
@@ -736,6 +775,28 @@ async function loadContentFlags(
   return withContent;
 }
 
+/**
+ * Who is told whether a document has any amendment at all, unpublished
+ * drafts included (DocumentSummaryDto.hasAmendments): those who delete
+ * documents or agenda items, which is what it blocks.
+ */
+export function seesAmendmentExistence(actor: Actor): boolean {
+  return canManageDocuments(actor) || canManageAssemblies(actor);
+}
+
+/** The documents with any amendment row, of any status. */
+export async function loadAmendedDocumentIds(
+  executor: Executor,
+  documentIds: string[],
+): Promise<Set<string>> {
+  if (documentIds.length === 0) return new Set();
+  const rows = await executor
+    .selectDistinct({ documentId: amendments.documentId })
+    .from(amendments)
+    .where(inArray(amendments.documentId, documentIds));
+  return new Set(rows.map((row) => row.documentId));
+}
+
 /** The calendar of several assemblies in one query. */
 export async function loadMilestonesByAssembly(
   assemblyIds: string[],
@@ -777,10 +838,13 @@ export async function buildDocumentSummaries(
   executor: Executor = db,
 ): Promise<DocumentSummaryDto[]> {
   const ids = rows.map((row) => row.id);
-  const [counts, content, coProponents] = await Promise.all([
+  const [counts, content, coProponents, amended] = await Promise.all([
     countVisibleAmendments(actor, ids, executor),
     loadContentFlags(executor, rows),
     loadCoProponents(ids, executor),
+    seesAmendmentExistence(actor)
+      ? loadAmendedDocumentIds(executor, ids)
+      : Promise.resolve(null),
   ]);
   return rows.map(({ proponent, ...document }) => {
     const co = coProponents.get(document.id) ?? [];
@@ -788,6 +852,7 @@ export async function buildDocumentSummaries(
       proponent: memberRefOrNull(proponent),
       coProponents: co,
       amendmentCount: counts.get(document.id) ?? 0,
+      hasAmendments: amended ? amended.has(document.id) : null,
       window: documentWindow(
         document,
         milestones.get(document.assemblyId) ?? {},
@@ -1270,19 +1335,63 @@ export function assertStatusChange(
   fail(422, "Cambio de estado no válido");
 }
 
+/** What a member reads when the item does not take the kind (itemAcceptsKind). */
+export const SUBMISSION_KIND_REFUSED_MESSAGE =
+  "Este punto del orden del día no admite documentos de este tipo";
+
+/** A member presents under an item only what the item takes. */
+export function requireSubmissionTarget(
+  item: Pick<AgendaItemRow, "acceptsSubmissions" | "submissionKinds">,
+  kind: DocumentKind,
+): void {
+  if (!item.acceptsSubmissions) {
+    fail(
+      403,
+      "Este punto del orden del día no admite documentos de los miembros",
+    );
+  }
+  if (!itemAcceptsKind(item, kind)) {
+    fail(422, SUBMISSION_KIND_REFUSED_MESSAGE, {
+      reason: SUBMISSION_KIND_REFUSED_REASON,
+    });
+  }
+}
+
+/** What anyone reads when the item chosen is another document's sub-item. */
+export const AUTO_ITEM_REFUSED_MESSAGE =
+  "Este subpunto es el de otro documento. Elige otro punto";
+
 /**
- * The agenda item a document moves to, read under the assembly share lock so
- * neither an agenda delete nor a change of acceptsSubmissions (both under
- * lockAssembly) can happen between this check and the commit.
+ * Nobody, managers included, puts a document in the automatic sub-item of
+ * another one: that item carries the other document's title, which may be
+ * a draft's, and would show to everyone who sees the newcomer.
+ * `documentId` is the document being moved (null when creating one).
+ */
+export function requireNotOthersAutoItem(
+  item: Pick<AgendaItemRow, "generatedForDocumentId">,
+  documentId: string | null,
+): void {
+  if (isAutoItem(item) && item.generatedForDocumentId !== documentId) {
+    fail(422, AUTO_ITEM_REFUSED_MESSAGE, { reason: AUTO_ITEM_REFUSED_REASON });
+  }
+}
+
+/**
+ * The agenda item a document moves to, read under the assembly lock so
+ * neither an agenda delete nor a change of what the item accepts (both
+ * under lockAssembly) can happen between this check and the commit. A
+ * member moves a document only to an item that takes its kind.
  */
 async function requireAgendaTarget(
   executor: Executor,
   assemblyId: string,
   agendaItemId: string,
   manager: boolean,
-): Promise<void> {
+  kind: DocumentKind,
+  documentId: string,
+): Promise<AgendaItemRow> {
   const [item] = await executor
-    .select({ acceptsSubmissions: agendaItems.acceptsSubmissions })
+    .select()
     .from(agendaItems)
     .where(
       and(
@@ -1291,17 +1400,43 @@ async function requireAgendaTarget(
       ),
     );
   if (!item) fail(404, "Punto no encontrado");
-  if (!manager && !item.acceptsSubmissions) {
-    fail(
-      403,
-      "Este punto del orden del día no admite documentos de los miembros",
-    );
-  }
+  requireNotOthersAutoItem(item, documentId);
+  if (!manager) requireSubmissionTarget(item, kind);
+  return item;
 }
 
 /**
+ * The item whose submission rules bind a document where it hangs now: the
+ * item itself, or its parent when the item is the document's automatic
+ * sub-item. Null when no such item exists.
+ */
+async function loadSubmissionContainer(
+  executor: Executor,
+  document: Pick<DocumentRow, "id" | "agendaItemId">,
+): Promise<AgendaItemRow | null> {
+  const [item] = await executor
+    .select()
+    .from(agendaItems)
+    .where(eq(agendaItems.id, document.agendaItemId));
+  if (!item) return null;
+  if (item.generatedForDocumentId !== document.id || !item.parentId) {
+    return item;
+  }
+  const [parent] = await executor
+    .select()
+    .from(agendaItems)
+    .where(eq(agendaItems.id, item.parentId));
+  return parent ?? null;
+}
+
+/** What a presenter reads when a PDF is refused (fileFormatRefused). */
+export const FILE_FORMAT_REFUSED_MESSAGE =
+  "Este tipo de documento admite enmiendas y se presenta como texto en la plataforma. Solo Secretaría puede subirlo en PDF.";
+
+/**
  * Updates the metadata of a document. Presenters may change title, summary,
- * kind, format (text or PDF, until it is published), agenda item and
+ * kind, format (text or PDF, until it is published; a PDF only for the types
+ * that take no amendments), agenda item and
  * presenters (planPresenters) of their draft;
  * everything else needs document:manage. The slug never changes, since it is
  * part of the URLs already shared.
@@ -1332,15 +1467,19 @@ export async function updateDocument(
   );
   await requireMembers(added);
 
+  // A move or a new title may write agenda rows: the automatic sub-item of
+  // the document is created, removed or renamed with it.
+  const writesAgenda =
+    (body.agendaItemId !== undefined &&
+      body.agendaItemId !== ctx.document.agendaItemId) ||
+    (body.title !== undefined && body.title !== ctx.document.title);
+
   await db.transaction(async (tx) => {
-    // A move takes the assembly before the document ("Row locks"). The share
-    // lock conflicts with the NO KEY UPDATE of an agenda delete, so the two
-    // serialize: the delete then finds the document under its new item and
-    // refuses (hasProtectedDocuments) instead of cascading to it, or the move
-    // finds its target gone (requireAgendaTarget).
-    if (body.agendaItemId !== undefined) {
-      await shareLockAssembly(tx, assembly.id);
-    }
+    // Agenda writes take the assembly before the document ("Row locks"), as
+    // the agenda endpoints do, so the two serialize: an agenda delete then
+    // finds the document under its new item and takes it into account, or
+    // the move finds its target gone (requireAgendaTarget).
+    if (writesAgenda) await lockAssembly(tx, assembly.id);
     const current = await lockDocument(tx, ctx.document.id);
     assertOptimisticLock(
       body.updatedAt,
@@ -1349,8 +1488,16 @@ export async function updateDocument(
     );
     requireDocumentEditor(actor, current);
 
-    const changed = changedFields(current, body);
+    let changed = changedFields(current, body);
     if (changed.length === 0) return;
+    // The row changed since it was resolved in a way the optimistic lock
+    // did not catch: never write the agenda without the assembly lock.
+    if (
+      !writesAgenda &&
+      (changed.includes("title") || changed.includes("agendaItemId"))
+    ) {
+      fail(409, STALE_DOCUMENT_MESSAGE);
+    }
     // Published text (or PDF) is what amendments and the vote refer to.
     if (changed.includes("format") && isTextFrozen(current)) {
       fail(
@@ -1359,15 +1506,82 @@ export async function updateDocument(
       );
     }
     const format = body.format ?? current.format;
-    if (changed.includes("agendaItemId")) {
-      await requireAgendaTarget(tx, assembly.id, body.agendaItemId!, manager);
+    // A presenter never ends with a PDF of a type that takes amendments,
+    // by switching the format or by changing the type of a PDF.
+    if (
+      fileFormatRefused({
+        manager,
+        current: { kind: current.kind, format: current.format },
+        next: {
+          kind: changed.includes("kind") ? body.kind! : current.kind,
+          format,
+        },
+      })
+    ) {
+      fail(422, FILE_FORMAT_REFUSED_MESSAGE, {
+        reason: FILE_FORMAT_REFUSED_REASON,
+      });
     }
-
+    const nextKind = changed.includes("kind") ? body.kind! : current.kind;
     const patch: Partial<typeof documents.$inferInsert> = {};
     if (changed.includes("title")) patch.title = body.title;
     if (changed.includes("summary")) patch.summary = body.summary ?? null;
-    if (changed.includes("agendaItemId"))
-      patch.agendaItemId = body.agendaItemId;
+
+    // The automatic sub-item the document leaves behind (removed once it is
+    // empty) and the one it gets under an item that accepts submissions.
+    // `keptItem` is its automatic sub-item when that one stays because it
+    // holds something else: it stops being the document's.
+    let leftItem: AgendaItemRow | null = null;
+    let keptItem: AgendaItemRow | null = null;
+    let newItem: AgendaItemRow | null = null;
+    if (changed.includes("agendaItemId")) {
+      const target = await requireAgendaTarget(
+        tx,
+        assembly.id,
+        body.agendaItemId!,
+        manager,
+        nextKind,
+        current.id,
+      );
+      const [here] = await tx
+        .select()
+        .from(agendaItems)
+        .where(eq(agendaItems.id, current.agendaItemId));
+      const ownItem =
+        here && here.generatedForDocumentId === current.id ? here : null;
+      if (ownItem && ownItem.parentId === target.id) {
+        // Picking the item its own sub-item hangs from moves nothing,
+        // whatever else that sub-item holds.
+        changed = changed.filter((key) => key !== "agendaItemId");
+        if (changed.length === 0) return;
+      } else {
+        leftItem = await findRemovableAutoItem(tx, current);
+        if (!leftItem) keptItem = ownItem;
+      }
+      if (!changed.includes("agendaItemId")) {
+        // Nothing moves.
+      } else if (target.acceptsSubmissions) {
+        newItem = await insertAutoItem(tx, {
+          assemblyId: assembly.id,
+          parentId: target.id,
+          title: patch.title ?? current.title,
+        });
+        patch.agendaItemId = newItem.id;
+      } else {
+        patch.agendaItemId = target.id;
+      }
+    } else if (!manager && changed.includes("kind")) {
+      // A member's document stays of a kind its item takes.
+      const container = await loadSubmissionContainer(tx, current);
+      if (
+        container?.acceptsSubmissions &&
+        !itemAcceptsKind(container, nextKind)
+      ) {
+        fail(422, SUBMISSION_KIND_REFUSED_MESSAGE, {
+          reason: SUBMISSION_KIND_REFUSED_REASON,
+        });
+      }
+    }
     if (changed.includes("kind")) {
       patch.kind = body.kind;
       if (!manager) {
@@ -1491,6 +1705,38 @@ export async function updateDocument(
     await tx.update(documents).set(patch).where(eq(documents.id, current.id));
     if (presenters) {
       await saveCoProponents(tx, current.id, presenters.coProponentMemberIds);
+    }
+    if (newItem) {
+      await bindAutoItem(tx, {
+        assemblyId: assembly.id,
+        item: newItem,
+        documentId: current.id,
+        actor,
+      });
+    }
+    if (leftItem) {
+      await removeAutoItem(tx, {
+        assemblyId: assembly.id,
+        item: leftItem,
+        documentId: current.id,
+        actor,
+      });
+    }
+    if (keptItem) {
+      await unbindAutoItem(tx, {
+        assemblyId: assembly.id,
+        item: keptItem,
+        documentId: current.id,
+        actor,
+      });
+    }
+    if (patch.title !== undefined && patch.agendaItemId === undefined) {
+      await syncAutoItemTitle(tx, {
+        assemblyId: assembly.id,
+        document: current,
+        title: patch.title,
+        actor,
+      });
     }
     // The amendments already answered follow the new rule: accepted ones
     // are incorporated, or the incorporated ones go back to the vote.
@@ -1673,7 +1919,10 @@ export async function submitDocument(
       fail(409, "Solo se pueden presentar borradores");
     if (!manager) {
       const [item] = await tx
-        .select({ acceptsSubmissions: agendaItems.acceptsSubmissions })
+        .select({
+          acceptsSubmissions: agendaItems.acceptsSubmissions,
+          generatedForDocumentId: agendaItems.generatedForDocumentId,
+        })
         .from(agendaItems)
         .where(eq(agendaItems.id, current.agendaItemId));
       if (item && presentationClosed(current, item, milestones)) {
@@ -1856,73 +2105,164 @@ export async function hasAnyAmendment(
   return row !== undefined;
 }
 
+/** What a deleted document leaves on disk, removed once the delete commits. */
+export interface DeletedDocumentFiles {
+  fileUrl: string | null;
+  images: { id: string; mimeType: string }[];
+}
+
+/**
+ * Removes a document inside a transaction, whoever asked for it: the
+ * projection stops showing it (clearLiveDocument), the votes of its final
+ * vote go (their subject would point at nothing), the row goes with its
+ * versions, co-presenters and images (cascade), and `document_deleted`
+ * closes its history. Its automatic sub-item, if it has one left empty,
+ * goes too unless `keepAgendaItem` (the agenda delete removes the items
+ * itself).
+ *
+ * The caller checks whether the document may go (deleteBlocker, or the
+ * amendments rule of the agenda delete) and holds the assembly lock
+ * (lockAssembly) and the document FOR UPDATE, in that order. Returns what
+ * to remove from disk after the commit (removeStoredPdf, removeImageFiles).
+ */
+export async function removeDocument(
+  tx: Executor,
+  input: {
+    assemblyId: string;
+    document: PresentedDocumentRow;
+    actor: Actor;
+    keepAgendaItem?: boolean;
+  },
+): Promise<DeletedDocumentFiles> {
+  const { assemblyId, document, actor } = input;
+  const autoItem = input.keepAgendaItem
+    ? null
+    : await findRemovableAutoItem(tx, document);
+  const images = await tx
+    .select({ id: documentImages.id, mimeType: documentImages.mimeType })
+    .from(documentImages)
+    .where(eq(documentImages.documentId, document.id));
+  await clearLiveDocument(tx, {
+    assemblyId,
+    documentId: document.id,
+    actor,
+  });
+  await tx
+    .delete(votes)
+    .where(
+      and(eq(votes.subjectType, "document"), eq(votes.subjectId, document.id)),
+    );
+  await tx.delete(documents).where(eq(documents.id, document.id));
+  await recordEvent(tx, {
+    assemblyId,
+    entityType: "document",
+    entityId: document.id,
+    documentId: document.id,
+    type: "document_deleted",
+    // An explicit allowlist (never the correction note): enough to say
+    // what was deleted and to tell its presenters once the row is gone.
+    payload: {
+      title: document.title,
+      kind: document.kind,
+      format: document.format,
+      reference: document.reference,
+      status: document.status,
+      agendaItemId: document.agendaItemId,
+      proponentMemberId: document.proponentMemberId,
+      coProponentMemberIds: document.coProponentMemberIds,
+      submittedByUserId: document.submittedByUserId,
+    },
+    actor,
+  });
+  if (autoItem) {
+    await removeAutoItem(tx, {
+      assemblyId,
+      item: autoItem,
+      documentId: document.id,
+      actor,
+    });
+  }
+  return { fileUrl: document.fileUrl, images };
+}
+
+/**
+ * The documents under these agenda items, locked FOR UPDATE in id order
+ * (after the assembly, "Row locks"), with their co-presenters and how many
+ * amendment rows of any status each one has. For the agenda delete, which
+ * removes them all or none.
+ */
+export async function lockDocumentsUnder(
+  tx: Executor,
+  agendaItemIds: string[],
+): Promise<{ document: PresentedDocumentRow; amendments: number }[]> {
+  if (agendaItemIds.length === 0) return [];
+  const rows = await tx
+    .select()
+    .from(documents)
+    .where(inArray(documents.agendaItemId, agendaItemIds))
+    .orderBy(asc(documents.id))
+    .for("update");
+  if (rows.length === 0) return [];
+  const ids = rows.map((row) => row.id);
+  const [coProponents, totals] = await Promise.all([
+    loadCoProponentIds(ids, tx),
+    tx
+      .select({ documentId: amendments.documentId, total: count() })
+      .from(amendments)
+      .where(inArray(amendments.documentId, ids))
+      .groupBy(amendments.documentId),
+  ]);
+  const amendmentTotals = new Map(
+    totals.map((row) => [row.documentId, Number(row.total)]),
+  );
+  return rows.map((row) => ({
+    document: {
+      ...row,
+      coProponentMemberIds: coProponents.get(row.id) ?? [],
+    },
+    amendments: amendmentTotals.get(row.id) ?? 0,
+  }));
+}
+
 /**
  * Deletes a document (document:manage) unless deleteBlocker refuses it: a
- * final vote, or a published text with amendments. Its versions and
- * co-presenters go with it (cascade), and so do the votes of a final vote
- * that was annulled, whose subject would otherwise point at nothing. The
- * events stay in the history, closed by `document_deleted`.
+ * final vote, or a published text with amendments. What goes with it is in
+ * removeDocument; the events stay in the history, closed by
+ * `document_deleted`.
  *
- * The document is locked FOR UPDATE before counting its amendments: an
+ * The assembly is locked first: the delete may clear the live projection
+ * and remove the document's automatic sub-item, an agenda write. The
+ * document is locked FOR UPDATE before counting its amendments: an
  * amendment insert takes FOR KEY SHARE on it, so one in flight finishes
  * first and is counted, and one that starts later fails its foreign key.
+ * Returns the image files to remove (removeImageFiles); the PDF is already
+ * removed.
  */
 export async function deleteDocument(
   ctx: DocumentRouteContext,
-): Promise<{ success: true }> {
+): Promise<{ success: true; images: DeletedDocumentFiles["images"] }> {
   const { actor, assembly } = ctx;
   if (!canManageDocuments(actor)) {
     fail(403, "No tienes permiso para eliminar documentos");
   }
 
-  const fileUrl = await db.transaction(async (tx) => {
-    // A published document may be on the live projection, which the delete
-    // clears (clearLiveDocument): take the assembly first, as every path
-    // that moves the projection does.
-    await shareLockAssembly(tx, assembly.id);
+  const files = await db.transaction(async (tx) => {
+    await lockAssembly(tx, assembly.id);
     const current = await lockDocument(tx, ctx.document.id, "update");
     const blocker = deleteBlocker(
       current,
       await hasAnyAmendment(tx, current.id),
     );
     if (blocker) fail(409, blocker);
-    await clearLiveDocument(tx, {
+    return removeDocument(tx, {
       assemblyId: assembly.id,
-      documentId: current.id,
+      document: current,
       actor,
     });
-    await tx
-      .delete(votes)
-      .where(
-        and(eq(votes.subjectType, "document"), eq(votes.subjectId, current.id)),
-      );
-    await tx.delete(documents).where(eq(documents.id, current.id));
-    await recordEvent(tx, {
-      assemblyId: assembly.id,
-      entityType: "document",
-      entityId: current.id,
-      documentId: current.id,
-      type: "document_deleted",
-      // An explicit allowlist (never the correction note): enough to say
-      // what was deleted and to tell its presenters once the row is gone.
-      payload: {
-        title: current.title,
-        kind: current.kind,
-        format: current.format,
-        reference: current.reference,
-        status: current.status,
-        agendaItemId: current.agendaItemId,
-        proponentMemberId: current.proponentMemberId,
-        coProponentMemberIds: current.coProponentMemberIds,
-        submittedByUserId: current.submittedByUserId,
-      },
-      actor,
-    });
-    return current.fileUrl;
   });
 
-  await removeStoredPdf(fileUrl);
-  return { success: true };
+  await removeStoredPdf(files.fileUrl);
+  return { success: true, images: files.images };
 }
 
 // Live projection -----------------------------------------------------------
@@ -1941,10 +2281,11 @@ type LivePointer = Record<(typeof LIVE_FIELDS)[number], string | null>;
  * them in this order, so two transactions never wait on each other:
  *
  * 1. the assembly: FOR SHARE (shareLockAssembly) in the transactions that
- *    move the live projection from a document or amendment path and in
- *    updateDocument when the body sets an agenda item (so a move serializes
- *    with an agenda delete of its target), NO KEY UPDATE in lockAssembly
- *    (agenda, calendar, PUT .../live-state);
+ *    move the live projection from a document or amendment path, NO KEY
+ *    UPDATE in lockAssembly (agenda, calendar, PUT .../live-state, and the
+ *    document paths that may write agenda rows: creating a document,
+ *    deleting one, and updateDocument when it moves or renames one, so they
+ *    serialize with an agenda delete);
  * 2. the document: NO KEY UPDATE, or FOR SHARE in the amendment paths
  *    (lockDocument here and in amendments.ts);
  * 3. amendment rows, in id order (lockAmendments in amendments.ts);
@@ -1953,7 +2294,7 @@ type LivePointer = Record<(typeof LIVE_FIELDS)[number], string | null>;
  *
  * Explicit locks are NO KEY UPDATE or FOR SHARE, never FOR UPDATE, except on
  * a row the transaction deletes (deleteDocument, and the agenda delete, which
- * locks the documents its cascade removes after the assembly). The foreign
+ * locks the documents it removes after the assembly, in id order). The foreign
  * key checks of an insert or update take FOR KEY SHARE on the rows they
  * reference: the assembly for events, votes and decisions, the document for
  * versions, amendments and live_state, the amendment for relations, sources

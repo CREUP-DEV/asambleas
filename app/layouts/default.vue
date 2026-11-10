@@ -78,11 +78,14 @@ useHead({
       <!--
         Panels fill <main> and scroll their own body. The overflow is a
         safety net for pages that render plain content instead of a panel.
+        Each panel shows the breadcrumb row (ShellBreadcrumbs) under its
+        navbar; its height is set here, so the row and the pages that size
+        themselves to the viewport agree on it.
       -->
       <main
         id="main-content"
         tabindex="-1"
-        class="flex min-w-0 flex-1 overflow-y-auto focus:outline-none print:block print:overflow-visible"
+        class="flex min-w-0 flex-1 overflow-y-auto [--shell-breadcrumb-height:2.5rem] focus:outline-none print:block print:overflow-visible"
       >
         <slot />
       </main>
