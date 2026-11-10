@@ -3101,6 +3101,8 @@
       "file": "PDF document",
       "fileDescription": "This document was uploaded as a PDF and cannot be amended on the platform.",
       "openPdf": "Open the PDF",
+      "openPdfTab": "Open in a new tab",
+      "pdfFrame": "PDF of “{title}”",
       "unpublished": "Unpublished document",
       "unpublishedDescription": "Amendments can be submitted once the Secretariat publishes it.",
       "empty": "The document has no text yet",

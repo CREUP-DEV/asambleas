@@ -1299,27 +1299,13 @@ const filteredBlockLabel = computed(() =>
       </p>
 
       <!-- Uploaded PDF -->
-      <CommonEmptyState
+      <DocumentPdfViewer
         v-if="document.format === 'file'"
-        icon="i-lucide-file-text"
-        :title="t('workspace.text.file')"
-        :description="
-          document.fileUrl
-            ? t('workspace.text.fileDescription')
-            : t('workspace.text.filePending')
-        "
-        variant="outline"
-      >
-        <template v-if="document.fileUrl" #action>
-          <UButton
-            :to="document.fileUrl"
-            external
-            target="_blank"
-            icon="i-lucide-external-link"
-            :label="t('workspace.text.openPdf')"
-          />
-        </template>
-      </CommonEmptyState>
+        :url="document.fileUrl"
+        :title="document.title"
+        :description="t('workspace.text.fileDescription')"
+        :pending-description="t('workspace.text.filePending')"
+      />
 
       <!-- Not published yet -->
       <template v-else-if="!isPublished">
