@@ -18,11 +18,12 @@ import type { AgendaRootChangeRunner } from "~/utils/agendaTree";
  * page refetches.
  *
  * "¿Los miembros presentan documentos aquí?" (No / Sí) says whether the item
- * takes documents from members. With Sí, the kinds it takes are chips in
- * view: "Todos los tipos" or the ones ticked, the usual ones first and the
- * rest behind "Más tipos". Each document presented there gets a sub-item of
- * its own, which the form says. The form of such an automatic sub-item says
- * that its title follows the document's until it is changed here.
+ * takes documents from members, and each choice says what it does to the
+ * agenda: with Sí every document added there gets a sub-item of its own;
+ * with No the Secretaría adds one or several straight to the item. With Sí,
+ * the kinds it takes are one select, the usual ones first; none chosen
+ * means every kind. The form of an automatic sub-item says that its title
+ * follows the document's until it is changed here.
  */
 const props = withDefaults(
   defineProps<{
@@ -80,24 +81,6 @@ const state = reactive<ItemForm>({
   submissionKinds: [],
 });
 const saving = ref(false);
-/** The kinds beyond the usual ones are in view. */
-const moreKindsOpen = ref(false);
-/**
- * The kinds that show without unfolding beyond the usual ones: the ones
- * stored when the form opened, and the ones ticked since, added when the
- * list folds so a ticked kind never goes out of view.
- */
-const storedKinds = shallowRef<DocumentKind[]>([]);
-
-function toggleMoreKinds(): void {
-  if (moreKindsOpen.value) {
-    storedKinds.value = [
-      ...new Set([...storedKinds.value, ...state.submissionKinds]),
-    ];
-  }
-  moreKindsOpen.value = !moreKindsOpen.value;
-}
-
 watch(
   open,
   (isOpen) => {
@@ -105,9 +88,7 @@ watch(
     state.title = props.item?.title ?? "";
     state.description = props.item?.description ?? "";
     state.acceptsSubmissions = props.item?.acceptsSubmissions ?? false;
-    storedKinds.value = [...(props.item?.submissionKinds ?? [])];
-    state.submissionKinds = [...storedKinds.value];
-    moreKindsOpen.value = false;
+    state.submissionKinds = [...(props.item?.submissionKinds ?? [])];
   },
   { immediate: true },
 );
@@ -137,40 +118,23 @@ const submissionItems = computed(() => [
 ]);
 const choiceCardsUi = { fieldset: "grid gap-2 sm:grid-cols-2" };
 
-/** Stands for "every kind" among the chips: no kind is stored then. */
-const ALL_KINDS = "__all__";
-type KindChip = DocumentKind | typeof ALL_KINDS;
-
-const kindGroups = computed(() => containerKindGroups(storedKinds.value));
-
-const kindChips = computed<{ label: string; value: KindChip }[]>(() => [
-  { label: t("agenda.container.allKinds"), value: ALL_KINDS },
-  ...[
-    ...kindGroups.value.common,
-    ...(moreKindsOpen.value ? kindGroups.value.others : []),
-  ].map((kind) => ({
+/** Every kind, the usual ones first. None chosen means all of them. */
+const kindItems = computed(() => {
+  const groups = containerKindGroups();
+  return [...groups.common, ...groups.others].map((kind) => ({
     label: t(`agenda.documentKinds.${kind}`),
     value: kind,
-  })),
-]);
-
-/** "Todos los tipos" is ticked while no kind is. */
-const chosenChips = computed<KindChip[]>(() =>
-  state.submissionKinds.length === 0 ? [ALL_KINDS] : state.submissionKinds,
-);
-
-/**
- * Ticking "Todos los tipos" clears the kinds, ticking a kind unticks it,
- * and unticking the last kind goes back to all.
- */
-function onKindChips(values: KindChip[]): void {
-  const pickedAll =
-    values.includes(ALL_KINDS) && state.submissionKinds.length > 0;
-  state.submissionKinds = pickedAll
-    ? []
-    : DOCUMENT_KINDS.filter((kind) => values.includes(kind));
-}
-const kindChipsUi = { fieldset: "flex flex-wrap gap-2" };
+  }));
+});
+/** Stored in the order of the catalogue, whatever the order of the clicks. */
+const chosenKinds = computed<DocumentKind[]>({
+  get: () => state.submissionKinds,
+  set: (values) => {
+    state.submissionKinds = DOCUMENT_KINDS.filter((kind) =>
+      values.includes(kind),
+    );
+  },
+});
 
 /** An automatic sub-item: created for a document presented in its parent. */
 const autoHint = computed(() => {
@@ -316,46 +280,20 @@ async function onSubmit(event: FormSubmitEvent<ItemForm>) {
         <template v-if="state.acceptsSubmissions">
           <UFormField
             :label="t('agenda.container.kinds')"
+            :help="t('agenda.container.kindsHelp')"
             name="submissionKinds"
           >
-            <UCheckboxGroup
-              :model-value="chosenChips"
-              :items="kindChips"
+            <USelectMenu
+              v-model="chosenKinds"
+              :items="kindItems"
               value-key="value"
-              variant="card"
-              size="sm"
-              orientation="horizontal"
-              :ui="kindChipsUi"
+              multiple
+              :search-input="false"
+              :placeholder="t('agenda.container.allKinds')"
               class="w-full"
               data-testid="agenda-container-kinds"
-              @update:model-value="onKindChips($event as KindChip[])"
-            />
-            <UButton
-              v-if="kindGroups.others.length > 0"
-              color="neutral"
-              variant="link"
-              size="sm"
-              class="mt-2 px-0"
-              :icon="
-                moreKindsOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
-              "
-              :label="
-                moreKindsOpen
-                  ? t('agenda.container.fewerKinds')
-                  : t('agenda.container.moreKinds')
-              "
-              :aria-expanded="moreKindsOpen"
-              @click="toggleMoreKinds"
             />
           </UFormField>
-          <p class="text-muted flex items-start gap-2 text-sm">
-            <UIcon
-              name="i-lucide-list-tree"
-              class="mt-0.5 size-4 shrink-0"
-              aria-hidden="true"
-            />
-            <span>{{ t("agenda.container.ownItem") }}</span>
-          </p>
         </template>
       </UForm>
     </template>
