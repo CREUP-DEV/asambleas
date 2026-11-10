@@ -6,7 +6,15 @@ import {
   LIST_MARKERS,
   MARK_TYPES,
 } from "../../types/content";
-import type { Block, BlockCell, BlockImage, Mark } from "../../types/content";
+import type {
+  Block,
+  BlockCell,
+  BlockFormat,
+  BlockImage,
+  Mark,
+  ReplaceOp,
+} from "../../types/content";
+import { normalizeBlockFormat } from "../content/format";
 import { isSafeHref } from "../content/render";
 
 export const BLOCK_TEXT_MAX_LENGTH = 20_000;
@@ -29,6 +37,24 @@ const markSchema = z.object({
   to: z.number().int().min(0),
   href: z.string().max(2000).optional(),
 });
+
+/**
+ * Marks clipped to a text of `length`, empty ones dropped, and links kept
+ * only with an address that is safe to follow.
+ */
+function cleanMarks(marks: z.infer<typeof markSchema>[], length: number) {
+  return marks
+    .map((mark): Mark => ({
+      type: mark.type,
+      from: Math.min(mark.from, length),
+      to: Math.min(mark.to, length),
+      ...(mark.type === "link" && isSafeHref(mark.href)
+        ? { href: mark.href.trim() }
+        : {}),
+    }))
+    .filter((mark) => mark.from < mark.to)
+    .filter((mark) => mark.type !== "link" || "href" in mark);
+}
 
 const spanSchema = z.number().int().min(2).max(100).optional();
 
@@ -105,17 +131,7 @@ export const blockSchema = z
       return result;
     }
     const text = normalizeText(block.text);
-    const marks: Mark[] = block.marks
-      .map((mark) => ({
-        type: mark.type,
-        from: Math.min(mark.from, text.length),
-        to: Math.min(mark.to, text.length),
-        ...(mark.type === "link" && isSafeHref(mark.href)
-          ? { href: mark.href.trim() }
-          : {}),
-      }))
-      .filter((mark) => mark.from < mark.to)
-      .filter((mark) => mark.type !== "link" || "href" in mark);
+    const marks = cleanMarks(block.marks, text.length);
     const result: Block = { id: block.id, type: block.type, text, marks };
     if (block.type === "heading") result.level = block.level ?? 1;
     if (block.type === "list_item") {
@@ -142,15 +158,54 @@ export const blocksSchema = z
     { message: "duplicate_block_id" },
   );
 
-export const amendmentOpSchema = z.discriminatedUnion("op", [
-  z.object({
+/**
+ * The new format of a block (BlockFormat), stored with only the fields its
+ * type keeps, like a block's. Never an image.
+ */
+const blockFormatSchema = z
+  .object({
+    type: z.enum(["paragraph", "heading", "list_item", "quote"]),
+    level: z.number().int().min(0).max(6).optional(),
+    list: z.enum(["bullet", "ordered"]).optional(),
+    marker: z.enum(LIST_MARKERS).optional(),
+    start: z.number().int().min(0).max(99_999).optional(),
+    align: z.enum(BLOCK_ALIGNMENTS).optional(),
+  })
+  .transform((format): BlockFormat => normalizeBlockFormat(format));
+
+/**
+ * A replacement, with the formatting it may bring (ReplaceOp): `marks` for
+ * its new text, cleaned like a block's, or `block` for its whole block.
+ * Operations stored before formatting could be amended have neither, and
+ * come out as they went in.
+ */
+const replaceOpSchema = z
+  .object({
     op: z.literal("replace"),
     blockId: blockIdSchema,
     from: z.number().int().min(0),
     to: z.number().int().min(0),
     text: z.string().max(BLOCK_TEXT_MAX_LENGTH).transform(normalizeText),
     baseText: z.string().max(BLOCK_TEXT_MAX_LENGTH),
-  }),
+    marks: z.array(markSchema).max(500).optional(),
+    block: blockFormatSchema.optional(),
+  })
+  .transform((op): ReplaceOp => {
+    const result: ReplaceOp = {
+      op: "replace",
+      blockId: op.blockId,
+      from: op.from,
+      to: op.to,
+      text: op.text,
+      baseText: op.baseText,
+    };
+    if (op.marks) result.marks = cleanMarks(op.marks, op.text.length);
+    if (op.block) result.block = op.block;
+    return result;
+  });
+
+export const amendmentOpSchema = z.discriminatedUnion("op", [
+  replaceOpSchema,
   z.object({
     op: z.literal("insert"),
     afterBlockId: blockIdSchema.nullable(),

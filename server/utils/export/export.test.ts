@@ -11,6 +11,7 @@ import { create as createFont } from "fontkit";
 import sharp from "sharp";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
+import { FORMAT_CHANGE_CODES } from "../../../shared/types/content";
 import { consolidate } from "../../../shared/utils/content/consolidate";
 import {
   BRAND_FILES,
@@ -26,7 +27,12 @@ import {
   blocksToPdf,
   pdfImageKey,
 } from "./content";
-import { createTranslator, formatExportDateRange, interpolate } from "./labels";
+import {
+  createFormatLabeller,
+  createTranslator,
+  formatExportDateRange,
+  interpolate,
+} from "./labels";
 import {
   amendmentCodes,
   annexDisplayCode,
@@ -520,6 +526,92 @@ describe("annotatedToPdf", () => {
     const deleted = list.ol[2] as { listType?: string; counter?: number };
     expect(deleted.listType).toBe("none");
     expect((list.ol[3] as { counter?: number }).counter).toBe(2);
+  });
+
+  it("says in words what a change of format does", () => {
+    const formatted = consolidate(base, [
+      {
+        id: "f1",
+        ops: [
+          {
+            op: "replace",
+            blockId: "b2",
+            from: 12,
+            to: 17,
+            text: "final",
+            baseText: "final",
+            marks: [{ type: "bold", from: 0, to: 5 }],
+          },
+          {
+            op: "replace",
+            blockId: "l1",
+            from: 0,
+            to: 0,
+            text: "",
+            baseText: "",
+            block: { type: "heading", level: 2 },
+          },
+        ],
+      },
+    ]).annotated;
+    for (const locale of ["es", "en"] as const) {
+      const es = locale === "es";
+      const content = annotatedToPdf(formatted, {
+        links: new LinkRegistry(),
+        codeOf: () => "CEUM 2",
+        formatLabel: createFormatLabeller(locale),
+      });
+      // The text keeps its place over a dotted line, in its new format,
+      // followed by the change and the amendment's code.
+      const pieces = (content[content.length - 1] as ContentText)
+        .text as ContentText[];
+      const at = pieces.findIndex((piece) => piece.text === "final");
+      expect(pieces[at]).toMatchObject({
+        bold: true,
+        decoration: "underline",
+        decorationStyle: "dotted",
+      });
+      expect(pieces[at + 1]).toMatchObject({
+        text: es ? " (pasa a negrita)" : " (becomes bold)",
+        style: "formatNote",
+      });
+      expect(pieces[at + 2]).toMatchObject({ text: "CEUM 2", sup: true });
+      // Written once: never struck and written again.
+      expect(pieces.filter((piece) => piece.text === "final")).toHaveLength(1);
+
+      // The list item is a heading now, and starts by saying so. The words
+      // stay out of its bookmark.
+      const heading = content[3] as ContentText;
+      expect(heading.style).toBe("heading2");
+      expect((heading.text as ContentText[]).slice(0, 2)).toMatchObject([
+        {
+          text: es
+            ? "[pasa a título de nivel 2]"
+            : "[becomes a level 2 heading]",
+          style: "formatNote",
+        },
+        { text: "CEUM 2", sup: true },
+      ]);
+      expect(heading.outlineText).toBeUndefined();
+    }
+    const outlined = annotatedToPdf(formatted, {
+      links: new LinkRegistry(),
+      outline: {},
+      codeOf: () => "CEUM 2",
+      formatLabel: createFormatLabeller("es"),
+    });
+    expect((outlined[3] as ContentText).outlineText).toBe("Primera fase");
+  });
+
+  it("names every change of format in both languages", () => {
+    for (const locale of ["es", "en"] as const) {
+      const label = createFormatLabeller(locale);
+      for (const code of FORMAT_CHANGE_CODES) {
+        const text = label({ code, value: 3 });
+        expect(text, `${locale} ${code}`).not.toBe("");
+        expect(text).not.toContain("{");
+      }
+    }
   });
 });
 

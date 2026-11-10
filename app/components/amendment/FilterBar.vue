@@ -7,20 +7,33 @@ import {
 import type { MemberRef } from "~~/shared/types/api";
 import {
   activeAmendmentFilterCount,
+  AMENDMENT_QUICK_FILTERS,
   AMENDMENT_REVIEW_FILTERS,
+  amendmentQuickFilterOf,
+  applyAmendmentQuickFilter,
   emptyAmendmentFilters,
   type AmendmentFilters,
   type AmendmentLateFilter,
+  type AmendmentQuickFilter,
   type AmendmentReviewFilter,
 } from "~/composables/amendment/workspace";
 
 /**
- * Search box plus a popover with the amendment filters: where it stands,
- * where it stands with the Secretaría (when the actor sees amendments that
- * are not public; "Devueltas para corregir" only when some were sent back
- * and the actor cannot edit them), kind, who presents it, on time or late,
- * and "only mine". A block filter set from the text gutter shows as a
- * removable chip.
+ * What the amendments panel lists, as visible chips: "Todas", "Pendientes"
+ * and "Fuera de plazo" set the filters (applyAmendmentQuickFilter), and
+ * "Mías" switches to the actor's own amendments (`tab`: drafts,
+ * corrections and where the rest stand), with how many wait for them.
+ *
+ * Under them, for the whole list only: the search box and "Más filtros", a
+ * popover with the rest (where it stands, where it stands with the
+ * Secretaría when the actor sees amendments that are not public, with
+ * "Devueltas para corregir" only when some were sent back and the actor
+ * cannot edit them, kind, who presents it, on time or late, and "only
+ * mine"). A block filter set from the text gutter shows as a removable
+ * chip.
+ *
+ * Each chip carries `data-amendment-chip`, so the page can give focus back
+ * to the pressed one.
  */
 const props = withDefaults(
   defineProps<{
@@ -33,16 +46,30 @@ const props = withDefaults(
     showReturnedFilter?: boolean;
     /** Human reference of the filtered block ("¶ 3"). */
     blockLabel?: string | null;
+    /** Offer "Mías" (the actor can amend, or presents some amendment). */
+    showMine?: boolean;
+    /** How many of the actor's own amendments wait for them. */
+    mineWaiting?: number;
+    /** Some of those are corrections the Secretaría asked for. */
+    mineUrgent?: boolean;
+    /** How many amendments the whole list holds. */
+    total?: number | null;
   }>(),
   {
     canFilterMine: false,
     showReviewFilter: false,
     showReturnedFilter: false,
     blockLabel: null,
+    showMine: false,
+    mineWaiting: 0,
+    mineUrgent: false,
+    total: null,
   },
 );
 
 const filters = defineModel<AmendmentFilters>({ required: true });
+/** The whole list, or the actor's own amendments. */
+const tab = defineModel<"all" | "mine">("tab", { default: "all" });
 
 const { t } = useI18n();
 
@@ -88,12 +115,28 @@ const lateItems = computed(() =>
   })),
 );
 
-/** Filters inside the popover (search and block chip are outside). */
+const showingMine = computed(() => props.showMine && tab.value === "mine");
+/** The chip the filters amount to; none while "Mías" is on. */
+const quick = computed(() =>
+  showingMine.value ? null : amendmentQuickFilterOf(filters.value),
+);
+
+function pick(value: AmendmentQuickFilter): void {
+  tab.value = "all";
+  filters.value = applyAmendmentQuickFilter(filters.value, value);
+}
+
+/**
+ * Filters set in the popover (search and block chip are outside), leaving
+ * out what the pressed chip already says.
+ */
 const popoverCount = computed(() =>
   activeAmendmentFilterCount({
     ...filters.value,
     query: "",
     blockId: null,
+    ...(quick.value === "pending" ? { statuses: [] } : {}),
+    ...(quick.value === "late" ? { late: "any" as const } : {}),
   }),
 );
 const anyActive = computed(() => activeAmendmentFilterCount(filters.value) > 0);
@@ -105,7 +148,61 @@ function clearAll(): void {
 
 <template>
   <div class="flex flex-col gap-2">
-    <div class="flex items-center gap-2">
+    <div
+      class="flex flex-wrap items-center gap-1.5"
+      role="group"
+      :aria-label="t('amendment.filters.chipsLabel')"
+    >
+      <UButton
+        v-for="value in AMENDMENT_QUICK_FILTERS"
+        :key="value"
+        size="sm"
+        :color="quick === value ? 'primary' : 'neutral'"
+        :variant="quick === value ? 'subtle' : 'outline'"
+        :aria-pressed="quick === value"
+        data-amendment-chip
+        @click="pick(value)"
+      >
+        {{ t(`amendment.filters.chips.${value}`) }}
+        <span
+          v-if="value === 'all' && total !== null"
+          class="text-muted tabular-nums"
+        >
+          {{ total }}
+        </span>
+      </UButton>
+      <UButton
+        v-if="showMine"
+        size="sm"
+        :color="showingMine ? 'primary' : 'neutral'"
+        :variant="showingMine ? 'subtle' : 'outline'"
+        :aria-pressed="showingMine"
+        :aria-label="
+          mineWaiting > 0
+            ? t(
+                'amendment.filters.chips.mineWaiting',
+                { count: mineWaiting },
+                mineWaiting,
+              )
+            : undefined
+        "
+        data-amendment-chip
+        @click="tab = 'mine'"
+      >
+        {{ t("amendment.filters.chips.mine") }}
+        <UBadge
+          v-if="mineWaiting > 0"
+          size="sm"
+          :color="mineUrgent ? 'warning' : 'neutral'"
+          variant="subtle"
+          class="tabular-nums"
+          :label="String(mineWaiting)"
+          aria-hidden="true"
+        />
+      </UButton>
+    </div>
+
+    <div v-if="!showingMine" class="flex items-center gap-2">
       <UInput
         :model-value="filters.query"
         icon="i-lucide-search"
@@ -245,7 +342,7 @@ function clearAll(): void {
       </UPopover>
     </div>
 
-    <div v-if="filters.blockId" class="flex items-center gap-2">
+    <div v-if="filters.blockId && !showingMine" class="flex items-center gap-2">
       <UBadge
         color="primary"
         variant="subtle"

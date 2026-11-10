@@ -94,6 +94,32 @@
       "previewUnavailableDescription": "Las operaciones de esta enmienda ya no encajan con el texto base del documento.",
       "inserted": "Se añade:",
       "removed": "Se quita:",
+      "formatted": "Cambia el formato:",
+      "format": {
+        "bold_on": "pasa a negrita",
+        "bold_off": "deja de estar en negrita",
+        "italic_on": "pasa a cursiva",
+        "italic_off": "deja de estar en cursiva",
+        "underline_on": "pasa a subrayado",
+        "underline_off": "deja de estar subrayado",
+        "strike_on": "pasa a tachado",
+        "strike_off": "deja de estar tachado",
+        "link_on": "pasa a ser un enlace",
+        "link_off": "deja de ser un enlace",
+        "link_changed": "cambia la dirección del enlace",
+        "paragraph": "pasa a párrafo normal",
+        "heading": "pasa a título de nivel {value}",
+        "quote": "pasa a cita",
+        "bullet_list": "pasa a lista con puntos",
+        "ordered_list": "pasa a lista numerada",
+        "list_level": "pasa al nivel {value} de la lista",
+        "list_marker": "la numeración pasa a ser «{value}»",
+        "list_start": "la numeración empieza en {value}",
+        "list_continue": "la numeración sigue la de antes",
+        "align_start": "pasa a estar alineado a la izquierda",
+        "align_center": "pasa a estar centrado",
+        "align_right": "pasa a estar alineado a la derecha"
+      },
       "fragmentFrom": "{text} (de la enmienda {label})",
       "outline": {
         "button": "Índice",
@@ -1239,16 +1265,11 @@
       "more": "Más"
     },
     "card": {
-      "global": "En todo el texto",
       "sources": "Transacciona {list}",
       "transactedIn": "Transaccionada en {list}",
       "mainAuthor": "principal",
-      "proposedIn": "En la transaccional propuesta {list} | En las transaccionales propuestas {list}",
-      "position": {
-        "accept": "{member} la acepta",
-        "reject": "{member} la rechaza",
-        "transact": "{member} propone transaccional"
-      }
+      "moreAuthors": "y 1 más | y {count} más",
+      "proposedIn": "En la transaccional propuesta {list} | En las transaccionales propuestas {list}"
     },
     "list": {
       "label": "Enmiendas en orden del texto",
@@ -1266,8 +1287,16 @@
     "filters": {
       "search": "Buscar enmiendas",
       "searchPlaceholder": "Código, miembro o justificación",
-      "button": "Filtros",
-      "buttonActive": "Filtros activos: {count}",
+      "button": "Más filtros",
+      "buttonActive": "Más filtros. En uso: {count}",
+      "chipsLabel": "Qué enmiendas ver",
+      "chips": {
+        "all": "Todas",
+        "pending": "Pendientes",
+        "late": "Fuera de plazo",
+        "mine": "Mías",
+        "mineWaiting": "Mías. Hay 1 que espera por ti | Mías. Hay {count} que esperan por ti"
+      },
       "status": "En qué punto está",
       "kind": "Tipo de enmienda",
       "member": "Quién la presenta",
@@ -1295,7 +1324,15 @@
       }
     },
     "detail": {
-      "close": "Cerrar la enmienda",
+      "back": "Volver a la lista",
+      "navLabel": "Pasar a otra enmienda",
+      "position": "{n} de {total}",
+      "whatChanges": "Qué cambia",
+      "why": "Por qué",
+      "showInText": "Ver en el documento",
+      "showDetails": "Ver detalles",
+      "hideDetails": "Ocultar detalles",
+      "history": "Historial",
       "paragraph": "párrafo {n}",
       "changes": "Cambios propuestos",
       "globalReplace": "Sustituye «{find}» por «{replace}» en todo el texto",
@@ -1327,8 +1364,6 @@
       "deleted": "Borrador eliminado",
       "deleteFailed": "No se ha podido eliminar el borrador",
       "submittedDescription": "La revisará antes de que los demás puedan verla.",
-      "showHistory": "Ver el historial",
-      "hideHistory": "Ocultar el historial",
       "presented": "Enmienda presentada",
       "presentedDescription": "Ya la puede ver toda la asamblea.",
       "transact": "Proponer una transaccional con esta enmienda",
@@ -1488,7 +1523,8 @@
         "other": "Cambio registrado",
         "amendment_validated": "Validada por Secretaría",
         "amendment_published": "Publicada",
-        "amendment_correction_requested": "Secretaría pidió una corrección"
+        "amendment_correction_requested": "Secretaría pidió una corrección",
+        "amendment_reclassified": "Secretaría cambió el tipo de enmienda"
       },
       "admissionMethods": {
         "mesa": "Por decisión de la Mesa",
@@ -1535,26 +1571,19 @@
     "composer": {
       "titleNew": "Presentar una enmienda",
       "titleEdit": "Seguir con el borrador",
-      "close": "Cerrar el editor de enmiendas",
+      "close": "Cerrar sin enviar",
       "modes": {
-        "passage": "Cambiar este texto",
-        "delete": "Quitar este texto",
         "global": "Cambiar una palabra en todo el documento",
         "return": "Devolver el documento",
-        "alternative": "Proponer un texto alternativo",
-        "add": "Añadir un párrafo después"
+        "alternative": "Proponer un texto alternativo"
       },
       "modeDescriptions": {
-        "passage": "Escribe el texto tal y como quieres que quede. El cambio se marca solo.",
-        "delete": "Propones quitar los párrafos que has elegido.",
         "global": "La palabra o expresión cambia en todo el documento («y en lo sucesivo»).",
         "return": "Propones devolver el documento a quien lo presentó, sin cambiar el texto. Solo explicas por qué.",
         "alternative": "Propones cambiar el documento entero por un texto nuevo."
       },
-      "editorLabel": "Texto enmendado del pasaje",
+      "editorLabel": "Texto del documento",
       "editorPlaceholder": "Escribe el texto que propones",
-      "editorHint": "Cambia, borra o añade lo que quieras. Lo que no toques se queda como está.",
-      "deleteHint": "Esto es lo que se quitaría del texto.",
       "find": "Término actual",
       "findPlaceholder": "p. ej. Comisión Ejecutiva Ampliada",
       "replace": "Nuevo término",
@@ -1567,12 +1596,12 @@
       "alternativePlaceholder": "Escribe aquí el texto alternativo",
       "copyOriginal": "Partir del texto actual",
       "issues": {
-        "no_selection": "Selecciona antes uno o varios párrafos del texto.",
         "no_changes": "Todavía no has cambiado nada.",
         "find_empty": "Escribe el término que quieres reemplazar.",
         "same_term": "El nuevo término es igual al actual.",
         "no_matches": "El término no aparece en el texto (se buscan palabras completas, distinguiendo mayúsculas).",
-        "alternative_empty": "Escribe el texto alternativo."
+        "alternative_empty": "Escribe el texto alternativo.",
+        "kind_missing": "Elige qué tipo de enmienda es."
       },
       "errorsTitle": "La enmienda no se puede guardar así",
       "justificationPlaceholder": "Explica por qué propones este cambio",
@@ -1581,16 +1610,13 @@
       "onBehalfPlaceholder": "Elige el miembro que la presenta",
       "onBehalfHint": "Para enmiendas dictadas en la sesión. Quedará constancia de quién la registró.",
       "onBehalfRequired": "Indica el miembro que presenta la enmienda.",
-      "coAuthors": "¿La presentas junto con otros miembros?",
-      "coAuthorsHint": "Añádelos solo si la enmienda es conjunta.",
-      "coAuthorsPlaceholder": "Añade miembros (opcional)",
       "memberSearch": "Buscar miembro",
       "lateTitle": "Plazo de enmiendas cerrado",
       "lateWarning": "Llegará fuera de plazo: la Mesa decidirá si la admite.",
       "noMember": "Tu cuenta no está vinculada a ningún miembro",
       "noMemberDescription": "Solo los miembros pueden presentar enmiendas. Contacta con Secretaría si crees que es un error.",
       "saveDraft": "Guardar borrador",
-      "submit": "Enviar a Secretaría",
+      "submit": "Enviar",
       "saved": "Borrador guardado",
       "saveFailed": "No se ha podido guardar la enmienda",
       "submitted": "Enmienda enviada a Secretaría",
@@ -1618,25 +1644,6 @@
       "titleCorrection": "Corregir la enmienda",
       "correctionTitle": "Secretaría te pide que la corrijas",
       "step": "Paso {n}:",
-      "steps": {
-        "what": "Qué quieres hacer",
-        "write": "Escribe cómo quieres que quede",
-        "writeAdd": "Escribe el párrafo nuevo",
-        "writeGlobal": "Qué palabra quieres cambiar",
-        "writeAlternative": "Escribe el texto que propones",
-        "check": "Revisa el cambio",
-        "why": "Explica por qué (justificación)"
-      },
-      "changeChoice": "Cambiar",
-      "hideChoices": "Ocultar opciones",
-      "selectFirst": "Para cambiar o quitar un texto, elige antes el párrafo en el documento.",
-      "advanced": "Enmienda a la totalidad (avanzado)",
-      "totalityLegend": "Enmienda a la totalidad",
-      "addHint": "Escribe el párrafo nuevo debajo del texto actual. Lo que no toques se queda como está.",
-      "justificationHelp": "Es obligatoria para enviarla y ayuda a que todos entiendan tu propuesta.",
-      "moreOptions": "Más opciones: coautores y enmiendas de forma",
-      "formal": "Solo corrige erratas, estilo o numeración",
-      "formalDescription": "Es una enmienda de forma: no cambia el sentido del texto.",
       "reviewNotice": "Secretaría la revisará antes de que los demás puedan verla.",
       "submittedDescription": "La revisará antes de que los demás puedan verla. Puedes seguirla en «Mis enmiendas».",
       "lateKeptTitle": "Llegó fuera de plazo",
@@ -1644,7 +1651,53 @@
       "correctionOnTime": "La enviaste en plazo: aunque el plazo ya haya cerrado, al corregirla sigue contando como presentada a tiempo.",
       "mainAuthor": "Autor principal (responde a las transaccionales)",
       "mainAuthorHint": "Solo el autor principal acepta o rechaza las transaccionales que se propongan sobre esta enmienda. Los demás verán su respuesta.",
-      "mainAuthorRequired": "Elige quién es el autor principal."
+      "mainAuthorRequired": "Elige quién es el autor principal.",
+      "intro": "Cambia, borra o añade lo que quieras, como en cualquier texto. Lo que no toques se queda igual. Todo lo que cambies será una sola enmienda.",
+      "panelLabel": "Datos de la enmienda",
+      "kind": {
+        "question": "¿Qué tipo de enmienda es?",
+        "partial": "Cambia el contenido",
+        "partialHint": "Cambia lo que dice el texto.",
+        "formal": "Solo corrige la forma",
+        "formalHint": "Erratas, estilo o numeración. No cambia lo que dice."
+      },
+      "who": {
+        "question": "¿Quién la presenta?",
+        "solo": "Solo {member}",
+        "soloUnknown": "Solo ese miembro",
+        "others": "Con otros miembros",
+        "othersHint": "La presentáis juntos.",
+        "members": "¿Con quién la presentas?",
+        "placeholder": "Elige los miembros",
+        "onBehalfToggle": "Presentarla en nombre de otro miembro"
+      },
+      "why": {
+        "question": "¿Por qué?",
+        "help": "Hace falta para enviarla."
+      },
+      "changed": "Todavía no has cambiado nada | Has cambiado un párrafo | Has cambiado {count} párrafos",
+      "review": {
+        "action": "Revisar y enviar",
+        "title": "Revisa tu enmienda",
+        "description": "Así verán los demás lo que cambias.",
+        "back": "Volver a editar",
+        "problems": "Antes de guardarla falta esto",
+        "kind": "Tipo",
+        "noKind": "Sin elegir",
+        "who": "La presenta",
+        "noWho": "Sin elegir",
+        "mainMark": "{member} (principal)",
+        "why": "Por qué",
+        "noWhy": "Todavía no has explicado por qué.",
+        "changes": "Qué cambia"
+      },
+      "leave": {
+        "title": "¿Salir sin guardar?",
+        "description": "Si sales ahora, pierdes los cambios que no has guardado.",
+        "stay": "Seguir editando",
+        "discard": "Salir sin guardar",
+        "confirm": "Tienes cambios sin guardar. ¿Quieres salir y perderlos?"
+      }
     },
     "errors": {
       "empty": "La enmienda no propone ningún cambio.",
@@ -1662,13 +1715,38 @@
       "overlapping_ops": "Dos cambios de la enmienda se solapan.",
       "totality_return_ops": "Una enmienda de devolución no puede modificar el texto.",
       "inconsistent_counts": "Los votos emitidos superan a los miembros presentes.",
-      "unknown": "La enmienda no es válida."
+      "unknown": "La enmienda no es válida.",
+      "format_shape": "Un cambio de formato no está bien indicado.",
+      "format_image": "No se puede cambiar el formato de una imagen.",
+      "duplicate_format": "Cambia dos veces el formato del mismo párrafo.",
+      "marks_out_of_range": "Un formato queda fuera del texto que cambia."
     },
     "lateState": {
       "awaiting": "Pendiente de que la asamblea decida tratarla",
       "awaitingSentence": "Está pendiente de que la asamblea decida tratarla. Hasta entonces no se debate ni se vota."
     },
-    "lateAdmitted": "Fuera de plazo · admitida"
+    "lateAdmitted": "Fuera de plazo · admitida",
+    "reclassify": {
+      "label": "Tipo de enmienda",
+      "current": {
+        "partial": "Está como enmienda de contenido. Si solo corrige la forma, puedes cambiarla.",
+        "formal": "Está como enmienda de forma. Si cambia el contenido, puedes cambiarla."
+      },
+      "action": {
+        "formal": "Pasar a enmienda de forma",
+        "partial": "Pasar a enmienda de contenido"
+      },
+      "done": {
+        "formal": "Ahora es una enmienda de forma",
+        "partial": "Ahora es una enmienda de contenido"
+      },
+      "doneDescription": "Queda en el historial y quien la firma lo verá en sus novedades.",
+      "failed": "No se ha podido cambiar el tipo de la enmienda",
+      "changed": {
+        "formal": "Pasa de enmienda de contenido a enmienda de forma",
+        "partial": "Pasa de enmienda de forma a enmienda de contenido"
+      }
+    }
   },
   "admin": {
     "title": "Administración",
@@ -1990,6 +2068,10 @@
         "removed": {
           "sample": "texto suprimido",
           "text": "texto suprimido por una enmienda"
+        },
+        "formatted": {
+          "sample": "texto con otro formato",
+          "text": "texto al que una enmienda cambia el formato; el cambio va a continuación, en letra pequeña"
         },
         "code": "El código en superíndice indica la enmienda que introduce cada cambio. Consulta el anexo."
       },
@@ -2354,6 +2436,8 @@
         "validated": "Se ha validado {amendment}: ya se puede debatir.",
         "published": "Se ha publicado {amendment}: ya la puede leer toda la asamblea.",
         "correction": "Secretaría te pide que corrijas {amendment}. Cuando la tengas, vuelve a enviarla.",
+        "reclassifiedFormal": "Secretaría ha pasado {amendment} a enmienda de forma.",
+        "reclassifiedContent": "Secretaría ha pasado {amendment} a enmienda de contenido.",
         "admitted": "La asamblea ha decidido tratar {amendment}: se debatirá.",
         "inadmissible": "No se ha admitido {amendment}: no se debatirá.",
         "approved": "Se ha aprobado {amendment}: su cambio pasa al texto.",
@@ -2851,13 +2935,6 @@
     "consolidatedPage": "Texto consolidado",
     "detailDescription": "Detalle de la enmienda",
     "includeAccepted": "Incluir las que acepta quien presenta el documento",
-    "newMenu": {
-      "global": "Cambiar una palabra en todo el documento",
-      "return": "Devolver el documento",
-      "alternative": "Proponer un texto alternativo",
-      "label": "Otras enmiendas",
-      "totality": "Enmienda a la totalidad"
-    },
     "panes": {
       "label": "Vista",
       "text": "Texto",
@@ -2866,29 +2943,16 @@
     "modes": {
       "label": "Cómo ver el texto",
       "original": "Texto original",
-      "amended": "Una enmienda sobre el texto",
-      "consolidated": "Texto con lo aprobado",
-      "compare": "Original y resultado",
-      "button": "Ver: {mode}"
+      "amended": "Con la enmienda",
+      "consolidated": "Con lo aprobado",
+      "compare": "Comparar"
     },
     "tabs": {
-      "label": "Listas de enmiendas",
-      "all": "Todas",
       "mine": "Mis enmiendas"
     },
     "mine": {
       "empty": "Todavía no has presentado enmiendas",
       "emptyDescription": "Aquí verás tus borradores y en qué punto está cada enmienda que envíes."
-    },
-    "selection": {
-      "label": "Selección de párrafos",
-      "hint": "Pulsa el párrafo que quieres cambiar.",
-      "count": "Un párrafo seleccionado | {count} párrafos seleccionados",
-      "amend": "Cambiar este texto",
-      "addAfter": "Añadir un párrafo después",
-      "delete": "Quitar este párrafo | Quitar estos párrafos",
-      "clear": "Quitar la selección",
-      "rangeHint": "Para elegir varios, mantén Mayús al pulsar."
     },
     "amended": {
       "empty": "Elige una enmienda",
@@ -2964,7 +3028,14 @@
     },
     "editRecord": "Editar la ficha del documento",
     "cta": {
-      "present": "Presentar una enmienda"
+      "present": "Presentar enmienda",
+      "otherWays": "Otras formas de enmendar",
+      "global": "Cambiar una palabra en todo el documento",
+      "globalHint": "Cambia una palabra o expresión cada vez que aparece.",
+      "return": "Devolver el documento",
+      "returnHint": "Pide que vuelva a quien lo presentó, sin cambiar el texto.",
+      "alternative": "Texto alternativo",
+      "alternativeHint": "Propone un texto nuevo en lugar de todo el documento."
     },
     "more": {
       "label": "Más",
@@ -2972,7 +3043,6 @@
       "transactional": "Proponer una transaccional",
       "answers": "Ver las respuestas"
     },
-    "includeAcceptedOn": "Con las que acepta quien presenta el documento",
     "corrections": {
       "title": "Secretaría te pide que corrijas una enmienda | Secretaría te pide que corrijas {count} enmiendas",
       "description": "Lee su nota, corrígela y vuelve a enviarla. | Lee sus notas, corrígelas y vuelve a enviarlas.",
@@ -4690,6 +4760,7 @@
       "amendment_submitted": "Enmienda presentada",
       "amendment_withdrawn": "Enmienda retirada",
       "amendment_correction_requested": "@:amendment.history.events.amendment_correction_requested",
+      "amendment_reclassified": "@:amendment.history.events.amendment_reclassified",
       "amendment_validated": "Enmienda validada por Secretaría",
       "amendment_published": "Enmienda publicada",
       "amendment_admitted": "Enmienda admitida",

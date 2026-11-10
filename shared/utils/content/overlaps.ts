@@ -2,7 +2,10 @@ import type { AmendmentInput, AmendmentOp } from "../../types/content";
 
 /**
  * - `same_text`: both change intersecting text of the same block (or insert
- *   at the very same point), so they cannot both be applied as written.
+ *   at the very same point), so they cannot both be applied as written. A
+ *   change of formatting counts like one of text over its range, and a
+ *   change of a block's format (paragraph to heading, list level...) takes
+ *   the whole block: it collides with any other change inside it.
  * - `removed_block`: one deletes a block the other edits or also deletes.
  * - `same_position`: both insert new blocks after the same anchor. They can
  *   coexist, but the order between them has to be decided.
@@ -34,16 +37,21 @@ export function rangesCollide(a: Range, b: Range): boolean {
 
 interface Footprint {
   ranges: Map<string, Range[]>;
+  /** Blocks whose format the amendment changes. */
+  formatted: Set<string>;
   deleted: Set<string>;
   anchors: Set<string>;
 }
 
 function footprint(ops: AmendmentOp[]): Footprint {
   const ranges = new Map<string, Range[]>();
+  const formatted = new Set<string>();
   const deleted = new Set<string>();
   const anchors = new Set<string>();
   for (const op of ops) {
-    if (op.op === "replace") {
+    if (op.op === "replace" && op.block !== undefined) {
+      formatted.add(op.blockId);
+    } else if (op.op === "replace") {
       const list = ranges.get(op.blockId) ?? [];
       list.push({ from: op.from, to: op.to });
       ranges.set(op.blockId, list);
@@ -53,15 +61,23 @@ function footprint(ops: AmendmentOp[]): Footprint {
       anchors.add(op.afterBlockId ?? "\u0000start");
     }
   }
-  return { ranges, deleted, anchors };
+  return { ranges, formatted, deleted, anchors };
 }
 
 function collide(a: Footprint, b: Footprint): OverlapKind | null {
   for (const id of a.deleted) {
-    if (b.deleted.has(id) || b.ranges.has(id)) return "removed_block";
+    if (b.deleted.has(id) || b.ranges.has(id) || b.formatted.has(id)) {
+      return "removed_block";
+    }
   }
   for (const id of b.deleted) {
-    if (a.ranges.has(id)) return "removed_block";
+    if (a.ranges.has(id) || a.formatted.has(id)) return "removed_block";
+  }
+  for (const id of a.formatted) {
+    if (b.formatted.has(id) || b.ranges.has(id)) return "same_text";
+  }
+  for (const id of b.formatted) {
+    if (a.ranges.has(id)) return "same_text";
   }
   for (const [blockId, aRanges] of a.ranges) {
     const bRanges = b.ranges.get(blockId);
@@ -100,6 +116,7 @@ export function findOverlaps(amendments: AmendmentInput[]): OverlapReport {
   prints.forEach((print, i) => {
     const keys = new Set([
       ...print.ranges.keys(),
+      ...print.formatted,
       ...print.deleted,
       ...[...print.anchors].map((anchor) => `\u0001${anchor}`),
     ]);

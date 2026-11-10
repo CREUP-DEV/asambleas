@@ -940,6 +940,7 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   ],
   amendment_withdrawn: ["by", "sourceCode", "sourceStatus"],
   amendment_correction_requested: ["note"],
+  amendment_reclassified: ["from", "to"],
   amendment_validated: ["publish", "admission", "method"],
   amendment_published: [],
   amendment_admitted: ["method", "voteResult", "validated"],

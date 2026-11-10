@@ -1,5 +1,6 @@
 import esMessages from "../../../i18n/locales/es.json";
 import enMessages from "../../../i18n/locales/en.json";
+import type { FormatChange } from "../../../shared/types/content";
 import {
   EXPORT_LOCALES,
   type ExportLocale,
@@ -55,6 +56,20 @@ export function createTranslator(locale: ExportLocale): Translate {
     const message =
       lookup(MESSAGES[locale], path) ?? lookup(MESSAGES.es, path) ?? path;
     return interpolate(message, params);
+  };
+}
+
+/**
+ * What a formatting change does, in words: the labels the platform shows
+ * next to it (`common.content.format`), so the PDF reads the same.
+ */
+export function createFormatLabeller(
+  locale: ExportLocale,
+): (change: FormatChange) => string {
+  return (change) => {
+    const path = `common.content.format.${change.code}`;
+    const message = lookup(MESSAGES[locale], path) ?? lookup(MESSAGES.es, path);
+    return message ? interpolate(message, { value: change.value ?? "" }) : "";
   };
 }
 

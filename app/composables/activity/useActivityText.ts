@@ -229,6 +229,8 @@ export function useActivityText() {
         return t(`amendment.position.options.${detail.position}`);
       case "acceptance":
         return t(`common.status.acceptance.${detail.decision}`);
+      case "reclassified":
+        return t(`amendment.reclassify.changed.${detail.to}`);
       case "reason":
         return t("activity.details.reason", { reason: detail.text });
       case "roleSyncFailed":

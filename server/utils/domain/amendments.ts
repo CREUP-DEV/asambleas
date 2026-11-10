@@ -63,6 +63,7 @@ import type {
   OutcomeBody,
   PositionBody,
   PublishAmendmentsBody,
+  ReclassifyBody,
   RelationBody,
   RelationDto,
   TransactionalBody,
@@ -71,6 +72,7 @@ import type {
   VoteInput,
 } from "../../../shared/types/api";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
+import { reclassifyTarget } from "../../../shared/utils/amendmentReclassify";
 import {
   amendmentWindow,
   isLateSubmission,
@@ -3000,6 +3002,66 @@ export async function requestAmendmentCorrection(
       entityId: amendment.id,
       type: "amendment_correction_requested",
       payload: { note: body.note },
+      actor,
+    });
+  });
+
+  return amendmentDto(ctx, amendment.id);
+}
+
+/**
+ * The Secretaría (amendment:review; the Mesa alone cannot) moves a
+ * presented, undecided amendment between "de forma" (`formal`) and the
+ * content kind (`partial`): reclassifyTarget. Nothing else about it changes
+ * (operations, number, code, timing, review state, answer). Optimistic lock
+ * on the amendment; the event carries both kinds.
+ */
+export async function reclassifyAmendment(
+  ctx: AmendmentContext,
+  body: ReclassifyBody,
+): Promise<AmendmentDto> {
+  const { actor, amendment } = ctx;
+  assertReviewer(actor);
+  const from = amendment.kind;
+  const to = reclassifyTarget(from);
+  if (to === null) {
+    fail(
+      409,
+      "Solo se puede cambiar entre enmienda de forma y enmienda de contenido",
+    );
+  }
+  if (body.kind !== to) fail(409, "La enmienda ya es de ese tipo");
+  if (amendment.status !== "submitted") {
+    fail(
+      409,
+      "Solo se puede cambiar el tipo de una enmienda presentada y sin decidir",
+    );
+  }
+  assertNotFinal(ctx);
+
+  await db.transaction(async (tx) => {
+    await lockDocument(tx, ctx.document.id, "share");
+    const updated = await tx
+      .update(amendments)
+      .set({ kind: to })
+      .where(
+        and(
+          eq(amendments.id, amendment.id),
+          eq(amendments.status, "submitted"),
+          eq(amendments.kind, from),
+          buildOptimisticLockCondition(amendments.updatedAt, body.updatedAt),
+        ),
+      )
+      .returning({ id: amendments.id });
+    if (updated.length === 0)
+      fail(409, "La enmienda ha cambiado. Recarga la página");
+    await recordEvent(tx, {
+      assemblyId: ctx.assembly.id,
+      documentId: ctx.document.id,
+      entityType: "amendment",
+      entityId: amendment.id,
+      type: "amendment_reclassified",
+      payload: { from, to },
       actor,
     });
   });

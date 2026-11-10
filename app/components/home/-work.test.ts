@@ -399,6 +399,23 @@ describe("home work", () => {
       ).toBe("Admin");
     });
 
+    it("says the Secretaría changed the kind of the amendment", () => {
+      const reclassified = (value: string) =>
+        words(
+          homeWorkNewsItem(
+            news("n", { ...mine, type: "amendment_reclassified", value }),
+          ),
+        );
+      expect(reclassified("formal")).toMatchObject({
+        sentence: "home.news.amendment.reclassifiedFormal",
+        phrase: ["home.news.phrase.yourAmendment", { code: "CEUM 2" }],
+        tone: "neutral",
+      });
+      expect(reclassified("partial").sentence).toBe(
+        "home.news.amendment.reclassifiedContent",
+      );
+    });
+
     it("says what the main presenter answered", () => {
       expect(words(homeWorkNewsItem(news("n", mine)))).toEqual({
         sentence: "home.news.position.accept",

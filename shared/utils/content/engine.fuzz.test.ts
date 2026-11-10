@@ -3,17 +3,24 @@ import type {
   AmendmentInput,
   AmendmentOp,
   Block,
+  BlockFormat,
   BlockType,
   ConsolidatedBlock,
   ConsolidationResult,
   Mark,
   ReplaceOp,
 } from "../../types/content";
-import { MARK_TYPES } from "../../types/content";
-import { consolidate } from "./consolidate";
+import { BLOCK_ALIGNMENTS, MARK_TYPES } from "../../types/content";
+import { consolidate, mapPosition } from "./consolidate";
 import { diffPassage } from "./diff";
 import { blocksToEditor, editorToBlocks } from "./editor";
-import { validateOps } from "./ops";
+import {
+  blockFormatOf,
+  coverageToMarks,
+  markCoverage,
+  sameBlockFormat,
+} from "./format";
+import { compareReplaceOps, validateOps } from "./ops";
 import {
   findOverlaps,
   isHardOverlap,
@@ -402,6 +409,25 @@ function sliceMarks(marks: Mark[], from: number, to: number): Mark[] {
     .filter((mark) => mark.from < mark.to);
 }
 
+/** The block with the format of another random block, its text kept. */
+function withFormat(rng: Rng, block: Block): Block {
+  const shape = randomBlock(rng, block.id);
+  const next: Block = {
+    id: block.id,
+    type: shape.type,
+    text: block.text,
+    marks: block.marks,
+  };
+  if (shape.level !== undefined) next.level = shape.level;
+  if (shape.list !== undefined) next.list = shape.list;
+  if (next.list === "ordered") {
+    if (rng.chance(0.3)) next.marker = rng.pick(["a)", "I.", "1)"] as const);
+    if (rng.chance(0.3)) next.start = rng.int(1, 9);
+  }
+  if (rng.chance(0.25)) next.align = rng.pick(BLOCK_ALIGNMENTS);
+  return next;
+}
+
 // ---------------------------------------------------------------------------
 // Passage edits, as an author would make them in the editor
 
@@ -417,6 +443,9 @@ const EDITS = [
   "merge",
   "move",
   "duplicate",
+  "marks",
+  "marks",
+  "format",
 ] as const;
 
 function mutateWords(
@@ -454,9 +483,10 @@ function mutateChars(rng: Rng, text: string): string {
 
 /**
  * Applies 1-4 random edits to a copy of `passage`: word and character edits,
- * rewrites, deleted, inserted, split, merged, moved and duplicated blocks.
- * Only text changes are made to blocks that keep their id: operations cannot
- * express type or formatting changes of a kept block.
+ * rewrites, deleted, inserted, split, merged, moved and duplicated blocks,
+ * new inline marks and a new block format (type, level, list, alignment).
+ * Text edits leave the marks where they were, clipped to the new text, so
+ * most of them change the formatting of some text too.
  */
 function editPassage(
   rng: Rng,
@@ -538,6 +568,12 @@ function editPassage(
         edited.splice(rng.int(0, edited.length), 0, block);
         break;
       }
+      case "marks":
+        edited[i] = { ...block, marks: randomMarks(rng, block.text, options) };
+        break;
+      case "format":
+        edited[i] = withFormat(rng, block);
+        break;
       case "duplicate": {
         // Only base ids repeat here, to exercise diffPassage's handling of
         // them; any other copy gets a fresh id, as the editor would give it.
@@ -590,6 +626,51 @@ function directOps(
       const to = rng.chance(0.3)
         ? from
         : rng.pick(offsets.filter((offset) => offset >= from));
+      const formatRoll = rng.next();
+      if (formatRoll < 0.1) {
+        // A new format for the whole block.
+        const format = blockFormatOf(withFormat(rng, block));
+        if (format) {
+          ops.push({
+            op: "replace",
+            blockId: block.id,
+            from: 0,
+            to: 0,
+            text: "",
+            baseText: "",
+            block: format,
+          });
+        }
+        continue;
+      }
+      if (formatRoll < 0.25 && from < to) {
+        // New marks for text that stays.
+        const kept = block.text.slice(from, to);
+        ops.push({
+          op: "replace",
+          blockId: block.id,
+          from,
+          to,
+          text: kept,
+          baseText: kept,
+          marks: randomMarks(rng, kept, options),
+        });
+        continue;
+      }
+      if (formatRoll < 0.4) {
+        // New text with marks of its own.
+        const text = phrase(rng, 1, 3, options.words);
+        ops.push({
+          op: "replace",
+          blockId: block.id,
+          from,
+          to,
+          text,
+          baseText: block.text.slice(from, to),
+          marks: randomMarks(rng, text, options),
+        });
+        continue;
+      }
       ops.push({
         op: "replace",
         blockId: block.id,
@@ -649,6 +730,27 @@ function randomAmendments(
 
 function isReplace(op: AmendmentOp): op is ReplaceOp {
   return op.op === "replace";
+}
+
+/**
+ * The operations as they were stored before formatting could be amended:
+ * replacements of text alone, with no marks and no block format.
+ */
+function textOnly(ops: AmendmentOp[]): AmendmentOp[] {
+  return ops.flatMap((op): AmendmentOp[] => {
+    if (op.op !== "replace") return [op];
+    if (op.block !== undefined || op.text === op.baseText) return [];
+    return [
+      {
+        op: "replace",
+        blockId: op.blockId,
+        from: op.from,
+        to: op.to,
+        text: op.text,
+        baseText: op.baseText,
+      },
+    ];
+  });
 }
 
 /** Keys an amendment's operations act on: blocks it edits or removes. */
@@ -711,23 +813,26 @@ function assertWellFormed(result: ConsolidationResult): void {
 }
 
 /**
- * How a block of the edited passage should look after consolidation. Kept
- * blocks only carry text changes, so their marks are base marks mapped
- * through the operations and are checked by property 4 instead.
+ * How a block of the edited passage should look after consolidation. A kept
+ * block shows its format (`format` when the caller knows better which) and
+ * the formatting of each of its characters, line breaks aside: operations
+ * carry both, but not the way the marks were cut. A new block is stored as
+ * it came.
  */
 function passageView(
   block: Block,
   kept: boolean,
   isFreshId: (id: string) => boolean,
+  format: BlockFormat | null = blockFormatOf(block),
 ) {
   return {
     kept,
     id: kept ? block.id : isFreshId(block.id) ? "(fresh id)" : block.id,
-    type: block.type,
-    level: block.level,
-    list: block.list,
+    format: kept
+      ? format
+      : { type: block.type, level: block.level, list: block.list },
     text: block.text,
-    marks: kept ? "(mapped from base)" : block.marks,
+    marks: kept ? formatsByChar(block) : block.marks,
   };
 }
 
@@ -845,6 +950,8 @@ const ALLOWED_ATTRIBUTES = new Set([
   "rel",
   "target",
   "aria-hidden",
+  "start",
+  "data-marker",
 ]);
 const FORMAT_TAGS: Record<string, string> = {
   strong: "bold",
@@ -866,7 +973,7 @@ interface RenderedChar {
   formats: string[];
   /** Inside <del>. */
   removed: boolean;
-  /** Inside a provenance <sup> label. */
+  /** Inside a provenance <sup> label or the words a diff adds. */
   label: boolean;
 }
 
@@ -901,7 +1008,7 @@ function scanHtml(html: string): Scan {
     amendmentIds: [],
     breaks: 0,
   };
-  const stack: { tag: string; href?: string }[] = [];
+  const stack: { tag: string; href?: string; label?: boolean }[] = [];
   let i = 0;
   while (i < html.length) {
     if (html[i] !== "<") {
@@ -918,7 +1025,7 @@ function scanHtml(html: string): Scan {
         ),
       ].sort();
       const removed = stack.some((frame) => frame.tag === "del");
-      const label = stack.some((frame) => frame.tag === "sup");
+      const label = stack.some((frame) => frame.tag === "sup" || frame.label);
       for (let k = 0; k < text.length; k += 1) {
         scan.chars.push({ char: text[k]!, formats, removed, label });
       }
@@ -966,7 +1073,13 @@ function scanHtml(html: string): Scan {
     if (blockId !== undefined) scan.blockIds.push(blockId);
     const amendmentId = attributes.get("data-amendment-id");
     if (amendmentId !== undefined) scan.amendmentIds.push(amendmentId);
-    stack.push({ tag, href });
+    // Words the diff adds: the hidden ones and the label of a format change.
+    const classes = (attributes.get("class") ?? "").split(" ");
+    stack.push({
+      tag,
+      href,
+      label: classes.includes("sr-only") || classes.includes("cx-fmt-label"),
+    });
   }
   if (stack.length > 0) {
     throw new Error(`unclosed ${stack.map((frame) => `<${frame.tag}>`)}`);
@@ -1081,7 +1194,8 @@ function blockShape(block: Block) {
 
 /**
  * Formatting of every character, as sorted mark keys. Hard breaks carry no
- * marks in the editor, so newline characters have none.
+ * marks in the editor, so newline characters have none, and a link counts
+ * only with an address the schema keeps (trimmed): the editor reads no other.
  */
 function formatsByChar(block: Pick<Block, "text" | "marks">): string[][] {
   const result: string[][] = [];
@@ -1092,7 +1206,10 @@ function formatsByChar(block: Pick<Block, "text" | "marks">): string[][] {
     }
     const keys = block.marks
       .filter((mark) => mark.from <= i && i < mark.to)
-      .map((mark) => (mark.type === "link" ? `link:${mark.href}` : mark.type));
+      .filter((mark) => mark.type !== "link" || isAllowedScheme(mark.href))
+      .map((mark) =>
+        mark.type === "link" ? `link:${mark.href?.trim()}` : mark.type,
+      );
     result.push([...new Set(keys)].sort());
   }
   return result;
@@ -1119,6 +1236,43 @@ describe("amendment engine properties", () => {
       const anchorBefore = start > 0 ? base[start - 1]!.id : null;
       const ops = diffPassage(passage, edited, anchorBefore, newId);
       Object.assign(ctx, { base, start, end, edited, ops });
+      const replaces = ops.filter(isReplace);
+      coverage.hit(
+        "format of a block",
+        replaces.some((op) => op.block !== undefined),
+      );
+      coverage.hit(
+        "marks of kept text",
+        replaces.some(
+          (op) => op.marks !== undefined && op.text === op.baseText,
+        ),
+      );
+      coverage.hit(
+        "new text with its own marks",
+        replaces.some(
+          (op) => op.marks !== undefined && op.text !== op.baseText,
+        ),
+      );
+      coverage.hit(
+        "text alone",
+        replaces.some((op) => op.marks === undefined && op.block === undefined),
+      );
+      // A format the passage takes in the editor by itself (a nested item
+      // alone comes back at the first level) is not the author's change.
+      const untouched = new Map(
+        editorRoundTrip(passage).map((block) => [block.id, block]),
+      );
+      const formatOf = (block: Block) => {
+        const original = passage.find((item) => item.id === block.id);
+        const echo = untouched.get(block.id);
+        const next = blockFormatOf(block);
+        return original &&
+          echo &&
+          next &&
+          sameBlockFormat(blockFormatOf(echo)!, next)
+          ? blockFormatOf(original)
+          : next;
+      };
       coverage.hit(
         "replace",
         ops.some((op) => op.op === "replace"),
@@ -1158,7 +1312,14 @@ describe("amendment engine properties", () => {
         if (kept) seen.add(block.id);
         // diffPassage drops new blocks without visible text on purpose.
         if (!kept && block.text.trim() === "") return [];
-        return [passageView(block, kept, (id) => baseIds.has(id))];
+        return [
+          passageView(
+            block,
+            kept,
+            (id) => baseIds.has(id),
+            kept ? formatOf(block) : null,
+          ),
+        ];
       });
 
       if (ops.length === 0) {
@@ -1195,7 +1356,65 @@ describe("amendment engine properties", () => {
       "insert at start": 5,
       "moved or repeated block": 30,
       "replace, insert and delete": 12,
+      "format of a block": 40,
+      "marks of kept text": 60,
+      "new text with its own marks": 30,
+      "text alone": 60,
     });
+  });
+
+  it("1b. new text keeps the format the editor shows, however the base stores its marks", () => {
+    const coverage = new Coverage();
+    forAll(600, 1_500_000, (rng, ctx) => {
+      // Marks as an import may store them: same type in adjacent or
+      // overlapping pieces. The editor gives one mark per run.
+      const text = phrase(rng, 2, 8);
+      const base: Block = {
+        id: "blk0",
+        type: "paragraph",
+        text,
+        marks: randomMarks(rng, text, { maxMarks: 6 }),
+      };
+      const echo = editorRoundTrip([base])[0]!;
+      // Typed in the editor: new text takes the format of the character
+      // before it.
+      const offsets = codePointOffsets(text);
+      const from = rng.pick(offsets);
+      const to = rng.chance(0.5)
+        ? from
+        : rng.pick(offsets.filter((offset) => offset >= from));
+      const typed = `${rng.pick(WORDS)} `;
+      const shown = markCoverage(echo.marks, text.length);
+      const inherits = from > 0 && text[from - 1] !== "\n";
+      const want = shown.map((row) => [
+        ...row.slice(0, from),
+        ...new Array<string | null>(typed.length).fill(
+          inherits ? row[from - 1]! : null,
+        ),
+        ...row.slice(to),
+      ]);
+      const edited: Block = {
+        ...echo,
+        text: text.slice(0, from) + typed + text.slice(to),
+        marks: coverageToMarks(want),
+      };
+      const ops = diffPassage([base], [edited], null, () => "fresh");
+      Object.assign(ctx, { base, edited, ops });
+      coverage.hit(
+        "new text with its own marks",
+        ops.some(
+          (op) =>
+            op.op === "replace" &&
+            op.marks !== undefined &&
+            op.text !== op.baseText,
+        ),
+      );
+      expect(validateOps([base], ops)).toEqual([]);
+      const result = consolidate([base], [{ id: "A", ops }]).blocks[0]!;
+      expect(result.text).toBe(edited.text);
+      expect(formatsByChar(result)).toEqual(formatsByChar(edited));
+    });
+    coverage.expectAtLeast({ "new text with its own marks": 10 });
   });
 
   it("2. amendments without hard overlaps consolidate alike in any order", () => {
@@ -1332,8 +1551,15 @@ describe("amendment engine properties", () => {
           key: `${block.id}#${k}`,
         })),
       }));
-      const amendments = randomAmendments(rng, base, rng.int(1, 6));
+      // Operations of text alone, as stored before formatting could be
+      // amended: their marks follow the text exactly as they always did.
+      const amendments = randomAmendments(rng, base, rng.int(1, 6))
+        .map((amendment) => ({ ...amendment, ops: textOnly(amendment.ops) }))
+        .filter((amendment) => amendment.ops.length > 0);
       Object.assign(ctx, { base, amendments });
+      for (const amendment of amendments) {
+        expect(validateOps(base, amendment.ops)).toEqual([]);
+      }
 
       const result = consolidate(base, amendments);
       assertWellFormed(result);
@@ -1343,7 +1569,19 @@ describe("amendment engine properties", () => {
       for (const block of result.blocks) {
         const original = base.find((candidate) => candidate.id === block.id);
         if (!original) continue;
-        const ops = replaces.filter((op) => op.blockId === block.id);
+        const ops = replaces
+          .filter((op) => op.blockId === block.id)
+          .sort(compareReplaceOps);
+        expect(block.type).toBe(original.type);
+        expect(block.marks).toEqual(
+          original.marks
+            .map((mark) => ({
+              ...mark,
+              from: mapPosition(mark.from, ops, 1),
+              to: mapPosition(mark.to, ops, -1),
+            }))
+            .filter((mark) => mark.from < mark.to),
+        );
         for (const mark of original.marks as TaggedMark[]) {
           const untouched = ops.every(
             (op) => op.to <= mark.from || op.from >= mark.to,
@@ -1382,6 +1620,7 @@ describe("amendment engine properties", () => {
       hrefs: HOSTILE_HREFS,
       maxMarks: 4,
     };
+    const formatLabels = new Coverage();
     forAll(250, 5_000_000, (rng, ctx) => {
       const blocks = randomDocument(rng, 1, 8, hostile).map((block, i) => ({
         ...block,
@@ -1438,7 +1677,23 @@ describe("amendment engine properties", () => {
           mode,
           focus,
           label: (id) => `<${id}>&"'`,
+          diffLabels: {
+            inserted: "<added>&",
+            removed: '"removed">',
+            formatted: "<format>&",
+            format: (change) => `<${change.code}>&"${change.value ?? ""}'`,
+          },
         });
+        if (mode === "diff") {
+          const formatted = result.annotated.some(
+            (block) =>
+              block.status === "kept" &&
+              (block.format !== undefined ||
+                block.segments.some((segment) => segment.format)),
+          );
+          formatLabels.hit("format label", formatted);
+          expect(annotatedHtml.includes("cx-fmt-label")).toBe(formatted);
+        }
         Object.assign(ctx, { mode, html: annotatedHtml });
         const annotatedScan = scanHtml(annotatedHtml);
         const visible = result.annotated.filter(
@@ -1458,7 +1713,9 @@ describe("amendment engine properties", () => {
         expect(shown.map(({ char, formats }) => ({ char, formats }))).toEqual(
           expectedChars(result.blocks),
         );
-        const removed = annotatedScan.chars.filter((char) => char.removed);
+        const removed = annotatedScan.chars.filter(
+          (char) => char.removed && !char.label,
+        );
         if (mode !== "diff") {
           expect(removed).toEqual([]);
           continue;
@@ -1474,6 +1731,7 @@ describe("amendment engine properties", () => {
         );
       }
     });
+    formatLabels.expectAtLeast({ "format label": 60 });
   });
 
   it("6. well-formed blocks round-trip through the editor JSON", () => {

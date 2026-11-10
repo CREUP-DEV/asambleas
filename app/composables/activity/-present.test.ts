@@ -196,6 +196,25 @@ describe("activityDetails", () => {
     ).toEqual([]);
   });
 
+  it("reads the kind an amendment was reclassified to", () => {
+    expect(
+      activityDetails(
+        item({
+          action: "amendment_reclassified",
+          payload: { from: "partial", to: "formal" },
+        }),
+      ),
+    ).toEqual([{ type: "reclassified", to: "formal" }]);
+    expect(
+      activityDetails(
+        item({
+          action: "amendment_reclassified",
+          payload: { from: "formal", to: "transactional" },
+        }),
+      ),
+    ).toEqual([]);
+  });
+
   it("reads late submissions, notes, answers and results", () => {
     expect(
       activityDetails(

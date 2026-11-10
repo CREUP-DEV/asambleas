@@ -4,6 +4,13 @@ import type {
   ChangeKind,
   ReplaceOp,
 } from "../../types/content";
+import {
+  blockFormatOf,
+  isBlockFormatOp,
+  isValidBlockFormat,
+  sameBlockFormat,
+  sameMarksOver,
+} from "./format";
 
 export interface OpError {
   index: number;
@@ -31,9 +38,25 @@ export function compareReplaceOps(
   return a.from - b.from || a.to - b.to;
 }
 
+/** Whether the marks of an operation are whole ranges inside its text. */
+function marksFit(op: Pick<ReplaceOp, "text" | "marks">): boolean {
+  return (op.marks ?? []).every(
+    (mark) =>
+      Number.isInteger(mark.from) &&
+      Number.isInteger(mark.to) &&
+      mark.from >= 0 &&
+      mark.from <= mark.to &&
+      mark.to <= op.text.length,
+  );
+}
+
 /**
  * Checks that operations are anchored to the base and consistent with each
  * other. An empty array means the amendment can be stored and applied.
+ *
+ * A replacement may change formatting too (see ReplaceOp): with `marks` it
+ * may keep its text, as long as the marks differ from the base's; with
+ * `block` it changes the format of its whole block and nothing else.
  */
 export function validateOps(base: Block[], ops: AmendmentOp[]): OpError[] {
   const errors: OpError[] = [];
@@ -42,6 +65,8 @@ export function validateOps(base: Block[], ops: AmendmentOp[]): OpError[] {
   const anchors = new Set<string>();
   const newIds = new Set<string>();
   const replacesByBlock = new Map<string, { op: ReplaceOp; index: number }[]>();
+  // Block format changes, by block: they take no range of the text.
+  const formatsByBlock = new Map<string, number>();
 
   if (ops.length === 0) {
     errors.push({ index: -1, reason: "empty" });
@@ -101,10 +126,40 @@ export function validateOps(base: Block[], ops: AmendmentOp[]): OpError[] {
     if (text.slice(op.from, op.to) !== op.baseText) {
       errors.push({ index: i, reason: "anchor_mismatch" });
     }
+    if (isBlockFormatOp(op)) {
+      const current = blockFormatOf(base[position]!);
+      if (
+        op.from !== 0 ||
+        op.to !== 0 ||
+        op.text !== "" ||
+        op.marks !== undefined ||
+        !isValidBlockFormat(op.block)
+      ) {
+        errors.push({ index: i, reason: "format_shape" });
+      } else if (!current) {
+        errors.push({ index: i, reason: "format_image" });
+      } else if (sameBlockFormat(current, op.block)) {
+        errors.push({ index: i, reason: "noop" });
+      }
+      if (formatsByBlock.has(op.blockId)) {
+        errors.push({ index: i, reason: "duplicate_format" });
+      } else {
+        formatsByBlock.set(op.blockId, i);
+      }
+      return;
+    }
+    if (!marksFit(op)) {
+      errors.push({ index: i, reason: "marks_out_of_range" });
+      return;
+    }
     if (op.from === op.to && op.text === "") {
       errors.push({ index: i, reason: "noop" });
     }
-    if (op.text === op.baseText) {
+    if (
+      op.text === op.baseText &&
+      (op.marks === undefined ||
+        sameMarksOver(base[position]!, op.from, op.to, op.marks))
+    ) {
       errors.push({ index: i, reason: "noop" });
     }
     const list = replacesByBlock.get(op.blockId) ?? [];
@@ -112,6 +167,11 @@ export function validateOps(base: Block[], ops: AmendmentOp[]): OpError[] {
     replacesByBlock.set(op.blockId, list);
   });
 
+  for (const [blockId, index] of formatsByBlock) {
+    if (deleted.has(blockId) && !replacesByBlock.has(blockId)) {
+      errors.push({ index, reason: "replace_in_deleted_block" });
+    }
+  }
   for (const [blockId, list] of replacesByBlock) {
     if (deleted.has(blockId)) {
       errors.push({
@@ -137,6 +197,8 @@ export function validateOps(base: Block[], ops: AmendmentOp[]): OpError[] {
 export function changeKindOf(op: AmendmentOp): ChangeKind {
   if (op.op === "insert") return "addition";
   if (op.op === "delete") return "suppression";
+  // A change of format alone modifies what is there.
+  if (isBlockFormatOp(op)) return "modification";
   if (op.from === op.to) return "addition";
   if (op.text === "") return "suppression";
   return "modification";
@@ -159,6 +221,32 @@ export function touchedBlockIds(ops: AmendmentOp[]): string[] {
     else if (op.afterBlockId) ids.push(op.afterBlockId);
   }
   return [...new Set(ids)];
+}
+
+/**
+ * The base block where an amendment first acts, in the order of the text
+ * (operations are not stored in that order). Text added before everything
+ * counts as the first block.
+ */
+export function firstTouchedBlockId(
+  ops: AmendmentOp[],
+  base: Block[],
+): string | null {
+  if (ops.some((op) => op.op === "insert" && op.afterBlockId === null)) {
+    return base[0]?.id ?? null;
+  }
+  const index = indexBlocks(base);
+  const ids = touchedBlockIds(ops);
+  let first: string | null = null;
+  let position = Number.POSITIVE_INFINITY;
+  for (const id of ids) {
+    const at = index.get(id);
+    if (at !== undefined && at < position) {
+      first = id;
+      position = at;
+    }
+  }
+  return first ?? ids[0] ?? null;
 }
 
 /**

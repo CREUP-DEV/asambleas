@@ -43,6 +43,12 @@ const props = withDefaults(
     modelValue: Block[];
     /** Smaller toolbar (marks, link, history) for inline amendment editing. */
     compact?: boolean;
+    /**
+     * Editing a published text to amend it: the full toolbar, without what
+     * an amendment cannot change on a table that is already there (the fill
+     * of a cell, header cells, merged cells).
+     */
+    amend?: boolean;
     autofocus?: boolean;
     editable?: boolean;
     placeholder?: string;
@@ -58,6 +64,7 @@ const props = withDefaults(
   }>(),
   {
     compact: false,
+    amend: false,
     outline: false,
     uploadImage: undefined,
     autofocus: false,
@@ -281,27 +288,35 @@ const tableMenu = computed(
             c.deleteColumn(),
           ),
         ],
-        [
-          // The fill of the cell: burgundy is a header cell.
-          { type: "label", label: t("common.editor.table.fill.label") },
-          ...cellFillItems(cellFill.value, (fill) =>
-            runInTable((c) => c.setCellFill(fill)),
-          ),
-        ],
-        [
-          tableAction("toggleHeaderRow", "i-lucide-panel-top", (c) =>
-            c.toggleHeaderRow(),
-          ),
-          tableAction("toggleHeaderColumn", "i-lucide-panel-left", (c) =>
-            c.toggleHeaderColumn(),
-          ),
-          tableAction("mergeCells", "i-lucide-table-cells-merge", (c) =>
-            c.mergeCells(),
-          ),
-          tableAction("splitCell", "i-lucide-table-cells-split", (c) =>
-            c.splitCell(),
-          ),
-        ],
+        // Amendments compare no cell: its fill, header and span stay.
+        ...(props.amend
+          ? []
+          : [
+              [
+                // The fill of the cell: burgundy is a header cell.
+                {
+                  type: "label",
+                  label: t("common.editor.table.fill.label"),
+                },
+                ...cellFillItems(cellFill.value, (fill) =>
+                  runInTable((c) => c.setCellFill(fill)),
+                ),
+              ],
+              [
+                tableAction("toggleHeaderRow", "i-lucide-panel-top", (c) =>
+                  c.toggleHeaderRow(),
+                ),
+                tableAction("toggleHeaderColumn", "i-lucide-panel-left", (c) =>
+                  c.toggleHeaderColumn(),
+                ),
+                tableAction("mergeCells", "i-lucide-table-cells-merge", (c) =>
+                  c.mergeCells(),
+                ),
+                tableAction("splitCell", "i-lucide-table-cells-split", (c) =>
+                  c.splitCell(),
+                ),
+              ],
+            ]),
         [tableAction("deleteTable", "i-lucide-trash", (c) => c.deleteTable())],
       ],
     }) as EditorToolbarItem,
@@ -429,7 +444,7 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
   ];
   const link = [{ slot: "link" } as EditorToolbarItem];
   const tables: EditorToolbarItem[] = [tableMenu.value];
-  if (props.uploadImage && !props.compact) {
+  if (props.uploadImage && !props.compact && !props.amend) {
     tables.push({
       icon: "i-lucide-image-plus",
       color: "neutral",
@@ -745,27 +760,30 @@ function buildContextItems(): void {
               c.addColumnAfter(),
             ),
           ],
-          [
-            {
-              label: t("common.editor.table.fill.label"),
-              icon: "i-lucide-paint-bucket",
-              children: cellFillItems(cellFillOf(instance), (fill) =>
-                run((c) => c.setCellFill(fill)),
-              ),
-            },
-            action("toggleHeaderRow", "i-lucide-panel-top", (c) =>
-              c.toggleHeaderRow(),
-            ),
-            action("toggleHeaderColumn", "i-lucide-panel-left", (c) =>
-              c.toggleHeaderColumn(),
-            ),
-            action("mergeCells", "i-lucide-table-cells-merge", (c) =>
-              c.mergeCells(),
-            ),
-            action("splitCell", "i-lucide-table-cells-split", (c) =>
-              c.splitCell(),
-            ),
-          ],
+          // Amendments compare no cell: its fill, header and span stay.
+          props.amend
+            ? []
+            : [
+                {
+                  label: t("common.editor.table.fill.label"),
+                  icon: "i-lucide-paint-bucket",
+                  children: cellFillItems(cellFillOf(instance), (fill) =>
+                    run((c) => c.setCellFill(fill)),
+                  ),
+                },
+                action("toggleHeaderRow", "i-lucide-panel-top", (c) =>
+                  c.toggleHeaderRow(),
+                ),
+                action("toggleHeaderColumn", "i-lucide-panel-left", (c) =>
+                  c.toggleHeaderColumn(),
+                ),
+                action("mergeCells", "i-lucide-table-cells-merge", (c) =>
+                  c.mergeCells(),
+                ),
+                action("splitCell", "i-lucide-table-cells-split", (c) =>
+                  c.splitCell(),
+                ),
+              ],
           [
             action(
               "deleteRow",
@@ -786,7 +804,7 @@ function buildContextItems(): void {
               "error",
             ),
           ],
-        ],
+        ].filter((group) => group.length > 0),
       },
     ]);
   } else if (!onImage) {
@@ -927,7 +945,7 @@ function hasText(html: string): boolean {
 
 /** Whether this editor takes new pictures (amendments never do). */
 const takesImages = computed(
-  () => Boolean(props.uploadImage) && !props.compact,
+  () => Boolean(props.uploadImage) && !props.compact && !props.amend,
 );
 
 /** Said once per editor: where no picture can be added. */

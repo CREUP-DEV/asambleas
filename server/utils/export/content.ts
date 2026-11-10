@@ -19,6 +19,7 @@ import type {
   BlockCell,
   BlockImage,
   ConsolidatedBlock,
+  FormatChange,
   ListMarker,
   Mark,
 } from "../../../shared/types/content";
@@ -92,6 +93,8 @@ export const CONTENT_STYLES: Record<string, Style> = {
   listItem: { fontSize: 11, lineHeight: 1.15 },
   list: { margin: [0, 0, 0, 12] },
   amendmentRef: { color: CREUP_RED, bold: true },
+  // What a formatting change does, in words next to the text it changes.
+  formatNote: { fontSize: 8, bold: false, italics: true },
 };
 
 /** The template's tables: burgundy rules around every cell. */
@@ -158,18 +161,27 @@ export interface PdfContentContext {
 export interface AnnotatedContext extends PdfContentContext {
   /** Short code shown in superscript for an amendment id, e.g. "CEUM 4". */
   codeOf: (amendmentId: string) => string;
+  /** What a formatting change does, in words ("becomes bold"). */
+  formatLabel?: (change: FormatChange) => string;
 }
 
 type Inline = ContentText & { text: string };
 
 interface SegmentStyle {
   decoration: Decoration;
+  decorationStyle?: "dotted";
   color?: string;
   decorationColor: string;
 }
 
 const INSERTED: SegmentStyle = {
   decoration: "underline",
+  decorationColor: CREUP_RED,
+};
+/** Text an amendment keeps and formats anew: a dotted line, and a note. */
+const FORMATTED: SegmentStyle = {
+  decoration: "underline",
+  decorationStyle: "dotted",
   decorationColor: CREUP_RED,
 };
 const REMOVED: SegmentStyle = {
@@ -235,6 +247,7 @@ function markedInlines(
     if (extra) {
       decorations.push(extra.decoration);
       piece.decorationColor = extra.decorationColor;
+      if (extra.decorationStyle) piece.decorationStyle = extra.decorationStyle;
       if (extra.color) piece.color = extra.color;
     }
     piece = withDecorations(piece, decorations);
@@ -329,7 +342,7 @@ function headingLevel(level: number | undefined): number {
 
 function plainText(inlines: Inline[]): string {
   return inlines
-    .filter((inline) => !inline.sup)
+    .filter((inline) => !inline.sup && inline.style !== "formatNote")
     .map((inline) => inline.text)
     .join("")
     .replace(/\s+/g, " ")
@@ -715,10 +728,29 @@ export function blocksToPdf(
   );
 }
 
+/** The note of a formatting change: what changes, in words; null without. */
+function formatNote(
+  changes: FormatChange[],
+  ctx: AnnotatedContext,
+  wrap: (label: string) => string,
+): Inline | null {
+  const describe = ctx.formatLabel;
+  if (!describe) return null;
+  const label = changes
+    .map((change) => describe(change))
+    .filter(Boolean)
+    .join(", ");
+  if (!label) return null;
+  return { text: wrap(label), style: "formatNote", color: MUTED_GREY };
+}
+
 /**
  * Annotated rendering of consolidated blocks: inserted text underlined,
  * removed text struck through in grey, and the amendment code in
  * superscript at the end of every run of text it produced or removed.
+ * Text whose formatting an amendment changes shows its new format over a
+ * dotted line, followed by what changes in words; a block whose own format
+ * changes (to a heading, a list...) starts with those words.
  */
 export function annotatedToPdf(
   blocks: ConsolidatedBlock[],
@@ -726,6 +758,24 @@ export function annotatedToPdf(
 ): Content[] {
   const items: Item[] = blocks.map((block) => {
     const inlines: Inline[] = [];
+    if (block.format && block.status === "kept") {
+      const note = formatNote(
+        block.format.changes,
+        ctx,
+        (label) => `[${label}]`,
+      );
+      if (note) {
+        inlines.push(
+          note,
+          {
+            text: ctx.codeOf(block.format.source),
+            sup: true,
+            style: "amendmentRef",
+          },
+          { text: " " },
+        );
+      }
+    }
     let offset = 0;
     block.segments.forEach((segment, index) => {
       if (segment.removed) {
@@ -746,9 +796,17 @@ export function annotatedToPdf(
             block.marks,
             offset,
             ctx,
-            segment.source ? INSERTED : undefined,
+            segment.format ? FORMATTED : segment.source ? INSERTED : undefined,
           ),
         );
+        if (segment.format) {
+          const note = formatNote(
+            segment.format,
+            ctx,
+            (label) => ` (${label})`,
+          );
+          if (note) inlines.push(note);
+        }
         // Removed text is not part of the clean text the marks refer to.
         offset += segment.text.length;
       }

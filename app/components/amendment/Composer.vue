@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { createId } from "@paralleldrive/cuid2";
+import type { Editor } from "@tiptap/core";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type {
   AmendmentDraftBody,
@@ -9,56 +10,73 @@ import type {
   MemberRef,
 } from "~~/shared/types/api";
 import type { AmendmentOp, Block } from "~~/shared/types/content";
-import { globalReplaceOps, validateOps } from "~~/shared/utils/content/ops";
-import { blockLabels } from "~~/shared/utils/content/render";
+import { blocksToEditor, editorToBlocks } from "~~/shared/utils/content/editor";
 import {
-  AMENDMENT_TOTALITY_MODES,
-  amendmentComposerSteps,
+  globalReplaceOps,
+  touchedBlockIds,
+  validateOps,
+} from "~~/shared/utils/content/ops";
+import {
   amendmentErrorKey,
   amendmentErrorReasons,
   amendmentLateOnSend,
   amendmentSentNotice,
+  changedBlockCount,
+  composerAmendmentKind,
   composerAuthorMemberIds,
   composerAuthorSeed,
   composerAuthorSet,
+  composerDocumentSeed,
+  composerStartBlockId,
+  composerEditSettler,
+  composerIssues,
   composerMainAuthor,
   composerSyncState,
-  contiguousBlockRange,
-  deletePassageOps,
-  passageAmendmentOps,
-  passageSeed,
+  documentAmendmentOps,
   seedComposerFromDraft,
   totalityAlternativeOps,
   type AmendmentComposerMode,
-  type AmendmentComposerStep,
 } from "~/composables/amendment/workspace";
 
 /**
- * Guided form to present an amendment, in plain steps: what it does (the
- * choice made on the text, which can be changed here), write the change,
- * see it against the text, and explain why. Co-authors, the "formal"
- * nature and presenting on behalf of a member stay folded unless needed.
- * With co-authors, one of the members presenting it must be named main
- * author ("Autor principal"): only that one answers the transactionals
- * proposed over it, and the others see its answer.
- * Sending goes to the Secretaría, which checks it before anyone else sees
- * it. A draft sent back for correction shows the Secretaría's note on top.
+ * Presents an amendment. It takes the place of the text and the list (the
+ * whole width; the whole screen on a phone) and has two parts:
  *
- * It writes an amendment as an edit of the base text and turns it into
- * operations anchored to the base:
- * - passage: edit the selected blocks in place (diffPassage);
- * - delete: suppress the selected blocks;
- * - global: replace a term everywhere (globalReplaceOps);
- * - return / alternative: totality amendments (justification only, or a
- *   full replacement text).
- * Shows a live diff preview, validates with validateOps before sending, and
- * shows the reasons of a 422. Saving creates or updates a draft; presenting
- * saves and then submits it.
+ * - on the left, the whole published text in an editor, opened where the
+ *   reader was (`startBlockId`). The author edits it like any text: nobody
+ *   says whether a change modifies, adds or suppresses, the difference with
+ *   the base does (`documentAmendmentOps`, formatting included). Everything
+ *   changed in one go is one amendment with one justification;
+ * - on the right (below on a phone), a panel that stays in view with three
+ *   questions: what kind of amendment it is (content or form, nothing chosen
+ *   for a new one), who presents it (alone or with other members, and then
+ *   who the main author is) and why. Under them, how many paragraphs change
+ *   and "Revisar y enviar".
+ *
+ * "Revisar y enviar" shows the changes as everybody else will see them, what
+ * is still missing in plain words, the late notices, and "Guardar borrador"
+ * and "Enviar". Sending goes to the Secretaría, which checks it before anyone
+ * else sees it. A draft sent back for correction shows the Secretaría's note
+ * on top.
+ *
+ * Three other ways to amend open here from their links in the page, with
+ * their own form in place of the editor: one word changed everywhere
+ * (`global`, globalReplaceOps) and the totality amendments (`return`, only a
+ * justification; `alternative`, a full replacement text).
+ *
+ * A stored draft opens with the text as it leaves it (its operations
+ * applied), so the author goes on editing; saving diffs it against the base
+ * again.
+ *
+ * The difference is worked out a moment after the author stops typing, never
+ * on each keystroke: a long text would stutter.
  *
  * The optimistic-lock token only moves with this composer's own saves. When
  * someone else saves the draft (or a save is refused with 409), the author
  * chooses: load the stored version (`reload`, the parent remounts the
  * composer) or overwrite it with theirs after confirming.
+ *
+ * Leaving with changes that were not saved asks first.
  */
 const props = withDefaults(
   defineProps<{
@@ -66,19 +84,16 @@ const props = withDefaults(
     document: DocumentDto;
     /** Base URL of the document's amendments: .../amendments. */
     amendmentsUrl: string;
-    /** Starting mode of a new amendment. */
+    /** What a new amendment writes. */
     mode?: AmendmentComposerMode;
-    /** Selected base block ids (passage and delete modes). */
-    selection?: string[];
-    /** Start with an empty paragraph after the selection. */
-    appendParagraph?: boolean;
+    /** Base block the editor opens at: where the reader was. */
+    startBlockId?: string | null;
     /** Draft being edited (its latest version, kept fresh by the parent). */
     draft?: AmendmentDto | null;
   }>(),
   {
-    mode: "passage",
-    selection: () => [],
-    appendParagraph: false,
+    mode: "document",
+    startBlockId: null,
     draft: null,
   },
 );
@@ -97,7 +112,8 @@ const { t } = useI18n();
 const api = useApi();
 const toast = useToast();
 const { member, can } = useMe();
-const formId = useId();
+const uid = useId();
+const isDesktop = useMediaQuery("(min-width: 1024px)");
 
 // State ----------------------------------------------------------------------
 // Seeded once from `draft`. Later copies of it never replace the text nor the
@@ -107,32 +123,39 @@ const seed = props.draft
   ? seedComposerFromDraft(props.base, props.draft)
   : null;
 
-const mode = ref<AmendmentComposerMode>(seed?.mode ?? props.mode);
-const selection = ref<string[]>(
-  seed && seed.selection.length > 0
-    ? seed.selection
-    : contiguousBlockRange(props.base, props.selection),
+/** Fixed for the life of the composer: each way to amend opens its own. */
+const mode: AmendmentComposerMode = seed?.mode ?? props.mode;
+
+/** The untouched text as the editor gives it back, to tell real changes. */
+function editorEcho(blocks: Block[]): Block[] {
+  try {
+    return editorToBlocks(blocksToEditor(blocks), createId);
+  } catch {
+    return [];
+  }
+}
+
+const documentSeed: Block[] =
+  mode === "document" ? (seed?.edited ?? composerDocumentSeed(props.base)) : [];
+const settle = composerEditSettler(
+  documentSeed,
+  mode === "document" ? editorEcho(documentSeed) : [],
 );
-const passageBlocks = ref<Block[]>(
-  seed?.mode === "passage"
-    ? seed.edited
-    : passageSeed(
-        props.base,
-        selection.value,
-        props.appendParagraph ? { appendEmpty: createId } : {},
-      ),
-);
-const alternativeBlocks = ref<Block[]>(
+
+/** The whole text as the author has it in the editor. */
+const edited = shallowRef<Block[]>(documentSeed);
+const alternativeBlocks = shallowRef<Block[]>(
   seed?.mode === "alternative" ? seed.edited : [],
 );
 const find = ref(seed?.find ?? "");
 const replacement = ref(seed?.replace ?? "");
-const kind = ref<"partial" | "formal">(
-  props.draft?.kind === "formal" ? "formal" : "partial",
+/** Content or form: the author chooses; a stored draft keeps its own. */
+const kind = ref<"partial" | "formal" | null>(
+  props.draft?.kind === "formal" || props.draft?.kind === "partial"
+    ? props.draft.kind
+    : null,
 );
 const justification = ref(props.draft?.justification ?? "");
-/** Opened with "Añadir un párrafo después": the passage ends in a new one. */
-const adding = !props.draft && props.appendParagraph;
 
 const draftId = ref<string | null>(props.draft?.id ?? null);
 const updatedAt = ref<string | null>(props.draft?.updatedAt ?? null);
@@ -159,9 +182,115 @@ const mainAuthorId = ref<string | undefined>(
 );
 /**
  * Editing a draft the actor's member does not present (a moderator): the
- * picker holds every member presenting it, not "the others".
+ * picker holds every member presenting it, not "the others", and there is
+ * no "alone or with others" to choose.
  */
 const editingOthers = !isNew && authorSeed.keptMemberId === null;
+/** "Con otros miembros": the picker shows and its members count. */
+const withOthers = ref(coAuthorIds.value.length > 0);
+const sentCoAuthorIds = computed(() =>
+  editingOthers || withOthers.value ? coAuthorIds.value : [],
+);
+
+// Operations -----------------------------------------------------------------
+// Worked out a moment after the last change (`scheduleOps`), and right away
+// before reviewing, saving or leaving (`refreshOps`).
+
+interface EditorHandle {
+  flush: () => void;
+  focus: () => void;
+  editor?: Editor;
+}
+const editorRef = useTemplateRef<EditorHandle>("editor");
+
+/**
+ * Ids for blocks the difference has to renew, handed out in the same order
+ * each time: the same text gives the same operations, so an unchanged text
+ * never looks changed.
+ */
+const idPool: string[] = [];
+function pooledIds(): () => string {
+  let next = 0;
+  return () => {
+    idPool[next] ??= createId();
+    next += 1;
+    return idPool[next - 1]!;
+  };
+}
+
+function computeOps(): AmendmentOp[] {
+  switch (mode) {
+    case "document":
+      return documentAmendmentOps(
+        props.base,
+        settle(edited.value),
+        pooledIds(),
+      );
+    case "global":
+      return find.value.trim()
+        ? globalReplaceOps(props.base, find.value.trim(), replacement.value)
+        : [];
+    case "alternative":
+      return totalityAlternativeOps(
+        props.base,
+        alternativeBlocks.value,
+        pooledIds(),
+      );
+    default:
+      return [];
+  }
+}
+
+const ops = shallowRef<AmendmentOp[]>(computeOps());
+
+function refreshOps(): void {
+  editorRef.value?.flush();
+  ops.value = computeOps();
+}
+
+// A long text waits longer, so typing never stutters.
+const scheduleOps = useDebounceFn(
+  () => {
+    ops.value = computeOps();
+  },
+  props.base.length > 150 ? 600 : 200,
+);
+
+const serverReasons = ref<string[]>([]);
+watch([edited, alternativeBlocks, find, replacement], () => {
+  serverReasons.value = [];
+  void scheduleOps();
+});
+
+const occurrences = computed(() => ({
+  count: ops.value.length,
+  blocks: new Set(touchedBlockIds(ops.value)).size,
+}));
+const changedCount = computed(() => changedBlockCount(ops.value));
+
+/** Whether the question "content or form" applies (never to a totality). */
+const asksKind = mode === "document" || mode === "global";
+
+/** What the author still has to do before anything is saved. */
+const issues = computed(() =>
+  composerIssues({
+    mode,
+    kind: kind.value,
+    ops: ops.value,
+    find: find.value,
+    replacement: replacement.value,
+    alternative: alternativeBlocks.value,
+  }),
+);
+/** The ones about the text itself: with any, there is nothing to show. */
+const textIssues = computed(() =>
+  issues.value.filter((issue) => issue !== "kind_missing"),
+);
+
+const opReasons = computed<string[]>(() => {
+  if (mode === "return" || textIssues.value.length > 0) return [];
+  return [...new Set(validateOps(props.base, ops.value).map((e) => e.reason))];
+});
 
 // Sync with the stored draft ---------------------------------------------------
 
@@ -190,6 +319,8 @@ watch(syncState, (state) => {
 
 function loadRemote(): void {
   reloading.value = true;
+  // The author chose the stored version over theirs: nothing to ask.
+  finished = true;
   emit("reload");
 }
 
@@ -229,78 +360,7 @@ const syncDescription = computed(() => {
   }
 });
 
-const attempted = ref(false);
-/** Presenting needs a justification; saving a draft does not. */
-const presentAttempted = ref(false);
-const serverReasons = ref<string[]>([]);
-
-const editorRef = useTemplateRef<{ flush: () => void; focus: () => void }>(
-  "editor",
-);
-const justificationRef = useTemplateRef<{ textareaRef?: HTMLTextAreaElement }>(
-  "justificationInput",
-);
-
-// Modes ------------------------------------------------------------------------
-
-const hasSelection = computed(() => selection.value.length > 0);
-
-/** Ways to amend shown first; totality amendments are folded away. */
-const MAIN_MODES = ["passage", "delete", "global"] as const;
-const mainModeItems = computed(() =>
-  MAIN_MODES.map((value) => ({
-    label: t(`amendment.composer.modes.${value}`),
-    description: t(`amendment.composer.modeDescriptions.${value}`),
-    value,
-    disabled:
-      (value === "passage" || value === "delete") && !hasSelection.value,
-  })),
-);
-const totalityModeItems = computed(() =>
-  AMENDMENT_TOTALITY_MODES.map((value) => ({
-    label: t(`amendment.composer.modes.${value}`),
-    description: t(`amendment.composer.modeDescriptions.${value}`),
-    value,
-  })),
-);
-
-/** The choice list is open when there is nothing sensible chosen yet. */
-const choosing = ref(
-  !hasSelection.value && (mode.value === "passage" || mode.value === "delete"),
-);
-const advancedOpen = ref(AMENDMENT_TOTALITY_MODES.includes(mode.value));
-
-/** The chosen main mode, or none while a totality mode is chosen. */
-const mainChoice = computed(() =>
-  MAIN_MODES.find((value) => value === mode.value),
-);
-
-function setMode(value: unknown): void {
-  if (typeof value === "string") mode.value = value as AmendmentComposerMode;
-}
-
-const choiceLabel = computed(() =>
-  adding && mode.value === "passage"
-    ? t("amendment.composer.modes.add")
-    : t(`amendment.composer.modes.${mode.value}`),
-);
-
-const steps = computed(() => amendmentComposerSteps(mode.value));
-function stepNumber(step: AmendmentComposerStep): number {
-  return steps.value.indexOf(step) + 1;
-}
-const stepBadge =
-  "bg-primary/10 text-primary inline-flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-semibold tabular-nums";
-
-const writeTitle = computed(() => {
-  if (mode.value === "global") return t("amendment.composer.steps.writeGlobal");
-  if (mode.value === "alternative") {
-    return t("amendment.composer.steps.writeAlternative");
-  }
-  return adding
-    ? t("amendment.composer.steps.writeAdd")
-    : t("amendment.composer.steps.write");
-});
+// Titles and notices -------------------------------------------------------------
 
 /** The note of a draft the Secretaría sent back for correction. */
 const correctionNote = computed(() =>
@@ -311,163 +371,16 @@ const correctionNote = computed(() =>
 
 const title = computed(() => {
   if (correctionNote.value) return t("amendment.composer.titleCorrection");
-  return props.draft
-    ? t("amendment.composer.titleEdit")
-    : t("amendment.composer.titleNew");
+  if (props.draft) return t("amendment.composer.titleEdit");
+  return mode === "document"
+    ? t("amendment.composer.titleNew")
+    : t(`amendment.composer.modes.${mode}`);
 });
-
-watch(mode, (value) => {
-  serverReasons.value = [];
-  if (value === "passage" && passageBlocks.value.length === 0) {
-    passageBlocks.value = passageSeed(props.base, selection.value);
-  }
-});
-
-const amendmentKind = computed<AmendmentDraftBody["kind"]>(() => {
-  if (mode.value === "return") return "totality_return";
-  if (mode.value === "alternative") return "totality_alternative";
-  return kind.value;
-});
-
-/** Only text changes can be formal (typos, style, numbering). */
-const canBeFormal = computed(
-  () =>
-    mode.value === "passage" ||
-    mode.value === "delete" ||
-    mode.value === "global",
+const intro = computed(() =>
+  mode === "document"
+    ? t("amendment.composer.intro")
+    : t(`amendment.composer.modeDescriptions.${mode}`),
 );
-
-const passageLabel = computed(() => {
-  const first = selection.value[0];
-  if (!first) return null;
-  const label = blockLabels(props.base).get(first);
-  const parts = [
-    label?.heading ?? null,
-    label && label.paragraph > 0
-      ? t("amendment.detail.paragraph", { n: label.paragraph })
-      : null,
-  ].filter(Boolean);
-  return parts.join(" · ") || null;
-});
-
-// Operations -----------------------------------------------------------------
-
-const ops = computed<AmendmentOp[]>(() => {
-  switch (mode.value) {
-    case "passage":
-      return passageAmendmentOps(
-        props.base,
-        selection.value,
-        passageBlocks.value,
-        createId,
-      );
-    case "delete":
-      return deletePassageOps(props.base, selection.value);
-    case "global":
-      return find.value.trim()
-        ? globalReplaceOps(props.base, find.value.trim(), replacement.value)
-        : [];
-    case "alternative":
-      return totalityAlternativeOps(
-        props.base,
-        alternativeBlocks.value,
-        createId,
-      );
-    default:
-      return [];
-  }
-});
-
-const occurrences = computed(() => ({
-  count: ops.value.length,
-  blocks: new Set(
-    ops.value.map((op) => (op.op === "replace" ? op.blockId : "")),
-  ).size,
-}));
-
-/** Problems the author can fix before anything is sent. */
-const localIssues = computed<string[]>(() => {
-  switch (mode.value) {
-    case "passage":
-      if (!hasSelection.value) return ["no_selection"];
-      return ops.value.length === 0 ? ["no_changes"] : [];
-    case "delete":
-      return hasSelection.value ? [] : ["no_selection"];
-    case "global":
-      if (!find.value.trim()) return ["find_empty"];
-      if (find.value.trim() === replacement.value) return ["same_term"];
-      return ops.value.length === 0 ? ["no_matches"] : [];
-    case "alternative":
-      return alternativeBlocks.value.some(
-        (block) => block.text.trim() || block.type === "image",
-      )
-        ? []
-        : ["alternative_empty"];
-    default:
-      return [];
-  }
-});
-
-const opReasons = computed<string[]>(() => {
-  if (mode.value === "return" || localIssues.value.length > 0) return [];
-  return [...new Set(validateOps(props.base, ops.value).map((e) => e.reason))];
-});
-
-/**
- * A moderator presents on behalf of a member when their account has none, or
- * when it cannot present amendments of its own (no amendment:create). Only a
- * new amendment needs it: a stored draft keeps its presenting member.
- */
-const onBehalfRequired = computed(
-  () =>
-    canActOnBehalf.value &&
-    isNew &&
-    (!member.value || !can(PERMISSION_KEYS.AMENDMENT_CREATE)),
-);
-const needsMember = computed(
-  () => onBehalfRequired.value && !onBehalfOfMemberId.value,
-);
-const cannotPresent = computed(() => !member.value && !canActOnBehalf.value);
-const syncBlocked = computed(() => syncState.value !== "in_sync");
-
-/** Folded options start open when the draft already uses them. */
-const optionsOpen = ref(
-  coAuthorIds.value.length > 0 ||
-    kind.value === "formal" ||
-    (canActOnBehalf.value &&
-      !onBehalfRequired.value &&
-      Boolean(onBehalfOfMemberId.value)),
-);
-
-/**
- * Everyone presenting it: the presenting member of a new amendment (picked
- * on behalf, or the actor's own), the kept own member of a stored draft,
- * and the co-authors. With several, one must be the main author.
- */
-const authorSet = computed(() =>
-  composerAuthorSet({
-    presentingMemberId: isNew
-      ? (onBehalfOfMemberId.value ?? member.value?.id ?? null)
-      : (onBehalfOfMemberId.value ?? null),
-    keptMemberId: authorSeed.keptMemberId,
-    coAuthorIds: coAuthorIds.value,
-  }),
-);
-const mainAuthor = computed(() =>
-  composerMainAuthor(authorSet.value, mainAuthorId.value),
-);
-const mainAuthorBox = useTemplateRef<HTMLElement>("mainAuthorBox");
-
-const blocked = computed(
-  () =>
-    localIssues.value.length > 0 ||
-    opReasons.value.length > 0 ||
-    needsMember.value ||
-    mainAuthor.value.missing ||
-    cannotPresent.value ||
-    syncBlocked.value,
-);
-const justificationMissing = computed(() => !justification.value.trim());
 
 // The shared clock ticks every minute, so a window that closes while the
 // page is open is seen as closed, and hydration matches the server.
@@ -493,7 +406,45 @@ const onTimeKept = computed(
   () => isCorrection.value && windowClosed.value && !lateOnSend.value,
 );
 
-// Members ------------------------------------------------------------------------
+// Who presents it ------------------------------------------------------------------
+
+/**
+ * A moderator presents on behalf of a member when their account has none, or
+ * when it cannot present amendments of its own (no amendment:create). Only a
+ * new amendment needs it: a stored draft keeps its presenting member.
+ */
+const onBehalfRequired = computed(
+  () =>
+    canActOnBehalf.value &&
+    isNew &&
+    (!member.value || !can(PERMISSION_KEYS.AMENDMENT_CREATE)),
+);
+const needsMember = computed(
+  () => onBehalfRequired.value && !onBehalfOfMemberId.value,
+);
+const cannotPresent = computed(() => !member.value && !canActOnBehalf.value);
+const syncBlocked = computed(() => syncState.value !== "in_sync");
+/** The Mesa's own control, small and out of the way until it is used. */
+const onBehalfOpen = ref(Boolean(onBehalfOfMemberId.value));
+
+/**
+ * Everyone presenting it: the presenting member of a new amendment (picked
+ * on behalf, or the actor's own), the kept own member of a stored draft,
+ * and the co-authors. With several, one must be the main author.
+ */
+const authorSet = computed(() =>
+  composerAuthorSet({
+    presentingMemberId: isNew
+      ? (onBehalfOfMemberId.value ?? member.value?.id ?? null)
+      : (onBehalfOfMemberId.value ?? null),
+    keptMemberId: authorSeed.keptMemberId,
+    coAuthorIds: sentCoAuthorIds.value,
+  }),
+);
+const mainAuthor = computed(() =>
+  composerMainAuthor(authorSet.value, mainAuthorId.value),
+);
+const mainAuthorBox = useTemplateRef<HTMLElement>("mainAuthorBox");
 
 const { data: members, status: membersStatus } = useLazyFetch<MemberDto[]>(
   "/api/members",
@@ -523,7 +474,7 @@ const coAuthorItems = computed(() => {
   );
 });
 
-/** Members by id, to name the main author choices. */
+/** Members by id, to name them. */
 const memberRefs = computed(() => {
   const refs = new Map<string, Pick<MemberRef, "acronym" | "name">>();
   for (const item of members.value ?? []) refs.set(item.id, item);
@@ -531,26 +482,164 @@ const memberRefs = computed(() => {
   if (member.value) refs.set(member.value.id, member.value);
   return refs;
 });
+function memberName(id: string): string {
+  const ref = memberRefs.value.get(id);
+  return ref ? memberLabel(ref) : id;
+}
 const mainAuthorItems = computed(() =>
-  authorSet.value.map((id) => {
-    const ref = memberRefs.value.get(id);
-    return {
-      label: ref ? memberLabel(ref) : id,
-      value: id,
-    };
-  }),
+  authorSet.value.map((id) => ({ label: memberName(id), value: id })),
 );
 
-/** Opens the folded options and takes focus to the main author choice. */
+/** The member that presents it alone: the one picked on behalf, or the actor's. */
+const soloMemberId = computed(
+  () =>
+    onBehalfOfMemberId.value ??
+    (isNew ? member.value?.id : authorSeed.keptMemberId) ??
+    null,
+);
+const whoItems = computed(() => {
+  const solo = soloMemberId.value
+    ? memberRefs.value.get(soloMemberId.value)
+    : undefined;
+  return [
+    {
+      label: solo
+        ? t("amendment.composer.who.solo", { member: solo.acronym })
+        : t("amendment.composer.who.soloUnknown"),
+      value: "solo",
+    },
+    {
+      label: t("amendment.composer.who.others"),
+      description: t("amendment.composer.who.othersHint"),
+      value: "others",
+    },
+  ];
+});
+function setWho(value: unknown): void {
+  withOthers.value = value === "others";
+}
+
+const kindItems = computed(() =>
+  (["partial", "formal"] as const).map((value) => ({
+    label: t(`amendment.composer.kind.${value}`),
+    description: t(`amendment.composer.kind.${value}Hint`),
+    value,
+  })),
+);
+function setKind(value: unknown): void {
+  if (value === "partial" || value === "formal") kind.value = value;
+}
+
+/** Takes focus to the main author choice. */
 async function focusMainAuthor(): Promise<void> {
-  optionsOpen.value = true;
   await nextTick();
   mainAuthorBox.value
     ?.querySelector<HTMLElement>('[role="radio"], input, button')
     ?.focus();
 }
 
+// Review -------------------------------------------------------------------------
+
+const stage = ref<"edit" | "review">("edit");
+/** "Revisar y enviar" was pressed: what is missing is said from then on. */
+const attempted = ref(false);
+const heading = useTemplateRef<HTMLElement>("heading");
+const reviewHeading = useTemplateRef<HTMLElement>("reviewHeading");
+const justificationRef = useTemplateRef<{ textareaRef?: HTMLTextAreaElement }>(
+  "justificationInput",
+);
+
+const blocked = computed(
+  () =>
+    issues.value.length > 0 ||
+    opReasons.value.length > 0 ||
+    needsMember.value ||
+    mainAuthor.value.missing ||
+    cannotPresent.value ||
+    syncBlocked.value,
+);
+const justificationMissing = computed(() => !justification.value.trim());
+
+/** What stops the amendment from being saved, in plain words. */
+const problems = computed<string[]>(() => {
+  const list = issues.value.map((issue) =>
+    t(`amendment.composer.issues.${issue}`),
+  );
+  for (const reason of new Set([...opReasons.value, ...serverReasons.value])) {
+    list.push(t(amendmentErrorKey(reason)));
+  }
+  if (needsMember.value) list.push(t("amendment.composer.onBehalfRequired"));
+  if (mainAuthor.value.missing) {
+    list.push(t("amendment.composer.mainAuthorRequired"));
+  }
+  return list;
+});
+
+/** Who presents it, by name, the main author marked when there are several. */
+const authorNames = computed(() =>
+  authorSet.value
+    .map((id) =>
+      mainAuthor.value.required && mainAuthor.value.value === id
+        ? t("amendment.composer.review.mainMark", { member: memberName(id) })
+        : memberName(id),
+    )
+    .join(", "),
+);
+
+const kindLabel = computed(() => {
+  if (!asksKind) return t(`amendment.composer.modes.${mode}`);
+  return kind.value ? t(`amendment.composer.kind.${kind.value}`) : null;
+});
+
+async function openReview(): Promise<void> {
+  refreshOps();
+  attempted.value = true;
+  stage.value = "review";
+  await nextTick();
+  reviewHeading.value?.focus();
+}
+
+async function backToEdit(): Promise<void> {
+  stage.value = "edit";
+  await nextTick();
+  heading.value?.focus();
+}
+
 // Saving ---------------------------------------------------------------------
+
+function draftBody(): Omit<AmendmentDraftBody, "kind"> & {
+  kind: AmendmentDraftBody["kind"] | null;
+} {
+  return {
+    kind: composerAmendmentKind(mode, kind.value),
+    ops: ops.value,
+    justification: justification.value.trim(),
+    // A co-author editing someone else's draft stays among its authors.
+    authorMemberIds: composerAuthorMemberIds(
+      sentCoAuthorIds.value,
+      authorSeed.keptMemberId,
+    ),
+    mainAuthorMemberId: mainAuthor.value.value,
+    globalReplace:
+      mode === "global"
+        ? { find: find.value.trim(), replace: replacement.value }
+        : null,
+    ...(onBehalfOfMemberId.value
+      ? { onBehalfOfMemberId: onBehalfOfMemberId.value }
+      : {}),
+  };
+}
+
+// Unsaved changes: what would be saved now against what was saved last.
+let savedSnapshot = JSON.stringify(draftBody());
+/** Sent, or given up for the stored version: nothing left to ask about. */
+let finished = false;
+
+function hasUnsavedChanges(): boolean {
+  if (finished) return false;
+  refreshOps();
+  return JSON.stringify(draftBody()) !== savedSnapshot;
+}
 
 function handleError(error: unknown, fallbackKey: string): void {
   serverReasons.value = amendmentErrorReasons(error);
@@ -559,30 +648,12 @@ function handleError(error: unknown, fallbackKey: string): void {
 }
 
 async function persist(): Promise<AmendmentDto | null> {
-  editorRef.value?.flush();
+  refreshOps();
   attempted.value = true;
   serverReasons.value = [];
   if (mainAuthor.value.missing) void focusMainAuthor();
-  if (blocked.value) return null;
-
-  const body: AmendmentDraftBody = {
-    kind: amendmentKind.value,
-    ops: ops.value,
-    justification: justification.value.trim(),
-    // A co-author editing someone else's draft stays among its authors.
-    authorMemberIds: composerAuthorMemberIds(
-      coAuthorIds.value,
-      authorSeed.keptMemberId,
-    ),
-    mainAuthorMemberId: mainAuthor.value.value,
-    globalReplace:
-      mode.value === "global"
-        ? { find: find.value.trim(), replace: replacement.value }
-        : null,
-    ...(onBehalfOfMemberId.value
-      ? { onBehalfOfMemberId: onBehalfOfMemberId.value }
-      : {}),
-  };
+  const body = draftBody();
+  if (blocked.value || body.kind === null) return null;
 
   const updating = Boolean(draftId.value && updatedAt.value);
   try {
@@ -595,6 +666,7 @@ async function persist(): Promise<AmendmentDto | null> {
     draftId.value = saved.id;
     updatedAt.value = saved.updatedAt;
     conflicted.value = false;
+    savedSnapshot = JSON.stringify(body);
     emit("saved", saved);
     return saved;
   } catch (error) {
@@ -629,8 +701,6 @@ async function saveDraft(): Promise<void> {
 
 async function present(): Promise<void> {
   attempted.value = true;
-  presentAttempted.value = true;
-  editorRef.value?.flush();
   if (justificationMissing.value) {
     justificationRef.value?.textareaRef?.focus();
     return;
@@ -660,6 +730,7 @@ async function present(): Promise<void> {
       color: notice === "review_late" ? "warning" : "success",
       icon: "i-lucide-send",
     });
+    finished = true;
     emit("submitted", submitted);
   } catch (error) {
     handleError(error, "amendment.composer.submitFailed");
@@ -675,33 +746,133 @@ function copyOriginal(): void {
   }));
 }
 
-onMounted(() => {
-  if (mode.value === "passage" || mode.value === "alternative") {
-    nextTick(() => editorRef.value?.focus());
+// Leaving ------------------------------------------------------------------------
+
+const leaveOpen = ref(false);
+
+function requestClose(): void {
+  if (busy.value !== null) return;
+  if (hasUnsavedChanges()) {
+    leaveOpen.value = true;
+    return;
   }
+  emit("close");
+}
+
+function discardAndClose(): void {
+  leaveOpen.value = false;
+  finished = true;
+  emit("close");
+}
+
+onBeforeRouteLeave(() => {
+  if (!hasUnsavedChanges()) return true;
+  return window.confirm(t("amendment.composer.leave.confirm"));
 });
+
+function onBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!hasUnsavedChanges()) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+
+// Where the reader was -----------------------------------------------------------
+
+const root = useTemplateRef<HTMLElement>("root");
+const scroller = useTemplateRef<HTMLElement>("scroller");
+/** Room the editor's toolbar takes at the top of the text while it scrolls. */
+const TOOLBAR_ROOM = 72;
+
+/** A new amendment opens where the reader was; a draft, at its first change. */
+const startId =
+  mode === "document"
+    ? (props.startBlockId ??
+      (props.draft
+        ? composerStartBlockId(props.base, props.draft.ops, documentSeed)
+        : null))
+    : null;
+let placed = false;
+
+/** Brings that block to the top of the editor, with the cursor in it. */
+function placeEditor(instance: Editor): void {
+  const box = scroller.value;
+  if (!startId || !box) return;
+  const element = instance.view.dom.querySelector<HTMLElement>(
+    `[data-block-id="${CSS.escape(startId)}"]`,
+  );
+  if (!element) return;
+  // Typing on a phone opens the keyboard: there the text only scrolls, and
+  // the focus stays on the heading (onMounted).
+  if (isDesktop.value) {
+    try {
+      const position = instance.view.posAtDOM(element, 0);
+      instance
+        .chain()
+        .setTextSelection(position)
+        .focus(undefined, { scrollIntoView: false })
+        .run();
+    } catch {
+      // The block takes no cursor (an image): scrolling to it is enough.
+    }
+  }
+  box.scrollTop +=
+    element.getBoundingClientRect().top -
+    box.getBoundingClientRect().top -
+    TOOLBAR_ROOM;
+}
+
+watch(
+  () => editorRef.value?.editor,
+  (instance) => {
+    if (!instance || placed || mode !== "document") return;
+    placed = true;
+    void nextTick(() => placeEditor(instance));
+  },
+  { flush: "post" },
+);
+
+onMounted(() => {
+  window.addEventListener("beforeunload", onBeforeUnload);
+  // The composer is as tall as the hub's scroll area: bring all of it in.
+  root.value?.scrollIntoView({ block: isDesktop.value ? "nearest" : "start" });
+  // The button that opened the composer is gone: the heading takes the
+  // focus, so the keyboard and screen readers start here. On a wide screen
+  // the editor takes it next, at the starting block (placeEditor).
+  heading.value?.focus({ preventScroll: true });
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("beforeunload", onBeforeUnload);
+});
+
+const questionClass = "text-highlighted text-sm font-semibold";
 </script>
 
 <template>
-  <form
-    :id="formId"
-    class="flex flex-col gap-6"
-    novalidate
-    :aria-label="title"
-    @submit.prevent="present"
+  <section
+    ref="root"
+    class="border-default flex flex-col gap-3 rounded-lg border p-3 sm:p-4 lg:h-[calc(100dvh-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-3rem)] lg:min-h-[38rem]"
+    :aria-labelledby="`${uid}-title`"
   >
-    <header class="flex items-start gap-2">
-      <div class="min-w-0 flex-1">
-        <h2 class="text-highlighted text-lg font-semibold">{{ title }}</h2>
-        <p class="text-muted text-sm">{{ document.title }}</p>
+    <header class="flex flex-wrap items-start gap-2">
+      <div class="min-w-0 flex-1 basis-64">
+        <h2
+          :id="`${uid}-title`"
+          ref="heading"
+          tabindex="-1"
+          class="text-highlighted text-lg font-semibold focus:outline-none"
+        >
+          {{ title }}
+        </h2>
+        <p class="text-muted text-sm">{{ intro }}</p>
       </div>
       <UButton
         icon="i-lucide-x"
         color="neutral"
-        variant="ghost"
+        variant="outline"
         size="sm"
-        :aria-label="t('amendment.composer.close')"
-        @click="emit('close')"
+        :disabled="busy !== null"
+        :label="t('amendment.composer.close')"
+        @click="requestClose"
       />
     </header>
 
@@ -719,33 +890,6 @@ onMounted(() => {
     </UAlert>
 
     <UAlert
-      v-if="lateKept"
-      color="warning"
-      variant="subtle"
-      icon="i-lucide-clock-alert"
-      :title="t('amendment.composer.lateKeptTitle')"
-      :description="t('amendment.composer.lateKeptWarning')"
-    />
-    <UAlert
-      v-else-if="lateOnSend"
-      color="warning"
-      variant="subtle"
-      icon="i-lucide-clock-alert"
-      :title="t('amendment.composer.lateTitle')"
-      :description="t('amendment.composer.lateWarning')"
-    />
-    <p
-      v-else-if="onTimeKept"
-      class="text-muted flex items-start gap-1.5 text-sm"
-    >
-      <UIcon
-        name="i-lucide-clock-check"
-        class="mt-0.5 size-4 shrink-0"
-        aria-hidden="true"
-      />
-      {{ t("amendment.composer.correctionOnTime") }}
-    </p>
-    <UAlert
       v-if="cannotPresent"
       color="error"
       variant="subtle"
@@ -754,553 +898,611 @@ onMounted(() => {
       :description="t('amendment.composer.noMemberDescription')"
     />
 
-    <!-- Step: what the amendment does -->
-    <section class="flex flex-col gap-2" :aria-labelledby="`${formId}-what`">
-      <h3
-        :id="`${formId}-what`"
-        class="text-highlighted flex items-center gap-2 text-sm font-semibold"
-      >
-        <span :class="stepBadge" aria-hidden="true">
-          {{ stepNumber("what") }}
-        </span>
-        <span class="sr-only">
-          {{ t("amendment.composer.step", { n: stepNumber("what") }) }}
-        </span>
-        {{ t("amendment.composer.steps.what") }}
-      </h3>
-      <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <p class="text-default text-sm font-medium">
-          {{ choiceLabel }}
-          <span
-            v-if="passageLabel && (mode === 'passage' || mode === 'delete')"
-            class="text-muted font-normal"
-          >
-            · {{ passageLabel }}
+    <!-- The stored draft moved on: the author chooses, nothing is adopted silently. -->
+    <UAlert
+      v-if="showSync"
+      :color="syncState === 'not_editable' ? 'error' : 'warning'"
+      variant="subtle"
+      :icon="
+        syncState === 'not_editable' ? 'i-lucide-file-lock' : 'i-lucide-users'
+      "
+      role="alert"
+      :title="t(`amendment.composer.sync.${syncState}.title`)"
+      :description="syncDescription"
+    >
+      <template #actions>
+        <div
+          v-if="confirmingOverwrite"
+          class="flex flex-wrap items-center gap-2"
+          role="group"
+        >
+          <span class="text-sm">
+            {{ t("amendment.composer.sync.overwriteConfirm") }}
           </span>
-        </p>
-        <UButton
-          color="primary"
-          variant="link"
-          size="sm"
-          class="px-0"
-          :aria-expanded="choosing"
-          :aria-controls="`${formId}-choices`"
-          :label="
-            choosing
-              ? t('amendment.composer.hideChoices')
-              : t('amendment.composer.changeChoice')
-          "
-          @click="choosing = !choosing"
-        />
-      </div>
-      <p class="text-muted text-sm">
-        {{ t(`amendment.composer.modeDescriptions.${mode}`) }}
-      </p>
-
-      <div
-        v-if="choosing"
-        :id="`${formId}-choices`"
-        class="flex flex-col gap-3 pt-1"
-      >
-        <URadioGroup
-          :model-value="mainChoice"
-          :items="mainModeItems"
-          variant="card"
-          size="sm"
-          :aria-labelledby="`${formId}-what`"
-          @update:model-value="setMode"
-        />
-        <p v-if="!hasSelection" class="text-muted text-xs">
-          {{ t("amendment.composer.selectFirst") }}
-        </p>
-        <UCollapsible v-model:open="advancedOpen">
+          <UButton
+            color="error"
+            size="sm"
+            :loading="busy === 'save'"
+            :disabled="busy !== null"
+            :label="t('amendment.composer.sync.overwrite')"
+            @click="overwrite"
+          />
           <UButton
             color="neutral"
-            variant="link"
+            variant="ghost"
             size="sm"
-            class="px-0"
-            :icon="
-              advancedOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'
-            "
-            :label="t('amendment.composer.advanced')"
+            :disabled="busy !== null"
+            :label="t('common.cancel')"
+            @click="confirmingOverwrite = false"
           />
-          <template #content>
-            <URadioGroup
-              class="mt-2"
-              :model-value="mode"
-              :items="totalityModeItems"
-              :legend="t('amendment.composer.totalityLegend')"
-              variant="card"
+        </div>
+        <div v-else class="flex flex-wrap items-center gap-2">
+          <UButton
+            v-if="syncState === 'not_editable'"
+            color="neutral"
+            variant="outline"
+            size="sm"
+            :label="t('common.close')"
+            @click="discardAndClose"
+          />
+          <template v-else>
+            <UButton
+              color="warning"
               size="sm"
-              @update:model-value="setMode"
+              icon="i-lucide-refresh-ccw"
+              :loading="reloading"
+              :disabled="busy !== null || reloading"
+              :label="t('document.authoring.loadRemote')"
+              @click="loadRemote"
+            />
+            <UButton
+              v-if="syncState === 'remote_newer'"
+              color="neutral"
+              variant="outline"
+              size="sm"
+              :disabled="busy !== null || reloading"
+              :label="t('amendment.composer.sync.keepMine')"
+              @click="confirmingOverwrite = true"
             />
           </template>
-        </UCollapsible>
-      </div>
+        </div>
+      </template>
+    </UAlert>
 
-      <UAlert
-        v-if="mode === 'return'"
-        color="neutral"
-        variant="subtle"
-        icon="i-lucide-file-x"
-        :description="t('amendment.composer.returnNote')"
-      />
-    </section>
-
-    <!-- Step: write the change -->
-    <section
-      v-if="steps.includes('write')"
-      class="flex flex-col gap-2"
-      :aria-labelledby="`${formId}-write`"
+    <div
+      class="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-[minmax(0,1fr)]"
     >
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <h3
-          :id="`${formId}-write`"
-          class="text-highlighted flex items-center gap-2 text-sm font-semibold"
-        >
-          <span :class="stepBadge" aria-hidden="true">
-            {{ stepNumber("write") }}
-          </span>
-          <span class="sr-only">
-            {{ t("amendment.composer.step", { n: stepNumber("write") }) }}
-          </span>
-          {{ writeTitle }}
-        </h3>
-        <UButton
-          v-if="mode === 'alternative'"
-          icon="i-lucide-copy"
-          color="neutral"
-          variant="outline"
-          size="xs"
-          :label="t('amendment.composer.copyOriginal')"
-          @click="copyOriginal"
-        />
-      </div>
-
-      <!-- Passage: edit in place -->
-      <template v-if="mode === 'passage'">
-        <ClientOnly>
+      <!-- Writing: kept mounted while reviewing, so the editor keeps its
+           cursor and its undo history. -->
+      <div
+        v-show="stage === 'edit'"
+        ref="scroller"
+        class="min-h-0 min-w-0 overflow-y-auto p-0.5 lg:h-full"
+        :class="
+          mode === 'document' || mode === 'alternative'
+            ? 'max-lg:h-[70dvh]'
+            : ''
+        "
+      >
+        <!-- The whole text, edited in place -->
+        <ClientOnly v-if="mode === 'document'">
           <ContentBlockEditor
             ref="editor"
-            v-model="passageBlocks"
-            compact
+            v-model="edited"
+            amend
+            outline
             :label="t('amendment.composer.editorLabel')"
             :placeholder="t('amendment.composer.editorPlaceholder')"
           />
           <template #fallback>
-            <USkeleton aria-hidden="true" class="h-32 w-full" />
+            <USkeleton aria-hidden="true" class="h-96 w-full" />
           </template>
         </ClientOnly>
-        <p class="text-dimmed text-xs">
-          {{
-            adding
-              ? t("amendment.composer.addHint")
-              : t("amendment.composer.editorHint")
-          }}
-        </p>
-      </template>
 
-      <!-- Global replacement -->
-      <template v-else-if="mode === 'global'">
-        <div class="grid gap-3 sm:grid-cols-2">
-          <UFormField :label="t('amendment.composer.find')" required>
-            <UInput
-              v-model="find"
-              class="w-full"
-              :maxlength="500"
-              autocomplete="off"
-              :placeholder="t('amendment.composer.findPlaceholder')"
-            />
-          </UFormField>
-          <UFormField :label="t('amendment.composer.replace')">
-            <UInput
-              v-model="replacement"
-              class="w-full"
-              :maxlength="500"
-              autocomplete="off"
-              :placeholder="t('amendment.composer.replacePlaceholder')"
-            />
-          </UFormField>
-        </div>
-        <p class="text-sm" aria-live="polite">
-          <template v-if="find.trim()">
-            {{
-              t(
-                "amendment.composer.occurrences",
-                { count: occurrences.count, blocks: occurrences.blocks },
-                occurrences.count,
-              )
-            }}
-          </template>
-          <span v-else class="text-muted">
-            {{ t("amendment.composer.globalHint") }}
-          </span>
-        </p>
-      </template>
-
-      <!-- Totality: alternative text -->
-      <template v-else-if="mode === 'alternative'">
-        <p class="text-muted text-sm">
-          {{ t("amendment.composer.alternativeHint") }}
-        </p>
-        <ClientOnly>
-          <ContentBlockEditor
-            ref="editor"
-            v-model="alternativeBlocks"
-            :label="t('amendment.composer.alternativeLabel')"
-            :placeholder="t('amendment.composer.alternativePlaceholder')"
-          />
-          <template #fallback>
-            <USkeleton aria-hidden="true" class="h-48 w-full" />
-          </template>
-        </ClientOnly>
-      </template>
-    </section>
-
-    <!-- Step: see the change -->
-    <section
-      v-if="steps.includes('check')"
-      class="flex flex-col gap-2"
-      :aria-labelledby="`${formId}-check`"
-      aria-live="polite"
-    >
-      <h3
-        :id="`${formId}-check`"
-        class="text-highlighted flex items-center gap-2 text-sm font-semibold"
-      >
-        <span :class="stepBadge" aria-hidden="true">
-          {{ stepNumber("check") }}
-        </span>
-        <span class="sr-only">
-          {{ t("amendment.composer.step", { n: stepNumber("check") }) }}
-        </span>
-        {{ t("amendment.composer.steps.check") }}
-      </h3>
-      <p v-if="mode === 'delete'" class="text-muted text-sm">
-        {{ t("amendment.composer.deleteHint") }}
-      </p>
-      <div class="border-default rounded-md border p-3 sm:p-4">
-        <ContentAmendmentDiff
-          v-if="localIssues.length === 0 && ops.length > 0"
-          :id="`${formId}-preview`"
-          :base="base"
-          :ops="ops"
-          :context="1"
-        />
-        <p v-else class="text-muted text-sm">
-          {{ t(`amendment.composer.issues.${localIssues[0] ?? "no_changes"}`) }}
-        </p>
-      </div>
-    </section>
-
-    <UAlert
-      v-if="opReasons.length > 0 || serverReasons.length > 0"
-      color="error"
-      variant="subtle"
-      icon="i-lucide-circle-alert"
-      role="alert"
-      :title="t('amendment.composer.errorsTitle')"
-    >
-      <template #description>
-        <ul class="list-disc ps-5">
-          <li
-            v-for="reason in [...new Set([...opReasons, ...serverReasons])]"
-            :key="reason"
-          >
-            {{ t(amendmentErrorKey(reason)) }}
-          </li>
-        </ul>
-      </template>
-    </UAlert>
-
-    <!-- A moderator's account that presents nothing of its own must pick the member. -->
-    <UFormField
-      v-if="canActOnBehalf && onBehalfRequired"
-      :label="t('amendment.composer.onBehalf')"
-      required
-      :help="
-        member
-          ? t('amendment.composer.onBehalfOnlyHint')
-          : t('amendment.composer.onBehalfHint')
-      "
-      :error="
-        attempted && needsMember
-          ? t('amendment.composer.onBehalfRequired')
-          : undefined
-      "
-    >
-      <USelectMenu
-        v-model="onBehalfOfMemberId"
-        :items="memberItems"
-        value-key="value"
-        class="w-full"
-        :loading="membersStatus === 'pending'"
-        :placeholder="t('amendment.composer.onBehalfPlaceholder')"
-        :aria-label="
-          selectMenuLabel(
-            t('amendment.composer.onBehalf'),
-            memberItems,
-            onBehalfOfMemberId,
-            t('amendment.composer.onBehalfPlaceholder'),
-          )
-        "
-        :search-input="labelledSearch(t('amendment.composer.memberSearch'))"
-        clear
-      />
-    </UFormField>
-
-    <!-- Step: why -->
-    <UFormField
-      required
-      :error="
-        presentAttempted && justificationMissing
-          ? t('amendment.composer.justificationRequired')
-          : undefined
-      "
-      :help="t('amendment.composer.justificationHelp')"
-    >
-      <template #label>
-        <span
-          class="text-highlighted flex items-center gap-2 text-sm font-semibold"
-        >
-          <span :class="stepBadge" aria-hidden="true">
-            {{ stepNumber("why") }}
-          </span>
-          <span class="sr-only">
-            {{ t("amendment.composer.step", { n: stepNumber("why") }) }}
-          </span>
-          {{ t("amendment.composer.steps.why") }}
-        </span>
-      </template>
-      <UTextarea
-        ref="justificationInput"
-        v-model="justification"
-        :rows="4"
-        autoresize
-        :maxrows="14"
-        class="w-full"
-        :maxlength="20000"
-        :placeholder="t('amendment.composer.justificationPlaceholder')"
-      />
-    </UFormField>
-
-    <!-- Only if needed: co-authors, formal amendment, on behalf of a member. -->
-    <UCollapsible v-model:open="optionsOpen">
-      <UButton
-        color="neutral"
-        variant="link"
-        size="sm"
-        class="px-0"
-        :icon="optionsOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
-        :label="t('amendment.composer.moreOptions')"
-      />
-      <template #content>
-        <div
-          class="border-default mt-2 flex flex-col gap-4 rounded-md border p-3 sm:p-4"
-        >
-          <UFormField
-            :label="
-              editingOthers
-                ? t('amendment.detail.authors')
-                : t('amendment.composer.coAuthors')
-            "
-            :help="t('amendment.composer.coAuthorsHint')"
-          >
-            <USelectMenu
-              v-model="coAuthorIds"
-              :items="coAuthorItems"
-              value-key="value"
-              multiple
-              class="w-full"
-              :loading="membersStatus === 'pending'"
-              :placeholder="t('amendment.composer.coAuthorsPlaceholder')"
-              :aria-label="
-                selectMenuLabel(
-                  editingOthers
-                    ? t('amendment.detail.authors')
-                    : t('amendment.composer.coAuthors'),
-                  coAuthorItems,
-                  coAuthorIds,
-                  t('amendment.composer.coAuthorsPlaceholder'),
-                )
-              "
-              :search-input="
-                labelledSearch(t('amendment.composer.memberSearch'))
-              "
-            />
-          </UFormField>
-
-          <!-- Several members present it: one answers the transactionals. -->
-          <div v-if="mainAuthor.required" ref="mainAuthorBox">
-            <UFormField
-              :label="t('amendment.composer.mainAuthor')"
-              required
-              :help="t('amendment.composer.mainAuthorHint')"
-              :error="
-                attempted && mainAuthor.missing
-                  ? t('amendment.composer.mainAuthorRequired')
-                  : undefined
-              "
-            >
-              <!-- The visible label is the field's; the legend names the group. -->
-              <URadioGroup
-                v-model="mainAuthorId"
-                :items="mainAuthorItems"
-                :legend="t('amendment.composer.mainAuthor')"
-                :ui="{ legend: 'sr-only' }"
-                aria-required="true"
-                size="sm"
+        <!-- One word everywhere -->
+        <div v-else-if="mode === 'global'" class="flex flex-col gap-3">
+          <div class="grid gap-3 sm:grid-cols-2">
+            <UFormField :label="t('amendment.composer.find')" required>
+              <UInput
+                v-model="find"
+                class="w-full"
+                :maxlength="500"
+                autocomplete="off"
+                :placeholder="t('amendment.composer.findPlaceholder')"
+              />
+            </UFormField>
+            <UFormField :label="t('amendment.composer.replace')">
+              <UInput
+                v-model="replacement"
+                class="w-full"
+                :maxlength="500"
+                autocomplete="off"
+                :placeholder="t('amendment.composer.replacePlaceholder')"
               />
             </UFormField>
           </div>
-
-          <UCheckbox
-            v-if="canBeFormal"
-            :model-value="kind === 'formal'"
-            :label="t('amendment.composer.formal')"
-            :description="t('amendment.composer.formalDescription')"
-            @update:model-value="kind = $event === true ? 'formal' : 'partial'"
-          />
-
-          <UFormField
-            v-if="canActOnBehalf && !onBehalfRequired"
-            :label="t('amendment.composer.onBehalf')"
-            :help="t('amendment.composer.onBehalfHint')"
-          >
-            <USelectMenu
-              v-model="onBehalfOfMemberId"
-              :items="memberItems"
-              value-key="value"
-              class="w-full"
-              :loading="membersStatus === 'pending'"
-              :placeholder="t('amendment.composer.onBehalfPlaceholder')"
-              :aria-label="
-                selectMenuLabel(
-                  t('amendment.composer.onBehalf'),
-                  memberItems,
-                  onBehalfOfMemberId,
-                  t('amendment.composer.onBehalfPlaceholder'),
+          <p class="text-sm" aria-live="polite">
+            <template v-if="find.trim()">
+              {{
+                t(
+                  "amendment.composer.occurrences",
+                  { count: occurrences.count, blocks: occurrences.blocks },
+                  occurrences.count,
                 )
+              }}
+            </template>
+            <span v-else class="text-muted">
+              {{ t("amendment.composer.globalHint") }}
+            </span>
+          </p>
+        </div>
+
+        <!-- Totality: send the document back -->
+        <UAlert
+          v-else-if="mode === 'return'"
+          color="neutral"
+          variant="subtle"
+          icon="i-lucide-file-x"
+          :description="t('amendment.composer.returnNote')"
+        />
+
+        <!-- Totality: alternative text -->
+        <div v-else class="flex flex-col gap-2">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <p class="text-muted text-sm">
+              {{ t("amendment.composer.alternativeHint") }}
+            </p>
+            <UButton
+              icon="i-lucide-copy"
+              color="neutral"
+              variant="outline"
+              size="xs"
+              :label="t('amendment.composer.copyOriginal')"
+              @click="copyOriginal"
+            />
+          </div>
+          <ClientOnly>
+            <ContentBlockEditor
+              ref="editor"
+              v-model="alternativeBlocks"
+              :label="t('amendment.composer.alternativeLabel')"
+              :placeholder="t('amendment.composer.alternativePlaceholder')"
+            />
+            <template #fallback>
+              <USkeleton aria-hidden="true" class="h-48 w-full" />
+            </template>
+          </ClientOnly>
+        </div>
+      </div>
+
+      <!-- Reviewing: the amendment as everybody else will see it -->
+      <div
+        v-if="stage === 'review'"
+        class="flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto p-0.5 lg:h-full"
+        :aria-labelledby="`${uid}-review`"
+        role="region"
+      >
+        <div>
+          <h3
+            :id="`${uid}-review`"
+            ref="reviewHeading"
+            tabindex="-1"
+            class="text-highlighted text-base font-semibold focus:outline-none"
+          >
+            {{ t("amendment.composer.review.title") }}
+          </h3>
+          <p class="text-muted text-sm">
+            {{ t("amendment.composer.review.description") }}
+          </p>
+        </div>
+
+        <UAlert
+          v-if="lateKept"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-clock-alert"
+          :title="t('amendment.composer.lateKeptTitle')"
+          :description="t('amendment.composer.lateKeptWarning')"
+        />
+        <UAlert
+          v-else-if="lateOnSend"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-clock-alert"
+          :title="t('amendment.composer.lateTitle')"
+          :description="t('amendment.composer.lateWarning')"
+        />
+        <p
+          v-else-if="onTimeKept"
+          class="text-muted flex items-start gap-1.5 text-sm"
+        >
+          <UIcon
+            name="i-lucide-clock-check"
+            class="mt-0.5 size-4 shrink-0"
+            aria-hidden="true"
+          />
+          {{ t("amendment.composer.correctionOnTime") }}
+        </p>
+
+        <UAlert
+          v-if="problems.length > 0"
+          color="error"
+          variant="subtle"
+          icon="i-lucide-circle-alert"
+          role="alert"
+          :title="t('amendment.composer.review.problems')"
+        >
+          <template #description>
+            <ul class="list-disc ps-5">
+              <li v-for="problem in problems" :key="problem">{{ problem }}</li>
+            </ul>
+          </template>
+        </UAlert>
+
+        <dl
+          class="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[auto_minmax(0,1fr)]"
+        >
+          <dt class="text-muted">{{ t("amendment.composer.review.kind") }}</dt>
+          <dd class="text-default">
+            {{ kindLabel ?? t("amendment.composer.review.noKind") }}
+          </dd>
+          <dt class="text-muted">{{ t("amendment.composer.review.who") }}</dt>
+          <dd class="text-default">
+            {{ authorNames || t("amendment.composer.review.noWho") }}
+          </dd>
+          <dt class="text-muted">{{ t("amendment.composer.review.why") }}</dt>
+          <dd class="text-default whitespace-pre-line">
+            {{
+              justificationMissing
+                ? t("amendment.composer.review.noWhy")
+                : justification.trim()
+            }}
+          </dd>
+        </dl>
+
+        <div v-if="mode !== 'return'" class="flex flex-col gap-2">
+          <h4 class="text-highlighted text-sm font-semibold">
+            {{ t("amendment.composer.review.changes") }}
+          </h4>
+          <div class="border-default rounded-md border p-3 sm:p-4">
+            <ContentAmendmentDiff
+              v-if="
+                textIssues.length === 0 &&
+                opReasons.length === 0 &&
+                ops.length > 0
               "
-              :search-input="
-                labelledSearch(t('amendment.composer.memberSearch'))
+              :id="`${uid}-preview`"
+              :base="base"
+              :ops="ops"
+              :context="1"
+            />
+            <p v-else class="text-muted text-sm">
+              {{
+                t(`amendment.composer.issues.${textIssues[0] ?? "no_changes"}`)
+              }}
+            </p>
+          </div>
+        </div>
+        <UAlert
+          v-else
+          color="neutral"
+          variant="subtle"
+          icon="i-lucide-file-x"
+          :description="t('amendment.composer.returnNote')"
+        />
+
+        <div
+          class="border-default bg-default sticky bottom-0 mt-auto flex flex-col gap-2 border-t pt-3"
+        >
+          <p class="text-muted flex items-start gap-1.5 text-xs">
+            <UIcon
+              name="i-lucide-shield-check"
+              class="mt-px size-3.5 shrink-0"
+              aria-hidden="true"
+            />
+            {{ t("amendment.composer.reviewNotice") }}
+          </p>
+          <p
+            v-if="justificationMissing && !blocked"
+            class="text-default text-sm"
+          >
+            {{ t("amendment.composer.justificationRequired") }}
+          </p>
+          <div class="flex flex-wrap items-center gap-2">
+            <UButton
+              icon="i-lucide-arrow-left"
+              color="neutral"
+              variant="ghost"
+              :disabled="busy !== null"
+              :label="t('amendment.composer.review.back')"
+              @click="backToEdit"
+            />
+            <UButton
+              class="ms-auto"
+              icon="i-lucide-save"
+              color="neutral"
+              variant="outline"
+              :loading="busy === 'save'"
+              :disabled="busy !== null || blocked"
+              :label="t('amendment.composer.saveDraft')"
+              @click="saveDraft"
+            />
+            <UButton
+              icon="i-lucide-send"
+              :loading="busy === 'submit'"
+              :disabled="busy !== null || blocked"
+              :label="t('amendment.composer.submit')"
+              @click="present"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- The three questions, always in view -->
+      <aside
+        class="border-default flex min-h-0 min-w-0 flex-col rounded-md border lg:h-full"
+        :aria-label="t('amendment.composer.panelLabel')"
+      >
+        <div
+          class="flex min-h-0 flex-1 flex-col gap-5 p-3 sm:p-4 lg:overflow-y-auto"
+        >
+          <!-- 1. Content or form -->
+          <div v-if="asksKind" class="flex flex-col gap-1.5">
+            <URadioGroup
+              :model-value="kind ?? undefined"
+              :items="kindItems"
+              :legend="t('amendment.composer.kind.question')"
+              :ui="{ legend: `${questionClass} mb-2` }"
+              variant="card"
+              size="sm"
+              aria-required="true"
+              @update:model-value="setKind"
+            />
+            <p
+              v-if="attempted && kind === null"
+              role="alert"
+              class="text-error text-sm"
+            >
+              {{ t("amendment.composer.issues.kind_missing") }}
+            </p>
+          </div>
+
+          <!-- 2. Who presents it -->
+          <div class="flex flex-col gap-3">
+            <!-- A moderator's account that presents nothing of its own must
+                 pick the member. -->
+            <UFormField
+              v-if="canActOnBehalf && onBehalfRequired"
+              :label="t('amendment.composer.onBehalf')"
+              required
+              :help="
+                member
+                  ? t('amendment.composer.onBehalfOnlyHint')
+                  : t('amendment.composer.onBehalfHint')
               "
-              clear
+              :error="
+                attempted && needsMember
+                  ? t('amendment.composer.onBehalfRequired')
+                  : undefined
+              "
+            >
+              <USelectMenu
+                v-model="onBehalfOfMemberId"
+                :items="memberItems"
+                value-key="value"
+                class="w-full"
+                :loading="membersStatus === 'pending'"
+                :placeholder="t('amendment.composer.onBehalfPlaceholder')"
+                :aria-label="
+                  selectMenuLabel(
+                    t('amendment.composer.onBehalf'),
+                    memberItems,
+                    onBehalfOfMemberId,
+                    t('amendment.composer.onBehalfPlaceholder'),
+                  )
+                "
+                :search-input="
+                  labelledSearch(t('amendment.composer.memberSearch'))
+                "
+                clear
+              />
+            </UFormField>
+
+            <URadioGroup
+              v-if="!editingOthers"
+              :model-value="withOthers ? 'others' : 'solo'"
+              :items="whoItems"
+              :legend="t('amendment.composer.who.question')"
+              :ui="{ legend: `${questionClass} mb-2` }"
+              variant="card"
+              size="sm"
+              @update:model-value="setWho"
+            />
+            <p v-else :class="questionClass">
+              {{ t("amendment.composer.who.question") }}
+            </p>
+
+            <UFormField
+              v-if="editingOthers || withOthers"
+              :label="
+                editingOthers
+                  ? t('amendment.detail.authors')
+                  : t('amendment.composer.who.members')
+              "
+            >
+              <USelectMenu
+                v-model="coAuthorIds"
+                :items="coAuthorItems"
+                value-key="value"
+                multiple
+                class="w-full"
+                :loading="membersStatus === 'pending'"
+                :placeholder="t('amendment.composer.who.placeholder')"
+                :aria-label="
+                  selectMenuLabel(
+                    editingOthers
+                      ? t('amendment.detail.authors')
+                      : t('amendment.composer.who.members'),
+                    coAuthorItems,
+                    coAuthorIds,
+                    t('amendment.composer.who.placeholder'),
+                  )
+                "
+                :search-input="
+                  labelledSearch(t('amendment.composer.memberSearch'))
+                "
+              />
+            </UFormField>
+
+            <!-- Several members present it: one answers the transactionals. -->
+            <div v-if="mainAuthor.required" ref="mainAuthorBox">
+              <UFormField
+                :label="t('amendment.composer.mainAuthor')"
+                required
+                :help="t('amendment.composer.mainAuthorHint')"
+                :error="
+                  attempted && mainAuthor.missing
+                    ? t('amendment.composer.mainAuthorRequired')
+                    : undefined
+                "
+              >
+                <!-- The visible label is the field's; the legend names the group. -->
+                <URadioGroup
+                  v-model="mainAuthorId"
+                  :items="mainAuthorItems"
+                  :legend="t('amendment.composer.mainAuthor')"
+                  :ui="{ legend: 'sr-only' }"
+                  aria-required="true"
+                  size="sm"
+                />
+              </UFormField>
+            </div>
+
+            <!-- The Mesa records an amendment dictated in the room. -->
+            <template v-if="canActOnBehalf && !onBehalfRequired">
+              <UButton
+                v-if="!onBehalfOpen"
+                color="neutral"
+                variant="link"
+                size="xs"
+                class="self-start px-0"
+                icon="i-lucide-user-round-pen"
+                :label="t('amendment.composer.who.onBehalfToggle')"
+                @click="onBehalfOpen = true"
+              />
+              <UFormField
+                v-else
+                size="sm"
+                :label="t('amendment.composer.onBehalf')"
+                :help="t('amendment.composer.onBehalfHint')"
+              >
+                <USelectMenu
+                  v-model="onBehalfOfMemberId"
+                  :items="memberItems"
+                  value-key="value"
+                  size="sm"
+                  class="w-full"
+                  :loading="membersStatus === 'pending'"
+                  :placeholder="t('amendment.composer.onBehalfPlaceholder')"
+                  :aria-label="
+                    selectMenuLabel(
+                      t('amendment.composer.onBehalf'),
+                      memberItems,
+                      onBehalfOfMemberId,
+                      t('amendment.composer.onBehalfPlaceholder'),
+                    )
+                  "
+                  :search-input="
+                    labelledSearch(t('amendment.composer.memberSearch'))
+                  "
+                  clear
+                />
+              </UFormField>
+            </template>
+          </div>
+
+          <!-- 3. Why -->
+          <UFormField
+            required
+            :error="
+              attempted && justificationMissing
+                ? t('amendment.composer.justificationRequired')
+                : undefined
+            "
+            :help="t('amendment.composer.why.help')"
+          >
+            <template #label>
+              <span :class="questionClass">
+                {{ t("amendment.composer.why.question") }}
+              </span>
+            </template>
+            <UTextarea
+              ref="justificationInput"
+              v-model="justification"
+              :rows="4"
+              autoresize
+              :maxrows="12"
+              class="w-full"
+              :maxlength="20000"
+              :placeholder="t('amendment.composer.justificationPlaceholder')"
             />
           </UFormField>
         </div>
-      </template>
-    </UCollapsible>
 
-    <footer
-      class="border-default bg-default sticky bottom-0 -mx-1 flex flex-col gap-2 border-t px-1 pt-3 pb-1"
-    >
-      <!-- The stored draft moved on: the author chooses, nothing is adopted silently. -->
-      <UAlert
-        v-if="showSync"
-        :color="syncState === 'not_editable' ? 'error' : 'warning'"
-        variant="subtle"
-        :icon="
-          syncState === 'not_editable' ? 'i-lucide-file-lock' : 'i-lucide-users'
-        "
-        role="alert"
-        :title="t(`amendment.composer.sync.${syncState}.title`)"
-        :description="syncDescription"
-      >
-        <template #actions>
-          <div
-            v-if="confirmingOverwrite"
-            class="flex flex-wrap items-center gap-2"
-            role="group"
+        <!-- 4. How much changes, and on to the review -->
+        <div
+          v-if="stage === 'edit'"
+          class="border-default flex shrink-0 flex-col gap-2 border-t p-3 sm:p-4"
+        >
+          <p
+            v-if="mode === 'document'"
+            class="text-default flex items-center gap-1.5 text-sm font-medium"
+            aria-live="polite"
           >
-            <span class="text-sm">
-              {{ t("amendment.composer.sync.overwriteConfirm") }}
-            </span>
-            <UButton
-              color="error"
-              size="sm"
-              :loading="busy === 'save'"
-              :disabled="busy !== null"
-              :label="t('amendment.composer.sync.overwrite')"
-              @click="overwrite"
+            <UIcon
+              name="i-lucide-pencil-line"
+              class="size-4 shrink-0"
+              aria-hidden="true"
             />
-            <UButton
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              :disabled="busy !== null"
-              :label="t('common.cancel')"
-              @click="confirmingOverwrite = false"
-            />
-          </div>
-          <div v-else class="flex flex-wrap items-center gap-2">
-            <UButton
-              v-if="syncState === 'not_editable'"
-              color="neutral"
-              variant="outline"
-              size="sm"
-              :label="t('common.close')"
-              @click="emit('close')"
-            />
-            <template v-else>
-              <UButton
-                color="warning"
-                size="sm"
-                icon="i-lucide-refresh-ccw"
-                :loading="reloading"
-                :disabled="busy !== null || reloading"
-                :label="t('document.authoring.loadRemote')"
-                @click="loadRemote"
-              />
-              <UButton
-                v-if="syncState === 'remote_newer'"
-                color="neutral"
-                variant="outline"
-                size="sm"
-                :disabled="busy !== null || reloading"
-                :label="t('amendment.composer.sync.keepMine')"
-                @click="confirmingOverwrite = true"
-              />
-            </template>
-          </div>
-        </template>
-      </UAlert>
+            {{
+              t(
+                "amendment.composer.changed",
+                { count: changedCount },
+                changedCount,
+              )
+            }}
+          </p>
+          <UButton
+            block
+            icon="i-lucide-list-checks"
+            :disabled="cannotPresent"
+            :label="t('amendment.composer.review.action')"
+            @click="openReview"
+          />
+        </div>
+      </aside>
+    </div>
 
-      <p class="text-muted flex items-start gap-1.5 text-xs">
-        <UIcon
-          name="i-lucide-shield-check"
-          class="mt-px size-3.5 shrink-0"
-          aria-hidden="true"
-        />
-        {{ t("amendment.composer.reviewNotice") }}
-      </p>
-
-      <div class="flex flex-wrap items-center gap-2">
-        <UButton
-          color="neutral"
-          variant="ghost"
-          :label="t('amendment.actions.cancel')"
-          :disabled="busy !== null"
-          @click="emit('close')"
-        />
-        <UButton
-          class="ms-auto"
-          icon="i-lucide-save"
-          color="neutral"
-          variant="outline"
-          :loading="busy === 'save'"
-          :disabled="busy !== null || cannotPresent || syncBlocked"
-          :label="t('amendment.composer.saveDraft')"
-          @click="saveDraft"
-        />
-        <UButton
-          type="submit"
-          icon="i-lucide-send"
-          :loading="busy === 'submit'"
-          :disabled="busy !== null || cannotPresent || syncBlocked"
-          :label="t('amendment.composer.submit')"
-        />
-      </div>
-    </footer>
-  </form>
+    <!-- Leaving with changes that were not saved -->
+    <UModal
+      v-model:open="leaveOpen"
+      :title="t('amendment.composer.leave.title')"
+      :description="t('amendment.composer.leave.description')"
+    >
+      <template #footer>
+        <div class="flex w-full flex-wrap justify-end gap-2">
+          <UButton
+            color="neutral"
+            variant="ghost"
+            :label="t('amendment.composer.leave.discard')"
+            @click="discardAndClose"
+          />
+          <UButton
+            :label="t('amendment.composer.leave.stay')"
+            @click="leaveOpen = false"
+          />
+        </div>
+      </template>
+    </UModal>
+  </section>
 </template>

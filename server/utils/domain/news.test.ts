@@ -94,6 +94,16 @@ describe("newsValue", () => {
     ).toBe("postponed");
   });
 
+  it("says the kind an amendment was reclassified to", () => {
+    expect(
+      newsValue("amendment_reclassified", { from: "partial", to: "formal" }),
+    ).toBe("formal");
+    expect(
+      newsValue("amendment_reclassified", { from: "formal", to: "partial" }),
+    ).toBe("partial");
+    expect(NEWS_OUTCOME_TYPES).toContain("amendment_reclassified");
+  });
+
   it("leaves it out when the type says it all", () => {
     expect(newsValue("amendment_published", {})).toBeNull();
     expect(newsValue("position_changed", {})).toBeNull();

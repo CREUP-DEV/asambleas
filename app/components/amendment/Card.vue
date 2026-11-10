@@ -2,38 +2,34 @@
 import type { AmendmentStatus } from "~~/shared/constants/domain";
 import type { AmendmentDto } from "~~/shared/types/api";
 import {
-  transactionalLinksOf,
   transactionalProgressMessage,
   transactionalProgressOf,
 } from "~/composables/amendment/transactional";
 import {
   amendmentAuthorsInOrder,
   amendmentLateState,
-  amendmentReviewView,
+  amendmentStatusLine,
   isAmendmentPrivate,
-  showAmendmentAdmission,
-  type AmendmentRelationView,
 } from "~/composables/amendment/workspace";
 
 /**
- * One amendment in the workspace list: label, presenting members (the main
- * author first, marked when there are several), one status (where it
- * stands with the Secretaría while it is a draft or waits for it, the
- * outcome otherwise), the Secretaría's note when it asked for a correction,
- * the kind when it is not the usual partial one, change typology, admission
- * and the main presenter's answer (naming it when the page knows who it
- * is), the late mark (and once the assembly admitted it, that it did),
- * relations and transactional links: the transactional that replaced it, or
- * the open ones proposed over it. A presented transactional says instead,
- * in one line, what it waits for (the main authors still to answer, or who
- * rejected it) or which amendments it replaced; while the Secretaría has
- * it, the usual
- * review badge stays (as in the detail), so the Secretaría still finds it
- * "Por revisar". A late amendment the assembly still has to decide on says
- * so in a line of its own. An amendment that is not public yet has a dashed
- * border and says who can see it. The whole card is one button that
- * selects the amendment (`data-amendment-card` lets the page give it focus
- * back).
+ * One amendment in the workspace list, kept to what tells them apart:
+ * label, its main author (and how many more present it), one status (where
+ * it stands with the Secretaría while it is a draft or waits for it, the
+ * outcome otherwise: amendmentStatusLine) and one line of justification.
+ * A presented transactional says instead, in one line, what it waits for
+ * (the main authors still to answer, or who rejected it) or which
+ * amendments it replaced.
+ *
+ * Only what asks the viewer to act stays besides that: the Secretaría's
+ * note when it asked for a correction, that a late amendment waits for the
+ * assembly's decision, and that it came in late. Kind, change typology,
+ * admission, the main presenter's answer, relations and transactional links
+ * are in the detail.
+ *
+ * An amendment that is not public yet has a dashed border and says who can
+ * see it. The whole card is one button that selects the amendment
+ * (`data-amendment-card` lets the page give it focus back).
  */
 const props = withDefaults(
   defineProps<{
@@ -41,7 +37,6 @@ const props = withDefaults(
     /** "12 · CEUM 4", or the draft label. */
     label: string;
     labelOf: (id: string) => string;
-    relations?: AmendmentRelationView[];
     selected?: boolean;
     /** Also say "Publicada" ("Mis enmiendas"), not only the private states. */
     showPublished?: boolean;
@@ -50,21 +45,11 @@ const props = withDefaults(
      * a transactional can tell whether it replaced the ones it combines.
      */
     statusOf?: (id: string) => AmendmentStatus | undefined;
-    /**
-     * Every amendment of the document (the workspace list), so its
-     * transactional links tell a replacement from a proposal.
-     */
-    byId?: ReadonlyMap<string, AmendmentDto>;
-    /** Acronym of the document's main presenter, who answers it. */
-    presenter?: string | null;
   }>(),
   {
-    relations: () => [],
     selected: false,
     showPublished: false,
     statusOf: undefined,
-    byId: undefined,
-    presenter: null,
   },
 );
 
@@ -75,7 +60,8 @@ const { member } = useMe();
 
 /**
  * A presented, undecided transactional out of the Secretaría's hands: its
- * progress line replaces the badges (the same rule as the review panel).
+ * progress line is its status (the same rule as the review panel), also
+ * once a main author rejected it ("Rechazada por CEUM").
  */
 const progress = computed(() =>
   transactionalProgressOf(
@@ -89,104 +75,22 @@ const hasProgress = computed(
     progress.value !== null &&
     transactionalProgressMessage(progress.value, "long") !== null,
 );
-/** Main author first; marked only when there are several. */
+/** Main author first; the rest are counted. */
 const authors = computed(() => amendmentAuthorsInOrder(props.amendment));
 const lateState = computed(() => amendmentLateState(props.amendment));
-/** Late and waiting for the assembly: its own line, no extra badges. */
-const awaitingDecision = computed(
-  () => lateState.value === "awaiting_decision",
-);
-const showAdmission = computed(
-  () =>
-    props.amendment.status === "submitted" &&
-    !awaitingDecision.value &&
-    showAmendmentAdmission(props.amendment),
-);
 const isPrivate = computed(() => isAmendmentPrivate(props.amendment));
-/**
- * While it is a draft or waits for the Secretaría, the review badge
- * ("Sin enviar", "En revisión") says it better than "Borrador" or
- * "Presentada": show one, not both. A transactional's progress line does
- * the same, also once a main author rejected it ("Rechazada por CEUM").
- */
-const showStatus = computed(() => {
-  if (hasProgress.value) return false;
-  if (
-    props.amendment.status !== "draft" &&
-    props.amendment.status !== "submitted"
-  ) {
-    return true;
-  }
-  const review = amendmentReviewView(props.amendment);
-  const reviewShown =
-    review !== null && (props.showPublished || review.key !== "published");
-  return !reviewShown;
-});
-/** "Parcial" is the usual kind: only the others are worth a badge. */
-const showKind = computed(() => props.amendment.kind !== "partial");
+/** One status: the review badge while it says more, else the status. */
+const statusLine = computed(() =>
+  amendmentStatusLine(props.amendment, { showPublished: props.showPublished }),
+);
+const showStatus = computed(
+  () => !hasProgress.value && statusLine.value.type === "status",
+);
 const correctionNote = computed(() =>
   props.amendment.reviewState === "correction_requested"
     ? props.amendment.correctionNote
     : null,
 );
-const showPosition = computed(
-  () =>
-    props.amendment.position !== null &&
-    props.amendment.position.position !== "pending",
-);
-
-/** The progress line already names the amendments it replaced. */
-const sources = computed(() =>
-  progress.value?.stage === "replaced"
-    ? ""
-    : props.amendment.sourceIds.map((id) => props.labelOf(id)).join(", "),
-);
-/**
- * "Transaccionada en T1" once a transactional replaced it, "En la
- * transaccional propuesta T2" while one is only proposed over it.
- */
-const links = computed(() =>
-  props.byId
-    ? transactionalLinksOf(props.amendment, props.byId)
-    : {
-        replacedBy:
-          props.amendment.status === "transacted"
-            ? props.amendment.transactionalIds
-            : [],
-        proposed: [],
-      },
-);
-const transactedIn = computed(() =>
-  links.value.replacedBy.map((id) => props.labelOf(id)).join(", "),
-);
-const proposedIn = computed(() =>
-  links.value.proposed.map((id) => props.labelOf(id)).join(", "),
-);
-/** "VPU la acepta": whose answer it is, when the page knows. */
-const positionLabel = computed(() => {
-  const position = props.amendment.position?.position;
-  if (!props.presenter || !position || position === "pending") return undefined;
-  return t(`amendment.card.position.${position}`, {
-    member: props.presenter,
-  });
-});
-const showTags = computed(
-  () =>
-    showKind.value ||
-    props.amendment.changeKinds.length > 0 ||
-    showAdmission.value ||
-    showPosition.value ||
-    lateState.value === "late" ||
-    props.amendment.globalReplace !== null,
-);
-
-function relationLabel(view: AmendmentRelationView): string {
-  const key =
-    view.direction === "from"
-      ? `amendment.relations.kinds.${view.relation.kind}`
-      : `amendment.relations.inverse.${view.relation.kind}`;
-  return `${t(key)} ${props.labelOf(view.otherId)}`;
-}
 </script>
 
 <template>
@@ -209,19 +113,17 @@ function relationLabel(view: AmendmentRelationView): string {
       <span class="text-highlighted font-semibold tabular-nums">
         {{ label }}
       </span>
-      <template v-if="authors.main">
-        <CommonMemberBadge :member="authors.main" size="xs" />
-        <span v-if="authors.marked" class="text-dimmed text-xs">
-          {{ t("amendment.card.mainAuthor") }}
-        </span>
-      </template>
-      <CommonMemberBadge
-        v-for="author in authors.others"
-        :key="author.id"
-        :member="author"
-        size="xs"
-      />
-      <span v-if="showStatus" class="ms-auto flex flex-wrap items-center gap-1">
+      <CommonMemberBadge v-if="authors.main" :member="authors.main" size="xs" />
+      <span v-if="authors.others.length > 0" class="text-muted text-xs">
+        {{
+          t(
+            "amendment.card.moreAuthors",
+            { count: authors.others.length },
+            authors.others.length,
+          )
+        }}
+      </span>
+      <span v-if="showStatus" class="ms-auto flex items-center">
         <CommonStatusBadge
           kind="amendment"
           :value="amendment.status"
@@ -244,16 +146,24 @@ function relationLabel(view: AmendmentRelationView): string {
       class="mt-2"
     />
 
-    <!-- Late, validated, and not admitted yet: the assembly decides. -->
-    <span v-if="awaitingDecision" class="mt-2 flex items-start gap-1.5 text-sm">
+    <!-- Late: waiting for the assembly's decision, or just out of time. -->
+    <span v-if="lateState" class="mt-2 flex items-start gap-1.5 text-sm">
       <UIcon
         name="i-lucide-clock-alert"
         class="text-warning mt-0.5 size-4 shrink-0"
         aria-hidden="true"
       />
       <span class="text-default">
-        <span class="font-medium">{{ t("amendment.late") }}</span>
-        · {{ t("amendment.lateState.awaiting") }}
+        <span class="font-medium">
+          {{
+            lateState === "late" && amendment.admission === "admitted"
+              ? t("amendment.lateAdmitted")
+              : t("amendment.late")
+          }}
+        </span>
+        <template v-if="lateState === 'awaiting_decision'">
+          · {{ t("amendment.lateState.awaiting") }}
+        </template>
       </span>
     </span>
 
@@ -272,107 +182,11 @@ function relationLabel(view: AmendmentRelationView): string {
       </span>
     </span>
 
-    <span v-if="showTags" class="mt-2 flex flex-wrap items-center gap-1">
-      <UBadge
-        v-if="showKind"
-        color="neutral"
-        variant="outline"
-        size="xs"
-        :label="t(`amendment.kinds.${amendment.kind}`)"
-      />
-      <UBadge
-        v-for="change in amendment.changeKinds"
-        :key="change"
-        color="neutral"
-        variant="soft"
-        size="xs"
-        :label="t(`amendment.changeKinds.${change}`)"
-      />
-      <CommonStatusBadge
-        v-if="showAdmission"
-        kind="admission"
-        :value="amendment.admission"
-        size="xs"
-      />
-      <CommonStatusBadge
-        v-if="showPosition && amendment.position"
-        kind="position"
-        :value="amendment.position.position"
-        :label="positionLabel"
-        size="xs"
-      />
-      <UBadge
-        v-if="lateState === 'late'"
-        color="warning"
-        variant="subtle"
-        size="xs"
-        icon="i-lucide-clock-alert"
-        :label="
-          amendment.admission === 'admitted'
-            ? t('amendment.lateAdmitted')
-            : t('amendment.late')
-        "
-      />
-      <UBadge
-        v-if="amendment.globalReplace"
-        color="neutral"
-        variant="soft"
-        size="xs"
-        icon="i-lucide-replace-all"
-        :label="t('amendment.card.global')"
-      />
-    </span>
-
     <span
       v-if="amendment.justification"
-      class="text-muted mt-2 line-clamp-2 block text-sm"
+      class="text-muted mt-2 line-clamp-1 block text-sm"
     >
       {{ amendment.justification }}
-    </span>
-
-    <span
-      v-if="relations.length > 0 || sources || transactedIn || proposedIn"
-      class="mt-2 flex flex-wrap gap-1"
-    >
-      <UBadge
-        v-if="sources"
-        color="secondary"
-        variant="soft"
-        size="xs"
-        icon="i-lucide-git-merge"
-        :label="t('amendment.card.sources', { list: sources })"
-      />
-      <UBadge
-        v-if="transactedIn"
-        color="secondary"
-        variant="soft"
-        size="xs"
-        icon="i-lucide-git-merge"
-        :label="t('amendment.card.transactedIn', { list: transactedIn })"
-      />
-      <UBadge
-        v-if="proposedIn"
-        color="neutral"
-        variant="soft"
-        size="xs"
-        icon="i-lucide-git-pull-request-arrow"
-        :label="
-          t(
-            'amendment.card.proposedIn',
-            { list: proposedIn },
-            links.proposed.length,
-          )
-        "
-      />
-      <UBadge
-        v-for="view in relations"
-        :key="view.relation.id"
-        :color="view.relation.kind === 'incompatible' ? 'error' : 'info'"
-        variant="soft"
-        size="xs"
-        icon="i-lucide-link-2"
-        :label="relationLabel(view)"
-      />
     </span>
   </button>
 </template>

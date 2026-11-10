@@ -207,6 +207,8 @@ type AmendmentOp =
       to: number;
       text: string;
       baseText: string;
+      marks?: Mark[]; // formatting of the new text, offsets inside `text`
+      block?: BlockFormat; // new format of the whole block
     }
   | { op: "insert"; afterBlockId: string | null; blocks: NewBlock[] }
   | { op: "delete"; blockIds: string[] };
@@ -216,6 +218,36 @@ type AmendmentOp =
 modification. A global term replacement is stored as a group of `replace`
 operations with the search term recorded for display. The change typology
 (supresión, adición, modificación) is derived from the operations.
+
+A `replace` also amends the formatting of text that is already there, still
+anchored to the base (`shared/utils/content/format.ts`):
+
+- `marks` is the inline formatting (bold, italic, underline, strike, link)
+  of the operation's new text, with offsets inside `text`. It takes the place
+  of the base marks over `[from, to)`. With `text` equal to `baseText` the
+  operation changes formatting only (new bold on a word). Without `marks`
+  the base marks follow the text as they always did.
+- `block` is the new format of the whole block (`BlockFormat`: `type`
+  paragraph, heading, list item or quote, with `level`, `list`, `marker`,
+  `start` and `align`). It travels alone, on an operation with `from` and
+  `to` at 0 and empty `text` and `baseText`, one per block at most. Images
+  and the table cell a block sits in are not amended this way.
+
+Both fields are optional: amendments stored before them stay valid as they
+are, with no migration, and consolidate to the same blocks and hashes.
+`diffPassage` emits them for a block edited in place; what the editor does
+by itself to a passage out of its document (a nested list item alone comes
+back at the first level, a line break carries no marks) is not taken for a
+change. A change of format counts as a modification. In overlaps a change
+of marks takes its range like a change of text, and a change of `block`
+takes the whole block: it collides (`same_text`) with any other change
+inside it. Moving a block is still a deletion and an insertion.
+
+A formatting change shows its text once, in its new format, with a label
+that says in words what changes ("pasa a negrita", "pasa a título de nivel
+2"; `common.content.format.*`, from the `FormatChange` codes the engine
+attaches to the segment or the block), on screen and in the PDF: never a
+strike and a rewrite, and never colour alone.
 
 - `kind`: `partial`, `formal`, `totality_return`, `totality_alternative`,
   `transactional`.
@@ -805,9 +837,34 @@ Secretaría or the Mesa sees them under "Asamblea", "Secretaría" and "Mesa".
     overlaps highlighted.
   - View modes: original, with amendments, consolidated with provenance, and
     side by side.
-  - To amend, select a passage and edit it in place, then add a justification
-    and co-authors. Adding a paragraph, suppressing one, global replacement
-    and totality amendments are also available.
+  - To amend, one button ("Presentar enmienda") opens the composer in place
+    of the text and the list (the whole width; the whole screen on a phone):
+    - the whole base version in the block editor, opened at the paragraph the
+      reader had at the top of the text (or had selected); a stored draft
+      opens with its operations applied, at its first change;
+    - the author edits it like any text. Nobody says whether a change
+      modifies, adds or suppresses: `diffPassage` over the whole document
+      derives the operations, formatting included, a moment after the author
+      stops typing. Everything changed in one go is one amendment with one
+      justification;
+    - the editor offers what an amendment can express: text, marks, links,
+      headings, lists and their numbering, quotes, alignment, new blocks and
+      tables, and rows and columns of a table. It leaves out what the engine
+      does not compare on a table of the base (the fill of a cell, header
+      cells, merged cells) and new images. Moving a paragraph is removing it
+      and adding it;
+    - a panel that stays in view asks three things: content or form (nothing
+      chosen for a new amendment), who presents it (alone or with other
+      members, and then the main author; the Mesa may present it on behalf of
+      a member) and why. Under them, how many paragraphs change and "Revisar
+      y enviar";
+    - "Revisar y enviar" shows the changes as everybody will see them
+      (`ContentAmendmentDiff`), what is missing in plain words, the late and
+      correction notices, and "Guardar borrador" and "Enviar". Leaving with
+      changes that were not saved asks first.
+  - Changing a word everywhere, sending the document back and proposing an
+    alternative text are links under that button, each with a sentence, and
+    open the same composer with their own form in place of the editor.
   - The amendment list is ordered by position, filterable, and grouped by
     overlap cluster.
 - **Session console** (Mesa): agenda progress, the current document's

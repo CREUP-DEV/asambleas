@@ -16,11 +16,13 @@ import type {
   OutcomeBody,
   PositionBody,
   PublishAmendmentsBody,
+  ReclassifyBody,
   RelationBody,
   TransactionalBody,
   ValidateAmendmentsBody,
   VoteInput,
 } from "../../types/api";
+import { RECLASSIFIABLE_KINDS } from "../amendmentReclassify";
 import { amendmentOpsSchema, normalizeText } from "./content";
 
 /**
@@ -214,9 +216,16 @@ export const relationBodySchema = z
     path: ["toId"],
   });
 
+/** Body of POST .../amendments/[amendment]/reclassify (ReclassifyBody). */
+export const reclassifyBodySchema = z.object({
+  kind: z.enum(RECLASSIFIABLE_KINDS),
+  updatedAt: updatedAtSchema,
+});
+
 // Compile-time checks: every parsed body is assignable to its API type.
 type Assignable<T, U extends T> = U;
 export type _AmendmentSchemaChecks = [
+  Assignable<ReclassifyBody, z.output<typeof reclassifyBodySchema>>,
   Assignable<VoteInput, z.output<typeof voteInputSchema>>,
   Assignable<AmendmentDraftBody, z.output<typeof amendmentDraftBodySchema>>,
   Assignable<AmendmentUpdateBody, z.output<typeof amendmentUpdateBodySchema>>,

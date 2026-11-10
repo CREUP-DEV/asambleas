@@ -6,6 +6,16 @@ import type {
   InsertOp,
   ReplaceOp,
 } from "../../types/content";
+import { mapMarks } from "./consolidate";
+import { blocksToEditor, editorToBlocks } from "./editor";
+import {
+  blockFormatOf,
+  coverageToMarks,
+  markCoverage,
+  sameBlockFormat,
+  sameFormatAt,
+} from "./format";
+import { markerOf } from "./lists";
 
 const dmp = new DiffMatchPatch();
 
@@ -121,6 +131,185 @@ export function diffText(base: Block, edited: string): ReplaceOp[] {
 }
 
 /**
+ * The passage as the editor gives it back when nobody touches it. Out of
+ * its document a passage can read differently (a nested list item alone
+ * comes back at the first level, a line break carries no marks): what an
+ * edited block shares with this was never the author's change.
+ */
+function untouchedPassage(basePassage: Block[]): Map<string, Block> {
+  try {
+    let n = 0;
+    const blocks = editorToBlocks(blocksToEditor(basePassage), () => {
+      n += 1;
+      return `untouched-${n}`;
+    });
+    return new Map(blocks.map((block) => [block.id, block]));
+  } catch {
+    return new Map();
+  }
+}
+
+/**
+ * Whether an ordered item carries on the numbering of the block before it:
+ * the editor reads the two as one list (see editorToBlocks).
+ */
+function joinsList(block: Block, previous: Block | undefined): boolean {
+  return (
+    block.type === "list_item" &&
+    block.list === "ordered" &&
+    previous?.type === "list_item" &&
+    previous.list === "ordered" &&
+    (previous.level ?? 0) === (block.level ?? 0) &&
+    markerOf(previous) === markerOf(block)
+  );
+}
+
+/**
+ * Operations for the formatting an author changed on a block edited in
+ * place: `textOps` (from diffText) with the marks of their new text where
+ * it does not simply take those around it, plus one operation per run of
+ * kept text whose marks change, plus one for the block's own format
+ * (paragraph, heading level, list...). Line breaks never count: the editor
+ * keeps no marks on them.
+ */
+function formatOps(
+  base: Block,
+  edited: Block,
+  textOps: ReplaceOp[],
+  untouched: () => Block | undefined,
+  previous: Block | undefined,
+): ReplaceOp[] {
+  const baseFormat = blockFormatOf(base);
+  let nextFormat = blockFormatOf(edited);
+  // An image has no text and no format to amend.
+  if (!baseFormat || !nextFormat) return textOps;
+  // The editor only keeps "starts at 1" on a list right after one it would
+  // join. Once the author parts the two, the item comes back without it and
+  // still starts at 1: nothing changed for it.
+  if (
+    baseFormat.start === 1 &&
+    nextFormat.type === "list_item" &&
+    nextFormat.list === "ordered" &&
+    nextFormat.start === undefined &&
+    !joinsList(edited, previous)
+  ) {
+    nextFormat = { ...nextFormat, start: 1 };
+  }
+
+  const ops: ReplaceOp[] = [];
+  if (!sameBlockFormat(baseFormat, nextFormat)) {
+    const echo = untouched();
+    const echoFormat = echo ? blockFormatOf(echo) : null;
+    if (!echoFormat || !sameBlockFormat(echoFormat, nextFormat)) {
+      ops.push({
+        op: "replace",
+        blockId: base.id,
+        from: 0,
+        to: 0,
+        text: "",
+        baseText: "",
+        block: nextFormat,
+      });
+    }
+  }
+
+  const text = edited.text;
+  const want = markCoverage(edited.marks, text.length);
+  const have = markCoverage(mapMarks(base.marks, textOps), text.length);
+  let differs = false;
+  for (let i = 0; i < text.length && !differs; i += 1) {
+    differs = text[i] !== "\n" && !sameFormatAt(want, i, have, i);
+  }
+  if (!differs) return [...ops, ...textOps];
+
+  // What the editor shows where consolidate would give something else is
+  // the author's change, unless the editor reads the base itself that way.
+  // That excuse holds per mark type, and only for a type the editor reads
+  // differently somewhere in the block: stored marks cut in other pieces
+  // than the editor's (an imported text) cover the same characters, but
+  // new text typed where two pieces meet would take neither.
+  const echo = untouched();
+  const sameText = echo !== undefined && echo.text === base.text;
+  const echoed = sameText
+    ? markCoverage(mapMarks(echo.marks, textOps), text.length)
+    : null;
+  const readsOtherwise = want.map(() => false);
+  if (sameText) {
+    const stored = markCoverage(base.marks, base.text.length);
+    const read = markCoverage(echo.marks, base.text.length);
+    stored.forEach((row, type) => {
+      readsOtherwise[type] = row.some(
+        (value, i) => base.text[i] !== "\n" && value !== read[type]![i],
+      );
+    });
+  }
+  const changed = (i: number) =>
+    text[i] !== "\n" &&
+    want.some(
+      (row, type) =>
+        row[i] !== have[type]![i] &&
+        !(echoed && readsOtherwise[type] && row[i] === echoed[type]![i]),
+    );
+  /** What the change at `i` is, so a run holds one kind of change. */
+  const changeKey = (i: number) =>
+    want.map((row, type) => `${have[type]![i]}>${row[i]}`).join("|");
+
+  // Runs of kept text whose marks change: edited[from, from + length) is
+  // base[baseFrom, ...). Line breaks inside a run stay in it.
+  const keptText = (baseFrom: number, from: number, length: number) => {
+    let start = -1;
+    let last = -1;
+    const close = () => {
+      if (start < 0) return;
+      const slice = text.slice(start, last + 1);
+      ops.push({
+        op: "replace",
+        blockId: base.id,
+        from: baseFrom + (start - from),
+        to: baseFrom + (last + 1 - from),
+        text: slice,
+        baseText: slice,
+        marks: coverageToMarks(want, start, last + 1),
+      });
+      start = -1;
+    };
+    for (let i = from; i < from + length; i += 1) {
+      if (changed(i)) {
+        if (start >= 0 && changeKey(i) !== changeKey(last)) close();
+        if (start < 0) start = i;
+        last = i;
+      } else if (text[i] !== "\n") {
+        close();
+      }
+    }
+    close();
+  };
+
+  let basePosition = 0;
+  let position = 0;
+  for (const op of textOps) {
+    keptText(basePosition, position, op.from - basePosition);
+    position += op.from - basePosition;
+    let own = false;
+    for (let i = position; i < position + op.text.length && !own; i += 1) {
+      own = changed(i);
+    }
+    ops.push(
+      own
+        ? {
+            ...op,
+            marks: coverageToMarks(want, position, position + op.text.length),
+          }
+        : op,
+    );
+    position += op.text.length;
+    basePosition = op.to;
+  }
+  keptText(basePosition, position, base.text.length - basePosition);
+  return ops;
+}
+
+/**
  * Turns an edited passage into amendment operations.
  *
  * `basePassage` is a run of consecutive base blocks; `edited` is what the
@@ -129,6 +318,10 @@ export function diffText(base: Block, edited: string): ReplaceOp[] {
  * the base block right before the passage (null at the start of the document).
  * A block moved out of order is treated as deleted and re-inserted, because
  * operations do not express moves.
+ *
+ * A block edited in place may change its text, its inline formatting and
+ * its own format (see formatOps); the cell it sits in and an image's
+ * picture are not compared.
  */
 export function diffPassage(
   basePassage: Block[],
@@ -142,9 +335,17 @@ export function diffPassage(
   const replaces: ReplaceOp[] = [];
   const inserts: InsertOp[] = [];
 
+  let untouched: Map<string, Block> | null = null;
+  const untouchedOf = (id: string) => {
+    untouched ??= untouchedPassage(basePassage);
+    return untouched.get(id);
+  };
+
   let anchor = anchorBefore;
   let lastIndex = -1;
   let pending: Block[] = [];
+  /** The block before the one being read, as the author left it. */
+  let previous: Block | undefined;
   const flush = () => {
     if (pending.length > 0) {
       inserts.push({ op: "insert", afterBlockId: anchor, blocks: pending });
@@ -153,6 +354,8 @@ export function diffPassage(
   };
 
   for (const block of edited) {
+    const before = previous;
+    previous = block;
     const original = baseById.get(block.id);
     const order = baseOrder.get(block.id);
     if (
@@ -165,7 +368,15 @@ export function diffPassage(
       kept.add(block.id);
       lastIndex = order;
       anchor = block.id;
-      replaces.push(...diffText(original, block.text));
+      replaces.push(
+        ...formatOps(
+          original,
+          block,
+          diffText(original, block.text),
+          () => untouchedOf(block.id),
+          before,
+        ),
+      );
       continue;
     }
     const fresh = original ? { ...block, id: newId() } : block;
