@@ -329,7 +329,7 @@ links `users.memberId`:
   as an intranet member with the account's id, and the next roster sync
   fills it in.
 - `CEA` accounts (role shown as "Comisión Ejecutiva Ampliada (CEA)") act for
-  their executive office (shown as "Cargo de la CEA"). A missing office is created as a
+  their executive office (its kind labelled "CEA"). A missing office is created as a
   manual `executive` member named after its acronym (the intranet name may be
   the person's), so the roster sync never deactivates it; an admin renames
   it. CEA accounts link by initials only, since their intranet id is a

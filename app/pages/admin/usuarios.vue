@@ -5,6 +5,7 @@ import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import {
   ALL_PERMISSION_KEYS,
   PERMISSION_DESCRIPTION_I18N_KEYS,
+  PERMISSION_ICONS,
   PERMISSION_KEYS,
   type PermissionKey,
 } from "~~/shared/constants/permissions";
@@ -1073,10 +1074,13 @@ function goToPage(next: number): void {
                   : t("admin.users.noRole")
               }}
             </span>
-            <!-- Hover or focus lists the extras; a click opens the panel. -->
+            <!-- Hover or focus lists the extras; a click opens the panel.
+                 A tooltip is one line tall (h-6) by default: the list
+                 needs its own height or it spills out of the box. -->
             <UTooltip
               v-if="extraCount(row.original) > 0"
               :content="{ side: 'bottom', align: 'start' }"
+              :ui="{ content: 'h-auto py-1.5' }"
             >
               <UButton
                 color="neutral"
@@ -1103,16 +1107,16 @@ function goToPage(next: number): void {
               <template #content>
                 <ul class="space-y-0.5 py-0.5 text-xs">
                   <li
-                    v-for="label in extraLabels(row.original)"
-                    :key="label"
+                    v-for="key in extraKeys(row.original)"
+                    :key="key"
                     class="flex items-center gap-1.5"
                   >
                     <UIcon
-                      name="i-lucide-key-round"
+                      :name="PERMISSION_ICONS[key]"
                       class="size-3.5 shrink-0"
                       aria-hidden="true"
                     />
-                    <span>{{ label }}</span>
+                    <span>{{ permissionLabel(key) }}</span>
                   </li>
                 </ul>
               </template>
@@ -1394,16 +1398,16 @@ function goToPage(next: number): void {
               </p>
               <ul v-else-if="extraCount(editTarget) > 0" class="space-y-1">
                 <li
-                  v-for="label in extraLabels(editTarget)"
-                  :key="label"
+                  v-for="key in extraKeys(editTarget)"
+                  :key="key"
                   class="flex items-center gap-1.5 text-sm"
                 >
                   <UIcon
-                    name="i-lucide-key-round"
+                    :name="PERMISSION_ICONS[key]"
                     class="text-dimmed size-4 shrink-0"
                     aria-hidden="true"
                   />
-                  <span>{{ label }}</span>
+                  <span>{{ permissionLabel(key) }}</span>
                 </li>
               </ul>
               <p v-else class="text-muted text-sm">
@@ -1580,8 +1584,8 @@ function goToPage(next: number): void {
                     class="flex items-start gap-2 text-sm"
                   >
                     <UIcon
-                      name="i-lucide-check"
-                      class="text-success mt-0.5 size-4 shrink-0"
+                      :name="PERMISSION_ICONS[key]"
+                      class="text-dimmed mt-0.5 size-4 shrink-0"
                       aria-hidden="true"
                     />
                     <span>{{ permissionLabel(key) }}</span>

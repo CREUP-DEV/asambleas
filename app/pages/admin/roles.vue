@@ -3,6 +3,7 @@ import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import {
   ALL_PERMISSION_KEYS,
   PERMISSION_DESCRIPTION_I18N_KEYS,
+  PERMISSION_ICONS,
   PERMISSION_KEYS,
 } from "~~/shared/constants/permissions";
 import type { PermissionKey } from "~~/shared/constants/permissions";
@@ -523,6 +524,11 @@ onBeforeRouteLeave(() => {
             >
               <th scope="row" class="p-3 text-start font-normal">
                 <span class="text-highlighted flex items-start gap-1.5">
+                  <UIcon
+                    :name="PERMISSION_ICONS[key]"
+                    class="text-dimmed mt-0.5 size-4 shrink-0"
+                    aria-hidden="true"
+                  />
                   <span>{{ permissionLabel(key) }}</span>
                   <!-- One lock for the whole row: the note above says why. -->
                   <UIcon

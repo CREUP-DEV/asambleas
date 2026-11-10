@@ -28,8 +28,8 @@ enters counts), credentials and per-person attendance, minutes.
 
 Amendments and documents are presented by **members** (student councils,
 sectorials, executive offices), not by people. An executive office is a single-person office ("cargo unipersonal", such as
-PRES or SE) of the Comisión Ejecutiva Ampliada: the interface calls it
-"Cargo de la CEA", never an area, and
+PRES or SE) of the Comisión Ejecutiva Ampliada: the interface labels its kind
+"CEA" (and says "cargo de la CEA" in sentences about one office), never an area, and
 the `CEA` role "Comisión Ejecutiva Ampliada (CEA)". Interface and PDF texts
 never say "Comisión Ejecutiva" alone.
 
