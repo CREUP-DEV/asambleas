@@ -105,6 +105,12 @@ const savedKey = ref(canonical(blocks.value));
 
 const unsaved = computed(() => canonical(blocks.value) !== savedKey.value);
 watch(unsaved, (value) => (dirtyModel.value = value), { immediate: true });
+
+/** Who else has this draft open in the editor right now. */
+const { editors: otherEditors } = useDocumentPresence(
+  () => props.documentApi,
+  unsaved,
+);
 watch(
   () => blocks.value.length,
   (count) => (blockCountModel.value = count),
@@ -361,6 +367,8 @@ defineExpose({
     <p class="sr-only" role="status" aria-live="polite">
       {{ statusText }}
     </p>
+
+    <DocumentPresenceNotice :editors="otherEditors" />
 
     <UAlert
       v-if="remoteChanged && !recovery"

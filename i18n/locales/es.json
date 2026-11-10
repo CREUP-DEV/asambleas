@@ -694,6 +694,13 @@
       "remoteTitle": "Otra persona ha guardado cambios en el texto",
       "remoteDescription": "Tus cambios aún no están guardados. Si guardas ahora habrá un conflicto: carga la versión guardada y tu texto quedará a mano para recuperarlo.",
       "loadRemote": "Cargar la versión guardada",
+      "presence": {
+        "editing": "{names} también está editando este borrador. | {names} también están editando este borrador.",
+        "editingUnsaved": "{names} también está editando este borrador y tiene cambios sin guardar. | {names} también están editando este borrador y tienen cambios sin guardar.",
+        "sameAccount": "otra sesión con tu cuenta",
+        "fromMember": "alguien de {member}",
+        "someone": "otra persona"
+      },
       "imported": "Texto importado y guardado",
       "frozen": {
         "notice": "El texto se ha publicado y ya no se puede editar. Puedes seguir cambiando los datos y el estado del documento.",

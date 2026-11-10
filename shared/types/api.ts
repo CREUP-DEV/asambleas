@@ -708,6 +708,35 @@ export interface DocumentContentBody {
   baseHash: string;
 }
 
+/** Heartbeat of an open draft editor (POST .../presence). */
+export interface DocumentPresenceBody {
+  /** Random id of the browser tab (8 to 64 of A-Z, a-z, 0-9, "_", "-"). */
+  tabId: string;
+  /** The editor holds changes it has not saved yet. */
+  unsaved?: boolean;
+  /** The editor closes: drop this tab now. */
+  leaving?: boolean;
+}
+
+/**
+ * Another editor tab open on the same draft. Who acts for an executive
+ * office reads as the generic "CEA", with no name, for those who may not
+ * see the offices.
+ */
+export interface DocumentEditorPresenceDto {
+  /** The intranet's name of the account; null when withheld. */
+  name: string | null;
+  member: MemberRef | null;
+  /** The same account as the caller, in another tab or browser. */
+  sameAccount: boolean;
+  unsaved: boolean;
+}
+
+export interface DocumentPresenceDto {
+  /** In the order they opened the editor; never the caller's own tab. */
+  editors: DocumentEditorPresenceDto[];
+}
+
 export interface DocxImportDto {
   blocks: Block[];
   warnings: (

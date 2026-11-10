@@ -13,6 +13,11 @@ export interface ApiSendOptions {
   /** JSON body (any DTO object) or FormData for uploads. */
   body?: object | FormData | null;
   query?: Record<string, unknown>;
+  /**
+   * Let the request outlive the page (fetch `keepalive`), for a last word
+   * as it closes. Small JSON bodies only.
+   */
+  keepalive?: boolean;
 }
 
 type QueryValue = string | number | boolean | null | undefined;
@@ -207,6 +212,7 @@ export function useApi() {
         body?: Record<string, unknown> | FormData;
         query?: Record<string, unknown>;
         headers?: Record<string, string>;
+        keepalive?: boolean;
       },
     ) => Promise<T>;
     try {
@@ -216,6 +222,7 @@ export function useApi() {
           Record<string, unknown> | undefined,
         query: options.query,
         headers,
+        ...(options.keepalive ? { keepalive: true } : {}),
       });
     } catch (error) {
       if (isIdentityChanged(error)) reloadForIdentityChange();

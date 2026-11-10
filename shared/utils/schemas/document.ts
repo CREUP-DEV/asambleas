@@ -123,6 +123,13 @@ export const documentContentSchema = z.object({
   baseHash: contentHashSchema,
 });
 
+/** Heartbeat of an open draft editor (DocumentPresenceBody). */
+export const documentPresenceSchema = z.strictObject({
+  tabId: z.string().regex(/^[A-Za-z0-9_-]{8,64}$/),
+  unsaved: z.boolean().optional(),
+  leaving: z.boolean().optional(),
+});
+
 /** Optional body of submit and publish: the updatedAt the client last saw. */
 export const documentActionSchema = z
   .object({ updatedAt: isoDateSchema.optional() })
