@@ -5,13 +5,15 @@ import { roleLabelKey } from "./RoleBadge.vue";
 /**
  * Sidebar footer: who is signed in (avatar, name, member acronym, role) and
  * a menu with the account's activity, "Preferencias" (one dialog with
- * language, theme and content accessibility: ShellPreferences) and sign out. While an Admin acts as another account it shows
+ * language, theme and content accessibility: ShellPreferences), "Ayuda"
+ * (the welcome again: the layout opens it, `help`) and sign out. While an Admin acts as another account it shows
  * that account, and "Volver a mi cuenta" replaces signing out.
  *
  * The button truncates a long name; the menu wraps every line instead, so
  * opening it always shows the whole name, email and labels.
  */
 const props = defineProps<{ collapsed?: boolean }>();
+const emit = defineEmits<{ help: [] }>();
 
 const { t } = useI18n();
 const localePath = useLocalePath();
@@ -109,6 +111,11 @@ const items = computed<DropdownMenuItem[][]>(() => [
       onSelect: () => {
         preferencesOpen.value = true;
       },
+    },
+    {
+      label: t("shell.help.open"),
+      icon: "i-lucide-life-buoy",
+      onSelect: () => emit("help"),
     },
   ],
   [

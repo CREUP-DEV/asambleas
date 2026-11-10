@@ -983,8 +983,8 @@ step records in the browser that it was seen (`localStorage`), so it never
 opens by itself there again. It is per browser, not per account, like the
 language, the theme and the content preferences: an account may be shared by
 several people (a council's account is the council), and each one should see
-the welcome once on their own device. "Ayuda", a button of its own in
-the sidebar footer, opens it again at any time. While an Admin acts as another
+the welcome once on their own device. "Ayuda", in the user menu next to
+"Preferencias", opens it again at any time. While an Admin acts as another
 account the welcome never opens by itself and nothing is recorded.
 
 Language, theme and the content accessibility preferences live together in one

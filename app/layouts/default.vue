@@ -12,9 +12,8 @@ import { useImpersonationBannerOffset } from "~/components/shell/ImpersonationBa
  * never covers the navbars, and `--shell-banner-height` tells the pages
  * sized to the viewport how much to take off.
  *
- * It also holds the welcome (ShellWelcome), which opens by itself on an
- * account's first visit, and "Ayuda" in the sidebar footer, which opens it
- * again. The welcome is client only: nothing of it is server-rendered.
+ * It also holds the welcome (ShellWelcome), which opens by itself the first
+ * time in a browser, and again from "Ayuda" in the user menu. The welcome is client only: nothing of it is server-rendered.
  */
 const { t } = useI18n();
 const bannerOffset = useImpersonationBannerOffset();
@@ -87,27 +86,7 @@ useHead({
         </template>
 
         <template #footer="{ collapsed }">
-          <div class="flex w-full min-w-0 flex-col gap-1">
-            <UTooltip
-              :text="t('shell.help.open')"
-              :disabled="!collapsed"
-              :content="{ side: 'right' }"
-            >
-              <UButton
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-life-buoy"
-                :block="!collapsed"
-                :square="collapsed"
-                :label="collapsed ? undefined : t('shell.help.open')"
-                :aria-label="t('shell.help.label')"
-                class="justify-start gap-2.5"
-                :class="collapsed ? 'justify-center' : ''"
-                @click="openHelp"
-              />
-            </UTooltip>
-            <ShellUserMenu :collapsed="collapsed" />
-          </div>
+          <ShellUserMenu :collapsed="collapsed" @help="openHelp" />
         </template>
       </UDashboardSidebar>
 
