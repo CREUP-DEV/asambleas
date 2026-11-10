@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { welcomeAudience, welcomePending, welcomeSteps } from "./-welcome";
+import {
+  WELCOME_SEEN_STORAGE_KEY,
+  welcomeAudience,
+  welcomePending,
+  welcomeSteps,
+} from "./-welcome";
 
 /**
  * The welcome: five short steps, one idea each, worded for what the
@@ -7,18 +12,33 @@ import { welcomeAudience, welcomePending, welcomeSteps } from "./-welcome";
  * itself the first time an account reaches the dashboard and again from
  * "Ayuda" in the sidebar.
  *
- * Closing it, at any step and however it closes, records that the account
- * saw it (POST /api/me/onboarding), so it never opens by itself again.
- * While an Admin acts as another account it neither opens by itself nor
- * records anything: "Ayuda" still shows what that account would read.
+ * Closing it, at any step and however it closes, records in this browser
+ * that it was seen (WELCOME_SEEN_STORAGE_KEY), so it never opens by itself
+ * there again; another person using the same account on their own device
+ * still gets it. While an Admin acts as another account it neither opens by
+ * itself nor records anything: "Ayuda" still shows what that account would
+ * read.
  *
  * Mounted client only by the layout, so nothing of it is server-rendered.
  */
 const open = defineModel<boolean>("open", { default: false });
 
 const { t } = useI18n();
-const { me, member, refresh } = useMe();
-const api = useApi();
+const { me, member } = useMe();
+
+/** Read once mounted: storage may be blocked (private windows). */
+const seen = ref(true);
+function readSeen(): boolean {
+  try {
+    return localStorage.getItem(WELCOME_SEEN_STORAGE_KEY) !== null;
+  } catch {
+    // Storage blocked: never open by itself, or it would on every visit.
+    return true;
+  }
+}
+const pending = computed(() =>
+  welcomePending({ seen: seen.value, account: me.value }),
+);
 
 const steps = computed(() =>
   welcomeSteps(
@@ -44,32 +64,28 @@ function back(): void {
   if (!isFirst.value) index.value -= 1;
 }
 
-/** Records the first close. A failure only means it opens again next time. */
-let marking = false;
-async function markSeen(): Promise<void> {
-  if (marking || !welcomePending(me.value)) return;
-  marking = true;
+/** Records the first close in this browser. */
+function markSeen(): void {
+  if (!pending.value) return;
+  seen.value = true;
   try {
-    await api.send("/api/me/onboarding", { method: "POST" });
-    await refresh();
+    localStorage.setItem(WELCOME_SEEN_STORAGE_KEY, new Date().toISOString());
   } catch {
-    // Nothing to tell the person: they did nothing wrong, and the welcome
-    // simply shows again on their next visit.
-  } finally {
-    marking = false;
+    // Storage blocked: it stays closed for this visit.
   }
 }
 
 watch(open, (isOpen, wasOpen) => {
   if (isOpen) index.value = 0;
-  else if (wasOpen) void markSeen();
+  else if (wasOpen) markSeen();
 });
 
 /** Opens by itself once per visit, as soon as the account is known. */
 let offered = false;
 onMounted(() => {
+  seen.value = readSeen();
   watch(
-    () => welcomePending(me.value),
+    pending,
     (pending) => {
       if (!pending || offered) return;
       offered = true;

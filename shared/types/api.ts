@@ -180,23 +180,12 @@ export interface MeDto {
    */
   seesExecutiveMembers: boolean;
   /**
-   * Whether the account already closed the welcome (users.onboarding_seen_at,
-   * POST /api/me/onboarding). While false, the welcome opens by itself on
-   * the first page of the dashboard; never while an Admin acts as the account.
-   */
-  onboardingSeen: boolean;
-  /**
    * Set while an Admin acts as this account: every field above is then the
    * account acted as (permissions, member, isAdmin false), and this names
    * the real Admin for the banner. null otherwise. Identity comes only from
    * here: better-auth's own get-session keeps reporting the Admin.
    */
   impersonation: MeImpersonationDto | null;
-}
-
-/** POST /api/me/onboarding: the welcome is marked as seen (idempotent). */
-export interface MeOnboardingResult {
-  onboardingSeen: true;
 }
 
 /** MeDto.impersonation: the impersonation the current request runs under. */

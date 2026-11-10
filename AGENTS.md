@@ -356,7 +356,7 @@ throw createError({
 - `server/utils/auth/impersonation.ts`: start, stop, lazy close and the request guards.
 - `app/composables/activity/*`: `useActivityPages`, `useActivityText`, `useActivityOptions`, and the pure `-filters.ts` and `-present.ts`.
 - `app/composables/shell/*` and `ShellBreadcrumbs`: the breadcrumb row. Every page with the default layout puts `<ShellBreadcrumbs />` in its panel header, right after the navbar (the assembly hub does it for all its pages); the trail comes from the route (`-trail.ts`), so a new route gets its step there, and pages never add their own "back" link up the hierarchy. A page of a document names it with `useDocumentBreadcrumb` (client only, once mounted: the row renders before the page loads the document); the page of an agenda item (`orden-del-dia/[item]`, keyed by the item's id) names itself and the items above it the same way with `useAgendaItemBreadcrumb`. Pages sized to the viewport take `--shell-banner-height` (the impersonation banner, 0 without it) and `--shell-breadcrumb-height` off; the dashboard's sidebar and panels fill their group (`min-h-full` in `app.config.ts`), never a whole screen.
-- `ShellWelcome` and `app/components/shell/-welcome.ts`: the welcome, mounted client only by the default layout. It opens by itself while `MeDto.onboardingSeen` is false and again from "Ayuda" in the sidebar footer; closing it calls `POST /api/me/onboarding` (`users.onboardingSeenAt`, `user.onboarding_seen`). Never open it by itself or record it while an Admin impersonates (`welcomePending`; the endpoint answers 403). Its wording follows permissions and the member's kind (`welcomeAudience`), never the role name alone.
+- `ShellWelcome` and `app/components/shell/-welcome.ts`: the welcome, mounted client only by the default layout. It opens by itself until this browser closes it (`WELCOME_SEEN_STORAGE_KEY` in `localStorage`) and again from "Ayuda" in the sidebar footer. Like the language, the theme and the content preferences it belongs to the browser, never to the account: one account may be shared by several people (a council's account is the council). Never open it by itself or record it while an Admin impersonates (`welcomePending`). Audit rows `user.onboarding_seen` are from before. Its wording follows permissions and the member's kind (`welcomeAudience`), never the role name alone.
 - `ShellPreferences`: language, theme and the content accessibility preferences as visible radio groups, shown by "Preferencias" in the user menu and by the welcome's last step. Add a preference there, never as a submenu of the user menu.
 - `app/composables/assembly/-sections.ts` and `useAssemblySections`: the one list of an assembly's sections, for the sidebar and the phone toolbar of the hub. Add a section there, never in one of the two menus.
 - `HomeFold` (`app/components/home/Fold.vue`): the home page and the assembly overview keep at most three blocks in first plane, for every role ("Te toca", the next deadline of the calendar, and the upcoming assemblies or the agenda summary). Anything else goes under them in a `HomeFold`, folded by default and remembered per browser; never add a fourth block.
@@ -389,6 +389,11 @@ and `~` too (`vitest.config.ts`).
   migration, so a clone without it can do neither. Commit what drizzle-kit
   writes there; never hand-edit or reformat it.
 - Do not edit existing migration files after they have been committed.
+- Drop a column of `users` one release after the code stops using it, never
+  in the same one: better-auth selects every column of the row on each
+  request, so the previous release (still running while the migration
+  applies, and after a `rollback.sh`) would fail every session.
+  `users.onboarding_seen_at` is unused and waiting to go.
 
 ## PDF Export
 

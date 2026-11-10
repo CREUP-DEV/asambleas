@@ -53,7 +53,6 @@ The usual AGENTS.md handler order applies:
 | ------ | ----------------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/api/me`                           | any                       | `MeDto`. `permissions` are the role's plus the user's own grants (see "Permissions" below).                                                                                                                                     |
 | GET    | `/api/me/work`                      | any                       | `MeWorkDto`, see "Review and work" below.                                                                                                                                                                                       |
-| POST   | `/api/me/onboarding`                | any, never impersonating  | No body. Marks the welcome as seen. Returns `MeOnboardingResult`. See "Welcome" below.                                                                                                                                          |
 | GET    | `/api/members`                      | any                       | `MemberDto[]`, active first, by kind (asociados, sectorials, others, offices) and acronym. `?all=1` also returns inactive members. One generic entry instead of the executive offices, except with `?for=amendment`; see below. |
 | POST   | `/api/members`                      | `member:manage`           | Creates a member manually, typically an executive office.                                                                                                                                                                       |
 | PUT    | `/api/members/[id]`                 | `member:manage`           | Edits name, kind or active, with `updatedAt`.                                                                                                                                                                                   |
@@ -198,14 +197,12 @@ localized message for each and a general one for any other code, and never
 daily re-check (05:30 Europe/Madrid) revokes the accounts with a live
 session that the Intranet deleted.
 
-**Welcome.** `MeDto.onboardingSeen` says whether the account already closed
-the welcome (`users.onboarding_seen_at`). While it is false the client opens
-the welcome by itself, and closing it calls `POST /api/me/onboarding`, which
-sets the column once and writes `user.onboarding_seen` (target the account,
-before `{ onboardingSeen: false }`, after `{ onboardingSeen: true }`). Calling
-it again changes and records nothing and still answers
-`{ onboardingSeen: true }`. While an Admin acts as the account it answers 403
-and the client neither opens the welcome by itself nor calls it.
+**Welcome.** Whether the welcome was seen is kept by the browser
+(`localStorage`), like the language, the theme and the content preferences,
+never on the account: one account may be shared by several people. No
+endpoint records it: `POST /api/me/onboarding` is gone,
+`users.onboarding_seen_at` is no longer read nor written (it goes in a later
+release), and older `user.onboarding_seen` audit rows stay as they were.
 
 **Roster sync.** `POST /api/members/sync` takes an optional body
 `MemberSyncBody` `{ confirmDeactivation?: boolean, confirmedKinds?: [{ kind,
