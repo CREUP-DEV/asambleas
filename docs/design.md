@@ -38,31 +38,27 @@ never say "Comisión Ejecutiva" alone.
   unique when set: partial index `members_intranet_id_unique`), `name`,
   `university`, `region`, `source` (`intranet`, `manual`), `active`.
 - The intranet exposes the roster: `GET {NUXT_INTRANET_API_URL}/usuarios/asociados`,
-  `/usuarios/sectoriales`, `/usuarios/cea` (one account per place in the
-  CEA) and `/usuarios/invitados` (its `Invitado` and `Desasociado`
-  accounts, shown there as "Antiguos miembros") return
+  `/usuarios/sectoriales` and `/usuarios/cea` (one account per place in the
+  CEA) return
   `{ data: [{ id, denomination, initials, university, autonomous_community }] }`
-  (a university only for current and former councils).
-  The roster sync matches an asociado, a sectorial or a guest (`guest`) by
-  `intranet_id` first, then by `initials` = `acronym`, so a change of
-  acronym updates the member instead of creating another, and a council that
-  leaves the association becomes a guest. Guests attend and are written down
-  in the headcounts, but never vote, present nor sign anything
-  (`memberPresents`): the server refuses them as presenters or authors, and
-  `GET /api/members` leaves them out unless asked (`?guests=1`, the members,
-  accounts and speakers pages). The CEA list only adds the executive offices
+  (a university only for councils).
+  The roster sync matches an asociado or a sectorial by `intranet_id` first,
+  then by `initials` = `acronym`, so a change of acronym updates the member
+  instead of creating another. The CEA list only adds the executive offices
   nobody has created yet, named after their denomination, so the Secretaría
   can assign them documents before anyone signs in; offices stay manual
-  members and are never deactivated by a sync. Without the CEA list or the
-  guests (an Intranet without those routes) the sync goes on and leaves that
-  kind as it was. It runs by hand from Miembros and daily at 05:00 Europe/Madrid (a
+  members and are never deactivated by a sync. Without the CEA list (an
+  Intranet without that route) the sync goes on and leaves the offices as
+  they were. An acronym listed twice or held by another member, and an
+  account without initials, are not synced, and the sync says so
+  (`MemberSyncResult.ignored`, shown on the members page and kept in the
+  `members.sync` audit row). It runs by hand from Miembros and daily at 05:00 Europe/Madrid (a
   pg-boss schedule, `server/utils/members/schedule.ts`, off with
   `NUXT_INTRANET_ROSTER_SYNC=false`). A sync that would deactivate every
   active member of a kind, or more than max(3, 30%) of them, is not applied
   unless the request confirms those counts (`confirmedKinds`; a retry that
   would deactivate more asks again): it records `members.sync_blocked`, and
-  the daily run never confirms. The safeguard covers asociados and
-  sectorials only: guests come and go.
+  the daily run never confirms.
 - In the intranet an `Asociado` account _is_ the member, and
   `POST /user/role` returns its `id` (stored in `users.intranet_id`) and the
   same `initials`. Role sync therefore links the `users.memberId` of Asociado
@@ -83,7 +79,7 @@ Moderador (the Mesa gives them the floor) or CEA, when it holds a management
 permission (`document:manage`, `amendment:review`, `amendment:manage`,
 `assembly:manage`, `session:moderate`, `member:manage`,
 `user:manage_roles`), or when it acts for an office itself
-(`Actor.memberKind`). Everyone else (Asociado, Sectorial, Invitado) gets one
+(`Actor.memberKind`). Everyone else (Asociado, Sectorial, Invitado, Otro) gets one
 generic presenter instead of any office:
 `{ id: GENERIC_EXECUTIVE_MEMBER_ID, acronym: "CEA", name: "Comisión Ejecutiva Ampliada", kind: "executive" }`.
 Members of the other kinds read the same for everyone.
@@ -518,14 +514,20 @@ The Mesa takes a headcount at the start of each day, after a break or
 whenever it decides (`headcounts`, `headcount_entries`). Each one marks every
 asociado with a vote (the active `asociado` members, synced from the
 Intranet) as in the room or not, and a member not in the room may delegate
-its vote to another. The active sectorials and guests are marked too, only
-as in the room: they never vote, delegate, receive a delegation nor count for
-quorum or `present`, and each entry stores whether it had a vote
+its vote to another. The active sectorials are marked too, only as in the
+room: they never vote, delegate, receive a delegation nor count for quorum
+or `present`, and each entry stores whether it had a vote
 (`headcount_entries.voting`), so a correction never turns one into a vote.
-The form and every list of a count follow the roll call (`compareRollCall`,
-the one exception to `orderMembers`): asociados, then sectorials, then
-guests, each in reverse alphabetical order of its denomination and, for a
-council, its university ("Consejo de Estudiantes" + "Universidad de ..."). A delegated vote counts for quorum and for every vote
+So are the guests: the accounts given the role `Invitado` here, by hand
+(`headcount_guests`, with the account's name at the count, so the record
+survives a rename or a deletion). Every other account has the role `Otro`,
+which only reads and appears in no count. The list of guests a new count
+offers reaches only the Mesa; who was in the room is public, without
+emails. The form and every list of a count follow the roll call
+(`compareRollCall` and `compareGuests`, the one exception to
+`orderMembers`): asociados, then sectorials, then guests, each in reverse
+alphabetical order of its denomination and, for a council, its university
+("Consejo de Estudiantes" + "Universidad de ..."), or of a guest's name. A delegated vote counts for quorum and for every vote
 (RRI art. 19.3, RFAG art. 9.4) only while its receiver is in the room; the
 delegation is kept otherwise, so it counts again when the receiver is back.
 Each member receives at most one (Estatutos art. 17.1, RFAG art. 8.5).
@@ -541,19 +543,17 @@ reloading loses nothing.
 
 A count stores a snapshot: the asociados with a vote at that moment
 (`eligible`), those in the room, those delegated, the total (`present`) and
-the members needed for quorum (`required`) under the call it was taken in.
-That call is always the one an assembly starts in (`sessionCall`): the
-second call for a type that has one, since a session always opens in second
-call, and the single call otherwise; the Mesa never chooses it. Later roster
-syncs or rule changes never rewrite a count; a correction keeps its call,
-`eligible` and `required`.
+the members needed for quorum (`required`). Later roster syncs or rule
+changes never rewrite a count; a correction keeps `eligible` and
+`required`.
 
 The quorum is data, part of each type's calendar rules (`quorum`, edited at
-`/admin/calendario`): a share of the asociados with a vote, "at least" or
-"more than", for the first call and, when the type has one, the second
-(`INITIAL_CALENDAR_RULES` cites the articles: an AGO needs half in the first
-call and a third in the second, an AGE or AGET more than half in its single
-call). The Presidencia and the Secretaría Ejecutiva must also be present to
+`/admin/calendario`): one share of the asociados with a vote, "at least" or
+"more than". It is the quorum of the call a session opens in: an AGO
+always starts in second call, so a third (Estatutos art. 14.1, RFAG art.
+9.1; the half of the first call is never used and not kept), and an AGE or
+AGET, with a single call, more than half (`INITIAL_CALENDAR_RULES` cites the
+articles). The Mesa never picks a call. The Presidencia and the Secretaría Ejecutiva must also be present to
 constitute the assembly; the form reminds the Mesa, the count does not check
 it. The regulations are silent on re-checking quorum during the session; the
 counts at the start of each day and after breaks follow the practice of the
@@ -748,7 +748,7 @@ account the Intranet knew before (`externalRole` or `intranet_id` set)
 revokes its access in one transaction: `users.access_revoked_at` and
 `access_revoked_reason` (`intranet_deleted`, from `ACCESS_REVOKED_REASONS`;
 the CHECK `users_access_revoked_consistent` keeps both set or both null),
-role `Invitado`, no member, every session deleted, its open impersonations
+role `Otro`, no member, every session deleted, its open impersonations
 closed (`revoked`), and `user.access_revoked`. The sign-in is refused and
 lands on the login page of the user's language with `?error=access_revoked`
 (the client sends it as `errorCallbackURL`). Per-user grants are kept and
@@ -757,7 +757,7 @@ apply again on restore.
 - Protected roles (Admin, Secretaría, Presidencia, Moderador) keep
   everything and get `user.intranet_missing` and a warning instead; an
   account the Intranet never knew stays as it is (a new one is an
-  `Invitado`).
+  `Otro`).
 - A revoked account gets access back only at a sign-in whose authenticated
   lookup returns it (`user.access_restored`); role sync then gives back its
   role and member. There is no manual restore: the Intranet is the source of
@@ -968,7 +968,7 @@ one idea each, with a drawing made of icons.
 2. Where it sees what it has to do (the home page) and how to reach an
    assembly.
 3. Its main task: presenting a document or an amendment, validating and
-   organising (Secretaría), running the session (Mesa) or reading (Invitado).
+   organising (Secretaría), running the session (Mesa) or reading (Otro, Invitado).
 4. How to go back (the breadcrumb row) and where the help is.
 5. "Ponlo a tu gusto": language, theme, content font and how changes are
    marked, chosen right there.

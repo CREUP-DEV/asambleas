@@ -1,5 +1,5 @@
 import { createError, defineEventHandler, getQuery } from "h3";
-import { and, asc, desc, eq, ne } from "drizzle-orm";
+import { asc, desc, eq } from "drizzle-orm";
 import type { MemberDto } from "~~/shared/types/api";
 import { orderMembers } from "~~/shared/utils/memberOrder";
 import { memberListQuerySchema } from "~~/shared/utils/schemas/member";
@@ -8,7 +8,6 @@ import { members } from "../../db/schema";
 import { requireActor } from "../../utils/domain/actor";
 import {
   canNameExecutiveAuthors,
-  canSeeGuests,
   collapseExecutive,
 } from "../../utils/domain/visibility";
 import {
@@ -17,10 +16,7 @@ import {
 } from "../../utils/members/dto";
 
 /**
- * Active members first, by acronym. `?all=1` also returns inactive ones,
- * `?guests=1` the guests too, and so does `?all=1`, to resolve the former
- * councils in a history; both only for those who read the guests
- * (canSeeGuests), and never with `for`: guests present nothing.
+ * Active members first, by acronym. `?all=1` also returns inactive ones.
  * An account that may not see the executive areas gets one generic "CEA"
  * entry instead of them (canSeeExecutiveMembers).
  *
@@ -43,14 +39,7 @@ export default defineEventHandler(async (event): Promise<MemberDto[]> => {
     .select()
     .from(members)
     .where(
-      and(
-        query.data.all && !forAmendment ? undefined : eq(members.active, true),
-        (query.data.guests || query.data.all) &&
-          query.data.for === undefined &&
-          canSeeGuests(actor)
-          ? undefined
-          : ne(members.kind, "guest"),
-      ),
+      query.data.all && !forAmendment ? undefined : eq(members.active, true),
     )
     .orderBy(desc(members.active), asc(members.acronym));
   // The general order of every list of members: asociados, sectorials, the

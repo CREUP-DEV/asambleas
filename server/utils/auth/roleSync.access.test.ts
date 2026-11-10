@@ -270,7 +270,7 @@ describe("an account deleted in the intranet", () => {
           accessRevokedReason: null,
         },
         after: {
-          roleName: SYSTEM_ROLES.INVITADO,
+          roleName: SYSTEM_ROLES.OTRO,
           memberId: null,
           accessRevokedReason: "intranet_deleted",
           sessionsEnded: 2,
@@ -310,7 +310,7 @@ describe("an account deleted in the intranet", () => {
     expect(linkUserToIntranetMember).not.toHaveBeenCalled();
   });
 
-  it("leaves no role when the Invitado row is missing", async () => {
+  it("leaves no role when the Otro row is missing", async () => {
     answer(NOT_FOUND, 404);
     state.roleRow = undefined;
     await applyIntranetNotFound("u1");
@@ -339,7 +339,7 @@ describe("a not_found answer that revokes nothing", () => {
     expect(state.updates).toEqual([]);
     expect(state.sessions).toEqual(["s1", "s2"]);
 
-    // The new account becomes Invitado; no intranet data, no lastRoleSyncAt.
+    // The new account becomes Otro; no intranet data, no lastRoleSyncAt.
     const lookup = access.allowed ? (access.lookup ?? undefined) : undefined;
     expect(await syncUserRole("u1", { lookup })).toBe("not_found");
     expect(state.updates).toEqual([{ roleId: "role-invitado" }]);
@@ -432,7 +432,7 @@ describe("signing in again after losing access", () => {
   beforeEach(() => {
     state.account = account({
       roleId: "role-invitado",
-      role: { name: SYSTEM_ROLES.INVITADO },
+      role: { name: SYSTEM_ROLES.OTRO },
       memberId: null,
       accessRevokedAt: new Date("2026-10-01T10:00:00Z"),
       accessRevokedReason: "intranet_deleted",

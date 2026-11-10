@@ -3,11 +3,7 @@
  * ISO strings. See docs/api.md for the endpoints that return each shape.
  */
 import type { AssemblyType } from "../constants/assemblyTypes";
-import type {
-  AttendanceMark,
-  QuorumCall,
-  QuorumRules,
-} from "../utils/headcount";
+import type { AttendanceMark, QuorumThreshold } from "../utils/headcount";
 import type {
   AcceptanceDecision,
   AcceptanceRole,
@@ -95,14 +91,26 @@ export interface MemberSyncResult {
   updated: number;
   deactivated: number;
   /**
-   * Lists the Intranet could not give (the CEA's places, the guests): the
-   * sync left those members as they were.
+   * Lists the Intranet could not give (the CEA's places): the sync left
+   * those members as they were.
    */
   skipped: MemberSyncSkippedKind[];
+  /** What the Intranet listed that the sync could not store. */
+  ignored: MemberSyncIgnored;
 }
 
 /** The lists a roster sync does without when the Intranet cannot give them. */
-export type MemberSyncSkippedKind = Extract<MemberKind, "executive" | "guest">;
+export type MemberSyncSkippedKind = Extract<MemberKind, "executive">;
+
+export interface MemberSyncIgnored {
+  /**
+   * Acronyms listed twice (the first one is kept) or held by another
+   * member: those accounts were not synced.
+   */
+  acronyms: string[];
+  /** Accounts without initials, which cannot be a member. */
+  withoutInitials: number;
+}
 
 /** The member kinds the Intranet roster lists (asociados and sectorials). */
 export type RosterMemberKind = Extract<MemberKind, "asociado" | "sectorial">;
@@ -1091,16 +1099,25 @@ export interface HeadcountEntryDto {
   /** The member in the room that votes for this one (when delegated). */
   delegate: HeadcountMemberDto | null;
   /**
-   * It had a vote when the count was taken (an asociado). Sectorials and
-   * guests only attend: they are always `present` and never count.
+   * It had a vote when the count was taken (an asociado). Sectorials only
+   * attend: they are always `present` and never count.
    */
   voting: boolean;
+}
+
+/**
+ * A guest at a headcount: an account with the role Invitado. Never an
+ * email. `userId` is null once the account is deleted; `name` is the one it
+ * had at the count.
+ */
+export interface HeadcountGuestDto {
+  userId: string | null;
+  name: string;
 }
 
 /** A headcount the Mesa took: a snapshot of that moment. */
 export interface HeadcountDto {
   id: string;
-  call: QuorumCall;
   /** Active asociados when it was taken. */
   eligible: number;
   inRoom: number;
@@ -1116,22 +1133,25 @@ export interface HeadcountDto {
   takenAt: IsoDate;
   updatedAt: IsoDate;
   entries: HeadcountEntryDto[];
+  /** The guests in the room, in the order of the roll call. */
+  guests: HeadcountGuestDto[];
 }
 
 /**
- * GET /api/assemblies/[assembly]/headcounts (session:moderate, or
- * amendment:review). Headcounts newest first; `latest` is the one in force
+ * GET /api/assemblies/[assembly]/headcounts (everyone who sees the
+ * assembly). Headcounts newest first; `latest` is the one in force
  * (headcounts[0]). `members` are those a new count lists, in the order of
  * the roll call (compareRollCall): the active asociados, who vote, then the
- * active sectorials and guests, who only attend; only the Mesa
- * (session:moderate) gets them, everyone else an empty list. `quorum` holds the rules
- * of the assembly type; every count is taken under `sessionCall` of them.
+ * active sectorials, who only attend; `guests`, the accounts with the role
+ * Invitado and access. Only the Mesa (session:moderate) gets either list,
+ * everyone else empty ones. `quorum` is the threshold of the assembly type.
  */
 export interface HeadcountsDto {
   headcounts: HeadcountDto[];
   latest: HeadcountDto | null;
   members: HeadcountMemberDto[];
-  quorum: QuorumRules;
+  guests: HeadcountGuestDto[];
+  quorum: QuorumThreshold;
 }
 
 /** One mark of the Mesa's form; absent members are left out. */
@@ -1141,12 +1161,11 @@ export interface HeadcountEntryInput {
   delegateId?: string | null;
 }
 
-/**
- * POST /api/assemblies/[assembly]/headcounts (session:moderate). The call
- * is the server's (sessionCall): an assembly always starts in second call.
- */
+/** POST /api/assemblies/[assembly]/headcounts (session:moderate). */
 export interface HeadcountBody {
   entries: HeadcountEntryInput[];
+  /** The accounts with the role Invitado in the room. */
+  guests?: string[];
   note?: string | null;
 }
 

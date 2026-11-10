@@ -324,27 +324,6 @@ export function canNameExecutiveAuthors(actor: Actor): boolean {
   );
 }
 
-/** Holders of these read the guests: members, accounts or the session. */
-const GUEST_VISIBLE_PERMISSIONS = [
-  PERMISSION_KEYS.MEMBER_MANAGE,
-  PERMISSION_KEYS.USER_MANAGE_ROLES,
-  PERMISSION_KEYS.SESSION_MODERATE,
-] as const;
-
-/**
- * Whether the actor reads the guests (members of kind `guest`) where a list
- * of members offers them (GET /api/members) and the members a new headcount
- * lists. Most guests are people (every Google sign-in to the Intranet starts
- * as an Invitado, with its first name and initials), so only those who keep
- * the members, the accounts or the session read them. Who was in the room
- * at a headcount stays public, guests included.
- */
-export function canSeeGuests(actor: Actor): boolean {
-  return (
-    actor.isAdmin || GUEST_VISIBLE_PERMISSIONS.some((key) => actor.can(key))
-  );
-}
-
 /** The generic presenter shown instead of an executive area. */
 export function genericExecutiveMember(): MemberRef {
   return { ...GENERIC_EXECUTIVE_MEMBER };

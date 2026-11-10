@@ -83,7 +83,6 @@ import {
   formerMemberSeq,
 } from "../../../shared/utils/amendmentAuthors";
 import { reclassifyTarget } from "../../../shared/utils/amendmentReclassify";
-import { memberPresents } from "../../../shared/utils/presenterKinds";
 import {
   amendmentWindow,
   isLateSubmission,
@@ -1277,7 +1276,7 @@ async function assertMembers(
 ): Promise<void> {
   if (ids.length === 0) return;
   const rows = await db
-    .select({ id: members.id, active: members.active, kind: members.kind })
+    .select({ id: members.id, active: members.active })
     .from(members)
     .where(inArray(members.id, ids));
   if (
@@ -1285,15 +1284,6 @@ async function assertMembers(
     (activeOnly && rows.some((row) => !row.active))
   ) {
     fail(422, "Algún miembro indicado no existe o no está activo");
-  }
-  // Guests only attend: they never author an amendment (memberPresents).
-  // Without activeOnly the authors come from the amendments a transactional
-  // builds on, and one may since have become a guest (a council that left
-  // the association): it keeps its place.
-  if (activeOnly && rows.some((row) => !memberPresents(row.kind))) {
-    fail(422, "Los invitados no presentan enmiendas", {
-      reason: "guest_member",
-    });
   }
 }
 

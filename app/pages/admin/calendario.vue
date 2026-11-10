@@ -45,12 +45,8 @@ interface RulesForm {
   minimums: Record<MilestoneKey, OffsetField>;
   documentsWithConvocationBelow: OffsetField;
   regulationWindowDays: number | null;
-  quorum: {
-    firstCall: QuorumField;
-    /** Off: the type is convened in a single call. */
-    hasSecondCall: boolean;
-    secondCall: QuorumField;
-  };
+  /** The quorum of the call a session opens in (the second, or the only one). */
+  quorum: QuorumField;
 }
 
 interface QuorumField {
@@ -58,9 +54,6 @@ interface QuorumField {
   denominator: number | null;
   strict: boolean;
 }
-
-type QuorumCallKey = "firstCall" | "secondCall";
-const QUORUM_CALL_KEYS: QuorumCallKey[] = ["firstCall", "secondCall"];
 
 type Column = "defaults" | "minimums";
 const COLUMNS: Column[] = ["defaults", "minimums"];
@@ -148,11 +141,7 @@ function formFrom(
       rules?.documentsWithConvocationBelow ?? undefined,
     ),
     regulationWindowDays: rules?.regulationWindowDays ?? null,
-    quorum: {
-      firstCall: quorumField(quorum?.firstCall),
-      hasSecondCall: Boolean(quorum?.secondCall),
-      secondCall: quorumField(quorum?.secondCall),
-    },
+    quorum: quorumField(quorum),
   };
 }
 
@@ -179,12 +168,7 @@ function rulesOf(value: RulesForm): CalendarRules {
       value.documentsWithConvocationBelow,
     ),
     regulationWindowDays: value.regulationWindowDays || null,
-    quorum: {
-      firstCall: quorumOf(value.quorum.firstCall),
-      secondCall: value.quorum.hasSecondCall
-        ? quorumOf(value.quorum.secondCall)
-        : null,
-    },
+    quorum: quorumOf(value.quorum),
   };
 }
 
@@ -251,10 +235,7 @@ const invalid = computed(() => {
   ) {
     result.add("regulationWindowDays");
   }
-  for (const call of QUORUM_CALL_KEYS) {
-    if (call === "secondCall" && !form.quorum.hasSecondCall) continue;
-    if (isInvalidQuorum(form.quorum[call])) result.add(`quorum.${call}`);
-  }
+  if (isInvalidQuorum(form.quorum)) result.add("quorum");
   return result;
 });
 
@@ -585,66 +566,50 @@ onBeforeRouteLeave(() => {
                   {{ t("admin.calendarRules.quorum.hint") }}
                 </p>
               </div>
-              <UCheckbox
-                v-model="form.quorum.hasSecondCall"
-                :label="t('admin.calendarRules.quorum.hasSecondCall')"
-              />
-              <template v-for="call in QUORUM_CALL_KEYS" :key="call">
-                <fieldset
-                  v-if="call === 'firstCall' || form.quorum.hasSecondCall"
-                  class="space-y-1.5"
-                >
-                  <legend class="text-default text-sm font-medium">
-                    {{ t(`admin.calendarRules.quorum.${call}`) }}
-                  </legend>
-                  <div class="flex flex-wrap items-center gap-2">
-                    <USelect
-                      v-model="form.quorum[call].strict"
-                      :items="strictItems"
-                      class="w-32"
-                      :aria-label="t('admin.calendarRules.quorum.comparison')"
-                    />
-                    <UInput
-                      v-model.number="form.quorum[call].numerator"
-                      type="number"
-                      inputmode="numeric"
-                      min="1"
-                      :max="QUORUM_DENOMINATOR_MAX"
-                      step="1"
-                      class="w-20"
-                      :color="
-                        invalid.has(`quorum.${call}`) ? 'error' : undefined
-                      "
-                      :aria-invalid="invalid.has(`quorum.${call}`)"
-                      :aria-label="t('admin.calendarRules.quorum.numerator')"
-                    />
-                    <span class="text-muted" aria-hidden="true">/</span>
-                    <UInput
-                      v-model.number="form.quorum[call].denominator"
-                      type="number"
-                      inputmode="numeric"
-                      min="1"
-                      :max="QUORUM_DENOMINATOR_MAX"
-                      step="1"
-                      class="w-20"
-                      :color="
-                        invalid.has(`quorum.${call}`) ? 'error' : undefined
-                      "
-                      :aria-invalid="invalid.has(`quorum.${call}`)"
-                      :aria-label="t('admin.calendarRules.quorum.denominator')"
-                    />
-                    <span class="text-muted text-sm">
-                      {{ t("admin.calendarRules.quorum.ofMembers") }}
-                    </span>
-                  </div>
-                  <p
-                    v-if="invalid.has(`quorum.${call}`)"
-                    class="text-error text-sm"
-                  >
-                    {{ t("admin.calendarRules.quorum.invalid") }}
-                  </p>
-                </fieldset>
-              </template>
+              <fieldset class="space-y-1.5">
+                <legend class="sr-only">
+                  {{ t("admin.calendarRules.quorum.title") }}
+                </legend>
+                <div class="flex flex-wrap items-center gap-2">
+                  <USelect
+                    v-model="form.quorum.strict"
+                    :items="strictItems"
+                    class="w-32"
+                    :aria-label="t('admin.calendarRules.quorum.comparison')"
+                  />
+                  <UInput
+                    v-model.number="form.quorum.numerator"
+                    type="number"
+                    inputmode="numeric"
+                    min="1"
+                    :max="QUORUM_DENOMINATOR_MAX"
+                    step="1"
+                    class="w-20"
+                    :color="invalid.has('quorum') ? 'error' : undefined"
+                    :aria-invalid="invalid.has('quorum')"
+                    :aria-label="t('admin.calendarRules.quorum.numerator')"
+                  />
+                  <span class="text-muted" aria-hidden="true">/</span>
+                  <UInput
+                    v-model.number="form.quorum.denominator"
+                    type="number"
+                    inputmode="numeric"
+                    min="1"
+                    :max="QUORUM_DENOMINATOR_MAX"
+                    step="1"
+                    class="w-20"
+                    :color="invalid.has('quorum') ? 'error' : undefined"
+                    :aria-invalid="invalid.has('quorum')"
+                    :aria-label="t('admin.calendarRules.quorum.denominator')"
+                  />
+                  <span class="text-muted text-sm">
+                    {{ t("admin.calendarRules.quorum.ofMembers") }}
+                  </span>
+                </div>
+                <p v-if="invalid.has('quorum')" class="text-error text-sm">
+                  {{ t("admin.calendarRules.quorum.invalid") }}
+                </p>
+              </fieldset>
             </div>
           </UCard>
 

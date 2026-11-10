@@ -73,8 +73,6 @@ const { data: members, status: membersStatus } = useLazyFetch<MemberDto[]>(
   "/api/members",
   {
     key: "session-speaker-members",
-    // Guests attend and may be given the floor, though they never vote.
-    query: { guests: 1 },
     server: false,
     default: () => [],
   },

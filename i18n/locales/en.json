@@ -2016,8 +2016,12 @@
         }
       },
       "syncSkipped": {
-        "executive": "The CEA offices could not be read from the Intranet: they were left as they were.",
-        "guest": "The guests could not be read from the Intranet: they were left as they were."
+        "executive": "The CEA offices could not be read from the Intranet: they were left as they were."
+      },
+      "syncIgnored": {
+        "title": "Some acronyms were not synced",
+        "acronyms": "{acronyms}: they are repeated in the Intranet or another member already uses them. Fix them in the Intranet and sync again.",
+        "withoutInitials": "No account without an acronym | 1 Intranet account has no acronym and was not synced | {count} Intranet accounts have no acronym and were not synced"
       }
     },
     "impersonationReadOnly": "While you act as another account you cannot change users, roles, members or regulatory deadlines. Go back to your account to do it.",
@@ -2062,10 +2066,7 @@
       "documentsWithConvocationUnit": "Notice below which the documents go with the notice of meeting: unit",
       "quorum": {
         "title": "Quorum",
-        "hint": "Share of the asociados with a vote, delegations included, that each Mesa headcount needs.",
-        "hasSecondCall": "Has a second call",
-        "firstCall": "First call",
-        "secondCall": "Second call",
+        "hint": "Share of the member councils with a vote, delegations included, that each count of the Mesa needs. It is the second call's, the one a session always opens in, or the only call's when the type has one.",
         "atLeast": "At least",
         "moreThan": "More than",
         "comparison": "At least or more than",
@@ -2329,14 +2330,14 @@
       "invitado": "Guest",
       "none": "No role",
       "cea": "Extended Executive Committee (CEA)",
-      "presidencia": "Presidency"
+      "presidencia": "Presidency",
+      "otro": "Other"
     },
     "memberKinds": {
       "asociado": "Member council",
       "sectorial": "Sectoral body",
       "executive": "CEA office",
-      "other": "Other",
-      "guest": "Guest"
+      "other": "Other"
     },
     "toastRegion": "Notifications (F8)",
     "impersonation": {

@@ -2,15 +2,13 @@ import type { MemberKind } from "../constants/domain";
 
 /**
  * The order members are listed in everywhere: asociados, sectorials, the
- * other members, the CEA's offices and the guests, each kind by acronym.
- * The headcount is the one exception (rollCallOrder in headcount.ts).
+ * other members and the CEA's offices, each kind by acronym.
  */
 export const MEMBER_KIND_ORDER: readonly MemberKind[] = [
   "asociado",
   "sectorial",
   "other",
   "executive",
-  "guest",
 ];
 
 interface Orderable {

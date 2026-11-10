@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { INITIAL_CALENDAR_RULES } from "../constants/calendarRules";
 import {
+  compareGuests,
   quorumRequired,
-  quorumThreshold,
   rollCallOrder,
-  sessionCall,
   tallyHeadcount,
   type AttendanceEntry,
 } from "./headcount";
@@ -98,18 +97,16 @@ describe("quorumRequired", () => {
     expect(quorumRequired(0, moreThanHalf)).toBe(1);
   });
 
-  it("follows the initial rules of each type", () => {
-    const ago = INITIAL_CALENDAR_RULES.AGO.quorum!;
-    const age = INITIAL_CALENDAR_RULES.AGE.quorum!;
-    expect(quorumRequired(40, quorumThreshold(ago, "first"))).toBe(20);
-    expect(quorumRequired(40, quorumThreshold(ago, "second"))).toBe(14);
-    expect(quorumRequired(40, quorumThreshold(age, "first"))).toBe(21);
-    // A type with a single call always uses the first.
-    expect(quorumThreshold(age, "second")).toBe(age.firstCall);
+  it("follows the initial rules of each type: the call a session opens in", () => {
+    // An AGO opens in second call: a third.
+    expect(quorumRequired(40, INITIAL_CALENDAR_RULES.AGO.quorum!)).toBe(14);
+    // An AGE or an AGET has a single call: more than half.
+    expect(quorumRequired(40, INITIAL_CALENDAR_RULES.AGE.quorum!)).toBe(21);
+    expect(quorumRequired(40, INITIAL_CALENDAR_RULES.AGET.quorum!)).toBe(21);
   });
 });
 
-describe("tallyHeadcount with sectorials and guests", () => {
+describe("tallyHeadcount with sectorials", () => {
   const attendees = new Set(["s", "g"]);
 
   it("writes them down in the room without counting them", () => {
@@ -147,27 +144,9 @@ describe("tallyHeadcount with sectorials and guests", () => {
   });
 });
 
-describe("sessionCall", () => {
-  it("counts in second call when the type has one, else in its single call", () => {
-    expect(
-      sessionCall({
-        firstCall: { numerator: 1, denominator: 2, strict: false },
-        secondCall: { numerator: 1, denominator: 3, strict: false },
-      }),
-    ).toBe("second");
-    expect(
-      sessionCall({
-        firstCall: { numerator: 1, denominator: 2, strict: true },
-        secondCall: null,
-      }),
-    ).toBe("first");
-  });
-});
-
 describe("rollCallOrder", () => {
-  it("calls asociados, sectorials and guests, each in reverse alphabetical order", () => {
+  it("calls asociados, then sectorials, each in reverse alphabetical order", () => {
     const order = rollCallOrder([
-      { acronym: "G", name: "Antiguo consejo", kind: "guest" as const },
       { acronym: "VPO", name: "Vicepresidencia", kind: "executive" as const },
       {
         acronym: "ANEM",
@@ -211,8 +190,17 @@ describe("rollCallOrder", () => {
       "CEUAL",
       "RITSI",
       "ANEM",
-      "G",
       "VPO",
     ]);
+  });
+});
+
+describe("compareGuests", () => {
+  it("calls the guests in reverse alphabetical order of their name", () => {
+    expect(
+      [{ name: "Ana" }, { name: "Zoe" }, { name: "Álvaro" }]
+        .sort(compareGuests)
+        .map((guest) => guest.name),
+    ).toEqual(["Zoe", "Ana", "Álvaro"]);
   });
 });

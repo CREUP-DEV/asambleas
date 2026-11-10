@@ -67,11 +67,11 @@ describe("roleSyncAuditStates", () => {
         university: "Universidad de León",
         memberId: null,
       },
-      writtenRoleName: SYSTEM_ROLES.INVITADO,
+      writtenRoleName: SYSTEM_ROLES.OTRO,
     });
     expect(before).toEqual(current);
     expect(after).toEqual({
-      roleName: SYSTEM_ROLES.INVITADO,
+      roleName: SYSTEM_ROLES.OTRO,
       intranetId: null,
       externalRole: "Alumni",
       externalName: null,
@@ -85,9 +85,9 @@ describe("roleSyncAuditStates", () => {
     const { after } = roleSyncAuditStates({
       current: { ...current, roleName: null },
       update: {},
-      writtenRoleName: SYSTEM_ROLES.INVITADO,
+      writtenRoleName: SYSTEM_ROLES.OTRO,
     });
-    expect(after).toEqual({ ...current, roleName: SYSTEM_ROLES.INVITADO });
+    expect(after).toEqual({ ...current, roleName: SYSTEM_ROLES.OTRO });
   });
 });
 
@@ -116,12 +116,12 @@ describe("resolveTargetRole", () => {
     expect(resolveTargetRole("Sectorial", null, true)).toBe(
       SYSTEM_ROLES.SECTORIAL,
     );
-    expect(resolveTargetRole("Alumni", null, true)).toBe(SYSTEM_ROLES.INVITADO);
+    expect(resolveTargetRole("Alumni", null, true)).toBe(SYSTEM_ROLES.OTRO);
   });
 
-  it("moves sectorial Invitado accounts to the Sectorial role, and back", () => {
+  it("moves sectorial Otro accounts to the Sectorial role, and back", () => {
     // Accounts that signed in before the role existed.
-    expect(resolveTargetRole("Sectorial", SYSTEM_ROLES.INVITADO, false)).toBe(
+    expect(resolveTargetRole("Sectorial", SYSTEM_ROLES.OTRO, false)).toBe(
       SYSTEM_ROLES.SECTORIAL,
     );
     expect(resolveTargetRole("Sectorial", SYSTEM_ROLES.SECTORIAL, false)).toBe(
@@ -131,7 +131,7 @@ describe("resolveTargetRole", () => {
       SYSTEM_ROLES.ASOCIADO,
     );
     expect(resolveTargetRole("Alumni", SYSTEM_ROLES.SECTORIAL, false)).toBe(
-      SYSTEM_ROLES.INVITADO,
+      SYSTEM_ROLES.OTRO,
     );
     // Roles assigned here stay.
     expect(resolveTargetRole("Sectorial", SYSTEM_ROLES.MODERADOR, false)).toBe(
@@ -139,8 +139,27 @@ describe("resolveTargetRole", () => {
     );
   });
 
-  it("makes Invitado, Asociado and CEA users follow their intranet type", () => {
+  it("never gives Invitado, and only raises one given here", () => {
+    // Invitado is given here by hand: sync keeps it for any other type...
+    expect(resolveTargetRole("Alumni", SYSTEM_ROLES.INVITADO, false)).toBe(
+      null,
+    );
+    expect(resolveTargetRole("Invitado", SYSTEM_ROLES.INVITADO, false)).toBe(
+      null,
+    );
+    // ...and raises it to the role of a member type.
+    expect(resolveTargetRole("Asociado", SYSTEM_ROLES.INVITADO, false)).toBe(
+      SYSTEM_ROLES.ASOCIADO,
+    );
     expect(resolveTargetRole("CEA", SYSTEM_ROLES.INVITADO, false)).toBe(
+      SYSTEM_ROLES.CEA,
+    );
+    // A new account with the intranet type Invitado gets Otro.
+    expect(resolveTargetRole("Invitado", null, true)).toBe(SYSTEM_ROLES.OTRO);
+  });
+
+  it("makes Otro, Asociado and CEA users follow their intranet type", () => {
+    expect(resolveTargetRole("CEA", SYSTEM_ROLES.OTRO, false)).toBe(
       SYSTEM_ROLES.CEA,
     );
     expect(resolveTargetRole("CEA", SYSTEM_ROLES.ASOCIADO, false)).toBe(
@@ -150,7 +169,7 @@ describe("resolveTargetRole", () => {
       SYSTEM_ROLES.ASOCIADO,
     );
     expect(resolveTargetRole("Alumni", SYSTEM_ROLES.CEA, false)).toBe(
-      SYSTEM_ROLES.INVITADO,
+      SYSTEM_ROLES.OTRO,
     );
     expect(resolveTargetRole("Asociado", SYSTEM_ROLES.ASOCIADO, false)).toBe(
       null,
@@ -208,9 +227,9 @@ describe("computeRoleSyncUpdate", () => {
     });
   });
 
-  it("gives Invitado to a new user when the sync fails", () => {
+  it("gives Otro to a new user when the sync fails", () => {
     expect(computeRoleSyncUpdate(user(null), null, false).assignRoleName).toBe(
-      SYSTEM_ROLES.INVITADO,
+      SYSTEM_ROLES.OTRO,
     );
     expect(
       computeRoleSyncUpdate(user(SYSTEM_ROLES.CEA), null, false).assignRoleName,
@@ -258,12 +277,12 @@ describe("stopsActingForMember", () => {
   it("unlinks a CEA cargo whose term ended", () => {
     expect(
       stopsActingForMember(
-        input(SYSTEM_ROLES.CEA, SYSTEM_ROLES.INVITADO, "CEA", "Alumni"),
+        input(SYSTEM_ROLES.CEA, SYSTEM_ROLES.OTRO, "CEA", "Alumni"),
       ),
     ).toBe(true);
     expect(
       stopsActingForMember(
-        input(SYSTEM_ROLES.ASOCIADO, SYSTEM_ROLES.INVITADO, "Asociado", "Baja"),
+        input(SYSTEM_ROLES.ASOCIADO, SYSTEM_ROLES.OTRO, "Asociado", "Baja"),
       ),
     ).toBe(true);
   });
@@ -276,11 +295,11 @@ describe("stopsActingForMember", () => {
     ).toBe(true);
   });
 
-  it("unlinks a sectorial Invitado that becomes Sectorial, so it is linked again", () => {
+  it("unlinks a sectorial Otro that becomes Sectorial, so it is linked again", () => {
     expect(
       stopsActingForMember(
         input(
-          SYSTEM_ROLES.INVITADO,
+          SYSTEM_ROLES.OTRO,
           SYSTEM_ROLES.SECTORIAL,
           "Sectorial",
           "Sectorial",
@@ -294,10 +313,10 @@ describe("stopsActingForMember", () => {
     ).toBe(false);
   });
 
-  it("unlinks an Invitado whose intranet type stops being a member", () => {
+  it("unlinks an Otro whose intranet type stops being a member", () => {
     expect(
       stopsActingForMember(
-        input(SYSTEM_ROLES.INVITADO, null, "Sectorial", "Alumni"),
+        input(SYSTEM_ROLES.OTRO, null, "Sectorial", "Alumni"),
       ),
     ).toBe(true);
   });
@@ -308,16 +327,16 @@ describe("stopsActingForMember", () => {
     ).toBe(false);
     // A manual link on an account that never had a member type stays.
     expect(
-      stopsActingForMember(input(SYSTEM_ROLES.INVITADO, null, "Otro", "Otro")),
+      stopsActingForMember(input(SYSTEM_ROLES.OTRO, null, "Otro", "Otro")),
     ).toBe(false);
     expect(
-      stopsActingForMember(input(SYSTEM_ROLES.INVITADO, null, null, "Otro")),
+      stopsActingForMember(input(SYSTEM_ROLES.OTRO, null, null, "Otro")),
     ).toBe(false);
   });
 
   it("never unlinks new accounts nor roles assigned on the platform", () => {
     expect(
-      stopsActingForMember(input(null, SYSTEM_ROLES.INVITADO, null, "Alumni")),
+      stopsActingForMember(input(null, SYSTEM_ROLES.OTRO, null, "Alumni")),
     ).toBe(false);
     for (const role of [
       SYSTEM_ROLES.ADMIN,
@@ -332,13 +351,13 @@ describe("stopsActingForMember", () => {
 });
 
 describe("computeRoleSyncUpdate and the member link", () => {
-  it("asks to unlink a CEA account demoted to Invitado", () => {
+  it("asks to unlink a CEA account demoted to Otro", () => {
     const update = computeRoleSyncUpdate(
       user(SYSTEM_ROLES.CEA, "CEA"),
       external("Alumni"),
       false,
     );
-    expect(update.assignRoleName).toBe(SYSTEM_ROLES.INVITADO);
+    expect(update.assignRoleName).toBe(SYSTEM_ROLES.OTRO);
     expect(update.clearMember).toBe(true);
   });
 
@@ -359,10 +378,8 @@ describe("computeRoleSyncUpdate and the member link", () => {
 
 describe("fallbackRoleName", () => {
   it("never leaves a new account without a role", () => {
-    expect(fallbackRoleName(SYSTEM_ROLES.CEA, true)).toBe(
-      SYSTEM_ROLES.INVITADO,
-    );
-    expect(fallbackRoleName(SYSTEM_ROLES.INVITADO, true)).toBe(null);
+    expect(fallbackRoleName(SYSTEM_ROLES.CEA, true)).toBe(SYSTEM_ROLES.OTRO);
+    expect(fallbackRoleName(SYSTEM_ROLES.OTRO, true)).toBe(null);
   });
 
   it("lets an existing account keep its role", () => {

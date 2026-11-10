@@ -9,7 +9,6 @@ import {
   type ExistingMember,
   type RosterMember,
   planExecutiveSync,
-  withoutReservedAcronyms,
 } from "./roster";
 
 const existing = (overrides: Partial<ExistingMember>): ExistingMember => ({
@@ -490,37 +489,6 @@ describe("isDeactivationConfirmed", () => {
   });
 });
 
-describe("planRosterSync with lists left out", () => {
-  it("deactivates only members of the kinds the Intranet listed", () => {
-    const guest = {
-      id: "m-g",
-      kind: "guest" as const,
-      acronym: "G",
-      name: "G",
-      university: null,
-      region: null,
-      intranetId: 30,
-      source: "intranet" as const,
-      active: true,
-    };
-    const asociado = {
-      ...guest,
-      id: "m-a",
-      kind: "asociado" as const,
-      acronym: "A",
-      intranetId: 31,
-    };
-    expect(
-      planRosterSync([], [guest, asociado], ["asociado", "sectorial"])
-        .deactivate,
-    ).toEqual(["m-a"]);
-    expect(planRosterSync([], [guest, asociado]).deactivate).toEqual([
-      "m-g",
-      "m-a",
-    ]);
-  });
-});
-
 describe("planExecutiveSync", () => {
   const entry = (initials: string, denomination: string | null) => ({
     id: 1,
@@ -559,15 +527,7 @@ describe("planExecutiveSync", () => {
       ],
       rename: [{ id: "m-vdt", name: "Vocalía" }],
       conflicts: ["CEUM"],
+      duplicates: ["pres"],
     });
-  });
-
-  it("keeps the CEA's acronyms away from the guests", () => {
-    expect(
-      withoutReservedAcronyms(
-        [entry("se", "Sergio"), entry("ANA", "Ana")],
-        [entry("SE", "Secretaría Ejecutiva")],
-      ).map((item) => item.initials),
-    ).toEqual(["ANA"]);
   });
 });

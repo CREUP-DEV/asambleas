@@ -1,5 +1,5 @@
 import type { PermissionKey } from "~~/shared/constants/permissions";
-import { SYSTEM_ROLES } from "~~/shared/constants/roles";
+import { SYSTEM_ROLES, isReadOnlyRole } from "~~/shared/constants/roles";
 
 /**
  * Role and permission checks for the UI, built on `useMe` (GET /api/me).
@@ -21,7 +21,8 @@ export const usePermissions = () => {
     () => roleName.value === SYSTEM_ROLES.SECRETARIA,
   );
   const isAsociado = computed(() => roleName.value === SYSTEM_ROLES.ASOCIADO);
-  const isInvitado = computed(() => roleName.value === SYSTEM_ROLES.INVITADO);
+  /** Otro or Invitado: the account only reads. */
+  const isReadOnly = computed(() => isReadOnlyRole(roleName.value));
   const isModerador = computed(() => roleName.value === SYSTEM_ROLES.MODERADOR);
 
   return {
@@ -34,7 +35,7 @@ export const usePermissions = () => {
     isAdmin,
     isSecretaria,
     isAsociado,
-    isInvitado,
+    isReadOnly,
     isModerador,
   };
 };

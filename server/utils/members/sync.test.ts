@@ -48,7 +48,6 @@ let roster: {
   asociado: RosterRow[];
   sectorial: RosterRow[];
   executive?: RosterRow[] | null;
-  guest?: RosterRow[] | null;
 } = {
   asociado: [],
   sectorial: [],
@@ -102,7 +101,7 @@ vi.mock("./intranet", () => {
     getIntranetApiBaseUrl: () => "https://intranet.test",
     fetchIntranetRoster: async (
       _base: string,
-      kind: "asociado" | "sectorial" | "executive" | "guest",
+      kind: "asociado" | "sectorial" | "executive",
     ) => {
       const rows = roster[kind];
       if (rows === null) throw new IntranetUnavailableError("status 404");
@@ -118,6 +117,8 @@ vi.mock("./intranet", () => {
 });
 
 const { memberAuditState, syncIntranetRoster } = await import("./sync");
+
+const NONE_IGNORED = { acronyms: [], withoutInitials: 0 };
 
 type AuditInput = Record<string, unknown> & {
   after: Record<string, unknown>;
@@ -214,7 +215,13 @@ describe("syncIntranetRoster traceability", () => {
     const outcome = await syncIntranetRoster({ actor });
     expect(outcome).toEqual({
       status: "applied",
-      result: { created: 1, updated: 1, deactivated: 1, skipped: [] },
+      result: {
+        created: 1,
+        updated: 1,
+        deactivated: 1,
+        skipped: [],
+        ignored: { acronyms: ["CEA"], withoutInitials: 0 },
+      },
     });
     expect(execute).toHaveBeenCalledTimes(1);
 
@@ -311,7 +318,13 @@ describe("syncIntranetRoster safeguard", () => {
     });
     expect(outcome).toEqual({
       status: "applied",
-      result: { created: 1, updated: 1, deactivated: 3, skipped: [] },
+      result: {
+        created: 1,
+        updated: 1,
+        deactivated: 3,
+        skipped: [],
+        ignored: NONE_IGNORED,
+      },
     });
     const summary = audits().at(-1)!;
     expect(summary).toMatchObject({
@@ -420,7 +433,13 @@ describe("syncIntranetRoster write order", () => {
     const outcome = await syncIntranetRoster({ actor: null });
     expect(outcome).toEqual({
       status: "applied",
-      result: { created: 1, updated: 1, deactivated: 0, skipped: [] },
+      result: {
+        created: 1,
+        updated: 1,
+        deactivated: 0,
+        skipped: [],
+        ignored: NONE_IGNORED,
+      },
     });
     expect(writes).toEqual(["update acronym A2", "insert A"]);
   });
@@ -447,59 +466,42 @@ describe("syncIntranetRoster write order", () => {
   });
 });
 
-describe("syncIntranetRoster guests", () => {
-  it("syncs the guests, a former council among them, and deactivates those gone", async () => {
-    existing = [
-      stored({ id: "m-old", kind: "asociado", acronym: "OLD", intranetId: 7 }),
-      stored({ id: "m-g1", kind: "guest", acronym: "G1", intranetId: 30 }),
-      stored({ id: "m-g2", kind: "guest", acronym: "G2", intranetId: 31 }),
-      stored({ id: "m-g3", kind: "guest", acronym: "G3", intranetId: 32 }),
-      stored({ id: "m-g4", kind: "guest", acronym: "G4", intranetId: 33 }),
-    ];
-    roster = {
-      asociado: [],
-      sectorial: [],
-      executive: [],
-      guest: [
-        // The council left the association: it is a guest now.
-        { id: 7, initials: "OLD", denomination: "OLD" },
-        { id: 40, initials: "NEW", denomination: "Invitada" },
-      ],
-    };
+describe("syncIntranetRoster without the CEA list", () => {
+  it("leaves the offices alone when the Intranet cannot list them", async () => {
+    existing = [];
+    roster = { asociado: [], sectorial: [], executive: null };
     const outcome = await syncIntranetRoster({ actor: null });
-    // Four guests gone is more than max(3, 30%), but guests never block.
-    expect(outcome).toEqual({
+    expect(outcome).toMatchObject({
       status: "applied",
-      result: { created: 1, updated: 1, deactivated: 4, skipped: [] },
-    });
-    const update = audits().find(
-      (row) => row.action === AUDIT_ACTIONS.MEMBER_SYNC_UPDATE,
-    )!;
-    expect(update).toMatchObject({
-      targetId: "m-old",
-      before: { kind: "asociado" },
-      after: { kind: "guest" },
-    });
-  });
-
-  it("leaves the guests and the offices alone when the Intranet cannot list them", async () => {
-    existing = [
-      stored({ id: "m-g1", kind: "guest", acronym: "G1", intranetId: 30 }),
-    ];
-    roster = { asociado: [], sectorial: [], executive: null, guest: null };
-    const outcome = await syncIntranetRoster({ actor: null });
-    expect(outcome).toEqual({
-      status: "applied",
-      result: {
-        created: 0,
-        updated: 0,
-        deactivated: 0,
-        skipped: ["executive", "guest"],
-      },
+      result: { created: 0, skipped: ["executive"] },
     });
     expect(writes).toEqual([]);
+    expect(audits().at(-1)!.after).toMatchObject({ skipped: ["executive"] });
+  });
+});
+
+describe("syncIntranetRoster warnings", () => {
+  it("reports the acronyms it could not store and the accounts without one", async () => {
+    existing = [];
+    roster = {
+      asociado: [
+        { id: 1, initials: "CEUM", denomination: "Uno" },
+        { id: 2, initials: "ceum", denomination: "Otro" },
+        { id: 3, initials: "", denomination: "Sin siglas" },
+      ],
+      sectorial: [],
+      executive: [],
+    };
+    const outcome = await syncIntranetRoster({ actor: null });
+    expect(outcome).toMatchObject({
+      status: "applied",
+      result: {
+        created: 1,
+        ignored: { acronyms: ["ceum"], withoutInitials: 1 },
+      },
+    });
     expect(audits().at(-1)!.after).toMatchObject({
-      skipped: ["executive", "guest"],
+      ignored: { acronyms: ["ceum"], withoutInitials: 1 },
     });
   });
 });
@@ -532,13 +534,17 @@ describe("syncIntranetRoster CEA offices", () => {
         { id: 102, initials: "SE", denomination: "Secretaría Ejecutiva" },
         { id: 103, initials: "TES", denomination: "Tesorería" },
       ],
-      // A guest whose initials match a new office never takes them.
-      guest: [{ id: 50, initials: "SE", denomination: "Sergio" }],
     };
     const outcome = await syncIntranetRoster({ actor: null });
     expect(outcome).toEqual({
       status: "applied",
-      result: { created: 1, updated: 1, deactivated: 0, skipped: [] },
+      result: {
+        created: 1,
+        updated: 1,
+        deactivated: 0,
+        skipped: [],
+        ignored: { acronyms: ["TES"], withoutInitials: 0 },
+      },
     });
     expect(writes).toEqual(["update syncedAt", "update name", "insert SE"]);
     const rows = audits();

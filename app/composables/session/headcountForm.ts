@@ -1,17 +1,23 @@
 import type {
   HeadcountDto,
   HeadcountEntryInput,
+  HeadcountGuestDto,
   HeadcountMemberDto,
 } from "~~/shared/types/api";
-import { compareRollCall, votesInHeadcount } from "~~/shared/utils/headcount";
+import {
+  compareGuests,
+  compareRollCall,
+  votesInHeadcount,
+} from "~~/shared/utils/headcount";
 
 /**
  * The Mesa's headcount form, as pure functions: one checkbox per member in
- * the order of the roll call (asociados, sectorials, guests). An asociado
- * with a vote that is not in the room may delegate it to another one; a
- * delegation counts only while its receiver is in the room. Sectorials and
- * guests are only marked in the room: they never vote, delegate nor count.
- * The server counts and checks it again (tallyHeadcount).
+ * the order of the roll call (asociados, sectorials), then one per guest
+ * (an account with the role Invitado). An asociado with a vote that is not
+ * in the room may delegate it to another one; a delegation counts only
+ * while its receiver is in the room. Sectorials and guests are only marked
+ * in the room: they never vote, delegate nor count. The server counts and
+ * checks it again (tallyHeadcount).
  */
 
 /** A member on the form, and whether it votes in this count. */
@@ -27,13 +33,58 @@ export interface FormRow {
 
 export type HeadcountForm = Record<string, FormRow>;
 
+/** A guest on the form: an account with the role Invitado. */
+export interface FormGuest {
+  userId: string;
+  name: string;
+}
+
+/** The guests in the room, by account id. */
+export type GuestForm = Record<string, boolean>;
+
 /** What survives an accidental close of the form (this device only). */
 export interface HeadcountDraft {
   /** The count being corrected, or null for a new one. */
   targetId: string | null;
   form: HeadcountForm;
+  /** Absent in drafts saved before guests were counted. */
+  guests?: GuestForm;
   note: string;
   savedAt: string;
+}
+
+/**
+ * The guests of the form: the accounts with the role Invitado now and, for
+ * a count being corrected, the ones it listed (by the name they had then).
+ * A deleted account is not offered: its entry stays as it was.
+ */
+export function headcountFormGuests(
+  guests: readonly HeadcountGuestDto[],
+  target: HeadcountDto | null,
+): FormGuest[] {
+  const byId = new Map<string, FormGuest>();
+  for (const guest of [...(target?.guests ?? []), ...guests]) {
+    if (guest.userId && !byId.has(guest.userId)) {
+      byId.set(guest.userId, { userId: guest.userId, name: guest.name });
+    }
+  }
+  return [...byId.values()].sort(compareGuests);
+}
+
+/** The guests of `guests` that `from` found in the room. */
+export function guestFormFrom(
+  guests: readonly FormGuest[],
+  from: HeadcountDto | null,
+): GuestForm {
+  const present = new Set((from?.guests ?? []).map((guest) => guest.userId));
+  return Object.fromEntries(
+    guests.map((guest) => [guest.userId, present.has(guest.userId)]),
+  );
+}
+
+/** The account ids of the guests in the room. */
+export function guestIdsOf(form: GuestForm): string[] {
+  return Object.entries(form).flatMap(([id, present]) => (present ? [id] : []));
 }
 
 /** Voters first, then the roll-call order. */

@@ -88,7 +88,7 @@ function logLookup(
   }
 }
 
-/** Intranet types (`users.type`) that grant a platform role; any other gives Invitado. */
+/** Intranet types (`users.type`) that grant a platform role; any other gives Otro. */
 const EXTERNAL_ROLES: ReadonlyMap<string, string> = new Map<string, string>([
   ["Asociado", SYSTEM_ROLES.ASOCIADO],
   ["Sectorial", SYSTEM_ROLES.SECTORIAL],
@@ -101,25 +101,37 @@ const EXTERNAL_ROLES: ReadonlyMap<string, string> = new Map<string, string>([
  * kept (PROTECTED_ROLES).
  */
 const SYNCED_ROLES: ReadonlySet<string> = new Set([
-  SYSTEM_ROLES.INVITADO,
+  SYSTEM_ROLES.OTRO,
   SYSTEM_ROLES.ASOCIADO,
   SYSTEM_ROLES.SECTORIAL,
   SYSTEM_ROLES.CEA,
 ]);
 
 /**
+ * Roles given here by hand that role sync only raises: a guest (Invitado)
+ * whose intranet type becomes Asociado, Sectorial or CEA takes that role,
+ * and keeps Invitado otherwise. Sync never gives one.
+ */
+const RAISED_ONLY_ROLES: ReadonlySet<string> = new Set([SYSTEM_ROLES.INVITADO]);
+
+/**
  * Role to assign after a successful sync, or null to keep the current one:
  * a new user gets the role of their intranet type (Asociado, Sectorial,
- * CEA) or Invitado; an Invitado, Asociado, Sectorial or CEA user follows
- * their type when it changes; everyone else keeps their role.
+ * CEA) or Otro; an Otro, Asociado, Sectorial or CEA user follows their type
+ * when it changes; an Invitado takes the role of a member type and keeps
+ * Invitado otherwise (RAISED_ONLY_ROLES); everyone else keeps their role.
  */
 export function resolveTargetRole(
   externalRole: string,
   currentRoleName: string | null,
   isNewUser: boolean,
 ): string | null {
-  const target = EXTERNAL_ROLES.get(externalRole) ?? SYSTEM_ROLES.INVITADO;
+  const memberRole = EXTERNAL_ROLES.get(externalRole) ?? null;
+  const target = memberRole ?? SYSTEM_ROLES.OTRO;
   if (isNewUser) return target;
+  if (currentRoleName && RAISED_ONLY_ROLES.has(currentRoleName)) {
+    return memberRole;
+  }
   if (!currentRoleName || !SYNCED_ROLES.has(currentRoleName)) return null;
   return currentRoleName === target ? null : target;
 }
@@ -148,7 +160,7 @@ interface FreshUserRow {
 
 /**
  * Whether the account stops acting for the member it is linked to
- * (users.memberId): an account with a synced role (Invitado, Asociado,
+ * (users.memberId): an account with a synced role (Otro, Asociado,
  * Sectorial, CEA)
  * whose role changes with its intranet type (say a CEA cargo whose term
  * ended), or whose intranet type stops being one linked to a member. Role
@@ -178,15 +190,15 @@ export function stopsActingForMember(input: {
 /**
  * The role to give instead when the one sync resolved has no row (the
  * database was not seeded after a role was added): a new account gets
- * Invitado, so it is never left without a role; an existing one keeps its
+ * Otro, so it is never left without a role; an existing one keeps its
  * role (null).
  */
 export function fallbackRoleName(
   assignRoleName: string,
   isNewUser: boolean,
 ): string | null {
-  return isNewUser && assignRoleName !== SYSTEM_ROLES.INVITADO
-    ? SYSTEM_ROLES.INVITADO
+  return isNewUser && assignRoleName !== SYSTEM_ROLES.OTRO
+    ? SYSTEM_ROLES.OTRO
     : null;
 }
 
@@ -224,7 +236,7 @@ export function computeRoleSyncUpdate(
       assignRoleName = target;
     }
   } else if (isNewUser) {
-    assignRoleName = SYSTEM_ROLES.INVITADO;
+    assignRoleName = SYSTEM_ROLES.OTRO;
   }
 
   if (isInitialAdmin) {
@@ -328,7 +340,7 @@ export function isProtectedRole(roleName: string | null | undefined): boolean {
 /**
  * What an authenticated `not_found` answer does to an account:
  * - `already_revoked`: nothing, it has no access already (idempotent);
- * - `unknown`: nothing, the intranet never knew it (an Invitado by Google);
+ * - `unknown`: nothing, the intranet never knew it (a Google account it never had);
  * - `protected`: nothing but a `user.intranet_missing` row and a warning,
  *   since Admin, Secretaría, Presidencia and Moderador are assigned here;
  * - `revoke`: it loses access to the platform.
@@ -365,7 +377,7 @@ export function lostAccess(result: IntranetNotFoundResult): boolean {
  * Applies an authenticated `not_found` answer of the intranet to an account
  * (decideIntranetNotFound), in one transaction over the locked account row.
  * When it revokes: `access_revoked_at` and `access_revoked_reason`
- * ("intranet_deleted") are set together, the role becomes Invitado (or none
+ * ("intranet_deleted") are set together, the role becomes Otro (or none
  * when that row is missing), the member link is cleared, every session of
  * the account is deleted (signed out everywhere), the open impersonations
  * of it are closed (`revoked`), and `user.access_revoked` records it
@@ -416,11 +428,11 @@ export async function applyIntranetNotFound(
         return { kind: "protected", roleName };
       }
 
-      const invitadoId = await getRoleIdByNameTx(tx, SYSTEM_ROLES.INVITADO);
-      if (!invitadoId) {
+      const otroId = await getRoleIdByNameTx(tx, SYSTEM_ROLES.OTRO);
+      if (!otroId) {
         logWarn("roleSync.access", {
           reason: "role not found; run pnpm db:seed",
-          role: SYSTEM_ROLES.INVITADO,
+          role: SYSTEM_ROLES.OTRO,
           userId,
         });
       }
@@ -430,7 +442,7 @@ export async function applyIntranetNotFound(
           accessRevokedAt: now,
           accessRevokedReason: INTRANET_DELETED,
           memberId: null,
-          roleId: invitadoId,
+          roleId: otroId,
         })
         .where(eq(users.id, userId));
       const ended = await tx
@@ -456,7 +468,7 @@ export async function applyIntranetNotFound(
           accessRevokedReason: null,
         },
         after: {
-          roleName: invitadoId ? SYSTEM_ROLES.INVITADO : null,
+          roleName: otroId ? SYSTEM_ROLES.OTRO : null,
           memberId: null,
           accessRevokedReason: INTRANET_DELETED,
           sessionsEnded: outcome.sessionsEnded,
@@ -590,7 +602,7 @@ export async function checkSignInAccess(userId: string): Promise<SignInAccess> {
  *
  * Only a successful lookup writes the intranet data, `intranetId` and
  * `lastRoleSyncAt`; a failed one leaves an existing account as it was (a
- * new one gets Invitado). Changes are recorded with source `intranet` and
+ * new one gets Otro). Changes are recorded with source `intranet` and
  * no actor, in the transaction of the update: `user.role_sync`
  * (before/after, RoleSyncAuditState) whenever anything but
  * `lastRoleSyncAt` changes, and `user.initial_admin` when
@@ -695,7 +707,7 @@ export async function syncUserRole(
         updateFields.roleId = targetRoleId;
         roleWritten = true;
         // The logger redacts emails: the user id and the accountRef name
-        // the account. The initial admin may have fallen back to Invitado
+        // the account. The initial admin may have fallen back to Otro
         // (no Admin row).
         if (isInitialAdmin && roleName === SYSTEM_ROLES.ADMIN) {
           logInfo("roleSync", {
@@ -749,7 +761,7 @@ export async function syncUserRole(
       update: updateFields,
       writtenRoleName,
     });
-    // Only when Admin was really written, not its Invitado fallback.
+    // Only when Admin was really written, not its Otro fallback.
     if (isInitialAdmin && writtenRoleName === SYSTEM_ROLES.ADMIN) {
       await recordAudit(tx, {
         actor: null,

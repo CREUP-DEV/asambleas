@@ -123,19 +123,27 @@ const latest = computed(() => props.attendance?.latest ?? null);
         </ul>
       </details>
 
-      <details v-if="attendance.attending.length > 0">
+      <details
+        v-if="attendance.attending.length + attendance.guests.length > 0"
+      >
         <summary class="text-default cursor-pointer text-sm font-medium">
           {{
             t(
               "liveView.attendance.attending",
-              { count: attendance.attending.length },
-              attendance.attending.length,
+              { count: attendance.attending.length + attendance.guests.length },
+              attendance.attending.length + attendance.guests.length,
             )
           }}
         </summary>
         <ul class="mt-2 flex flex-wrap gap-1.5">
           <li v-for="member in attendance.attending" :key="member.id">
             <CommonMemberBadge :member="member" />
+          </li>
+          <li
+            v-for="(name, index) in attendance.guests"
+            :key="'guest-' + index"
+          >
+            <UBadge color="neutral" variant="subtle" size="sm" :label="name" />
           </li>
         </ul>
       </details>

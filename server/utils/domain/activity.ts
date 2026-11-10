@@ -1004,7 +1004,14 @@ export const AUDIT_PAYLOAD_KEYS: Record<AuditAction, readonly string[]> = {
     "region",
     "active",
   ],
-  "members.sync": ["created", "updated", "deactivated", "unchanged", "skipped"],
+  "members.sync": [
+    "created",
+    "updated",
+    "deactivated",
+    "unchanged",
+    "skipped",
+    "ignored",
+  ],
   // The counts per kind of a refused roster sync; who ran it is the actor.
   "members.sync_blocked": ["reason", "kinds", "trigger"],
   "member.sync_create": [],

@@ -49,11 +49,6 @@ export const quorumThresholdSchema = z
     message: "quorum_over_total",
   });
 
-export const quorumRulesSchema = z.strictObject({
-  firstCall: quorumThresholdSchema,
-  secondCall: quorumThresholdSchema.nullable(),
-});
-
 export const calendarRulesSchema = z.strictObject({
   defaults: offsetsByMilestone,
   minimums: offsetsByMilestone,
@@ -65,7 +60,7 @@ export const calendarRulesSchema = z.strictObject({
     .max(REGULATION_WINDOW_MAX_DAYS)
     .nullable(),
   // Optional: rows stored before quorum was part of the rules lack it.
-  quorum: quorumRulesSchema.optional(),
+  quorum: quorumThresholdSchema.optional(),
 });
 
 export const calendarRulesBodySchema = z.strictObject({
@@ -96,16 +91,7 @@ export function normalizeCalendarRules(rules: CalendarRules): CalendarRules {
     minimums: ordered(rules.minimums),
     documentsWithConvocationBelow: rules.documentsWithConvocationBelow,
     regulationWindowDays: rules.regulationWindowDays,
-    ...(rules.quorum
-      ? {
-          quorum: {
-            firstCall: share(rules.quorum.firstCall),
-            secondCall: rules.quorum.secondCall
-              ? share(rules.quorum.secondCall)
-              : null,
-          },
-        }
-      : {}),
+    ...(rules.quorum ? { quorum: share(rules.quorum) } : {}),
   };
 }
 

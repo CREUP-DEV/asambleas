@@ -66,6 +66,7 @@ const ROLE_ORDER: readonly string[] = [
   SYSTEM_ROLES.ASOCIADO,
   SYSTEM_ROLES.SECTORIAL,
   SYSTEM_ROLES.INVITADO,
+  SYSTEM_ROLES.OTRO,
 ];
 
 function roleRank(name: string): number {

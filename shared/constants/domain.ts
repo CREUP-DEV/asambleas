@@ -34,17 +34,11 @@ export const MILESTONE_KEYS = [
 ] as const;
 export type MilestoneKey = (typeof MILESTONE_KEYS)[number];
 
-/**
- * `guest`: the Intranet's guests and former members (Invitado, Desasociado),
- * who attend an assembly but never vote, present nor sign anything
- * (memberPresents).
- */
 export const MEMBER_KINDS = [
   "asociado",
   "sectorial",
   "executive",
   "other",
-  "guest",
 ] as const;
 export type MemberKind = (typeof MEMBER_KINDS)[number];
 
