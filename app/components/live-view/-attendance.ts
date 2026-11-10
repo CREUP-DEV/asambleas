@@ -27,8 +27,10 @@ export interface LiveAttendance {
    * present; null when the assembly counts them on the valid votes.
    */
   majorities: { absolute: number; twoThirds: number } | null;
-  /** Members in the room, by acronym. */
+  /** Members with a vote in the room, in the order of the roll call. */
   inRoom: MemberRef[];
+  /** Sectorials and guests in the room, who neither vote nor count. */
+  attending: MemberRef[];
   delegations: LiveDelegation[];
   /** The counts before the latest, newest first. */
   earlier: HeadcountDto[];
@@ -41,26 +43,26 @@ export function liveAttendance(
 ): LiveAttendance | null {
   const latest = dto?.latest ?? null;
   if (!latest) return null;
-  const byAcronym = (a: MemberRef, b: MemberRef) =>
-    a.acronym.localeCompare(b.acronym);
-  const inRoom = latest.entries
-    .filter((entry) => entry.mark === "present")
-    .map((entry) => entry.member)
-    .sort(byAcronym);
+  // The server sends the entries in the order of the roll call.
+  const present = latest.entries.filter((entry) => entry.mark === "present");
+  const inRoom = present
+    .filter((entry) => entry.voting)
+    .map((entry) => entry.member);
+  const attending = present
+    .filter((entry) => !entry.voting)
+    .map((entry) => entry.member);
   const inRoomIds = new Set(inRoom.map((member) => member.id));
-  const delegations = latest.entries
-    .flatMap((entry) =>
-      entry.mark === "delegated" && entry.delegate
-        ? [
-            {
-              from: entry.member,
-              to: entry.delegate,
-              counts: inRoomIds.has(entry.delegate.id),
-            },
-          ]
-        : [],
-    )
-    .sort((a, b) => byAcronym(a.from, b.from));
+  const delegations = latest.entries.flatMap((entry) =>
+    entry.mark === "delegated" && entry.delegate
+      ? [
+          {
+            from: entry.member,
+            to: entry.delegate,
+            counts: inRoomIds.has(entry.delegate.id),
+          },
+        ]
+      : [],
+  );
   return {
     latest,
     majorities:
@@ -71,6 +73,7 @@ export function liveAttendance(
           }
         : null,
     inRoom,
+    attending,
     delegations,
     earlier: (dto?.headcounts ?? []).filter((count) => count.id !== latest.id),
   };

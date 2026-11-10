@@ -61,7 +61,8 @@ export const AUDIT_ACTIONS = {
    * Roster sync summary: POST /api/members/sync (actor the account that ran
    * it) or the scheduled job (actor null). Source intranet. Target
    * members/"intranet"; after {created, updated, deactivated, unchanged,
-   * manualConflicts, batchId}.
+   * skipped (the lists the Intranet could not give), manualConflicts,
+   * batchId}.
    */
   MEMBERS_SYNC: "members.sync",
   /**

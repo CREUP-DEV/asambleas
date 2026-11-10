@@ -94,7 +94,15 @@ export interface MemberSyncResult {
   created: number;
   updated: number;
   deactivated: number;
+  /**
+   * Lists the Intranet could not give (the CEA's places, the guests): the
+   * sync left those members as they were.
+   */
+  skipped: MemberSyncSkippedKind[];
 }
+
+/** The lists a roster sync does without when the Intranet cannot give them. */
+export type MemberSyncSkippedKind = Extract<MemberKind, "executive" | "guest">;
 
 /** The member kinds the Intranet roster lists (asociados and sectorials). */
 export type RosterMemberKind = Extract<MemberKind, "asociado" | "sectorial">;
@@ -1071,12 +1079,22 @@ export interface LiveStateBody {
 
 // Headcounts ---------------------------------------------------------------
 
-/** One asociado counted in a headcount. */
+/** A member as a headcount lists it: the university orders the roll call. */
+export interface HeadcountMemberDto extends MemberRef {
+  university: string | null;
+}
+
+/** One member counted in a headcount. */
 export interface HeadcountEntryDto {
-  member: MemberRef;
+  member: HeadcountMemberDto;
   mark: AttendanceMark;
   /** The member in the room that votes for this one (when delegated). */
-  delegate: MemberRef | null;
+  delegate: HeadcountMemberDto | null;
+  /**
+   * It had a vote when the count was taken (an asociado). Sectorials and
+   * guests only attend: they are always `present` and never count.
+   */
+  voting: boolean;
 }
 
 /** A headcount the Mesa took: a snapshot of that moment. */
@@ -1089,6 +1107,8 @@ export interface HeadcountDto {
   delegated: number;
   /** In the room plus delegated. */
   present: number;
+  /** Sectorials and guests in the room, who neither vote nor count. */
+  attending: number;
   /** Members needed for quorum under the rules then in force. */
   required: number;
   quorum: boolean;
@@ -1101,13 +1121,16 @@ export interface HeadcountDto {
 /**
  * GET /api/assemblies/[assembly]/headcounts (session:moderate, or
  * amendment:review). Headcounts newest first; `latest` is the one in force
- * (headcounts[0]). `members` are the asociados with a vote now and
- * `quorum` the rules of the assembly type, for a new count.
+ * (headcounts[0]). `members` are those a new count lists, in the order of
+ * the roll call (compareRollCall): the active asociados, who vote, then the
+ * active sectorials and guests, who only attend; only the Mesa
+ * (session:moderate) gets them, everyone else an empty list. `quorum` holds the rules
+ * of the assembly type; every count is taken under `sessionCall` of them.
  */
 export interface HeadcountsDto {
   headcounts: HeadcountDto[];
   latest: HeadcountDto | null;
-  members: MemberRef[];
+  members: HeadcountMemberDto[];
   quorum: QuorumRules;
 }
 
@@ -1118,9 +1141,11 @@ export interface HeadcountEntryInput {
   delegateId?: string | null;
 }
 
-/** POST /api/assemblies/[assembly]/headcounts (session:moderate). */
+/**
+ * POST /api/assemblies/[assembly]/headcounts (session:moderate). The call
+ * is the server's (sessionCall): an assembly always starts in second call.
+ */
 export interface HeadcountBody {
-  call: QuorumCall;
   entries: HeadcountEntryInput[];
   note?: string | null;
 }

@@ -20,6 +20,11 @@ import { acronymKey } from "./dto";
  * be null, and `/usuarios/sectoriales` has no `university` nor
  * `autonomous_community` keys at all. `id` is the Intranet `users.id`; the
  * public listings of the website send none.
+ *
+ * Four lists: asociados and sectorials (required: without either the sync
+ * fails), and the CEA's places and the guests (Invitado and Desasociado),
+ * which an Intranet without those routes may not offer: the sync then
+ * leaves that kind untouched (OPTIONAL_ROSTER_KINDS).
  */
 
 const optionalText = z
@@ -52,10 +57,27 @@ export const intranetRosterResponseSchema = z.object({
 
 export type IntranetRosterEntry = z.output<typeof intranetRosterEntrySchema>;
 
-export type RosterKind = Extract<MemberKind, "asociado" | "sectorial">;
+/** The member kinds planRosterSync matches by Intranet id, then acronym. */
+export type RosterKind = Extract<
+  MemberKind,
+  "asociado" | "sectorial" | "guest"
+>;
 
-/** The member kinds the roster lists, in the order the safeguard reports them. */
-export const ROSTER_KINDS = [
+/** Every list the sync fetches, in the order acronyms are claimed. */
+export type RosterListKind = RosterKind | "executive";
+
+/** Lists the sync does without when the Intranet cannot give them. */
+export type OptionalRosterKind = Extract<RosterListKind, "executive" | "guest">;
+export const OPTIONAL_ROSTER_KINDS = [
+  "executive",
+  "guest",
+] as const satisfies readonly OptionalRosterKind[];
+
+/**
+ * The kinds a large deactivation needs confirming for, in the order the
+ * safeguard reports them. Guests come and go and never block a sync.
+ */
+export const GUARDED_ROSTER_KINDS = [
   "asociado",
   "sectorial",
 ] as const satisfies readonly RosterKind[];
@@ -77,10 +99,33 @@ const DETAIL_MAX_LENGTH = 200;
 const clip = (value: string | null, max: number) =>
   value === null ? null : value.slice(0, max);
 
+/** The acronym key of a list entry, or null for one without initials. */
+function entryKey(entry: IntranetRosterEntry): string | null {
+  const acronym = clip(entry.initials, ACRONYM_MAX_LENGTH);
+  return acronym ? acronymKey(acronym) : null;
+}
+
 /**
- * Turns both intranet lists into one roster keyed by acronym. Rows without
+ * The entries whose acronym none of `reserved` uses: a guest never takes an
+ * acronym the CEA list names, so a new office is not lost to a guest whose
+ * initials happen to match it.
+ */
+export function withoutReservedAcronyms(
+  entries: readonly IntranetRosterEntry[],
+  reserved: readonly IntranetRosterEntry[],
+): IntranetRosterEntry[] {
+  const keys = new Set(reserved.map(entryKey));
+  return entries.filter((entry) => {
+    const key = entryKey(entry);
+    return key === null || !keys.has(key);
+  });
+}
+
+/**
+ * Turns the intranet lists into one roster keyed by acronym. Rows without
  * initials cannot be stored and are skipped. An acronym or an Intranet id
- * listed twice keeps its first appearance (asociados come first).
+ * listed twice keeps its first appearance (asociados come first, guests
+ * last).
  */
 export function normalizeRoster(
   lists: { kind: RosterKind; entries: IntranetRosterEntry[] }[],
@@ -171,7 +216,8 @@ export interface RosterSyncPlan {
 }
 
 /**
- * Compares the roster with the stored members:
+ * Compares the roster with the stored members of the kinds in `synced` (the
+ * lists the Intranet gave):
  * 1. an entry with an Intranet id takes the member stored with that id, so
  *    a change of acronym updates the member instead of creating another;
  * 2. any other entry takes the member with its acronym (case-insensitive),
@@ -182,11 +228,14 @@ export interface RosterSyncPlan {
  * Manual members are never touched, even when the roster lists their
  * acronym or id. No plan leaves two members with the same acronym: a
  * rename onto an acronym another member keeps is not applied (the member
- * keeps its own) and such an entry is not created.
+ * keeps its own) and such an entry is not created. Only members of a kind
+ * in `synced` are deactivated: a list the Intranet did not give deactivates
+ * nobody.
  */
 export function planRosterSync(
   roster: RosterMember[],
   existing: ExistingMember[],
+  synced: readonly RosterKind[] = ["asociado", "sectorial", "guest"],
 ): RosterSyncPlan {
   const plan: RosterSyncPlan = {
     create: [],
@@ -318,11 +367,70 @@ export function planRosterSync(
     }
   }
 
+  const deactivatable = new Set<MemberKind>(synced);
   for (const member of existing) {
     if (member.source !== "intranet" || !member.active) continue;
+    if (!deactivatable.has(member.kind)) continue;
     if (!claimed.has(member.id)) plan.deactivate.push(member.id);
   }
 
+  return plan;
+}
+
+// CEA places ------------------------------------------------------------------
+
+export interface ExecutiveSyncPlan {
+  /** Offices the CEA list names and no member has the acronym of. */
+  create: { acronym: string; name: string }[];
+  /** Offices still named after their acronym, which the list now names. */
+  rename: { id: string; name: string }[];
+  /** CEA acronyms another kind of member holds: never touched. */
+  conflicts: string[];
+}
+
+/**
+ * The executive offices the CEA list adds (`/usuarios/cea`, one account per
+ * place). Offices are matched by acronym only: an account outlives whoever
+ * holds the place, but the platform has always keyed offices by initials
+ * (link.ts), and sign-in links CEA accounts the same way. Offices are
+ * manual members:
+ * - a missing one is created, named after the list's denomination;
+ * - one still named after its acronym (created at a sign-in) takes the
+ *   denomination; one renamed by hand keeps its name;
+ * - none is ever deactivated, nor reactivated: a manager does that.
+ * An acronym held by a member of another kind is left alone (conflicts).
+ */
+export function planExecutiveSync(
+  entries: IntranetRosterEntry[],
+  existing: Pick<ExistingMember, "id" | "kind" | "acronym" | "name">[],
+): ExecutiveSyncPlan {
+  const plan: ExecutiveSyncPlan = { create: [], rename: [], conflicts: [] };
+  const byKey = new Map<string, (typeof existing)[number]>();
+  for (const member of existing) {
+    const key = acronymKey(member.acronym);
+    if (!byKey.has(key)) byKey.set(key, member);
+  }
+  const seen = new Set<string>();
+  for (const entry of entries) {
+    const acronym = clip(entry.initials, ACRONYM_MAX_LENGTH);
+    if (!acronym) continue;
+    const key = acronymKey(acronym);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const denomination = clip(entry.denomination, NAME_MAX_LENGTH);
+    const holder = byKey.get(key);
+    if (!holder) {
+      plan.create.push({ acronym, name: denomination ?? acronym });
+    } else if (holder.kind !== "executive") {
+      plan.conflicts.push(holder.acronym);
+    } else if (
+      denomination &&
+      holder.name === holder.acronym &&
+      denomination !== holder.name
+    ) {
+      plan.rename.push({ id: holder.id, name: denomination });
+    }
+  }
   return plan;
 }
 
@@ -380,7 +488,7 @@ export function findLargeDeactivations(
 ): MemberSyncDeactivationKind[] {
   const leaving = new Set(deactivate);
   const kinds: MemberSyncDeactivationKind[] = [];
-  for (const kind of ROSTER_KINDS) {
+  for (const kind of GUARDED_ROSTER_KINDS) {
     let active = 0;
     let toDeactivate = 0;
     for (const member of existing) {

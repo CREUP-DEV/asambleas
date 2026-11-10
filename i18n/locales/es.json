@@ -2014,6 +2014,10 @@
           "asociado": "Consejos asociados",
           "sectorial": "Sectoriales"
         }
+      },
+      "syncSkipped": {
+        "executive": "No se han podido leer los cargos de la CEA de la Intranet: se han dejado como estaban.",
+        "guest": "No se han podido leer los invitados de la Intranet: se han dejado como estaban."
       }
     },
     "impersonationReadOnly": "Mientras actúas como otra cuenta no puedes cambiar usuarios, roles, miembros ni plazos del reglamento. Vuelve a tu cuenta para hacerlo.",
@@ -2331,7 +2335,8 @@
       "asociado": "Consejo asociado",
       "sectorial": "Sectorial",
       "executive": "Cargo de la CEA",
-      "other": "Otro"
+      "other": "Otro",
+      "guest": "Invitado"
     },
     "toastRegion": "Notificaciones (F8)",
     "impersonation": {
@@ -3746,22 +3751,18 @@
       "earlier": "Ningún recuento anterior | 1 recuento anterior | {count} recuentos anteriores",
       "newTitle": "Nuevo recuento",
       "correctTitle": "Corregir el recuento de las {time}",
-      "description": "Marca los asociados que están en la sala. Parte del recuento anterior, así que solo tienes que cambiar quién ha llegado o se ha ido.",
-      "call": "Convocatoria",
-      "calls": {
-        "first": "Primera convocatoria",
-        "second": "Segunda convocatoria"
-      },
+      "description": "Marca quién está en la sala, en el orden en que se pasa lista: los asociados, que votan, y después las sectoriales y los invitados, que no votan ni cuentan para el quórum. Parte del recuento anterior, así que solo tienes que cambiar quién ha llegado o se ha ido.",
       "note": "Nota",
       "notePlaceholder": "Por ejemplo, inicio de la segunda jornada",
-      "filter": "Buscar un asociado",
-      "allPresent": "Marcar todos presentes",
+      "filter": "Buscar un miembro",
+      "allPresent": "Marcar presentes todos los asociados",
       "noMembers": "No hay asociados activos. Sincroniza los miembros desde la Intranet.",
       "problems": {
         "duplicate": "Aparece dos veces.",
-        "not_eligible": "Ya no es un asociado activo.",
+        "not_eligible": "Ya no es un miembro activo.",
         "delegate_missing": "Elige un asociado con derecho a voto.",
-        "delegate_twice": "Ese miembro ya recibe otra delegación."
+        "delegate_twice": "Ese miembro ya recibe otra delegación.",
+        "no_vote": "No tiene voto: solo se marca si está en la sala."
       },
       "leadership": "Para constituir la asamblea también tienen que estar la Presidencia y la Secretaría Ejecutiva, o quien las sustituya.",
       "save": "Guardar recuento",
@@ -3772,14 +3773,19 @@
       "startOver": "Empezar de nuevo",
       "draftHint": "Si lo cierras sin guardar, se queda como borrador en este dispositivo.",
       "later": "Seguir luego",
-      "listLabel": "Asociados con derecho a voto",
       "delegate": "Delega…",
       "delegateOf": "Delegación de {member}",
       "searchDelegate": "Buscar quién recibe el voto",
       "noDelegation": "Sin delegación",
       "delegateOut": "{member} (no está en la sala)",
       "uncounted": "La delegación no cuenta mientras {member} no esté en la sala.",
-      "alsoVotesFor": "Vota también por {member}."
+      "alsoVotesFor": "Vota también por {member}.",
+      "groups": {
+        "asociado": "Asociados, con voto",
+        "sectorial": "Sectoriales, sin voto",
+        "guest": "Invitados, sin voto"
+      },
+      "attending": "Ninguna sectorial ni invitado en la sala | 1 sectorial o invitado en la sala, sin voto | {count} sectoriales o invitados en la sala, sin voto"
     }
   },
   "projection": {
@@ -4233,10 +4239,11 @@
       "delegated": "Por delegación",
       "majoritiesHint": "Votos a favor necesarios con los presentes de este recuento. La mayoría simple solo pide más votos a favor que en contra.",
       "validVotesHint": "En esta asamblea las mayorías se calculan sobre los votos válidos de cada votación.",
-      "inRoom": "Nadie en la sala | 1 miembro en la sala | {count} miembros en la sala",
+      "inRoom": "Nadie con voto en la sala | 1 asociado en la sala | {count} asociados en la sala",
       "delegations": "Sin delegaciones | 1 delegación | {count} delegaciones",
       "votesThrough": "vota a través de",
-      "notCounted": "No cuenta: no está en la sala."
+      "notCounted": "No cuenta: no está en la sala.",
+      "attending": "Ninguna sectorial ni invitado | 1 sectorial o invitado en la sala, sin voto | {count} sectoriales o invitados en la sala, sin voto"
     }
   },
   "transactional": {

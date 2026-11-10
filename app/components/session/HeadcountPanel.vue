@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import type { HeadcountDto, MemberRef } from "~~/shared/types/api";
+import type { HeadcountDto } from "~~/shared/types/api";
 import {
   quorumRequired,
   quorumThreshold,
+  sessionCall,
   tallyHeadcount,
-  type QuorumCall,
 } from "~~/shared/utils/headcount";
 import { HEADCOUNT_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/headcount";
 import {
@@ -15,6 +15,7 @@ import {
   headcountFormMembers,
   setHeadcountDelegate,
   setHeadcountPresent,
+  type FormMember,
   type HeadcountDraft,
   type HeadcountForm,
 } from "~/composables/session/headcountForm";
@@ -24,10 +25,14 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * Headcounts of the members with a vote (the active asociados): the Mesa
  * takes one at the start of each day, after a break or whenever it decides.
  * The latest one is the base of majorities on the members present, and it
- * says whether there is quorum under the rules of the assembly type.
+ * says whether there is quorum under the rules of the assembly type, always
+ * in second call when the type has one (an assembly always starts in it).
+ * The sectorials and guests in the room are written down too, for the
+ * record: they never vote, delegate nor count.
  *
- * The form is built for speed: a new count starts from the previous one, so
- * the Mesa only ticks who came and who left, one checkbox per asociado. A
+ * The form is built for speed and follows the roll call (asociados,
+ * sectorials, guests): a new count starts from the previous one, so the
+ * Mesa only ticks who came and who left, one checkbox per member. A
  * delegation, less frequent, is a quiet searchable menu on a member that is
  * not in the room; it counts only while its receiver is in the room, and
  * stays on the form otherwise. Until it is saved, the form is kept as a
@@ -120,7 +125,6 @@ const open = ref(false);
 /** The count being corrected; null for a new one. */
 const editing = ref<HeadcountDto | null>(null);
 const form = ref<HeadcountForm>({});
-const call = ref<QuorumCall>("first");
 const note = ref("");
 const filter = ref("");
 /** The form came back from a draft (the Mesa may start over). */
@@ -129,17 +133,27 @@ const restored = ref(false);
 const baseline = ref<string | null>(null);
 
 function snapshot(): string {
-  return JSON.stringify({
-    form: form.value,
-    call: call.value,
-    note: note.value,
-  });
+  return JSON.stringify({ form: form.value, note: note.value });
 }
 
-const formMembers = computed<MemberRef[]>(() =>
+const formMembers = computed<FormMember[]>(() =>
   headcountFormMembers(dto.value?.members ?? [], editing.value),
 );
-const order = computed(() => formMembers.value.map((member) => member.id));
+/** The members with a vote, in the order of the form. */
+const voterOrder = computed(() =>
+  formMembers.value
+    .filter((member) => member.voting)
+    .map((member) => member.id),
+);
+const voters = computed(() => new Set(voterOrder.value));
+const attendees = computed(
+  () =>
+    new Set(
+      formMembers.value
+        .filter((member) => !member.voting)
+        .map((member) => member.id),
+    ),
+);
 const byId = computed(
   () => new Map(formMembers.value.map((member) => [member.id, member])),
 );
@@ -147,7 +161,6 @@ const byId = computed(
 function freshForm(target: HeadcountDto | null): void {
   const from = target ?? latest.value;
   form.value = headcountFormFrom(formMembers.value, from);
-  call.value = from?.call ?? "first";
   note.value = target?.note ?? "";
   restored.value = false;
   baseline.value = snapshot();
@@ -160,6 +173,7 @@ function start(target: HeadcountDto | null): void {
   const saved = readDraft();
   if (saved && saved.targetId === (target?.id ?? null)) {
     // Members that left the roster drop out; new ones start out of the room.
+    // Only a member with a vote delegates, and only to another one.
     const base = headcountFormFrom(formMembers.value, null);
     for (const id of Object.keys(base)) {
       const row = saved.form[id];
@@ -167,13 +181,16 @@ function start(target: HeadcountDto | null): void {
         base[id] = {
           present: row.present,
           delegateId:
-            row.delegateId && base[row.delegateId] ? row.delegateId : null,
+            row.delegateId &&
+            voters.value.has(id) &&
+            voters.value.has(row.delegateId)
+              ? row.delegateId
+              : null,
         };
       }
     }
     form.value = base;
-    call.value = saved.call;
-    note.value = saved.note;
+    note.value = saved.note ?? "";
     restored.value = true;
   }
   open.value = true;
@@ -186,7 +203,7 @@ function startOver(): void {
 
 // Every change while the form is open is kept as the draft.
 watch(
-  [form, call, note],
+  [form, note],
   () => {
     if (!open.value) return;
     if (snapshot() === baseline.value) {
@@ -196,7 +213,6 @@ watch(
     writeDraft({
       targetId: editing.value?.id ?? null,
       form: form.value,
-      call: call.value,
       note: note.value,
       savedAt: new Date().toISOString(),
     });
@@ -204,41 +220,61 @@ watch(
   { deep: true },
 );
 
-const callItems = computed(() =>
-  rules.value?.secondCall
-    ? (["first", "second"] as const).map((value) => ({
-        label: t(`session.headcount.calls.${value}`),
-        value,
-      }))
-    : [],
-);
-
 const tally = computed(() =>
-  tallyHeadcount(headcountEntriesOf(form.value), new Set(order.value)),
+  tallyHeadcount(headcountEntriesOf(form.value), voters.value, attendees.value),
 );
 const received = computed(() => delegationsReceived(form.value));
 const eligible = computed(() =>
-  editing.value ? editing.value.eligible : (dto.value?.members.length ?? 0),
+  editing.value ? editing.value.eligible : voters.value.size,
 );
+/** A correction keeps its threshold; a new count, the session's call. */
 const required = computed(() => {
-  if (editing.value && editing.value.call === call.value) {
-    return editing.value.required;
-  }
+  if (editing.value) return editing.value.required;
   return rules.value
-    ? quorumRequired(eligible.value, quorumThreshold(rules.value, call.value))
+    ? quorumRequired(
+        eligible.value,
+        quorumThreshold(rules.value, sessionCall(rules.value)),
+      )
     : 0;
 });
 const quorumMet = computed(() => tally.value.present >= required.value);
 
+type RollCallGroup = "asociado" | "sectorial" | "guest";
+
+/**
+ * The group a member is called in: with a vote, or as a sectorial; any
+ * other member without a vote goes with the guests.
+ */
+function groupOf(member: FormMember): RollCallGroup {
+  if (member.voting) return "asociado";
+  return member.kind === "sectorial" ? "sectorial" : "guest";
+}
+
 const shown = computed(() => {
   const query = filter.value.trim().toLocaleLowerCase(locale.value);
-  if (!query) return formMembers.value;
-  return formMembers.value.filter(
-    (member) =>
-      member.acronym.toLocaleLowerCase(locale.value).includes(query) ||
-      member.name.toLocaleLowerCase(locale.value).includes(query),
-  );
+  const matching = query
+    ? formMembers.value.filter((member) =>
+        [member.acronym, member.name, member.university ?? ""].some((value) =>
+          value.toLocaleLowerCase(locale.value).includes(query),
+        ),
+      )
+    : formMembers.value;
+  const groups: { key: RollCallGroup; members: FormMember[] }[] = [];
+  for (const member of matching) {
+    const key = groupOf(member);
+    const group = groups.find((item) => item.key === key);
+    if (group) group.members.push(member);
+    else groups.push({ key, members: [member] });
+  }
+  return groups;
 });
+
+/** What a member is called: its denomination and, if any, its university. */
+function denomination(member: FormMember): string | undefined {
+  const name = member.name !== member.acronym ? member.name : "";
+  const full = [name, member.university].filter(Boolean).join(" · ");
+  return full || undefined;
+}
 
 function acronym(id: string | null | undefined): string {
   return (id && byId.value.get(id)?.acronym) || "";
@@ -255,7 +291,7 @@ const NO_DELEGATION = "none";
 function delegateItems(memberId: string) {
   return [
     { label: t("session.headcount.noDelegation"), value: NO_DELEGATION },
-    ...delegateOptions(form.value, memberId, order.value).map((id) => ({
+    ...delegateOptions(form.value, memberId, voterOrder.value).map((id) => ({
       label: form.value[id]?.present
         ? acronym(id)
         : t("session.headcount.delegateOut", { member: acronym(id) }),
@@ -273,9 +309,10 @@ function chooseDelegate(memberId: string, value: unknown): void {
   );
 }
 
+/** Every asociado in the room; sectorials and guests are ticked one by one. */
 function markAllPresent(): void {
   let next = form.value;
-  for (const id of order.value) {
+  for (const id of voterOrder.value) {
     if (!next[id]?.present) next = setHeadcountPresent(next, id, true);
   }
   form.value = next;
@@ -295,7 +332,6 @@ const canSave = computed(
 async function save(): Promise<void> {
   if (!canSave.value) return;
   const body = {
-    call: rules.value?.secondCall ? call.value : ("first" as const),
     entries: headcountEntriesOf(form.value),
     note: note.value.trim() || null,
   };
@@ -448,27 +484,18 @@ async function save(): Promise<void> {
             ]"
           />
 
-          <div class="grid gap-3 sm:grid-cols-2">
-            <UFormField
-              v-if="callItems.length > 0"
-              :label="t('session.headcount.call')"
-              name="headcount-call"
-            >
-              <USelect v-model="call" :items="callItems" class="w-full" />
-            </UFormField>
-            <UFormField
-              :label="t('session.headcount.note')"
-              :hint="t('session.vote.optional')"
-              name="headcount-note"
-            >
-              <UInput
-                v-model="note"
-                :maxlength="HEADCOUNT_NOTE_MAX_LENGTH"
-                :placeholder="t('session.headcount.notePlaceholder')"
-                class="w-full"
-              />
-            </UFormField>
-          </div>
+          <UFormField
+            :label="t('session.headcount.note')"
+            :hint="t('session.vote.optional')"
+            name="headcount-note"
+          >
+            <UInput
+              v-model="note"
+              :maxlength="HEADCOUNT_NOTE_MAX_LENGTH"
+              :placeholder="t('session.headcount.notePlaceholder')"
+              class="w-full"
+            />
+          </UFormField>
 
           <div class="flex flex-wrap items-end gap-2">
             <UFormField
@@ -495,96 +522,109 @@ async function save(): Promise<void> {
           <p v-if="formMembers.length === 0" class="text-muted text-sm">
             {{ t("session.headcount.noMembers") }}
           </p>
-          <ul
+          <div
             v-else
-            class="border-default divide-default max-h-[45vh] divide-y overflow-y-auto rounded-lg border"
-            :aria-label="t('session.headcount.listLabel')"
+            class="border-default max-h-[45vh] overflow-y-auto rounded-lg border"
           >
-            <li
-              v-for="member in shown"
-              :key="member.id"
-              class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2"
+            <section
+              v-for="group in shown"
+              :key="group.key"
+              :aria-labelledby="'headcount-group-' + group.key"
             >
-              <UCheckbox
-                :model-value="form[member.id]?.present ?? false"
-                :label="member.acronym"
-                :description="
-                  member.name !== member.acronym ? member.name : undefined
-                "
-                class="min-w-0 flex-1"
-                :ui="{ description: 'truncate' }"
-                @update:model-value="(value) => togglePresent(member.id, value)"
-              />
-              <USelectMenu
-                v-if="!form[member.id]?.present"
-                :model-value="form[member.id]?.delegateId ?? undefined"
-                :items="delegateItems(member.id)"
-                value-key="value"
-                :filter-fields="['label', 'name']"
-                :search-input="
-                  labelledSearch(t('session.headcount.searchDelegate'))
-                "
-                :placeholder="t('session.headcount.delegate')"
-                :aria-label="
-                  selectMenuLabel(
-                    t('session.headcount.delegateOf', {
-                      member: member.acronym,
-                    }),
-                    delegateItems(member.id),
-                    form[member.id]?.delegateId || undefined,
-                    t('session.headcount.noDelegation'),
-                  )
-                "
-                :variant="form[member.id]?.delegateId ? 'outline' : 'ghost'"
-                size="sm"
-                icon="i-lucide-forward"
-                class="w-40 shrink-0"
-                @update:model-value="
-                  (value) => chooseDelegate(member.id, value)
-                "
-              />
-              <p
-                v-if="
-                  tally.problems.has(member.id) ||
-                  tally.uncounted.has(member.id) ||
-                  (form[member.id]?.present && received.has(member.id))
-                "
-                class="text-muted w-full text-xs"
+              <h3
+                :id="'headcount-group-' + group.key"
+                class="bg-elevated text-highlighted border-default sticky top-0 z-10 border-b px-3 py-1.5 text-xs font-semibold"
               >
-                <template v-if="tally.problems.has(member.id)">
-                  <UIcon
-                    name="i-lucide-circle-alert"
-                    class="text-error size-3.5 align-middle"
-                    aria-hidden="true"
+                {{ t("session.headcount.groups." + group.key) }}
+              </h3>
+              <ul class="divide-default divide-y">
+                <li
+                  v-for="member in group.members"
+                  :key="member.id"
+                  class="flex flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2"
+                >
+                  <UCheckbox
+                    :model-value="form[member.id]?.present ?? false"
+                    :label="member.acronym"
+                    :description="denomination(member)"
+                    class="min-w-0 flex-1"
+                    :ui="{ description: 'truncate' }"
+                    @update:model-value="
+                      (value) => togglePresent(member.id, value)
+                    "
                   />
-                  {{
-                    t(
-                      `session.headcount.problems.${tally.problems.get(member.id)}`,
-                    )
-                  }}
-                </template>
-                <template v-else-if="tally.uncounted.has(member.id)">
-                  <UIcon
-                    name="i-lucide-triangle-alert"
-                    class="text-warning size-3.5 align-middle"
-                    aria-hidden="true"
+                  <USelectMenu
+                    v-if="member.voting && !form[member.id]?.present"
+                    :model-value="form[member.id]?.delegateId ?? undefined"
+                    :items="delegateItems(member.id)"
+                    value-key="value"
+                    :filter-fields="['label', 'name']"
+                    :search-input="
+                      labelledSearch(t('session.headcount.searchDelegate'))
+                    "
+                    :placeholder="t('session.headcount.delegate')"
+                    :aria-label="
+                      selectMenuLabel(
+                        t('session.headcount.delegateOf', {
+                          member: member.acronym,
+                        }),
+                        delegateItems(member.id),
+                        form[member.id]?.delegateId || undefined,
+                        t('session.headcount.noDelegation'),
+                      )
+                    "
+                    :variant="form[member.id]?.delegateId ? 'outline' : 'ghost'"
+                    size="sm"
+                    icon="i-lucide-forward"
+                    class="w-40 shrink-0"
+                    @update:model-value="
+                      (value) => chooseDelegate(member.id, value)
+                    "
                   />
-                  {{
-                    t("session.headcount.uncounted", {
-                      member: acronym(form[member.id]?.delegateId),
-                    })
-                  }}
-                </template>
-                <template v-else>
-                  {{
-                    t("session.headcount.alsoVotesFor", {
-                      member: acronym(received.get(member.id)),
-                    })
-                  }}
-                </template>
-              </p>
-            </li>
-          </ul>
+                  <p
+                    v-if="
+                      tally.problems.has(member.id) ||
+                      tally.uncounted.has(member.id) ||
+                      (form[member.id]?.present && received.has(member.id))
+                    "
+                    class="text-muted w-full text-xs"
+                  >
+                    <template v-if="tally.problems.has(member.id)">
+                      <UIcon
+                        name="i-lucide-circle-alert"
+                        class="text-error size-3.5 align-middle"
+                        aria-hidden="true"
+                      />
+                      {{
+                        t(
+                          `session.headcount.problems.${tally.problems.get(member.id)}`,
+                        )
+                      }}
+                    </template>
+                    <template v-else-if="tally.uncounted.has(member.id)">
+                      <UIcon
+                        name="i-lucide-triangle-alert"
+                        class="text-warning size-3.5 align-middle"
+                        aria-hidden="true"
+                      />
+                      {{
+                        t("session.headcount.uncounted", {
+                          member: acronym(form[member.id]?.delegateId),
+                        })
+                      }}
+                    </template>
+                    <template v-else>
+                      {{
+                        t("session.headcount.alsoVotesFor", {
+                          member: acronym(received.get(member.id)),
+                        })
+                      }}
+                    </template>
+                  </p>
+                </li>
+              </ul>
+            </section>
+          </div>
 
           <div
             class="border-default bg-elevated/40 space-y-1 rounded-lg border p-3"
@@ -613,6 +653,16 @@ async function save(): Promise<void> {
             </div>
             <p class="text-muted text-xs tabular-nums">
               {{ t("session.headcount.requiredOnly", { required }) }}
+              <template v-if="tally.attending > 0">
+                ·
+                {{
+                  t(
+                    "session.headcount.attending",
+                    { count: tally.attending },
+                    tally.attending,
+                  )
+                }}
+              </template>
             </p>
             <p class="text-muted text-xs">
               {{ t("session.headcount.leadership") }}

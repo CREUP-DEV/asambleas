@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { DOCUMENT_KINDS, MEMBER_KINDS } from "../constants/domain";
-import { barredPresenters, memberMayPresent } from "./presenterKinds";
+import {
+  barredPresenters,
+  memberMayPresent,
+  memberPresents,
+} from "./presenterKinds";
 
 describe("memberMayPresent", () => {
   it("bars sectorials from internal motions only", () => {
@@ -11,12 +15,47 @@ describe("memberMayPresent", () => {
     }
   });
 
-  it("lets every other member present every kind", () => {
-    for (const memberKind of MEMBER_KINDS.filter((k) => k !== "sectorial")) {
+  it("lets every other member but a guest present every kind", () => {
+    for (const memberKind of MEMBER_KINDS.filter(
+      (k) => k !== "sectorial" && k !== "guest",
+    )) {
       for (const kind of DOCUMENT_KINDS) {
         expect(memberMayPresent(kind, memberKind)).toBe(true);
       }
     }
+  });
+
+  it("never lets a guest present anything", () => {
+    expect(memberPresents("guest")).toBe(false);
+    for (const kind of DOCUMENT_KINDS) {
+      expect(memberMayPresent(kind, "guest")).toBe(false);
+    }
+    expect(memberPresents("sectorial")).toBe(true);
+  });
+});
+
+describe("barredPresenters with guests", () => {
+  const former = { id: "m-old", acronym: "OLD", kind: "guest" as const };
+  const sectorial = {
+    id: "m-aeee",
+    acronym: "AEEE",
+    kind: "sectorial" as const,
+  };
+
+  it("never adds a guest as a presenter", () => {
+    expect(barredPresenters("positioning", [former])).toEqual([former]);
+  });
+
+  it("keeps a presenter that has since become a guest", () => {
+    expect(
+      barredPresenters("positioning", [former], new Set(["m-old"])),
+    ).toEqual([]);
+  });
+
+  it("still bars a sectorial it already had from an internal motion", () => {
+    expect(
+      barredPresenters("internal_motion", [sectorial], new Set(["m-aeee"])),
+    ).toEqual([sectorial]);
   });
 });
 

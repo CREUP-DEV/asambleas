@@ -52,7 +52,7 @@ const {
   refresh,
 } = await useFetch<MemberRow[]>("/api/members", {
   key: "admin-members",
-  query: { all: 1 },
+  query: { all: 1, guests: 1 },
 });
 
 const members = computed(() => data.value ?? []);
@@ -239,6 +239,14 @@ async function runSync(
       color: "success",
       icon: "i-lucide-refresh-cw",
     });
+    // Lists the Intranet could not give: those members were left as they were.
+    for (const kind of result.skipped ?? []) {
+      toast.add({
+        title: t(`admin.members.syncSkipped.${kind}`),
+        color: "warning",
+        icon: "i-lucide-triangle-alert",
+      });
+    }
     await refresh();
   } catch (error) {
     const kinds = blockedSyncKinds(error);

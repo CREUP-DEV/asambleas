@@ -202,7 +202,7 @@ const { data: rolesData } = await useFetch<{ data: RoleOption[] }>(
 // Every member, inactive ones too, so a link to one still shows.
 const { data: membersData } = await useFetch<MemberDto[]>("/api/members", {
   key: "admin-users-members",
-  query: { all: 1 },
+  query: { all: 1, guests: 1 },
 });
 
 const users = computed(() => usersData.value?.data ?? []);
