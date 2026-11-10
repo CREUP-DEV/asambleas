@@ -27,6 +27,11 @@ import {
   cellFillOf,
   type CellFill,
 } from "~/utils/editor/cellFillExtension";
+import {
+  CELL_FILLS,
+  CELL_FILL_NAMES,
+  cellFillTextColour,
+} from "~~/shared/constants/cellFills";
 import { TableKit } from "@tiptap/extension-table";
 import { TextAlign } from "@tiptap/extension-text-align";
 
@@ -45,8 +50,8 @@ const props = withDefaults(
     compact?: boolean;
     /**
      * Editing a published text to amend it: the full toolbar, without what
-     * an amendment cannot change on a table that is already there (the fill
-     * of a cell, header cells, merged cells).
+     * an amendment cannot change on a table that is already there (the
+     * colour of a cell, header cells, merged cells).
      */
     amend?: boolean;
     autofocus?: boolean;
@@ -180,32 +185,46 @@ const extensions = [
   }),
 ];
 
-/** Whether the cursor is in a table, and its cell's fill, for the table menu. */
+/** Whether the cursor is in a table, and its cells' fill, for the swatches. */
 const inTable = ref(false);
-const cellFill = ref<CellFill | null>(null);
+const cellFill = ref<CellFill | "mixed" | null>(null);
 
 function updateInTable(): void {
   inTable.value = editor.value?.isActive("table") ?? false;
   cellFill.value = cellFillOf(editor.value);
 }
 
-const CELL_FILLS: { fill: CellFill; icon: string }[] = [
-  { fill: "none", icon: "i-lucide-square" },
-  { fill: "light", icon: "i-lucide-paint-bucket" },
-  { fill: "dark", icon: "i-lucide-square-dot" },
-];
+/** The fills on offer: the palette's colours, then none. */
+const FILL_OPTIONS: CellFill[] = [...CELL_FILL_NAMES, "none"];
 
 /**
- * The cell fill choice: none, light or burgundy (a header cell), checked on
- * the current one.
+ * Amendments compare no cell, so its colour stays: neither the text of an
+ * amendment (`amend`) nor the short editor of one passage (`compact`)
+ * offers it.
+ */
+const offersFill = computed(() => !props.amend && !props.compact);
+
+/** A swatch's own colours, from the palette; none keeps the page's. */
+function swatchStyle(fill: CellFill): Record<string, string> {
+  if (fill === "none") return {};
+  return {
+    backgroundColor: CELL_FILLS[fill].hex,
+    color: cellFillTextColour(fill),
+  };
+}
+
+/**
+ * The colour choice in the right-click menu: each colour by name, with its
+ * swatch (the `fill` slot), checked on the current one.
  */
 function cellFillItems(
-  current: CellFill | null,
+  current: CellFill | "mixed" | null,
   apply: (fill: CellFill) => void,
-) {
-  return CELL_FILLS.map(({ fill, icon }) => ({
+): ContextMenuItem[] {
+  return FILL_OPTIONS.map((fill) => ({
     label: t(`common.editor.table.fill.${fill}`),
-    icon,
+    slot: "fill" as const,
+    fill,
     type: "checkbox" as const,
     checked: current === fill,
     disabled: current === null,
@@ -288,26 +307,21 @@ const tableMenu = computed(
             c.deleteColumn(),
           ),
         ],
-        // Amendments compare no cell: its fill, header and span stay.
+        // Amendments compare no cell: its colour, header and span stay.
         ...(props.amend
           ? []
           : [
-              [
-                // The fill of the cell: burgundy is a header cell.
-                {
-                  type: "label",
-                  label: t("common.editor.table.fill.label"),
-                },
-                ...cellFillItems(cellFill.value, (fill) =>
-                  runInTable((c) => c.setCellFill(fill)),
-                ),
-              ],
               [
                 tableAction("toggleHeaderRow", "i-lucide-panel-top", (c) =>
                   c.toggleHeaderRow(),
                 ),
                 tableAction("toggleHeaderColumn", "i-lucide-panel-left", (c) =>
                   c.toggleHeaderColumn(),
+                ),
+                // The first row and column have their own; this one reaches
+                // any other cell (a subtotal row brought from Word).
+                tableAction("toggleHeaderCell", "i-lucide-heading", (c) =>
+                  c.toggleHeaderCell(),
                 ),
                 tableAction("mergeCells", "i-lucide-table-cells-merge", (c) =>
                   c.mergeCells(),
@@ -484,6 +498,12 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
   // Amendments may change a table's text, rows and columns too.
   if (props.compact) return [marks, link, tables, history];
 
+  // The colour of the cells, as a row of swatches while in a table.
+  const fills =
+    offersFill.value && inTable.value
+      ? [[{ slot: "cellFill" } as EditorToolbarItem]]
+      : [];
+
   const structure = [
     action(
       { kind: "heading", level: 1, icon: "i-lucide-heading-2" },
@@ -526,7 +546,15 @@ const toolbarItems = computed<EditorToolbarItem[][]>(() => {
       "common.editor.quote",
     ),
   ];
-  const groups = [structure, [alignment], tables, marks, link, history];
+  const groups = [
+    structure,
+    [alignment],
+    tables,
+    ...fills,
+    marks,
+    link,
+    history,
+  ];
   // What the page adds at the toolbar's end (saving the text, say).
   if (slots["toolbar-end"]) {
     groups.push([{ slot: "toolbar-end" } as EditorToolbarItem]);
@@ -760,22 +788,29 @@ function buildContextItems(): void {
               c.addColumnAfter(),
             ),
           ],
-          // Amendments compare no cell: its fill, header and span stay.
+          // Amendments compare no cell: its colour, header and span stay.
           props.amend
             ? []
             : [
-                {
-                  label: t("common.editor.table.fill.label"),
-                  icon: "i-lucide-paint-bucket",
-                  children: cellFillItems(cellFillOf(instance), (fill) =>
-                    run((c) => c.setCellFill(fill)),
-                  ),
-                },
+                ...(offersFill.value
+                  ? [
+                      {
+                        label: t("common.editor.table.fill.label"),
+                        icon: "i-lucide-paint-bucket",
+                        children: cellFillItems(cellFillOf(instance), (fill) =>
+                          run((c) => c.setCellFill(fill)),
+                        ),
+                      },
+                    ]
+                  : []),
                 action("toggleHeaderRow", "i-lucide-panel-top", (c) =>
                   c.toggleHeaderRow(),
                 ),
                 action("toggleHeaderColumn", "i-lucide-panel-left", (c) =>
                   c.toggleHeaderColumn(),
+                ),
+                action("toggleHeaderCell", "i-lucide-heading", (c) =>
+                  c.toggleHeaderCell(),
                 ),
                 action("mergeCells", "i-lucide-table-cells-merge", (c) =>
                   c.mergeCells(),
@@ -1128,6 +1163,13 @@ defineExpose({
       :modal="false"
       @update:open="(open: boolean) => open && buildContextItems()"
     >
+      <template #fill-leading="{ item }">
+        <span
+          aria-hidden="true"
+          class="cx-fill-swatch size-4"
+          :style="swatchStyle((item as { fill: CellFill }).fill)"
+        />
+      </template>
       <!-- The menu's trigger: UEditor would not pass its listener on -->
       <div>
         <UEditor
@@ -1198,6 +1240,49 @@ defineExpose({
           >
             <template v-if="$slots['toolbar-end']" #toolbar-end>
               <slot name="toolbar-end" />
+            </template>
+            <template #cellFill>
+              <div
+                role="group"
+                :aria-label="t('common.editor.table.fill.label')"
+                class="flex flex-wrap items-center gap-1 px-1"
+              >
+                <UIcon
+                  name="i-lucide-paint-bucket"
+                  class="text-muted size-4 shrink-0"
+                  aria-hidden="true"
+                />
+                <UTooltip
+                  v-for="fill in FILL_OPTIONS"
+                  :key="fill"
+                  :text="t(`common.editor.table.fill.${fill}`)"
+                >
+                  <!-- The chosen one shows a tick and a ring, not only its
+                       colour. mousedown keeps the cells selected. -->
+                  <button
+                    type="button"
+                    class="cx-fill-swatch size-6"
+                    :style="swatchStyle(fill)"
+                    :aria-label="t(`common.editor.table.fill.${fill}`)"
+                    :aria-pressed="cellFill === fill"
+                    @mousedown.prevent
+                    @click="runInTable((c) => c.setCellFill(fill))"
+                  >
+                    <UIcon
+                      v-if="cellFill === fill"
+                      name="i-lucide-check"
+                      class="size-4"
+                      aria-hidden="true"
+                    />
+                    <UIcon
+                      v-else-if="fill === 'none'"
+                      name="i-lucide-slash"
+                      class="text-muted size-4"
+                      aria-hidden="true"
+                    />
+                  </button>
+                </UTooltip>
+              </div>
             </template>
             <template #link>
               <UPopover

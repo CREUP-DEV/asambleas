@@ -23,6 +23,11 @@ import type {
   ListMarker,
   Mark,
 } from "../../../shared/types/content";
+import {
+  CELL_FILLS,
+  cellFillOf,
+  cellFillTextColour,
+} from "../../../shared/constants/cellFills";
 import { markerOf } from "../../../shared/utils/content/lists";
 import {
   groupTables,
@@ -496,7 +501,8 @@ function assemble(items: Item[], ctx: PdfContentContext): Content[] {
 
 /**
  * A table in the template's style: burgundy rules, a burgundy header row in
- * white bold that repeats on every page, and spans laid out as a browser
+ * white bold that repeats on every page, cells on their fill from the
+ * palette (cellLook), and spans laid out as a browser
  * does (tableGrid). pdfmake wants every row full, so spanned positions get
  * the empty placeholders it expects, and rows an amendment left short are
  * filled with blank cells.
@@ -518,7 +524,13 @@ function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
           if (dr || dc) covered.add(`${r + dr}:${cell.column + dc}`);
         }
       }
-      const nodes = assembleFlow(cell.blocks, ctx);
+      const look = cellLook(cell.cell);
+      const nodes = look.color
+        ? assembleFlow(
+            cell.blocks.map((item) => onFill(item, look.color!)),
+            ctx,
+          ).map((node) => headingOnFill(node, look.color!))
+        : assembleFlow(cell.blocks, ctx);
       // Blocks in a cell sit close together, the last one flush, in the
       // table's type (their own style would set the body's).
       const stack = nodes.map((node, index) =>
@@ -534,11 +546,7 @@ function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
         stack,
         ...(cell.colspan > 1 ? { colSpan: cell.colspan } : {}),
         ...(cell.rowspan > 1 ? { rowSpan: cell.rowspan } : {}),
-        ...(cell.cell.header
-          ? { fillColor: CREUP_RED, color: "#ffffff", bold: true }
-          : cell.cell.shade
-            ? { fillColor: CELL_SHADE }
-            : {}),
+        ...look,
       } as TableCell;
     }
   });
@@ -559,8 +567,71 @@ function tableNode(table: TableGroup<Item>, ctx: PdfContentContext): Content {
   };
 }
 
-/** The template's light fill for shaded cells (`shade`). */
-export const CELL_SHADE = "#f5eee6";
+/**
+ * A block of a header cell or a filled one, with every colour of its own
+ * (links and their references, amendment marks, removed text, notes) turned
+ * into the cell's text colour: pdfmake keeps an inline's colour over the
+ * cell's, and those would not read on a fill, or would be the fill itself.
+ * A level 1 heading keeps its own bar and colours (onBurgundy).
+ */
+function onFill(item: Item, color: string): Item {
+  if (item.shape.type === "heading" && headingLevel(item.shape.level) === 1)
+    return item;
+  return {
+    ...item,
+    inlines: item.inlines.map((inline) => {
+      const plain = { ...inline };
+      if (plain.color || plain.style === "amendmentRef") plain.color = color;
+      if (plain.decorationColor) plain.decorationColor = color;
+      return plain;
+    }),
+  };
+}
+
+const HEADING_STYLE = /^(heading\d|boxHeading)$/;
+
+/** A heading below the bar takes the cell's text colour, not the burgundy. */
+function headingOnFill(node: Content, color: string): Content {
+  if (typeof node !== "object" || node === null || Array.isArray(node))
+    return node;
+  const style = (node as { style?: unknown }).style;
+  if (typeof style === "string" && HEADING_STYLE.test(style))
+    return { ...node, color } as Content;
+  // The level 3 box is a one-cell table around the heading's text.
+  const table = (node as Partial<ContentTable>).table;
+  const inner = table?.body[0]?.[0];
+  if (
+    table &&
+    typeof inner === "object" &&
+    inner !== null &&
+    (inner as { style?: unknown }).style === "boxHeading"
+  ) {
+    return {
+      ...node,
+      table: { ...table, body: [[{ ...inner, color } as TableCell]] },
+    } as Content;
+  }
+  return node;
+}
+
+/**
+ * A cell's fill and text colour: its fill from the palette (CELL_FILLS) with
+ * the text colour that reads on it; a header cell is bold, and burgundy
+ * with white text when it has no fill of its own.
+ */
+function cellLook(cell: BlockCell): {
+  fillColor?: string;
+  color?: string;
+  bold?: boolean;
+} {
+  const fill = cellFillOf(cell);
+  const look = fill
+    ? { fillColor: CELL_FILLS[fill].hex, color: cellFillTextColour(fill) }
+    : cell.header
+      ? { fillColor: CREUP_RED, color: "#ffffff" }
+      : {};
+  return cell.header ? { ...look, bold: true } : look;
+}
 
 /** The body text's size, which tables keep up to five columns. */
 const BODY_FONT_SIZE = 11;

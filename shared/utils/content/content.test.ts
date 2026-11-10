@@ -1,4 +1,14 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import {
+  CELL_FILLS,
+  CELL_FILL_NAMES,
+  CELL_FILL_TEXT,
+  cellFillOf,
+  nearestCellFill,
+} from "../../constants/cellFills";
+import { hashContent } from "../diff";
 import type { AmendmentOp, Block, FormatChange } from "../../types/content";
 import { consolidate, mapPosition, previewAmendment } from "./consolidate";
 import { diffPassage, diffText } from "./diff";
@@ -731,34 +741,134 @@ describe("tables", () => {
     expect(editorToBlocks(doc, newId)).toEqual(table);
   });
 
-  it("keeps shaded cells through the schema, the editor and the view", () => {
+  it("reads cells shaded before the palette as beige, and stores them as they came", async () => {
     const shaded = [
       c("s001", "Concepto", at("srow1", "scel1", { header: true })),
       c("s002", "Ingresos", at("srow2", "scel2", { shade: true })),
       c("s003", "10", at("srow2", "scel3")),
     ];
-    // A header has its own fill: shading one means nothing.
-    const parsed = blocksSchema.parse([
-      ...shaded,
+    // Stored content comes out of the schema untouched, so saving a text
+    // nobody changed keeps its hash.
+    const stored = blocksSchema.parse(shaded);
+    expect(stored).toEqual(shaded);
+    expect(await hashContent(JSON.stringify(stored))).toBe(
+      await hashContent(JSON.stringify(shaded)),
+    );
+    // Shading a header meant nothing then, and still does.
+    const [header] = blocksSchema.parse([
       c("s004", "x", at("srow3", "scel4", { header: true, shade: true })),
     ]);
-    expect(parsed.map((block) => block.cell!.shade ?? false)).toEqual([
-      false,
-      true,
-      false,
-      false,
+    expect(header!.cell).toEqual(at("srow3", "scel4", { header: true }));
+    expect(shaded.map((block) => cellFillOf(block.cell!) ?? null)).toEqual([
+      null,
+      "beige",
+      null,
     ]);
+
     const doc = blocksToEditor(shaded);
     const cells = doc.content![0]!.content!.flatMap((row) => row.content!);
-    expect(cells.map((cell) => cell.attrs!.shade)).toEqual([
-      false,
-      true,
-      false,
+    expect(cells.map((cell) => cell.attrs!.fill)).toEqual([
+      null,
+      "beige",
+      null,
     ]);
-    expect(editorToBlocks(doc, newId)).toEqual(shaded);
+    // What the editor writes names the fill.
+    expect(editorToBlocks(doc, newId)).toEqual([
+      shaded[0],
+      c("s002", "Ingresos", at("srow2", "scel2", { fill: "beige" })),
+      shaded[2],
+    ]);
     expect(renderBlocks(shaded)).toMatch(
-      /<td class="cx-shade"><p[^>]*>Ingresos<\/p><\/td><td><p/,
+      /<td class="cx-fill-beige"><p[^>]*>Ingresos<\/p><\/td><td><p/,
     );
+  });
+
+  it("keeps a cell's fill through the schema, the editor and the view", () => {
+    const filled = [
+      // A header keeps its own toggle: with a fill, or without one.
+      c("f001", "Concepto", at("frow1", "fcel1", { header: true })),
+      c("f002", "Total", at("frow1", "fcel2", { header: true, fill: "blue" })),
+      c("f003", "Ingresos", at("frow2", "fcel3", { fill: "green" })),
+      c("f004", "10", at("frow2", "fcel4")),
+    ];
+    expect(blocksSchema.parse(filled)).toEqual(filled);
+    // A fill is a name of the palette, never a colour code.
+    for (const fill of ["#792225", "red", "", "Blue"]) {
+      expect(() =>
+        blocksSchema.parse([
+          c("f005", "x", at("frow3", "fcel5", { fill } as never)),
+        ]),
+      ).toThrow();
+    }
+    // With a fill, the earlier `shade` says nothing more.
+    const [both] = blocksSchema.parse([
+      c("f006", "x", at("frow3", "fcel6", { fill: "purple", shade: true })),
+    ]);
+    expect(both!.cell).toEqual(at("frow3", "fcel6", { fill: "purple" }));
+
+    const doc = blocksToEditor(filled);
+    const cells = doc.content![0]!.content!.flatMap((row) => row.content!);
+    expect(cells.map((cell) => [cell.type, cell.attrs!.fill])).toEqual([
+      ["tableHeader", null],
+      ["tableHeader", "blue"],
+      ["tableCell", "green"],
+      ["tableCell", null],
+    ]);
+    expect(editorToBlocks(doc, newId)).toEqual(filled);
+    // An unknown fill in the editor is dropped.
+    cells[3]!.attrs!.fill = "#00ff00";
+    expect(editorToBlocks(doc, newId)).toEqual(filled);
+
+    const html = renderBlocks(filled);
+    expect(html).toMatch(/<th><p[^>]*>Concepto/);
+    expect(html).toMatch(/<th class="cx-fill-blue"><p[^>]*>Total/);
+    expect(html).toMatch(/<td class="cx-fill-green"><p[^>]*>Ingresos/);
+    for (const name of CELL_FILL_NAMES) {
+      expect(
+        renderBlocks([c("f007", "x", at("frow4", "fcel7", { fill: name }))]),
+      ).toContain(`<td class="cx-fill-${name}">`);
+    }
+  });
+
+  it("has one palette: the stylesheet's colours are the constant's", () => {
+    const css = readFileSync(
+      resolve(process.cwd(), "app/assets/css/main.css"),
+      "utf8",
+    );
+    const token = (name: string) =>
+      new RegExp(`--cx-fill-${name}:\\s*(#[0-9a-f]{6});`, "i")
+        .exec(css)?.[1]
+        ?.toLowerCase();
+    for (const name of CELL_FILL_NAMES) {
+      expect(token(name)).toBe(CELL_FILLS[name].hex);
+      // Each fill's rule takes the text colour the constant gives it.
+      const rule = new RegExp(
+        `\\.cx-fill-${name}, \\[data-fill="${name}"\\]\\) \\{\\s*--cx-fill: var\\(--cx-fill-${name}\\);\\s*--cx-fill-fg: var\\(--cx-fill-fg-(light|dark)\\);`,
+      ).exec(css);
+      expect(rule?.[1]).toBe(CELL_FILLS[name].text);
+    }
+    expect(token("fg-light")).toBe(CELL_FILL_TEXT.light);
+    expect(token("fg-dark")).toBe(CELL_FILL_TEXT.dark);
+  });
+
+  it("finds the palette colour nearest to any colour", () => {
+    for (const name of CELL_FILL_NAMES) {
+      expect(nearestCellFill(CELL_FILLS[name].hex)).toBe(name);
+    }
+    expect(nearestCellFill("1F3864")).toBe("blue");
+    expect(nearestCellFill("#c00000")).toBe("burgundy");
+    expect(nearestCellFill("E2EFD9")).toBe("beige");
+    expect(nearestCellFill("#000")).toBe("darkGrey");
+    expect(nearestCellFill("rgb(42, 114, 88)")).toBe("green");
+    expect(nearestCellFill("rgba(81, 50, 105, 0.5)")).toBe("purple");
+    // A web table's faint stripes are no fill.
+    expect(nearestCellFill("rgba(0, 0, 0, 0.05)")).toBeNull();
+    expect(nearestCellFill("rgb(0 0 0 / 5%)")).toBeNull();
+    expect(nearestCellFill("rgb(0 0 0 / 80%)")).toBe("darkGrey");
+    // White, a transparent colour and what is no colour are no fill.
+    for (const none of ["ffffff", "#FEFEFE", "rgba(0, 0, 0, 0)", "auto", ""]) {
+      expect(nearestCellFill(none)).toBeNull();
+    }
   });
 
   it("gives copies of a cell their own id, and blank cells a paragraph", () => {

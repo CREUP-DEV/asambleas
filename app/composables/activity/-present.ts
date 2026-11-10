@@ -170,6 +170,7 @@ export const ACTIVITY_ACTION_ICONS = {
   "user.access_restored": "i-lucide-user-check",
   "user.intranet_missing": "i-lucide-user-search",
   "users.access_recheck_blocked": "i-lucide-shield-alert",
+  "user.onboarding_seen": "i-lucide-life-buoy",
   "auth.sign_in": "i-lucide-log-in",
   "auth.sign_out": "i-lucide-log-out",
   "auth.session_ended": "i-lucide-timer-off",

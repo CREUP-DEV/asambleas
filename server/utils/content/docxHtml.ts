@@ -6,6 +6,8 @@
  * note's content into a <div> and write its "[1]" before it.
  */
 
+import { nearestCellFill } from "../../../shared/constants/cellFills";
+
 export interface PrepareImportedHtmlOptions {
   /** The title of the document the import is for. */
   documentTitle?: string;
@@ -156,25 +158,25 @@ function alignments(document: Document): void {
 }
 
 /**
- * Filled cells (`span.docx-cell`, see cellFills in docx.ts): on a dark fill
- * they become header cells (`data-header="true"`), on a light one shaded
- * cells (`data-shade="true"`). A table that marks dark cells marks its
- * headers by colour, so its other cells are no headers however bold their
- * text (`data-header="false"`); htmlElementToBlocks reads all three. Cells
- * Word itself makes headers (repeated header rows, `th`) stay so.
+ * Filled cells (`span.docx-cell`, see cellFills in docx.ts, which writes
+ * "dark:rrggbb" or "light:rrggbb"): each takes the palette colour nearest
+ * to its Word fill (`data-fill`, nearestCellFill), and on a dark fill it
+ * becomes a header cell too (`data-header="true"`). A table that marks dark
+ * cells marks its headers by colour, so its other cells are no headers
+ * however bold their text (`data-header="false"`); htmlElementToBlocks reads
+ * all three. Cells Word itself makes headers (repeated header rows, `th`)
+ * stay so.
  */
 function cellFills(document: Document): void {
   const tables = new Set<Element>();
   for (const span of Array.from(document.querySelectorAll("span.docx-cell"))) {
-    const fill = span.textContent;
+    const [tone, colour] = (span.textContent ?? "").split(":");
     const cell = span.closest("td, th");
     span.remove();
     if (!cell) continue;
-    if (fill === "light") {
-      cell.setAttribute("data-shade", "true");
-      continue;
-    }
-    if (fill !== "dark") continue;
+    const fill = colour ? nearestCellFill(colour) : null;
+    if (fill) cell.setAttribute("data-fill", fill);
+    if (tone !== "dark") continue;
     cell.setAttribute("data-header", "true");
     const table = cell.closest("table");
     if (table) tables.add(table);

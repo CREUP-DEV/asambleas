@@ -146,7 +146,7 @@ type Block = {
   list?: "bullet" | "ordered";
   marker?: ListMarker; // ordered items: "1." (default), "1)", "a.", "a)", "A.", "A)", "i.", "i)", "I.", "I)"
   start?: number; // ordered items: the list starts again here, at this number
-  cell?: BlockCell; // inside a table: { table, row, cell, header?, shade?, colspan?, rowspan? }
+  cell?: BlockCell; // inside a table: { table, row, cell, header?, fill?, shade? (legacy), colspan?, rowspan? }
   align?: "center" | "right"; // start when absent; never justified (WCAG 1.4.8)
   image?: BlockImage; // image blocks: { asset, width, height, alt }; text stays ""
   text: string; // plain text
@@ -169,9 +169,21 @@ the PDF group items the same way.
 
 Tables are blocks too: every block inside one carries its cell
 (`BlockCell`: table, row and cell ids as stable as block ids, header,
-shade and spans). A cell's fill is one choice in the editor (none, light,
-burgundy): burgundy is a header cell (white bold text), light a shaded one
-(`shade`, the template's beige, never on a header). Consecutive blocks of one table form it, of one row a row, of one
+fill and spans). A cell's fill (`fill`) is the name of one of the seven
+colours of CREUP's palette (burgundy, blue, beige, darkGrey, lightGrey,
+green, purple), never a colour code; `shared/constants/cellFills.ts` is the
+one list of them, with the text colour the platform sets on each (white, or
+near-black on beige and light grey), and the editor's swatches, the view
+(`cx-fill-<name>`, coloured in `main.css`, which a test keeps equal to the
+list), the PDF export and the Word import all read it. The fill is only how
+the cell looks: a header cell stays its own toggle (`header`, which makes
+the `<th>` and the rows the PDF repeats), keeps the template's burgundy
+without a fill and takes the fill when it has one. Content saved before the
+palette marks a beige body cell with `shade: true`; that still validates, is
+read as "beige" (`cellFillOf`) and is never rewritten in stored versions:
+the schema hands it back as it came, so saving an untouched text keeps its
+content hash, and only what the editor writes anew names the fill. An
+amendment never changes a fill. Consecutive blocks of one table form it, of one row a row, of one
 cell a cell (`groupTables`, `tableGrid` in `shared/utils/content/tables.ts`),
 and a blank cell holds an empty paragraph. Amendments need no new
 operations: a cell's text changes like any block's, and rows and columns
@@ -222,8 +234,9 @@ is sanitized and converted to blocks (`server/utils/content/docx.ts`):
 - A table whose rows have one cell each (a framed signature or note) is read
   as its content. Any other table stays a table: its cells' blocks carry
   their cell, with header cells (Word's header rows and cells on a dark
-  fill; in a table without fills, cells all in bold), shaded cells (a light
-  fill) and spans. A table of contents is left out: the view offers its own
+  fill; in a table without fills, cells all in bold), fills (each Word fill
+  becomes the nearest colour of the palette by RGB distance, white none)
+  and spans. A table of contents is left out: the view offers its own
   index of the headings. A table nested inside a cell becomes a
   paragraph per row, cells joined by " | ".
 - Footnotes and endnotes become paragraphs at the end that start with their
@@ -877,6 +890,37 @@ The sections of an assembly come from one list
 (`app/composables/assembly/-sections.ts`, `useAssemblySections`) for the
 sidebar and the phone toolbar of the hub; whoever has a section of the
 Secretaría or the Mesa sees them under "Asamblea", "Secretaría" and "Mesa".
+
+The first time an account reaches the shell, a welcome opens by itself
+(`ShellWelcome`, mounted client only by the default layout): five short steps,
+one idea each, with a drawing made of icons.
+
+1. What the platform is and what this account can do.
+2. Where it sees what it has to do (the home page) and how to reach an
+   assembly.
+3. Its main task: presenting a document or an amendment, validating and
+   organising (Secretaría), running the session (Mesa) or reading (Invitado).
+4. How to go back (the breadcrumb row) and where the help is.
+5. "Ponlo a tu gusto": language, theme, content font and how changes are
+   marked, chosen right there.
+
+The wording follows what the account can do, not the name of its role
+(`welcomeAudience` in `app/components/shell/-welcome.ts`): whoever manages
+assemblies, documents or amendments reads the Secretaría's text, whoever only
+moderates the Mesa's, a presenter the text of the member it acts for (area of
+the CEA, council or sectorial) and anyone else the guest's. Closing it at any
+step records that the account saw it (`users.onboarding_seen_at`,
+`POST /api/me/onboarding`, `user.onboarding_seen`), so it is per account, not
+per browser, and never opens by itself again. "Ayuda", a button of its own in
+the sidebar footer, opens it again at any time. While an Admin acts as another
+account the welcome never opens by itself and nothing is recorded.
+
+Language, theme and the content accessibility preferences live together in one
+component (`ShellPreferences`), as radio groups in plain sight: the last step
+of the welcome shows it, and so does "Preferencias", the single entry of the
+user menu that replaced the language and theme submenus. The choices
+themselves stay per browser (the locale cookie, the colour mode and
+`localStorage`).
 
 - **Home**: upcoming assemblies, open deadlines with countdowns, my drafts, the
   amendments waiting for my position, and a live-session banner.

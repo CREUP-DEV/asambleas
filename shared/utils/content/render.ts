@@ -9,6 +9,7 @@ import type {
   Segment,
 } from "../../types/content";
 import { IMAGE_ASSET_PATTERN, IMAGE_URL_PREFIX } from "../../types/content";
+import { cellFillOf } from "../../constants/cellFills";
 import { markerOf } from "./lists";
 import { groupTables, type TableGroup } from "./tables";
 
@@ -148,8 +149,9 @@ function tableHtml(
     html += "<tr>";
     for (const cell of row.cells) {
       const tag = cell.cell.header ? "th" : "td";
-      let attrs =
-        !cell.cell.header && cell.cell.shade ? ' class="cx-shade"' : "";
+      // The fill by its name in the palette (main.css colours the class).
+      const fill = cellFillOf(cell.cell);
+      let attrs = fill ? ` class="cx-fill-${fill}"` : "";
       if (cell.cell.colspan)
         attrs += ` colspan="${Math.trunc(cell.cell.colspan)}"`;
       if (cell.cell.rowspan)

@@ -151,6 +151,13 @@ export const AUDIT_ACTIONS = {
    */
   USERS_ACCESS_RECHECK_BLOCKED: "users.access_recheck_blocked",
   /**
+   * POST /api/me/onboarding: the account closed the welcome for the first
+   * time (users.onboarding_seen_at). Never written while an Admin acts as
+   * the account. Target user (the account itself); before {onboardingSeen:
+   * false}; after {onboardingSeen: true}.
+   */
+  USER_ONBOARDING_SEEN: "user.onboarding_seen",
+  /**
    * A sign-in (better-auth session.create.after). Target user; source auth;
    * after {sessionId, roleSync: "ok" | "failed" | "unconfigured"}; the row's
    * ip_address and user_agent hold the access.
@@ -455,6 +462,7 @@ const AUDIT_CATEGORIES: Record<AuditAction, ActivityCategory> = {
   "user.access_restored": "access",
   "user.intranet_missing": "account",
   "users.access_recheck_blocked": "access",
+  "user.onboarding_seen": "account",
   "auth.sign_in": "access",
   "auth.sign_out": "access",
   "auth.session_ended": "access",

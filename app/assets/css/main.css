@@ -166,8 +166,21 @@ html {
   --content-heading: var(--color-creup-red-900);
   --content-heading-bar: var(--color-creup-red-900);
   --content-heading-bar-fg: #fff;
-  /* The template's light fill for table cells (`shade`). */
-  --content-cell-shade: #f5eee6;
+  /*
+   * The fills of table cells: CREUP's palette, the same in both colour
+   * modes, with the text colour that reads on each (white, or near-black on
+   * beige and light grey). Kept equal to shared/constants/cellFills.ts by a
+   * test (content.test.ts).
+   */
+  --cx-fill-burgundy: #792225;
+  --cx-fill-blue: #163866;
+  --cx-fill-beige: #f5eee6;
+  --cx-fill-darkGrey: #424242;
+  --cx-fill-lightGrey: #a6a6a6;
+  --cx-fill-green: #2a7258;
+  --cx-fill-purple: #513269;
+  --cx-fill-fg-light: #ffffff;
+  --cx-fill-fg-dark: #111111;
 }
 
 .dark {
@@ -182,11 +195,6 @@ html {
   --cx-del-line: var(--ui-color-error-400);
   --cx-selected-bg: color-mix(in oklab, var(--ui-primary) 16%, transparent);
   --content-heading: var(--color-creup-red-300);
-  --content-cell-shade: color-mix(
-    in oklab,
-    var(--color-creup-red-900) 22%,
-    transparent
-  );
   --cx-prov-0: #60a5fa;
   --cx-prov-1: #fbbf24;
   --cx-prov-2: #34d399;
@@ -322,6 +330,33 @@ html {
   line-height: inherit;
 }
 
+/*
+ * In a header cell or a filled one, links, headings below the bar and the
+ * small reference marks take the cell's text colour: their own (the page's
+ * primary, the template's burgundy) would not read on a fill, or would be
+ * the fill itself. Outside any layer: the editor's theme colours links and
+ * headings with utilities, and the editor's heading rules above are
+ * unlayered too.
+ */
+:is(.rich-text, .content-editor)
+  :is(th, td:is([class*="cx-fill-"], [data-fill]))
+  :is(a, .cx-ref) {
+  color: inherit;
+}
+
+:is(.rich-text, .content-editor)
+  :is(th, td:is([class*="cx-fill-"], [data-fill]))
+  a {
+  text-decoration-line: underline;
+}
+
+.rich-text
+  :is(th, td[class*="cx-fill-"])
+  :is(h3, h4, h5, .cx-heading-3, .cx-heading-4, .cx-heading-5),
+.content-editor :is(th, td[data-fill]) :is(h2, h3, h4) {
+  color: inherit;
+}
+
 @layer components {
   .rich-text {
     max-width: none;
@@ -440,12 +475,84 @@ html {
     -webkit-print-color-adjust: exact;
   }
 
-  /* A shaded cell (`shade`), on the template's light fill. */
-  .rich-text td.cx-shade,
-  .content-editor td[data-shade="true"] {
-    background-color: var(--content-cell-shade);
+  /*
+   * A filled cell (`fill`): the view names the fill in a class, the editor
+   * in `data-fill`. A header cell with a fill takes it instead of its
+   * burgundy; the text colour comes with the fill, in both colour modes.
+   */
+  :is(.rich-text, .content-editor)
+    :is(td, th):is(.cx-fill-burgundy, [data-fill="burgundy"]) {
+    --cx-fill: var(--cx-fill-burgundy);
+    --cx-fill-fg: var(--cx-fill-fg-light);
+  }
+
+  :is(.rich-text, .content-editor)
+    :is(td, th):is(.cx-fill-blue, [data-fill="blue"]) {
+    --cx-fill: var(--cx-fill-blue);
+    --cx-fill-fg: var(--cx-fill-fg-light);
+  }
+
+  :is(.rich-text, .content-editor)
+    :is(td, th):is(.cx-fill-beige, [data-fill="beige"]) {
+    --cx-fill: var(--cx-fill-beige);
+    --cx-fill-fg: var(--cx-fill-fg-dark);
+  }
+
+  :is(.rich-text, .content-editor)
+    :is(td, th):is(.cx-fill-darkGrey, [data-fill="darkGrey"]) {
+    --cx-fill: var(--cx-fill-darkGrey);
+    --cx-fill-fg: var(--cx-fill-fg-light);
+  }
+
+  :is(.rich-text, .content-editor)
+    :is(td, th):is(.cx-fill-lightGrey, [data-fill="lightGrey"]) {
+    --cx-fill: var(--cx-fill-lightGrey);
+    --cx-fill-fg: var(--cx-fill-fg-dark);
+  }
+
+  :is(.rich-text, .content-editor)
+    :is(td, th):is(.cx-fill-green, [data-fill="green"]) {
+    --cx-fill: var(--cx-fill-green);
+    --cx-fill-fg: var(--cx-fill-fg-light);
+  }
+
+  :is(.rich-text, .content-editor)
+    :is(td, th):is(.cx-fill-purple, [data-fill="purple"]) {
+    --cx-fill: var(--cx-fill-purple);
+    --cx-fill-fg: var(--cx-fill-fg-light);
+  }
+
+  :is(.rich-text, .content-editor)
+    :is(td, th):is([class*="cx-fill-"], [data-fill]) {
+    color: var(--cx-fill-fg);
+    background-color: var(--cx-fill);
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
+  }
+
+  /* A colour of the editor's choice: a small square in that colour. */
+  .cx-fill-swatch {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--ui-border-accented);
+    border-radius: 0.25rem;
+    cursor: pointer;
+    print-color-adjust: exact;
+  }
+
+  /* The chosen colour: a ring close to the square (and its tick). */
+  .cx-fill-swatch[aria-pressed="true"] {
+    box-shadow:
+      0 0 0 1px var(--ui-bg),
+      0 0 0 3px var(--ui-text-highlighted);
+  }
+
+  /* Keyboard focus: its own ring, further out, on a chosen colour too. */
+  .cx-fill-swatch:focus-visible {
+    outline: 2px solid var(--ui-primary);
+    outline-offset: 4px;
   }
 
   /* Figures, right-aligned, stay on one line: "53.048,86" never breaks. */
@@ -624,11 +731,11 @@ html {
   }
 
   /*
-   * The level 1 bar and the table header cells are burgundy with white text
-   * in both colour modes: a change inside them takes the light palette and
-   * dark text on its tint.
+   * The level 1 bar, the table header cells and the filled cells keep their
+   * own colours in both colour modes: a change inside them takes the light
+   * palette and dark text on its tint, which reads on every fill.
    */
-  .rich-text :is(h2, .cx-heading-2, th) {
+  .rich-text :is(h2, .cx-heading-2, th, td[class*="cx-fill-"]) {
     --cx-ins-fg: var(--ui-color-neutral-900);
     --cx-ins-bg: var(--ui-color-success-100);
     --cx-ins-line: var(--ui-color-success-700);

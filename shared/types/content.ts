@@ -6,6 +6,8 @@
  * the frozen base version (see AmendmentOp).
  */
 
+import type { CellFillName } from "../constants/cellFills";
+
 export const BLOCK_TYPES = [
   "heading",
   "paragraph",
@@ -49,8 +51,15 @@ export interface BlockCell {
   /** A header cell. */
   header?: boolean;
   /**
-   * A shaded body cell, on the template's light fill (a statement's lines);
-   * never a header, which has its own.
+   * The cell's fill, by its name in CREUP's palette (CELL_FILLS), never a
+   * colour code. Only how the cell looks: a header cell may have one too,
+   * and without one it keeps the header's burgundy.
+   */
+  fill?: CellFillName;
+  /**
+   * How content saved before the palette marks a beige body cell. Still
+   * valid and read as the fill "beige" (cellFillOf); new content writes
+   * `fill`.
    */
   shade?: boolean;
   /** Columns and rows the cell spans, when more than one. */

@@ -70,6 +70,8 @@ export const useLocaleSwitcher = () => {
 
   return {
     currentLocale,
+    localeItems,
     localeMenuItems,
+    switchToLocale,
   };
 };

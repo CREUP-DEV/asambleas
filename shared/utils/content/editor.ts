@@ -7,6 +7,7 @@ import type {
   MarkType,
 } from "../../types/content";
 import { IMAGE_ASSET_PATTERN, MARK_TYPES } from "../../types/content";
+import { cellFillOf, isCellFillName } from "../../constants/cellFills";
 import {
   formatListNumber,
   isBlockAlign,
@@ -218,7 +219,9 @@ export function editorToBlocks(doc: EditorNode, newId: () => string): Block[] {
           cell: tableIdFor(cellNode, "cellId"),
         };
         if (cellNode.type === "tableHeader") cell.header = true;
-        else if (cellNode.attrs?.shade === true) cell.shade = true;
+        // The fill by its name (CellFillExtension), on header cells too.
+        const fill = cellNode.attrs?.fill;
+        if (isCellFillName(fill)) cell.fill = fill;
         const colspan = span(cellNode.attrs?.colspan);
         const rowspan = span(cellNode.attrs?.rowspan);
         if (colspan) cell.colspan = colspan;
@@ -465,7 +468,8 @@ function tableNode(table: TableGroup<Block>): EditorNode {
           type: cell.cell.header ? "tableHeader" : "tableCell",
           attrs: {
             cellId: cell.cell.cell,
-            shade: !cell.cell.header && cell.cell.shade === true,
+            // Content saved before the palette (`shade`) reads as beige.
+            fill: cellFillOf(cell.cell) ?? null,
             colspan: cell.cell.colspan ?? 1,
             rowspan: cell.cell.rowspan ?? 1,
             colwidth: null,
@@ -871,9 +875,15 @@ export function htmlElementToBlocks(
         else if (marked !== "false" && own.length > 0 && own.every(isAllBold)) {
           cell.header = true;
         }
-        // A light fill, as the DOCX import says (`data-shade`).
-        if (!cell.header && cellElement.getAttribute("data-shade") === "true") {
-          cell.shade = true;
+        // The fill, by its name in the palette, as the DOCX import and the
+        // editor say (`data-fill`); `data-shade` is the earlier beige.
+        const fill = cellElement.getAttribute("data-fill");
+        if (isCellFillName(fill)) cell.fill = fill;
+        else if (
+          !cell.header &&
+          cellElement.getAttribute("data-shade") === "true"
+        ) {
+          cell.fill = "beige";
         }
         for (const block of own) block.cell = { ...cell };
         if (blocks.length === before) {

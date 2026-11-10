@@ -20,7 +20,11 @@ import {
   type ExportBrand,
 } from "./brand";
 import {
-  CELL_SHADE,
+  CELL_FILLS,
+  CELL_FILL_NAMES,
+  CELL_FILL_TEXT,
+} from "../../../shared/constants/cellFills";
+import {
   LINK_BLUE,
   LinkRegistry,
   annotatedToPdf,
@@ -1192,20 +1196,95 @@ describe("CREUP template", () => {
     expect(pages).toBe(1);
   });
 
-  it("fills header cells in burgundy and shaded ones in the light fill", () => {
+  it("fills cells from the palette, with the text colour of each fill", () => {
     const cell = (id: string, extra: Partial<Block["cell"]>) => ({
       ...p(id, id),
       cell: { table: "fill", row: "r1", cell: `c${id}`, ...extra },
     });
     const [node] = blocksToPdf(
-      [cell("h", { header: true }), cell("s", { shade: true }), cell("n", {})],
+      [
+        // A header without a fill keeps the template's burgundy.
+        cell("h", { header: true }),
+        // Content saved before the palette: `shade` is beige.
+        cell("s", { shade: true }),
+        cell("n", {}),
+        cell("b", { fill: "blue" }),
+        cell("g", { fill: "lightGrey" }),
+        // A header with a fill takes the fill, and stays bold.
+        cell("hg", { header: true, fill: "green" }),
+      ],
       { links: new LinkRegistry() },
-    ) as { table: { body: { fillColor?: string }[][] } }[];
-    expect(node!.table.body[0]!.map((entry) => entry.fillColor)).toEqual([
-      BRAND_RED,
-      CELL_SHADE,
-      undefined,
+    ) as {
+      table: {
+        body: { fillColor?: string; color?: string; bold?: boolean }[][];
+      };
+    }[];
+    expect(
+      node!.table.body[0]!.map((entry) => [
+        entry.fillColor,
+        entry.color,
+        entry.bold ?? false,
+      ]),
+    ).toEqual([
+      [BRAND_RED, "#ffffff", true],
+      [CELL_FILLS.beige.hex, CELL_FILL_TEXT.dark, false],
+      [undefined, undefined, false],
+      [CELL_FILLS.blue.hex, CELL_FILL_TEXT.light, false],
+      [CELL_FILLS.lightGrey.hex, CELL_FILL_TEXT.dark, false],
+      [CELL_FILLS.green.hex, CELL_FILL_TEXT.light, true],
     ]);
+    // Every fill of the palette reaches the PDF with its own colours.
+    for (const name of CELL_FILL_NAMES) {
+      const [filled] = blocksToPdf([cell("x", { fill: name })], {
+        links: new LinkRegistry(),
+      }) as { table: { body: { fillColor?: string; color?: string }[][] } }[];
+      expect(filled!.table.body[0]![0]).toMatchObject({
+        fillColor: CELL_FILLS[name].hex,
+        color: CELL_FILL_TEXT[CELL_FILLS[name].text],
+      });
+    }
+  });
+
+  it("gives links and headings in a filled cell the cell's text colour", () => {
+    const at = (cellId: string, extra: Partial<Block["cell"]> = {}) => ({
+      table: "ink",
+      row: "r1",
+      cell: cellId,
+      ...extra,
+    });
+    const link: Block = {
+      ...p("l", "Enlace"),
+      marks: [{ type: "link", from: 0, to: 6, href: "https://creup.es" }],
+    };
+    const [node] = blocksToPdf(
+      [
+        { ...link, id: "l1", cell: at("a", { fill: "blue" }) },
+        {
+          id: "h1",
+          type: "heading",
+          level: 2,
+          text: "Título",
+          marks: [],
+          cell: at("a", { fill: "blue" }),
+        },
+        // An unfilled cell keeps the link's own colour.
+        { ...link, id: "l2", cell: at("b") },
+      ],
+      { links: new LinkRegistry() },
+    ) as {
+      table: {
+        body: {
+          stack: { color?: string; text: { color?: string }[] }[];
+        }[][];
+      };
+    }[];
+    const [filled, plain] = node!.table.body[0]!;
+    expect(filled!.stack[0]!.text.map((inline) => inline.color)).toEqual([
+      CELL_FILL_TEXT.light,
+      CELL_FILL_TEXT.light,
+    ]);
+    expect(filled!.stack[1]!.color).toBe(CELL_FILL_TEXT.light);
+    expect(plain!.stack[0]!.text[0]!.color).toBe(LINK_BLUE);
   });
 
   it("sets wide tables in smaller type, cell by cell", () => {

@@ -47,6 +47,10 @@ import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
  * the date, and never offers "Acceder como" (the server refuses it too).
  * The access filter (`?access=revoked`, so it can be linked) lists only
  * those accounts; the server filters, since the list is paged.
+ *
+ * The search runs as the person types (300 ms after the last key): the
+ * field shows a spinner while it does, and a search that finds nobody says
+ * so, with a button to clear it.
  */
 definePageMeta({
   middleware: ["admin"],
@@ -163,6 +167,13 @@ watch(searchQuery, (value) => {
   });
 });
 
+/** What the list is filtered by now, trimmed; empty with no search. */
+const activeSearch = computed(() => searchQuery.value.trim());
+
+function clearSearch(): void {
+  search.value = "";
+}
+
 const accessFilterItems = computed(() => [
   { label: t("admin.users.access.all"), value: "all" },
   { label: t("admin.users.access.revokedOnly"), value: "revoked" },
@@ -199,6 +210,15 @@ const pagination = computed(() => usersData.value?.pagination);
 const currentUserId = computed(() => me.value?.id ?? null);
 const loading = computed(
   () => usersStatus.value === "pending" && users.value.length === 0,
+);
+/**
+ * The search field shows it is working from the first key typed (the
+ * debounce has not fired yet) until the list for that text arrives.
+ */
+const searching = computed(
+  () =>
+    search.value.trim() !== activeSearch.value ||
+    (usersStatus.value === "pending" && activeSearch.value !== ""),
 );
 
 function roleName(name: string): string {
@@ -933,8 +953,13 @@ function goToPage(next: number): void {
               icon="i-lucide-search"
               :placeholder="t('admin.users.search')"
               :aria-label="t('admin.users.search')"
+              :loading="searching"
               class="w-64"
+              data-testid="users-search"
             />
+            <span class="sr-only" role="status">
+              {{ searching ? t("admin.users.searching") : "" }}
+            </span>
             <USelect
               :model-value="accessFilter"
               :items="accessFilterItems"
@@ -1186,7 +1211,7 @@ function goToPage(next: number): void {
 
         <template #empty>
           <CommonEmptyState
-            v-if="accessFilter === 'revoked'"
+            v-if="accessFilter === 'revoked' && !activeSearch"
             icon="i-lucide-user-check"
             :title="t('admin.users.access.noneRevoked')"
           >
@@ -1198,6 +1223,24 @@ function goToPage(next: number): void {
                 @click="showAllAccounts"
               >
                 {{ t("admin.users.access.showAll") }}
+              </UButton>
+            </template>
+          </CommonEmptyState>
+          <CommonEmptyState
+            v-else-if="activeSearch"
+            icon="i-lucide-search-x"
+            :title="t('admin.users.noResults', { search: activeSearch })"
+            :description="t('admin.users.noResultsHelp')"
+            data-testid="users-no-results"
+          >
+            <template #action>
+              <UButton
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-x"
+                @click="clearSearch"
+              >
+                {{ t("admin.users.clearSearch") }}
               </UButton>
             </template>
           </CommonEmptyState>

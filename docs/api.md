@@ -53,6 +53,7 @@ The usual AGENTS.md handler order applies:
 | ------ | ----------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | GET    | `/api/me`                           | any                       | `MeDto`. `permissions` are the role's plus the user's own grants (see "Permissions" below).                                                   |
 | GET    | `/api/me/work`                      | any                       | `MeWorkDto`, see "Review and work" below.                                                                                                     |
+| POST   | `/api/me/onboarding`                | any, never impersonating  | No body. Marks the welcome as seen. Returns `MeOnboardingResult`. See "Welcome" below.                                                        |
 | GET    | `/api/members`                      | any                       | `MemberDto[]`, active first, by acronym. `?all=1` also returns inactive members. One generic entry instead of the executive areas, see below. |
 | POST   | `/api/members`                      | `member:manage`           | Creates a member manually, typically an executive area.                                                                                       |
 | PUT    | `/api/members/[id]`                 | `member:manage`           | Edits name, kind or active, with `updatedAt`.                                                                                                 |
@@ -139,6 +140,15 @@ localized message for each and a general one for any other code, and never
 `GET /api/auth/session` included, so the client sends it to `/login`. A
 daily re-check (05:30 Europe/Madrid) revokes the accounts with a live
 session that the Intranet deleted.
+
+**Welcome.** `MeDto.onboardingSeen` says whether the account already closed
+the welcome (`users.onboarding_seen_at`). While it is false the client opens
+the welcome by itself, and closing it calls `POST /api/me/onboarding`, which
+sets the column once and writes `user.onboarding_seen` (target the account,
+before `{ onboardingSeen: false }`, after `{ onboardingSeen: true }`). Calling
+it again changes and records nothing and still answers
+`{ onboardingSeen: true }`. While an Admin acts as the account it answers 403
+and the client neither opens the welcome by itself nor calls it.
 
 **Roster sync.** `POST /api/members/sync` takes an optional body
 `MemberSyncBody` `{ confirmDeactivation?: boolean, confirmedKinds?: [{ kind,

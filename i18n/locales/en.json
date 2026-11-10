@@ -164,13 +164,19 @@
         "addColumnAfter": "Add column to the right",
         "deleteColumn": "Delete column",
         "fill": {
-          "label": "Cell fill",
-          "none": "No fill",
-          "light": "Light",
-          "dark": "Burgundy (header)"
+          "label": "Cell color",
+          "none": "No color",
+          "burgundy": "Burgundy",
+          "blue": "Blue",
+          "beige": "Beige",
+          "darkGrey": "Dark gray",
+          "lightGrey": "Light gray",
+          "green": "Green",
+          "purple": "Purple"
         },
         "toggleHeaderRow": "Header row",
         "toggleHeaderColumn": "Header column",
+        "toggleHeaderCell": "Header cell",
         "mergeCells": "Merge cells",
         "splitCell": "Split cell",
         "deleteTable": "Delete table"
@@ -457,7 +463,18 @@
       "addDocument": {
         "title": "Documents can be presented",
         "until": "Until {date}."
-      }
+      },
+      "todo": {
+        "title": "For you to do",
+        "empty": "You have nothing to do",
+        "readOnly": "Your account is a guest account. You can read this assembly, its documents and its amendments, but you cannot present anything."
+      },
+      "next": {
+        "title": "Coming next",
+        "none": "No deadlines are left in the calendar.",
+        "open": "Open the calendar"
+      },
+      "fullCalendar": "Full calendar"
     },
     "settingsPage": {
       "title": "Settings",
@@ -1858,6 +1875,10 @@
         "targetRevoked": "This account no longer has access because the intranet deleted it, so its role cannot be changed."
       },
       "search": "Search by name, email or acronym",
+      "searching": "Searching users",
+      "noResults": "No user matches “{search}”",
+      "noResultsHelp": "Try another part of the name, the email or the acronym.",
+      "clearSearch": "Clear the search",
       "editAction": "Edit",
       "editFor": "Edit {user}",
       "moreActionsFor": "More actions for {user}",
@@ -2251,11 +2272,7 @@
     },
     "user": {
       "menu": "User menu for {name}",
-      "accessibility": "Accessibility preferences",
-      "accessibilityDescription": "Font and change marks for the text of documents and amendments.",
       "done": "Done",
-      "language": "Language",
-      "theme": "Theme",
       "themes": {
         "system": "Match the system",
         "light": "Light",
@@ -2263,6 +2280,17 @@
       },
       "signOut": "Sign out",
       "activity": "My activity"
+    },
+    "preferences": {
+      "title": "Preferences",
+      "description": "Language, theme and how the text of documents and amendments looks. Every change applies at once.",
+      "language": "Language",
+      "theme": "Theme",
+      "contentHint": "What follows only changes the text of documents and amendments."
+    },
+    "help": {
+      "open": "Help",
+      "label": "Help: open the welcome guide"
     },
     "roles": {
       "admin": "Administrator",
@@ -2288,6 +2316,66 @@
       "details": "Everything you do is recorded. It ends at {time}.",
       "stop": "Back to my account",
       "stopFailed": "Could not go back to your account"
+    }
+  },
+  "onboarding": {
+    "title": "Welcome",
+    "progress": "Step {step} of {total}",
+    "stepsLabel": "Welcome steps",
+    "goToStep": "Go to step {step}",
+    "next": "Next",
+    "back": "Back",
+    "skip": "Skip",
+    "finish": "Start",
+    "yourRole": "Your role:",
+    "steps": {
+      "role": {
+        "title": "CREUP assemblies are prepared here",
+        "body": {
+          "secretariat": "Here you find the agenda, the documents and the amendments of each assembly. You organise them: you create assemblies, check what members submit and publish it.",
+          "mesa": "Here you find the agenda, the documents and the amendments of each assembly. You run the session: speaking turns, headcounts and votes.",
+          "cea": "Here you find the agenda, the documents and the amendments of each assembly. You submit documents and amendments for your CEA area.",
+          "asociado": "Here you find the agenda, the documents and the amendments of each assembly. You submit documents and amendments for your council.",
+          "sectorial": "Here you find the agenda, the documents and the amendments of each assembly. You submit documents and amendments for your sectorial. The one thing you cannot submit is an internal motion. You can still amend one.",
+          "guest": "Here you find the agenda, the documents and the amendments of each assembly. You can read everything, but you cannot submit or change anything."
+        }
+      },
+      "find": {
+        "tasks": {
+          "title": "Home shows what you have to do",
+          "body": "The \"Home\" page tells you what is waiting for you. To open an assembly, press \"Assemblies\" in the menu and pick one."
+        },
+        "guest": {
+          "title": "Home shows the next assemblies",
+          "body": "To open an assembly, press its name on \"Home\", or press \"Assemblies\" in the menu and pick one."
+        }
+      },
+      "work": {
+        "present": {
+          "title": "How to submit a document or an amendment",
+          "body": "Open the assembly and go to \"Agenda\". For a document, press \"Submit a document\" under its item. For an amendment, open the document and press \"Present an amendment\"."
+        },
+        "manage": {
+          "title": "How to validate and organise",
+          "body": "What members submit reaches you in \"Validation\", inside each assembly. There you check it and publish it. The items of the assembly are ordered in \"Agenda\"."
+        },
+        "moderate": {
+          "title": "How to run the session",
+          "body": "Open the assembly and go to \"Session\". There you keep the speaking turns, the headcounts and the votes."
+        },
+        "read": {
+          "title": "How to read the documents",
+          "body": "Open the assembly and go to \"Agenda\" or \"Documents\". Press a document to read all of it."
+        }
+      },
+      "back": {
+        "title": "How to go back and where the help is",
+        "body": "The top of every page shows where you are. Press any step of that row to go back. This guide opens again with \"Help\", at the bottom of the menu."
+      },
+      "preferences": {
+        "title": "Make it yours",
+        "body": "Choose right here. You can change it whenever you like in \"Preferences\", in the menu with your name."
+      }
     }
   },
   "home": {
@@ -2329,13 +2417,20 @@
       "members": "Members"
     },
     "todo": {
-      "title": "What you need to do",
+      "title": "For you to do",
       "count": "1 task to do | {count} tasks to do",
       "loading": "Loading your tasks",
       "loadFailed": "Your tasks could not be loaded",
-      "emptyTitle": "You are all caught up",
-      "emptyDescription": "Nothing is waiting for you. If the Secretariat asks you for a document or a correction, you will see it here.",
-      "emptyNoMember": "Nothing is waiting for you. To present documents or amendments, your account has to be linked to a member."
+      "emptyTitle": "You have nothing to do",
+      "emptyDescription": "If the Secretariat asks you for a document or a correction, you will see it here.",
+      "emptyNoMember": "To present documents or amendments, your account has to be linked to a member."
+    },
+    "readOnly": "Your account is a guest account. You can read the assemblies, their documents and their amendments, but you cannot present anything.",
+    "next": {
+      "title": "Coming next",
+      "when": "{assembly}, on {date}",
+      "calendar": "Open the calendar",
+      "calendarOf": "Open the calendar of the {assembly}"
     },
     "mine": {
       "title": "Your documents and amendments",
@@ -4788,7 +4883,8 @@
         "initial_admin": "Initial administrator role given",
         "access_revoked": "The account lost access because it no longer exists in the intranet",
         "access_restored": "The account got access back because it exists in the intranet again",
-        "intranet_missing": "The intranet no longer has the account, but it keeps its role"
+        "intranet_missing": "The intranet no longer has the account, but it keeps its role",
+        "onboarding_seen": "Welcome seen for the first time"
       },
       "permissions": {
         "set": "Permissions of a role changed"

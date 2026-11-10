@@ -55,6 +55,14 @@ export const users = pgTable(
     accessRevokedReason: text(
       "access_revoked_reason",
     ).$type<AccessRevokedReason>(),
+    /**
+     * When the account closed the welcome (POST /api/me/onboarding); null
+     * until then, so the welcome opens by itself on the next visit.
+     */
+    onboardingSeenAt: timestamp("onboarding_seen_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),

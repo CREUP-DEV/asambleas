@@ -1,4 +1,5 @@
 import { z } from "zod/v4";
+import { CELL_FILL_NAMES } from "../../constants/cellFills";
 import {
   BLOCK_ALIGNMENTS,
   BLOCK_TYPES,
@@ -65,6 +66,10 @@ const cellSchema = z
     row: blockIdSchema,
     cell: blockIdSchema,
     header: z.boolean().optional(),
+    // A name of the palette, never a colour code.
+    fill: z.enum(CELL_FILL_NAMES).optional(),
+    // Content saved before the palette: read as "beige" (cellFillOf), and
+    // kept as it came so that saving an untouched text changes nothing.
     shade: z.boolean().optional(),
     colspan: spanSchema,
     rowspan: spanSchema,
@@ -76,7 +81,8 @@ const cellSchema = z
       cell: cell.cell,
     };
     if (cell.header) result.header = true;
-    else if (cell.shade) result.shade = true;
+    if (cell.fill) result.fill = cell.fill;
+    else if (cell.shade && !cell.header) result.shade = true;
     if (cell.colspan) result.colspan = cell.colspan;
     if (cell.rowspan) result.rowspan = cell.rowspan;
     return result;
