@@ -1948,7 +1948,7 @@
     "save": "Save",
     "members": {
       "title": "Members",
-      "description": "Member councils, sectoral bodies and Extended Executive Committee offices that present documents and amendments. They are synced from the intranet; add other members here.",
+      "description": "Member councils, sectoral bodies and Extended Executive Committee offices that present documents and amendments. They are synced from the intranet, which deactivates those no longer listed there; add other members here.",
       "sync": "Sync with the intranet",
       "syncing": "Syncing with the intranet…",
       "syncDoneTitle": "Sync complete",
@@ -1956,7 +1956,7 @@
       "syncFailed": "The intranet sync failed",
       "create": "New member",
       "createTitle": "New member",
-      "createDescription": "For members that do not come from the intranet, or a CEA office not listed there yet.",
+      "createDescription": "For members that do not come from the intranet. The sync never touches them.",
       "createAction": "Create member",
       "created": "{acronym} created",
       "updated": "{acronym} updated",
@@ -2010,7 +2010,8 @@
         "confirm": "Sync and deactivate",
         "kinds": {
           "asociado": "Member councils",
-          "sectorial": "Sectoral bodies"
+          "sectorial": "Sectoral bodies",
+          "executive": "CEA offices"
         }
       },
       "syncSkipped": {

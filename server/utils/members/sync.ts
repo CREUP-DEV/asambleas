@@ -23,10 +23,10 @@ import {
   findLargeDeactivations,
   isDeactivationConfirmed,
   normalizeRoster,
-  planExecutiveSync,
   planRosterSync,
   type IntranetRosterEntry,
   type OptionalRosterKind,
+  type RosterKind,
 } from "./roster";
 
 /**
@@ -110,19 +110,19 @@ async function fetchOptionalRoster(
 
 /**
  * Syncs the members from the intranet rosters: asociados, sectorials and the
- * CEA's offices.
+ * CEA's offices, all the same way.
  *
  * Every list is fetched before anything is written: a failed or partial
  * fetch must never deactivate the members it did not return. Without the
  * asociados or the sectorials the sync fails; without the CEA list it goes
- * on and leaves the offices as they were (`skipped`). What it could not
+ * on and leaves the offices as they were (`skipped`): none is created,
+ * updated nor deactivated. What it could not
  * sync is in `MemberSyncResult.ignored` (an acronym listed twice or held by
  * another member, an account without initials), for the members page to
  * warn. Members are
  * matched by their Intranet id, then by acronym (the intranet's `initials`,
  * case-insensitively): planRosterSync. Manual members are never touched.
- * The CEA list only adds offices (planExecutiveSync): they stay manual
- * members and are never deactivated by a sync.
+ * A manual office the CEA list names is adopted: it syncs from then on.
  *
  * A sync that would deactivate every active intranet member of a kind, or
  * more than max(3, 30%) of them, is applied only with `confirmDeactivation`
@@ -194,9 +194,15 @@ export async function syncIntranetRoster(options: {
   const skipped = OPTIONAL_ROSTER_KINDS.filter(
     (kind) => kind === "executive" && executives === null,
   );
+  const synced: RosterKind[] = executives
+    ? ["asociado", "sectorial", "executive"]
+    : ["asociado", "sectorial"];
   const roster = normalizeRoster([
     { kind: "asociado", entries: asociados },
     { kind: "sectorial", entries: sectoriales },
+    ...(executives
+      ? [{ kind: "executive" as const, entries: executives }]
+      : []),
   ]);
   if (
     roster.skipped > 0 ||
@@ -236,7 +242,7 @@ export async function syncIntranetRoster(options: {
       .from(members)
       .for("update");
 
-    const plan = planRosterSync(roster.members, existing);
+    const plan = planRosterSync(roster.members, existing, synced);
     const large = findLargeDeactivations(existing, plan.deactivate);
     if (
       large.length > 0 &&
@@ -293,10 +299,15 @@ export async function syncIntranetRoster(options: {
           .where(eq(members.id, id));
       }
     }
-    for (const { id, values } of plan.update) {
+    for (const { id, values, adopt } of plan.update) {
       await tx
         .update(members)
-        .set({ ...values, active: true, syncedAt: now })
+        .set({
+          ...values,
+          active: true,
+          syncedAt: now,
+          ...(adopt ? { source: "intranet" as const } : {}),
+        })
         .where(eq(members.id, id));
       const current = existingById.get(id);
       await memberAudit({
@@ -305,7 +316,7 @@ export async function syncIntranetRoster(options: {
         before: current ? memberAuditState(current) : null,
         after: memberAuditState({
           ...values,
-          source: current?.source ?? "intranet",
+          source: adopt ? "intranet" : (current?.source ?? "intranet"),
           active: true,
         }),
       });
@@ -352,52 +363,9 @@ export async function syncIntranetRoster(options: {
       }
     }
 
-    // The CEA's offices, against the members as the roster left them.
-    const current =
-      executives && executives.length > 0
-        ? await tx.select().from(members)
-        : [];
-    const executivePlan = planExecutiveSync(executives ?? [], current);
-    const currentById = new Map(current.map((member) => [member.id, member]));
-    for (const { id, name } of executivePlan.rename) {
-      const before = currentById.get(id);
-      if (!before) continue;
-      await tx.update(members).set({ name }).where(eq(members.id, id));
-      await memberAudit({
-        action: AUDIT_ACTIONS.MEMBER_SYNC_UPDATE,
-        memberId: id,
-        before: memberAuditState(before),
-        after: memberAuditState({ ...before, name }),
-      });
-    }
-    if (executivePlan.create.length > 0) {
-      const created = await tx
-        .insert(members)
-        .values(
-          executivePlan.create.map((office) => ({
-            kind: "executive" as const,
-            acronym: office.acronym,
-            name: office.name,
-            // A CEA account stands for a person's place, not an office.
-            intranetId: null,
-            source: "manual" as const,
-            active: true,
-          })),
-        )
-        .returning();
-      for (const row of created) {
-        await memberAudit({
-          action: AUDIT_ACTIONS.MEMBER_SYNC_CREATE,
-          memberId: row.id,
-          before: null,
-          after: memberAuditState(row),
-        });
-      }
-    }
-
     const result: MemberSyncResult = {
-      created: plan.create.length + executivePlan.create.length,
-      updated: plan.update.length + executivePlan.rename.length,
+      created: plan.create.length,
+      updated: plan.update.length,
       deactivated: plan.deactivate.length,
       skipped,
       ignored: {
@@ -405,10 +373,8 @@ export async function syncIntranetRoster(options: {
         acronyms: [
           ...new Set([
             ...roster.duplicates,
-            ...executivePlan.duplicates,
             ...plan.manualConflicts,
             ...plan.acronymConflicts,
-            ...executivePlan.conflicts,
           ]),
         ].sort((a, b) => a.localeCompare(b, "es")),
         withoutInitials: roster.skipped,
@@ -426,10 +392,7 @@ export async function syncIntranetRoster(options: {
         skipped,
         ignored: result.ignored,
         manualConflicts: plan.manualConflicts,
-        acronymConflicts: [
-          ...plan.acronymConflicts,
-          ...executivePlan.conflicts,
-        ],
+        acronymConflicts: plan.acronymConflicts,
         trigger,
         // A large deactivation applied because the account confirmed it.
         confirmedDeactivation: large.length > 0,
@@ -441,12 +404,6 @@ export async function syncIntranetRoster(options: {
       logWarn("members.sync", {
         reason: "roster acronyms held by manual members",
         acronyms: plan.manualConflicts,
-      });
-    }
-    if (executivePlan.conflicts.length > 0) {
-      logWarn("members.sync", {
-        reason: "CEA acronyms held by another kind of member",
-        acronyms: executivePlan.conflicts,
       });
     }
     if (plan.acronymConflicts.length > 0) {

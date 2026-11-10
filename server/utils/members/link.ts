@@ -17,10 +17,11 @@ export type LinkedMemberKind = Extract<
 >;
 
 /**
- * Intranet account types (intranet `users.type`) linked to a member:
- * Asociado and Sectorial accounts are the member itself (linked by their
- * intranet id, then their initials), and a CEA account acts for its
- * executive area (by initials only: its id is a person, not an area).
+ * Intranet account types (intranet `users.type`) linked to a member, each
+ * by its intranet id first, then its initials: Asociado and Sectorial
+ * accounts are the member itself, and a CEA account is the place of its
+ * executive office, which outlives whoever holds it (the CEA list,
+ * `/usuarios/cea`, sends the same id).
  */
 export const INTRANET_MEMBER_TYPES: ReadonlyMap<string, LinkedMemberKind> =
   new Map<string, LinkedMemberKind>([
@@ -70,24 +71,22 @@ export function canLinkToMember(
 
 /**
  * The intranet id an account is linked to its member by: the account's own
- * id for councils and sectorials (the account is the member), never for a
- * CEA account (its id is a person, not the area it acts for).
+ * id, for every kind (a CEA account is its office's place).
  */
 export function memberIntranetId(
-  kind: LinkedMemberKind,
+  _kind: LinkedMemberKind,
   id: number | null | undefined,
 ): number | null {
-  return kind !== "executive" && typeof id === "number" ? id : null;
+  return typeof id === "number" ? id : null;
 }
 
 /**
- * The member created when none has the intranet id or the acronym yet.
- * Councils and sectorials come from the intranet roster, whose next sync
- * fills in their details; they keep the account's intranet id, which the
- * roster matches first. Executive areas are not in the roster: they are
- * created as manual members, so a roster sync never deactivates them, and
- * named after their acronym, since a CEA account may carry the name of the
- * person rather than the area (an admin renames it in the members page).
+ * The member created when none has the intranet id or the acronym yet: an
+ * intranet member with the account's intranet id, which the roster matches
+ * first and whose next sync fills in its details (or deactivates it, once
+ * the Intranet no longer lists it). An executive office is named after its
+ * acronym until then, since a CEA account carries the name of the person
+ * who holds the place, not the office's.
  */
 export function newLinkedMember(
   kind: LinkedMemberKind,
@@ -116,9 +115,9 @@ export function newLinkedMember(
         ? external.university?.trim().slice(0, NAME_MAX_LENGTH) || null
         : null,
     intranetId: memberIntranetId(kind, external.id),
-    source: executive ? "manual" : "intranet",
+    source: "intranet",
     active: true,
-    syncedAt: executive ? null : now,
+    syncedAt: now,
   };
 }
 
@@ -217,13 +216,11 @@ async function findLinkedMember(
 
 /**
  * Links `users.memberId` after a successful role sync, when the intranet
- * account is an Asociado, a Sectorial or a CEA account. Asociado and
- * Sectorial accounts link to the member of their kind with their intranet
- * `id` first (it survives a change of acronym), then to the member with
- * their `initials` (the acronym), unless that member belongs to another
- * intranet account (acronymHeldByAnotherAccount). A CEA account links by
- * initials only. The member is created when none matches yet (see
- * newLinkedMember). A CEA account that already acts for a member keeps it
+ * account is an Asociado, a Sectorial or a CEA account: to the member of
+ * its kind with its intranet `id` first (it survives a change of acronym),
+ * then to the member with its `initials` (the acronym), unless that member
+ * belongs to another intranet account (acronymHeldByAnotherAccount). The
+ * member is created when none matches yet (see newLinkedMember). A CEA account that already acts for a member keeps it
  * until its initials change (keepsCurrentLink); `previousInitials` are the
  * ones stored by the previous sync.
  *

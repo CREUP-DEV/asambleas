@@ -43,7 +43,7 @@ describe("memberSyncBodySchema", () => {
 
   it("rejects malformed or repeated counts", () => {
     for (const confirmedKinds of [
-      [{ kind: "executive", toDeactivate: 1 }],
+      [{ kind: "other", toDeactivate: 1 }],
       [{ kind: "asociado", toDeactivate: -1 }],
       [{ kind: "asociado", toDeactivate: 1.5 }],
       [{ kind: "asociado", toDeactivate: "5" }],

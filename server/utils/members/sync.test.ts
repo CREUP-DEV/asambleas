@@ -507,7 +507,7 @@ describe("syncIntranetRoster warnings", () => {
 });
 
 describe("syncIntranetRoster CEA offices", () => {
-  it("adds the missing offices and names only those still named after their acronym", async () => {
+  it("syncs the offices like the other members, adopting the manual ones", async () => {
     existing = [
       stored({
         id: "m-pres",
@@ -517,53 +517,52 @@ describe("syncIntranetRoster CEA offices", () => {
         source: "manual",
       }),
       stored({
-        id: "m-vdt",
+        id: "m-old",
         kind: "executive",
-        acronym: "VDT",
-        name: "VDT",
-        source: "manual",
+        acronym: "VOLD",
+        intranetId: 90,
       }),
-      stored({ id: "m-tes", kind: "asociado", acronym: "TES", intranetId: 3 }),
+      // Still listed: one office of two goes, below the safeguard.
+      stored({
+        id: "m-tes",
+        kind: "executive",
+        acronym: "TES",
+        name: "Tesorería",
+        intranetId: 91,
+      }),
     ];
     roster = {
-      asociado: [{ id: 3, initials: "TES", denomination: "TES" }],
+      asociado: [],
       sectorial: [],
       executive: [
         { id: 100, initials: "PRES", denomination: "Presidencia" },
-        { id: 101, initials: "VDT", denomination: "Vocalía de Transformación" },
         { id: 102, initials: "SE", denomination: "Secretaría Ejecutiva" },
-        { id: 103, initials: "TES", denomination: "Tesorería" },
+        { id: 91, initials: "TES", denomination: "Tesorería" },
       ],
     };
     const outcome = await syncIntranetRoster({ actor: null });
-    expect(outcome).toEqual({
+    expect(outcome).toMatchObject({
       status: "applied",
-      result: {
-        created: 1,
-        updated: 1,
-        deactivated: 0,
-        skipped: [],
-        ignored: { acronyms: ["TES"], withoutInitials: 0 },
-      },
+      result: { created: 1, updated: 1, deactivated: 1, skipped: [] },
     });
-    expect(writes).toEqual(["update syncedAt", "update name", "insert SE"]);
     const rows = audits();
     expect(rows[0]).toMatchObject({
       action: AUDIT_ACTIONS.MEMBER_SYNC_UPDATE,
-      targetId: "m-vdt",
-      before: { name: "VDT" },
-      after: { name: "Vocalía de Transformación", source: "manual" },
+      targetId: "m-pres",
+      before: { source: "manual", name: "Presidencia de CREUP" },
+      after: {
+        source: "intranet",
+        name: "Presidencia",
+        intranetId: 100,
+      },
     });
     expect(rows[1]).toMatchObject({
       action: AUDIT_ACTIONS.MEMBER_SYNC_CREATE,
-      after: {
-        kind: "executive",
-        acronym: "SE",
-        name: "Secretaría Ejecutiva",
-        source: "manual",
-        intranetId: null,
-      },
+      after: { kind: "executive", acronym: "SE", intranetId: 102 },
     });
-    expect(rows.at(-1)!.after).toMatchObject({ acronymConflicts: ["TES"] });
+    expect(rows[2]).toMatchObject({
+      action: AUDIT_ACTIONS.MEMBER_SYNC_DEACTIVATE,
+      targetId: "m-old",
+    });
   });
 });
