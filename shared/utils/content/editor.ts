@@ -13,6 +13,7 @@ import {
   isListMarker,
   markerOf,
 } from "./lists";
+import { isSafeHref } from "./render";
 import { groupTables, type TableGroup } from "./tables";
 
 /**
@@ -115,8 +116,13 @@ function readInline(nodes: EditorNode[] | undefined): Inline {
         from,
         to: text.length,
       };
-      if (mark.type === "link" && typeof mark.attrs?.href === "string") {
-        entry.href = mark.attrs.href;
+      if (mark.type === "link") {
+        // As the schema stores them (cleanMarks): a link with no address
+        // that is safe to follow is not kept, so it never reaches an
+        // amendment as a change the server would then drop.
+        const href = mark.attrs?.href;
+        if (typeof href !== "string" || !isSafeHref(href)) continue;
+        entry.href = href.trim();
       }
       const previous = marks.find(
         (m) => m.type === entry.type && m.to === from && m.href === entry.href,

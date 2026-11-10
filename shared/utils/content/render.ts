@@ -2,6 +2,7 @@ import type {
   BlockImage,
   Block,
   ConsolidatedBlock,
+  FormatChange,
   ListMarker,
   Mark,
   MarkType,
@@ -267,8 +268,30 @@ export interface AnnotatedOptions extends RenderOptions {
   /**
    * Visually hidden words read before each insertion and removal in diff
    * mode (e.g. "Added:"), so the change is not told by colour alone.
+   *
+   * A change of formatting keeps its text, so words say it: `format` gives
+   * the visible label of each thing that changes ("becomes bold"), and
+   * `formatted` the hidden words read before the text ("Format change:").
    */
-  diffLabels?: { inserted: string; removed: string };
+  diffLabels?: {
+    inserted: string;
+    removed: string;
+    formatted?: string;
+    format?: (change: FormatChange) => string;
+  };
+}
+
+/** The visible label of a formatting change: what changes, in words. */
+function formatLabel(
+  changes: FormatChange[],
+  options: AnnotatedOptions,
+): string {
+  const describe = options.diffLabels?.format;
+  if (!describe) return "";
+  return changes
+    .map((change) => describe(change))
+    .filter(Boolean)
+    .join(", ");
 }
 
 function srOnly(label: string | undefined): string {
@@ -288,6 +311,15 @@ function segmentHtml(
       ? `<del class="cx-del${focused}" data-amendment-id="${id}">${srOnly(options.diffLabels?.removed)}${inner}</del>`
       : "";
   }
+  if (segment.format && options.mode === "diff") {
+    // Formatted anew, not added: the text shows its new format and a label
+    // says what changes.
+    const label = formatLabel(segment.format, options);
+    const chip = label
+      ? `<span class="cx-fmt-label">${escapeHtml(label)}</span>`
+      : "";
+    return `<span class="cx-fmt${focused}" data-amendment-id="${id}">${srOnly(options.diffLabels?.formatted)}${inner}${chip}</span>`;
+  }
   if (options.mode === "diff") {
     return `<ins class="cx-ins${focused}" data-amendment-id="${id}">${srOnly(options.diffLabels?.inserted)}${inner}</ins>`;
   }
@@ -303,7 +335,8 @@ function segmentHtml(
 
 /**
  * Renders consolidated blocks in one of three modes:
- * - `diff`: insertions as <ins>, removals as <del> (styled by the diff mode);
+ * - `diff`: insertions as <ins>, removals as <del> (styled by the diff mode),
+ *   and formatting changes as their text in its new format with a label;
  * - `provenance`: clean text with every amended fragment linked to its amendment;
  * - `clean`: the consolidated text alone.
  */
@@ -340,6 +373,23 @@ export function renderAnnotated(
             ? options.diffLabels?.inserted
             : options.diffLabels?.removed,
         );
+      }
+    }
+    if (block.format && block.status === "kept") {
+      // The block already shows its new format: say what it was changed to.
+      const id = escapeHtml(block.format.source);
+      const focused = options.focus === block.format.source ? " cx-focus" : "";
+      if (options.mode === "diff") {
+        const label = formatLabel(block.format.changes, options);
+        if (label) {
+          inner = `<span class="cx-fmt-label cx-fmt-block${focused}" data-amendment-id="${id}">${srOnly(options.diffLabels?.formatted)}${escapeHtml(label)}</span>${inner}`;
+        }
+      } else if (options.mode === "provenance") {
+        const label = options.label?.(block.format.source);
+        const sup = label
+          ? `<sup class="cx-ref" aria-hidden="true">${escapeHtml(label)}</sup>`
+          : "";
+        inner = `<span class="cx-prov${focused}" data-amendment-id="${id}">${inner}</span>${sup}`;
       }
     }
     items.push({ ...block, inner: inner || "<br>", attrs, className });

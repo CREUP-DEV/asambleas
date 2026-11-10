@@ -2,7 +2,11 @@
 import type { OutlineEntry } from "~/components/content/ContentView.vue";
 import type { AmendmentDto } from "~~/shared/types/api";
 import { consolidate } from "~~/shared/utils/content/consolidate";
-import { touchedBlockIds, validateOps } from "~~/shared/utils/content/ops";
+import {
+  firstTouchedBlockId,
+  touchedBlockIds,
+  validateOps,
+} from "~~/shared/utils/content/ops";
 import { blockLabels } from "~~/shared/utils/content/render";
 import {
   proponentReviewBacklog,
@@ -10,16 +14,14 @@ import {
   transactionalSourceEligible,
 } from "~/composables/amendment/transactional";
 import {
+  amendmentNeighbours,
   amendmentReviewQueue,
   amendmentsAwaitingActor,
   consolidationInputs,
-  contiguousBlockRange,
-  extendBlockSelection,
   isAmendmentAuthor,
   isAmendmentPrivate,
   type AmendmentComposerMode,
   type AmendmentReviewFilter,
-  type BlockSelection,
 } from "~/composables/amendment/workspace";
 import {
   documentAudience,
@@ -28,12 +30,13 @@ import {
 
 /**
  * Document workspace (inside the assembly hub). Its one primary action, for
- * those who can amend, is "Presentar una enmienda": pick the paragraph in
- * the text, then choose in plain words what to do with it ("Cambiar este
- * texto", "Añadir un párrafo después", "Quitar este párrafo"); changing a
- * word everywhere and totality amendments sit in a "Más" menu. The
- * composer then opens in place of the list. Once a paragraph is picked, the
- * selection bar's "Cambiar este texto" is the one primary button.
+ * those who can amend, is "Presentar enmienda": it opens the whole text in
+ * an editor (AmendmentComposer) in place of the text and the list, at the
+ * paragraph the reader had at the top of the text (or the one they had
+ * selected). Everything changed there is one amendment. Under the button,
+ * three links with a sentence each open the other ways to amend: changing a
+ * word everywhere, sending the document back and proposing an alternative
+ * text.
  *
  * The document's main presenter (and the Mesa, which can answer for it) get
  * "Revisar enmiendas", with how many amendments wait for the main
@@ -47,20 +50,25 @@ import {
  * answered.
  *
  * "Proponer una transaccional" (any member who can amend, the document's
- * presenter, and the Mesa) is a secondary action: in the header's "Más"
- * menu, on a group of amendments on the same passage, and in an
+ * presenter, and the Mesa) is a secondary action with a visible button: in
+ * the header, on a group of amendments on the same passage, and in an
  * amendment's detail. Its composer opens in
- * place of the list like the amendment composer, with the passage it
- * rewrites marked in the text.
+ * place of the list, with the passage it rewrites marked in the text.
  *
- * The text is on the left, with four views in a compact "Ver" menu
- * (original with gutter markers, one amendment over the full text, live
- * consolidation with provenance, side by side: on wide screens it takes the
- * whole workspace until an amendment or a composer is opened); the
- * amendments are on the right, grouped by the passage they act on, with
- * "Mis enmiendas" showing where the actor's own stand with the Secretaría
- * (its badge counts what waits for them). Corrections the Secretaría asked
- * for get a notice above
+ * The text is on the left, with four views as visible tabs (original with
+ * gutter markers, one amendment over the full text, live consolidation with
+ * provenance, side by side: on wide screens it takes the whole workspace
+ * until an amendment or a composer is opened). The view only changes when
+ * the reader picks a tab or presses "Ver en el documento" in an amendment's
+ * detail, never by selecting an amendment. The
+ * amendments are on the right, grouped by the passage they act on, under
+ * visible chips: "Todas", "Pendientes" and "Fuera de plazo" filter the
+ * list, "Mías" shows where the actor's own stand with the Secretaría
+ * (its badge counts what waits for them), and "Más filtros" holds the rest.
+ * An open amendment takes the panel and is read on its own: "Anterior ·
+ * 3 de 17 · Siguiente" walks the list as filtered (also with the arrow
+ * keys and K / J), and "Volver a la lista" is always there. Corrections the
+ * Secretaría asked for get a notice above
  * the workspace; the Secretaría gets a quiet line with what it still has to
  * review or publish, and what it sent back for correction (those drafts are
  * listed only under that filter). Secondary links live in the header's
@@ -82,10 +90,11 @@ interface TextViewHandle {
   getSelectedBlockIds: () => string[];
   scrollToBlock: (
     blockId: string,
-    options?: { align?: "center" | "start" },
+    options?: { align?: "center" | "start"; focus?: boolean },
   ) => void;
   currentHeading: () => string | null;
   outline: OutlineEntry[];
+  root: HTMLElement | null;
 }
 
 type TextMode = "original" | "amended" | "consolidated" | "compare";
@@ -95,8 +104,8 @@ type ListTab = "all" | "mine";
 interface ComposerState {
   key: number;
   mode: AmendmentComposerMode;
-  selection: string[];
-  appendParagraph: boolean;
+  /** Base block the editor opens at: where the reader was. */
+  startBlockId: string | null;
   draftId: string | null;
 }
 
@@ -135,7 +144,6 @@ const draftView = useTemplateRef<TextViewHandle>("draftView");
 const textOutline = computed(() => textView.value?.outline ?? []);
 const draftOutline = computed(() => draftView.value?.outline ?? []);
 const workspaceBox = useTemplateRef<HTMLElement>("workspaceBox");
-const selectionBar = useTemplateRef<HTMLElement>("selectionBar");
 
 // Document state ----------------------------------------------------------------
 
@@ -276,20 +284,26 @@ const showAnswersEntry = computed(() => {
   return doc.coProponents.some((coProponent) => coProponent.id === memberId);
 });
 /**
- * "Revisar enmiendas" leads for the presenter with something pending. A
- * paragraph picked (the selection bar leads) or a composer open (its send
- * button leads) keep it secondary.
+ * "Revisar enmiendas" leads for the presenter with something pending,
+ * unless a composer is open.
  */
 const reviewIsPrimary = computed(
   () =>
     showReviewEntry.value &&
     isDocumentPresenter.value &&
     reviewBacklog.value.total > 0 &&
-    selection.value.ids.length === 0 &&
     !composing.value,
 );
 
-/** Secondary actions of the header, in its "Más" menu. */
+/** "Proponer una transaccional": a visible button while there is something to combine. */
+const showTransactEntry = computed(
+  () =>
+    canTransact.value &&
+    !composing.value &&
+    transactionalCandidates.value.length > 0,
+);
+
+/** Secondary links of the header, in its "Más" menu. */
 const moreItems = computed(() => {
   const items: {
     label: string;
@@ -297,17 +311,6 @@ const moreItems = computed(() => {
     to?: string;
     onSelect?: () => void;
   }[] = [];
-  if (
-    canTransact.value &&
-    !composing.value &&
-    transactionalCandidates.value.length > 0
-  ) {
-    items.push({
-      label: t("workspace.more.transactional"),
-      icon: "i-lucide-git-merge",
-      onSelect: () => startTransactional([]),
-    });
-  }
   if (showAnswersEntry.value) {
     items.push({
       label: t("workspace.more.answers"),
@@ -367,80 +370,44 @@ const paneItems = computed(() => [
   },
 ]);
 
-const MODE_ICONS: Record<TextMode, string> = {
-  original: "i-lucide-file-text",
-  amended: "i-lucide-file-diff",
-  consolidated: "i-lucide-file-check",
-  compare: "i-lucide-columns-2",
-};
-const TEXT_MODES = Object.keys(MODE_ICONS) as TextMode[];
+const TEXT_MODES: TextMode[] = [
+  "original",
+  "amended",
+  "consolidated",
+  "compare",
+];
 
-/** The "Ver" menu: how to show the text, and what the result includes. */
-const viewItems = computed(() => {
-  const groups = [
-    TEXT_MODES.map((mode) => ({
-      label: t(`workspace.modes.${mode}`),
-      icon: MODE_ICONS[mode],
-      type: "checkbox" as const,
-      checked: textMode.value === mode,
-      onSelect: () => {
-        textMode.value = mode;
-        // Side by side takes the whole width: the detail would hide it.
-        if (mode === "compare") detailOpen.value = false;
-      },
-    })),
-  ];
-  if (showAcceptedToggle.value) {
-    groups.push([
-      {
-        label: t("workspace.includeAccepted"),
-        icon: "i-lucide-check-check",
-        type: "checkbox" as const,
-        checked: includeAccepted.value,
-        onSelect: () => {
-          includeAccepted.value = !includeAccepted.value;
-          if (textMode.value === "original" || textMode.value === "amended") {
-            textMode.value = "consolidated";
-          }
-        },
-      },
-    ]);
-  }
-  return groups;
-});
-const textModeLabel = computed(() => t(`workspace.modes.${textMode.value}`));
+/** How to show the text, as visible tabs. */
+const modeItems = computed(() =>
+  TEXT_MODES.map((mode) => ({
+    label: t(`workspace.modes.${mode}`),
+    value: mode,
+  })),
+);
+
+function onTextMode(mode: string | number): void {
+  // Side by side takes the whole width: the detail would hide it.
+  if (mode === "compare") detailOpen.value = false;
+}
+
+/** "Incluir las aceptadas" only changes the two views of the result. */
+const showAcceptedSwitch = computed(
+  () =>
+    showAcceptedToggle.value &&
+    (textMode.value === "consolidated" || textMode.value === "compare"),
+);
 
 /** The actor's drafts: corrections asked by the Secretaría, then unsent ones. */
 const awaiting = computed(() => amendmentsAwaitingActor(list.mine.value));
 const corrections = computed(() => awaiting.value.corrections);
 
-const listTabItems = computed(() => {
-  // "Mis enmiendas" counts only what waits for the actor, in warning colour
-  // when the Secretaría asked for a correction.
-  const waiting = corrections.value.length + awaiting.value.drafts.length;
-  return [
-    {
-      label: t("workspace.tabs.all"),
-      value: "all",
-      badge: String(list.listed.value.length),
-    },
-    {
-      label: t("workspace.tabs.mine"),
-      value: "mine",
-      badge:
-        waiting > 0
-          ? {
-              label: String(waiting),
-              color:
-                corrections.value.length > 0
-                  ? ("warning" as const)
-                  : ("neutral" as const),
-              variant: "subtle" as const,
-            }
-          : undefined,
-    },
-  ];
-});
+/**
+ * "Mías" counts only what waits for the actor (in warning colour when the
+ * Secretaría asked for a correction).
+ */
+const mineWaiting = computed(
+  () => corrections.value.length + awaiting.value.drafts.length,
+);
 const showMineTab = computed(
   () => canAmend.value || list.mine.value.length > 0,
 );
@@ -518,22 +485,16 @@ const panelUi = {
   body: "relative gap-4 p-4 sm:p-5 overflow-visible lg:overflow-y-auto",
 };
 
-// Selection and composer -------------------------------------------------------------
+// Composers ----------------------------------------------------------------------
 
-const selection = ref<BlockSelection>({ ids: [], anchor: null });
+/**
+ * The amendment composer. It takes the whole workspace: the text and the
+ * list give way to it and come back as they were when it closes.
+ */
 const composer = ref<ComposerState | null>(null);
 let composerSeq = 0;
-/** "Presentar una enmienda" was pressed with nothing selected yet. */
-const picking = ref(false);
 
-watch(
-  () => selection.value.ids.length,
-  (count) => {
-    if (count > 0) picking.value = false;
-  },
-);
-
-/** The transactional composer, in the same place (one composer at a time). */
+/** The transactional composer, in the amendments panel (one composer at a time). */
 const transactional = ref<TransactionalState | null>(null);
 /** Base blocks the transactional being written rewrites, marked in the text. */
 const transactionalPassage = ref<string[]>([]);
@@ -546,40 +507,26 @@ const composerDraft = computed(() =>
 const composing = computed(
   () => composer.value !== null || transactional.value !== null,
 );
-const canSelect = computed(
-  () => canAmend.value && textMode.value === "original" && !composing.value,
-);
 
-function clearSelection(): void {
-  selection.value = { ids: [], anchor: null };
-}
-
-function onBlockClick(
-  blockId: string,
-  event: MouseEvent | KeyboardEvent,
-): void {
-  if (!canSelect.value) return;
-  selection.value = extendBlockSelection(
-    base.value,
-    selection.value,
-    blockId,
-    event.shiftKey,
+/**
+ * Where the reader is in the text: the first paragraph of the base they
+ * have selected, or else the one at the top of what they see. Null when the
+ * text is not on screen (the editor then opens at the start).
+ */
+function readingBlockId(): string | null {
+  const view = textView.value;
+  if (!view?.root) return null;
+  const known = new Set(base.value.map((block) => block.id));
+  const isBase = (id: string) => known.has(id);
+  return (
+    view.getSelectedBlockIds().find(isBase) ??
+    blockAtReadingTop(view.root, isBase)
   );
 }
 
-/** A text selection (drag) inside the original text selects its blocks. */
-function onTextPointerUp(): void {
-  if (!canSelect.value) return;
-  const ids = textView.value?.getSelectedBlockIds() ?? [];
-  if (ids.length === 0) return;
-  const range = contiguousBlockRange(base.value, ids);
-  selection.value = { ids: range, anchor: range[0] ?? null };
-}
-
-/** A composer takes the amendments panel, over the original text. */
+/** The transactional composer takes the amendments panel, over the original text. */
 function showComposerPanel(): void {
   detailOpen.value = false;
-  picking.value = false;
   textMode.value = "original";
   mobilePane.value = "amendments";
   // The workspace is as tall as the hub's scroll area: bring all of it into
@@ -592,16 +539,15 @@ function showComposerPanel(): void {
 }
 
 function openComposer(options: Partial<Omit<ComposerState, "key">>): void {
-  transactional.value = null;
+  closeTransactional();
+  detailOpen.value = false;
   composer.value = {
     key: (composerSeq += 1),
-    mode: "passage",
-    selection: [],
-    appendParagraph: false,
+    mode: "document",
+    startBlockId: null,
     draftId: null,
     ...options,
   };
-  showComposerPanel();
 }
 
 /** "Proponer una transaccional", on these amendments or picking them there. */
@@ -640,35 +586,37 @@ function onTransactionalView(id: string): void {
   mobilePane.value = "amendments";
 }
 
-function amendSelection(
-  mode: AmendmentComposerMode = "passage",
-  appendParagraph = false,
-): void {
-  if (selection.value.ids.length === 0) return;
-  openComposer({ mode, selection: [...selection.value.ids], appendParagraph });
+/**
+ * The primary action: the whole text in an editor, where the reader was.
+ * Read before the composer opens, while the text is still on screen.
+ */
+function startAmendment(): void {
+  openComposer({ mode: "document", startBlockId: readingBlockId() });
 }
 
 /**
- * The primary action: with a passage selected, amend it; otherwise show the
- * text and ask for the paragraph (the selection bar then offers what to do).
+ * The composer took the focus with it: it goes to the button that opens
+ * one, back in the header, or else to the list.
  */
-function startAmendment(): void {
-  if (selection.value.ids.length > 0) {
-    amendSelection("passage");
-    return;
-  }
-  detailOpen.value = false;
-  textMode.value = "original";
-  mobilePane.value = "text";
-  picking.value = true;
-  void nextTick(() => {
-    selectionBar.value?.scrollIntoView({ block: "nearest" });
-    selectionBar.value?.focus({ preventScroll: true });
-  });
+async function focusAfterComposer(): Promise<void> {
+  await nextTick();
+  const entry =
+    globalThis.document?.querySelector<HTMLElement>("[data-amend-entry]");
+  (entry ?? listHeading.value)?.focus();
+}
+
+/**
+ * The amendment that takes the composer's place gets the focus, on its
+ * heading. On narrow screens it opens in a slideover, which takes it itself.
+ */
+async function focusDetail(): Promise<void> {
+  await nextTick();
+  desktopDetail.value?.focusHeading();
 }
 
 function closeComposer(): void {
   composer.value = null;
+  void focusAfterComposer();
 }
 
 /** Loads the stored draft into a fresh composer (after a save conflict). */
@@ -685,13 +633,19 @@ async function reloadComposer(): Promise<void> {
     assembly.value?.status === "closed"
   ) {
     composer.value = null;
+    void focusAfterComposer();
     return;
   }
   const stored = current.draftId ? list.byId.value.get(current.draftId) : null;
   if (current.draftId && stored?.status !== "draft") {
     // Presented, withdrawn or deleted meanwhile: show it instead, if visible.
     composer.value = null;
-    if (stored) selectAmendment(stored.id);
+    if (stored) {
+      selectAmendment(stored.id);
+      void focusDetail();
+    } else {
+      void focusAfterComposer();
+    }
     return;
   }
   composer.value = { ...current, key: (composerSeq += 1) };
@@ -706,37 +660,21 @@ function onComposerSaved(amendment: AmendmentDto): void {
 function onComposerSubmitted(amendment: AmendmentDto): void {
   list.upsert(amendment);
   composer.value = null;
-  clearSelection();
   listTab.value = "mine";
   selectAmendment(amendment.id);
+  void focusDetail();
 }
 
-/** Amendments that do not start from a paragraph, in the selection bar. */
-const otherAmendmentItems = computed(() => [
-  [
-    {
-      label: t("workspace.newMenu.global"),
-      icon: "i-lucide-replace-all",
-      onSelect: () => openComposer({ mode: "global" }),
-    },
-  ],
-  [
-    { type: "label" as const, label: t("workspace.newMenu.totality") },
-    {
-      label: t("workspace.newMenu.return"),
-      icon: "i-lucide-file-x",
-      onSelect: () => openComposer({ mode: "return" }),
-    },
-    {
-      label: t("workspace.newMenu.alternative"),
-      icon: "i-lucide-file-pen-line",
-      onSelect: () => openComposer({ mode: "alternative" }),
-    },
-  ],
-]);
-
-const selectionReference = computed(() =>
-  blockReference(selection.value.ids[0]),
+/**
+ * The other ways to amend, as links under the main button, each with a
+ * sentence that says what it does.
+ */
+const otherWays = computed(() =>
+  (["global", "return", "alternative"] as const).map((mode) => ({
+    mode,
+    label: t(`workspace.cta.${mode}`),
+    hint: t(`workspace.cta.${mode}Hint`),
+  })),
 );
 
 // Amendment detail -----------------------------------------------------------------
@@ -744,6 +682,10 @@ const selectionReference = computed(() =>
 const selectedId = ref<string | null>(null);
 const detailOpen = ref(false);
 const listHeading = useTemplateRef<HTMLElement>("listHeading");
+/** The detail in the amendments panel (wide screens). */
+const desktopDetail = useTemplateRef<{ focusHeading: () => void }>(
+  "desktopDetail",
+);
 /**
  * Where the selected card sat in the list it was picked from, so focus can
  * go to its neighbour when it leaves the list (sent back for correction,
@@ -767,7 +709,7 @@ function shownIds(): string[] {
 
 /**
  * Gives focus back to the list once the detail is gone: the same card, its
- * neighbour, or the list tabs. A slideover returns focus by itself, unless
+ * neighbour, or the pressed chip. A slideover returns focus by itself, unless
  * the card it came from left the list.
  */
 async function restoreListFocus(id: string | null): Promise<void> {
@@ -782,22 +724,42 @@ async function restoreListFocus(id: string | null): Promise<void> {
     (selectedIndex >= 0
       ? cards[Math.min(selectedIndex, cards.length - 1)]
       : undefined) ??
-    box.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]') ??
+    box.querySelector<HTMLElement>(
+      '[data-amendment-chip][aria-pressed="true"]',
+    ) ??
     listHeading.value;
   target?.focus();
 }
 
+/**
+ * Narrow screens: the amendment "Ver en el documento" was pressed on. Its
+ * change takes the focus once the detail's slideover has closed, which is
+ * when the slideover stops holding it.
+ */
+let locateAfterClose: AmendmentDto | null = null;
+
 function onSlideoverClosed(): void {
+  const located = locateAfterClose;
+  locateAfterClose = null;
+  if (located) {
+    // The list is hidden behind the text: nothing there can take the focus.
+    scrollToAmendment(located, { focus: true });
+    return;
+  }
   const active = globalThis.document?.activeElement;
   if (!active || active === globalThis.document.body) {
     void restoreListFocus(selectedId.value);
   }
 }
 
-function scrollToAmendment(amendment: AmendmentDto): void {
-  const first = touchedBlockIds(amendment.ops)[0];
+/** To the amendment's first change, in the order of the text. */
+function scrollToAmendment(
+  amendment: AmendmentDto,
+  options: { focus?: boolean } = {},
+): void {
+  const first = firstTouchedBlockId(amendment.ops, base.value);
   if (!first) return;
-  void nextTick(() => textView.value?.scrollToBlock(first));
+  void nextTick(() => textView.value?.scrollToBlock(first, options));
 }
 
 function selectAmendment(
@@ -808,14 +770,32 @@ function selectAmendment(
   if (composing.value) return;
   if (!options.fromText) selectedIndex = shownIds().indexOf(id);
   detailOpen.value = true;
+  // The text keeps its view: it only moves to where the amendment acts.
   const amendment = list.byId.value.get(id);
-  if (!options.fromText && textMode.value === "original") {
-    textMode.value = "amended";
-  }
   if (amendment && !options.fromText && isDesktop.value) {
     scrollToAmendment(amendment);
   }
 }
+
+/**
+ * "Ver en el documento": the amendment over the full text, scrolled to its
+ * change. On narrow screens the detail closes and the text pane shows.
+ */
+function showInDocument(amendment: AmendmentDto): void {
+  selectedId.value = amendment.id;
+  textMode.value = "amended";
+  if (!isDesktop.value) {
+    locateAfterClose = detailOpen.value ? amendment : null;
+    detailOpen.value = false;
+    mobilePane.value = "text";
+  }
+  scrollToAmendment(amendment);
+}
+
+/** Where the open amendment sits in the list on screen, and its neighbours. */
+const detailNav = computed(() =>
+  amendmentNeighbours(shownIds(), selectedId.value),
+);
 
 function closeDetail(): void {
   const inPanel = showDesktopDetail.value;
@@ -1030,13 +1010,10 @@ const showAcceptedToggle = computed(
     document.value?.acceptedAmendments !== "incorporate",
 );
 
-const originalSelected = computed(() => {
-  if (transactional.value) return transactionalPassage.value;
-  return composer.value &&
-    (composer.value.mode === "passage" || composer.value.mode === "delete")
-    ? contiguousBlockRange(base.value, composer.value.selection)
-    : selection.value.ids;
-});
+/** The passage a transactional being written rewrites, marked in the text. */
+const originalSelected = computed(() =>
+  transactional.value ? transactionalPassage.value : [],
+);
 
 const fallbackText = computed(
   () => document.value?.workingVersion?.blocks ?? null,
@@ -1143,17 +1120,12 @@ const filteredBlockLabel = computed(() =>
                 />
               </template>
             </UButton>
-            <!-- With a paragraph picked, the selection bar's "Cambiar este
-                 texto" is the primary button; with the presenter's review
-                 pending, that one is. -->
+            <!-- Primary, unless the presenter's review is pending. -->
             <UButton
               v-if="canAmend && isStructured && !composing"
+              data-amend-entry
               icon="i-lucide-pencil-line"
-              :variant="
-                selection.ids.length > 0 || reviewIsPrimary
-                  ? 'outline'
-                  : 'solid'
-              "
+              :variant="reviewIsPrimary ? 'outline' : 'solid'"
               :label="t('workspace.cta.present')"
               @click="startAmendment"
             />
@@ -1181,6 +1153,14 @@ const filteredBlockLabel = computed(() =>
               variant="clean"
               button-variant="outline"
             />
+            <UButton
+              v-if="showTransactEntry"
+              icon="i-lucide-git-merge"
+              color="neutral"
+              variant="outline"
+              :label="t('workspace.more.transactional')"
+              @click="startTransactional([])"
+            />
             <UDropdownMenu
               v-if="moreItems.length > 0"
               :items="moreItems"
@@ -1195,11 +1175,33 @@ const filteredBlockLabel = computed(() =>
               />
             </UDropdownMenu>
           </div>
+          <!-- The other ways to amend, each with what it does. -->
+          <ul
+            v-if="canAmend && isStructured && !composing"
+            class="flex max-w-xl flex-col gap-0.5 sm:items-end"
+            :aria-label="t('workspace.cta.otherWays')"
+          >
+            <li
+              v-for="way in otherWays"
+              :key="way.mode"
+              class="text-muted text-xs sm:text-end"
+            >
+              <UButton
+                color="primary"
+                variant="link"
+                size="xs"
+                class="p-0 align-baseline"
+                :label="way.label"
+                @click="openComposer({ mode: way.mode })"
+              />
+              {{ way.hint }}
+            </li>
+          </ul>
         </div>
       </DocumentHeader>
 
       <p
-        v-if="document.summary"
+        v-if="document.summary && !composer"
         class="text-muted max-w-3xl text-sm whitespace-pre-line"
       >
         {{ document.summary }}
@@ -1307,7 +1309,25 @@ const filteredBlockLabel = computed(() =>
           ]"
         />
 
+        <!-- The amendment composer, in place of the text and the list -->
+        <AmendmentComposer
+          v-if="composer"
+          :key="composer.key"
+          :base="base"
+          :document="document"
+          :amendments-url="amendmentsUrl"
+          :mode="composer.mode"
+          :start-block-id="composer.startBlockId"
+          :draft="composerDraft"
+          @close="closeComposer"
+          @saved="onComposerSaved"
+          @submitted="onComposerSubmitted"
+          @conflict="refreshAll()"
+          @reload="reloadComposer"
+        />
+
         <UTabs
+          v-show="!composer"
           v-model="mobilePane"
           :items="paneItems"
           :content="false"
@@ -1319,7 +1339,7 @@ const filteredBlockLabel = computed(() =>
         <!-- The index on narrow screens, floating at the corner while the text
              scrolls with the page. -->
         <div
-          v-if="textOutline.length > 1 && mobilePane === 'text'"
+          v-if="textOutline.length > 1 && mobilePane === 'text' && !composer"
           class="fixed start-4 bottom-4 z-30 lg:hidden"
         >
           <ContentOutline
@@ -1331,7 +1351,10 @@ const filteredBlockLabel = computed(() =>
 
         <!-- As tall as the hub body's scroll area (viewport minus navbar,
              section toolbar and padding), like the session console. -->
+        <!-- Hidden, not removed, while the amendment composer is open: the
+             text keeps its place for when it closes. -->
         <div
+          v-show="!composer"
           ref="workspaceBox"
           class="border-default flex flex-col overflow-hidden rounded-lg border lg:h-[calc(100dvh-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-3rem)] lg:min-h-[32rem] lg:flex-row"
         >
@@ -1354,35 +1377,26 @@ const filteredBlockLabel = computed(() =>
                 }"
               >
                 <template #left>
-                  <UDropdownMenu
-                    :items="viewItems"
-                    :content="{ align: 'start' }"
-                  >
-                    <UButton
-                      color="neutral"
-                      variant="ghost"
-                      size="sm"
-                      :icon="MODE_ICONS[textMode]"
-                      trailing-icon="i-lucide-chevron-down"
-                      :label="textModeLabel"
-                      :aria-label="
-                        t('workspace.modes.button', { mode: textModeLabel })
-                      "
-                    />
-                  </UDropdownMenu>
-                </template>
-                <template #right>
-                  <UBadge
-                    v-if="
-                      includeAccepted &&
-                      showAcceptedToggle &&
-                      (textMode === 'consolidated' || textMode === 'compare')
-                    "
+                  <UTabs
+                    v-model="textMode"
+                    :items="modeItems"
+                    :content="false"
                     color="neutral"
-                    variant="soft"
+                    size="xs"
+                    class="max-w-full"
+                    :ui="{
+                      list: 'w-auto max-w-full overflow-x-auto',
+                      trigger: 'shrink-0 grow-0',
+                    }"
+                    :aria-label="t('workspace.modes.label')"
+                    @update:model-value="onTextMode"
+                  />
+                </template>
+                <template v-if="showAcceptedSwitch" #right>
+                  <USwitch
+                    v-model="includeAccepted"
                     size="sm"
-                    icon="i-lucide-check-check"
-                    :label="t('workspace.includeAcceptedOn')"
+                    :label="t('workspace.includeAccepted')"
                   />
                 </template>
               </UDashboardToolbar>
@@ -1408,112 +1422,14 @@ const filteredBlockLabel = computed(() =>
 
               <!-- Original -->
               <template v-if="textMode === 'original'">
-                <div
-                  v-if="canAmend && !composing"
-                  ref="selectionBar"
-                  tabindex="-1"
-                  class="bg-default/95 sticky top-0 z-10 -mx-1 flex flex-wrap items-center gap-2 rounded-md border px-3 py-2 backdrop-blur transition-shadow focus-visible:outline-none"
-                  :class="
-                    picking
-                      ? 'border-primary ring-primary/40 ring-2'
-                      : 'border-default'
-                  "
-                  role="region"
-                  :aria-label="t('workspace.selection.label')"
-                >
-                  <template v-if="selection.ids.length > 0">
-                    <span class="text-sm font-medium" aria-live="polite">
-                      {{
-                        t(
-                          "workspace.selection.count",
-                          { count: selection.ids.length },
-                          selection.ids.length,
-                        )
-                      }}
-                      <span
-                        v-if="selectionReference"
-                        class="text-muted font-normal"
-                      >
-                        · {{ selectionReference }}
-                      </span>
-                    </span>
-                    <span class="ms-auto flex flex-wrap items-center gap-1.5">
-                      <UButton
-                        icon="i-lucide-pencil-line"
-                        size="sm"
-                        :label="t('workspace.selection.amend')"
-                        @click="amendSelection('passage')"
-                      />
-                      <UButton
-                        icon="i-lucide-between-horizontal-end"
-                        color="neutral"
-                        variant="outline"
-                        size="sm"
-                        :label="t('workspace.selection.addAfter')"
-                        @click="amendSelection('passage', true)"
-                      />
-                      <UButton
-                        icon="i-lucide-trash-2"
-                        color="neutral"
-                        variant="outline"
-                        size="sm"
-                        :label="
-                          t('workspace.selection.delete', selection.ids.length)
-                        "
-                        @click="amendSelection('delete')"
-                      />
-                      <UButton
-                        icon="i-lucide-x"
-                        color="neutral"
-                        variant="ghost"
-                        size="xs"
-                        :aria-label="t('workspace.selection.clear')"
-                        @click="clearSelection"
-                      />
-                    </span>
-                  </template>
-                  <template v-else>
-                    <p
-                      class="min-w-0 flex-1 text-sm"
-                      :class="picking ? 'text-highlighted' : 'text-muted'"
-                      aria-live="polite"
-                    >
-                      <UIcon
-                        name="i-lucide-mouse-pointer-click"
-                        class="me-1 size-4 align-middle"
-                        aria-hidden="true"
-                      />
-                      {{ t("workspace.selection.hint") }}
-                      <span class="text-dimmed hidden text-xs sm:inline">
-                        {{ t("workspace.selection.rangeHint") }}
-                      </span>
-                    </p>
-                    <UDropdownMenu
-                      :items="otherAmendmentItems"
-                      :content="{ align: 'end' }"
-                    >
-                      <UButton
-                        color="neutral"
-                        variant="ghost"
-                        size="sm"
-                        trailing-icon="i-lucide-chevron-down"
-                        :label="t('workspace.newMenu.label')"
-                      />
-                    </UDropdownMenu>
-                  </template>
-                </div>
-
-                <div @mouseup="onTextPointerUp" @keyup.shift="onTextPointerUp">
-                  <ContentView
-                    ref="textView"
-                    :blocks="base"
-                    :markers="list.markers.value"
-                    :selected="originalSelected"
-                    :interactive="canSelect"
-                    @block-click="onBlockClick"
-                    @marker-click="onMarkerClick"
-                  />
-                </div>
+                <ContentView
+                  ref="textView"
+                  :blocks="base"
+                  :markers="list.markers.value"
+                  :selected="originalSelected"
+                  marker-buttons
+                  @marker-click="onMarkerClick"
+                />
               </template>
 
               <!-- One amendment over the full text -->
@@ -1686,57 +1602,32 @@ const filteredBlockLabel = computed(() =>
             :ui="panelUi"
           >
             <template v-if="!composing && !showDesktopDetail" #header>
-              <UDashboardToolbar
-                :ui="{
-                  root: 'flex-wrap gap-2 py-2 min-h-12 h-auto',
-                  left: 'flex-wrap',
-                  right: 'flex-wrap',
-                }"
+              <div
+                class="border-default flex flex-col gap-2 border-b px-4 py-2.5 sm:px-5"
               >
-                <template #left>
-                  <UTabs
-                    v-if="showMineTab"
-                    v-model="listTab"
-                    :items="listTabItems"
-                    :content="false"
-                    variant="link"
-                    size="sm"
-                    :aria-label="t('workspace.tabs.label')"
-                  />
-                  <h2
-                    v-else
-                    ref="listHeading"
-                    tabindex="-1"
-                    class="text-highlighted text-sm font-semibold outline-none"
-                  >
-                    {{ t("workspace.panes.amendments") }}
-                  </h2>
-                </template>
-              </UDashboardToolbar>
+                <h2 ref="listHeading" tabindex="-1" class="sr-only">
+                  {{ t("workspace.panes.amendments") }}
+                </h2>
+                <AmendmentFilterBar
+                  v-model="list.filters.value"
+                  v-model:tab="listTab"
+                  :author-options="list.authorOptions.value"
+                  :can-filter-mine="Boolean(member)"
+                  :show-review-filter="showReviewFilter"
+                  :show-returned-filter="list.returned.value.length > 0"
+                  :block-label="filteredBlockLabel"
+                  :show-mine="showMineTab"
+                  :mine-waiting="mineWaiting"
+                  :mine-urgent="corrections.length > 0"
+                  :total="list.listed.value.length"
+                />
+              </div>
             </template>
 
             <template #body>
-              <!-- Composer -->
-              <AmendmentComposer
-                v-if="composer"
-                :key="composer.key"
-                :base="base"
-                :document="document"
-                :amendments-url="amendmentsUrl"
-                :mode="composer.mode"
-                :selection="composer.selection"
-                :append-paragraph="composer.appendParagraph"
-                :draft="composerDraft"
-                @close="closeComposer"
-                @saved="onComposerSaved"
-                @submitted="onComposerSubmitted"
-                @conflict="refreshAll()"
-                @reload="reloadComposer"
-              />
-
               <!-- Transactional composer -->
               <TransactionalComposer
-                v-else-if="transactional"
+                v-if="transactional"
                 :key="transactional.key"
                 :base="base"
                 :document="document"
@@ -1754,6 +1645,7 @@ const filteredBlockLabel = computed(() =>
               <!-- Detail (wide screens) -->
               <AmendmentDetail
                 v-else-if="showDesktopDetail && selectedAmendment"
+                ref="desktopDetail"
                 :amendment="selectedAmendment"
                 :base="base"
                 :document="document"
@@ -1764,8 +1656,10 @@ const filteredBlockLabel = computed(() =>
                 :overlaps="selectedOverlaps"
                 :decisions-url="decisionsUrl"
                 :can-transact="canTransact"
+                :nav="detailNav"
                 @close="closeDetail"
                 @select="selectAmendment"
+                @locate="showInDocument"
                 @edit="onDetailEdit"
                 @transact="startTransactional"
                 @updated="list.upsert"
@@ -1795,11 +1689,8 @@ const filteredBlockLabel = computed(() =>
                       :amendment="item"
                       :label="list.labelOf(item.id)"
                       :label-of="list.labelOf"
-                      :relations="list.relationsOf(item.id)"
                       :selected="selectedId === item.id"
                       :status-of="amendmentStatusOf"
-                      :by-id="list.byId.value"
-                      :presenter="document.proponent?.acronym ?? null"
                       show-published
                       @select="selectAmendment"
                     />
@@ -1837,14 +1728,6 @@ const filteredBlockLabel = computed(() =>
                   />
                 </div>
 
-                <AmendmentFilterBar
-                  v-model="list.filters.value"
-                  :author-options="list.authorOptions.value"
-                  :can-filter-mine="Boolean(member)"
-                  :show-review-filter="showReviewFilter"
-                  :show-returned-filter="list.returned.value.length > 0"
-                  :block-label="filteredBlockLabel"
-                />
                 <p class="sr-only" aria-live="polite">{{ listAnnouncement }}</p>
 
                 <div
@@ -1919,11 +1802,8 @@ const filteredBlockLabel = computed(() =>
                   :groups="list.groups.value"
                   :selected-id="selectedId"
                   :label-of="list.labelOf"
-                  :relations-of="list.relationsOf"
                   :can-transact="canTransact"
                   :status-of="amendmentStatusOf"
-                  :by-id="list.byId.value"
-                  :presenter="document.proponent?.acronym ?? null"
                   @select="selectAmendment"
                   @transact="startTransactional"
                 />
@@ -1953,10 +1833,11 @@ const filteredBlockLabel = computed(() =>
               :candidates="relationCandidates"
               :overlaps="selectedOverlaps"
               :decisions-url="decisionsUrl"
-              :closable="false"
               :can-transact="canTransact"
+              :nav="detailNav"
               @close="closeDetail"
               @select="selectAmendment"
+              @locate="showInDocument"
               @edit="onDetailEdit"
               @transact="startTransactional"
               @updated="list.upsert"

@@ -50,6 +50,8 @@ const props = withDefaults(
     /** Gutter markers per block id. */
     markers?: Record<string, BlockMarker>;
     interactive?: boolean;
+    /** Gutter markers as buttons also when the text is not interactive. */
+    markerButtons?: boolean;
     /** Headings as real heading elements; false for excerpts. */
     headings?: boolean;
   }>(),
@@ -62,6 +64,7 @@ const props = withDefaults(
     selected: () => [],
     markers: undefined,
     interactive: false,
+    markerButtons: false,
     headings: true,
   },
 );
@@ -69,7 +72,7 @@ const props = withDefaults(
 const emit = defineEmits<{
   "block-click": [blockId: string, event: MouseEvent | KeyboardEvent];
   "amendment-click": [amendmentId: string];
-  /** A gutter marker was activated (interactive views only). */
+  /** A gutter marker was activated (`interactive` or `markerButtons`). */
   "marker-click": [blockId: string, event: MouseEvent];
 }>();
 
@@ -99,6 +102,11 @@ const html = computed(() => {
           ? {
               inserted: t("common.content.inserted"),
               removed: t("common.content.removed"),
+              formatted: t("common.content.formatted"),
+              format: (change) =>
+                t(`common.content.format.${change.code}`, {
+                  value: change.value ?? "",
+                }),
             }
           : undefined,
     });
@@ -219,7 +227,9 @@ function readOutline(root: HTMLElement): void {
     .forEach((element) => {
       if (element.closest("table")) return;
       const copy = element.cloneNode(true) as HTMLElement;
-      copy.querySelectorAll("del, .sr-only, .cx-ref").forEach((node) => {
+      // A format label says what changes; it is not part of the heading.
+      const extras = "del, .sr-only, .cx-ref, .cx-fmt-label";
+      copy.querySelectorAll(extras).forEach((node) => {
         node.remove();
       });
       const text = (copy.textContent ?? "").replace(/\s+/g, " ").trim();
@@ -407,12 +417,12 @@ function getSelectedBlockIds(): string[] {
 /**
  * Scrolls a block into view: centred, or to the top for a heading picked in
  * the index (`align: "start"`), which also takes the focus there so the
- * keyboard and screen readers carry on from it. Otherwise it is focused when
- * the view is interactive.
+ * keyboard and screen readers carry on from it (`focus` asks for the same
+ * on a centred block). Otherwise it is focused when the view is interactive.
  */
 function scrollToBlock(
   blockId: string,
-  options: { align?: "center" | "start" } = {},
+  options: { align?: "center" | "start"; focus?: boolean } = {},
 ): void {
   const element = contentEl.value?.querySelector<HTMLElement>(
     `[data-block-id="${CSS.escape(blockId)}"]`,
@@ -422,11 +432,12 @@ function scrollToBlock(
     "(prefers-reduced-motion: reduce)",
   ).matches;
   const start = options.align === "start";
+  const takesFocus = start || options.focus === true;
   element.scrollIntoView({
     block: start ? "start" : "center",
     behavior: reduceMotion ? "auto" : "smooth",
   });
-  if (start && !selectableBlocks.value) {
+  if (takesFocus && !selectableBlocks.value) {
     element.tabIndex = -1;
     element.addEventListener(
       "blur",
@@ -436,7 +447,9 @@ function scrollToBlock(
       { once: true },
     );
   }
-  if (start || selectableBlocks.value) element.focus({ preventScroll: true });
+  if (takesFocus || selectableBlocks.value) {
+    element.focus({ preventScroll: true });
+  }
 }
 
 defineExpose({
@@ -462,7 +475,7 @@ defineExpose({
       <template v-for="[id, marker] in markerEntries" :key="id">
         <template v-if="positions[id] !== undefined">
           <button
-            v-if="interactive"
+            v-if="interactive || markerButtons"
             type="button"
             class="cx-marker"
             :class="{ 'cx-marker--overlap': marker.overlap }"

@@ -46,6 +46,7 @@ import {
 } from "./content";
 import {
   EXPORT_INTL_LOCALES,
+  createFormatLabeller,
   createTranslator,
   formatExportDate,
   formatExportDateRange,
@@ -688,6 +689,18 @@ function legendSection(t: Translate): Content[] {
       ],
       style: "legend",
     },
+    {
+      text: [
+        {
+          text: t("legend.formatted.sample"),
+          decoration: "underline",
+          decorationStyle: "dotted",
+          decorationColor: CREUP_RED,
+        },
+        `: ${t("legend.formatted.text")}`,
+      ],
+      style: "legend",
+    },
     { text: t("legend.code"), style: "legend", margin: [0, 0, 0, 8] },
   ];
 }
@@ -740,6 +753,7 @@ export function buildDocumentPdf(
         : annotatedToPdf(body.blocks, {
             ...ctx,
             codeOf: (id) => body.codes[id] ?? "?",
+            formatLabel: createFormatLabeller(locale),
           })),
       ...linksSection(links, t),
       ...annexSection(body.annex, t),

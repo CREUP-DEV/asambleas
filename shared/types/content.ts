@@ -127,7 +127,31 @@ export interface Block {
   marks: Mark[];
 }
 
-/** Replaces base[from, to) of one block. Covers suppression, addition and modification. */
+/**
+ * What a block is besides its text: the fields an amendment may change on a
+ * block of the base. Never an image, and never the table cell it sits in.
+ */
+export interface BlockFormat {
+  type: Exclude<BlockType, "image">;
+  /** Heading level (1-4) or list depth (0-based). */
+  level?: number;
+  list?: "bullet" | "ordered";
+  marker?: ListMarker;
+  start?: number;
+  align?: BlockAlign;
+}
+
+/**
+ * Replaces base[from, to) of one block. Covers suppression, addition and
+ * modification of text, and changes of formatting:
+ * - `marks` is the inline formatting of the new text, with offsets inside
+ *   `text`. It takes the place of the base marks over [from, to). With
+ *   `text` equal to `baseText` the operation changes formatting only.
+ *   Without it the base marks follow the text as they always did.
+ * - `block` is the new format of the whole block (paragraph, heading of a
+ *   level, list item...). It travels alone, on an operation with `from` and
+ *   `to` at 0 and no text, one per block at most.
+ */
 export interface ReplaceOp {
   op: "replace";
   blockId: string;
@@ -136,6 +160,8 @@ export interface ReplaceOp {
   text: string;
   /** The base text being replaced, kept to verify the anchor. */
   baseText: string;
+  marks?: Mark[];
+  block?: BlockFormat;
 }
 
 /** Inserts new blocks after a base block, or at the start when afterBlockId is null. */
@@ -156,12 +182,60 @@ export type AmendmentOp = ReplaceOp | InsertOp | DeleteOp;
 /** Change typology derived from the operations, as used in the regulations. */
 export type ChangeKind = "suppression" | "addition" | "modification";
 
+/**
+ * One thing a formatting change does, for the label shown next to it:
+ * - `bold_on`, `link_off`...: a mark the text gains or loses;
+ * - `link_changed`: the address of a link changes;
+ * - `paragraph`, `heading` (value: its level), `quote`, `bullet_list`,
+ *   `ordered_list`: what the block becomes;
+ * - `list_level` (value: the level, from 1), `list_marker` (value: how the
+ *   first item reads, "a)"), `list_start` (value: the number), `list_continue`
+ *   (the item no longer starts its list again);
+ * - `align_start`, `align_center`, `align_right`.
+ */
+export const FORMAT_CHANGE_CODES = [
+  "bold_on",
+  "bold_off",
+  "italic_on",
+  "italic_off",
+  "underline_on",
+  "underline_off",
+  "strike_on",
+  "strike_off",
+  "link_on",
+  "link_off",
+  "link_changed",
+  "paragraph",
+  "heading",
+  "quote",
+  "bullet_list",
+  "ordered_list",
+  "list_level",
+  "list_marker",
+  "list_start",
+  "list_continue",
+  "align_start",
+  "align_center",
+  "align_right",
+] as const;
+export type FormatChangeCode = (typeof FORMAT_CHANGE_CODES)[number];
+
+export interface FormatChange {
+  code: FormatChangeCode;
+  value?: string | number;
+}
+
 /** A run of consolidated text and the amendment it comes from (null = base text). */
 export interface Segment {
   text: string;
   source: string | null;
   /** Text removed by `source`. Only present in annotated output. */
   removed?: boolean;
+  /**
+   * Text `source` keeps and formats anew: what changes. Only present in
+   * annotated output, and never together with `removed`.
+   */
+  format?: FormatChange[];
 }
 
 export interface ConsolidatedBlock {
@@ -180,6 +254,11 @@ export interface ConsolidatedBlock {
   /** "inserted" and "deleted" carry the amendment in `source`. */
   status: "kept" | "inserted" | "deleted";
   source: string | null;
+  /**
+   * A kept block whose format an amendment changes: the amendment and what
+   * changes. The block already shows its new format.
+   */
+  format?: { source: string; changes: FormatChange[] };
 }
 
 export interface AmendmentInput {

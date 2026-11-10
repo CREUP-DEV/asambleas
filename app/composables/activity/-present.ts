@@ -18,6 +18,7 @@ import {
   type EventType,
   type ImpersonationEndReason,
 } from "~~/shared/constants/activity";
+import { RECLASSIFIABLE_KINDS } from "~~/shared/utils/amendmentReclassify";
 import type {
   ActivityItemDto,
   ActivityTargetDto,
@@ -131,6 +132,7 @@ export const ACTIVITY_ACTION_ICONS = {
   amendment_submitted: "i-lucide-send",
   amendment_withdrawn: "i-lucide-undo-2",
   amendment_correction_requested: "i-lucide-message-square-warning",
+  amendment_reclassified: "i-lucide-tags",
   amendment_validated: "i-lucide-badge-check",
   amendment_published: "i-lucide-eye",
   amendment_admitted: "i-lucide-badge-check",
@@ -312,6 +314,8 @@ export type ActivityDetail =
   | { type: "result"; result: string }
   | { type: "position"; position: string }
   | { type: "acceptance"; decision: string }
+  /** The kind an amendment was reclassified to ("formal" or "partial"). */
+  | { type: "reclassified"; to: string }
   | { type: "reason"; text: string }
   | { type: "roleSyncFailed" }
   | { type: "sync"; created: number; updated: number; deactivated: number }
@@ -492,6 +496,10 @@ function eventDetails(
     case "document_correction_requested": {
       const note = text(payload.note);
       return note ? [{ type: "note", text: note }] : [];
+    }
+    case "amendment_reclassified": {
+      const to = oneOf(RECLASSIFIABLE_KINDS, payload.to);
+      return to ? [{ type: "reclassified", to }] : [];
     }
     case "position_changed": {
       const position = oneOf(PROPONENT_POSITIONS, payload.position);

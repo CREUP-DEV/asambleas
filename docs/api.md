@@ -636,6 +636,7 @@ All paths are under `/api/assemblies/[assembly]/documents/[document]/amendments`
 | POST   | `/validate`               | `amendment:review`                                   | `ValidateAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                              |
 | POST   | `/publish`                | `amendment:review`                                   | `PublishAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                               |
 | POST   | `/[amendment]/correction` | `amendment:review`                                   | `CorrectionBody`. See validation below. Returns `AmendmentDto`.                                               |
+| POST   | `/[amendment]/reclassify` | `amendment:review`                                   | `ReclassifyBody`. See reclassifying below. Returns `AmendmentDto`.                                            |
 | POST   | `/admission`              | `amendment:review` or moderator                      | See admission rules below.                                                                                    |
 | PUT    | `/[amendment]/position`   | main presenter or moderator                          | `PositionBody`. See the main presenter's answer below.                                                        |
 | POST   | `/[amendment]/outcome`    | moderator                                            | See outcome rules below.                                                                                      |
@@ -674,6 +675,14 @@ author; a transactional the Mesa drafts for nobody has none (null).
 
 - `validateOps` runs against the base, and any error returns 422 with the
   reasons.
+- A `replace` operation may carry formatting (`docs/design.md`,
+  "Amendments"): `marks` for its new text (cleaned like a block's: clipped
+  to the text, links only to safe addresses) or `block`, the new format of
+  its whole block, stored with only the fields its type keeps. Both are
+  optional. Their own reasons: `format_shape` (a `block` that is malformed
+  or not alone on an empty operation at 0), `format_image` (the block is an
+  image), `duplicate_format` (two for one block), `marks_out_of_range`, and
+  `noop` when the format or the marks are the ones the base already has.
 - Authors are the actor's member plus `authorMemberIds`. A moderator may use
   `onBehalfOfMemberId`.
 - `mainAuthorMemberId` names the main author, which must be one of the
@@ -747,6 +756,18 @@ admission }`, `publish` being what happened to that amendment, plus
   number, code and timing are kept (see submitting). Records
   `amendment_correction_requested` (`{ note }`). A transactional still
   waiting for its main authors returns 409.
+- Reclassifying: `POST .../[amendment]/reclassify` (`amendment:review` or
+  `amendment:manage`; `session:moderate` alone answers 403. `ReclassifyBody`:
+  the `kind` it becomes and the amendment's `updatedAt` for the optimistic
+  lock) moves a `submitted` amendment between "de forma" (`formal`) and the
+  content kind (`partial`), whatever its review state. Only those two kinds
+  have a counterpart (`reclassifyTarget` in
+  `shared/utils/amendmentReclassify.ts`): a totality amendment or a
+  transactional, a `kind` that is not the other one of the two, a draft, a
+  decided amendment and a voted document all return 409. Nothing else about
+  the amendment changes. Records `amendment_reclassified`
+  (`{ from, to }`), shown in the amendment's history and in its authors'
+  news.
 - `reviewState` on `AmendmentDto` tells where it stands:
   - `correction_requested`: a draft the Secretaría sent back;
   - `published`: `publishedAt` is set, whatever its status;
@@ -1105,7 +1126,8 @@ managers and the Mesa), soonest first:
     (`acceptance_recorded`);
   - for the authors of an amendment, what was settled about it:
     `amendment_validated`, `amendment_published`,
-    `amendment_correction_requested`, `amendment_admitted`,
+    `amendment_correction_requested`, `amendment_reclassified` (the value
+    is the kind it became), `amendment_admitted`,
     `amendment_inadmissible`, `amendment_approved`, `amendment_rejected`,
     `amendment_withdrawn`, `amendment_lapsed` (with
     `reason: "sources_transacted"` for a transactional closed because

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { AmendmentDto } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
-import { touchedBlockIds } from "~~/shared/utils/content/ops";
+import { firstTouchedBlockId } from "~~/shared/utils/content/ops";
 import { blockLabels } from "~~/shared/utils/content/render";
 
 /**
@@ -36,7 +36,7 @@ const hasText = computed(
 
 /** "3. Devolución · párrafo 2", from the first paragraph it touches. */
 const place = computed(() => {
-  const first = touchedBlockIds(props.amendment.ops)[0];
+  const first = firstTouchedBlockId(props.amendment.ops, props.base);
   if (!first) return null;
   const label = blockLabels(props.base).get(first);
   if (!label) return null;

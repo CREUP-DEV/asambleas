@@ -94,6 +94,32 @@
       "previewUnavailableDescription": "The operations of this amendment no longer match the base text of the document.",
       "inserted": "Added:",
       "removed": "Removed:",
+      "formatted": "Format change:",
+      "format": {
+        "bold_on": "becomes bold",
+        "bold_off": "is no longer bold",
+        "italic_on": "becomes italic",
+        "italic_off": "is no longer italic",
+        "underline_on": "becomes underlined",
+        "underline_off": "is no longer underlined",
+        "strike_on": "becomes struck through",
+        "strike_off": "is no longer struck through",
+        "link_on": "becomes a link",
+        "link_off": "is no longer a link",
+        "link_changed": "the link address changes",
+        "paragraph": "becomes a normal paragraph",
+        "heading": "becomes a level {value} heading",
+        "quote": "becomes a quote",
+        "bullet_list": "becomes a bulleted list",
+        "ordered_list": "becomes a numbered list",
+        "list_level": "moves to level {value} of the list",
+        "list_marker": "the numbering changes to \"{value}\"",
+        "list_start": "the numbering starts at {value}",
+        "list_continue": "the numbering carries on from before",
+        "align_start": "is aligned to the left",
+        "align_center": "is centred",
+        "align_right": "is aligned to the right"
+      },
       "fragmentFrom": "{text} (from amendment {label})",
       "outline": {
         "button": "Contents",
@@ -1239,16 +1265,11 @@
       "more": "More"
     },
     "card": {
-      "global": "Whole text",
       "sources": "Combines {list}",
       "transactedIn": "Merged into {list}",
       "mainAuthor": "main",
-      "proposedIn": "In proposed transactional {list} | In proposed transactionals {list}",
-      "position": {
-        "accept": "{member} accepts it",
-        "reject": "{member} rejects it",
-        "transact": "{member} proposes a transactional"
-      }
+      "moreAuthors": "and 1 more | and {count} more",
+      "proposedIn": "In proposed transactional {list} | In proposed transactionals {list}"
     },
     "list": {
       "label": "Amendments in text order",
@@ -1266,8 +1287,16 @@
     "filters": {
       "search": "Search amendments",
       "searchPlaceholder": "Code, member or justification",
-      "button": "Filters",
-      "buttonActive": "Active filters: {count}",
+      "button": "More filters",
+      "buttonActive": "More filters. In use: {count}",
+      "chipsLabel": "Which amendments to show",
+      "chips": {
+        "all": "All",
+        "pending": "Undecided",
+        "late": "Late",
+        "mine": "Mine",
+        "mineWaiting": "Mine. 1 waits for you | Mine. {count} wait for you"
+      },
       "status": "Where it stands",
       "kind": "Kind of amendment",
       "member": "Who presents it",
@@ -1295,7 +1324,15 @@
       }
     },
     "detail": {
-      "close": "Close the amendment",
+      "back": "Back to the list",
+      "navLabel": "Go to another amendment",
+      "position": "{n} of {total}",
+      "whatChanges": "What changes",
+      "why": "Why",
+      "showInText": "See it in the document",
+      "showDetails": "See details",
+      "hideDetails": "Hide details",
+      "history": "History",
       "paragraph": "paragraph {n}",
       "changes": "Proposed changes",
       "globalReplace": "Replaces “{find}” with “{replace}” throughout the text",
@@ -1327,8 +1364,6 @@
       "deleted": "Draft deleted",
       "deleteFailed": "The draft could not be deleted",
       "submittedDescription": "It will be checked before anyone else can see it.",
-      "showHistory": "Show the history",
-      "hideHistory": "Hide the history",
       "presented": "Amendment presented",
       "presentedDescription": "The whole assembly can see it now.",
       "transact": "Propose a transactional amendment with this one",
@@ -1488,7 +1523,8 @@
         "other": "Change recorded",
         "amendment_validated": "Validated by the Secretariat",
         "amendment_published": "Published",
-        "amendment_correction_requested": "The Secretariat asked for a correction"
+        "amendment_correction_requested": "The Secretariat asked for a correction",
+        "amendment_reclassified": "The Secretariat changed the kind of amendment"
       },
       "admissionMethods": {
         "mesa": "By decision of the presiding board",
@@ -1535,26 +1571,19 @@
     "composer": {
       "titleNew": "Present an amendment",
       "titleEdit": "Continue the draft",
-      "close": "Close the amendment editor",
+      "close": "Close without sending",
       "modes": {
-        "passage": "Change this text",
-        "delete": "Remove this text",
         "global": "Change a word throughout the document",
         "return": "Send the document back",
-        "alternative": "Propose an alternative text",
-        "add": "Add a paragraph after it"
+        "alternative": "Propose an alternative text"
       },
       "modeDescriptions": {
-        "passage": "Write the text as you want it to read. The change is marked for you.",
-        "delete": "You propose removing the paragraphs you chose.",
         "global": "The word or phrase changes throughout the document.",
         "return": "You propose sending the document back to whoever presented it, without changing the text. You only explain why.",
         "alternative": "You propose replacing the whole document with a new text."
       },
-      "editorLabel": "Amended text of the passage",
+      "editorLabel": "Text of the document",
       "editorPlaceholder": "Write the text you propose",
-      "editorHint": "Change, delete or add whatever you want. Whatever you leave untouched stays as it is.",
-      "deleteHint": "This is what would be removed from the text.",
       "find": "Current term",
       "findPlaceholder": "e.g. Extended Executive Committee",
       "replace": "New term",
@@ -1567,12 +1596,12 @@
       "alternativePlaceholder": "Write the alternative text here",
       "copyOriginal": "Start from the current text",
       "issues": {
-        "no_selection": "Select one or more paragraphs in the text first.",
         "no_changes": "You have not changed anything yet.",
         "find_empty": "Type the term you want to replace.",
         "same_term": "The new term is the same as the current one.",
         "no_matches": "The term does not appear in the text (whole words, case-sensitive).",
-        "alternative_empty": "Write the alternative text."
+        "alternative_empty": "Write the alternative text.",
+        "kind_missing": "Choose what kind of amendment it is."
       },
       "errorsTitle": "The amendment cannot be saved like this",
       "justificationPlaceholder": "Explain why you propose this change",
@@ -1581,16 +1610,13 @@
       "onBehalfPlaceholder": "Choose the presenting member",
       "onBehalfHint": "For amendments dictated in session. Who recorded it is kept on record.",
       "onBehalfRequired": "Choose the member presenting the amendment.",
-      "coAuthors": "Are you presenting it with other members?",
-      "coAuthorsHint": "Add them only if the amendment is a joint one.",
-      "coAuthorsPlaceholder": "Add members (optional)",
       "memberSearch": "Search member",
       "lateTitle": "Amendment window closed",
       "lateWarning": "It will arrive late: the Mesa will decide whether to admit it.",
       "noMember": "Your account is not linked to any member",
       "noMemberDescription": "Only members can submit amendments. Contact the Secretariat if you think this is a mistake.",
       "saveDraft": "Save draft",
-      "submit": "Send to the Secretariat",
+      "submit": "Send",
       "saved": "Draft saved",
       "saveFailed": "The amendment could not be saved",
       "submitted": "Amendment sent to the Secretariat",
@@ -1618,25 +1644,6 @@
       "titleCorrection": "Fix the amendment",
       "correctionTitle": "The Secretariat asks you to fix it",
       "step": "Step {n}:",
-      "steps": {
-        "what": "What you want to do",
-        "write": "Write how you want it to read",
-        "writeAdd": "Write the new paragraph",
-        "writeGlobal": "Which word you want to change",
-        "writeAlternative": "Write the text you propose",
-        "check": "Check the change",
-        "why": "Explain why (justification)"
-      },
-      "changeChoice": "Change",
-      "hideChoices": "Hide options",
-      "selectFirst": "To change or remove a text, first choose the paragraph in the document.",
-      "advanced": "Amendment to the whole text (advanced)",
-      "totalityLegend": "Amendment to the whole text",
-      "addHint": "Write the new paragraph below the current text. Whatever you leave untouched stays as it is.",
-      "justificationHelp": "It is required to send it and helps everyone understand your proposal.",
-      "moreOptions": "More options: co-authors and formal amendments",
-      "formal": "It only fixes typos, style or numbering",
-      "formalDescription": "It is a formal amendment: it does not change the meaning of the text.",
       "reviewNotice": "The Secretariat will check it before anyone else can see it.",
       "submittedDescription": "It will be checked before anyone else can see it. You can follow it under “My amendments”.",
       "lateKeptTitle": "It arrived late",
@@ -1644,7 +1651,53 @@
       "correctionOnTime": "You sent it on time: even though the deadline has passed, it still counts as on time once you fix it.",
       "mainAuthor": "Main author (answers transactionals)",
       "mainAuthorHint": "Only the main author accepts or rejects the transactionals proposed over this amendment. The others will see its answer.",
-      "mainAuthorRequired": "Choose who the main author is."
+      "mainAuthorRequired": "Choose who the main author is.",
+      "intro": "Change, delete or add whatever you want, as in any text. Whatever you leave untouched stays the same. Everything you change will be one amendment.",
+      "panelLabel": "Amendment details",
+      "kind": {
+        "question": "What kind of amendment is it?",
+        "partial": "It changes the content",
+        "partialHint": "It changes what the text says.",
+        "formal": "It only fixes the form",
+        "formalHint": "Typos, style or numbering. It does not change what it says."
+      },
+      "who": {
+        "question": "Who presents it?",
+        "solo": "Only {member}",
+        "soloUnknown": "Only that member",
+        "others": "With other members",
+        "othersHint": "You present it together.",
+        "members": "Who do you present it with?",
+        "placeholder": "Choose the members",
+        "onBehalfToggle": "Present it on behalf of another member"
+      },
+      "why": {
+        "question": "Why?",
+        "help": "You need it to send the amendment."
+      },
+      "changed": "You have not changed anything yet | You have changed one paragraph | You have changed {count} paragraphs",
+      "review": {
+        "action": "Review and send",
+        "title": "Review your amendment",
+        "description": "This is how everyone else will see what you change.",
+        "back": "Back to editing",
+        "problems": "Before you can save it, this is missing",
+        "kind": "Kind",
+        "noKind": "Not chosen",
+        "who": "Presented by",
+        "noWho": "Nobody chosen",
+        "mainMark": "{member} (main author)",
+        "why": "Why",
+        "noWhy": "You have not explained why yet.",
+        "changes": "What changes"
+      },
+      "leave": {
+        "title": "Leave without saving?",
+        "description": "If you leave now, you lose the changes you have not saved.",
+        "stay": "Keep editing",
+        "discard": "Leave without saving",
+        "confirm": "You have unsaved changes. Do you want to leave and lose them?"
+      }
     },
     "errors": {
       "empty": "The amendment proposes no change.",
@@ -1662,13 +1715,38 @@
       "overlapping_ops": "Two changes of the amendment overlap.",
       "totality_return_ops": "A return amendment cannot change the text.",
       "inconsistent_counts": "The votes cast exceed the members present.",
-      "unknown": "The amendment is not valid."
+      "unknown": "The amendment is not valid.",
+      "format_shape": "A formatting change is not stated properly.",
+      "format_image": "The format of an image cannot be changed.",
+      "duplicate_format": "It changes the format of the same paragraph twice.",
+      "marks_out_of_range": "A format falls outside the text it changes."
     },
     "lateState": {
       "awaiting": "Waiting for the assembly to decide whether to consider it",
       "awaitingSentence": "It is waiting for the assembly to decide whether to consider it. Until then it is neither debated nor voted on."
     },
-    "lateAdmitted": "Late · admitted"
+    "lateAdmitted": "Late · admitted",
+    "reclassify": {
+      "label": "Kind of amendment",
+      "current": {
+        "partial": "It is filed as an amendment of content. If it only fixes the form, you can change it.",
+        "formal": "It is filed as an amendment of form. If it changes the content, you can change it."
+      },
+      "action": {
+        "formal": "Change to amendment of form",
+        "partial": "Change to amendment of content"
+      },
+      "done": {
+        "formal": "It is now an amendment of form",
+        "partial": "It is now an amendment of content"
+      },
+      "doneDescription": "It stays in the history and its authors will see it in their news.",
+      "failed": "The kind of amendment could not be changed",
+      "changed": {
+        "formal": "From amendment of content to amendment of form",
+        "partial": "From amendment of form to amendment of content"
+      }
+    }
   },
   "admin": {
     "title": "Administration",
@@ -1990,6 +2068,10 @@
         "removed": {
           "sample": "removed text",
           "text": "text removed by an amendment"
+        },
+        "formatted": {
+          "sample": "text with new formatting",
+          "text": "text whose formatting an amendment changes; the change follows in small print"
         },
         "code": "The superscript code names the amendment behind each change. See the annex."
       },
@@ -2354,6 +2436,8 @@
         "validated": "Validated: {amendment} can now be debated.",
         "published": "Published: the whole assembly can now read {amendment}.",
         "correction": "The Secretariat asks you to correct {amendment}. Send it again once it is ready.",
+        "reclassifiedFormal": "The Secretariat changed {amendment} to an amendment of form.",
+        "reclassifiedContent": "The Secretariat changed {amendment} to an amendment of content.",
         "admitted": "The assembly decided to treat {amendment}: it will be debated.",
         "inadmissible": "Not admitted: {amendment} will not be debated.",
         "approved": "Approved: {amendment} goes into the text.",
@@ -2851,13 +2935,6 @@
     "consolidatedPage": "Consolidated text",
     "detailDescription": "Amendment details",
     "includeAccepted": "Include those the document's presenter accepts",
-    "newMenu": {
-      "global": "Change a word throughout the document",
-      "return": "Send the document back",
-      "alternative": "Propose an alternative text",
-      "label": "Other amendments",
-      "totality": "Amendment to the whole text"
-    },
     "panes": {
       "label": "View",
       "text": "Text",
@@ -2866,29 +2943,16 @@
     "modes": {
       "label": "How to view the text",
       "original": "Original text",
-      "amended": "One amendment on the text",
-      "consolidated": "Text with what was approved",
-      "compare": "Original and result",
-      "button": "View: {mode}"
+      "amended": "With the amendment",
+      "consolidated": "With what was approved",
+      "compare": "Compare"
     },
     "tabs": {
-      "label": "Amendment lists",
-      "all": "All",
       "mine": "My amendments"
     },
     "mine": {
       "empty": "You have not presented any amendments yet",
       "emptyDescription": "Here you will see your drafts and where each amendment you send stands."
-    },
-    "selection": {
-      "label": "Paragraph selection",
-      "hint": "Click the paragraph you want to change.",
-      "count": "One paragraph selected | {count} paragraphs selected",
-      "amend": "Change this text",
-      "addAfter": "Add a paragraph after it",
-      "delete": "Remove this paragraph | Remove these paragraphs",
-      "clear": "Clear the selection",
-      "rangeHint": "Hold Shift to pick several."
     },
     "amended": {
       "empty": "Choose an amendment",
@@ -2964,7 +3028,14 @@
     },
     "editRecord": "Edit document record",
     "cta": {
-      "present": "Present an amendment"
+      "present": "Present an amendment",
+      "otherWays": "Other ways to amend",
+      "global": "Change a word throughout the document",
+      "globalHint": "Changes a word or phrase every time it appears.",
+      "return": "Send the document back",
+      "returnHint": "Asks for it to go back to whoever presented it, without changing the text.",
+      "alternative": "Alternative text",
+      "alternativeHint": "Proposes a new text in place of the whole document."
     },
     "more": {
       "label": "More",
@@ -2972,7 +3043,6 @@
       "transactional": "Propose a transactional amendment",
       "answers": "See the answers"
     },
-    "includeAcceptedOn": "With those the document's presenter accepts",
     "corrections": {
       "title": "The Secretariat asks you to fix one amendment | The Secretariat asks you to fix {count} amendments",
       "description": "Read its note, fix it and send it again. | Read their notes, fix them and send them again.",
@@ -4690,6 +4760,7 @@
       "amendment_submitted": "Amendment submitted",
       "amendment_withdrawn": "Amendment withdrawn",
       "amendment_correction_requested": "@:amendment.history.events.amendment_correction_requested",
+      "amendment_reclassified": "@:amendment.history.events.amendment_reclassified",
       "amendment_validated": "Amendment validated by the Secretariat",
       "amendment_published": "Amendment published",
       "amendment_admitted": "Amendment admitted",

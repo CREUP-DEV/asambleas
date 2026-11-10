@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { AmendmentOp, Block } from "../../types/content";
+import type { AmendmentOp, Block, FormatChange } from "../../types/content";
 import { consolidate, mapPosition, previewAmendment } from "./consolidate";
 import { diffPassage, diffText } from "./diff";
-import { blocksSchema } from "../schemas/content";
+import { amendmentOpsSchema, blocksSchema } from "../schemas/content";
 import { blocksToEditor, editorToBlocks } from "./editor";
 import { formatListNumber, orderedListNumbers } from "./lists";
 import { groupTables, tableGrid, type TableGroup } from "./tables";
@@ -842,5 +842,622 @@ describe("alignment", () => {
 
   it("carries the alignment through consolidation", () => {
     expect(consolidate(aligned, []).blocks).toEqual(aligned);
+  });
+});
+
+describe("format changes", () => {
+  const BOLD = "en su totalidad";
+  const boldFrom = base[1]!.text.indexOf(BOLD);
+  const bolded: Block = {
+    ...base[1]!,
+    marks: [{ type: "bold", from: boldFrom, to: boldFrom + BOLD.length }],
+  };
+  const labels = {
+    inserted: "Se añade:",
+    removed: "Se quita:",
+    formatted: "Cambia el formato:",
+    format: (change: FormatChange) =>
+      change.value === undefined
+        ? change.code
+        : `${change.code} ${change.value}`,
+  };
+  const listBase: Block[] = [
+    p("l000", "Antes de la lista."),
+    { ...p("l001", "Primero"), type: "list_item", level: 0, list: "bullet" },
+    { ...p("l002", "Segundo"), type: "list_item", level: 1, list: "bullet" },
+    { ...p("l003", "Tercero"), type: "list_item", level: 0, list: "bullet" },
+  ];
+
+  it("turns new bold on kept text into one operation that keeps the text", () => {
+    const ops = diffPassage([base[1]!], [bolded], "h001", newId);
+    expect(ops).toEqual([
+      {
+        op: "replace",
+        blockId: "b001",
+        from: boldFrom,
+        to: boldFrom + BOLD.length,
+        text: BOLD,
+        baseText: BOLD,
+        marks: [{ type: "bold", from: 0, to: BOLD.length }],
+      },
+    ]);
+    expect(validateOps(base, ops)).toEqual([]);
+    expect(changeKinds(ops)).toEqual(["modification"]);
+    const { blocks, annotated } = consolidate(base, [{ id: "A", ops }]);
+    expect(blocks[1]).toEqual(bolded);
+    expect(annotated[1]!.segments).toEqual([
+      { text: base[1]!.text.slice(0, boldFrom), source: null },
+      { text: BOLD, source: "A", format: [{ code: "bold_on" }] },
+      { text: base[1]!.text.slice(boldFrom + BOLD.length), source: null },
+    ]);
+  });
+
+  it("says which marks a text loses and when a link changes", () => {
+    const marked: Block = {
+      ...base[3]!,
+      marks: [
+        { type: "italic", from: 0, to: 11 },
+        { type: "link", from: 0, to: 11, href: "https://creup.es/a" },
+      ],
+    };
+    const edited: Block = {
+      ...marked,
+      marks: [{ type: "link", from: 0, to: 11, href: "https://creup.es/b" }],
+    };
+    const ops = diffPassage([marked], [edited], null, newId);
+    expect(validateOps([marked], ops)).toEqual([]);
+    const { blocks, annotated } = consolidate([marked], [{ id: "A", ops }]);
+    expect(blocks[0]).toEqual(edited);
+    expect(annotated[0]!.segments[0]!.format).toEqual([
+      { code: "italic_off" },
+      { code: "link_changed" },
+    ]);
+  });
+
+  it("carries a change of text and a change of format together", () => {
+    const text = base[1]!.text.replace("deberá", "tendrá que");
+    const at = text.indexOf("tendrá que");
+    const end = text.indexOf(BOLD) + BOLD.length;
+    const edited: Block = {
+      ...base[1]!,
+      text,
+      marks: [
+        { type: "italic", from: at, to: at + 10 },
+        { type: "bold", from: text.indexOf(BOLD), to: end },
+      ],
+    };
+    const ops = diffPassage([base[1]!], [edited], "h001", newId);
+    expect(ops).toHaveLength(2);
+    expect(ops[0]).toMatchObject({
+      baseText: "deberá",
+      text: "tendrá que",
+      marks: [{ type: "italic", from: 0, to: 10 }],
+    });
+    expect(ops[1]).toMatchObject({ baseText: BOLD, text: BOLD });
+    expect(validateOps(base, ops)).toEqual([]);
+    const { blocks, annotated } = consolidate(base, [{ id: "A", ops }]);
+    expect(blocks[1]).toEqual(edited);
+    // The new text is struck and written again; only the kept text is
+    // labelled as a change of format.
+    expect(
+      annotated[1]!.segments.filter((segment) => segment.source === "A"),
+    ).toEqual([
+      { text: "deberá", source: "A", removed: true },
+      { text: "tendrá que", source: "A" },
+      { text: BOLD, source: "A", format: [{ code: "bold_on" }] },
+    ]);
+  });
+
+  it("leaves text edits without new formatting as they always were", () => {
+    const marked: Block = {
+      ...base[1]!,
+      marks: [{ type: "bold", from: 3, to: 30 }],
+    };
+    const text = marked.text.replace("deberá", "tendrá que");
+    const edited: Block = {
+      ...marked,
+      text,
+      marks: [{ type: "bold", from: 3, to: 34 }],
+    };
+    const ops = diffPassage([marked], [edited], null, newId);
+    expect(ops).toEqual(diffText(marked, text));
+    expect(ops.every((op) => !("marks" in op) && !("block" in op))).toBe(true);
+    const result = consolidate([marked], [{ id: "A", ops }]);
+    // The marks come out as they were mapped: same objects, same order.
+    expect(result.blocks[0]!.marks).toEqual([
+      { type: "bold", from: 3, to: 34 },
+    ]);
+    expect(result.annotated[0]!.format).toBeUndefined();
+  });
+
+  it("turns a paragraph into a heading with one operation on the block", () => {
+    const edited: Block = { ...base[2]!, type: "heading", level: 2 };
+    const ops = diffPassage([base[2]!], [edited], "b001", newId);
+    expect(ops).toEqual([
+      {
+        op: "replace",
+        blockId: "b002",
+        from: 0,
+        to: 0,
+        text: "",
+        baseText: "",
+        block: { type: "heading", level: 2 },
+      },
+    ]);
+    expect(validateOps(base, ops)).toEqual([]);
+    expect(changeKinds(ops)).toEqual(["modification"]);
+    const { blocks, annotated } = consolidate(base, [{ id: "A", ops }]);
+    expect(blocks[2]).toEqual(edited);
+    expect(annotated[2]).toMatchObject({
+      type: "heading",
+      level: 2,
+      status: "kept",
+      format: { source: "A", changes: [{ code: "heading", value: 2 }] },
+    });
+    // A block that only changes its format still shows in the preview.
+    expect(
+      previewAmendment(base, { id: "A", ops }).map((block) => block.id),
+    ).toEqual(["b002"]);
+  });
+
+  it("changes the kind, level, numbering and alignment of a list item", () => {
+    const edited: Block[] = [
+      listBase[0]!,
+      { ...listBase[1]!, list: "ordered", marker: "a)" },
+      { ...listBase[2]!, level: 0 },
+      {
+        ...p("l003", "Tercero"),
+        align: "center",
+      },
+    ];
+    const ops = diffPassage(listBase, edited, null, newId);
+    expect(validateOps(listBase, ops)).toEqual([]);
+    const { blocks, annotated } = consolidate(listBase, [{ id: "A", ops }]);
+    expect(blocks).toEqual(edited);
+    expect(annotated.map((block) => block.format?.changes)).toEqual([
+      undefined,
+      [{ code: "ordered_list" }, { code: "list_marker", value: "a)" }],
+      [{ code: "list_level", value: 1 }],
+      [{ code: "paragraph" }, { code: "align_center" }],
+    ]);
+    // Formats come out as the block schema stores them.
+    expect(blocksSchema.parse(blocks)).toEqual(blocks);
+  });
+
+  it("does not take for a change what the editor does to a passage alone", () => {
+    // A nested item edited without its parent comes back at the first
+    // level, and a line break carries no marks.
+    const nested: Block = {
+      ...p("n001", "Uno\ndos", [{ type: "bold", from: 0, to: 7 }]),
+      type: "list_item",
+      level: 1,
+      list: "bullet",
+    };
+    const echoed = editorToBlocks(blocksToEditor([nested]), newId);
+    expect(echoed[0]).toMatchObject({ level: 0 });
+    expect(echoed[0]!.marks).toHaveLength(2);
+    expect(diffPassage([nested], echoed, null, newId)).toEqual([]);
+
+    // What the author changes on top of that still counts.
+    const edited: Block[] = [
+      {
+        ...echoed[0]!,
+        text: "Uno\ntres",
+        marks: [
+          { type: "bold", from: 0, to: 3 },
+          { type: "bold", from: 4, to: 8 },
+        ],
+      },
+    ];
+    const ops = diffPassage([nested], edited, null, newId);
+    expect(ops).toEqual(diffText(nested, "Uno\ntres"));
+  });
+
+  it("keeps the format of new text where the stored marks are cut in pieces", () => {
+    // An imported text stores one mark per piece: bold, bold and italic,
+    // bold. The editor gives one bold over all of it.
+    const imported = p("i001", "Hello world again", [
+      { type: "bold", from: 0, to: 6 },
+      { type: "bold", from: 6, to: 11 },
+      { type: "italic", from: 6, to: 11 },
+      { type: "bold", from: 11, to: 17 },
+    ]);
+    const echoed = editorToBlocks(blocksToEditor([imported]), newId);
+    expect(diffPassage([imported], echoed, null, newId)).toEqual([]);
+
+    const check = (text: string, marks: Block["marks"]) => {
+      const edited: Block[] = [{ ...echoed[0]!, text, marks }];
+      const ops = diffPassage([imported], edited, null, newId);
+      expect(validateOps([imported], ops)).toEqual([]);
+      const [result] = consolidate([imported], [{ id: "A", ops }]).blocks;
+      expect(result!.text).toBe(text);
+      // Every character ends up as the editor showed it.
+      expect(
+        editorToBlocks(blocksToEditor([result!]), newId)[0]!.marks,
+      ).toEqual(marks);
+    };
+    // Typed where two pieces meet.
+    check("Hello big world again", [
+      { type: "bold", from: 0, to: 21 },
+      { type: "italic", from: 10, to: 15 },
+    ]);
+    // Typed over two pieces.
+    check("Hi there again", [{ type: "bold", from: 0, to: 14 }]);
+  });
+
+  it("does not take for a change a list that still starts at 1", () => {
+    const item = (id: string, text: string, extra: Partial<Block> = {}) => ({
+      ...p(id, text),
+      type: "list_item" as const,
+      level: 0,
+      list: "ordered" as const,
+      ...extra,
+    });
+    // Two lists in a row: only "starts at 1" tells the second from the first.
+    const lists: Block[] = [
+      item("o001", "a"),
+      item("o002", "b"),
+      item("o003", "c", { start: 1 }),
+      item("o004", "d"),
+    ];
+    const echoed = editorToBlocks(blocksToEditor(lists), newId);
+    expect(echoed).toEqual(lists);
+
+    // A paragraph between them: the editor drops the start, which is the same.
+    const parted = editorToBlocks(
+      blocksToEditor([
+        lists[0]!,
+        lists[1]!,
+        p("fresh", "Entre las dos"),
+        lists[2]!,
+        lists[3]!,
+      ]),
+      newId,
+    );
+    expect(parted[3]!.start).toBeUndefined();
+    expect(diffPassage(lists, parted, null, newId)).toEqual([
+      { op: "insert", afterBlockId: "o002", blocks: [parted[2]!] },
+    ]);
+
+    // Joining the two lists is a change: the numbering carries on.
+    const joined = lists.map((block) => ({ ...block, start: undefined }));
+    const ops = diffPassage(lists, joined, null, newId);
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toMatchObject({
+      blockId: "o003",
+      block: { list: "ordered" },
+    });
+  });
+
+  it("drops a link the schema would not keep when reading the editor", () => {
+    const linked = (href: string) =>
+      editorToBlocks(
+        {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              attrs: { blockId: "b003" },
+              content: [
+                {
+                  type: "text",
+                  text: "Disposición final.",
+                  marks: [{ type: "link", attrs: { href } }],
+                },
+              ],
+            },
+          ],
+        },
+        newId,
+      );
+    // Pasted over the text: no operation, as the server would see none.
+    expect(linked("ftp://host/file")[0]!.marks).toEqual([]);
+    expect(
+      diffPassage([base[3]!], linked("ftp://host/file"), null, newId),
+    ).toEqual([]);
+    const ops = diffPassage(
+      [base[3]!],
+      linked(" https://creup.es "),
+      null,
+      newId,
+    );
+    expect(ops).toEqual(amendmentOpsSchema.parse(ops));
+    expect(ops[0]).toMatchObject({
+      marks: [{ type: "link", from: 0, to: 18, href: "https://creup.es" }],
+    });
+  });
+
+  it("rejects formatting operations that change nothing or are malformed", () => {
+    const reasons = (ops: AmendmentOp[], blocks = base) =>
+      validateOps(blocks, ops).map((error) => error.reason);
+    const format = (block: object, extra: object = {}): AmendmentOp =>
+      ({
+        op: "replace",
+        blockId: "b002",
+        from: 0,
+        to: 0,
+        text: "",
+        baseText: "",
+        block,
+        ...extra,
+      }) as AmendmentOp;
+
+    expect(reasons([format({ type: "paragraph" })])).toEqual(["noop"]);
+    expect(reasons([format({ type: "image" })])).toEqual(["format_shape"]);
+    expect(reasons([format({ type: "heading", level: 9 })])).toEqual([
+      "format_shape",
+    ]);
+    expect(reasons([format({ type: "quote" }, { marks: [] })])).toEqual([
+      "format_shape",
+    ]);
+    expect(
+      reasons([format({ type: "quote" }), format({ type: "heading" })]),
+    ).toEqual(["duplicate_format"]);
+    expect(
+      reasons([
+        format({ type: "quote" }),
+        { op: "delete", blockIds: ["b002"] },
+      ]),
+    ).toEqual(["replace_in_deleted_block"]);
+
+    const image: Block = {
+      id: "i001",
+      type: "image",
+      text: "",
+      marks: [],
+      image: { asset: "a".repeat(24), width: 10, height: 10, alt: "" },
+    };
+    expect(
+      reasons(
+        [{ ...format({ type: "quote" }), blockId: "i001" } as never],
+        [image],
+      ),
+    ).toEqual(["format_image"]);
+
+    const marks = (list: Block["marks"]): AmendmentOp => ({
+      op: "replace",
+      blockId: "b002",
+      from: 4,
+      to: 18,
+      text: "universidades ",
+      baseText: "universidades ",
+      marks: list,
+    });
+    expect(reasons([marks([])])).toEqual(["noop"]);
+    expect(reasons([marks([{ type: "bold", from: 0, to: 40 }])])).toEqual([
+      "marks_out_of_range",
+    ]);
+    expect(reasons([marks([{ type: "bold", from: 0, to: 13 }])])).toEqual([]);
+    // Two changes of format over the same text collide like two of text.
+    expect(
+      reasons([
+        marks([{ type: "bold", from: 0, to: 13 }]),
+        marks([{ type: "italic", from: 0, to: 13 }]),
+      ]),
+    ).toEqual(["overlapping_ops"]);
+  });
+
+  it("counts a change of format as the text or the block it touches", () => {
+    const boldOps = diffPassage([base[1]!], [bolded], "h001", newId);
+    const sameText = diffText(
+      base[1]!,
+      base[1]!.text.replace("totalidad", "integridad"),
+    );
+    const otherText = diffText(
+      base[1]!,
+      base[1]!.text.replace("deberá", "tendrá que"),
+    );
+    expect(overlapBetween(boldOps, sameText)).toBe("same_text");
+    expect(overlapBetween(boldOps, otherText)).toBeNull();
+
+    const heading: AmendmentOp[] = [
+      {
+        op: "replace",
+        blockId: "b001",
+        from: 0,
+        to: 0,
+        text: "",
+        baseText: "",
+        block: { type: "heading", level: 3 },
+      },
+    ];
+    // A new format takes the whole block.
+    expect(overlapBetween(heading, otherText)).toBe("same_text");
+    expect(overlapBetween(otherText, heading)).toBe("same_text");
+    expect(overlapBetween(heading, heading)).toBe("same_text");
+    expect(
+      overlapBetween(heading, [{ op: "delete", blockIds: ["b001"] }]),
+    ).toBe("removed_block");
+    expect(
+      overlapBetween(heading, [
+        { op: "insert", afterBlockId: "b001", blocks: [p("x001", "Nuevo")] },
+      ]),
+    ).toBeNull();
+    expect(
+      findOverlaps([
+        { id: "A", ops: heading },
+        { id: "B", ops: otherText },
+        { id: "C", ops: boldOps },
+      ]).pairs,
+    ).toEqual(
+      expect.arrayContaining([
+        { a: "A", b: "B", kind: "same_text" },
+        { a: "A", b: "C", kind: "same_text" },
+      ]),
+    );
+
+    // The second one to arrive is left out, never applied halfway.
+    const result = consolidate(base, [
+      { id: "A", ops: heading },
+      { id: "B", ops: otherText },
+      { id: "C", ops: diffText(base[2]!, "Otro texto.") },
+    ]);
+    expect(result.applied).toEqual(["A", "C"]);
+    expect(result.conflicts).toEqual([
+      { amendmentId: "B", conflictsWith: ["A"] },
+    ]);
+  });
+
+  it("applies two amendments that format different parts of a block", () => {
+    const first = diffPassage([base[1]!], [bolded], "h001", newId);
+    const italicFrom = base[1]!.text.indexOf("créditos");
+    const second = diffPassage(
+      [base[1]!],
+      [
+        {
+          ...base[1]!,
+          marks: [{ type: "italic", from: italicFrom, to: italicFrom + 8 }],
+        },
+      ],
+      "h001",
+      newId,
+    );
+    const one = consolidate(base, [
+      { id: "A", ops: first },
+      { id: "B", ops: second },
+    ]);
+    const other = consolidate(base, [
+      { id: "B", ops: second },
+      { id: "A", ops: first },
+    ]);
+    expect(one.conflicts).toEqual([]);
+    expect(one.blocks).toEqual(other.blocks);
+    expect(one.blocks[1]!.marks).toEqual([
+      { type: "bold", from: boldFrom, to: boldFrom + BOLD.length },
+      { type: "italic", from: italicFrom, to: italicFrom + 8 },
+    ]);
+  });
+
+  it("shows a change of format with its text once and a label in words", () => {
+    const ops = diffPassage([base[1]!], [bolded], "h001", newId);
+    const { annotated } = consolidate(base, [{ id: "A", ops }]);
+    const html = renderAnnotated([annotated[1]!], {
+      mode: "diff",
+      diffLabels: labels,
+    });
+    expect(html).toContain(
+      '<span class="cx-fmt" data-amendment-id="A">' +
+        '<span class="sr-only">Cambia el formato: </span>' +
+        "<strong>en su totalidad</strong>" +
+        '<span class="cx-fmt-label">bold_on</span></span>',
+    );
+    expect(html).not.toContain("<del");
+    expect(html).not.toContain("<ins");
+
+    const hostile = renderAnnotated([annotated[1]!], {
+      mode: "diff",
+      diffLabels: { ...labels, format: () => "<b>&" },
+    });
+    expect(hostile).toContain(
+      '<span class="cx-fmt-label">&lt;b&gt;&amp;</span>',
+    );
+
+    // Without words for it the text still shows its new format.
+    expect(renderAnnotated([annotated[1]!], { mode: "diff" })).toContain(
+      '<span class="cx-fmt" data-amendment-id="A"><strong>en su totalidad</strong></span>',
+    );
+    expect(renderAnnotated([annotated[1]!], { mode: "clean" })).toBe(
+      renderBlocks([bolded]),
+    );
+    expect(
+      renderAnnotated([annotated[1]!], {
+        mode: "provenance",
+        label: () => "7",
+      }),
+    ).toContain(
+      '<span class="cx-prov" data-amendment-id="A"><strong>en su totalidad</strong></span><sup class="cx-ref" aria-hidden="true">7</sup>',
+    );
+  });
+
+  it("shows a block in its new format with a label at its start", () => {
+    const edited: Block = { ...base[2]!, type: "heading", level: 2 };
+    const ops = diffPassage([base[2]!], [edited], "b001", newId);
+    const { annotated } = consolidate(base, [{ id: "A", ops }]);
+    const html = renderAnnotated([annotated[2]!], {
+      mode: "diff",
+      diffLabels: labels,
+      focus: "A",
+    });
+    expect(html).toBe(
+      '<h3 data-block-id="b002">' +
+        '<span class="cx-fmt-label cx-fmt-block cx-focus" data-amendment-id="A">' +
+        '<span class="sr-only">Cambia el formato: </span>heading 2</span>' +
+        "Las universidades habilitarán un procedimiento de alegaciones.</h3>",
+    );
+    expect(renderAnnotated([annotated[2]!], { mode: "clean" })).toBe(
+      renderBlocks([edited]),
+    );
+    expect(
+      renderAnnotated([annotated[2]!], {
+        mode: "provenance",
+        label: () => "7",
+      }),
+    ).toBe(
+      '<h3 data-block-id="b002"><span class="cx-prov" data-amendment-id="A">' +
+        "Las universidades habilitarán un procedimiento de alegaciones.</span>" +
+        '<sup class="cx-ref" aria-hidden="true">7</sup></h3>',
+    );
+  });
+
+  it("parses operations with formatting and leaves the old ones as they were", () => {
+    const old = [
+      {
+        op: "replace",
+        blockId: "b001",
+        from: 3,
+        to: 11,
+        text: "estudiantado",
+        baseText: "alumnado",
+      },
+      { op: "delete", blockIds: ["b003"] },
+    ];
+    const parsed = amendmentOpsSchema.parse(old);
+    expect(parsed).toEqual(old);
+    expect(Object.keys(parsed[0]!)).toEqual(Object.keys(old[0]!));
+
+    const [marked, formatted] = amendmentOpsSchema.parse([
+      {
+        op: "replace",
+        blockId: "b001",
+        from: 3,
+        to: 11,
+        text: "alumnado",
+        baseText: "alumnado",
+        marks: [
+          { type: "bold", from: 0, to: 99 },
+          { type: "italic", from: 4, to: 4 },
+          { type: "link", from: 0, to: 4, href: "javascript:alert(1)" },
+        ],
+      },
+      {
+        op: "replace",
+        blockId: "b002",
+        from: 0,
+        to: 0,
+        text: "",
+        baseText: "",
+        block: { type: "list_item", marker: "a)", start: 3 },
+      },
+    ]);
+    expect(marked).toMatchObject({
+      marks: [{ type: "bold", from: 0, to: 8 }],
+    });
+    // A bullet keeps no marker and no start, like a stored block.
+    expect(formatted).toMatchObject({
+      block: { type: "list_item", level: 0, list: "bullet" },
+    });
+    expect(() =>
+      amendmentOpsSchema.parse([
+        {
+          op: "replace",
+          blockId: "b002",
+          from: 0,
+          to: 0,
+          text: "",
+          baseText: "",
+          block: { type: "image" },
+        },
+      ]),
+    ).toThrow();
   });
 });

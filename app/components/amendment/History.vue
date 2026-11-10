@@ -126,6 +126,7 @@ const ICONS: Record<string, string> = {
   amendment_validated: "i-lucide-badge-check",
   amendment_published: "i-lucide-eye",
   amendment_correction_requested: "i-lucide-message-square-warning",
+  amendment_reclassified: "i-lucide-tags",
   amendment_admitted: "i-lucide-badge-check",
   amendment_inadmissible: "i-lucide-ban",
   amendment_withdrawn: "i-lucide-undo-2",
@@ -385,6 +386,12 @@ function detailOf(event: EventDto): string | null {
         text(payload.code),
       );
       return label ? t("amendment.history.replacedBy", { label }) : null;
+    }
+    case "amendment_reclassified": {
+      const to = text(payload.to);
+      return to === "formal" || to === "partial"
+        ? t(`amendment.reclassify.changed.${to}`)
+        : null;
     }
     case "amendment_validated":
       return payload.publish === true

@@ -2,10 +2,7 @@
 import type { AmendmentStatus } from "~~/shared/constants/domain";
 import type { AmendmentDto } from "~~/shared/types/api";
 import { transactionalGroupSources } from "~/composables/amendment/transactional";
-import type {
-  AmendmentGroup,
-  AmendmentRelationView,
-} from "~/composables/amendment/workspace";
+import type { AmendmentGroup } from "~/composables/amendment/workspace";
 
 /**
  * Amendments in text order, grouped by the passage they act on: totality
@@ -20,22 +17,15 @@ const props = withDefaults(
     groups: AmendmentGroup<AmendmentDto>[];
     selectedId?: string | null;
     labelOf: (id: string) => string;
-    relationsOf: (id: string) => AmendmentRelationView[];
     /** The viewer may propose a transactional on this document. */
     canTransact?: boolean;
     /** Status of any amendment of the document, for transactionals. */
     statusOf?: (id: string) => AmendmentStatus | undefined;
-    /** Every amendment of the document, for transactional links. */
-    byId?: ReadonlyMap<string, AmendmentDto>;
-    /** Acronym of the document's main presenter, who answers them. */
-    presenter?: string | null;
   }>(),
   {
     selectedId: null,
     canTransact: false,
     statusOf: undefined,
-    byId: undefined,
-    presenter: null,
   },
 );
 
@@ -120,11 +110,8 @@ function groupLabel(group: AmendmentGroup<AmendmentDto>): string {
               :amendment="amendment"
               :label="labelOf(amendment.id)"
               :label-of="labelOf"
-              :relations="relationsOf(amendment.id)"
               :selected="selectedId === amendment.id"
               :status-of="statusOf"
-              :by-id="byId"
-              :presenter="presenter"
               @select="emit('select', $event)"
             />
           </li>
@@ -135,11 +122,8 @@ function groupLabel(group: AmendmentGroup<AmendmentDto>): string {
         :amendment="group.amendments[0]!"
         :label="labelOf(group.amendments[0]!.id)"
         :label-of="labelOf"
-        :relations="relationsOf(group.amendments[0]!.id)"
         :selected="selectedId === group.amendments[0]!.id"
         :status-of="statusOf"
-        :by-id="byId"
-        :presenter="presenter"
         @select="emit('select', $event)"
       />
     </li>

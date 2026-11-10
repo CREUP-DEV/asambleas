@@ -653,6 +653,51 @@ html {
     text-decoration-thickness: 0.1em;
   }
 
+  /*
+   * Text an amendment keeps and formats anew: the tint of added text over
+   * a dotted line, and a small label that says in words what changes, so
+   * colour never says it alone. The label keeps the page's own colours: it
+   * reads on any tint and on the burgundy heading bar.
+   */
+  .cx-fmt {
+    border-radius: 0.125rem;
+    box-decoration-break: clone;
+    -webkit-box-decoration-break: clone;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+    color: var(--cx-ins-fg, inherit);
+    background-color: var(--cx-ins-bg);
+    text-decoration-line: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: var(--cx-ins-line);
+    text-decoration-thickness: 0.1em;
+    text-underline-offset: 0.2em;
+  }
+
+  .diff-marks .cx-fmt {
+    color: inherit;
+    background-color: transparent;
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 0.12em;
+  }
+
+  .cx-fmt-label {
+    display: inline-block;
+    margin-inline: 0.15em;
+    padding-inline: 0.35em;
+    border: 1px solid var(--ui-border-accented);
+    border-radius: 0.25rem;
+    background-color: var(--ui-bg);
+    color: var(--ui-text-toned);
+    font-family: var(--font-sans);
+    font-size: 0.75em;
+    font-style: normal;
+    font-weight: 500;
+    line-height: 1.4;
+    text-decoration: none;
+    user-select: none;
+  }
+
   /* Whole blocks added or removed by an amendment (diff mode only). */
   .cx-block-inserted,
   .cx-block-deleted {

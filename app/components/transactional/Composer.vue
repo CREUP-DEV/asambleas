@@ -8,7 +8,7 @@ import type {
 } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
 import { diffPassage } from "~~/shared/utils/content/diff";
-import { touchedBlockIds, validateOps } from "~~/shared/utils/content/ops";
+import { firstTouchedBlockId, validateOps } from "~~/shared/utils/content/ops";
 import { blockLabels } from "~~/shared/utils/content/render";
 import {
   amendmentErrorKey,
@@ -141,7 +141,7 @@ const sources = computed(() =>
 const labels = computed(() => blockLabels(props.base));
 
 function whereOf(amendment: AmendmentDto): string | null {
-  const first = touchedBlockIds(amendment.ops)[0];
+  const first = firstTouchedBlockId(amendment.ops, props.base);
   const label = first ? labels.value.get(first) : undefined;
   if (!label) return null;
   const paragraph =

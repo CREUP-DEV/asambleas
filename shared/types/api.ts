@@ -822,6 +822,17 @@ export interface AdmissionBody {
   vote?: VoteInput | null;
 }
 
+/**
+ * POST .../amendments/[amendment]/reclassify (amendment:review): moves a
+ * presented, undecided amendment between "de forma" (`formal`) and the
+ * content kind (`partial`). Returns AmendmentDto.
+ */
+export interface ReclassifyBody {
+  /** The kind it becomes: the other one of the two. */
+  kind: "formal" | "partial";
+  updatedAt: IsoDate;
+}
+
 export interface PositionBody {
   position: ProponentPosition;
   comment?: string | null;

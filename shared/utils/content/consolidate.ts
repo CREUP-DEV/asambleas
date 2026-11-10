@@ -1,6 +1,7 @@
 import type {
   AmendmentInput,
   Block,
+  BlockFormat,
   ConsolidatedBlock,
   ConsolidationConflict,
   ConsolidationResult,
@@ -8,6 +9,16 @@ import type {
   ReplaceOp,
   Segment,
 } from "../../types/content";
+import {
+  blockFormatChanges,
+  blockFormatOf,
+  coverageToMarks,
+  isBlockFormatOp,
+  isMarksOnlyOp,
+  markChanges,
+  markCoverage,
+  normalizeBlockFormat,
+} from "./format";
 import { copyShape } from "./lists";
 import { compareReplaceOps, validateOps } from "./ops";
 import { isHardOverlap, overlapBetween } from "./overlaps";
@@ -42,7 +53,11 @@ export function mapPosition(
   return position + delta;
 }
 
-function mapMarks(marks: Mark[], ops: SourcedReplace[]): Mark[] {
+/** The base marks after the replacements, following the text they sit on. */
+export function mapMarks(
+  marks: Mark[],
+  ops: Pick<ReplaceOp, "from" | "to" | "text">[],
+): Mark[] {
   return marks
     .map((mark) => ({
       ...mark,
@@ -52,6 +67,41 @@ function mapMarks(marks: Mark[], ops: SourcedReplace[]): Mark[] {
     .filter((mark) => mark.from < mark.to);
 }
 
+/**
+ * The marks of a block after its replacements (sorted, none of them a block
+ * format change). Base marks follow the text; where an operation brings its
+ * own `marks`, its new text takes exactly those. A block no operation
+ * formats keeps its marks as they were mapped, untouched.
+ */
+export function resolveMarks(
+  block: Pick<Block, "marks">,
+  ops: Pick<ReplaceOp, "from" | "to" | "text" | "marks">[],
+): Mark[] {
+  const mapped = mapMarks(block.marks, ops);
+  if (!ops.some((op) => op.marks !== undefined)) return mapped;
+
+  let length = 0;
+  let cursor = 0;
+  const placed: { at: number; op: (typeof ops)[number] }[] = [];
+  for (const op of ops) {
+    length += Math.max(0, op.from - cursor);
+    placed.push({ at: length, op });
+    length += op.text.length;
+    cursor = Math.max(cursor, op.to);
+  }
+  // Marks never reach past the text, so its end needs no measuring.
+  const end = Math.max(length, ...mapped.map((mark) => mark.to));
+  const coverage = markCoverage(mapped, end);
+  for (const { at, op } of placed) {
+    if (op.marks === undefined) continue;
+    const own = markCoverage(op.marks, op.text.length);
+    coverage.forEach((row, type) => {
+      for (let i = 0; i < op.text.length; i += 1) row[at + i] = own[type]![i]!;
+    });
+  }
+  return coverageToMarks(coverage);
+}
+
 function buildSegments(block: Block, ops: SourcedReplace[]): Segment[] {
   const segments: Segment[] = [];
   const push = (segment: Segment) => {
@@ -59,6 +109,8 @@ function buildSegments(block: Block, ops: SourcedReplace[]): Segment[] {
     const last = segments[segments.length - 1];
     if (
       last &&
+      !last.format &&
+      !segment.format &&
       last.source === segment.source &&
       Boolean(last.removed) === Boolean(segment.removed)
     ) {
@@ -71,8 +123,18 @@ function buildSegments(block: Block, ops: SourcedReplace[]): Segment[] {
   let cursor = 0;
   for (const op of ops) {
     push({ text: block.text.slice(cursor, op.from), source: null });
-    push({ text: op.baseText, source: op.source, removed: true });
-    push({ text: op.text, source: op.source });
+    if (isMarksOnlyOp(op)) {
+      // The text stays: striking it and writing it again would not say what
+      // changes, so the segment carries the change itself.
+      push({
+        text: op.text,
+        source: op.source,
+        format: markChanges(block, op),
+      });
+    } else {
+      push({ text: op.baseText, source: op.source, removed: true });
+      push({ text: op.text, source: op.source });
+    }
     cursor = op.to;
   }
   push({ text: block.text.slice(cursor), source: null });
@@ -122,12 +184,18 @@ export function consolidate(
   }
 
   const replaces = new Map<string, SourcedReplace[]>();
+  const formats = new Map<string, { source: string; format: BlockFormat }>();
   const deletedBy = new Map<string, string>();
   const insertsAfter = new Map<string, { source: string; blocks: Block[] }[]>();
 
   for (const amendment of applied) {
     for (const op of amendment.ops) {
-      if (op.op === "replace") {
+      if (op.op === "replace" && isBlockFormatOp(op)) {
+        formats.set(op.blockId, {
+          source: amendment.id,
+          format: normalizeBlockFormat(op.block!),
+        });
+      } else if (op.op === "replace") {
         const list = replaces.get(op.blockId) ?? [];
         list.push({ ...op, source: amendment.id });
         replaces.set(op.blockId, list);
@@ -186,7 +254,7 @@ export function consolidate(
       });
     } else {
       const ops = (replaces.get(block.id) ?? []).sort(compareReplaceOps);
-      annotated.push({
+      const kept: ConsolidatedBlock = {
         id: block.id,
         type: block.type,
         level: block.level,
@@ -197,10 +265,27 @@ export function consolidate(
         align: block.align,
         image: block.image,
         segments: buildSegments(block, ops),
-        marks: mapMarks(block.marks, ops),
+        marks: resolveMarks(block, ops),
         status: "kept",
         source: null,
-      });
+      };
+      const formatted = formats.get(block.id);
+      const before = blockFormatOf(block);
+      if (formatted && before) {
+        // The block shows its new format; the cell it sits in stays.
+        const { format } = formatted;
+        kept.type = format.type;
+        kept.level = format.level;
+        kept.list = format.list;
+        kept.marker = format.marker;
+        kept.start = format.start;
+        kept.align = format.align;
+        kept.format = {
+          source: formatted.source,
+          changes: blockFormatChanges(before, format),
+        };
+      }
+      annotated.push(kept);
     }
     pushInserted(block.id);
   }
@@ -240,6 +325,7 @@ export function previewAmendment(
     .filter(
       ({ block }) =>
         block.status !== "kept" ||
+        block.format !== undefined ||
         block.segments.some((segment) => segment.source !== null),
     )
     .map(({ i }) => i);

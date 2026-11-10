@@ -1,7 +1,6 @@
 /**
  * Pure helpers behind the document workspace: ordering, overlap grouping,
- * gutter markers, filters, passage selection and the operations the composer
- * builds. No Nuxt or Vue APIs here, so they are unit-tested on their own
+ * gutter markers, filters and the operations the composer builds. No Nuxt or Vue APIs here, so they are unit-tested on their own
  * (workspace.test.ts).
  *
  * Every export is auto-imported app-wide (`imports.dirs: composables/**`),
@@ -26,7 +25,11 @@ import type {
 } from "~~/shared/types/content";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { diffPassage } from "~~/shared/utils/content/diff";
-import { indexBlocks, touchedBlockIds } from "~~/shared/utils/content/ops";
+import {
+  firstTouchedBlockId,
+  touchedBlockIds,
+  validateOps,
+} from "~~/shared/utils/content/ops";
 import {
   findOverlaps,
   type OverlapKind,
@@ -968,6 +971,129 @@ export function filterAmendmentList(
   });
 }
 
+// Reader -----------------------------------------------------------------------
+
+/**
+ * The filters offered as visible chips over the list: everything, only the
+ * undecided ones, only the late ones. ("Mías" is the list of the actor's
+ * own amendments, a tab of its own, not a filter.)
+ */
+export type AmendmentQuickFilter = "all" | "pending" | "late";
+
+export const AMENDMENT_QUICK_FILTERS: readonly AmendmentQuickFilter[] = [
+  "all",
+  "pending",
+  "late",
+];
+
+/**
+ * The chip the filters amount to, or null when they are a combination no
+ * chip stands for:
+ * - `all`: nothing filtered (a search apart);
+ * - `pending`: only the presented, undecided ones, on time or late;
+ * - `late`: only the late ones, whatever their status.
+ * Filters with no chip (kind, member, review, paragraph) may narrow
+ * `pending` and `late` further; `all` means none is set.
+ */
+export function amendmentQuickFilterOf(
+  filters: AmendmentFilters,
+): AmendmentQuickFilter | null {
+  if (activeAmendmentFilterCount({ ...filters, query: "" }) === 0) return "all";
+  if (filters.mine) return null;
+  if (
+    filters.statuses.length === 1 &&
+    filters.statuses[0] === "submitted" &&
+    filters.late === "any"
+  ) {
+    return "pending";
+  }
+  if (filters.late === "late" && filters.statuses.length === 0) return "late";
+  return null;
+}
+
+/**
+ * The filters after pressing a chip. `all` clears every filter but the
+ * search; the other two set the status and the timing and keep the rest.
+ * `pending` leaves the drafts sent back for correction, which are not
+ * presented.
+ */
+export function applyAmendmentQuickFilter(
+  filters: AmendmentFilters,
+  quick: AmendmentQuickFilter,
+): AmendmentFilters {
+  if (quick === "all") {
+    return { ...emptyAmendmentFilters(), query: filters.query };
+  }
+  if (quick === "pending") {
+    return {
+      ...filters,
+      statuses: ["submitted"],
+      late: "any",
+      mine: false,
+      review:
+        filters.review === "correction_requested" ? "any" : filters.review,
+    };
+  }
+  return { ...filters, statuses: [], late: "late", mine: false };
+}
+
+/** Where an amendment sits in the list on screen, and what is next to it. */
+export interface AmendmentNeighbours {
+  /** Zero-based position, or -1 when the list does not hold it. */
+  index: number;
+  total: number;
+  previous: string | null;
+  next: string | null;
+}
+
+/**
+ * The amendments before and after one in the list as shown (filtered, in
+ * its order), for reading them one after another. An amendment the list
+ * does not hold (opened from the text or a link, or filtered out since) has
+ * no neighbours.
+ */
+export function amendmentNeighbours(
+  ids: readonly string[],
+  id: string | null,
+): AmendmentNeighbours {
+  const index = id === null ? -1 : ids.indexOf(id);
+  if (index < 0) {
+    return { index: -1, total: ids.length, previous: null, next: null };
+  }
+  return {
+    index,
+    total: ids.length,
+    previous: ids[index - 1] ?? null,
+    next: ids[index + 1] ?? null,
+  };
+}
+
+/**
+ * The one status an amendment shows in a card or at the top of its detail:
+ * where it stands with the Secretaría while it is a draft or waits for it
+ * ("Sin enviar", "En revisión"), which says more than "Borrador" or
+ * "Presentada"; otherwise its status (presented, or how it ended). A
+ * published amendment only says so where asked (`showPublished`: the
+ * actor's own list).
+ */
+export type AmendmentStatusLine =
+  | { type: "review"; view: AmendmentReviewView }
+  | { type: "status"; status: AmendmentStatus };
+
+export function amendmentStatusLine(
+  amendment: AmendmentReviewInput,
+  options: { showPublished?: boolean } = {},
+): AmendmentStatusLine {
+  const view =
+    amendment.status === "draft" || amendment.status === "submitted"
+      ? amendmentReviewView(amendment)
+      : null;
+  if (view && (options.showPublished || view.key !== "published")) {
+    return { type: "review", view };
+  }
+  return { type: "status", status: amendment.status };
+}
+
 // Relations --------------------------------------------------------------------
 
 export interface AmendmentRelationView {
@@ -992,73 +1118,7 @@ export function amendmentRelationsOf(
   });
 }
 
-// Passage selection ------------------------------------------------------------
-
-/** The smallest run of consecutive base blocks covering `ids`, in base order. */
-export function contiguousBlockRange(base: Block[], ids: string[]): string[] {
-  const index = indexBlocks(base);
-  const positions = ids
-    .map((id) => index.get(id))
-    .filter((position): position is number => position !== undefined);
-  if (positions.length === 0) return [];
-  const start = Math.min(...positions);
-  const end = Math.max(...positions);
-  return base.slice(start, end + 1).map((block) => block.id);
-}
-
-export interface BlockSelection {
-  ids: string[];
-  /** Block the range grows from on shift-click. */
-  anchor: string | null;
-}
-
-/**
- * Click selects one block (or clears it when it was the only one selected);
- * shift-click selects the range between the anchor and the clicked block.
- */
-export function extendBlockSelection(
-  base: Block[],
-  current: BlockSelection,
-  clickedId: string,
-  extend: boolean,
-): BlockSelection {
-  const anchor =
-    current.anchor && current.ids.includes(current.anchor)
-      ? current.anchor
-      : (current.ids[0] ?? null);
-  if (extend && anchor) {
-    return {
-      ids: contiguousBlockRange(base, [anchor, clickedId]),
-      anchor,
-    };
-  }
-  if (current.ids.length === 1 && current.ids[0] === clickedId) {
-    return { ids: [], anchor: null };
-  }
-  return { ids: [clickedId], anchor: clickedId };
-}
-
-export interface Passage {
-  blocks: Block[];
-  /** The base block right before the passage (null at the start). */
-  anchorBefore: string | null;
-  start: number;
-  end: number;
-}
-
-export function passageOf(base: Block[], ids: string[]): Passage | null {
-  const range = contiguousBlockRange(base, ids);
-  if (range.length === 0) return null;
-  const index = indexBlocks(base);
-  const start = index.get(range[0]!)!;
-  const end = index.get(range[range.length - 1]!)!;
-  return {
-    blocks: base.slice(start, end + 1),
-    anchorBefore: start > 0 ? base[start - 1]!.id : null,
-    start,
-    end,
-  };
-}
+// Composer operations ------------------------------------------------------------
 
 function cloneBlock(block: Block): Block {
   return {
@@ -1067,43 +1127,99 @@ function cloneBlock(block: Block): Block {
   };
 }
 
-/** Editor seed for a passage: copies of its base blocks (ids kept). */
-export function passageSeed(
+/**
+ * What the composer's editor opens with: the whole base text, or that text
+ * as a stored draft leaves it (its operations applied), so the author goes
+ * on editing where they stopped. A draft that no longer applies starts again
+ * from the base.
+ */
+export function composerDocumentSeed(
   base: Block[],
-  ids: string[],
-  options: { appendEmpty?: () => string } = {},
+  ops: AmendmentOp[] = [],
 ): Block[] {
-  const passage = passageOf(base, ids);
-  const blocks = passage ? passage.blocks.map(cloneBlock) : [];
-  if (options.appendEmpty) {
-    blocks.push({
-      id: options.appendEmpty(),
-      type: "paragraph",
-      text: "",
-      marks: [],
-    });
+  if (ops.length > 0 && validateOps(base, ops).length === 0) {
+    const result = consolidate(base, [{ id: "draft", ops }]);
+    if (result.conflicts.length === 0) return result.blocks.map(cloneBlock);
   }
-  return blocks;
+  return base.map(cloneBlock);
 }
 
-// Operations -------------------------------------------------------------------
-
-/** Operations turning the selected passage into what the author left in the editor. */
-export function passageAmendmentOps(
+/**
+ * Where a draft's editor opens: at its first change in the order of the
+ * text. `shown` is what the editor holds (composerDocumentSeed); a block the
+ * draft removes is not there, so the nearest block that is stands in for it,
+ * the one before it first.
+ */
+export function composerStartBlockId(
   base: Block[],
-  ids: string[],
+  ops: AmendmentOp[],
+  shown: Block[],
+): string | null {
+  const first = firstTouchedBlockId(ops, base);
+  if (first === null) return null;
+  const present = new Set(shown.map((block) => block.id));
+  const at = base.findIndex((block) => block.id === first);
+  if (at < 0) return present.has(first) ? first : null;
+  for (let i = at; i >= 0; i -= 1) {
+    if (present.has(base[i]!.id)) return base[i]!.id;
+  }
+  for (let i = at + 1; i < base.length; i += 1) {
+    if (present.has(base[i]!.id)) return base[i]!.id;
+  }
+  return null;
+}
+
+/**
+ * Tells what the author really touched. An editor may give a block back a
+ * little different from how it was stored (spacing, the order of its marks)
+ * without anyone editing it. `echo` is the seed as the editor returns it
+ * untouched: a block that still equals its echo is taken as the seed's own,
+ * so it never shows up as a change.
+ */
+export function composerEditSettler(
+  seed: Block[],
+  echo: Block[],
+): (edited: Block[]) => Block[] {
+  const seedById = new Map(seed.map((block) => [block.id, block]));
+  const echoById = new Map<string, string>();
+  for (const block of echo) {
+    if (seedById.has(block.id)) echoById.set(block.id, JSON.stringify(block));
+  }
+  return (edited) =>
+    edited.map((block) => {
+      const untouched = echoById.get(block.id);
+      return untouched !== undefined && untouched === JSON.stringify(block)
+        ? seedById.get(block.id)!
+        : block;
+    });
+}
+
+/**
+ * Operations turning the whole base text into what the author left in the
+ * editor: changed text and formatting, new blocks and removed ones. Nobody
+ * says whether it modifies, adds or suppresses: the difference does.
+ */
+export function documentAmendmentOps(
+  base: Block[],
   edited: Block[],
   newId: () => string,
 ): AmendmentOp[] {
-  const passage = passageOf(base, ids);
-  if (!passage) return [];
-  return diffPassage(passage.blocks, edited, passage.anchorBefore, newId);
+  return diffPassage(base, edited, null, newId);
 }
 
-/** "Suprimir": deletes the selected passage. */
-export function deletePassageOps(base: Block[], ids: string[]): AmendmentOp[] {
-  const range = contiguousBlockRange(base, ids);
-  return range.length > 0 ? [{ op: "delete", blockIds: range }] : [];
+/**
+ * How many paragraphs an amendment changes ("Has cambiado N párrafos"):
+ * the base blocks it rewrites, formats or removes, plus the ones it adds.
+ */
+export function changedBlockCount(ops: AmendmentOp[]): number {
+  const touched = new Set<string>();
+  let added = 0;
+  for (const op of ops) {
+    if (op.op === "replace") touched.add(op.blockId);
+    else if (op.op === "delete") op.blockIds.forEach((id) => touched.add(id));
+    else added += op.blocks.length;
+  }
+  return touched.size + added;
 }
 
 /**
@@ -1142,109 +1258,27 @@ export function insertedBlocksOf(ops: AmendmentOp[]): Block[] {
 
 // Composer seed ------------------------------------------------------------------
 
+/**
+ * What the composer writes:
+ * - `document`: the whole text in an editor; everything changed there is one
+ *   amendment;
+ * - `global`: one word or expression changed everywhere;
+ * - `return` and `alternative`: totality amendments.
+ */
 export type AmendmentComposerMode =
-  "passage" | "delete" | "global" | "return" | "alternative";
+  "document" | "global" | "return" | "alternative";
 
-/** Composer modes on the selected passage, then those on the whole text. */
-export const AMENDMENT_PASSAGE_MODES: readonly AmendmentComposerMode[] = [
-  "passage",
-  "delete",
-];
 export const AMENDMENT_TOTALITY_MODES: readonly AmendmentComposerMode[] = [
   "return",
   "alternative",
 ];
 
-/**
- * The guided steps of the composer for a mode, in order:
- * - `what`: what the amendment does (and on which passage);
- * - `write`: write the change (passage, global term or alternative text);
- * - `check`: see the change against the text;
- * - `why`: the justification.
- * A deletion has nothing to write, and a return changes no text.
- */
-export type AmendmentComposerStep = "what" | "write" | "check" | "why";
-
-export function amendmentComposerSteps(
-  mode: AmendmentComposerMode,
-): AmendmentComposerStep[] {
-  switch (mode) {
-    case "delete":
-      return ["what", "check", "why"];
-    case "return":
-      return ["what", "why"];
-    default:
-      return ["what", "write", "check", "why"];
-  }
-}
-
 export interface AmendmentComposerSeed {
   mode: AmendmentComposerMode;
-  /** Selected base block ids (passage and delete modes). */
-  selection: string[];
-  /** Editor content (passage and alternative modes). */
+  /** Editor content (document and alternative modes). */
   edited: Block[];
   find: string;
   replace: string;
-}
-
-/**
- * Rebuilds the passage a draft was written on: the base range its operations
- * touch, and that range as the draft leaves it. Re-diffing the result yields
- * the same operations.
- */
-export function draftPassage(
-  base: Block[],
-  ops: AmendmentOp[],
-): { selection: string[]; edited: Block[] } {
-  const index = indexBlocks(base);
-  const positions = touchedBlockIds(ops)
-    .map((id) => index.get(id))
-    .filter((position): position is number => position !== undefined);
-  if (ops.some((op) => op.op === "insert" && op.afterBlockId === null)) {
-    positions.push(0);
-  }
-  if (positions.length === 0 || base.length === 0) {
-    return { selection: [], edited: [] };
-  }
-  const start = Math.min(...positions);
-  const end = Math.max(...positions);
-  const selection = base.slice(start, end + 1).map((block) => block.id);
-
-  const result = consolidate(base, [{ id: "draft", ops }]);
-  if (result.conflicts.length > 0) {
-    // The draft no longer applies: start again from the base passage.
-    return {
-      selection,
-      edited: base.slice(start, end + 1).map(cloneBlock),
-    };
-  }
-
-  const clean = new Map(result.blocks.map((block) => [block.id, block]));
-  const edited: Block[] = [];
-  let current = -1;
-  for (const block of result.annotated) {
-    const position =
-      block.status === "inserted" ? undefined : index.get(block.id);
-    if (position !== undefined) {
-      current = position;
-      if (block.status !== "deleted" && position >= start && position <= end) {
-        edited.push(cloneBlock(clean.get(block.id)!));
-      }
-      continue;
-    }
-    const inPassage =
-      (current >= start && current <= end) || (current === -1 && start === 0);
-    if (inPassage && clean.has(block.id)) {
-      edited.push(cloneBlock(clean.get(block.id)!));
-    }
-  }
-  return { selection, edited };
-}
-
-function isContiguous(base: Block[], ids: string[]): boolean {
-  const range = contiguousBlockRange(base, ids);
-  return range.length === ids.length && range.every((id) => ids.includes(id));
 }
 
 /** Composer state to keep editing an existing draft. */
@@ -1252,7 +1286,7 @@ export function seedComposerFromDraft(
   base: Block[],
   draft: Pick<AmendmentDto, "kind" | "ops" | "globalReplace">,
 ): AmendmentComposerSeed {
-  const empty = { selection: [], edited: [], find: "", replace: "" };
+  const empty = { edited: [], find: "", replace: "" };
   if (draft.kind === "totality_return") return { ...empty, mode: "return" };
   if (draft.kind === "totality_alternative") {
     return {
@@ -1269,21 +1303,77 @@ export function seedComposerFromDraft(
       replace: draft.globalReplace.replace,
     };
   }
-  const deleted = draft.ops.flatMap((op) =>
-    op.op === "delete" ? op.blockIds : [],
-  );
-  if (
-    draft.ops.length > 0 &&
-    draft.ops.every((op) => op.op === "delete") &&
-    isContiguous(base, deleted)
-  ) {
-    return {
-      ...empty,
-      mode: "delete",
-      selection: contiguousBlockRange(base, deleted),
-    };
+  return {
+    ...empty,
+    mode: "document",
+    edited: composerDocumentSeed(base, draft.ops),
+  };
+}
+
+// Composer checks ----------------------------------------------------------------
+
+/**
+ * What the author still has to do before the amendment can be saved, in the
+ * order it is said:
+ * - `no_changes`: the text is as it was;
+ * - `find_empty`, `same_term`, `no_matches`: the word to change everywhere;
+ * - `alternative_empty`: no alternative text yet;
+ * - `kind_missing`: content or form was not chosen (never asked of a
+ *   totality amendment).
+ */
+export type ComposerIssue =
+  | "no_changes"
+  | "find_empty"
+  | "same_term"
+  | "no_matches"
+  | "alternative_empty"
+  | "kind_missing";
+
+export function composerIssues(input: {
+  mode: AmendmentComposerMode;
+  /** Content ("partial") or form ("formal"); null until the author chooses. */
+  kind: "partial" | "formal" | null;
+  ops: AmendmentOp[];
+  find?: string;
+  replacement?: string;
+  alternative?: Block[];
+}): ComposerIssue[] {
+  const issues: ComposerIssue[] = [];
+  const find = (input.find ?? "").trim();
+  switch (input.mode) {
+    case "document":
+      if (input.ops.length === 0) issues.push("no_changes");
+      break;
+    case "global":
+      if (!find) issues.push("find_empty");
+      else if (find === (input.replacement ?? "")) issues.push("same_term");
+      else if (input.ops.length === 0) issues.push("no_matches");
+      break;
+    case "alternative":
+      if (
+        !(input.alternative ?? []).some(
+          (block) => block.text.trim() !== "" || block.type === "image",
+        )
+      ) {
+        issues.push("alternative_empty");
+      }
+      break;
+    default:
+      break;
   }
-  return { ...empty, mode: "passage", ...draftPassage(base, draft.ops) };
+  const asksKind = input.mode === "document" || input.mode === "global";
+  if (asksKind && input.kind === null) issues.push("kind_missing");
+  return issues;
+}
+
+/** The kind to send: the totality kinds follow the mode. */
+export function composerAmendmentKind(
+  mode: AmendmentComposerMode,
+  kind: "partial" | "formal" | null,
+): Exclude<AmendmentKind, "transactional"> | null {
+  if (mode === "return") return "totality_return";
+  if (mode === "alternative") return "totality_alternative";
+  return kind;
 }
 
 // Composer authors ---------------------------------------------------------------
@@ -1512,6 +1602,10 @@ export const AMENDMENT_ERROR_REASONS = [
   "overlapping_ops",
   "totality_return_ops",
   "inconsistent_counts",
+  "format_shape",
+  "format_image",
+  "duplicate_format",
+  "marks_out_of_range",
 ] as const;
 
 /** i18n key of a reason code; unknown codes share a generic message. */

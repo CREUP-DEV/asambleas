@@ -557,6 +557,11 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
       return make("home.news.amendment.published");
     case "amendment_correction_requested":
       return make("home.news.amendment.correction");
+    case "amendment_reclassified":
+      // The Secretaría moved it between "de forma" and "de contenido".
+      return news.value === "formal"
+        ? make("home.news.amendment.reclassifiedFormal")
+        : make("home.news.amendment.reclassifiedContent");
     case "amendment_admitted":
       return make("home.news.amendment.admitted", "success");
     case "amendment_inadmissible":

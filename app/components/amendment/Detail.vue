@@ -6,12 +6,15 @@ import type {
 } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
 import { blockLabels } from "~~/shared/utils/content/render";
-import { touchedBlockIds } from "~~/shared/utils/content/ops";
+import { canReclassifyAmendment } from "~~/shared/utils/amendmentReclassify";
+import { firstTouchedBlockId } from "~~/shared/utils/content/ops";
 import {
   transactionalAuthorTurn,
   transactionalClosure,
   transactionalGroupSources,
   transactionalLinksOf,
+  transactionalProgressMessage,
+  transactionalProgressOf,
   transactionalRejectedBy,
   transactionalRejectedByAuthors,
   transactionalSourceEligible,
@@ -27,18 +30,44 @@ import {
   amendmentLateState,
   amendmentReviewView,
   amendmentSentNotice,
+  amendmentStatusLine,
   showAmendmentAdmission,
+  type AmendmentNeighbours,
   type AmendmentOverlap,
   type AmendmentRelationView,
 } from "~/composables/amendment/workspace";
 
 /**
- * Everything about one amendment: where it stands with the Secretaría (and
- * the Secretaría's validation actions), its changes over the base (with
- * context), justification, authors (the main author first), outcome,
- * overlaps, the main presenter's answer, transactional parties, relations,
- * the history (folded), and the author actions (edit, send to the
- * Secretaría, delete a draft; withdraw while undecided).
+ * One amendment, read on its own. What matters comes first, in this order:
+ * 1. its code, who presents it and ONE status (where it stands with the
+ *    Secretaría while that says more, what a transactional waits for, or
+ *    how it ended: the same rule as its card);
+ * 2. what changes: only the passage it touches, with a little context.
+ *    "Ver en el documento" asks the page to show the change in the full
+ *    text (`locate`); the text never changes view by itself;
+ * 3. why: its justification;
+ * 4. what is the viewer's turn: the Secretaría's review (validate, publish,
+ *    ask for a correction, record the assembly's decision on a late one,
+ *    and for an author "Corregir y volver a enviar"), moving it between
+ *    "de forma" and "de contenido" (those who review amendments, while it
+ *    is presented and undecided), the main presenter's answer (or the
+ *    Mesa's for it), a transactional over it waiting for the viewer as its
+ *    main author, and the parties of a transactional when the viewer is
+ *    one of them or the Mesa records their answers. The author's own
+ *    actions (edit, send, withdraw, delete a draft) and "Proponer una
+ *    transaccional" are buttons in the footer.
+ *
+ * Everything else is folded under "Ver detalles": authors and dates (late,
+ * admission, change typology), outcome and vote, overlaps, transactional
+ * links and the answers that are not the viewer's to give, relations and
+ * the history. A panel that asks the viewer to act is never folded.
+ *
+ * Above it all, "Volver a la lista" and, when the page says where the
+ * amendment sits in the list on screen (`nav`), "Anterior · 3 de 17 ·
+ * Siguiente", also with the left and right arrows and K / J. The shortcuts
+ * are off while typing, inside a dialog, menu, list box or tab list (where
+ * the keys mean something else), and while a request runs or a
+ * confirmation is open.
  *
  * Transactionals proposed over this amendment are listed with what its main
  * author answered (who, what, when): the main author answers them here,
@@ -55,10 +84,6 @@ import {
  * one way forward, "Corregir y volver a enviar" in the review panel: the
  * composer shows the note and sends it, so the footer offers no direct
  * send.
- *
- * Whoever can propose a transactional finds it as a secondary action: in
- * the footer's "Más" menu for this amendment, and next to the amendments
- * that touch the same passage to combine them (`transact`).
  */
 const props = withDefaults(
   defineProps<{
@@ -75,8 +100,11 @@ const props = withDefaults(
      */
     candidates: AmendmentDto[];
     overlaps?: AmendmentOverlap[];
-    /** Show the close button (off inside a slideover, which has its own). */
-    closable?: boolean;
+    /**
+     * Where it sits in the list on screen, to move to the one before or
+     * after it. None when the list does not hold it.
+     */
+    nav?: AmendmentNeighbours | null;
     /** GET .../decisions of the assembly, for admission votes in the history. */
     decisionsUrl?: string;
     /** The viewer may propose a transactional on this document. */
@@ -84,7 +112,7 @@ const props = withDefaults(
   }>(),
   {
     overlaps: () => [],
-    closable: true,
+    nav: null,
     decisionsUrl: undefined,
     canTransact: false,
   },
@@ -93,6 +121,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   close: [];
   select: [id: string];
+  /** "Ver en el documento": show its change in the full text. */
+  locate: [amendment: AmendmentDto];
   edit: [amendment: AmendmentDto];
   /** Open the transactional composer on these amendments. */
   transact: [ids: string[]];
@@ -108,6 +138,8 @@ const { t, locale } = useI18n();
 const api = useApi();
 const toast = useToast();
 const headingId = useId();
+const detailsId = useId();
+const root = useTemplateRef<HTMLElement>("root");
 const heading = useTemplateRef<HTMLElement>("heading");
 const { member } = useMe();
 
@@ -115,7 +147,7 @@ const url = computed(() => `${props.amendmentsUrl}/${props.amendment.id}`);
 const label = computed(() => props.labelOf(props.amendment.id));
 
 const busy = ref<"submit" | "withdraw" | "delete" | null>(null);
-const historyOpen = ref(false);
+const detailsOpen = ref(false);
 const confirming = ref<"withdraw" | "delete" | null>(null);
 const reasons = ref<string[]>([]);
 
@@ -124,9 +156,78 @@ watch(
   () => {
     confirming.value = null;
     reasons.value = [];
-    historyOpen.value = false;
+    detailsOpen.value = false;
   },
 );
+
+// One after another -------------------------------------------------------------
+
+/** "3 de 17", when the list on screen holds this amendment. */
+const position = computed(() =>
+  props.nav && props.nav.index >= 0
+    ? { n: props.nav.index + 1, total: props.nav.total }
+    : null,
+);
+
+/**
+ * Moves to a neighbour. The pressed button stays under the pointer; when it
+ * is disabled at the end of the list, focus goes to the heading instead of
+ * being lost.
+ */
+async function go(id: string | null | undefined): Promise<void> {
+  if (!id) return;
+  emit("select", id);
+  await nextTick();
+  const active = globalThis.document?.activeElement;
+  if (
+    !active ||
+    active === globalThis.document.body ||
+    (active instanceof HTMLButtonElement && active.disabled)
+  ) {
+    heading.value?.focus();
+  }
+}
+
+/**
+ * Shortcuts act once per press, never while a request runs or a
+ * confirmation is open, and not inside a dialog, menu, list box, tab list
+ * or radio group (where arrows and letters mean something else). The
+ * slideover that holds this detail on narrow screens is a dialog too: that
+ * one does not block them. Inputs and textareas are skipped by
+ * defineShortcuts itself.
+ */
+function shortcutsBlocked(event?: KeyboardEvent): boolean {
+  if (event?.repeat || !props.nav || busy.value || confirming.value) {
+    return true;
+  }
+  const active = import.meta.client ? globalThis.document.activeElement : null;
+  const scope = active?.closest(
+    '[role="dialog"], [role="menu"], [role="listbox"], [role="tablist"], [role="radiogroup"]',
+  );
+  if (!scope) return false;
+  return !(
+    scope.getAttribute("role") === "dialog" &&
+    root.value !== null &&
+    scope.contains(root.value)
+  );
+}
+
+function shortcutGo(
+  event: KeyboardEvent | undefined,
+  direction: "previous" | "next",
+): void {
+  if (shortcutsBlocked(event)) return;
+  void go(props.nav?.[direction]);
+}
+
+defineShortcuts({
+  arrowleft: (event?: KeyboardEvent) => shortcutGo(event, "previous"),
+  arrowright: (event?: KeyboardEvent) => shortcutGo(event, "next"),
+  k: (event?: KeyboardEvent) => shortcutGo(event, "previous"),
+  j: (event?: KeyboardEvent) => shortcutGo(event, "next"),
+});
+
+// What it is --------------------------------------------------------------------
 
 const decided = computed(
   () =>
@@ -187,42 +288,16 @@ const overlapSources = computed(() => {
   ]);
 });
 
-const moreItems = computed(() => {
-  const items: {
-    label: string;
-    icon: string;
-    color?: "error";
-    onSelect: () => void;
-  }[] = [];
-  if (transactable.value) {
-    items.push({
-      label: t("amendment.detail.transact"),
-      icon: "i-lucide-git-merge",
-      onSelect: () => emit("transact", [props.amendment.id]),
-    });
-  }
-  if (props.amendment.can.edit) {
-    items.push({
-      label: t("amendment.actions.delete"),
-      icon: "i-lucide-trash-2",
-      color: "error",
-      onSelect: () => {
-        confirming.value = "delete";
-      },
-    });
-  }
-  return items;
-});
 /** Late and validated: the review panel says the assembly has to decide. */
 const awaitingDecision = computed(
   () => amendmentLateState(props.amendment) === "awaiting_decision",
 );
 
 const where = computed(() => {
-  const ids = touchedBlockIds(props.amendment.ops);
-  if (ids.length === 0) return null;
-  const labels = blockLabels(props.base);
-  const first = labels.get(ids[0]!);
+  // The first change in the order of the text, as the list sorts it.
+  const id = firstTouchedBlockId(props.amendment.ops, props.base);
+  if (id === null) return null;
+  const first = blockLabels(props.base).get(id);
   if (!first) return null;
   const paragraph =
     first.paragraph > 0
@@ -233,6 +308,32 @@ const where = computed(() => {
 
 /** Main author first; marked only when there are several. */
 const authors = computed(() => amendmentAuthorsInOrder(props.amendment));
+
+/**
+ * The one status at the top: what a presented transactional waits for (as
+ * in its card, also once a main author rejected it), else where it stands
+ * with the Secretaría while that says more, else its status.
+ */
+const progress = computed(() =>
+  transactionalProgressOf(props.amendment, member.value?.id ?? null, statusOf),
+);
+const hasProgress = computed(
+  () =>
+    progress.value !== null &&
+    transactionalProgressMessage(progress.value, "long") !== null,
+);
+const statusLine = computed(() => amendmentStatusLine(props.amendment));
+
+/** Those who review amendments may move it between form and content. */
+const canReclassify = computed(
+  () =>
+    props.amendment.can.review &&
+    canReclassifyAmendment(props.amendment, Boolean(props.document.finalVote)),
+);
+/** The viewer answers it (the main presenter, or the Mesa for it). */
+const positionTurn = computed(
+  () => showPosition.value && props.amendment.can.position,
+);
 /** A transactional a main author rejected (closed, the originals carry on). */
 const rejectedByAuthors = computed(() =>
   transactionalRejectedByAuthors(props.amendment),
@@ -298,6 +399,32 @@ const firstTurnId = computed(
     transactionalsOver.value.find((item) =>
       transactionalAuthorTurn(item, props.amendment, member.value?.id ?? null),
     )?.id ?? null,
+);
+/** The ones waiting for the viewer's answer as main author: never folded. */
+const transactionalsToAnswer = computed(() =>
+  transactionalsOver.value.filter((item) =>
+    transactionalAuthorTurn(item, props.amendment, member.value?.id ?? null),
+  ),
+);
+/** The rest: answered, closed, or someone else's to answer. */
+const transactionalsAnswered = computed(() => {
+  const waiting = new Set(transactionalsToAnswer.value.map((item) => item.id));
+  return transactionalsOver.value.filter((item) => !waiting.has(item.id));
+});
+/**
+ * A transactional whose parties still answer, seen by one of them or by the
+ * Mesa, which records the answers given in the room: its list of parties
+ * is the viewer's turn.
+ */
+const acceptancesTurn = computed(
+  () =>
+    props.amendment.kind === "transactional" &&
+    props.amendment.status === "submitted" &&
+    (props.amendment.can.accept ||
+      (props.amendment.can.moderate &&
+        props.amendment.acceptances.some(
+          (party) => party.decision === "pending",
+        ))),
 );
 /** "Incluida en": the other transactionals, not shown with an answer below. */
 const transactedInIds = computed(() => {
@@ -390,6 +517,11 @@ function onReviewSettled(): void {
   heading.value?.focus();
 }
 
+defineExpose({
+  /** For the page, when it opens this amendment in place of something else. */
+  focusHeading: () => heading.value?.focus(),
+});
+
 async function remove(): Promise<void> {
   busy.value = "delete";
   try {
@@ -410,81 +542,106 @@ async function remove(): Promise<void> {
 </script>
 
 <template>
-  <article class="flex flex-col gap-5" :aria-labelledby="headingId">
-    <header class="flex flex-col gap-2">
-      <div class="flex items-start gap-2">
-        <div class="min-w-0 flex-1">
-          <h2
-            :id="headingId"
-            ref="heading"
-            tabindex="-1"
-            class="text-highlighted text-lg font-semibold tabular-nums outline-none"
-          >
-            {{ label }}
-          </h2>
-          <p v-if="where" class="text-muted truncate text-sm">{{ where }}</p>
-        </div>
+  <article ref="root" class="flex flex-col gap-5" :aria-labelledby="headingId">
+    <!-- Back to the list, and the amendments before and after this one. -->
+    <div class="flex flex-wrap items-center justify-between gap-x-2 gap-y-1">
+      <UButton
+        icon="i-lucide-arrow-left"
+        color="neutral"
+        variant="ghost"
+        size="sm"
+        class="-ms-2"
+        :label="t('amendment.detail.back')"
+        @click="emit('close')"
+      />
+      <nav
+        v-if="position"
+        class="flex items-center gap-1"
+        :aria-label="t('amendment.detail.navLabel')"
+      >
         <UButton
-          v-if="closable"
-          icon="i-lucide-x"
+          icon="i-lucide-chevron-left"
           color="neutral"
           variant="ghost"
           size="sm"
-          :aria-label="t('amendment.detail.close')"
-          @click="emit('close')"
+          aria-keyshortcuts="ArrowLeft K"
+          :disabled="!nav?.previous || busy !== null"
+          :label="t('common.previous')"
+          @click="go(nav?.previous)"
         />
+        <span
+          class="text-muted text-sm whitespace-nowrap tabular-nums"
+          aria-live="polite"
+        >
+          {{ t("amendment.detail.position", position) }}
+        </span>
+        <UButton
+          trailing-icon="i-lucide-chevron-right"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          aria-keyshortcuts="ArrowRight J"
+          :disabled="!nav?.next || busy !== null"
+          :label="t('common.next')"
+          @click="go(nav?.next)"
+        />
+      </nav>
+    </div>
+
+    <!-- 1. Code, who presents it and one status. -->
+    <header class="flex flex-col gap-2">
+      <div class="min-w-0">
+        <h2
+          :id="headingId"
+          ref="heading"
+          tabindex="-1"
+          class="text-highlighted text-lg font-semibold tabular-nums outline-none"
+        >
+          {{ label }}
+        </h2>
+        <p v-if="where" class="text-muted truncate text-sm">{{ where }}</p>
       </div>
-      <div class="flex flex-wrap items-center gap-1.5">
-        <!-- Closed by a main author's rejection: the review panel says so. -->
-        <CommonStatusBadge
-          v-if="!rejectedByAuthors"
-          kind="amendment"
-          :value="amendment.status"
+      <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+        <CommonMemberBadge
+          v-if="authors.main"
+          :member="authors.main"
+          size="xs"
+          show-name
         />
-        <CommonStatusBadge
-          v-if="!awaitingDecision && showAmendmentAdmission(amendment)"
-          kind="admission"
-          :value="amendment.admission"
-        />
-        <!-- Waiting for the assembly, the review panel says it is late. -->
-        <UBadge
-          v-if="amendment.late && !awaitingDecision"
-          color="warning"
-          variant="subtle"
-          icon="i-lucide-clock-alert"
-          :label="
-            amendment.admission === 'admitted'
-              ? t('amendment.lateAdmitted')
-              : t('amendment.late')
-          "
-        />
+        <span v-if="authors.others.length > 0" class="text-muted text-sm">
+          {{
+            t(
+              "amendment.card.moreAuthors",
+              { count: authors.others.length },
+              authors.others.length,
+            )
+          }}
+        </span>
+        <!-- "Parcial" is the usual kind: only the others are named. -->
         <UBadge
           v-if="showKind"
           color="neutral"
           variant="outline"
           :label="t(`amendment.kinds.${amendment.kind}`)"
         />
+      </div>
+      <TransactionalProgress
+        v-if="hasProgress"
+        :amendment="amendment"
+        :label-of="labelOf"
+        :status-of="statusOf"
+      />
+      <div v-else class="flex items-center">
         <UBadge
-          v-for="change in amendment.changeKinds"
-          :key="change"
-          color="neutral"
-          variant="soft"
-          :label="t(`amendment.changeKinds.${change}`)"
+          v-if="statusLine.type === 'review'"
+          :color="statusLine.view.color"
+          variant="subtle"
+          :icon="statusLine.view.icon"
+          :label="t(`amendment.review.badges.${statusLine.view.key}`)"
         />
+        <CommonStatusBadge v-else kind="amendment" :value="amendment.status" />
       </div>
     </header>
-
-    <AmendmentReviewPanel
-      :amendment="amendment"
-      :amendments-url="amendmentsUrl"
-      :label-of="labelOf"
-      :status-of="statusOf"
-      @edit="emit('edit', $event)"
-      @replaced="emit('replaced', $event)"
-      @corrected="onCorrected"
-      @changed="emit('changed')"
-      @settled="onReviewSettled"
-    />
 
     <UAlert
       v-if="reasons.length > 0"
@@ -503,9 +660,10 @@ async function remove(): Promise<void> {
       </template>
     </UAlert>
 
+    <!-- 2. What changes: the passage only. -->
     <section class="flex flex-col gap-2">
       <h3 class="text-highlighted text-sm font-semibold">
-        {{ t("amendment.detail.changes") }}
+        {{ t("amendment.detail.whatChanges") }}
       </h3>
       <p v-if="amendment.globalReplace" class="text-sm">
         <UIcon
@@ -548,11 +706,22 @@ async function remove(): Promise<void> {
           </template>
         </ContentAmendmentDiff>
       </div>
+      <UButton
+        v-if="amendment.ops.length > 0"
+        class="self-start"
+        icon="i-lucide-file-search"
+        color="neutral"
+        variant="outline"
+        size="sm"
+        :label="t('amendment.detail.showInText')"
+        @click="emit('locate', amendment)"
+      />
     </section>
 
+    <!-- 3. Why. -->
     <section class="flex flex-col gap-2">
       <h3 class="text-highlighted text-sm font-semibold">
-        {{ t("amendment.detail.justification") }}
+        {{ t("amendment.detail.why") }}
       </h3>
       <p
         v-if="amendment.justification"
@@ -565,199 +734,63 @@ async function remove(): Promise<void> {
       </p>
     </section>
 
-    <section class="flex flex-col gap-2">
-      <h3 class="text-highlighted text-sm font-semibold">
-        {{ t("amendment.detail.authors") }}
-      </h3>
-      <div class="flex flex-col gap-1.5">
-        <div v-if="authors.main" class="flex flex-wrap items-center gap-2">
-          <CommonMemberBadge :member="authors.main" size="xs" show-name />
-          <span v-if="authors.marked" class="text-dimmed text-xs">
-            {{ t("amendment.detail.mainAuthor") }}
-          </span>
-        </div>
-        <CommonMemberBadge
-          v-for="author in authors.others"
-          :key="author.id"
-          :member="author"
-          size="xs"
-          show-name
-        />
-        <p v-if="amendment.submittedAt" class="text-muted text-xs">
-          {{
-            t("amendment.detail.submittedAt", {
-              date: formatDateTime(amendment.submittedAt, { locale }),
-            })
-          }}
-        </p>
-      </div>
-    </section>
+    <!-- 4. What is the viewer's turn. Never folded. -->
+    <AmendmentReviewPanel
+      :amendment="amendment"
+      :amendments-url="amendmentsUrl"
+      :label-of="labelOf"
+      :status-of="statusOf"
+      @edit="emit('edit', $event)"
+      @replaced="emit('replaced', $event)"
+      @corrected="onCorrected"
+      @changed="emit('changed')"
+      @settled="onReviewSettled"
+    />
 
-    <section v-if="decided" class="flex flex-col gap-2">
-      <h3 class="text-highlighted text-sm font-semibold">
-        {{ t("amendment.detail.outcome") }}
-      </h3>
-      <p
-        v-if="
-          amendment.status === 'approved' &&
-          amendment.approvalMethod === 'proponent'
-        "
-        class="text-sm"
-      >
-        {{
-          amendment.position?.recordedBy === "mesa"
-            ? t("amendment.detail.approvedByMesa")
-            : t("amendment.detail.approvedByPresenter")
-        }}
-      </p>
-      <p
-        v-else-if="amendment.status === 'approved' && amendment.approvalMethod"
-        class="text-sm"
-      >
-        {{
-          t("amendment.detail.approvedBy", {
-            method: t(`amendment.approvalMethods.${amendment.approvalMethod}`),
-          })
-        }}
-      </p>
-      <!-- Replaced: which transactional took its place. -->
-      <p v-else-if="amendment.status === 'transacted'" class="text-sm">
-        {{
-          replacedBy.length > 0
-            ? t(
-                "amendment.detail.replacedBy",
-                { list: join(replacedBy.map((id) => labelOf(id))) },
-                replacedBy.length,
-              )
-            : t("amendment.detail.replacedByUnknown")
-        }}
-      </p>
-      <!-- Closed by a main author's rejection: who said no. -->
-      <p v-if="rejectedByAuthors && rejectedBy" class="text-sm">
-        {{ t("amendment.detail.rejectedByAuthors", { members: rejectedBy }) }}
-      </p>
-      <p v-else-if="closedBecause" class="text-sm">
-        {{ closedBecause }}
-      </p>
-      <p v-if="amendment.decidedAt" class="text-muted text-xs">
-        {{
-          t("amendment.detail.decidedAt", {
-            date: formatDateTime(amendment.decidedAt, { locale }),
-          })
-        }}
-      </p>
-      <p
-        v-if="amendment.outcomeNote"
-        class="text-default text-sm whitespace-pre-line"
-      >
-        {{ amendment.outcomeNote }}
-      </p>
-      <AmendmentVoteSummary
-        v-if="amendment.outcomeVote"
-        :vote="amendment.outcomeVote"
-      />
-    </section>
+    <AmendmentReclassify
+      v-if="canReclassify"
+      :amendment="amendment"
+      :url="url"
+      @updated="emit('updated', $event)"
+      @conflict="emit('changed')"
+    />
 
-    <section v-if="overlaps.length > 0" class="flex flex-col gap-2">
-      <h3 class="text-highlighted text-sm font-semibold">
-        {{ t("amendment.detail.overlaps") }}
-      </h3>
-      <ul class="flex flex-wrap gap-2">
-        <li v-for="overlap in overlaps" :key="overlap.id">
-          <UButton
-            size="xs"
-            :color="overlap.kind === 'same_position' ? 'neutral' : 'warning'"
-            variant="soft"
-            icon="i-lucide-layers"
-            :label="`${labelOf(overlap.id)} · ${t(`amendment.detail.overlapKinds.${overlap.kind}`)}`"
-            @click="emit('select', overlap.id)"
-          />
-        </li>
-      </ul>
-      <UButton
-        v-if="overlapSources.length >= 2"
-        class="self-start"
-        icon="i-lucide-git-merge"
-        color="neutral"
-        variant="outline"
-        size="xs"
-        :label="t('amendment.detail.transactOverlaps')"
-        @click="emit('transact', overlapSources)"
-      />
-    </section>
+    <AmendmentPositionPanel
+      v-if="positionTurn"
+      :amendment="amendment"
+      :url="url"
+      :document="document"
+      @updated="emit('updated', $event)"
+      @conflict="emit('changed')"
+    />
 
+    <!-- Transactionals over this one that wait for the viewer's answer. -->
     <section
-      v-if="
-        amendment.sourceIds.length > 0 ||
-        transactedInIds.length > 0 ||
-        transactionalsOver.length > 0
-      "
+      v-if="transactionalsToAnswer.length > 0"
       class="flex flex-col gap-2"
     >
       <h3 class="text-highlighted text-sm font-semibold">
-        {{ t("amendment.detail.transactional") }}
+        {{ t("amendment.detail.transactionalsOver") }}
       </h3>
-      <div
-        v-if="amendment.sourceIds.length > 0"
-        class="flex flex-wrap items-center gap-2"
-      >
-        <span class="text-muted text-sm">{{
-          t("amendment.detail.sources")
-        }}</span>
-        <UButton
-          v-for="id in amendment.sourceIds"
-          :key="id"
-          size="xs"
-          color="secondary"
-          variant="soft"
-          icon="i-lucide-git-merge"
-          :label="labelOf(id)"
-          @click="emit('select', id)"
-        />
-      </div>
-      <div
-        v-if="transactedInIds.length > 0"
-        class="flex flex-wrap items-center gap-2"
-      >
-        <span class="text-muted text-sm">
-          {{ t("amendment.detail.transactedIn") }}
-        </span>
-        <UButton
-          v-for="id in transactedInIds"
-          :key="id"
-          size="xs"
-          color="secondary"
-          variant="soft"
-          icon="i-lucide-git-merge"
-          :label="labelOf(id)"
-          @click="emit('select', id)"
-        />
-      </div>
-      <!-- Transactionals over this one: its main author's answer. -->
-      <template v-if="transactionalsOver.length > 0">
-        <p class="text-muted text-sm">
-          {{ t("amendment.detail.transactionalsOver") }}
-        </p>
-        <TransactionalAuthorAnswer
-          v-for="item in transactionalsOver"
-          :key="item.id"
-          :transactional="item"
-          :source="amendment"
-          :primary="item.id === firstTurnId"
-          :amendments-url="amendmentsUrl"
-          :actor-member-id="member?.id ?? null"
-          :label-of="labelOf"
-          :status-of="statusOf"
-          :amendment-of="amendmentOf"
-          @updated="emit('updated', $event)"
-          @conflict="emit('changed')"
-          @select="emit('select', $event)"
-        />
-      </template>
+      <TransactionalAuthorAnswer
+        v-for="item in transactionalsToAnswer"
+        :key="item.id"
+        :transactional="item"
+        :source="amendment"
+        :primary="item.id === firstTurnId"
+        :amendments-url="amendmentsUrl"
+        :actor-member-id="member?.id ?? null"
+        :label-of="labelOf"
+        :status-of="statusOf"
+        :amendment-of="amendmentOf"
+        @updated="emit('updated', $event)"
+        @conflict="emit('changed')"
+        @select="emit('select', $event)"
+      />
     </section>
 
     <AmendmentAcceptances
-      v-if="amendment.kind === 'transactional'"
+      v-if="acceptancesTurn"
       :amendment="amendment"
       :url="url"
       :actor-member-id="member?.id ?? null"
@@ -767,58 +800,313 @@ async function remove(): Promise<void> {
       @conflict="emit('changed')"
     />
 
-    <AmendmentPositionPanel
-      v-if="showPosition"
-      :amendment="amendment"
-      :url="url"
-      :document="document"
-      @updated="emit('updated', $event)"
-      @conflict="emit('changed')"
-    />
-
-    <AmendmentRelations
-      v-if="showRelations"
-      :amendment="amendment"
-      :relations="relations"
-      :candidates="candidates"
-      :label-of="labelOf"
-      :amendments-url="amendmentsUrl"
-      :can-manage="canManageRelations"
-      @changed="emit('changed')"
-      @select="emit('select', $event)"
-    />
-
-    <UCollapsible v-model:open="historyOpen">
+    <!-- Everything else, folded. -->
+    <div class="flex flex-col gap-4">
       <UButton
         color="neutral"
-        variant="link"
+        variant="outline"
         size="sm"
-        class="px-0"
-        :icon="historyOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
+        class="self-start"
+        :icon="detailsOpen ? 'i-lucide-chevron-up' : 'i-lucide-chevron-down'"
         :label="
-          historyOpen
-            ? t('amendment.detail.hideHistory')
-            : t('amendment.detail.showHistory')
+          detailsOpen
+            ? t('amendment.detail.hideDetails')
+            : t('amendment.detail.showDetails')
         "
+        :aria-expanded="detailsOpen"
+        :aria-controls="detailsId"
+        @click="detailsOpen = !detailsOpen"
       />
-      <template #content>
-        <AmendmentHistory
-          class="mt-2"
+      <div v-if="detailsOpen" :id="detailsId" class="flex flex-col gap-5">
+        <section class="flex flex-col gap-2">
+          <h3 class="text-highlighted text-sm font-semibold">
+            {{ t("amendment.detail.authors") }}
+          </h3>
+          <div class="flex flex-col gap-1.5">
+            <div v-if="authors.main" class="flex flex-wrap items-center gap-2">
+              <CommonMemberBadge :member="authors.main" size="xs" show-name />
+              <span v-if="authors.marked" class="text-dimmed text-xs">
+                {{ t("amendment.detail.mainAuthor") }}
+              </span>
+            </div>
+            <CommonMemberBadge
+              v-for="author in authors.others"
+              :key="author.id"
+              :member="author"
+              size="xs"
+              show-name
+            />
+            <p v-if="amendment.submittedAt" class="text-muted text-xs">
+              {{
+                t("amendment.detail.submittedAt", {
+                  date: formatDateTime(amendment.submittedAt, { locale }),
+                })
+              }}
+            </p>
+            <div
+              v-if="
+                amendment.late ||
+                amendment.changeKinds.length > 0 ||
+                (!awaitingDecision && showAmendmentAdmission(amendment))
+              "
+              class="flex flex-wrap items-center gap-1.5"
+            >
+              <UBadge
+                v-if="amendment.late"
+                color="warning"
+                variant="subtle"
+                size="sm"
+                icon="i-lucide-clock-alert"
+                :label="
+                  amendment.admission === 'admitted'
+                    ? t('amendment.lateAdmitted')
+                    : t('amendment.late')
+                "
+              />
+              <CommonStatusBadge
+                v-if="!awaitingDecision && showAmendmentAdmission(amendment)"
+                kind="admission"
+                :value="amendment.admission"
+                size="sm"
+              />
+              <UBadge
+                v-for="change in amendment.changeKinds"
+                :key="change"
+                color="neutral"
+                variant="soft"
+                size="sm"
+                :label="t(`amendment.changeKinds.${change}`)"
+              />
+            </div>
+          </div>
+        </section>
+
+        <section v-if="decided" class="flex flex-col gap-2">
+          <h3 class="text-highlighted text-sm font-semibold">
+            {{ t("amendment.detail.outcome") }}
+          </h3>
+          <p
+            v-if="
+              amendment.status === 'approved' &&
+              amendment.approvalMethod === 'proponent'
+            "
+            class="text-sm"
+          >
+            {{
+              amendment.position?.recordedBy === "mesa"
+                ? t("amendment.detail.approvedByMesa")
+                : t("amendment.detail.approvedByPresenter")
+            }}
+          </p>
+          <p
+            v-else-if="
+              amendment.status === 'approved' && amendment.approvalMethod
+            "
+            class="text-sm"
+          >
+            {{
+              t("amendment.detail.approvedBy", {
+                method: t(
+                  `amendment.approvalMethods.${amendment.approvalMethod}`,
+                ),
+              })
+            }}
+          </p>
+          <!-- Replaced: which transactional took its place. -->
+          <p v-else-if="amendment.status === 'transacted'" class="text-sm">
+            {{
+              replacedBy.length > 0
+                ? t(
+                    "amendment.detail.replacedBy",
+                    { list: join(replacedBy.map((id) => labelOf(id))) },
+                    replacedBy.length,
+                  )
+                : t("amendment.detail.replacedByUnknown")
+            }}
+          </p>
+          <!-- Closed by a main author's rejection: who said no. -->
+          <p v-if="rejectedByAuthors && rejectedBy" class="text-sm">
+            {{
+              t("amendment.detail.rejectedByAuthors", { members: rejectedBy })
+            }}
+          </p>
+          <p v-else-if="closedBecause" class="text-sm">
+            {{ closedBecause }}
+          </p>
+          <p v-if="amendment.decidedAt" class="text-muted text-xs">
+            {{
+              t("amendment.detail.decidedAt", {
+                date: formatDateTime(amendment.decidedAt, { locale }),
+              })
+            }}
+          </p>
+          <p
+            v-if="amendment.outcomeNote"
+            class="text-default text-sm whitespace-pre-line"
+          >
+            {{ amendment.outcomeNote }}
+          </p>
+          <AmendmentVoteSummary
+            v-if="amendment.outcomeVote"
+            :vote="amendment.outcomeVote"
+          />
+        </section>
+
+        <!-- The main presenter's answer, for those who only read it. -->
+        <AmendmentPositionPanel
+          v-if="showPosition && !positionTurn"
+          :amendment="amendment"
           :url="url"
-          :version="historyVersion"
-          :decisions-url="decisionsUrl"
-          :members="historyMembers"
-          :label-of="historyLabelOf"
+          :document="document"
+          @updated="emit('updated', $event)"
+          @conflict="emit('changed')"
         />
-      </template>
-    </UCollapsible>
+
+        <section v-if="overlaps.length > 0" class="flex flex-col gap-2">
+          <h3 class="text-highlighted text-sm font-semibold">
+            {{ t("amendment.detail.overlaps") }}
+          </h3>
+          <ul class="flex flex-wrap gap-2">
+            <li v-for="overlap in overlaps" :key="overlap.id">
+              <UButton
+                size="xs"
+                :color="
+                  overlap.kind === 'same_position' ? 'neutral' : 'warning'
+                "
+                variant="soft"
+                icon="i-lucide-layers"
+                :label="`${labelOf(overlap.id)} · ${t(`amendment.detail.overlapKinds.${overlap.kind}`)}`"
+                @click="emit('select', overlap.id)"
+              />
+            </li>
+          </ul>
+          <UButton
+            v-if="overlapSources.length >= 2"
+            class="self-start"
+            icon="i-lucide-git-merge"
+            color="neutral"
+            variant="outline"
+            size="xs"
+            :label="t('amendment.detail.transactOverlaps')"
+            @click="emit('transact', overlapSources)"
+          />
+        </section>
+
+        <section
+          v-if="
+            amendment.sourceIds.length > 0 ||
+            transactedInIds.length > 0 ||
+            transactionalsAnswered.length > 0
+          "
+          class="flex flex-col gap-2"
+        >
+          <h3 class="text-highlighted text-sm font-semibold">
+            {{ t("amendment.detail.transactional") }}
+          </h3>
+          <div
+            v-if="amendment.sourceIds.length > 0"
+            class="flex flex-wrap items-center gap-2"
+          >
+            <span class="text-muted text-sm">{{
+              t("amendment.detail.sources")
+            }}</span>
+            <UButton
+              v-for="id in amendment.sourceIds"
+              :key="id"
+              size="xs"
+              color="secondary"
+              variant="soft"
+              icon="i-lucide-git-merge"
+              :label="labelOf(id)"
+              @click="emit('select', id)"
+            />
+          </div>
+          <div
+            v-if="transactedInIds.length > 0"
+            class="flex flex-wrap items-center gap-2"
+          >
+            <span class="text-muted text-sm">
+              {{ t("amendment.detail.transactedIn") }}
+            </span>
+            <UButton
+              v-for="id in transactedInIds"
+              :key="id"
+              size="xs"
+              color="secondary"
+              variant="soft"
+              icon="i-lucide-git-merge"
+              :label="labelOf(id)"
+              @click="emit('select', id)"
+            />
+          </div>
+          <!-- Transactionals over this one: what its main author answered. -->
+          <template v-if="transactionalsAnswered.length > 0">
+            <p class="text-muted text-sm">
+              {{ t("amendment.detail.transactionalsOver") }}
+            </p>
+            <TransactionalAuthorAnswer
+              v-for="item in transactionalsAnswered"
+              :key="item.id"
+              :transactional="item"
+              :source="amendment"
+              :primary="false"
+              :amendments-url="amendmentsUrl"
+              :actor-member-id="member?.id ?? null"
+              :label-of="labelOf"
+              :status-of="statusOf"
+              :amendment-of="amendmentOf"
+              @updated="emit('updated', $event)"
+              @conflict="emit('changed')"
+              @select="emit('select', $event)"
+            />
+          </template>
+        </section>
+
+        <!-- The parties of a transactional, once nobody here answers. -->
+        <AmendmentAcceptances
+          v-if="amendment.kind === 'transactional' && !acceptancesTurn"
+          :amendment="amendment"
+          :url="url"
+          :actor-member-id="member?.id ?? null"
+          :sources="sources"
+          :label-of="labelOf"
+          @updated="emit('updated', $event)"
+          @conflict="emit('changed')"
+        />
+
+        <AmendmentRelations
+          v-if="showRelations"
+          :amendment="amendment"
+          :relations="relations"
+          :candidates="candidates"
+          :label-of="labelOf"
+          :amendments-url="amendmentsUrl"
+          :can-manage="canManageRelations"
+          @changed="emit('changed')"
+          @select="emit('select', $event)"
+        />
+
+        <section class="flex flex-col gap-2">
+          <h3 class="text-highlighted text-sm font-semibold">
+            {{ t("amendment.detail.history") }}
+          </h3>
+          <AmendmentHistory
+            :url="url"
+            :version="historyVersion"
+            :decisions-url="decisionsUrl"
+            :members="historyMembers"
+            :label-of="historyLabelOf"
+          />
+        </section>
+      </div>
+    </div>
 
     <footer
       v-if="
         amendment.can.edit ||
         amendment.can.submit ||
         amendment.can.withdraw ||
-        moreItems.length > 0
+        transactable
       "
       class="border-default bg-default sticky bottom-0 -mx-1 flex flex-col gap-2 border-t px-1 pt-3 pb-1"
     >
@@ -865,20 +1153,6 @@ async function remove(): Promise<void> {
       </div>
 
       <div v-else class="flex flex-wrap items-center gap-2">
-        <UDropdownMenu
-          v-if="moreItems.length > 0"
-          :items="moreItems"
-          :content="{ align: 'start', side: 'top' }"
-        >
-          <UButton
-            icon="i-lucide-ellipsis"
-            color="neutral"
-            variant="ghost"
-            size="sm"
-            :label="t('amendment.actions.more')"
-            :disabled="busy !== null"
-          />
-        </UDropdownMenu>
         <UButton
           v-if="showEdit"
           icon="i-lucide-pencil"
@@ -898,6 +1172,26 @@ async function remove(): Promise<void> {
           :label="t('amendment.actions.withdraw')"
           :disabled="busy !== null"
           @click="confirming = 'withdraw'"
+        />
+        <UButton
+          v-if="transactable"
+          icon="i-lucide-git-merge"
+          color="neutral"
+          variant="outline"
+          size="sm"
+          :label="t('amendment.detail.transact')"
+          :disabled="busy !== null"
+          @click="emit('transact', [amendment.id])"
+        />
+        <UButton
+          v-if="amendment.can.edit"
+          icon="i-lucide-trash-2"
+          color="error"
+          variant="ghost"
+          size="sm"
+          :label="t('amendment.actions.delete')"
+          :disabled="busy !== null"
+          @click="confirming = 'delete'"
         />
         <UButton
           v-if="showSubmit"

@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import type { AmendmentDto } from "~~/shared/types/api";
 import type { AmendmentOp, Block } from "~~/shared/types/content";
 import { consolidate } from "~~/shared/utils/content/consolidate";
+import { blocksToEditor, editorToBlocks } from "~~/shared/utils/content/editor";
 import { validateOps } from "~~/shared/utils/content/ops";
 import {
   activeAmendmentFilterCount,
   amendmentBlockMarkers,
-  amendmentComposerSteps,
   amendmentHistoryVersion,
   amendmentDisplayLabel,
   amendmentErrorKey,
@@ -16,19 +16,20 @@ import {
   composerAuthorSeed,
   composerSyncState,
   consolidationInputs,
-  contiguousBlockRange,
-  deletePassageOps,
-  draftPassage,
   emptyAmendmentFilters,
-  extendBlockSelection,
   filterAmendmentList,
   groupAmendmentsByOverlap,
   isAmendmentPrivate,
   isNewerAmendmentVersion,
   mineAmendments,
-  passageAmendmentOps,
-  passageSeed,
   seedComposerFromDraft,
+  changedBlockCount,
+  composerAmendmentKind,
+  composerDocumentSeed,
+  composerStartBlockId,
+  composerEditSettler,
+  composerIssues,
+  documentAmendmentOps,
   showAmendmentAdmission,
   totalityAlternativeOps,
   amendmentLateOnSend,
@@ -50,6 +51,10 @@ import {
   amendmentPositionNext,
   composerAuthorSet,
   composerMainAuthor,
+  amendmentNeighbours,
+  amendmentQuickFilterOf,
+  amendmentStatusLine,
+  applyAmendmentQuickFilter,
 } from "./workspace";
 
 const p = (id: string, text: string): Block => ({
@@ -150,70 +155,187 @@ describe("labels", () => {
   });
 });
 
-describe("selection", () => {
-  it("normalizes to a contiguous range in base order", () => {
-    expect(contiguousBlockRange(base, ["b3", "b1"])).toEqual([
-      "b1",
-      "b2",
-      "b3",
-    ]);
-    expect(contiguousBlockRange(base, ["missing"])).toEqual([]);
+/** The text as the editor gives it back when nobody touches it. */
+const echoOf = (blocks: Block[]) =>
+  editorToBlocks(blocksToEditor(blocks), newId);
+
+/** A longer text with what an editor may read differently. */
+const rich: Block[] = [
+  { id: "r1", type: "heading", level: 1, text: "Título primero", marks: [] },
+  {
+    id: "r2",
+    type: "paragraph",
+    text: "Un párrafo con negrita y un enlace.",
+    marks: [
+      { type: "bold", from: 16, to: 23 },
+      { type: "link", from: 29, to: 35, href: "https://creup.es" },
+    ],
+  },
+  {
+    id: "r3",
+    type: "list_item",
+    list: "ordered",
+    level: 0,
+    marker: "a)",
+    text: "Primer punto",
+    marks: [],
+  },
+  {
+    id: "r4",
+    type: "list_item",
+    list: "ordered",
+    level: 1,
+    text: "Punto anidado",
+    marks: [],
+  },
+  {
+    id: "r5",
+    type: "paragraph",
+    text: "Celda uno",
+    marks: [],
+    cell: { table: "t1", row: "w1", cell: "c1", header: true },
+  },
+  {
+    id: "r6",
+    type: "paragraph",
+    text: "Celda dos",
+    marks: [],
+    cell: { table: "t1", row: "w1", cell: "c2", shade: true },
+  },
+  { id: "r7", type: "quote", text: "Una cita final.", marks: [] },
+];
+
+describe("whole-document operations", () => {
+  it("finds no change in a text nobody touched", () => {
+    const seed = composerDocumentSeed(rich);
+    expect(seed).toEqual(rich);
+    expect(seed[1]).not.toBe(rich[1]);
+    // As seeded, and as the editor returns it.
+    expect(documentAmendmentOps(rich, seed, newId)).toEqual([]);
+    const settle = composerEditSettler(seed, echoOf(seed));
+    const ops = documentAmendmentOps(rich, settle(echoOf(seed)), newId);
+    expect(ops).toEqual([]);
+    expect(changedBlockCount(ops)).toBe(0);
   });
 
-  it("selects, toggles and extends from the anchor", () => {
-    let selection = extendBlockSelection(
-      base,
-      { ids: [], anchor: null },
-      "b2",
-      false,
+  it("takes an untouched block as the stored one, whatever the editor returns", () => {
+    const seed = composerDocumentSeed(base);
+    // An editor that gives the second paragraph back with a stray space.
+    const echo = seed.map((block) =>
+      block.id === "b2" ? { ...block, text: `${block.text} ` } : block,
     );
-    expect(selection).toEqual({ ids: ["b2"], anchor: "b2" });
-    selection = extendBlockSelection(base, selection, "b4", true);
-    expect(selection.ids).toEqual(["b2", "b3", "b4"]);
-    selection = extendBlockSelection(base, selection, "b3", true);
-    expect(selection.ids).toEqual(["b2", "b3"]);
-    selection = extendBlockSelection(base, selection, "b1", true);
-    expect(selection.ids).toEqual(["b1", "b2"]);
-    selection = extendBlockSelection(
-      base,
-      { ids: ["b1"], anchor: "b1" },
-      "b1",
-      false,
+    const settle = composerEditSettler(seed, echo);
+    expect(documentAmendmentOps(base, settle(echo), newId)).toEqual([]);
+    // Once the author edits it, it is theirs.
+    const edited = echo.map((block) =>
+      block.id === "b2" ? { ...block, text: "Otro texto." } : block,
     );
-    expect(selection.ids).toEqual([]);
+    const ops = documentAmendmentOps(base, settle(edited), newId);
+    expect(ops.every((op) => op.op === "replace" && op.blockId === "b2")).toBe(
+      true,
+    );
+    expect(changedBlockCount(ops)).toBe(1);
   });
-});
 
-describe("passage operations", () => {
-  it("diffs an edited passage against the base", () => {
-    const edited = passageSeed(base, ["b2"]);
-    edited[0] = {
-      ...edited[0]!,
-      text: edited[0]!.text.replace("la totalidad", "la mitad"),
+  it("opens a draft at its first change in the text, on a block the editor has", () => {
+    const seed = composerDocumentSeed(base);
+    // A new paragraph after the first and another ending: the operations
+    // come with the replacement first.
+    const edited = [
+      seed[0]!,
+      p("n1", "Párrafo nuevo."),
+      seed[1]!,
+      seed[2]!,
+      { ...seed[3]!, text: "Otro final." },
+    ];
+    const ops = documentAmendmentOps(base, edited, newId);
+    expect(ops[0]).toMatchObject({ op: "replace", blockId: base[3]!.id });
+    expect(
+      composerStartBlockId(base, ops, composerDocumentSeed(base, ops)),
+    ).toBe(base[0]!.id);
+
+    // A removed paragraph is not in the editor: the one before it, or the
+    // one after when it was the first.
+    const startOf = (blockId: string) => {
+      const removal: AmendmentOp[] = [{ op: "delete", blockIds: [blockId] }];
+      return composerStartBlockId(
+        base,
+        removal,
+        composerDocumentSeed(base, removal),
+      );
     };
-    const ops = passageAmendmentOps(base, ["b2"], edited, newId);
+    expect(startOf(base[2]!.id)).toBe(base[1]!.id);
+    expect(startOf(base[0]!.id)).toBe(base[1]!.id);
+    expect(composerStartBlockId(base, [], seed)).toBeNull();
+  });
+
+  it("derives modification, addition and suppression from one edit", () => {
+    const seed = composerDocumentSeed(base);
+    const edited = [
+      seed[0]!,
+      { ...seed[1]!, text: "El Consejo financiará la mitad de las becas." },
+      p("n1", "Párrafo nuevo."),
+      // b3 is gone.
+      seed[3]!,
+    ];
+    const ops = documentAmendmentOps(base, edited, newId);
     expect(validateOps(base, ops)).toEqual([]);
-    const { blocks } = consolidate(base, [{ id: "a", ops }]);
-    expect(blocks[1]!.text).toBe(
+    expect(ops.map((op) => op.op).sort()).toEqual([
+      "delete",
+      "insert",
+      "replace",
+    ]);
+    expect(changedBlockCount(ops)).toBe(3);
+    expect(
+      consolidate(base, [{ id: "a", ops }]).blocks.map((block) => block.text),
+    ).toEqual([
+      "Primer párrafo del texto.",
       "El Consejo financiará la mitad de las becas.",
-    );
-  });
-
-  it("adds a paragraph after the selection only once it has text", () => {
-    const seeded = passageSeed(base, ["b3"], { appendEmpty: newId });
-    expect(seeded).toHaveLength(2);
-    expect(passageAmendmentOps(base, ["b3"], seeded, newId)).toEqual([]);
-    seeded[1] = { ...seeded[1]!, text: "Nuevo párrafo." };
-    const ops = passageAmendmentOps(base, ["b3"], seeded, newId);
-    expect(ops).toEqual([
-      { op: "insert", afterBlockId: "b3", blocks: [seeded[1]] },
+      "Párrafo nuevo.",
+      "Cuarto párrafo final.",
     ]);
   });
 
-  it("deletes a contiguous passage", () => {
-    expect(deletePassageOps(base, ["b3", "b2"])).toEqual([
-      { op: "delete", blockIds: ["b2", "b3"] },
-    ]);
+  it("turns a change of format alone into an amendment", () => {
+    const seed = composerDocumentSeed(rich);
+    const edited = seed.map((block) => {
+      if (block.id === "r1") return { ...block, level: 2 };
+      if (block.id === "r7") {
+        return {
+          ...block,
+          marks: [{ type: "italic" as const, from: 4, to: 8 }],
+        };
+      }
+      return block;
+    });
+    const ops = documentAmendmentOps(rich, edited, newId);
+    expect(validateOps(rich, ops)).toEqual([]);
+    expect(changedBlockCount(ops)).toBe(2);
+    const { blocks } = consolidate(rich, [{ id: "a", ops }]);
+    expect(blocks[0]).toMatchObject({ type: "heading", level: 2 });
+    expect(blocks[6]!.marks).toEqual([{ type: "italic", from: 4, to: 8 }]);
+  });
+
+  it("ignores empty paragraphs the author leaves around", () => {
+    const seed = composerDocumentSeed(base);
+    const edited = [...seed, p("n9", "   ")];
+    expect(documentAmendmentOps(base, edited, newId)).toEqual([]);
+  });
+
+  it("counts every block an amendment rewrites, removes or adds", () => {
+    expect(
+      changedBlockCount([
+        replace("b1", 0, 6, "Segundo"),
+        replace("b1", 7, 14, "apartado"),
+        { op: "delete", blockIds: ["b2", "b3"] },
+        {
+          op: "insert",
+          afterBlockId: "b4",
+          blocks: [p("n1", "Uno."), p("n2", "Dos.")],
+        },
+      ]),
+    ).toBe(5);
+    expect(changedBlockCount([])).toBe(0);
   });
 
   it("builds a full alternative text with fresh ids", () => {
@@ -236,44 +358,111 @@ describe("passage operations", () => {
 });
 
 describe("draft re-seeding", () => {
-  it("rebuilds an edited passage that re-diffs to the same operations", () => {
-    const edited = passageSeed(base, ["b2", "b3"]);
-    edited[0] = {
-      ...edited[0]!,
-      text: "El Consejo financiará parte de las becas.",
-    };
-    edited.splice(1, 0, p("n1", "Párrafo insertado."));
-    const ops = passageAmendmentOps(base, ["b2", "b3"], edited, newId);
+  /** A stored draft: one paragraph rewritten, one removed, one added. */
+  const draftOps = (): AmendmentOp[] => {
+    const seed = composerDocumentSeed(base);
+    return documentAmendmentOps(
+      base,
+      [
+        seed[0]!,
+        { ...seed[1]!, text: "El Consejo financiará parte de las becas." },
+        p("n1", "Párrafo insertado."),
+        seed[3]!,
+      ],
+      newId,
+    );
+  };
+
+  it("opens the whole text as the draft leaves it", () => {
+    const ops = draftOps();
     const seed = seedComposerFromDraft(base, {
       kind: "partial",
       ops,
       globalReplace: null,
     });
-    expect(seed.mode).toBe("passage");
-    const again = passageAmendmentOps(base, seed.selection, seed.edited, newId);
+    expect(seed.mode).toBe("document");
+    expect(seed.edited.map((block) => block.id)).toEqual([
+      "b1",
+      "b2",
+      "n1",
+      "b4",
+    ]);
+    expect(seed.edited).toEqual(consolidate(base, [{ id: "a", ops }]).blocks);
+  });
+
+  it("gives the same amendment again when nothing else is touched", () => {
+    const ops = draftOps();
+    const seed = composerDocumentSeed(base, ops);
+    const settle = composerEditSettler(seed, echoOf(seed));
+    const again = documentAmendmentOps(base, settle(echoOf(seed)), newId);
+    expect(validateOps(base, again)).toEqual([]);
     expect(consolidate(base, [{ id: "a", ops: again }]).blocks).toEqual(
       consolidate(base, [{ id: "a", ops }]).blocks,
+    );
+    expect(changedBlockCount(again)).toBe(changedBlockCount(ops));
+  });
+
+  it("lets the author go on editing the draft", () => {
+    const seed = composerDocumentSeed(base, draftOps());
+    const settle = composerEditSettler(seed, echoOf(seed));
+    const edited = echoOf(seed).map((block) =>
+      block.id === "b4"
+        ? { ...block, text: "Cuarto párrafo, cambiado." }
+        : block,
+    );
+    const ops = documentAmendmentOps(base, settle(edited), newId);
+    expect(validateOps(base, ops)).toEqual([]);
+    expect(
+      consolidate(base, [{ id: "a", ops }]).blocks.map((block) => block.text),
+    ).toEqual([
+      "Primer párrafo del texto.",
+      "El Consejo financiará parte de las becas.",
+      "Párrafo insertado.",
+      "Cuarto párrafo, cambiado.",
+    ]);
+  });
+
+  it("keeps a draft that only changes formatting", () => {
+    const first = composerDocumentSeed(rich);
+    const ops = documentAmendmentOps(
+      rich,
+      first.map((block) =>
+        block.id === "r1" ? { ...block, level: 3 } : block,
+      ),
+      newId,
+    );
+    const seed = composerDocumentSeed(rich, ops);
+    expect(seed[0]).toMatchObject({ id: "r1", level: 3 });
+    const settle = composerEditSettler(seed, echoOf(seed));
+    const again = documentAmendmentOps(rich, settle(echoOf(seed)), newId);
+    expect(consolidate(rich, [{ id: "a", ops: again }]).blocks).toEqual(
+      consolidate(rich, [{ id: "a", ops }]).blocks,
     );
   });
 
-  it("handles a deleted first block replaced by new text", () => {
-    const edited = [p("n2", "Sustituto."), ...passageSeed(base, ["b3"])];
-    const ops = passageAmendmentOps(base, ["b2", "b3"], edited, newId);
-    const seed = draftPassage(base, ops);
-    const again = passageAmendmentOps(base, seed.selection, seed.edited, newId);
-    expect(consolidate(base, [{ id: "a", ops: again }]).blocks).toEqual(
-      consolidate(base, [{ id: "a", ops }]).blocks,
-    );
+  it("starts again from the base when the draft no longer applies", () => {
+    const stale: AmendmentOp[] = [
+      {
+        op: "replace",
+        blockId: "b2",
+        from: 0,
+        to: 2,
+        text: "La",
+        baseText: "XX",
+      },
+    ];
+    expect(composerDocumentSeed(base, stale)).toEqual(base);
   });
 
   it("recognizes delete, global, return and alternative drafts", () => {
-    expect(
-      seedComposerFromDraft(base, {
-        kind: "partial",
-        ops: deletePassageOps(base, ["b2", "b3"]),
-        globalReplace: null,
-      }),
-    ).toMatchObject({ mode: "delete", selection: ["b2", "b3"] });
+    // A draft that only removes paragraphs is one more edit of the text.
+    const deleted = seedComposerFromDraft(base, {
+      kind: "partial",
+      ops: [{ op: "delete", blockIds: ["b2", "b3"] }],
+      globalReplace: null,
+    });
+    expect(deleted.mode).toBe("document");
+    expect(deleted.edited.map((block) => block.id)).toEqual(["b1", "b4"]);
     expect(
       seedComposerFromDraft(base, {
         kind: "formal",
@@ -300,6 +489,79 @@ describe("draft re-seeding", () => {
         globalReplace: null,
       }),
     ).toMatchObject({ mode: "alternative", edited: [p("z1", "Nuevo.")] });
+  });
+});
+
+describe("composer checks", () => {
+  const change = [replace("b1", 0, 6, "Segundo")];
+
+  it("asks for a change and for the kind of amendment", () => {
+    expect(composerIssues({ mode: "document", kind: null, ops: [] })).toEqual([
+      "no_changes",
+      "kind_missing",
+    ]);
+    expect(
+      composerIssues({ mode: "document", kind: null, ops: change }),
+    ).toEqual(["kind_missing"]);
+    expect(
+      composerIssues({ mode: "document", kind: "formal", ops: change }),
+    ).toEqual([]);
+  });
+
+  it("checks the word to change everywhere", () => {
+    const global = { mode: "global" as const, kind: "partial" as const };
+    expect(composerIssues({ ...global, ops: [], find: "  " })).toEqual([
+      "find_empty",
+    ]);
+    expect(
+      composerIssues({
+        ...global,
+        ops: [],
+        find: "Consejo",
+        replacement: "Consejo",
+      }),
+    ).toEqual(["same_term"]);
+    expect(
+      composerIssues({ ...global, ops: [], find: "Nada", replacement: "" }),
+    ).toEqual(["no_matches"]);
+    expect(
+      composerIssues({
+        ...global,
+        ops: change,
+        find: "Primer",
+        replacement: "Segundo",
+      }),
+    ).toEqual([]);
+  });
+
+  it("never asks a totality amendment for its kind", () => {
+    expect(composerIssues({ mode: "return", kind: null, ops: [] })).toEqual([]);
+    expect(
+      composerIssues({
+        mode: "alternative",
+        kind: null,
+        ops: [],
+        alternative: [p("x", "  ")],
+      }),
+    ).toEqual(["alternative_empty"]);
+    expect(
+      composerIssues({
+        mode: "alternative",
+        kind: null,
+        ops: [],
+        alternative: [p("x", "Texto.")],
+      }),
+    ).toEqual([]);
+  });
+
+  it("sends the kind the mode asks for", () => {
+    expect(composerAmendmentKind("document", null)).toBeNull();
+    expect(composerAmendmentKind("document", "formal")).toBe("formal");
+    expect(composerAmendmentKind("global", "partial")).toBe("partial");
+    expect(composerAmendmentKind("return", null)).toBe("totality_return");
+    expect(composerAmendmentKind("alternative", "formal")).toBe(
+      "totality_alternative",
+    );
   });
 });
 
@@ -445,6 +707,15 @@ describe("api errors", () => {
     expect(amendmentErrorReasons(error)).toEqual(["noop", "something_new"]);
     expect(amendmentErrorKey("noop")).toBe("amendment.errors.noop");
     expect(amendmentErrorKey("something_new")).toBe("amendment.errors.unknown");
+    // What validateOps says about a change of format has its own wording.
+    for (const reason of [
+      "format_shape",
+      "format_image",
+      "duplicate_format",
+      "marks_out_of_range",
+    ]) {
+      expect(amendmentErrorKey(reason)).toBe(`amendment.errors.${reason}`);
+    }
     expect(amendmentErrorReasons(new Error("x"))).toEqual([]);
   });
 });
@@ -1494,31 +1765,6 @@ describe("review by the Secretaría", () => {
   });
 });
 
-describe("composer steps", () => {
-  it("skips what a mode does not need", () => {
-    expect(amendmentComposerSteps("passage")).toEqual([
-      "what",
-      "write",
-      "check",
-      "why",
-    ]);
-    expect(amendmentComposerSteps("global")).toEqual([
-      "what",
-      "write",
-      "check",
-      "why",
-    ]);
-    expect(amendmentComposerSteps("alternative")).toEqual([
-      "what",
-      "write",
-      "check",
-      "why",
-    ]);
-    expect(amendmentComposerSteps("delete")).toEqual(["what", "check", "why"]);
-    expect(amendmentComposerSteps("return")).toEqual(["what", "why"]);
-  });
-});
-
 describe("sent notice", () => {
   it("says whether it waits for the Secretaría or is public at once", () => {
     expect(
@@ -1531,5 +1777,198 @@ describe("sent notice", () => {
     expect(amendmentSentNotice({ late: false, reviewState: "published" })).toBe(
       "public",
     );
+  });
+});
+
+describe("reader", () => {
+  it("finds the neighbours of an amendment in the list on screen", () => {
+    const ids = ["a", "b", "c"];
+    expect(amendmentNeighbours(ids, "a")).toEqual({
+      index: 0,
+      total: 3,
+      previous: null,
+      next: "b",
+    });
+    expect(amendmentNeighbours(ids, "b")).toEqual({
+      index: 1,
+      total: 3,
+      previous: "a",
+      next: "c",
+    });
+    expect(amendmentNeighbours(ids, "c")).toEqual({
+      index: 2,
+      total: 3,
+      previous: "b",
+      next: null,
+    });
+    expect(amendmentNeighbours(["a"], "a")).toEqual({
+      index: 0,
+      total: 1,
+      previous: null,
+      next: null,
+    });
+  });
+
+  it("gives no neighbours to an amendment the list does not hold", () => {
+    // Opened from the text or a link, or filtered out since.
+    expect(amendmentNeighbours(["a", "b"], "z")).toEqual({
+      index: -1,
+      total: 2,
+      previous: null,
+      next: null,
+    });
+    expect(amendmentNeighbours(["a", "b"], null)).toEqual({
+      index: -1,
+      total: 2,
+      previous: null,
+      next: null,
+    });
+    expect(amendmentNeighbours([], "a")).toEqual({
+      index: -1,
+      total: 0,
+      previous: null,
+      next: null,
+    });
+  });
+
+  it("tells which chip the filters amount to", () => {
+    const empty = emptyAmendmentFilters();
+    expect(amendmentQuickFilterOf(empty)).toBe("all");
+    // A search narrows any chip.
+    expect(amendmentQuickFilterOf({ ...empty, query: "becas" })).toBe("all");
+    expect(amendmentQuickFilterOf({ ...empty, statuses: ["submitted"] })).toBe(
+      "pending",
+    );
+    expect(amendmentQuickFilterOf({ ...empty, late: "late" })).toBe("late");
+    // Filters with no chip narrow "pending" and "late", never "all".
+    expect(
+      amendmentQuickFilterOf({
+        ...empty,
+        statuses: ["submitted"],
+        kinds: ["formal"],
+      }),
+    ).toBe("pending");
+    expect(amendmentQuickFilterOf({ ...empty, kinds: ["formal"] })).toBeNull();
+    expect(amendmentQuickFilterOf({ ...empty, blockId: "b1" })).toBeNull();
+    // Combinations no chip stands for.
+    expect(
+      amendmentQuickFilterOf({ ...empty, statuses: ["submitted", "approved"] }),
+    ).toBeNull();
+    expect(
+      amendmentQuickFilterOf({
+        ...empty,
+        statuses: ["submitted"],
+        late: "late",
+      }),
+    ).toBeNull();
+    expect(amendmentQuickFilterOf({ ...empty, late: "on_time" })).toBeNull();
+    expect(
+      amendmentQuickFilterOf({ ...empty, late: "late", mine: true }),
+    ).toBeNull();
+  });
+
+  it("applies a chip over the current filters", () => {
+    const current = {
+      ...emptyAmendmentFilters(),
+      query: "becas",
+      kinds: ["formal" as const],
+      late: "on_time" as const,
+      mine: true,
+      blockId: "b1",
+    };
+    // "Todas" clears everything but the search.
+    expect(applyAmendmentQuickFilter(current, "all")).toEqual({
+      ...emptyAmendmentFilters(),
+      query: "becas",
+    });
+    const pending = applyAmendmentQuickFilter(current, "pending");
+    expect(pending).toEqual({
+      ...current,
+      statuses: ["submitted"],
+      late: "any",
+      mine: false,
+    });
+    expect(amendmentQuickFilterOf(pending)).toBe("pending");
+    const late = applyAmendmentQuickFilter(pending, "late");
+    expect(late).toEqual({
+      ...current,
+      statuses: [],
+      late: "late",
+      mine: false,
+    });
+    expect(amendmentQuickFilterOf(late)).toBe("late");
+    // Drafts sent back for correction are not presented.
+    expect(
+      applyAmendmentQuickFilter(
+        { ...emptyAmendmentFilters(), review: "correction_requested" },
+        "pending",
+      ).review,
+    ).toBe("any");
+    expect(
+      applyAmendmentQuickFilter(
+        { ...emptyAmendmentFilters(), review: "validated" },
+        "pending",
+      ).review,
+    ).toBe("validated");
+  });
+
+  it("the chips filter the list", () => {
+    const list = [
+      amendment("a1", []),
+      amendment("a2", [], { late: true }),
+      amendment("a3", [], { status: "approved" }),
+      amendment("a4", [], { status: "rejected", late: true }),
+    ];
+    const ids = (quick: "all" | "pending" | "late") =>
+      filterAmendmentList(
+        list,
+        applyAmendmentQuickFilter(emptyAmendmentFilters(), quick),
+        null,
+      ).map((item) => item.id);
+    expect(ids("all")).toEqual(["a1", "a2", "a3", "a4"]);
+    expect(ids("pending")).toEqual(["a1", "a2"]);
+    expect(ids("late")).toEqual(["a2", "a4"]);
+  });
+
+  it("shows one status: the review state while it says more", () => {
+    const can = amendment("x", []).can;
+    // A draft, and one waiting for the Secretaría.
+    expect(
+      amendmentStatusLine(
+        amendment("a", [], { status: "draft", reviewState: null }),
+      ),
+    ).toMatchObject({ type: "review", view: { key: "draft" } });
+    expect(
+      amendmentStatusLine(
+        amendment("a", [], { reviewState: "pending_validation" }),
+      ),
+    ).toMatchObject({ type: "review", view: { key: "pending" } });
+    expect(
+      amendmentStatusLine(
+        amendment("a", [], {
+          reviewState: "pending_validation",
+          can: { ...can, validate: true },
+        }),
+      ),
+    ).toMatchObject({ type: "review", view: { key: "to_validate" } });
+    // Published: "Presentada", unless the list asks for "Publicada".
+    expect(amendmentStatusLine(amendment("a", []))).toEqual({
+      type: "status",
+      status: "submitted",
+    });
+    expect(
+      amendmentStatusLine(amendment("a", []), { showPublished: true }),
+    ).toMatchObject({ type: "review", view: { key: "published" } });
+    // Decided: how it ended, also for the Secretaría that can still publish it.
+    expect(
+      amendmentStatusLine(
+        amendment("a", [], {
+          status: "approved",
+          reviewState: "validated",
+          can: { ...can, publish: true },
+        }),
+        { showPublished: true },
+      ),
+    ).toEqual({ type: "status", status: "approved" });
   });
 });
