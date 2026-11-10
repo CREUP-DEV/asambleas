@@ -9,7 +9,8 @@ import { useImpersonationBannerOffset } from "~/components/shell/ImpersonationBa
  *
  * The dashboard is fixed to the viewport; while an Admin acts as another
  * account it starts below the impersonation banner (app.vue), so the banner
- * never covers the navbars.
+ * never covers the navbars, and `--shell-banner-height` tells the pages
+ * sized to the viewport how much to take off.
  *
  * It also holds the welcome (ShellWelcome), which opens by itself on an
  * account's first visit, and "Ayuda" in the sidebar footer, which opens it
@@ -50,7 +51,11 @@ useHead({
 
     <UDashboardGroup
       class="print:static print:block print:overflow-visible"
-      :style="bannerOffset !== '0px' ? { top: bannerOffset } : undefined"
+      :style="
+        bannerOffset !== '0px'
+          ? { top: bannerOffset, '--shell-banner-height': bannerOffset }
+          : undefined
+      "
     >
       <!-- The banner landmark holds the brand, the navigation, "Ayuda" and
            the user menu (activity, preferences, sign out). On phones the

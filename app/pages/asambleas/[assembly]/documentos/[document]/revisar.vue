@@ -1052,7 +1052,7 @@ useHead({
 
           <aside class="hidden lg:block">
             <div
-              class="sticky top-0 max-h-[calc(100dvh-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-6rem)] space-y-3 overflow-x-hidden overflow-y-auto"
+              class="sticky top-0 max-h-[calc(100dvh-var(--shell-banner-height,0px)-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-6rem)] space-y-3 overflow-x-hidden overflow-y-auto"
             >
               <h3 class="text-highlighted px-2 text-sm font-semibold">
                 {{ t("proponentReview.list.title") }}

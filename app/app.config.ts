@@ -35,6 +35,12 @@ const STATUS_COLORS = Object.keys(ON_TINT) as StatusColor[];
 
 export default defineAppConfig({
   ui: {
+    // The dashboard is fixed to the viewport and starts below the
+    // impersonation banner while it shows (layouts/default.vue): its sidebar
+    // and panels fill the group, never a whole screen (min-h-svh), or they
+    // overflow it by the banner's height and lose their header and footer.
+    dashboardSidebar: { slots: { root: "min-h-full" } },
+    dashboardPanel: { slots: { root: "min-h-full" } },
     colors: {
       primary: "creup-red",
       secondary: "creup-blue",

@@ -2421,7 +2421,6 @@
     "loadFailed": "No se han podido cargar las asambleas",
     "retry": "Reintentar",
     "loading": "Cargando asambleas",
-    "aside": "Tu cuenta",
     "live": {
       "title": "En sesión ahora",
       "follow": "Seguir la sesión",
@@ -2433,12 +2432,6 @@
       "all": "Ver todas",
       "empty": "No hay asambleas próximas",
       "emptyDescription": "Cuando se convoque una asamblea, aparecerá aquí con sus plazos."
-    },
-    "member": {
-      "title": "Tu usuario",
-      "actingFor": "Presentas documentos y enmiendas en nombre de este usuario.",
-      "none": "Tu cuenta no está vinculada a ningún miembro. Si representas a un consejo, una sectorial o un cargo de la CEA, pide a Secretaría que lo revise.",
-      "role": "Rol en la plataforma"
     },
     "admin": {
       "title": "Administración",

@@ -13,7 +13,6 @@ import {
   homeWorkTasks,
   homeWorkUpdates,
 } from "~/components/home/-work";
-import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
 import { welcomeAudience } from "~/components/shell/-welcome";
 import {
   assemblyPath,
@@ -164,12 +163,6 @@ const greeting = computed(() =>
 );
 
 const today = computed(() => formatDate(now.value, { locale: locale.value }));
-
-const roleLabel = computed(() => {
-  const role = me.value?.role ?? null;
-  const key = roleLabelKey(role);
-  return key ? t(key) : role;
-});
 
 // Admin shortcuts ---------------------------------------------------------
 
@@ -538,28 +531,6 @@ const adminLinks = computed(() =>
             :count="updates.length"
           >
             <HomeUpdateList :updates="updates" />
-          </HomeFold>
-
-          <HomeFold id="account" :title="t('home.aside')" icon="i-lucide-user">
-            <div class="flex flex-col gap-3">
-              <h3 class="sr-only">{{ t("home.member.title") }}</h3>
-              <template v-if="member">
-                <CommonMemberBadge :member="member" size="lg" show-name />
-                <p class="text-muted text-sm">
-                  {{ t("home.member.actingFor") }}
-                </p>
-              </template>
-              <p v-else class="text-muted text-sm">
-                {{ t("home.member.none") }}
-              </p>
-              <p
-                v-if="roleLabel"
-                class="flex flex-wrap items-center gap-2 text-sm"
-              >
-                <span class="text-muted">{{ t("home.member.role") }}</span>
-                <ShellRoleBadge :role="me?.role" />
-              </p>
-            </div>
           </HomeFold>
 
           <HomeFold

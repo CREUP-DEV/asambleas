@@ -895,7 +895,7 @@ const questionClass = "text-highlighted text-sm font-semibold";
 <template>
   <section
     ref="root"
-    class="border-default flex flex-col gap-3 rounded-lg border p-3 sm:p-4 lg:h-[calc(100dvh-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-3rem)] lg:min-h-[38rem]"
+    class="border-default flex flex-col gap-3 rounded-lg border p-3 sm:p-4 lg:h-[calc(100dvh-var(--shell-banner-height,0px)-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-3rem)] lg:min-h-[38rem]"
     :aria-labelledby="`${uid}-title`"
   >
     <header class="flex flex-wrap items-start gap-2">
