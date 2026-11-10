@@ -1948,7 +1948,7 @@
     "save": "Guardar",
     "members": {
       "title": "Miembros",
-      "description": "Consejos asociados, sectoriales y cargos de la Comisión Ejecutiva Ampliada que presentan documentos y enmiendas. Se sincronizan con la intranet; aquí puedes dar de alta otros miembros.",
+      "description": "Consejos asociados, sectoriales y cargos de la Comisión Ejecutiva Ampliada que presentan documentos y enmiendas. Se sincronizan con la intranet, que da de baja los que ya no figuran en ella; aquí puedes dar de alta otros miembros.",
       "sync": "Sincronizar con la intranet",
       "syncing": "Sincronizando con la intranet…",
       "syncDoneTitle": "Sincronización completada",
@@ -1956,7 +1956,7 @@
       "syncFailed": "No se ha podido sincronizar con la intranet",
       "create": "Nuevo miembro",
       "createTitle": "Nuevo miembro",
-      "createDescription": "Para miembros que no vienen de la intranet, o un cargo de la CEA que todavía no figura en ella.",
+      "createDescription": "Para miembros que no vienen de la intranet. La sincronización no los toca.",
       "createAction": "Crear miembro",
       "created": "{acronym} creado",
       "updated": "{acronym} actualizado",
@@ -2010,7 +2010,8 @@
         "confirm": "Sincronizar y desactivar",
         "kinds": {
           "asociado": "Consejos asociados",
-          "sectorial": "Sectoriales"
+          "sectorial": "Sectoriales",
+          "executive": "Cargos de la CEA"
         }
       },
       "syncSkipped": {

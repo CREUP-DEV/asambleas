@@ -42,14 +42,14 @@ never say "Comisión Ejecutiva" alone.
   CEA) return
   `{ data: [{ id, denomination, initials, university, autonomous_community }] }`
   (a university only for councils).
-  The roster sync matches an asociado or a sectorial by `intranet_id` first,
-  then by `initials` = `acronym`, so a change of acronym updates the member
-  instead of creating another. The CEA list only adds the executive offices
-  nobody has created yet, named after their denomination, so the Secretaría
-  can assign them documents before anyone signs in; offices stay manual
-  members and are never deactivated by a sync. Without the CEA list (an
-  Intranet without that route) the sync goes on and leaves the offices as
-  they were. An acronym listed twice or held by another member, and an
+  The roster sync matches an asociado, a sectorial or an office by
+  `intranet_id` first, then by `initials` = `acronym`, so a change of
+  acronym updates the member instead of creating another, and deactivates
+  those the Intranet no longer lists. Offices sync like the rest, so the
+  Secretaría can assign them documents before anyone signs in; a manual
+  office the CEA list names is adopted. Without the CEA list (an Intranet
+  without that route) the sync goes on and leaves the offices as they
+  were. An acronym listed twice or held by another member, and an
   account without initials, are not synced, and the sync says so
   (`MemberSyncResult.ignored`, shown on the members page and kept in the
   `members.sync` audit row). It runs by hand from Miembros and daily at 05:00 Europe/Madrid (a
@@ -64,7 +64,8 @@ never say "Comisión Ejecutiva" alone.
   same `initials`. Role sync therefore links the `users.memberId` of Asociado
   and Sectorial accounts by `intranet_id`, then by acronym, creating the
   member if the roster has not been synced yet. CEA accounts link to their
-  executive office by initials only, since their `id` is a person's.
+  executive office the same way: the account is the office's place, which
+  outlives whoever holds it.
 
 A user acts for the member in `users.memberId`. Users with moderation
 permissions may act on behalf of any member; every such action records both.

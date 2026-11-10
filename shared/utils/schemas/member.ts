@@ -95,6 +95,7 @@ export const userMemberLinkBodySchema = z.object({
 export const ROSTER_MEMBER_KINDS = [
   "asociado",
   "sectorial",
+  "executive",
 ] as const satisfies readonly RosterMemberKind[];
 
 /** Largest count a confirmation may carry: more members than any roster has. */

@@ -112,8 +112,11 @@ export interface MemberSyncIgnored {
   withoutInitials: number;
 }
 
-/** The member kinds the Intranet roster lists (asociados and sectorials). */
-export type RosterMemberKind = Extract<MemberKind, "asociado" | "sectorial">;
+/** The member kinds the Intranet roster lists (asociados, sectorials, CEA offices). */
+export type RosterMemberKind = Extract<
+  MemberKind,
+  "asociado" | "sectorial" | "executive"
+>;
 
 /**
  * Body of POST /api/members/sync (memberSyncBodySchema). The body may be

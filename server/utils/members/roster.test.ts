@@ -8,7 +8,6 @@ import {
   planRosterSync,
   type ExistingMember,
   type RosterMember,
-  planExecutiveSync,
 } from "./roster";
 
 const existing = (overrides: Partial<ExistingMember>): ExistingMember => ({
@@ -449,9 +448,11 @@ describe("findLargeDeactivations", () => {
       existing({ id: "a2", acronym: "B", active: false }),
       existing({ id: "a3", acronym: "C", source: "manual" }),
       existing({ id: "e1", acronym: "E", kind: "executive" }),
+      existing({ id: "e2", acronym: "F", kind: "executive", source: "manual" }),
     ];
     expect(findLargeDeactivations(members, ["a1", "e1"])).toEqual([
       { kind: "asociado", active: 1, toDeactivate: 1 },
+      { kind: "executive", active: 1, toDeactivate: 1 },
     ]);
   });
 });
@@ -489,45 +490,76 @@ describe("isDeactivationConfirmed", () => {
   });
 });
 
-describe("planExecutiveSync", () => {
-  const entry = (initials: string, denomination: string | null) => ({
-    id: 1,
-    order: null,
-    initials,
-    denomination,
+describe("planRosterSync with the CEA list", () => {
+  const office = (overrides: Partial<ExistingMember>): ExistingMember =>
+    existing({
+      kind: "executive",
+      university: null,
+      region: null,
+      ...overrides,
+    });
+  const listed = (
+    acronym: string,
+    intranetId: number,
+    name = acronym,
+  ): RosterMember => ({
+    kind: "executive",
+    acronym,
+    name,
     university: null,
-    autonomous_community: null,
+    region: null,
+    intranetId,
   });
 
-  it("creates, names and leaves offices as the CEA list says", () => {
-    const plan = planExecutiveSync(
+  it("adopts a manual office the list names and deactivates one it dropped", () => {
+    const plan = planRosterSync(
+      [listed("PRES", 100, "Presidencia"), listed("SE", 101)],
       [
-        entry("PRES", "Presidencia"),
-        entry("pres", "Duplicada"),
-        entry("VDT", "Vocalía"),
-        entry("SE", null),
-        entry("CEUM", "Consejo"),
-        entry("VPO", "Vicepresidencia"),
-      ],
-      [
-        {
+        office({
           id: "m-pres",
-          kind: "executive",
           acronym: "PRES",
-          name: "Presidencia de CREUP",
-        },
-        { id: "m-vdt", kind: "executive", acronym: "VDT", name: "VDT" },
-        { id: "m-ceum", kind: "asociado", acronym: "CEUM", name: "Consejo" },
+          name: "PRES",
+          source: "manual",
+        }),
+        office({ id: "m-old", acronym: "VOLD", intranetId: 90 }),
+        office({ id: "m-hand", acronym: "VHAND", source: "manual" }),
       ],
     );
-    expect(plan).toEqual({
-      create: [
-        { acronym: "SE", name: "SE" },
-        { acronym: "VPO", name: "Vicepresidencia" },
+    expect(plan.update).toEqual([
+      {
+        id: "m-pres",
+        adopt: true,
+        values: listed("PRES", 100, "Presidencia"),
+      },
+    ]);
+    expect(plan.create.map((entry) => entry.acronym)).toEqual(["SE"]);
+    // An office the Intranet dropped goes; one made by hand stays.
+    expect(plan.deactivate).toEqual(["m-old"]);
+    expect(plan.manualConflicts).toEqual([]);
+  });
+
+  it("never adopts a manual member of another kind", () => {
+    const plan = planRosterSync(
+      [listed("CAS", 102)],
+      [
+        existing({
+          id: "m-cas",
+          acronym: "CAS",
+          kind: "other",
+          source: "manual",
+        }),
       ],
-      rename: [{ id: "m-vdt", name: "Vocalía" }],
-      conflicts: ["CEUM"],
-      duplicates: ["pres"],
-    });
+    );
+    expect(plan.update).toEqual([]);
+    expect(plan.manualConflicts).toEqual(["CAS"]);
+  });
+
+  it("deactivates no office when the Intranet did not give the list", () => {
+    const plan = planRosterSync(
+      [],
+      [office({ id: "m-old", acronym: "VOLD", intranetId: 90 })],
+      ["asociado", "sectorial"],
+    );
+    expect(plan.deactivate).toEqual([]);
   });
 });

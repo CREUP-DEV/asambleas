@@ -145,7 +145,11 @@ function formatDay(value: string | null): string {
 const syncing = ref(false);
 const statusMessage = ref("");
 
-const ROSTER_KINDS: readonly RosterMemberKind[] = ["asociado", "sectorial"];
+const ROSTER_KINDS: readonly RosterMemberKind[] = [
+  "asociado",
+  "sectorial",
+  "executive",
+];
 
 /**
  * The kinds a refused sync would deactivate too much of: the 409 that

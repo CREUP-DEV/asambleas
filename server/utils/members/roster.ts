@@ -21,10 +21,11 @@ import { acronymKey } from "./dto";
  * `autonomous_community` keys at all. `id` is the Intranet `users.id`; the
  * public listings of the website send none.
  *
- * Three lists: asociados and sectorials (required: without either the sync
- * fails), and the CEA's places, which an Intranet without that route may
- * not offer: the sync then leaves the offices untouched
- * (OPTIONAL_ROSTER_KINDS).
+ * Three lists: asociados, sectorials and the CEA's places (one account per
+ * office, which outlives whoever holds it), all synced the same way. The
+ * first two are required: without either the sync fails. The CEA list is
+ * optional, since an Intranet without that route may not offer it: the
+ * sync then leaves the offices untouched (OPTIONAL_ROSTER_KINDS).
  */
 
 const optionalText = z
@@ -58,10 +59,13 @@ export const intranetRosterResponseSchema = z.object({
 export type IntranetRosterEntry = z.output<typeof intranetRosterEntrySchema>;
 
 /** The member kinds planRosterSync matches by Intranet id, then acronym. */
-export type RosterKind = Extract<MemberKind, "asociado" | "sectorial">;
+export type RosterKind = Extract<
+  MemberKind,
+  "asociado" | "sectorial" | "executive"
+>;
 
 /** Every list the sync fetches. */
-export type RosterListKind = RosterKind | "executive";
+export type RosterListKind = RosterKind;
 
 /** Lists the sync does without when the Intranet cannot give them. */
 export type OptionalRosterKind = Extract<RosterListKind, "executive">;
@@ -76,6 +80,7 @@ export const OPTIONAL_ROSTER_KINDS = [
 export const GUARDED_ROSTER_KINDS = [
   "asociado",
   "sectorial",
+  "executive",
 ] as const satisfies readonly RosterKind[];
 
 export interface RosterMember {
@@ -168,7 +173,15 @@ export interface RosterSyncPlan {
    * by another member (acronymConflicts, manualConflicts), and
    * `values.intranetId` keeps the stored id when the roster sends none.
    */
-  update: { id: string; values: RosterMember }[];
+  update: {
+    id: string;
+    values: RosterMember;
+    /**
+     * A manual executive office the CEA list names: it becomes an intranet
+     * member (offices used to be created by hand or at a sign-in).
+     */
+    adopt?: true;
+  }[];
   /** Intranet members still listed and unchanged: only `syncedAt` moves. */
   unchanged: string[];
   /** Active intranet members no longer listed. */
@@ -198,14 +211,18 @@ export interface RosterSyncPlan {
  *    the member; one the roster no longer lists is replaced (replacedIds),
  *    and an entry without id never clears a stored one.
  * Manual members are never touched, even when the roster lists their
- * acronym or id. No plan leaves two members with the same acronym: a
- * rename onto an acronym another member keeps is not applied (the member
- * keeps its own) and such an entry is not created. Only asociados and
- * sectorials are deactivated.
+ * acronym or id, except a manual executive office the CEA list names by
+ * its acronym: it is adopted (`adopt`) and syncs from then on. No plan
+ * leaves two members with the same acronym: a rename onto an acronym
+ * another member keeps is not applied (the member keeps its own) and such
+ * an entry is not created. Only members of a kind in `synced` (the lists
+ * the Intranet gave) are deactivated: a list it did not give deactivates
+ * nobody.
  */
 export function planRosterSync(
   roster: RosterMember[],
   existing: ExistingMember[],
+  synced: readonly RosterKind[] = GUARDED_ROSTER_KINDS,
 ): RosterSyncPlan {
   const plan: RosterSyncPlan = {
     create: [],
@@ -248,10 +265,19 @@ export function planRosterSync(
 
   // Then by acronym, among the members step 1 left.
   const toCreate: RosterMember[] = [];
+  const adopted = new Set<string>();
   for (const entry of pending) {
     const holder = byKey.get(acronymKey(entry.acronym));
     if (!holder || claimed.has(holder.id)) {
       toCreate.push(entry);
+    } else if (
+      holder.source === "manual" &&
+      holder.kind === "executive" &&
+      entry.kind === "executive"
+    ) {
+      matchOf.set(entry, holder);
+      claimed.set(holder.id, entry);
+      adopted.add(holder.id);
     } else if (holder.source === "manual") {
       plan.manualConflicts.push(holder.acronym);
     } else {
@@ -292,8 +318,11 @@ export function planRosterSync(
     const keeper = existing.find(
       (member) => member.id !== id && finalKey.get(member.id) === wanted,
     );
-    if (keeper?.source === "manual") plan.manualConflicts.push(keeper.acronym);
-    else plan.acronymConflicts.push(claimed.get(id)!.acronym);
+    if (keeper?.source === "manual" && !adopted.has(keeper.id)) {
+      plan.manualConflicts.push(keeper.acronym);
+    } else {
+      plan.acronymConflicts.push(claimed.get(id)!.acronym);
+    }
   }
 
   for (const entry of roster) {
@@ -316,7 +345,9 @@ export function planRosterSync(
         to: entry.intranetId,
       });
     }
+    const adopt = adopted.has(current.id);
     const differs =
+      adopt ||
       !current.active ||
       current.kind !== values.kind ||
       current.acronym !== values.acronym ||
@@ -324,8 +355,11 @@ export function planRosterSync(
       current.university !== values.university ||
       current.region !== values.region ||
       current.intranetId !== values.intranetId;
-    if (differs) plan.update.push({ id: current.id, values });
-    else plan.unchanged.push(current.id);
+    if (differs) {
+      plan.update.push(
+        adopt ? { id: current.id, values, adopt } : { id: current.id, values },
+      );
+    } else plan.unchanged.push(current.id);
   }
 
   const takenKeys = new Set(finalKey.values());
@@ -337,80 +371,13 @@ export function planRosterSync(
     }
   }
 
-  const deactivatable = new Set<MemberKind>(GUARDED_ROSTER_KINDS);
+  const deactivatable = new Set<MemberKind>(synced);
   for (const member of existing) {
     if (member.source !== "intranet" || !member.active) continue;
     if (!deactivatable.has(member.kind)) continue;
     if (!claimed.has(member.id)) plan.deactivate.push(member.id);
   }
 
-  return plan;
-}
-
-// CEA places ------------------------------------------------------------------
-
-export interface ExecutiveSyncPlan {
-  /** Offices the CEA list names and no member has the acronym of. */
-  create: { acronym: string; name: string }[];
-  /** Offices still named after their acronym, which the list now names. */
-  rename: { id: string; name: string }[];
-  /** CEA acronyms another kind of member holds: never touched. */
-  conflicts: string[];
-  /** Acronyms the CEA list names twice: the first one counts. */
-  duplicates: string[];
-}
-
-/**
- * The executive offices the CEA list adds (`/usuarios/cea`, one account per
- * place). Offices are matched by acronym only: an account outlives whoever
- * holds the place, but the platform has always keyed offices by initials
- * (link.ts), and sign-in links CEA accounts the same way. Offices are
- * manual members:
- * - a missing one is created, named after the list's denomination;
- * - one still named after its acronym (created at a sign-in) takes the
- *   denomination; one renamed by hand keeps its name;
- * - none is ever deactivated, nor reactivated: a manager does that.
- * An acronym held by a member of another kind is left alone (conflicts).
- */
-export function planExecutiveSync(
-  entries: IntranetRosterEntry[],
-  existing: Pick<ExistingMember, "id" | "kind" | "acronym" | "name">[],
-): ExecutiveSyncPlan {
-  const plan: ExecutiveSyncPlan = {
-    create: [],
-    rename: [],
-    conflicts: [],
-    duplicates: [],
-  };
-  const byKey = new Map<string, (typeof existing)[number]>();
-  for (const member of existing) {
-    const key = acronymKey(member.acronym);
-    if (!byKey.has(key)) byKey.set(key, member);
-  }
-  const seen = new Set<string>();
-  for (const entry of entries) {
-    const acronym = clip(entry.initials, ACRONYM_MAX_LENGTH);
-    if (!acronym) continue;
-    const key = acronymKey(acronym);
-    if (seen.has(key)) {
-      plan.duplicates.push(acronym);
-      continue;
-    }
-    seen.add(key);
-    const denomination = clip(entry.denomination, NAME_MAX_LENGTH);
-    const holder = byKey.get(key);
-    if (!holder) {
-      plan.create.push({ acronym, name: denomination ?? acronym });
-    } else if (holder.kind !== "executive") {
-      plan.conflicts.push(holder.acronym);
-    } else if (
-      denomination &&
-      holder.name === holder.acronym &&
-      denomination !== holder.name
-    ) {
-      plan.rename.push({ id: holder.id, name: denomination });
-    }
-  }
   return plan;
 }
 

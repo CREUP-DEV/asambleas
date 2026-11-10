@@ -211,18 +211,17 @@ invalid one answers 400. It answers 503 without a usable
 `NUXT_INTRANET_API_URL` and 502 when the asociados or the sectorials fail,
 writing nothing. The CEA list (`/usuarios/cea`) is optional: when it fails,
 the sync goes on without it and leaves the offices as they were, and
-`MemberSyncResult.skipped` names it (the members page warns). Asociados and
-sectorials are matched by `intranet_id`, then by acronym. What the Intranet
+`MemberSyncResult.skipped` names it (the members page warns). Asociados,
+sectorials and offices are matched by `intranet_id`, then by acronym, and
+deactivated once the Intranet no longer lists them. What the Intranet
 lists and the sync cannot store is in `MemberSyncResult.ignored`
 `{ acronyms, withoutInitials }`: acronyms listed twice (the first one is
 kept) or held by another member, and accounts without initials. The members
 page warns, and the `members.sync` audit row keeps it, also for the daily
-run. The CEA list only adds offices
-(`planExecutiveSync`): a missing one is created as a manual `executive`
-member named after its denomination, one still named after its acronym
-takes the denomination, one renamed by hand keeps its name, and none is ever
-deactivated. A sync that would deactivate every active intranet asociado or
-sectorial, or more than max(3, 30%) of them, needs `confirmDeactivation: true` and, in `confirmedKinds`, every
+run. A manual office the CEA list names by its acronym is adopted and syncs
+from then on; other manual members are never touched. A sync that would
+deactivate every active intranet asociado, sectorial or office, or more than
+max(3, 30%) of them, needs `confirmDeactivation: true` and, in `confirmedKinds`, every
 kind it would deactivate too much of with at least as many members as it
 would deactivate now. Otherwise nothing changes but a `members.sync_blocked`
 audit row, and the answer is 409 with `data: MemberSyncBlockedData`
@@ -325,13 +324,13 @@ links `users.memberId`:
   account is not linked, and a warning is logged. A missing member is created
   as an intranet member with the account's id, and the next roster sync
   fills it in.
-- `CEA` accounts (role shown as "Comisión Ejecutiva Ampliada (CEA)") act for
-  their executive office (its kind labelled "CEA"). A missing office is created as a
-  manual `executive` member named after its acronym (the intranet name may be
-  the person's), so the roster sync never deactivates it; an admin renames
-  it. CEA accounts link by initials only, since their intranet id is a
-  person's. A CEA account is never linked to a council or a sectorial that
-  shares its initials.
+- `CEA` accounts (role shown as "Comisión Ejecutiva Ampliada (CEA)") are the
+  place of their executive office (its kind labelled "CEA"), which outlives
+  whoever holds it, and link like the others: by intranet id, then by
+  initials. A missing office is created as an intranet member with the
+  account's id, named after its acronym (the account carries its holder's
+  name) until the next roster sync names it. A CEA account is never linked
+  to a council or a sectorial that shares its initials.
 - Other types leave `memberId` alone.
 - A CEA account that already acts for a member keeps it while its intranet
   initials stay the same, so a link an admin set by hand is not undone at

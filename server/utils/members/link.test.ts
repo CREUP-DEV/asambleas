@@ -65,7 +65,7 @@ describe("newLinkedMember", () => {
     });
   });
 
-  it("keeps the intranet id of a council or a sectorial, never of an area", () => {
+  it("keeps the intranet id of every account, a CEA place's too", () => {
     expect(
       newLinkedMember("asociado", "CEUM", { ...identity, id: 412 }, now),
     ).toMatchObject({ intranetId: 412 });
@@ -74,19 +74,25 @@ describe("newLinkedMember", () => {
     ).toMatchObject({ intranetId: 7 });
     expect(
       newLinkedMember("executive", "VPU", { ...identity, id: 99 }, now),
-    ).toMatchObject({ intranetId: null });
+    ).toMatchObject({ intranetId: 99 });
   });
 
-  it("creates executive areas as manual members named by their acronym", () => {
+  it("creates an office as an intranet member named by its acronym", () => {
+    // The account carries the holder's name, never the office's.
     expect(
-      newLinkedMember("executive", "VPU", { name: "Ana", university: null }),
+      newLinkedMember(
+        "executive",
+        "VPU",
+        { name: "Ana", university: null },
+        now,
+      ),
     ).toMatchObject({
       kind: "executive",
       acronym: "VPU",
       name: "VPU",
       university: null,
-      source: "manual",
-      syncedAt: null,
+      source: "intranet",
+      syncedAt: now,
     });
   });
 
@@ -98,10 +104,10 @@ describe("newLinkedMember", () => {
 });
 
 describe("memberIntranetId", () => {
-  it("links councils and sectorials by the account id, CEA areas never", () => {
+  it("links every account by its id, a CEA place's too", () => {
     expect(memberIntranetId("asociado", 412)).toBe(412);
     expect(memberIntranetId("sectorial", 7)).toBe(7);
-    expect(memberIntranetId("executive", 99)).toBeNull();
+    expect(memberIntranetId("executive", 99)).toBe(99);
     expect(memberIntranetId("asociado", null)).toBeNull();
     expect(memberIntranetId("asociado", undefined)).toBeNull();
   });
