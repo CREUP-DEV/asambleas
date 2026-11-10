@@ -194,7 +194,8 @@ async function loadMembers(): Promise<void> {
   membersLoading.value = true;
   membersFailed.value = false;
   try {
-    members.value = await api.get<MemberDto[]>("/api/members");
+    // Never the generic "CEA": it is not a member anyone presents for.
+    members.value = addableMembers(await api.get<MemberDto[]>("/api/members"));
   } catch (error) {
     membersFailed.value = true;
     api.notifyError(error, "agenda.newDocument.membersError");

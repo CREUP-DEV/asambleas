@@ -194,6 +194,11 @@ Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`
 - A roster sync that would deactivate every active member of a kind, or more than max(3, 30%) of them, is not applied unless the body says `confirmDeactivation: true` with `confirmedKinds` covering what it would deactivate now (`isDeactivationConfirmed`): otherwise it records `members.sync_blocked` and answers 409 `large_deactivation` with the current counts. The daily run never confirms, and its audit rows have actor null.
 - `users.memberId` links an account to the member it acts for. In the intranet an Asociado or Sectorial account is the member itself. Asociado and Sectorial accounts link by `users.intranetId` = `members.intranetId` first, then by initials (`server/utils/members/link.ts`).
 - CEA accounts (intranet type `CEA`) act for an `executive` member keyed by their intranet initials. Whoever holds `user:manage_roles` can link any account by hand (`PUT /api/admin/users/[id]/member`).
+- Who sees the executive areas is one predicate, `canSeeExecutiveMembers` (`server/utils/domain/visibility.ts`): the roles Admin, Secretaría, Presidencia, Moderador and CEA, the holders of `document:manage`, `amendment:review`, `amendment:manage`, `assembly:manage`, `session:moderate`, `member:manage` or `user:manage_roles`, and an account that acts for an area (`Actor.memberKind`). Everyone else gets from the server one generic presenter, `GENERIC_EXECUTIVE_MEMBER` (`CEA`, "Comisión Ejecutiva Ampliada"), instead of any area; never hide an area on screen instead.
+  - Every answer that carries a member goes through the helpers there: `redactMember`, `redactMembers`, `redactPresenters`, `redactAuthors` (remaps `mainAuthorId`), `redactAcceptances`, `redactEventActor` (also drops the name of the person who acted for an area), `redactPayloadMembers` with `loadExecutiveMask` (member ids in payloads), `collapseExecutive` (`GET /api/members`) and `visibleAcronym` (PDFs, built with the requester's actor). `MeDto.member` stays real. A new DTO with a `MemberRef` or a member id uses them.
+  - `GENERIC_EXECUTIVE_MEMBER_ID` is never a member. An account that does not see the areas neither adds nor removes one: bodies go through `resolveBodyMembers` (`server/utils/domain/executiveMembers.ts`), which answers 422 `executive_member` for an area that is not already there (by its id or the generic one) and keeps the areas that are.
+  - On the client the generic entry is told by its id, never by the viewer's role (`app/utils/executiveMembers.ts`): a picker that adds members passes its list through `addableMembers`, a generic entry already on a draft is shown fixed (`withFixedGenericExecutive`, `keptGenericExecutive`), and filters by member use it as any other id. The 422 is worded once, in `useApi().notifyError` (`errorReasonKey`).
+  - Amendments whose main author is an area are coded `CEA n` for everyone, numbered per document across all the areas (`amendmentCodePrefix`): a code never names the area.
 
 ### Assemblies
 
@@ -332,7 +337,7 @@ throw createError({
 ## Shared Helpers To Prefer
 
 - `server/utils/domain/actor.ts`: `requireActor`, `requireCan`, `canModerate`, `canManageDocuments` and related checks. Admin passes every check.
-- `server/utils/domain/visibility.ts`: who sees assemblies, documents, amendments and positions.
+- `server/utils/domain/visibility.ts`: who sees assemblies, documents, amendments, positions and the executive areas (`canSeeExecutiveMembers` and the `redact*` helpers); `server/utils/domain/executiveMembers.ts`: the mask of hidden areas and the rule for the members a body names.
 - `server/utils/domain/resolvers.ts`: slug and CUID route resolution with 404 on hidden targets.
 - `server/utils/domain/events.ts`: `recordEvent` (history plus live notification).
 - `server/utils/domain/audit.ts`: `recordAudit`, the only `audit_log` writer; `server/utils/domain/changes.ts`: `diffChanges`.
@@ -414,6 +419,7 @@ pg-boss v12 reminders:
 - An account deleted in the Intranet has no access (`accessRevokedAt`), checked on every request and found by the daily re-check even if it never signs in again; only an authenticated Intranet lookup gives it back.
 - The Intranet token never travels over `http:` to a public host in production, and logs never carry an email (`accountRef`).
 - Activity readers re-check visibility with the current actor and never show others' IPs or emails to non-Admins.
+- An executive area, the person who acted for it and its acronym in an amendment code never reach an account that may not see the areas (`canSeeExecutiveMembers`): the server answers the generic "CEA" everywhere a member leaves it, PDFs included, and never takes the generic id for a member.
 
 ## Formatting
 

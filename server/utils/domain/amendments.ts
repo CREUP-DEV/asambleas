@@ -41,9 +41,13 @@ import type {
   ApprovalMethod,
   AssemblySettings,
   Majority,
+  MemberKind,
   RelationKind,
 } from "../../../shared/constants/domain";
-import { amendmentVoteMajority } from "../../../shared/constants/domain";
+import {
+  EXECUTIVE_AMENDMENT_CODE_PREFIX,
+  amendmentVoteMajority,
+} from "../../../shared/constants/domain";
 import { PERMISSION_KEYS } from "../../../shared/constants/permissions";
 import type {
   AcceptanceBody,
@@ -115,6 +119,7 @@ import {
   shareLockAssembly,
 } from "./documents";
 import { recordEvent } from "./events";
+import { loadExecutiveMask, resolveBodyMembers } from "./executiveMembers";
 import { withHeadcount } from "./headcounts";
 import { assertOpImagesBelong } from "./documentImages";
 import {
@@ -165,7 +170,11 @@ import {
   canSeePositions,
   isDocumentPresenter,
   isDocumentProponent,
+  redactAcceptances,
+  redactAuthors,
   redactCorrectionNote,
+  redactEventActor,
+  redactPayloadMembers,
 } from "./visibility";
 
 /**
@@ -364,6 +373,20 @@ export function buildAcceptanceParties(
     role: "author",
     accepted: memberId === creatorMemberId,
   }));
+}
+
+/**
+ * What the code of an amendment starts with: the acronym of its main author,
+ * or "CEA" for every executive area, so the code never names the area
+ * ("CEA 3" for everyone; docs/design.md, "Who sees the executive areas").
+ */
+export function amendmentCodePrefix(member: {
+  acronym: string;
+  kind: MemberKind;
+}): string {
+  return member.kind === "executive"
+    ? EXECUTIVE_AMENDMENT_CODE_PREFIX
+    : member.acronym;
 }
 
 /** "T{n}" with n = existing transactionals + 1, skipping codes already taken. */
@@ -1309,8 +1332,14 @@ export async function buildAmendmentDtos(
   return rows.map((row) => {
     const meta = readMeta(row);
     const approval = authorsApproval(row);
-    const mainAuthorId = loadedMainAuthor(row);
     const parties = partiesOf(row);
+    // An executive area reads as "CEA" to whoever may not see the areas:
+    // the authors, the main author's id and the parties of a transactional.
+    const { authors, mainAuthorId } = redactAuthors(
+      ctx.actor,
+      row.authors.map((author) => toMemberRef(author.member)),
+      loadedMainAuthor(row),
+    );
     return {
       id: row.id,
       documentId: row.documentId,
@@ -1325,10 +1354,7 @@ export async function buildAmendmentDtos(
       justification: row.justification,
       positionKey: row.positionKey,
       changeKinds: changeKinds(row.ops),
-      authors: orderAuthors(
-        row.authors.map((author) => toMemberRef(author.member)),
-        mainAuthorId ?? undefined,
-      ),
+      authors: orderAuthors(authors, mainAuthorId ?? undefined),
       mainAuthorId,
       submittedAt: iso(row.submittedAt),
       validatedAt: iso(row.validatedAt),
@@ -1366,15 +1392,18 @@ export async function buildAmendmentDtos(
       transactionalIds: row.derived
         .map((derived) => derived.transactionalId)
         .filter(keep),
-      acceptances: parties.map((acceptance) => ({
-        member: toMemberRef(acceptance.member),
-        role: acceptance.role,
-        decision: acceptance.decision,
-        decidedAt: iso(acceptance.decidedAt),
-        recordedBy: acceptanceRecordedBy(
-          acceptanceRecorders.get(acceptanceKey(row.id, acceptance.memberId)),
-        ),
-      })),
+      acceptances: redactAcceptances(
+        ctx.actor,
+        parties.map((acceptance) => ({
+          member: toMemberRef(acceptance.member),
+          role: acceptance.role,
+          decision: acceptance.decision,
+          decidedAt: iso(acceptance.decidedAt),
+          recordedBy: acceptanceRecordedBy(
+            acceptanceRecorders.get(acceptanceKey(row.id, acceptance.memberId)),
+          ),
+        })),
+      ),
       updatedAt: row.updatedAt.toISOString(),
       can: amendmentCapabilities({
         status: row.status,
@@ -1806,10 +1835,22 @@ export async function createAmendmentDraft(
     fail(403, "No tienes permiso para presentar enmiendas");
   }
   assertAmendable(ctx);
-  const authors = await resolveDraftAuthors(actor, body);
+  // An account that does not see the executive areas cannot add one as a
+  // co-author, and the generic "CEA" id is never a member (422
+  // `executive_member`).
+  const named = await resolveBodyMembers(actor, {
+    listed: body.authorMemberIds,
+    named: body.mainAuthorMemberId,
+    current: [],
+    currentMain: null,
+  });
+  const authors = await resolveDraftAuthors(actor, {
+    ...body,
+    authorMemberIds: named.listed,
+  });
   // With co-authors, the main author has to be named (pickMainAuthor).
   const mainAuthorId = mainAuthorOrFail(
-    pickMainAuthor(authors.memberIds, body.mainAuthorMemberId),
+    pickMainAuthor(authors.memberIds, named.named),
   )!;
   const base = await loadBaseBlocks(document);
 
@@ -1875,13 +1916,29 @@ export async function createAmendmentDraft(
 
 export async function updateAmendmentDraft(
   ctx: AmendmentContext,
-  body: AmendmentUpdateBody,
+  input: AmendmentUpdateBody,
 ): Promise<AmendmentDto> {
   const { actor, amendment, document } = ctx;
   if (!ctx.isAuthor) fail(403, "Solo los autores pueden editar la enmienda");
   if (amendment.status !== "draft")
     fail(409, "Solo se pueden editar borradores");
   assertAmendable(ctx);
+
+  const currentAuthorIds = amendment.authors.map((author) => author.memberId);
+  // An account that does not see the executive areas neither adds nor
+  // removes one: the areas among the authors stay, and the generic "CEA" id
+  // only stands for them (422 `executive_member` otherwise).
+  const named = await resolveBodyMembers(actor, {
+    listed: input.authorMemberIds,
+    named: input.mainAuthorMemberId,
+    current: currentAuthorIds,
+    currentMain: loadedMainAuthor(amendment),
+  });
+  const body: AmendmentUpdateBody = {
+    ...input,
+    authorMemberIds: named.listed,
+    mainAuthorMemberId: named.named,
+  };
 
   const transactional = amendment.kind === "transactional";
   if (transactional && body.kind) {
@@ -1891,7 +1948,6 @@ export async function updateAmendmentDraft(
     ? "transactional"
     : (body.kind ?? amendment.kind);
   const meta = readMeta(amendment);
-  const currentAuthorIds = amendment.authors.map((author) => author.memberId);
 
   // A new main author must already be an author or be added now; it then
   // anchors the authors, as the stored one does: `authorMemberIds` lists
@@ -2107,10 +2163,14 @@ async function nextNumber(tx: Tx, documentId: string): Promise<number> {
   return Number(row?.value ?? 0) + 1;
 }
 
+/**
+ * The next number of the member's amendments to the document. The executive
+ * areas share one sequence ("CEA n"), whichever of them presents.
+ */
 async function nextMemberSeq(
   tx: Tx,
   documentId: string,
-  memberId: string,
+  member: { id: string; kind: MemberKind },
 ): Promise<number> {
   const [row] = await tx
     .select({ value: sql<number>`coalesce(max(${amendments.memberSeq}), 0)` })
@@ -2119,7 +2179,9 @@ async function nextMemberSeq(
       and(
         eq(amendments.documentId, documentId),
         ne(amendments.kind, "transactional"),
-        sql`${amendments.meta}->>'presentingMemberId' = ${memberId}`,
+        member.kind === "executive"
+          ? sql`${amendments.meta}->>'presentingMemberId' in (select ${members.id} from ${members} where ${members.kind} = 'executive')`
+          : sql`${amendments.meta}->>'presentingMemberId' = ${member.id}`,
       ),
     );
   return Number(row?.value ?? 0) + 1;
@@ -2228,12 +2290,14 @@ export async function submitAmendment(
     } else {
       // Sent back for correction: it keeps its number and, while the same
       // member presents it, its code (numbering without gaps).
-      const kept = numberingToKeep(amendment, presenting!.member.acronym);
+      // An executive area's amendments are "CEA n", numbered together.
+      const prefix = amendmentCodePrefix(presenting!.member);
+      const kept = numberingToKeep(amendment, prefix);
       const number = kept.number ?? (await nextNumber(tx, document.id));
       const memberSeq =
         kept.memberSeq ??
-        (await nextMemberSeq(tx, document.id, presenting!.memberId));
-      const code = `${presenting!.member.acronym} ${memberSeq}`;
+        (await nextMemberSeq(tx, document.id, presenting!.member));
+      const code = `${prefix} ${memberSeq}`;
       const late = submissionLate(amendment, isLateSubmission(ctx.window, now));
       // Never admitted here: the Secretaría validates it first (and admits
       // it if on time); a late one also waits for the Mesa.
@@ -3728,6 +3792,16 @@ export async function createTransactionalAmendment(
       source.authors.map((author) => author.memberId),
     ),
   );
+  // The parties come from the database, so proposing one over an area's
+  // amendment needs nothing from the body. Its co-authors do: an account
+  // that does not see the executive areas cannot name one (422
+  // `executive_member`).
+  const named = await resolveBodyMembers(actor, {
+    listed: body.authorMemberIds,
+    named: body.mainAuthorMemberId,
+    current: [],
+    currentMain: null,
+  });
   const moderate = canModerate(actor);
   const canCreate = actor.can(PERMISSION_KEYS.AMENDMENT_CREATE);
   // Presents amendments but acts for no member: tell it how to fix that.
@@ -3748,7 +3822,7 @@ export async function createTransactionalAmendment(
   let authorIds: string[];
   if (moderate) {
     authorIds = unique(
-      body.authorMemberIds ?? (actor.memberId ? [actor.memberId] : []),
+      named.listed ?? (actor.memberId ? [actor.memberId] : []),
     );
   } else {
     // Co-authors among those involved: the authors of what it groups and
@@ -3756,7 +3830,7 @@ export async function createTransactionalAmendment(
     const involved = new Set([...sourceAuthorIds, document.proponentMemberId]);
     authorIds = unique([
       ...(actor.memberId ? [actor.memberId] : []),
-      ...(body.authorMemberIds ?? []),
+      ...(named.listed ?? []),
     ]);
     if (authorIds.some((id) => id !== actor.memberId && !involved.has(id))) {
       fail(
@@ -3766,9 +3840,7 @@ export async function createTransactionalAmendment(
     }
   }
   await assertMembers(authorIds, false);
-  const mainAuthorId = mainAuthorOrFail(
-    pickMainAuthor(authorIds, body.mainAuthorMemberId),
-  );
+  const mainAuthorId = mainAuthorOrFail(pickMainAuthor(authorIds, named.named));
 
   const parties = buildAcceptanceParties(
     sources.map(loadedMainAuthor),
@@ -4303,6 +4375,9 @@ export async function amendmentHistory(
     .orderBy(asc(events.createdAt), asc(events.id));
 
   const notesVisible = canReadCorrection(ctx.actor, ctx.amendment);
+  // Payloads name members by id: the areas read as one for those who may
+  // not see them.
+  const mask = await loadExecutiveMask(ctx.actor);
   // An Admin's act as an account names the Admin to that account and Admins.
   const impersonators = await loadImpersonators(
     rows
@@ -4314,21 +4389,32 @@ export async function amendmentHistory(
     type: row.type,
     entityType: row.entityType,
     entityId: row.entityId,
-    payload: redactCorrectionNote(
-      row.type,
-      redactAmendmentEventPayload(row.type, row.payload, ctx.positionsVisible),
-      notesVisible,
+    payload: redactPayloadMembers(
+      mask,
+      redactCorrectionNote(
+        row.type,
+        redactAmendmentEventPayload(
+          row.type,
+          row.payload,
+          ctx.positionsVisible,
+        ),
+        notesVisible,
+      ),
     ),
-    actorName: row.actorName,
-    actorMember:
-      row.memberId && row.memberAcronym && row.memberName && row.memberKind
-        ? {
-            id: row.memberId,
-            acronym: row.memberAcronym,
-            name: row.memberName,
-            kind: row.memberKind,
-          }
-        : null,
+    // Neither the area nor the person who acted for it, for those who may
+    // not see the areas.
+    ...redactEventActor(ctx.actor, {
+      actorName: row.actorName,
+      actorMember:
+        row.memberId && row.memberAcronym && row.memberName && row.memberKind
+          ? {
+              id: row.memberId,
+              acronym: row.memberAcronym,
+              name: row.memberName,
+              kind: row.memberKind,
+            }
+          : null,
+    }),
     impersonatedBy: impersonatedByFor(ctx.actor, row, impersonators),
     createdAt: row.createdAt.toISOString(),
   }));

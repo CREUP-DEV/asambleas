@@ -68,7 +68,11 @@ import {
   hasPendingReview,
   type ReviewCounts,
 } from "./reviewState";
-import { canSeeAssembly, canSeeDocument } from "./visibility";
+import {
+  canSeeAssembly,
+  canSeeDocument,
+  redactMemberOrNull,
+} from "./visibility";
 
 /**
  * The Secretaría's validation inbox (GET .../review) and each user's work on
@@ -579,10 +583,13 @@ async function loadWorkAcceptances(
           title: document.title,
         },
         transactional: { id: transactional.id, code: transactional.code },
-        proposedBy:
+        // An executive area reads as "CEA" to whoever may not see the areas.
+        proposedBy: redactMemberOrNull(
+          actor,
           transactional.authors.find(
             (author) => author.memberId === loadedMainAuthor(transactional),
-          )?.member ?? null,
+          )?.member,
+        ),
         replaces: replaces.get(transactional.id) ?? [],
       });
     }

@@ -11,6 +11,7 @@ import {
   documentVersions,
   votes,
 } from "../../db/schema";
+import type { MemberKind } from "../../../shared/constants/domain";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
 import { visibleAgendaItems } from "../../../shared/utils/agendaSubmissions";
 import { consolidate } from "../../../shared/utils/content/consolidate";
@@ -20,7 +21,11 @@ import { loadAmendmentVisibility } from "../domain/documents";
 import { getImageDir, imageFileName } from "../domain/documentImages";
 import { logError } from "../core/logger";
 import { loadCoProponents, withCoProponentIds } from "../domain/presenters";
-import { canSeeAssembly, canSeeDocument } from "../domain/visibility";
+import {
+  canSeeAssembly,
+  canSeeDocument,
+  visibleAcronym,
+} from "../domain/visibility";
 import { loadExportActor } from "./actor";
 import {
   amendmentCodes,
@@ -133,12 +138,37 @@ async function loadAgenda(assemblyId: string) {
     .where(eq(agendaItems.assemblyId, assemblyId));
 }
 
+type AcronymMember = { acronym: string; kind: MemberKind };
+
+/**
+ * The co-presenters' acronyms as the actor reads them. They come in acronym
+ * order; when an area reads as "CEA" they are sorted again, since where the
+ * area sat would narrow down which one it is.
+ */
+function visibleCoAcronyms(
+  actor: Actor,
+  coProponents: readonly AcronymMember[],
+): string[] {
+  const acronyms = coProponents.map((member) => visibleAcronym(actor, member));
+  const hidden = coProponents.some(
+    (member, index) => member.acronym !== acronyms[index],
+  );
+  return hidden
+    ? [...new Set(acronyms)].sort((a, b) => a.localeCompare(b))
+    : acronyms;
+}
+
+/**
+ * `actor` is the requester: an executive area is printed as "CEA" for one
+ * who may not see the areas (presentersLabel then names it once).
+ */
 function documentMeta(
-  document: DocumentRow & { proponent: { acronym: string } | null },
+  actor: Actor,
+  document: DocumentRow & { proponent: AcronymMember | null },
   agenda: AgendaTree,
   agendaTitles: Map<string, string>,
   finalVote: VoteRow | undefined,
-  coProponentAcronyms: readonly string[] = [],
+  coProponents: readonly AcronymMember[] = [],
 ): ExportDocumentMeta {
   return {
     title: document.title,
@@ -146,8 +176,8 @@ function documentMeta(
     kind: document.kind,
     format: document.format,
     proponent: presentersLabel(
-      document.proponent?.acronym,
-      coProponentAcronyms,
+      document.proponent ? visibleAcronym(actor, document.proponent) : null,
+      visibleCoAcronyms(actor, coProponents),
     ),
     fileName: document.fileName,
     agendaNumbering: agenda.numbering.get(document.agendaItemId) ?? null,
@@ -161,6 +191,7 @@ function documentMeta(
 type LoadedAmendment = AnnexAmendment & { ops: AmendmentOp[] };
 
 async function loadAnnexAmendments(
+  actor: Actor,
   documentId: string,
 ): Promise<LoadedAmendment[]> {
   const rows = await db.query.amendments.findMany({
@@ -180,7 +211,9 @@ async function loadAnnexAmendments(
       ops: true,
     },
     with: {
-      authors: { with: { member: { columns: { id: true, acronym: true } } } },
+      authors: {
+        with: { member: { columns: { id: true, acronym: true, kind: true } } },
+      },
       sources: { columns: { sourceId: true } },
       derived: { columns: { transactionalId: true } },
     },
@@ -202,9 +235,12 @@ async function loadAnnexAmendments(
       approvalMethod: row.approvalMethod,
       decidedAt: row.decidedAt,
       positionKey: row.positionKey,
-      authors: row.authors
-        .map((author) => author.member.acronym)
-        .sort((a, b) => a.localeCompare(b)),
+      // Several areas read as one "CEA" for a requester who may not see them.
+      authors: [
+        ...new Set(
+          row.authors.map((author) => visibleAcronym(actor, author.member)),
+        ),
+      ].sort((a, b) => a.localeCompare(b)),
       sourceIds: row.sources.map((source) => source.sourceId),
       derivedIds: row.derived.map((derived) => derived.transactionalId),
       vote: vote
@@ -227,7 +263,7 @@ async function annotatedBody(
   const baseVersionId = document.baseVersionId!;
   const [baseBlocks, amendmentRows, { visible }] = await Promise.all([
     loadVersionBlocks([baseVersionId]),
-    loadAnnexAmendments(document.id),
+    loadAnnexAmendments(actor, document.id),
     loadAmendmentVisibility(actor, document),
   ]);
 
@@ -322,7 +358,7 @@ export async function buildDocumentExportData(
       eq(documents.id, job.documentId),
       eq(documents.assemblyId, assembly.id),
     ),
-    with: { proponent: { columns: { acronym: true } } },
+    with: { proponent: { columns: { acronym: true, kind: true } } },
   });
   // Co-presenters see a draft like its main presenter.
   const document = row ? (await withCoProponentIds([row]))[0] : undefined;
@@ -350,11 +386,12 @@ export async function buildDocumentExportData(
     images,
     assembly: toExportAssembly(assembly),
     document: documentMeta(
+      actor,
       document,
       agenda,
       agendaTitles,
       document.finalVoteId ? finalVotes.get(document.finalVoteId) : undefined,
-      (coProponents.get(document.id) ?? []).map((member) => member.acronym),
+      coProponents.get(document.id) ?? [],
     ),
     body,
     generatedAt: new Date(),
@@ -381,7 +418,7 @@ export async function buildAssemblyExportData(
         eq(documents.assemblyId, assembly.id),
         eq(documents.status, "published"),
       ),
-      with: { proponent: { columns: { acronym: true } } },
+      with: { proponent: { columns: { acronym: true, kind: true } } },
       orderBy: [asc(documents.createdAt), asc(documents.id)],
     }),
   ]);
@@ -409,11 +446,12 @@ export async function buildAssemblyExportData(
     const versionId = versionOf(document);
     return {
       meta: documentMeta(
+        actor,
         document,
         agenda,
         agendaTitles,
         document.finalVoteId ? finalVotes.get(document.finalVoteId) : undefined,
-        (coProponents.get(document.id) ?? []).map((member) => member.acronym),
+        coProponents.get(document.id) ?? [],
       ),
       source:
         document.format === "file"

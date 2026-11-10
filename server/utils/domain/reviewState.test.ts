@@ -767,6 +767,12 @@ describe("numberingToKeep", () => {
     ).toEqual({ number: 7, memberSeq: 2 });
   });
 
+  it("keeps an area's code when another area presents it again: they share CEA", () => {
+    expect(
+      numberingToKeep({ number: 7, memberSeq: 3, code: "CEA 3" }, "CEA"),
+    ).toEqual({ number: 7, memberSeq: 3 });
+  });
+
   it("keeps the number but renumbers the code for another member", () => {
     expect(
       numberingToKeep({ number: 7, memberSeq: 2, code: "CEUM 2" }, "CAUB"),

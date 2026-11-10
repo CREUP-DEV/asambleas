@@ -77,6 +77,19 @@ export function amendmentShortLabel(
   return amendment.number !== null ? String(amendment.number) : null;
 }
 
+/**
+ * Order of two amendment codes ("CEUM 4", "CEA 12", "T 3"): by acronym, then
+ * by the number as a number, so "CEA 2" comes before "CEA 10". The codes of
+ * every executive area share the acronym "CEA" and one count per document,
+ * so they reach two digits sooner. A missing code sorts first.
+ */
+export function compareAmendmentCodes(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): number {
+  return (a ?? "").localeCompare(b ?? "", undefined, { numeric: true });
+}
+
 // Review by the Secretaría -------------------------------------------------------
 
 /**

@@ -82,6 +82,8 @@
       "rateLimited": "Demasiadas peticiones seguidas. Espera un momento y vuelve a intentarlo.",
       "server": "Error del servidor. Inténtalo de nuevo en unos minutos.",
       "network": "No hay conexión con el servidor. Comprueba tu red.",
+      "executiveMain": "No puedes elegir a la CEA como principal. Pídeselo a la CEA o a la Secretaría.",
+      "executiveMember": "No puedes añadir a la CEA. Pídeselo a la CEA o a la Secretaría.",
       "unknown": "No se ha podido completar la operación."
     },
     "content": {
@@ -1669,6 +1671,7 @@
         "othersHint": "La presentáis juntos.",
         "members": "¿Con quién la presentas?",
         "placeholder": "Elige los miembros",
+        "ceaKept": "La CEA también la presenta. Solo la CEA o la Secretaría pueden quitarla.",
         "onBehalfToggle": "Presentarla en nombre de otro miembro"
       },
       "why": {

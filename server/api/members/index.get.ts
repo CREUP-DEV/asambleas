@@ -5,11 +5,22 @@ import { memberListQuerySchema } from "~~/shared/utils/schemas/member";
 import { db } from "../../db";
 import { members } from "../../db/schema";
 import { requireActor } from "../../utils/domain/actor";
-import { toMemberDto } from "../../utils/members/dto";
+import {
+  collapseExecutive,
+  placeGenericByAcronym,
+} from "../../utils/domain/visibility";
+import {
+  genericExecutiveMemberDto,
+  toMemberDto,
+} from "../../utils/members/dto";
 
-/** Active members first, by acronym. `?all=1` also returns inactive ones. */
+/**
+ * Active members first, by acronym. `?all=1` also returns inactive ones.
+ * An account that may not see the executive areas gets one generic "CEA"
+ * entry instead of them (canSeeExecutiveMembers).
+ */
 export default defineEventHandler(async (event): Promise<MemberDto[]> => {
-  await requireActor(event);
+  const actor = await requireActor(event);
   const query = memberListQuerySchema.safeParse(getQuery(event));
   if (!query.success) {
     throw createError({ statusCode: 400, message: "Parámetros no válidos" });
@@ -21,5 +32,8 @@ export default defineEventHandler(async (event): Promise<MemberDto[]> => {
     .where(query.data.all ? undefined : eq(members.active, true))
     .orderBy(desc(members.active), asc(members.acronym));
 
-  return rows.map(toMemberDto);
+  // The generic entry goes where "CEA" sorts, not where the first area was.
+  return placeGenericByAcronym(
+    collapseExecutive(actor, rows.map(toMemberDto), genericExecutiveMemberDto),
+  );
 });

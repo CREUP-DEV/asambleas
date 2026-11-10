@@ -48,13 +48,14 @@ import {
   type EventType,
   type MeActivityTab,
 } from "~~/shared/constants/activity";
-import type {
-  AssemblySettings,
-  AssemblyStatus,
-  DecisionKind,
-  DecisionMethod,
-  DocumentStatus,
-  AmendmentStatus,
+import {
+  GENERIC_EXECUTIVE_MEMBER_ID,
+  type AssemblySettings,
+  type AssemblyStatus,
+  type DecisionKind,
+  type DecisionMethod,
+  type DocumentStatus,
+  type AmendmentStatus,
 } from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type {
@@ -95,19 +96,24 @@ import {
 } from "./actor";
 import { redactAmendmentEventPayload } from "./amendments";
 import { assemblySettings, canSeeDocumentCorrection } from "./documents";
+import { loadExecutiveMask } from "./executiveMembers";
 import { loadCoProponentIds, loadSourceAuthorIds } from "./presenters";
 import { resolveAssembly } from "./resolvers";
 import {
   canSeeAmendment,
   canSeeAssembly,
   canSeeDocument,
+  canSeeExecutiveMembers,
   canSeePositions,
   filterDecisionsByAmendment,
+  genericExecutiveMember,
   isAmendmentInsider,
   isDocumentPresenter,
   redactCorrectionNote,
   redactDocumentChanges,
+  redactPayloadMembers,
   seesAllPresentedAmendments,
+  type ExecutiveMask,
 } from "./visibility";
 
 /**
@@ -127,6 +133,10 @@ import {
  * - The account's own acts it can no longer see stay, with their type, time
  *   and (visible) assembly, and `target.available = false`, no label, no
  *   document and an empty payload.
+ * - An account that may not see the executive areas (canSeeExecutiveMembers)
+ *   reads every area as the generic "CEA", and the person who acted for one
+ *   is not named. There is no member filter here, so nothing tells areas
+ *   apart; the Admin log has one and shows everything.
  * - Others' acts (tab `member`) it cannot see are left out, so they do not
  *   reveal that a hidden item exists.
  * - Payloads go through a per-action allowlist after the redactions, so a
@@ -2114,6 +2124,55 @@ function actorOf(
   return { ...user, member };
 }
 
+/**
+ * What a page hides from an actor who may not see the executive areas, from
+ * the members its rows name; null for an actor who sees them. loadMeActivity
+ * passes the full one (loadExecutiveMask), which also covers the member ids
+ * that only payloads carry.
+ */
+function executiveMaskOf(
+  actor: Actor,
+  lookups: ActivityLookups,
+): ExecutiveMask {
+  if (canSeeExecutiveMembers(actor)) return null;
+  return new Set(
+    [...lookups.members.values()]
+      .filter((member) => member.kind === "executive")
+      .map((member) => member.id),
+  );
+}
+
+/** The members of a page with every executive area as the generic "CEA". */
+function maskedMembers(
+  members: ReadonlyMap<string, MemberRef>,
+): Map<string, MemberRef> {
+  return new Map(
+    [...members].map(([id, member]) => [
+      id,
+      member.kind === "executive" ? genericExecutiveMember() : member,
+    ]),
+  );
+}
+
+/**
+ * Who acted, once the members are masked: the person who acted for an area
+ * is not named either, since the name would say which area. The viewer's
+ * own acts keep their name.
+ */
+function maskedActor(
+  actor: ActivityActorDto | null,
+  own: boolean,
+): ActivityActorDto | null {
+  if (!actor || own || actor.member?.id !== GENERIC_EXECUTIVE_MEMBER_ID) {
+    return actor;
+  }
+  return {
+    id: GENERIC_EXECUTIVE_MEMBER_ID,
+    name: actor.member.name,
+    member: actor.member,
+  };
+}
+
 /** The real Admin behind a row done while acting as its actor; null otherwise. */
 function impersonatorOf(
   row: RawActivityRow,
@@ -2161,12 +2220,19 @@ export function toMeActivityItem(
   actor: Actor,
   tab: MeActivityTab,
   row: RawActivityRow,
-  lookups: ActivityLookups,
+  all: ActivityLookups,
   now: Date = new Date(),
+  mask: ExecutiveMask = executiveMaskOf(actor, all),
 ): ActivityItemDto | null {
   const me = actor.user.id;
+  // For an account that may not see the executive areas, every area reads
+  // as the generic "CEA": the member acted for, the members a payload
+  // names and a member the row is about.
+  const lookups = mask ? { ...all, members: maskedMembers(all.members) } : all;
   const view = targetView(row, lookups, actor);
   if (!view.visible && tab === "member") return null;
+  const aboutArea =
+    mask !== null && row.targetType === "member" && mask.has(row.targetId);
 
   // Who was really behind it: only for the account acted as and Admins.
   const seesImpersonation = row.actorUserId === me || actor.isAdmin;
@@ -2190,26 +2256,31 @@ export function toMeActivityItem(
     action: row.action,
     category: activityCategory(row.kind, row.action),
     source: row.source,
-    actor: actorOf(row, lookups),
+    actor: maskedActor(actorOf(row, lookups), row.actorUserId === me),
     impersonatedBy: seesImpersonation ? impersonatorOf(row, lookups) : null,
     impersonationId: seesImpersonation ? row.impersonationId : null,
     target: {
       type: row.targetType,
-      id: row.targetId,
+      id: aboutArea ? GENERIC_EXECUTIVE_MEMBER_ID : row.targetId,
       label: view.visible ? view.label : null,
       assembly,
       document:
         view.visible && view.document ? documentRef(view.document) : null,
       available: view.visible,
     },
-    payload: view.visible
-      ? allowActivityPayload(
-          row.kind,
-          row.action,
-          view.payload,
-          lookups.members,
-        )
-      : {},
+    // What an area was and became (its name, its acronym) is not for them.
+    payload:
+      view.visible && !aboutArea
+        ? redactPayloadMembers(
+            mask,
+            allowActivityPayload(
+              row.kind,
+              row.action,
+              view.payload,
+              lookups.members,
+            ),
+          )
+        : {},
     impersonation: windowOf(row, lookups, now),
     access:
       tab === "access" && ownAccess
@@ -2313,6 +2384,8 @@ export async function loadMeActivity(
     ? (await resolveAssembly(actor, query.assembly)).id
     : undefined;
   const tenure = query.tab === "to" ? await loadRoleTenure(actor.user.id) : [];
+  // Every executive area, for an account that may not see them.
+  const mask = await loadExecutiveMask(actor);
   const branches = meActivityBranches({
     tab: query.tab,
     userId: actor.user.id,
@@ -2334,7 +2407,7 @@ export async function loadMeActivity(
       build: async (rows) => {
         const lookups = await loadActivityLookups(rows);
         return rows.map((row) =>
-          toMeActivityItem(actor, query.tab, row, lookups, now),
+          toMeActivityItem(actor, query.tab, row, lookups, now, mask),
         );
       },
     }),

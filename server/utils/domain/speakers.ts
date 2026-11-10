@@ -17,6 +17,7 @@ import { SPEAKING_QUEUE_MAX_LENGTH } from "~~/shared/utils/schemas/speakers";
 import { getOptimisticLockTimestampMs } from "../optimisticLock";
 import { toMemberRef } from "../members/dto";
 import { canModerate, type Actor } from "./actor";
+import { canSeeExecutiveMembers, redactMember } from "./visibility";
 import { lockAssembly } from "./agendaWrites";
 import type { AssemblyRow } from "./assemblies";
 import type { Executor } from "./events";
@@ -51,15 +52,25 @@ function iso(value: Date | null): string | null {
   return value ? value.toISOString() : null;
 }
 
-function toTurnDto(row: {
-  turn: TurnRow;
-  member: MemberColumns | null;
-}): SpeakingTurnDto {
+/**
+ * A turn as the actor may read it. For those who may not see the executive
+ * areas, an area's turn reads as "CEA" and the person's name goes too,
+ * since it would name the area. The Mesa always sees both.
+ */
+function toTurnDto(
+  actor: Actor,
+  row: {
+    turn: TurnRow;
+    member: MemberColumns | null;
+  },
+): SpeakingTurnDto {
   const { turn } = row;
+  const hidden =
+    row.member?.kind === "executive" && !canSeeExecutiveMembers(actor);
   return {
     id: turn.id,
-    member: row.member ? toMemberRef(row.member) : null,
-    speaker: turn.speaker,
+    member: row.member ? redactMember(actor, toMemberRef(row.member)) : null,
+    speaker: hidden ? null : turn.speaker,
     agendaItemId: turn.agendaItemId,
     status: turn.status,
     position: turn.position,
@@ -151,7 +162,7 @@ export async function loadSpeakers(
   );
   return {
     visible: live.visible,
-    turns: turns.map((turn) => toTurnDto(byId.get(turn.id)!)),
+    turns: turns.map((turn) => toTurnDto(actor, byId.get(turn.id)!)),
   };
 }
 

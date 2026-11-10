@@ -63,6 +63,14 @@ export type IsoDate = string;
 
 // Members ----------------------------------------------------------------
 
+/**
+ * A member as the account may read it. An executive area is itself only for
+ * the accounts that see the areas (the CEA, the Secretaría, the Presidencia,
+ * the Mesa, managers and Admins); everyone else gets GENERIC_EXECUTIVE_MEMBER
+ * instead (id GENERIC_EXECUTIVE_MEMBER_ID, "CEA"), once per list. That id is
+ * not a member: a body may carry it only as a stand-in for the areas already
+ * there (422 `executive_member` otherwise). docs/api.md, "Executive areas".
+ */
 export interface MemberRef {
   id: string;
   acronym: string;
@@ -746,7 +754,8 @@ export interface AmendmentDto {
   authors: MemberRef[];
   /**
    * The main author: it answers the transactionals proposed over this
-   * amendment. Required when there are co-authors.
+   * amendment. Required when there are co-authors. The generic id when it
+   * is an executive area the account may not see (MemberRef).
    */
   mainAuthorId: string | null;
   submittedAt: IsoDate | null;
@@ -1070,7 +1079,10 @@ export interface SpeakingTurnDto {
   id: string;
   /** Who speaks for: a council, sectorial or CEA area. */
   member: MemberRef | null;
-  /** The person's name, when the Mesa wrote it. */
+  /**
+   * The person's name, when the Mesa wrote it. Null for the turn of an
+   * executive area the account may not see (MemberRef).
+   */
   speaker: string | null;
   agendaItemId: string | null;
   status: SpeakingTurnStatus;
@@ -1118,6 +1130,10 @@ export interface EventDto {
   entityType: string;
   entityId: string;
   payload: Record<string, unknown>;
+  /**
+   * The person who did it. Null too when they acted for an executive area
+   * the account may not see (MemberRef): the name would say which area.
+   */
   actorName: string | null;
   actorMember: MemberRef | null;
   /**

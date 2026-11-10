@@ -22,7 +22,7 @@ import {
  * always among the choices. So are `fixedIds` (a co-presenter cannot drop
  * the main presenter), and with `mainLocked` the choice of who answers is
  * shown but cannot change: only that member or the Secretaría hands it
- * over. A presenter who picks another member to answer is told so before
+ * over. A generic "CEA" among the co-presenters is fixed too. A presenter who picks another member to answer is told so before
  * saving, since afterwards they cannot take it back themselves. The parent
  * loads the members (`load` fires in the browser when the section opens),
  * may react to `update:mainId` (managers make the chosen one the lead) and
@@ -69,13 +69,22 @@ const emit = defineEmits<{ load: [] }>();
 
 const { t } = useI18n();
 
+/**
+ * Co-presenters this user cannot remove: `fixedIds`, and the generic "CEA"
+ * that stands for executive areas this account does not see (only the CEA
+ * or the Secretaría take an area out).
+ */
+const fixed = computed(() =>
+  withFixedGenericExecutive(props.fixedIds, coIds.value),
+);
+
 /** The co-presenters this user may add or remove. */
 const editableCoIds = computed<string[]>({
-  get: () => coIds.value.filter((id) => !props.fixedIds.includes(id)),
+  get: () => coIds.value.filter((id) => !fixed.value.includes(id)),
   set: (ids) => {
     coIds.value = [
-      ...coIds.value.filter((id) => props.fixedIds.includes(id)),
-      ...ids.filter((id) => !props.fixedIds.includes(id)),
+      ...coIds.value.filter((id) => fixed.value.includes(id)),
+      ...ids.filter((id) => !fixed.value.includes(id)),
     ];
   },
 });
@@ -106,12 +115,11 @@ const byId = computed(() => {
 
 /**
  * Everyone but the lead and the fixed ones; current co-presenters stay even
- * if inactive.
+ * if inactive. The generic "CEA" is never offered: it is not a member.
  */
 const coItems = computed(() => {
-  const listed = props.members.filter(
-    (member) =>
-      member.id !== props.leadId && !props.fixedIds.includes(member.id),
+  const listed = addableMembers(props.members).filter(
+    (member) => member.id !== props.leadId && !fixed.value.includes(member.id),
   );
   const missing = editableCoIds.value
     .filter((id) => !listed.some((member) => member.id === id))

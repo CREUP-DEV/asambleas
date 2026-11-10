@@ -285,7 +285,8 @@ const parties = computed<MemberRef[]>(() => {
   }
   const proponent = props.document.proponent;
   if (proponent && !seen.has(proponent.id)) seen.set(proponent.id, proponent);
-  return [...seen.values()];
+  // Never the generic "CEA": it is not a member (the Mesa sees the areas).
+  return addableMembers([...seen.values()]);
 });
 const partyItems = computed(() =>
   parties.value.map((party) => ({
@@ -307,7 +308,11 @@ watch(
       return;
     }
     authorIds.value = [
-      ...new Set(list.flatMap((source) => source.authors.map((a) => a.id))),
+      ...new Set(
+        list.flatMap((source) =>
+          addableMembers(source.authors).map((a) => a.id),
+        ),
+      ),
     ];
   },
   { immediate: true },

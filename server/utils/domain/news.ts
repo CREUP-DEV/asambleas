@@ -38,6 +38,7 @@ import {
   canSeeDocument,
   canSeePositions,
   isDocumentPresenter,
+  redactMember,
 } from "./visibility";
 
 /**
@@ -576,7 +577,8 @@ export async function loadWorkNews(
       amendment: amendment ? { id: amendment.id, code: amendment.code } : null,
       ownAmendment: amendment !== null && authoredIds.has(amendment.id),
       type: row.type,
-      by: member ? toMemberRef(member) : null,
+      // An executive area reads as "CEA" to whoever may not see the areas.
+      by: member ? redactMember(actor, toMemberRef(member)) : null,
       impersonatedBy: impersonatedByFor(self, row, impersonators),
       value: newsValue(row.type, row.payload),
       at: row.createdAt.toISOString(),

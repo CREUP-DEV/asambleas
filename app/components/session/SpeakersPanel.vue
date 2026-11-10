@@ -78,8 +78,9 @@ const { data: members, status: membersStatus } = useLazyFetch<MemberDto[]>(
   },
 );
 
+/** Never the generic "CEA": it is not a member the Mesa gives the floor to. */
 const memberItems = computed(() =>
-  (members.value ?? [])
+  addableMembers(members.value ?? [])
     .filter((member) => member.active)
     .map((member) => ({
       label: memberLabel(member),

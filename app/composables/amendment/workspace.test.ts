@@ -55,6 +55,7 @@ import {
   amendmentQuickFilterOf,
   amendmentStatusLine,
   applyAmendmentQuickFilter,
+  compareAmendmentCodes,
 } from "./workspace";
 
 const p = (id: string, text: string): Block => ({
@@ -1970,5 +1971,23 @@ describe("reader", () => {
         { showPublished: true },
       ),
     ).toEqual({ type: "status", status: "approved" });
+  });
+});
+
+describe("compareAmendmentCodes", () => {
+  it("orders the numbers of one acronym as numbers", () => {
+    const codes = ["CEA 10", "CEA 2", "CEUM 1", "CEA 1", null];
+    expect([...codes].sort(compareAmendmentCodes)).toEqual([
+      null,
+      "CEA 1",
+      "CEA 2",
+      "CEA 10",
+      "CEUM 1",
+    ]);
+  });
+
+  it("is zero for the same code and for two missing ones", () => {
+    expect(compareAmendmentCodes("CEA 3", "CEA 3")).toBe(0);
+    expect(compareAmendmentCodes(null, undefined)).toBe(0);
   });
 });

@@ -82,6 +82,8 @@
       "rateLimited": "Too many requests in a row. Wait a moment and try again.",
       "server": "Server error. Try again in a few minutes.",
       "network": "Cannot reach the server. Check your connection.",
+      "executiveMain": "You cannot choose the CEA as the main one. Ask the CEA or the Secretaría to do it.",
+      "executiveMember": "You cannot add the CEA. Ask the CEA or the Secretaría to do it.",
       "unknown": "The operation could not be completed."
     },
     "content": {
@@ -1669,6 +1671,7 @@
         "othersHint": "You present it together.",
         "members": "Who do you present it with?",
         "placeholder": "Choose the members",
+        "ceaKept": "The CEA presents it too. Only the CEA or the Secretaría can take it out.",
         "onBehalfToggle": "Present it on behalf of another member"
       },
       "why": {

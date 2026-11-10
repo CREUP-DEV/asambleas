@@ -188,8 +188,26 @@ const mainAuthorId = ref<string | undefined>(
 const editingOthers = !isNew && authorSeed.keptMemberId === null;
 /** "Con otros miembros": the picker shows and its members count. */
 const withOthers = ref(coAuthorIds.value.length > 0);
+/**
+ * The generic "CEA" stands for executive areas this account does not see.
+ * When the draft has it, it stays: only the CEA or the Secretaría take an
+ * area out (the server keeps them whatever is sent).
+ */
+const genericCoAuthorKept = authorSeed.coAuthorIds.some(
+  isGenericExecutiveMember,
+);
+watch(coAuthorIds, (ids) => {
+  if (genericCoAuthorKept && !ids.some(isGenericExecutiveMember)) {
+    coAuthorIds.value = [
+      ...ids,
+      ...keptGenericExecutive(authorSeed.coAuthorIds),
+    ];
+  }
+});
 const sentCoAuthorIds = computed(() =>
-  editingOthers || withOthers.value ? coAuthorIds.value : [],
+  editingOthers || withOthers.value
+    ? coAuthorIds.value
+    : keptGenericExecutive(coAuthorIds.value),
 );
 
 // Operations -----------------------------------------------------------------
@@ -455,23 +473,32 @@ const { data: members, status: membersStatus } = useLazyFetch<MemberDto[]>(
   },
 );
 
+/** Never the generic "CEA": it is not a member anyone can add. */
 const memberItems = computed(() =>
-  (members.value ?? [])
+  addableMembers(members.value ?? [])
     .filter((item) => item.active)
     .map((item) => ({
       label: memberLabel(item),
       value: item.id,
+      disabled: false,
     })),
 );
 /**
  * Everyone but the actor's member (always kept) and, on a new amendment,
- * the presenting one (always included).
+ * the presenting one (always included). A generic "CEA" the draft already
+ * has is listed so it is named, but cannot be taken out.
  */
 const coAuthorItems = computed(() => {
   const presenting = isNew ? onBehalfOfMemberId.value : undefined;
-  return memberItems.value.filter(
+  const items = memberItems.value.filter(
     (item) => item.value !== member.value?.id && item.value !== presenting,
   );
+  const kept = keptGenericExecutive(coAuthorIds.value).map((id) => ({
+    label: memberName(id),
+    value: id,
+    disabled: true,
+  }));
+  return [...kept, ...items];
 });
 
 /** Members by id, to name them. */
@@ -1328,6 +1355,11 @@ const questionClass = "text-highlighted text-sm font-semibold";
                 editingOthers
                   ? t('amendment.detail.authors')
                   : t('amendment.composer.who.members')
+              "
+              :help="
+                genericCoAuthorKept
+                  ? t('amendment.composer.who.ceaKept')
+                  : undefined
               "
             >
               <USelectMenu

@@ -25,7 +25,10 @@ import type {
   AssemblySettings,
   Majority,
 } from "~~/shared/constants/domain";
-import { amendmentAcceptBlocked } from "~/composables/amendment/workspace";
+import {
+  amendmentAcceptBlocked,
+  compareAmendmentCodes,
+} from "~/composables/amendment/workspace";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { copyShape } from "~~/shared/utils/content/lists";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
@@ -588,7 +591,7 @@ export function sortSessionAmendments(list: AmendmentDto[]): AmendmentDto[] {
       a.positionKey - b.positionKey ||
       (a.number ?? Number.MAX_SAFE_INTEGER) -
         (b.number ?? Number.MAX_SAFE_INTEGER) ||
-      (a.code ?? "").localeCompare(b.code ?? "") ||
+      compareAmendmentCodes(a.code, b.code) ||
       a.id.localeCompare(b.id),
   );
 }
@@ -1355,7 +1358,7 @@ export function sessionConsolidatedPreview(
         decidedTime(a) - decidedTime(b) ||
         (a.number ?? Number.MAX_SAFE_INTEGER) -
           (b.number ?? Number.MAX_SAFE_INTEGER) ||
-        (a.code ?? "").localeCompare(b.code ?? ""),
+        compareAmendmentCodes(a.code, b.code),
     );
   const withText = approved.filter(
     (amendment) =>
