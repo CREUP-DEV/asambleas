@@ -3077,7 +3077,9 @@
     "panes": {
       "label": "View",
       "text": "Text",
-      "amendments": "Amendments"
+      "amendments": "Amendments",
+      "show": "Show amendments",
+      "hide": "Hide amendments"
     },
     "modes": {
       "label": "How to view the text",

@@ -3077,7 +3077,9 @@
     "panes": {
       "label": "Vista",
       "text": "Texto",
-      "amendments": "Enmiendas"
+      "amendments": "Enmiendas",
+      "show": "Mostrar enmiendas",
+      "hide": "Ocultar enmiendas"
     },
     "modes": {
       "label": "Cómo ver el texto",
