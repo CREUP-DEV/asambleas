@@ -3693,7 +3693,7 @@
       "addTitle": "Apuntar un turno",
       "member": "Quién pide la palabra",
       "memberPlaceholder": "Busca por siglas, nombre o universidad",
-      "memberInRoom": "Consejos y sectoriales en la sala según el último recuento.",
+      "memberInRoom": "Consejos y sectoriales en la sala o con delegación según el último recuento.",
       "person": "Nombre de la persona",
       "add": "Apuntar turno",
       "waiting": "En espera ({count})",

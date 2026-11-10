@@ -79,18 +79,14 @@ const { data: members, status: membersStatus } = useLazyFetch<MemberDto[]>(
 );
 
 /**
- * The councils and sectorials in the room at the latest headcount (marked
- * present, not delegated), or null before the first one: then every member
- * is offered.
+ * The councils and sectorials at the latest headcount, in the room or
+ * delegated (whoever holds the delegation may speak for them), or null
+ * before the first one: then every member is offered.
  */
 const inRoom = computed<Set<string> | null>(() => {
   const latest = session.headcounts.latest.value;
   if (!latest) return null;
-  return new Set(
-    latest.entries
-      .filter((entry) => entry.mark === "present")
-      .map((entry) => entry.member.id),
-  );
+  return new Set(latest.entries.map((entry) => entry.member.id));
 });
 
 /** Whether the headcount says who of this kind is in the room. */
@@ -103,7 +99,7 @@ function spoken(memberId: string): number {
 
 /**
  * Who may ask for the floor: the active members, councils and sectorials
- * only while in the room (the CEA's offices and the others are not counted,
+ * only while in the room or delegated (the CEA's offices and the others are not counted,
  * so they are always there). Those who have spoken most in the assembly go
  * first; the rest keep the general order. Never the generic "CEA": it is
  * not a member the Mesa gives the floor to.
