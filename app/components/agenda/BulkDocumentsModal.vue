@@ -13,6 +13,7 @@ import type {
   MemberDto,
 } from "~~/shared/types/api";
 import { BULK_DOCUMENTS_MAX } from "~~/shared/utils/agendaSubmissions";
+import { orderMembers } from "~~/shared/utils/memberOrder";
 import { memberMayPresent } from "~~/shared/utils/presenterKinds";
 import { proposeFromItem } from "~/composables/document/itemProposal";
 import {
@@ -185,6 +186,7 @@ const formatItems = computed(() =>
 );
 const formatUi = { fieldset: "flex-wrap gap-2" };
 
+const { member: myMember } = useMe();
 const members = ref<MemberDto[]>([]);
 const membersLoading = ref(false);
 const membersFailed = ref(false);
@@ -194,8 +196,12 @@ async function loadMembers(): Promise<void> {
   membersLoading.value = true;
   membersFailed.value = false;
   try {
-    // Never the generic "CEA": it is not a member anyone presents for.
-    members.value = addableMembers(await api.get<MemberDto[]>("/api/members"));
+    // Never the generic "CEA": it is not a member anyone presents for. The
+    // account's own kind goes first, then the general order.
+    members.value = orderMembers(
+      addableMembers(await api.get<MemberDto[]>("/api/members")),
+      myMember.value?.kind ?? null,
+    );
   } catch (error) {
     membersFailed.value = true;
     api.notifyError(error, "agenda.newDocument.membersError");

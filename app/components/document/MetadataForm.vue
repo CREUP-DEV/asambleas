@@ -16,6 +16,7 @@ import type {
   MemberRef,
 } from "~~/shared/types/api";
 import { itemAcceptsKind } from "~~/shared/utils/agendaSubmissions";
+import { orderMembers } from "~~/shared/utils/memberOrder";
 import { memberMayPresent } from "~~/shared/utils/presenterKinds";
 import { formatDateTime, toDate } from "~/utils/format";
 import { presenterKindGroups } from "~/composables/document/documentKinds";
@@ -488,11 +489,15 @@ const {
 /**
  * The members that may present a document of the kind chosen: a sectorial
  * is not offered for an internal motion (memberMayPresent), and the generic
- * "CEA" never is (it is not a member).
+ * "CEA" never is (it is not a member). The account's own kind goes first
+ * (orderMembers), then the general order.
  */
 const presentableMembers = computed<MemberDto[]>(() =>
-  addableMembers(members.value ?? []).filter((member) =>
-    memberMayPresent(state.kind, member.kind),
+  orderMembers(
+    addableMembers(members.value ?? []).filter((member) =>
+      memberMayPresent(state.kind, member.kind),
+    ),
+    myMember.value?.kind ?? null,
   ),
 );
 
