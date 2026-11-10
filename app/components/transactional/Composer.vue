@@ -289,12 +289,7 @@ const parties = computed<MemberRef[]>(() => {
   // Never the generic "CEA": it is not a member (the Mesa sees the areas).
   return addableMembers([...seen.values()]);
 });
-const partyItems = computed(() =>
-  parties.value.map((party) => ({
-    label: memberLabel(party),
-    value: party.id,
-  })),
-);
+const partyItems = computed(() => parties.value.map(memberMenuItem));
 const authorIds = ref<string[]>([]);
 const authorsTouched = ref(false);
 const optionsOpen = ref(false);
@@ -344,7 +339,7 @@ const executiveItems = computed(() =>
     ? []
     : executiveMembersOf(authorMembers.value ?? [])
         .filter((item) => item.active && item.id !== member.value?.id)
-        .map((item) => ({ label: memberLabel(item), value: item.id })),
+        .map(memberMenuItem),
 );
 const executiveAuthorIds = ref<string[]>([]);
 const executiveOpen = ref(false);
@@ -997,6 +992,8 @@ const stepBadge =
                 :model-value="authorIds"
                 :items="partyItems"
                 value-key="value"
+                :ui="MEMBER_MENU_UI"
+                :filter-fields="MEMBER_MENU_FILTER_FIELDS"
                 multiple
                 class="w-full"
                 :placeholder="t('transactional.composer.authorsPlaceholder')"
@@ -1067,6 +1064,8 @@ const stepBadge =
                 v-model="executiveAuthorIds"
                 :items="executiveItems"
                 value-key="value"
+                :ui="MEMBER_MENU_UI"
+                :filter-fields="MEMBER_MENU_FILTER_FIELDS"
                 multiple
                 class="w-full"
                 :placeholder="

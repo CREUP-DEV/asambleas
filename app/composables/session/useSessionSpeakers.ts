@@ -67,6 +67,13 @@ export function useSessionSpeakers(options: SessionSpeakersOptions) {
   });
 
   const turns = computed<SpeakingTurnDto[]>(() => data.value?.turns ?? []);
+  /** Each member's turns in the whole assembly (the Mesa only). */
+  const history = computed(
+    () =>
+      new Map(
+        (data.value?.history ?? []).map((entry) => [entry.memberId, entry]),
+      ),
+  );
   const view = computed(() => sessionSpeakers(turns.value));
   const byId = computed(
     () => new Map(turns.value.map((turn) => [turn.id, turn])),
@@ -294,6 +301,7 @@ export function useSessionSpeakers(options: SessionSpeakersOptions) {
 
   return {
     turns,
+    history,
     view,
     loading,
     unavailable,

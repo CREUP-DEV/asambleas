@@ -114,10 +114,7 @@ const sources = computed<AmendmentDto[]>(() =>
 /** The main author of each source: who has to accept it. */
 const parties = computed(() => sessionTransactionalParties(sources.value));
 const partyItems = computed(() =>
-  parties.value.map((party) => ({
-    label: memberLabel(party.member),
-    value: party.member.id,
-  })),
+  parties.value.map((party) => memberMenuItem(party.member)),
 );
 /** The authors chosen, as the main author select lists them. */
 const mainAuthorItems = computed(() =>
@@ -502,6 +499,8 @@ function voteCreated(): void {
             :model-value="authorIds"
             :items="partyItems"
             value-key="value"
+            :ui="MEMBER_MENU_UI"
+            :filter-fields="MEMBER_MENU_FILTER_FIELDS"
             multiple
             :placeholder="t('session.composer.authorsPlaceholder')"
             :aria-label="

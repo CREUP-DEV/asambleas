@@ -501,11 +501,7 @@ const memberItems = computed(() => {
   // Its own kind first: an asociado looks among the asociados, a sectorial
   // among the sectorials and an office among the offices.
   return orderMembers([...listed, ...kept], member.value?.kind ?? null).map(
-    (item) => ({
-      label: memberLabel(item),
-      value: item.id,
-      disabled: false,
-    }),
+    (item) => ({ ...memberMenuItem(item), disabled: false }),
   );
 });
 /**
@@ -1335,6 +1331,8 @@ const questionClass = "text-highlighted text-sm font-semibold";
                 v-model="onBehalfOfMemberId"
                 :items="memberItems"
                 value-key="value"
+                :ui="MEMBER_MENU_UI"
+                :filter-fields="MEMBER_MENU_FILTER_FIELDS"
                 class="w-full"
                 :loading="membersStatus === 'pending'"
                 :placeholder="t('amendment.composer.onBehalfPlaceholder')"
@@ -1380,6 +1378,8 @@ const questionClass = "text-highlighted text-sm font-semibold";
                 v-model="coAuthorIds"
                 :items="coAuthorItems"
                 value-key="value"
+                :ui="MEMBER_MENU_UI"
+                :filter-fields="MEMBER_MENU_FILTER_FIELDS"
                 multiple
                 class="w-full"
                 :loading="membersStatus === 'pending'"
@@ -1446,6 +1446,8 @@ const questionClass = "text-highlighted text-sm font-semibold";
                   v-model="onBehalfOfMemberId"
                   :items="memberItems"
                   value-key="value"
+                  :ui="MEMBER_MENU_UI"
+                  :filter-fields="MEMBER_MENU_FILTER_FIELDS"
                   size="sm"
                   class="w-full"
                   :loading="membersStatus === 'pending'"

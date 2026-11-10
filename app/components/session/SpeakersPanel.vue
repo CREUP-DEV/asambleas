@@ -78,15 +78,59 @@ const { data: members, status: membersStatus } = useLazyFetch<MemberDto[]>(
   },
 );
 
-/** Never the generic "CEA": it is not a member the Mesa gives the floor to. */
+/**
+ * The councils and sectorials in the room at the latest headcount (marked
+ * present, not delegated), or null before the first one: then every member
+ * is offered.
+ */
+const inRoom = computed<Set<string> | null>(() => {
+  const latest = session.headcounts.latest.value;
+  if (!latest) return null;
+  return new Set(
+    latest.entries
+      .filter((entry) => entry.mark === "present")
+      .map((entry) => entry.member.id),
+  );
+});
+
+/** Whether the headcount says who of this kind is in the room. */
+const COUNTED_KINDS = new Set<MemberDto["kind"]>(["asociado", "sectorial"]);
+
+/** How many turns a member has had the floor in, in this assembly. */
+function spoken(memberId: string): number {
+  return speakers.history.value.get(memberId)?.spoken ?? 0;
+}
+
+/**
+ * Who may ask for the floor: the active members, councils and sectorials
+ * only while in the room (the CEA's offices and the others are not counted,
+ * so they are always there). Those who have spoken most in the assembly go
+ * first; the rest keep the general order. Never the generic "CEA": it is
+ * not a member the Mesa gives the floor to.
+ */
 const memberItems = computed(() =>
   addableMembers(members.value ?? [])
-    .filter((member) => member.active)
-    .map((member) => ({
-      label: memberLabel(member),
-      value: member.id,
-    })),
+    .filter(
+      (member) =>
+        member.active &&
+        (inRoom.value === null ||
+          !COUNTED_KINDS.has(member.kind) ||
+          inRoom.value.has(member.id)),
+    )
+    .map((member, index) => ({ member, index }))
+    .sort(
+      (a, b) => spoken(b.member.id) - spoken(a.member.id) || a.index - b.index,
+    )
+    .map(({ member }) => memberMenuItem(member)),
 );
+
+/** The people already written down for the member chosen, latest first. */
+const speakerSuggestions = computed(() =>
+  memberId.value
+    ? (speakers.history.value.get(memberId.value)?.speakers ?? [])
+    : [],
+);
+const speakerListId = useId();
 
 const memberId = ref<string | undefined>(undefined);
 const speakerName = ref("");
@@ -418,6 +462,7 @@ function duration(turn: SpeakingTurnDto): string | null {
       >
         <UFormField
           :label="t('session.speakers.member')"
+          :help="inRoom ? t('session.speakers.memberInRoom') : undefined"
           name="session-speaker-member"
         >
           <UInputMenu
@@ -425,6 +470,8 @@ function duration(turn: SpeakingTurnDto): string | null {
             v-model="memberId"
             :items="memberItems"
             value-key="value"
+            :ui="MEMBER_MENU_UI"
+            :filter-fields="MEMBER_MENU_FILTER_FIELDS"
             :loading="membersStatus === 'pending'"
             :placeholder="t('session.speakers.memberPlaceholder')"
             icon="i-lucide-search"
@@ -442,8 +489,17 @@ function duration(turn: SpeakingTurnDto): string | null {
             v-model="speakerName"
             :maxlength="SPEAKER_NAME_MAX_LENGTH"
             autocomplete="off"
+            :list="speakerSuggestions.length > 0 ? speakerListId : undefined"
             class="w-full"
           />
+          <!-- The names already written for this member, to pick again -->
+          <datalist v-if="speakerSuggestions.length > 0" :id="speakerListId">
+            <option
+              v-for="name in speakerSuggestions"
+              :key="name"
+              :value="name"
+            />
+          </datalist>
         </UFormField>
         <UButton
           type="submit"

@@ -154,13 +154,15 @@ export interface Presenters {
 }
 
 export type PresentersError =
-  "main_required" | "own_member_required" | "main_only";
+  "presenter_required" | "main_required" | "own_member_required" | "main_only";
 
 /**
  * Messages for the errors of planPresenters. `main_only` is a 403 (who may
  * do it), the others a 422 (what the body says).
  */
 export const PRESENTERS_MESSAGES: Record<PresentersError, string> = {
+  presenter_required:
+    "Indica quién presenta el documento: un consejo, un sectorial o un cargo de la CEA",
   main_required:
     "Indica quién presenta principalmente el documento: es quien responde a las enmiendas",
   own_member_required:
@@ -180,6 +182,10 @@ function unique(values: (string | null | undefined)[]): string[] {
  * (docs/api.md, "Presenters"). The bodies name the main presenter apart
  * from the co-presenters (DocumentCreateBody), so the main presenter named
  * is always one of the presenters:
+ * - a document is always presented by someone (`presenter_required`): a
+ *   create names a presenter (a manager's own member by default) and an
+ *   update never clears it. A document stored without one (from before)
+ *   keeps none until someone is named;
  * - with co-presenters there must be a main presenter (`main_required`);
  * - managers set any main presenter and co-presenters (on create the main
  *   one defaults to their own member);
@@ -248,6 +254,9 @@ export function planPresenters(input: {
   }
   co = unique(co).filter((id) => id !== main);
   if (co.length > 0 && !main) return "main_required";
+  if (!main && (current === null || requested === null)) {
+    return "presenter_required";
+  }
   if (own && main !== own && !co.includes(own)) return "own_member_required";
   return { proponentMemberId: main, coProponentMemberIds: co };
 }
