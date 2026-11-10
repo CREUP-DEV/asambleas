@@ -17,8 +17,9 @@ import {
  * whose title link covers it, keep this component above the link
  * (`relative z-[1]`), as the agenda row does. `showName` adds the full name
  * of a member presenting it alone (with co-presenters only acronyms fit);
- * with `labelled` the name alone replaces the badge and the visible
- * "Presenta" (kept for screen readers).
+ * with `labelled` the names replace the badges and the visible "Presenta"
+ * (kept for screen readers), alone or with co-presenters ("Vocalía de X con
+ * Vocalía de Y").
  * Renders nothing without a main presenter: callers say so themselves.
  */
 const props = withDefaults(
@@ -46,6 +47,14 @@ const { t, locale } = useI18n();
 const presenters = computed(() => documentPresenterMembers(props.document));
 const main = computed(() => presenters.value[0] ?? null);
 const others = computed(() => presenters.value.slice(1));
+
+/** Names in plain text instead of badges, without a visible "Presenta". */
+const named = computed(() => props.labelled && props.showName);
+
+/** A member's name, or its acronym when the name only repeats it. */
+function displayName(member: MemberRef): string {
+  return memberNameRepeatsAcronym(member) ? member.acronym : member.name;
+}
 
 const shown = computed(() => others.value.slice(0, props.maxOthers));
 const hidden = computed(() => others.value.slice(shown.value.length));
@@ -81,12 +90,12 @@ const parts = computed<Part[]>(() => {
     <!-- The name alone ("Presenta" only for screen readers): beside the
          title it says who presents it without a label -->
     <span
-      v-if="labelled && showName"
+      v-if="named"
       class="text-default min-w-0 text-sm font-medium"
       data-testid="document-presenter-name"
     >
-      <span class="sr-only">{{ t("document.header.proponent") }} </span>
-      {{ memberNameRepeatsAcronym(main) ? main.acronym : main.name }}
+      <span class="sr-only">{{ `${t("document.header.proponent")} ` }}</span>
+      {{ displayName(main) }}
     </span>
     <template v-else>
       <span v-if="labelled" class="text-muted text-sm">
@@ -94,6 +103,31 @@ const parts = computed<Part[]>(() => {
       </span>
       <CommonMemberBadge :member="main" :size="size" :show-name="showName" />
     </template>
+  </span>
+
+  <!-- Several, by name beside the title: "Vocalía de X con Vocalía de Y" -->
+  <span
+    v-else-if="main && named"
+    class="text-muted min-w-0 text-sm"
+    data-testid="document-presenters"
+  >
+    <span class="sr-only">{{ `${t("document.header.proponent")} ` }}</span>
+    <i18n-t keypath="document.presenters.short" tag="span" scope="global">
+      <template #main>
+        <span class="text-default font-medium">{{ displayName(main) }}</span>
+      </template>
+      <template #others>
+        <template v-for="(part, position) in parts" :key="position">
+          <template v-if="part.kind === 'text'">{{ part.value }}</template>
+          <span
+            v-else-if="part.kind === 'member'"
+            class="text-default font-medium"
+          >
+            {{ displayName(part.member) }}
+          </span>
+        </template>
+      </template>
+    </i18n-t>
   </span>
 
   <i18n-t
