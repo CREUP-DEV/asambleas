@@ -80,16 +80,20 @@ const memberItems = computed(() => {
       (author) => !known.has(author.id),
     ),
     ...listed,
-  ].map((item) => ({ label: memberLabel(item), value: item.id }));
+  ].map(memberMenuItem);
 });
-const labelOf = (id: string) =>
-  memberItems.value.find((item) => item.value === id)?.label ?? id;
+const itemOf = (id: string) =>
+  memberItems.value.find((item) => item.value === id);
 
 const mainAuthor = computed(() =>
   composerMainAuthor(authorIds.value, mainAuthorId.value),
 );
 const mainAuthorItems = computed(() =>
-  authorIds.value.map((id) => ({ label: labelOf(id), value: id })),
+  authorIds.value.map((id) => ({
+    label: itemOf(id)?.label ?? id,
+    description: itemOf(id)?.description,
+    value: id,
+  })),
 );
 const authorsMissing = computed(() => authorIds.value.length === 0);
 const change = computed(() =>
@@ -182,6 +186,8 @@ async function save(): Promise<void> {
               v-model="authorIds"
               :items="memberItems"
               value-key="value"
+              :ui="MEMBER_MENU_UI"
+              :filter-fields="MEMBER_MENU_FILTER_FIELDS"
               multiple
               class="w-full"
               :loading="membersStatus === 'pending'"

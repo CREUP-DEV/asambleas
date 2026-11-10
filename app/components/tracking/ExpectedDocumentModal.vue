@@ -145,6 +145,7 @@ const KIND_ORDER: readonly MemberKind[] = [
 
 interface MemberOption {
   label: string;
+  description?: string;
   value: string;
   type?: "label";
 }
@@ -165,10 +166,7 @@ const memberOptions = computed<MemberOption[][]>(() =>
     .map((kind) => {
       const list: MemberOption[] = members.value
         .filter((candidate) => candidate.active && candidate.kind === kind)
-        .map((candidate) => ({
-          label: memberLabel(candidate),
-          value: candidate.id,
-        }));
+        .map(memberMenuItem);
       if (list.length === 0) return [];
       const heading: MemberOption = {
         type: "label",
@@ -304,6 +302,8 @@ async function onSubmit(event: FormSubmitEvent<ExpectedForm>) {
               v-model="state.proponentMemberId"
               :items="memberOptions"
               value-key="value"
+              :ui="MEMBER_MENU_UI"
+              :filter-fields="MEMBER_MENU_FILTER_FIELDS"
               :loading="membersLoading"
               :placeholder="t('tracking.expected.presenterPlaceholder')"
               :search-input="
