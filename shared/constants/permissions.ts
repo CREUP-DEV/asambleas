@@ -40,6 +40,26 @@ export const PERMISSION_DESCRIPTION_I18N_KEYS: Record<PermissionKey, string> = {
   [PERMISSION_KEYS.MEMBER_MANAGE]: "permissions.descriptions.memberManage",
 };
 
+/**
+ * One icon per permission, wherever permissions are listed. Those with a
+ * page of their own take the icon of that page in the sidebar (users,
+ * roles, members, assemblies, the session).
+ */
+export const PERMISSION_ICONS: Record<PermissionKey, string> = {
+  [PERMISSION_KEYS.USER_MANAGE_ROLES]: "i-lucide-users",
+  [PERMISSION_KEYS.ROLE_MANAGE_PERMISSIONS]: "i-lucide-shield-check",
+  [PERMISSION_KEYS.ASSEMBLY_CREATE]: "i-lucide-calendar-plus",
+  [PERMISSION_KEYS.ASSEMBLY_MANAGE]: "i-lucide-landmark",
+  [PERMISSION_KEYS.DOCUMENT_CREATE]: "i-lucide-file-plus",
+  [PERMISSION_KEYS.DOCUMENT_MANAGE]: "i-lucide-folder-cog",
+  [PERMISSION_KEYS.AMENDMENT_CREATE]: "i-lucide-file-pen-line",
+  [PERMISSION_KEYS.AMENDMENT_MANAGE]: "i-lucide-file-cog",
+  [PERMISSION_KEYS.AMENDMENT_REVIEW]: "i-lucide-badge-check",
+  [PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT]: "i-lucide-vote",
+  [PERMISSION_KEYS.SESSION_MODERATE]: "i-lucide-gavel",
+  [PERMISSION_KEYS.MEMBER_MANAGE]: "i-lucide-building-2",
+};
+
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
   // The association's Secretaría manages everything, users and roles included.
   Secretaría: [...ALL_PERMISSION_KEYS],
@@ -54,4 +74,5 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
   ],
   Moderador: [PERMISSION_KEYS.SESSION_MODERATE],
   Invitado: [],
+  Otro: [],
 };

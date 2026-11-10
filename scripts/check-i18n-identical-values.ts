@@ -47,6 +47,10 @@ const ALLOWLIST: AllowlistEntry[] = [
     reason: "File format acronym stays the same across locales.",
   },
   {
+    pattern: /^shell\.memberKinds\.executive$/,
+    reason: "The CEA is the association's own acronym in every locale.",
+  },
+  {
     pattern: /^admin\.roles\.title$/,
     reason: "Role management label is identical in Spanish and English.",
   },
