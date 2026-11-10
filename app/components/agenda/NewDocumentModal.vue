@@ -18,6 +18,7 @@ import type {
 } from "~~/shared/types/api";
 import { SUBMISSION_KIND_REFUSED_REASON } from "~~/shared/utils/agendaSubmissions";
 import { mayUseFileFormat } from "~~/shared/utils/documentFormat";
+import { orderMembers } from "~~/shared/utils/memberOrder";
 import { memberMayPresent } from "~~/shared/utils/presenterKinds";
 import {
   memberSubmissionKinds,
@@ -508,11 +509,16 @@ const majorityCardsUi = { fieldset: "flex-wrap gap-2" };
 /**
  * The members that may present a document of the kind chosen: a sectorial
  * is not offered for an internal motion (memberMayPresent), and the generic
- * "CEA" never is (it is not a member).
+ * "CEA" never is (it is not a member). The account's own kind goes first
+ * (orderMembers), then the general order.
  */
 const presentableMembers = computed<MemberDto[]>(() =>
-  addableMembers(members.value).filter(
-    (candidate) => !state.kind || memberMayPresent(state.kind, candidate.kind),
+  orderMembers(
+    addableMembers(members.value).filter(
+      (candidate) =>
+        !state.kind || memberMayPresent(state.kind, candidate.kind),
+    ),
+    member.value?.kind ?? null,
   ),
 );
 
