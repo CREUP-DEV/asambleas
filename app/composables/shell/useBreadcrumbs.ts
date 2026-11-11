@@ -144,14 +144,19 @@ interface BreadcrumbDocument {
 }
 
 /**
- * Called by the pages of a document with the DTO they already load: names
- * the document in the breadcrumb by its reference, or by its title.
+ * Called by the pages of a document with the DTO they already load. When it
+ * is the only document of its agenda item (its own automatic sub-item, or a
+ * point such as "15. Aprobación, si procede, del Posicionamiento…") that item
+ * already names it, so its own step says just "Ver"; among several, the step
+ * is its title. Never its reference.
  */
 export function useDocumentBreadcrumb(
   document: MaybeRefOrGetter<BreadcrumbDocument | null | undefined>,
 ): void {
   if (import.meta.server) return;
   const labels = useBreadcrumbLabels();
+  const { t } = useI18n();
+  const { data: agenda } = useAssemblyAgenda();
   const mounted = ref(false);
   onMounted(() => {
     mounted.value = true;
@@ -161,13 +166,16 @@ export function useDocumentBreadcrumb(
       mounted,
       () => {
         const value = toValue(document);
-        return value
-          ? ([
-              value.id,
-              value.slug,
-              value.reference?.trim() || value.title,
-            ] as const)
-          : null;
+        if (!value) return null;
+        const siblings = agenda.value?.documents.filter(
+          (other) => other.agendaItemId === value.agendaItemId,
+        );
+        const alone = siblings?.length === 1 && siblings[0]!.id === value.id;
+        return [
+          value.id,
+          value.slug,
+          alone ? t("shell.breadcrumb.view") : value.title,
+        ] as const;
       },
     ],
     ([isMounted, entry]) => {
@@ -190,8 +198,6 @@ export function useDocumentBreadcrumb(
   );
 
   // The items it hangs from, from the agenda the hub pages share.
-  const { t } = useI18n();
-  const { data: agenda } = useAssemblyAgenda();
   const chains = useDocumentItemChains();
   watch(
     [
