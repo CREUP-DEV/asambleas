@@ -468,7 +468,7 @@
         "until": "Hasta el {date}."
       },
       "todo": {
-        "title": "Te toca",
+        "title": "Tareas pendientes",
         "empty": "No tienes nada pendiente",
         "readOnly": "Tu cuenta es de invitado. Puedes consultar esta asamblea, sus documentos y sus enmiendas, pero no puedes presentar nada."
       },
@@ -2017,7 +2017,7 @@
         "warning": "Si la intranet ha enviado una lista incompleta por un error, cancela y revísala antes. Los miembros desactivados no pueden presentar documentos ni enmiendas.",
         "confirm": "Sincronizar y desactivar",
         "kinds": {
-          "asociado": "Consejos asociados",
+          "asociado": "Asociados",
           "sectorial": "Sectoriales",
           "executive": "Cargos de la CEA"
         }
@@ -2344,7 +2344,7 @@
       "cdg": "Comité de Garantías (CdG)"
     },
     "memberKinds": {
-      "asociado": "Consejo asociado",
+      "asociado": "Asociado",
       "sectorial": "Sectorial",
       "executive": "CEA",
       "other": "Otro"
@@ -2383,7 +2383,7 @@
       },
       "find": {
         "tasks": {
-          "title": "En Inicio ves lo que te toca",
+          "title": "En Inicio ves tus tareas pendientes",
           "body": "La página «Inicio» te dice qué tienes pendiente. Para entrar en una asamblea, pulsa «Asambleas» en el menú y elige una."
         },
         "guest": {
@@ -2444,14 +2444,8 @@
       "empty": "No hay asambleas próximas",
       "emptyDescription": "Cuando se convoque una asamblea, aparecerá aquí con sus plazos."
     },
-    "admin": {
-      "title": "Administración",
-      "users": "Usuarios",
-      "roles": "Roles y permisos",
-      "members": "Miembros"
-    },
     "todo": {
-      "title": "Te toca",
+      "title": "Tareas pendientes",
       "count": "1 tarea pendiente | {count} tareas pendientes",
       "loading": "Cargando lo que tienes pendiente",
       "loadFailed": "No se ha podido cargar lo que tienes pendiente",

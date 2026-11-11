@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { isReadOnlyRole } from "~~/shared/constants/roles";
 import type {
   AssemblyListDto,
@@ -29,20 +28,20 @@ import {
  * the Secretaría's pending review per assembly, a live-session banner that
  * leads to the live view and the upcoming assemblies.
  *
- * At most three blocks stand in first plane, for every role: "Te toca"
+ * At most three blocks stand in first plane, for every role: "Tareas pendientes"
  * (the Secretaría's pending review and the user's tasks), "Lo siguiente"
  * (the next deadline of the calendar, one line that opens that calendar)
  * and the upcoming assemblies. The rest stays one click away in folded
  * sections under them (HomeFold): the news, the user's documents and
- * amendments, their account and the administration shortcuts, which open
- * by permission as the admin pages do. A read-only account (Otro, Invitado) with nothing to
+ * amendments and their account; the administration pages hang from the
+ * sidebar only. A read-only account (Otro, Invitado) with nothing to
  * do reads one sentence saying the account can only read, instead of an
- * empty "Te toca".
+ * empty "Tareas pendientes".
  */
 
 const { t, locale } = useI18n();
 const localePath = useLocalePath();
-const { me, member, can } = useMe();
+const { me, member } = useMe();
 
 useHead({ title: () => t("home.title") });
 
@@ -115,7 +114,7 @@ const nothingToDo = computed(
 /**
  * A guest account with nothing to do: it can only read, and the page says
  * so in one sentence. A guest given a permission of its own (the welcome's
- * rule, welcomeAudience), or linked to a member, gets the normal "Te toca".
+ * rule, welcomeAudience), or linked to a member, gets the normal "Tareas pendientes".
  */
 const readOnly = computed(
   () =>
@@ -163,34 +162,6 @@ const greeting = computed(() =>
 );
 
 const today = computed(() => formatDate(now.value, { locale: locale.value }));
-
-// Admin shortcuts ---------------------------------------------------------
-
-const adminLinks = computed(() =>
-  [
-    {
-      key: "users",
-      visible: can(PERMISSION_KEYS.USER_MANAGE_ROLES),
-      label: t("home.admin.users"),
-      icon: "i-lucide-users",
-      to: localePath("/admin/usuarios"),
-    },
-    {
-      key: "roles",
-      visible: can(PERMISSION_KEYS.ROLE_MANAGE_PERMISSIONS),
-      label: t("home.admin.roles"),
-      icon: "i-lucide-shield-check",
-      to: localePath("/admin/roles"),
-    },
-    {
-      key: "members",
-      visible: can(PERMISSION_KEYS.MEMBER_MANAGE),
-      label: t("home.admin.members"),
-      icon: "i-lucide-building-2",
-      to: localePath("/admin/miembros"),
-    },
-  ].filter((link) => link.visible),
-);
 </script>
 
 <template>
@@ -531,30 +502,6 @@ const adminLinks = computed(() =>
             :count="updates.length"
           >
             <HomeUpdateList :updates="updates" />
-          </HomeFold>
-
-          <HomeFold
-            v-if="adminLinks.length > 0"
-            id="admin"
-            :title="t('home.admin.title')"
-            icon="i-lucide-settings"
-          >
-            <ul class="flex flex-col">
-              <li v-for="link in adminLinks" :key="link.key">
-                <UButton
-                  :to="link.to"
-                  :icon="link.icon"
-                  color="neutral"
-                  variant="ghost"
-                  trailing-icon="i-lucide-chevron-right"
-                  block
-                  class="justify-start"
-                  :ui="{ trailingIcon: 'ms-auto' }"
-                >
-                  {{ link.label }}
-                </UButton>
-              </li>
-            </ul>
           </HomeFold>
         </div>
       </div>
