@@ -1577,9 +1577,15 @@ export async function updateDocument(
         .where(eq(agendaItems.id, current.agendaItemId));
       const ownItem =
         here && here.generatedForDocumentId === current.id ? here : null;
-      if (ownItem && ownItem.parentId === target.id) {
+      if (
+        ownItem &&
+        ownItem.parentId === target.id &&
+        target.acceptsSubmissions
+      ) {
         // Picking the item its own sub-item hangs from moves nothing,
-        // whatever else that sub-item holds.
+        // whatever else that sub-item holds. Once that item takes no
+        // submissions, picking it moves the document up to it, and the
+        // sub-item goes as after any move away.
         changed = changed.filter((key) => key !== "agendaItemId");
         if (changed.length === 0) return;
       } else {
