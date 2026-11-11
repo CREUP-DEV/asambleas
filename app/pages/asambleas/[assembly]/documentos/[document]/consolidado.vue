@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AmendmentStatus } from "~~/shared/constants/domain";
 import { consolidate } from "~~/shared/utils/content/consolidate";
+import { kindAcceptsFile } from "~~/shared/utils/documentFormat";
 import { consolidationInputs } from "~/composables/amendment/workspace";
 
 /**
@@ -196,7 +197,11 @@ watch(popoverOpen, (open) => {
         v-if="document.format === 'file'"
         :url="document.fileUrl"
         :title="document.title"
-        :description="t('workspace.text.fileDescription')"
+        :description="
+          kindAcceptsFile(document.kind)
+            ? undefined
+            : t('workspace.text.fileDescription')
+        "
       />
 
       <CommonEmptyState
@@ -270,8 +275,9 @@ watch(popoverOpen, (open) => {
         </UAlert>
 
         <!-- Text -->
+        <!-- The text keeps the editor's measure (`main.css`), centred. -->
         <section
-          class="border-default rounded-lg border p-4 sm:p-6"
+          class="border-default rounded-lg border p-4 sm:p-6 lg:px-[max(1.5rem,calc((100%_-_52rem)/2))]"
           aria-labelledby="consolidated-text"
         >
           <div class="mb-4 flex flex-wrap items-baseline justify-between gap-2">

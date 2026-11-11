@@ -479,12 +479,15 @@ whatever the hour (`respectsNotice`): a convocation sent on 18 October at any
 time gives a month's notice for an assembly starting on 18 November. Minimums
 in hours count exactly. Warnings are computed on read, so past assemblies are checked
 against the rules in force. The convocatoria is generated from the assembly
-data, the agenda and the milestones as a print view and a PDF. Once
-Secretaría uploads the signed convocatoria (a PDF in
-`assemblies.convocation_file_url`, served by
+data, the agenda and the milestones (`ConvocationSheet`). Its page is a
+section of the hub like any other (`convocatoria/index.vue`); "Imprimir"
+opens the generated one alone, outside the shell, ready to print
+(`convocatoria/imprimir.vue`). Once Secretaría uploads the signed
+convocatoria (a PDF in `assemblies.convocation_file_url`, served by
 `/api/uploads/convocations/[filename]` to whoever sees the assembly), that PDF
-leads the convocatoria page for everyone; managers still reach the generated
-one, and replace or remove the PDF, from its "Más" menu.
+leads the convocatoria page for everyone, in the viewer of any uploaded
+document (`DocumentPdfViewer`); managers still reach the generated one, and
+replace or remove the PDF, from its "Más" menu.
 
 ## Assemblies and session
 
@@ -828,6 +831,50 @@ apply again on restore.
   date, filters them with `/admin/usuarios?access=revoked`, and never offers
   "Acceder como" on them.
 
+## Read marks
+
+Going through the documentation of an assembly is linear work: every
+published document, then every amendment to it. Each account keeps its own
+marks of what it has read (`document_reads`, `amendment_reads`, one row per
+account and document or amendment).
+
+- **By hand.** Opening a document or an amendment never marks it: reading it
+  and having opened it are different things. "Marcar como leído" does, and
+  the same button takes the mark back.
+- **Per account.** A council's account is the council, so its delegation
+  shares the marks. Nobody else reads them: no endpoint returns another
+  account's.
+- **What takes a mark.** Published documents (`status` `published`) and the
+  amendments to them that are presented and published. Everyone who sees
+  the assembly reads those, so the marks need no visibility rule of their
+  own, and nothing else can be marked (404).
+- **Changed since.** A mark stores the revision it was made on: a document's
+  frozen base version and its PDF, an amendment's operations and
+  justification. When the current revision differs (the document was
+  published again after a correction, its PDF was replaced, the amendment
+  came back corrected) the mark reads as `changed` ("Con cambios") until the
+  account marks it again.
+- **What is left.** Everything not read as it is now, except what the
+  account's member presents (`own`) and the amendments already decided
+  (`open` false). The pure rules are in `shared/utils/readMarks.ts`.
+
+The hub fetches the marks once (`provideReadMarks`, client only) and every
+page under it reads the same state (`useReadMarks`): the overview's agenda
+block says how much is left and opens the first document with something
+left ("Empezar a leer" / "Seguir leyendo"), each agenda item says how much
+of that is under it, rows and amendment cards carry a dot ("Sin leer"),
+"Con cambios" or a tick, and the documents list filters by what is left.
+
+A published document's page starts with the reading bar (`DocumentReadBar`):
+"Documento 3 de 25", the documents before and after it in the order of the
+agenda (`documentsInAgendaOrder`), what is left in the whole assembly (which
+opens the next document with something left) and "Marcar como leído". With
+the breadcrumb, which leads back to the document's agenda item, the whole
+documentation can be read without going back to a list.
+
+Every change of marks is recorded (`read_marks.set`, counts only), like any
+other mutation.
+
 ## Traceability
 
 Every change leaves a record of who did it, acting for which member, when,
@@ -993,11 +1040,20 @@ which names the section, and their navbar names the page. The last crumb is the 
 row is a single link to the level above. The trail comes from the route
 (`app/composables/shell/-trail.ts`), so pages do not link "back" up the
 hierarchy themselves. Every agenda item and sub-item has its own page
-(`orden-del-dia/[item]`, keyed by the item's id because its number changes
-when the agenda is reordered): number, title and description, its documents
+(`orden-del-dia/[item]`, keyed by the slug of its title, `AgendaItemDto.slug`
+from `agendaItemSlugs`, never stored and so renamed with the item; its number
+is no key because it changes when the agenda is reordered; an item whose
+title the viewer may not read goes by its id, and an older link by id moves
+to the slug): number, title and description, its documents
 in full, its sub-items as links and "Anterior" / "Siguiente" in reading
 order, all from the agenda the hub already loads. Its trail names the items
 above it: `Asambleas › 80.ª AGO › Orden del día › 3. Resoluciones › 3.2 …`.
+A document hangs from an agenda item, and its trail goes through it whatever
+page it was opened from: `Asambleas › 80.ª AGO › Orden del día › 3.
+Resoluciones › RES 4` (`useDocumentBreadcrumb` registers the items from the
+agenda; a document whose item the viewer does not get keeps the route's
+trail, `Documentos › RES 4`). So the way back from a document is the item it
+belongs to.
 The sections of an assembly come from one list
 (`app/composables/assembly/-sections.ts`, `useAssemblySections`) for the
 sidebar and the phone toolbar of the hub; whoever has a section of the

@@ -455,10 +455,8 @@
       },
       "tasks": {
         "title": "Tus tareas en esta asamblea",
-        "upToDate": "Estás al día en esta asamblea. Lo que has enviado está en manos de Secretaría o ya está publicado.",
         "more": "Ver 1 tarea más en Inicio | Ver {count} tareas más en Inicio",
-        "all": "Ver tus documentos y enmiendas en Inicio",
-        "empty": "Aún no tienes nada en esta asamblea. Aquí verás lo que presentes y lo que Secretaría te pida."
+        "all": "Ver tus documentos y enmiendas en Inicio"
       },
       "loading": "Cargando las cifras de la asamblea",
       "documentCount": "Sin documentos | 1 documento | {count} documentos",
@@ -469,7 +467,6 @@
       },
       "todo": {
         "title": "Tareas pendientes",
-        "empty": "No tienes nada pendiente",
         "readOnly": "Tu cuenta es de invitado. Puedes consultar esta asamblea, sus documentos y sus enmiendas, pero no puedes presentar nada."
       },
       "next": {
@@ -3030,7 +3027,8 @@
   },
   "convocation": {
     "heading": "Convocatoria de la {assembly}",
-    "back": "Volver a la {assembly}",
+    "back": "Volver a la convocatoria",
+    "generatedNote": "Generada a partir de la asamblea, su orden del día y su calendario.",
     "editIntro": "Editar introducción",
     "print": "Imprimir",
     "draftWarning": "La asamblea sigue en borrador: esta convocatoria todavía no es visible para los participantes.",
@@ -4630,6 +4628,60 @@
       "pendingTransactional": "Hay una transaccional pendiente que la incluye: {list}. Si sale adelante, sustituirá a esta enmienda. | Hay transaccionales pendientes que la incluyen: {list}. Si alguna sale adelante, sustituirá a esta enmienda."
     }
   },
+  "readMarks": {
+    "bar": {
+      "label": "Lectura de la documentación",
+      "position": "Documento {index} de {total}",
+      "left": "Te quedan por leer {items}",
+      "nextLeft": "Abrir el siguiente que te queda: {title}"
+    },
+    "count": {
+      "documents": "{count} documento | {count} documentos",
+      "amendments": "{count} enmienda | {count} enmiendas",
+      "and": " y "
+    },
+    "allRead": "Has leído toda la documentación publicada",
+    "mark": {
+      "document": "Marcar como leído",
+      "amendment": "Marcar como leída"
+    },
+    "read": {
+      "document": "Leído",
+      "amendment": "Leída"
+    },
+    "unmark": {
+      "document": "Quitar la marca de leído",
+      "amendment": "Quitar la marca de leída"
+    },
+    "unread": {
+      "document": "Sin leer",
+      "amendment": "Sin leer"
+    },
+    "changed": {
+      "document": "Con cambios",
+      "amendment": "Con cambios"
+    },
+    "marked": {
+      "document": "Marcado como leído",
+      "amendment": "Marcada como leída"
+    },
+    "unmarked": {
+      "document": "Marcado como no leído",
+      "amendment": "Marcada como no leída"
+    },
+    "changedNote": {
+      "document": "Ha cambiado desde que lo leíste"
+    },
+    "amendmentsHere": "{count} enmienda sin leer | {count} enmiendas sin leer",
+    "itemLeft": "{count} por leer | {count} por leer",
+    "overview": {
+      "left": "Te quedan por leer {items}.",
+      "start": "Empezar a leer",
+      "resume": "Seguir leyendo"
+    },
+    "onlyLeft": "Solo lo que me queda por leer ({count})",
+    "error": "No se ha podido guardar la marca de lectura"
+  },
   "impersonation": {
     "errors": {
       "adminOnly": "Solo quien tiene el rol Administrador puede acceder como otra cuenta.",
@@ -4987,6 +5039,9 @@
         "request": "PDF pedido",
         "download": "PDF descargado"
       },
+      "read_marks": {
+        "set": "Marcas de lectura cambiadas"
+      },
       "rbac": {
         "seed": "Permisos iniciales añadidos a un rol"
       },
@@ -5010,6 +5065,9 @@
       "headcount_corrected": "Recuento de asistencia corregido",
       "document_images": {
         "cleanup": "Imágenes sin usar borradas del documento"
+      },
+      "documents": {
+        "reslug": "Enlaces de los documentos recalculados"
       }
     },
     "changes": {

@@ -9,7 +9,10 @@ import {
   documentAudience,
   isPendingProgress,
 } from "~/composables/document/documentProgress";
-import { documentCoPresenters } from "~/composables/document/documentPresenters";
+import {
+  documentCoPresenters,
+  isDocumentPresenter,
+} from "~/composables/document/documentPresenters";
 import { toDate } from "~/utils/format";
 
 /**
@@ -28,7 +31,8 @@ import { toDate } from "~/utils/format";
  * (projection, print) pass `:heading-level="1"` and `show-assembly`.
  *
  * Before publication it says where the document stands and what comes next
- * (useDocumentProgress), with the short status as the badge. Screens that
+ * (useDocumentProgress), with the short status as the badge; a published one says
+ * "Publicado" to its presenters only. Screens that
  * explain the status themselves pass `:progress="false"`. With `editTo` the
  * presenter of a draft gets a link to its next step.
  *
@@ -111,6 +115,16 @@ const audience = computed(() =>
 const status = useDocumentProgress(() => props.document, audience);
 const pending = computed(() => isPendingProgress(status.value.state));
 const showSentence = computed(() => props.progress && pending.value);
+/**
+ * "Publicado" tells only its presenters something: to everyone else a
+ * document they can read is public by being there. Withdrawn and postponed
+ * show to all.
+ */
+const showStatus = computed(
+  () =>
+    props.document.status !== "published" ||
+    isDocumentPresenter(props.document, me.member.value?.id),
+);
 const callToAction = computed(() =>
   props.editTo && status.value.actionLabel ? status.value.actionLabel : null,
 );
@@ -212,14 +226,10 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
           size="sm"
           :label="status.label"
         />
-        <CommonStatusBadge v-else kind="document" :value="document.status" />
-        <UBadge
-          v-if="document.format === 'file'"
-          color="neutral"
-          variant="outline"
-          size="sm"
-          icon="i-lucide-file-text"
-          :label="t('document.formats.file')"
+        <CommonStatusBadge
+          v-else-if="showStatus"
+          kind="document"
+          :value="document.status"
         />
         <DocumentPresenters :document="document" labelled show-name />
 

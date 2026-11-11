@@ -28,9 +28,12 @@ export function agendaItemAnchor(id: string): string {
   return `agenda-item-${id}`;
 }
 
-/** The page of one agenda item or sub-item, keyed by its id. */
-export function agendaItemPath(hubPath: string, itemId: string): string {
-  return `${hubPath}/orden-del-dia/${encodeURIComponent(itemId)}`;
+/** The page of one agenda item or sub-item, by its slug (AgendaItemDto.slug). */
+export function agendaItemPath(
+  hubPath: string,
+  item: { slug: string },
+): string {
+  return `${hubPath}/orden-del-dia/${encodeURIComponent(item.slug)}`;
 }
 
 function firstValue(value: unknown): unknown {

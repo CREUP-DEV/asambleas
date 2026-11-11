@@ -23,6 +23,7 @@ import {
   loadAgendaItems,
   readAssemblyBody,
   throwAssemblyMutationError,
+  loadAgendaItemSlug,
   loadUnlistedItemIds,
   toAgendaItemDto,
 } from "../../../../utils/domain/assemblies";
@@ -180,8 +181,16 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
       return row;
     });
 
-    const unlisted = await loadUnlistedItemIds(assembly.id);
-    return toAgendaItemDto(updated, !readsTitle, unlisted.has(updated.id));
+    const [unlisted, slug] = await Promise.all([
+      loadUnlistedItemIds(assembly.id),
+      loadAgendaItemSlug(assembly.id, updated.id),
+    ]);
+    return toAgendaItemDto(
+      updated,
+      !readsTitle,
+      unlisted.has(updated.id),
+      slug,
+    );
   } catch (error) {
     throwAssemblyMutationError("agenda.update", error, event);
   }

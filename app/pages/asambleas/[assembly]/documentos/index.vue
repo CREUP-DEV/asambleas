@@ -2,6 +2,7 @@
 import { DOCUMENT_KINDS } from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { DocumentSummaryDto } from "~~/shared/types/api";
+import { hasSomethingLeft } from "~~/shared/utils/readMarks";
 import {
   documentProgress,
   PROGRESS_LABEL_ORDER,
@@ -22,7 +23,10 @@ import {
  * documents the user's member presents, alone or with others; the search
  * also finds a document by any of its presenters. The status filter offers the same
  * names as the badges ("Enviado a Secretaría", "Corrección pedida", "Fuera
- * de plazo"...), only those that some document has.
+ * de plazo"...), only those that some document has, and shows only when
+ * there are two or more to choose from. "Solo lo que me queda
+ * por leer" keeps the documents the account has not marked as read, or that
+ * have amendments it has not read.
  */
 
 const { t } = useI18n();
@@ -55,6 +59,14 @@ const search = ref("");
 const status = ref<string>("all");
 const kind = ref<string>("all");
 const onlyMine = ref(false);
+const onlyLeft = ref(false);
+
+const marks = useReadMarks();
+const isLeft = (document: DocumentSummaryDto) =>
+  hasSomethingLeft(marks.index.value, document.id);
+const leftCount = computed(
+  () => (agenda.value?.documents ?? []).filter(isLeft).length,
+);
 
 const memberId = computed(() => me.member.value?.id ?? null);
 const isMine = (document: DocumentSummaryDto) =>
@@ -90,6 +102,14 @@ const statusItems = computed(() => {
     })),
   ];
 });
+/**
+ * Only when it can tell documents apart: someone who reads only what is
+ * published would get just "Publicado". Kept while a status is chosen, so
+ * it can be cleared.
+ */
+const showStatusFilter = computed(
+  () => statusItems.value.length > 2 || status.value !== "all",
+);
 const kindItems = computed(() => [
   { label: t("documents.allKinds"), value: "all" },
   ...DOCUMENT_KINDS.map((value) => ({
@@ -109,6 +129,7 @@ const filtered = computed<DocumentSummaryDto[]>(() => {
   const query = normalized(search.value.trim());
   return (agenda.value?.documents ?? []).filter((document) => {
     if (onlyMine.value && !isMine(document)) return false;
+    if (onlyLeft.value && !isLeft(document)) return false;
     if (
       status.value !== "all" &&
       statusKeys.value.get(document.id) !== status.value
@@ -155,7 +176,8 @@ const filtering = computed(
     search.value.trim() !== "" ||
     status.value !== "all" ||
     kind.value !== "all" ||
-    onlyMine.value,
+    onlyMine.value ||
+    onlyLeft.value,
 );
 
 function resetFilters() {
@@ -163,6 +185,7 @@ function resetFilters() {
   status.value = "all";
   kind.value = "all";
   onlyMine.value = false;
+  onlyLeft.value = false;
 }
 
 function documentPath(document: DocumentSummaryDto): string {
@@ -218,6 +241,7 @@ function documentEditPath(document: DocumentSummaryDto): string | null {
         class="sm:max-w-sm sm:flex-1"
       />
       <USelect
+        v-if="showStatusFilter"
         v-model="status"
         :items="statusItems"
         :aria-label="t('documents.statusFilter')"
@@ -236,6 +260,13 @@ function documentEditPath(document: DocumentSummaryDto): string | null {
         :label="
           t('documents.onlyMine', { member: me.member.value?.acronym ?? '' })
         "
+      />
+      <USwitch
+        v-if="leftCount > 0 || onlyLeft"
+        v-model="onlyLeft"
+        size="sm"
+        :label="t('readMarks.onlyLeft', { count: leftCount })"
+        data-testid="documents-only-left"
       />
       <UButton
         v-if="filtering"

@@ -178,12 +178,27 @@ export const AUDIT_ACTIONS = {
    * document; after {count}.
    */
   DOCUMENT_IMAGES_CLEANUP: "document_images.cleanup",
+  /**
+   * `pnpm db:reslug` (drizzle/reslug-documents.ts) gave the documents of an
+   * assembly the slug of their current title under today's rule. Source
+   * import; actor null; target the assembly; after {count, documents:
+   * [{id, from, to}]} (the slugs carry titles, drafts' too: Admins only).
+   */
+  DOCUMENTS_RESLUG: "documents.reslug",
 
   // Exports ---------------------------------------------------------------
   /** POST .../export. Target document or assembly; assemblyId set; after {jobId, variant, locale, documentId}. */
   EXPORT_REQUEST: "export.request",
   /** GET /api/exports/[jobId]/download. Target document or assembly; after {jobId}. */
   EXPORT_DOWNLOAD: "export.download",
+
+  // Read marks ------------------------------------------------------------
+  /**
+   * PUT /api/assemblies/[assembly]/read-marks: the account marked published
+   * documents or amendments as read, or as not read. Target assembly;
+   * assemblyId set; after {read, documents, amendments} (counts only).
+   */
+  READ_MARKS_SET: "read_marks.set",
 
   // Roles seed ------------------------------------------------------------
   /** `pnpm db:seed` added grants. Target role; source seed; after {added: keys}. */
@@ -462,6 +477,7 @@ const AUDIT_CATEGORIES: Record<AuditAction, ActivityCategory> = {
   "assembly.import": "assembly",
   "document.import": "document",
   "document_images.cleanup": "document",
+  "documents.reslug": "document",
   "calendar_rules.update": "assembly",
   "calendar_rules.seed": "assembly",
   "user.created": "account",
@@ -477,6 +493,7 @@ const AUDIT_CATEGORIES: Record<AuditAction, ActivityCategory> = {
   "auth.session_ended": "access",
   "export.request": "export",
   "export.download": "export",
+  "read_marks.set": "document",
   "rbac.seed": "roles",
   "impersonation.start": "access",
   "impersonation.stop": "access",

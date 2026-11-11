@@ -9,6 +9,7 @@ const item = (
   titleHidden = false,
 ): AgendaItemDto => ({
   id,
+  slug: id,
   parentId: null,
   title,
   titleHidden,

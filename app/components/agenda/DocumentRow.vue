@@ -9,6 +9,10 @@ import { isPendingProgress } from "~/composables/document/documentProgress";
  * before "N más"), amendment count and the countdown of its amendment
  * window.
  *
+ * Once published its status badge is only for its presenters
+ * (useDocumentStatusShown); everyone gets whether the account
+ * has read it (ReadMark) and how many of its amendments are left to read.
+ *
  * Before publication it also says, in a sentence, where the document stands
  * and what comes next (useDocumentProgress). With `editTo` (the presenter's
  * own draft) it offers the next step: prepare it, keep working on it or fix
@@ -82,6 +86,14 @@ const windowCountdown = computed<{ label: string; at: string } | null>(() => {
   }
   return null;
 });
+
+const showStatus = useDocumentStatusShown(() => props.document);
+const marks = useReadMarks();
+const mark = computed(() => marks.document(props.document.id));
+/** Amendments to it the account still has to read. */
+const amendmentsLeft = computed(
+  () => marks.index.value.amendmentsLeft.get(props.document.id) ?? 0,
+);
 
 const amendmentsLabel = computed(() =>
   t(
@@ -190,7 +202,17 @@ const SENTENCE_COLORS: Record<string, string> = {
         size="sm"
         :label="progress.label"
       />
-      <CommonStatusBadge v-else kind="document" :value="document.status" />
+      <CommonStatusBadge
+        v-else-if="showStatus"
+        kind="document"
+        :value="document.status"
+      />
+      <ReadMark
+        v-if="!pending"
+        kind="document"
+        :state="mark?.state"
+        :own="mark?.own"
+      />
       <UBadge
         v-if="document.consolidated"
         color="success"
@@ -213,6 +235,21 @@ const SENTENCE_COLORS: Record<string, string> = {
           <span class="sr-only">{{ amendmentsLabel }}</span>
         </UBadge>
       </UTooltip>
+      <UBadge
+        v-if="amendmentsLeft > 0"
+        color="primary"
+        variant="subtle"
+        size="sm"
+        class="tabular-nums"
+        :label="
+          t(
+            'readMarks.amendmentsHere',
+            { count: amendmentsLeft },
+            amendmentsLeft,
+          )
+        "
+        data-testid="document-amendments-left"
+      />
       <UButton
         v-if="callToAction && editTo"
         :to="editTo"

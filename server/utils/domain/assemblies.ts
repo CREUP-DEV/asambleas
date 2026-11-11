@@ -81,7 +81,11 @@ import {
   AGENDA_FINAL_CONFLICT_CODE,
   ASSEMBLY_LIST_PAGE_SIZE,
 } from "~~/shared/utils/schemas/assembly";
-import { buildAssemblySlug, formatAssemblyLabel } from "~~/shared/utils/slug";
+import {
+  agendaItemSlugs,
+  buildAssemblySlug,
+  formatAssemblyLabel,
+} from "~~/shared/utils/slug";
 
 /**
  * Assembly, calendar, agenda, decisions and live-state helpers shared by the
@@ -498,9 +502,13 @@ export function toAgendaItemDto(
   row: AgendaItemRow,
   titleHidden = false,
   unlisted = false,
+  /** From agendaItemSlugs over every item of the assembly. */
+  slug: string = row.id,
 ): AgendaItemDto {
   return {
     id: row.id,
+    // A hidden title leaves no trace in the link either.
+    slug: titleHidden ? row.id : slug,
     parentId: row.parentId,
     title: titleHidden ? "" : row.title,
     titleHidden,
@@ -589,8 +597,14 @@ export function agendaItemDtos(
       isPublicDocumentStatus(document.status),
     ),
   );
+  const slugs = agendaItemSlugs(items);
   return visible.map((item) =>
-    toAgendaItemDto(item, hiddenTitles.has(item.id), unlisted.has(item.id)),
+    toAgendaItemDto(
+      item,
+      hiddenTitles.has(item.id),
+      unlisted.has(item.id),
+      slugs.get(item.id),
+    ),
   );
 }
 
@@ -630,6 +644,17 @@ export async function loadUnlistedItemIds(
       ),
   ]);
   return unlistedAgendaItemIds(items, publicDocuments);
+}
+
+/** The link slug of one item (agendaItemSlugs), for a mutation's answer. */
+export async function loadAgendaItemSlug(
+  assemblyId: string,
+  itemId: string,
+  executor: Executor = db,
+): Promise<string | undefined> {
+  return agendaItemSlugs(await loadAgendaItems(assemblyId, executor)).get(
+    itemId,
+  );
 }
 
 /** Whether the agenda is final (ODD definitivo). */

@@ -146,7 +146,7 @@ import {
   fileFormatRefused,
 } from "~~/shared/utils/documentFormat";
 import { barredPresenters } from "~~/shared/utils/presenterKinds";
-import { slugify } from "~~/shared/utils/slug";
+import { pickDocumentSlug, slugify } from "~~/shared/utils/slug";
 import { computeVoteOutcome } from "~~/shared/utils/votes";
 
 /**
@@ -1109,12 +1109,10 @@ function emptyDocumentError(document: Pick<DocumentRow, "format">): never {
 
 // Slugs, versions and references ------------------------------------------
 
-/** Words used by the document routes themselves. */
-const RESERVED_SLUGS = new Set(["nuevo", "new", "documentos", "documents"]);
-
 /**
- * slugify(title), unique within the assembly (-2, -3...). Serialized per
- * assembly with an advisory lock held until the transaction ends.
+ * slugify(title), unique within the assembly (pickDocumentSlug). Serialized
+ * per assembly with an advisory lock held until the transaction ends; the
+ * slug recalculation (`drizzle/reslug-documents.ts`) takes the same one.
  */
 export async function uniqueDocumentSlug(
   executor: Executor,
@@ -1124,6 +1122,7 @@ export async function uniqueDocumentSlug(
   await executor.execute(
     sql`select pg_advisory_xact_lock(hashtext(${`document_slug:${assemblyId}`}))`,
   );
+  // Only the slugs pickDocumentSlug may compare with: the title's and its -n.
   const base = slugify(title) || "documento";
   const rows = await executor
     .select({ slug: documents.slug })
@@ -1134,13 +1133,7 @@ export async function uniqueDocumentSlug(
         like(documents.slug, `${base}%`),
       ),
     );
-  const taken = new Set(rows.map((row) => row.slug));
-  const isFree = (slug: string) =>
-    !taken.has(slug) && !RESERVED_SLUGS.has(slug);
-  if (isFree(base)) return base;
-  let suffix = 2;
-  while (!isFree(`${base}-${suffix}`)) suffix += 1;
-  return `${base}-${suffix}`;
+  return pickDocumentSlug(title, new Set(rows.map((row) => row.slug)));
 }
 
 export async function nextVersionNumber(

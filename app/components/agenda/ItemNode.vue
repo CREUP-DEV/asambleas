@@ -104,7 +104,7 @@ const headingLevel = computed(() => (props.node.depth === 0 ? "h3" : "h4"));
 
 /** The item's own page: its title leads there. */
 const { sectionPath } = useCurrentAssembly();
-const itemPath = computed(() => agendaItemPath(sectionPath(), item.value.id));
+const itemPath = computed(() => agendaItemPath(sectionPath(), item.value));
 
 const MOVES: { move: AgendaMove; icon: string }[] = [
   { move: "up", icon: "i-lucide-arrow-up" },

@@ -17,6 +17,7 @@ import {
   presenterPartners,
   resolveMainPresenter,
   samePresenterFields,
+  showsDocumentStatus,
   stablePresenterOrder,
   withDefaultMainPresenter,
   withMainAsLead,
@@ -61,6 +62,27 @@ describe("isDocumentPresenter", () => {
   it("is false without a member", () => {
     expect(isDocumentPresenter(document, null)).toBe(false);
     expect(isDocumentPresenter({ proponent: null }, undefined)).toBe(false);
+  });
+});
+
+describe("showsDocumentStatus", () => {
+  const published = {
+    proponent: CEUM,
+    coProponents: [UPV],
+    status: "published",
+  };
+
+  it("says Publicado only to the presenters", () => {
+    expect(showsDocumentStatus(published, "ceum")).toBe(true);
+    expect(showsDocumentStatus(published, "upv")).toBe(true);
+    expect(showsDocumentStatus(published, "uv")).toBe(false);
+    expect(showsDocumentStatus(published, null)).toBe(false);
+  });
+
+  it("always shows any other status", () => {
+    for (const status of ["draft", "submitted", "withdrawn", "postponed"]) {
+      expect(showsDocumentStatus({ ...published, status }, "uv")).toBe(true);
+    }
   });
 });
 

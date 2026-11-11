@@ -302,6 +302,14 @@ ORDER BY createdon DESC
 LIMIT 7;
 ```
 
+Recalcular los enlaces de los documentos (`/app/ops/reslug-documents.mjs`, en local `pnpm db:reslug`): da a cada documento el enlace de su título actual con la regla de hoy, por ejemplo tras ampliar el límite de longitud. Los enlaces anteriores dejan de funcionar. Deja `documents.reslug` en Actividad por cada asamblea que cambie y, si se repite, no cambia nada. No va en `deploy.sh`: se lanza a mano una vez, primero con `--dry-run`, que solo enseña qué cambiaría.
+
+```bash
+cd ~
+docker compose run -T --rm --no-deps asambleas-app /app/ops/reslug-documents.mjs --dry-run </dev/null
+docker compose run -T --rm --no-deps asambleas-app /app/ops/reslug-documents.mjs </dev/null
+```
+
 Cuentas sin acceso: una cuenta borrada en la Intranet pierde el acceso la próxima vez que inicia sesión o, si mantiene una sesión abierta, en la revisión de las 05:30; desde ese momento cada petición suya recibe 401 en todos sus dispositivos ([docs/intranet.md](docs/intranet.md), sección 1). Administración > Usuarios, con "Solo cuentas sin acceso", las lista. No hay forma de devolver el acceso a mano: lo recupera sola cuando la Intranet vuelve a tener la cuenta. Las cuentas `Admin`, `Secretaria`, `Presidencia` y `Moderador` nunca lo pierden; en su lugar queda `user.intranet_missing` en Actividad.
 
 ## Problemas Frecuentes

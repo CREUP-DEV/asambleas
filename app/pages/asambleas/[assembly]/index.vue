@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { isReadOnlyRole } from "~~/shared/constants/roles";
 import type { MeWorkDto } from "~~/shared/types/api";
+import { isDocumentLeft, readNeighbours } from "~~/shared/utils/readMarks";
 import {
   homeWorkForAssembly,
   homeWorkReviewPending,
   homeWorkTasks,
-  homeWorkUpdates,
 } from "~/components/home/-work";
 import { welcomeAudience } from "~/components/shell/-welcome";
 import { agendaItemPath } from "~/composables/document/agendaReturn";
@@ -21,12 +21,16 @@ import { formatDateTime } from "~/utils/format";
  *    ("Presentar documento" for members), which opens the new-document modal
  *    with the item to choose (useAddDocument); the editor comes back here,
  *    or with the modal open on the next item. Then, for the Secretaría, what
- *    waits for its review, and the user's tasks. Anyone acting for a member
- *    always sees their tasks card, even with nothing in it, so they know
- *    where requests will show up; a read-only account (Otro, Invitado) reads one sentence
+ *    waits for its review, and the user's tasks. With nothing to do the
+ *    block is not there at all: an empty card saying so only pushed the
+ *    agenda down. A read-only account (Otro, Invitado) reads one sentence
  *    saying the account can only read.
  * 2. The agenda summary with documents and amendment counts (each item
- *    opens its own page).
+ *    opens its own page). Its header says how much of the published
+ *    documentation the account still has to read, with "Seguir leyendo",
+ *    which opens the first document with something left; each item says
+ *    how much of that is under it. It is part of this block, never a
+ *    fourth one.
  * 3. Beside it on large screens, under it on phones, the calendar: the next
  *    milestone and its countdown in the header, then every milestone (with
  *    its warnings for managers). The key figures follow it in the same
@@ -37,7 +41,7 @@ import { formatDateTime } from "~/utils/format";
 
 const { t, locale } = useI18n();
 const localePath = useLocalePath();
-const { me, member } = useMe();
+const { me } = useMe();
 const current = useCurrentAssembly();
 const { assembly, sectionPath } = current;
 
@@ -103,9 +107,6 @@ const assemblyWork = computed(() =>
 const myTasks = computed(() =>
   assemblyWork.value ? homeWorkTasks(assemblyWork.value, now.value) : [],
 );
-const myUpdates = computed(() =>
-  assemblyWork.value ? homeWorkUpdates(assemblyWork.value) : [],
-);
 const pendingReview = computed(
   () =>
     (assemblyWork.value
@@ -116,14 +117,8 @@ const pendingReview = computed(
 /** Tasks shown here; the rest are on the home page. */
 const TASK_LIMIT = 3;
 const shownTasks = computed(() => myTasks.value.slice(0, TASK_LIMIT));
-/** Something presented here, whether or not there is anything to do. */
-const hasWork = computed(
-  () => myTasks.value.length > 0 || myUpdates.value.length > 0,
-);
-// Once the work list is in: always for a member, otherwise only with work.
-const showMine = computed(
-  () => Boolean(assemblyWork.value) && (Boolean(member.value) || hasWork.value),
-);
+/** The tasks card: only while something waits for the user. */
+const showMine = computed(() => myTasks.value.length > 0);
 
 /**
  * Whether the account only reads: a guest with no permission of its own
@@ -176,6 +171,45 @@ const totals = computed(() =>
 const totalsFor = (itemId: string) =>
   totals.value.get(itemId) ?? { documents: 0, amendments: 0 };
 
+// Reading ------------------------------------------------------------------
+
+const marks = useReadMarks();
+const readLeft = useReadLeftText(() => marks.progress.value);
+/** There is something published to read, and the marks are in. */
+const showReading = computed(
+  () =>
+    marks.marks.value !== null &&
+    marks.progress.value.documents + marks.progress.value.amendments > 0,
+);
+/** Nothing marked yet: the button starts the reading instead of going on. */
+const readingNotStarted = computed(
+  () =>
+    marks.progress.value.documentsLeft === marks.progress.value.documents &&
+    marks.progress.value.amendmentsLeft === marks.progress.value.amendments,
+);
+/** The first document, in the order of the agenda, with something left. */
+const nextToRead = computed(
+  () =>
+    readNeighbours(
+      documentsInAgendaOrder(tree.value, agenda.value?.documents ?? []).filter(
+        (document) => marks.document(document.id) !== null,
+      ),
+      null,
+      marks.index.value,
+    ).nextLeft,
+);
+/** Documents and amendments left to read under every item. */
+const leftByItem = computed(() =>
+  agendaSubtreeLeft(tree.value, agenda.value?.documents ?? [], (id) => {
+    const mark = marks.document(id);
+    return (
+      (mark && isDocumentLeft(mark) ? 1 : 0) +
+      (marks.index.value.amendmentsLeft.get(id) ?? 0)
+    );
+  }),
+);
+const leftFor = (itemId: string) => leftByItem.value.get(itemId) ?? 0;
+
 const stats = computed(() => {
   const documents = agenda.value?.documents ?? [];
   return {
@@ -209,8 +243,10 @@ const figures = computed(() =>
       key: "documents",
       value: stats.value.documents,
       label: t("assembly.overview.stats.documents", stats.value.documents),
+      // Only when some are not published yet: whoever reads only what is
+      // published would always read "25 documentos (25 publicados)".
       hint:
-        stats.value.documents > 0
+        stats.value.published < stats.value.documents
           ? t(
               "assembly.overview.stats.published",
               { count: stats.value.published },
@@ -346,31 +382,13 @@ const warnedKeys = computed(() =>
           </template>
 
           <HomeTaskList
-            v-if="shownTasks.length > 0"
             :tasks="shownTasks"
             :show-assembly="false"
             compact
             :primary="!pendingReview && !canAddDocument"
           />
-          <div v-else class="space-y-1 text-sm">
-            <p class="text-default flex items-start gap-2 font-medium">
-              <UIcon
-                name="i-lucide-circle-check-big"
-                class="text-success mt-0.5 size-4 shrink-0"
-                aria-hidden="true"
-              />
-              {{ t("assembly.overview.todo.empty") }}
-            </p>
-            <p class="text-muted ps-6">
-              {{
-                hasWork
-                  ? t("assembly.overview.tasks.upToDate")
-                  : t("assembly.overview.tasks.empty")
-              }}
-            </p>
-          </div>
 
-          <template v-if="hasWork" #footer>
+          <template #footer>
             <UButton
               variant="link"
               color="neutral"
@@ -438,6 +456,39 @@ const warnedKeys = computed(() =>
               "
             />
           </div>
+          <!-- How much of the documentation is left to read -->
+          <div
+            v-if="showReading"
+            class="mt-2 flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-sm"
+            data-testid="overview-reading"
+          >
+            <p v-if="readLeft" class="text-default">
+              {{ t("readMarks.overview.left", { items: readLeft }) }}
+            </p>
+            <p v-else class="text-muted flex items-center gap-1.5">
+              <UIcon
+                name="i-lucide-check-check"
+                class="text-success size-4 shrink-0"
+                aria-hidden="true"
+              />
+              {{ t("readMarks.allRead") }}
+            </p>
+            <UButton
+              v-if="nextToRead"
+              size="sm"
+              variant="soft"
+              trailing-icon="i-lucide-arrow-right"
+              :label="
+                readingNotStarted
+                  ? t('readMarks.overview.start')
+                  : t('readMarks.overview.resume')
+              "
+              :to="
+                sectionPath(`documentos/${encodeURIComponent(nextToRead.slug)}`)
+              "
+              data-testid="overview-reading-next"
+            />
+          </div>
         </template>
 
         <div v-if="agendaPending && !agenda" class="space-y-2" role="status">
@@ -490,7 +541,7 @@ const warnedKeys = computed(() =>
             :style="{ paddingInlineStart: `${row.depth * 1.25}rem` }"
           >
             <NuxtLink
-              :to="agendaItemPath(sectionPath(), row.item.id)"
+              :to="agendaItemPath(sectionPath(), row.item)"
               class="text-default hover:text-primary focus-visible:outline-primary min-w-0 rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2"
               :class="row.depth === 0 ? 'font-medium' : 'text-sm'"
             >
@@ -529,6 +580,23 @@ const warnedKeys = computed(() =>
                     "assembly.overview.amendmentCount",
                     { count: totalsFor(row.item.id).amendments },
                     totalsFor(row.item.id).amendments,
+                  )
+                }}
+              </span>
+              <span
+                v-if="leftFor(row.item.id) > 0"
+                class="text-default inline-flex items-center gap-1.5"
+                data-testid="agenda-item-left"
+              >
+                <span
+                  class="bg-primary size-2 shrink-0 rounded-full"
+                  aria-hidden="true"
+                />
+                {{
+                  t(
+                    "readMarks.itemLeft",
+                    { count: leftFor(row.item.id) },
+                    leftFor(row.item.id),
                   )
                 }}
               </span>
