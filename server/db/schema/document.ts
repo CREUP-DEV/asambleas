@@ -198,6 +198,43 @@ export const documentImages = pgTable(
   (table) => [index("idx_document_images_document").on(table.documentId)],
 );
 
+/**
+ * The PDFs of a `file` document: the current one (`documents.fileUrl` ends in
+ * its `storedName`) and the ones it replaced once published, kept because
+ * delegates may have read them. A PDF replaced before publication goes with
+ * its row. Files live in the upload directory under their stored name; rows
+ * go with the document, and its files are removed with it. Only document
+ * managers read a replaced one (`replacedAt` set).
+ */
+export const documentFiles = pgTable(
+  "document_files",
+  {
+    id: text("id").primaryKey().$defaultFn(cuid),
+    documentId: text("document_id")
+      .notNull()
+      .references((): AnyPgColumn => documents.id, { onDelete: "cascade" }),
+    /** Random name on disk (STORED_PDF_NAME), never shown. */
+    storedName: text("stored_name").notNull(),
+    /** Name of the file as uploaded. */
+    fileName: text("file_name").notNull(),
+    uploadedByUserId: text("uploaded_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    uploadedAt: timestamp("uploaded_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    /** When another PDF replaced it after publication; null while current. */
+    replacedAt: timestamp("replaced_at", { withTimezone: true, mode: "date" }),
+    replacedByUserId: text("replaced_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+  },
+  (table) => [
+    uniqueIndex("document_files_stored_name_unique").on(table.storedName),
+    index("idx_document_files_document").on(table.documentId),
+  ],
+);
+
 export const documentVersions = pgTable(
   "document_versions",
   {

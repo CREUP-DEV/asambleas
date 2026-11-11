@@ -638,6 +638,22 @@ export interface DocumentDto extends DocumentSummaryDto {
   can: DocumentCapabilities;
 }
 
+/**
+ * A PDF a published `file` document replaced (GET .../documents/{document}/files,
+ * document managers only), newest replacement first. `url` opens it through
+ * the uploads route, which serves it only to document managers.
+ */
+export interface DocumentFileVersionDto {
+  id: string;
+  fileName: string;
+  url: string;
+  uploadedAt: IsoDate;
+  /** Name of the account that uploaded it; null when unknown or deleted. */
+  uploadedBy: string | null;
+  replacedAt: IsoDate;
+  replacedBy: string | null;
+}
+
 export interface DocumentCreateBody {
   agendaItemId: string;
   kind: DocumentKind;

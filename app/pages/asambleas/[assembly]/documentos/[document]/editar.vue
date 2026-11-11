@@ -1074,6 +1074,11 @@ async function onDeleted(): Promise<void> {
               @uploaded="storeDocument"
               @stale="refetch"
             />
+            <DocumentFileVersions
+              v-if="manager"
+              :document-api="documentApi"
+              :file-url="document.fileUrl"
+            />
           </section>
         </div>
 

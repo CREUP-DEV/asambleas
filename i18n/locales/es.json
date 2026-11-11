@@ -707,7 +707,7 @@
         "title": "Texto publicado",
         "description": "Al publicarse, el texto quedó congelado como versión base y los cambios se proponen como enmiendas. Aquí puedes seguir cambiando los datos del documento, su plazo de enmiendas y su estado.",
         "fileTitle": "PDF publicado",
-        "fileDescription": "Si sustituyes el PDF, todas las personas de la asamblea verán el archivo nuevo. El anterior queda registrado en el historial.",
+        "fileDescription": "Si sustituyes el PDF, todas las personas de la asamblea verán el archivo nuevo. El anterior se guarda en «Versiones anteriores», que solo ve la Secretaría.",
         "fileVoted": "El PDF ya se ha votado y no se puede sustituir."
       },
       "refreshError": {
@@ -799,7 +799,16 @@
       "uploaded": "PDF subido",
       "error": "No se ha podido subir el PDF",
       "invalidType": "Solo se admiten archivos PDF.",
-      "tooLarge": "El archivo supera el límite de 20 MB."
+      "tooLarge": "El archivo supera el límite de 20 MB.",
+      "versions": {
+        "title": "Versión anterior ({count}) | Versiones anteriores ({count})",
+        "description": "PDFs que el documento tuvo publicados antes del actual. Solo los ve la Secretaría.",
+        "uploaded": "Subido el {date}",
+        "uploadedBy": "Subido el {date} por {name}",
+        "replaced": "Sustituido el {date}",
+        "replacedBy": "Sustituido el {date} por {name}",
+        "loadError": "No se han podido cargar las versiones anteriores del PDF."
+      }
     },
     "formatSwitch": {
       "current": {
@@ -4795,6 +4804,8 @@
       "autoItem": "Es el subpunto propio de un documento",
       "cascade": "Se eliminó con el punto del que colgaba",
       "deletedDocuments": "Con {count} documento | Con {count} documentos",
+      "fileReplaced": "Sustituye a «{name}»",
+      "fileReplacedUnnamed": "Sustituye al PDF anterior",
       "quoted": "«{text}»"
     },
     "endReasons": {

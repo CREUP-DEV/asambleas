@@ -215,6 +215,22 @@ describe("activityDetails", () => {
     ).toEqual([]);
   });
 
+  it("says which PDF an upload replaced", () => {
+    const upload = (payload: Record<string, unknown>) =>
+      activityDetails(item({ action: "document_file_uploaded", payload }));
+    expect(
+      upload({
+        fileName: "nuevo.pdf",
+        replaced: true,
+        previousFileName: "anterior.pdf",
+      }),
+    ).toEqual([{ type: "fileReplaced", previous: "anterior.pdf" }]);
+    expect(upload({ fileName: "nuevo.pdf", replaced: true })).toEqual([
+      { type: "fileReplaced", previous: null },
+    ]);
+    expect(upload({ fileName: "nuevo.pdf", replaced: false })).toEqual([]);
+  });
+
   it("reads late submissions, notes, answers and results", () => {
     expect(
       activityDetails(

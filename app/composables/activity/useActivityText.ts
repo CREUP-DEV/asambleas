@@ -282,6 +282,10 @@ export function useActivityText() {
           { count: detail.count },
           detail.count,
         );
+      case "fileReplaced":
+        return detail.previous
+          ? t("activity.details.fileReplaced", { name: detail.previous })
+          : t("activity.details.fileReplacedUnnamed");
     }
   }
 

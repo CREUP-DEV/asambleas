@@ -5,14 +5,14 @@ import {
   sendStream,
   setResponseHeaders,
 } from "h3";
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { createReadStream } from "node:fs";
 import { stat } from "node:fs/promises";
 import { join } from "node:path";
 import { db } from "../../../db";
-import { assemblies, documents } from "../../../db/schema";
+import { assemblies, documentFiles, documents } from "../../../db/schema";
 import { getUploadDir } from "../../../utils/core/uploadPaths";
-import { requireActor } from "../../../utils/domain/actor";
+import { canManageDocuments, requireActor } from "../../../utils/domain/actor";
 import { withCoProponentIds } from "../../../utils/domain/presenters";
 import {
   canSeeAssembly,
@@ -38,9 +38,19 @@ function contentDisposition(name: string): string {
   return `inline; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(name)}`;
 }
 
+const DOCUMENT_COLUMNS = {
+  id: documents.id,
+  status: documents.status,
+  format: documents.format,
+  proponentMemberId: documents.proponentMemberId,
+  submittedByUserId: documents.submittedByUserId,
+  assemblyStatus: assemblies.status,
+};
+
 /**
- * Serves the PDF of a `file` document to whoever can see that document.
- * Files nobody points to answer 404.
+ * Serves the PDF of a `file` document to whoever can see that document, and
+ * a PDF it replaced once published (`document_files.replacedAt`) only to
+ * document managers who can see it. Files nobody points to answer 404.
  */
 export default defineEventHandler(async (event) => {
   const actor = await requireActor(event);
@@ -50,20 +60,29 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, message: "Archivo no válido" });
   }
 
-  const [row] = await db
-    .select({
-      id: documents.id,
-      status: documents.status,
-      format: documents.format,
-      proponentMemberId: documents.proponentMemberId,
-      submittedByUserId: documents.submittedByUserId,
-      fileName: documents.fileName,
-      assemblyStatus: assemblies.status,
-    })
+  const [current] = await db
+    .select({ ...DOCUMENT_COLUMNS, fileName: documents.fileName })
     .from(documents)
     .innerJoin(assemblies, eq(assemblies.id, documents.assemblyId))
     .where(eq(documents.fileUrl, `${PDF_URL_PREFIX}${filename}`))
     .limit(1);
+  const [replaced] = current
+    ? []
+    : canManageDocuments(actor)
+      ? await db
+          .select({ ...DOCUMENT_COLUMNS, fileName: documentFiles.fileName })
+          .from(documentFiles)
+          .innerJoin(documents, eq(documents.id, documentFiles.documentId))
+          .innerJoin(assemblies, eq(assemblies.id, documents.assemblyId))
+          .where(
+            and(
+              eq(documentFiles.storedName, filename),
+              isNotNull(documentFiles.replacedAt),
+            ),
+          )
+          .limit(1)
+      : [];
+  const row = current ?? replaced;
 
   if (
     !row ||

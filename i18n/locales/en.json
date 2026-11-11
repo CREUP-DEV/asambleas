@@ -707,7 +707,7 @@
         "title": "Published text",
         "description": "When it was published, the text was frozen as the base version, and changes are proposed as amendments. Here you can still change the document's details, its amendment window and its status.",
         "fileTitle": "Published PDF",
-        "fileDescription": "If you replace the PDF, everyone in the assembly will see the new file. The previous one stays recorded in the history.",
+        "fileDescription": "If you replace the PDF, everyone in the assembly will see the new file. The previous one is kept under “Previous versions”, which only the Secretariat sees.",
         "fileVoted": "The PDF has already been voted on and cannot be replaced."
       },
       "refreshError": {
@@ -799,7 +799,16 @@
       "uploaded": "PDF uploaded",
       "error": "The PDF could not be uploaded",
       "invalidType": "Only PDF files are accepted.",
-      "tooLarge": "The file is larger than the 20 MB limit."
+      "tooLarge": "The file is larger than the 20 MB limit.",
+      "versions": {
+        "title": "Previous version ({count}) | Previous versions ({count})",
+        "description": "PDFs the document had published before the current one. Only the Secretariat sees them.",
+        "uploaded": "Uploaded on {date}",
+        "uploadedBy": "Uploaded on {date} by {name}",
+        "replaced": "Replaced on {date}",
+        "replacedBy": "Replaced on {date} by {name}",
+        "loadError": "The previous versions of the PDF could not be loaded."
+      }
     },
     "formatSwitch": {
       "current": {
@@ -4795,6 +4804,8 @@
       "autoItem": "It is the sub-item of a document",
       "cascade": "Deleted with the item it was under",
       "deletedDocuments": "With {count} document | With {count} documents",
+      "fileReplaced": "Replaces “{name}”",
+      "fileReplacedUnnamed": "Replaces the previous PDF",
       "quoted": "“{text}”"
     },
     "endReasons": {

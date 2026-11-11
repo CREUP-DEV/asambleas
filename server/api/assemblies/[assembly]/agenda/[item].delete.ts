@@ -212,7 +212,7 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
 
   // Best effort, once nothing points at them.
   for (const file of files) {
-    await removeStoredPdf(file.fileUrl);
+    for (const fileUrl of file.fileUrls) await removeStoredPdf(fileUrl);
     await removeImageFiles(file.images);
   }
   return { success: true };
