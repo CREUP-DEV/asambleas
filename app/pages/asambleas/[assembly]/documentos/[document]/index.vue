@@ -1069,8 +1069,17 @@ function setAmendmentsHidden(hidden: boolean): void {
  * list hidden, whatever the reader chose elsewhere: there is nothing in it.
  * Opening it there lasts this visit only and is not remembered.
  */
+// Only once mounted, like the stored choice: decided while hydrating, the
+// panel would keep the server's classes (Vue does not patch them then).
+const workspaceMounted = ref(false);
+onMounted(() => {
+  workspaceMounted.value = true;
+});
 const noAmendments = computed(
-  () => Boolean(list.data.value) && list.amendments.value.length === 0,
+  () =>
+    workspaceMounted.value &&
+    Boolean(list.data.value) &&
+    list.amendments.value.length === 0,
 );
 const emptyListOpened = ref(false);
 
@@ -1136,6 +1145,17 @@ const textPanelUi = computed(() => {
         : "";
   return { ...panelUi, body: `${panelUi.body} ${extra}`.trim() };
 });
+/**
+ * The index in the text's left margin. With the list hidden the text sits
+ * centred in a wide margin, so on large screens the index steps further away
+ * from it (the margin is at least 5rem from xl and 13rem from 2xl); beside
+ * the list, or on smaller screens, it keeps close.
+ */
+const outlineRailClass = computed(() =>
+  listHidden.value && !compareColumns.value
+    ? "-ms-9 xl:-ms-14 2xl:-ms-20"
+    : "-ms-9",
+);
 
 /**
  * The open amendment in the address (`?enmienda=<id>`), so its link can be
@@ -1312,6 +1332,8 @@ const filteredBlockLabel = computed(() =>
         :document="document"
         :assembly="assembly"
         :edit-to="canEditDraft ? documentPath('editar') : null"
+        :show-kind="false"
+        :show-reference="false"
       >
         <div class="flex flex-col items-start gap-1.5 sm:items-end">
           <div class="flex flex-wrap items-center gap-2">
@@ -1643,7 +1665,8 @@ const filteredBlockLabel = computed(() =>
                    instead (above). -->
               <div
                 v-if="textOutline.length > 1"
-                class="sticky top-2 z-20 -ms-9 -mb-4 h-0 max-lg:hidden"
+                class="sticky top-2 z-20 -mb-4 h-0 max-lg:hidden"
+                :class="outlineRailClass"
               >
                 <ContentOutlineRail
                   :items="textOutline"

@@ -2301,6 +2301,7 @@
       "assembly": "Assembly",
       "agendaItem": "Item",
       "document": "Document",
+      "view": "View",
       "views": {
         "edit": "Edit",
         "answers": "Answers",

@@ -2301,6 +2301,7 @@
       "assembly": "Asamblea",
       "agendaItem": "Punto",
       "document": "Documento",
+      "view": "Ver",
       "views": {
         "edit": "Editar",
         "answers": "Respuestas",

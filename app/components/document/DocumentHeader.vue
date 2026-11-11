@@ -53,6 +53,12 @@ const props = withDefaults(
     showAnswerer?: boolean;
     /** Name the kind above the title (the editor leaves it out). */
     showKind?: boolean;
+    /**
+     * The reference above the title. The document page leaves the line out:
+     * its reading bar and breadcrumb already say where the reader is, and
+     * the title follows.
+     */
+    showReference?: boolean;
   }>(),
   {
     showAssembly: false,
@@ -61,6 +67,7 @@ const props = withDefaults(
     editTo: null,
     showAnswerer: true,
     showKind: true,
+    showReference: true,
   },
 );
 
@@ -87,7 +94,7 @@ const eyebrow = computed(() =>
   [
     props.showAssembly && "assembly",
     props.showKind && "kind",
-    props.document.reference && "reference",
+    props.showReference && props.document.reference && "reference",
   ].filter(Boolean),
 );
 
@@ -202,7 +209,7 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
           <span v-if="eyebrow.length > 1" aria-hidden="true">·</span>
         </template>
         <span v-if="showKind">{{ kindLabel }}</span>
-        <template v-if="document.reference">
+        <template v-if="showReference && document.reference">
           <span v-if="showKind" aria-hidden="true">·</span>
           <span class="text-default font-medium tabular-nums">
             <span class="sr-only">{{ t("document.header.reference") }}: </span>
