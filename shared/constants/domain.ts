@@ -160,7 +160,7 @@ export const DOCUMENT_KIND_DEFAULTS: Record<
     voted: true,
     acceptedAmendments: "vote",
     majority: "two_thirds",
-    referencePrefix: "PO",
+    referencePrefix: "POS",
   },
   resolution: {
     amendable: true,
