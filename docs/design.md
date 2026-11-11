@@ -180,9 +180,10 @@ Members of the other kinds read the same for everyone.
 - Optional per-document amendment window overriding the assembly calendar.
 - `carriedFromDocumentId` for documents postponed to a later assembly.
 
-While documents can be presented (the assembly is not closed and
-`documents_close` has not passed), the home page and the agenda offer "Añadir
-documento" ("Presentar documento" for members). The modal starts with the
+The assembly overview and the agenda offer "Añadir documento" to managers
+until the assembly closes, whatever the calendar says, and "Presentar
+documento" to members while documents can be presented (the assembly is not
+closed and `documents_close` has not passed). The modal starts with the
 agenda item and proposes the kind and the title from it (`proposeFromItem`:
 "Aprobación, si procede, del Posicionamiento sobre X" gives a positioning
 titled "Posicionamiento sobre X"; an item that names several documents gets
