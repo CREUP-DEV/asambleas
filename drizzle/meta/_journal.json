@@ -197,6 +197,13 @@
       "when": 1794427644395,
       "tag": "0027_pretty_karen_page",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1794432669882,
+      "tag": "0028_white_blackheart",
+      "breakpoints": true
     }
   ]
 }

@@ -5083,6 +5083,11 @@
       },
       "documents": {
         "reslug": "Enlaces de los documentos recalculados"
+      },
+      "document_note": {
+        "created": "Nota privada escrita",
+        "updated": "Nota privada cambiada",
+        "deleted": "Nota privada borrada"
       }
     },
     "changes": {
@@ -5127,6 +5132,36 @@
           "note": "Nota"
         }
       }
+    }
+  },
+  "notes": {
+    "button": "Notas",
+    "buttonCount": "Notas. Tienes {count} | Notas. Tienes {count}",
+    "title": "Mis notas",
+    "private": "Solo las ve tu cuenta.",
+    "addGeneral": "Añadir nota general",
+    "addHere": "Añadir nota aquí",
+    "empty": "Todavía no tienes notas en este documento",
+    "emptyHint": "Para anotar un fragmento, selecciónalo en el texto, haz clic derecho y elige «Añadir nota aquí».",
+    "sections": {
+      "general": "Sobre el documento",
+      "placed": "Sobre el texto",
+      "orphaned": "Sin ubicación"
+    },
+    "orphanedHint": "El texto ha cambiado y ya no contiene estos fragmentos. Las notas se conservan.",
+    "locate": "Ver en el texto",
+    "deleteConfirm": "Pulsa otra vez para borrarla",
+    "saved": "Nota guardada",
+    "deleted": "Nota borrada",
+    "saveError": "No se ha podido guardar la nota",
+    "deleteError": "No se ha podido borrar la nota",
+    "dialog": {
+      "newTitle": "Nueva nota sobre el texto",
+      "generalTitle": "Nueva nota sobre el documento",
+      "editTitle": "Cambiar la nota",
+      "label": "Nota",
+      "placeholder": "Escribe aquí lo que quieras recordar",
+      "save": "Guardar nota"
     }
   }
 }

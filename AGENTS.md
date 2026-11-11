@@ -289,6 +289,13 @@ Full model: [`docs/design.md`](docs/design.md). Endpoints and business rules: [`
 - The hub fetches them once (`provideReadMarks`) and everything under it uses `useReadMarks`; never fetch them per row. A published document's page starts with `DocumentReadBar` (position, the documents before and after it in the order of the agenda, what is left and "Marcar como leído"). On the overview the reading progress lives in the agenda block's header: it is not a fourth block.
 - "Publicado" is shown only to a document's presenters (`showsDocumentStatus`, and `DocumentHeader`): to everyone else a document they can read is public by being there. Rows show the read mark (`ReadMark`) instead.
 
+### Private notes
+
+- Each account keeps private notes on a published document (`document_notes`; `server/utils/domain/documentNotes.ts`, `shared/utils/documentNotes.ts`): about the whole document, or on a stretch of one block of its text (block id, character offsets into the block's text as it shows, and the text it covered, `quote`). They are the account's own (a council's account shares them): every read and write is keyed by `actor.user.id`, and no endpoint returns another account's.
+- An Admin acting as the account is that account here too: it reads and writes its notes, and what it writes is recorded under the impersonation. The activity records only that one was written, changed or deleted (`document_note.*`, payload `anchored`), never its text nor where it is. Never add either to a payload, a log or an export.
+- Nothing follows the document: when the text is published again, `locateNote` looks the quote up in the block, and a note it cannot place stays listed with its quote ("Sin ubicación"). Never delete notes because the text changed.
+- `DocumentNotes` is the whole UI (the "Notas" button, the side panel, the dialog, the marks on the text), on the document page and in the reader of an agenda item. The marks are drawn with the CSS Custom Highlight API (`::highlight(cx-note)` in `main.css`) over the text ContentView renders: never write a note into the rendered HTML. "Añadir nota aquí" is in the text's right-click menu (`AmendmentTextActions`), next to "Hacer enmienda aquí".
+
 ## Traceability And Impersonation
 
 Model in [`docs/design.md`](docs/design.md) ("Traceability", "Impersonation"); endpoints in [`docs/api.md`](docs/api.md) ("Activity and impersonation").

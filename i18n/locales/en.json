@@ -5083,6 +5083,11 @@
       },
       "documents": {
         "reslug": "Document links recalculated"
+      },
+      "document_note": {
+        "created": "Private note written",
+        "updated": "Private note changed",
+        "deleted": "Private note deleted"
       }
     },
     "changes": {
@@ -5127,6 +5132,36 @@
           "note": "Note"
         }
       }
+    }
+  },
+  "notes": {
+    "button": "Notes",
+    "buttonCount": "Notes. You have {count} | Notes. You have {count}",
+    "title": "My notes",
+    "private": "Only your account sees them.",
+    "addGeneral": "Add a general note",
+    "addHere": "Add a note here",
+    "empty": "You have no notes on this document yet",
+    "emptyHint": "To annotate a passage, select it in the text, right-click and choose “Add a note here”.",
+    "sections": {
+      "general": "About the document",
+      "placed": "On the text",
+      "orphaned": "No longer placed"
+    },
+    "orphanedHint": "The text has changed and no longer holds these passages. The notes are kept.",
+    "locate": "See in the text",
+    "deleteConfirm": "Press again to delete it",
+    "saved": "Note saved",
+    "deleted": "Note deleted",
+    "saveError": "The note could not be saved",
+    "deleteError": "The note could not be deleted",
+    "dialog": {
+      "newTitle": "New note on the text",
+      "generalTitle": "New note on the document",
+      "editTitle": "Change the note",
+      "label": "Note",
+      "placeholder": "Write here what you want to remember",
+      "save": "Save note"
     }
   }
 }

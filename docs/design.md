@@ -894,6 +894,44 @@ documentation can be read without going back to a list.
 Every change of marks is recorded (`read_marks.set`, counts only), like any
 other mutation.
 
+## Private notes
+
+Reading a document to prepare an assembly means writing things down: what
+to ask, what to amend, what one thinks of a paragraph. Each
+account keeps private notes on the published documents (`document_notes`).
+
+- **Two kinds.** About the whole document (no anchor), or on a stretch of
+  one block of its text: the block id, the stretch as character offsets
+  into the block's text as it shows, and the text it covered (`quote`). A
+  selection that runs over several paragraphs is cut at the end of the one
+  it starts in.
+- **Per account.** A council's account is the council, so everyone who uses it
+  shares the notes. Nobody else reads them: every read and write is keyed by
+  the account. An Admin acting as the account is that account here as
+  everywhere else: it reads its notes, and what it writes is recorded
+  under the impersonation.
+- **Never recorded.** The activity keeps that a note was written, changed
+  or deleted (`document_note.created`, `.updated`, `.deleted`, with
+  `anchored`), never its text nor where in the document it is.
+- **The text may change.** Nothing here follows the document. When it is
+  published again after a correction, `locateNote`
+  (`shared/utils/documentNotes.ts`) finds the note where it was written if
+  the text there is still the quote, else at the first place the quote
+  shows in the block. One that cannot be placed is kept and listed with its
+  quote ("Sin ubicación").
+- **Limits.** 4000 characters a note, 2000 a quote, 200 notes per account
+  and document; only its text can be changed, with an optimistic lock on
+  `updatedAt` (the account may be open in several places).
+
+On screen (`DocumentNotes`, on the document page and in the reader of an
+agenda item) "Notas" opens the list in a side panel, in the order of the
+text; "Añadir nota aquí" in the text's right-click menu writes one on the
+selection, or on the whole paragraph without one. A note on the text shows
+as a soft highlight with a dotted line, drawn with the CSS Custom Highlight
+API over the rendered text (its HTML is never changed); pointing at it or
+pressing it shows the note. A browser without that API shows no marks, and
+the notes stay in the panel.
+
 ## Traceability
 
 Every change leaves a record of who did it, acting for which member, when,
