@@ -1040,6 +1040,7 @@ const compareColumns = computed(
  * The amendments list hidden by the reader on a wide screen, so the text
  * takes the whole workspace. Remembered per browser, like the home folds.
  * Opening an amendment (a card, a mark in the text, a link) brings it back.
+ * A document without amendments starts with it hidden (noAmendments).
  */
 const AMENDMENTS_HIDDEN_KEY = "document-workspace-amendments-hidden";
 const amendmentsHidden = ref(false);
@@ -1063,8 +1064,22 @@ function setAmendmentsHidden(hidden: boolean): void {
   }
 }
 
+/**
+ * A document without amendments (once the list has loaded) starts with the
+ * list hidden, whatever the reader chose elsewhere: there is nothing in it.
+ * Opening it there lasts this visit only and is not remembered.
+ */
+const noAmendments = computed(
+  () => Boolean(list.data.value) && list.amendments.value.length === 0,
+);
+const emptyListOpened = ref(false);
+
 /** Hiding the list closes the amendment open in it too. */
 function toggleAmendments(): void {
+  if (noAmendments.value) {
+    emptyListOpened.value = !emptyListOpened.value;
+    return;
+  }
   if (amendmentsHidden.value) {
     setAmendmentsHidden(false);
     return;
@@ -1077,9 +1092,15 @@ watch(detailOpen, (open) => {
   if (open) setAmendmentsHidden(false);
 });
 
-/** The list hidden by the reader, while nothing in it asks to be seen. */
+/**
+ * The list hidden (by the reader, or because the document has no
+ * amendments), while nothing in it asks to be seen.
+ */
 const listHidden = computed(
-  () => isDesktop.value && amendmentsHidden.value && !composing.value,
+  () =>
+    isDesktop.value &&
+    !composing.value &&
+    (noAmendments.value ? !emptyListOpened.value : amendmentsHidden.value),
 );
 /** The text alone in the workspace: "Original y resultado", or the list hidden. */
 const textOnly = computed(() => wideCompare.value || listHidden.value);
