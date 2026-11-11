@@ -839,6 +839,29 @@ export function amendmentBlockMarkers(
   return markers;
 }
 
+/**
+ * The undecided amendments that act on any of these base blocks, in text
+ * order: what someone changing those paragraphs should read first, so they
+ * do not propose what is already presented. Totality amendments are left
+ * out (they touch every block), and so is `exceptId` (the draft being
+ * written).
+ */
+export function amendmentsOnBlocks<T extends AmendmentLike>(
+  list: T[],
+  blockIds: Iterable<string>,
+  exceptId: string | null = null,
+): T[] {
+  const wanted = new Set(blockIds);
+  if (wanted.size === 0) return [];
+  return sortAmendments(
+    passageAmendments(list.filter(isAmendmentOpen)).filter(
+      (amendment) =>
+        amendment.id !== exceptId &&
+        touchedBlockIds(amendment.ops).some((id) => wanted.has(id)),
+    ),
+  );
+}
+
 // Filters ----------------------------------------------------------------------
 
 export type AmendmentLateFilter = "any" | "late" | "on_time";
@@ -869,6 +892,8 @@ export interface AmendmentFilters {
   review: AmendmentReviewFilter;
   /** Only amendments presented by the actor's member. */
   mine: boolean;
+  /** Only amendments the account still has to read (its read marks). */
+  unread: boolean;
   /** Only amendments touching this base block (gutter marker). */
   blockId: string | null;
   query: string;
@@ -882,6 +907,7 @@ export function emptyAmendmentFilters(): AmendmentFilters {
     late: "any",
     review: "any",
     mine: false,
+    unread: false,
     blockId: null,
     query: "",
   };
@@ -896,6 +922,7 @@ export function activeAmendmentFilterCount(filters: AmendmentFilters): number {
     (filters.late !== "any" ? 1 : 0) +
     (filters.review !== "any" ? 1 : 0) +
     (filters.mine ? 1 : 0) +
+    (filters.unread ? 1 : 0) +
     (filters.blockId ? 1 : 0) +
     (filters.query.trim() ? 1 : 0)
   );
@@ -912,11 +939,14 @@ function fold(text: string): string {
  * The amendments that pass every filter. The `correction_requested` review
  * filter keeps only the drafts sent back that the viewer cannot edit
  * (isAmendmentReturnedForCorrection); every other value leaves drafts out.
+ * `isUnread` says which ones the account still has to read, for the
+ * `unread` filter; without it that filter lists nothing.
  */
 export function filterAmendmentList(
   list: AmendmentDto[],
   filters: AmendmentFilters,
   actorMemberId: string | null,
+  isUnread: (id: string) => boolean = () => false,
 ): AmendmentDto[] {
   const query = fold(filters.query.trim());
   const returnedOnly = filters.review === "correction_requested";
@@ -961,6 +991,7 @@ export function filterAmendmentList(
     ) {
       return false;
     }
+    if (filters.unread && !isUnread(amendment.id)) return false;
     if (
       filters.blockId &&
       !touchedBlockIds(amendment.ops).includes(filters.blockId)
@@ -988,14 +1019,16 @@ export function filterAmendmentList(
 
 /**
  * The filters offered as visible chips over the list: everything, only the
- * undecided ones, only the late ones. ("Mías" is the list of the actor's
- * own amendments, a tab of its own, not a filter.)
+ * undecided ones, only the ones the account still has to read, only the
+ * late ones. ("Mías" is the list of the actor's own amendments, a tab of
+ * its own, not a filter.)
  */
-export type AmendmentQuickFilter = "all" | "pending" | "late";
+export type AmendmentQuickFilter = "all" | "pending" | "unread" | "late";
 
 export const AMENDMENT_QUICK_FILTERS: readonly AmendmentQuickFilter[] = [
   "all",
   "pending",
+  "unread",
   "late",
 ];
 
@@ -1004,15 +1037,21 @@ export const AMENDMENT_QUICK_FILTERS: readonly AmendmentQuickFilter[] = [
  * chip stands for:
  * - `all`: nothing filtered (a search apart);
  * - `pending`: only the presented, undecided ones, on time or late;
+ * - `unread`: only the ones left to read, whatever their status or timing;
  * - `late`: only the late ones, whatever their status.
  * Filters with no chip (kind, member, review, paragraph) may narrow
- * `pending` and `late` further; `all` means none is set.
+ * `pending`, `unread` and `late` further; `all` means none is set.
  */
 export function amendmentQuickFilterOf(
   filters: AmendmentFilters,
 ): AmendmentQuickFilter | null {
   if (activeAmendmentFilterCount({ ...filters, query: "" }) === 0) return "all";
   if (filters.mine) return null;
+  if (filters.unread) {
+    return filters.statuses.length === 0 && filters.late === "any"
+      ? "unread"
+      : null;
+  }
   if (
     filters.statuses.length === 1 &&
     filters.statuses[0] === "submitted" &&
@@ -1026,9 +1065,10 @@ export function amendmentQuickFilterOf(
 
 /**
  * The filters after pressing a chip. `all` clears every filter but the
- * search; the other two set the status and the timing and keep the rest.
- * `pending` leaves the drafts sent back for correction, which are not
- * presented.
+ * search; the others set the status, the timing and whether only what is
+ * left to read shows, and keep the rest. `pending` and `unread` leave the
+ * drafts sent back for correction, which are neither presented nor
+ * published.
  */
 export function applyAmendmentQuickFilter(
   filters: AmendmentFilters,
@@ -1037,17 +1077,35 @@ export function applyAmendmentQuickFilter(
   if (quick === "all") {
     return { ...emptyAmendmentFilters(), query: filters.query };
   }
+  const review =
+    filters.review === "correction_requested" ? "any" : filters.review;
   if (quick === "pending") {
     return {
       ...filters,
       statuses: ["submitted"],
       late: "any",
       mine: false,
-      review:
-        filters.review === "correction_requested" ? "any" : filters.review,
+      unread: false,
+      review,
     };
   }
-  return { ...filters, statuses: [], late: "late", mine: false };
+  if (quick === "unread") {
+    return {
+      ...filters,
+      statuses: [],
+      late: "any",
+      mine: false,
+      unread: true,
+      review,
+    };
+  }
+  return {
+    ...filters,
+    statuses: [],
+    late: "late",
+    mine: false,
+    unread: false,
+  };
 }
 
 /** Where an amendment sits in the list on screen, and what is next to it. */

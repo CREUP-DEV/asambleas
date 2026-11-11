@@ -21,12 +21,18 @@ import {
   amendmentNeighbours,
   amendmentReviewQueue,
   amendmentsAwaitingActor,
+  applyAmendmentQuickFilter,
   consolidationInputs,
   isAmendmentAuthor,
   isAmendmentPrivate,
   type AmendmentComposerMode,
   type AmendmentReviewFilter,
 } from "~/composables/amendment/workspace";
+import {
+  DOCUMENT_AMEND_QUERY,
+  DOCUMENT_AMENDMENTS_QUERY,
+  DOCUMENT_AMENDMENTS_UNREAD,
+} from "~/composables/document/documentLinks";
 import {
   documentAudience,
   documentProgress,
@@ -65,9 +71,12 @@ import {
  * until an amendment or a composer is opened). The view only changes when
  * the reader picks a tab or presses "Ver en el documento" in an amendment's
  * detail, never by selecting an amendment. The
+ * original text marks in its margin, with a thin line, the paragraphs that
+ * undecided amendments act on (pressing one lists them); "Enmiendas en el
+ * margen" turns the lines off, per browser. The
  * amendments are on the right, grouped by the passage they act on, under
- * visible chips: "Todas", "Pendientes" and "Fuera de plazo" filter the
- * list, "Mías" shows where the actor's own stand with the Secretaría
+ * visible chips: "Todas", "Pendientes", "Sin leer" and "Fuera de plazo"
+ * filter the list, "Mías" shows where the actor's own stand with the Secretaría
  * (its badge counts what waits for them), and "Más filtros" holds the rest.
  * An open amendment takes the panel and is read on its own: "Anterior ·
  * 3 de 17 · Siguiente" walks the list as filtered (also with the arrow
@@ -79,9 +88,12 @@ import {
  * "Más" menu. On narrow screens the two panels stack behind a toggle and
  * the amendment detail opens in a slideover.
  *
- * `?enmienda=<id>` opens that amendment (links from the home page), and
+ * `?enmienda=<id>` opens that amendment (links from the home page),
  * `?transaccional=<id>,<id>` opens the transactional composer on those
- * amendments (from the presenter's review, "Transaccionar"). The open
+ * amendments (from the presenter's review, "Transaccionar"),
+ * `?enmendar=<block>` opens the amendment editor at that paragraph (from
+ * the reader of an agenda item) and `?enmiendas=sin-leer` lists the
+ * amendments left to read (documentLinks.ts). The open
  * amendment is kept in the address, so its link can be shared.
  *
  * A PDF document shows its file, or says it is still to be uploaded. An
@@ -925,9 +937,12 @@ function openCorrections(): void {
 /**
  * On arrival, `?enmienda=<id>` opens that amendment (a draft of the
  * actor's own in "Mis enmiendas"; one sent back for correction they cannot
- * edit in "Todas", under "Devueltas para corregir"), and
+ * edit in "Todas", under "Devueltas para corregir"),
  * `?transaccional=<id>,<id>` the transactional composer
- * on those amendments (the ones that can still be combined). Client only:
+ * on those amendments (the ones that can still be combined),
+ * `?enmendar=<block>` the amendment editor at that paragraph, for whoever
+ * may amend (asked once: it leaves the address), and `?enmiendas=sin-leer`
+ * the list with only what is left to read. Client only:
  * whether the detail opens in the panel or in a slideover depends on the
  * screen width.
  */
@@ -946,6 +961,31 @@ function landOnAmendment(): void {
       }),
     );
     return;
+  }
+  const amend = route.query[DOCUMENT_AMEND_QUERY];
+  if (typeof amend === "string") {
+    void router.replace({
+      query: { ...route.query, [DOCUMENT_AMEND_QUERY]: undefined },
+    });
+    if (canAmend.value && isStructured.value) {
+      openComposer({
+        mode: "document",
+        startBlockId: base.value.some((block) => block.id === amend)
+          ? amend
+          : null,
+      });
+      return;
+    }
+  }
+  if (route.query[DOCUMENT_AMENDMENTS_QUERY] === DOCUMENT_AMENDMENTS_UNREAD) {
+    list.filters.value = applyAmendmentQuickFilter(
+      list.filters.value,
+      "unread",
+    );
+    listTab.value = "all";
+    mobilePane.value = "amendments";
+    // Shown for this visit, whatever the reader chose before.
+    amendmentsHidden.value = false;
   }
   const wanted = route.query.enmienda;
   const id = typeof wanted === "string" ? wanted : null;
@@ -1046,6 +1086,10 @@ const AMENDMENTS_HIDDEN_KEY = "document-workspace-amendments-hidden";
 const amendmentsHidden = ref(false);
 
 onMounted(() => {
+  // A link that asks for the list shows it.
+  if (route.query[DOCUMENT_AMENDMENTS_QUERY] === DOCUMENT_AMENDMENTS_UNREAD) {
+    return;
+  }
   try {
     amendmentsHidden.value =
       window.localStorage.getItem(AMENDMENTS_HIDDEN_KEY) === "1";
@@ -1179,6 +1223,21 @@ watch(
 
 const relationCandidates = computed(() =>
   list.listed.value.filter((amendment) => amendment.id !== selectedId.value),
+);
+
+/**
+ * The lines in the margin of the original text, on the paragraphs undecided
+ * amendments act on. On unless the reader turned them off; remembered per
+ * browser.
+ */
+const marginMarkers = useLocalStorage<boolean>(
+  "document-margin-amendments",
+  true,
+  { initOnMounted: true },
+);
+const hasMarkers = computed(() => Object.keys(list.markers.value).length > 0);
+const showMarkersSwitch = computed(
+  () => textMode.value === "original" && hasMarkers.value,
 );
 
 /** Markers count the listed amendments: filter those, not the returned ones. */
@@ -1386,6 +1445,21 @@ const filteredBlockLabel = computed(() =>
                   : t('workspace.editDraft')
               "
             />
+            <!-- The uploaded PDF in a tab of its own, on the screens
+                 where it shows embedded below; elsewhere its card has the
+                 button. -->
+            <UButton
+              v-if="document.format === 'file' && document.fileUrl"
+              :to="document.fileUrl"
+              external
+              target="_blank"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-external-link"
+              class="max-lg:hidden"
+              :label="t('workspace.text.openPdfTab')"
+              data-testid="document-open-pdf"
+            />
             <!-- Asked for from "Más"; it shows only once the PDF is on its
                  way, and then offers the download. -->
             <ExportButton
@@ -1438,6 +1512,7 @@ const filteredBlockLabel = computed(() =>
             : t('workspace.text.fileDescription')
         "
         :pending-description="t('workspace.text.filePending')"
+        :open-button="false"
       />
 
       <!-- Not published yet -->
@@ -1531,6 +1606,8 @@ const filteredBlockLabel = computed(() =>
           :start-block-id="composer.startBlockId"
           :draft="composerDraft"
           :draft-authors="composer.draftAuthors"
+          :others="list.listed.value"
+          :label-of="list.labelOf"
           @close="closeComposer"
           @saved="onComposerSaved"
           @submitted="onComposerSubmitted"
@@ -1608,10 +1685,18 @@ const filteredBlockLabel = computed(() =>
                   v-if="
                     showAcceptedSwitch ||
                     showAmendmentsToggle ||
+                    showMarkersSwitch ||
                     textMode === 'compare'
                   "
                   #right
                 >
+                  <USwitch
+                    v-if="showMarkersSwitch"
+                    v-model="marginMarkers"
+                    size="sm"
+                    :label="t('workspace.marginMarkers')"
+                    data-testid="margin-markers"
+                  />
                   <USwitch
                     v-if="textMode === 'compare'"
                     v-model="compareDiff"
@@ -1682,7 +1767,7 @@ const filteredBlockLabel = computed(() =>
                 <ContentView
                   ref="textView"
                   :blocks="base"
-                  :markers="list.markers.value"
+                  :markers="marginMarkers ? list.markers.value : undefined"
                   :selected="originalSelected"
                   marker-buttons
                   @marker-click="onMarkerClick"
@@ -1893,6 +1978,7 @@ const filteredBlockLabel = computed(() =>
                   :mine-waiting="mineWaiting"
                   :mine-urgent="corrections.length > 0"
                   :total="list.listed.value.length"
+                  :unread="list.unreadIds.value.length"
                 />
               </div>
             </template>

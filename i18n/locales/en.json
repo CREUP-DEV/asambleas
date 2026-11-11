@@ -89,7 +89,7 @@
     },
     "content": {
       "empty": "There is no content to show.",
-      "markerCount": "{count} amendment affects this block | {count} amendments affect this block",
+      "markerCount": "{count} amendment on this paragraph. See it | {count} amendments on this paragraph. See them",
       "markerOverlap": "Some amendments overlap",
       "totalityTitle": "Amendment to the whole text",
       "totalityNote": "This amendment proposes no specific changes to the text: it asks for the whole text to be sent back.",
@@ -1331,7 +1331,8 @@
         "pending": "Undecided",
         "late": "Late",
         "mine": "Mine",
-        "mineWaiting": "Mine. 1 waits for you | Mine. {count} wait for you"
+        "mineWaiting": "Mine. 1 waits for you | Mine. {count} wait for you",
+        "unread": "Unread"
       },
       "status": "Where it stands",
       "kind": "Kind of amendment",
@@ -1736,6 +1737,10 @@
         "stay": "Keep editing",
         "discard": "Leave without saving",
         "confirm": "You have unsaved changes. Do you want to leave and lose them?"
+      },
+      "sameParagraphs": {
+        "notice": "There is already {count} amendment on what you change. See it | There are already {count} amendments on what you change. See them",
+        "hint": "Presented, undecided amendments that touch the same paragraphs as yours. Read them before sending it, in case they already propose the same."
       }
     },
     "errors": {
@@ -2738,8 +2743,9 @@
         "kinds": "Members submit here: {kinds}."
       },
       "neighbours": "Previous and next item",
-      "previous": "Previous",
-      "next": "Next"
+      "unpublished": "Not published",
+      "previousItem": "Previous item",
+      "nextItem": "Next item"
     },
     "move": {
       "group": "Move the item",
@@ -2940,6 +2946,14 @@
       "blockedAmendments": "A document under this item or its sub-items has amendments. | {count} documents under this item or its sub-items have amendments.",
       "blockedHelp": "Amendments are other members' work and are not deleted. Move those documents to another item first.",
       "blockedLive": "This item, a sub-item or one of their documents is being dealt with in the session right now. Try again when the Mesa moves on to another item."
+    },
+    "reader": {
+      "label": "Documents of this item",
+      "choose": "Choose a document",
+      "open": "Open document",
+      "viewAmendments": "See amendments",
+      "loading": "Loading the document",
+      "loadError": "The document could not be loaded"
     }
   },
   "calendar": {
@@ -3201,7 +3215,8 @@
     "proponentReview": {
       "action": "Review amendments",
       "actionCount": "Review amendments: {count} pending | Review amendments: {count} pending"
-    }
+    },
+    "marginMarkers": "Amendments in the margin"
   },
   "session": {
     "title": "Session console",

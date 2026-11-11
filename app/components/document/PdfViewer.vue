@@ -4,7 +4,9 @@
  * that shows PDFs inline (`navigator.pdfViewerEnabled`), the browser's own
  * viewer is embedded, with the way to open it in a new tab and, when given,
  * one line about it (that it cannot be amended, where its type usually
- * is). Elsewhere (phones, where Android does not render
+ * is). A page that offers that way itself, or that has another way to the
+ * document, leaves the button out (`openButton: false`), and then the
+ * viewer starts right away unless there is a line to say. Elsewhere (phones, where Android does not render
  * a framed PDF and iOS shows only its first page, and before hydration) the
  * card with the button stays.
  *
@@ -12,16 +14,25 @@
  * framed, and only by the platform
  * (route rules in `nuxt.config.ts`).
  */
-const props = defineProps<{
-  /** The PDF, or null while it has not been uploaded. */
-  url: string | null;
-  /** The document's title, which names the frame for screen readers. */
-  title: string;
-  /** The line about the PDF, if any. */
-  description?: string;
-  /** The card's description while there is none. */
-  pendingDescription?: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    /** The PDF, or null while it has not been uploaded. */
+    url: string | null;
+    /** The document's title, which names the frame for screen readers. */
+    title: string;
+    /** The line about the PDF, if any. */
+    description?: string;
+    /** The card's description while there is none. */
+    pendingDescription?: string;
+    /** "Abrir en una pestaña nueva" above the embedded viewer. */
+    openButton?: boolean;
+  }>(),
+  {
+    description: undefined,
+    pendingDescription: undefined,
+    openButton: true,
+  },
+);
 
 const { t } = useI18n();
 
@@ -43,7 +54,10 @@ const embedded = computed(
     :aria-label="t('workspace.text.file')"
     data-testid="document-pdf-viewer"
   >
-    <div class="flex flex-wrap items-center justify-between gap-3">
+    <div
+      v-if="description || openButton"
+      class="flex flex-wrap items-center justify-between gap-3"
+    >
       <p v-if="description" class="text-muted flex items-center gap-2 text-sm">
         <UIcon
           name="i-lucide-file-text"
@@ -53,6 +67,7 @@ const embedded = computed(
         {{ description }}
       </p>
       <UButton
+        v-if="openButton"
         :to="url"
         external
         target="_blank"

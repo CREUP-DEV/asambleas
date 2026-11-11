@@ -7,6 +7,7 @@ import { validateOps } from "~~/shared/utils/content/ops";
 import {
   activeAmendmentFilterCount,
   amendmentBlockMarkers,
+  amendmentsOnBlocks,
   amendmentHistoryVersion,
   amendmentDisplayLabel,
   amendmentErrorKey,
@@ -586,6 +587,20 @@ describe("markers and groups", () => {
       b2: { count: 2, overlap: true },
       b4: { count: 1, overlap: false },
     });
+  });
+
+  it("lists the undecided amendments on some paragraphs", () => {
+    const list = [c, b, a, closed, totality];
+    expect(amendmentsOnBlocks(list, ["b2"]).map((x) => x.id)).toEqual([
+      "a",
+      "b",
+    ]);
+    // The draft being written is not one of the others.
+    expect(
+      amendmentsOnBlocks(list, ["b2", "b4"], "a").map((x) => x.id),
+    ).toEqual(["b", "c"]);
+    expect(amendmentsOnBlocks(list, [])).toEqual([]);
+    expect(amendmentsOnBlocks(list, ["b1"])).toEqual([]);
   });
 
   it("groups by overlap cluster in text order, totality first", () => {
@@ -1929,6 +1944,37 @@ describe("reader", () => {
     expect(ids("all")).toEqual(["a1", "a2", "a3", "a4"]);
     expect(ids("pending")).toEqual(["a1", "a2"]);
     expect(ids("late")).toEqual(["a2", "a4"]);
+  });
+
+  it("the unread chip keeps only what the account has left to read", () => {
+    const list = [
+      amendment("a1", []),
+      amendment("a2", [], { late: true }),
+      amendment("a3", [], { status: "approved" }),
+    ];
+    const unread = applyAmendmentQuickFilter(
+      { ...emptyAmendmentFilters(), statuses: ["approved"], late: "late" },
+      "unread",
+    );
+    expect(unread).toMatchObject({ unread: true, statuses: [], late: "any" });
+    expect(amendmentQuickFilterOf(unread)).toBe("unread");
+    expect(activeAmendmentFilterCount(unread)).toBe(1);
+    const left = new Set(["a2", "a3"]);
+    expect(
+      filterAmendmentList(list, unread, null, (id) => left.has(id)).map(
+        (item) => item.id,
+      ),
+    ).toEqual(["a2", "a3"]);
+    // Nobody says what is left: nothing is listed.
+    expect(filterAmendmentList(list, unread, null)).toEqual([]);
+    // The other chips turn it off.
+    expect(applyAmendmentQuickFilter(unread, "pending").unread).toBe(false);
+    expect(applyAmendmentQuickFilter(unread, "late").unread).toBe(false);
+    expect(applyAmendmentQuickFilter(unread, "all").unread).toBe(false);
+    // Narrowed by a status it is no chip's list any more.
+    expect(
+      amendmentQuickFilterOf({ ...unread, statuses: ["submitted"] }),
+    ).toBeNull();
   });
 
   it("shows one status: the review state while it says more", () => {

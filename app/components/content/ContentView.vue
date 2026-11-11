@@ -13,7 +13,12 @@ export interface OutlineEntry {
   text: string;
 }
 
-/** Gutter marker of one block: amendments touching it and whether they overlap. */
+/**
+ * Gutter marker of one block: amendments touching it and whether they
+ * overlap. It shows as a thin line down the block's side; how many there
+ * are is its name (and a small count while the pointer or the focus is on
+ * it), so the text reads undisturbed.
+ */
 export interface BlockMarker {
   count: number;
   overlap: boolean;
@@ -80,9 +85,6 @@ const { t, locale } = useI18n();
 
 /** Distinct provenance underline colours (see `.cx-prov-N` in main.css). */
 const PROVENANCE_COLORS = 6;
-/** Height of a gutter marker in px (`.cx-marker`). */
-const MARKER_HEIGHT = 22;
-
 /** Says how to pick a focusable block, for screen readers (aria-describedby). */
 const blockHintId = useId();
 
@@ -264,7 +266,9 @@ function currentHeading(): string | null {
 
 // Gutter layout ---------------------------------------------------------------------
 
-const positions = shallowRef<Record<string, number>>({});
+const positions = shallowRef<Record<string, { top: number; height: number }>>(
+  {},
+);
 let layoutFrame = 0;
 
 function measure(): void {
@@ -276,19 +280,17 @@ function measure(): void {
     return;
   }
   const top = container.getBoundingClientRect().top;
-  const next: Record<string, number> = {};
+  const next: Record<string, { top: number; height: number }> = {};
   for (const [id] of markerEntries.value) {
     const element = root.querySelector<HTMLElement>(
       `[data-block-id="${CSS.escape(id)}"]`,
     );
     if (!element) continue;
     const rect = element.getBoundingClientRect();
-    const lineHeight =
-      Number.parseFloat(getComputedStyle(element).lineHeight) || 24;
-    const firstLine = Math.min(rect.height, lineHeight);
-    next[id] = Math.round(
-      rect.top - top + Math.max(0, (firstLine - MARKER_HEIGHT) / 2),
-    );
+    next[id] = {
+      top: Math.round(rect.top - top),
+      height: Math.round(rect.height),
+    };
   }
   positions.value = next;
 }
@@ -479,23 +481,34 @@ defineExpose({
             type="button"
             class="cx-marker"
             :class="{ 'cx-marker--overlap': marker.overlap }"
-            :style="{ top: `${positions[id]}px` }"
+            :style="{
+              top: `${positions[id].top}px`,
+              height: `${positions[id].height}px`,
+            }"
             :aria-label="markerLabel(marker)"
             :title="markerLabel(marker)"
+            :data-marker-block="id"
             @click="onMarkerClick(id, $event)"
           >
-            {{ marker.count }}
+            <span class="cx-marker-count" aria-hidden="true">{{
+              marker.count
+            }}</span>
           </button>
           <span
             v-else
             role="img"
             class="cx-marker"
             :class="{ 'cx-marker--overlap': marker.overlap }"
-            :style="{ top: `${positions[id]}px` }"
+            :style="{
+              top: `${positions[id].top}px`,
+              height: `${positions[id].height}px`,
+            }"
             :aria-label="markerLabel(marker)"
             :title="markerLabel(marker)"
           >
-            {{ marker.count }}
+            <span class="cx-marker-count" aria-hidden="true">{{
+              marker.count
+            }}</span>
           </span>
         </template>
       </template>

@@ -89,7 +89,7 @@
     },
     "content": {
       "empty": "No hay contenido que mostrar.",
-      "markerCount": "{count} enmienda afecta a este bloque | {count} enmiendas afectan a este bloque",
+      "markerCount": "{count} enmienda sobre este párrafo. Verla | {count} enmiendas sobre este párrafo. Verlas",
       "markerOverlap": "Hay enmiendas que se solapan",
       "totalityTitle": "Enmienda a la totalidad",
       "totalityNote": "Esta enmienda no propone cambios concretos sobre el texto: pide su devolución en conjunto.",
@@ -1331,7 +1331,8 @@
         "pending": "Pendientes",
         "late": "Fuera de plazo",
         "mine": "Mías",
-        "mineWaiting": "Mías. Hay 1 que espera por ti | Mías. Hay {count} que esperan por ti"
+        "mineWaiting": "Mías. Hay 1 que espera por ti | Mías. Hay {count} que esperan por ti",
+        "unread": "Sin leer"
       },
       "status": "En qué punto está",
       "kind": "Tipo de enmienda",
@@ -1736,6 +1737,10 @@
         "stay": "Seguir editando",
         "discard": "Salir sin guardar",
         "confirm": "Tienes cambios sin guardar. ¿Quieres salir y perderlos?"
+      },
+      "sameParagraphs": {
+        "notice": "Ya hay {count} enmienda sobre lo que cambias. Verla | Ya hay {count} enmiendas sobre lo que cambias. Verlas",
+        "hint": "Enmiendas presentadas y sin decidir que tocan los mismos párrafos que la tuya. Léelas antes de enviarla, por si ya proponen lo mismo."
       }
     },
     "errors": {
@@ -2738,8 +2743,9 @@
         "kinds": "Los miembros presentan aquí: {kinds}."
       },
       "neighbours": "Punto anterior y siguiente",
-      "previous": "Anterior",
-      "next": "Siguiente"
+      "unpublished": "Sin publicar",
+      "previousItem": "Punto anterior",
+      "nextItem": "Punto siguiente"
     },
     "move": {
       "group": "Mover el punto",
@@ -2940,6 +2946,14 @@
       "blockedAmendments": "Un documento de este punto o de sus subpuntos tiene enmiendas. | {count} documentos de este punto o de sus subpuntos tienen enmiendas.",
       "blockedHelp": "Las enmiendas son trabajo de otros miembros y no se borran. Mueve antes esos documentos a otro punto.",
       "blockedLive": "Ahora mismo se está tratando en la sesión este punto, un subpunto o uno de sus documentos. Inténtalo cuando la Mesa pase a otro punto."
+    },
+    "reader": {
+      "label": "Documentos del punto",
+      "choose": "Elegir documento",
+      "open": "Abrir documento",
+      "viewAmendments": "Ver enmiendas",
+      "loading": "Cargando el documento",
+      "loadError": "No se ha podido cargar el documento"
     }
   },
   "calendar": {
@@ -3201,7 +3215,8 @@
     "proponentReview": {
       "action": "Revisar enmiendas",
       "actionCount": "Revisar enmiendas: {count} pendiente | Revisar enmiendas: {count} pendientes"
-    }
+    },
+    "marginMarkers": "Enmiendas en el margen"
   },
   "session": {
     "title": "Consola de sesión",
