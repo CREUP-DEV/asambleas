@@ -560,6 +560,53 @@ export interface ReadMarksBody {
   amendmentIds?: string[];
 }
 
+/**
+ * Where a private note is in a document's published text: a stretch of one
+ * block, as character offsets into the block's text, with the text it
+ * covered when the note was written (to find it again, or to show it once
+ * the text no longer holds it).
+ */
+export interface DocumentNoteAnchor {
+  blockId: string;
+  from: number;
+  to: number;
+  quote: string;
+}
+
+/** A private note of the account on a published document. */
+export interface DocumentNoteDto {
+  id: string;
+  /** Null for a note about the whole document. */
+  anchor: DocumentNoteAnchor | null;
+  body: string;
+  createdAt: IsoDate;
+  updatedAt: IsoDate;
+}
+
+/**
+ * GET /api/assemblies/[assembly]/documents/[document]/notes: the account's
+ * own notes on the document, oldest first. `available` is false, with no
+ * notes, while the document is not published: nothing can be read or
+ * written then.
+ */
+export interface DocumentNotesDto {
+  available: boolean;
+  notes: DocumentNoteDto[];
+}
+
+/** POST .../documents/[document]/notes. */
+export interface DocumentNoteCreateBody {
+  anchor?: DocumentNoteAnchor | null;
+  body: string;
+}
+
+/** PUT .../documents/[document]/notes/[note]: only its text changes. */
+export interface DocumentNoteUpdateBody {
+  body: string;
+  /** The `updatedAt` the client saw (409 when it is no longer that). */
+  updatedAt: IsoDate;
+}
+
 export interface AgendaItemBody {
   parentId?: string | null;
   title: string;

@@ -3,29 +3,38 @@ import type { ContextMenuItem } from "@nuxt/ui";
 import type { TextSpan } from "~/composables/document/documentLinks";
 
 /**
- * Amending from the text itself: a right click (or a long press) on the
- * published text it wraps opens a menu, like the editor's, with "Hacer
- * enmienda aquí". The editor then opens at that paragraph and, when the
- * reader had some text selected, with that text selected, ready to be
- * written over. "Copiar" stays in the menu, since it takes the place of
- * the browser's own; Shift with the right click still opens that one.
+ * Acting from the text itself: a right click (or a long press) on the
+ * published text it wraps opens a menu, like the editor's.
  *
- * It is a shortcut of "Presentar enmienda": it creates nothing, it only
- * says where the editor opens (`amend`). Disabled, it is just its content.
+ * - "Hacer enmienda aquí" (`amend`, for whoever may amend): the editor
+ *   opens at that paragraph and, when the reader had some text selected,
+ *   with that text selected, ready to be written over. A shortcut of
+ *   "Presentar enmienda": it creates nothing, it only says where the
+ *   editor opens.
+ * - "Añadir nota aquí" (`note`, where the account keeps private notes):
+ *   a note on the selected text, or on the whole paragraph without one.
+ * - "Copiar" stays, since the menu takes the place of the browser's own;
+ *   Shift with the right click still opens that one.
+ *
+ * With neither action it is just its content.
  */
 const props = withDefaults(
   defineProps<{
     /** The viewer may amend this text now. */
-    enabled?: boolean;
+    amend?: boolean;
+    /** The account keeps private notes on this text. */
+    note?: boolean;
     /** Blocks that can be amended (the base's); every block by default. */
     accept?: (blockId: string) => boolean;
   }>(),
-  { enabled: true, accept: undefined },
+  { amend: false, note: false, accept: undefined },
 );
 
 const emit = defineEmits<{
   /** Open the editor at this block, with this text selected if any. */
   amend: [blockId: string, span: TextSpan | null];
+  /** Write a private note on this block, on this text if any. */
+  note: [blockId: string, span: TextSpan | null];
 }>();
 
 const { t } = useI18n();
@@ -109,16 +118,32 @@ function onContextMenu(event: MouseEvent): void {
 
 const items = computed<ContextMenuItem[][]>(() => [
   [
-    {
-      label: t("workspace.amendHere"),
-      icon: "i-lucide-pencil-line",
-      onSelect: () => {
-        const at = target.value;
-        if (!at) return;
-        window.getSelection()?.removeAllRanges();
-        emit("amend", at.blockId, at.span);
-      },
-    },
+    ...(props.amend
+      ? [
+          {
+            label: t("workspace.amendHere"),
+            icon: "i-lucide-pencil-line",
+            onSelect: () => {
+              const at = target.value;
+              if (!at) return;
+              window.getSelection()?.removeAllRanges();
+              emit("amend", at.blockId, at.span);
+            },
+          },
+        ]
+      : []),
+    ...(props.note
+      ? [
+          {
+            label: t("notes.addHere"),
+            icon: "i-lucide-sticky-note",
+            onSelect: () => {
+              const at = target.value;
+              if (at) emit("note", at.blockId, at.span);
+            },
+          },
+        ]
+      : []),
   ],
   [
     {
@@ -137,7 +162,7 @@ const items = computed<ContextMenuItem[][]>(() => [
 
 <template>
   <div
-    v-if="enabled"
+    v-if="amend || note"
     ref="box"
     data-testid="amend-from-text"
     @contextmenu.capture="onContextMenu"

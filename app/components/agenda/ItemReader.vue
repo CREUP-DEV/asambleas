@@ -32,6 +32,10 @@ import { isDocumentLiveBatch } from "~/composables/document/useDocument";
  *   The header with them stays in view while the document scrolls (from
  *   `sm` up; on a phone it would take too much of the screen).
  *
+ * The account's private notes on the document on show are one button away
+ * (DocumentNotes), marked on the text, and "Añadir nota aquí" is in the
+ * text's right-click menu.
+ *
  * Phones get the PDF as a card with its button (DocumentPdfViewer) and the
  * text in place. The embedded viewer has no "open in a new tab" of its own
  * here: the room goes to the document.
@@ -150,7 +154,15 @@ const canAmend = computed(
     !detail.value?.finalVote,
 );
 
-const textView = useTemplateRef<{ root: HTMLElement | null }>("textView");
+const textView = useTemplateRef<{
+  root: HTMLElement | null;
+  scrollToBlock: (blockId: string, options?: { focus?: boolean }) => void;
+}>("textView");
+/** The account's private notes on the document on show. */
+const notes = useTemplateRef<{
+  available: boolean;
+  annotate: (blockId: string, span: TextSpan | null) => void;
+}>("notes");
 const headerEl = useTemplateRef<HTMLElement>("headerEl");
 
 /**
@@ -370,6 +382,14 @@ function pick(slug: unknown): void {
         </div>
 
         <div class="flex shrink-0 flex-wrap items-center gap-2">
+          <!-- The account's private notes on it -->
+          <DocumentNotes
+            ref="notes"
+            :notes-url="`${apiBase}/documents/${current.id}/notes`"
+            :blocks="blocks"
+            :root="() => textView?.root ?? null"
+            @locate="(id) => textView?.scrollToBlock(id, { focus: true })"
+          />
           <!-- Always the way to the document's page, named after what is
                there to see; and, for whoever may amend it, the editor. -->
           <UButton
@@ -454,7 +474,12 @@ function pick(slug: unknown): void {
           >
             <!-- For whoever may amend, a right click on the text offers
                  "Hacer enmienda aquí", which opens the document's editor. -->
-            <AmendmentTextActions :enabled="canAmend" @amend="amendAt">
+            <AmendmentTextActions
+              :amend="canAmend"
+              :note="Boolean(notes?.available)"
+              @amend="amendAt"
+              @note="(blockId, span) => notes?.annotate(blockId, span)"
+            >
               <ContentView ref="textView" :key="detail.id" :blocks="blocks" />
             </AmendmentTextActions>
           </div>

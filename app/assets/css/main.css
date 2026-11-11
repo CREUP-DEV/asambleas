@@ -1000,6 +1000,20 @@ html {
     opacity: 1;
   }
 
+  /*
+   * A private note of the account on a stretch of the text (DocumentNotes):
+   * a soft tint and a dotted line, in a hue no diff uses. Drawn with the
+   * CSS Custom Highlight API, so the text's HTML stays as rendered.
+   */
+  ::highlight(cx-note) {
+    background-color: color-mix(
+      in oklab,
+      var(--ui-color-info-400) 24%,
+      transparent
+    );
+    text-decoration: underline dotted var(--ui-color-info-500);
+  }
+
   .cx-marker--overlap::before {
     background-color: var(--ui-color-warning-500);
   }

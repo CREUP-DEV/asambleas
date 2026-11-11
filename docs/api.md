@@ -1306,6 +1306,21 @@ or `changed` (marked on another one: the document was published again or its
 PDF replaced, the amendment came back corrected). `own`: the account's
 member presents it. `open`: the amendment is presented and undecided.
 
+### Private notes
+
+The account's private notes on a published document (design.md, "Private
+notes"). They are the account's own: any account that sees the document
+reads and changes its own, and nobody else's (an Admin acting as the account
+is that account). While the document is not published, GET answers
+`available: false` with no notes, and the writes answer 409.
+
+| Method | Path                                                           | Permission | Notes                                                                                                                                                                                                                      |
+| ------ | -------------------------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/assemblies/[assembly]/documents/[document]/notes`        | visible    | `DocumentNotesDto`: `available` and the account's notes, oldest first (`id`, `anchor` or null, `body`, `createdAt`, `updatedAt`).                                                                                          |
+| POST   | `/api/assemblies/[assembly]/documents/[document]/notes`        | visible    | `DocumentNoteCreateBody` (`body`, up to 4000 characters; optional `anchor`: `blockId`, `from` < `to`, `quote` up to 2000). 409 past 200 notes on the document. Records `document_note.created`. Returns `DocumentNoteDto`. |
+| PUT    | `/api/assemblies/[assembly]/documents/[document]/notes/[note]` | visible    | `DocumentNoteUpdateBody` (`body`, `updatedAt`). Only the text changes. 404 if it is not the account's; 409 if `updatedAt` is no longer the stored one. Records `document_note.updated`. Returns `DocumentNoteDto`.         |
+| DELETE | `/api/assemblies/[assembly]/documents/[document]/notes/[note]` | visible    | 404 if it is not the account's. Records `document_note.deleted`. Returns `{ success: true }`.                                                                                                                              |
+
 ## Review and work
 
 **Validation inbox.** `GET /api/assemblies/[assembly]/review` returns a

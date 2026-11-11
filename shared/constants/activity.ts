@@ -200,6 +200,18 @@ export const AUDIT_ACTIONS = {
    */
   READ_MARKS_SET: "read_marks.set",
 
+  // Private notes ---------------------------------------------------------
+  /**
+   * POST, PUT and DELETE .../documents/[document]/notes: the account wrote,
+   * changed or deleted a private note on a published document. Target
+   * document; assemblyId set; after (or before, on delete) {anchored}:
+   * whether it is on the text or about the whole document. Never its text
+   * nor where it is.
+   */
+  DOCUMENT_NOTE_CREATED: "document_note.created",
+  DOCUMENT_NOTE_UPDATED: "document_note.updated",
+  DOCUMENT_NOTE_DELETED: "document_note.deleted",
+
   // Roles seed ------------------------------------------------------------
   /** `pnpm db:seed` added grants. Target role; source seed; after {added: keys}. */
   RBAC_SEED: "rbac.seed",
@@ -494,6 +506,9 @@ const AUDIT_CATEGORIES: Record<AuditAction, ActivityCategory> = {
   "export.request": "export",
   "export.download": "export",
   "read_marks.set": "document",
+  "document_note.created": "document",
+  "document_note.updated": "document",
+  "document_note.deleted": "document",
   "rbac.seed": "roles",
   "impersonation.start": "access",
   "impersonation.stop": "access",

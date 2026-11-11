@@ -102,6 +102,10 @@ import {
  * amendments left to read (documentLinks.ts). The open
  * amendment is kept in the address, so its link can be shared.
  *
+ * The account's private notes on the document (DocumentNotes) open from
+ * "Notas" in the header; the ones on the text are marked on the original
+ * text, and its right-click menu offers "Añadir nota aquí".
+ *
  * A PDF document shows its file, or says it is still to be uploaded. An
  * unpublished one says amendments open once the Secretaría publishes it,
  * unless it takes none or is back with its presenters for a correction (the
@@ -700,6 +704,30 @@ function onTransactionalView(id: string): void {
  */
 function startAmendment(): void {
   openComposer({ mode: "document", startBlockId: readingBlockId() });
+}
+
+// Private notes -------------------------------------------------------------------
+
+/** The account's private notes on the document (DocumentNotes). */
+const notes = useTemplateRef<{
+  available: boolean;
+  annotate: (blockId: string, span: TextSpan | null) => void;
+}>("notes");
+const notesUrl = computed(() =>
+  amendmentsUrl.value.replace(/\/amendments$/, "/notes"),
+);
+
+/** Their marks go on the original text only: the other views show another. */
+function notesRoot(): HTMLElement | null {
+  return textMode.value === "original" && !composer.value
+    ? (textView.value?.root ?? null)
+    : null;
+}
+/** "Ver en el texto": the original text, at the note's paragraph. */
+function showNoteBlock(blockId: string): void {
+  textMode.value = "original";
+  mobilePane.value = "text";
+  void nextTick(() => textView.value?.scrollToBlock(blockId, { focus: true }));
 }
 
 /** A block of the published text, the only ones an amendment acts on. */
@@ -1483,6 +1511,16 @@ const filteredBlockLabel = computed(() =>
                   : t('workspace.editDraft')
               "
             />
+            <!-- The account's private notes on the document, marked on
+                 the original text while it is on show. -->
+            <DocumentNotes
+              v-if="!composing"
+              ref="notes"
+              :notes-url="notesUrl"
+              :blocks="base"
+              :root="notesRoot"
+              @locate="showNoteBlock"
+            />
             <!-- The uploaded PDF in a tab of its own, on the screens
                  where it shows embedded below; elsewhere its card has the
                  button. -->
@@ -1805,9 +1843,11 @@ const filteredBlockLabel = computed(() =>
               <template v-if="textMode === 'original'">
                 <!-- A right click on the text offers to amend there -->
                 <AmendmentTextActions
-                  :enabled="canAmend && isStructured && !composing"
+                  :amend="canAmend && isStructured && !composing"
+                  :note="Boolean(notes?.available)"
                   :accept="isBaseBlock"
                   @amend="startAmendmentAt"
+                  @note="(blockId, span) => notes?.annotate(blockId, span)"
                 >
                   <ContentView
                     ref="textView"
