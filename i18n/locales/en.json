@@ -468,7 +468,7 @@
         "until": "Until {date}."
       },
       "todo": {
-        "title": "For you to do",
+        "title": "Pending tasks",
         "empty": "You have nothing to do",
         "readOnly": "Your account is a guest account. You can read this assembly, its documents and its amendments, but you cannot present anything."
       },
@@ -2017,7 +2017,7 @@
         "warning": "If the intranet sent an incomplete list by mistake, cancel and check it first. Deactivated members cannot present documents or amendments.",
         "confirm": "Sync and deactivate",
         "kinds": {
-          "asociado": "Member councils",
+          "asociado": "Associates",
           "sectorial": "Sectoral bodies",
           "executive": "CEA offices"
         }
@@ -2344,7 +2344,7 @@
       "cdg": "Guarantees Committee (CdG)"
     },
     "memberKinds": {
-      "asociado": "Member council",
+      "asociado": "Associate",
       "sectorial": "Sectoral body",
       "executive": "CEA",
       "other": "Other"
@@ -2383,7 +2383,7 @@
       },
       "find": {
         "tasks": {
-          "title": "Home shows what you have to do",
+          "title": "Home shows your pending tasks",
           "body": "The \"Home\" page tells you what is waiting for you. To open an assembly, press \"Assemblies\" in the menu and pick one."
         },
         "guest": {
@@ -2444,14 +2444,8 @@
       "empty": "No upcoming assemblies",
       "emptyDescription": "When an assembly is convened, it will show up here with its deadlines."
     },
-    "admin": {
-      "title": "Administration",
-      "users": "Users",
-      "roles": "Roles and permissions",
-      "members": "Members"
-    },
     "todo": {
-      "title": "For you to do",
+      "title": "Pending tasks",
       "count": "1 task to do | {count} tasks to do",
       "loading": "Loading your tasks",
       "loadFailed": "Your tasks could not be loaded",

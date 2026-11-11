@@ -16,7 +16,7 @@ import { formatDateTime } from "~/utils/format";
  * Assembly overview. At most three blocks stand in first plane, for every
  * role:
  *
- * 1. "Te toca": what the signed-in user has to do here. While documents can
+ * 1. "Tareas pendientes": what the signed-in user has to do here. While documents can
  *    be presented, a strip says until when and offers "Añadir documento"
  *    ("Presentar documento" for members), which opens the new-document modal
  *    with the item to choose (useAddDocument); the editor comes back here,
@@ -156,7 +156,7 @@ const readOnly = computed(
     !showMine.value,
 );
 
-/** Whether "Te toca" has anything to show. */
+/** Whether "Tareas pendientes" has anything to show. */
 const showTodo = computed(
   () =>
     canAddDocument.value ||
