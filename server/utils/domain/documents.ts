@@ -30,6 +30,7 @@ import {
   amendments,
   assemblies,
   assemblyMilestones,
+  documentFiles,
   documentImages,
   documents,
   documentVersions,
@@ -2141,7 +2142,8 @@ export async function hasAnyAmendment(
 
 /** What a deleted document leaves on disk, removed once the delete commits. */
 export interface DeletedDocumentFiles {
-  fileUrl: string | null;
+  /** Its PDFs: the current one and the ones it replaced once published. */
+  fileUrls: string[];
   images: { id: string; mimeType: string }[];
 }
 
@@ -2149,7 +2151,7 @@ export interface DeletedDocumentFiles {
  * Removes a document inside a transaction, whoever asked for it: the
  * projection stops showing it (clearLiveDocument), the votes of its final
  * vote go (their subject would point at nothing), the row goes with its
- * versions, co-presenters and images (cascade), and `document_deleted`
+ * versions, co-presenters, PDFs and images (cascade), and `document_deleted`
  * closes its history. Its automatic sub-item, if it has one left empty,
  * goes too unless `keepAgendaItem` (the agenda delete removes the items
  * itself). An item that carries its title and stays keeps it withheld
@@ -2177,6 +2179,16 @@ export async function removeDocument(
     .select({ id: documentImages.id, mimeType: documentImages.mimeType })
     .from(documentImages)
     .where(eq(documentImages.documentId, document.id));
+  const files = await tx
+    .select({ storedName: documentFiles.storedName })
+    .from(documentFiles)
+    .where(eq(documentFiles.documentId, document.id));
+  const fileUrls = [
+    ...new Set([
+      ...(document.fileUrl ? [document.fileUrl] : []),
+      ...files.map((file) => `${PDF_URL_PREFIX}${file.storedName}`),
+    ]),
+  ];
   await clearLiveDocument(tx, {
     assemblyId,
     documentId: document.id,
@@ -2227,7 +2239,7 @@ export async function removeDocument(
       actor,
     });
   }
-  return { fileUrl: document.fileUrl, images };
+  return { fileUrls, images };
 }
 
 /**
@@ -2306,7 +2318,7 @@ export async function deleteDocument(
     });
   });
 
-  await removeStoredPdf(files.fileUrl);
+  for (const fileUrl of files.fileUrls) await removeStoredPdf(fileUrl);
   return { success: true, images: files.images };
 }
 
@@ -3060,6 +3072,15 @@ export async function storePdf(
   };
 }
 
+/** The name on disk of a stored PDF's URL; null for anything else. */
+export function storedPdfName(
+  fileUrl: string | null | undefined,
+): string | null {
+  if (!fileUrl?.startsWith(PDF_URL_PREFIX)) return null;
+  const name = fileUrl.slice(PDF_URL_PREFIX.length);
+  return STORED_PDF_NAME.test(name) ? name : null;
+}
+
 /** Best-effort removal of a stored PDF that no document points to any more. */
 export async function removeStoredPdf(
   fileUrl: string | null | undefined,
@@ -3087,11 +3108,13 @@ export function assertFileReplaceable(
 
 /**
  * Attaches the PDF of a `file` document: managers until the final vote,
- * presenters while it is a draft. Before publication the previous file is
- * removed once the change commits. Once published, the previous file is kept
- * on disk and recorded in the event (`previousFileUrl`, `previousFileName`),
- * since delegates may have read it. An optional multipart field `updatedAt`
- * enables the optimistic lock.
+ * presenters while it is a draft. Every PDF gets its `document_files` row.
+ * Before publication the previous file goes with its row once the change
+ * commits. Once published, the previous file is kept on disk and its row
+ * marked replaced (`replacedAt`), since delegates may have read it: document
+ * managers still read it (listDocumentFiles), and the event names it
+ * (`previousFileId`, `previousFileName`). An optional multipart field
+ * `updatedAt` enables the optimistic lock.
  */
 export async function attachDocumentFile(
   ctx: DocumentRouteContext,
@@ -3125,6 +3148,42 @@ export async function attachDocumentFile(
         .update(documents)
         .set({ fileUrl: stored.fileUrl, fileName: stored.fileName })
         .where(eq(documents.id, current.id));
+      await tx.insert(documentFiles).values({
+        documentId: current.id,
+        storedName: storedPdfName(stored.fileUrl)!,
+        fileName: stored.fileName,
+        uploadedByUserId: actor.user.id,
+      });
+      const previousName = storedPdfName(current.fileUrl);
+      let previousFileId: string | null = null;
+      if (previousName && keep) {
+        // A file stored before its row existed gets one now.
+        const [row] = await tx
+          .insert(documentFiles)
+          .values({
+            documentId: current.id,
+            storedName: previousName,
+            fileName: current.fileName ?? previousName,
+            replacedAt: new Date(),
+            replacedByUserId: actor.user.id,
+          })
+          .onConflictDoUpdate({
+            target: documentFiles.storedName,
+            set: { replacedAt: new Date(), replacedByUserId: actor.user.id },
+            setWhere: eq(documentFiles.documentId, current.id),
+          })
+          .returning({ id: documentFiles.id });
+        previousFileId = row?.id ?? null;
+      } else if (previousName) {
+        await tx
+          .delete(documentFiles)
+          .where(
+            and(
+              eq(documentFiles.documentId, current.id),
+              eq(documentFiles.storedName, previousName),
+            ),
+          );
+      }
       await recordEvent(tx, {
         assemblyId: assembly.id,
         entityType: "document",
@@ -3135,10 +3194,7 @@ export async function attachDocumentFile(
           fileName: stored.fileName,
           replaced: current.fileUrl !== null,
           ...(keep
-            ? {
-                previousFileUrl: current.fileUrl,
-                previousFileName: current.fileName,
-              }
+            ? { previousFileId, previousFileName: current.fileName }
             : {}),
         },
         actor,

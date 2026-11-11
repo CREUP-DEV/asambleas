@@ -921,7 +921,7 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   document_updated: ["fields", "changes"],
   document_status_changed: ["from", "to"],
   document_content_updated: ["blockCount"],
-  document_file_uploaded: ["fileName", "replaced"],
+  document_file_uploaded: ["fileName", "replaced", "previousFileName"],
   document_image_uploaded: ["width", "height"],
   document_images_imported: ["count"],
   document_submitted: ["submittedAt", "afterCorrection"],

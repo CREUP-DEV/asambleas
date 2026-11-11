@@ -349,7 +349,9 @@ export type ActivityDetail =
   /** The agenda item went with the item it hung from. */
   | { type: "cascade" }
   /** How many documents a deleted agenda item took with it. */
-  | { type: "deletedDocuments"; count: number };
+  | { type: "deletedDocuments"; count: number }
+  /** A PDF upload replaced the document's file (named once it was published). */
+  | { type: "fileReplaced"; previous: string | null };
 
 /** A value in a field change: text, number, flag or empty. */
 export type ActivityChangeValue = string | number | boolean | null;
@@ -521,6 +523,10 @@ function eventDetails(
       const result = oneOf(VOTE_RESULTS, payload.result);
       return result ? [{ type: "result", result }] : [];
     }
+    case "document_file_uploaded":
+      return payload.replaced === true
+        ? [{ type: "fileReplaced", previous: text(payload.previousFileName) }]
+        : [];
     default:
       return [];
   }
