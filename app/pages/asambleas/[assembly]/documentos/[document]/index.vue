@@ -30,6 +30,9 @@ import {
 } from "~/composables/amendment/workspace";
 import {
   DOCUMENT_AMEND_QUERY,
+  DOCUMENT_AMEND_SELECTION_QUERY,
+  parseAmendSelection,
+  type TextSpan,
   DOCUMENT_AMENDMENTS_QUERY,
   DOCUMENT_AMENDMENTS_UNREAD,
 } from "~/composables/document/documentLinks";
@@ -43,7 +46,10 @@ import {
  * those who can amend, is "Presentar enmienda": it opens the whole text in
  * an editor (AmendmentComposer) in place of the text and the list, at the
  * paragraph the reader had at the top of the text (or the one they had
- * selected). Everything changed there is one amendment. Under the button,
+ * selected). Over the original text the same editor opens from the text
+ * itself (AmendmentTextActions): a right click on it offers "Hacer
+ * enmienda aquí", at that paragraph and with the text the reader had
+ * selected, if any, selected in the editor too. Everything changed there is one amendment. Under the button,
  * three links with a sentence each open the other ways to amend: changing a
  * word everywhere, sending the document back and proposing an alternative
  * text.
@@ -122,6 +128,8 @@ interface ComposerState {
   mode: AmendmentComposerMode;
   /** Base block the editor opens at: where the reader was. */
   startBlockId: string | null;
+  /** Text the reader had selected there, selected in the editor too. */
+  startSelection: TextSpan | null;
   draftId: string | null;
   /**
    * The draft's real authors, when the viewer reads offices of the CEA
@@ -622,6 +630,7 @@ function openComposer(options: Partial<Omit<ComposerState, "key">>): void {
     key: (composerSeq += 1),
     mode: "document",
     startBlockId: null,
+    startSelection: null,
     draftId: null,
     draftAuthors: null,
     ...options,
@@ -691,6 +700,24 @@ function onTransactionalView(id: string): void {
  */
 function startAmendment(): void {
   openComposer({ mode: "document", startBlockId: readingBlockId() });
+}
+
+/** A block of the published text, the only ones an amendment acts on. */
+function isBaseBlock(id: string): boolean {
+  return base.value.some((block) => block.id === id);
+}
+
+/**
+ * "Hacer enmienda aquí", in the menu of a right click on the text
+ * (AmendmentTextActions): the editor opens there, with that text selected.
+ */
+function startAmendmentAt(blockId: string, span: TextSpan | null): void {
+  if (!canAmend.value || composing.value) return;
+  openComposer({
+    mode: "document",
+    startBlockId: blockId,
+    startSelection: span,
+  });
 }
 
 /**
@@ -965,14 +992,24 @@ function landOnAmendment(): void {
   const amend = route.query[DOCUMENT_AMEND_QUERY];
   if (typeof amend === "string") {
     void router.replace({
-      query: { ...route.query, [DOCUMENT_AMEND_QUERY]: undefined },
+      query: {
+        ...route.query,
+        [DOCUMENT_AMEND_QUERY]: undefined,
+        [DOCUMENT_AMEND_SELECTION_QUERY]: undefined,
+      },
     });
     if (canAmend.value && isStructured.value) {
+      const known = isBaseBlock(amend);
+      const span = known
+        ? parseAmendSelection(
+            amend,
+            route.query[DOCUMENT_AMEND_SELECTION_QUERY],
+          )
+        : null;
       openComposer({
         mode: "document",
-        startBlockId: base.value.some((block) => block.id === amend)
-          ? amend
-          : null,
+        startBlockId: known ? amend : null,
+        startSelection: span && isBaseBlock(span.end.blockId) ? span : null,
       });
       return;
     }
@@ -1605,6 +1642,7 @@ const filteredBlockLabel = computed(() =>
           :amendments-url="amendmentsUrl"
           :mode="composer.mode"
           :start-block-id="composer.startBlockId"
+          :start-selection="composer.startSelection"
           :draft="composerDraft"
           :draft-authors="composer.draftAuthors"
           :others="list.listed.value"
@@ -1765,14 +1803,21 @@ const filteredBlockLabel = computed(() =>
 
               <!-- Original -->
               <template v-if="textMode === 'original'">
-                <ContentView
-                  ref="textView"
-                  :blocks="base"
-                  :markers="marginMarkers ? list.markers.value : undefined"
-                  :selected="originalSelected"
-                  marker-buttons
-                  @marker-click="onMarkerClick"
-                />
+                <!-- A right click on the text offers to amend there -->
+                <AmendmentTextActions
+                  :enabled="canAmend && isStructured && !composing"
+                  :accept="isBaseBlock"
+                  @amend="startAmendmentAt"
+                >
+                  <ContentView
+                    ref="textView"
+                    :blocks="base"
+                    :markers="marginMarkers ? list.markers.value : undefined"
+                    :selected="originalSelected"
+                    marker-buttons
+                    @marker-click="onMarkerClick"
+                  />
+                </AmendmentTextActions>
               </template>
 
               <!-- One amendment over the full text -->
