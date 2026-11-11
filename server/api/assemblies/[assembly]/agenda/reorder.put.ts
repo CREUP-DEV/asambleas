@@ -75,7 +75,7 @@ export default defineEventHandler(async (event): Promise<AgendaDto> => {
       }
       const afterFinal =
         rootSequence(items).join(",") !== rootSequence(next).join(",") &&
-        confirmFinalRootChange(current, body.confirmFinal);
+        (await confirmFinalRootChange(tx, current.id, body.confirmFinal));
 
       for (const change of changes) {
         await tx

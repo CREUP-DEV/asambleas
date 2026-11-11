@@ -4,7 +4,7 @@ import type { AssemblyDto } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { calendarBodySchema } from "~~/shared/utils/schemas/assembly";
 import { db } from "../../../db";
-import { assemblies, assemblyMilestones } from "../../../db/schema";
+import { assemblyMilestones } from "../../../db/schema";
 import { requireActor, requireCan } from "../../../utils/domain/actor";
 import { lockAssembly } from "../../../utils/domain/agendaWrites";
 import {
@@ -17,8 +17,10 @@ import { recordEvent } from "../../../utils/domain/events";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 
 /**
- * Upserts the listed milestones (a null date deletes one) and marks the
- * agenda as final or reopens it. Milestones that are not listed stay as they are.
+ * Upserts the listed milestones (a null date deletes one). Milestones that
+ * are not listed stay as they are. The agenda turns final on its own when
+ * the `agenda_final` date comes (agendaFinalSince), so moving that date is
+ * how it is brought forward or put off.
  */
 export default defineEventHandler(async (event): Promise<AssemblyDto> => {
   const actor = await requireActor(event);
@@ -31,7 +33,7 @@ export default defineEventHandler(async (event): Promise<AssemblyDto> => {
 
   try {
     await db.transaction(async (tx) => {
-      const current = await lockAssembly(tx, assembly.id);
+      await lockAssembly(tx, assembly.id);
       const updated: string[] = [];
       const removed: string[] = [];
       // Date and note of each listed milestone before and after, for the
@@ -97,21 +99,6 @@ export default defineEventHandler(async (event): Promise<AssemblyDto> => {
           entityId: assembly.id,
           type: "calendar_updated",
           payload: { updated, removed, changes: diffChanges(before, after) },
-          actor,
-        });
-      }
-
-      const wasFinal = current.agendaFinalizedAt !== null;
-      if (body.agendaFinal !== undefined && body.agendaFinal !== wasFinal) {
-        await tx
-          .update(assemblies)
-          .set({ agendaFinalizedAt: body.agendaFinal ? new Date() : null })
-          .where(eq(assemblies.id, assembly.id));
-        await recordEvent(tx, {
-          assemblyId: assembly.id,
-          entityType: "assembly",
-          entityId: assembly.id,
-          type: body.agendaFinal ? "agenda_finalized" : "agenda_reopened",
           actor,
         });
       }

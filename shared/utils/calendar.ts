@@ -327,3 +327,21 @@ export function isLateSubmission(
 ): boolean {
   return Boolean(window.closesAt && at > window.closesAt);
 }
+
+/**
+ * Since when the agenda is final (ODD definitivo): the date of the calendar's
+ * `agenda_final` milestone once it has come, else null. Nobody marks it by
+ * hand; moving that milestone moves it, and a calendar without it keeps the
+ * agenda provisional.
+ */
+export function agendaFinalSince(
+  milestones: readonly { key: string; at: string | Date }[],
+  now: Date | number = Date.now(),
+): Date | null {
+  const planned = milestones.find(
+    (milestone) => milestone.key === "agenda_final",
+  );
+  if (!planned) return null;
+  const at = new Date(planned.at);
+  return at.getTime() <= new Date(now).getTime() ? at : null;
+}

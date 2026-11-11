@@ -2634,7 +2634,6 @@
       "location": "Venue",
       "documentsLabel": "Documents",
       "documents": "No documents | {count} document | {count} documents",
-      "agendaFinal": "Final agenda",
       "agendaProvisional": "Provisional agenda",
       "nextMilestone": "Next deadline"
     },
@@ -2668,7 +2667,6 @@
     "more": "More",
     "title": "Agenda",
     "hiddenTitle": "Item of an unpublished document",
-    "final": "Final",
     "provisional": "Provisional agenda",
     "itemsCount": "No items | {count} item | {count} items",
     "documentsCount": "no documents | {count} document | {count} documents",
@@ -2685,17 +2683,6 @@
       "collapsedAll": "All sub-items are hidden"
     },
     "finalAgenda": {
-      "mark": "Mark as final",
-      "reopen": "Reopen as provisional",
-      "markTitle": "Mark the agenda as final?",
-      "markDescription": "Final means this is the agenda the assembly will deal with: the convocation and the assembly will stop calling it provisional. You can still add sub-items and edit it; if you change a main item, you will have to confirm it and it will be recorded in the history.",
-      "reopenTitle": "Reopen the agenda as provisional?",
-      "reopenDescription": "The agenda will be provisional again and main items can be changed without confirming.",
-      "marked": "The agenda is now final",
-      "reopened": "The agenda is provisional again",
-      "error": "The status of the agenda could not be changed",
-      "overdueTitle": "The agenda is still provisional",
-      "overdueDescription": "The final agenda was due on {date}. Once you mark it, the convocation and the assembly stop calling it provisional and everyone knows it is the one to be dealt with. You can still add sub-items and edit it; changing a main item will ask you to confirm and be recorded in the history.",
       "confirmChangeTitle": "The agenda is already final",
       "confirmChangeDescription": "Change it anyway? The change will be noted in the history.",
       "confirmChange": "Change anyway",

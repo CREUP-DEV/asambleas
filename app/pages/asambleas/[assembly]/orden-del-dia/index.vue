@@ -26,9 +26,10 @@ import type {
  * "Presentar documento" under the items that accept submissions. Items with
  * sub-items fold: by default the sub-items of a root item show and theirs
  * are hidden; what the reader opens or closes is remembered per assembly in
- * the browser, and "Desplegar todo" / "Plegar todo" do it at once. Managers
- * mark the agenda as final here (AgendaFinalAction); once final, a change
- * to the root items asks for a confirmation first. Managers
+ * the browser, and "Desplegar todo" / "Plegar todo" do it at once. The
+ * agenda turns final on its own on the calendar's "Orden del día
+ * definitivo" date; once final, a change to the root items asks for a
+ * confirmation first. Managers
  * switch to "Organizar orden del día" to add, edit, move (buttons, keyboard
  * accessible), switch submissions, delete items and add documents.
  * `?organizar=1` opens it organized and a `#agenda-item-…` hash focuses that
@@ -85,14 +86,7 @@ interface MoreItem {
   to?: string;
   onSelect?: () => void;
 }
-const finalAction = useTemplateRef<{ ask: (final: boolean) => void }>(
-  "finalAction",
-);
-/**
- * What the header keeps out of its first plane: the convocation and, for
- * managers, marking the agenda as final or reopening it. An empty agenda is
- * not marked as final, but a final one that lost its items can be reopened.
- */
+/** What the header keeps out of its first plane: the convocation. */
 const moreItems = computed<MoreItem[]>(() => {
   const list: MoreItem[] = [];
   if (!organizing.value) {
@@ -101,21 +95,6 @@ const moreItems = computed<MoreItem[]>(() => {
       icon: "i-lucide-scroll-text",
       to: sectionPath("convocatoria"),
     });
-  }
-  if (manage.value && (tree.value.length > 0 || agendaFinal.value)) {
-    list.push(
-      agendaFinal.value
-        ? {
-            label: t("agenda.finalAgenda.reopen"),
-            icon: "i-lucide-lock-open",
-            onSelect: () => finalAction.value?.ask(false),
-          }
-        : {
-            label: t("agenda.finalAgenda.mark"),
-            icon: "i-lucide-lock",
-            onSelect: () => finalAction.value?.ask(true),
-          },
-    );
   }
   return list;
 });
@@ -604,11 +583,13 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
           <h2 class="text-highlighted text-xl font-semibold">
             {{ t("agenda.title") }}
           </h2>
+          <!-- Final is how an agenda is expected to be: only provisional says so -->
           <UBadge
-            :color="agendaFinal ? 'success' : 'neutral'"
+            v-if="!agendaFinal"
+            color="neutral"
             variant="subtle"
-            :icon="agendaFinal ? 'i-lucide-lock' : 'i-lucide-pencil-ruler'"
-            :label="agendaFinal ? t('agenda.final') : t('agenda.provisional')"
+            icon="i-lucide-pencil-ruler"
+            :label="t('agenda.provisional')"
           />
         </div>
         <p class="text-muted text-sm">
@@ -664,7 +645,6 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
             :label="t('agenda.more')"
           />
         </UDropdownMenu>
-        <AgendaFinalAction ref="finalAction" as="menu" />
       </div>
     </div>
 
@@ -694,9 +674,6 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
       icon="i-lucide-lock"
       :title="submitBlockedReason ?? ''"
     />
-
-    <!-- The planned date of the final agenda passed and it is still provisional -->
-    <AgendaFinalAction v-if="tree.length > 0" as="reminder" />
 
     <p
       v-if="manage && agendaFinal && organizing"

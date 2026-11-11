@@ -63,6 +63,7 @@ import type {
   MilestoneDto,
 } from "~~/shared/types/api";
 import {
+  agendaFinalSince,
   checkCalendar,
   type CalendarRules,
   type Milestones,
@@ -306,6 +307,7 @@ export function toAssemblySummaryDto(
   row: AssemblyRow,
   extra: { documentCount: number; milestones: MilestoneDto[]; now?: Date },
 ): AssemblySummaryDto {
+  const finalSince = agendaFinalSince(extra.milestones, extra.now);
   return {
     id: row.id,
     slug: buildAssemblySlug(row),
@@ -316,11 +318,11 @@ export function toAssemblySummaryDto(
     startDate: row.startDate.toISOString(),
     endDate: row.endDate.toISOString(),
     location: row.location,
-    agendaFinalizedAt: iso(row.agendaFinalizedAt),
+    agendaFinalizedAt: iso(finalSince),
     documentCount: extra.documentCount,
     nextMilestone: nextMilestone(extra.milestones, extra.now, {
       convened: row.status !== "draft",
-      agendaFinal: row.agendaFinalizedAt !== null,
+      agendaFinal: finalSince !== null,
     }),
     updatedAt: row.updatedAt.toISOString(),
   };
@@ -657,11 +659,25 @@ export async function loadAgendaItemSlug(
   );
 }
 
-/** Whether the agenda is final (ODD definitivo). */
-export function isAgendaFinal(
-  assembly: Pick<AssemblyRow, "agendaFinalizedAt">,
-): boolean {
-  return assembly.agendaFinalizedAt !== null;
+/**
+ * Whether the agenda is final (ODD definitivo): the calendar's
+ * `agenda_final` date has come (agendaFinalSince).
+ */
+export async function isAgendaFinal(
+  executor: Executor,
+  assemblyId: string,
+  now = new Date(),
+): Promise<boolean> {
+  const planned = await executor
+    .select({ key: assemblyMilestones.key, at: assemblyMilestones.at })
+    .from(assemblyMilestones)
+    .where(
+      and(
+        eq(assemblyMilestones.assemblyId, assemblyId),
+        eq(assemblyMilestones.key, "agenda_final"),
+      ),
+    );
+  return agendaFinalSince(planned, now) !== null;
 }
 
 /**
@@ -671,12 +687,25 @@ export function isAgendaFinal(
  * answer is 409 with `data.code` "agenda_final", so the client asks and
  * retries; with it the change goes ahead and the result is true, which the
  * caller writes into its event as `afterFinal`. Sub-items never come here.
+ * Callers hold the assembly lock, so the calendar cannot move meanwhile.
  */
-export function confirmFinalRootChange(
-  assembly: Pick<AssemblyRow, "agendaFinalizedAt">,
+export async function confirmFinalRootChange(
+  executor: Executor,
+  assemblyId: string,
+  confirmFinal: boolean | undefined,
+): Promise<boolean> {
+  return finalRootChange(
+    await isAgendaFinal(executor, assemblyId),
+    confirmFinal,
+  );
+}
+
+/** The rule of confirmFinalRootChange, once it knows whether it is final. */
+export function finalRootChange(
+  final: boolean,
   confirmFinal: boolean | undefined,
 ): boolean {
-  if (!isAgendaFinal(assembly)) return false;
+  if (!final) return false;
   if (confirmFinal !== true) {
     fail(
       409,

@@ -493,9 +493,10 @@ replace or remove the PDF, from its "Más" menu.
 ## Assemblies and session
 
 - Assembly `status`: `draft`, `convened`, `in_session`, `closed`.
-  `agendaFinalizedAt` marks the final agenda (ODD definitivo). Managers mark
-  it, or reopen it, on the agenda page; past the `agenda_final` milestone a
-  provisional agenda reminds them there and on the overview. A final agenda
+  The agenda turns final (ODD definitivo, `agendaFinalizedAt`) on its own when
+  the calendar's `agenda_final` date comes (`agendaFinalSince`); nobody marks
+  it by hand, and moving that date moves it. Only a provisional agenda shows
+  a badge. A final agenda
   does not lock anything: a manager still creates, renames, moves and deletes
   root items after confirming it (`confirmFinal`), and the event of that
   change carries `afterFinal: true`, which the activity shows. Sub-items are

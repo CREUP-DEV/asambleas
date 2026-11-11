@@ -53,7 +53,11 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
       const current = await lockAssembly(tx, assembly.id);
       let afterFinal = false;
       if (parentId === null) {
-        afterFinal = confirmFinalRootChange(current, body.confirmFinal);
+        afterFinal = await confirmFinalRootChange(
+          tx,
+          current.id,
+          body.confirmFinal,
+        );
       } else {
         const [parent] = await tx
           .select({ id: agendaItems.id })
