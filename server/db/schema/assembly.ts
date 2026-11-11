@@ -50,6 +50,17 @@ export const assemblies = pgTable(
     location: text("location").notNull(),
     /** Free text opening the convocatoria, written by Secretaría. */
     convocationIntro: text("convocation_intro"),
+    /**
+     * The signed convocatoria as a PDF, once Secretaría uploads it: it then
+     * leads the convocatoria page over the generated one. Served by
+     * /api/uploads/convocations/[filename] to whoever sees the assembly.
+     */
+    convocationFileUrl: text("convocation_file_url"),
+    convocationFileName: text("convocation_file_name"),
+    convocationUploadedAt: timestamp("convocation_uploaded_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     agendaFinalizedAt: timestamp("agenda_finalized_at", {
       withTimezone: true,
       mode: "date",

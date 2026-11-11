@@ -55,9 +55,28 @@ const routeRules = {
       },
     },
   },
-  // Uploaded PDFs are shown inside the document page (DocumentPdfViewer):
-  // only this route may be framed, and only by the platform itself.
+  "/api/assemblies/*/convocation": {
+    security: {
+      requestSizeLimiter: {
+        maxRequestSizeInBytes: 6_000_000,
+        maxUploadFileRequestInBytes: 21_000_000,
+      },
+    },
+  },
+  // Uploaded PDFs are shown inside the document page and the convocatoria
+  // (DocumentPdfViewer): only these routes may be framed, and only by the
+  // platform itself.
   "/api/uploads/documents/**": {
+    security: {
+      headers: {
+        contentSecurityPolicy: {
+          "frame-ancestors": ["'self'"],
+        },
+        xFrameOptions: "SAMEORIGIN",
+      },
+    },
+  },
+  "/api/uploads/convocations/**": {
     security: {
       headers: {
         contentSecurityPolicy: {

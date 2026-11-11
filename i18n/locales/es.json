@@ -3060,6 +3060,23 @@
       "amendments_open": "Se abre el plazo de enmiendas. Se presentan en la plataforma, editando directamente el texto del documento, con una justificación.",
       "amendments_close": "Se cierra el plazo de enmiendas. Las que lleguen después quedan fuera de plazo y la Mesa decide si las admite.",
       "candidacies_close": "Último día para presentar candidaturas a los cargos que se eligen en esta asamblea."
+    },
+    "signed": {
+      "upload": "Subir la convocatoria firmada",
+      "replace": "Sustituir el PDF",
+      "remove": "Quitar el PDF",
+      "generated": "Ver la versión generada",
+      "back": "Ver la convocatoria firmada",
+      "more": "Más",
+      "uploadedAt": "Convocatoria firmada, subida el {date}.",
+      "description": "Convocatoria firmada por la Secretaría Ejecutiva.",
+      "uploaded": "Convocatoria firmada subida",
+      "removed": "Convocatoria firmada quitada",
+      "error": "No se ha podido subir la convocatoria",
+      "removeError": "No se ha podido quitar la convocatoria",
+      "removeTitle": "¿Quitar la convocatoria firmada?",
+      "removeDescription": "La página volverá a mostrar la convocatoria generada. El PDF se borra y no se puede recuperar.",
+      "removeConfirm": "Quitar"
     }
   },
   "workspace": {
@@ -4868,6 +4885,8 @@
       "calendar_updated": "Calendario de la asamblea cambiado",
       "agenda_finalized": "Orden del día cerrado como definitivo",
       "agenda_reopened": "Orden del día reabierto",
+      "convocation_uploaded": "Convocatoria firmada subida",
+      "convocation_removed": "Convocatoria firmada quitada",
       "agenda_item_created": "Punto añadido al orden del día",
       "agenda_item_updated": "Punto del orden del día cambiado",
       "agenda_item_deleted": "Punto quitado del orden del día",

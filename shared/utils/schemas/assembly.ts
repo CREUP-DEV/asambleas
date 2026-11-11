@@ -152,6 +152,11 @@ export const agendaItemBodySchema = z.object({
 });
 
 /** DELETE of an item has no body: the confirmation travels in the query. */
+/** DELETE of the signed convocatoria: `updatedAt` of the assembly, for the lock. */
+export const convocationDeleteQuerySchema = z.object({
+  updatedAt: isoDateTime,
+});
+
 export const agendaItemDeleteQuerySchema = z.object({
   confirmFinal: z
     .enum(["true", "false"])

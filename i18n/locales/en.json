@@ -3060,6 +3060,23 @@
       "amendments_open": "The amendment window opens. Amendments are submitted on the platform by editing the document text directly, with a justification.",
       "amendments_close": "The amendment window closes. Later amendments are late and the Mesa decides whether to admit them.",
       "candidacies_close": "Last day to stand for the posts elected at this assembly."
+    },
+    "signed": {
+      "upload": "Upload the signed convocation",
+      "replace": "Replace the PDF",
+      "remove": "Remove the PDF",
+      "generated": "See the generated version",
+      "back": "See the signed convocation",
+      "more": "More",
+      "uploadedAt": "Signed convocation, uploaded on {date}.",
+      "description": "Convocation signed by the Executive Secretariat.",
+      "uploaded": "Signed convocation uploaded",
+      "removed": "Signed convocation removed",
+      "error": "The convocation could not be uploaded",
+      "removeError": "The convocation could not be removed",
+      "removeTitle": "Remove the signed convocation?",
+      "removeDescription": "The page will show the generated convocation again. The PDF is deleted and cannot be recovered.",
+      "removeConfirm": "Remove"
     }
   },
   "workspace": {
@@ -4868,6 +4885,8 @@
       "calendar_updated": "Assembly calendar changed",
       "agenda_finalized": "Agenda finalized",
       "agenda_reopened": "Agenda reopened",
+      "convocation_uploaded": "Signed convocation uploaded",
+      "convocation_removed": "Signed convocation removed",
       "agenda_item_created": "Agenda item added",
       "agenda_item_updated": "Agenda item changed",
       "agenda_item_deleted": "Agenda item removed",
