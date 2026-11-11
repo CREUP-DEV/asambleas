@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { createReusableTemplate } from "@vueuse/core";
 import { isReadOnlyRole } from "~~/shared/constants/roles";
 import type {
   AssemblyListDto,
@@ -31,7 +32,8 @@ import {
  * At most three blocks stand in first plane, for every role: "Tareas pendientes"
  * (the Secretaría's pending review and the user's tasks), "Lo siguiente"
  * (the next deadline of the calendar, one line that opens that calendar)
- * and the upcoming assemblies. The rest stays one click away in folded
+ * and the upcoming assemblies; with nothing to do, "Tareas pendientes"
+ * goes last on the page instead. The rest stays one click away in folded
  * sections under them (HomeFold): the news, the user's documents and
  * amendments and their account; the administration pages hang from the
  * sidebar only. A read-only account (Otro, Invitado) with nothing to
@@ -124,6 +126,18 @@ const readOnly = computed(
     !member.value &&
     nothingToDo.value,
 );
+/**
+ * With nothing to do, "Tareas pendientes" (or the read-only sentence) goes
+ * to the end of the page, in the DOM too, so the reading order follows
+ * what is seen. While loading or failing it stays first.
+ */
+const todoLast = computed(
+  () =>
+    nothingToDo.value &&
+    !workLoading.value &&
+    !(workError.value && !work.value),
+);
+const [DefineTodo, ReuseTodo] = createReusableTemplate();
 
 // What comes next in the calendar ------------------------------------------
 
@@ -241,107 +255,116 @@ const today = computed(() => formatDate(now.value, { locale: locale.value }));
           </div>
         </section>
 
-        <!-- 1. What the user has to do -->
-        <p
-          v-if="readOnly && !workLoading && !(workError && !work)"
-          class="border-default text-default flex items-start gap-3 rounded-lg border p-4 text-sm"
-          data-testid="home-read-only"
-        >
-          <UIcon
-            name="i-lucide-eye"
-            class="text-muted mt-0.5 size-4 shrink-0"
-            aria-hidden="true"
-          />
-          <span>{{ t("home.readOnly") }}</span>
-        </p>
-
-        <section
-          v-else
-          aria-labelledby="home-todo-title"
-          class="flex flex-col gap-3"
-        >
-          <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-            <h2
-              id="home-todo-title"
-              class="text-highlighted text-lg font-semibold"
-            >
-              {{ t("home.todo.title") }}
-            </h2>
-            <p v-if="tasks.length > 0" class="text-muted text-sm" role="status">
-              {{ t("home.todo.count", { count: tasks.length }, tasks.length) }}
-            </p>
-          </div>
-
-          <div
-            v-if="workLoading"
-            class="ring-default space-y-4 rounded-lg p-4 ring"
-            role="status"
+        <!-- 1. What the user has to do: first, or last once there is nothing -->
+        <DefineTodo>
+          <p
+            v-if="readOnly && !workLoading && !(workError && !work)"
+            class="border-default text-default flex items-start gap-3 rounded-lg border p-4 text-sm"
+            data-testid="home-read-only"
           >
-            <span class="sr-only">{{ t("home.todo.loading") }}</span>
-            <div v-for="n in 2" :key="n" class="flex gap-3">
-              <USkeleton
-                aria-hidden="true"
-                class="size-8 shrink-0 rounded-full"
-              />
-              <div class="flex-1 space-y-2">
-                <USkeleton aria-hidden="true" class="h-4 w-1/2" />
-                <USkeleton aria-hidden="true" class="h-4 w-3/4" />
+            <UIcon
+              name="i-lucide-eye"
+              class="text-muted mt-0.5 size-4 shrink-0"
+              aria-hidden="true"
+            />
+            <span>{{ t("home.readOnly") }}</span>
+          </p>
+
+          <section
+            v-else
+            aria-labelledby="home-todo-title"
+            class="flex flex-col gap-3"
+          >
+            <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <h2
+                id="home-todo-title"
+                class="text-highlighted text-lg font-semibold"
+              >
+                {{ t("home.todo.title") }}
+              </h2>
+              <p
+                v-if="tasks.length > 0"
+                class="text-muted text-sm"
+                role="status"
+              >
+                {{
+                  t("home.todo.count", { count: tasks.length }, tasks.length)
+                }}
+              </p>
+            </div>
+
+            <div
+              v-if="workLoading"
+              class="ring-default space-y-4 rounded-lg p-4 ring"
+              role="status"
+            >
+              <span class="sr-only">{{ t("home.todo.loading") }}</span>
+              <div v-for="n in 2" :key="n" class="flex gap-3">
+                <USkeleton
+                  aria-hidden="true"
+                  class="size-8 shrink-0 rounded-full"
+                />
+                <div class="flex-1 space-y-2">
+                  <USkeleton aria-hidden="true" class="h-4 w-1/2" />
+                  <USkeleton aria-hidden="true" class="h-4 w-3/4" />
+                </div>
               </div>
             </div>
-          </div>
 
-          <UAlert
-            v-else-if="workError && !work"
-            color="error"
-            variant="subtle"
-            icon="i-lucide-circle-alert"
-            :title="t('home.todo.loadFailed')"
-            :actions="[
-              {
-                label: t('home.retry'),
-                color: 'error',
-                variant: 'outline',
-                onClick: () => refreshWork(),
-              },
-            ]"
-          />
-
-          <template v-else>
-            <ul
-              v-if="review.length > 0"
-              class="grid gap-4"
-              :class="review.length > 1 ? 'sm:grid-cols-2' : ''"
-            >
-              <li v-for="(entry, index) in review" :key="entry.assembly.id">
-                <HomeReviewCard
-                  :review="entry"
-                  :heading-level="3"
-                  :primary="workIsPrimary && index === 0"
-                />
-              </li>
-            </ul>
-
-            <UCard v-if="tasks.length > 0">
-              <HomeTaskList
-                :tasks="tasks"
-                :primary="workIsPrimary && review.length === 0"
-              />
-            </UCard>
-
-            <CommonEmptyState
-              v-if="nothingToDo"
-              icon="i-lucide-circle-check-big"
-              :title="t('home.todo.emptyTitle')"
-              :description="
-                member
-                  ? t('home.todo.emptyDescription')
-                  : t('home.todo.emptyNoMember')
-              "
-              variant="outline"
-              size="sm"
+            <UAlert
+              v-else-if="workError && !work"
+              color="error"
+              variant="subtle"
+              icon="i-lucide-circle-alert"
+              :title="t('home.todo.loadFailed')"
+              :actions="[
+                {
+                  label: t('home.retry'),
+                  color: 'error',
+                  variant: 'outline',
+                  onClick: () => refreshWork(),
+                },
+              ]"
             />
-          </template>
-        </section>
+
+            <template v-else>
+              <ul
+                v-if="review.length > 0"
+                class="grid gap-4"
+                :class="review.length > 1 ? 'sm:grid-cols-2' : ''"
+              >
+                <li v-for="(entry, index) in review" :key="entry.assembly.id">
+                  <HomeReviewCard
+                    :review="entry"
+                    :heading-level="3"
+                    :primary="workIsPrimary && index === 0"
+                  />
+                </li>
+              </ul>
+
+              <UCard v-if="tasks.length > 0">
+                <HomeTaskList
+                  :tasks="tasks"
+                  :primary="workIsPrimary && review.length === 0"
+                />
+              </UCard>
+
+              <CommonEmptyState
+                v-if="nothingToDo"
+                icon="i-lucide-circle-check-big"
+                :title="t('home.todo.emptyTitle')"
+                :description="
+                  member
+                    ? t('home.todo.emptyDescription')
+                    : t('home.todo.emptyNoMember')
+                "
+                variant="outline"
+                size="sm"
+              />
+            </template>
+          </section>
+        </DefineTodo>
+        <ReuseTodo v-if="!todoLast" />
 
         <!-- 2. What comes next in the calendar: one line -->
         <section
@@ -504,6 +527,8 @@ const today = computed(() => formatDate(now.value, { locale: locale.value }));
             <HomeUpdateList :updates="updates" />
           </HomeFold>
         </div>
+
+        <ReuseTodo v-if="todoLast" />
       </div>
     </template>
   </UDashboardPanel>
