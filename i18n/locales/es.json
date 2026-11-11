@@ -3224,7 +3224,8 @@
       "action": "Revisar enmiendas",
       "actionCount": "Revisar enmiendas: {count} pendiente | Revisar enmiendas: {count} pendientes"
     },
-    "marginMarkers": "Enmiendas en el margen"
+    "marginMarkers": "Enmiendas en el margen",
+    "amendHere": "Hacer enmienda aquí"
   },
   "session": {
     "title": "Consola de sesión",

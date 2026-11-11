@@ -11,6 +11,7 @@ import type {
   MemberRef,
 } from "~~/shared/types/api";
 import type { AmendmentOp, Block } from "~~/shared/types/content";
+import type { TextPoint, TextSpan } from "~/composables/document/documentLinks";
 import { blocksToEditor, editorToBlocks } from "~~/shared/utils/content/editor";
 import { orderMembers } from "~~/shared/utils/memberOrder";
 import {
@@ -91,6 +92,11 @@ const props = withDefaults(
     mode?: AmendmentComposerMode;
     /** Base block the editor opens at: where the reader was. */
     startBlockId?: string | null;
+    /**
+     * Text the reader had selected there: the editor opens with it
+     * selected, ready to be written over.
+     */
+    startSelection?: TextSpan | null;
     /** Draft being edited (its latest version, kept fresh by the parent). */
     draft?: AmendmentDto | null;
     /**
@@ -111,6 +117,7 @@ const props = withDefaults(
   {
     mode: "document",
     startBlockId: null,
+    startSelection: null,
     draft: null,
     draftAuthors: null,
     others: () => [],
@@ -874,7 +881,46 @@ const startId =
     : null;
 let placed = false;
 
-/** Brings that block to the top of the editor, with the cursor in it. */
+/**
+ * Where a point of the reader's selection falls in the editor: the same
+ * count of characters into the same block. Null when the block is not
+ * there or holds less text than that.
+ */
+function editorPosition(instance: Editor, point: TextPoint): number | null {
+  const block = instance.view.dom.querySelector<HTMLElement>(
+    `[data-block-id="${CSS.escape(point.blockId)}"]`,
+  );
+  if (!block) return null;
+  const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+  let left = point.offset;
+  let last: Text | null = null;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const text = node as Text;
+    if (left <= text.length) return instance.view.posAtDOM(text, left);
+    left -= text.length;
+    last = text;
+  }
+  // Past the end by what the reading view adds: the end of the block.
+  return last && left === 0 ? instance.view.posAtDOM(last, last.length) : null;
+}
+
+/** The reader's selection as a range of the editor; null when it has none. */
+function selectionRange(instance: Editor): { from: number; to: number } | null {
+  const span = props.startSelection;
+  if (!span) return null;
+  try {
+    const from = editorPosition(instance, span.start);
+    const to = editorPosition(instance, span.end);
+    return from !== null && to !== null && to > from ? { from, to } : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Brings that block to the top of the editor, with the cursor in it, or
+ * with the text the reader had selected there selected.
+ */
 function placeEditor(instance: Editor): void {
   const box = scroller.value;
   if (!startId || !box) return;
@@ -886,7 +932,8 @@ function placeEditor(instance: Editor): void {
   // the focus stays on the heading (onMounted).
   if (isDesktop.value) {
     try {
-      const position = instance.view.posAtDOM(element, 0);
+      const position =
+        selectionRange(instance) ?? instance.view.posAtDOM(element, 0);
       instance
         .chain()
         .setTextSelection(position)

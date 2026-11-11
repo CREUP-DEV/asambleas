@@ -3224,7 +3224,8 @@
       "action": "Review amendments",
       "actionCount": "Review amendments: {count} pending | Review amendments: {count} pending"
     },
-    "marginMarkers": "Amendments in the margin"
+    "marginMarkers": "Amendments in the margin",
+    "amendHere": "Amend here"
   },
   "session": {
     "title": "Session console",

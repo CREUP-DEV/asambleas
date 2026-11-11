@@ -3,6 +3,7 @@ import type { DocumentDto, DocumentSummaryDto } from "~~/shared/types/api";
 import { kindAcceptsFile } from "~~/shared/utils/documentFormat";
 import {
   amendDocumentPath,
+  type TextSpan,
   unreadAmendmentsPath,
 } from "~/composables/document/documentLinks";
 import { isDocumentLiveBatch } from "~/composables/document/useDocument";
@@ -167,6 +168,14 @@ function readingBlockId(): string | null {
     }
   }
   return null;
+}
+
+/** From the text itself: the editor at that paragraph, that text selected. */
+function amendAt(blockId: string, span: TextSpan | null): void {
+  if (!canAmend.value || !current.value) return;
+  void navigateTo(
+    amendDocumentPath(props.documentPath(current.value), blockId, span),
+  );
 }
 
 /** "Presentar enmienda": the editor, at the paragraph the reader had on top. */
@@ -443,7 +452,11 @@ function pick(slug: unknown): void {
             class="mx-auto max-w-[52rem]"
             data-testid="item-reader-text"
           >
-            <ContentView ref="textView" :key="detail.id" :blocks="blocks" />
+            <!-- For whoever may amend, a right click on the text offers
+                 "Hacer enmienda aquí", which opens the document's editor. -->
+            <AmendmentTextActions :enabled="canAmend" @amend="amendAt">
+              <ContentView ref="textView" :key="detail.id" :blocks="blocks" />
+            </AmendmentTextActions>
           </div>
 
           <p v-else class="text-muted text-sm">
