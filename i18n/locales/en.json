@@ -455,10 +455,8 @@
       },
       "tasks": {
         "title": "Your tasks in this assembly",
-        "upToDate": "You are all caught up in this assembly. What you sent is with the Secretariat or already published.",
         "more": "See 1 more task on Home | See {count} more tasks on Home",
-        "all": "See your documents and amendments on Home",
-        "empty": "You have nothing in this assembly yet. What you present and anything the Secretariat asks of you will show up here."
+        "all": "See your documents and amendments on Home"
       },
       "loading": "Loading the assembly figures",
       "documentCount": "No documents | 1 document | {count} documents",
@@ -469,7 +467,6 @@
       },
       "todo": {
         "title": "Pending tasks",
-        "empty": "You have nothing to do",
         "readOnly": "Your account is a guest account. You can read this assembly, its documents and its amendments, but you cannot present anything."
       },
       "next": {
@@ -3030,7 +3027,8 @@
   },
   "convocation": {
     "heading": "Notice of the {assembly}",
-    "back": "Back to the {assembly}",
+    "back": "Back to the notice",
+    "generatedNote": "Generated from the assembly, its agenda and its calendar.",
     "editIntro": "Edit introduction",
     "print": "Print",
     "draftWarning": "The assembly is still a draft: participants cannot see this notice yet.",
@@ -4630,6 +4628,60 @@
       "pendingTransactional": "A pending transactional includes it: {list}. If it goes ahead, it will replace this amendment. | Pending transactionals include it: {list}. If one goes ahead, it will replace this amendment."
     }
   },
+  "readMarks": {
+    "bar": {
+      "label": "Reading the documents",
+      "position": "Document {index} of {total}",
+      "left": "Left to read: {items}",
+      "nextLeft": "Open the next one you have left: {title}"
+    },
+    "count": {
+      "documents": "{count} document | {count} documents",
+      "amendments": "{count} amendment | {count} amendments",
+      "and": " and "
+    },
+    "allRead": "You have read all the published documents",
+    "mark": {
+      "document": "Mark as read",
+      "amendment": "Mark as read"
+    },
+    "read": {
+      "document": "Read",
+      "amendment": "Read"
+    },
+    "unmark": {
+      "document": "Remove the read mark",
+      "amendment": "Remove the read mark"
+    },
+    "unread": {
+      "document": "Unread",
+      "amendment": "Unread"
+    },
+    "changed": {
+      "document": "Changed",
+      "amendment": "Changed"
+    },
+    "marked": {
+      "document": "Marked as read",
+      "amendment": "Marked as read"
+    },
+    "unmarked": {
+      "document": "Marked as unread",
+      "amendment": "Marked as unread"
+    },
+    "changedNote": {
+      "document": "It has changed since you read it"
+    },
+    "amendmentsHere": "{count} unread amendment | {count} unread amendments",
+    "itemLeft": "{count} to read | {count} to read",
+    "overview": {
+      "left": "Left to read: {items}.",
+      "start": "Start reading",
+      "resume": "Continue reading"
+    },
+    "onlyLeft": "Only what I have left to read ({count})",
+    "error": "The read mark could not be saved"
+  },
   "impersonation": {
     "errors": {
       "adminOnly": "Only someone with the Administrator role can act as another account.",
@@ -4987,6 +5039,9 @@
         "request": "PDF requested",
         "download": "PDF downloaded"
       },
+      "read_marks": {
+        "set": "Read marks changed"
+      },
       "rbac": {
         "seed": "Initial permissions added to a role"
       },
@@ -5010,6 +5065,9 @@
       "headcount_corrected": "Headcount corrected",
       "document_images": {
         "cleanup": "Unused images removed from the document"
+      },
+      "documents": {
+        "reslug": "Document links recalculated"
       }
     },
     "changes": {

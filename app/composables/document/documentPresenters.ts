@@ -44,6 +44,21 @@ export function isDocumentPresenter(
 }
 
 /**
+ * Whether a list shows the document's status, as its header does
+ * (DocumentHeader). Everything a reader gets is published, so "Publicado"
+ * says nothing to them: only its presenters, who follow their own document
+ * from draft to publication, read it. Any other status is always shown.
+ */
+export function showsDocumentStatus(
+  document: PresentedDocument & { status: string },
+  memberId: string | null | undefined,
+): boolean {
+  return (
+    document.status !== "published" || isDocumentPresenter(document, memberId)
+  );
+}
+
+/**
  * What a presenter of the document is told about the members it works
  * with: the other presenters and who answers the amendments. Null when the
  * member is not a presenter or presents it alone.

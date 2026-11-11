@@ -53,9 +53,10 @@ ENV NODE_ENV=production \
 USER 1000:1000
 
 COPY --from=builder --chown=1000:1000 /app/.output /app/.output
-# Migrations and the RBAC seed, bundled with their packages (pnpm build:ops):
-# the image carries no node_modules besides the one inside .output.
-COPY --from=builder --chown=1000:1000 /app/dist/ops/migrate.mjs /app/dist/ops/seed.mjs /app/ops/
+# Migrations, the RBAC seed and the one-off slug recalculation, bundled with
+# their packages (pnpm build:ops): the image carries no node_modules besides
+# the one inside .output.
+COPY --from=builder --chown=1000:1000 /app/dist/ops/migrate.mjs /app/dist/ops/seed.mjs /app/dist/ops/reslug-documents.mjs /app/ops/
 COPY --from=builder --chown=1000:1000 /app/drizzle/meta /app/drizzle/meta
 COPY --from=builder --chown=1000:1000 /app/drizzle/*.sql /app/drizzle/
 COPY --from=builder --chown=1000:1000 /app/storage /app/storage

@@ -470,6 +470,7 @@ describe("session model", () => {
   it("flattens agenda", () => {
     const it = (id: string, parentId: string | null, order: number) => ({
       id,
+      slug: id,
       parentId,
       title: id,
       description: null,
@@ -1495,6 +1496,7 @@ describe("session model", () => {
     it("finds the next agenda item and its only document", () => {
       const item = (id: string, order: number) => ({
         id,
+        slug: id,
         parentId: null,
         title: id,
         description: null,

@@ -1024,6 +1024,8 @@ export const AUDIT_PAYLOAD_KEYS: Record<AuditAction, readonly string[]> = {
   "assembly.import": [],
   "document.import": ["fileName", "blockCount"],
   "document_images.cleanup": ["count"],
+  // The slugs carry titles, drafts' included: the list is for Admins only.
+  "documents.reslug": ["count"],
   // The regulations' deadlines: nothing personal in them.
   "calendar_rules.update": ["rules"],
   "calendar_rules.seed": ["rules"],
@@ -1049,6 +1051,7 @@ export const AUDIT_PAYLOAD_KEYS: Record<AuditAction, readonly string[]> = {
   "auth.session_ended": [],
   "export.request": ["variant", "locale"],
   "export.download": [],
+  "read_marks.set": ["read", "documents", "amendments"],
   "rbac.seed": ["added"],
   "impersonation.start": ["reason", "expiresAt"],
   "impersonation.stop": ["endReason", "startedAt", "endedAt"],

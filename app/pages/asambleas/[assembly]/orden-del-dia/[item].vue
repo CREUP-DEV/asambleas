@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { AgendaItemDto, DocumentSummaryDto } from "~~/shared/types/api";
+import { isDocumentLeft } from "~~/shared/utils/readMarks";
 import { agendaItemPath } from "~/composables/document/agendaReturn";
 import { memberSubmissionKinds } from "~/composables/document/documentKinds";
 import { isDocumentPresenter } from "~/composables/document/documentPresenters";
@@ -8,15 +9,18 @@ import { useAddDocument } from "~/composables/document/useAddDocument";
 import { useAgendaItemBreadcrumb } from "~/composables/shell/useBreadcrumbs";
 
 /**
- * The page of one agenda item or sub-item, keyed by the item's id (its
- * number changes when the agenda is reordered). It reads the agenda the hub
+ * The page of one agenda item or sub-item, keyed by the item's slug
+ * (AgendaItemDto.slug; its number changes when the agenda is reordered). An
+ * older link by id still opens it, and the address moves to the slug, also
+ * when the item is renamed. It reads the agenda the hub
  * pages share (useAssemblyAgenda) and picks its part: nothing else is
  * fetched.
  *
  * Top to bottom: number, title and description; the manage bar
  * (AgendaItemManageBar: edit, add a sub-item, add documents, delete), which
  * shows itself to managers only; the item's documents with everything the
- * agenda leaves out (presenters, amendment window, where a draft stands);
+ * agenda leaves out (presenters, amendment window, where a draft stands)
+ * and whether the account has read each one;
  * "Presentar documento" for members where the item takes their documents;
  * its sub-items as links with their totals; and "Anterior" / "Siguiente",
  * which walk the agenda in reading order across levels.
@@ -33,12 +37,20 @@ const { assembly, apiBase, sectionPath } = useCurrentAssembly();
 
 const { data: agenda, pending, error, refresh } = await useAssemblyAgenda();
 
-const itemId = computed(() => {
-  const param = route.params.item;
-  return typeof param === "string" ? param : "";
+const param = computed(() => {
+  const value = route.params.item;
+  return typeof value === "string" ? value : "";
 });
 
 const items = computed<AgendaItemDto[]>(() => agenda.value?.items ?? []);
+/** The item in the address, by its slug or, from older links, its id. */
+const itemId = computed(
+  () =>
+    (
+      items.value.find((entry) => entry.slug === param.value) ??
+      items.value.find((entry) => entry.id === param.value)
+    )?.id ?? param.value,
+);
 const tree = computed(() => buildAgendaTree(items.value));
 const node = computed(() => findAgendaNode(tree.value, itemId.value));
 
@@ -67,12 +79,36 @@ useHead({
       .join(" · "),
 });
 
-// Breadcrumbs: the items above this one, then this one.
-const itemPath = (id: string) => agendaItemPath(sectionPath(), id);
+/** The page of an item of this agenda, by its id. */
+const itemPath = (id: string) =>
+  agendaItemPath(sectionPath(), {
+    slug: items.value.find((entry) => entry.id === id)?.slug ?? id,
+  });
+
+// The address follows the slug: an older link by id, or a renamed item.
+watch(
+  () => item.value?.slug,
+  (slug) => {
+    if (import.meta.client && slug && slug !== param.value) {
+      void navigateTo(
+        {
+          path: itemPath(item.value!.id),
+          query: route.query,
+          hash: route.hash,
+        },
+        { replace: true },
+      );
+    }
+  },
+  { immediate: true },
+);
+
+// Breadcrumbs: the items above this one, then this one, keyed by the slug
+// the address carries.
 useAgendaItemBreadcrumb(() =>
   node.value
     ? agendaNodePath(tree.value, node.value.item.id).map((step) => ({
-        id: step.item.id,
+        id: step.item.slug,
         label: numbered(step.number, step.item.title),
       }))
     : null,
@@ -169,6 +205,19 @@ const totals = computed(() =>
 );
 const totalsFor = (id: string) =>
   totals.value.get(id) ?? { documents: 0, amendments: 0 };
+
+/** Documents and amendments left to read under every item. */
+const marks = useReadMarks();
+const leftByItem = computed(() =>
+  agendaSubtreeLeft(tree.value, agenda.value?.documents ?? [], (id) => {
+    const mark = marks.document(id);
+    return (
+      (mark && isDocumentLeft(mark) ? 1 : 0) +
+      (marks.index.value.amendmentsLeft.get(id) ?? 0)
+    );
+  }),
+);
+const leftFor = (id: string) => leftByItem.value.get(id) ?? 0;
 
 const neighbours = computed(() => agendaNeighbours(tree.value, itemId.value));
 
@@ -373,6 +422,23 @@ async function onDeleted() {
                       "assembly.overview.amendmentCount",
                       { count: totalsFor(child.item.id).amendments },
                       totalsFor(child.item.id).amendments,
+                    )
+                  }}
+                </span>
+                <span
+                  v-if="leftFor(child.item.id) > 0"
+                  class="text-default inline-flex items-center gap-1.5"
+                  data-testid="agenda-item-left"
+                >
+                  <span
+                    class="bg-primary size-2 shrink-0 rounded-full"
+                    aria-hidden="true"
+                  />
+                  {{
+                    t(
+                      "readMarks.itemLeft",
+                      { count: leftFor(child.item.id) },
+                      leftFor(child.item.id),
                     )
                   }}
                 </span>

@@ -250,6 +250,54 @@ export function agendaSubtreeTotals<T extends AgendaTreeItem>(
   return totals;
 }
 
+/**
+ * The documents in reading order: item by item as the agenda reads (1, 1.1,
+ * 1.2, 2...), and within an item as they are listed. What "Anterior" and
+ * "Siguiente" walk on a document's page. A document of an item that is not
+ * in the tree is left out.
+ */
+export function documentsInAgendaOrder<
+  T extends AgendaTreeItem,
+  D extends { agendaItemId: string },
+>(tree: readonly AgendaTreeNode<T>[], documents: readonly D[]): D[] {
+  const byItem = new Map<string, D[]>();
+  for (const document of documents) {
+    const list = byItem.get(document.agendaItemId);
+    if (list) list.push(document);
+    else byItem.set(document.agendaItemId, [document]);
+  }
+  return flattenAgendaTree(tree).flatMap(
+    (node) => byItem.get(node.item.id) ?? [],
+  );
+}
+
+/**
+ * How many documents and amendments are left to read under every item,
+ * counting its sub-items at any depth. `left` says it of one document.
+ */
+export function agendaSubtreeLeft<T extends AgendaTreeItem>(
+  tree: readonly AgendaTreeNode<T>[],
+  documents: readonly { id: string; agendaItemId: string }[],
+  left: (documentId: string) => number,
+): Map<string, number> {
+  const own = new Map<string, number>();
+  for (const document of documents) {
+    own.set(
+      document.agendaItemId,
+      (own.get(document.agendaItemId) ?? 0) + left(document.id),
+    );
+  }
+  const totals = new Map<string, number>();
+  const visit = (node: AgendaTreeNode<T>): number => {
+    let total = own.get(node.item.id) ?? 0;
+    for (const child of node.children) total += visit(child);
+    totals.set(node.item.id, total);
+    return total;
+  };
+  for (const root of tree) visit(root);
+  return totals;
+}
+
 // Folding -------------------------------------------------------------------
 
 /**

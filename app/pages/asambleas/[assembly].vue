@@ -128,6 +128,9 @@ const current = provideCurrentAssembly({
 });
 const { assembly, live, stale } = current;
 
+// The account's read marks, once for every page and row of the assembly.
+provideReadMarks(current);
+
 const retrying = ref(false);
 async function retryRefresh() {
   retrying.value = true;

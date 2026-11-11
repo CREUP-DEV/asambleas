@@ -18,6 +18,7 @@ import {
 } from "../../../../utils/domain/agendaWrites";
 import {
   confirmFinalRootChange,
+  loadAgendaItemSlug,
   readAssemblyBody,
   throwAssemblyMutationError,
   toAgendaItemDto,
@@ -109,7 +110,12 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
     });
 
     setResponseStatus(event, 201);
-    return toAgendaItemDto(item);
+    return toAgendaItemDto(
+      item,
+      false,
+      false,
+      await loadAgendaItemSlug(assembly.id, item.id),
+    );
   } catch (error) {
     throwAssemblyMutationError("agenda.create", error, event);
   }

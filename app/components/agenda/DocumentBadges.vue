@@ -3,9 +3,11 @@ import type { DocumentSummaryDto } from "~~/shared/types/api";
 import { isPendingProgress } from "~/composables/document/documentProgress";
 
 /**
- * What the agenda says of a document at a glance: its status, how many
- * amendments it has, in words ("4 enmiendas"), and, for the presenter's own
- * draft (`editTo`), the next step as a button. Used by the compact document
+ * What the agenda says of a document at a glance: its status (once published,
+ * only to its presenters: useDocumentStatusShown), whether
+ * the account has read it (ReadMark), how many amendments it has, in words
+ * ("4 enmiendas"), how many of them are left to read, and, for the
+ * presenter's own draft (`editTo`), the next step as a button. Used by the compact document
  * row and by an agenda item that shows its only document in its own row.
  */
 const props = withDefaults(
@@ -27,6 +29,14 @@ const callToAction = computed(() =>
     : null,
 );
 
+const showStatus = useDocumentStatusShown(() => props.document);
+const marks = useReadMarks();
+const mark = computed(() => marks.document(props.document.id));
+/** Amendments to it the account still has to read. */
+const amendmentsLeft = computed(
+  () => marks.index.value.amendmentsLeft.get(props.document.id) ?? 0,
+);
+
 const showAmendments = computed(
   () =>
     !pending.value &&
@@ -43,7 +53,17 @@ const showAmendments = computed(
       size="sm"
       :label="progress.label"
     />
-    <CommonStatusBadge v-else kind="document" :value="document.status" />
+    <CommonStatusBadge
+      v-else-if="showStatus"
+      kind="document"
+      :value="document.status"
+    />
+    <ReadMark
+      v-if="!pending"
+      kind="document"
+      :state="mark?.state"
+      :own="mark?.own"
+    />
     <UBadge
       v-if="showAmendments"
       color="neutral"
@@ -59,6 +79,17 @@ const showAmendments = computed(
         )
       "
       data-testid="document-amendment-count"
+    />
+    <UBadge
+      v-if="amendmentsLeft > 0"
+      color="primary"
+      variant="subtle"
+      size="sm"
+      class="tabular-nums"
+      :label="
+        t('readMarks.amendmentsHere', { count: amendmentsLeft }, amendmentsLeft)
+      "
+      data-testid="document-amendments-left"
     />
     <UButton
       v-if="callToAction && editTo"

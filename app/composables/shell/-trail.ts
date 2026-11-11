@@ -20,7 +20,7 @@ export type TrailStep =
   | { kind: "documentView"; path: string; view: DocumentView }
   /**
    * The page of one agenda item; `param` is the decoded `[item]` route param
-   * (the item id). The items above it are not in the path: useBreadcrumbs
+   * (the item's slug, or its id from an older link). The items above it are not in the path: useBreadcrumbs
    * adds them from what the page registers.
    */
   | { kind: "agendaItem"; path: string; param: string }

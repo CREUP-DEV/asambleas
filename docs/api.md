@@ -1282,6 +1282,23 @@ the room (403 for anyone else; 404 when that member is not a party).
   answers are read again under those locks, so two parties answering at
   once both count.
 
+## Read marks
+
+What an account marked as read, by hand, among the published documents of an
+assembly and the published amendments to them (docs/design.md, "Read
+marks"). The marks are the account's own: any account that sees the assembly
+reads and changes its own, and nobody else's.
+
+| Method | Path                                    | Permission | Notes                                                                                                                                                                                                                                                     |
+| ------ | --------------------------------------- | ---------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/assemblies/[assembly]/read-marks` | visible    | `ReadMarksDto`: every published document (`id`, `state`, `own`) and every presented, published amendment to one (`id`, `documentId`, `state`, `own`, `open`).                                                                                             |
+| PUT    | `/api/assemblies/[assembly]/read-marks` | visible    | `ReadMarksBody` (`read`, `documentIds`, `amendmentIds`, at least one id, up to 500 of each). Marks them as read on the revision on show, or removes the marks. 404 if any id is not in the GET's lists. Records `read_marks.set`. Returns `ReadMarksDto`. |
+
+`state` is `unread` (never marked), `read` (marked on the revision on show)
+or `changed` (marked on another one: the document was published again or its
+PDF replaced, the amendment came back corrected). `own`: the account's
+member presents it. `open`: the amendment is presented and undecided.
+
 ## Review and work
 
 **Validation inbox.** `GET /api/assemblies/[assembly]/review` returns a

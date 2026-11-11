@@ -21,6 +21,8 @@ import {
  * (the main authors still to answer, or who rejected it) or which
  * amendments it replaced.
  *
+ * Before the label, whether the account has read it (ReadMark).
+ *
  * Only what asks the viewer to act stays besides that: the Secretaría's
  * note when it asked for a correction, that a late amendment waits for the
  * assembly's decision, and that it came in late. Kind, change typology,
@@ -91,6 +93,17 @@ const correctionNote = computed(() =>
     ? props.amendment.correctionNote
     : null,
 );
+
+/**
+ * Whether the account has read it: a dot while it is left to read (never
+ * on one already decided, which nobody has to read any more), "Con
+ * cambios", or a tick.
+ */
+const marks = useReadMarks();
+const readMark = computed(() => {
+  const mark = marks.amendment(props.amendment.id);
+  return mark && (mark.open || mark.state === "read") ? mark : null;
+});
 </script>
 
 <template>
@@ -110,6 +123,11 @@ const correctionNote = computed(() =>
     @click="emit('select', amendment.id)"
   >
     <span class="flex flex-wrap items-center gap-1.5">
+      <ReadMark
+        kind="amendment"
+        :state="readMark?.state"
+        :own="readMark?.own"
+      />
       <span class="text-highlighted font-semibold tabular-nums">
         {{ label }}
       </span>

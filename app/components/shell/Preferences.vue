@@ -52,8 +52,15 @@ const themeModel = computed({
   },
 });
 
-/** Choices side by side that wrap on a narrow screen. */
-const choicesUi = { fieldset: "flex-wrap gap-y-2", item: "min-w-32 flex-1" };
+/**
+ * Choices side by side, each on one line ("Según el sistema" broke in two
+ * and left its radio above its icon), wrapping as a whole on a narrow screen.
+ */
+const choicesUi = {
+  fieldset: "flex-wrap gap-y-2",
+  item: "min-w-fit flex-1 items-center",
+  label: "whitespace-nowrap",
+};
 
 function iconOf(item: unknown): string {
   return (item as IconItem).icon;

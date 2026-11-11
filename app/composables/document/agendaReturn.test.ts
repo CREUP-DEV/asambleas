@@ -37,9 +37,13 @@ describe("agenda return", () => {
     expect(originPath("home", hub, "abc")).toBe(hub);
   });
 
-  it("names the page of an item by its id", () => {
-    expect(agendaItemPath(hub, "abc")).toBe(`${hub}/orden-del-dia/abc`);
-    expect(agendaItemPath(hub, "a/b")).toBe(`${hub}/orden-del-dia/a%2Fb`);
+  it("names the page of an item by its slug", () => {
+    expect(agendaItemPath(hub, { slug: "ruegos-y-preguntas" })).toBe(
+      `${hub}/orden-del-dia/ruegos-y-preguntas`,
+    );
+    expect(agendaItemPath(hub, { slug: "a/b" })).toBe(
+      `${hub}/orden-del-dia/a%2Fb`,
+    );
   });
 
   it("asks the page to add another after the item", () => {

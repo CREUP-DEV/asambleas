@@ -449,6 +449,13 @@ export interface CalendarBody {
 
 export interface AgendaItemDto {
   id: string;
+  /**
+   * Its page's key in the URL (`orden-del-dia/[slug]`): the slug of its
+   * title, unique in the assembly (agendaItemSlugs), or its id when the title
+   * is hidden. Follows the title: renaming the item changes it. The page
+   * also opens by id.
+   */
+  slug: string;
   parentId: string | null;
   /** Empty when `titleHidden`. */
   title: string;
@@ -503,6 +510,48 @@ export interface AgendaItemDto {
 export interface AgendaDto {
   items: AgendaItemDto[];
   documents: DocumentSummaryDto[];
+}
+
+// Read marks ---------------------------------------------------------------
+
+/**
+ * Where a published document or amendment stands for the account: never
+ * marked as read, marked and changed since (another text or PDF, other
+ * operations), or read as it is now. Opening one never marks it.
+ */
+export type ReadState = "unread" | "changed" | "read";
+
+export interface ReadMarkDocumentDto {
+  id: string;
+  state: ReadState;
+  /** The account's member presents it: it never counts as left to read. */
+  own: boolean;
+}
+
+export interface ReadMarkAmendmentDto {
+  id: string;
+  documentId: string;
+  state: ReadState;
+  /** The account's member presents it: it never counts as left to read. */
+  own: boolean;
+  /** Still to be debated (presented and undecided). */
+  open: boolean;
+}
+
+/**
+ * GET /api/assemblies/[assembly]/read-marks: the account's read marks over
+ * the published documents of the assembly and their published amendments.
+ */
+export interface ReadMarksDto {
+  documents: ReadMarkDocumentDto[];
+  amendments: ReadMarkAmendmentDto[];
+}
+
+/** PUT /api/assemblies/[assembly]/read-marks: mark as read, or not read. */
+export interface ReadMarksBody {
+  read: boolean;
+  documentIds?: string[];
+  amendmentIds?: string[];
 }
 
 export interface AgendaItemBody {

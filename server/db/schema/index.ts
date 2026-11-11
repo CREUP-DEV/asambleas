@@ -9,4 +9,5 @@ export * from "./document";
 export * from "./amendment";
 export * from "./impersonation";
 export * from "./session";
+export * from "./readMarks";
 export * from "./auditLog";

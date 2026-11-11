@@ -1,5 +1,6 @@
 import type { MaybeRefOrGetter } from "vue";
 import type { AssemblyDto } from "~~/shared/types/api";
+import { ASSEMBLY_SECTION_SEGMENTS } from "../assembly/-sections";
 import {
   breadcrumbTrail,
   stripLocalePrefix,
@@ -22,6 +23,13 @@ import {
  * the path only carries the item's id, so the page registers the items from
  * the root one down to itself ("3. Resoluciones"), and the row shows the
  * generic "Item" until then.
+ *
+ * A document hangs from an agenda item, and that is where its trail leads:
+ * "Orden del día > 3. Resoluciones > RES 4", whatever page it was opened
+ * from, so the way back from a document is always the item it belongs to.
+ * useDocumentBreadcrumb registers those items too, from the agenda; until
+ * then, and for a document whose item the viewer does not get, the trail is
+ * the route's ("Documentos > RES 4").
  */
 
 export interface Breadcrumb {
@@ -39,8 +47,9 @@ function useBreadcrumbLabels() {
   return useState<Record<string, string>>(LABELS_STATE_KEY, () => ({}));
 }
 
-/** One agenda item of a trail: its id and its numbered title. */
+/** One agenda item of a trail: its key in the URL and its numbered title. */
 export interface AgendaItemCrumb {
+  /** The item's slug (AgendaItemDto.slug), the `[item]` route param. */
   id: string;
   /** "3. Resoluciones" */
   label: string;
@@ -98,12 +107,40 @@ export function useAgendaItemBreadcrumb(
   );
 }
 
+/**
+ * The agenda items a document hangs from, from the root one down to its
+ * own (last), by `document:<slug or id>`. Client only.
+ */
+const DOCUMENT_CHAINS_STATE_KEY = "breadcrumb-document-items";
+
+function useDocumentItemChains() {
+  return useState<Record<string, AgendaItemCrumb[]>>(
+    DOCUMENT_CHAINS_STATE_KEY,
+    () => ({}),
+  );
+}
+
+function sameChain(
+  a: readonly AgendaItemCrumb[] | undefined,
+  b: readonly AgendaItemCrumb[],
+): boolean {
+  return (
+    a !== undefined &&
+    a.length === b.length &&
+    a.every(
+      (entry, index) =>
+        entry.id === b[index]!.id && entry.label === b[index]!.label,
+    )
+  );
+}
+
 /** The document slice of DocumentDto the breadcrumb needs. */
 interface BreadcrumbDocument {
   id: string;
   slug: string;
   title: string;
   reference: string | null;
+  agendaItemId: string;
 }
 
 /**
@@ -151,6 +188,45 @@ export function useDocumentBreadcrumb(
     },
     { immediate: true },
   );
+
+  // The items it hangs from, from the agenda the hub pages share.
+  const { t } = useI18n();
+  const { data: agenda } = useAssemblyAgenda();
+  const chains = useDocumentItemChains();
+  watch(
+    [
+      mounted,
+      () => {
+        const value = toValue(document);
+        const items = agenda.value?.items;
+        if (!value || !items) return null;
+        const chain = agendaNodePath(
+          buildAgendaTree(items),
+          value.agendaItemId,
+        ).map((node) => ({
+          id: node.item.slug,
+          label: numberedAgendaTitle(
+            node.number,
+            node.item.title,
+            t("agenda.unlisted.inText"),
+          ),
+        }));
+        return { id: value.id, slug: value.slug, chain };
+      },
+    ],
+    ([isMounted, entry]) => {
+      if (!isMounted || !entry || entry.chain.length === 0) return;
+      const keys = [`document:${entry.id}`, `document:${entry.slug}`];
+      if (keys.every((key) => sameChain(chains.value[key], entry.chain))) {
+        return;
+      }
+      chains.value = {
+        ...chains.value,
+        ...Object.fromEntries(keys.map((key) => [key, entry.chain])),
+      };
+    },
+    { immediate: true },
+  );
 }
 
 export function useBreadcrumbs() {
@@ -159,6 +235,7 @@ export function useBreadcrumbs() {
   const route = useRoute();
   const labels = useBreadcrumbLabels();
   const agendaChains = useAgendaItemChains();
+  const documentChains = useDocumentItemChains();
   const currentAssembly = useState<AssemblyDto | null>(
     "current-assembly",
     () => null,
@@ -207,12 +284,37 @@ export function useBreadcrumbs() {
       stripLocalePrefix(route.path, localeCodes.value),
     );
     const last = trail.steps.length - 1;
+    // A document's trail goes through the agenda item it hangs from, once
+    // its page has registered it.
+    const documentStep = trail.steps.find((step) => step.kind === "document");
+    const documentChain = documentStep
+      ? (documentChains.value[`document:${documentStep.param}`] ?? [])
+      : [];
     return trail.steps.flatMap((step, index) => {
       const crumb = {
         label: labelOf(step),
         to: localePath(step.path),
         current: trail.exact && index === last,
       };
+      if (
+        step.kind === "section" &&
+        step.section === "documents" &&
+        documentChain.length > 0
+      ) {
+        const agenda = `${step.path.slice(0, step.path.lastIndexOf("/"))}/${ASSEMBLY_SECTION_SEGMENTS.agenda}`;
+        return [
+          {
+            label: t("shell.assembly.agenda"),
+            to: localePath(agenda),
+            current: false,
+          },
+          ...documentChain.map((item) => ({
+            label: truncateLabel(item.label, 32),
+            to: localePath(`${agenda}/${encodeURIComponent(item.id)}`),
+            current: false,
+          })),
+        ];
+      }
       if (step.kind !== "agendaItem") return [crumb];
       // The items above it, once its page has registered them: their pages
       // are siblings of this one in the path.

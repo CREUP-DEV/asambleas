@@ -5,12 +5,14 @@ import {
   agendaFoldableIds,
   agendaNeighbours,
   agendaNodePath,
+  agendaSubtreeLeft,
   agendaSubtreeTotals,
   buildAgendaTree,
   canMoveAgendaItem,
   collapseAllAgenda,
   collapsedAgendaIds,
   defaultCollapsedIds,
+  documentsInAgendaOrder,
   expandAgendaAncestors,
   expandAllAgenda,
   findAgendaNode,
@@ -180,6 +182,40 @@ describe("the page of one item", () => {
     expect(totals.get("a2")).toEqual({ documents: 1, amendments: 2 });
     expect(totals.get("b")).toEqual({ documents: 0, amendments: 0 });
     expect(totals.has("gone")).toBe(false);
+  });
+
+  it("lists the documents item by item, in reading order", () => {
+    const documents = [
+      { id: "d1", agendaItemId: "b" },
+      { id: "d2", agendaItemId: "a1xy" },
+      { id: "d3", agendaItemId: "a" },
+      { id: "d4", agendaItemId: "a1xy" },
+      { id: "d5", agendaItemId: "gone" },
+    ];
+    expect(
+      documentsInAgendaOrder(tree, documents).map((document) => document.id),
+    ).toEqual(["d3", "d2", "d4", "d1"]);
+  });
+
+  it("adds up what is left to read under an item", () => {
+    const documents = [
+      { id: "d1", agendaItemId: "a" },
+      { id: "d2", agendaItemId: "a1xy" },
+      { id: "d3", agendaItemId: "b1" },
+    ];
+    const left = new Map([
+      ["d1", 1],
+      ["d2", 3],
+    ]);
+    const totals = agendaSubtreeLeft(
+      tree,
+      documents,
+      (id) => left.get(id) ?? 0,
+    );
+    expect(totals.get("a")).toBe(4);
+    expect(totals.get("a1")).toBe(3);
+    expect(totals.get("a2")).toBe(0);
+    expect(totals.get("b")).toBe(0);
   });
 });
 

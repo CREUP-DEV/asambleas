@@ -634,6 +634,8 @@ async function remove(): Promise<void> {
           variant="outline"
           :label="t(`amendment.kinds.${amendment.kind}`)"
         />
+        <!-- The account's own mark; nothing for one that is not published. -->
+        <ReadToggle :id="amendment.id" kind="amendment" class="ms-auto" />
       </div>
       <TransactionalProgress
         v-if="hasProgress"

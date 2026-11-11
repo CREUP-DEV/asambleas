@@ -11,6 +11,7 @@ import {
   validateOps,
 } from "~~/shared/utils/content/ops";
 import { blockLabels } from "~~/shared/utils/content/render";
+import { kindAcceptsFile } from "~~/shared/utils/documentFormat";
 import {
   proponentReviewBacklog,
   transactionalSourceCandidates,
@@ -1100,17 +1101,20 @@ const amendmentsPanelClass = computed(() =>
   ].join(" "),
 );
 /**
- * Alone and wide, the text keeps the editor's measure (`main.css`) instead
- * of running edge to edge; the two columns of "Original y resultado" need
- * the whole width.
+ * Alone and wide, the text keeps the editor's measure (`main.css`), centred
+ * by the body's padding, instead of running edge to edge; the two columns
+ * of "Original y resultado" need the whole width. With an index the left
+ * padding leaves its marks room apart from the text.
  */
-const textPanelUi = computed(() => ({
-  ...panelUi,
-  body:
+const textPanelUi = computed(() => {
+  const extra =
     listHidden.value && !compareColumns.value
-      ? `${panelUi.body} *:max-w-[52rem]`
-      : panelUi.body,
-}));
+      ? "lg:px-[max(2.75rem,calc((100%_-_52rem)/2))]"
+      : textOutline.value.length > 1
+        ? "lg:ps-11"
+        : "";
+  return { ...panelUi, body: `${panelUi.body} ${extra}`.trim() };
+});
 
 /**
  * The open amendment in the address (`?enmienda=<id>`), so its link can be
@@ -1280,6 +1284,9 @@ const filteredBlockLabel = computed(() =>
     </CommonEmptyState>
 
     <template v-else>
+      <!-- Reading the documents one after another, and "Marcar como leído" -->
+      <DocumentReadBar :document="document" />
+
       <DocumentHeader
         :document="document"
         :assembly="assembly"
@@ -1382,7 +1389,11 @@ const filteredBlockLabel = computed(() =>
         v-if="document.format === 'file'"
         :url="document.fileUrl"
         :title="document.title"
-        :description="t('workspace.text.fileDescription')"
+        :description="
+          kindAcceptsFile(document.kind)
+            ? undefined
+            : t('workspace.text.fileDescription')
+        "
         :pending-description="t('workspace.text.filePending')"
       />
 
@@ -1397,14 +1408,17 @@ const filteredBlockLabel = computed(() =>
           :title="t('workspace.text.unpublished')"
           :description="t('workspace.text.unpublishedDescription')"
         />
+        <!-- The text keeps the editor's measure (`main.css`), centred; with
+             an index the left padding leaves its marks room apart. -->
         <div
           v-if="fallbackText && fallbackText.length > 0"
-          class="border-default rounded-lg border p-4 sm:p-6"
+          class="border-default rounded-lg border p-4 sm:p-6 lg:px-[max(2.75rem,calc((100%_-_52rem)/2))]"
+          :class="{ 'sm:ps-11': draftOutline.length > 1 }"
         >
           <template v-if="draftOutline.length > 1">
             <!-- Marks in the box's left margin, kept in view as the draft
                  scrolls; they take no room of their own. -->
-            <div class="sticky top-4 z-20 -ms-5 h-0 max-sm:hidden">
+            <div class="sticky top-4 z-20 -ms-9 h-0 max-sm:hidden">
               <ContentOutlineRail
                 :items="draftOutline"
                 :current="() => draftView?.currentHeading() ?? null"
@@ -1608,7 +1622,7 @@ const filteredBlockLabel = computed(() =>
                    instead (above). -->
               <div
                 v-if="textOutline.length > 1"
-                class="sticky top-2 z-20 -ms-5 -mb-4 h-0 max-lg:hidden"
+                class="sticky top-2 z-20 -ms-9 -mb-4 h-0 max-lg:hidden"
               >
                 <ContentOutlineRail
                   :items="textOutline"

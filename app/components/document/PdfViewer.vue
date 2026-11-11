@@ -2,8 +2,9 @@
 /**
  * The uploaded PDF of a `file` document. On large screens, in a browser
  * that shows PDFs inline (`navigator.pdfViewerEnabled`), the browser's own
- * viewer is embedded, with one line saying it cannot be amended and the way
- * to open it in a new tab. Elsewhere (phones, where Android does not render
+ * viewer is embedded, with the way to open it in a new tab and, when given,
+ * one line about it (that it cannot be amended, where its type usually
+ * is). Elsewhere (phones, where Android does not render
  * a framed PDF and iOS shows only its first page, and before hydration) the
  * card with the button stays.
  *
@@ -16,8 +17,8 @@ const props = defineProps<{
   url: string | null;
   /** The document's title, which names the frame for screen readers. */
   title: string;
-  /** The card's description when there is a PDF. */
-  description: string;
+  /** The line about the PDF, if any. */
+  description?: string;
   /** The card's description while there is none. */
   pendingDescription?: string;
 }>();
@@ -43,7 +44,7 @@ const embedded = computed(
     data-testid="document-pdf-viewer"
   >
     <div class="flex flex-wrap items-center justify-between gap-3">
-      <p class="text-muted flex items-center gap-2 text-sm">
+      <p v-if="description" class="text-muted flex items-center gap-2 text-sm">
         <UIcon
           name="i-lucide-file-text"
           class="size-4 shrink-0"
@@ -55,6 +56,7 @@ const embedded = computed(
         :to="url"
         external
         target="_blank"
+        class="ms-auto"
         size="sm"
         color="neutral"
         variant="outline"
