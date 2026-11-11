@@ -263,6 +263,7 @@ const opsById: Record<string, AmendmentOp[]> = {
 
 const assembly: ExportAssembly = {
   label: "80.ª AGO",
+  number: 80,
   type: "AGO",
   startDate: new Date("2026-11-20T09:00:00Z"),
   endDate: new Date("2026-11-22T14:00:00Z"),
@@ -284,6 +285,7 @@ const meta: ExportDocumentMeta = {
     abstentions: 1,
     majority: "two_thirds",
     result: "approved",
+    method: "show_of_hands",
     recordedAt: new Date("2026-11-22T12:00:00Z"),
   },
 };
@@ -836,6 +838,40 @@ describe("pdf rendering", () => {
     const flat = JSON.stringify(definition.content as Content);
     expect(flat).toContain("<img src=x onerror=alert(1)>");
     expect(flat).not.toContain('"image"');
+  });
+
+  it("fills the template's approval line once approved, and leaves it out before", () => {
+    const blocks = [
+      p(
+        "approval",
+        "Aprobada por [Mayoría] en la 80.ª Asamblea General Ordinaria el [Día] de noviembre de 2026.",
+      ),
+      p("body", "Texto de la resolución."),
+    ];
+    const flatFor = (finalVote: ExportDocumentMeta["finalVote"]) =>
+      JSON.stringify(
+        buildDocumentPdf(
+          {
+            assembly,
+            document: { ...meta, finalVote },
+            body: { variant: "clean", source: "consolidated", blocks },
+            generatedAt: new Date(),
+          },
+          "es",
+        ).content as Content,
+      );
+
+    const approved = flatFor(meta.finalVote);
+    expect(approved).toContain(
+      "Aprobada por mayoría de dos tercios en la 80.ª Asamblea General Ordinaria el 22 de noviembre de 2026.",
+    );
+    expect(approved).not.toContain("[Mayoría]");
+    // The text says it: no second line under the title.
+    expect(approved).not.toContain("Aprobado en la 80.ª AGO");
+
+    const pending = flatFor(null);
+    expect(pending).not.toContain("[Mayoría]");
+    expect(pending).toContain("Texto de la resolución.");
   });
 });
 

@@ -1,10 +1,14 @@
 import type { Block } from "~~/shared/types/content";
+import { isApprovalLine } from "~~/shared/utils/content/approvalLine";
+
+export { isApprovalLine };
 
 /**
  * CREUP's Word templates open with the document's title and a line such as
- * "Aprobada en la [NUM] Asamblea General Ordinaria el XX/XX/XXXX…". The
- * platform shows the title and the approval itself, so a DOCX import offers
- * to drop those leading lines (DocxImport).
+ * "Aprobada en la [NUM] Asamblea General Ordinaria el XX/XX/XXXX…"
+ * (isApprovalLine, shared with the PDF export). The platform shows the title
+ * and the approval itself, so a DOCX import offers to drop those leading
+ * lines (DocxImport).
  */
 
 /** How many leading blocks to look at: title, subtitle and approval line. */
@@ -75,16 +79,6 @@ export function repeatsTitle(text: string, title: string): boolean {
   let shared = 0;
   for (const word of lineWords) if (titleWords.has(word)) shared++;
   return shared / Math.max(lineWords.size, titleWords.size) >= TITLE_OVERLAP;
-}
-
-/** The template's approval line, filled in or still a placeholder. */
-export function isApprovalLine(text: string): boolean {
-  const line = normalize(text);
-  return (
-    /^aprobad[oa]s? /.test(line) &&
-    line.split(" ").length <= MAX_TITLE_LINE_WORDS &&
-    /\b(asamblea|ago|age|aget|num)\b/.test(line)
-  );
 }
 
 /**

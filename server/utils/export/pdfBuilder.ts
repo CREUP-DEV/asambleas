@@ -14,9 +14,11 @@ import type {
   DocumentFormat,
   DocumentKind,
   Majority,
+  VoteMethod,
   VoteResult,
 } from "../../../shared/constants/domain";
 import type { Block, ConsolidatedBlock } from "../../../shared/types/content";
+import { fillApprovalLines } from "../../../shared/utils/content/approvalLine";
 import {
   BRAND_RED,
   CONTACT,
@@ -70,6 +72,7 @@ export type { ExportBrand } from "./brand";
 export interface ExportAssembly {
   /** formatAssemblyLabel, e.g. "80.ª AGO". */
   label: string;
+  number: number;
   type: AssemblyType;
   startDate: Date;
   endDate: Date;
@@ -82,6 +85,7 @@ export interface ExportVote {
   abstentions: number;
   majority: Majority;
   result: VoteResult;
+  method: VoteMethod;
   recordedAt: Date;
 }
 
@@ -514,6 +518,8 @@ function documentHeading(input: {
   t: Translate;
   /** False when a cover page already shows the title. */
   title?: boolean;
+  /** False when the text's own approval line already says it. */
+  vote?: boolean;
   outlineId?: string;
   pageBreak?: boolean;
 }): Content[] {
@@ -533,7 +539,8 @@ function documentHeading(input: {
     if (input.pageBreak) title.pageBreak = "before";
     lines.push(title);
   }
-  const vote = finalVoteLine(meta, assembly, locale, t);
+  const vote =
+    input.vote === false ? null : finalVoteLine(meta, assembly, locale, t);
   if (vote) lines.push(vote);
   if (lines.length === 0) return [];
   // The text starts after a paragraph's worth of space.
@@ -562,6 +569,28 @@ function coverTitle(
 function linksSection(links: LinkRegistry, t: Translate): Content[] {
   const list = linksToPdf(links);
   return list ? [{ text: t("links.title"), style: "linksTitle" }, list] : [];
+}
+
+/**
+ * The text as its PDF shows it: the template's approval line filled in from
+ * the final vote that approved it, or left out while nothing is approved
+ * (shared/utils/content/approvalLine.ts).
+ */
+function withApprovalLine(
+  blocks: Block[],
+  meta: ExportDocumentMeta,
+  assembly: ExportAssembly,
+): { blocks: Block[]; filled: number } {
+  const vote = meta.finalVote;
+  return fillApprovalLines(
+    blocks,
+    vote?.result === "approved"
+      ? {
+          assembly: { number: assembly.number, type: assembly.type },
+          vote,
+        }
+      : null,
+  );
 }
 
 function cleanBody(
@@ -724,17 +753,22 @@ export function buildDocumentPdf(
   const draft = body.variant === "clean" && body.source === "working";
 
   const content: Content[] = cover ? [coverTitle(meta, locale, t)] : [];
+  const clean =
+    body.variant === "clean"
+      ? withApprovalLine(body.blocks, meta, assembly)
+      : null;
   const heading = documentHeading({
     meta,
     assembly,
     locale,
     t,
     title: !cover,
+    vote: !clean?.filled,
   });
   if (body.variant === "clean") {
     content.push(
       ...heading,
-      ...cleanBody(body.blocks, ctx, t),
+      ...cleanBody(clean?.blocks ?? body.blocks, ctx, t),
       ...linksSection(links, t),
     );
   } else {
@@ -890,6 +924,10 @@ export function buildAssemblyPdf(
   data.documents.forEach((entry, index) => {
     const outlineId = `export-document-${index}`;
     const links = new LinkRegistry();
+    const text =
+      entry.meta.format === "file"
+        ? null
+        : withApprovalLine(entry.blocks, entry.meta, assembly);
     content.push(
       ...documentHeading({
         meta: entry.meta,
@@ -898,6 +936,7 @@ export function buildAssemblyPdf(
         t,
         outlineId,
         pageBreak: true,
+        vote: !text?.filled,
       }),
     );
     if (entry.meta.format === "file") {
@@ -911,7 +950,7 @@ export function buildAssemblyPdf(
     }
     content.push(
       ...cleanBody(
-        entry.blocks,
+        text?.blocks ?? entry.blocks,
         { links, outline: { parentId: outlineId }, images: data.images },
         t,
       ),

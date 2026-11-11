@@ -94,6 +94,7 @@ async function requireExportAssembly(
 function toExportAssembly(assembly: AssemblyRow): ExportAssembly {
   return {
     label: formatAssemblyLabel(assembly),
+    number: assembly.number,
     type: assembly.type,
     startDate: assembly.startDate,
     endDate: assembly.endDate,
@@ -108,6 +109,7 @@ function toExportVote(vote: VoteRow): ExportVote {
     abstentions: vote.abstentions,
     majority: vote.majority,
     result: vote.result,
+    method: vote.method,
     recordedAt: vote.recordedAt,
   };
 }

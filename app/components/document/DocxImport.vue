@@ -5,6 +5,11 @@ import {
   REGULATION_DOCUMENT_KINDS,
   type DocumentKind,
 } from "~~/shared/constants/domain";
+import {
+  APPROVAL_LINE_MAX_INDEX,
+  findPlaceholders,
+  isUnfilledApprovalLine,
+} from "~~/shared/utils/content/approvalLine";
 
 /**
  * DOCX import for the working draft: pick a .docx, the server converts it
@@ -150,6 +155,30 @@ const blocks = computed(() =>
     ? imported.value.slice(headerLength.value)
     : imported.value,
 );
+/**
+ * Approval lines kept with their placeholders (a regulation's history
+ * line): the PDF of the approved text fills them in from the final vote.
+ */
+const pendingApprovalLines = computed(() =>
+  blocks.value
+    .slice(0, APPROVAL_LINE_MAX_INDEX)
+    .filter(isUnfilledApprovalLine)
+    .map((block) => block.text),
+);
+/** Placeholders left anywhere else in the text, for the presenter to fill. */
+const placeholders = computed(() => {
+  const pending = new Set(pendingApprovalLines.value);
+  return [
+    ...new Set(
+      blocks.value
+        .filter((block, index) =>
+          index < APPROVAL_LINE_MAX_INDEX ? !pending.has(block.text) : true,
+        )
+        .flatMap((block) => findPlaceholders(block.text)),
+    ),
+  ];
+});
+
 /** Paragraphs and headings: images are not counted as either. */
 const textBlocks = computed(
   () => blocks.value.filter((block) => block.type !== "image").length,
@@ -224,6 +253,29 @@ watch(open, (isOpen) => {
             variant="subtle"
             :icon="WARNING_ICONS[warning]"
             :title="t(`document.import.warnings.${warning}`)"
+          />
+
+          <UAlert
+            v-if="placeholders.length > 0"
+            color="warning"
+            variant="subtle"
+            icon="i-lucide-brackets"
+            :title="
+              t('document.import.placeholders', {
+                list: placeholders.slice(0, 6).join(', '),
+              })
+            "
+            data-testid="docx-import-placeholders"
+          />
+
+          <UAlert
+            v-for="line in pendingApprovalLines"
+            :key="line"
+            color="neutral"
+            variant="subtle"
+            icon="i-lucide-stamp"
+            :title="t('document.import.approvalLine', { line })"
+            data-testid="docx-import-approval-line"
           />
 
           <UAlert

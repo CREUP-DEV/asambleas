@@ -780,7 +780,9 @@
       "templateHeader": {
         "label": "Quitar el encabezado de la plantilla",
         "description": "La plataforma ya muestra el título y la aprobación del documento. Se quitará esta línea del principio: | La plataforma ya muestra el título y la aprobación del documento. Se quitarán estas {count} líneas del principio:"
-      }
+      },
+      "placeholders": "Quedan marcadores por rellenar en el texto: {list}. Complétalos antes de enviar el documento.",
+      "approvalLine": "«{line}» se completará con el resultado de la votación en el PDF del texto aprobado."
     },
     "file": {
       "title": "Documento en PDF",
