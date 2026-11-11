@@ -780,7 +780,9 @@
       "templateHeader": {
         "label": "Remove the template header",
         "description": "The platform already shows the document's title and approval. This line at the start will be removed: | The platform already shows the document's title and approval. These {count} lines at the start will be removed:"
-      }
+      },
+      "placeholders": "The text still has placeholders to fill in: {list}. Complete them before sending the document.",
+      "approvalLine": "“{line}” will be filled in with the result of the vote in the PDF of the approved text."
     },
     "file": {
       "title": "PDF document",

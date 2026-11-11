@@ -308,6 +308,19 @@ is sanitized and converted to blocks (`server/utils/content/docx.ts`):
   charts, SmartArt and linked pictures are left out, as are those past 100
   per file or 32 MB in all; pictures in headers and footers never reach the
   text.
+- The template's approval line ("Aprobada por [Mayoría] en la 80.ª Asamblea
+  General Ordinaria el [Día] de noviembre de 2026.", or a regulation's
+  "Modificado parcialmente en la … el XX de xxxxxxxxx de 202x.") is
+  recognised by `shared/utils/content/approvalLine.ts`. The import dialog
+  drops it with the repeated title by default (`templateHeader.ts`; kept in
+  regulations and the Estatutos, where the history belongs to the text), says
+  that a kept unfilled one fills itself in, and lists any other placeholder
+  left in the text ("[Nº]", "XX", "202x"). The PDF of a document whose final
+  vote approved it writes such a line with the vote's data ("Aprobada por
+  mayoría simple en la 80.ª Asamblea General Ordinaria el 21 de noviembre de
+  2026.", always in Spanish, as the text is) instead of the separate vote line
+  under the title, and leaves an unfilled one out before that; the stored
+  text never changes.
 - It warns about tracked changes, comments, dropped images, images in
   tables, images without a description, flattened tables and highlighting,
   whose meaning is lost.
