@@ -71,6 +71,17 @@ const documentsClose = computed(
     )?.at ?? null,
 );
 
+/**
+ * The deadline has passed: only managers still get the card (useAddDocument),
+ * and it says the deadline closed instead of counting down to it.
+ */
+const now = useAppNow();
+const documentsClosed = computed(
+  () =>
+    documentsClose.value !== null &&
+    new Date(documentsClose.value).getTime() <= now.value,
+);
+
 async function onDocumentCreated(): Promise<void> {
   await Promise.all([refreshAgenda(), refreshWork()]);
 }
@@ -96,8 +107,6 @@ current.onLive((events) => {
     void refreshWork();
   }
 });
-
-const now = useAppNow();
 
 const assemblyWork = computed(() =>
   work.value && assembly.value
@@ -317,9 +326,23 @@ const warnedKeys = computed(() =>
               class="text-primary size-5 shrink-0"
               aria-hidden="true"
             />
-            {{ t("assembly.overview.addDocument.title") }}
+            {{
+              documentsClosed
+                ? t("assembly.overview.addDocument.closedTitle")
+                : t("assembly.overview.addDocument.title")
+            }}
           </h4>
-          <p v-if="documentsClose" class="text-muted text-sm">
+          <p
+            v-if="documentsClose && documentsClosed"
+            class="text-muted text-sm"
+          >
+            {{
+              t("assembly.overview.addDocument.closed", {
+                date: formatDateTime(documentsClose, { style: "long", locale }),
+              })
+            }}
+          </p>
+          <p v-else-if="documentsClose" class="text-muted text-sm">
             {{
               t("assembly.overview.addDocument.until", {
                 date: formatDateTime(documentsClose, { style: "long", locale }),

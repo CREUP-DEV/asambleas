@@ -463,7 +463,9 @@
       "amendmentCount": "Sin enmiendas | 1 enmienda | {count} enmiendas",
       "addDocument": {
         "title": "Plazo de presentación de documentos abierto",
-        "until": "Hasta el {date}."
+        "until": "Hasta el {date}.",
+        "closedTitle": "Plazo de presentación de documentos cerrado",
+        "closed": "Cerró el {date}. Puedes seguir añadiendo documentos."
       },
       "todo": {
         "title": "Tareas pendientes",

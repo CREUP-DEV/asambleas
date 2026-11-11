@@ -463,7 +463,9 @@
       "amendmentCount": "No amendments | 1 amendment | {count} amendments",
       "addDocument": {
         "title": "Documents can be presented",
-        "until": "Until {date}."
+        "until": "Until {date}.",
+        "closedTitle": "Documents deadline passed",
+        "closed": "It closed on {date}. You can still add documents."
       },
       "todo": {
         "title": "Pending tasks",
