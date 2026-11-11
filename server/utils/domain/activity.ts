@@ -884,6 +884,8 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   calendar_updated: ["updated", "removed", "changes"],
   agenda_finalized: [],
   agenda_reopened: [],
+  convocation_uploaded: ["fileName", "replaced"],
+  convocation_removed: ["fileName"],
   agenda_item_created: ["title", "afterFinal", "auto"],
   agenda_item_updated: ["changes", "afterFinal", "auto"],
   agenda_item_deleted: [

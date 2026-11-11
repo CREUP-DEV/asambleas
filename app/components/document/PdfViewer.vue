@@ -7,7 +7,8 @@
  * a framed PDF and iOS shows only its first page, and before hydration) the
  * card with the button stays.
  *
- * Only `/api/uploads/documents/**` may be framed, and only by the platform
+ * Only `/api/uploads/documents/**` and `/api/uploads/convocations/**` may be
+ * framed, and only by the platform
  * (route rules in `nuxt.config.ts`).
  */
 const props = defineProps<{

@@ -360,8 +360,18 @@ export interface AssemblySummaryDto {
   updatedAt: IsoDate;
 }
 
+/** The signed convocatoria uploaded as a PDF. */
+export interface ConvocationFileDto {
+  /** Served by /api/uploads/convocations/[filename]. */
+  url: string;
+  name: string;
+  uploadedAt: IsoDate;
+}
+
 export interface AssemblyDto extends AssemblySummaryDto {
   convocationIntro: string | null;
+  /** Null until Secretaría uploads the signed convocatoria. */
+  convocationFile: ConvocationFileDto | null;
   settings: AssemblySettings;
   milestones: MilestoneDto[];
   /**

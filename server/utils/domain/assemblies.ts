@@ -336,6 +336,14 @@ export function toAssemblyDto(
   return {
     ...toAssemblySummaryDto(row, extra),
     convocationIntro: row.convocationIntro,
+    convocationFile:
+      row.convocationFileUrl && row.convocationUploadedAt
+        ? {
+            url: row.convocationFileUrl,
+            name: row.convocationFileName ?? "convocatoria.pdf",
+            uploadedAt: row.convocationUploadedAt.toISOString(),
+          }
+        : null,
     settings: assemblySettings(row),
     milestones: extra.milestones,
     calendarWarnings: checkCalendar(

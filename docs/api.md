@@ -376,16 +376,19 @@ gets 403 with the next step: ask the Secretaría to link it.
 
 ## Assemblies and calendar
 
-| Method | Path                                  | Who               | Notes                                                                                                                                            |
-| ------ | ------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| GET    | `/api/assemblies`                     | any               | `AssemblyListDto`. Drafts are listed only for managers. Takes `?status=&type=&page=`.                                                            |
-| POST   | `/api/assemblies`                     | `assembly:create` | `AssemblyCreateBody`. Seeds the milestones from `defaultMilestones` with the calendar rules of the type, unless told not to.                     |
-| GET    | `/api/assemblies/[assembly]`          | visible           | `AssemblyDto`, including the milestones, the type's `calendarRules` and the warnings from `checkCalendar`.                                       |
-| PUT    | `/api/assemblies/[assembly]`          | `assembly:manage` | `AssemblyUpdateBody`. Settings are merged (see below).                                                                                           |
-| DELETE | `/api/assemblies/[assembly]`          | `assembly:manage` | Only in `draft`.                                                                                                                                 |
-| PUT    | `/api/assemblies/[assembly]/status`   | `assembly:manage` | Follows `ASSEMBLY_STATUS_TRANSITIONS`. Entering `in_session` creates the `live_state` row. Closing ends the speaking turns (see speaking turns). |
-| PUT    | `/api/assemblies/[assembly]/calendar` | `assembly:manage` | `CalendarBody`. Upserts or deletes the milestones and toggles `agendaFinalizedAt`. Returns `AssemblyDto`.                                        |
-| GET    | `/api/assemblies/[assembly]/review`   | see notes         | `ReviewQueueDto`, the Secretaría's validation inbox. `document:manage` or `amendment:review`, otherwise 403. See "Review and work" below.        |
+| Method | Path                                     | Who               | Notes                                                                                                                                                                                    |
+| ------ | ---------------------------------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/assemblies`                        | any               | `AssemblyListDto`. Drafts are listed only for managers. Takes `?status=&type=&page=`.                                                                                                    |
+| POST   | `/api/assemblies`                        | `assembly:create` | `AssemblyCreateBody`. Seeds the milestones from `defaultMilestones` with the calendar rules of the type, unless told not to.                                                             |
+| GET    | `/api/assemblies/[assembly]`             | visible           | `AssemblyDto`, including the milestones, the type's `calendarRules` and the warnings from `checkCalendar`.                                                                               |
+| PUT    | `/api/assemblies/[assembly]`             | `assembly:manage` | `AssemblyUpdateBody`. Settings are merged (see below).                                                                                                                                   |
+| DELETE | `/api/assemblies/[assembly]`             | `assembly:manage` | Only in `draft`.                                                                                                                                                                         |
+| PUT    | `/api/assemblies/[assembly]/status`      | `assembly:manage` | Follows `ASSEMBLY_STATUS_TRANSITIONS`. Entering `in_session` creates the `live_state` row. Closing ends the speaking turns (see speaking turns).                                         |
+| PUT    | `/api/assemblies/[assembly]/calendar`    | `assembly:manage` | `CalendarBody`. Upserts or deletes the milestones and toggles `agendaFinalizedAt`. Returns `AssemblyDto`.                                                                                |
+| POST   | `/api/assemblies/[assembly]/convocation` | `assembly:manage` | The signed convocatoria: multipart `file` (PDF up to 20 MB, type and signature checked) and `updatedAt`. Replaces the one before. Records `convocation_uploaded`. Returns `AssemblyDto`. |
+| DELETE | `/api/assemblies/[assembly]/convocation` | `assembly:manage` | `?updatedAt=`. Removes the signed convocatoria and its file. Records `convocation_removed`. Returns `AssemblyDto`.                                                                       |
+| GET    | `/api/uploads/convocations/[filename]`   | visible           | The signed convocatoria (`AssemblyDto.convocationFile.url`) to whoever sees the assembly. May be framed by the platform only.                                                            |
+| GET    | `/api/assemblies/[assembly]/review`      | see notes         | `ReviewQueueDto`, the Secretaría's validation inbox. `document:manage` or `amendment:review`, otherwise 403. See "Review and work" below.                                                |
 
 **Calendar warnings.** `calendarWarnings` comes from `checkCalendar` with the
 calendar rules of the assembly's type. For managers, `calendarDocuments` lists

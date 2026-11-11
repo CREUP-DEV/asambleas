@@ -8,6 +8,7 @@ import { agendaItems, assemblies, documents, events } from "../../../db/schema";
 import { requireActor, requireCan } from "../../../utils/domain/actor";
 import { throwAssemblyMutationError } from "../../../utils/domain/assemblies";
 import { recordAudit } from "../../../utils/domain/audit";
+import { removeConvocationPdf } from "../../../utils/domain/convocation";
 import { recordEvent, type Executor } from "../../../utils/domain/events";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 
@@ -115,6 +116,8 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
         },
       });
     });
+    // Its signed convocatoria, if any, has nobody pointing to it any more.
+    await removeConvocationPdf(assembly.convocationFileUrl);
     return { success: true };
   } catch (error) {
     throwAssemblyMutationError("assemblies.delete", error, event);

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AssemblyDto, DocumentSummaryDto } from "~~/shared/types/api";
 import { CONVOCATION_INTRO_MAX_LENGTH } from "~~/shared/utils/schemas/assembly";
 
@@ -6,6 +7,10 @@ import { CONVOCATION_INTRO_MAX_LENGTH } from "~~/shared/utils/schemas/assembly";
  * Print-ready convocatoria generated from the assembly, its agenda and its
  * calendar. It leaves the app shell (`layout: false`) and the hub renders
  * it without its chrome (`meta.print`); the toolbar is hidden when printing. Managers edit the introduction inline.
+ *
+ * Once Secretaría uploads the signed convocatoria (a PDF, POST
+ * .../convocation), that PDF leads the page for everyone; managers can still
+ * open the generated one from "Más", and replace or remove the PDF there.
  */
 definePageMeta({ print: true, layout: false });
 
@@ -149,6 +154,132 @@ async function saveIntro(value: string | null) {
 function printPage() {
   if (import.meta.client) window.print();
 }
+
+// Signed convocatoria ---------------------------------------------------------------
+
+const signed = computed(() => assembly.value?.convocationFile ?? null);
+/** Managers looking at the generated convocatoria while a signed one leads. */
+const showGenerated = ref(false);
+const viewingSigned = computed(
+  () => signed.value !== null && !showGenerated.value,
+);
+
+const PDF_MAX_BYTES = 20 * 1024 * 1024;
+const fileInput = useTemplateRef<HTMLInputElement>("fileInput");
+const uploading = ref(false);
+const removing = ref(false);
+const confirmRemove = ref(false);
+
+function chooseFile(): void {
+  fileInput.value?.click();
+}
+
+function rejectFile(key: string): void {
+  toast.add({
+    title: t("convocation.signed.error"),
+    description: t(key),
+    color: "error",
+    icon: "i-lucide-circle-alert",
+  });
+}
+
+async function onFileChosen(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement;
+  const selected = input.files?.[0];
+  input.value = "";
+  const target = assembly.value;
+  if (!selected || !target) return;
+  if (selected.type !== "application/pdf" && !/\.pdf$/i.test(selected.name)) {
+    rejectFile("document.file.invalidType");
+    return;
+  }
+  if (selected.size > PDF_MAX_BYTES) {
+    rejectFile("document.file.tooLarge");
+    return;
+  }
+  uploading.value = true;
+  announcement.value = t("document.file.uploading", { name: selected.name });
+  try {
+    const body = new FormData();
+    body.append("file", selected, selected.name);
+    body.append("updatedAt", target.updatedAt);
+    const updated = await api.send<AssemblyDto>(
+      `${current.apiBase.value}/convocation`,
+      { body },
+    );
+    current.setAssembly(updated);
+    showGenerated.value = false;
+    announcement.value = t("convocation.signed.uploaded");
+    toast.add({
+      title: t("convocation.signed.uploaded"),
+      color: "success",
+      icon: "i-lucide-check",
+    });
+  } catch (error) {
+    announcement.value = "";
+    const status = api.errorStatus(error);
+    if (status === 415) rejectFile("document.file.invalidType");
+    else if (status === 413) rejectFile("document.file.tooLarge");
+    else api.notifyError(error, "convocation.signed.error");
+    if (api.isConflict(error)) await current.refresh();
+  } finally {
+    uploading.value = false;
+  }
+}
+
+async function removeSigned(): Promise<void> {
+  const target = assembly.value;
+  if (!target) return;
+  removing.value = true;
+  try {
+    const updated = await api.send<AssemblyDto>(
+      `${current.apiBase.value}/convocation`,
+      { method: "DELETE", query: { updatedAt: target.updatedAt } },
+    );
+    current.setAssembly(updated);
+    confirmRemove.value = false;
+    showGenerated.value = false;
+    announcement.value = t("convocation.signed.removed");
+    toast.add({
+      title: t("convocation.signed.removed"),
+      color: "success",
+      icon: "i-lucide-check",
+    });
+  } catch (error) {
+    api.notifyError(error, "convocation.signed.removeError");
+    if (api.isConflict(error)) await current.refresh();
+  } finally {
+    removing.value = false;
+  }
+}
+
+/** "Más" over the signed convocatoria, for managers. */
+const signedMenu = computed<DropdownMenuItem[][]>(() => [
+  [
+    {
+      label: t("convocation.signed.generated"),
+      icon: "i-lucide-file-text",
+      onSelect: () => {
+        showGenerated.value = true;
+      },
+    },
+    {
+      label: t("convocation.signed.replace"),
+      icon: "i-lucide-file-up",
+      onSelect: chooseFile,
+    },
+  ],
+  [
+    {
+      label: t("convocation.signed.remove"),
+      icon: "i-lucide-trash-2",
+      color: "error",
+      onSelect: () => {
+        confirmRemove.value = true;
+      },
+    },
+  ],
+]);
 </script>
 
 <template>
@@ -172,24 +303,92 @@ function printPage() {
           :to="sectionPath()"
         />
         <div class="flex flex-wrap items-center gap-2">
-          <UButton
-            v-if="assembly.can.manage && !editing"
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-pencil"
-            :label="t('convocation.editIntro')"
-            @click="startEditing"
-          />
-          <UButton
-            icon="i-lucide-printer"
-            :label="t('convocation.print')"
-            @click="printPage"
+          <UDropdownMenu
+            v-if="viewingSigned && assembly.can.manage"
+            :items="signedMenu"
+            :content="{ align: 'end' }"
+          >
+            <UButton
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-ellipsis"
+              :label="t('convocation.signed.more')"
+              :loading="uploading"
+              data-testid="convocation-signed-menu"
+            />
+          </UDropdownMenu>
+          <template v-else-if="!viewingSigned">
+            <UButton
+              v-if="signed"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-file-signature"
+              :label="t('convocation.signed.back')"
+              @click="showGenerated = false"
+            />
+            <UButton
+              v-else-if="assembly.can.manage"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-file-up"
+              :label="t('convocation.signed.upload')"
+              :loading="uploading"
+              data-testid="convocation-upload"
+              @click="chooseFile"
+            />
+            <UButton
+              v-if="assembly.can.manage && !editing"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-pencil"
+              :label="t('convocation.editIntro')"
+              @click="startEditing"
+            />
+            <UButton
+              icon="i-lucide-printer"
+              :label="t('convocation.print')"
+              @click="printPage"
+            />
+          </template>
+          <input
+            v-if="assembly.can.manage"
+            ref="fileInput"
+            type="file"
+            accept="application/pdf,.pdf"
+            class="sr-only"
+            tabindex="-1"
+            aria-hidden="true"
+            data-testid="convocation-file-input"
+            @change="onFileChosen"
           />
         </div>
       </UContainer>
     </div>
 
-    <div class="px-4 py-6 sm:py-10 print:p-0">
+    <!-- The signed convocatoria, once uploaded -->
+    <div v-if="viewingSigned && signed" class="px-4 py-6 sm:py-10">
+      <div class="mx-auto max-w-5xl space-y-4">
+        <div class="space-y-1">
+          <h1 class="text-highlighted text-2xl leading-tight font-bold">
+            {{ heading }}
+          </h1>
+          <p class="text-muted text-sm" data-testid="convocation-signed-at">
+            {{
+              t("convocation.signed.uploadedAt", {
+                date: formatDate(signed.uploadedAt, { locale }),
+              })
+            }}
+          </p>
+        </div>
+        <DocumentPdfViewer
+          :url="signed.url"
+          :title="heading"
+          :description="t('convocation.signed.description')"
+        />
+      </div>
+    </div>
+
+    <div v-else class="px-4 py-6 sm:py-10 print:p-0">
       <UAlert
         v-if="!assembly.agendaFinalizedAt || assembly.status === 'draft'"
         class="no-print mx-auto mb-4 max-w-3xl"
@@ -465,6 +664,31 @@ function printPage() {
         </section>
       </article>
     </div>
+
+    <UModal
+      v-model:open="confirmRemove"
+      :title="t('convocation.signed.removeTitle')"
+      :description="t('convocation.signed.removeDescription')"
+    >
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton
+            color="neutral"
+            variant="outline"
+            :label="t('common.cancel')"
+            :disabled="removing"
+            @click="confirmRemove = false"
+          />
+          <UButton
+            color="error"
+            icon="i-lucide-trash-2"
+            :label="t('convocation.signed.removeConfirm')"
+            :loading="removing"
+            @click="removeSigned"
+          />
+        </div>
+      </template>
+    </UModal>
 
     <p class="sr-only" aria-live="polite" role="status">{{ announcement }}</p>
   </main>

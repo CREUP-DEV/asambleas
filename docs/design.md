@@ -466,7 +466,12 @@ whatever the hour (`respectsNotice`): a convocation sent on 18 October at any
 time gives a month's notice for an assembly starting on 18 November. Minimums
 in hours count exactly. Warnings are computed on read, so past assemblies are checked
 against the rules in force. The convocatoria is generated from the assembly
-data, the agenda and the milestones as a print view and a PDF.
+data, the agenda and the milestones as a print view and a PDF. Once
+Secretaría uploads the signed convocatoria (a PDF in
+`assemblies.convocation_file_url`, served by
+`/api/uploads/convocations/[filename]` to whoever sees the assembly), that PDF
+leads the convocatoria page for everyone; managers still reach the generated
+one, and replace or remove the PDF, from its "Más" menu.
 
 ## Assemblies and session
 

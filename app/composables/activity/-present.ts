@@ -96,6 +96,8 @@ export const ACTIVITY_ACTION_ICONS = {
   calendar_updated: "i-lucide-calendar-days",
   agenda_finalized: "i-lucide-lock",
   agenda_reopened: "i-lucide-lock-open",
+  convocation_uploaded: "i-lucide-file-signature",
+  convocation_removed: "i-lucide-file-x",
   agenda_item_created: "i-lucide-list-plus",
   agenda_item_updated: "i-lucide-pencil",
   agenda_item_deleted: "i-lucide-list-x",
@@ -213,7 +215,7 @@ export function activityIcon(
 
 /** Sections of an assembly an item can link to (see assemblyPath). */
 export type ActivityLinkSection =
-  "overview" | "agenda" | "documents" | "live" | "calendar";
+  "overview" | "agenda" | "documents" | "live" | "calendar" | "convocation";
 
 /**
  * Where an item leads, as parts of an unlocalized path: the assembly section
@@ -273,6 +275,9 @@ export function activityLink(
     case "agenda_reopened":
     case "agenda_reordered":
       return at("agenda");
+    case "convocation_uploaded":
+    case "convocation_removed":
+      return at("convocation");
     default:
       return document ? at("documents", document) : at("overview");
   }

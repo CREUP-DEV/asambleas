@@ -242,6 +242,8 @@ export const EVENT_TYPES = [
   "calendar_updated",
   "agenda_finalized",
   "agenda_reopened",
+  "convocation_uploaded",
+  "convocation_removed",
   // Agenda items
   "agenda_item_created",
   "agenda_item_updated",
@@ -389,6 +391,8 @@ const EVENT_CATEGORIES: Record<EventType, ActivityCategory> = {
   calendar_updated: "assembly",
   agenda_finalized: "assembly",
   agenda_reopened: "assembly",
+  convocation_uploaded: "assembly",
+  convocation_removed: "assembly",
   agenda_item_created: "agenda",
   agenda_item_updated: "agenda",
   agenda_item_deleted: "agenda",
