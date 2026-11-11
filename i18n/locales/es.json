@@ -2634,7 +2634,6 @@
       "location": "Lugar",
       "documentsLabel": "Documentos",
       "documents": "Sin documentos | {count} documento | {count} documentos",
-      "agendaFinal": "ODD definitivo",
       "agendaProvisional": "ODD provisional",
       "nextMilestone": "Próximo plazo"
     },
@@ -2668,7 +2667,6 @@
     "more": "Más",
     "title": "Orden del día",
     "hiddenTitle": "Punto de un documento sin publicar",
-    "final": "Definitivo",
     "provisional": "Orden del día provisional",
     "itemsCount": "Sin puntos | {count} punto | {count} puntos",
     "documentsCount": "sin documentos | {count} documento | {count} documentos",
@@ -2685,17 +2683,6 @@
       "collapsedAll": "Se han ocultado todos los subpuntos"
     },
     "finalAgenda": {
-      "mark": "Marcar como definitivo",
-      "reopen": "Reabrir como provisional",
-      "markTitle": "¿Marcar el orden del día como definitivo?",
-      "markDescription": "Definitivo quiere decir que este es el orden del día que se tratará en la asamblea: la convocatoria y la asamblea dejarán de decir que es provisional. Podrás seguir añadiendo subpuntos y editándolo; si cambias un punto principal, tendrás que confirmarlo y quedará anotado en el historial.",
-      "reopenTitle": "¿Reabrir el orden del día como provisional?",
-      "reopenDescription": "El orden del día volverá a ser provisional y los puntos principales se podrán cambiar sin confirmar.",
-      "marked": "El orden del día ya es definitivo",
-      "reopened": "El orden del día vuelve a ser provisional",
-      "error": "No se ha podido cambiar el estado del orden del día",
-      "overdueTitle": "El orden del día sigue siendo provisional",
-      "overdueDescription": "La fecha prevista para el orden del día definitivo era el {date}. Al marcarlo, la convocatoria y la asamblea dejan de decir que es provisional y todos saben que es el que se tratará. Podrás seguir añadiendo subpuntos y editándolo; cambiar un punto principal pedirá confirmación y quedará anotado en el historial.",
       "confirmChangeTitle": "El orden del día ya es definitivo",
       "confirmChangeDescription": "¿Cambiarlo igualmente? El cambio quedará anotado en el historial.",
       "confirmChange": "Cambiar igualmente",

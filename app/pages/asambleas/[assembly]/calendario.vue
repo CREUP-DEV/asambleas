@@ -13,8 +13,8 @@ import { MILESTONE_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/assembly";
  * Calendar editor: one date-time per milestone (Europe/Madrid), a note, the
  * default deadlines of the assembly type (its calendar rules, edited in
  * /admin/calendario) and live warnings from checkCalendar. Read-only for
- * non-managers. The agenda is marked as final on the agenda page
- * (AgendaFinalAction), not here.
+ * non-managers. The agenda turns final on its own on the "Orden del día
+ * definitivo" date set here (agendaFinalSince).
  */
 
 const { t, locale } = useI18n();

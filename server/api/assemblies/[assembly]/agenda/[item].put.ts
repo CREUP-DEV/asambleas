@@ -100,7 +100,8 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
         (moved && (item.parentId === null || newParentId === null)) ||
         (item.parentId === null && body.title !== item.title);
       const afterFinal =
-        changesRoots && confirmFinalRootChange(current, body.confirmFinal);
+        changesRoots &&
+        (await confirmFinalRootChange(tx, current.id, body.confirmFinal));
 
       if (moved) {
         if (newParentId !== null) {

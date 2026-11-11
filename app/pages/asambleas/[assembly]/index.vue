@@ -293,10 +293,6 @@ const warnedKeys = computed(() =>
       :edit-to="sectionPath('calendario')"
     />
 
-    <!-- The planned date of the final agenda passed and it is still
-         provisional (never for an agenda with no items yet) -->
-    <AgendaFinalAction v-if="tree.length > 0" as="reminder" />
-
     <!-- 1. What the user has to do here -->
     <section
       v-if="showTodo"
@@ -469,14 +465,11 @@ const warnedKeys = computed(() =>
               {{ t("assembly.overview.agendaTitle") }}
             </h3>
             <UBadge
-              :color="assembly.agendaFinalizedAt ? 'success' : 'neutral'"
+              v-if="!assembly.agendaFinalizedAt"
+              color="neutral"
               variant="subtle"
               size="sm"
-              :label="
-                assembly.agendaFinalizedAt
-                  ? t('agenda.final')
-                  : t('agenda.provisional')
-              "
+              :label="t('agenda.provisional')"
             />
           </div>
           <!-- How much of the documentation is left to read -->

@@ -353,6 +353,10 @@ export interface AssemblySummaryDto {
   startDate: IsoDate;
   endDate: IsoDate;
   location: string;
+  /**
+   * Since when the agenda is final (ODD definitivo): the calendar's
+   * `agenda_final` date once it has come, else null (agendaFinalSince).
+   */
   agendaFinalizedAt: IsoDate | null;
   documentCount: number;
   /** Next milestone still to come, for countdowns. */
@@ -441,8 +445,6 @@ export interface CalendarRulesBody {
 
 export interface CalendarBody {
   milestones: { key: MilestoneKey; at: IsoDate | null; note?: string | null }[];
-  /** Mark the agenda as final (ODD definitivo) or reopen it. */
-  agendaFinal?: boolean;
 }
 
 // Agenda -----------------------------------------------------------------

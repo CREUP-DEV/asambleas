@@ -117,7 +117,6 @@ export const calendarBodySchema = z.object({
         milestones.length,
       { message: "duplicate_milestone" },
     ),
-  agendaFinal: z.boolean().optional(),
 });
 
 export const assemblyListQuerySchema = z.object({

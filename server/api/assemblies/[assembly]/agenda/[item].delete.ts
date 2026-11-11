@@ -115,7 +115,8 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
         });
       }
       const afterFinal =
-        item.parentId === null && confirmFinalRootChange(current, confirmFinal);
+        item.parentId === null &&
+        (await confirmFinalRootChange(tx, current.id, confirmFinal));
 
       const itemIds = [...agendaSubtree(items, item.id)];
       // Locked FOR UPDATE after the assembly: an amendment being inserted

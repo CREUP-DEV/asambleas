@@ -5,22 +5,48 @@ import {
   agendaItemDeleteQuerySchema,
   agendaReorderBodySchema,
 } from "~~/shared/utils/schemas/assembly";
-import { confirmFinalRootChange } from "./assemblies";
+import { agendaFinalSince } from "~~/shared/utils/calendar";
+import { finalRootChange } from "./assemblies";
 
-const provisional = { agendaFinalizedAt: null };
-const final = { agendaFinalizedAt: new Date("2026-11-01T09:00:00Z") };
+const provisional = false;
+const final = true;
 
-describe("confirmFinalRootChange", () => {
+describe("agendaFinalSince", () => {
+  const milestones = [
+    { key: "convocation", at: "2026-10-18T09:47:03.000Z" },
+    { key: "agenda_final", at: "2026-11-04T08:00:00.000Z" },
+  ];
+
+  it("turns the agenda final on the calendar's date, on its own", () => {
+    expect(agendaFinalSince(milestones, new Date("2026-11-04T07:59:59Z"))).toBe(
+      null,
+    );
+    expect(
+      agendaFinalSince(
+        milestones,
+        new Date("2026-11-04T08:00:00Z"),
+      )?.toISOString(),
+    ).toBe("2026-11-04T08:00:00.000Z");
+  });
+
+  it("keeps it provisional without that date in the calendar", () => {
+    expect(
+      agendaFinalSince(milestones.slice(0, 1), new Date("2027-01-01")),
+    ).toBe(null);
+  });
+});
+
+describe("finalRootChange", () => {
   it("lets a provisional agenda change, never marked as after final", () => {
-    expect(confirmFinalRootChange(provisional, undefined)).toBe(false);
-    expect(confirmFinalRootChange(provisional, true)).toBe(false);
+    expect(finalRootChange(provisional, undefined)).toBe(false);
+    expect(finalRootChange(provisional, true)).toBe(false);
   });
 
   it("asks for the confirmation once the agenda is final", () => {
     for (const confirmFinal of [undefined, false]) {
       let thrown: unknown;
       try {
-        confirmFinalRootChange(final, confirmFinal);
+        finalRootChange(final, confirmFinal);
       } catch (error) {
         thrown = error;
       }
@@ -33,7 +59,7 @@ describe("confirmFinalRootChange", () => {
   });
 
   it("lets a confirmed change through and marks it as after final", () => {
-    expect(confirmFinalRootChange(final, true)).toBe(true);
+    expect(finalRootChange(final, true)).toBe(true);
   });
 });
 

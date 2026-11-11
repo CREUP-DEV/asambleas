@@ -384,7 +384,7 @@ gets 403 with the next step: ask the Secretaría to link it.
 | PUT    | `/api/assemblies/[assembly]`             | `assembly:manage` | `AssemblyUpdateBody`. Settings are merged (see below).                                                                                                                                   |
 | DELETE | `/api/assemblies/[assembly]`             | `assembly:manage` | Only in `draft`.                                                                                                                                                                         |
 | PUT    | `/api/assemblies/[assembly]/status`      | `assembly:manage` | Follows `ASSEMBLY_STATUS_TRANSITIONS`. Entering `in_session` creates the `live_state` row. Closing ends the speaking turns (see speaking turns).                                         |
-| PUT    | `/api/assemblies/[assembly]/calendar`    | `assembly:manage` | `CalendarBody`. Upserts or deletes the milestones and toggles `agendaFinalizedAt`. Returns `AssemblyDto`.                                                                                |
+| PUT    | `/api/assemblies/[assembly]/calendar`    | `assembly:manage` | `CalendarBody`. Upserts or deletes the milestones. Returns `AssemblyDto`.                                                                                                                |
 | POST   | `/api/assemblies/[assembly]/convocation` | `assembly:manage` | The signed convocatoria: multipart `file` (PDF up to 20 MB, type and signature checked) and `updatedAt`. Replaces the one before. Records `convocation_uploaded`. Returns `AssemblyDto`. |
 | DELETE | `/api/assemblies/[assembly]/convocation` | `assembly:manage` | `?updatedAt=`. Removes the signed convocatoria and its file. Records `convocation_removed`. Returns `AssemblyDto`.                                                                       |
 | GET    | `/api/uploads/convocations/[filename]`   | visible           | The signed convocatoria (`AssemblyDto.convocationFile.url`) to whoever sees the assembly. May be framed by the platform only.                                                            |
@@ -433,7 +433,8 @@ two, its only call otherwise. There is no first-call quorum.
 | PUT    | `/api/assemblies/[assembly]/agenda/reorder`          | `assembly:manage` | `AgendaReorderBody`. Validates that every parent exists in the same assembly and that there are no cycles.                                                                                                                                                               |
 | POST   | `/api/assemblies/[assembly]/agenda/[item]/documents` | `document:manage` | `BulkDocumentsBody`. Creates several documents under the item, all or none. Returns 201 `BulkDocumentsDto`. See "Adding several documents" below.                                                                                                                        |
 
-Once the agenda is final (`agendaFinalizedAt`), a change to the root items
+Once the agenda is final (`agendaFinalizedAt`, the calendar's `agenda_final`
+date once it has come: `agendaFinalSince`), a change to the root items
 needs a confirmation: creating one (POST), renaming one or moving an item
 from or to the root level (PUT `[item]`), changing which items are root items
 or their order (PUT `reorder`) and deleting one (DELETE). The request says
@@ -446,9 +447,9 @@ carries `afterFinal: true`. Sub-items, and the description and submissions
 switch of a root item, never need `confirmFinal` and never get `afterFinal`;
 on a provisional agenda `confirmFinal` is ignored (`confirmFinalRootChange`).
 
-The agenda is marked as final or reopened with PUT `calendar`
-(`{ milestones: [], agendaFinal }`), from the agenda page; it records
-`agenda_finalized` or `agenda_reopened`.
+Nobody marks the agenda as final or reopens it: moving the `agenda_final`
+milestone (PUT `calendar`) is how. The events `agenda_finalized` and
+`agenda_reopened` remain only in the history from before.
 
 **Items where members present ("containers").** `acceptsSubmissions` marks an
 item where members present documents, and `submissionKinds` names the
