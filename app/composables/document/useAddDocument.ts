@@ -12,12 +12,13 @@ import { memberSubmissionKinds } from "~/composables/document/documentKinds";
  * The new-document modal of a hub page (home, agenda): who may add, under
  * which items, and the "Añadir documento" / "Presentar documento" button.
  *
- * - The button only shows while documents can be presented: the assembly is
- *   not closed and the calendar's "documents_close" has not passed (shared
- *   clock, so it goes away on time in a tab left open). Managers
- *   (document:manage) add under any item; members, for their own member,
- *   under the items that take submissions of a kind their member may
- *   present. Nobody adds under an automatic sub-item (the one the server
+ * - Managers (document:manage) get the button until the assembly closes,
+ *   whatever the calendar says, as the server lets them add documents at
+ *   any time, and add under any item. Members get it only while documents
+ *   can be presented: the assembly is not closed and the calendar's
+ *   "documents_close" has not passed (shared clock, so it goes away on time
+ *   in a tab left open), for their own member, under the items that take
+ *   submissions of a kind their member may present. Nobody adds under an automatic sub-item (the one the server
  *   creates for each document presented under such an item): the document
  *   goes to the item above, and gets its own.
  * - `?nuevo=<item>` (the editor's "… y añadir otro") opens the modal on the
@@ -35,10 +36,15 @@ export function useAddDocument(agenda: Ref<AgendaDto | null | undefined>) {
 
   const manager = computed(() => me.can(PERMISSION_KEYS.DOCUMENT_MANAGE));
 
-  /** Documents can be presented now (status and calendar). */
+  /** The assembly still takes documents from managers. */
+  const assemblyOpen = computed(
+    () => !!assembly.value && assembly.value.status !== "closed",
+  );
+
+  /** Members can present documents now (status and calendar). */
   const windowOpen = computed(() => {
     const value = assembly.value;
-    if (!value || value.status === "closed") return false;
+    if (!value || !assemblyOpen.value) return false;
     const close = value.milestones.find(
       (milestone) => milestone.key === "documents_close",
     );
@@ -82,8 +88,10 @@ export function useAddDocument(agenda: Ref<AgendaDto | null | undefined>) {
   );
 
   /** The button at the top of the page. */
-  const canAdd = computed(
-    () => windowOpen.value && (manager.value || memberCanPresent.value),
+  const canAdd = computed(() =>
+    manager.value
+      ? assemblyOpen.value
+      : windowOpen.value && memberCanPresent.value,
   );
 
   const open = ref(false);
