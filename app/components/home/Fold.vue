@@ -84,7 +84,8 @@ const contentId = computed(() => `home-fold-${props.id}-content`);
         </span>
       </UButton>
     </component>
-    <div v-show="open" :id="contentId" class="px-4 pb-4">
+    <!-- Some room under the header, whose hover band reaches its edge. -->
+    <div v-show="open" :id="contentId" class="px-4 pt-2 pb-4">
       <slot />
     </div>
   </section>

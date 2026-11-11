@@ -143,6 +143,12 @@ export const amendments = pgTable(
       table.documentId,
       table.number,
     ),
+    // A code names one amendment of the document; the ones without a code
+    // yet (not published) are distinct nulls.
+    uniqueIndex("amendments_document_code_unique").on(
+      table.documentId,
+      table.code,
+    ),
   ],
 );
 

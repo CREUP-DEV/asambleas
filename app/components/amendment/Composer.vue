@@ -50,9 +50,10 @@ import {
  *   the base does (`documentAmendmentOps`, formatting included). Everything
  *   changed in one go is one amendment with one justification;
  * - on the right (below on a phone), a panel that stays in view with three
- *   questions: what kind of amendment it is (content or form, nothing chosen
- *   for a new one), who presents it (alone or with other members, and then
- *   who the main author is) and why. Under them, how many paragraphs change
+ *   questions: what kind of amendment it is (content or form, content for a
+ *   new one), who presents it (alone or with other members, and then
+ *   who the main author is) and why (optional, except for a return to the text: its justification is
+ *   all it says). Under them, how many paragraphs change
  *   and "Revisar y enviar".
  *
  * "Revisar y enviar" shows the changes as everybody else will see them, what
@@ -168,11 +169,12 @@ const alternativeBlocks = shallowRef<Block[]>(
 );
 const find = ref(seed?.find ?? "");
 const replacement = ref(seed?.replace ?? "");
-/** Content or form: the author chooses; a stored draft keeps its own. */
+/**
+ * Content or form: a new amendment starts as content, the usual case; a
+ * stored draft keeps its own.
+ */
 const kind = ref<"partial" | "formal" | null>(
-  props.draft?.kind === "formal" || props.draft?.kind === "partial"
-    ? props.draft.kind
-    : null,
+  props.draft?.kind === "formal" ? "formal" : "partial",
 );
 const justification = ref(props.draft?.justification ?? "");
 
@@ -622,7 +624,14 @@ const blocked = computed(
     cannotPresent.value ||
     syncBlocked.value,
 );
-const justificationMissing = computed(() => !justification.value.trim());
+const justificationEmpty = computed(() => !justification.value.trim());
+/**
+ * The justification is optional, except for a return to the text: it is all
+ * that amendment says.
+ */
+const justificationMissing = computed(
+  () => mode === "return" && justificationEmpty.value,
+);
 
 /** What stops the amendment from being saved, in plain words. */
 const problems = computed<string[]>(() => {
@@ -829,10 +838,18 @@ function discardAndClose(): void {
   emit("close");
 }
 
-onBeforeRouteLeave(() => {
+function confirmLeaving(): boolean {
   if (!hasUnsavedChanges()) return true;
   return window.confirm(t("amendment.composer.leave.confirm"));
-});
+}
+
+onBeforeRouteLeave(confirmLeaving);
+// Another document of the same assembly is the same page with other
+// params ("Anterior", "Siguiente", the breadcrumbs): asked too. A change of
+// the query alone (the open amendment) stays on this text.
+onBeforeRouteUpdate((to, from) =>
+  to.path === from.path ? true : confirmLeaving(),
+);
 
 function onBeforeUnload(event: BeforeUnloadEvent): void {
   if (!hasUnsavedChanges()) return;
@@ -1214,14 +1231,6 @@ const questionClass = "text-highlighted text-sm font-semibold";
           <dd class="text-default">
             {{ authorNames || t("amendment.composer.review.noWho") }}
           </dd>
-          <dt class="text-muted">{{ t("amendment.composer.review.why") }}</dt>
-          <dd class="text-default whitespace-pre-line">
-            {{
-              justificationMissing
-                ? t("amendment.composer.review.noWhy")
-                : justification.trim()
-            }}
-          </dd>
         </dl>
 
         <div v-if="mode !== 'return'" class="flex flex-col gap-2">
@@ -1254,6 +1263,27 @@ const questionClass = "text-highlighted text-sm font-semibold";
           icon="i-lucide-file-x"
           :description="t('amendment.composer.returnNote')"
         />
+
+        <!-- Why, after what changes (as in the amendment's detail): a
+             justification may run to several paragraphs. -->
+        <div class="flex flex-col gap-2">
+          <h4 class="text-highlighted text-sm font-semibold">
+            {{ t("amendment.composer.review.why") }}
+          </h4>
+          <p
+            v-if="justificationEmpty"
+            class="text-muted text-sm"
+            :class="{ 'text-error': justificationMissing }"
+          >
+            {{ t("amendment.composer.review.noWhy") }}
+          </p>
+          <p
+            v-else
+            class="text-default max-w-prose text-sm leading-relaxed break-words whitespace-pre-line"
+          >
+            {{ justification.trim() }}
+          </p>
+        </div>
 
         <div
           class="border-default bg-default sticky bottom-0 mt-auto flex flex-col gap-2 border-t pt-3"
@@ -1494,7 +1524,7 @@ const questionClass = "text-highlighted text-sm font-semibold";
 
           <!-- 3. Why -->
           <UFormField
-            required
+            :required="mode === 'return'"
             :error="
               attempted && justificationMissing
                 ? t('amendment.composer.justificationRequired')
@@ -1503,7 +1533,9 @@ const questionClass = "text-highlighted text-sm font-semibold";
             :help="
               justificationMissing
                 ? t('amendment.composer.why.help')
-                : undefined
+                : mode === 'return'
+                  ? undefined
+                  : t('amendment.composer.why.optional')
             "
           >
             <template #label>

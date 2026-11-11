@@ -63,7 +63,13 @@ const localePath = useLocalePath();
 function title(task: HomeWorkTask): string {
   if (!task.amendment) return task.document.title;
   if (task.kind === "transactional_answer") {
-    const code = task.amendment.code ?? "";
+    const code = task.amendment.code;
+    // A member's transactional has no code until it is published.
+    if (!code) {
+      return task.proposedBy
+        ? t("home.work.transactionalNoCodeBy", { member: task.proposedBy })
+        : t("home.work.transactionalNoCode");
+    }
     return task.proposedBy
       ? t("home.work.transactionalBy", { code, member: task.proposedBy })
       : t("home.work.transactional", { code });

@@ -18,7 +18,7 @@ import { formatListNumber, orderedListNumbers } from "./lists";
 import { groupTables, tableGrid, type TableGroup } from "./tables";
 import { changeKinds, globalReplaceOps, positionKey, validateOps } from "./ops";
 import { findOverlaps, overlapBetween } from "./overlaps";
-import { renderAnnotated, renderBlocks } from "./render";
+import { isShownFormatSegment, renderAnnotated, renderBlocks } from "./render";
 
 let counter = 0;
 const newId = () => `new${String(counter++).padStart(4, "0")}`;
@@ -1438,29 +1438,41 @@ describe("format changes", () => {
     ]);
   });
 
-  it("shows a change of format with its text once and a label in words", () => {
+  it("shows a change of format with its text once and a note in words", () => {
     const ops = diffPassage([base[1]!], [bolded], "h001", newId);
     const { annotated } = consolidate(base, [{ id: "A", ops }]);
     const html = renderAnnotated([annotated[1]!], {
       mode: "diff",
       diffLabels: labels,
     });
+    // The text once, in its new format; what changes at the block's end.
     expect(html).toContain(
-      '<span class="cx-fmt" data-amendment-id="A">' +
-        '<span class="sr-only">Cambia el formato: </span>' +
-        "<strong>en su totalidad</strong>" +
-        '<span class="cx-fmt-label">bold_on</span></span>',
+      '<span class="cx-fmt" data-amendment-id="A" title="bold_on">' +
+        "<strong>en su totalidad</strong></span>",
+    );
+    expect(html).toMatch(
+      new RegExp(
+        '<span class="cx-fmt-label">Cambia el formato: ' +
+          '<span class="cx-fmt-part" data-amendment-id="A">' +
+          "«en su totalidad» bold_on</span></span></p>$",
+      ),
     );
     expect(html).not.toContain("<del");
     expect(html).not.toContain("<ins");
 
     const hostile = renderAnnotated([annotated[1]!], {
       mode: "diff",
-      diffLabels: { ...labels, format: () => "<b>&" },
+      diffLabels: {
+        ...labels,
+        format: () => "<b>&",
+        quote: (text) => `<${text}>`,
+      },
     });
     expect(hostile).toContain(
-      '<span class="cx-fmt-label">&lt;b&gt;&amp;</span>',
+      '<span class="cx-fmt-part" data-amendment-id="A">' +
+        "&lt;en su totalidad&gt; &lt;b&gt;&amp;</span>",
     );
+    expect(hostile).toContain('title="&lt;b&gt;&amp;"');
 
     // Without words for it the text still shows its new format.
     expect(renderAnnotated([annotated[1]!], { mode: "diff" })).toContain(
@@ -1479,7 +1491,69 @@ describe("format changes", () => {
     );
   });
 
-  it("shows a block in its new format with a label at its start", () => {
+  it("leaves a blank change of format unmarked next to other changes", () => {
+    const text = "Reglamento de de Funcionamiento";
+    const struck: Block = {
+      ...p("b009", text),
+      marks: [{ type: "strike", from: 13, to: 17 }],
+    };
+    // The second "de" goes and the space before it loses its strike.
+    const edited: Block = {
+      ...struck,
+      text: "Reglamento de Funcionamiento",
+      marks: [],
+    };
+    const ops = diffPassage([struck], [edited], null, newId);
+    const { annotated } = consolidate([struck], [{ id: "A", ops }]);
+    const block = annotated[0]!;
+    const html = renderAnnotated([block], {
+      mode: "diff",
+      diffLabels: labels,
+    });
+    expect(html).toContain("<del");
+    for (const segment of block.segments) {
+      if (segment.format && segment.text.trim() === "") {
+        expect(isShownFormatSegment(block, segment)).toBe(false);
+      }
+    }
+    expect(html).not.toMatch(/cx-fmt-part[^>]*>«\s*»/);
+
+    // Alone in its block, it is told, the space named in words.
+    const spaced: Block = {
+      ...p("b010", "uno dos"),
+      marks: [{ type: "bold", from: 3, to: 4 }],
+    };
+    const plain: Block = { ...spaced, marks: [] };
+    const only = consolidate(
+      [spaced],
+      [{ id: "A", ops: diffPassage([spaced], [plain], null, newId) }],
+    ).annotated[0]!;
+    const alone = renderAnnotated([only], {
+      mode: "diff",
+      diffLabels: { ...labels, space: "espacio" },
+    });
+    expect(alone).toContain("«espacio» bold_off");
+  });
+
+  it("cuts a long text in the format note", () => {
+    const long = "a".repeat(60);
+    const before = p("b011", long);
+    const after: Block = {
+      ...before,
+      marks: [{ type: "italic", from: 0, to: 60 }],
+    };
+    const { annotated } = consolidate(
+      [before],
+      [{ id: "A", ops: diffPassage([before], [after], null, newId) }],
+    );
+    const html = renderAnnotated([annotated[0]!], {
+      mode: "diff",
+      diffLabels: labels,
+    });
+    expect(html).toContain(`«${"a".repeat(39)}…» italic_on`);
+  });
+
+  it("shows a block in its new format with a note at its end", () => {
     const edited: Block = { ...base[2]!, type: "heading", level: 2 };
     const ops = diffPassage([base[2]!], [edited], "b001", newId);
     const { annotated } = consolidate(base, [{ id: "A", ops }]);
@@ -1490,9 +1564,10 @@ describe("format changes", () => {
     });
     expect(html).toBe(
       '<h3 data-block-id="b002">' +
-        '<span class="cx-fmt-label cx-fmt-block cx-focus" data-amendment-id="A">' +
-        '<span class="sr-only">Cambia el formato: </span>heading 2</span>' +
-        "Las universidades habilitarán un procedimiento de alegaciones.</h3>",
+        "Las universidades habilitarán un procedimiento de alegaciones." +
+        '<span class="cx-fmt-label">Cambia el formato: ' +
+        '<span class="cx-fmt-part cx-focus" data-amendment-id="A">heading 2</span>' +
+        "</span></h3>",
     );
     expect(renderAnnotated([annotated[2]!], { mode: "clean" })).toBe(
       renderBlocks([edited]),

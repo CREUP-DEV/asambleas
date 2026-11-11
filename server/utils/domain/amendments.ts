@@ -8,6 +8,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  lte,
   ne,
   or,
   sql,
@@ -399,12 +400,16 @@ export function amendmentCodePrefix(member: {
     : member.acronym;
 }
 
-/** "T{n}" with n = existing transactionals + 1, skipping codes already taken. */
+/**
+ * "T{n}" with n = numbered transactionals + 1, skipping codes already taken.
+ * One not published yet has no code (numberOnPublication) and does not count.
+ */
 export function nextTransactionalCode(
   existingCodes: (string | null)[],
 ): string {
-  const taken = new Set(existingCodes);
-  let n = existingCodes.length + 1;
+  const codes = existingCodes.filter((code) => code !== null);
+  const taken = new Set(codes);
+  let n = codes.length + 1;
   while (taken.has(`T${n}`)) n += 1;
   return `T${n}`;
 }
@@ -2220,20 +2225,33 @@ async function nextNumber(tx: Tx, documentId: string): Promise<number> {
 }
 
 /**
- * The next number of the member's amendments to the document. The executive
- * areas share one sequence ("CEA n"), whichever of them presents.
+ * Serializes the numbering of a document's amendments: publishing takes no
+ * lock of the document (it is allowed after the final vote too).
+ */
+async function lockNumbering(tx: Tx, documentId: string): Promise<void> {
+  await tx.execute(
+    sql`select pg_advisory_xact_lock(hashtext(${`amendment_numbering:${documentId}`}))`,
+  );
+}
+
+/**
+ * The next number of a code sequence of the document ("UGR n", "CEA n"):
+ * one per prefix (amendmentCodePrefix), whoever holds it now. The offices of
+ * the CEA share "CEA n"; a member whose prefix changed starts its own at 1
+ * (the CAS, an office before, presents "CAS 1"), and its earlier codes keep
+ * theirs taken.
  *
  * A code an amendment gave up when the Secretaría corrected its main author
  * (the `previousCode` of its `amendment_authors_changed` events) is never
- * handed to another amendment: `retired.prefix` is the prefix of the
- * sequence, and those numbers count as taken. Only the amendment that held
- * one (`retired.returningAmendmentId`) gets it back, when a later
- * correction returns it to that sequence.
+ * handed to another amendment once everyone had seen it (the amendment was
+ * published by then): `retired.prefix` is the prefix of the sequence, and
+ * those numbers count as taken. Only the amendment that held one
+ * (`retired.returningAmendmentId`) gets it back, when a later correction
+ * returns it to that sequence.
  */
 async function nextMemberSeq(
   tx: Tx,
   documentId: string,
-  member: { id: string; kind: MemberKind },
   retired: { prefix: string; returningAmendmentId?: string },
 ): Promise<number> {
   const former = await tx
@@ -2248,6 +2266,9 @@ async function nextMemberSeq(
         eq(amendments.documentId, documentId),
         eq(events.entityType, "amendment"),
         eq(events.type, "amendment_authors_changed"),
+        // Given up before its publication: nobody else had seen it.
+        isNotNull(amendments.publishedAt),
+        lte(amendments.publishedAt, events.createdAt),
       ),
     )
     .orderBy(desc(events.createdAt));
@@ -2262,6 +2283,7 @@ async function nextMemberSeq(
     if (event.amendmentId === retired.returningAmendmentId) return seq;
     retiredMax = Math.max(retiredMax, seq);
   }
+  const head = `${retired.prefix} `;
   const [row] = await tx
     .select({ value: sql<number>`coalesce(max(${amendments.memberSeq}), 0)` })
     .from(amendments)
@@ -2269,12 +2291,103 @@ async function nextMemberSeq(
       and(
         eq(amendments.documentId, documentId),
         ne(amendments.kind, "transactional"),
-        member.kind === "executive"
-          ? sql`${amendments.meta}->>'presentingMemberId' in (select ${members.id} from ${members} where ${members.kind} = 'executive')`
-          : sql`${amendments.meta}->>'presentingMemberId' = ${member.id}`,
+        sql`left(${amendments.code}, ${head.length}) = ${head}`,
       ),
     );
   return Math.max(Number(row?.value ?? 0), retiredMax) + 1;
+}
+
+/**
+ * Numbers amendments on their first publication, so what everyone reads
+ * runs without gaps: one withdrawn, declared inadmissible or abandoned
+ * before anyone else saw it never takes a number. Gives each its number in
+ * the document and its code ("UGR 3", "CEA 2", or "T1" for a transactional),
+ * in the order they were presented when several are published at once.
+ * What one already has stays (amendments numbered on presentation, before
+ * this rule). Returns the code of each.
+ */
+async function numberOnPublication(
+  tx: Tx,
+  documentId: string,
+  ids: readonly string[],
+): Promise<Map<string, string | null>> {
+  const codes = new Map<string, string | null>();
+  if (ids.length === 0) return codes;
+  await lockNumbering(tx, documentId);
+  const rows = await tx
+    .select({
+      id: amendments.id,
+      kind: amendments.kind,
+      number: amendments.number,
+      memberSeq: amendments.memberSeq,
+      code: amendments.code,
+      meta: amendments.meta,
+    })
+    .from(amendments)
+    .where(
+      and(
+        eq(amendments.documentId, documentId),
+        inArray(amendments.id, [...ids]),
+      ),
+    )
+    .orderBy(
+      asc(amendments.submittedAt),
+      asc(amendments.createdAt),
+      asc(amendments.id),
+    );
+  for (const row of rows) {
+    if (row.kind === "transactional") {
+      let code = row.code;
+      if (code === null) {
+        const existing = await tx
+          .select({ code: amendments.code })
+          .from(amendments)
+          .where(
+            and(
+              eq(amendments.documentId, documentId),
+              eq(amendments.kind, "transactional"),
+            ),
+          );
+        code = nextTransactionalCode(existing.map((other) => other.code));
+        await tx
+          .update(amendments)
+          .set({ code })
+          .where(eq(amendments.id, row.id));
+      }
+      codes.set(row.id, code);
+      continue;
+    }
+    const presentingId = readMeta(row).presentingMemberId ?? null;
+    const [main] = presentingId
+      ? await tx
+          .select({ acronym: members.acronym, kind: members.kind })
+          .from(members)
+          .where(eq(members.id, presentingId))
+      : [];
+    const number = row.number ?? (await nextNumber(tx, documentId));
+    let memberSeq = row.memberSeq;
+    let code = row.code;
+    if (main && (code === null || memberSeq === null)) {
+      const prefix = amendmentCodePrefix(main);
+      memberSeq = await nextMemberSeq(tx, documentId, {
+        prefix,
+        returningAmendmentId: row.id,
+      });
+      code = `${prefix} ${memberSeq}`;
+    }
+    if (
+      number !== row.number ||
+      memberSeq !== row.memberSeq ||
+      code !== row.code
+    ) {
+      await tx
+        .update(amendments)
+        .set({ number, memberSeq, code })
+        .where(eq(amendments.id, row.id));
+    }
+    codes.set(row.id, code);
+  }
+  return codes;
 }
 
 export async function submitAmendment(
@@ -2378,19 +2491,15 @@ export async function submitAmendment(
         ...(!instant && approval !== "accepted" ? { awaitsAuthors: true } : {}),
       };
     } else {
-      // Sent back for correction: it keeps its number and, while the same
-      // member presents it, its code (numbering without gaps).
-      // An executive area's amendments are "CEA n", numbered together.
+      // Numbered on its first publication (numberOnPublication), never
+      // here. One numbered on presentation before that rule and sent back
+      // for correction keeps its number and, while the same member presents
+      // it, its code.
       const prefix = amendmentCodePrefix(presenting!.member);
       const kept = numberingToKeep(amendment, prefix);
-      const number = kept.number ?? (await nextNumber(tx, document.id));
-      const memberSeq =
-        kept.memberSeq ??
-        (await nextMemberSeq(tx, document.id, presenting!.member, {
-          prefix,
-          returningAmendmentId: amendment.id,
-        }));
-      const code = `${prefix} ${memberSeq}`;
+      const number = kept.number;
+      const memberSeq = kept.memberSeq;
+      const code = memberSeq === null ? null : `${prefix} ${memberSeq}`;
       const late = submissionLate(amendment, isLateSubmission(ctx.window, now));
       // Never admitted here: the Secretaría validates it first (and admits
       // it if on time); a late one also waits for the Mesa.
@@ -2420,6 +2529,13 @@ export async function submitAmendment(
     }
     if (updated.length === 0) fail(409, "La enmienda ya se ha presentado");
     if (afterCorrection) payload.afterCorrection = true;
+    // A transactional the Mesa presents is published at once: numbered now.
+    const code = instant
+      ? ((await numberOnPublication(tx, document.id, [amendment.id])).get(
+          amendment.id,
+        ) ?? null)
+      : amendment.code;
+    if (transactional) payload.code = code;
 
     await tx
       .insert(amendmentPositions)
@@ -2451,7 +2567,7 @@ export async function submitAmendment(
         documentId: document.id,
         actor,
         now,
-        transactional: { id: amendment.id, code: amendment.code },
+        transactional: { id: amendment.id, code },
         ...replace,
       });
     }
@@ -2799,6 +2915,8 @@ export async function decideAmendmentAdmission(
         actor,
       });
     }
+    // Published now: numbered (numberOnPublication).
+    await numberOnPublication(tx, document.id, unpublished);
     for (const id of unpublished) {
       await recordEvent(tx, {
         assemblyId: ctx.assembly.id,
@@ -3000,6 +3118,7 @@ export async function validateAmendments(
       group.ids.push(row.id);
       groups.set(key, group);
     }
+    const publishedCodes = new Map<string, string | null>();
     for (const { admission, publish, ids } of groups.values()) {
       const updated = await tx
         .update(amendments)
@@ -3019,6 +3138,16 @@ export async function validateAmendments(
         .returning({ id: amendments.id });
       if (updated.length !== ids.length) {
         fail(409, "Las enmiendas han cambiado. Recarga la página");
+      }
+      // Published now: numbered (numberOnPublication).
+      if (publish) {
+        for (const [id, code] of await numberOnPublication(
+          tx,
+          document.id,
+          ids,
+        )) {
+          publishedCodes.set(id, code);
+        }
       }
       for (const id of ids) {
         await recordEvent(tx, {
@@ -3044,7 +3173,10 @@ export async function validateAmendments(
         documentId: document.id,
         actor,
         now,
-        transactional: row,
+        transactional: {
+          id: row.id,
+          code: publishedCodes.get(row.id) ?? row.code,
+        },
         sources: sourcesOf(row.id),
         competitors: lockedCompetitors(competitors, lockedById.values()),
       });
@@ -3091,6 +3223,7 @@ export async function publishAmendments(
     if (updated.length !== body.amendmentIds.length) {
       fail(409, "Las enmiendas han cambiado. Recarga la página");
     }
+    await numberOnPublication(tx, document.id, body.amendmentIds);
     for (const id of body.amendmentIds) {
       await recordEvent(tx, {
         assemblyId: ctx.assembly.id,
@@ -3303,8 +3436,11 @@ export async function changeAmendmentAuthors(
     }
 
     // Only a new main author moves the code: with the same one it stays as
-    // it was presented, also if the member's acronym changed since.
-    let numbering: { memberSeq: number; code: string } | null = null;
+    // it was presented, also if the member's acronym changed since. One not
+    // published yet has none to move (numberOnPublication); one numbered
+    // before that rule gives its code up and takes one on publication.
+    let numbering: { memberSeq: number | null; code: string | null } | null =
+      null;
     if (!transactional && change.mainChanged) {
       const [main] = await tx
         .select({
@@ -3315,13 +3451,22 @@ export async function changeAmendmentAuthors(
         .from(members)
         .where(eq(members.id, nextMain));
       const prefix = amendmentCodePrefix(main!);
-      const memberSeq =
-        numberingToKeep(amendment, prefix).memberSeq ??
-        (await nextMemberSeq(tx, document.id, main!, {
+      const kept = numberingToKeep(amendment, prefix).memberSeq;
+      if (kept !== null) {
+        numbering = { memberSeq: kept, code: `${prefix} ${kept}` };
+      } else if (amendment.publishedAt === null) {
+        numbering = { memberSeq: null, code: null };
+      } else {
+        // Its row before the numbering lock, the order publishing takes
+        // them in (numberOnPublication), so the two never wait on each other.
+        await lockAmendments(tx, document.id, [amendment.id]);
+        await lockNumbering(tx, document.id);
+        const memberSeq = await nextMemberSeq(tx, document.id, {
           prefix,
           returningAmendmentId: amendment.id,
-        }));
-      numbering = { memberSeq, code: `${prefix} ${memberSeq}` };
+        });
+        numbering = { memberSeq, code: `${prefix} ${memberSeq}` };
+      }
     }
     const codeChanged = numbering !== null && numbering.code !== amendment.code;
 
@@ -3369,7 +3514,10 @@ export async function changeAmendmentAuthors(
         },
         to: { authorMemberIds: [...nextIds].sort(), mainAuthorId: nextMain },
         ...(codeChanged
-          ? { code: numbering!.code, previousCode: amendment.code }
+          ? {
+              ...(numbering!.code ? { code: numbering!.code } : {}),
+              previousCode: amendment.code,
+            }
           : {}),
       },
       actor,
@@ -4159,17 +4307,6 @@ export async function createTransactionalAmendment(
     // Images it inserts are this document's own.
     await assertOpImagesBelong(document.id, ops);
 
-    const existing = await tx
-      .select({ code: amendments.code })
-      .from(amendments)
-      .where(
-        and(
-          eq(amendments.documentId, document.id),
-          eq(amendments.kind, "transactional"),
-        ),
-      );
-    const code = nextTransactionalCode(existing.map((row) => row.code));
-
     const meta: StoredAmendmentMeta = mainAuthorId
       ? { presentingMemberId: mainAuthorId }
       : {};
@@ -4178,7 +4315,6 @@ export async function createTransactionalAmendment(
       .values({
         documentId: document.id,
         baseVersionId: document.baseVersionId!,
-        code,
         kind: "transactional",
         status: submit ? "submitted" : "draft",
         ...instantReview(instant, actor, now),
@@ -4193,6 +4329,13 @@ export async function createTransactionalAmendment(
       })
       .returning({ id: amendments.id });
     const amendmentId = row!.id;
+    // Its "T n" comes with its publication (numberOnPublication): at once
+    // when the Mesa presents it.
+    const code = instant
+      ? ((await numberOnPublication(tx, document.id, [amendmentId])).get(
+          amendmentId,
+        ) ?? null)
+      : null;
 
     if (authorIds.length > 0) {
       await tx

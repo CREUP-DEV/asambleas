@@ -577,7 +577,9 @@ export async function loadWorkNews(
       id: row.id,
       assembly: assemblyById.get(row.assemblyId)!.ref,
       document: { id: document.id, slug: document.slug, title: document.title },
-      amendment: amendment ? { id: amendment.id, code: amendment.code } : null,
+      amendment: amendment
+        ? { id: amendment.id, code: amendment.code, kind: amendment.kind }
+        : null,
       ownAmendment: amendment !== null && authoredIds.has(amendment.id),
       type: row.type,
       // An executive area reads as "CEA" to whoever may not see the areas.

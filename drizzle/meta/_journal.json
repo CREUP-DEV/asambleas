@@ -190,6 +190,13 @@
       "when": 1794394695287,
       "tag": "0026_fixed_tattoo",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1794427644395,
+      "tag": "0027_pretty_karen_page",
+      "breakpoints": true
     }
   ]
 }

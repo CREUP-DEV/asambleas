@@ -134,16 +134,6 @@ const canSubmitDocument = computed(
     Boolean(me.member.value) &&
     submitBlockedReason.value === null,
 );
-/**
- * Said once above the agenda (not on every item) when a member could
- * present documents here but no longer can.
- */
-const showSubmitBlocked = computed(
-  () =>
-    submitBlockedReason.value !== null &&
-    !canCreateDocument.value &&
-    items.value.some((item) => item.acceptsSubmissions),
-);
 
 // Organize mode -----------------------------------------------------------------
 
@@ -666,14 +656,6 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
         }}
       </span>
     </p>
-
-    <UAlert
-      v-if="showSubmitBlocked && !organizing"
-      color="neutral"
-      variant="subtle"
-      icon="i-lucide-lock"
-      :title="submitBlockedReason ?? ''"
-    />
 
     <p
       v-if="manage && agendaFinal && organizing"

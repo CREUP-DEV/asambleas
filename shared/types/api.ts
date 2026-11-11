@@ -252,7 +252,11 @@ export interface MeWorkNewsDto {
   id: string;
   assembly: MeWorkAssemblyRef;
   document: { id: string; slug: string; title: string };
-  amendment: { id: string; code: string | null } | null;
+  /**
+   * `code` is null until the amendment is published (numbered then);
+   * `kind` names a transactional without one.
+   */
+  amendment: { id: string; code: string | null; kind: AmendmentKind } | null;
   /** The amendment is one the user's member authored ("tu enmienda"). */
   ownAmendment: boolean;
   /** The event type (position_changed, acceptance_recorded, amendment_validated...). */

@@ -1161,6 +1161,11 @@ const editorUi = computed(() => ({
   base: [
     "content-font",
     props.compact ? "min-h-16 px-3 py-2 sm:px-3" : "min-h-48 px-4 py-4 sm:px-6",
+    // The index's marks sit in the left margin: the text keeps clear of
+    // them, as in the reading view.
+    !props.compact && props.outline && outlineItems.value.length > 1
+      ? "sm:ps-12"
+      : "",
     "[&_h1]:text-[1.75rem] [&_h2]:text-[1.375rem] [&_h3]:text-lg [&_h4]:text-[1.0625rem] [&_h4]:font-bold",
     "content-editor",
   ].join(" "),

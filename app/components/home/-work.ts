@@ -10,6 +10,7 @@
  * The "-" prefix keeps Nuxt from registering this module (and its test) as
  * a component; import it explicitly.
  */
+import type { AmendmentKind } from "~~/shared/constants/domain";
 import type {
   MeWorkAcceptanceDto,
   MeWorkAmendmentDto,
@@ -70,7 +71,10 @@ export interface HomeWorkDocumentRef {
 
 export interface HomeWorkAmendmentRef {
   id: string;
+  /** Null until it is published (numbered then). */
   code: string | null;
+  /** Names a transactional before it has a code. */
+  kind?: AmendmentKind;
 }
 
 /** What waits for the main presenter of a document (`proponent_review`). */
@@ -424,7 +428,7 @@ export function isHomeWorkTransactionalCode(code: string | null): boolean {
 /**
  * How a sentence names the amendment: "tu enmienda CEUM 2", "la enmienda
  * CEUM 2", "tu transaccional T2", "la transaccional T2", or "una enmienda"
- * before it has a code.
+ * ("una transaccional") before it has a code.
  */
 function amendmentPhrase(
   amendment: HomeWorkAmendmentRef | null,
@@ -433,7 +437,12 @@ function amendmentPhrase(
 ): HomeWorkPhrase | null {
   if (!amendment) return null;
   if (!amendment.code) {
-    return { key: "home.news.phrase.someAmendment", params: {} };
+    return {
+      key: transactional
+        ? "home.news.phrase.someTransactional"
+        : "home.news.phrase.someAmendment",
+      params: {},
+    };
   }
   const key = transactional
     ? own
@@ -454,7 +463,9 @@ function amendmentPhrase(
 export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
   const amendment = news.amendment ? { ...news.amendment } : null;
   const mine = amendment !== null && news.ownAmendment === true;
-  const transactional = isHomeWorkTransactionalCode(amendment?.code ?? null);
+  const transactional =
+    amendment?.kind === "transactional" ||
+    isHomeWorkTransactionalCode(amendment?.code ?? null);
   const by = news.by?.acronym ?? null;
   const base = {
     key: news.id,

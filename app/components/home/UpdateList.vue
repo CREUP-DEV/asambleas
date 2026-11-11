@@ -50,9 +50,13 @@ const hidden = computed(() => props.updates.length - shown.value.length);
 
 function title(update: HomeWorkUpdate): string {
   if (!update.amendment) return update.document.title;
-  return update.amendment.code
-    ? t("home.work.amendment", { code: update.amendment.code })
-    : t("home.work.amendmentDraft");
+  // Numbered once published: before that, sent or still a draft.
+  if (update.amendment.code) {
+    return t("home.work.amendment", { code: update.amendment.code });
+  }
+  return update.amendment.status === "draft"
+    ? t("home.work.amendmentDraft")
+    : t("home.work.amendmentSent");
 }
 
 function context(update: HomeWorkUpdate): string {

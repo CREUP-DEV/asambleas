@@ -28,7 +28,7 @@ import {
   type OverlapKind,
   type OverlapReport,
 } from "./overlaps";
-import { renderAnnotated, renderBlocks } from "./render";
+import { isShownFormatSegment, renderAnnotated, renderBlocks } from "./render";
 
 /**
  * Property-based tests of the amendment engine.
@@ -952,6 +952,8 @@ const ALLOWED_ATTRIBUTES = new Set([
   "aria-hidden",
   "start",
   "data-marker",
+  // The words of a format change on hover, escaped like any text.
+  "title",
 ]);
 const FORMAT_TAGS: Record<string, string> = {
   strong: "bold",
@@ -1689,7 +1691,9 @@ describe("amendment engine properties", () => {
             (block) =>
               block.status === "kept" &&
               (block.format !== undefined ||
-                block.segments.some((segment) => segment.format)),
+                block.segments.some((segment) =>
+                  isShownFormatSegment(block, segment),
+                )),
           );
           formatLabels.hit("format label", formatted);
           expect(annotatedHtml.includes("cx-fmt-label")).toBe(formatted);

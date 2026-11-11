@@ -345,6 +345,11 @@ describe("nextTransactionalCode", () => {
   it("skips codes still in use after a draft was deleted", () => {
     expect(nextTransactionalCode(["T2"])).toBe("T3");
   });
+
+  it("does not count transactionals not published yet (no code)", () => {
+    expect(nextTransactionalCode([null, "T1", null])).toBe("T2");
+    expect(nextTransactionalCode([null])).toBe("T1");
+  });
 });
 
 describe("amendmentCapabilities", () => {

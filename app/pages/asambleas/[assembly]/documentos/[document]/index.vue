@@ -1385,7 +1385,8 @@ const filteredBlockLabel = computed(() =>
 
     <template v-else>
       <!-- Reading the documents one after another, and "Marcar como leído" -->
-      <DocumentReadBar :document="document" />
+      <!-- Not while an amendment is being written: it takes the page. -->
+      <DocumentReadBar v-if="!composing" :document="document" />
 
       <DocumentHeader
         :document="document"
