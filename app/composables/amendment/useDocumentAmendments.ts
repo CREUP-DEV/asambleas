@@ -1,4 +1,5 @@
 import type { MaybeRefOrGetter } from "vue";
+import { isAmendmentLeft } from "~~/shared/utils/readMarks";
 import type {
   AmendmentDto,
   DocumentAmendmentsDto,
@@ -104,6 +105,34 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
   const markers = computed(() => amendmentBlockMarkers(listed.value));
 
   const filters = ref<AmendmentFilters>(emptyAmendmentFilters());
+
+  // "Sin leer": the listed amendments the account still has to read (its
+  // read marks: published, undecided, not its member's own).
+  const marks = useReadMarks();
+  const isLeft = (id: string) => {
+    const mark = marks.amendment(id);
+    return mark !== null && isAmendmentLeft(mark);
+  };
+  const unreadIds = computed(() =>
+    listed.value.map((amendment) => amendment.id).filter(isLeft),
+  );
+  /**
+   * While the filter is on, an amendment marked as read stays in the list
+   * until the filter goes: the reader does not lose their place.
+   */
+  const unreadKept = ref<ReadonlySet<string>>(new Set());
+  watch(
+    [() => filters.value.unread, unreadIds],
+    ([on, ids]) => {
+      if (!on) {
+        if (unreadKept.value.size > 0) unreadKept.value = new Set();
+        return;
+      }
+      if (ids.every((id) => unreadKept.value.has(id))) return;
+      unreadKept.value = new Set([...unreadKept.value, ...ids]);
+    },
+    { immediate: true },
+  );
   /**
    * What the list draws from: the listed amendments, or the returned drafts
    * while the review filter asks for them. Markers, counts and the overlap
@@ -115,7 +144,12 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
       : listed.value,
   );
   const filtered = computed(() =>
-    filterAmendmentList(source.value, filters.value, member.value?.id ?? null),
+    filterAmendmentList(
+      source.value,
+      filters.value,
+      member.value?.id ?? null,
+      (id) => unreadKept.value.has(id) || isLeft(id),
+    ),
   );
   const groups = computed(() => groupAmendmentsByOverlap(filtered.value));
 
@@ -221,6 +255,7 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     listed,
     mine,
     returned,
+    unreadIds,
     source,
     relations,
     byId,

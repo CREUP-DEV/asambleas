@@ -16,14 +16,18 @@ import { useAgendaItemBreadcrumb } from "~/composables/shell/useBreadcrumbs";
  * pages share (useAssemblyAgenda) and picks its part: nothing else is
  * fetched.
  *
- * Top to bottom: number, title and description; the manage bar
+ * Top to bottom: the reading bar of a document's page (DocumentReadBar),
+ * for the document its reader has on show; number and title, with "Punto anterior" / "Punto
+ * siguiente" beside it, which walk the agenda in reading order across
+ * levels; the description; the manage bar
  * (AgendaItemManageBar: edit, add a sub-item, add documents, delete), which
- * shows itself to managers only; the item's documents with everything the
- * agenda leaves out (presenters, amendment window, where a draft stands)
- * and whether the account has read each one;
+ * shows itself to managers only; the item's published documents in a
+ * reader (AgendaItemReader): one on show at a time, in place, with tabs to
+ * move between them; the ones that are not published (a draft of the
+ * user's member, what managers see before publication) as rows under it,
+ * with where each stands;
  * "Presentar documento" for members where the item takes their documents;
- * its sub-items as links with their totals; and "Anterior" / "Siguiente",
- * which walk the agenda in reading order across levels.
+ * and its sub-items as links with their totals.
  *
  * An id that is not in the agenda is a 404. An item that goes away while
  * the page is open (deleted here or elsewhere) leaves a note and the way to
@@ -125,6 +129,45 @@ const documents = computed<DocumentSummaryDto[]>(() =>
 const canCreateDocument = computed(() =>
   me.can(PERMISSION_KEYS.DOCUMENT_MANAGE),
 );
+
+/**
+ * What the reader shows: the published ones. A draft is never previewed;
+ * it keeps its row, with its next step.
+ */
+const readable = computed(() =>
+  documents.value.filter((document) => document.status === "published"),
+);
+const unpublished = computed(() =>
+  documents.value.filter((document) => document.status !== "published"),
+);
+/** Every published document, as the agenda reads: what the reader walks. */
+const readingOrder = computed(() =>
+  documentsInAgendaOrder(
+    tree.value,
+    (agenda.value?.documents ?? []).filter(
+      (document) => document.status === "published",
+    ),
+  ),
+);
+
+/** The document the reader has on show (`?doc=<slug>`, else the first). */
+const readerDocument = computed(
+  () =>
+    itemReaderPosition(
+      readingOrder.value,
+      itemId.value,
+      typeof route.query[ITEM_READER_QUERY] === "string"
+        ? (route.query[ITEM_READER_QUERY] as string)
+        : null,
+    ).current,
+);
+/** A document in the reader of its item's page. */
+function readerPath(document: DocumentSummaryDto) {
+  return {
+    path: itemPath(document.agendaItemId),
+    query: { [ITEM_READER_QUERY]: document.slug },
+  };
+}
 
 function documentPath(document: DocumentSummaryDto): string {
   return sectionPath(`documentos/${encodeURIComponent(document.slug)}`);
@@ -288,15 +331,77 @@ async function onDeleted() {
     </CommonEmptyState>
 
     <template v-else>
+      <!-- Reading the documents one after another, as on a document's page:
+           for the one the reader below has on show, and opening the others
+           in the reader of their item. -->
+      <DocumentReadBar
+        v-if="readerDocument"
+        :document="readerDocument"
+        :to="readerPath"
+      />
+
       <header class="space-y-2">
-        <h2
-          class="text-highlighted text-xl font-semibold break-words sm:text-2xl"
-          data-testid="agenda-item-title"
+        <div
+          class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
         >
-          <AgendaItemNumber :number="node.number" class="text-primary me-2" />{{
-            item.title
-          }}
-        </h2>
+          <h2
+            class="text-highlighted min-w-0 text-xl font-semibold break-words sm:text-2xl"
+            data-testid="agenda-item-title"
+          >
+            <AgendaItemNumber
+              :number="node.number"
+              class="text-primary me-2"
+            />{{ item.title }}
+          </h2>
+          <!-- The items before and after this one, in reading order: always
+               here, whatever the item holds -->
+          <nav
+            v-if="neighbours.previous || neighbours.next"
+            class="flex shrink-0 items-center gap-1"
+            :aria-label="t('agenda.item.neighbours')"
+            data-testid="agenda-item-neighbours"
+          >
+            <UButton
+              icon="i-lucide-arrow-left"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              rel="prev"
+              :to="
+                neighbours.previous
+                  ? itemPath(neighbours.previous.item.id)
+                  : undefined
+              "
+              :disabled="!neighbours.previous"
+              :label="t('agenda.item.previousItem')"
+              :title="
+                neighbours.previous
+                  ? numbered(
+                      neighbours.previous.number,
+                      neighbours.previous.item.title,
+                    )
+                  : undefined
+              "
+            />
+            <UButton
+              trailing-icon="i-lucide-arrow-right"
+              color="neutral"
+              variant="ghost"
+              size="sm"
+              rel="next"
+              :to="
+                neighbours.next ? itemPath(neighbours.next.item.id) : undefined
+              "
+              :disabled="!neighbours.next"
+              :label="t('agenda.item.nextItem')"
+              :title="
+                neighbours.next
+                  ? numbered(neighbours.next.number, neighbours.next.item.title)
+                  : undefined
+              "
+            />
+          </nav>
+        </div>
         <p
           v-if="item.description"
           class="text-default max-w-prose text-sm whitespace-pre-line sm:text-base"
@@ -348,22 +453,55 @@ async function onDeleted() {
           :title="submitBlockedReason"
         />
 
-        <ul v-if="documents.length > 0" class="space-y-2">
-          <li v-for="document in documents" :key="document.id">
-            <AgendaDocumentRow
-              :document="document"
-              :to="documentPath(document)"
-              :edit-to="documentEditPath(document)"
+        <AgendaItemReader
+          v-if="readable.length > 0"
+          :item-id="item.id"
+          :ordered="readingOrder"
+          :item-path="itemPath"
+          :document-path="documentPath"
+        />
+
+        <!-- Not published: never previewed, each with where it stands -->
+        <div v-if="unpublished.length > 0" class="space-y-2">
+          <h4
+            v-if="readable.length > 0"
+            class="text-muted text-sm font-medium"
+            data-testid="agenda-item-unpublished"
+          >
+            {{ t("agenda.item.unpublished") }}
+          </h4>
+          <ul class="space-y-2">
+            <li v-for="document in unpublished" :key="document.id">
+              <AgendaDocumentRow
+                :document="document"
+                :to="documentPath(document)"
+                :edit-to="documentEditPath(document)"
+              />
+            </li>
+          </ul>
+        </div>
+        <template v-if="documents.length === 0">
+          <!-- Its sub-items follow: one line is enough -->
+          <p v-if="node.children.length > 0" class="text-muted text-sm">
+            {{ t("agenda.item.noOwnDocuments") }}
+          </p>
+          <!-- Nothing else on the page: say so in the open space -->
+          <div
+            v-else
+            class="border-default flex flex-col items-center gap-4 rounded-lg border border-dashed px-4 py-16 text-center sm:py-24"
+            role="status"
+            data-testid="agenda-item-empty"
+          >
+            <UIcon
+              name="i-lucide-file-x"
+              class="text-dimmed size-16 sm:size-24"
+              aria-hidden="true"
             />
-          </li>
-        </ul>
-        <p v-else class="text-muted text-sm">
-          {{
-            node.children.length > 0
-              ? t("agenda.item.noOwnDocuments")
-              : t("agenda.item.noDocuments")
-          }}
-        </p>
+            <p class="text-muted text-base">
+              {{ t("agenda.item.noDocuments") }}
+            </p>
+          </div>
+        </template>
       </section>
 
       <!-- Sub-items -->
@@ -447,64 +585,6 @@ async function onDeleted() {
           </li>
         </ol>
       </section>
-
-      <!-- Previous and next item, in reading order -->
-      <nav
-        v-if="neighbours.previous || neighbours.next"
-        class="border-default grid gap-3 border-t pt-4 sm:grid-cols-2"
-        :aria-label="t('agenda.item.neighbours')"
-        data-testid="agenda-item-neighbours"
-      >
-        <NuxtLink
-          v-if="neighbours.previous"
-          :to="itemPath(neighbours.previous.item.id)"
-          rel="prev"
-          class="border-default hover:bg-elevated/50 focus-visible:outline-primary flex min-h-14 items-center gap-3 rounded-lg border px-3 py-3 focus-visible:outline-2 focus-visible:outline-offset-2"
-        >
-          <UIcon
-            name="i-lucide-arrow-left"
-            class="text-muted size-5 shrink-0"
-            aria-hidden="true"
-          />
-          <span class="min-w-0">
-            <span class="text-muted block text-xs">
-              {{ t("agenda.item.previous") }}
-            </span>
-            <span
-              class="text-highlighted block text-sm font-medium break-words"
-            >
-              {{
-                numbered(
-                  neighbours.previous.number,
-                  neighbours.previous.item.title,
-                )
-              }}
-            </span>
-          </span>
-        </NuxtLink>
-        <NuxtLink
-          v-if="neighbours.next"
-          :to="itemPath(neighbours.next.item.id)"
-          rel="next"
-          class="border-default hover:bg-elevated/50 focus-visible:outline-primary flex min-h-14 items-center justify-end gap-3 rounded-lg border px-3 py-3 text-end focus-visible:outline-2 focus-visible:outline-offset-2 sm:col-start-2"
-        >
-          <span class="min-w-0">
-            <span class="text-muted block text-xs">
-              {{ t("agenda.item.next") }}
-            </span>
-            <span
-              class="text-highlighted block text-sm font-medium break-words"
-            >
-              {{ numbered(neighbours.next.number, neighbours.next.item.title) }}
-            </span>
-          </span>
-          <UIcon
-            name="i-lucide-arrow-right"
-            class="text-muted size-5 shrink-0"
-            aria-hidden="true"
-          />
-        </NuxtLink>
-      </nav>
 
       <AgendaNewDocumentModal
         v-model:open="addDocument.open.value"

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { RouteLocationRaw } from "vue-router";
 import type { DocumentSummaryDto } from "~~/shared/types/api";
 import { readNeighbours } from "~~/shared/utils/readMarks";
 
@@ -7,14 +8,21 @@ import { readNeighbours } from "~~/shared/utils/readMarks";
  * sits among the published ones, in the order of the agenda, with the ones
  * before and after it, what is left to read (which opens the next one with
  * something left) and "Marcar como leído". It stands above the document's
- * title, so going through every document never needs the lists.
+ * title, so going through every document never needs the lists. The page
+ * of an agenda item shows it over its reader, and there the documents open
+ * in that reader (`to`) instead of on their own page.
  *
  * Only for a published document, and once the read marks and the agenda are
  * in: before that, and for a draft, the page shows nothing here.
  */
-const props = defineProps<{
-  document: Pick<DocumentSummaryDto, "id">;
-}>();
+const props = withDefaults(
+  defineProps<{
+    document: Pick<DocumentSummaryDto, "id">;
+    /** Where another document opens; its own page when left out. */
+    to?: (document: DocumentSummaryDto) => RouteLocationRaw;
+  }>(),
+  { to: undefined },
+);
 
 const { t } = useI18n();
 const { sectionPath } = useCurrentAssembly();
@@ -34,8 +42,10 @@ const position = computed(() =>
 );
 const mark = computed(() => marks.document(props.document.id));
 
-const pathOf = (document: { slug: string }) =>
-  sectionPath(`documentos/${encodeURIComponent(document.slug)}`);
+const pathOf = (document: DocumentSummaryDto): RouteLocationRaw =>
+  props.to
+    ? props.to(document)
+    : sectionPath(`documentos/${encodeURIComponent(document.slug)}`);
 
 /** "3 documentos y 2 enmiendas", what is left in the whole assembly. */
 const left = useReadLeftText(() => marks.progress.value);

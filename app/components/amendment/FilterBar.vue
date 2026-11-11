@@ -19,8 +19,10 @@ import {
 } from "~/composables/amendment/workspace";
 
 /**
- * What the amendments panel lists, as visible chips: "Todas", "Pendientes"
- * and "Fuera de plazo" set the filters (applyAmendmentQuickFilter), and
+ * What the amendments panel lists, as visible chips: "Todas", "Pendientes",
+ * "Sin leer" (with how many are left, only while the account has some or
+ * the filter is on) and "Fuera de plazo" set the filters
+ * (applyAmendmentQuickFilter), and
  * "Mías" switches to the actor's own amendments (`tab`: drafts,
  * corrections and where the rest stand), with how many wait for them.
  *
@@ -54,6 +56,8 @@ const props = withDefaults(
     mineUrgent?: boolean;
     /** How many amendments the whole list holds. */
     total?: number | null;
+    /** How many of them the account still has to read. */
+    unread?: number;
   }>(),
   {
     canFilterMine: false,
@@ -64,6 +68,7 @@ const props = withDefaults(
     mineWaiting: 0,
     mineUrgent: false,
     total: null,
+    unread: 0,
   },
 );
 
@@ -116,6 +121,13 @@ const quick = computed(() =>
   showingMine.value ? null : amendmentQuickFilterOf(filters.value),
 );
 
+/** "Sin leer" only while something is left, or while it is on. */
+const quickFilters = computed(() =>
+  AMENDMENT_QUICK_FILTERS.filter(
+    (value) => value !== "unread" || props.unread > 0 || filters.value.unread,
+  ),
+);
+
 function pick(value: AmendmentQuickFilter): void {
   tab.value = "all";
   filters.value = applyAmendmentQuickFilter(filters.value, value);
@@ -132,6 +144,7 @@ const popoverCount = computed(() =>
     blockId: null,
     ...(quick.value === "pending" ? { statuses: [] } : {}),
     ...(quick.value === "late" ? { late: "any" as const } : {}),
+    ...(quick.value === "unread" ? { unread: false } : {}),
   }),
 );
 const anyActive = computed(() => activeAmendmentFilterCount(filters.value) > 0);
@@ -149,12 +162,13 @@ function clearAll(): void {
       :aria-label="t('amendment.filters.chipsLabel')"
     >
       <UButton
-        v-for="value in AMENDMENT_QUICK_FILTERS"
+        v-for="value in quickFilters"
         :key="value"
         size="sm"
         :color="quick === value ? 'primary' : 'neutral'"
         :variant="quick === value ? 'subtle' : 'outline'"
         :aria-pressed="quick === value"
+        :data-testid="`amendment-chip-${value}`"
         data-amendment-chip
         @click="pick(value)"
       >
@@ -164,6 +178,12 @@ function clearAll(): void {
           class="text-muted tabular-nums"
         >
           {{ total }}
+        </span>
+        <span
+          v-else-if="value === 'unread' && unread > 0"
+          class="text-muted tabular-nums"
+        >
+          {{ unread }}
         </span>
       </UButton>
       <UButton

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { DocumentSummaryDto } from "~~/shared/types/api";
-import { isWindowOpen } from "~~/shared/utils/calendar";
+import { unreadAmendmentsPath } from "~/composables/document/documentLinks";
 import { isPendingProgress } from "~/composables/document/documentProgress";
 
 /**
@@ -11,7 +11,8 @@ import { isPendingProgress } from "~/composables/document/documentProgress";
  *
  * Once published its status badge is only for its presenters
  * (useDocumentStatusShown); everyone gets whether the account
- * has read it (ReadMark) and how many of its amendments are left to read.
+ * has read it (ReadMark) and how many of its amendments are left to read,
+ * which opens the document with only those listed.
  *
  * Before publication it also says, in a sentence, where the document stands
  * and what comes next (useDocumentProgress). With `editTo` (the presenter's
@@ -36,10 +37,6 @@ const props = withDefaults(
 
 const { t } = useI18n();
 
-// The shared clock, so a window that opens or closes while the page is open
-// changes state without waiting for a refetch.
-const now = useAppNow();
-
 const progress = useDocumentProgress(() => props.document);
 const pending = computed(() => isPendingProgress(progress.value.state));
 const callToAction = computed(() =>
@@ -48,44 +45,10 @@ const callToAction = computed(() =>
     : null,
 );
 
-/** Whether the document has an amendment window (as the server computes it). */
-const hasWindow = computed(
-  () =>
-    props.document.amendable &&
-    props.document.status === "published" &&
-    props.document.format === "structured",
+// Its amendment window, against the shared clock.
+const { countdown: windowCountdown, closed: windowClosed } = useDocumentWindow(
+  () => props.document,
 );
-
-/**
- * Whether the amendment window is open right now. `window.open` is the
- * server's answer at fetch time; for a document with a window it is exactly
- * `isWindowOpen` over its dates, so it is recomputed against the clock (no
- * live event fires when a window opens or closes on time).
- */
-const openNow = computed(() => {
-  const { open, opensAt, closesAt } = props.document.window;
-  if (!hasWindow.value) return open;
-  return isWindowOpen(
-    {
-      opensAt: opensAt ? new Date(opensAt) : null,
-      closesAt: closesAt ? new Date(closesAt) : null,
-    },
-    new Date(now.value),
-  );
-});
-
-/** The window countdown worth showing, if any. */
-const windowCountdown = computed<{ label: string; at: string } | null>(() => {
-  if (!hasWindow.value) return null;
-  const { opensAt, closesAt } = props.document.window;
-  if (openNow.value && closesAt && new Date(closesAt).getTime() > now.value) {
-    return { label: t("agenda.document.windowCloses"), at: closesAt };
-  }
-  if (!openNow.value && opensAt && new Date(opensAt).getTime() > now.value) {
-    return { label: t("agenda.document.windowOpens"), at: opensAt };
-  }
-  return null;
-});
 
 const showStatus = useDocumentStatusShown(() => props.document);
 const marks = useReadMarks();
@@ -101,10 +64,6 @@ const amendmentsLabel = computed(() =>
     { count: props.document.amendmentCount },
     props.document.amendmentCount,
   ),
-);
-
-const windowClosed = computed(
-  () => hasWindow.value && !openNow.value && !windowCountdown.value,
 );
 
 const SENTENCE_COLORS: Record<string, string> = {
@@ -235,21 +194,26 @@ const SENTENCE_COLORS: Record<string, string> = {
           <span class="sr-only">{{ amendmentsLabel }}</span>
         </UBadge>
       </UTooltip>
-      <UBadge
+      <NuxtLink
         v-if="amendmentsLeft > 0"
-        color="primary"
-        variant="subtle"
-        size="sm"
-        class="tabular-nums"
-        :label="
-          t(
-            'readMarks.amendmentsHere',
-            { count: amendmentsLeft },
-            amendmentsLeft,
-          )
-        "
+        :to="unreadAmendmentsPath(props.to)"
+        class="focus-visible:outline-primary inline-flex rounded-md hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2"
         data-testid="document-amendments-left"
-      />
+      >
+        <UBadge
+          color="primary"
+          variant="subtle"
+          size="sm"
+          class="tabular-nums"
+          :label="
+            t(
+              'readMarks.amendmentsHere',
+              { count: amendmentsLeft },
+              amendmentsLeft,
+            )
+          "
+        />
+      </NuxtLink>
       <UButton
         v-if="callToAction && editTo"
         :to="editTo"

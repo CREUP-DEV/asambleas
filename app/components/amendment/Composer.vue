@@ -99,12 +99,21 @@ const props = withDefaults(
      * real ones already.
      */
     draftAuthors?: AmendmentComposerAuthorsDto | null;
+    /**
+     * The document's presented amendments as the viewer sees them, to say
+     * which ones already act on the paragraphs being changed.
+     */
+    others?: AmendmentDto[];
+    /** "12 · CEUM 4" for one of them. */
+    labelOf?: (id: string) => string;
   }>(),
   {
     mode: "document",
     startBlockId: null,
     draft: null,
     draftAuthors: null,
+    others: () => [],
+    labelOf: undefined,
   },
 );
 
@@ -292,6 +301,20 @@ const occurrences = computed(() => ({
   blocks: new Set(touchedBlockIds(ops.value)).size,
 }));
 const changedCount = computed(() => changedBlockCount(ops.value));
+
+/**
+ * Undecided amendments that already act on the paragraphs this one changes:
+ * read them before proposing the same thing again.
+ */
+const sameParagraphs = computed(() =>
+  mode === "document"
+    ? amendmentsOnBlocks(
+        props.others,
+        touchedBlockIds(ops.value),
+        draftId.value,
+      )
+    : [],
+);
 
 /** Whether the question "content or form" applies (never to a totality). */
 const asksKind = mode === "document" || mode === "global";
@@ -1524,6 +1547,59 @@ const questionClass = "text-highlighted text-sm font-semibold";
               )
             }}
           </p>
+          <!-- Others already amend these paragraphs: read them first. -->
+          <UPopover
+            v-if="sameParagraphs.length > 0"
+            :content="{ align: 'end', side: 'top' }"
+          >
+            <UButton
+              color="neutral"
+              variant="link"
+              size="sm"
+              icon="i-lucide-layers"
+              trailing-icon="i-lucide-chevron-up"
+              class="justify-start p-0 text-start"
+              :label="
+                t(
+                  'amendment.composer.sameParagraphs.notice',
+                  { count: sameParagraphs.length },
+                  sameParagraphs.length,
+                )
+              "
+              data-testid="composer-same-paragraphs"
+            />
+            <template #content>
+              <div
+                class="flex max-h-[60dvh] w-[28rem] max-w-[92vw] flex-col gap-4 overflow-y-auto p-4"
+              >
+                <p class="text-muted text-sm">
+                  {{ t("amendment.composer.sameParagraphs.hint") }}
+                </p>
+                <article
+                  v-for="item in sameParagraphs"
+                  :key="item.id"
+                  class="border-default flex flex-col gap-2 border-t pt-3"
+                >
+                  <p class="flex flex-wrap items-center gap-1.5 text-sm">
+                    <span class="text-highlighted font-semibold tabular-nums">
+                      {{ labelOf ? labelOf(item.id) : (item.code ?? "") }}
+                    </span>
+                    <CommonMemberBadge
+                      v-for="author in item.authors"
+                      :key="author.id"
+                      :member="author"
+                      size="xs"
+                    />
+                  </p>
+                  <ContentAmendmentDiff
+                    :id="item.id"
+                    :base="base"
+                    :ops="item.ops"
+                  />
+                </article>
+              </div>
+            </template>
+          </UPopover>
           <UButton
             block
             icon="i-lucide-list-checks"
