@@ -25,8 +25,9 @@ import { isDocumentLiveBatch } from "~/composables/document/useDocument";
  *   next item.
  * - Reading only: the text shows clean, with no amendment marks. What the
  *   document holds besides (its amendments, the editor) is one button away,
- *   on the document's page: "Presentar enmienda" (where the reader was)
- *   for whoever may amend it, else "Ver enmiendas" or "Abrir documento".
+ *   on the document's page: always "Ver enmiendas" (when it has any) or
+ *   "Abrir documento", and "Presentar enmienda" (where the reader was) for
+ *   whoever may amend it.
  *   The header with them stays in view while the document scrolls (from
  *   `sm` up; on a phone it would take too much of the screen).
  *
@@ -360,16 +361,9 @@ function pick(slug: unknown): void {
         </div>
 
         <div class="flex shrink-0 flex-wrap items-center gap-2">
+          <!-- Always the way to the document's page, named after what is
+               there to see; and, for whoever may amend it, the editor. -->
           <UButton
-            v-if="canAmend"
-            size="sm"
-            icon="i-lucide-pencil-line"
-            :label="t('workspace.cta.present')"
-            data-testid="item-reader-amend"
-            @click="navigateTo(amendPath())"
-          />
-          <UButton
-            v-else
             :to="documentPath(current)"
             size="sm"
             color="neutral"
@@ -381,6 +375,14 @@ function pick(slug: unknown): void {
                 : t('agenda.reader.open')
             "
             data-testid="item-reader-open"
+          />
+          <UButton
+            v-if="canAmend"
+            size="sm"
+            icon="i-lucide-pencil-line"
+            :label="t('workspace.cta.present')"
+            data-testid="item-reader-amend"
+            @click="navigateTo(amendPath())"
           />
         </div>
       </header>
