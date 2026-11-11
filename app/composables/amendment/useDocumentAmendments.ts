@@ -183,7 +183,15 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
   function labelOf(id: string): string {
     const amendment = byId.value.get(id);
     if (!amendment) return t("amendment.unknownAmendment");
-    return amendmentDisplayLabel(amendment) ?? t("amendment.draftLabel");
+    // Numbered on publication: sent and not published yet, it has none.
+    return (
+      amendmentDisplayLabel(amendment) ??
+      t(
+        amendment.status === "draft"
+          ? "amendment.draftLabel"
+          : "amendment.unnumberedLabel",
+      )
+    );
   }
 
   /** Short reference for provenance marks ("CEUM 4", "T1"). */

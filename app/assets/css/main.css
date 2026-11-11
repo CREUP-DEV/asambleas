@@ -146,6 +146,8 @@ html {
   --cx-del-fg: var(--ui-color-neutral-600);
   --cx-del-bg: var(--ui-color-error-50);
   --cx-del-line: var(--ui-color-error-600);
+  /* Text formatted anew: a dotted line of its own hue, neither green nor red. */
+  --cx-fmt-line: var(--ui-color-info-700);
   /* Only where several amendments show together: a thin, quiet ring. */
   --cx-ring: color-mix(in oklab, var(--ui-primary) 60%, transparent);
   --cx-ring-width: 1px;
@@ -193,6 +195,7 @@ html {
   --cx-del-fg: var(--ui-color-neutral-400);
   --cx-del-bg: color-mix(in oklab, var(--ui-color-error-500) 14%, transparent);
   --cx-del-line: var(--ui-color-error-400);
+  --cx-fmt-line: var(--ui-color-info-400);
   --cx-selected-bg: color-mix(in oklab, var(--ui-primary) 16%, transparent);
   --content-heading: var(--color-creup-red-300);
   --cx-prov-0: #60a5fa;
@@ -743,6 +746,7 @@ html {
     --cx-del-fg: var(--ui-color-neutral-600);
     --cx-del-bg: var(--ui-color-error-50);
     --cx-del-line: var(--ui-color-error-600);
+    --cx-fmt-line: currentColor;
   }
 
   .diff-marks .cx-ins {
@@ -762,48 +766,45 @@ html {
   }
 
   /*
-   * Text an amendment keeps and formats anew: the tint of added text over
-   * a dotted line, and a small label that says in words what changes, so
-   * colour never says it alone. The label keeps the page's own colours: it
-   * reads on any tint and on the burgundy heading bar.
+   * Text an amendment keeps and formats anew: shown once, in its new
+   * format, with a dotted line of its own hue (no tint), so it never reads
+   * as added or removed. A note at the end of the block (`cx-fmt-label`)
+   * says in words what changes and to which text, so colour never says it
+   * alone; it keeps the page's quiet colours, and the heading bar's own.
    */
   .cx-fmt {
-    border-radius: 0.125rem;
-    box-decoration-break: clone;
-    -webkit-box-decoration-break: clone;
     print-color-adjust: exact;
     -webkit-print-color-adjust: exact;
-    color: var(--cx-ins-fg, inherit);
-    background-color: var(--cx-ins-bg);
     text-decoration-line: underline;
     text-decoration-style: dotted;
-    text-decoration-color: var(--cx-ins-line);
-    text-decoration-thickness: 0.1em;
-    text-underline-offset: 0.2em;
+    text-decoration-color: var(--cx-fmt-line);
+    text-decoration-thickness: 0.12em;
+    text-underline-offset: 0.25em;
   }
 
   .diff-marks .cx-fmt {
-    color: inherit;
-    background-color: transparent;
     text-decoration-color: currentColor;
-    text-decoration-thickness: 0.12em;
   }
 
   .cx-fmt-label {
-    display: inline-block;
-    margin-inline: 0.15em;
-    padding-inline: 0.35em;
-    border: 1px solid var(--ui-border-accented);
-    border-radius: 0.25rem;
-    background-color: var(--ui-bg);
-    color: var(--ui-text-toned);
+    display: block;
+    margin-top: 0.35em;
+    color: var(--ui-text-muted);
     font-family: var(--font-sans);
-    font-size: 0.75em;
+    font-size: 0.75rem;
     font-style: normal;
     font-weight: 500;
+    letter-spacing: normal;
     line-height: 1.4;
+    text-align: start;
     text-decoration: none;
+    text-transform: none;
     user-select: none;
+  }
+
+  .rich-text :is(h2, .cx-heading-2, th, td[class*="cx-fill-"]) .cx-fmt-label {
+    color: inherit;
+    opacity: 0.85;
   }
 
   /* Whole blocks added or removed by an amendment (diff mode only). */

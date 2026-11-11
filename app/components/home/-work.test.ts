@@ -103,7 +103,7 @@ const news = (
   id,
   assembly: ago,
   document: { id: "d1", slug: "d1", title: "Resolución" },
-  amendment: { id: "e2", code: "CEUM 2" },
+  amendment: { id: "e2", code: "CEUM 2", kind: "partial" },
   ownAmendment: false,
   type: "position_changed",
   by: upv,
@@ -488,7 +488,7 @@ describe("home work", () => {
       const rejected = news("n", {
         ...mine,
         type: "acceptance_recorded",
-        amendment: { id: "t2", code: "T2" },
+        amendment: { id: "t2", code: "T2", kind: "transactional" },
         by: { ...upv, acronym: "CAUB" },
         value: "rejected",
       });
@@ -519,7 +519,7 @@ describe("home work", () => {
       // "CAUB rechazó la transaccional T2: sigue tu enmienda."
       const rejected = news("n", {
         type: "acceptance_recorded",
-        amendment: { id: "t2", code: "T2" },
+        amendment: { id: "t2", code: "T2", kind: "transactional" },
         by: { ...upv, acronym: "CAUB" },
         value: "rejected",
       });
@@ -567,7 +567,7 @@ describe("home work", () => {
         homeWorkNewsItem(
           news("n", {
             type: "amendment_withdrawn",
-            amendment: { id: "t2", code: "T2" },
+            amendment: { id: "t2", code: "T2", kind: "transactional" },
             ownAmendment: own,
             by: null,
             value,
@@ -599,7 +599,7 @@ describe("home work", () => {
         homeWorkNewsItem(
           news("n", {
             type: "amendment_lapsed",
-            amendment: { id: "t1", code: "T1" },
+            amendment: { id: "t1", code: "T1", kind: "transactional" },
             by: null,
             value: "T2",
           }),
@@ -618,7 +618,7 @@ describe("home work", () => {
 
     it("says one decision once", () => {
       const at = "2026-11-04T10:00:00Z";
-      const t2 = { id: "t2", code: "T2" };
+      const t2 = { id: "t2", code: "T2", kind: "transactional" as const };
       // CAUB rejects the member's transactional: it is closed (withdrawn)
       // in the same transaction.
       const rejection = [
@@ -672,7 +672,7 @@ describe("home work", () => {
           rejection[0]!,
           {
             ...rejection[1]!,
-            amendment: { id: "t3", code: "T3" },
+            amendment: { id: "t3", code: "T3", kind: "transactional" },
             value: "CEUM 2",
           },
         ]).map((x) => x.id),
@@ -737,7 +737,7 @@ describe("home work", () => {
         news("n", {
           ...mine,
           type: "amendment_lapsed",
-          amendment: { id: "t1", code: "T1" },
+          amendment: { id: "t1", code: "T1", kind: "transactional" },
           value: "T2",
           by: null,
         }),
@@ -766,9 +766,18 @@ describe("home work", () => {
         "home.news.document.other",
       );
       expect(
-        homeWorkNewsItem(news("n", { amendment: { id: "x", code: null } }))
-          .phrase?.key,
+        homeWorkNewsItem(
+          news("n", { amendment: { id: "x", code: null, kind: "partial" } }),
+        ).phrase?.key,
       ).toBe("home.news.phrase.someAmendment");
+      // A transactional is numbered on publication: before, its kind names it.
+      expect(
+        homeWorkNewsItem(
+          news("n", {
+            amendment: { id: "x", code: null, kind: "transactional" },
+          }),
+        ).phrase?.key,
+      ).toBe("home.news.phrase.someTransactional");
       // A document's news names no amendment, even if flagged as own.
       expect(
         homeWorkNewsItem(
@@ -784,7 +793,7 @@ describe("home work", () => {
           news("new", {
             ...mine,
             at: "2026-11-05T09:00:00Z",
-            amendment: { id: "e1", code: "E1" },
+            amendment: { id: "e1", code: "E1", kind: "partial" },
           }),
           // Decided and gone from the work list: still the member's.
           news("voted", {

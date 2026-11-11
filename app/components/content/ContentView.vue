@@ -109,6 +109,8 @@ const html = computed(() => {
                 t(`common.content.format.${change.code}`, {
                   value: change.value ?? "",
                 }),
+              quote: (text) => t("common.content.formatQuote", { text }),
+              space: t("common.content.formatSpace"),
             }
           : undefined,
     });

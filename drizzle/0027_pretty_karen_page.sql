@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "amendments_document_code_unique" ON "amendments" USING btree ("document_id","code");

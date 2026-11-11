@@ -97,6 +97,8 @@
       "previewUnavailableDescription": "The operations of this amendment no longer match the base text of the document.",
       "inserted": "Added:",
       "removed": "Removed:",
+      "formatQuote": "“{text}”",
+      "formatSpace": "space",
       "formatted": "Format change:",
       "format": {
         "bold_on": "becomes bold",
@@ -1270,6 +1272,7 @@
       "rejected_vote": "Rejected by vote"
     },
     "draftLabel": "Draft",
+    "unnumberedLabel": "No number yet",
     "draftShort": "Dft.",
     "unknownAmendment": "Unavailable amendment",
     "late": "Late",
@@ -1713,7 +1716,8 @@
       },
       "why": {
         "question": "Why?",
-        "help": "You need it to send the amendment."
+        "help": "You need it to send the amendment.",
+        "optional": "Optional, but it helps others understand it."
       },
       "changed": "You have not changed anything yet | You have changed one paragraph | You have changed {count} paragraphs",
       "review": {
@@ -1728,7 +1732,7 @@
         "noWho": "Nobody chosen",
         "mainMark": "{member} (main author)",
         "why": "Why",
-        "noWhy": "You have not explained why yet.",
+        "noWhy": "You have not explained why.",
         "changes": "What changes"
       },
       "leave": {
@@ -2493,6 +2497,7 @@
     "work": {
       "amendment": "Amendment {code}",
       "amendmentDraft": "Unsent amendment",
+      "amendmentSent": "Sent amendment",
       "amendmentTo": "Document: {document}",
       "note": "Note from the Secretariat:",
       "due": "Deadline: {date}",
@@ -2543,7 +2548,9 @@
         "amendment_late": "Late: the assembly still has to decide whether to treat it."
       },
       "transactional": "Transactional {code}",
-      "transactionalBy": "Transactional {code} by {member}"
+      "transactionalBy": "Transactional {code} by {member}",
+      "transactionalNoCode": "Proposed transactional amendment",
+      "transactionalNoCodeBy": "Transactional amendment by {member}"
     },
     "news": {
       "title": "News",
@@ -2557,6 +2564,7 @@
         "amendment": "amendment {code}",
         "transactional": "transactional {code}",
         "someAmendment": "an amendment",
+        "someTransactional": "a transactional amendment",
         "yourTransactional": "your transactional {code}"
       },
       "position": {
@@ -4343,6 +4351,7 @@
         "toast": "Transactional amendment sent",
         "title": "Transactional amendment {code} sent",
         "titlePublished": "Transactional amendment {code} presented",
+        "titleUnnumbered": "Transactional amendment sent",
         "next": "What happens now",
         "view": "View the transactional amendment"
       },

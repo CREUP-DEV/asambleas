@@ -97,6 +97,8 @@
       "previewUnavailableDescription": "Las operaciones de esta enmienda ya no encajan con el texto base del documento.",
       "inserted": "Se añade:",
       "removed": "Se quita:",
+      "formatQuote": "«{text}»",
+      "formatSpace": "espacio",
       "formatted": "Cambia el formato:",
       "format": {
         "bold_on": "pasa a negrita",
@@ -1270,6 +1272,7 @@
       "rejected_vote": "Rechazada en votación"
     },
     "draftLabel": "Borrador",
+    "unnumberedLabel": "Sin número",
     "draftShort": "Borr.",
     "unknownAmendment": "Enmienda no disponible",
     "late": "Fuera de plazo",
@@ -1713,7 +1716,8 @@
       },
       "why": {
         "question": "¿Por qué?",
-        "help": "Hace falta para enviarla."
+        "help": "Hace falta para enviarla.",
+        "optional": "Es opcional, pero ayuda a entenderla."
       },
       "changed": "Todavía no has cambiado nada | Has cambiado un párrafo | Has cambiado {count} párrafos",
       "review": {
@@ -1728,7 +1732,7 @@
         "noWho": "Sin elegir",
         "mainMark": "{member} (principal)",
         "why": "Por qué",
-        "noWhy": "Todavía no has explicado por qué.",
+        "noWhy": "No has explicado por qué.",
         "changes": "Qué cambia"
       },
       "leave": {
@@ -2493,6 +2497,7 @@
     "work": {
       "amendment": "Enmienda {code}",
       "amendmentDraft": "Enmienda sin enviar",
+      "amendmentSent": "Enmienda enviada",
       "amendmentTo": "Documento: {document}",
       "note": "Nota de Secretaría:",
       "due": "Fecha límite: {date}",
@@ -2543,7 +2548,9 @@
         "amendment_late": "Fuera de plazo: falta que la asamblea decida tratarla."
       },
       "transactional": "Transaccional {code}",
-      "transactionalBy": "Transaccional {code} de {member}"
+      "transactionalBy": "Transaccional {code} de {member}",
+      "transactionalNoCode": "Transaccional propuesta",
+      "transactionalNoCodeBy": "Transaccional de {member}"
     },
     "news": {
       "title": "Novedades",
@@ -2557,6 +2564,7 @@
         "amendment": "la enmienda {code}",
         "transactional": "la transaccional {code}",
         "someAmendment": "una enmienda",
+        "someTransactional": "una transaccional",
         "yourTransactional": "tu transaccional {code}"
       },
       "position": {
@@ -4343,6 +4351,7 @@
         "toast": "Transaccional enviada",
         "title": "Transaccional {code} enviada",
         "titlePublished": "Transaccional {code} presentada",
+        "titleUnnumbered": "Transaccional enviada",
         "next": "Qué pasa ahora",
         "view": "Ver la transaccional"
       },

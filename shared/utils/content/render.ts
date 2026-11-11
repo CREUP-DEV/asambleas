@@ -271,15 +271,19 @@ export interface AnnotatedOptions extends RenderOptions {
    * Visually hidden words read before each insertion and removal in diff
    * mode (e.g. "Added:"), so the change is not told by colour alone.
    *
-   * A change of formatting keeps its text, so words say it: `format` gives
-   * the visible label of each thing that changes ("becomes bold"), and
-   * `formatted` the hidden words read before the text ("Format change:").
+   * A change of formatting keeps its text, so words say it, in a note at
+   * the end of its block: `formatted` opens it ("Cambia el formato:"),
+   * `format` says each thing that changes ("deja de estar tachado"),
+   * `quote` names the text it applies to ("«de»") and `space` names text
+   * that is only blank.
    */
   diffLabels?: {
     inserted: string;
     removed: string;
     formatted?: string;
     format?: (change: FormatChange) => string;
+    quote?: (text: string) => string;
+    space?: string;
   };
 }
 
@@ -296,6 +300,52 @@ function formatLabel(
     .join(", ");
 }
 
+/** Longest text a format note quotes before cutting it with an ellipsis. */
+const FORMAT_QUOTE_MAX = 40;
+
+/** The text a format note names: "«de»", cut when long. */
+function formatQuote(text: string, options: AnnotatedOptions): string {
+  const flat = text.replace(/\s+/g, " ").trim();
+  const shown = flat
+    ? flat.length > FORMAT_QUOTE_MAX
+      ? `${flat.slice(0, FORMAT_QUOTE_MAX - 1).trimEnd()}…`
+      : flat
+    : (options.diffLabels?.space ?? " ");
+  return options.diffLabels?.quote?.(shown) ?? `«${shown}»`;
+}
+
+/**
+ * Whether a change of format inside a block is shown. One on blank text
+ * alone (a space losing its strike) has nothing to show: it is told only
+ * when it is the block's one change, and otherwise goes with the changes
+ * around it (it is still applied).
+ */
+export function isShownFormatSegment(
+  block: Pick<ConsolidatedBlock, "segments" | "format" | "status">,
+  segment: Segment,
+): boolean {
+  if (!segment.format || !segment.source || segment.removed) return false;
+  if (segment.text.trim() !== "") return true;
+  if (block.status !== "kept" || block.format) return false;
+  return !block.segments.some(
+    (other) =>
+      other !== segment &&
+      other.source !== undefined &&
+      other.source !== null &&
+      (other.removed || !other.format || other.text.trim() !== ""),
+  );
+}
+
+/** One item of a block's format note, linked to its amendment. */
+function formatNotePart(
+  source: string,
+  words: string,
+  options: AnnotatedOptions,
+): string {
+  const focused = options.focus === source ? " cx-focus" : "";
+  return `<span class="cx-fmt-part${focused}" data-amendment-id="${escapeHtml(source)}">${escapeHtml(words)}</span>`;
+}
+
 function srOnly(label: string | undefined): string {
   return label ? `<span class="sr-only">${escapeHtml(label)} </span>` : "";
 }
@@ -304,6 +354,10 @@ function segmentHtml(
   segment: Segment,
   inner: string,
   options: AnnotatedOptions,
+  /** Collects the block's format note (diff mode). */
+  notes?: string[],
+  /** isShownFormatSegment: false leaves a blank format change unmarked. */
+  shown = true,
 ): string {
   if (!segment.source) return inner;
   const id = escapeHtml(segment.source);
@@ -314,13 +368,22 @@ function segmentHtml(
       : "";
   }
   if (segment.format && options.mode === "diff") {
-    // Formatted anew, not added: the text shows its new format and a label
-    // says what changes.
+    if (!shown) return inner;
+    // Formatted anew, not added: the text shows its new format once, marked
+    // apart from added and removed text, and the note at the end of the
+    // block says in words what changes (the title says it on hover).
     const label = formatLabel(segment.format, options);
-    const chip = label
-      ? `<span class="cx-fmt-label">${escapeHtml(label)}</span>`
-      : "";
-    return `<span class="cx-fmt${focused}" data-amendment-id="${id}">${srOnly(options.diffLabels?.formatted)}${inner}${chip}</span>`;
+    if (label) {
+      notes?.push(
+        formatNotePart(
+          segment.source,
+          `${formatQuote(segment.text, options)} ${label}`,
+          options,
+        ),
+      );
+    }
+    const title = label ? ` title="${escapeHtml(label)}"` : "";
+    return `<span class="cx-fmt${focused}" data-amendment-id="${id}"${title}>${inner}</span>`;
   }
   if (options.mode === "diff") {
     return `<ins class="cx-ins${focused}" data-amendment-id="${id}">${srOnly(options.diffLabels?.inserted)}${inner}</ins>`;
@@ -338,7 +401,8 @@ function segmentHtml(
 /**
  * Renders consolidated blocks in one of three modes:
  * - `diff`: insertions as <ins>, removals as <del> (styled by the diff mode),
- *   and formatting changes as their text in its new format with a label;
+ *   and formatting changes as their text in its new format, said in words in
+ *   a note at the end of the block (`cx-fmt-label`);
  * - `provenance`: clean text with every amended fragment linked to its amendment;
  * - `clean`: the consolidated text alone.
  */
@@ -352,6 +416,7 @@ export function renderAnnotated(
 
     let offset = 0;
     let inner = "";
+    const notes: string[] = [];
     for (const segment of block.segments) {
       if (segment.removed) {
         inner += segmentHtml(segment, escapeText(segment.text), options);
@@ -359,7 +424,13 @@ export function renderAnnotated(
       }
       const text = renderInline(segment.text, block.marks, offset);
       offset += segment.text.length;
-      inner += segmentHtml(segment, text, options);
+      inner += segmentHtml(
+        segment,
+        text,
+        options,
+        notes,
+        isShownFormatSegment(block, segment),
+      );
     }
 
     let attrs = "";
@@ -384,7 +455,7 @@ export function renderAnnotated(
       if (options.mode === "diff") {
         const label = formatLabel(block.format.changes, options);
         if (label) {
-          inner = `<span class="cx-fmt-label cx-fmt-block${focused}" data-amendment-id="${id}">${srOnly(options.diffLabels?.formatted)}${escapeHtml(label)}</span>${inner}`;
+          notes.unshift(formatNotePart(block.format.source, label, options));
         }
       } else if (options.mode === "provenance") {
         const label = options.label?.(block.format.source);
@@ -393,6 +464,11 @@ export function renderAnnotated(
           : "";
         inner = `<span class="cx-prov${focused}" data-amendment-id="${id}">${inner}</span>${sup}`;
       }
+    }
+    // What changes of format, in words, below the block's text.
+    if (notes.length > 0) {
+      const opening = options.diffLabels?.formatted;
+      inner = `${inner || "<br>"}<span class="cx-fmt-label">${opening ? `${escapeHtml(opening)} ` : ""}${notes.join("; ")}</span>`;
     }
     items.push({ ...block, inner: inner || "<br>", attrs, className });
   }

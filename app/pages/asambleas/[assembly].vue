@@ -373,7 +373,13 @@ watch(() => route.path, revealActiveSection);
         </template>
         <template #trailing>
           <template v-if="assembly">
-            <CommonStatusBadge kind="assembly" :value="assembly.status" />
+            <!-- "Convocada" is the usual state and says nothing new: only
+                 the others (draft, in session, closed) are shown. -->
+            <CommonStatusBadge
+              v-if="assembly.status !== 'convened'"
+              kind="assembly"
+              :value="assembly.status"
+            />
             <UTooltip v-if="stale" :text="t('assembly.hub.staleDescription')">
               <UButton
                 color="warning"

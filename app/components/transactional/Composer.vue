@@ -531,7 +531,9 @@ async function send(): Promise<void> {
 const sentTitle = computed(() => {
   const amendment = createdNow.value;
   if (!amendment) return "";
-  const code = amendment.code ?? "";
+  // Numbered once published: one waiting for its parties has no code.
+  const code = amendment.code;
+  if (!code) return t("transactional.composer.sent.titleUnnumbered");
   return amendment.reviewState === "published"
     ? t("transactional.composer.sent.titlePublished", { code })
     : t("transactional.composer.sent.title", { code });

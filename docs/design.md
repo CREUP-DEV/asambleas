@@ -154,9 +154,11 @@ Members of the other kinds read the same for everyone.
 - If an amendment was presented wrong, whoever reviews amendments
   (`amendment:review`) corrects its authors and its main author while it
   is presented and undecided (`changeAmendmentAuthors`,
-  `amendment_authors_changed`). The code follows the new main author as
-  after a correction (`numberingToKeep`), so it never names an office, and
-  a code given up is never handed to another amendment (`nextMemberSeq`).
+  `amendment_authors_changed`). The code of a published amendment follows
+  the new main author as after a correction (`numberingToKeep`), so it never
+  names an office, and a code given up once public is never handed to
+  another amendment (`nextMemberSeq`). One not published yet has no code to
+  follow.
 - Amendment codes never name the office: an amendment whose main author is an
   office is coded `CEA n` for everyone, numbered per document across all the
   offices (`amendmentCodePrefix`). Migration `0017` renumbered the existing
@@ -376,19 +378,34 @@ of marks takes its range like a change of text, and a change of `block`
 takes the whole block: it collides (`same_text`) with any other change
 inside it. Moving a block is still a deletion and an insertion.
 
-A formatting change shows its text once, in its new format, with a label
-that says in words what changes ("pasa a negrita", "pasa a título de nivel
-2"; `common.content.format.*`, from the `FormatChange` codes the engine
-attaches to the segment or the block), on screen and in the PDF: never a
-strike and a rewrite, and never colour alone.
+A formatting change shows its text once, in its new format, with words that
+say what changes ("pasa a negrita", "pasa a título de nivel 2";
+`common.content.format.*`, from the `FormatChange` codes the engine attaches
+to the segment or the block), on screen and in the PDF: never a strike and a
+rewrite, and never colour alone. On screen the text carries a dotted line of
+its own hue (`--cx-fmt-line`, neither the green of added text nor the red of
+removed text) and the words go in a note at the end of its block ("Cambia el
+formato: «de» deja de estar tachado"; `cx-fmt-label`, also the text's title
+on hover), never inside the line. A change of format on blank text alone (a
+space) is told only when it is its block's one change
+(`isShownFormatSegment`); it is still applied.
 
 - `kind`: `partial`, `formal`, `totality_return`, `totality_alternative`,
   `transactional`.
 - Authors: `amendment_authors` (member ids; joint amendments have several).
-- Numbering: `number` per document, assigned on submission without gaps, and a
-  per-member counter, shown as `12 · CEUM 4`. The executive offices share one
-  counter and the prefix `CEA` (`12 · CEA 4`), so a code never names the
-  office. Transactionals are `T1`, `T2`...
+- Numbering: `number` per document and a counter per code prefix, shown as
+  `12 · CEUM 4`, both given on the amendment's first publication
+  (`numberOnPublication`), in publication order. What everyone reads runs
+  without gaps: an amendment withdrawn, declared inadmissible or abandoned
+  before it was published never takes a number, and until then its authors,
+  the Secretaría and the Mesa read it without one ("Sin número"). The
+  executive offices share the prefix `CEA` (`12 · CEA 4`), so a code never
+  names the office; a member whose prefix changed starts its own counter at 1
+  (the CAS, an office before, presents `CAS 1`). Transactionals are `T1`,
+  `T2`..., numbered when published too (a member's waits for its parties
+  without one). A code names one amendment of the document
+  (`amendments_document_code_unique`). Amendments numbered on presentation,
+  before this rule, keep their numbers.
 - `submittedAt` is set by the server. `late` is computed from the window, never
   typed by hand.
 - `status`: `draft`, `submitted`, `inadmissible`, `withdrawn`, `transacted`
@@ -1121,15 +1138,19 @@ themselves stay per browser (the locale cookie, the colour mode and
       does not compare on a table of the base (the fill of a cell, header
       cells, merged cells) and new images. Moving a paragraph is removing it
       and adding it;
-    - a panel that stays in view asks three things: content or form (nothing
-      chosen for a new amendment), who presents it (alone or with other
+    - a panel that stays in view asks three things: content or form
+      (content for a new amendment), who presents it (alone or with other
       members, and then the main author; the Mesa may present it on behalf of
-      a member) and why. Under them, how many paragraphs change and "Revisar
-      y enviar";
+      a member) and why (optional, except for sending the document back,
+      whose justification is all it says). Under them, how many paragraphs
+      change and "Revisar y enviar";
     - "Revisar y enviar" shows the changes as everybody will see them
-      (`ContentAmendmentDiff`), what is missing in plain words, the late and
-      correction notices, and "Guardar borrador" and "Enviar". Leaving with
-      changes that were not saved asks first.
+      (`ContentAmendmentDiff`), then the justification, which may run to
+      several paragraphs, what is missing in plain words, the late and
+      correction notices, and "Guardar borrador" and "Enviar". The document's
+      reading bar (previous, next, "Marcar como leído") hides while it is
+      open. Leaving with changes that were not saved asks first, going to
+      another document of the assembly included.
   - Changing a word everywhere, sending the document back and proposing an
     alternative text are links under that button, each with a sentence, and
     open the same composer with their own form in place of the editor.
