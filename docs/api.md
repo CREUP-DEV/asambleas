@@ -1353,6 +1353,19 @@ may not see.
 | GET    | `/api/admin/stats`            | `stats:view` | `StatsDto`: `assembly`, `totals`, `members` (`StatsMemberDto`, in `orderMembers` order), `accounts` (`StatsAccountDto`) and `documents` (`StatsDocumentDto`).                                                                                                            |
 | GET    | `/api/admin/stats/users/[id]` | `stats:view` | `StatsAccountDetailDto`: the account's `StatsAccountDto`, its member and every published document and amendment with the state of its mark (`state`, `readAt`, `own`) and, for documents, its opening (`views`, `seconds`, `firstOpenedAt`). 404 for an unknown account. |
 
+## Email notifications
+
+For whoever holds `notification:manage` (by default the Secretaría and the
+Presidencia, and an Admin; design.md, "Email notifications"). Read-only
+while an Admin impersonates, like the whole admin section.
+
+| Method | Path                                  | Permission            | Notes                                                                                                                                                                                                                                                        |
+| ------ | ------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/api/admin/notifications`            | `notification:manage` | `NotificationSettingsDto`: `settings` (the stored row over `DEFAULT_NOTIFICATION_SETTINGS`), `updatedAt` (null while nothing was stored), `roles` (the role names), `smtp` (`configured`, `from`) and `lastDay` (deliveries of the last 24 hours by status). |
+| PUT    | `/api/admin/notifications`            | `notification:manage` | Body `NotificationSettingsBody` (`settings`, every kind; `updatedAt` as read). 409 when it changed since. Audit `notifications.update` (before and after). Answers the new `NotificationSettingsDto`.                                                        |
+| POST   | `/api/admin/notifications/test`       | `notification:manage` | Sends a test email to the caller's own address now and logs it (kind `test`). `EmailTestResultDto`: `sent`, `failed` or `skipped` (`unconfigured`). Audit `notifications.test`.                                                                              |
+| GET    | `/api/admin/notifications/deliveries` | `notification:manage` | `EmailDeliveryDto[]`, newest first, `?limit=` up to 200 (50 by default): kind, status, frequency, skip reason, recipient (id and name, never the address), attempts, last error, times. `subject` only for `document:manage`.                                |
+
 ## Review and work
 
 **Validation inbox.** `GET /api/assemblies/[assembly]/review` returns a

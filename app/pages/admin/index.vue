@@ -4,7 +4,8 @@ import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 
 /**
  * Administration home: one card per section the user may open. Each one
- * opens by permission (users, roles, members, calendar rules, statistics); an Admin
+ * opens by permission (users, roles, members, calendar rules, statistics,
+ * email notifications); an Admin
  * sees them all.
  */
 definePageMeta({
@@ -16,6 +17,7 @@ definePageMeta({
     // CALENDAR_RULES_PERMISSION (page meta must be a literal).
     "assembly:manage",
     "stats:view",
+    "notification:manage",
   ],
 });
 
@@ -66,6 +68,14 @@ const sections = computed(() =>
       description: t("admin.stats.cardDescription"),
       icon: "i-lucide-chart-column",
       to: localePath("/admin/estadisticas"),
+    },
+    {
+      key: "notifications",
+      visible: can(PERMISSION_KEYS.NOTIFICATION_MANAGE),
+      label: t("admin.notifications.title"),
+      description: t("admin.notifications.cardDescription"),
+      icon: "i-lucide-mail",
+      to: localePath("/admin/notificaciones"),
     },
   ].filter((section) => section.visible),
 );

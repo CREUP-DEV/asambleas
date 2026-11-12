@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import type { db } from "../../db";
-import { events } from "../../db/schema";
+import { cuid, events, notificationOutbox } from "../../db/schema";
+import { eventMayNotify } from "../notifications/triggers";
 import type { Actor } from "./actor";
 
 /** The database or an open transaction: what recordEvent and recordAudit write through. */
@@ -45,6 +46,9 @@ export interface LiveMessage {
  * While an Admin acts as another account, the actor is that account and
  * `impersonation_id` names the impersonation (eventImpersonationId), so the
  * real Admin and the time window stay on record.
+ *
+ * An event that may send an email (eventMayNotify) also goes to
+ * notification_outbox in the same transaction.
  */
 export async function recordEvent(
   executor: Executor,
@@ -59,7 +63,9 @@ export async function recordEvent(
     impersonationId?: string | null;
   },
 ): Promise<void> {
+  const id = cuid();
   await executor.insert(events).values({
+    id,
     assemblyId: input.assemblyId,
     entityType: input.entityType,
     entityId: input.entityId,
@@ -70,6 +76,11 @@ export async function recordEvent(
     impersonationId: eventImpersonationId(input),
     createdAt: sql`clock_timestamp()`,
   });
+  // The email notifications read it once the change commits; a rollback
+  // takes it away with the event (server/utils/notifications/*).
+  if (eventMayNotify(input.type, input.payload)) {
+    await executor.insert(notificationOutbox).values({ eventId: id });
+  }
 
   const message: LiveMessage = {
     assemblyId: input.assemblyId,

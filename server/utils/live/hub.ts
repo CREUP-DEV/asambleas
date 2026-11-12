@@ -11,6 +11,9 @@ import { LIVE_CHANNEL, type LiveMessage } from "../domain/events";
 const emitter = new EventEmitter();
 emitter.setMaxListeners(0);
 
+/** The emitter key of subscribeToAll (assembly ids are cuids, never this). */
+const ANY_ASSEMBLY = "*";
+
 const INITIAL_RETRY_MS = 1_000;
 const MAX_RETRY_MS = 30_000;
 
@@ -44,6 +47,7 @@ async function connect(): Promise<void> {
     try {
       const message = JSON.parse(notification.payload) as LiveMessage;
       emitter.emit(message.assemblyId, message);
+      emitter.emit(ANY_ASSEMBLY, message);
     } catch (error) {
       logWarn("live.hub", { reason: "invalid payload", error: String(error) });
     }
@@ -112,4 +116,15 @@ export function subscribeToAssembly(
 ): () => void {
   emitter.on(assemblyId, listener);
   return () => emitter.off(assemblyId, listener);
+}
+
+/**
+ * Every committed event of every assembly, in this process: the email
+ * sender wakes up with it (server/utils/notifications/runner.ts).
+ */
+export function subscribeToAll(
+  listener: (message: LiveMessage) => void,
+): () => void {
+  emitter.on(ANY_ASSEMBLY, listener);
+  return () => emitter.off(ANY_ASSEMBLY, listener);
 }

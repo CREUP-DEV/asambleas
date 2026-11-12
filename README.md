@@ -29,7 +29,7 @@ Este repositorio está separado de la web pública `creup/web`, pero comparte id
 - `pdfmake` para exportaciones PDF
 - Zod v4 para validación
 
-No hay Redis ni Mailpit en este proyecto. Sesiones, colas y datos persistentes usan PostgreSQL; la caché de permisos es en memoria.
+Sesiones, colas y datos persistentes usan PostgreSQL; la caché de permisos es en memoria. Los correos salen por SMTP con `nodemailer`; en local los recoge Mailpit.
 
 ## Desarrollo Local
 
@@ -56,6 +56,7 @@ Servicios locales por defecto:
 | ---------- | ----------------------- |
 | Aplicación | `http://localhost:3000` |
 | Adminer    | `http://localhost:8080` |
+| Mailpit    | `http://localhost:8225` |
 | PostgreSQL | `localhost:5432`        |
 
 ## Variables De Entorno

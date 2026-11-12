@@ -304,7 +304,8 @@
       "assemblyVoteResult": "Registrar resultado de votación en asamblea",
       "sessionModerate": "Moderar la sesión: estado en directo, admisiones, votaciones y transaccionales",
       "memberManage": "Sincronizar y editar miembros",
-      "statsView": "Ver las estadísticas de lectura y participación de cada cuenta y miembro"
+      "statsView": "Ver las estadísticas de lectura y participación de cada cuenta y miembro",
+      "notificationManage": "Configurar qué avisos se envían por correo, a quién y con qué frecuencia"
     }
   },
   "assembly": {
@@ -2188,6 +2189,132 @@
       "markedOn": "Marcado el {date}",
       "openedDetail": "Abierto {count} vez, {time} en total; la primera, el {date} | Abierto {count} veces, {time} en total; la primera, el {date}",
       "neverOpened": "No lo ha abierto"
+    },
+    "notifications": {
+      "title": "Avisos por correo",
+      "cardDescription": "Qué se avisa por correo, a qué roles y con qué frecuencia, y el registro de envíos.",
+      "intro": "Cada aviso llega a las cuentas con acceso a las que corresponde, nunca a quien hizo el cambio. El correo se compone al enviarlo, con lo que esa cuenta puede ver en ese momento, y no incluye el texto de los documentos ni de las enmiendas.",
+      "enabled": "Los avisos por correo están activados",
+      "disabled": "Los avisos por correo están desactivados: no se envía ninguno",
+      "enabledLabel": "Activar los avisos por correo",
+      "lastDay": "Últimas 24 horas: {sent} enviados, {failed} fallidos, {pending} pendientes",
+      "smtp": {
+        "from": "Remitente: {from}",
+        "unconfiguredTitle": "No hay servidor de correo configurado",
+        "unconfigured": "Faltan NUXT_SMTP_HOST o NUXT_SMTP_FROM_EMAIL. Los avisos quedan en el registro como no enviados hasta que se configure."
+      },
+      "groups": {
+        "leadership": {
+          "title": "Secretaría y Presidencia",
+          "description": "Lo que presentan los miembros, en cuanto lo presentan."
+        },
+        "mesa": {
+          "title": "Mesa",
+          "description": "Lo presentado, una vez validado."
+        },
+        "transactionals": {
+          "title": "Transaccionales",
+          "description": "Antes de validarlas: cuando todas las partes aceptan una y cuando se pide a cada parte que la acepte."
+        },
+        "presenters": {
+          "title": "Quien presenta",
+          "description": "Las cuentas del miembro que presenta el documento o la enmienda. Nunca reciben avisos de lo que hace su propio miembro."
+        }
+      },
+      "kinds": {
+        "document_submitted": {
+          "title": "Documento enviado a validar",
+          "description": "Cada documento que un miembro envía a la Secretaría."
+        },
+        "amendment_submitted": {
+          "title": "Enmienda presentada",
+          "description": "Cada enmienda que se presenta. Las transaccionales tienen su propio aviso."
+        },
+        "transactional_ready": {
+          "title": "Transaccional lista para validar",
+          "description": "Cuando todas las partes aceptan una transaccional y llega a la Secretaría. Las que presenta la Mesa no pasan por aquí."
+        },
+        "submission_validated": {
+          "title": "Documento o enmienda validados",
+          "description": "Cada documento publicado y cada enmienda validada. Las que están fuera de plazo se señalan, porque aún falta su admisión."
+        },
+        "transactional_acceptance_requested": {
+          "title": "Aceptar una transaccional",
+          "description": "A las partes de una transaccional (los autores principales de lo que agrupa), cuando se propone."
+        },
+        "presenter_assigned": {
+          "title": "Documento asignado",
+          "description": "Cuando se asigna un documento a su miembro, como presentador o copresentador."
+        },
+        "presenter_correction": {
+          "title": "Devuelto para corregir",
+          "description": "Cuando la Secretaría devuelve su documento o su enmienda, con la nota."
+        },
+        "presenter_validated": {
+          "title": "Validado o admitido",
+          "description": "Cuando se publica su documento o se valida o admite su enmienda."
+        },
+        "presenter_decided": {
+          "title": "Resuelto",
+          "description": "Cuando su documento se vota o su enmienda se aprueba, se rechaza, no se admite, decae, se transa o se cierra."
+        },
+        "presenter_changed": {
+          "title": "Cambio sustancial",
+          "description": "Cuando otra persona reclasifica su enmienda, corrige quién la presenta o cambia el plazo interno de su documento."
+        }
+      },
+      "audience": {
+        "transactional_acceptance_requested": "Las partes de la transaccional",
+        "presenter_assigned": "Quien presenta el documento",
+        "presenter_correction": "Quien lo presenta",
+        "presenter_validated": "Quien lo presenta",
+        "presenter_decided": "Quien lo presenta",
+        "presenter_changed": "Quien lo presenta"
+      },
+      "frequencies": {
+        "immediate": "Al momento",
+        "daily": "Resumen diario ({hour})"
+      },
+      "rolesLabel": "Roles que reciben «{notice}»",
+      "rolesPlaceholder": "Ningún rol",
+      "frequencyLabel": "Frecuencia de «{notice}»",
+      "kindSwitchLabel": "Enviar «{notice}»",
+      "noRoles": "Activado, pero sin ningún rol: no le llega a nadie.",
+      "save": "Guardar",
+      "discard": "Descartar cambios",
+      "saved": "Avisos por correo guardados",
+      "saveError": "No se han podido guardar los avisos por correo",
+      "unsavedConfirm": "Tienes cambios sin guardar en los avisos por correo. ¿Salir sin guardarlos?",
+      "test": {
+        "button": "Enviarme una prueba",
+        "sent": "Correo de prueba enviado a tu dirección",
+        "unconfigured": "No se ha enviado: no hay servidor de correo configurado",
+        "failed": "El servidor de correo ha rechazado el envío; mira el registro"
+      },
+      "log": {
+        "title": "Registro de envíos",
+        "description": "Los últimos 50 correos, del más reciente al más antiguo. Nunca se muestra la dirección.",
+        "refresh": "Actualizar",
+        "empty": "Todavía no se ha enviado ningún correo.",
+        "testKind": "Correo de prueba",
+        "deletedAccount": "Cuenta eliminada",
+        "daily": "en el resumen diario",
+        "error": "Último error ({attempts} intentos): {error}",
+        "statuses": {
+          "pending": "Pendiente",
+          "sending": "Enviando",
+          "sent": "Enviado",
+          "failed": "Fallido",
+          "skipped": "No enviado"
+        },
+        "reasons": {
+          "unconfigured": "Sin servidor de correo",
+          "disabled": "Aviso desactivado",
+          "no_access": "Cuenta sin acceso",
+          "not_visible": "Ya no puede verlo",
+          "gone": "Ya no existe"
+        }
+      }
     }
   },
   "export": {
@@ -2368,7 +2495,8 @@
       "members": "Miembros",
       "activity": "Actividad",
       "calendarRules": "Plazos del reglamento",
-      "stats": "Estadísticas"
+      "stats": "Estadísticas",
+      "notifications": "Avisos por correo"
     },
     "assembly": {
       "navLabel": "Secciones de la {assembly}",
@@ -4866,6 +4994,7 @@
       "member": "Miembros",
       "roles": "Roles y permisos",
       "export": "Descargas en PDF",
+      "notifications": "Avisos por correo",
       "other": "Otros"
     },
     "sources": {
@@ -4924,7 +5053,8 @@
       "assembly": "Una asamblea",
       "users": "Cuentas de la plataforma",
       "calendarRules": "Plazos del calendario de la {type}",
-      "calendarRulesNoType": "Plazos del calendario"
+      "calendarRulesNoType": "Plazos del calendario",
+      "notificationSettings": "Avisos por correo"
     },
     "actor": {
       "intranet": "La intranet de CREUP",
@@ -5206,6 +5336,10 @@
         "created": "Nota privada escrita",
         "updated": "Nota privada cambiada",
         "deleted": "Nota privada borrada"
+      },
+      "notifications": {
+        "update": "Avisos por correo cambiados",
+        "test": "Correo de prueba enviado"
       }
     },
     "changes": {

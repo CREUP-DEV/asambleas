@@ -292,6 +292,8 @@ const EXECUTIVE_VISIBLE_PERMISSIONS = [
   PERMISSION_KEYS.USER_MANAGE_ROLES,
   // The statistics name every account and the member it acts for.
   PERMISSION_KEYS.STATS_VIEW,
+  // The email log names every account and what it was told.
+  PERMISSION_KEYS.NOTIFICATION_MANAGE,
 ] as const;
 
 /**
