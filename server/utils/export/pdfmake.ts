@@ -24,7 +24,9 @@ export const RALEWAY_FILES = {
 export type RalewayFile = (typeof RALEWAY_FILES)[keyof typeof RALEWAY_FILES];
 
 /**
- * Registers Raleway and locks resource access down.
+ * Registers Raleway and locks resource access down, in this process (the
+ * tests). The app never lays a PDF out here: the render process does it
+ * (pdfRender.ts) and registers the fonts the same way.
  *
  * pdfmake 0.3 reads an object font source as `{ url, headers }` and then
  * overwrites it, so a Buffer passed to `setFonts` breaks the first render.

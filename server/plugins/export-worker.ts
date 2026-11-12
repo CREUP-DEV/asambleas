@@ -1,4 +1,5 @@
-import { mkdir } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
+import { performance } from "node:perf_hooks";
 import type { TDocumentDefinitions } from "pdfmake/interfaces";
 import type { Job } from "pg-boss";
 import type { z } from "zod/v4";
@@ -10,12 +11,8 @@ import {
 import { create as createFont } from "fontkit";
 import { BRAND_FILES, type ExportBrand } from "../utils/export/brand";
 import { buildAssemblyPdf, buildDocumentPdf } from "../utils/export/pdfBuilder";
-import {
-  RALEWAY_FILES,
-  pdfmake,
-  registerPdfFonts,
-  type RalewayFile,
-} from "../utils/export/pdfmake";
+import { RALEWAY_FILES, type RalewayFile } from "../utils/export/pdfmake";
+import { PdfRenderLimitError, renderPdf } from "../utils/export/pdfRender";
 import {
   EXPORT_QUEUE_NAMES,
   EXPORT_RETRY_LIMIT,
@@ -31,7 +28,7 @@ import {
   readExportMetadata,
 } from "../utils/export/storage";
 
-let fontsReady = false;
+let fonts: Record<RalewayFile, Buffer> | null = null;
 let brand: ExportBrand | null = null;
 
 async function readServerAsset(path: string): Promise<Buffer> {
@@ -62,17 +59,15 @@ async function loadBrand(): Promise<ExportBrand> {
   return brand;
 }
 
-async function ensurePdfFonts() {
-  if (fontsReady) return;
+/** Raleway for the render process, read once. */
+async function loadPdfFonts(): Promise<Record<RalewayFile, Buffer>> {
+  if (fonts) return fonts;
   const names = Object.values(RALEWAY_FILES);
   const buffers = await Promise.all(names.map(readServerFont));
-  registerPdfFonts(
-    Object.fromEntries(names.map((name, i) => [name, buffers[i]!])) as Record<
-      RalewayFile,
-      Buffer
-    >,
-  );
-  fontsReady = true;
+  fonts = Object.fromEntries(
+    names.map((name, i) => [name, buffers[i]!]),
+  ) as Record<RalewayFile, Buffer>;
+  return fonts;
 }
 
 /** Metadata is written before the job is queued; without it the job is void. */
@@ -90,16 +85,41 @@ async function readExportMetadataWithRetry(jobId: string) {
   throw new ExportRejectedError("Export metadata missing or unreadable");
 }
 
+/**
+ * `load` reads the data (buildData.ts: database queries) and answers how to
+ * build the definition, which is built here; pdfmake lays it out in the
+ * render process (pdfRender.ts), so the app keeps answering meanwhile. The
+ * time of each stage is logged on its own.
+ */
 async function writePdf(
-  jobId: string,
+  job: Job<unknown>,
   filePath: string,
-  docDefinition: TDocumentDefinitions,
+  load: () => Promise<() => TDocumentDefinitions>,
 ) {
+  const started = performance.now();
+  const build = await load();
+  const loadedAt = performance.now();
+  const definition = build();
+  const builtAt = performance.now();
+  const { pdf, maxRssKb, waitedMs } = await renderPdf(
+    definition,
+    await loadPdfFonts(),
+  );
+  // Without the wait for the render slot (the other queue's render).
+  const renderMs = Math.round(performance.now() - builtAt) - waitedMs;
   await mkdir(getExportMetadataDir(filePath), { recursive: true });
-  await ensurePdfFonts();
-  await pdfmake.createPdf(docDefinition).write(filePath);
-
-  await patchExportMetadata(jobId, { status: "done", error: undefined });
+  await writeFile(filePath, pdf);
+  await patchExportMetadata(job.id, { status: "done", error: undefined });
+  logInfo("export-worker.timing", {
+    jobId: job.id,
+    queue: job.name,
+    buildDataMs: Math.round(loadedAt - started),
+    definitionMs: Math.round(builtAt - loadedAt),
+    waitMs: waitedMs,
+    renderMs,
+    maxRssKb,
+    bytes: pdf.length,
+  });
 }
 
 /** Job payloads queued by an older version of the app fail without retry. */
@@ -117,24 +137,26 @@ async function processAssemblyExport(job: Job<unknown>) {
   const data = parseJobData(assemblyExportJobSchema, job.data);
   const metadata = await readExportMetadataWithRetry(job.id);
   await patchExportMetadata(job.id, { status: "processing", error: undefined });
-  const exportData = await buildAssemblyExportData(data);
-  await writePdf(
-    job.id,
-    metadata.filePath,
-    buildAssemblyPdf(exportData, data.locale, await loadBrand()),
-  );
+  await writePdf(job, metadata.filePath, async () => {
+    const [exportData, letterhead] = await Promise.all([
+      buildAssemblyExportData(data),
+      loadBrand(),
+    ]);
+    return () => buildAssemblyPdf(exportData, data.locale, letterhead);
+  });
 }
 
 async function processDocumentExport(job: Job<unknown>) {
   const data = parseJobData(documentExportJobSchema, job.data);
   const metadata = await readExportMetadataWithRetry(job.id);
   await patchExportMetadata(job.id, { status: "processing", error: undefined });
-  const exportData = await buildDocumentExportData(data);
-  await writePdf(
-    job.id,
-    metadata.filePath,
-    buildDocumentPdf(exportData, data.locale, await loadBrand()),
-  );
+  await writePdf(job, metadata.filePath, async () => {
+    const [exportData, letterhead] = await Promise.all([
+      buildDocumentExportData(data),
+      loadBrand(),
+    ]);
+    return () => buildDocumentPdf(exportData, data.locale, letterhead);
+  });
 }
 
 /**
@@ -150,7 +172,10 @@ async function processJob(
   try {
     await processor(job);
   } catch (error) {
-    const rejected = error instanceof ExportRejectedError;
+    // A render that ran out of heap, time or room would do it again.
+    const rejected =
+      error instanceof ExportRejectedError ||
+      error instanceof PdfRenderLimitError;
     const final = rejected || job.retryCount >= EXPORT_RETRY_LIMIT;
     const message =
       error instanceof Error ? error.message : "Unknown export error";

@@ -1,6 +1,8 @@
 import type {
   Content,
   ContentText,
+  DynamicBackground,
+  DynamicContent,
   Style,
   TDocumentDefinitions,
   TableCell,
@@ -56,6 +58,7 @@ import {
   type ExportLocale,
   type Translate,
 } from "./labels";
+import { PAGE_NUMBER_MARK, PAGE_TOTAL_MARK, pdfFunction } from "./pdfSerial";
 
 export type { ExportLocale } from "./labels";
 export type { ExportBrand } from "./brand";
@@ -257,20 +260,19 @@ function truncate(text: string, max: number): string {
   return text.length > max ? `${text.slice(0, max - 1).trimEnd()}…` : text;
 }
 
-/** "3 de 12" with the numbers in bold, as the template's footer has it. */
-function pageCount(t: Translate, page: number, total: number): ContentText[] {
-  // Private-use characters mark where the numbers go in the label.
-  const PAGE = String.fromCharCode(0xe000);
-  const TOTAL = String.fromCharCode(0xe001);
-  return t("footer.page", { page: PAGE, total: TOTAL })
-    .split(new RegExp(`(${PAGE}|${TOTAL})`))
+/**
+ * "3 de 12" with the numbers in bold, as the template's footer has it. The
+ * numbers stay as marks (private-use characters) that the footer's page
+ * function fills in on every page (pdfSerial.ts).
+ */
+function pageCount(t: Translate): ContentText[] {
+  return t("footer.page", { page: PAGE_NUMBER_MARK, total: PAGE_TOTAL_MARK })
+    .split(new RegExp(`(${PAGE_NUMBER_MARK}|${PAGE_TOTAL_MARK})`))
     .filter(Boolean)
     .map((part) =>
-      part === PAGE
-        ? { text: String(page), bold: true }
-        : part === TOTAL
-          ? { text: String(total), bold: true }
-          : { text: part },
+      part === PAGE_NUMBER_MARK || part === PAGE_TOTAL_MARK
+        ? { text: part, bold: true }
+        : { text: part },
     );
 }
 
@@ -301,8 +303,17 @@ function frame(input: {
     input.watermark && brand
       ? watermarkSvg(input.watermark, brand.labelFont)
       : null;
-  const onCover = (page: number) => input.cover === true && page === 1;
-  const firstPage = input.cover ? 1 : 0;
+  const coverFirst = input.cover === true;
+  // On the cover (`cover`) and on every other page (`page`); pages count
+  // from the one after the cover.
+  const perPage = <T>(cover: Content | null, page: Content | null): T =>
+    pdfFunction<T>({
+      kind: "page",
+      coverFirst,
+      firstPage: coverFirst ? 1 : 0,
+      cover: coverFirst ? cover : null,
+      page,
+    });
   return {
     content: input.content,
     styles: STYLES,
@@ -325,91 +336,81 @@ function frame(input: {
           },
         }
       : {}),
-    background: (page: number) =>
-      onCover(page)
-        ? coverBackground(brand)
-        : {
+    background: perPage<DynamicBackground>(coverBackground(brand), {
+      stack: [
+        ...(watermark
+          ? [
+              {
+                svg: watermark,
+                width: PAGE_WIDTH,
+                height: PAGE_HEIGHT,
+                absolutePosition: { x: 0, y: 0 },
+              },
+            ]
+          : []),
+        {
+          svg: band.svg,
+          width: band.width,
+          height: band.height,
+          absolutePosition: { x: band.x, y: band.y },
+        },
+      ],
+    }),
+    header: perPage<DynamicContent>(
+      null,
+      brand
+        ? {
             stack: [
-              ...(watermark
-                ? [
-                    {
-                      svg: watermark,
-                      width: PAGE_WIDTH,
-                      height: PAGE_HEIGHT,
-                      absolutePosition: { x: 0, y: 0 },
-                    },
-                  ]
-                : []),
               {
-                svg: band.svg,
-                width: band.width,
-                height: band.height,
-                absolutePosition: { x: band.x, y: band.y },
+                image: "creupLogo",
+                width: LOGOS.creup.width,
+                absolutePosition: { x: LOGOS.creup.x, y: LOGOS.creup.y },
+              },
+              {
+                image: "esuLogo",
+                width: LOGOS.esu.width,
+                absolutePosition: { x: LOGOS.esu.x, y: LOGOS.esu.y },
               },
             ],
-          },
-    header: (page: number) =>
-      onCover(page)
-        ? null
-        : brand
-          ? {
-              stack: [
-                {
-                  image: "creupLogo",
-                  width: LOGOS.creup.width,
-                  absolutePosition: { x: LOGOS.creup.x, y: LOGOS.creup.y },
-                },
-                {
-                  image: "esuLogo",
-                  width: LOGOS.esu.width,
-                  absolutePosition: { x: LOGOS.esu.x, y: LOGOS.esu.y },
-                },
-              ],
-            }
-          : {
-              text: "CREUP",
-              bold: true,
-              fontSize: 22,
-              color: BRAND_RED,
-              margin: [LOGOS.creup.x, LOGOS.creup.y + 8, 0, 0],
-            },
-    footer: (currentPage: number, pageTotal: number) =>
-      onCover(currentPage)
-        ? null
+          }
         : {
-            columns: [
-              { text: "", width: "*" },
-              {
-                text: [
-                  {
-                    text: CONTACT.web.text,
-                    link: CONTACT.web.href,
-                    decoration: "underline",
-                  },
-                  " – ",
-                  {
-                    text: CONTACT.email.text,
-                    link: CONTACT.email.href,
-                    decoration: "underline",
-                  },
-                ],
-                width: "auto",
-              },
-              {
-                text: pageCount(
-                  t,
-                  currentPage - firstPage,
-                  pageTotal - firstPage,
-                ),
-                alignment: "right",
-                width: "*",
-              },
-            ],
-            columnGap: 12,
+            text: "CREUP",
+            bold: true,
+            fontSize: 22,
             color: BRAND_RED,
-            fontSize: 11,
-            margin: [PAGE_MARGINS[0], 28, PAGE_MARGINS[2], 0],
+            margin: [LOGOS.creup.x, LOGOS.creup.y + 8, 0, 0],
           },
+    ),
+    footer: perPage<DynamicContent>(null, {
+      columns: [
+        { text: "", width: "*" },
+        {
+          text: [
+            {
+              text: CONTACT.web.text,
+              link: CONTACT.web.href,
+              decoration: "underline",
+            },
+            " – ",
+            {
+              text: CONTACT.email.text,
+              link: CONTACT.email.href,
+              decoration: "underline",
+            },
+          ],
+          width: "auto",
+        },
+        {
+          text: pageCount(t),
+          alignment: "right",
+          width: "*",
+        },
+      ],
+      columnGap: 12,
+      color: BRAND_RED,
+      fontSize: 11,
+      margin: [PAGE_MARGINS[0], 28, PAGE_MARGINS[2], 0],
+    }),
   };
 }
 
@@ -810,9 +811,9 @@ export function buildDocumentPdf(
   });
   withContentImages(definition, data.images);
   // Keeps headings with the text that follows them.
-  definition.pageBreakBefore = (node, queries) =>
-    node.headlineLevel !== undefined &&
-    queries.getFollowingNodesOnPage().length === 0;
+  definition.pageBreakBefore = pdfFunction<
+    NonNullable<TDocumentDefinitions["pageBreakBefore"]>
+  >({ kind: "keepHeadingWithNext" });
   if (draft && !brand) {
     definition.watermark = {
       text: t("watermarkDraft"),
