@@ -60,6 +60,21 @@
   --color-creup-dark-gray-900: #3d3d3d;
   --color-creup-dark-gray-950: #262626;
 
+  /* The sectorials' green: #2a7258 at 700, the rest along its hue (OKLCH).
+     700 reads 5.8:1 on white and 5:1 on its own 10% tint; 400, the dark-mode
+     step, over 7:1 on the dark background. */
+  --color-creup-green-50: #f0fbf6;
+  --color-creup-green-100: #e0f4eb;
+  --color-creup-green-200: #c7e9d9;
+  --color-creup-green-300: #a6dac3;
+  --color-creup-green-400: #81c3a7;
+  --color-creup-green-500: #5faa8c;
+  --color-creup-green-600: #418c70;
+  --color-creup-green-700: #2a7258;
+  --color-creup-green-800: #225c47;
+  --color-creup-green-900: #1c4b3a;
+  --color-creup-green-950: #092b1f;
+
   --color-creup-light-gray-50: #f7f7f7;
   --color-creup-light-gray-100: #ededed;
   --color-creup-light-gray-200: #dfdfdf;
@@ -76,6 +91,7 @@
 :root {
   --ui-primary: var(--color-creup-red-900);
   --ui-secondary: var(--color-creup-blue-950);
+  --ui-sectorial: var(--color-creup-green-700);
   --user-content-font: var(--font-sans);
   /* Nuxt UI's dimmed text (neutral-400 on white, 2.6:1) fails WCAG AA for
      the small hints and labels that use it; one step darker reaches 4.8:1. */
@@ -117,6 +133,7 @@ html {
 .dark {
   --ui-primary: var(--color-creup-red-400);
   --ui-secondary: var(--color-creup-blue-400);
+  --ui-sectorial: var(--color-creup-green-400);
   /* neutral-500 on the dark background is 3.7:1; neutral-400 is 7:1. */
   --ui-text-dimmed: var(--ui-color-neutral-400);
   --ui-success: var(--ui-color-success-400);
