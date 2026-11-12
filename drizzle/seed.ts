@@ -2,7 +2,7 @@
  * Seeds the RBAC catalog (roles, every permission key and the default role
  * permissions). Idempotent, but it puts back every default grant, including
  * ones removed by hand in the roles page: production runs it only on request
- * (`bash ./deploy.sh --seed`), for the first deploy or a new key or role.
+ * (`bash ./scripts/deploy.sh --seed`), for the first deploy or a new key or role.
  *
  * With SEED_DEMO=1 it also loads a demo dataset so every screen has data:
  * members, an 80.ª AGO convened with its amendment window open, a structured
@@ -223,7 +223,7 @@ async function seedRbac(db: Db): Promise<void> {
  * Stores the initial calendar rules (INITIAL_CALENDAR_RULES) of every
  * assembly type that has none, with a `calendar_rules.seed` audit row each.
  * Never overwrites a stored row: the rules are edited in the admin section,
- * and a later `deploy.sh --seed` must not undo those edits.
+ * and a later `scripts/deploy.sh --seed` must not undo those edits.
  */
 async function seedCalendarRules(db: Db): Promise<void> {
   console.log("Seeding calendar rules...");

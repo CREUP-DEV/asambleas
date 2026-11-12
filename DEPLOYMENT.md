@@ -2,7 +2,7 @@
 
 Runbook de producción para CREUP Asambleas. El README cubre desarrollo local; este documento solo cubre operación y despliegue.
 
-El build ocurre siempre en local: `deploy.sh` construye la imagen, la publica en GHCR y el VPS solo la descarga y la ejecuta, igual que la web.
+El build ocurre siempre en local: `scripts/deploy.sh` construye la imagen, la publica en GHCR y el VPS solo la descarga y la ejecuta, igual que la web.
 
 ## Arquitectura
 
@@ -24,7 +24,7 @@ postgresql (PostgreSQL 18 compartido, base de datos asambleas)
 
 - En el VPS, todos los proyectos viven bajo un compose raíz compartido, `/home/esternocleidomastoideo2003` (`COMPOSE_DIR`), que incluye el de cada proyecto (`include:`). La plataforma está en `asambleas/` (`REMOTE_DIR`) y usa los servicios `postgresql` y `nginx` del compose raíz.
 - Todo comparte la red de Docker `esternocleidomastoideo2003_default`: nginx llega a la app como `asambleas-app:3000`, y la app puede llamar a la Intranet como `http://intranet`.
-- La imagen es `ghcr.io/creup-dev/asambleas:<commit>`. El compose la lee de `ASAMBLEAS_IMAGE`, en el `.env` del compose raíz, que escriben `deploy.sh` y `rollback.sh`.
+- La imagen es `ghcr.io/creup-dev/asambleas:<commit>`. El compose la lee de `ASAMBLEAS_IMAGE`, en el `.env` del compose raíz, que escriben `scripts/deploy.sh` y `scripts/rollback.sh`.
 - `pg-boss` usa la misma base de datos para las exportaciones, para la sincronización diaria del listado de miembros (05:00, Europe/Madrid) y para la revisión diaria de accesos (05:30).
 - Los PDFs generados (`EXPORT_STORAGE_DIR`) y los PDFs e imágenes subidos a los documentos (`UPLOAD_STORAGE_DIR`, las imágenes en `images/`) viven en `asambleas/data/`, montado en el contenedor. Sin esos montajes se pierden al recrearlo.
 - La plataforma llama a la API de la Intranet por su URL pública, `https://intranet.creup.es/api/asambleas/v1`, con el token. También puede llamarla por dentro (más abajo). Cómo y por qué: [docs/intranet.md](docs/intranet.md), sección 5.8.
@@ -63,7 +63,7 @@ CREATE ROLE asambleas LOGIN PASSWORD '<password>';
 CREATE DATABASE asambleas OWNER asambleas;
 ```
 
-La base de datos hereda la configuración regional del clúster (ICU `es-ES`). Las migraciones las aplica `deploy.sh`.
+La base de datos hereda la configuración regional del clúster (ICU `es-ES`). Las migraciones las aplica `scripts/deploy.sh`.
 
 ### 3. Directorio del proyecto en el VPS
 
@@ -181,12 +181,12 @@ GHCR_TOKEN=<PAT con write:packages>
 La primera vez, con el seed de roles y permisos (la base de datos está vacía):
 
 ```bash
-bash ./deploy.sh --seed
+bash ./scripts/deploy.sh --seed
 ```
 
 Con la primera imagen publicada, el paquete `ghcr.io/creup-dev/asambleas` aparece en GitHub. La imagen lleva la etiqueta `org.opencontainers.image.source`, que lo enlaza al repositorio `CREUP-DEV/asambleas` y le da sus permisos. Si el VPS no puede descargarlo, el despliegue se para antes de las migraciones: dale acceso al token del VPS desde la configuración del paquete y repite.
 
-## Qué Hace deploy.sh
+## Qué Hace scripts/deploy.sh
 
 1. Carga el `.env` local y construye la imagen para `linux/amd64`, etiquetada con el commit, y la publica en GHCR. Con cambios sin confirmar, la etiqueta es `<commit>-dirty-<fecha y hora UTC>`, distinta en cada build, y no mueve `latest`, que solo nombra builds confirmados. Mejor desplegar siempre un commit.
 2. Por SSH, en `COMPOSE_DIR`:
@@ -201,17 +201,17 @@ Con la primera imagen publicada, el paquete `ghcr.io/creup-dev/asambleas` aparec
    9. Comprueba y recarga nginx, y borra las imágenes viejas del proyecto. Conserva la nueva, la del rollback y hasta `DEPLOY_IMAGE_RETENTION` (2 por defecto).
 3. Si el lado remoto no llega al final, el script termina con error aunque la conexión no lo diga.
 
-Para volver a desplegar una imagen ya publicada sin compilar: `DEPLOY_SKIP_BUILD=1 IMAGE=ghcr.io/creup-dev/asambleas:<etiqueta> bash ./deploy.sh`.
+Para volver a desplegar una imagen ya publicada sin compilar: `DEPLOY_SKIP_BUILD=1 IMAGE=ghcr.io/creup-dev/asambleas:<etiqueta> bash ./scripts/deploy.sh`.
 
 Recrear el contenedor corta el servicio unos segundos. Evita desplegar durante una sesión de asamblea.
 
-Antes de desplegar, pasa la lista de verificación de `AGENTS.md` (`pnpm lint`, `pnpm typecheck`, `pnpm test`...): `deploy.sh` no la ejecuta.
+Antes de desplegar, pasa la lista de verificación de `AGENTS.md` (`pnpm lint`, `pnpm typecheck`, `pnpm test`...): `scripts/deploy.sh` no la ejecuta.
 
 ### Rollback
 
 ```bash
-bash ./rollback.sh           # vuelve a la imagen guardada por el último despliegue
-bash ./rollback.sh <commit>  # o a una etiqueta concreta
+bash ./scripts/rollback.sh           # vuelve a la imagen guardada por el último despliegue
+bash ./scripts/rollback.sh <commit>  # o a una etiqueta concreta
 ```
 
 Recrea la app con esa imagen, espera a que esté sana y la deja en `ASAMBLEAS_IMAGE`.
@@ -227,7 +227,7 @@ curl -I https://asambleas.creup.es    # 302 a /login
 - Entra con `tic@creup.es`: queda como `Admin`.
 - Entra con una cuenta Asociado y otra CEA, y comprueba en Administración que tienen el rol y el miembro correctos.
 - Pulsa "Sincronizar" en Miembros.
-- Sube un PDF a un documento y exporta otro. Tras otro `bash ./deploy.sh`, los dos siguen ahí.
+- Sube un PDF a un documento y exporta otro. Tras otro `bash ./scripts/deploy.sh`, los dos siguen ahí.
 
 Tras desplegar por primera vez la versión que guarda el id de la Intranet (migración `0012`), es normal que la primera sincronización del listado dé casi todos los miembros como actualizados, y que el primer inicio de sesión de cada cuenta deje un `user.role_sync` en Actividad: los dos guardan ese id.
 
@@ -251,6 +251,26 @@ Copia manual solo de esta base de datos:
 cd ~
 docker compose exec -T postgresql pg_dump -U asambleas asambleas | zstd > "backups/db/asambleas-$(date +%Y%m%d-%H%M%S).sql.zst"
 ```
+
+## Clonar producción en local
+
+`scripts/clone-prod-db.sh` sustituye la base de datos local y los PDF e imágenes subidos en local por los de producción, para probar con datos reales:
+
+```bash
+bash ./scripts/clone-prod-db.sh                 # base de datos y ficheros subidos
+bash ./scripts/clone-prod-db.sh --skip-uploads  # solo la base de datos
+bash ./scripts/clone-prod-db.sh --skip-migrate  # sin pnpm db:migrate al final
+```
+
+1. Guarda la base local (`backups/local-<fecha>.dump`) y los ficheros subidos en local (`backups/local-uploads-<fecha>.tar.gz`).
+2. Por SSH, vuelca la base `asambleas` de producción con `pg_dump -Fc` dentro de su contenedor (`backups/prod-<fecha>.dump`) y empaqueta `asambleas/data/uploads` (`backups/prod-uploads-<fecha>.tar.gz`). Si alguno sale vacío, se para sin tocar nada.
+3. Recrea vacía la base local (`DROP DATABASE … WITH (FORCE)`, que corta las conexiones del servidor de desarrollo) y restaura en ella el volcado, sin dueños ni permisos de producción. Nunca restaura con `--clean` sobre la vieja: las tablas de migraciones aún no desplegadas se quedarían y `pnpm db:migrate` fallaría al crearlas.
+4. Sustituye los ficheros subidos en local (`UPLOAD_STORAGE_DIR`, o `private/uploads/documents`).
+5. Borra todas las sesiones (son las de producción) y aplica las migraciones aún no desplegadas. Hay que volver a iniciar sesión.
+
+Usa las mismas variables del `.env` local que `scripts/deploy.sh` (`VPS_HOST`, `COMPOSE_DIR`, `REMOTE_DIR`, `COMPOSE_POSTGRES_SERVICE`, `DEPLOY_DB_NAME`, `DEPLOY_DB_USER`) y, para el lado local, `POSTGRES_USER` y `POSTGRES_DB`. Ninguna contraseña: los volcados y la restauración corren dentro de sus contenedores. La cola de pg-boss viaja con la base, así que el servidor de desarrollo puede retomar trabajos pendientes de producción, como exportaciones.
+
+Lo que trae son datos personales: correos, IP y navegadores del registro de actividad, y qué ha leído y abierto cada cuenta. `backups/` está en `.gitignore`. Los volcados no deben salir de tu máquina; bórralos cuando ya no los necesites.
 
 ## Operación
 
@@ -302,7 +322,7 @@ ORDER BY createdon DESC
 LIMIT 7;
 ```
 
-Recalcular los enlaces de los documentos (`/app/ops/reslug-documents.mjs`, en local `pnpm db:reslug`): da a cada documento el enlace de su título actual con la regla de hoy, por ejemplo tras ampliar el límite de longitud. Los enlaces anteriores dejan de funcionar. Deja `documents.reslug` en Actividad por cada asamblea que cambie y, si se repite, no cambia nada. No va en `deploy.sh`: se lanza a mano una vez, primero con `--dry-run`, que solo enseña qué cambiaría.
+Recalcular los enlaces de los documentos (`/app/ops/reslug-documents.mjs`, en local `pnpm db:reslug`): da a cada documento el enlace de su título actual con la regla de hoy, por ejemplo tras ampliar el límite de longitud. Los enlaces anteriores dejan de funcionar. Deja `documents.reslug` en Actividad por cada asamblea que cambie y, si se repite, no cambia nada. No va en `scripts/deploy.sh`: se lanza a mano una vez, primero con `--dry-run`, que solo enseña qué cambiaría.
 
 ```bash
 cd ~
@@ -316,10 +336,10 @@ Cuentas sin acceso: una cuenta borrada en la Intranet pierde el acceso la próxi
 
 | Síntoma                                                   | Revisión                                                                                                                                                                                                                                                                                                    |
 | --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `deploy.sh` falla en el push                              | `docker login ghcr.io` en tu máquina, o `GHCR_USERNAME` y `GHCR_TOKEN` con `write:packages`                                                                                                                                                                                                                 |
-| `deploy.sh` falla en el pull del VPS                      | El token del `docker login` del VPS no puede leer `ghcr.io/creup-dev/asambleas`: darle acceso al paquete                                                                                                                                                                                                    |
-| `deploy.sh` falla en las migraciones                      | `DATABASE_URL` en `asambleas/.env` (host `postgresql`, rol y base `asambleas`). Un lock atascado: `SELECT pid FROM pg_locks WHERE locktype = 'advisory';` y `pg_terminate_backend(pid)`                                                                                                                     |
-| `deploy.sh` se para: "belongs to uid"                     | `sudo chown -R 1000:1000 ~/asambleas/data`: la app corre con el uid 1000 y no podría escribir los PDFs                                                                                                                                                                                                      |
+| `scripts/deploy.sh` falla en el push                      | `docker login ghcr.io` en tu máquina, o `GHCR_USERNAME` y `GHCR_TOKEN` con `write:packages`                                                                                                                                                                                                                 |
+| `scripts/deploy.sh` falla en el pull del VPS              | El token del `docker login` del VPS no puede leer `ghcr.io/creup-dev/asambleas`: darle acceso al paquete                                                                                                                                                                                                    |
+| `scripts/deploy.sh` falla en las migraciones              | `DATABASE_URL` en `asambleas/.env` (host `postgresql`, rol y base `asambleas`). Un lock atascado: `SELECT pid FROM pg_locks WHERE locktype = 'advisory';` y `pg_terminate_backend(pid)`                                                                                                                     |
+| `scripts/deploy.sh` se para: "belongs to uid"             | `sudo chown -R 1000:1000 ~/asambleas/data`: la app corre con el uid 1000 y no podría escribir los PDFs                                                                                                                                                                                                      |
 | "the remote deploy stopped before its last step"          | El script remoto terminó antes de tiempo (conexión cortada o un comando que se comió la entrada): revisar la salida y repetir                                                                                                                                                                               |
 | La app no llega a `healthy`                               | Los logs que imprime el script: `APP_SECRET`, `DATABASE_URL`, credenciales OAuth                                                                                                                                                                                                                            |
 | 502 en `asambleas.creup.es`                               | `docker compose ps asambleas-app`; el contenedor tiene que estar en la red del compose raíz                                                                                                                                                                                                                 |

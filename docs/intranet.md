@@ -633,7 +633,7 @@ variables dentro del `docker-compose.yml` (ahí `scripts/deploy.sh` fija
 1. Editar el `env_file` del servicio `intranet` en el VPS.
 2. Desde el directorio de compose (`REMOTE_DIR` de `scripts/deploy.sh`, cuyo
    `.env` mantiene la imagen desplegada). Antes, comprobar que ese `.env` fija
-   la imagen que está corriendo: `deploy.sh` solo escribe la línea tras un
+   la imagen que está corriendo: `scripts/deploy.sh` solo escribe la línea tras un
    despliegue verificado, y sin ella el compose cae en `:latest`, que en el
    VPS puede ser una versión vieja, sin dar ningún error. Si falta, añadirla
    con la imagen que muestra `docker compose images intranet`.
@@ -645,7 +645,7 @@ variables dentro del `docker-compose.yml` (ahí `scripts/deploy.sh` fija
    docker compose exec -T nginx nginx -s reload
    ```
 
-   La recarga de nginx es la misma que hace `deploy.sh`: el contenedor nuevo
+   La recarga de nginx es la misma que hace `scripts/deploy.sh`: el contenedor nuevo
    puede tener otra dirección. Alternativa: editar el `env_file` y desplegar
    con `scripts/deploy.sh`, que también recrea el contenedor y recarga nginx.
 

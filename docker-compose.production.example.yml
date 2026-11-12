@@ -4,7 +4,7 @@
 services:
   asambleas-app:
     # Per-project image var, never a bare ${IMAGE}: the root .env is shared.
-    # deploy.sh and rollback.sh write it there.
+    # scripts/deploy.sh and scripts/rollback.sh write it there.
     image: ${ASAMBLEAS_IMAGE:-ghcr.io/creup-dev/asambleas:latest}
     container_name: asambleas-app
     restart: unless-stopped
