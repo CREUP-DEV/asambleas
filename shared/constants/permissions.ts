@@ -11,6 +11,7 @@ export const PERMISSION_KEYS = {
   ASSEMBLY_VOTE_RESULT: "assembly:vote_result",
   SESSION_MODERATE: "session:moderate",
   MEMBER_MANAGE: "member:manage",
+  STATS_VIEW: "stats:view",
 } as const;
 
 export type PermissionKey =
@@ -38,6 +39,7 @@ export const PERMISSION_DESCRIPTION_I18N_KEYS: Record<PermissionKey, string> = {
   [PERMISSION_KEYS.SESSION_MODERATE]:
     "permissions.descriptions.sessionModerate",
   [PERMISSION_KEYS.MEMBER_MANAGE]: "permissions.descriptions.memberManage",
+  [PERMISSION_KEYS.STATS_VIEW]: "permissions.descriptions.statsView",
 };
 
 /**
@@ -58,6 +60,7 @@ export const PERMISSION_ICONS: Record<PermissionKey, string> = {
   [PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT]: "i-lucide-vote",
   [PERMISSION_KEYS.SESSION_MODERATE]: "i-lucide-gavel",
   [PERMISSION_KEYS.MEMBER_MANAGE]: "i-lucide-building-2",
+  [PERMISSION_KEYS.STATS_VIEW]: "i-lucide-chart-column",
 };
 
 export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {

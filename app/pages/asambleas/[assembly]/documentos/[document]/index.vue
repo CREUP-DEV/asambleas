@@ -717,6 +717,13 @@ const notesUrl = computed(() =>
   amendmentsUrl.value.replace(/\/amendments$/, "/notes"),
 );
 
+// How long it is open, for the statistics (only once it is published).
+useDocumentReading(() =>
+  document.value?.status === "published"
+    ? amendmentsUrl.value.replace(/\/amendments$/, "/reading")
+    : null,
+);
+
 /** Their marks go on the original text only: the other views show another. */
 function notesRoot(): HTMLElement | null {
   return textMode.value === "original" && !composer.value

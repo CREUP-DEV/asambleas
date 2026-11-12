@@ -6,6 +6,7 @@ import {
   MAJORITIES,
   VOTE_METHODS,
 } from "../../constants/domain";
+import { READING_BEAT_MAX_SECONDS } from "../documentViews";
 import type {
   BulkDocumentsBody,
   CorrectionBody,
@@ -121,6 +122,12 @@ export const contentHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 export const documentContentSchema = z.object({
   blocks: blocksSchema,
   baseHash: contentHashSchema,
+});
+
+/** Time a published document was open (DocumentReadingBody). */
+export const documentReadingSchema = z.strictObject({
+  opened: z.boolean().optional(),
+  seconds: z.int().min(0).max(READING_BEAT_MAX_SECONDS),
 });
 
 /** Heartbeat of an open draft editor (DocumentPresenceBody). */

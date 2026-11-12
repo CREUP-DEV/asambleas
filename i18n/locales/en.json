@@ -298,7 +298,8 @@
       "amendmentReview": "Validate and publish amendments, and record their admission",
       "assemblyVoteResult": "Record assembly vote result",
       "sessionModerate": "Moderate the session: live state, admissions, votes and transactionals",
-      "memberManage": "Sync and edit members"
+      "memberManage": "Sync and edit members",
+      "statsView": "See the reading and participation statistics of every account and member"
     }
   },
   "assembly": {
@@ -2100,6 +2101,83 @@
         "ofMembers": "of the asociados with a vote",
         "invalid": "Enter a fraction between 1/100 and 1."
       }
+    },
+    "stats": {
+      "title": "Statistics",
+      "cardDescription": "What each council and each account read, presented and sent, and how it took part in the session.",
+      "description": "Reading comes from each account's read marks, over what is published and not presented by its own member; a member counts with its account that read most. Opening and time come from the pages of the published documents: time is how long they were on screen with someone using the page (inside a PDF there is no telling whether anyone reads), and a member adds up all its accounts.",
+      "assembly": "Assembly",
+      "search": "Search a member, an account or a document",
+      "summary": "Published: {documents} and {amendments}. {reading} of {accounts} accounts marked something as read ({members} members). Accounts that opened a document: {opening}.",
+      "count": {
+        "documents": "{count} document | {count} documents",
+        "amendments": "{count} amendment | {count} amendments"
+      },
+      "tabs": {
+        "members": "Members",
+        "accounts": "Accounts",
+        "documents": "Documents"
+      },
+      "columns": {
+        "member": "Member",
+        "account": "Account",
+        "documentsRead": "Documents read",
+        "amendmentsRead": "Amendments read",
+        "lastRead": "Last read",
+        "documentsPresented": "Documents presented",
+        "amendmentsPresented": "Amendments presented",
+        "outcomes": "Outcome of its amendments",
+        "attendance": "Attendance",
+        "speaking": "Speaking turns",
+        "accounts": "Accounts",
+        "signIns": "Sign-ins",
+        "lastSignIn": "Last sign-in",
+        "sent": "Sent",
+        "document": "Document",
+        "presenter": "Presented by",
+        "readerMembers": "Members who read it",
+        "readers": "Accounts who read it",
+        "changed": "Read on an earlier version",
+        "amendments": "Amendments",
+        "opened": "Documents opened",
+        "readingTime": "Time with documents open",
+        "openedByMembers": "Members who opened it",
+        "timeOpen": "Time open"
+      },
+      "sortBy": "Sort by {column}",
+      "never": "Never",
+      "duration": "{minutes}m {seconds}s",
+      "noRole": "No role",
+      "inactive": "Inactive",
+      "late": "{count} late | {count} late",
+      "main": "{count} as main author | {count} as main author",
+      "attendance": "In the room at {inRoom} of {taken} headcounts",
+      "delegations": "Delegated {gave} · Received {received}",
+      "turns": "{count} turn | {count} turns",
+      "revoked": "No access",
+      "sentDetail": "Amendments: {amendments} · Documents: {documents}",
+      "written": "{count} amendment written | {count} amendments written",
+      "openDetail": "See {account} in detail",
+      "detail": "Account detail",
+      "detailFailed": "The account detail could not be loaded",
+      "loading": "Loading…",
+      "detailDocuments": "Published documents",
+      "detailAmendments": "Published amendments",
+      "nothingPublished": "Nothing is published yet.",
+      "own": "Presented by its member",
+      "empty": "No data for this assembly.",
+      "readOf": "{read} of {total}",
+      "changedCount": "{count} changed since | {count} changed since",
+      "time": {
+        "hours": "{hours}h {minutes}m",
+        "minutes": "{minutes}m",
+        "seconds": "{seconds}s"
+      },
+      "views": "Opened {count} time | Opened {count} times",
+      "openedByAccounts": "Accounts: {accounts} · Views: {views}",
+      "markedOn": "Marked on {date}",
+      "openedDetail": "Opened {count} time, {time} in all; first on {date} | Opened {count} times, {time} in all; first on {date}",
+      "neverOpened": "Never opened"
     }
   },
   "export": {
@@ -2279,7 +2357,8 @@
       "roles": "Roles and permissions",
       "members": "Members",
       "activity": "Activity",
-      "calendarRules": "Regulatory deadlines"
+      "calendarRules": "Regulatory deadlines",
+      "stats": "Statistics"
     },
     "assembly": {
       "navLabel": "{assembly} sections",

@@ -290,6 +290,8 @@ const EXECUTIVE_VISIBLE_PERMISSIONS = [
   PERMISSION_KEYS.SESSION_MODERATE,
   PERMISSION_KEYS.MEMBER_MANAGE,
   PERMISSION_KEYS.USER_MANAGE_ROLES,
+  // The statistics name every account and the member it acts for.
+  PERMISSION_KEYS.STATS_VIEW,
 ] as const;
 
 /**

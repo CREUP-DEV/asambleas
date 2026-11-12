@@ -848,6 +848,19 @@ export interface DocumentContentBody {
 }
 
 /** Heartbeat of an open draft editor (POST .../presence). */
+/** POST .../documents/[document]/reading: a beat of an open document. */
+export interface DocumentReadingBody {
+  /** The page just opened the document: one more view. */
+  opened?: boolean;
+  /** Seconds it was on show with someone at it since the last beat. */
+  seconds: number;
+}
+
+export interface DocumentReadingDto {
+  /** False when nothing was kept: not published, or an Admin acting. */
+  recorded: boolean;
+}
+
 export interface DocumentPresenceBody {
   /** Random id of the browser tab (8 to 64 of A-Z, a-z, 0-9, "_", "-"). */
   tabId: string;
@@ -1732,4 +1745,164 @@ export interface AdminActivityQuery {
   cursor?: ActivityCursor;
   /** 1..ADMIN_ACTIVITY_MAX_LIMIT, default ACTIVITY_PAGE_DEFAULT_LIMIT. */
   limit: number;
+}
+
+// Statistics (stats:view) ---------------------------------------------------
+
+/**
+ * Reading of one account or member over an assembly: what it marked as read
+ * among the published documents and amendments it does not present itself.
+ * `changed` were marked on an earlier revision.
+ */
+export interface StatsReadingDto {
+  documents: number;
+  documentsRead: number;
+  documentsChanged: number;
+  amendments: number;
+  amendmentsRead: number;
+  amendmentsChanged: number;
+  /** The latest mark in the assembly, if any. */
+  lastReadAt: IsoDate | null;
+}
+
+/**
+ * How long one account or member had the published documents open
+ * (document_views): how many of those it has to read it opened, the times
+ * and the seconds it had any published document on show.
+ */
+export interface StatsOpeningDto {
+  /** Published documents it does not present itself. */
+  documents: number;
+  /** Of those, the ones it opened at least once. */
+  opened: number;
+  /** Times it opened a published document, its own included. */
+  views: number;
+  /** Seconds it had a published document on show, its own included. */
+  seconds: number;
+  lastOpenedAt: IsoDate | null;
+}
+
+/** One account in the statistics of an assembly. */
+export interface StatsAccountDto {
+  id: string;
+  name: string;
+  image: string | null;
+  role: string | null;
+  memberId: string | null;
+  /** The account lost access (deleted in the Intranet). */
+  revoked: boolean;
+  /** Sign-ins ever recorded (audit `auth.sign_in`) and the latest one. */
+  signIns: number;
+  lastSignInAt: IsoDate | null;
+  reading: StatsReadingDto;
+  opening: StatsOpeningDto;
+  /** Amendments of the assembly this account wrote, drafts included. */
+  amendmentsWritten: number;
+  /** Amendments and documents of the assembly this account sent. */
+  amendmentsSubmitted: number;
+  documentsSubmitted: number;
+}
+
+/** Amendments presented by a member (any author), by how they ended. */
+export type StatsAmendmentOutcomes = Record<
+  Exclude<AmendmentStatus, "draft">,
+  number
+>;
+
+/** One member in the statistics of an assembly. */
+export interface StatsMemberDto {
+  member: MemberRef & { university: string | null; active: boolean };
+  /** Accounts that act for the member. */
+  accounts: number;
+  /** Documents it presents (main or co-presenter), drafts left out. */
+  documentsPresented: number;
+  /** Of those, sent after their internal deadline (`dueAt`). */
+  documentsLate: number;
+  /** Amendments it presents (any author), drafts left out. */
+  amendmentsPresented: number;
+  /** Of those, the ones it presents as main author. */
+  amendmentsMain: number;
+  /** Of those, presented out of time. */
+  amendmentsLate: number;
+  amendmentOutcomes: StatsAmendmentOutcomes;
+  /** Reading of the account of the member that read most. */
+  reading: StatsReadingDto;
+  /** Opening of all its accounts together. */
+  opening: StatsOpeningDto;
+  /** Headcounts of the assembly and how the member was in each. */
+  headcounts: {
+    taken: number;
+    inRoom: number;
+    delegated: number;
+    received: number;
+  };
+  /** Turns it spoke (done or speaking) and for how long, in seconds. */
+  speakingTurns: number;
+  speakingSeconds: number;
+}
+
+/** One published document and how many read it. */
+export interface StatsDocumentDto {
+  id: string;
+  slug: string;
+  title: string;
+  kind: DocumentKind;
+  presenter: MemberRef | null;
+  /** Accounts and members that marked it as read on its current revision. */
+  readers: number;
+  readerMembers: number;
+  /** Accounts that marked an earlier revision. */
+  changed: number;
+  amendments: number;
+  /** Accounts and members that opened it, how often and for how long. */
+  openedBy: number;
+  openedByMembers: number;
+  views: number;
+  seconds: number;
+}
+
+/** GET /api/admin/stats?assembly= (stats:view). */
+export interface StatsDto {
+  assembly: { id: string; slug: string; label: string };
+  totals: {
+    documents: number;
+    amendments: number;
+    accounts: number;
+    /** Accounts with at least one read mark in the assembly. */
+    readingAccounts: number;
+    /** Members with at least one account that marked something. */
+    readingMembers: number;
+    /** Accounts that opened at least one published document. */
+    openingAccounts: number;
+  };
+  members: StatsMemberDto[];
+  accounts: StatsAccountDto[];
+  documents: StatsDocumentDto[];
+}
+
+/** One document or amendment as an account read it. */
+export interface StatsReadItemDto {
+  id: string;
+  /** The document's title, or the amendment's code. */
+  label: string;
+  /** For an amendment: the title of its document. */
+  documentTitle: string | null;
+  /** The slug of the document (an amendment's document). */
+  slug: string;
+  state: ReadState;
+  readAt: IsoDate | null;
+  /** Presented by the account's member: it never counts as left to read. */
+  own: boolean;
+  /** For a document: times opened, seconds on show and the first time. */
+  views: number;
+  seconds: number;
+  firstOpenedAt: IsoDate | null;
+}
+
+/** GET /api/admin/stats/users/[id]?assembly= (stats:view). */
+export interface StatsAccountDetailDto {
+  account: StatsAccountDto;
+  member: MemberRef | null;
+  documents: StatsReadItemDto[];
+  amendments: StatsReadItemDto[];
 }

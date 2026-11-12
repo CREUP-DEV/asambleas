@@ -129,6 +129,14 @@ onLive((events) => {
 
 const blocks = computed(() => detail.value?.baseVersion?.blocks ?? []);
 
+// How long each document on show is open, for the statistics: every
+// document here is published.
+useDocumentReading(() =>
+  current.value
+    ? `${apiBase.value}/documents/${encodeURIComponent(current.value.id)}/reading`
+    : null,
+);
+
 // What the header says ---------------------------------------------------------------
 
 const documentWindow = useDocumentWindow(

@@ -94,6 +94,11 @@ const NON_RECORDING_MUTATIONS: Readonly<Record<string, string>> = {
   // each beat would fill the history and wake every live listener.
   "server/api/assemblies/[assembly]/documents/[document]/presence.post.ts":
     "presence heartbeat, memory only",
+  // Time a published document was open, for the statistics: the
+  // document_views row is the record. An event or an audit row per beat
+  // would fill the history every 30 seconds per reader.
+  "server/api/assemblies/[assembly]/documents/[document]/reading.post.ts":
+    "reading heartbeat, the document_views row is the record",
 };
 
 interface ModuleInfo {

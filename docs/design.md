@@ -861,7 +861,8 @@ account and document or amendment).
   and having opened it are different things. "Marcar como leído" does, and
   the same button takes the mark back.
 - **Per account.** A council's account is the council, so its delegation
-  shares the marks. Nobody else reads them: no endpoint returns another
+  shares the marks. Only the account changes them; the statistics
+  (`stats:view`, "Statistics") are the one place that reads another
   account's.
 - **What takes a mark.** Published documents (`status` `published`) and the
   amendments to them that are presented and published. Everyone who sees
@@ -893,6 +894,51 @@ documentation can be read without going back to a list.
 
 Every change of marks is recorded (`read_marks.set`, counts only), like any
 other mutation.
+
+## Statistics
+
+`/admin/estadisticas` answers, for one assembly, who read what, who presented
+what and how each member took part in the session. It opens with
+`stats:view`. Out of the box only the Secretaría and the Presidencia hold it
+(they hold every key) and an Admin by the bypass; it can be granted to
+another role or account like any key. Everything but the opening comes
+from data the platform keeps anyway.
+
+- **Per member.** Every active asociado and sectorial, and any other member
+  with an account or something done in the assembly, in the order of
+  `orderMembers`: its reading (the account of the member that read most),
+  documents presented (main or co-presenter, drafts left out) and how many
+  were sent after their `dueAt`, amendments presented (any author), as main
+  author and out of time, their outcomes, headcounts (in the room, delegated,
+  received) and speaking turns (count and time with the floor).
+- **Per account.** Every account linked to a member, and any other with a
+  mark or something written in the assembly: role, sign-ins (audit
+  `auth.sign_in`, all time) and the latest, its reading, the amendments it
+  wrote (drafts included) and the amendments and documents it sent. Its
+  detail lists every published document and amendment with the state of its
+  mark and when it was made.
+- **Per document.** Each published document: how many accounts and members
+  marked it on its current revision, how many on an earlier one, how many
+  accounts and members opened it, how often and for how long, and how many
+  amendments it has.
+- **Opening.** The one thing recorded for the statistics (`document_views`:
+  one row per account, published document and day, with `views` and
+  `seconds`). The document page and the reader of an agenda item report once
+  when a published document opens, then every 30 seconds the time the page
+  was visible with someone at it: a key, a scroll, the pointer or a touch in
+  the last two minutes, or the focus inside the embedded PDF. Hiding the tab
+  or leaving the page sends what is left. The server credits each beat at
+  most 60 seconds and never more than the time since that account's previous
+  beat on the document, so two open tabs never count twice. Nothing is kept
+  for a document that is not published, nor while an Admin acts as the
+  account. It is time open, not time read: inside a PDF nothing tells. A
+  member's opening adds up all its accounts; per account, the detail lists
+  each document's views, time and first opening.
+- **Reading.** As the hub counts it (`readStateOf`): what the account's
+  member presents never counts, `changed` counts apart from `read`.
+
+The page names every account and the member it acts for, so `stats:view` is
+one of the keys that see the executive offices. Private notes never reach it.
 
 ## Private notes
 

@@ -11,4 +11,5 @@ export * from "./impersonation";
 export * from "./session";
 export * from "./readMarks";
 export * from "./documentNotes";
+export * from "./documentViews";
 export * from "./auditLog";

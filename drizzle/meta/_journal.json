@@ -204,6 +204,13 @@
       "when": 1794432669882,
       "tag": "0028_white_blackheart",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1794437891419,
+      "tag": "0029_adorable_shard",
+      "breakpoints": true
     }
   ]
 }
