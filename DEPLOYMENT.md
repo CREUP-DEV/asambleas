@@ -101,7 +101,6 @@ NUXT_SMTP_SECURE=false
 NUXT_SMTP_USER=asambleas@creup.example
 NUXT_SMTP_PASS=<contraseña del buzón>
 NUXT_SMTP_FROM_EMAIL=asambleas@creup.example
-NUXT_SMTP_FROM_NAME=CREUP Asambleas
 ```
 
 Notas:
