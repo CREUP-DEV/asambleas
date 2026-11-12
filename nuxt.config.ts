@@ -291,6 +291,22 @@ export default defineNuxtConfig({
     },
   },
 
+  // Nuxt UI's colours plus `sectorial`, the green that marks a sectorial's
+  // acronym (`CommonMemberBadge`; palette and steps in main.css).
+  ui: {
+    theme: {
+      colors: [
+        "primary",
+        "secondary",
+        "success",
+        "info",
+        "warning",
+        "error",
+        "sectorial",
+      ],
+    },
+  },
+
   icon: {
     provider: "server",
     fallbackToApi: false,

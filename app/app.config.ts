@@ -44,6 +44,7 @@ export default defineAppConfig({
     colors: {
       primary: "creup-red",
       secondary: "creup-blue",
+      sectorial: "creup-green",
     },
     // The close button sits absolutely in the header's corner (end-4, 32px
     // wide), so the title and description keep clear of it, with a gap: a

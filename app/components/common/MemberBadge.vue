@@ -3,7 +3,7 @@ import type { MemberKind } from "~~/shared/constants/domain";
 import type { MemberRef } from "~~/shared/types/api";
 
 /**
- * A member (student council, sectorial, executive area) shown by its acronym,
+ * A member (student council, sectorial, executive office) shown by its acronym,
  * with the full name in a tooltip. Screen readers get the full name instead
  * of the acronym.
  */
@@ -19,18 +19,20 @@ const props = withDefaults(
   { size: "sm", variant: "subtle", showName: false },
 );
 
-const KIND_COLORS: Record<
-  MemberKind,
-  "secondary" | "info" | "primary" | "neutral"
-> = {
-  asociado: "secondary",
-  sectorial: "info",
-  executive: "primary",
-  other: "neutral",
+/**
+ * Councils in blue, sectorials in their own green (`sectorial`, main.css),
+ * everyone else (the CEA's offices, the CAS and any other) in the grey-blue
+ * of `secondary`.
+ */
+const KIND_COLORS: Record<MemberKind, "info" | "sectorial" | "secondary"> = {
+  asociado: "info",
+  sectorial: "sectorial",
+  executive: "secondary",
+  other: "secondary",
 };
 
 const color = computed(() =>
-  props.member.kind ? KIND_COLORS[props.member.kind] : "neutral",
+  props.member.kind ? KIND_COLORS[props.member.kind] : "secondary",
 );
 /** A name that only repeats the acronym is not shown twice. */
 const nameRepeats = computed(() => memberNameRepeatsAcronym(props.member));
