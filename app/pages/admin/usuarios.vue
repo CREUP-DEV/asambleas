@@ -84,6 +84,8 @@ interface UserRow {
    * (user_permissions); undefined if the server omits them.
    */
   extraPermissions?: PermissionKey[];
+  /** It used the platform lately (AdminUserDto.online). */
+  online?: boolean;
 }
 
 /** A row of the table: the user with its linked member resolved. */
@@ -1025,10 +1027,10 @@ function goToPage(next: number): void {
       >
         <template #name-cell="{ row }">
           <div class="flex max-w-md min-w-48 items-center gap-3">
-            <UAvatar
-              :src="row.original.image ?? undefined"
+            <CommonAccountAvatar
+              :src="row.original.image"
               :alt="displayName(row.original)"
-              size="sm"
+              :online="row.original.online"
             />
             <div class="min-w-0">
               <!-- The whole name and email, on as many lines as they need. -->

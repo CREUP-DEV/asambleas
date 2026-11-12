@@ -2315,6 +2315,10 @@
           "gone": "No longer exists"
         }
       }
+    },
+    "online": {
+      "label": "Online",
+      "hint": "Online: used the platform in the last {minutes} minutes"
     }
   },
   "export": {

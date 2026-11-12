@@ -1,3 +1,4 @@
+import { isOnline } from "../live/online";
 import {
   and,
   eq,
@@ -155,11 +156,14 @@ export async function loadExtraPermissions(
 /** Adds `extraPermissions` to rows read with ADMIN_USER_COLUMNS. */
 export async function withExtraPermissions<T extends { id: string }>(
   rows: T[],
-): Promise<(T & { extraPermissions: PermissionKey[] })[]> {
+): Promise<(T & { extraPermissions: PermissionKey[]; online: boolean })[]> {
   const extra = await loadExtraPermissions(rows.map((row) => row.id));
+  const now = Date.now();
   return rows.map((row) => ({
     ...row,
     extraPermissions: extra.get(row.id) ?? [],
+    // Whether it used the platform lately (server/utils/live/online.ts).
+    online: isOnline(row.id, now),
   }));
 }
 

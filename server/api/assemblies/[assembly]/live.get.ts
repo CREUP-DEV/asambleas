@@ -7,7 +7,9 @@ import {
 import { requireActor } from "../../../utils/domain/actor";
 import { toLiveEventDto } from "../../../utils/domain/assemblies";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
+import type { AuthEventContext } from "../../../utils/auth/requireAuth";
 import { subscribeToAssembly } from "../../../utils/live/hub";
+import { markSeen } from "../../../utils/live/online";
 import {
   LIVE_HEARTBEAT_INTERVAL_MS,
   liveHeartbeat,
@@ -22,7 +24,8 @@ const RETRY_MS = 5_000;
  * - `change` with a LiveEventDto for every recorded event (ids only: clients
  *   refetch through the permission-checked endpoints);
  * - a `ping` heartbeat every 25 s (liveHeartbeat), which clients use to
- *   tell a live stream from one that died in silence.
+ *   tell a live stream from one that died in silence, and which keeps the
+ *   viewer online (server/utils/live/online.ts) while the page stays open.
  */
 export default defineEventHandler(async (event) => {
   // Resolve first, so a 401 or 404 still answers as plain JSON.
@@ -42,8 +45,12 @@ export default defineEventHandler(async (event) => {
   const unsubscribe = subscribeToAssembly(assembly.id, (message) => {
     push({ event: "change", data: JSON.stringify(toLiveEventDto(message)) });
   });
+  // A page with the stream open keeps its person online while idle; the
+  // real user, never the account an Admin acts as.
+  const viewerId = (event.context as AuthEventContext).realUser?.id ?? null;
   const heartbeat = setInterval(() => {
     push(liveHeartbeat());
+    if (viewerId) markSeen(viewerId);
   }, LIVE_HEARTBEAT_INTERVAL_MS);
 
   let cleaned = false;

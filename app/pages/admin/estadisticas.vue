@@ -696,10 +696,10 @@ const detailSections = computed(() => {
       >
         <template #name-cell="{ row }">
           <div class="flex max-w-xs min-w-48 items-center gap-3">
-            <UAvatar
-              :src="row.original.image ?? undefined"
+            <CommonAccountAvatar
+              :src="row.original.image"
               :alt="row.original.name"
-              size="sm"
+              :online="row.original.online"
             />
             <div class="min-w-0">
               <button

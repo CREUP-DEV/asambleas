@@ -1488,6 +1488,11 @@ export interface AdminUserDto {
   member: MemberRef | null;
   /** Permissions granted on top of the role (user_permissions), in catalog order. */
   extraPermissions: PermissionKey[];
+  /**
+   * It used the platform in the last ONLINE_WINDOW_MINUTES (a request or a
+   * live stream's heartbeat; kept in memory only, false after a restart).
+   */
+  online: boolean;
 }
 
 // Impersonation ------------------------------------------------------------
@@ -1797,6 +1802,8 @@ export interface StatsAccountDto {
   memberId: string | null;
   /** The account lost access (deleted in the Intranet). */
   revoked: boolean;
+  /** It used the platform lately (AdminUserDto.online). */
+  online: boolean;
   /** Sign-ins ever recorded (audit `auth.sign_in`) and the latest one. */
   signIns: number;
   lastSignInAt: IsoDate | null;
