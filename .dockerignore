@@ -22,3 +22,7 @@ private
 storage
 data
 backups
+# Local simulation dumps, and scratch files in public/ (the app serves none
+# starting with "_"), which Nuxt would otherwise copy into the image.
+.sim77
+public/_*

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Puts the previous app image back on the VPS and waits for it to be healthy.
-# Migrations are not reverted.
+# Migrations are not reverted, so it refuses an image older than the database
+# (one that does not know every migration applied) unless --force.
 set -euo pipefail
 
 # Settings, the build context and git all live at the repository root,
@@ -13,6 +14,8 @@ Usage:
   bash ./scripts/rollback.sh            the image saved by the last successful deploy
   bash ./scripts/rollback.sh <tag>      ghcr.io/creup-dev/asambleas:<tag>
   bash ./scripts/rollback.sh <ref>      a full image reference (repo:tag or repo@sha256:...)
+  --force                       roll back even when the database has migrations
+                                the image does not know (it may misread data)
 EOF
 }
 
@@ -28,10 +31,30 @@ resolve_ssh_bin() {
   fi
 }
 
-if [ "${1:-}" = "--help" ] || [ "${1:-}" = "-h" ]; then
-  usage
-  exit 0
-fi
+FORCE=false
+TARGET=""
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=true ;;
+    -h | --help)
+      usage
+      exit 0
+      ;;
+    -*)
+      printf 'ERROR: unknown argument: %s\n' "$arg" >&2
+      usage >&2
+      exit 1
+      ;;
+    *)
+      if [ -n "$TARGET" ]; then
+        printf 'ERROR: only one image may be given\n' >&2
+        usage >&2
+        exit 1
+      fi
+      TARGET="$arg"
+      ;;
+  esac
+done
 
 if [ -f .env ]; then
   set -a
@@ -47,12 +70,15 @@ resolve_ssh_bin
 
 IMAGE_NAME="${IMAGE_NAME:-ghcr.io/creup-dev/asambleas}"
 COMPOSE_APP_SERVICE="${COMPOSE_APP_SERVICE:-asambleas-app}"
+COMPOSE_POSTGRES_SERVICE="${COMPOSE_POSTGRES_SERVICE:-postgresql}"
+DEPLOY_DB_NAME="${DEPLOY_DB_NAME:-asambleas}"
+DEPLOY_DB_USER="${DEPLOY_DB_USER:-asambleas}"
 ROLLBACK_IMAGE_FILE="${ROLLBACK_IMAGE_FILE:-.last_asambleas_image}"
 
-case "${1:-}" in
+case "$TARGET" in
   "") ROLLBACK_IMAGE="" ;;
-  */* | *@*) ROLLBACK_IMAGE="$1" ;;
-  *) ROLLBACK_IMAGE="${IMAGE_NAME}:$1" ;;
+  */* | *@*) ROLLBACK_IMAGE="$TARGET" ;;
+  *) ROLLBACK_IMAGE="${IMAGE_NAME}:$TARGET" ;;
 esac
 
 if [ -z "$ROLLBACK_IMAGE" ]; then
@@ -79,6 +105,39 @@ export ASAMBLEAS_IMAGE="$IMAGE"
 
 echo "== Pull rollback image if missing =="
 docker compose pull --policy missing "$APP_SERVICE" </dev/null
+
+echo "== Compare migrations: image and database =="
+# Drizzle records each migration by its journal timestamp (created_at = the
+# journal's `when`) and applies those newer than the last one recorded. An
+# image whose journal ends before the database's last migration predates the
+# schema it would run on: after one like 0021, which dropped a column and
+# changed a JSON shape the previous release read, it breaks in session.
+image_last="$(docker run --rm --network none --entrypoint /nodejs/bin/node "$IMAGE" -e 'const j=require("/app/drizzle/meta/_journal.json");console.log(Math.max(...j.entries.map((e)=>e.when)))' </dev/null 2>/dev/null || true)"
+db_applied="$(docker compose exec -T "$POSTGRES_SERVICE" psql -X -A -t -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" -c 'SELECT created_at FROM drizzle.__drizzle_migrations ORDER BY created_at' </dev/null 2>/dev/null || true)"
+db_applied="${db_applied//$'\r'/}"
+if ! [[ "$image_last" =~ ^[0-9]+$ ]] || [ -z "$db_applied" ]; then
+  if [ "$FORCE" != true ]; then
+    echo "ERROR: could not read the migrations of the image or of the database; nothing changed. Check them, or pass --force" >&2
+    exit 1
+  fi
+  echo "    could not compare them; going on (--force)"
+else
+  ahead=0
+  while read -r applied; do
+    if [[ "$applied" =~ ^[0-9]+$ ]] && [ "$applied" -gt "$image_last" ]; then
+      ahead=$((ahead + 1))
+    fi
+  done <<<"$db_applied"
+  if [ "$ahead" -gt 0 ]; then
+    if [ "$FORCE" != true ]; then
+      echo "ERROR: the database has $ahead migration(s) newer than $IMAGE knows; it could misread the data. Nothing changed. Restore the pre-deploy dump first (DEPLOYMENT.md, Restaurar), or pass --force" >&2
+      exit 1
+    fi
+    echo "    the database has $ahead migration(s) newer than the image; going on (--force)"
+  else
+    echo "    the image knows every migration applied"
+  fi
+fi
 
 echo "== Recreate app container =="
 docker compose up -d --no-deps "$APP_SERVICE" </dev/null
@@ -120,7 +179,11 @@ REMOTE
 remote_env="$(printf '%q=%q ' \
   COMPOSE_DIR "$COMPOSE_DIR" \
   IMAGE "$ROLLBACK_IMAGE" \
-  APP_SERVICE "$COMPOSE_APP_SERVICE")"
+  APP_SERVICE "$COMPOSE_APP_SERVICE" \
+  POSTGRES_SERVICE "$COMPOSE_POSTGRES_SERVICE" \
+  DB_NAME "$DEPLOY_DB_NAME" \
+  DB_USER "$DEPLOY_DB_USER" \
+  FORCE "$FORCE")"
 
 log_file="$(mktemp)"
 trap 'rm -f "$log_file"' EXIT
