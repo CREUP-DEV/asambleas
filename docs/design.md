@@ -946,6 +946,12 @@ from data the platform keeps anyway.
 The page names every account and the member it acts for, so `stats:view` is
 one of the keys that see the executive offices. Private notes never reach it.
 
+Both Usuarios and Estadísticas put a green dot on the avatar of every account
+that used the platform in the last five minutes (a request, or the heartbeat
+of an assembly page left open). Only the real person counts, never an account
+an Admin acts as. The platform keeps it in memory and nowhere else, so after
+a restart everyone reads offline until they do something.
+
 ## Private notes
 
 Reading a document to prepare an assembly means writing things down: what

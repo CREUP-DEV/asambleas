@@ -1,3 +1,4 @@
+import { isOnline } from "../live/online";
 import {
   and,
   count,
@@ -545,6 +546,7 @@ function accountStats(
   const signIn = signIns.get(account.id);
   return {
     ...account,
+    online: isOnline(account.id),
     signIns: signIn?.count ?? 0,
     lastSignInAt: signIn?.last ? signIn.last.toISOString() : null,
     reading: tallyReading({

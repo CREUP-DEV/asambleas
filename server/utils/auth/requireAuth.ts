@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import { db } from "../../db";
 import { users } from "../../db/schema";
 import { auth } from "./auth";
+import { markSeen } from "../live/online";
 import { resolveImpersonation } from "./impersonation";
 import type { ImpersonationContext } from "./impersonation";
 import type { PermissionKey } from "~~/shared/constants/permissions";
@@ -117,6 +118,8 @@ async function loadUserWithRole(
  * target becoming Admin stop it at once, since the real role is read on
  * every request.
  *
+ * It also marks the real user as online (server/utils/live/online.ts).
+ *
  * An account that lost access (users.access_revoked_at, an account the
  * Intranet deleted) gets 401 on every request, read from the database each
  * time: revoking deletes its sessions, but better-auth's session cookie
@@ -143,6 +146,9 @@ export async function getAuthUserWithRole(
     });
   }
   const realUser = loaded.user;
+  // The person at the keyboard is online, never the account an Admin acts
+  // as (server/utils/live/online.ts).
+  markSeen(realUser.id);
 
   const impersonated = await resolveImpersonation(event, {
     sessionId: session.session.id,
