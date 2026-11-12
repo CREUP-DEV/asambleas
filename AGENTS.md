@@ -426,7 +426,7 @@ and `~` too (`vitest.config.ts`).
 - Drop a column of `users` one release after the code stops using it, never
   in the same one: better-auth selects every column of the row on each
   request, so the previous release (still running while the migration
-  applies, and after a `rollback.sh`) would fail every session.
+  applies, and after a `scripts/rollback.sh`) would fail every session.
   `users.onboarding_seen_at` is unused and waiting to go.
 
 ## PDF Export
@@ -500,8 +500,9 @@ pnpm db:seed
 pnpm db:studio
 pnpm i18n:check
 pnpm i18n:audit-identical
-bash ./deploy.sh    # build, push to GHCR and roll out on the VPS (DEPLOYMENT.md); --seed also runs the RBAC seed
-bash ./rollback.sh
+bash ./scripts/deploy.sh    # build, push to GHCR and roll out on the VPS (DEPLOYMENT.md); --seed also runs the RBAC seed
+bash ./scripts/rollback.sh
+bash ./scripts/clone-prod-db.sh  # replace the local database and uploads with production's (DEPLOYMENT.md); backups/ keeps both sides
 ```
 
 ## Verification Checklist

@@ -3,12 +3,16 @@
 # Migrations are not reverted.
 set -euo pipefail
 
+# Settings, the build context and git all live at the repository root,
+# whatever folder this is run from.
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
+
 usage() {
   cat <<'EOF'
 Usage:
-  bash ./rollback.sh            the image saved by the last successful deploy
-  bash ./rollback.sh <tag>      ghcr.io/creup-dev/asambleas:<tag>
-  bash ./rollback.sh <ref>      a full image reference (repo:tag or repo@sha256:...)
+  bash ./scripts/rollback.sh            the image saved by the last successful deploy
+  bash ./scripts/rollback.sh <tag>      ghcr.io/creup-dev/asambleas:<tag>
+  bash ./scripts/rollback.sh <ref>      a full image reference (repo:tag or repo@sha256:...)
 EOF
 }
 
@@ -60,7 +64,7 @@ if [ -z "$ROLLBACK_IMAGE" ]; then
 fi
 
 if [ -z "$ROLLBACK_IMAGE" ]; then
-  printf 'ERROR: no saved rollback image on the VPS; pass a tag: bash ./rollback.sh <tag>\n' >&2
+  printf 'ERROR: no saved rollback image on the VPS; pass a tag: bash ./scripts/rollback.sh <tag>\n' >&2
   exit 1
 fi
 

@@ -2,14 +2,18 @@
 # Builds the production image, pushes it to GHCR and rolls it out on the VPS:
 # migrations, optional RBAC seed, app recreate, health wait, NGINX reload and
 # old image cleanup.
-# Usage: bash ./deploy.sh [--seed]   (settings in the local .env, see DEPLOYMENT.md)
+# Usage: bash ./scripts/deploy.sh [--seed]   (settings in the local .env, see DEPLOYMENT.md)
 set -euo pipefail
+
+# Settings, the build context and git all live at the repository root,
+# whatever folder this is run from.
+cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 usage() {
   cat <<'EOF'
 Usage:
-  bash ./deploy.sh           build, push and roll out the current tree
-  bash ./deploy.sh --seed    also run the RBAC seed (first deploy, or a new
+  bash ./scripts/deploy.sh           build, push and roll out the current tree
+  bash ./scripts/deploy.sh --seed    also run the RBAC seed (first deploy, or a new
                              permission key or system role). It puts back
                              every default grant, including ones removed by hand.
 EOF
@@ -183,7 +187,7 @@ echo "== Wait for the app to be healthy =="
 if ! wait_healthy "$APP_SERVICE" 120; then
   echo "Last logs:" >&2
   docker compose logs --tail 80 "$APP_SERVICE" </dev/null >&2 || true
-  echo "Roll back with: bash ./rollback.sh" >&2
+  echo "Roll back with: bash ./scripts/rollback.sh" >&2
   exit 1
 fi
 echo "    healthy"

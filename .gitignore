@@ -45,3 +45,6 @@ data/
 
 # PDFs uploaded in development (server/utils/core/uploadPaths.ts)
 /private/
+
+# Clones of production (scripts/clone-prod-db.sh): personal data
+/backups/
