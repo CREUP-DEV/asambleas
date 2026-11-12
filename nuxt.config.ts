@@ -17,6 +17,40 @@ const umamiHost = getOptionalConfigUrl(
 const umamiId = process.env.NUXT_PUBLIC_UMAMI_WEBSITE_ID?.trim() || "";
 const isUmamiConfigured = Boolean(umamiId && umamiHost);
 
+// nuxt-security keys its rate limiter on the client IP plus the route rule
+// that matches (not the path), with a fixed window per bucket. The venue's
+// whole room comes out of one public IP (eduroam NAT, behind Cloudflare), so
+// a per-IP budget on the assembly API is a budget for the whole room, Mesa
+// included: one burst of votes or a wave of SSE reconnections would answer
+// 429 to everyone until the window ends. Those routes go without it (they
+// all need a Google session first, `server/handlers/protected.ts`).
+//
+// A route-level `false` wins over the global object: nuxt-security merges
+// every matching rule with defu, most specific first (radix3 `matchAll`,
+// reversed), and defu keeps the first non-null value. A rule under
+// `/api/assemblies/**` that sets no `rateLimiter` inherits its `false`, and
+// `/**` cannot bring the limiter back; one that sets an object overrides it,
+// is completed from the global options (driver, headers) and counts in a
+// bucket of its own (ip + that rule's pattern, shared by every assembly and
+// document). `server/securityRules.test.ts` replays that resolution.
+//
+// The expensive endpoints keep a separate, generous bucket. Uploads (PDFs,
+// DOCX imports, images, the signed convocatoria) are read whole into memory
+// and only presenters and the Secretaría send them, never the whole room at
+// once: 300 per 5 minutes is room for every council uploading together.
+// Exports queue a PDF job each and anyone who sees the assembly may ask for
+// one; the room may do it at once ("descargad el PDF"), and the bucket is
+// shared by every document of every assembly, so it allows 1,000 per
+// 5 minutes (about ten each for a hundred devices).
+const UPLOAD_RATE_LIMIT = {
+  tokensPerInterval: 300,
+  interval: 300_000,
+};
+const EXPORT_RATE_LIMIT = {
+  tokensPerInterval: 1000,
+  interval: 300_000,
+};
+
 const routeRules = {
   "/admin/**": {
     headers: {
@@ -33,6 +67,7 @@ const routeRules = {
   // JSON, 8 MB uploads) would answer 413 before the handlers' own limits.
   "/api/assemblies/**": {
     security: {
+      rateLimiter: false,
       requestSizeLimiter: {
         maxRequestSizeInBytes: 6_000_000,
         maxUploadFileRequestInBytes: 8_000_000,
@@ -41,6 +76,7 @@ const routeRules = {
   },
   "/api/assemblies/*/documents/*/import": {
     security: {
+      rateLimiter: UPLOAD_RATE_LIMIT,
       requestSizeLimiter: {
         maxRequestSizeInBytes: 6_000_000,
         maxUploadFileRequestInBytes: 16_000_000,
@@ -49,18 +85,51 @@ const routeRules = {
   },
   "/api/assemblies/*/documents/*/file": {
     security: {
+      rateLimiter: UPLOAD_RATE_LIMIT,
       requestSizeLimiter: {
         maxRequestSizeInBytes: 6_000_000,
         maxUploadFileRequestInBytes: 21_000_000,
       },
     },
   },
+  "/api/assemblies/*/documents/*/images": {
+    security: {
+      rateLimiter: UPLOAD_RATE_LIMIT,
+    },
+  },
   "/api/assemblies/*/convocation": {
     security: {
+      rateLimiter: UPLOAD_RATE_LIMIT,
       requestSizeLimiter: {
         maxRequestSizeInBytes: 6_000_000,
         maxUploadFileRequestInBytes: 21_000_000,
       },
+    },
+  },
+  "/api/assemblies/*/export": {
+    security: {
+      rateLimiter: EXPORT_RATE_LIMIT,
+    },
+  },
+  "/api/assemblies/*/documents/*/export": {
+    security: {
+      rateLimiter: EXPORT_RATE_LIMIT,
+    },
+  },
+  // Export status polling and downloads: authenticated and owner-checked,
+  // and polled by every device that asked for a PDF.
+  "/api/exports/**": {
+    security: {
+      rateLimiter: false,
+    },
+  },
+  // The account's own data (`/api/me`, `/api/me/work`, `/api/me/activity`):
+  // every device in the room reads it on each page and the overview refetches
+  // `/api/me/work` on live events, so it goes without the per-IP limiter too.
+  // radix3 matches `/api/me` itself here, never `/api/members`.
+  "/api/me/**": {
+    security: {
+      rateLimiter: false,
     },
   },
   // Uploaded PDFs are shown inside the document page and the convocatoria
@@ -163,12 +232,22 @@ export default defineNuxtConfig({
 
   security: {
     nonce: true,
-    // Delegates in the same room share the venue's public IP, and every live
-    // change makes each client refetch, so the per-IP budget is generous.
+    // What keeps the per-IP limiter: pages, `/api/auth` and the smaller
+    // authenticated sections (`/api/members`, uploaded images), all in one
+    // bucket per IP. Generous, since a room shares one IP; the assembly API,
+    // exports and `/api/me` go without it (see the route rules above).
     rateLimiter: {
       tokensPerInterval: 12000,
       interval: 300000,
     },
+    // Off on purpose. It runs FilterXSS over JSON.stringify of every GET
+    // query and POST body (multipart files included, as arrays of numbers)
+    // and answers 400 when anything changes: it refused plain text such as
+    // "<<Ley>>", ">50 %" or "a -> b" in amendments and notes while letting
+    // "<b>hola</b>" through, and froze the server for seconds on each large
+    // upload. Input is validated with Zod, content is stored as blocks
+    // (`blocksSchema`) and rendered escaped (`shared/utils/content/render.ts`).
+    xssValidator: false,
     headers: {
       contentSecurityPolicy: {
         "default-src": ["'self'"],
