@@ -19,7 +19,13 @@ import {
   markCoverage,
   normalizeBlockFormat,
 } from "./format";
-import { copyShape } from "./lists";
+import {
+  copyShape,
+  fragmentListStarts,
+  handedOnListStarts,
+  orderedListNumbers,
+  struckListNext,
+} from "./lists";
 import { compareReplaceOps, validateOps } from "./ops";
 import { isHardOverlap, overlapBetween } from "./overlaps";
 
@@ -290,17 +296,20 @@ export function consolidate(
     pushInserted(block.id);
   }
 
-  const blocks: Block[] = annotated
-    .filter((block) => block.status !== "deleted")
-    .map((block) => {
-      const result: Block = {
-        id: block.id,
-        type: block.type,
-        text: cleanText(block.segments),
-        marks: block.marks,
-      };
-      return copyShape(block, result);
-    });
+  // A deleted ordered item that started its list again hands its number on
+  // to the next item, as the diff and the PDF number them.
+  const remains = (block: ConsolidatedBlock) => block.status !== "deleted";
+  const handed = handedOnListStarts(annotated, remains);
+  const blocks: Block[] = annotated.filter(remains).map((block) => {
+    const result: Block = {
+      id: block.id,
+      type: block.type,
+      text: cleanText(block.segments),
+      marks: block.marks,
+    };
+    const start = handed.get(block.id);
+    return copyShape(start === undefined ? block : { ...block, start }, result);
+  });
 
   return {
     annotated,
@@ -313,6 +322,14 @@ export function consolidate(
 /**
  * Preview of a single amendment over the base: only the blocks it touches,
  * plus the blocks it inserts, with removed text kept for the diff view.
+ *
+ * Its ordered items carry the numbers they have in the whole diff (the one
+ * the PDF lays out, where deleted items take none): the first of each run
+ * of contiguous blocks, and any other the fragment alone would number
+ * otherwise, get that number as `start` (fragmentListStarts), so an
+ * amendment to "k)" reads "k)" and a run does not carry on the numbers of
+ * the run before it. A deleted item that begins a run gets the number the
+ * next item of its list shows, so it opens a list of its own too.
  */
 export function previewAmendment(
   base: Block[],
@@ -336,5 +353,22 @@ export function previewAmendment(
       if (k >= 0 && k < annotated.length) keep.add(k);
     }
   }
-  return annotated.filter((_, i) => keep.has(i));
+  const counted = (block: ConsolidatedBlock) => block.status !== "deleted";
+  const numbers = orderedListNumbers(annotated, counted);
+  const fragment: ConsolidatedBlock[] = [];
+  const runStarts = new Set<number>();
+  annotated.forEach((block, i) => {
+    if (!keep.has(i)) return;
+    if (!keep.has(i - 1)) runStarts.add(fragment.length);
+    fragment.push(block);
+  });
+  const starts = fragmentListStarts(fragment, numbers, {
+    counted,
+    runStarts,
+    struckNext: struckListNext(annotated, counted),
+  });
+  return fragment.map((block) => {
+    const start = starts.get(block.id);
+    return start === undefined ? block : { ...block, start };
+  });
 }

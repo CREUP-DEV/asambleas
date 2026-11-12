@@ -6,6 +6,7 @@ import type {
 } from "~~/shared/types/api";
 import type { AmendmentOp, Block } from "~~/shared/types/content";
 import { diffPassage } from "~~/shared/utils/content/diff";
+import { blocksToEditor, editorToBlocks } from "~~/shared/utils/content/editor";
 import { validateOps } from "~~/shared/utils/content/ops";
 import {
   proponentReviewBacklog,
@@ -409,8 +410,207 @@ describe("transactional seed", () => {
     expect(transactionalComposerSeed(base, [], newId)).toEqual({
       passage: [],
       anchorBefore: null,
+      before: [],
       seed: [],
       skipped: [],
+    });
+  });
+
+  describe("list numbers", () => {
+    const li = (id: string, text: string, extra: Partial<Block> = {}) =>
+      ({
+        id,
+        type: "list_item",
+        level: 0,
+        list: "ordered",
+        marker: "a)",
+        text,
+        marks: [],
+        ...extra,
+      }) as Block;
+    // Art. 15.1: a) to m), with "1.º" and "2.º" under c).
+    const letters = "abcdefghijklm".split("");
+    const article: Block[] = [
+      p("intro", "Son funciones de la Asamblea:"),
+      ...letters.flatMap((letter) => [
+        li(`l${letter}`, `Apartado ${letter}.`),
+        ...(letter === "c"
+          ? [
+              li("c1", "Primero.", { level: 1, marker: "1." }),
+              li("c2", "Segundo.", { level: 1, marker: "1." }),
+            ]
+          : []),
+      ]),
+    ];
+    const at = (blockId: string, from: number, to: number, text: string) => {
+      const block = article.find((candidate) => candidate.id === blockId)!;
+      return {
+        op: "replace" as const,
+        blockId,
+        from,
+        to,
+        text,
+        baseText: block.text.slice(from, to),
+      };
+    };
+    // The editor reads the seed as the author finds it.
+    const throughEditor = (blocks: Block[]) =>
+      editorToBlocks(blocksToEditor(blocks), newId);
+    const formatOps = (ops: AmendmentOp[]) =>
+      ops.filter((op) => op.op === "replace" && op.block !== undefined);
+
+    it("starts the passage at its real letter", () => {
+      const source = amendment("s", [at("lk", 9, 10, "k bis")]);
+      const seed = transactionalComposerSeed(
+        article,
+        [{ id: source.id, ops: source.ops }],
+        newId,
+      );
+      expect(seed.seed.map((block) => [block.id, block.start])).toEqual([
+        ["lk", 11],
+      ]);
+      expect(blocksToEditor(seed.seed).content![0]!.attrs).toEqual({
+        start: 11,
+        marker: "a)",
+      });
+      // Untouched in the editor, the numbers are no change of format.
+      const edited = throughEditor(seed.seed);
+      const ops = diffPassage(
+        seed.passage,
+        edited,
+        seed.anchorBefore,
+        newId,
+        seed.before,
+      );
+      expect(formatOps(ops)).toEqual([]);
+      expect(validateOps(article, ops)).toEqual([]);
+      // Without `before` the start would read as the author's change.
+      expect(
+        formatOps(diffPassage(seed.passage, edited, seed.anchorBefore, newId)),
+      ).toHaveLength(1);
+    });
+
+    it("reads no change when the author deletes the item that starts it", () => {
+      const source = amendment("s", [
+        at("lk", 9, 10, "k bis"),
+        at("ll", 9, 10, "l bis"),
+      ]);
+      const seed = transactionalComposerSeed(
+        article,
+        [{ id: source.id, ops: source.ops }],
+        newId,
+      );
+      // Deleting "k)" in the editor leaves its list's start to "l)".
+      const doc = blocksToEditor(seed.seed);
+      doc.content![0]!.content!.shift();
+      const edited = editorToBlocks(doc, newId);
+      expect(edited.map((block) => [block.id, block.start])).toEqual([
+        ["ll", 11],
+      ]);
+      const ops = diffPassage(
+        seed.passage,
+        edited,
+        seed.anchorBefore,
+        newId,
+        seed.before,
+      );
+      expect(formatOps(ops)).toEqual([]);
+      expect(ops.some((op) => op.op === "delete")).toBe(true);
+    });
+
+    it("reads no change when the deleted first item stores the start", () => {
+      // A list that carries on after a paragraph: "k)" stores its start.
+      const carried: Block[] = [
+        li("lj", "Apartado j."),
+        p("mid", "Intermedio."),
+        li("lk", "Apartado k.", { start: 11 }),
+        li("ll", "Apartado l."),
+      ];
+      const source = amendment("s", [
+        {
+          op: "replace",
+          blockId: "lk",
+          from: 9,
+          to: 10,
+          text: "k bis",
+          baseText: "k",
+        },
+        {
+          op: "replace",
+          blockId: "ll",
+          from: 9,
+          to: 10,
+          text: "l bis",
+          baseText: "l",
+        },
+      ]);
+      const seed = transactionalComposerSeed(
+        carried,
+        [{ id: source.id, ops: source.ops }],
+        newId,
+      );
+      expect(seed.seed.map((block) => [block.id, block.start])).toEqual([
+        ["lk", 11],
+        ["ll", undefined],
+      ]);
+      const doc = blocksToEditor(seed.seed);
+      doc.content![0]!.content!.shift();
+      const edited = editorToBlocks(doc, newId);
+      expect(edited.map((block) => [block.id, block.start])).toEqual([
+        ["ll", 11],
+      ]);
+      const ops = diffPassage(
+        seed.passage,
+        edited,
+        seed.anchorBefore,
+        newId,
+        seed.before,
+      );
+      // "l)" reads "k)" without a start of its own: consolidate hands on
+      // the deleted item's.
+      expect(formatOps(ops)).toEqual([]);
+      expect(ops).toContainEqual({ op: "delete", blockIds: ["lk"] });
+    });
+
+    it("reads no change on a passage that starts inside a nested list", () => {
+      const source = amendment("s", [at("c2", 0, 7, "Otro")]);
+      const seed = transactionalComposerSeed(
+        article,
+        [{ id: source.id, ops: source.ops }],
+        newId,
+      );
+      expect(seed.seed.map((block) => block.start)).toEqual([2]);
+      const ops = diffPassage(
+        seed.passage,
+        throughEditor(seed.seed),
+        seed.anchorBefore,
+        newId,
+        seed.before,
+      );
+      expect(formatOps(ops)).toEqual([]);
+    });
+
+    it("keeps a start the author changes", () => {
+      const source = amendment("s", [at("lk", 9, 10, "k bis")]);
+      const seed = transactionalComposerSeed(
+        article,
+        [{ id: source.id, ops: source.ops }],
+        newId,
+      );
+      const edited = throughEditor(seed.seed).map((block) => ({
+        ...block,
+        start: 20,
+      }));
+      const ops = diffPassage(
+        seed.passage,
+        edited,
+        seed.anchorBefore,
+        newId,
+        seed.before,
+      );
+      expect(formatOps(ops)).toMatchObject([
+        { blockId: "lk", block: { start: 20 } },
+      ]);
     });
   });
 });

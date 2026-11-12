@@ -15,7 +15,12 @@ import {
   sameBlockFormat,
   sameFormatAt,
 } from "./format";
-import { markerOf } from "./lists";
+import {
+  handedOnListStarts,
+  markerOf,
+  seedListStarts,
+  withoutImpliedStarts,
+} from "./lists";
 
 const dmp = new DiffMatchPatch();
 
@@ -310,6 +315,39 @@ function formatOps(
 }
 
 /**
+ * `edited` without the `start` a base item only takes over from the deleted
+ * items before it: with them gone, consolidate gives it that number anyway
+ * (handedOnListStarts), so it is no change of format. `stored` keeps the
+ * start an item's base text already gives it.
+ */
+function handedOverStarts(
+  before: readonly Block[],
+  basePassage: readonly Block[],
+  edited: Block[],
+  stored: (block: Block) => boolean,
+): Block[] {
+  const editedIds = new Set(edited.map((block) => block.id));
+  const passageIds = new Set(basePassage.map((block) => block.id));
+  const handed = handedOnListStarts(
+    [...before, ...basePassage],
+    (block) => !passageIds.has(block.id) || editedIds.has(block.id),
+  );
+  if (handed.size === 0) return edited;
+  return edited.map((block) => {
+    if (
+      block.start === undefined ||
+      block.start !== handed.get(block.id) ||
+      stored(block)
+    ) {
+      return block;
+    }
+    const copy: Block = { ...block };
+    delete copy.start;
+    return copy;
+  });
+}
+
+/**
  * Turns an edited passage into amendment operations.
  *
  * `basePassage` is a run of consecutive base blocks; `edited` is what the
@@ -322,22 +360,40 @@ function formatOps(
  * A block edited in place may change its text, its inline formatting and
  * its own format (see formatOps); the cell it sits in and an image's
  * picture are not compared.
+ *
+ * `before`, the base blocks before the passage, is for an editor seeded
+ * with the passage's real list numbers (seedListStarts): a `start` that
+ * only says the number an item shows there anyway is no change. Nor is the
+ * start an item takes over from a deleted one that carried it (the editor
+ * moves a list's start to its new first item): consolidate hands it on.
  */
 export function diffPassage(
   basePassage: Block[],
-  edited: Block[],
+  editedPassage: Block[],
   anchorBefore: string | null,
   newId: () => string,
+  before?: readonly Block[],
 ): AmendmentOp[] {
   const baseById = new Map(basePassage.map((block) => [block.id, block]));
   const baseOrder = new Map(basePassage.map((block, i) => [block.id, i]));
   const kept = new Set<string>();
   const replaces: ReplaceOp[] = [];
   const inserts: InsertOp[] = [];
+  const stored = (block: Block) => baseById.get(block.id)?.start !== undefined;
+  const handed = handedOverStarts(
+    before ?? [],
+    basePassage,
+    editedPassage,
+    stored,
+  );
+  const edited = before ? withoutImpliedStarts(before, handed, stored) : handed;
 
   let untouched: Map<string, Block> | null = null;
   const untouchedOf = (id: string) => {
-    untouched ??= untouchedPassage(basePassage);
+    // Seeded with its numbers, the passage comes back from the editor so.
+    untouched ??= untouchedPassage(
+      before ? seedListStarts(before, basePassage) : basePassage,
+    );
     return untouched.get(id);
   };
 
@@ -354,7 +410,7 @@ export function diffPassage(
   };
 
   for (const block of edited) {
-    const before = previous;
+    const previousEdited = previous;
     previous = block;
     const original = baseById.get(block.id);
     const order = baseOrder.get(block.id);
@@ -374,7 +430,7 @@ export function diffPassage(
           block,
           diffText(original, block.text),
           () => untouchedOf(block.id),
-          before,
+          previousEdited,
         ),
       );
       continue;

@@ -11,7 +11,7 @@ import type {
   ReplaceOp,
 } from "../../types/content";
 import { BLOCK_ALIGNMENTS, MARK_TYPES } from "../../types/content";
-import { consolidate, mapPosition } from "./consolidate";
+import { consolidate, mapPosition, previewAmendment } from "./consolidate";
 import { diffPassage } from "./diff";
 import { blocksToEditor, editorToBlocks } from "./editor";
 import {
@@ -20,6 +20,7 @@ import {
   markCoverage,
   sameBlockFormat,
 } from "./format";
+import { orderedListNumbers } from "./lists";
 import { compareReplaceOps, validateOps } from "./ops";
 import {
   findOverlaps,
@@ -1771,7 +1772,80 @@ describe("amendment engine properties", () => {
       expect(editorRoundTrip(once)).toEqual(once);
     });
   });
+
+  it("7. a diff and every fragment of it show the list numbers of the PDF", () => {
+    const coverage = new Coverage();
+    forAll(300, 8_000_000, (rng, ctx) => {
+      // Mostly ordered items, with markers and starts, so lists form.
+      const base = randomDocument(rng, 3, 12).map((block): Block => {
+        if (block.type !== "list_item" || rng.chance(0.2)) return block;
+        const item: Block = { ...block, list: "ordered" };
+        if (rng.chance(0.4)) item.marker = rng.pick(["a)", "I."] as const);
+        if (rng.chance(0.15)) item.start = rng.int(1, 30);
+        return item;
+      });
+      ctx.base = base;
+      const [amendment] = randomAmendments(rng, base, 1);
+      if (!amendment) return;
+      ctx.amendment = amendment;
+      const { annotated } = consolidate(base, [amendment]);
+      const counted = (block: ConsolidatedBlock) => block.status !== "deleted";
+      // The PDF numbers counted items as orderedListNumbers does.
+      const numbers = orderedListNumbers(annotated, counted);
+      const diff = (blocks: ConsolidatedBlock[]) =>
+        shownListNumbers(renderAnnotated(blocks, { mode: "diff" }));
+      coverage.hit(
+        "deleted ordered item",
+        annotated.some((block) => !counted(block) && block.list === "ordered"),
+      );
+      expect(diff(annotated)).toEqual(numbers);
+      for (const context of [0, 1, 2]) {
+        const fragment = previewAmendment(base, amendment, context);
+        const expected = new Map(
+          fragment
+            .filter((block) => numbers.has(block.id))
+            .map((block) => [block.id, numbers.get(block.id)!]),
+        );
+        coverage.hit(
+          "fragment past 1",
+          [...expected.values()].some((n) => n > 1),
+        );
+        expect(diff(fragment)).toEqual(expected);
+      }
+    });
+    coverage.expectAtLeast({
+      "deleted ordered item": 10,
+      "fragment past 1": 40,
+    });
+  });
 });
+
+/**
+ * The number the browser gives each <li> of an <ol> (its `start`, every
+ * <li> counting, `value` setting it), by block id, leaving out struck items
+ * shown without a marker (cx-uncounted).
+ */
+function shownListNumbers(html: string): Map<string, number> {
+  const shown = new Map<string, number>();
+  const stack: { ol: boolean; next: number }[] = [];
+  for (const [tag] of html.matchAll(/<\/?(?:ol|ul|li)\b[^>]*>/g)) {
+    if (tag.startsWith("</ol") || tag.startsWith("</ul")) {
+      stack.pop();
+    } else if (tag.startsWith("<ol") || tag.startsWith("<ul")) {
+      const start = /\sstart="(\d+)"/.exec(tag);
+      stack.push({ ol: tag.startsWith("<ol"), next: Number(start?.[1] ?? 1) });
+    } else if (tag.startsWith("<li")) {
+      const list = stack[stack.length - 1]!;
+      if (!list.ol) continue;
+      const value = /\svalue="(\d+)"/.exec(tag);
+      const n = value ? Number(value[1]) : list.next;
+      list.next = n + 1;
+      if (tag.includes("cx-uncounted")) continue;
+      shown.set(/data-block-id="([^"]+)"/.exec(tag)![1]!, n);
+    }
+  }
+  return shown;
+}
 
 // ---------------------------------------------------------------------------
 // Defects the properties found, as minimal reproductions.

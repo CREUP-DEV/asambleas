@@ -215,6 +215,7 @@ const ops = computed(() =>
         edited.value,
         seed.value.anchorBefore,
         createId,
+        seed.value.before,
       )
     : [],
 );

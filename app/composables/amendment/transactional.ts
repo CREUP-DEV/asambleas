@@ -21,7 +21,7 @@ import type {
 import type { AmendmentInput, Block } from "~~/shared/types/content";
 import { cellFillOf } from "~~/shared/constants/cellFills";
 import { consolidate } from "~~/shared/utils/content/consolidate";
-import { copyShape } from "~~/shared/utils/content/lists";
+import { copyShape, seedListStarts } from "~~/shared/utils/content/lists";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
 import { MAX_TRANSACTIONAL_SOURCES } from "~~/shared/utils/schemas/amendment";
 import { sessionReplacingIds } from "~/composables/session/sessionModel";
@@ -152,7 +152,16 @@ export interface TransactionalComposerSeed {
   passage: Block[];
   /** The base block right before the passage, null at the start. */
   anchorBefore: string | null;
-  /** The passage with the sources applied, ready for the editor. */
+  /**
+   * The base blocks before the passage, which the sources leave alone:
+   * diffPassage reads the seed's list numbers against them.
+   */
+  before: Block[];
+  /**
+   * The passage with the sources applied, ready for the editor. Its ordered
+   * items carry the numbers they show in the text (seedListStarts), so a
+   * passage from "k)" does not start at "a)".
+   */
   seed: Block[];
   /** Sources that could not be applied together with earlier ones. */
   skipped: string[];
@@ -163,7 +172,9 @@ export interface TransactionalComposerSeed {
  * with the sources applied in the given order. When two sources collide the
  * first applicable one wins, as `consolidate` does. Blocks the sources insert
  * get fresh ids, so they never clash with the sources' own. (Same rules as
- * the session console's composer.)
+ * the session console's composer.) Diff the edited text with
+ * `diffPassage(passage, edited, anchorBefore, newId, before)`, so the list
+ * numbers the seed carries are no change.
  */
 export function transactionalComposerSeed(
   base: Block[],
@@ -184,7 +195,13 @@ export function transactionalComposerSeed(
     }
   }
   if (positions.length === 0 || base.length === 0) {
-    return { passage: [], anchorBefore: null, seed: [], skipped: [] };
+    return {
+      passage: [],
+      anchorBefore: null,
+      before: [],
+      seed: [],
+      skipped: [],
+    };
   }
 
   const lo = Math.min(...positions);
@@ -213,11 +230,13 @@ export function transactionalComposerSeed(
     };
     seed.push(copyShape(block, clean));
   }
+  const before = base.slice(0, lo);
 
   return {
     passage: base.slice(lo, hi + 1),
     anchorBefore: lo > 0 ? base[lo - 1]!.id : null,
-    seed,
+    before,
+    seed: seedListStarts(before, seed),
     skipped: result.conflicts.map((conflict) => conflict.amendmentId),
   };
 }

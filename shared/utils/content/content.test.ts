@@ -9,7 +9,12 @@ import {
   nearestCellFill,
 } from "../../constants/cellFills";
 import { hashContent } from "../diff";
-import type { AmendmentOp, Block, FormatChange } from "../../types/content";
+import type {
+  AmendmentOp,
+  Block,
+  ConsolidatedBlock,
+  FormatChange,
+} from "../../types/content";
 import { consolidate, mapPosition, previewAmendment } from "./consolidate";
 import { diffPassage, diffText } from "./diff";
 import { amendmentOpsSchema, blocksSchema } from "../schemas/content";
@@ -617,6 +622,355 @@ describe("ordered list markers", () => {
   it("carries markers and starts through consolidation", () => {
     const { blocks } = consolidate(lettered, []);
     expect(blocks).toEqual(lettered);
+  });
+});
+
+describe("list numbers in amendment diffs", () => {
+  const li = (id: string, text: string, extra: Partial<Block> = {}): Block => ({
+    id,
+    type: "list_item",
+    level: 0,
+    list: "ordered",
+    marker: "a)",
+    text,
+    marks: [],
+    ...extra,
+  });
+  // Art. 15.1: a) to m), with "1.º" and "2.º" under c).
+  const article: Block[] = [
+    p("intro", "Son funciones de la Asamblea:"),
+    ..."abcdefghijklm"
+      .split("")
+      .flatMap((letter) => [
+        li(`l${letter}`, `Apartado ${letter}.`),
+        ...(letter === "c"
+          ? [
+              li("c1", "Primero.", { level: 1, marker: "1." }),
+              li("c2", "Segundo.", { level: 1, marker: "1." }),
+            ]
+          : []),
+      ]),
+  ];
+  const at = (blockId: string, text: string): AmendmentOp => {
+    const block = article.find((candidate) => candidate.id === blockId)!;
+    return {
+      op: "replace",
+      blockId,
+      from: 0,
+      to: block.text.length,
+      text,
+      baseText: block.text,
+    };
+  };
+  const diff = (blocks: ConsolidatedBlock[]) =>
+    renderAnnotated(blocks, { mode: "diff" });
+
+  /**
+   * The number the browser gives each <li> of an <ol> (its `start`, every
+   * <li> counting, `value` setting it), by block id; struck items without
+   * a marker (cx-uncounted) are left out.
+   */
+  function shownNumbers(html: string): Map<string, number> {
+    const shown = new Map<string, number>();
+    const stack: { ol: boolean; next: number }[] = [];
+    for (const [tag] of html.matchAll(/<\/?(?:ol|ul|li)\b[^>]*>/g)) {
+      if (tag.startsWith("</ol") || tag.startsWith("</ul")) {
+        stack.pop();
+      } else if (tag.startsWith("<ol") || tag.startsWith("<ul")) {
+        const start = /\sstart="(\d+)"/.exec(tag);
+        stack.push({
+          ol: tag.startsWith("<ol"),
+          next: Number(start?.[1] ?? 1),
+        });
+      } else if (tag.startsWith("<li")) {
+        const list = stack[stack.length - 1]!;
+        if (!list.ol) continue;
+        const value = /\svalue="(\d+)"/.exec(tag);
+        const n = value ? Number(value[1]) : list.next;
+        list.next = n + 1;
+        if (tag.includes("cx-uncounted")) continue;
+        shown.set(/data-block-id="([^"]+)"/.exec(tag)![1]!, n);
+      }
+    }
+    return shown;
+  }
+
+  it("starts a fragment at its real letter", () => {
+    const preview = previewAmendment(article, {
+      id: "A",
+      ops: [at("lk", "Apartado k reformado.")],
+    });
+    expect(preview.map((block) => [block.id, block.start])).toEqual([
+      ["lk", 11],
+    ]);
+    const html = diff(preview);
+    expect(html).toContain('<ol data-marker="a)" start="11">');
+    expect(shownNumbers(html)).toEqual(new Map([["lk", 11]]));
+    // With context too: "j)" to "l)".
+    const around = previewAmendment(
+      article,
+      { id: "A", ops: [at("lk", "Apartado k reformado.")] },
+      1,
+    );
+    expect([...shownNumbers(diff(around))]).toEqual([
+      ["lj", 10],
+      ["lk", 11],
+      ["ll", 12],
+    ]);
+  });
+
+  it("keeps two runs apart with their own numbers", () => {
+    const ops = [at("lb", "Otro b."), at("lk", "Otro k.")];
+    const html = diff(previewAmendment(article, { id: "A", ops }));
+    expect(html.match(/<ol[^>]*>/g)).toEqual([
+      '<ol data-marker="a)" start="2">',
+      '<ol data-marker="a)" start="11">',
+    ]);
+    expect([...shownNumbers(html)]).toEqual([
+      ["lb", 2],
+      ["lk", 11],
+    ]);
+
+    // Two lists of the text: "c)" of the first, "a)" of the second, never
+    // read as "c)" and "d)".
+    const two: Block[] = [
+      li("x1", "Uno."),
+      li("x2", "Dos."),
+      li("x3", "Tres."),
+      p("xp", "Además:"),
+      li("y1", "Otro uno."),
+      li("y2", "Otro dos."),
+    ];
+    const both = previewAmendment(two, {
+      id: "A",
+      ops: [
+        {
+          op: "replace",
+          blockId: "x3",
+          from: 0,
+          to: 4,
+          text: "TRES",
+          baseText: "Tres",
+        },
+        {
+          op: "replace",
+          blockId: "y1",
+          from: 0,
+          to: 4,
+          text: "OTRO",
+          baseText: "Otro",
+        },
+      ],
+    });
+    const bothHtml = diff(both);
+    expect(bothHtml.match(/<ol[^>]*>/g)).toHaveLength(2);
+    expect([...shownNumbers(bothHtml)]).toEqual([
+      ["x3", 3],
+      ["y1", 1],
+    ]);
+  });
+
+  it("numbers a nested fragment and the list it returns to", () => {
+    const preview = previewAmendment(article, {
+      id: "A",
+      ops: [at("c2", "Segundo reformado."), at("ld", "Otro d.")],
+    });
+    expect([...shownNumbers(diff(preview))]).toEqual([
+      ["c2", 2],
+      ["ld", 4],
+    ]);
+  });
+
+  it("skips a deleted item in the numbers, as the PDF does", () => {
+    const ops: AmendmentOp[] = [{ op: "delete", blockIds: ["le"] }];
+    const { annotated } = consolidate(article, [{ id: "A", ops }]);
+    const html = diff(annotated);
+    const counted = (block: ConsolidatedBlock) => block.status !== "deleted";
+    expect(shownNumbers(html)).toEqual(orderedListNumbers(annotated, counted));
+    // "f)" reads "e)" and the struck item shows no letter.
+    expect(shownNumbers(html).get("lf")).toBe(5);
+    expect(html).toContain('<li value="5" data-block-id="lf"');
+    expect(html).toMatch(/<li data-block-id="le"[^>]*cx-uncounted/);
+    // The fragment reads the same numbers as the whole diff.
+    const preview = previewAmendment(article, { id: "A", ops }, 1);
+    const fragment = shownNumbers(diff(preview));
+    expect([...fragment]).toEqual([
+      ["ld", 4],
+      ["lf", 5],
+    ]);
+    // Other modes and plain text are numbered as before.
+    expect(renderAnnotated(annotated, { mode: "clean" })).not.toContain(
+      "value=",
+    );
+    expect(renderBlocks(article)).not.toContain("value=");
+  });
+
+  it("opens its own list for a run that begins with a struck item", () => {
+    // "a)" edited, "d)" deleted: two runs, never read as "a)" then "d)".
+    const alone = diff(
+      previewAmendment(article, {
+        id: "A",
+        ops: [at("la", "Otro a."), { op: "delete", blockIds: ["ld"] }],
+      }),
+    );
+    expect(alone.match(/<ol[^>]*>/g)).toEqual([
+      '<ol data-marker="a)" start="1">',
+      '<ol data-marker="a)" start="4">',
+    ]);
+    expect(alone).toMatch(
+      /<ol data-marker="a\)" start="4"><li data-block-id="ld"[^>]*cx-uncounted/,
+    );
+    expect([...shownNumbers(alone)]).toEqual([["la", 1]]);
+
+    // "f)" deleted and "g)" edited: the run reads "f)" for "g)", as the
+    // whole diff does.
+    const ops: AmendmentOp[] = [
+      at("la", "Otro a."),
+      { op: "delete", blockIds: ["lf"] },
+      at("lg", "Otro g."),
+    ];
+    const html = diff(previewAmendment(article, { id: "A", ops }));
+    expect(html.match(/<ol[^>]*>/g)).toEqual([
+      '<ol data-marker="a)" start="1">',
+      '<ol data-marker="a)" start="6">',
+    ]);
+    const { annotated } = consolidate(article, [{ id: "A", ops }]);
+    const counted = (block: ConsolidatedBlock) => block.status !== "deleted";
+    expect(orderedListNumbers(annotated, counted).get("lg")).toBe(6);
+    expect([...shownNumbers(html)]).toEqual([
+      ["la", 1],
+      ["lg", 6],
+    ]);
+  });
+
+  it("hands a struck item's start on to the next item", () => {
+    const result = consolidate(
+      [li("s1", "Uno."), li("s2", "Dos.", { start: 5 }), li("s3", "Tres.")],
+      [{ id: "A", ops: [{ op: "delete", blockIds: ["s2"] }] }],
+    );
+    const html = diff(result.annotated);
+    expect([...shownNumbers(html)]).toEqual([
+      ["s1", 1],
+      ["s3", 5],
+    ]);
+    // The clean text reads the same number.
+    expect(result.blocks.map((block) => [block.id, block.start])).toEqual([
+      ["s1", undefined],
+      ["s3", 5],
+    ]);
+  });
+
+  describe("deleting the item that carries a list's start", () => {
+    // A list imported from Word that carries on after a paragraph: "k)"
+    // holds the start, "l)" and "m)" follow it.
+    const carried: Block[] = [
+      li("lj", "Apartado j."),
+      p("mid", "Intermedio."),
+      li("lk", "Apartado k.", { start: 11 }),
+      li("ll", "Apartado l."),
+      li("lm", "Apartado m."),
+    ];
+    const counted = (block: ConsolidatedBlock) => block.status !== "deleted";
+    const numbersOf = (blocks: Block[]) => orderedListNumbers(blocks);
+
+    it("leaves the next item at its number everywhere", () => {
+      const amendment = {
+        id: "A",
+        ops: [{ op: "delete", blockIds: ["lk"] }] as AmendmentOp[],
+      };
+      const { annotated, blocks } = consolidate(carried, [amendment]);
+      expect(orderedListNumbers(annotated, counted).get("ll")).toBe(11);
+      // The whole diff.
+      const html = diff(annotated);
+      expect(shownNumbers(html)).toEqual(
+        orderedListNumbers(annotated, counted),
+      );
+      expect(html).toContain('<li value="11" data-block-id="ll"');
+      // The fragment, with context.
+      const preview = previewAmendment(carried, amendment, 1);
+      expect([...shownNumbers(diff(preview))]).toEqual([["ll", 11]]);
+      // The clean text.
+      expect(blocks.find((block) => block.id === "ll")?.start).toBe(11);
+      expect(numbersOf(blocks).get("lm")).toBe(12);
+    });
+
+    it("reads no change of format where the editor moves the start", () => {
+      // Deleting "k)" in the editor leaves its list's start on "l)".
+      const doc = blocksToEditor(carried);
+      doc.content![2]!.content!.shift();
+      let n = 0;
+      const edited = editorToBlocks(doc, () => `new-${++n}`);
+      expect(edited.find((block) => block.id === "ll")?.start).toBe(11);
+      const ops = diffPassage(carried, edited, null, () => `new-${++n}`);
+      expect(ops).toEqual([{ op: "delete", blockIds: ["lk"] }]);
+      const { blocks } = consolidate(carried, [{ id: "A", ops }]);
+      expect(numbersOf(blocks).get("ll")).toBe(11);
+    });
+
+    it("carries the start past several struck items", () => {
+      const { annotated, blocks } = consolidate(carried, [
+        { id: "A", ops: [{ op: "delete", blockIds: ["lk", "ll"] }] },
+      ]);
+      expect(shownNumbers(diff(annotated)).get("lm")).toBe(11);
+      expect(numbersOf(blocks).get("lm")).toBe(11);
+    });
+
+    it("hands on a start that begins a list again at 1", () => {
+      const restart: Block[] = [
+        li("a", "Uno."),
+        li("b", "Dos."),
+        li("x", "Otro uno.", { start: 1 }),
+        li("y", "Otro dos."),
+      ];
+      const { annotated, blocks } = consolidate(restart, [
+        { id: "A", ops: [{ op: "delete", blockIds: ["x"] }] },
+      ]);
+      expect([...shownNumbers(diff(annotated))]).toEqual([
+        ["a", 1],
+        ["b", 2],
+        ["y", 1],
+      ]);
+      expect(blocks.find((block) => block.id === "y")?.start).toBe(1);
+      expect([...numbersOf(blocks)]).toEqual([
+        ["a", 1],
+        ["b", 2],
+        ["y", 1],
+      ]);
+    });
+
+    it("adds no start where the next item reads that number anyway", () => {
+      const { blocks } = consolidate(
+        [
+          li("a", "Uno."),
+          li("b", "Dos."),
+          li("c", "Tres.", { start: 3 }),
+          li("d", "Cuatro."),
+        ],
+        [{ id: "A", ops: [{ op: "delete", blockIds: ["c"] }] }],
+      );
+      expect(blocks.map((block) => block.start)).toEqual([
+        undefined,
+        undefined,
+        undefined,
+      ]);
+    });
+
+    it("keeps an item's own start and another marker's list", () => {
+      const { blocks } = consolidate(
+        [
+          p("p0", "Intermedio."),
+          li("k", "Apartado k.", { start: 11 }),
+          li("n1", "Uno.", { marker: "1." }),
+          li("l", "Apartado l.", { start: 20 }),
+        ],
+        [{ id: "A", ops: [{ op: "delete", blockIds: ["k"] }] }],
+      );
+      expect(blocks.map((block) => [block.id, block.start])).toEqual([
+        ["p0", undefined],
+        ["n1", undefined],
+        ["l", 20],
+      ]);
+    });
   });
 });
 
