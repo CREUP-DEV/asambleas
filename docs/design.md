@@ -1030,7 +1030,8 @@ How it works:
    is everything while no SMTP server is configured, rather than kept to
    go out later.
 
-Emails are in Spanish only, with CREUP's template (the web's), a plain text
+Emails are in Spanish only, drawn like the platform (Raleway, its neutrals
+and burgundy, the assembly as a badge), with a plain text
 part and a link to the platform. Every subject starts with its assembly in
 brackets ("[80.ª AGO] Enmienda presentada al documento «…»"), and a daily
 summary names each of its assemblies once; never the text of a document or an
