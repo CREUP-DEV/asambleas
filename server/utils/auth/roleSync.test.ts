@@ -40,6 +40,7 @@ describe("roleSyncAuditStates", () => {
     externalName: "Persona",
     externalInitials: "VPU",
     university: null,
+    universityAcronym: null,
     memberId: "m1",
   };
 
@@ -77,6 +78,7 @@ describe("roleSyncAuditStates", () => {
       externalName: null,
       externalInitials: null,
       university: "Universidad de León",
+      universityAcronym: null,
       memberId: null,
     });
   });
@@ -97,6 +99,7 @@ const external = (role: string, id: number | null = null) => ({
   name: "Persona",
   initials: "VPU",
   university: null,
+  university_acronym: null,
 });
 
 const user = (roleName: string | null, externalRole: string | null = null) => ({

@@ -156,6 +156,7 @@ interface RoleSyncUpdate {
   externalName?: string | null;
   externalInitials?: string | null;
   university?: string | null;
+  universityAcronym?: string | null;
   roleId?: string;
   memberId?: null;
 }
@@ -241,6 +242,10 @@ export function computeRoleSyncUpdate(
     fields.externalName = external.name;
     fields.externalInitials = external.initials;
     fields.university = external.university;
+    // An acronym means nothing without its university.
+    fields.universityAcronym = external.university
+      ? external.university_acronym
+      : null;
 
     const target = resolveTargetRole(external.role, currentRoleName, isNewUser);
     if (target) {
@@ -280,6 +285,7 @@ export interface RoleSyncAuditState {
   externalName: string | null;
   externalInitials: string | null;
   university: string | null;
+  universityAcronym: string | null;
   memberId: string | null;
 }
 
@@ -307,6 +313,7 @@ export function roleSyncAuditStates(input: {
       externalName: next("externalName", update.externalName),
       externalInitials: next("externalInitials", update.externalInitials),
       university: next("university", update.university),
+      universityAcronym: next("universityAcronym", update.universityAcronym),
       memberId: next("memberId", update.memberId),
     },
   };
@@ -670,6 +677,7 @@ export async function syncUserRole(
         externalName: true,
         externalInitials: true,
         university: true,
+        universityAcronym: true,
         accessRevokedAt: true,
       },
       with: { role: { columns: { name: true } } },
@@ -767,6 +775,7 @@ export async function syncUserRole(
         externalName: freshUser.externalName,
         externalInitials: freshUser.externalInitials,
         university: freshUser.university,
+        universityAcronym: freshUser.universityAcronym,
         memberId: freshUser.memberId,
       },
       update: updateFields,

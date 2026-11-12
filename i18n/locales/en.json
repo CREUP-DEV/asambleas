@@ -5106,7 +5106,8 @@
         "externalRole": "Intranet account type",
         "externalName": "Name on the intranet",
         "externalInitials": "Initials on the intranet",
-        "university": "University"
+        "university": "University",
+        "universityAcronym": "University acronym"
       },
       "empty": "(empty)",
       "note": "Note: “{note}”",

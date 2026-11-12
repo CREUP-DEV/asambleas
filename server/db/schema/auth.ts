@@ -28,6 +28,11 @@ export const users = pgTable(
     externalName: text("external_name"),
     externalInitials: text("external_initials"),
     university: text("university"),
+    /**
+     * Its university's acronym (UGR, UVa) from the Intranet, not the
+     * account's initials: the avatar draws it. Null without a university.
+     */
+    universityAcronym: text("university_acronym"),
     /** The member this account acts for (an Asociado account is its member). */
     memberId: text("member_id").references(() => members.id, {
       onDelete: "set null",

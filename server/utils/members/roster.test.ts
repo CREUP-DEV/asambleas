@@ -16,6 +16,7 @@ const existing = (overrides: Partial<ExistingMember>): ExistingMember => ({
   acronym: "CEUM",
   name: "Consejo de Estudiantes de la Universidad de Murcia",
   university: "Universidad de Murcia",
+  universityAcronym: "UM",
   region: "Región de Murcia",
   intranetId: null,
   email: null,
@@ -29,6 +30,7 @@ const entry = (overrides: Partial<RosterMember>): RosterMember => ({
   acronym: "CEUM",
   name: "Consejo de Estudiantes de la Universidad de Murcia",
   university: "Universidad de Murcia",
+  universityAcronym: "UM",
   region: "Región de Murcia",
   intranetId: null,
   email: null,
@@ -41,6 +43,7 @@ const listed = (member: ExistingMember): RosterMember => ({
   acronym: member.acronym,
   name: member.name,
   university: member.university,
+  universityAcronym: member.universityAcronym,
   region: member.region,
   intranetId: member.intranetId,
   email: member.email,
@@ -106,6 +109,7 @@ describe("normalizeRoster", () => {
             denomination: "Consejo A",
             initials: "CEUM",
             university: "UM",
+            university_acronym: null,
             autonomous_community: "Murcia",
           },
           {
@@ -115,6 +119,7 @@ describe("normalizeRoster", () => {
             denomination: "Sin siglas",
             initials: null,
             university: null,
+            university_acronym: null,
             autonomous_community: null,
           },
         ],
@@ -129,6 +134,7 @@ describe("normalizeRoster", () => {
             denomination: "Duplicado",
             initials: "ceum",
             university: null,
+            university_acronym: null,
             autonomous_community: null,
           },
           {
@@ -138,6 +144,7 @@ describe("normalizeRoster", () => {
             denomination: null,
             initials: "CEEM",
             university: null,
+            university_acronym: null,
             autonomous_community: null,
           },
         ],
@@ -152,6 +159,7 @@ describe("normalizeRoster", () => {
         acronym: "CEUM",
         name: "Consejo A",
         university: "UM",
+        universityAcronym: null,
         region: "Murcia",
         intranetId: 10,
         email: null,
@@ -161,6 +169,7 @@ describe("normalizeRoster", () => {
         acronym: "CEEM",
         name: "CEEM",
         university: null,
+        universityAcronym: null,
         region: null,
         intranetId: null,
         email: null,
@@ -174,6 +183,7 @@ describe("normalizeRoster", () => {
       order: null,
       denomination: null,
       university: null,
+      university_acronym: null,
       autonomous_community: null,
     };
     const roster = normalizeRoster([
@@ -185,11 +195,54 @@ describe("normalizeRoster", () => {
     expect(roster.duplicates).toEqual([]);
   });
 
+  it("keeps a university's acronym only with its university", () => {
+    const row = {
+      email: null,
+      order: null,
+      denomination: null,
+      autonomous_community: null,
+    };
+    const roster = normalizeRoster([
+      {
+        kind: "asociado",
+        entries: [
+          {
+            ...row,
+            id: 1,
+            initials: "CGEUGR",
+            university: "Universidad de Granada",
+            university_acronym: "UGR",
+          },
+          {
+            ...row,
+            id: 2,
+            initials: "CEUM",
+            university: "Universidad de Murcia",
+            university_acronym: "X".repeat(21),
+          },
+          {
+            ...row,
+            id: 3,
+            initials: "CEX",
+            university: null,
+            university_acronym: "UX",
+          },
+        ],
+      },
+    ]);
+    expect(roster.members.map((member) => member.universityAcronym)).toEqual([
+      "UGR",
+      null,
+      null,
+    ]);
+  });
+
   it("keeps an email lowercased, once, and drops what is not one", () => {
     const row = {
       order: null,
       denomination: null,
       university: null,
+      university_acronym: null,
       autonomous_community: null,
     };
     const roster = normalizeRoster([
@@ -595,6 +648,7 @@ describe("planRosterSync with the CEA list", () => {
     existing({
       kind: "executive",
       university: null,
+      universityAcronym: null,
       region: null,
       ...overrides,
     });
@@ -607,6 +661,7 @@ describe("planRosterSync with the CEA list", () => {
     acronym,
     name,
     university: null,
+    universityAcronym: null,
     region: null,
     intranetId,
     email: null,

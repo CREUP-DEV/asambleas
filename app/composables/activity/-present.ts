@@ -299,6 +299,7 @@ export const ACTIVITY_INTRANET_FIELDS = [
   "externalName",
   "externalInitials",
   "university",
+  "universityAcronym",
 ] as const;
 export type ActivityIntranetField = (typeof ACTIVITY_INTRANET_FIELDS)[number];
 

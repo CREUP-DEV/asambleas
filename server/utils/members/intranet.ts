@@ -14,7 +14,8 @@ import {
  * - `GET {base}/usuarios/asociados`, `.../sectoriales`, `.../cea` (one
  *   account per place in the CEA) and `.../cas` (the Coordinación del CAS,
  *   under the committee's name) return `{ data: [...], generated_at }`;
- * - `POST {base}/user/role` returns `{ id, role, name, initials, university }`
+ * - `POST {base}/user/role` returns `{ id, role, name, initials, university,
+ *   university_acronym }`
  *   for an email, or 404 `{"error":"not_found"}` when the intranet has no
  *   such account (lookupIntranetRole).
  * Every request sends `Accept: application/json` and the API token when one
@@ -216,6 +217,15 @@ const nullableText = z
   .nullish()
   .transform((value) => value?.trim() || null);
 
+/** Longest university acronym stored (UPV/EHU is 7). */
+export const UNIVERSITY_ACRONYM_MAX_LENGTH = 20;
+
+const universityAcronymText = nullableText.transform((value) =>
+  value !== null && value.length <= UNIVERSITY_ACRONYM_MAX_LENGTH
+    ? value
+    : null,
+);
+
 /**
  * The 200 answer of the role lookup. `id` is the intranet `users.id`; the
  * Intranet always sends it, but a missing or null `id` is read as null so an
@@ -228,6 +238,12 @@ export const intranetRoleResponseSchema = z.object({
   name: nullableText,
   initials: nullableText,
   university: nullableText,
+  /**
+   * The university's acronym (UGR, UVa), not the account's initials. Newer
+   * than the rest: an answer without it reads null. One longer than any
+   * acronym reads null too, rather than refusing the sign-in.
+   */
+  university_acronym: universityAcronymText,
 });
 
 /** An account as the intranet describes it. `role` is its `users.type`, compared literally. */

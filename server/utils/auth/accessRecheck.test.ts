@@ -35,6 +35,7 @@ const OK: IntranetRoleLookup = {
     name: null,
     initials: null,
     university: null,
+    university_acronym: null,
   },
 };
 const NOT_FOUND: IntranetRoleLookup = { outcome: "notFound" };

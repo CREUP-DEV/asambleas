@@ -699,6 +699,7 @@ const detailSections = computed(() => {
             <CommonAccountAvatar
               :src="row.original.image"
               :alt="row.original.name"
+              :text="row.original.avatarText"
               :online="row.original.online"
             />
             <div class="min-w-0">

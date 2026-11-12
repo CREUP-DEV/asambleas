@@ -43,6 +43,7 @@ export function memberAuditState(
     | "acronym"
     | "name"
     | "university"
+    | "universityAcronym"
     | "region"
     | "intranetId"
     | "source"
@@ -54,6 +55,7 @@ export function memberAuditState(
     acronym: member.acronym,
     name: member.name,
     university: member.university,
+    universityAcronym: member.universityAcronym,
     region: member.region,
     intranetId: member.intranetId,
     source: member.source,
@@ -240,6 +242,7 @@ export async function syncIntranetRoster(options: {
         acronym: members.acronym,
         name: members.name,
         university: members.university,
+        universityAcronym: members.universityAcronym,
         region: members.region,
         intranetId: members.intranetId,
         email: members.email,

@@ -67,6 +67,8 @@ interface UserRow {
   externalRole: string | null;
   externalInitials: string | null;
   university: string | null;
+  /** What its avatar reads without a photo (AdminUserDto.avatarText). */
+  avatarText: string | null;
   lastRoleSyncAt: string | null;
   /**
    * When the account lost access to the platform; null (or undefined if the
@@ -1030,6 +1032,7 @@ function goToPage(next: number): void {
             <CommonAccountAvatar
               :src="row.original.image"
               :alt="displayName(row.original)"
+              :text="row.original.avatarText"
               :online="row.original.online"
             />
             <div class="min-w-0">
@@ -1304,9 +1307,10 @@ function goToPage(next: number): void {
         <template #body>
           <div v-if="editTarget" class="space-y-6">
             <div class="flex items-start gap-3">
-              <UAvatar
-                :src="editTarget.image ?? undefined"
+              <CommonAccountAvatar
+                :src="editTarget.image"
                 :alt="displayName(editTarget)"
+                :text="editTarget.avatarText"
                 size="md"
               />
               <div class="min-w-0 space-y-0.5 text-sm">

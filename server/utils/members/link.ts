@@ -45,6 +45,8 @@ export interface ExternalMemberIdentity {
   initials: string | null;
   name: string | null;
   university: string | null;
+  /** Its university's acronym (UGR, UVa); absent from older answers. */
+  university_acronym?: string | null;
 }
 
 const ACRONYM_MAX_LENGTH = 20;
@@ -98,7 +100,10 @@ export function memberIntranetId(
 export function newLinkedMember(
   kind: LinkedMemberKind,
   acronym: string,
-  external: Pick<ExternalMemberIdentity, "id" | "name" | "university">,
+  external: Pick<
+    ExternalMemberIdentity,
+    "id" | "name" | "university" | "university_acronym"
+  >,
   now = new Date(),
   email: string | null = null,
 ): {
@@ -106,6 +111,7 @@ export function newLinkedMember(
   acronym: string;
   name: string;
   university: string | null;
+  universityAcronym: string | null;
   intranetId: number | null;
   email: string | null;
   source: MemberSource;
@@ -113,16 +119,20 @@ export function newLinkedMember(
   syncedAt: Date | null;
 } {
   const namedAfterAcronym = kind === "executive" || kind === "other";
+  const university =
+    kind === "asociado"
+      ? external.university?.trim().slice(0, NAME_MAX_LENGTH) || null
+      : null;
   return {
     kind,
     acronym,
     name: namedAfterAcronym
       ? acronym
       : external.name?.trim().slice(0, NAME_MAX_LENGTH) || acronym,
-    university:
-      kind === "asociado"
-        ? external.university?.trim().slice(0, NAME_MAX_LENGTH) || null
-        : null,
+    university,
+    universityAcronym: university
+      ? external.university_acronym?.trim() || null
+      : null,
     intranetId: memberIntranetId(kind, external.id),
     email,
     source: "intranet",

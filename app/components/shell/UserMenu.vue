@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
 import { roleLabelKey } from "./RoleBadge.vue";
+import { avatarDisplayText, avatarTextClass } from "~/utils/accountAvatar";
 
 /**
  * Sidebar footer: who is signed in (avatar, name, member acronym, role) and
@@ -40,16 +41,6 @@ const preferencesContent = {
 
 const name = computed(() => me.value?.name || me.value?.email || "");
 
-const initials = computed(() =>
-  name.value
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((word: string) => word[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase(),
-);
-
 const roleLabel = computed(() => {
   const role = me.value?.role ?? null;
   const key = roleLabelKey(role);
@@ -60,10 +51,18 @@ const subtitle = computed(() =>
   [member.value?.acronym, roleLabel.value].filter(Boolean).join(" · "),
 );
 
+/**
+ * Its photo or, without one, its university's acronym or its member's
+ * (MeDto.avatarText), sized to fit; UAvatar draws the initials of the name
+ * when there is neither.
+ */
 const avatar = computed(() => ({
   src: me.value?.image ?? undefined,
   alt: name.value,
-  text: initials.value || undefined,
+  text: avatarDisplayText(me.value?.avatarText),
+  // The menu's label would draw it at 20 px, too small for an acronym.
+  size: "sm" as const,
+  ui: { fallback: avatarTextClass(me.value?.avatarText) },
 }));
 
 async function handleSignOut(): Promise<void> {
@@ -163,7 +162,7 @@ const items = computed<DropdownMenuItem[][]>(() => [
         :class="props.collapsed ? 'justify-center' : ''"
         :aria-label="t('shell.user.menu', { name })"
       >
-        <UAvatar v-bind="avatar" size="sm" class="shrink-0" />
+        <UAvatar v-bind="avatar" class="shrink-0" />
         <span v-if="!props.collapsed" class="min-w-0 flex-1 text-start">
           <span class="text-highlighted block truncate text-sm font-medium">
             {{ name }}
