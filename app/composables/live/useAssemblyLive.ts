@@ -1,5 +1,12 @@
 import type { MaybeRefOrGetter, Ref } from "vue";
 import type { LiveEventDto } from "~~/shared/types/api";
+import {
+  LIVE_ONLINE_JITTER_MS,
+  LIVE_WATCHDOG_TICK_MS,
+  isLiveStreamStale,
+  shouldReopenOnRestore,
+  shouldReopenOnShow,
+} from "./-watchdog";
 
 /** Quiet period before a burst of changes is delivered as one batch. */
 const DEBOUNCE_MS = 300;
@@ -66,6 +73,12 @@ function dedupe(events: LiveEventDto[]): LiveEventDto[] {
  *   reconnection, since changes made while disconnected were never received,
  *   and after the first connection, since changes made between the page's
  *   own fetch (SSR or client) and the stream's `ready` were never sent.
+ * - A stream that died in silence is found (./-watchdog.ts): the server
+ *   sends a `ping` every 25 s, and a visible page that heard nothing for a
+ *   minute counts it as a failure and reconnects. A page shown again after
+ *   a long hide whose stream missed a heartbeat, a page restored from the
+ *   browser's cache and a network that comes back reopen it at once. So
+ *   `connected` stays true only while messages keep arriving.
  * - Client-only. Closes the stream when the id changes and when the calling
  *   scope (component) is disposed. An undefined id means "not connected".
  *
@@ -82,16 +95,27 @@ export function useAssemblyLive(
 
   let source: EventSource | null = null;
   let activeId: string | undefined;
-  /** Bumped on every teardown so handlers of a closed stream do nothing. */
+  /**
+   * Bumped on every teardown so handlers of a closed stream do nothing; a
+   * stream replaced within the same generation (reopen) is told by `source`.
+   */
   let generation = 0;
   let failures = 0;
   let missedChanges = false;
   let pending: LiveEventDto[] = [];
+  /** When the open stream last delivered anything (ready, change or ping). */
+  let lastMessageAt = 0;
+  /** When the current stream was opened (null until one is). */
+  let openedAt: number | null = null;
+  /** When the page was hidden, while it is. */
+  let hiddenAt: number | null =
+    document.visibilityState === "hidden" ? Date.now() : null;
 
   let flushTimer: ReturnType<typeof setTimeout> | undefined;
   let maxWaitTimer: ReturnType<typeof setTimeout> | undefined;
   let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let pollTimer: ReturnType<typeof setInterval> | undefined;
+  let watchdogTimer: ReturnType<typeof setInterval> | undefined;
 
   function clearFlushTimers(): void {
     clearTimeout(flushTimer);
@@ -147,8 +171,47 @@ export function useAssemblyLive(
     }, jittered);
   }
 
+  /**
+   * A stream that failed (an error, or silence): drop it, mark the gap for
+   * the next `ready` and retry with backoff, polling after a few failures.
+   */
+  function fail(id: string, gen: number): void {
+    // Take over from the browser's own retry, so the backoff and the
+    // failure count stay under our control.
+    closeSource();
+    connected.value = false;
+    missedChanges = true;
+    failures += 1;
+    if (failures >= FAILURES_BEFORE_POLLING) startPolling(id);
+    scheduleReconnect(id, gen);
+  }
+
+  /**
+   * Reopens the stream without counting a failure (the page is back, or the
+   * network): now, or after `delayMs`. The next `ready` refetches.
+   */
+  function reopen(delayMs = 0): void {
+    const id = activeId;
+    if (!id) return;
+    const gen = generation;
+    closeSource();
+    clearTimeout(reconnectTimer);
+    connected.value = false;
+    missedChanges = true;
+    if (delayMs <= 0) {
+      open(id, gen);
+      return;
+    }
+    reconnectTimer = setTimeout(() => {
+      if (gen === generation) open(id, gen);
+    }, delayMs);
+  }
+
   function open(id: string, gen: number): void {
     closeSource();
+    // The silence is counted from the moment the stream opens.
+    lastMessageAt = Date.now();
+    openedAt = lastMessageAt;
     let stream: EventSource;
     try {
       stream = new EventSource(
@@ -164,7 +227,8 @@ export function useAssemblyLive(
     source = stream;
 
     stream.addEventListener("ready", () => {
-      if (gen !== generation) return;
+      if (gen !== generation || source !== stream) return;
+      lastMessageAt = Date.now();
       connected.value = true;
       const resync = missedChanges;
       failures = 0;
@@ -174,22 +238,33 @@ export function useAssemblyLive(
     });
 
     stream.addEventListener("change", (event) => {
-      if (gen !== generation) return;
+      if (gen !== generation || source !== stream) return;
+      lastMessageAt = Date.now();
       const change = parseChange((event as MessageEvent).data);
       if (change) enqueue(change);
     });
 
-    stream.addEventListener("error", () => {
-      if (gen !== generation) return;
-      // Take over from the browser's own retry, so the backoff and the
-      // failure count stay under our control.
-      closeSource();
-      connected.value = false;
-      missedChanges = true;
-      failures += 1;
-      if (failures >= FAILURES_BEFORE_POLLING) startPolling(id);
-      scheduleReconnect(id, gen);
+    // The heartbeat: nothing to deliver, only proof the stream is alive.
+    stream.addEventListener("ping", () => {
+      if (gen !== generation || source !== stream) return;
+      lastMessageAt = Date.now();
     });
+
+    stream.addEventListener("error", () => {
+      if (gen !== generation || source !== stream) return;
+      fail(id, gen);
+    });
+  }
+
+  function watchdogTick(): void {
+    if (!activeId) return;
+    const stale = isLiveStreamStale({
+      now: Date.now(),
+      lastMessageAt,
+      visible: document.visibilityState === "visible",
+      streaming: source !== null,
+    });
+    if (stale) fail(activeId, generation);
   }
 
   function teardown(): void {
@@ -197,6 +272,8 @@ export function useAssemblyLive(
     closeSource();
     clearTimeout(reconnectTimer);
     reconnectTimer = undefined;
+    clearInterval(watchdogTimer);
+    watchdogTimer = undefined;
     stopPolling();
     clearFlushTimers();
     pending = [];
@@ -213,16 +290,53 @@ export function useAssemblyLive(
     // data and before `ready` is lost, so resync once the stream is ready.
     missedChanges = true;
     open(id, generation);
+    watchdogTimer = setInterval(watchdogTick, LIVE_WATCHDOG_TICK_MS);
   }
 
-  // Back online: retry now instead of waiting out the backoff.
+  // Back online: the old socket may be dead even if it looks open, so
+  // always reopen, a little apart from everyone else in the room.
   function onOnline(): void {
-    if (activeId && !connected.value) {
-      clearTimeout(reconnectTimer);
-      open(activeId, generation);
+    reopen(Math.random() * LIVE_ONLINE_JITTER_MS);
+  }
+
+  function onVisibilityChange(): void {
+    if (document.visibilityState !== "visible") {
+      hiddenAt ??= Date.now();
+      return;
+    }
+    const since = hiddenAt;
+    hiddenAt = null;
+    if (
+      activeId &&
+      shouldReopenOnShow({
+        now: Date.now(),
+        hiddenAt: since,
+        lastMessageAt,
+        streaming: source !== null,
+      })
+    ) {
+      reopen();
     }
   }
+
+  // Restored from the browser's page cache: whatever the stream was, it
+  // missed everything in between. The visibility handler may have reopened
+  // it a moment ago (browsers fire the two in either order): one is enough.
+  function onPageShow(event: PageTransitionEvent): void {
+    if (
+      shouldReopenOnRestore({
+        persisted: event.persisted,
+        now: Date.now(),
+        openedAt,
+      })
+    ) {
+      reopen();
+    }
+  }
+
   window.addEventListener("online", onOnline);
+  document.addEventListener("visibilitychange", onVisibilityChange);
+  window.addEventListener("pageshow", onPageShow);
 
   const stopWatch = watch(
     () => toValue(assemblyId),
@@ -238,6 +352,8 @@ export function useAssemblyLive(
     onScopeDispose(() => {
       stopWatch();
       window.removeEventListener("online", onOnline);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pageshow", onPageShow);
       teardown();
     });
   }

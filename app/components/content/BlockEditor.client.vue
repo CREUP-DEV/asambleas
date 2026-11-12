@@ -25,7 +25,7 @@ import {
 } from "~/utils/editor/blockImageExtension";
 import { NodeSelection } from "@tiptap/pm/state";
 import { IMAGE_ALT_MAX_LENGTH } from "~~/shared/utils/schemas/content";
-import { headingAtReadingLine } from "~/utils/outline";
+import { headingAtReadingLine, scrollParent } from "~/utils/outline";
 import type { OutlineEntry } from "./ContentView.vue";
 import {
   CellFillExtension,
@@ -363,6 +363,23 @@ useEventListener(window, "scroll", checkStuck, {
   capture: true,
   passive: true,
 });
+// On a narrow screen the index floats just below the toolbar, whose height
+// changes as its buttons wrap: measured, so the two never overlap.
+const { height: toolbarHeight } = useElementSize(
+  computed(() => toolbarEl.value?.$el ?? null),
+  undefined,
+  { box: "border-box" },
+);
+/** The toolbar sits `top-2` (8 px) from the top of what scrolls the text. */
+const outlineTop = computed(() => `${8 + Math.round(toolbarHeight.value)}px`);
+/**
+ * Room the toolbar takes over the text once it floats: its height, read
+ * now, and its gaps. On a phone its buttons wrap to several rows.
+ */
+function toolbarRoom(): number {
+  const height = toolbarEl.value?.$el?.getBoundingClientRect?.().height ?? 0;
+  return Math.round(height) + 16;
+}
 // The index (`outline`): the top-level headings as the editor shows them,
 // read again a moment after each change.
 const outlineItems = shallowRef<OutlineEntry[]>([]);
@@ -427,8 +444,16 @@ function goToHeading(id: string): void {
   const reduceMotion = window.matchMedia?.(
     "(prefers-reduced-motion: reduce)",
   ).matches;
-  element.scrollIntoView({
-    block: "start",
+  // Just below the floating toolbar, however many rows it wraps to (never
+  // closer than the headings' own 5rem `scroll-margin-top`).
+  const room = Math.max(80, toolbarRoom());
+  const parent = scrollParent(element);
+  const top =
+    element.getBoundingClientRect().top -
+    Math.max(parent ? parent.getBoundingClientRect().top : 0, 0) -
+    room;
+  (parent ?? window).scrollBy({
+    top,
     behavior: reduceMotion ? "auto" : "smooth",
   });
 }
@@ -1176,6 +1201,8 @@ defineExpose({
   flush,
   focus: () => editor.value?.commands.focus(),
   editor,
+  /** Room the floating toolbar takes over the text, in px. */
+  toolbarRoom,
 });
 </script>
 
@@ -1386,6 +1413,22 @@ defineExpose({
           >
             <div class="absolute start-1.5 top-3">
               <ContentOutlineRail
+                :items="outlineItems"
+                :current="currentHeading"
+                @select="goToHeading"
+              />
+            </div>
+          </div>
+          <!-- No margin for them on a narrow screen: the index as a
+               floating button at the end of the line, kept in view just
+               below the toolbar. -->
+          <div
+            v-if="!compact && outline && outlineItems.length > 1"
+            class="sticky z-20 h-0 sm:hidden"
+            :style="{ top: outlineTop }"
+          >
+            <div class="absolute end-2 top-2">
+              <ContentOutline
                 :items="outlineItems"
                 :current="currentHeading"
                 @select="goToHeading"

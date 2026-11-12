@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { VoteInput } from "~~/shared/types/api";
+import type { AmendmentDto, VoteInput } from "~~/shared/types/api";
 import {
   DECISION_METHODS,
   type DecisionMethod,
@@ -61,7 +61,8 @@ watch(open, (isOpen) => {
   selected.value = [...session.admissionDialog.ids];
   method.value = "mesa";
   note.value = "";
-  vote.value = sessionEmptyVote("simple", session.votePresent.value);
+  // "Present" opens empty: the latest headcount fills it (VoteDialog).
+  vote.value = sessionEmptyVote("simple");
 });
 
 const allSelected = computed(
@@ -93,9 +94,25 @@ const methodItems = computed(() =>
   })),
 );
 
+// An empty "present" counts on the latest headcount, as on the server.
 const outcome = computed(() =>
-  sessionVoteOutcome(vote.value, session.settings.value),
+  sessionVoteOutcome(
+    vote.value,
+    session.settings.value,
+    session.voteHeadcount.value,
+  ),
 );
+
+/**
+ * Declaring it inadmissible withdraws a pending transactional over it:
+ * said on its row. Admitting settles nothing (and transactionals only
+ * build on admitted amendments).
+ */
+function transactionalsLine(amendment: AmendmentDto): string | null {
+  return decision.value === "inadmissible"
+    ? session.transactionalsOver.line(amendment)
+    : null;
+}
 const blocked = computed(
   () =>
     chosen.value.length === 0 ||
@@ -188,6 +205,17 @@ async function submit(): Promise<void> {
                 :value="amendment.admission"
                 size="sm"
               />
+              <p
+                v-if="transactionalsLine(amendment)"
+                class="text-default flex w-full items-start gap-1.5 text-xs"
+              >
+                <UIcon
+                  name="i-lucide-git-merge"
+                  class="text-warning mt-px size-3.5 shrink-0"
+                  aria-hidden="true"
+                />
+                {{ transactionalsLine(amendment) }}
+              </p>
             </li>
           </ul>
         </fieldset>

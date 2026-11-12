@@ -27,6 +27,8 @@
  */
 import type {
   AcceptedAmendmentRule,
+  AssemblySettings,
+  AssemblyStatus,
   ProponentPosition,
 } from "~~/shared/constants/domain";
 import type { AmendmentDto, PositionBody } from "~~/shared/types/api";
@@ -351,6 +353,73 @@ export function goneKey(
  */
 export function acceptHelpKey(rule: AcceptedAmendmentRule): string {
   return rule === "incorporate" ? "acceptHelpIncorporate" : "acceptHelpVote";
+}
+
+// What accepting sets off ------------------------------------------------------
+
+/**
+ * Accepting it now approves it at once: the document's rule is
+ * "incorporate" and it is still undecided (one already incorporated has
+ * nothing left to set off). The quiet notes about what accepting does (a
+ * clash with what is already in the text, the transactionals it withdraws,
+ * the approval everyone sees) apply only then.
+ */
+export function acceptIncorporates(
+  amendment: Pick<AmendmentDto, "status">,
+  rule: AcceptedAmendmentRule,
+): boolean {
+  return rule === "incorporate" && amendment.status === "submitted";
+}
+
+/**
+ * The amendments already approved (so in the text) among those it overlaps
+ * with (`overlaps`, from amendmentOverlapIndex), while accepting it would
+ * incorporate it: "Choca con 12 · CEUM 4, ya incorporada". In the order of
+ * `overlaps`; ids `byId` does not hold are left out.
+ */
+export function incorporatedClashIds(
+  amendment: Pick<AmendmentDto, "status">,
+  rule: AcceptedAmendmentRule,
+  overlaps: readonly { id: string }[],
+  byId: ReadonlyMap<string, Pick<AmendmentDto, "status">>,
+): string[] {
+  if (!acceptIncorporates(amendment, rule)) return [];
+  const ids: string[] = [];
+  for (const overlap of overlaps) {
+    if (
+      byId.get(overlap.id)?.status === "approved" &&
+      !ids.includes(overlap.id)
+    ) {
+      ids.push(overlap.id);
+    }
+  }
+  return ids;
+}
+
+/**
+ * Who reads the main presenter's answers now, as the key under
+ * `proponentReview.visibility`: the assembly's policy and, as on the server
+ * (canSeePositions), its status, since under "session" everyone reads them
+ * once the assembly is in session or closed.
+ */
+export function positionVisibilityKey(
+  policy: AssemblySettings["positionVisibility"],
+  status: AssemblyStatus | null | undefined,
+): "mesa" | "session" | "public" {
+  const started = status === "in_session" || status === "closed";
+  return policy === "session" && started ? "public" : policy;
+}
+
+/**
+ * The answers are still reserved to the presenters, the Mesa and the
+ * Secretaría (positionVisibilityKey), yet an acceptance that incorporates
+ * an amendment shows to everyone as its approval: the accept help says so.
+ */
+export function answersReserved(
+  policy: AssemblySettings["positionVisibility"],
+  status: AssemblyStatus | null | undefined,
+): boolean {
+  return positionVisibilityKey(policy, status) !== "public";
 }
 
 /**

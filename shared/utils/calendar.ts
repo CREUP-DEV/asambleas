@@ -76,6 +76,26 @@ function assemblyDay(at: Date | number): string {
 }
 
 /**
+ * Calendar days from the day of `now` to the day of `at` in the assemblies'
+ * time zone, whatever the hours: 0 is the same day, 1 tomorrow, -1 yesterday.
+ * A deadline at 23:59 tomorrow is 1 even 40 hours ahead. NaN for an invalid
+ * date.
+ */
+export function assemblyDayOffset(
+  at: Date | number,
+  now: Date | number = Date.now(),
+): number {
+  const a = new Date(at);
+  const b = new Date(now);
+  if (Number.isNaN(a.getTime()) || Number.isNaN(b.getTime())) {
+    return Number.NaN;
+  }
+  const dayNumber = (value: Date) =>
+    Date.parse(`${assemblyDay(value)}T00:00:00Z`) / DAY;
+  return Math.round(dayNumber(a) - dayNumber(b));
+}
+
+/**
  * Whether `at` respects a notice of `offset` before `reference`. Days and
  * months count calendar days in the assemblies' time zone, as CREUP reads
  * the regulations: a convocation sent on 18 October gives a month's notice

@@ -6,7 +6,10 @@ import {
   type AssemblySettings,
   type VoteMethod,
 } from "~~/shared/constants/domain";
-import { sessionVoteOutcome } from "~/composables/session/sessionModel";
+import {
+  sessionFillPresent,
+  sessionVoteOutcome,
+} from "~/composables/session/sessionModel";
 
 /**
  * Vote entry used by every session dialog: method, counts, majority and
@@ -16,8 +19,13 @@ import { sessionVoteOutcome } from "~/composables/session/sessionModel";
  * counts: only the method and the note are shown.
  *
  * With majorities on the members present, `headcount` is the Mesa's latest
- * count (the caller fills `present` from it): the form says which count it
- * is and warns, without blocking, when there is none or it lacks quorum.
+ * count (the session dialogs open with `present` empty, so a count another
+ * Mesa device takes while the form is open becomes the base): the form says
+ * which count it
+ * is, with its day when it is not today's (Europe/Madrid), and warns,
+ * without blocking, when there is none, it lacks quorum or it is from
+ * another day. An empty field counts on it, in the preview as on the server
+ * (sessionFillPresent), so the field is not "optional" then.
  * Left undefined (the caller does not load counts), it only says that an
  * empty field takes the latest count, as the server does.
  */
@@ -84,7 +92,16 @@ function setField<K extends "method" | "majority" | "note">(
 }
 
 const assent = computed(() => vote.value.method === "assent");
-const outcome = computed(() => sessionVoteOutcome(vote.value, props.settings));
+/**
+ * The vote as the server will count it: an empty "present" takes the latest
+ * headcount's (sessionFillPresent, like the server's fillPresent).
+ */
+const counted = computed(() =>
+  sessionFillPresent(vote.value, props.headcount, props.settings),
+);
+const outcome = computed(() =>
+  sessionVoteOutcome(vote.value, props.settings, props.headcount),
+);
 const cast = computed(
   () =>
     (vote.value.inFavor ?? 0) +
@@ -94,17 +111,53 @@ const cast = computed(
     (vote.value.invalid ?? 0),
 );
 const onPresent = computed(() => props.settings.denominator === "present");
+/** A headcount the field falls back on: "Opcional" would mislead then. */
+const hasHeadcount = computed(
+  () => onPresent.value && Boolean(props.headcount),
+);
+const now = useAppNow();
+/** When the latest count was taken, with its day when not today (Madrid). */
+const taken = computed(() =>
+  props.headcount
+    ? formatMoment(props.headcount.takenAt, {
+        locale: locale.value,
+        now: now.value,
+      })
+    : null,
+);
+/** The count is the base of this vote: the field is empty or matches it. */
+const fromCount = computed(
+  () =>
+    Boolean(props.headcount) &&
+    (vote.value.present == null ||
+      vote.value.present === props.headcount?.present),
+);
+/**
+ * The base comes from a count taken another day: a discreet, non-blocking
+ * line says so, since the room may have changed overnight.
+ */
+const otherDay = computed(
+  () => onPresent.value && fromCount.value && taken.value?.today === false,
+);
 /** What the form says about the base of majorities, under the counts. */
 const presentNote = computed<string | null>(() => {
   if (!onPresent.value) return null;
   const headcount = props.headcount;
   if (headcount === undefined) return t("session.vote.presentFromHeadcount");
-  if (headcount === null) return null;
-  const time = formatTime(headcount.takenAt, { locale: locale.value });
-  return vote.value.present === headcount.present
-    ? t("session.vote.presentFromCount", { time })
-    : t("session.vote.presentCorrected", {
-        time,
+  if (headcount === null || !taken.value) return null;
+  const { text, today } = taken.value;
+  if (fromCount.value) {
+    return today
+      ? t("session.vote.presentFromCount", { time: text })
+      : t("session.vote.presentFromCountDay", { moment: text });
+  }
+  return today
+    ? t("session.vote.presentCorrected", {
+        time: text,
+        present: headcount.present,
+      })
+    : t("session.vote.presentCorrectedDay", {
+        moment: text,
         present: headcount.present,
       });
 });
@@ -142,7 +195,7 @@ const denominatorText = computed(() =>
   t("session.vote.denominator", {
     count: outcome.value.denominator,
     base:
-      props.settings.denominator === "present" && vote.value.present != null
+      props.settings.denominator === "present" && counted.value.present != null
         ? t("session.vote.denominatorPresent")
         : t("session.vote.denominatorValid"),
   }),
@@ -203,20 +256,41 @@ const denominatorText = computed(() =>
         </UFormField>
         <UFormField
           :label="t('session.vote.present')"
-          :hint="t('session.vote.optional')"
+          :hint="hasHeadcount ? undefined : t('session.vote.optional')"
           :name="`${uid}-present`"
         >
+          <!-- Left empty, the count's figure is the base: it shows as the
+               placeholder. -->
           <UInputNumber
             :model-value="vote.present ?? undefined"
             :min="0"
             :max="100000"
-            :placeholder="t('session.vote.presentPlaceholder')"
+            :placeholder="
+              hasHeadcount && headcount
+                ? String(headcount.present)
+                : t('session.vote.presentPlaceholder')
+            "
             class="w-full"
             @update:model-value="(value) => setCount('present', value)"
           />
         </UFormField>
       </div>
-      <p v-if="presentNote" class="text-muted text-xs">
+      <!-- A count from another day: the same line, with a warning icon and
+           a hint to count again. It never blocks the vote. -->
+      <p
+        v-if="presentNote && otherDay"
+        class="text-default flex items-start gap-1.5 text-xs"
+      >
+        <UIcon
+          name="i-lucide-calendar-clock"
+          class="text-warning mt-px size-3.5 shrink-0"
+          aria-hidden="true"
+        />
+        <span>
+          {{ presentNote }} {{ t("session.vote.headcountOtherDay") }}
+        </span>
+      </p>
+      <p v-else-if="presentNote" class="text-muted text-xs">
         {{ presentNote }}
       </p>
       <UAlert

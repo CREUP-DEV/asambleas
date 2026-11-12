@@ -2,9 +2,11 @@
 /**
  * The review's keyboard shortcuts, in a popover. They act on the amendment
  * on screen (a transactional included) and do nothing while a comment is
- * being typed.
+ * being typed. The same popover turns them off in this browser (WCAG
+ * 2.1.4), like ShellPreferences.
  */
 const { t } = useI18n();
+const { enabled } = useSingleKeyShortcuts();
 
 const SHORTCUTS = [
   { keys: ["a"], key: "accept" },
@@ -28,7 +30,12 @@ const SHORTCUTS = [
         <p class="text-highlighted text-sm font-medium">
           {{ t("proponentReview.shortcuts.button") }}
         </p>
-        <dl class="space-y-1.5 text-sm">
+        <USwitch
+          v-model="enabled"
+          size="sm"
+          :label="t('shell.preferences.singleKeyShortcuts')"
+        />
+        <dl v-if="enabled" class="space-y-1.5 text-sm">
           <div
             v-for="shortcut in SHORTCUTS"
             :key="shortcut.key"
@@ -43,7 +50,11 @@ const SHORTCUTS = [
           </div>
         </dl>
         <p class="text-muted text-xs">
-          {{ t("proponentReview.shortcuts.hint") }}
+          {{
+            enabled
+              ? t("proponentReview.shortcuts.hint")
+              : t("shell.preferences.singleKeyShortcutsOff")
+          }}
         </p>
       </div>
     </template>

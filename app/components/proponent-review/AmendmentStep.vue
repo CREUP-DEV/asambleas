@@ -11,6 +11,7 @@ import {
 import {
   PROPONENT_ANSWERS,
   acceptHelpKey,
+  acceptIncorporates,
   isIncorporated,
   positionAnswer,
   stateKey,
@@ -40,6 +41,12 @@ import {
  * Under where it stands, one quiet line each for what the document page
  * also shows: a pending transactional over it (which would replace it) and
  * its relations with other amendments ("Incompatible con 5 · UGR 1").
+ * When accepting would incorporate it at once (acceptIncorporates), they
+ * also say what that sets off: the overlapping amendments already in the
+ * text it clashes with ("Choca con 12 · CEUM 4, ya incorporada"), the
+ * pending transactionals it withdraws (back if the answer changes before
+ * the final vote), and, under "Aceptar", that everyone sees the approval
+ * while the answers are still reserved.
  *
  * A transactional lists the amendments it replaced; their changes fold
  * away.
@@ -52,10 +59,23 @@ const props = withDefaults(
     acceptedAmendments: AcceptedAmendmentRule;
     /** For a transactional: the amendments it replaced, as the actor sees them. */
     sources?: AmendmentDto[];
-    /** Transactionals over this amendment still on their way. */
+    /**
+     * Transactionals over this amendment still on their way, the ones the
+     * viewer can see (`transactionalIds`): one still unpublished and
+     * waiting for its parties is not named, though accepting under
+     * "incorporate" withdraws it too (and changing the answer brings it
+     * back).
+     */
     pendingTransactionals?: AmendmentDto[];
     /** Its relations with other amendments of the document. */
     relations?: AmendmentRelationView[];
+    /**
+     * Approved amendments it overlaps with, while accepting would
+     * incorporate it (incorporatedClashIds).
+     */
+    clashIds?: string[];
+    /** The answers are still reserved (answersReserved). */
+    answersReserved?: boolean;
     /** "12 · CEUM 4" for an amendment id. */
     labelOf?: ((id: string) => string) | null;
     /** The choice being saved, if any. */
@@ -80,6 +100,8 @@ const props = withDefaults(
     sources: () => [],
     pendingTransactionals: () => [],
     relations: () => [],
+    clashIds: () => [],
+    answersReserved: false,
     labelOf: null,
     busy: null,
     disabled: false,
@@ -98,6 +120,8 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
+/** The keys are shown only while this browser keeps them on. */
+const { enabled: shortcutsEnabled } = useSingleKeyShortcuts();
 const titleId = useId();
 const answerId = useId();
 const heading = useTemplateRef<HTMLElement>("heading");
@@ -108,6 +132,10 @@ const label = computed(
 const answer = computed(() => positionAnswer(props.amendment));
 /** Accepted and already in the text, without a vote. */
 const incorporated = computed(() => isIncorporated(props.amendment));
+/** Accepting approves it at once, with what that sets off. */
+const incorporates = computed(() =>
+  acceptIncorporates(props.amendment, props.acceptedAmendments),
+);
 
 /**
  * How the main presenter the Mesa answers for is named, the same in the
@@ -146,9 +174,12 @@ const mainAuthor = computed(() =>
 /** Under each choice: what it means, and what it undoes. */
 function choiceHelp(choice: ProponentAnswer): string {
   if (choice === "accept") {
-    return t(
+    const help = t(
       `proponentReview.answer.${acceptHelpKey(props.acceptedAmendments)}`,
     );
+    return incorporates.value && props.answersReserved
+      ? `${help} ${t("proponentReview.answer.acceptRevealsApproval")}`
+      : help;
   }
   const help =
     choice === "transact" && mainAuthor.value
@@ -178,19 +209,33 @@ function otherLabel(id: string): string {
 }
 
 /**
- * The context lines under where it stands: a pending transactional over it
- * (one line for all of them) and each relation, worded as in the document's
- * amendment cards.
+ * The context lines under where it stands: the amendments already in the
+ * text it clashes with, a pending transactional over it (one line for all
+ * of them; accepting withdraws it when that incorporates the amendment) and
+ * each relation, worded as in the document's amendment cards.
  */
 const context = computed(() => {
   const lines: { key: string; icon: string; text: string }[] = [];
+  if (props.clashIds.length > 0) {
+    lines.push({
+      key: "clashes",
+      icon: "i-lucide-layers",
+      text: t(
+        "proponentReview.context.clashIncorporated",
+        { list: props.clashIds.map(otherLabel).join(", ") },
+        props.clashIds.length,
+      ),
+    });
+  }
   const pending = props.pendingTransactionals;
   if (pending.length > 0) {
     lines.push({
       key: "pending-transactionals",
       icon: "i-lucide-git-merge",
       text: t(
-        "proponentReview.context.pendingTransactional",
+        incorporates.value
+          ? "proponentReview.context.pendingTransactionalIncorporate"
+          : "proponentReview.context.pendingTransactional",
         { list: pending.map((item) => otherLabel(item.id)).join(", ") },
         pending.length,
       ),
@@ -445,7 +490,9 @@ defineExpose({
           block
           class="h-auto flex-col items-start gap-1 px-4 py-3 text-start"
           :aria-pressed="answer === choice"
-          :aria-keyshortcuts="CHOICES[choice].key"
+          :aria-keyshortcuts="
+            shortcutsEnabled ? CHOICES[choice].key : undefined
+          "
           :aria-busy="busy === choice"
           :disabled="
             disabled || commentBusy || (busy !== null && busy !== choice)
@@ -468,6 +515,7 @@ defineExpose({
             />
             {{ t(`proponentReview.answer.${choice}`) }}
             <UKbd
+              v-if="shortcutsEnabled"
               :value="CHOICES[choice].key"
               size="sm"
               class="ms-auto hidden lg:inline-flex"

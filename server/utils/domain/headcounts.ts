@@ -569,7 +569,22 @@ export async function withHeadcount(
 ): Promise<{ vote: VoteInput; headcountId: string | null }> {
   if (vote.method === "assent") return { vote, headcountId: null };
   const latest = await latestHeadcount(assemblyId);
-  if (!latest) return { vote, headcountId: null };
+  return fillPresent(vote, latest, settings);
+}
+
+/**
+ * The pure part of withHeadcount: with majorities on the members present
+ * and no figure typed for this vote (null or left out), the count's
+ * `present`; a typed figure, zero included, stays. The count is recorded
+ * whatever the denominator, and none is recorded without a count or for
+ * assent. The count is the latest of the assembly, whatever its day.
+ */
+export function fillPresent(
+  vote: VoteInput,
+  latest: Pick<HeadcountRow, "id" | "present"> | null,
+  settings: Pick<AssemblySettings, "denominator">,
+): { vote: VoteInput; headcountId: string | null } {
+  if (vote.method === "assent" || !latest) return { vote, headcountId: null };
   const fill = settings.denominator === "present" && vote.present == null;
   return {
     vote: fill ? { ...vote, present: latest.present } : vote,

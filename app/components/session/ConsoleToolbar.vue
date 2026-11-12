@@ -44,9 +44,13 @@ async function saveMessage(value: string | null): Promise<void> {
   if (ok) messageOpen.value = false;
 }
 
+/** Single-key shortcuts may be off in this browser (WCAG 2.1.4). */
+const { enabled: shortcutsEnabled } = useSingleKeyShortcuts();
+
+// j and k only move the selection: the debate moves with "Siguiente".
 const SHORTCUTS = [
-  { keys: ["j"], key: "next" },
-  { keys: ["k"], key: "previous" },
+  { keys: ["j"], key: "selectNext" },
+  { keys: ["k"], key: "selectPrevious" },
   { keys: ["a"], key: "assent" },
   { keys: ["v"], key: "vote" },
   { keys: ["t"], key: "transact" },
@@ -140,7 +144,12 @@ const SHORTCUTS = [
               <p class="text-highlighted text-sm font-medium">
                 {{ t("session.shortcuts.title") }}
               </p>
-              <dl class="space-y-1.5 text-sm">
+              <USwitch
+                v-model="shortcutsEnabled"
+                size="sm"
+                :label="t('shell.preferences.singleKeyShortcuts')"
+              />
+              <dl v-if="shortcutsEnabled" class="space-y-1.5 text-sm">
                 <div
                   v-for="shortcut in SHORTCUTS"
                   :key="shortcut.key"
@@ -159,7 +168,11 @@ const SHORTCUTS = [
                 </div>
               </dl>
               <p class="text-muted text-xs">
-                {{ t("session.shortcuts.hint") }}
+                {{
+                  shortcutsEnabled
+                    ? t("session.shortcuts.hint")
+                    : t("shell.preferences.singleKeyShortcutsOff")
+                }}
               </p>
             </div>
           </template>

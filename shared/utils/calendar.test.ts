@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { INITIAL_CALENDAR_RULES } from "../constants/calendarRules";
 import {
+  assemblyDayOffset,
   checkCalendar,
   defaultMilestones,
   milestoneOffsetBefore,
@@ -433,5 +434,31 @@ describe("checkCalendar documents with a short convocation", () => {
     }).map((warning) => warning.code);
     expect(codes).not.toContain("short_notice");
     expect(codes).toContain("documents_not_with_convocation");
+  });
+});
+
+describe("assemblyDayOffset", () => {
+  it("counts calendar days in Madrid, not blocks of 24 hours", () => {
+    // Monday 08:00 to Tuesday 23:59 (Madrid, CET): 40 hours, one day.
+    const now = new Date("2026-11-16T07:00:00Z");
+    expect(assemblyDayOffset(new Date("2026-11-17T22:59:00Z"), now)).toBe(1);
+    expect(assemblyDayOffset(new Date("2026-11-16T22:59:00Z"), now)).toBe(0);
+    expect(assemblyDayOffset(new Date("2026-11-18T22:59:00Z"), now)).toBe(2);
+    expect(assemblyDayOffset(new Date("2026-11-15T22:59:00Z"), now)).toBe(-1);
+  });
+
+  it("follows the Madrid day across midnight UTC", () => {
+    // 23:30 UTC on the 16th is already the 17th in Madrid.
+    const now = new Date("2026-11-16T23:30:00Z");
+    expect(assemblyDayOffset(new Date("2026-11-17T10:00:00Z"), now)).toBe(0);
+  });
+
+  it("crosses a clock change", () => {
+    const now = new Date("2026-10-24T10:00:00Z");
+    expect(assemblyDayOffset(new Date("2026-10-26T10:00:00Z"), now)).toBe(2);
+  });
+
+  it("is NaN for an invalid date", () => {
+    expect(assemblyDayOffset(Number.NaN)).toBeNaN();
   });
 });

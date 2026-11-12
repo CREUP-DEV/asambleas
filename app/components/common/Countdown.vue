@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DateInput } from "~/utils/format";
+import { datedCountdown } from "~/components/common/-countdown";
 
 /**
  * Relative time to (or since) a date: "dentro de 3 días", "hace 2 horas".
@@ -9,6 +10,11 @@ import type { DateInput } from "~/utils/format";
  *
  * `urgent` turns on within `urgentHours` of the date; `expired` is emitted
  * once when the date passes while the component is mounted.
+ *
+ * `dated` also says when the date falls, for the deadline a page is about
+ * ("mañana a las 23:59", "dentro de 3 días, el 19 nov a las 23:59"; see
+ * datedCountdown): there the date must be read, not only hovered. Lists of
+ * many dates leave it off.
  */
 const props = withDefaults(
   defineProps<{
@@ -20,13 +26,21 @@ const props = withDefaults(
     icon?: string;
     /** "day" counts days instead of weeks or months ("dentro de 35 días"). */
     maxUnit?: "day";
+    /** Say the time (today, tomorrow) or the date (further on) too. */
+    dated?: boolean;
   }>(),
-  { urgentHours: 24, label: undefined, icon: undefined, maxUnit: undefined },
+  {
+    urgentHours: 24,
+    label: undefined,
+    icon: undefined,
+    maxUnit: undefined,
+    dated: false,
+  },
 );
 
 const emit = defineEmits<{ expired: [] }>();
 
-const { locale } = useI18n();
+const { t, locale } = useI18n();
 
 // SSR and hydration share the render time so the text matches; the shared
 // clock moves on once the app is hydrated.
@@ -44,6 +58,15 @@ const relative = computed(() =>
     maxUnit: props.maxUnit,
   }),
 );
+const text = computed(() => {
+  if (!props.dated) return relative.value;
+  const dated = datedCountdown(target.value, {
+    now: now.value,
+    locale: locale.value,
+    maxUnit: props.maxUnit,
+  });
+  return dated ? t(dated.key, dated.params) : relative.value;
+});
 const remainingMs = computed(() =>
   target.value ? target.value.getTime() - now.value : 0,
 );
@@ -82,7 +105,7 @@ watch(past, (isPast, wasPast) => {
     <!-- Label and time wrap together, as text. -->
     <span class="min-w-0">
       {{ label ? `${label} ` : "" }}
-      <time :datetime="iso" :title="absolute">{{ relative }}</time>
+      <time :datetime="iso" :title="absolute">{{ text }}</time>
     </span>
   </span>
 </template>

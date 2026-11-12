@@ -7,7 +7,9 @@ import type { LiveAttendance } from "~/components/live-view/-attendance";
  * headcount (who is in the room with a vote, the delegated votes and
  * whether they count, the sectorials and guests in the room), whether there is quorum, the majorities it gives when the
  * assembly counts them on the members present, and the earlier counts.
- * The lists fold away: on a phone the figures come first.
+ * The lists fold away: on a phone the figures come first. A count from
+ * another day (Europe/Madrid) says its day: in a session of several days the
+ * latest count may be yesterday's.
  */
 const props = defineProps<{
   /** Null before the Mesa's first count. */
@@ -15,12 +17,39 @@ const props = defineProps<{
 }>();
 
 const { t, locale } = useI18n();
+const now = useAppNow();
+
+function moment(headcount: HeadcountDto) {
+  return formatMoment(headcount.takenAt, {
+    locale: locale.value,
+    now: now.value,
+  });
+}
 
 function when(headcount: HeadcountDto): string {
-  return formatTime(headcount.takenAt, { locale: locale.value });
+  return moment(headcount).text;
 }
 
 const latest = computed(() => props.attendance?.latest ?? null);
+
+/**
+ * "Recuento de las 18:45", "Recuento de ayer, 18:45" or, older, "Recuento
+ * del 16 nov 2026, 18:45": Spanish words a date and "ayer" differently.
+ */
+const takenAt = computed(() => {
+  if (!latest.value) return "";
+  const { text, today, dayOffset } = moment(latest.value);
+  const key = today
+    ? "liveView.attendance.takenAt"
+    : dayOffset === -1
+      ? "liveView.attendance.takenAtDay"
+      : "liveView.attendance.takenAtDate";
+  return t(key, {
+    time: text,
+    moment: text,
+    required: latest.value.required,
+  });
+});
 </script>
 
 <template>
@@ -50,12 +79,7 @@ const latest = computed(() => props.attendance?.latest ?? null);
           "
         />
         <p class="text-muted text-sm tabular-nums">
-          {{
-            t("liveView.attendance.takenAt", {
-              time: when(latest),
-              required: latest.required,
-            })
-          }}
+          {{ takenAt }}
           <template v-if="latest.note"> · {{ latest.note }}</template>
         </p>
       </div>

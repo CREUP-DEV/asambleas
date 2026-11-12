@@ -14,6 +14,9 @@ import {
   closeTransactionalsOver,
   competingTransactionalIds,
   loadSourceMap,
+  reopenTransactionalsClosedBy,
+  restoreLockIds,
+  transactionalsOverIds,
 } from "./transactionalClosure";
 
 type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -27,11 +30,14 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
  *   "rule_changed" and the main presenter as `memberId`), which closes the
  *   pending transactionals over them (closeTransactionalsOver);
  * - to "vote", the ones its acceptance approved go back to undecided
- *   (amendment_reopened with reason "rule_changed"), keeping the answer.
+ *   (amendment_reopened with reason "rule_changed"), keeping the answer,
+ *   and the transactionals their incorporation closed come back
+ *   (reopenTransactionalsClosedBy).
  * The caller holds the document NO KEY UPDATE (updateDocument), which every
  * amendment path waits for (they take it FOR SHARE), and refuses the change
  * after the final vote. The amendment rows (with the transactionals over
- * them) are locked in id order, then the acceptances ("Row locks").
+ * them and, when they go back, what those group) are locked in id order,
+ * then the acceptances ("Row locks").
  */
 export async function applyAcceptedAmendmentsRule(
   tx: Tx,
@@ -68,15 +74,17 @@ export async function applyAcceptedAmendmentsRule(
     );
   if (candidates.length === 0) return;
   const ids = candidates.map((row) => row.id);
-  // Incorporating them closes the transactionals over them: locked in the
-  // same ordered pass.
-  const sourceMap =
-    input.rule === "incorporate"
-      ? await loadSourceMap(tx, input.documentId)
-      : new Map<string, string[]>();
+  // Incorporating them closes the transactionals over them, and taking
+  // them out again brings back the ones that closed: locked in the same
+  // ordered pass, with what those group when they may come back.
+  const sourceMap = await loadSourceMap(tx, input.documentId);
   const dependentIds = competingTransactionalIds(sourceMap, null, ids).filter(
     (id) => !ids.includes(id),
   );
+  const restoreIds =
+    input.rule === "vote" ? restoreLockIds(sourceMap, ids) : [];
+  const overIds =
+    input.rule === "vote" ? transactionalsOverIds(sourceMap, ids) : [];
 
   const lockedAll = await tx
     .select({
@@ -87,18 +95,25 @@ export async function applyAcceptedAmendmentsRule(
       admission: amendments.admission,
       validatedAt: amendments.validatedAt,
       publishedAt: amendments.publishedAt,
+      decidedAt: amendments.decidedAt,
       approvalMethod: amendments.approvalMethod,
     })
     .from(amendments)
-    .where(inArray(amendments.id, [...ids, ...dependentIds]))
+    .where(
+      inArray(amendments.id, [
+        ...new Set([...ids, ...dependentIds, ...restoreIds]),
+      ]),
+    )
     .orderBy(asc(amendments.id))
     .for("no key update");
   const locked = lockedAll.filter((row) => ids.includes(row.id));
   const transactionalIds = locked
     .filter((row) => row.kind === "transactional")
     .map((row) => row.id);
+  // Theirs and, when they go back, those of the transactionals over them.
+  const partyIds = [...new Set([...transactionalIds, ...overIds])];
   const [parties, positions, sources] = await Promise.all([
-    transactionalIds.length > 0
+    partyIds.length > 0
       ? tx
           .select({
             amendmentId: amendmentAcceptances.amendmentId,
@@ -106,7 +121,7 @@ export async function applyAcceptedAmendmentsRule(
             decision: amendmentAcceptances.decision,
           })
           .from(amendmentAcceptances)
-          .where(inArray(amendmentAcceptances.amendmentId, transactionalIds))
+          .where(inArray(amendmentAcceptances.amendmentId, partyIds))
           .orderBy(asc(amendmentAcceptances.id))
           .for("share")
       : Promise.resolve([]),
@@ -228,5 +243,16 @@ export async function applyAcceptedAmendmentsRule(
         payload: { previousStatus: "approved", reason: "rule_changed" },
       });
     }
+    const reopenedIds = new Set(reopened.map((row) => row.id));
+    const back = locked.filter((row) => reopenedIds.has(row.id));
+    await reopenTransactionalsClosedBy(tx, {
+      assemblyId: input.assemblyId,
+      documentId: input.documentId,
+      actor: input.actor,
+      sourceMap,
+      reopened: back.map((row) => ({ id: row.id, code: row.code })),
+      locked: lockedAll,
+      parties,
+    });
   }
 }

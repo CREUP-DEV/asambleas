@@ -66,8 +66,13 @@ import {
   isSessionValidatable,
   isSessionPositionByMesa,
   sessionClosingSourceIds,
+  isSessionClosureReversible,
   sessionLapsingTransactionalIds,
   sessionPositionMenu,
+  sessionFillPresent,
+  sessionPendingTransactionalIds,
+  sessionSettleConfirm,
+  sessionTransactionalWaitsFor,
 } from "./sessionModel";
 
 const b = (id: string, text: string): Block => ({
@@ -1080,6 +1085,52 @@ describe("session model", () => {
       ).toEqual([]);
     });
 
+    it("says a closed transactional comes back only while it can", () => {
+      // T5 over s1 and s2, closed when s1 was withdrawn.
+      const at = "2026-01-02T10:00:00.000Z";
+      const s1 = am("s1", {
+        status: "withdrawn",
+        decidedAt: at,
+        transactionalIds: ["t5"],
+      });
+      const s2 = am("s2", { transactionalIds: ["t5"] });
+      const t5 = am("t5", {
+        kind: "transactional",
+        status: "withdrawn",
+        decidedAt: at,
+        sourceIds: ["s1", "s2"],
+        acceptances: [party("ceum", "accepted"), party("upv", "pending")],
+      });
+      const byId = new Map([s1, s2, t5].map((x) => [x.id, x]));
+      // s2 still open: reopening s1 brings it back, until the final vote.
+      expect(isSessionClosureReversible(t5, byId, false)).toBe(true);
+      expect(isSessionClosureReversible(t5, byId, true)).toBe(false);
+      // s2 approved later, at another instant: reopening s1 alone does not.
+      const s2Approved = new Map(byId).set("s2", {
+        ...s2,
+        status: "approved",
+        decidedAt: "2026-01-02T11:00:00.000Z",
+      });
+      expect(sessionClosingSourceIds(t5, s2Approved)).toEqual(["s1"]);
+      expect(isSessionClosureReversible(t5, s2Approved, false)).toBe(false);
+      // Both settled in that same moment: both named, both reopen it.
+      const both = new Map(byId).set("s2", {
+        ...s2,
+        status: "inadmissible",
+        decidedAt: at,
+      });
+      expect(sessionClosingSourceIds(t5, both)).toEqual(["s1", "s2"]);
+      expect(isSessionClosureReversible(t5, both, false)).toBe(true);
+      // Not closed on its own: nothing to say.
+      expect(
+        isSessionClosureReversible(
+          { ...t5, decidedAt: "2026-01-02T09:00:00Z" },
+          byId,
+          false,
+        ),
+      ).toBe(false);
+    });
+
     it("names the transactional that got ahead of a lapsed one", () => {
       // T1 and T2 both group s1. T2 was accepted by everyone and validated
       // first: s1 turned transacted and, in that same moment, the server let
@@ -1669,6 +1720,202 @@ describe("session model", () => {
       expect(isSessionSpeakersEvent(event("live", "live_changed"))).toBe(true);
       expect(isSessionSpeakersEvent(event("assembly", "poll"))).toBe(true);
       expect(isSessionSpeakersEvent(event("amendment"))).toBe(false);
+    });
+  });
+});
+
+describe("pending transactionals over an amendment (SES-3)", () => {
+  const member = (id: string) => ({
+    id,
+    acronym: id.toUpperCase(),
+    name: id,
+    kind: "asociado" as const,
+  });
+  const party = (id: string, decision: "pending" | "accepted") => ({
+    member: member(id),
+    role: "author" as const,
+    decision,
+    decidedAt: null,
+    recordedBy: "party" as const,
+  });
+  const accept = {
+    position: "accept" as const,
+    recordedBy: "presenter" as const,
+    comment: null,
+    updatedAt: "",
+  };
+  // T9 merges x1 and y1 and waits for UPV: proposed by a member, not
+  // published yet, so it has no code.
+  const t9 = am("t9", {
+    kind: "transactional",
+    code: null,
+    positionKey: 1.1,
+    admission: "pending",
+    validatedAt: null,
+    publishedAt: null,
+    reviewState: "pending_authors",
+    sourceIds: ["x1", "y1"],
+    ops: [rep("b2", 3, 15, "choza era muy")],
+    acceptances: [party("ugr", "accepted"), party("upv", "pending")],
+  });
+  // UGR 3: accepted by the presenter, with T9 over it.
+  const x1 = am("x1", {
+    ops: [rep("b2", 3, 7, "choza")],
+    positionKey: 1.1,
+    position: accept,
+    transactionalIds: ["t9"],
+  });
+  // UPV 2: not accepted by the presenter, also under T9.
+  const y1 = am("y1", {
+    ops: [rep("b2", 3, 7, "cabaña")],
+    positionKey: 1.1,
+    transactionalIds: ["t9"],
+  });
+  // Clashes with T9 (which stays out of the batch) but not with x1.
+  const x3 = am("x3", {
+    ops: [rep("b2", 11, 17, "enorme")],
+    positionKey: 1.2,
+    position: accept,
+  });
+  // Elsewhere in the text: nothing in its way.
+  const x4 = am("x4", {
+    ops: [rep("b1", 3, 7, "perro")],
+    positionKey: 0.1,
+    position: accept,
+    transactionalIds: ["draft"],
+  });
+  const draft = am("draft", {
+    kind: "transactional",
+    status: "draft",
+    sourceIds: ["x4"],
+    ops: [rep("b1", 3, 7, "loro")],
+    submittedAt: null,
+    validatedAt: null,
+    publishedAt: null,
+    reviewState: null,
+  });
+  const list = [t9, x1, y1, x3, x4, draft];
+  const byId = new Map(list.map((amendment) => [amendment.id, amendment]));
+
+  it("names the presented transactionals settling it would withdraw", () => {
+    expect(sessionPendingTransactionalIds(x1, byId)).toEqual(["t9"]);
+    expect(sessionPendingTransactionalIds(y1, byId)).toEqual(["t9"]);
+    // A draft is not withdrawn by the server, nor counted here.
+    expect(sessionPendingTransactionalIds(x4, byId)).toEqual([]);
+    // Nothing once it is decided, nor once T9 replaced it.
+    expect(
+      sessionPendingTransactionalIds({ ...x1, status: "approved" }, byId),
+    ).toEqual([]);
+    const replacing = {
+      ...t9,
+      validatedAt: "2026-01-01T00:00:00Z",
+      reviewState: "published" as const,
+      acceptances: [party("ugr", "accepted"), party("upv", "accepted")],
+    };
+    const replaced = new Map(byId).set("t9", replacing);
+    expect(
+      sessionPendingTransactionalIds({ ...x1, status: "transacted" }, replaced),
+    ).toEqual([]);
+    // Withdrawn already (a main author said no, or the Mesa withdrew it).
+    const closed = new Map(byId).set("t9", { ...t9, status: "withdrawn" });
+    expect(sessionPendingTransactionalIds(x1, closed)).toEqual([]);
+  });
+
+  it("says who a transactional waits for", () => {
+    expect(sessionTransactionalWaitsFor(t9)).toEqual({
+      members: [member("upv")],
+      validation: false,
+    });
+    expect(
+      sessionTransactionalWaitsFor({
+        ...t9,
+        acceptances: [party("ugr", "accepted"), party("upv", "accepted")],
+      }),
+    ).toEqual({ members: [], validation: true });
+    // The Mesa's own: validated at once, waiting for the parties.
+    expect(
+      sessionTransactionalWaitsFor({
+        ...t9,
+        validatedAt: "2026-01-01T00:00:00Z",
+        acceptances: [party("ugr", "accepted"), party("upv", "accepted")],
+      }),
+    ).toEqual({ members: [], validation: false });
+  });
+
+  it("leaves them and what clashes with them out of bulk assent", () => {
+    const plan = sessionAssentPlan(list);
+    expect(plan.ready.map((x) => x.id)).toEqual(["x4"]);
+    expect(
+      plan.skipped.map((x) => [x.amendment.id, x.reason, x.conflictsWith]),
+    ).toEqual([
+      ["x1", "transactional_pending", ["t9"]],
+      ["x3", "transactional_clash", ["t9"]],
+    ]);
+  });
+
+  it("keeps the batch as before once the transactional is gone", () => {
+    const withdrawn = { ...t9, status: "withdrawn" as const };
+    const plan = sessionAssentPlan([withdrawn, x1, y1, x3, x4]);
+    expect(plan.ready.map((x) => x.id)).toEqual(["x4", "x1", "x3"]);
+    expect(plan.skipped).toEqual([]);
+  });
+
+  it("asks once for a one-click decision, naming what applies", () => {
+    expect(
+      sessionSettleConfirm({ notDebated: false, pendingTransactionals: 0 }),
+    ).toBeNull();
+    expect(
+      sessionSettleConfirm({ notDebated: false, pendingTransactionals: 1 }),
+    ).toEqual({
+      title: "transactional",
+      parts: ["transactional"],
+      color: "warning",
+    });
+    expect(
+      sessionSettleConfirm({ notDebated: true, pendingTransactionals: 0 }),
+    ).toEqual({
+      title: "not_debated",
+      parts: ["not_debated"],
+      color: "primary",
+    });
+    // Both: one dialog, the debated amendment first.
+    expect(
+      sessionSettleConfirm({ notDebated: true, pendingTransactionals: 2 }),
+    ).toEqual({
+      title: "not_debated",
+      parts: ["not_debated", "transactional"],
+      color: "warning",
+    });
+  });
+});
+
+describe("the members present of a vote", () => {
+  const settings = { denominator: "present", tieRule: "rejected" } as const;
+  const vote = {
+    method: "show_of_hands" as const,
+    inFavor: 25,
+    against: 3,
+    abstentions: 4,
+    present: null,
+    majority: "two_thirds" as const,
+  };
+
+  it("counts an empty field on the latest headcount", () => {
+    // Of yesterday's 40 it takes 27: rejected. Typed, today's 32 take 22.
+    expect(sessionFillPresent(vote, { present: 40 }, settings).present).toBe(
+      40,
+    );
+    expect(sessionVoteOutcome(vote, settings, { present: 40 })).toMatchObject({
+      result: "rejected",
+      threshold: 27,
+      denominator: 40,
+    });
+    expect(
+      sessionVoteOutcome({ ...vote, present: 32 }, settings, { present: 40 }),
+    ).toMatchObject({ result: "approved", threshold: 22, denominator: 32 });
+    // Without a headcount the preview stays on the valid votes.
+    expect(sessionVoteOutcome(vote, settings)).toMatchObject({
+      denominator: 32,
     });
   });
 });

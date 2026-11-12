@@ -395,6 +395,7 @@ const summary = computed(() =>
       :document-title="group.document.title"
       :initial-decision="target?.decision ?? 'admitted'"
       :settings="props.settings"
+      :assembly-id="props.assemblyId"
       :busy="
         busy !== null && (busy.action === 'admit' || busy.action === 'inadmit')
       "

@@ -175,6 +175,10 @@ import {
   closeTransactionalsOver,
   competingTransactionalIds,
   loadSourceMap,
+  reopenTransactionalsClosedBy,
+  restoreLockIds,
+  transactionalsOverIds,
+  type RestoreRow,
 } from "./transactionalClosure";
 import {
   canSeeAmendment,
@@ -1113,6 +1117,36 @@ function closeDependents(
     sourceMap,
     closed,
     candidates: rows,
+  });
+}
+
+/**
+ * Brings back the transactionals closed over `reopened`
+ * (reopenTransactionalsClosedBy), once this path put them back to
+ * undecided: `reopened` are their rows as locked before, `reopenedAs` what
+ * else the reopening changed (readmission also admits them). `locked`
+ * holds them and restoreLockIds, locked in the same ordered pass, and
+ * `parties` the acceptances of the transactionals over them
+ * (transactionalsOverIds), locked after.
+ */
+function restoreDependents(
+  tx: Tx,
+  ctx: DocumentAmendmentContext,
+  sourceMap: ReadonlyMap<string, readonly string[]>,
+  locked: Iterable<LockedAmendment>,
+  parties: Awaited<ReturnType<typeof lockParties>>,
+  reopened: LockedAmendment[],
+  reopenedAs: Partial<RestoreRow> = {},
+): Promise<string[]> {
+  return reopenTransactionalsClosedBy(tx, {
+    assemblyId: ctx.assembly.id,
+    documentId: ctx.document.id,
+    actor: ctx.actor,
+    sourceMap,
+    reopened: reopened.map((row) => ({ id: row.id, code: row.code })),
+    locked,
+    reopenedAs,
+    parties,
   });
 }
 
@@ -2749,18 +2783,40 @@ export async function decideAmendmentAdmission(
     // Eligibility alone is not enough (both directions can be eligible, so
     // an opposite decision would be overturned): the locked rows must still
     // be exactly what the operator decided on. Declaring them inadmissible
-    // closes the transactionals over them, locked in the same pass.
+    // closes the transactionals over them, locked in the same pass; readmitting
+    // inadmissible ones brings back what that closed, so those and what they
+    // group are locked too (restoreLockIds), then their acceptances.
+    const readmitting =
+      admission === "admitted"
+        ? rows
+            .filter((row) => row.status === "inadmissible")
+            .map((row) => row.id)
+        : [];
     const dependents =
       admission === "inadmissible"
         ? await findCompetitors(tx, document.id, null, body.amendmentIds)
-        : { sourceMap: new Map<string, string[]>(), ids: [] };
+        : readmitting.length > 0
+          ? await findCompetitors(tx, document.id, null, readmitting)
+          : { sourceMap: new Map<string, string[]>(), ids: [] };
     const requested = new Set(body.amendmentIds);
     const lockedAll = await lockAmendments(
       tx,
       document.id,
-      unique([...body.amendmentIds, ...dependents.ids]),
+      unique([
+        ...body.amendmentIds,
+        ...(admission === "inadmissible" ? dependents.ids : []),
+        ...restoreLockIds(dependents.sourceMap, readmitting),
+      ]),
     );
     const locked = lockedAll.filter((row) => requested.has(row.id));
+    const restoreParties =
+      readmitting.length > 0
+        ? await lockParties(
+            tx,
+            transactionalsOverIds(dependents.sourceMap, readmitting),
+            "share",
+          )
+        : [];
     const seen = new Map(rows.map((row) => [row.id, row]));
     if (
       locked.length !== body.amendmentIds.length ||
@@ -2852,7 +2908,10 @@ export async function decideAmendmentAdmission(
               ...validation,
               admission: "inadmissible",
               status: "inadmissible",
-              decidedAt: now,
+              // One already inadmissible (a failed vote to readmit it) keeps
+              // the instant it was declared so: what that closed is dated
+              // with it (sessionClosingSourceIds).
+              decidedAt: sql`case when ${amendments.status} = 'inadmissible' then ${amendments.decidedAt} else ${nowSql} end`,
             })
             .where(
               and(
@@ -2941,6 +3000,18 @@ export async function decideAmendmentAdmission(
             code: row.code,
             status: "inadmissible" as const,
           })),
+      );
+    }
+    if (readmitting.length > 0) {
+      // Admitted again: what declaring it inadmissible closed comes back.
+      await restoreDependents(
+        tx,
+        ctx,
+        dependents.sourceMap,
+        lockedAll,
+        restoreParties,
+        locked.filter((row) => row.status === "inadmissible"),
+        { admission: "admitted" },
       );
     }
     if (voteRow) {
@@ -3565,28 +3636,38 @@ export async function setAmendmentPosition(
     await lockDocument(tx, document.id, "share");
     // The amendment (and what a transactional replaces, with the other
     // transactionals over that or over the amendment itself, which its
-    // incorporation closes) in one ordered pass, then its parties and its
-    // answer: the checks above, again under lock.
+    // incorporation closes and taking it out again brings back, with what
+    // those group) in one ordered pass, then the parties and its answer:
+    // the checks above, again under lock.
     const competitors = await findCompetitors(tx, document.id, amendment.id, [
       amendment.id,
       ...sourceIds,
     ]);
-    const locked = await lockAmendments(tx, document.id, [
-      amendment.id,
-      ...sourceIds,
-      ...competitors.ids,
-    ]);
+    const locked = await lockAmendments(
+      tx,
+      document.id,
+      unique([
+        amendment.id,
+        ...sourceIds,
+        ...competitors.ids,
+        ...restoreLockIds(competitors.sourceMap, [amendment.id]),
+      ]),
+    );
     const current = locked.find((row) => row.id === amendment.id);
     if (!current) fail(404, "Enmienda no encontrada");
+    const partyIds = unique([
+      ...(amendment.kind === "transactional" ? [amendment.id] : []),
+      ...transactionalsOverIds(competitors.sourceMap, [amendment.id]),
+    ]);
     const parties =
-      amendment.kind === "transactional"
-        ? await lockParties(tx, [amendment.id], "share")
-        : [];
+      partyIds.length > 0 ? await lockParties(tx, partyIds, "share") : [];
     const fields = {
       ...current,
       authorsApproval: authorsApproval({
         kind: amendment.kind,
-        acceptances: parties,
+        acceptances: parties.filter(
+          (party) => party.amendmentId === amendment.id,
+        ),
       }),
     };
     const lockedBlocker = positionBlocker(fields, ctx.rule);
@@ -3711,6 +3792,10 @@ export async function setAmendmentPosition(
         type: "amendment_reopened",
         payload: { previousStatus: "approved", reason: "position_changed" },
       });
+      // What its incorporation closed comes back.
+      await restoreDependents(tx, ctx, competitors.sourceMap, locked, parties, [
+        current,
+      ]);
     }
   });
 
@@ -4059,21 +4144,38 @@ export async function applyAmendmentOutcome(
     // The row also tells which vote this reopening voids. A transactional
     // keeps what it replaced: its sources stay transacted. One that never
     // replaced them needs them still open, and one a main author rejected
-    // stays closed (transactionalReopenBlocker).
-    const locked = await lockAmendments(tx, document.id, [
+    // stays closed (transactionalReopenBlocker). With them, the
+    // transactionals its settling closed and what those group: they come
+    // back (restoreDependents).
+    const dependents = await findCompetitors(tx, document.id, null, [
       amendment.id,
-      ...sourceIds,
     ]);
+    const locked = await lockAmendments(
+      tx,
+      document.id,
+      unique([
+        amendment.id,
+        ...sourceIds,
+        ...restoreLockIds(dependents.sourceMap, [amendment.id]),
+      ]),
+    );
     const current = locked.find((row) => row.id === amendment.id);
     if (!current) fail(409, "La enmienda ha cambiado. Recarga la página");
+    const partyIds = unique([
+      ...(transactional ? [amendment.id] : []),
+      ...transactionalsOverIds(dependents.sourceMap, [amendment.id]),
+    ]);
+    const parties =
+      partyIds.length > 0 ? await lockParties(tx, partyIds, "share") : [];
     if (transactional) {
-      const parties = await lockParties(tx, [amendment.id], "share");
       const blocker = transactionalReopenBlocker({
         kind: "transactional",
         validatedAt: current.validatedAt,
         authorsApproval: authorsApproval({
           kind: "transactional",
-          acceptances: parties,
+          acceptances: parties.filter(
+            (party) => party.amendmentId === amendment.id,
+          ),
         }),
         sources: locked.filter((row) => sourceIds.includes(row.id)),
       });
@@ -4109,6 +4211,9 @@ export async function applyAmendmentOutcome(
           : {}),
       },
     });
+    await restoreDependents(tx, ctx, dependents.sourceMap, locked, parties, [
+      current,
+    ]);
 
     await clearLiveVote(tx, {
       assemblyId: ctx.assembly.id,

@@ -1,14 +1,16 @@
 <script setup lang="ts">
 /**
  * Everything a person can set to their taste, in one place and in plain
- * sight: language, light or dark theme, and how document content looks
- * (AccessibilityPreferences). The "Preferencias" dialog of the user menu
- * and the last step of the welcome both show it. Every choice applies at
- * once; nothing here needs saving.
+ * sight: language, light or dark theme, single-key shortcuts (the review
+ * of amendments and the Mesa console offer the same switch) and how
+ * document content looks (AccessibilityPreferences). The "Preferencias"
+ * dialog of the user menu and the last step of the welcome both show it.
+ * Every choice applies at once; nothing here needs saving.
  */
 const { t, locale } = useI18n();
 const { localeItems, switchToLocale } = useLocaleSwitcher();
 const colorMode = useColorMode();
+const { enabled: singleKeyShortcuts } = useSingleKeyShortcuts();
 
 const COLOR_MODES = [
   { value: "system", icon: "i-lucide-monitor" },
@@ -111,6 +113,12 @@ function labelOf(item: unknown): string {
         </span>
       </template>
     </URadioGroup>
+
+    <USwitch
+      v-model="singleKeyShortcuts"
+      :label="t('shell.preferences.singleKeyShortcuts')"
+      :description="t('shell.preferences.singleKeyShortcutsHint')"
+    />
 
     <USeparator />
 

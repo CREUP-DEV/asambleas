@@ -11,6 +11,10 @@ import {
   amendmentPositionNext,
   type AmendmentPositionContext,
 } from "~/composables/amendment/workspace";
+import {
+  acceptIncorporates,
+  answersReserved,
+} from "~/components/proponent-review/-review";
 
 /**
  * The answer of the document's main presenter to an amendment (accept,
@@ -30,7 +34,14 @@ import {
  * the Mesa (who sees a private amendment, with its authors and the
  * Secretaría) is told here. Under the "incorporate" rule the answer can
  * change until the final vote: accepting approves it at once, and changing
- * it reopens it.
+ * it reopens it. While accepting would incorporate it (acceptIncorporates),
+ * the form says quietly what that sets off: the amendments already in the
+ * text it clashes with (`clashes`), the pending transactionals it withdraws
+ * (`withdraws`, back if the answer changes before the final vote; only the
+ * ones the viewer can see, `transactionalIds`, so one still unpublished and
+ * waiting for its parties goes unnamed, though it comes back too) and, when
+ * the answers are still reserved (answersReserved), that everyone sees the
+ * approval anyway.
  *
  * Answering is the main action for the main presenter while nobody has
  * answered yet ("Responder", solid); changing an answer, or the Mesa
@@ -45,6 +56,10 @@ const props = defineProps<{
   url: string;
   document: Pick<DocumentDto, "proponent" | "acceptedAmendments"> &
     Partial<Pick<DocumentDto, "finalVote">>;
+  /** Labels of the approved amendments it overlaps with (incorporatedClashIds). */
+  clashes?: string[];
+  /** Labels of the pending transactionals over it. */
+  withdraws?: string[];
 }>();
 
 const emit = defineEmits<{
@@ -56,6 +71,7 @@ const { t, locale } = useI18n();
 const api = useApi();
 const toast = useToast();
 const { member } = useMe();
+const { assembly } = useCurrentAssembly();
 
 const titleId = useId();
 const editing = ref(false);
@@ -94,14 +110,49 @@ const OPTIONS: ProponentPosition[] = [
   "transact",
   "pending",
 ];
+/** Accepting approves it at once, with what that sets off. */
+const incorporates = computed(() =>
+  acceptIncorporates(props.amendment, props.document.acceptedAmendments),
+);
+/** Under "Aceptar" while it would incorporate it: what else that does. */
+const acceptConsequences = computed(() => {
+  if (!incorporates.value) return [];
+  const withdraws = props.withdraws ?? [];
+  const reserved = answersReserved(
+    assembly.value?.settings.positionVisibility ?? "session",
+    assembly.value?.status,
+  );
+  return [
+    withdraws.length > 0
+      ? t(
+          "amendment.position.descriptions.acceptWithdraws",
+          { list: withdraws.join(", ") },
+          withdraws.length,
+        )
+      : null,
+    reserved ? t("amendment.position.descriptions.acceptRevealed") : null,
+  ].filter((line): line is string => line !== null);
+});
+const clashText = computed(() => {
+  const clashes = props.clashes ?? [];
+  return incorporates.value && clashes.length > 0
+    ? t(
+        "amendment.position.clashIncorporated",
+        { list: clashes.join(", ") },
+        clashes.length,
+      )
+    : null;
+});
 const items = computed(() =>
   OPTIONS.map((value) => ({
     label: t(`amendment.position.options.${value}`),
-    description: t(
+    description:
       value === "accept" && props.document.acceptedAmendments === "incorporate"
-        ? "amendment.position.descriptions.acceptIncorporate"
-        : `amendment.position.descriptions.${value}`,
-    ),
+        ? [
+            t("amendment.position.descriptions.acceptIncorporate"),
+            ...acceptConsequences.value,
+          ].join(" ")
+        : t(`amendment.position.descriptions.${value}`),
     value,
   })),
 );
@@ -322,6 +373,14 @@ async function save(): Promise<void> {
     </template>
 
     <form v-else class="flex flex-col gap-3" @submit.prevent="save">
+      <p v-if="clashText" class="text-muted flex items-start gap-1.5 text-sm">
+        <UIcon
+          name="i-lucide-layers"
+          class="mt-0.5 size-4 shrink-0"
+          aria-hidden="true"
+        />
+        <span>{{ clashText }}</span>
+      </p>
       <URadioGroup
         v-model="position"
         :items="items"

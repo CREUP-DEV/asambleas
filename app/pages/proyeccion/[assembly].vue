@@ -22,7 +22,7 @@ import {
   sessionConnectionState,
 } from "~/composables/session/sessionModel";
 import { agendaWithTitles } from "~/utils/agendaTitles";
-import { formatTime } from "~/utils/format";
+import { formatMoment, formatTime } from "~/utils/format";
 import {
   affectsAgenda,
   affectsSpeakers,
@@ -38,17 +38,25 @@ import {
   liveAttendance,
 } from "~/components/live-view/-attendance";
 import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+import { ROOM_VIEW_QUERY } from "~~/shared/constants/roomView";
 
 /**
  * Projection screen for the room: chrome-free, large type, high contrast.
  * It shows what the Mesa puts in debate (agenda item, document, amendment
- * with its diff and one block of context), the result of the last vote and
- * the Mesa's message; when nothing is in debate, the agenda. While the Mesa
- * makes the speaking turns visible, a band at the bottom shows who has the
- * floor and who is next. The header also shows the Mesa's latest
- * headcount (members present, quorum and the majorities it gives), for
- * transparency. It follows the live state and is open to every signed-in
- * user.
+ * with the blocks it changes), the result of the last vote and the Mesa's
+ * message; when nothing is in debate, the agenda. While the Mesa makes the
+ * speaking turns visible, a band at the bottom shows who has the floor and
+ * who is next. The header also shows the Mesa's latest headcount (members
+ * present, quorum and the majorities it gives), for transparency. It
+ * follows the live state and is open to every signed-in user.
+ *
+ * It is opened on a Mesa account but read by the whole room: every read of
+ * a Mesa account asks for the room view (`?view=room`), and the server
+ * answers as an account that sees only what is public (roomView.ts). The
+ * executive offices read as "CEA", nobody speaking for one is named, and
+ * unpublished documents, amendments and agenda items stay out, except the
+ * agenda item the Mesa itself puts on screen.
  *
  * Nobody watches the projector to reload it, so a failed refresh never
  * wipes the screen: every source keeps its last good data (and the footer
@@ -61,11 +69,32 @@ definePageMeta({ layout: false });
 const route = useRoute();
 const { t, locale } = useI18n();
 const api = useApi();
+const me = useMe();
 
 const param = computed(() => String(route.params.assembly ?? ""));
 const assemblyUrl = computed(
   () => `/api/assemblies/${encodeURIComponent(param.value)}`,
 );
+
+// Who opened the screen must be known before the first read.
+await me.ensure();
+
+/**
+ * The room view, for the Mesa's reads (the server honours it only for
+ * session:moderate). Anyone else already reads as themselves, which is
+ * what they may see. While the account is unknown (/api/me failed) the page
+ * asks for it anyway: a Mesa account never reads as itself here, and anyone
+ * else gets a 403 until the account loads (then every source reads again).
+ */
+const roomView = computed(
+  () => !me.loaded.value || me.can(PERMISSION_KEYS.SESSION_MODERATE),
+);
+const viewQuery = computed(() =>
+  roomView.value ? { ...ROOM_VIEW_QUERY } : undefined,
+);
+function read<T>(url: string): Promise<T> {
+  return api.get<T>(url, viewQuery.value);
+}
 
 /** Gone for this screen: deleted, or not visible to the signed-in user. */
 function isGone(error: unknown): boolean {
@@ -79,10 +108,17 @@ function nullIfGone(error: unknown): null {
   throw error;
 }
 
+// Its own key: the hub's copy of the assembly is the account's, not the room's.
 const assemblyFetch = await useFetch<AssemblyDto>(() => assemblyUrl.value, {
-  key: computed(() => `assembly-${param.value}`),
+  key: computed(() => `projection-assembly-${param.value}`),
+  query: viewQuery,
 });
 
+// Refused while the account was unknown: try once more as who it is.
+if (!assemblyFetch.data.value && !me.loaded.value) {
+  await me.refresh();
+  if (!roomView.value) await assemblyFetch.refresh();
+}
 if (!assemblyFetch.data.value) {
   const status = errorStatus(assemblyFetch.error.value) ?? 500;
   throw createError({
@@ -104,7 +140,7 @@ const refreshAssembly = assemblyFetch.refresh;
 
 const liveFetch = await useAsyncData(
   () => `projection-live-${param.value}`,
-  () => api.get<LiveStateDto>(`${assemblyUrl.value}/live-state`),
+  () => read<LiveStateDto>(`${assemblyUrl.value}/live-state`),
 );
 const {
   data: live,
@@ -117,7 +153,7 @@ const refreshLive = liveFetch.refresh;
 
 const agendaFetch = await useAsyncData(
   () => `projection-agenda-${param.value}`,
-  () => api.get<AgendaDto>(`${assemblyUrl.value}/agenda`),
+  () => read<AgendaDto>(`${assemblyUrl.value}/agenda`),
 );
 const {
   data: fetchedAgenda,
@@ -133,7 +169,7 @@ const refreshAgenda = agendaFetch.refresh;
 // Speaking turns. A 404 (no such endpoint, or hidden) shows nothing.
 const speakersFetch = await useAsyncData(
   () => `projection-speakers-${param.value}`,
-  () => api.get<SpeakersDto>(`${assemblyUrl.value}/speakers`).catch(nullIfGone),
+  () => read<SpeakersDto>(`${assemblyUrl.value}/speakers`).catch(nullIfGone),
 );
 const {
   data: speakersDto,
@@ -146,7 +182,7 @@ const refreshSpeakers = speakersFetch.refresh;
 const headcountsFetch = await useAsyncData(
   () => `projection-headcounts-${param.value}`,
   () =>
-    api.get<HeadcountsDto>(`${assemblyUrl.value}/headcounts`).catch(nullIfGone),
+    read<HeadcountsDto>(`${assemblyUrl.value}/headcounts`).catch(nullIfGone),
 );
 const {
   data: headcountsDto,
@@ -167,7 +203,7 @@ const documentFetch = await useAsyncData(
   () => `projection-document-${documentId.value ?? "none"}`,
   () =>
     documentUrl.value
-      ? api.get<DocumentDto>(documentUrl.value).catch(nullIfGone)
+      ? read<DocumentDto>(documentUrl.value).catch(nullIfGone)
       : Promise.resolve(null),
 );
 // Reset when the Mesa moves to another document: the previous one must not
@@ -183,9 +219,9 @@ const amendmentsFetch = await useAsyncData(
   () => `projection-amendments-${documentId.value ?? "none"}`,
   () =>
     documentUrl.value
-      ? api
-          .get<DocumentAmendmentsDto>(`${documentUrl.value}/amendments`)
-          .catch(nullIfGone)
+      ? read<DocumentAmendmentsDto>(`${documentUrl.value}/amendments`).catch(
+          nullIfGone,
+        )
       : Promise.resolve(null),
 );
 const {
@@ -240,6 +276,9 @@ function onLive(events: LiveEventDto[]): void {
         (event.entityType === "document" && event.entityId === current)),
   );
 
+  // Still unknown after the page opened (/api/me failed): every event or
+  // poll tries again, and the sources follow once it loads (roomView).
+  if (!me.loaded.value) void me.refresh();
   if (poll || touches(["live"])) refreshes.push(refreshLive());
   if (affectsSpeakers(events)) refreshes.push(refreshSpeakers());
   if (affectsHeadcounts(events)) refreshes.push(refreshHeadcounts());
@@ -335,12 +374,30 @@ useRetryFailed(
   },
 );
 
+// The account loaded after the page asked for the room view without it:
+// every source reads again as who it is (a 403 counted as gone is never
+// retried on its own).
+watch(roomView, () => {
+  void Promise.all([
+    refreshLive(),
+    refreshAgenda(),
+    refreshSpeakers(),
+    refreshHeadcounts(),
+    refreshDocument(),
+    refreshAmendments(),
+  ]);
+});
+
 // Derived ------------------------------------------------------------------------
 
-// Only the agenda everyone has: the projector is usually opened on a Mesa or
-// Secretaría account, which also receives the items that are not public yet
-// (no number: unlisted, or under an unlisted one). The room never reads
-// those, except the one the Mesa itself puts on screen.
+// The app's shared clock: it ticks right after every minute boundary.
+const now = useAppNow();
+
+// Only the items with a number: the room view also sends the item the Mesa
+// puts on screen when it is not public yet (and the items above it, without
+// their titles), and an item that stays without its title. The room never
+// reads those, except the one the Mesa itself puts on screen. An account
+// that reads as itself (not the Mesa) may also get items not public yet.
 const rows = computed(() =>
   buildSessionAgendaRows(
     agenda.value?.items ?? [],
@@ -352,6 +409,17 @@ const rows = computed(() =>
 const currentRow = computed(
   () =>
     rows.value.find((row) => row.item.id === live.value?.agendaItemId) ?? null,
+);
+// The room view gets an item that is not public yet only while the Mesa has
+// it on screen, and a change of the live state does not touch the agenda:
+// fetch it again when the Mesa puts on screen an item it does not have.
+watch(
+  () => live.value?.agendaItemId ?? null,
+  (id) => {
+    if (!roomView.value || !id) return;
+    const item = agenda.value?.items.find((entry) => entry.id === id);
+    if (!item || item.titleHidden) void refreshAgenda();
+  },
 );
 const amendments = computed(() => amendmentsDto.value?.amendments ?? []);
 const debated = computed(() =>
@@ -396,7 +464,19 @@ const attendance = computed(() =>
 const attendanceLine = computed(() => {
   const value = attendance.value;
   if (!value || assembly.value?.status !== "in_session") return null;
-  const parts = [
+  const parts: string[] = [];
+  // A count from another day (Europe/Madrid) says when it was taken: its
+  // majorities may no longer match the room.
+  const taken = formatMoment(value.latest.takenAt, {
+    locale: locale.value,
+    now: now.value,
+  });
+  // Worded as the final vote's dialog words it (session.vote.countMoment),
+  // with "ayer, 18:45" or "16 nov 2026, 18:45" from formatMoment.
+  if (!taken.today && taken.text) {
+    parts.push(t("session.vote.countMoment", { moment: taken.text }));
+  }
+  parts.push(
     t("projection.attendance.present", {
       present: value.latest.present,
       eligible: value.latest.eligible,
@@ -404,7 +484,7 @@ const attendanceLine = computed(() => {
     value.latest.quorum
       ? t("session.headcount.quorum")
       : t("session.headcount.noQuorum"),
-  ];
+  );
   if (value.majorities) {
     parts.push(
       t("projection.attendance.absolute", {
@@ -423,18 +503,123 @@ const speakers = computed(() =>
   liveSpeakers(speakersDto.value, live.value?.speakersVisible ?? false),
 );
 
-// Only what the room can read: the projector is usually opened on a Mesa or
-// Secretaría account, whose list also holds amendments pending validation,
-// validated but unpublished, or waiting for the presenter. Counting those
-// would show the room that private amendments exist, and how many.
+// Only what the room can read. The room view already gets published
+// amendments only; liveAmendmentRows keeps to them for an account that
+// reads as itself (an author also gets its own unpublished ones).
 const amendmentStats = computed(() =>
   liveAmendmentStats(liveAmendmentRows(amendments.value, null)),
 );
 
+// The amendment on screen ------------------------------------------------------
+
+/**
+ * Nobody scrolls a projector. The diff shows only the blocks the amendment
+ * changes, in a box that fills what the vote, the message and the speakers
+ * leave: its text shrinks until it fits (down to a readable minimum, set in
+ * the styles), and whenever the amendment, its text or the room left for it
+ * changes, the box scrolls to the first change, so the room always sees
+ * what is debated even when it does not fit whole.
+ */
+const diffBox = ref<HTMLElement | null>(null);
+
+/** Text scales tried, from the full size down; the CSS floor stops it. */
+const FIT_MIN = 0.4;
+const FIT_STEPS = 7;
+
+/** What an amendment changes, in the order of the text. */
+const CHANGE_SELECTOR =
+  ".cx-ins, .cx-del, .cx-fmt, .cx-fmt-label, .cx-block-inserted, .cx-block-deleted";
+
+function overflows(box: HTMLElement): boolean {
+  return box.scrollHeight > box.clientHeight + 1;
+}
+
+/** The largest text scale that fits the box, by bisection. */
+function fitDiff(box: HTMLElement): void {
+  box.style.setProperty("--projection-fit", "1");
+  if (!overflows(box)) return;
+  let fits = FIT_MIN;
+  let tooBig = 1;
+  for (let step = 0; step < FIT_STEPS; step++) {
+    const middle = (fits + tooBig) / 2;
+    box.style.setProperty("--projection-fit", String(middle));
+    if (overflows(box)) tooBig = middle;
+    else fits = middle;
+  }
+  box.style.setProperty("--projection-fit", String(fits));
+}
+
+/**
+ * Scrolls the box to the first change: to the start of its block when the
+ * change shows with it, else to the change itself, a line and a half
+ * below the top. Format-only changes count (their mark or their note).
+ */
+function scrollToFirstChange(box: HTMLElement): void {
+  if (!overflows(box)) {
+    box.scrollTop = 0;
+    return;
+  }
+  const change =
+    box.querySelector<HTMLElement>(CHANGE_SELECTOR) ??
+    box.querySelector<HTMLElement>("[data-block-id]");
+  if (!change) return;
+  const block = change.closest<HTMLElement>("[data-block-id]") ?? change;
+  const anchor = change.classList.contains("cx-fmt-label") ? block : change;
+  const boxTop = box.getBoundingClientRect().top - box.scrollTop;
+  const style = getComputedStyle(box);
+  const padding = Number.parseFloat(style.paddingTop) || 0;
+  const line =
+    Number.parseFloat(getComputedStyle(anchor).lineHeight) ||
+    Number.parseFloat(getComputedStyle(anchor).fontSize) * 1.5 ||
+    0;
+  const blockTop = block.getBoundingClientRect().top - boxTop - padding;
+  const anchorTop = anchor.getBoundingClientRect().top - boxTop;
+  const top =
+    anchorTop + line * 2 - blockTop <= box.clientHeight
+      ? blockTop
+      : anchorTop - line * 1.5;
+  const reduceMotion = window.matchMedia?.(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
+  box.scrollTo({
+    top: Math.max(0, top),
+    behavior: reduceMotion ? "auto" : "smooth",
+  });
+}
+
+let layoutFrame = 0;
+function layoutDiff(): void {
+  if (!import.meta.client || layoutFrame) return;
+  layoutFrame = requestAnimationFrame(() => {
+    layoutFrame = 0;
+    const box = diffBox.value;
+    if (!box) return;
+    fitDiff(box);
+    scrollToFirstChange(box);
+  });
+}
+
+// The amendment, its text or the base it applies to changed: the DOM is
+// up to date once a post-flush watcher runs.
+watch(
+  () => [debated.value?.id, debated.value?.ops, base.value, diffBox.value],
+  layoutDiff,
+  { flush: "post" },
+);
+// The room left for it changed: a vote, the message or the speakers came
+// or went, or the window was resized.
+useResizeObserver(diffBox, layoutDiff);
+// The content font (Raleway or the reader's preference) may land after the
+// first layout and change the height of the text.
+onMounted(() => {
+  void window.document.fonts?.ready.then(layoutDiff);
+});
+onBeforeUnmount(() => {
+  if (layoutFrame) cancelAnimationFrame(layoutFrame);
+});
+
 // Clock and fullscreen -----------------------------------------------------------
 
-// The app's shared clock: it ticks right after every minute boundary.
-const now = useAppNow();
 const clock = computed(() => formatTime(now.value, { locale: locale.value }));
 
 const {
@@ -450,8 +635,11 @@ useHead(() => ({
 
 <template>
   <div
-    class="projection bg-default text-highlighted flex min-h-dvh flex-col font-sans"
+    class="projection bg-default text-highlighted flex flex-col font-sans"
+    :class="mode === 'amendment' ? 'h-dvh' : 'min-h-dvh'"
   >
+    <!-- An amendment fits the screen (its box scrolls itself): the page
+         then takes the screen's height exactly. -->
     <header
       class="border-default flex flex-wrap items-center gap-x-6 gap-y-2 border-b px-[clamp(1rem,3vw,3rem)] py-[clamp(0.75rem,1.5vw,1.5rem)]"
     >
@@ -521,6 +709,7 @@ useHead(() => ({
 
     <main
       class="flex flex-1 flex-col gap-[clamp(1rem,2vw,2rem)] px-[clamp(1rem,3vw,3rem)] py-[clamp(1rem,2vw,2rem)] text-[clamp(1.125rem,1.5vw,2rem)]"
+      :class="{ 'min-h-0': mode === 'amendment' }"
     >
       <section
         v-if="vote"
@@ -598,7 +787,7 @@ useHead(() => ({
 
       <section
         v-if="mode === 'amendment' && debated"
-        class="flex flex-1 flex-col gap-[clamp(0.75rem,1.5vw,1.5rem)]"
+        class="flex min-h-0 flex-1 flex-col gap-[clamp(0.75rem,1.5vw,1.5rem)]"
         aria-live="polite"
       >
         <div class="flex flex-wrap items-end gap-x-6 gap-y-2">
@@ -607,6 +796,7 @@ useHead(() => ({
               {{ document?.reference ?? document?.title }}
             </p>
             <h1
+              id="projection-amendment-title"
               class="text-[clamp(2.25rem,4.5vw,5rem)] leading-none font-extrabold tracking-tight"
             >
               {{ t("projection.amendment", { code: debated.code ?? "" }) }}
@@ -636,14 +826,22 @@ useHead(() => ({
             />
           </div>
         </div>
+        <!-- Only the blocks it changes: context would push the change off
+             the screen (see "The amendment on screen"). -->
+        <!-- Focusable: a keyboard reads what does not fit (the room never
+             scrolls it; the page brings the change into view). -->
         <div
-          class="projection-text border-default min-h-0 flex-1 rounded-2xl border p-[clamp(1rem,2.5vw,2.5rem)]"
+          ref="diffBox"
+          role="region"
+          tabindex="0"
+          aria-labelledby="projection-amendment-title"
+          class="projection-text border-default focus-visible:outline-primary min-h-0 flex-1 overflow-y-auto rounded-2xl border p-[clamp(1rem,2.5vw,2.5rem)] focus-visible:outline-2"
         >
           <ContentAmendmentDiff
             :id="debated.id"
             :base="base"
             :ops="debated.ops"
-            :context="1"
+            :context="0"
           />
         </div>
       </section>
@@ -734,8 +932,9 @@ useHead(() => ({
       </section>
       <!--
         Nobody scrolls a projector: the band sticks to the bottom of the
-        screen when a long diff or agenda overflows it. The opaque wrapper
-        hides the text scrolling behind the translucent band.
+        screen when a long agenda overflows it (an amendment's diff fits in
+        its own box above it). The opaque wrapper hides the text scrolling
+        behind the translucent band.
       -->
       <div
         v-if="speakers"
@@ -782,9 +981,26 @@ useHead(() => ({
 </template>
 
 <style scoped>
+/*
+ * --projection-fit shrinks the text until the amendment fits its box
+ * (fitDiff), never below the readable floor; past it, the box scrolls to
+ * the first change.
+ */
 .projection-text :deep(.rich-text) {
-  font-size: clamp(1.375rem, 2.3vw, 3rem);
+  font-size: max(
+    1.375rem,
+    calc(clamp(1.375rem, 2.3vw, 3rem) * var(--projection-fit, 1))
+  );
   line-height: 1.55;
+}
+
+/* Only the page scrolls the box: a scrollbar on the projector is noise. */
+.projection-text {
+  scrollbar-width: none;
+}
+
+.projection-text::-webkit-scrollbar {
+  display: none;
 }
 
 .projection-text :deep(.rich-text p + p),
@@ -807,5 +1023,29 @@ useHead(() => ({
 .projection-text :deep(.cx-ins),
 .projection-text :deep(.cx-del) {
   padding-inline: 0.08em;
+}
+
+/*
+ * The strong marks of the marks mode (.diff-marks in main.css) whatever the
+ * diff mode of the laptop that projects: the room reads them from afar.
+ * Colour mode keeps its tints on top of them.
+ */
+.projection-text :deep(.cx-ins) {
+  font-weight: 700;
+  text-decoration-thickness: 0.1em;
+}
+
+.projection-text :deep(.cx-del) {
+  text-decoration-thickness: 0.1em;
+}
+
+.projection-text :deep(.cx-block-inserted),
+.projection-text :deep(.cx-block-deleted) {
+  border-inline-start-width: 4px;
+}
+
+/* The note of a format change reads with the text, not at UI size. */
+.projection-text :deep(.cx-fmt-label) {
+  font-size: 0.7em;
 }
 </style>

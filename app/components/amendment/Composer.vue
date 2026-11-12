@@ -40,6 +40,7 @@ import {
   totalityAlternativeOps,
   type AmendmentComposerMode,
 } from "~/composables/amendment/workspace";
+import { useComposerLeaveGuard } from "~/composables/amendment/useComposerLeaveGuard";
 
 /**
  * Presents an amendment. It takes the place of the text and the list (the
@@ -55,7 +56,8 @@ import {
  *   new one), who presents it (alone or with other members, and then
  *   who the main author is) and why (optional, except for a return to the text: its justification is
  *   all it says). Under them, how many paragraphs change
- *   and "Revisar y enviar".
+ *   and "Revisar y enviar" (on a narrower screen, a bar kept at the foot of
+ *   the screen while the composer is on it).
  *
  * "Revisar y enviar" shows the changes as everybody else will see them, what
  * is still missing in plain words, the late notices, and "Guardar borrador"
@@ -243,6 +245,8 @@ interface EditorHandle {
   flush: () => void;
   focus: () => void;
   editor?: Editor;
+  /** Room the floating toolbar takes over the text, in px. */
+  toolbarRoom?: () => number;
 }
 const editorRef = useTemplateRef<EditorHandle>("editor");
 
@@ -845,30 +849,19 @@ function discardAndClose(): void {
   emit("close");
 }
 
-function confirmLeaving(): boolean {
-  if (!hasUnsavedChanges()) return true;
-  return window.confirm(t("amendment.composer.leave.confirm"));
-}
-
-onBeforeRouteLeave(confirmLeaving);
-// Another document of the same assembly is the same page with other
-// params ("Anterior", "Siguiente", the breadcrumbs): asked too. A change of
-// the query alone (the open amendment) stays on this text.
-onBeforeRouteUpdate((to, from) =>
-  to.path === from.path ? true : confirmLeaving(),
+// Leaving the page, another document, "atrás", reloading: asked first.
+useComposerLeaveGuard(hasUnsavedChanges, () =>
+  t("amendment.composer.leave.confirm"),
 );
-
-function onBeforeUnload(event: BeforeUnloadEvent): void {
-  if (!hasUnsavedChanges()) return;
-  event.preventDefault();
-  event.returnValue = "";
-}
 
 // Where the reader was -----------------------------------------------------------
 
 const root = useTemplateRef<HTMLElement>("root");
 const scroller = useTemplateRef<HTMLElement>("scroller");
-/** Room the editor's toolbar takes at the top of the text while it scrolls. */
+/**
+ * Room the editor's toolbar takes at the top of the text while it scrolls:
+ * at least this, more where its buttons wrap to several rows (a phone).
+ */
 const TOOLBAR_ROOM = 72;
 
 /** A new amendment opens where the reader was; a draft, at its first change. */
@@ -946,7 +939,7 @@ function placeEditor(instance: Editor): void {
   box.scrollTop +=
     element.getBoundingClientRect().top -
     box.getBoundingClientRect().top -
-    TOOLBAR_ROOM;
+    Math.max(TOOLBAR_ROOM, editorRef.value?.toolbarRoom?.() ?? 0);
 }
 
 watch(
@@ -960,16 +953,12 @@ watch(
 );
 
 onMounted(() => {
-  window.addEventListener("beforeunload", onBeforeUnload);
   // The composer is as tall as the hub's scroll area: bring all of it in.
   root.value?.scrollIntoView({ block: isDesktop.value ? "nearest" : "start" });
   // The button that opened the composer is gone: the heading takes the
   // focus, so the keyboard and screen readers start here. On a wide screen
   // the editor takes it next, at the starting block (placeEditor).
   heading.value?.focus({ preventScroll: true });
-});
-onBeforeUnmount(() => {
-  window.removeEventListener("beforeunload", onBeforeUnload);
 });
 
 const questionClass = "text-highlighted text-sm font-semibold";
@@ -1097,18 +1086,22 @@ const questionClass = "text-highlighted text-sm font-semibold";
       </template>
     </UAlert>
 
+    <!-- On a wide screen the text on the left; on the right the questions,
+         with how much changes and "Revisar y enviar" under them. On a
+         narrower one all of it in a column, and that last block a bar at
+         the foot of the screen while the composer is on it. -->
     <div
-      class="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-[minmax(0,1fr)]"
+      class="grid min-h-0 flex-1 gap-4 lg:grid-cols-[minmax(0,1fr)_22rem] lg:grid-rows-[minmax(0,1fr)_auto] lg:gap-y-0"
     >
       <!-- Writing: kept mounted while reviewing, so the editor keeps its
            cursor and its undo history. -->
       <div
         v-show="stage === 'edit'"
         ref="scroller"
-        class="min-h-0 min-w-0 overflow-y-auto p-0.5 lg:h-full"
+        class="min-h-0 min-w-0 overflow-y-auto p-0.5 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:h-full"
         :class="
           mode === 'document' || mode === 'alternative'
-            ? 'max-lg:h-[70dvh]'
+            ? 'max-lg:h-[calc(70dvh-4rem)] max-lg:scroll-pb-16'
             : ''
         "
       >
@@ -1206,7 +1199,7 @@ const questionClass = "text-highlighted text-sm font-semibold";
       <!-- Reviewing: the amendment as everybody else will see it -->
       <div
         v-if="stage === 'review'"
-        class="flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto p-0.5 lg:h-full"
+        class="flex min-h-0 min-w-0 flex-col gap-4 overflow-y-auto p-0.5 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:h-full"
         :aria-labelledby="`${uid}-review`"
         role="region"
       >
@@ -1381,7 +1374,8 @@ const questionClass = "text-highlighted text-sm font-semibold";
 
       <!-- The three questions, always in view -->
       <aside
-        class="border-default flex min-h-0 min-w-0 flex-col rounded-md border lg:h-full"
+        class="border-default flex min-h-0 min-w-0 flex-col rounded-md border lg:col-start-2 lg:row-start-1 lg:h-full"
+        :class="{ 'lg:rounded-b-none lg:border-b-0': stage === 'edit' }"
         :aria-label="t('amendment.composer.panelLabel')"
       >
         <div
@@ -1602,92 +1596,95 @@ const questionClass = "text-highlighted text-sm font-semibold";
             />
           </UFormField>
         </div>
-
-        <!-- 4. How much changes, and on to the review -->
-        <div
-          v-if="stage === 'edit'"
-          class="border-default flex shrink-0 flex-col gap-2 border-t p-3 sm:p-4"
-        >
-          <p
-            v-if="mode === 'document'"
-            class="text-default flex items-center gap-1.5 text-sm font-medium"
-            aria-live="polite"
-          >
-            <UIcon
-              name="i-lucide-pencil-line"
-              class="size-4 shrink-0"
-              aria-hidden="true"
-            />
-            {{
-              t(
-                "amendment.composer.changed",
-                { count: changedCount },
-                changedCount,
-              )
-            }}
-          </p>
-          <!-- Others already amend these paragraphs: read them first. -->
-          <UPopover
-            v-if="sameParagraphs.length > 0"
-            :content="{ align: 'end', side: 'top' }"
-          >
-            <UButton
-              color="neutral"
-              variant="link"
-              size="sm"
-              icon="i-lucide-layers"
-              trailing-icon="i-lucide-chevron-up"
-              class="justify-start p-0 text-start"
-              :label="
-                t(
-                  'amendment.composer.sameParagraphs.notice',
-                  { count: sameParagraphs.length },
-                  sameParagraphs.length,
-                )
-              "
-              data-testid="composer-same-paragraphs"
-            />
-            <template #content>
-              <div
-                class="flex max-h-[60dvh] w-[28rem] max-w-[92vw] flex-col gap-4 overflow-y-auto p-4"
-              >
-                <p class="text-muted text-sm">
-                  {{ t("amendment.composer.sameParagraphs.hint") }}
-                </p>
-                <article
-                  v-for="item in sameParagraphs"
-                  :key="item.id"
-                  class="border-default flex flex-col gap-2 border-t pt-3"
-                >
-                  <p class="flex flex-wrap items-center gap-1.5 text-sm">
-                    <span class="text-highlighted font-semibold tabular-nums">
-                      {{ labelOf ? labelOf(item.id) : (item.code ?? "") }}
-                    </span>
-                    <CommonMemberBadge
-                      v-for="author in item.authors"
-                      :key="author.id"
-                      :member="author"
-                      size="xs"
-                    />
-                  </p>
-                  <ContentAmendmentDiff
-                    :id="item.id"
-                    :base="base"
-                    :ops="item.ops"
-                  />
-                </article>
-              </div>
-            </template>
-          </UPopover>
-          <UButton
-            block
-            icon="i-lucide-list-checks"
-            :disabled="cannotPresent"
-            :label="t('amendment.composer.review.action')"
-            @click="openReview"
-          />
-        </div>
       </aside>
+
+      <!-- 4. How much changes, and on to the review: under the questions
+             on a wide screen; below it, a bar kept at the foot of the
+             screen from the text down to here, so the way on is always in
+             reach. The same block and button, never a second one. -->
+      <div
+        v-if="stage === 'edit'"
+        class="border-default bg-default -mx-3 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-2 border-t p-3 max-lg:sticky max-lg:bottom-0 max-lg:z-20 sm:-mx-4 sm:p-4 lg:col-start-2 lg:row-start-2 lg:mx-0 lg:flex-col lg:flex-nowrap lg:items-stretch lg:rounded-b-md lg:border"
+      >
+        <p
+          v-if="mode === 'document'"
+          class="text-default flex items-center gap-1.5 text-sm font-medium"
+          aria-live="polite"
+        >
+          <UIcon
+            name="i-lucide-pencil-line"
+            class="size-4 shrink-0"
+            aria-hidden="true"
+          />
+          {{
+            t(
+              "amendment.composer.changed",
+              { count: changedCount },
+              changedCount,
+            )
+          }}
+        </p>
+        <!-- Others already amend these paragraphs: read them first. -->
+        <UPopover
+          v-if="sameParagraphs.length > 0"
+          :content="{ align: 'end', side: 'top' }"
+        >
+          <UButton
+            color="neutral"
+            variant="link"
+            size="sm"
+            icon="i-lucide-layers"
+            trailing-icon="i-lucide-chevron-up"
+            class="justify-start p-0 text-start"
+            :label="
+              t(
+                'amendment.composer.sameParagraphs.notice',
+                { count: sameParagraphs.length },
+                sameParagraphs.length,
+              )
+            "
+            data-testid="composer-same-paragraphs"
+          />
+          <template #content>
+            <div
+              class="flex max-h-[60dvh] w-[28rem] max-w-[92vw] flex-col gap-4 overflow-y-auto p-4"
+            >
+              <p class="text-muted text-sm">
+                {{ t("amendment.composer.sameParagraphs.hint") }}
+              </p>
+              <article
+                v-for="item in sameParagraphs"
+                :key="item.id"
+                class="border-default flex flex-col gap-2 border-t pt-3"
+              >
+                <p class="flex flex-wrap items-center gap-1.5 text-sm">
+                  <span class="text-highlighted font-semibold tabular-nums">
+                    {{ labelOf ? labelOf(item.id) : (item.code ?? "") }}
+                  </span>
+                  <CommonMemberBadge
+                    v-for="author in item.authors"
+                    :key="author.id"
+                    :member="author"
+                    size="xs"
+                  />
+                </p>
+                <ContentAmendmentDiff
+                  :id="item.id"
+                  :base="base"
+                  :ops="item.ops"
+                />
+              </article>
+            </div>
+          </template>
+        </UPopover>
+        <UButton
+          icon="i-lucide-list-checks"
+          class="max-lg:ms-auto lg:w-full lg:justify-center"
+          :disabled="cannotPresent"
+          :label="t('amendment.composer.review.action')"
+          @click="openReview"
+        />
+      </div>
     </div>
 
     <!-- Leaving with changes that were not saved -->

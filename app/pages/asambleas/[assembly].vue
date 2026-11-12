@@ -588,7 +588,7 @@ watch(() => route.path, revealActiveSection);
               <span>{{
                 t(`calendar.milestones.${assembly.nextMilestone.key}`)
               }}</span>
-              <CommonCountdown :to="assembly.nextMilestone.at" />
+              <CommonCountdown :to="assembly.nextMilestone.at" dated />
             </dd>
           </div>
         </dl>

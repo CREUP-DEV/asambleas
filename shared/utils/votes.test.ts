@@ -96,3 +96,74 @@ describe("computeVoteOutcome against the 77.ª AGO minutes", () => {
     expect(outcome.result).toBe(result);
   });
 });
+
+describe("computeVoteOutcome with the default settings", () => {
+  // Majorities on the members present (DEFAULT_ASSEMBLY_SETTINGS), the base
+  // of every assembly unless its settings say otherwise.
+  const settings = DEFAULT_ASSEMBLY_SETTINGS;
+
+  it("counts on the members present", () => {
+    expect(settings.denominator).toBe("present");
+  });
+
+  it("asks two thirds of 30 present for 20 in favour", () => {
+    expect(
+      computeVoteOutcome(
+        { inFavor: 19, against: 8, abstentions: 3, present: 30 },
+        "two_thirds",
+        settings,
+      ),
+    ).toEqual({
+      result: "rejected",
+      threshold: 20,
+      denominator: 30,
+      inconsistent: false,
+    });
+    expect(
+      computeVoteOutcome(
+        { inFavor: 20, against: 7, abstentions: 3, present: 30 },
+        "two_thirds",
+        settings,
+      ),
+    ).toEqual({
+      result: "approved",
+      threshold: 20,
+      denominator: 30,
+      inconsistent: false,
+    });
+  });
+
+  it("counts abstentions and those who did not vote against an absolute majority", () => {
+    expect(
+      computeVoteOutcome(
+        { inFavor: 12, against: 2, abstentions: 6, present: 30 },
+        "absolute",
+        settings,
+      ),
+    ).toEqual({
+      result: "rejected",
+      threshold: 16,
+      denominator: 30,
+      inconsistent: false,
+    });
+  });
+
+  it("falls back to the valid votes when no figure of present is given", () => {
+    // Deliberate: without a headcount the vote form warns
+    // (session.vote.noHeadcount) and the base is the valid votes cast.
+    for (const present of [null, undefined]) {
+      expect(
+        computeVoteOutcome(
+          { inFavor: 12, against: 2, abstentions: 6, present },
+          "absolute",
+          settings,
+        ),
+      ).toEqual({
+        result: "approved",
+        threshold: 11,
+        denominator: 20,
+        inconsistent: false,
+      });
+    }
+  });
+});

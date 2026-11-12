@@ -35,7 +35,7 @@ import {
   numberAgendaItems,
 } from "~~/shared/utils/agendaNumbering";
 import { consolidate } from "~~/shared/utils/content/consolidate";
-import { copyShape } from "~~/shared/utils/content/lists";
+import { copyShape, seedListStarts } from "~~/shared/utils/content/lists";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
 import {
   findOverlaps,
@@ -216,6 +216,29 @@ export function sessionClosingSourceIds(
 }
 
 /**
+ * Whether a transactional closed on its own (sessionClosingSourceIds) comes
+ * back by reopening the amendments that closed it, as the server does
+ * (transactionalsToRestore): before the final vote (`voted`), and only
+ * while every other amendment it groups is still open. When another one
+ * was decided since, reopening those alone does not bring it back, and the
+ * card says only why it closed.
+ */
+export function isSessionClosureReversible(
+  amendment: AmendmentDto,
+  byId: ReadonlyMap<string, AmendmentDto>,
+  voted: boolean,
+): boolean {
+  if (voted) return false;
+  const closing = new Set(sessionClosingSourceIds(amendment, byId));
+  if (closing.size === 0) return false;
+  return amendment.sourceIds.every((id) => {
+    if (closing.has(id)) return true;
+    const source = byId.get(id);
+    return source !== undefined && isSessionOpen(source);
+  });
+}
+
+/**
  * The transactionals that got ahead of a lapsed one: it still waited (no
  * main author turned it down) when another transactional replaced some
  * amendment it groups, and the server let it lapse in that same moment
@@ -350,6 +373,51 @@ export function sessionReplacedIds(
   return amendment.sourceIds.filter(
     (id) => byId.get(id)?.status === "transacted",
   );
+}
+
+/**
+ * The transactionals over an amendment that settling it would close: of
+ * those proposed over it (sessionReplacingIds), the loaded ones still
+ * presented (`submitted`) that have not replaced it yet. Whatever settles
+ * the amendment (assent, a vote, withdrawal, lapse, inadmission or the main
+ * presenter's acceptance where accepted amendments are incorporated) makes
+ * the server withdraw them in the same transaction (transactionalsToClose in
+ * server/utils/domain/transactionalClosure.ts), so the console says so
+ * before. Drafts are left out, as the server leaves them. Empty for an
+ * amendment that is not presented and undecided.
+ */
+export function sessionPendingTransactionalIds(
+  amendment: AmendmentDto,
+  byId: ReadonlyMap<string, AmendmentDto>,
+): string[] {
+  if (amendment.status !== "submitted") return [];
+  return sessionReplacingIds(amendment, byId).filter((id) => {
+    const transactional = byId.get(id);
+    return (
+      transactional !== undefined &&
+      transactional.kind === "transactional" &&
+      transactional.status === "submitted" &&
+      !isSessionReplacing(transactional)
+    );
+  });
+}
+
+/**
+ * Who a presented transactional still waits for before it replaces what it
+ * groups: the main authors that have not accepted it yet or, once every one
+ * has, the Secretaría's validation. Neither when nothing is missing.
+ */
+export function sessionTransactionalWaitsFor(amendment: AmendmentDto): {
+  members: MemberRef[];
+  validation: boolean;
+} {
+  const members = amendment.acceptances
+    .filter((party) => party.decision !== "accepted")
+    .map((party) => party.member);
+  return {
+    members,
+    validation: members.length === 0 && amendment.validatedAt === null,
+  };
 }
 
 /**
@@ -1264,7 +1332,11 @@ export function sessionLapseOffer(
 // Bulk assent ----------------------------------------------------------------
 
 export type SessionAssentSkipReason =
-  "acceptances" | "overlap_approved" | "overlap_candidate";
+  | "acceptances"
+  | "transactional_pending"
+  | "overlap_approved"
+  | "transactional_clash"
+  | "overlap_candidate";
 
 export interface SessionAssentPlan {
   ready: AmendmentDto[];
@@ -1277,12 +1349,23 @@ export interface SessionAssentPlan {
 
 /**
  * Admitted, undecided, public amendments the document's main presenter
- * accepted, ready to be approved together by assent. Those that would collide with an approved amendment,
- * or with an earlier candidate, are skipped and reported, as are
- * transactionals still missing an acceptance.
+ * accepted, ready to be approved together by assent. Skipped and reported,
+ * in this order of precedence:
+ * - transactionals still missing an acceptance;
+ * - amendments with a pending transactional over them
+ *   (sessionPendingTransactionalIds): approving one would withdraw it, and
+ *   the room debates the transactional first;
+ * - amendments that would collide with an approved one;
+ * - amendments that collide with a transactional still to be decided and
+ *   left out of the batch (waiting for its main authors or the Secretaría,
+ *   or skipped above): approving them would leave it without its text;
+ * - amendments that collide with an earlier one of the batch.
+ * A transactional skipped for the last two reasons does not count as left
+ * out for the others: the first that collides keeps its place.
  */
 export function sessionAssentPlan(list: AmendmentDto[]): SessionAssentPlan {
   const sorted = sortSessionAmendments(list);
+  const byId = new Map(list.map((amendment) => [amendment.id, amendment]));
   const approved = sorted.filter(
     (amendment) => amendment.status === "approved" && amendment.ops.length > 0,
   );
@@ -1294,44 +1377,126 @@ export function sessionAssentPlan(list: AmendmentDto[]): SessionAssentPlan {
       amendment.position?.position === "accept",
   );
 
-  const plan: SessionAssentPlan = { ready: [], skipped: [] };
+  const skipped: SessionAssentPlan["skipped"] = [];
   const collides = (a: AmendmentOp[], b: AmendmentOp[]) =>
     a.length > 0 && b.length > 0 && isHardOverlap(overlapBetween(a, b));
+  const collidingIds = (amendment: AmendmentDto, others: AmendmentDto[]) =>
+    others
+      .filter(
+        (other) =>
+          other.id !== amendment.id && collides(amendment.ops, other.ops),
+      )
+      .map((other) => other.id);
 
+  // First what each candidate is on its own.
+  const eligible: AmendmentDto[] = [];
   for (const amendment of candidates) {
     if (sessionMissingAcceptances(amendment) > 0) {
-      plan.skipped.push({
+      skipped.push({ amendment, reason: "acceptances", conflictsWith: [] });
+      continue;
+    }
+    const pending = sessionPendingTransactionalIds(amendment, byId);
+    if (pending.length > 0) {
+      skipped.push({
         amendment,
-        reason: "acceptances",
-        conflictsWith: [],
+        reason: "transactional_pending",
+        conflictsWith: pending,
       });
       continue;
     }
-    const withApproved = approved
-      .filter((other) => collides(amendment.ops, other.ops))
-      .map((other) => other.id);
+    const withApproved = collidingIds(amendment, approved);
     if (withApproved.length > 0) {
-      plan.skipped.push({
+      skipped.push({
         amendment,
         reason: "overlap_approved",
         conflictsWith: withApproved,
       });
       continue;
     }
-    const withReady = plan.ready
-      .filter((other) => collides(amendment.ops, other.ops))
-      .map((other) => other.id);
+    eligible.push(amendment);
+  }
+
+  // Then against what stays out and what is already in.
+  const eligibleIds = new Set(eligible.map((amendment) => amendment.id));
+  const openTransactionals = sorted.filter(
+    (amendment) =>
+      amendment.kind === "transactional" &&
+      amendment.status === "submitted" &&
+      !eligibleIds.has(amendment.id) &&
+      sessionTransactionalRejectors(amendment).length === 0 &&
+      // One that can no longer go ahead has no text left to protect.
+      !isSessionSuperseded(amendment, byId),
+  );
+  const ready: AmendmentDto[] = [];
+  for (const amendment of eligible) {
+    const withOpen = collidingIds(amendment, openTransactionals);
+    if (withOpen.length > 0) {
+      skipped.push({
+        amendment,
+        reason: "transactional_clash",
+        conflictsWith: withOpen,
+      });
+      continue;
+    }
+    const withReady = collidingIds(amendment, ready);
     if (withReady.length > 0) {
-      plan.skipped.push({
+      skipped.push({
         amendment,
         reason: "overlap_candidate",
         conflictsWith: withReady,
       });
       continue;
     }
-    plan.ready.push(amendment);
+    ready.push(amendment);
   }
-  return plan;
+
+  // Reported in text order, as the candidates came.
+  const order = new Map(
+    candidates.map((amendment, index) => [amendment.id, index]),
+  );
+  skipped.sort(
+    (a, b) =>
+      (order.get(a.amendment.id) ?? 0) - (order.get(b.amendment.id) ?? 0),
+  );
+  return { ready, skipped };
+}
+
+/** A decision the console sends in one click (or one key). */
+export type SessionSettleAction =
+  "assent" | "formal" | "withdraw" | "lapse" | "incorporate";
+
+export interface SessionSettleConfirm {
+  /**
+   * What the title says: the amendment is not the one in debate, or a
+   * pending transactional is over it.
+   */
+  title: "not_debated" | "transactional";
+  /** The sentences of the description, in order. */
+  parts: ("not_debated" | "transactional")[];
+  color: "primary" | "warning";
+}
+
+/**
+ * Whether a one-click decision asks first, and with which sentences: when
+ * it was taken by key on an amendment that is not the one in debate, and
+ * when a pending transactional over the amendment would be withdrawn by
+ * it (sessionPendingTransactionalIds). Both make one dialog, never two in a
+ * row. Null when nothing needs asking.
+ */
+export function sessionSettleConfirm(input: {
+  notDebated: boolean;
+  pendingTransactionals: number;
+}): SessionSettleConfirm | null {
+  const transactional = input.pendingTransactionals > 0;
+  if (!input.notDebated && !transactional) return null;
+  const parts: SessionSettleConfirm["parts"] = [];
+  if (input.notDebated) parts.push("not_debated");
+  if (transactional) parts.push("transactional");
+  return {
+    title: input.notDebated ? "not_debated" : "transactional",
+    parts,
+    color: transactional ? "warning" : "primary",
+  };
 }
 
 // Consolidated preview -------------------------------------------------------
@@ -1389,7 +1554,16 @@ export interface SessionTransactionalSeed {
   passage: Block[];
   /** The base block right before the passage, null at the start. */
   anchorBefore: string | null;
-  /** The passage with the sources applied, ready for the editor. */
+  /**
+   * The base blocks before the passage, which the sources leave alone:
+   * diffPassage reads the seed's list numbers against them.
+   */
+  before: Block[];
+  /**
+   * The passage with the sources applied, ready for the editor. Its ordered
+   * items carry the numbers they show in the text (seedListStarts), so a
+   * passage from "k)" does not start at "a)".
+   */
   seed: Block[];
   /** Sources that could not be applied together with earlier ones. */
   skipped: string[];
@@ -1399,7 +1573,10 @@ export interface SessionTransactionalSeed {
  * Starting point of a transactional: the passage touched by its sources,
  * with the sources applied in the given order. When two sources collide the
  * first applicable one wins, as `consolidate` does. Blocks the sources
- * insert get fresh ids, so they never clash with the sources' own.
+ * insert get fresh ids, so they never clash with the sources' own. Diff
+ * the edited text with
+ * `diffPassage(passage, edited, anchorBefore, newId, before)`, so the list
+ * numbers the seed carries are no change.
  */
 export function sessionTransactionalSeed(
   base: Block[],
@@ -1420,7 +1597,13 @@ export function sessionTransactionalSeed(
     }
   }
   if (positions.length === 0 || base.length === 0) {
-    return { passage: [], anchorBefore: null, seed: [], skipped: [] };
+    return {
+      passage: [],
+      anchorBefore: null,
+      before: [],
+      seed: [],
+      skipped: [],
+    };
   }
 
   const lo = Math.min(...positions);
@@ -1449,11 +1632,13 @@ export function sessionTransactionalSeed(
     };
     seed.push(copyShape(block, clean));
   }
+  const before = base.slice(0, lo);
 
   return {
     passage: base.slice(lo, hi + 1),
     anchorBefore: lo > 0 ? base[lo - 1]!.id : null,
-    seed,
+    before,
+    seed: seedListStarts(before, seed),
     skipped: result.conflicts.map((conflict) => conflict.amendmentId),
   };
 }
@@ -1571,21 +1756,45 @@ export function sessionEmptyVote(
   };
 }
 
-/** The outcome the server will compute for a vote, for the live preview. */
+/**
+ * The vote the server will count: with majorities on the members present and
+ * the field left empty (null or left out), the latest headcount's `present`,
+ * as fillPresent does on the server (server/utils/domain/headcounts.ts); a
+ * typed figure, zero included, stays. Assent carries no counts. Without a
+ * headcount (none yet, or not loaded) nothing is filled.
+ */
+export function sessionFillPresent(
+  vote: VoteInput,
+  headcount: { present: number } | null | undefined,
+  settings: Pick<AssemblySettings, "denominator">,
+): VoteInput {
+  if (vote.method === "assent" || !headcount) return vote;
+  return settings.denominator === "present" && vote.present == null
+    ? { ...vote, present: headcount.present }
+    : vote;
+}
+
+/**
+ * The outcome the server will compute for a vote, for the live preview and
+ * the confirmation: with `headcount` (the latest one), an empty "present"
+ * field counts on it, as the server will (sessionFillPresent).
+ */
 export function sessionVoteOutcome(
   vote: VoteInput,
   settings: Pick<AssemblySettings, "denominator" | "tieRule">,
+  headcount?: { present: number } | null,
 ): VoteOutcome {
+  const counted = sessionFillPresent(vote, headcount, settings);
   return computeVoteOutcome(
     {
-      inFavor: vote.inFavor ?? 0,
-      against: vote.against ?? 0,
-      abstentions: vote.abstentions ?? 0,
-      blank: vote.blank ?? 0,
-      invalid: vote.invalid ?? 0,
-      present: vote.present ?? null,
+      inFavor: counted.inFavor ?? 0,
+      against: counted.against ?? 0,
+      abstentions: counted.abstentions ?? 0,
+      blank: counted.blank ?? 0,
+      invalid: counted.invalid ?? 0,
+      present: counted.present ?? null,
     },
-    vote.majority ?? "simple",
+    counted.majority ?? "simple",
     settings,
   );
 }

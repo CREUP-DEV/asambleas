@@ -58,14 +58,17 @@ import {
  *   (acceptance_recorded), so its withdrawal is left out.
  * - For the authors of an amendment a transactional groups (its parties
  *   among them): that transactional closing by itself, because what it
- *   groups was settled or replaced by another one (isAutomaticClosure).
+ *   groups was settled or replaced by another one (isAutomaticClosure),
+ *   and coming back by itself, because what closed it was reopened
+ *   (isAutomaticRestore).
  * - For the presenters of a document (main and co-presenters): what the
  *   Secretaría, the Mesa or the assembly settled about it
  *   (NEWS_DOCUMENT_TYPES), with no amendment.
  * Decisions the member took itself are left out, and so is anything the
- * actor cannot see. A transactional closing by itself is nobody's decision:
- * it names nobody (`by` null) and reaches its authors and parties also when
- * their own act on what it grouped closed it. What an Admin did while
+ * actor cannot see. A transactional closing or coming back by itself is
+ * nobody's decision (isAutomaticChange): it names nobody (`by` null) and
+ * reaches its authors and parties also when their own act on what it
+ * grouped closed it or brought it back. What an Admin did while
  * acting as the user's account (events.impersonation_id) is not the user's
  * own decision either, so it reaches that account's news.
  */
@@ -100,8 +103,15 @@ export const NEWS_DOCUMENT_TYPES = [
   "document_status_changed",
 ] as const;
 
-/** Events that may close a transactional by itself (isAutomaticClosure). */
-const CLOSURE_TYPES = ["amendment_withdrawn", "amendment_lapsed"] as const;
+/**
+ * Events that may close a transactional by itself, or bring it back
+ * (isAutomaticChange).
+ */
+const AUTOMATIC_TYPES = [
+  "amendment_withdrawn",
+  "amendment_lapsed",
+  "amendment_reopened",
+] as const;
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -123,6 +133,27 @@ export function isAutomaticClosure(
     (type === "amendment_withdrawn" && payload.by === "sources_closed") ||
     (type === "amendment_lapsed" && payload.reason === "sources_transacted")
   );
+}
+
+/**
+ * A transactional back by itself, not by anyone's decision about it: an
+ * amendment it groups was reopened before the final vote and all of them are
+ * open again (amendment_reopened with `reason: "source_reopened"`,
+ * reopenTransactionalsClosedBy).
+ */
+export function isAutomaticRestore(
+  type: string,
+  payload: Record<string, unknown>,
+): boolean {
+  return type === "amendment_reopened" && payload.reason === "source_reopened";
+}
+
+/** A transactional that closed or came back by itself. */
+export function isAutomaticChange(
+  type: string,
+  payload: Record<string, unknown>,
+): boolean {
+  return isAutomaticClosure(type, payload) || isAutomaticRestore(type, payload);
 }
 
 /** Why an event concerns the member (loadWorkNews). */
@@ -165,7 +196,7 @@ export function isNewsEvent(
   if (type === "amendment_withdrawn" && payload.by === "author_rejection") {
     return false;
   }
-  return scope.authored || (scope.overOwn && isAutomaticClosure(type, payload));
+  return scope.authored || (scope.overOwn && isAutomaticChange(type, payload));
 }
 
 /**
@@ -202,6 +233,10 @@ export function newsValue(
         : null;
     case "amendment_withdrawn":
       return payload.by === "sources_closed" ? text(payload.sourceCode) : null;
+    case "amendment_reopened":
+      return payload.reason === "source_reopened"
+        ? text(payload.sourceCode)
+        : null;
     case "document_voted":
       return text(payload.result);
     case "document_status_changed":
@@ -213,8 +248,9 @@ export function newsValue(
 
 /**
  * Who decided (MeWorkNewsDto.by):
- * - nobody for a transactional that closed by itself (isAutomaticClosure):
- *   whoever settled what it grouped did not decide about it;
+ * - nobody for a transactional that closed or came back by itself
+ *   (isAutomaticChange): whoever settled or reopened what it grouped did
+ *   not decide about it;
  * - the party that answered a transactional (payload.memberId);
  * - the main presenter for its answer to an amendment, for the amendment
  *   its acceptance incorporated (amendment_approved with method
@@ -230,7 +266,7 @@ export function newsByMemberId(
   actorMemberId: string | null,
   mainPresenterId: string | null = null,
 ): string | null {
-  if (isAutomaticClosure(type, payload)) return null;
+  if (isAutomaticChange(type, payload)) return null;
   if (type === "acceptance_recorded") return text(payload.memberId);
   if (type === "position_changed") {
     const memberId = text(payload.memberId);
@@ -257,9 +293,9 @@ export interface NewsAssembly {
  * Whether an event is someone else's decision: not taken by this user, nor
  * for this member (its other accounts, or the Mesa recording its answer as
  * main presenter or as a party). `mainPresenterId` is the main presenter of
- * the event's document (newsByMemberId). A transactional that closed by
- * itself (isAutomaticClosure) is nobody's decision, so it always counts,
- * also for the user whose act on what it grouped closed it. So does what an
+ * the event's document (newsByMemberId). A transactional that closed or
+ * came back by itself (isAutomaticChange) is nobody's decision, so it
+ * always counts, also for the user whose act on what it grouped did it. So does what an
  * Admin did while acting as this very account (`impersonationId` set): the
  * account did not decide it. Done as another account of the member, it
  * stays that member's own decision.
@@ -276,7 +312,7 @@ export function isOthersDecision(
   actor: { userId: string; memberId: string },
   mainPresenterId: string | null = null,
 ): boolean {
-  if (isAutomaticClosure(event.type, event.payload)) return true;
+  if (isAutomaticChange(event.type, event.payload)) return true;
   if (event.actorUserId === actor.userId) return Boolean(event.impersonationId);
   return (
     newsByMemberId(
@@ -394,7 +430,7 @@ export async function loadWorkNews(
     scopes.push(
       and(
         onAmendments,
-        inArray(events.type, [...CLOSURE_TYPES]),
+        inArray(events.type, [...AUTOMATIC_TYPES]),
         inArray(events.entityId, [...overOwnIds]),
       )!,
     );
@@ -444,6 +480,10 @@ export async function loadWorkNews(
           and(
             eq(events.type, "amendment_lapsed"),
             sql`${events.payload}->>'reason' = 'sources_transacted'`,
+          ),
+          and(
+            eq(events.type, "amendment_reopened"),
+            sql`${events.payload}->>'reason' = 'source_reopened'`,
           ),
         ),
       ),

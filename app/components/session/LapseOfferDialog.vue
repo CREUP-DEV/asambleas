@@ -109,6 +109,18 @@ async function submit(): Promise<void> {
                 :member="author"
                 size="xs"
               />
+              <!-- Lapsing it withdraws a pending transactional over it. -->
+              <p
+                v-if="session.transactionalsOver.line(amendment)"
+                class="text-default flex w-full items-start gap-1.5 text-xs"
+              >
+                <UIcon
+                  name="i-lucide-git-merge"
+                  class="text-warning mt-px size-3.5 shrink-0"
+                  aria-hidden="true"
+                />
+                {{ session.transactionalsOver.line(amendment) }}
+              </p>
             </li>
           </ul>
         </fieldset>
