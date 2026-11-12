@@ -61,6 +61,14 @@ import {
   registerPdfFonts,
   type RalewayFile,
 } from "./pdfmake";
+import {
+  PDF_RENDER_LIMITS,
+  PdfRenderLimitError,
+  renderPdf,
+  unansweredRenderError,
+  withRenderSlot,
+} from "./pdfRender";
+import { serializePdfDefinition } from "./pdfSerial";
 
 const FONTS_DIR = resolve(__dirname, "../../assets/fonts");
 const ASSETS_DIR = resolve(__dirname, "../../assets");
@@ -85,6 +93,9 @@ beforeAll(() => {
 async function render(
   definition: TDocumentDefinitions,
 ): Promise<{ pdf: string; pages: number }> {
+  // Every definition rendered here must also cross into the render process
+  // (pdfRender.ts): serializing throws on anything JSON would drop.
+  expect(() => serializePdfDefinition(definition)).not.toThrow();
   const buffer = await pdfmake.createPdf(definition).getBuffer();
   const pdf = buffer.toString("latin1");
   return { pdf, pages: (pdf.match(/\/Type \/Page\b(?!s)/g) ?? []).length };
@@ -1397,5 +1408,224 @@ describe("CREUP template", () => {
       "center",
       undefined,
     ]);
+  });
+});
+
+// Render process --------------------------------------------------------------
+
+/** A PDF's bytes without what changes on every run: its date and file id. */
+function stable(pdf: Buffer): string {
+  return pdf
+    .toString("latin1")
+    .replace(/\(D:\d{14}Z\)/g, "(D:)")
+    .replace(/\/ID \[<[0-9a-f]+> <[0-9a-f]+>\]/gi, "/ID []");
+}
+
+describe("render process", () => {
+  const fonts = Object.fromEntries(
+    Object.values(RALEWAY_FILES).map((name) => [
+      name,
+      readFileSync(resolve(FONTS_DIR, name)),
+    ]),
+  ) as Record<RalewayFile, Buffer>;
+
+  // Built twice from the same data: pdfmake writes into the nodes it lays out.
+  const cases: [string, () => TDocumentDefinitions][] = [
+    [
+      "a positioning with its cover, headings, page counts and letterhead",
+      () =>
+        buildDocumentPdf(
+          {
+            assembly,
+            document: { ...meta, kind: "positioning" },
+            body: {
+              variant: "clean",
+              source: "base",
+              blocks: [
+                ...base,
+                ...Array.from({ length: 60 }, (_, index) =>
+                  index % 15 === 14
+                    ? {
+                        id: `h${index}`,
+                        type: "heading" as const,
+                        level: index % 2 === 0 ? 1 : 3,
+                        text: `Artículo ${index}`,
+                        marks: [],
+                      }
+                    : p(`f${index}`, "Texto de relleno. ".repeat(20)),
+                ),
+              ],
+            },
+            generatedAt: new Date("2026-11-20T10:00:00Z"),
+          },
+          "es",
+          brand,
+        ),
+    ],
+    [
+      "an annotated text with its annex, as a draft without letterhead",
+      () => {
+        const result = consolidate(
+          base,
+          approvalOrder(amendments).map(({ id }) => ({
+            id,
+            ops: opsById[id] ?? [],
+          })),
+        );
+        return buildDocumentPdf(
+          {
+            assembly,
+            document: meta,
+            body: {
+              variant: "annotated",
+              blocks: result.annotated,
+              codes: amendmentCodes(amendments),
+              annex: buildAnnexRows({
+                amendments,
+                visibleIds: new Set(amendments.map((entry) => entry.id)),
+                conflicts: result.conflicts,
+              }),
+            },
+            generatedAt: new Date("2026-11-20T10:00:00Z"),
+          },
+          "en",
+        );
+      },
+    ],
+    [
+      "an assembly dossier",
+      () =>
+        buildAssemblyPdf(
+          {
+            assembly,
+            agenda: [],
+            documents: [
+              { meta, source: "consolidated", blocks: base },
+              { meta: { ...meta, title: "Vacío" }, source: "base", blocks: [] },
+            ],
+            generatedAt: new Date("2026-11-20T10:00:00Z"),
+          },
+          "es",
+          brand,
+        ),
+    ],
+  ];
+
+  it.each(cases)(
+    "renders %s exactly as pdfmake does in this process",
+    async (_, build) => {
+      const [here, { pdf: there }] = await Promise.all([
+        pdfmake.createPdf(build()).getBuffer(),
+        renderPdf(build(), fonts),
+      ]);
+      expect(there.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+      expect(stable(there)).toBe(stable(here));
+    },
+    60_000,
+  );
+
+  it("refuses a definition JSON cannot carry before starting the process", async () => {
+    const definition = buildDocumentPdf(
+      {
+        assembly,
+        document: meta,
+        body: { variant: "clean", source: "base", blocks: base },
+        generatedAt: new Date(),
+      },
+      "es",
+    );
+    definition.footer = () => null;
+    await expect(renderPdf(definition, fonts)).rejects.toThrow(
+      "definition.footer is an untagged function",
+    );
+    expect(() =>
+      serializePdfDefinition({
+        content: [{ text: "x", date: new Date() }],
+      } as never),
+    ).toThrow("not plain data");
+  });
+
+  it("stops a render that runs out of time, without retrying it", async () => {
+    const definition = buildDocumentPdf(
+      {
+        assembly,
+        document: meta,
+        body: { variant: "clean", source: "base", blocks: base },
+        generatedAt: new Date(),
+      },
+      "es",
+    );
+    await expect(
+      renderPdf(definition, fonts, {
+        ...PDF_RENDER_LIMITS,
+        timeoutMs: 1,
+      }),
+    ).rejects.toBeInstanceOf(PdfRenderLimitError);
+  });
+
+  it("renders one at a time, in the order asked, whichever queue asks", async () => {
+    const log: string[] = [];
+    let release!: () => void;
+    const first = withRenderSlot(async () => {
+      log.push("first:start");
+      await new Promise<void>((resolve) => (release = resolve));
+      log.push("first:end");
+      return 1;
+    });
+    const second = withRenderSlot(async () => {
+      log.push("second");
+      return 2;
+    });
+    const third = withRenderSlot(async () => {
+      log.push("third");
+      throw new Error("failed");
+    });
+    const fourth = withRenderSlot(async () => {
+      log.push("fourth");
+      return 4;
+    });
+    await Promise.resolve();
+    expect(log).toEqual(["first:start"]);
+    release();
+    await expect(first).resolves.toBe(1);
+    await expect(second).resolves.toBe(2);
+    await expect(third).rejects.toThrow("failed");
+    // A failed render hands the slot on too.
+    await expect(fourth).resolves.toBe(4);
+    expect(log).toEqual([
+      "first:start",
+      "first:end",
+      "second",
+      "third",
+      "fourth",
+    ]);
+  });
+
+  it("reports the render's memory and its wait for the slot", async () => {
+    const definition = buildDocumentPdf(
+      {
+        assembly,
+        document: meta,
+        body: { variant: "clean", source: "base", blocks: base },
+        generatedAt: new Date(),
+      },
+      "es",
+    );
+    const result = await renderPdf(definition, fonts);
+    expect(result.pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+    expect(result.waitedMs).toBeGreaterThanOrEqual(0);
+    expect(result.maxRssKb).toBeGreaterThan(0);
+  }, 60_000);
+
+  it("retries a render the kernel killed, never one out of heap", () => {
+    // Killed from outside (the container out of memory): may be another
+    // process's doing, so the job is retried.
+    const killed = unansweredRenderError("SIGKILL");
+    expect(killed).not.toBeInstanceOf(PdfRenderLimitError);
+    // V8 aborts the process past its heap ceiling: the same again.
+    expect(unansweredRenderError("SIGABRT")).toBeInstanceOf(
+      PdfRenderLimitError,
+    );
+    expect(unansweredRenderError(null)).toBeInstanceOf(PdfRenderLimitError);
   });
 });

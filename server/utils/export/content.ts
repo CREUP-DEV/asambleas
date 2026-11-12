@@ -38,6 +38,7 @@ import {
 } from "../../../shared/utils/content/tables";
 import { PAGE_WIDTH, TEMPLATE_MARGINS } from "./brand";
 import { isSafeHref } from "../../../shared/utils/content/render";
+import { constantLayout } from "./pdfSerial";
 
 /**
  * Converts structured content (blocks, or consolidated blocks with
@@ -107,16 +108,18 @@ export const CONTENT_STYLES: Record<string, Style> = {
 const TABLE_CELL_PADDING = 5;
 const TABLE_RULE = 0.75;
 
-export const TEMPLATE_TABLE_LAYOUT: CustomTableLayout = {
-  hLineWidth: () => TABLE_RULE,
-  vLineWidth: () => TABLE_RULE,
-  hLineColor: () => CREUP_RED,
-  vLineColor: () => CREUP_RED,
-  paddingLeft: () => TABLE_CELL_PADDING,
-  paddingRight: () => TABLE_CELL_PADDING,
-  paddingTop: () => 3,
-  paddingBottom: () => 3,
-};
+// Layouts are constants made with constantLayout, so that a definition
+// crosses into the render process (pdfSerial.ts).
+export const TEMPLATE_TABLE_LAYOUT: CustomTableLayout = constantLayout({
+  hLineWidth: TABLE_RULE,
+  vLineWidth: TABLE_RULE,
+  hLineColor: CREUP_RED,
+  vLineColor: CREUP_RED,
+  paddingLeft: TABLE_CELL_PADDING,
+  paddingRight: TABLE_CELL_PADDING,
+  paddingTop: 3,
+  paddingBottom: 3,
+}) as CustomTableLayout;
 
 /** Collects link targets and numbers them in order of appearance. */
 export class LinkRegistry {
@@ -403,17 +406,17 @@ function headingNode(item: Item, ctx: PdfContentContext): Content {
   const border = bar ? 2 : 1;
   const table: ContentTable = {
     table: { widths: ["*"], body: [[text]] },
-    layout: {
-      hLineWidth: () => border,
-      vLineWidth: () => border,
-      hLineColor: () => CREUP_RED,
-      vLineColor: () => CREUP_RED,
-      fillColor: () => (bar ? CREUP_RED : null),
-      paddingLeft: () => (bar ? 4 : 3.5),
-      paddingRight: () => 4,
-      paddingTop: () => (bar ? 0.5 : 1),
-      paddingBottom: () => (bar ? 0.5 : 1),
-    },
+    layout: constantLayout({
+      hLineWidth: border,
+      vLineWidth: border,
+      hLineColor: CREUP_RED,
+      vLineColor: CREUP_RED,
+      fillColor: bar ? CREUP_RED : null,
+      paddingLeft: bar ? 4 : 3.5,
+      paddingRight: 4,
+      paddingTop: bar ? 0.5 : 1,
+      paddingBottom: bar ? 0.5 : 1,
+    }) as CustomTableLayout,
     margin: bar ? [-6, 12, -6, 12] : [-4.5, 0, -4.5, 12],
     headlineLevel: level,
   };

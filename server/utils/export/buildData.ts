@@ -22,7 +22,11 @@ import {
 } from "../../../shared/utils/agendaSubmissions";
 import { consolidate } from "../../../shared/utils/content/consolidate";
 import { formatAssemblyLabel } from "../../../shared/utils/slug";
-import { canManageDocuments, type Actor } from "../domain/actor";
+import {
+  canManageAssemblies,
+  canManageDocuments,
+  type Actor,
+} from "../domain/actor";
 import { loadAmendmentVisibility } from "../domain/documents";
 import { getImageDir, imageFileName } from "../domain/documentImages";
 import { logError } from "../core/logger";
@@ -32,7 +36,7 @@ import {
   canSeeDocument,
   visibleAcronym,
 } from "../domain/visibility";
-import { loadExportActor } from "./actor";
+import { loadExportActor, publicExportActor } from "./actor";
 import {
   amendmentCodes,
   buildAgendaTree,
@@ -182,8 +186,10 @@ function visibleCoAcronyms(
 }
 
 /**
- * `actor` is the requester: an executive area is printed as "CEA" for one
- * who may not see the areas (presentersLabel then names it once).
+ * `actor` is who the header is written for: an executive office is printed
+ * as "CEA" for one who may not see the offices (presentersLabel then names
+ * it once). Always the requester, for every PDF: the Secretaría's and the
+ * Mesa's read the real offices, a delegate's the generic "CEA".
  */
 function documentMeta(
   actor: Actor,
@@ -213,6 +219,7 @@ function documentMeta(
 
 type LoadedAmendment = AnnexAmendment & { ops: AmendmentOp[] };
 
+/** `actor` is the requester: it decides how the authors' offices read. */
 async function loadAnnexAmendments(
   actor: Actor,
   documentId: string,
@@ -258,7 +265,7 @@ async function loadAnnexAmendments(
       approvalMethod: row.approvalMethod,
       decidedAt: row.decidedAt,
       positionKey: row.positionKey,
-      // Several areas read as one "CEA" for a requester who may not see them.
+      // Several offices read as one "CEA" for a reader who may not see them.
       authors: [
         ...new Set(
           row.authors.map((author) => visibleAcronym(actor, author.member)),
@@ -278,20 +285,28 @@ async function loadAnnexAmendments(
   });
 }
 
-async function annotatedBody(
+/**
+ * The annotated text: its marks and annex. Like the clean PDF, it names the
+ * authors as the requester reads them (the Secretaría and the Mesa read the
+ * real offices, a delegate the generic "CEA"). Which amendments it carries
+ * is the same for everyone: only the published ones (publicExportActor
+ * decides it), so an amendment presented but never published (withdrawn
+ * before, declared inadmissible, still awaiting validation) never reaches a
+ * file that is filed with the minutes.
+ */
+export async function annotatedBody(
   actor: Actor,
-  assembly: AssemblyRow,
-  document: DocumentRow,
+  document: Pick<DocumentRow, "id" | "baseVersionId">,
 ): Promise<ExportBody> {
   const baseVersionId = document.baseVersionId!;
   const [baseBlocks, amendmentRows, { visible }] = await Promise.all([
     loadVersionBlocks([baseVersionId]),
     loadAnnexAmendments(actor, document.id),
-    loadAmendmentVisibility(actor, document),
+    loadAmendmentVisibility(publicExportActor(), document),
   ]);
 
-  // Only what the requester may read: an amendment that is not published
-  // stays out of the text, its codes and the annex. Deciding one needs it
+  // Only what everyone may read: an amendment that is not published stays
+  // out of the text, its codes and the annex. Deciding one needs it
   // published, so for approved amendments this is a second guard.
   const readable = amendmentRows.filter((row) => visible.has(row.id));
   const result = consolidate(
@@ -392,6 +407,8 @@ export async function buildDocumentExportData(
   }
   const refusal = exportRefusal(actor, document, job.variant);
   if (refusal) throw new ExportRejectedError(EXPORT_REFUSAL_MESSAGES[refusal]);
+  // Every PDF is written for its requester, the annotated one too.
+  const reader = actor;
 
   const [agendaRows, publicDocuments, finalVotes, coProponents, body] =
     await Promise.all([
@@ -400,7 +417,7 @@ export async function buildDocumentExportData(
       loadVotes([document.finalVoteId]),
       loadCoProponents([document.id]),
       job.variant === "annotated"
-        ? annotatedBody(actor, assembly, document)
+        ? annotatedBody(actor, document)
         : cleanBody(actor, document),
     ]);
   // The number everyone reads for its item: none while the item is not in
@@ -422,10 +439,12 @@ export async function buildDocumentExportData(
       where: eq(documents.id, titleOf),
     });
     const [source] = other ? await withCoProponentIds([other]) : [];
-    if (source && !canSeeDocument(actor, source)) agendaTitles.delete(item.id);
+    if (source && !canSeeDocument(reader, source)) {
+      agendaTitles.delete(item.id);
+    }
   }
   // Nor a title withheld since its document was deleted.
-  if (item?.titleWithheld && !canManageDocuments(actor)) {
+  if (item?.titleWithheld && !canManageDocuments(reader)) {
     agendaTitles.delete(item.id);
   }
   const images = await loadExportImages([document.id], body.blocks);
@@ -434,7 +453,7 @@ export async function buildDocumentExportData(
     images,
     assembly: toExportAssembly(assembly),
     document: documentMeta(
-      actor,
+      reader,
       document,
       agenda,
       agendaTitles,
@@ -451,12 +470,18 @@ export async function buildDocumentExportData(
 /**
  * Cover, agenda and every published document in agenda order. Only
  * published documents are listed, so the dossier never reveals drafts or
- * submissions under review, whoever requests it.
+ * submissions under review, whoever requests it. Only managers request it,
+ * and they see the executive offices, but the file goes round: its
+ * presenters are printed as anyone reads them, the offices as "CEA".
  */
 export async function buildAssemblyExportData(
   job: AssemblyExportJobData,
 ): Promise<AssemblyExportData> {
   const actor = await requireExportActor(job.requestedBy);
+  // Checked again: the job may outlive the requester's role.
+  if (!canManageAssemblies(actor)) {
+    throw new ExportRejectedError("The requester no longer manages assemblies");
+  }
   const assembly = await requireExportAssembly(actor, job.assemblyId);
 
   const [allAgendaRows, documentRows, postponedRows] = await Promise.all([
@@ -509,13 +534,15 @@ export async function buildAssemblyExportData(
     loadCoProponents(documentRows.map((document) => document.id)),
   ]);
 
+  // Written for the requester, like every PDF (managers only: real offices).
+  const reader = actor;
   const byId = new Map(documentRows.map((document) => [document.id, document]));
   const entries: AssemblyDocumentEntry[] = agenda.documentOrder.map((id) => {
     const document = byId.get(id)!;
     const versionId = versionOf(document);
     return {
       meta: documentMeta(
-        actor,
+        reader,
         document,
         agenda,
         agendaTitles,

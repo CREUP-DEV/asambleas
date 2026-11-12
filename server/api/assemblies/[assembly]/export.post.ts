@@ -1,19 +1,23 @@
 import { defineEventHandler, getRouterParam, readBody } from "h3";
-import { requireActor } from "../../../utils/domain/actor";
+import { requireActor, requireCan } from "../../../utils/domain/actor";
 import { parseDocumentBody } from "../../../utils/domain/documents";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 import { enqueueExport } from "../../../utils/export/enqueue";
 import { EXPORT_QUEUE_NAMES } from "../../../utils/export/queue";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { formatAssemblyLabel } from "~~/shared/utils/slug";
 import { assemblyExportSchema } from "~~/shared/utils/schemas/export";
 
 /**
  * Queues the assembly dossier: cover, agenda and every published document.
- * It only carries published content, so anyone who can see the assembly
- * may request it. The request is recorded as `export.request` (enqueueExport).
+ * It only carries published content, but laying out every text of an
+ * assembly takes the longest of any export, so only those who manage
+ * assemblies (assembly:manage) ask for it; no screen offers it to anyone
+ * else. The request is recorded as `export.request` (enqueueExport).
  */
 export default defineEventHandler(async (event): Promise<{ jobId: string }> => {
   const actor = await requireActor(event);
+  requireCan(actor, PERMISSION_KEYS.ASSEMBLY_MANAGE);
   const assembly = await resolveAssembly(
     actor,
     getRouterParam(event, "assembly"),
