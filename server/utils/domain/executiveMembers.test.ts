@@ -165,6 +165,7 @@ describe("canSeeExecutiveMembers", () => {
       PERMISSION_KEYS.SESSION_MODERATE,
       PERMISSION_KEYS.MEMBER_MANAGE,
       PERMISSION_KEYS.USER_MANAGE_ROLES,
+      PERMISSION_KEYS.STATS_VIEW,
     ]) {
       expect(
         canSeeExecutiveMembers(

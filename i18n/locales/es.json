@@ -298,7 +298,8 @@
       "amendmentReview": "Validar y publicar enmiendas, y anotar si se admiten",
       "assemblyVoteResult": "Registrar resultado de votación en asamblea",
       "sessionModerate": "Moderar la sesión: estado en directo, admisiones, votaciones y transaccionales",
-      "memberManage": "Sincronizar y editar miembros"
+      "memberManage": "Sincronizar y editar miembros",
+      "statsView": "Ver las estadísticas de lectura y participación de cada cuenta y miembro"
     }
   },
   "assembly": {
@@ -2100,6 +2101,83 @@
         "ofMembers": "de los asociados con derecho a voto",
         "invalid": "Indica una fracción entre 1/100 y 1."
       }
+    },
+    "stats": {
+      "title": "Estadísticas",
+      "cardDescription": "Qué ha leído, presentado y enviado cada consejo y cada cuenta, y cómo ha participado en la sesión.",
+      "description": "La lectura sale de las marcas de leído de cada cuenta, sobre lo publicado que no presenta su propio miembro; para un miembro cuenta la cuenta suya que más ha leído. Lo abierto y el tiempo salen de las páginas de los documentos publicados: el tiempo es el que estuvieron en pantalla con alguien usando la página (dentro de un PDF no se puede saber si se lee), y para un miembro suma todas sus cuentas.",
+      "assembly": "Asamblea",
+      "search": "Buscar miembro, cuenta o documento",
+      "summary": "Publicado: {documents} y {amendments}. {reading} de {accounts} cuentas han marcado algo como leído ({members} miembros). Cuentas que han abierto algún documento: {opening}.",
+      "count": {
+        "documents": "{count} documento | {count} documentos",
+        "amendments": "{count} enmienda | {count} enmiendas"
+      },
+      "tabs": {
+        "members": "Miembros",
+        "accounts": "Cuentas",
+        "documents": "Documentos"
+      },
+      "columns": {
+        "member": "Miembro",
+        "account": "Cuenta",
+        "documentsRead": "Documentos leídos",
+        "amendmentsRead": "Enmiendas leídas",
+        "lastRead": "Última lectura",
+        "documentsPresented": "Documentos presentados",
+        "amendmentsPresented": "Enmiendas presentadas",
+        "outcomes": "Resultado de sus enmiendas",
+        "attendance": "Asistencia",
+        "speaking": "Turnos de palabra",
+        "accounts": "Cuentas",
+        "signIns": "Inicios de sesión",
+        "lastSignIn": "Último inicio de sesión",
+        "sent": "Enviado",
+        "document": "Documento",
+        "presenter": "Lo presenta",
+        "readerMembers": "Miembros que lo leyeron",
+        "readers": "Cuentas que lo leyeron",
+        "changed": "Leído en una versión anterior",
+        "amendments": "Enmiendas",
+        "opened": "Documentos abiertos",
+        "readingTime": "Tiempo con documentos abiertos",
+        "openedByMembers": "Miembros que lo abrieron",
+        "timeOpen": "Tiempo abierto"
+      },
+      "sortBy": "Ordenar por {column}",
+      "never": "Nunca",
+      "duration": "{minutes} min {seconds} s",
+      "noRole": "Sin rol",
+      "inactive": "Inactivo",
+      "late": "{count} fuera de plazo | {count} fuera de plazo",
+      "main": "{count} como autor principal | {count} como autor principal",
+      "attendance": "En la sala en {inRoom} de {taken} recuentos",
+      "delegations": "Delegó {gave} · Recibió {received}",
+      "turns": "{count} turno | {count} turnos",
+      "revoked": "Sin acceso",
+      "sentDetail": "Enmiendas: {amendments} · Documentos: {documents}",
+      "written": "{count} enmienda redactada | {count} enmiendas redactadas",
+      "openDetail": "Ver el detalle de {account}",
+      "detail": "Detalle de la cuenta",
+      "detailFailed": "No se ha podido cargar el detalle de la cuenta",
+      "loading": "Cargando…",
+      "detailDocuments": "Documentos publicados",
+      "detailAmendments": "Enmiendas publicadas",
+      "nothingPublished": "Todavía no hay nada publicado.",
+      "own": "Lo presenta su miembro",
+      "empty": "No hay datos de esta asamblea.",
+      "readOf": "{read} de {total}",
+      "changedCount": "{count} con cambios | {count} con cambios",
+      "time": {
+        "hours": "{hours} h {minutes} min",
+        "minutes": "{minutes} min",
+        "seconds": "{seconds} s"
+      },
+      "views": "Abierto {count} vez | Abiertos {count} veces",
+      "openedByAccounts": "Cuentas: {accounts} · Aperturas: {views}",
+      "markedOn": "Marcado el {date}",
+      "openedDetail": "Abierto {count} vez, {time} en total; la primera, el {date} | Abierto {count} veces, {time} en total; la primera, el {date}",
+      "neverOpened": "No lo ha abierto"
     }
   },
   "export": {
@@ -2279,7 +2357,8 @@
       "roles": "Roles y permisos",
       "members": "Miembros",
       "activity": "Actividad",
-      "calendarRules": "Plazos del reglamento"
+      "calendarRules": "Plazos del reglamento",
+      "stats": "Estadísticas"
     },
     "assembly": {
       "navLabel": "Secciones de la {assembly}",

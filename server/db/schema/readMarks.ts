@@ -18,7 +18,8 @@ import { amendments } from "./amendment";
  * document or the amendment.
  *
  * The marks belong to the account, which a member may share among several
- * people: nobody else reads them.
+ * people: only the account changes them, and only the statistics
+ * (stats:view, server/utils/domain/stats.ts) read another account's.
  */
 export const documentReads = pgTable(
   "document_reads",

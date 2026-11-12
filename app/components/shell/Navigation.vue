@@ -145,6 +145,15 @@ const adminItems = computed<NavigationMenuItem[]>(() => {
       active: isWithin(calendarRules),
     });
   }
+  if (can(PERMISSION_KEYS.STATS_VIEW)) {
+    const stats = localePath("/admin/estadisticas");
+    items.push({
+      label: t("shell.nav.stats"),
+      icon: "i-lucide-chart-column",
+      to: stats,
+      active: isWithin(stats),
+    });
+  }
   // The whole activity log: Admins only, by their real role. Secretaría
   // and Presidencia hold every permission key, so no key opens it; while
   // an Admin acts as another account, `isAdmin` is that account's.
