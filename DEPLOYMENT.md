@@ -182,6 +182,7 @@ GHCR_TOKEN=<PAT con write:packages>
 ```
 
 - La URL pública y Umami se incrustan en el bundle al compilar (`nuxt.config.ts`), así que salen de `NUXT_DEPLOY_*`, no del `NUXT_SITE_URL` local, que sigue en `localhost`. Sin `NUXT_DEPLOY_SITE_URL` se usa `https://asambleas.creup.es`.
+- Umami solo se activa con las dos `NUXT_DEPLOY_UMAMI_*`; sin ellas la imagen sale sin analítica, sin aviso. El id es el de un sitio de `asambleas.creup.es` creado en Umami (Configuración, Sitios web). Con ellas, la CSP deja que la página envíe los datos a ese origen (`connect-src`).
 - Si ya has hecho `docker login ghcr.io` en tu máquina, `GHCR_USERNAME` y `GHCR_TOKEN` sobran.
 
 ### 7. Desplegar
