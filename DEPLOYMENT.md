@@ -154,7 +154,7 @@ Lo que hace el vhost:
 - Bloquea `/api/health` desde fuera.
 - No guarda en búfer las actualizaciones en directo (`/api/assemblies/<asamblea>/live`, eventos SSE con latido cada 25 s, por debajo de los 100 s de Cloudflare).
 - Deja pasar cuerpos de hasta 25 MB, por encima del límite de la propia app (21 MB para un PDF y 16 MB para importar un DOCX), que es la que responde con un error claro.
-- No toca la IP del visitante: la recupera el `nginx.conf` compartido (`snippets/cloudflare-realip.conf`, en el bloque `http`), así que `X-Forwarded-For` ya lleva la del visitante y no la de Cloudflare.
+- No toca la IP del visitante: la recupera el `nginx.conf` compartido (`snippets/cloudflare-realip.conf`, en el bloque `http`), así que `X-Forwarded-For` ya lleva la del visitante y no la de Cloudflare. Por eso toda una sede tras un mismo NAT comparte IP, y el límite por IP de nuxt-security está apagado en `/api/assemblies/**`, `/api/exports/**` y `/api/me/**`. Lo que sigue limitado tiene un cupo por IP y regla: subidas (importar, PDF, imágenes, convocatoria) 300 cada 5 min; peticiones de exportación 1.000 cada 5 min; páginas, `/api/auth`, `/api/members` y ficheros subidos 12.000 cada 5 min entre todos.
 
 ### 6. Variables de despliegue en tu `.env` local
 
@@ -188,35 +188,41 @@ Con la primera imagen publicada, el paquete `ghcr.io/creup-dev/asambleas` aparec
 
 ## Qué Hace scripts/deploy.sh
 
-1. Carga el `.env` local y construye la imagen para `linux/amd64`, etiquetada con el commit, y la publica en GHCR. Con cambios sin confirmar, la etiqueta es `<commit>-dirty-<fecha y hora UTC>`, distinta en cada build, y no mueve `latest`, que solo nombra builds confirmados. Mejor desplegar siempre un commit.
-2. Por SSH, en `COMPOSE_DIR`:
+1. Carga el `.env` local. Con cambios sin confirmar se para, salvo con `--allow-dirty` (`bash ./scripts/deploy.sh --allow-dirty`): entonces la etiqueta es `<commit>-dirty-<fecha y hora UTC>`, distinta en cada build, y no mueve `latest`, que solo nombra builds confirmados. Mejor desplegar siempre un commit.
+2. Pregunta al VPS si hay una asamblea `in_session`. Si la hay, la nombra y pide confirmación (`[y/N]`; cualquier otra respuesta cancela). Sin terminal (un script, una tarea programada) no puede preguntar y se para, salvo con `DEPLOY_ALLOW_IN_SESSION=1`, que despliega igualmente: a propósito, porque una sesión es el único momento en que desplegar hace daño. Si la consulta falla (primer despliegue, sin tablas), avisa y sigue. El VPS vuelve a mirarlo antes de migrar (paso 5.5).
+3. Ejecuta `pnpm verify`: la lista de verificación de `AGENTS.md` menos el build (lint, formato, tipos, i18n y tests). Si algo falla, no construye ni despliega nada. Bajo WSL la ejecuta el `pnpm` de Windows, el que instaló `node_modules`. Solo `DEPLOY_SKIP_VERIFY=1` la salta; `DEPLOY_SKIP_BUILD=1` no.
+4. Construye la imagen para `linux/amd64`, etiquetada con el commit, y la publica en GHCR.
+5. Por SSH, en `COMPOSE_DIR`:
    1. Crea `asambleas/data/exports` y `asambleas/data/uploads` si faltan, como el usuario de despliegue, y se para si no son del uid 1000, el de la app: no podría escribir los PDFs.
    2. Comprueba que `postgresql` está en marcha y sano. Si estuviera parado lo arranca, pero nunca lo recrea: lo comparten todos los proyectos.
    3. Si la app en marcha está sana, guarda su imagen en `.last_asambleas_image`, por digest (`repo@sha256:...`), para el rollback. Si no lo está (un despliegue anterior falló), conserva la guardada.
    4. Descarga la imagen nueva si el VPS no la tiene.
-   5. Aplica las migraciones en un contenedor efímero (`/app/ops/migrate.mjs`, con un advisory lock). Si una falla, se detiene y sigue la imagen anterior.
-   6. Solo con `--seed`, ejecuta el seed de roles y permisos (`/app/ops/seed.mjs`). Vuelve a dar todos los permisos por defecto, también los que se hayan quitado a mano en Administración, y deja `rbac.seed` en el registro de auditoría. Hace falta en el primer despliegue y cuando el código añade una clave de permiso o un rol de sistema. Nunca carga datos de demo.
-   7. Recrea solo `asambleas-app` y espera hasta 120 s a que esté `healthy`. Si no lo está, muestra los últimos logs y termina con error.
-   8. Ya sana, guarda `ASAMBLEAS_IMAGE` en el `.env` raíz, para que un `up -d` posterior no vuelva a un `latest` viejo.
-   9. Comprueba y recarga nginx, y borra las imágenes viejas del proyecto. Conserva la nueva, la del rollback y hasta `DEPLOY_IMAGE_RETENTION` (2 por defecto).
-3. Si el lado remoto no llega al final, el script termina con error aunque la conexión no lo diga.
+   5. Vuelve a buscar una asamblea `in_session`: verificar y construir pueden tardar lo bastante para que se abra una. Si la hay y nadie lo había permitido (la confirmación del paso 2 o `DEPLOY_ALLOW_IN_SESSION=1`), se para sin migrar nada; al repetir el despliegue pregunta.
+   6. Vuelca la base de datos `asambleas` con `pg_dump -Fc` en `backups/db/asambleas-predeploy-<fecha y hora UTC>.dump` y borra los volcados `asambleas-predeploy-*` más viejos que los 10 últimos (`DEPLOY_DUMP_RETENTION`), y los `.dump.partial` que haya dejado un volcado interrumpido; no toca los demás ficheros de `backups/db`. Si el volcado falla o queda vacío, se detiene sin migrar nada.
+   7. Aplica las migraciones en un contenedor efímero (`/app/ops/migrate.mjs`, con un advisory lock). Si una falla, se detiene y sigue la imagen anterior.
+   8. Solo con `--seed`, ejecuta el seed de roles y permisos (`/app/ops/seed.mjs`). Vuelve a dar todos los permisos por defecto, también los que se hayan quitado a mano en Administración, y deja `rbac.seed` en el registro de auditoría. Hace falta en el primer despliegue y cuando el código añade una clave de permiso o un rol de sistema. Nunca carga datos de demo.
+   9. Recrea solo `asambleas-app` y espera hasta 120 s a que esté `healthy`. Si no lo está, muestra los últimos logs, el volcado previo y cómo volver: `scripts/rollback.sh` si no se aplicó ninguna migración; si se aplicó alguna, `scripts/rollback.sh` se negaría, así que dice cuántas y que hay que restaurar antes ese volcado (sección «Restaurar») o usar `--force`.
+   10. Ya sana, guarda `ASAMBLEAS_IMAGE` en el `.env` raíz, para que un `up -d` posterior no vuelva a un `latest` viejo.
+   11. Comprueba y recarga nginx, y borra las imágenes viejas del proyecto. Conserva la nueva, la del rollback y hasta `DEPLOY_IMAGE_RETENTION` (2 por defecto).
+6. Si el lado remoto no llega al final, el script termina con error aunque la conexión no lo diga.
 
-Para volver a desplegar una imagen ya publicada sin compilar: `DEPLOY_SKIP_BUILD=1 IMAGE=ghcr.io/creup-dev/asambleas:<etiqueta> bash ./scripts/deploy.sh`.
+Para volver a desplegar una imagen ya publicada sin compilar: `DEPLOY_SKIP_BUILD=1 DEPLOY_SKIP_VERIFY=1 IMAGE=ghcr.io/creup-dev/asambleas:<etiqueta> bash ./scripts/deploy.sh`. Sin `DEPLOY_SKIP_VERIFY=1` verifica el árbol local, aunque no sea el de esa imagen.
 
-Recrear el contenedor corta el servicio unos segundos. Evita desplegar durante una sesión de asamblea.
-
-Antes de desplegar, pasa la lista de verificación de `AGENTS.md` (`pnpm lint`, `pnpm typecheck`, `pnpm test`...): `scripts/deploy.sh` no la ejecuta.
+Recrear el contenedor corta el servicio unos segundos. Evita desplegar durante una sesión de asamblea: por eso `scripts/deploy.sh` pregunta antes, y el VPS lo vuelve a comprobar antes de migrar.
 
 ### Rollback
 
 ```bash
-bash ./scripts/rollback.sh           # vuelve a la imagen guardada por el último despliegue
-bash ./scripts/rollback.sh <commit>  # o a una etiqueta concreta
+bash ./scripts/rollback.sh                   # vuelve a la imagen guardada por el último despliegue
+bash ./scripts/rollback.sh <commit>          # o a una etiqueta concreta
+bash ./scripts/rollback.sh --force [<tag>]   # aunque la base tenga migraciones que la imagen no conoce
 ```
 
 Recrea la app con esa imagen, espera a que esté sana y la deja en `ASAMBLEAS_IMAGE`.
 
 Las migraciones no se revierten: son de un solo sentido. Si una migración hay que deshacerla, se escribe otra que la deshaga.
+
+Antes de recrear nada, compara el diario de migraciones de la imagen (`drizzle/meta/_journal.json`) con `drizzle.__drizzle_migrations`. Si la base tiene migraciones posteriores a la última que conoce la imagen, se para sin tocar nada: esa versión leería un esquema que no es el suyo (tras la `0021`, por ejemplo, la anterior leía una columna borrada y la forma vieja del quórum, y rompía los recuentos en plena sesión). Entonces hay dos salidas: restaurar antes el volcado previo al despliegue (más abajo, «Restaurar») o, si se sabe que la versión anterior convive con esas migraciones, `--force`. También se para si no puede leer alguno de los dos lados.
 
 ## Comprobaciones
 
@@ -251,6 +257,41 @@ Copia manual solo de esta base de datos:
 cd ~
 docker compose exec -T postgresql pg_dump -U asambleas asambleas | zstd > "backups/db/asambleas-$(date +%Y%m%d-%H%M%S).sql.zst"
 ```
+
+## Restaurar
+
+Para volver la base de datos al momento anterior a un despliegue (una migración que terminó bien pero dejó mal los datos), con el volcado que `scripts/deploy.sh` hizo antes de migrar. Se pierde todo lo escrito después en la plataforma: anota antes lo que haya pasado en la sala (votaciones, recuentos) para volver a registrarlo.
+
+```bash
+cd ~
+ls -1 backups/db/asambleas-predeploy-*.dump | tail -n 3   # el último es el de este despliegue
+docker compose stop asambleas-app
+```
+
+Recrear la base vacía y restaurar en ella. `pg_restore --clean` solo borra lo que está en el volcado: las tablas que crearon las migraciones nuevas se quedarían y el siguiente despliegue fallaría al crearlas otra vez.
+
+```bash
+docker compose exec -T postgresql sh -c 'psql -U "$POSTGRES_USER" -d postgres -v ON_ERROR_STOP=1 -c "DROP DATABASE asambleas WITH (FORCE)" -c "CREATE DATABASE asambleas OWNER asambleas"'
+docker compose exec -T postgresql pg_restore -U asambleas -d asambleas --clean --if-exists < backups/db/asambleas-predeploy-<fecha>.dump
+```
+
+`pg_restore` sigue ante un error y al final dice cuántos hubo: revisa los que imprima antes de seguir.
+
+Después, desde tu máquina, vuelve a la imagen anterior; con la base restaurada, `scripts/rollback.sh` ya no encuentra migraciones que la imagen desconozca:
+
+```bash
+bash ./scripts/rollback.sh
+```
+
+Si lo que se perdió son ficheros (PDFs subidos, imágenes, exportaciones), se recuperan de restic, con su configuración del VPS, en un directorio aparte para copiar solo lo que falte:
+
+```bash
+restic restore latest --include /home/esternocleidomastoideo2003/asambleas/data --target /tmp/asambleas-restore
+```
+
+Los ficheros quedan en `/tmp/asambleas-restore/home/esternocleidomastoideo2003/asambleas/data/`. Cópialos a `~/asambleas/data/` conservando el uid 1000.
+
+Un volcado del clúster entero (`~/ops/db-dump.sh`) es SQL de `pg_dumpall`: de él se restaura solo la base `asambleas` recortando su parte, así que para un despliegue es mejor el volcado previo.
 
 ## Clonar producción en local
 
@@ -334,22 +375,27 @@ Cuentas sin acceso: una cuenta borrada en la Intranet pierde el acceso la próxi
 
 ## Problemas Frecuentes
 
-| Síntoma                                                   | Revisión                                                                                                                                                                                                                                                                                                    |
-| --------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `scripts/deploy.sh` falla en el push                      | `docker login ghcr.io` en tu máquina, o `GHCR_USERNAME` y `GHCR_TOKEN` con `write:packages`                                                                                                                                                                                                                 |
-| `scripts/deploy.sh` falla en el pull del VPS              | El token del `docker login` del VPS no puede leer `ghcr.io/creup-dev/asambleas`: darle acceso al paquete                                                                                                                                                                                                    |
-| `scripts/deploy.sh` falla en las migraciones              | `DATABASE_URL` en `asambleas/.env` (host `postgresql`, rol y base `asambleas`). Un lock atascado: `SELECT pid FROM pg_locks WHERE locktype = 'advisory';` y `pg_terminate_backend(pid)`                                                                                                                     |
-| `scripts/deploy.sh` se para: "belongs to uid"             | `sudo chown -R 1000:1000 ~/asambleas/data`: la app corre con el uid 1000 y no podría escribir los PDFs                                                                                                                                                                                                      |
-| "the remote deploy stopped before its last step"          | El script remoto terminó antes de tiempo (conexión cortada o un comando que se comió la entrada): revisar la salida y repetir                                                                                                                                                                               |
-| La app no llega a `healthy`                               | Los logs que imprime el script: `APP_SECRET`, `DATABASE_URL`, credenciales OAuth                                                                                                                                                                                                                            |
-| 502 en `asambleas.creup.es`                               | `docker compose ps asambleas-app`; el contenedor tiene que estar en la red del compose raíz                                                                                                                                                                                                                 |
-| OAuth falla                                               | Callback en Google, `NUXT_SITE_URL`, cabecera `X-Forwarded-Proto` en el vhost                                                                                                                                                                                                                               |
-| Las actualizaciones en directo no llegan                  | El `location` de `/live` del vhost (`proxy_buffering off`) y que Cloudflare no lo esté desafiando                                                                                                                                                                                                           |
-| Export PDF falla                                          | `asambleas/data/exports` existe y es del uid 1000                                                                                                                                                                                                                                                           |
-| Jobs no avanzan                                           | Logs del worker, tabla `pgboss.job`, conexión PostgreSQL                                                                                                                                                                                                                                                    |
-| PDFs o descargas 404 tras recrear                         | Los dos montajes de `asambleas/docker-compose.yml`: `docker inspect asambleas-app -f '{{range .Mounts}}{{.Destination}} {{end}}'`                                                                                                                                                                           |
-| "Sincronizar" responde 503                                | `NUXT_INTRANET_API_URL` falta o se rechaza (en producción, solo `https:` o `http://intranet`); buscar `intranet.config` en los logs                                                                                                                                                                         |
-| "Sincronizar" responde 502                                | La Intranet no responde o rechaza la llamada: token erróneo, URL mal puesta, Cloudflare desafiando la llamada (403 en HTML con `cf-ray`: excepción para `/api/asambleas/`) o, por dentro, sin `ASSEMBLIES_API_REQUIRE_HTTPS=false` en la Intranet ([docs/intranet.md](docs/intranet.md), secciones 5.8 y 8) |
-| Miembros pide confirmar la sincronización                 | Desactivaría todos los miembros de un tipo o más de max(3, 30 %): revisar el listado de la Intranet antes de confirmar                                                                                                                                                                                      |
-| Una cuenta no puede entrar: "ya no existe en la Intranet" | La Intranet la ha borrado o la ha dejado sin tipo o, si ya estaba sin acceso, la Intranet no responde. Recupera el acceso sola cuando la Intranet vuelve a devolverla                                                                                                                                       |
-| Nadie puede entrar y los logs muestran `auth.hook.access` | Error de base de datos al comprobar el acceso: el inicio de sesión se rechaza para no dejar entrar a una cuenta borrada. Revisar PostgreSQL                                                                                                                                                                 |
+| Síntoma                                                         | Revisión                                                                                                                                                                                                                                                                                                                             |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `scripts/deploy.sh` falla en el push                            | `docker login ghcr.io` en tu máquina, o `GHCR_USERNAME` y `GHCR_TOKEN` con `write:packages`                                                                                                                                                                                                                                          |
+| `scripts/deploy.sh` falla en el pull del VPS                    | El token del `docker login` del VPS no puede leer `ghcr.io/creup-dev/asambleas`: darle acceso al paquete                                                                                                                                                                                                                             |
+| `scripts/deploy.sh` falla en las migraciones                    | `DATABASE_URL` en `asambleas/.env` (host `postgresql`, rol y base `asambleas`). Un lock atascado: `SELECT pid FROM pg_locks WHERE locktype = 'advisory';` y `pg_terminate_backend(pid)`                                                                                                                                              |
+| `scripts/deploy.sh` se para: "belongs to uid"                   | `sudo chown -R 1000:1000 ~/asambleas/data`: la app corre con el uid 1000 y no podría escribir los PDFs                                                                                                                                                                                                                               |
+| `scripts/deploy.sh` se para: "uncommitted changes"              | Confirma los cambios o, si de verdad hay que desplegarlos así, `--allow-dirty`                                                                                                                                                                                                                                                       |
+| `scripts/deploy.sh` se para en "Verify"                         | Lo que falle de `pnpm verify`: arréglalo antes de desplegar. Solo en una emergencia, `DEPLOY_SKIP_VERIFY=1`                                                                                                                                                                                                                          |
+| `scripts/deploy.sh` se para: "pg_dump of asambleas failed"      | Espacio en disco (`df -h ~`) y que `backups/db` sea del usuario de despliegue. No se ha migrado nada                                                                                                                                                                                                                                 |
+| `scripts/rollback.sh` se para: "migration(s) newer than"        | La imagen es anterior a migraciones ya aplicadas: restaurar el volcado previo (sección «Restaurar») o, si la versión convive con ellas, `--force`                                                                                                                                                                                    |
+| "the remote deploy stopped before its last step"                | El script remoto terminó antes de tiempo (conexión cortada o un comando que se comió la entrada): revisar la salida y repetir                                                                                                                                                                                                        |
+| La app no llega a `healthy`                                     | Los logs que imprime el script: `APP_SECRET`, `DATABASE_URL`, credenciales OAuth. Para volver, lo que diga el script: `scripts/rollback.sh` si no se migró nada; si se aplicó alguna migración, restaurar antes el volcado que nombra (sección «Restaurar») o `scripts/rollback.sh --force` si la versión anterior convive con ellas |
+| `scripts/deploy.sh` se para: "entered session during the build" | Se abrió una sesión mientras se verificaba y construía; no se ha migrado nada. Repetir el despliegue (la imagen ya está publicada: `DEPLOY_SKIP_BUILD=1 DEPLOY_SKIP_VERIFY=1 IMAGE=...`) y confirmar, o esperar a que acabe la sesión                                                                                                |
+| 502 en `asambleas.creup.es`                                     | `docker compose ps asambleas-app`; el contenedor tiene que estar en la red del compose raíz                                                                                                                                                                                                                                          |
+| OAuth falla                                                     | Callback en Google, `NUXT_SITE_URL`, cabecera `X-Forwarded-Proto` en el vhost                                                                                                                                                                                                                                                        |
+| Las actualizaciones en directo no llegan                        | El `location` de `/live` del vhost (`proxy_buffering off`) y que Cloudflare no lo esté desafiando                                                                                                                                                                                                                                    |
+| Export PDF falla                                                | `asambleas/data/exports` existe y es del uid 1000                                                                                                                                                                                                                                                                                    |
+| Jobs no avanzan                                                 | Logs del worker, tabla `pgboss.job`, conexión PostgreSQL                                                                                                                                                                                                                                                                             |
+| PDFs o descargas 404 tras recrear                               | Los dos montajes de `asambleas/docker-compose.yml`: `docker inspect asambleas-app -f '{{range .Mounts}}{{.Destination}} {{end}}'`                                                                                                                                                                                                    |
+| "Sincronizar" responde 503                                      | `NUXT_INTRANET_API_URL` falta o se rechaza (en producción, solo `https:` o `http://intranet`); buscar `intranet.config` en los logs                                                                                                                                                                                                  |
+| "Sincronizar" responde 502                                      | La Intranet no responde o rechaza la llamada: token erróneo, URL mal puesta, Cloudflare desafiando la llamada (403 en HTML con `cf-ray`: excepción para `/api/asambleas/`) o, por dentro, sin `ASSEMBLIES_API_REQUIRE_HTTPS=false` en la Intranet ([docs/intranet.md](docs/intranet.md), secciones 5.8 y 8)                          |
+| Miembros pide confirmar la sincronización                       | Desactivaría todos los miembros de un tipo o más de max(3, 30 %): revisar el listado de la Intranet antes de confirmar                                                                                                                                                                                                               |
+| Una cuenta no puede entrar: "ya no existe en la Intranet"       | La Intranet la ha borrado o la ha dejado sin tipo o, si ya estaba sin acceso, la Intranet no responde. Recupera el acceso sola cuando la Intranet vuelve a devolverla                                                                                                                                                                |
+| Nadie puede entrar y los logs muestran `auth.hook.access`       | Error de base de datos al comprobar el acceso: el inicio de sesión se rechaza para no dejar entrar a una cuenta borrada. Revisar PostgreSQL                                                                                                                                                                                          |

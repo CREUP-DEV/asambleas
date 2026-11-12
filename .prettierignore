@@ -9,3 +9,6 @@ pnpm-lock.yaml
 
 # Drizzle rewrites these on every db:generate; reformatting them only churns
 drizzle/meta
+
+# Local scratch (dumps, one-off scripts; git-excluded): never block pnpm verify
+.sim77

@@ -116,11 +116,10 @@ server/assets/    Fuentes y assets empaquetados para servidor
 
 ## Verificación Antes De PR
 
+La lista que manda es la de [AGENTS.md](AGENTS.md#verification-checklist). `pnpm verify` ejecuta en orden todo menos el build, y `scripts/deploy.sh` la ejecuta antes de construir la imagen:
+
 ```bash
-pnpm lint
-pnpm typecheck
-pnpm i18n:check
-pnpm i18n:audit-identical
+pnpm verify    # pnpm lint, format:check, typecheck, i18n:check, i18n:audit-identical y test
 pnpm build
 ```
 
