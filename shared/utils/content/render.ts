@@ -96,6 +96,14 @@ interface ListFrame {
   level: number;
   /** Ordered lists: their marker; null for bullets. */
   marker: ListMarker | null;
+  /** Ordered lists: the number the next counted item shows. */
+  next: number;
+  /**
+   * Ordered lists: the number the browser gives the next <li>. Every <li>
+   * counts for it, a struck one too, so a counted item after one carries
+   * `value` (as the PDF's counter skips struck items).
+   */
+  auto: number;
 }
 
 type RenderableBlock = Pick<
@@ -114,6 +122,13 @@ type RenderableBlock = Pick<
   attrs?: string;
   /** Extra class of the block element, e.g. "cx-block-inserted". */
   className?: string;
+  /**
+   * An ordered item that takes no number (deleted, in a diff): it shows no
+   * marker and the items after it are not counted past it, as in the PDF
+   * (orderedListNumbers' `counted`). One with `start` still starts its
+   * list again, so the next item that counts shows that number.
+   */
+  uncounted?: boolean;
 };
 
 export interface RenderOptions {
@@ -189,12 +204,31 @@ function wrapFlow(items: RenderableBlock[], headings: boolean): string {
     return `data-block-id="${escapeHtml(item.id)}"${item.attrs ?? ""}${classAttr}`;
   };
 
+  /** The opening of an item of `frame`, numbered as orderedListNumbers. */
+  const itemTag = (item: RenderableBlock, frame: ListFrame): string => {
+    if (frame.tag !== "ol") return `<li ${attrsOf(item)}>`;
+    if (item.uncounted) {
+      frame.auto += 1;
+      return `<li ${attrsOf(item, "cx-uncounted")}>`;
+    }
+    const value = frame.auto === frame.next ? "" : ` value="${frame.next}"`;
+    frame.auto = frame.next + 1;
+    frame.next += 1;
+    return `<li${value} ${attrsOf(item)}>`;
+  };
+
   for (const item of items) {
     const attrs = attrsOf(item);
     if (item.type === "list_item") {
       const level = Math.max(0, Math.min(6, item.level ?? 0));
       const tag = item.list === "ordered" ? "ol" : "ul";
       const marker = tag === "ol" ? markerOf(item) : null;
+      // A struck item with `start` starts its list again all the same: the
+      // next counted item shows that number (`value`, see itemTag).
+      const start =
+        tag === "ol" && item.start !== undefined
+          ? Math.trunc(item.start)
+          : undefined;
       while (stack.length > 0 && stack[stack.length - 1]!.level > level) {
         closeFrame();
       }
@@ -205,9 +239,9 @@ function wrapFlow(items: RenderableBlock[], headings: boolean): string {
         top.level === level &&
         top.tag === tag &&
         top.marker === marker &&
-        item.start === undefined
+        start === undefined
       ) {
-        html += `</li><li ${attrs}>${item.inner}`;
+        html += `</li>${itemTag(item, top)}${item.inner}`;
         continue;
       }
       if (top && top.level === level) closeFrame();
@@ -217,11 +251,16 @@ function wrapFlow(items: RenderableBlock[], headings: boolean): string {
       if (marker && marker !== "1.") {
         listAttrs += ` data-marker="${escapeHtml(marker)}"`;
       }
-      if (tag === "ol" && item.start !== undefined) {
-        listAttrs += ` start="${Math.trunc(item.start)}"`;
-      }
-      html += `<${tag}${listAttrs}><li ${attrs}>${item.inner}`;
-      stack.push({ tag, level, marker });
+      if (start !== undefined) listAttrs += ` start="${start}"`;
+      const frame: ListFrame = {
+        tag,
+        level,
+        marker,
+        next: start ?? 1,
+        auto: start ?? 1,
+      };
+      html += `<${tag}${listAttrs}>${itemTag(item, frame)}${item.inner}`;
+      stack.push(frame);
       continue;
     }
     while (stack.length > 0) closeFrame();
@@ -470,7 +509,14 @@ export function renderAnnotated(
       const opening = options.diffLabels?.formatted;
       inner = `${inner || "<br>"}<span class="cx-fmt-label">${opening ? `${escapeHtml(opening)} ` : ""}${notes.join("; ")}</span>`;
     }
-    items.push({ ...block, inner: inner || "<br>", attrs, className });
+    items.push({
+      ...block,
+      inner: inner || "<br>",
+      attrs,
+      className,
+      // Shown struck, it takes no number (only diff mode shows it).
+      uncounted: block.status === "deleted",
+    });
   }
   return wrapBlocks(items, options.headings);
 }

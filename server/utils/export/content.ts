@@ -729,10 +729,9 @@ function assembleFlow(items: Item[], ctx: PdfContentContext): Content[] {
     const level = Math.max(0, Math.min(6, item.shape.level ?? 0));
     const kind: ListKind = item.shape.list === "ordered" ? "ol" : "ul";
     const marker = markerOf(item.shape);
-    // A struck item that would start the list again takes no number, so it
-    // does not start it either.
-    const start =
-      kind === "ol" && item.countable ? item.shape.start : undefined;
+    // A struck item takes no number, but one with `start` still starts the
+    // list again: the next counted item shows that number.
+    const start = kind === "ol" ? item.shape.start : undefined;
     while (stack.length > 0 && stack[stack.length - 1]!.level > level) {
       stack.pop();
     }

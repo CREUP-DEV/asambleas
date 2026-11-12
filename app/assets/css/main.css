@@ -281,6 +281,14 @@ html {
 }
 
 /*
+ * An ordered item an amendment deletes takes no number in a diff, as in the
+ * PDF: no marker, and the next item carries its own number (`value`).
+ */
+.rich-text ol > li.cx-uncounted {
+  list-style-type: none;
+}
+
+/*
  * The editor's headings look like the rendered ones (TipTap writes levels
  * 1-4 as h1-h4). Outside any layer: the editor's theme colours every heading
  * with a utility (`text-highlighted`, bold), which would win over a component
