@@ -16,6 +16,10 @@ const umamiHost = getOptionalConfigUrl(
 );
 const umamiId = process.env.NUXT_PUBLIC_UMAMI_WEBSITE_ID?.trim() || "";
 const isUmamiConfigured = Boolean(umamiId && umamiHost);
+// nuxt-umami sends each event with fetch to `${host}/api/send`, so the CSP
+// lets the page reach that origin (the web does the same).
+const umamiOrigin =
+  isUmamiConfigured && umamiHost ? new URL(umamiHost).origin : null;
 
 // nuxt-security keys its rate limiter on the client IP plus the route rule
 // that matches (not the path), with a fixed window per bucket. The venue's
@@ -261,7 +265,7 @@ export default defineNuxtConfig({
           "https://lh3.googleusercontent.com",
         ],
         "font-src": ["'self'", "data:"],
-        "connect-src": ["'self'"],
+        "connect-src": ["'self'", ...(umamiOrigin ? [umamiOrigin] : [])],
         // The document page frames its uploaded PDF; every other page still
         // refuses to be framed (frame-ancestors).
         "frame-src": ["'self'"],
