@@ -37,6 +37,7 @@ import {
   type AmendmentOverlap,
   type AmendmentRelationView,
 } from "~/composables/amendment/workspace";
+import { incorporatedClashIds } from "~/components/proponent-review/-review";
 
 /**
  * One amendment, read on its own. What matters comes first, in this order:
@@ -221,11 +222,21 @@ function shortcutGo(
   void go(props.nav?.[direction]);
 }
 
+/**
+ * j and k are single-letter shortcuts, which this browser may turn off
+ * (WCAG 2.1.4); the arrows are not letters and always work.
+ */
+const { enabled: letterShortcuts } = useSingleKeyShortcuts();
+
 defineShortcuts({
   arrowleft: (event?: KeyboardEvent) => shortcutGo(event, "previous"),
   arrowright: (event?: KeyboardEvent) => shortcutGo(event, "next"),
-  k: (event?: KeyboardEvent) => shortcutGo(event, "previous"),
-  j: (event?: KeyboardEvent) => shortcutGo(event, "next"),
+  k: (event?: KeyboardEvent) => {
+    if (letterShortcuts.value) shortcutGo(event, "previous");
+  },
+  j: (event?: KeyboardEvent) => {
+    if (letterShortcuts.value) shortcutGo(event, "next");
+  },
 });
 
 // What it is --------------------------------------------------------------------
@@ -365,6 +376,27 @@ const byId = computed(
 function statusOf(id: string) {
   return byId.value.get(id)?.status;
 }
+/**
+ * What accepting it would set off under the "incorporate" rule, for the
+ * answer form: the overlapping amendments already in the text, and the
+ * pending transactionals over it, which accepting withdraws.
+ */
+const acceptClashes = computed(() =>
+  incorporatedClashIds(
+    props.amendment,
+    props.document.acceptedAmendments,
+    props.overlaps,
+    byId.value,
+  ).map((id) => props.labelOf(id)),
+);
+const acceptWithdraws = computed(() =>
+  props.amendment.transactionalIds
+    .filter((id) => {
+      const item = byId.value.get(id);
+      return item?.kind === "transactional" && item.status === "submitted";
+    })
+    .map((id) => props.labelOf(id)),
+);
 /** The whole row, so a closure is matched to when its sources were settled. */
 function amendmentOf(id: string): AmendmentDto | undefined {
   return byId.value.get(id);
@@ -574,7 +606,7 @@ async function remove(): Promise<void> {
           color="neutral"
           variant="ghost"
           size="sm"
-          aria-keyshortcuts="ArrowLeft K"
+          :aria-keyshortcuts="letterShortcuts ? 'ArrowLeft K' : 'ArrowLeft'"
           :disabled="!nav?.previous || busy !== null"
           :label="t('common.previous')"
           @click="go(nav?.previous)"
@@ -590,7 +622,7 @@ async function remove(): Promise<void> {
           color="neutral"
           variant="ghost"
           size="sm"
-          aria-keyshortcuts="ArrowRight J"
+          :aria-keyshortcuts="letterShortcuts ? 'ArrowRight J' : 'ArrowRight'"
           :disabled="!nav?.next || busy !== null"
           :label="t('common.next')"
           @click="go(nav?.next)"
@@ -780,6 +812,8 @@ async function remove(): Promise<void> {
       :amendment="amendment"
       :url="url"
       :document="document"
+      :clashes="acceptClashes"
+      :withdraws="acceptWithdraws"
       @updated="emit('updated', $event)"
       @conflict="emit('changed')"
     />
@@ -978,6 +1012,8 @@ async function remove(): Promise<void> {
           :amendment="amendment"
           :url="url"
           :document="document"
+          :clashes="acceptClashes"
+          :withdraws="acceptWithdraws"
           @updated="emit('updated', $event)"
           @conflict="emit('changed')"
         />

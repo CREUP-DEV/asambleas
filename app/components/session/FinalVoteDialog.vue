@@ -7,6 +7,7 @@ import {
   sessionCleanVote,
   sessionEmptyVote,
   sessionFinalVoteBlockers,
+  sessionFillPresent,
   sessionFinalVoteResult,
   sessionVoteOutcome,
 } from "~/composables/session/sessionModel";
@@ -25,7 +26,7 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * not accepted) and the Secretaría (not validated yet).
  */
 const session = useSessionConsoleContext();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 
 const open = computed({
   get: () => session.finalVoteDialog.open,
@@ -49,10 +50,8 @@ const summary = useTemplateRef<HTMLElement>("summary");
 
 watch(open, (isOpen) => {
   if (!isOpen) return;
-  vote.value = sessionEmptyVote(
-    document.value?.majority ?? "simple",
-    session.votePresent.value,
-  );
+  // "Present" opens empty: the latest headcount fills it (VoteDialog).
+  vote.value = sessionEmptyVote(document.value?.majority ?? "simple");
   serverConflicts.value = [];
   serverUndecided.value = [];
   serverTie.value = false;
@@ -60,9 +59,10 @@ watch(open, (isOpen) => {
   confirming.value = false;
 });
 
-// Any change to the vote sends the Mesa back to the first step.
+// Any change to the vote sends the Mesa back to the first step, and so does
+// a new headcount: with "present" empty it changes the base of the result.
 watch(
-  vote,
+  [vote, () => session.voteHeadcount.value?.id],
   () => {
     confirming.value = false;
   },
@@ -112,9 +112,46 @@ const conflicts = computed(() =>
 const totalityReturn = computed(
   () => session.preview.value.totalityReturn?.id ?? serverTotalityReturn.value,
 );
+// An empty "present" counts on the latest headcount, as on the server.
 const outcome = computed(() =>
-  sessionVoteOutcome(vote.value, session.settings.value),
+  sessionVoteOutcome(
+    vote.value,
+    session.settings.value,
+    session.voteHeadcount.value,
+  ),
 );
+const now = useAppNow();
+/**
+ * The base the result is counted on, for the confirmation: "Base de
+ * cálculo: 40 miembros presentes", with the count's day when the base is a
+ * count taken another day (Europe/Madrid).
+ */
+const baseText = computed(() => {
+  const counted = sessionFillPresent(
+    vote.value,
+    session.voteHeadcount.value,
+    session.settings.value,
+  );
+  const onPresent =
+    session.settings.value.denominator === "present" && counted.present != null;
+  const text = t("session.vote.denominator", {
+    count: outcome.value.denominator,
+    base: onPresent
+      ? t("session.vote.denominatorPresent")
+      : t("session.vote.denominatorValid"),
+  });
+  const headcount = session.voteHeadcount.value;
+  if (!onPresent || !headcount || counted.present !== headcount.present) {
+    return text;
+  }
+  const taken = formatMoment(headcount.takenAt, {
+    locale: locale.value,
+    now: now.value,
+  });
+  return taken.today
+    ? text
+    : `${text} · ${t("session.vote.countMoment", { moment: taken.text })}`;
+});
 const expected = computed(() =>
   sessionFinalVoteResult(vote.value, outcome.value),
 );
@@ -290,6 +327,9 @@ async function record(): Promise<void> {
                     )}`
               }}
             </span>
+          </p>
+          <p v-if="!assent" class="text-muted mt-1 text-xs tabular-nums">
+            {{ baseText }}
           </p>
           <p class="text-muted mt-2 text-xs">
             {{ t("session.finalVote.confirmDescription") }}

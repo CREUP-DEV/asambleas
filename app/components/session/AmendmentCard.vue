@@ -14,6 +14,7 @@ import {
   isSessionTransactable,
   isSessionUnpublished,
   isSessionValidatable,
+  isSessionClosureReversible,
   sessionClosingSourceIds,
   sessionLapsingTransactionalIds,
   sessionMissingAcceptances,
@@ -70,6 +71,11 @@ const props = withDefaults(
 const session = useSessionConsoleContext();
 const answer = useSessionPosition(session);
 const { t } = useI18n();
+/** Shortcut letters show only while this browser keeps them on. */
+const { enabled: shortcutsEnabled } = useSingleKeyShortcuts();
+function kbdsOf(key: string): string[] | undefined {
+  return shortcutsEnabled.value ? [key] : undefined;
+}
 
 const id = computed(() => props.amendment.id);
 const code = computed(() => session.label(id.value));
@@ -118,6 +124,10 @@ const lapsedByCodes = computed(() =>
 const incorporated = computed(() => isSessionIncorporated(props.amendment));
 /** After the final vote nothing about its amendments changes. */
 const voted = computed(() => Boolean(session.document.value?.finalVote));
+/** Closed on its own, and back if what closed it is reopened. */
+const closureReversible = computed(() =>
+  isSessionClosureReversible(props.amendment, session.byId.value, voted.value),
+);
 /** Its authors or the Mesa may withdraw a presented, undecided amendment. */
 const withdrawable = computed(
   () =>
@@ -291,7 +301,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         {
           label: t("session.actions.lapse"),
           icon: "i-lucide-circle-slash",
-          kbds: ["l"],
+          kbds: kbdsOf("l"),
           onSelect: () => void session.lapse(props.amendment),
         },
         {
@@ -306,7 +316,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         {
           label: t("session.actions.transact"),
           icon: "i-lucide-git-merge",
-          kbds: ["t"],
+          kbds: kbdsOf("t"),
           // Delegates must be able to read what a transactional merges.
           disabled: !transactable.value,
           onSelect: () => session.openComposer([id.value]),
@@ -510,7 +520,14 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
       {{ t("session.now.stage.turned_down", { members: rejectors }) }}
     </p>
     <p v-else-if="closedCodes" class="text-default mt-1.5 text-sm">
-      {{ t("session.now.stage.closed", { codes: closedCodes }) }}
+      {{
+        t(
+          closureReversible
+            ? "session.now.stage.closedReversible"
+            : "session.now.stage.closed",
+          { codes: closedCodes },
+        )
+      }}
     </p>
     <p v-else-if="lapsedByCodes" class="text-default mt-1.5 text-sm">
       {{ t("session.now.stage.lapsedBy", { codes: lapsedByCodes }) }}
@@ -681,7 +698,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           {{ t("session.card.needsAcceptances") }}
         </span>
         <template v-else>
-          <UTooltip :text="t('session.actions.assentHint')" :kbds="['a']">
+          <UTooltip :text="t('session.actions.assentHint')" :kbds="kbdsOf('a')">
             <UButton
               size="xs"
               color="success"
@@ -693,7 +710,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
               @click="session.approve(amendment, 'assent')"
             />
           </UTooltip>
-          <UTooltip :text="t('session.actions.voteHint')" :kbds="['v']">
+          <UTooltip :text="t('session.actions.voteHint')" :kbds="kbdsOf('v')">
             <UButton
               size="xs"
               color="primary"

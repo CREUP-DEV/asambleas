@@ -751,7 +751,13 @@ When a transactional replaces its originals, any other transactional still
 open over any of them lapses. When an original is settled another way
 (withdrawn, lapsed, declared inadmissible, voted, or incorporated by the main
 presenter's acceptance) before the transactional replaces it, the
-transactional closes by itself, and its authors see why in their news.
+transactional closes by itself, and its authors see why in their news. If
+that original goes back to undecided before the final vote (the main
+presenter changes its answer, the Mesa reopens its decision, the rule for
+accepted amendments goes back to vote, the assembly readmits it), the
+transactional comes back by itself, as long as nobody withdrew it since,
+every original it groups is open again (in whatever order they were
+reopened) and no main author rejected it.
 
 **Session console.** Several people use it at once (Presidencia moderates,
 Secretaría records results), all live. It leads with what is being debated

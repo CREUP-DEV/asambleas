@@ -109,6 +109,7 @@ const hasDescription = computed(
           :to="upcomingDue"
           :label="t('document.progress.banner.dueCountdown')"
           :urgent-hours="48"
+          dated
           icon="i-lucide-hourglass"
         />
       </div>

@@ -970,7 +970,7 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
     "abstentions",
   ],
   amendment_rejected: ["method", "inFavor", "against", "abstentions"],
-  amendment_reopened: ["previousStatus", "reason"],
+  amendment_reopened: ["previousStatus", "reason", "sourceCode"],
   // The transactional that replaced it was published when validated.
   amendment_transacted: ["code"],
   amendment_lapsed: ["reason", "by", "code"],

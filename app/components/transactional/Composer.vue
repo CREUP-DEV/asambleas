@@ -16,6 +16,7 @@ import {
   amendmentErrorReasons,
   composerMainAuthor,
 } from "~/composables/amendment/workspace";
+import { useComposerLeaveGuard } from "~/composables/amendment/useComposerLeaveGuard";
 import { useTransactionalProgressText } from "~/composables/amendment/useTransactionalProgressText";
 import {
   transactionalAuthorsToAsk,
@@ -584,26 +585,18 @@ function requestClose(): void {
   emit("close");
 }
 
-onBeforeRouteLeave(() => {
-  if (!hasWork()) return true;
-  return window.confirm(t("transactional.composer.discardConfirm"));
-});
-
-function onBeforeUnload(event: BeforeUnloadEvent): void {
-  if (!hasWork()) return;
-  event.preventDefault();
-  event.returnValue = "";
-}
+// Leaving the page, another document, "atrás", reloading: asked first.
+useComposerLeaveGuard(hasWork, () =>
+  t("transactional.composer.discardConfirm"),
+);
 
 onMounted(() => {
-  window.addEventListener("beforeunload", onBeforeUnload);
   void nextTick(() => {
     if (hasPassage.value) editor.value?.focus();
     else heading.value?.focus();
   });
 });
 onBeforeUnmount(() => {
-  window.removeEventListener("beforeunload", onBeforeUnload);
   emit("passage", []);
 });
 

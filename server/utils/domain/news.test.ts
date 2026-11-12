@@ -19,7 +19,9 @@ vi.mock("./visibility", () => ({
 const {
   NEWS_DOCUMENT_TYPES,
   NEWS_OUTCOME_TYPES,
+  isAutomaticChange,
   isAutomaticClosure,
+  isAutomaticRestore,
   isNewsEvent,
   isOthersDecision,
   newsByMemberId,
@@ -508,5 +510,58 @@ describe("isAutomaticClosure", () => {
     expect(isAutomaticClosure("amendment_lapsed", { by: "moderator" })).toBe(
       false,
     );
+  });
+});
+
+describe("isAutomaticRestore", () => {
+  const restored = { reason: "source_reopened", sourceCode: "CEUM 4" };
+
+  it("tells a transactional back by itself from one somebody reopened", () => {
+    expect(isAutomaticRestore("amendment_reopened", restored)).toBe(true);
+    expect(
+      isAutomaticRestore("amendment_reopened", { reason: "position_changed" }),
+    ).toBe(false);
+    expect(isAutomaticRestore("amendment_reopened", {})).toBe(false);
+    expect(isAutomaticChange("amendment_reopened", restored)).toBe(true);
+    expect(
+      isAutomaticChange("amendment_withdrawn", { by: "sources_closed" }),
+    ).toBe(true);
+  });
+
+  it("names the amendment reopened and nobody as who decided", () => {
+    expect(newsValue("amendment_reopened", restored)).toBe("CEUM 4");
+    expect(
+      newsValue("amendment_reopened", { reason: "position_changed" }),
+    ).toBeNull();
+    expect(newsByMemberId("amendment_reopened", restored, "m1", "m2")).toBe(
+      null,
+    );
+  });
+
+  it("reaches the parties and also the user whose act brought it back", () => {
+    const event = {
+      entityType: "amendment",
+      type: "amendment_reopened",
+      payload: restored,
+    };
+    const none = {
+      presented: false,
+      coPresented: false,
+      authored: false,
+      overOwn: false,
+    };
+    expect(isNewsEvent(event, { ...none, overOwn: true })).toBe(true);
+    expect(
+      isNewsEvent(
+        { ...event, payload: { reason: "position_changed" } },
+        { ...none, overOwn: true },
+      ),
+    ).toBe(false);
+    expect(
+      isOthersDecision(
+        { ...event, actorUserId: "u1", actorMemberId: "m1" },
+        { userId: "u1", memberId: "m1" },
+      ),
+    ).toBe(true);
   });
 });

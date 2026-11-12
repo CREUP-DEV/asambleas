@@ -594,6 +594,28 @@ describe("home work", () => {
         key: "home.news.amendment.withdrawn",
         params: {},
       });
+      // Back on its own: CEUM 2 was reopened (the value names it).
+      const reopened = (value: string | null) =>
+        homeWorkNewsItem(
+          news("n", {
+            type: "amendment_reopened",
+            amendment: { id: "t2", code: "T2", kind: "transactional" },
+            ownAmendment: false,
+            by: null,
+            value,
+          }),
+        );
+      expect(reopened("CEUM 2")).toMatchObject({
+        sentence: {
+          key: "home.news.amendment.restoredBy",
+          params: { code: "CEUM 2" },
+        },
+        who: null,
+      });
+      expect(reopened(null).sentence).toEqual({
+        key: "home.news.amendment.reopened",
+        params: {},
+      });
       // Left behind because another transactional replaced what it groups.
       expect(
         homeWorkNewsItem(

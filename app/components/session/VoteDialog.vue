@@ -35,17 +35,23 @@ const proposedMajority = computed(() =>
     : "simple",
 );
 const vote = ref<VoteInput>(sessionEmptyVote(proposedMajority.value));
+// "Present" opens empty: the latest headcount fills it, on screen and on
+// the server, also one another Mesa device takes while the form is open.
 watch(open, (isOpen) => {
-  if (isOpen) {
-    vote.value = sessionEmptyVote(
-      proposedMajority.value,
-      session.votePresent.value,
-    );
-  }
+  if (isOpen) vote.value = sessionEmptyVote(proposedMajority.value);
 });
 
+// An empty "present" counts on the latest headcount, as on the server.
 const outcome = computed(() =>
-  sessionVoteOutcome(vote.value, session.settings.value),
+  sessionVoteOutcome(
+    vote.value,
+    session.settings.value,
+    session.voteHeadcount.value,
+  ),
+);
+/** A pending transactional over it, which the vote would withdraw. */
+const transactionalsLine = computed(() =>
+  amendment.value ? session.transactionalsOver.line(amendment.value) : null,
 );
 const blocked = computed(() => !isSessionVoteReady(vote.value, outcome.value));
 const saving = computed(() =>
@@ -80,6 +86,17 @@ async function submit(): Promise<void> {
         class="space-y-4"
         @submit.prevent="submit"
       >
+        <p
+          v-if="transactionalsLine"
+          class="text-default flex items-start gap-1.5 text-sm"
+        >
+          <UIcon
+            name="i-lucide-git-merge"
+            class="text-warning mt-0.5 size-4 shrink-0"
+            aria-hidden="true"
+          />
+          {{ transactionalsLine }}
+        </p>
         <SessionVoteFields
           v-model="vote"
           :settings="session.settings.value"

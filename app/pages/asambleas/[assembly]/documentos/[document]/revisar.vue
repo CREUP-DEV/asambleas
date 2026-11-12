@@ -3,11 +3,13 @@ import type { RouteLocationRaw } from "vue-router";
 import type { AmendmentDto } from "~~/shared/types/api";
 import { transactionalSourceEligible } from "~/composables/amendment/transactional";
 import {
+  answersReserved,
   commentUnsaved,
   emptyReviewReason,
   fallbackStep,
   firstPendingId,
   goneKey,
+  incorporatedClashIds,
   initialStep,
   isPositionAnswerable,
   isPositionReviewable,
@@ -15,6 +17,7 @@ import {
   positionBody,
   positionConflict,
   positionCounts,
+  positionVisibilityKey,
   positionWaitCounts,
   presenterAnswerItems,
   proponentReviewItems,
@@ -152,17 +155,26 @@ const onBehalfOf = computed(() => {
 /**
  * Who reads the answers, from the assembly's policy and, as on the server
  * (canSeePositions), its status: under the "session" policy everyone sees
- * them once the assembly is in session or closed.
+ * them once the assembly is in session or closed (positionVisibilityKey).
  */
-const visibilityNote = computed(() => {
-  const policy = assembly.value?.settings.positionVisibility ?? "session";
-  const started =
-    assembly.value?.status === "in_session" ||
-    assembly.value?.status === "closed";
-  return t(
-    `proponentReview.visibility.${policy === "session" && started ? "public" : policy}`,
-  );
-});
+const visibilityPolicy = computed(
+  () => assembly.value?.settings.positionVisibility ?? "session",
+);
+const visibilityNote = computed(() =>
+  t(
+    `proponentReview.visibility.${positionVisibilityKey(
+      visibilityPolicy.value,
+      assembly.value?.status,
+    )}`,
+  ),
+);
+/**
+ * The answers are still reserved: an acceptance that incorporates an
+ * amendment still shows to everyone as its approval.
+ */
+const reserved = computed(() =>
+  answersReserved(visibilityPolicy.value, assembly.value?.status),
+);
 
 /** What an amendment the main presenter accepts becomes. */
 const acceptedRule = computed(
@@ -687,6 +699,20 @@ const currentPendingTransactionals = computed(() =>
 const currentRelations = computed(() =>
   current.value ? list.relationsOf(current.value.id) : [],
 );
+/**
+ * The amendments already in the text the one on screen overlaps with, while
+ * accepting it would incorporate it.
+ */
+const currentClashIds = computed(() =>
+  current.value
+    ? incorporatedClashIds(
+        current.value.amendment,
+        acceptedRule.value,
+        list.overlaps.value.get(current.value.id) ?? [],
+        list.byId.value,
+      )
+    : [],
+);
 const busyAnswer = computed(() =>
   busy.value && busy.value.id === currentId.value && !busy.value.commentOnly
     ? busy.value.value
@@ -719,14 +745,23 @@ const summaryCounts = computed(() =>
 
 // Shortcuts -----------------------------------------------------------------------
 
+/** Single-key shortcuts may be off in this browser (WCAG 2.1.4). */
+const { enabled: shortcutsEnabled } = useSingleKeyShortcuts();
+
 /**
- * Shortcuts act once per press, only on the review screen, never while a
- * request runs, and not inside a dialog, menu or list box (where letters
- * and keys mean something else). Inputs and textareas are skipped by
- * defineShortcuts itself.
+ * Shortcuts act once per press, only on the review screen and while this
+ * browser keeps them on, never while a request runs, and not inside a
+ * dialog, menu or list box (where letters and keys mean something else).
+ * Inputs and textareas are skipped by defineShortcuts itself.
  */
 function shortcutsBlocked(event?: KeyboardEvent): boolean {
-  if (event?.repeat || !reviewing.value || busy.value || listOpen.value) {
+  if (
+    !shortcutsEnabled.value ||
+    event?.repeat ||
+    !reviewing.value ||
+    busy.value ||
+    listOpen.value
+  ) {
     return true;
   }
   const active = import.meta.client ? globalThis.document.activeElement : null;
@@ -1007,6 +1042,8 @@ useHead({
                 :sources="currentSources"
                 :pending-transactionals="currentPendingTransactionals"
                 :relations="currentRelations"
+                :clash-ids="currentClashIds"
+                :answers-reserved="reserved"
                 :label-of="list.labelOf"
                 :busy="busyAnswer"
                 :disabled="busy !== null && busy.id !== current.id"
@@ -1027,7 +1064,7 @@ useHead({
                   color="neutral"
                   variant="ghost"
                   icon="i-lucide-arrow-left"
-                  aria-keyshortcuts="k"
+                  :aria-keyshortcuts="shortcutsEnabled ? 'k' : undefined"
                   :disabled="!hasPrevious || busy !== null"
                   :label="t('common.previous')"
                   @click="goPrevious"
@@ -1039,7 +1076,7 @@ useHead({
                   color="neutral"
                   variant="outline"
                   trailing-icon="i-lucide-arrow-right"
-                  aria-keyshortcuts="j"
+                  :aria-keyshortcuts="shortcutsEnabled ? 'j' : undefined"
                   :disabled="busy !== null"
                   :label="
                     hasNext ? t('common.next') : t('proponentReview.nav.finish')

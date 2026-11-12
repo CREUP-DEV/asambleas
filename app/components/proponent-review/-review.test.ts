@@ -10,14 +10,17 @@ import {
 } from "~/composables/amendment/workspace";
 import {
   acceptHelpKey,
+  acceptIncorporates,
   amendmentOutcome,
   answeredByMesa,
+  answersReserved,
   answerStatus,
   commentUnsaved,
   emptyReviewReason,
   fallbackStep,
   firstPendingId,
   goneKey,
+  incorporatedClashIds,
   initialStep,
   isIncorporated,
   isPositionAnswerable,
@@ -26,6 +29,7 @@ import {
   positionBody,
   positionConflict,
   positionCounts,
+  positionVisibilityKey,
   positionWaitCounts,
   positionWaitReason,
   presenterAnswerItems,
@@ -1237,5 +1241,44 @@ describe("emptyReviewReason", () => {
         "incorporate",
       ),
     ).toBe("none");
+  });
+});
+
+describe("what accepting sets off", () => {
+  const open = { status: "submitted" as const };
+  const approved = { status: "approved" as const };
+
+  it("applies only while accepting incorporates an undecided amendment", () => {
+    expect(acceptIncorporates(open, "incorporate")).toBe(true);
+    expect(acceptIncorporates(open, "vote")).toBe(false);
+    expect(acceptIncorporates(approved, "incorporate")).toBe(false);
+  });
+
+  it("lists the overlapping amendments already in the text", () => {
+    const byId = new Map<string, Pick<AmendmentDto, "status">>([
+      ["a", approved],
+      ["b", open],
+      ["c", { status: "rejected" }],
+    ]);
+    const overlaps = [{ id: "b" }, { id: "a" }, { id: "c" }, { id: "x" }];
+    expect(incorporatedClashIds(open, "incorporate", overlaps, byId)).toEqual([
+      "a",
+    ]);
+    expect(incorporatedClashIds(open, "vote", overlaps, byId)).toEqual([]);
+    expect(
+      incorporatedClashIds(approved, "incorporate", overlaps, byId),
+    ).toEqual([]);
+  });
+
+  it("tells when the answers are still reserved, as the server does", () => {
+    expect(positionVisibilityKey("mesa", "in_session")).toBe("mesa");
+    expect(positionVisibilityKey("session", "convened")).toBe("session");
+    expect(positionVisibilityKey("session", "in_session")).toBe("public");
+    expect(positionVisibilityKey("session", "closed")).toBe("public");
+    expect(positionVisibilityKey("public", "draft")).toBe("public");
+    expect(answersReserved("mesa", "closed")).toBe(true);
+    expect(answersReserved("session", undefined)).toBe(true);
+    expect(answersReserved("session", "in_session")).toBe(false);
+    expect(answersReserved("public", "convened")).toBe(false);
   });
 });

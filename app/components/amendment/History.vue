@@ -224,6 +224,17 @@ function closedBySources(event: EventDto): boolean {
   );
 }
 
+/**
+ * A transactional back on its way by itself: the amendment whose settling
+ * had closed it was reopened before the final vote.
+ */
+function restoredBySources(event: EventDto): boolean {
+  return (
+    event.type === "amendment_reopened" &&
+    event.payload?.reason === "source_reopened"
+  );
+}
+
 /** A transactional that lapsed because another one replaced its amendments. */
 function lapsedBySources(event: EventDto): boolean {
   return (
@@ -423,6 +434,16 @@ function detailOf(event: EventDto): string | null {
         event.actorMember?.id !== memberId,
       );
     }
+    case "amendment_reopened": {
+      if (!restoredBySources(event)) return null;
+      const source = amendmentName(
+        text(payload.sourceId),
+        text(payload.sourceCode),
+      );
+      return source
+        ? t("amendment.history.restoredBySourcesDetail", { source })
+        : null;
+    }
     case "amendment_lapsed": {
       if (!lapsedBySources(event)) return text(payload.note);
       const replacement = amendmentName(
@@ -498,7 +519,9 @@ const items = computed<TimelineItem[]>(() =>
       ? "amendment.history.closedByRejection"
       : closedBySources(event)
         ? "amendment.history.closedBySources"
-        : `amendment.history.events.${event.type}`;
+        : restoredBySources(event)
+          ? "amendment.history.restoredBySources"
+          : `amendment.history.events.${event.type}`;
     const detail = detailOf(event);
     const actor = actorOf(event);
     // The server fills it only for the account acted as ("como tú") and

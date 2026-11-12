@@ -691,7 +691,8 @@ accepted amendment is (`acceptedRulePlan`, `applyAcceptedAmendmentsRule`):
   open is left for the Mesa;
 - to `vote`: every amendment approved by the presenter's acceptance goes
   back to undecided, keeping the answer (`amendment_reopened` with
-  `reason: "rule_changed"`), for the assembly to vote.
+  `reason: "rule_changed"`), for the assembly to vote, and the
+  transactionals its incorporation closed come back (see transactionals).
 
 After the final vote (or once the consolidated text exists) the rule no
 longer changes: 409.
@@ -1105,9 +1106,10 @@ reject, transact, or back to pending, with an optional comment). Returns the
 memberId }`, the main presenter) after `position_changed`, and closes the
   pending transactionals over it (see transactionals). Changing the answer
   of an amendment approved that way to anything but `accept` reopens it
-  (`submitted`, `amendment_reopened` with `reason: "position_changed"`).
-  One the Mesa approved otherwise (by vote, say) is decided: 409. Under the
-  `vote` rule an answer never decides anything.
+  (`submitted`, `amendment_reopened` with `reason: "position_changed"`)
+  and brings back the transactionals its acceptance closed (see
+  transactionals). One the Mesa approved otherwise (by vote, say) is
+  decided: 409. Under the `vote` rule an answer never decides anything.
 - After the final vote nothing changes (409).
 - Locks: the document (share), the amendment (and what a transactional
   replaces, with the other transactionals over that or over the amendment)
@@ -1151,6 +1153,8 @@ memberId }`, the main presenter) after `position_changed`, and closes the
   stays closed (409 for both, `transactionalReopenBlocker`): the way to try
   again is a new transactional. Reopening locks the transactional and its
   sources in one pass, then its acceptances.
+- Reopening any amendment brings back the pending transactionals its
+  decision closed, when they can go through again (see transactionals).
 - When approving any amendment, the response lists the ids of amendments with
   hard overlaps or an `incompatible` relation, so the client can offer to mark
   them as `lapse`.
@@ -1237,6 +1241,20 @@ propose one over published amendments, before or during the session
   it, and clients tell it apart that way. Every path that settles an
   amendment locks the transactionals over it in the same ordered pass
   (`closeTransactionalsOver` in `server/utils/domain/transactionalClosure.ts`).
+  When that amendment goes back to undecided before the final vote (a new
+  answer takes an incorporated one out, `reopen` below, the rule changes
+  back to `vote`, or the assembly readmits an inadmissible one), the
+  transactionals its settling closed come back: `submitted` again,
+  `decidedAt` cleared, and `amendment_reopened` with
+  `{ previousStatus: "withdrawn", reason: "source_reopened", sourceId,
+sourceCode }`, read in the news like the closure (nobody named, its
+  parties too). Only one whose latest withdrawal is such a closure, whose
+  amendments are all open again and that no main author rejected
+  (`reopenTransactionalsClosedBy`); the others stay as they are. The order
+  does not matter: one over A and B, closed by A, with B decided later,
+  comes back when the second of them is reopened, and so does a closure
+  from before this rule once everything it groups is open. Every reopen path locks those transactionals and what they group in
+  the same ordered pass (`restoreLockIds`), then their acceptances.
   An older one left submitted with a source already closed is still never
   asked for an answer (`can.accept` false, left out of the home page's
   `acceptances`, and accepting it returns 409); its proposer withdraws it
@@ -1415,16 +1433,18 @@ managers and the Mesa), soonest first:
   - for the authors of the amendments a transactional groups (its parties
     among them), that transactional closing by itself:
     `amendment_withdrawn` with `by: "sources_closed"` and
-    `amendment_lapsed` with `reason: "sources_transacted"`;
+    `amendment_lapsed` with `reason: "sources_transacted"`, and coming back
+    by itself: `amendment_reopened` with `reason: "source_reopened"`;
   - for the presenters of a document (main and co-presenters), what was
     settled about it, with `amendment: null`: `document_published` (the
     Secretaría's validation), `document_correction_requested`,
     `document_voted` and `document_status_changed`.
 
   `by` is the member that decided: null for a transactional that closed by
-  itself (`amendment_withdrawn` with `by: "sources_closed"`,
-  `amendment_lapsed` with `reason: "sources_transacted"`), which nobody
-  decided; the party, for an answer to a transactional; the main
+  itself or came back by itself (`amendment_withdrawn` with
+  `by: "sources_closed"`, `amendment_lapsed` with
+  `reason: "sources_transacted"`, `amendment_reopened` with
+  `reason: "source_reopened"`), which nobody decided; the party, for an answer to a transactional; the main
   presenter, also when the Mesa recorded it, for an answer to an amendment
   (`position_changed`), for an amendment its acceptance incorporated
   (`amendment_approved` with method `proponent`) and for one a new answer
@@ -1440,7 +1460,8 @@ managers and the Mesa), soonest first:
   transactional grouped (`amendment_lapsed` with
   `reason: "sources_transacted"`), the code of the amendment whose fate
   closed a transactional (`amendment_withdrawn` with
-  `by: "sources_closed"`), the result of the final vote (`document_voted`)
+  `by: "sources_closed"`) or whose reopening brought it back
+  (`amendment_reopened` with `reason: "source_reopened"`), the result of the final vote (`document_voted`)
   or the new status (`document_status_changed`); null otherwise.
   `ownAmendment` is true when the amendment is one the member wrote (main
   author or co-author), false for document news and for transactionals it
@@ -1456,12 +1477,12 @@ An account without a member gets empty `documents`, `amendments`,
 
 ## Votes, decisions and live session
 
-| Method | Path                                    | Who                | Notes                                                                                                                                                                                                                                    |
-| ------ | --------------------------------------- | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/assemblies/[assembly]/decisions`  | visible            | `DecisionDto[]`. An admission decision (`admit_late`, `inadmission`) lists in `subjectIds` only the amendments the actor can see, and is left out when it names none of them, so its note and vote do not reveal private amendments.     |
-| GET    | `/api/assemblies/[assembly]/live-state` | visible            | `LiveStateDto`                                                                                                                                                                                                                           |
-| PUT    | `/api/assemblies/[assembly]/live-state` | `session:moderate` | `LiveStateBody`. Records a `live_changed` event. An `amendmentId` must be published (409 otherwise): every delegate follows the projection. `speakersVisible` shows attendees who has the floor (see speaking turns).                    |
-| GET    | `/api/assemblies/[assembly]/live`       | visible            | SSE stream. On connect it sends `event: ready`. Each `LiveMessage` from `subscribeToAssembly` goes out as `event: change` with a `LiveEventDto`. A comment heartbeat goes out every 25 s. The stream closes when the client disconnects. |
+| Method | Path                                    | Who                | Notes                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ------ | --------------------------------------- | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/assemblies/[assembly]/decisions`  | visible            | `DecisionDto[]`. An admission decision (`admit_late`, `inadmission`) lists in `subjectIds` only the amendments the actor can see, and is left out when it names none of them, so its note and vote do not reveal private amendments.                                                                                                                                                                                          |
+| GET    | `/api/assemblies/[assembly]/live-state` | visible            | `LiveStateDto`                                                                                                                                                                                                                                                                                                                                                                                                                |
+| PUT    | `/api/assemblies/[assembly]/live-state` | `session:moderate` | `LiveStateBody`. Records a `live_changed` event. An `amendmentId` must be published (409 otherwise): every delegate follows the projection. `speakersVisible` shows attendees who has the floor (see speaking turns).                                                                                                                                                                                                         |
+| GET    | `/api/assemblies/[assembly]/live`       | visible            | SSE stream. On connect it sends `event: ready`. Each `LiveMessage` from `subscribeToAssembly` goes out as `event: change` with a `LiveEventDto`. Every 25 s it sends `event: ping` with non-empty data (`liveHeartbeat`, `server/utils/live/sse.ts`), never an SSE comment, which EventSource never exposes: `useAssemblyLive` reads it to find a stream that died in silence. The stream closes when the client disconnects. |
 
 **Projected votes.** Clients do not manage `voteId` after a vote. When the
 assembly has a `live_state` row (the session started), the server sets
@@ -1602,21 +1623,47 @@ the queue (`speaking_turns`). Schemas: `shared/utils/schemas/speakers.ts`.
   or `speaking_turn_updated`. Payloads carry ids and statuses, never the
   person's name.
 
+## Room view
+
+The projection is opened on a Mesa account but read by the room, so every
+read it makes adds `?view=room` (`ROOM_VIEW_QUERY`). These GETs take it:
+`/api/assemblies/[assembly]`, `.../live-state`, `.../agenda`,
+`.../speakers`, `.../headcounts`, `.../documents/[document]` and
+`.../documents/[document]/amendments`. Each calls `requireViewer`
+(`server/utils/domain/roomView.ts`): the flag is honoured only for
+`session:moderate` (403 otherwise) and only on GET (400 otherwise), and the
+answer is what an account that sees only what is public reads (offices as
+the generic "CEA", no person speaking for one, nothing unpublished). A draft
+assembly answers 404; a document put in debate while not public answers 404
+and the projection shows its agenda item instead. `.../agenda?view=room`
+also includes the item on screen, still unlisted, with its title only when
+the Mesa account reads it.
+
 ## Exports
 
 Existing endpoints, now based on structured content:
 
+- `POST /api/assemblies/[assembly]/export` (`assembly:manage`, checked again
+  by the worker): body `{ locale }`. Enqueues the assembly dossier (cover,
+  agenda and every published document) and returns `{ jobId }`. No screen
+  offers it.
 - `GET /api/exports/[jobId]/status`
 - `GET /api/exports/[jobId]/download`
+
+pdfmake lays out and renders each PDF in a separate Node process
+(`server/utils/export/pdfRender.ts`), one at a time, so the app keeps
+answering while a PDF is made.
 
 The PDF builder renders blocks:
 
 - headings, lists and emphasis are kept;
 - the annotated variant marks every amended fragment with its amendment code
-  and ends with an annex of the amendments and their outcomes. Text, codes
-  and annex only use the amendments the requester can see
-  (`canSeeAmendment`), so a private amendment never shows up in a member's
-  export;
+  and ends with an annex of the amendments and their outcomes. Like the clean
+  PDF, it names presenters and authors as the requester reads them (the
+  real executive offices for the Secretaría and the Mesa, the generic
+  "CEA" for a delegate). Its text, codes and annex carry only published
+  amendments, whoever requests it (`publicExportActor` decides which), so
+  an amendment presented but never published never reaches the file;
 - "Presentado por" names the main presenter, then the co-presenters;
 - labels come from the locale files.
 

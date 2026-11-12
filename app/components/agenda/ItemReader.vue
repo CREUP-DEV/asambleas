@@ -198,11 +198,52 @@ function amendAt(blockId: string, span: TextSpan | null): void {
   );
 }
 
-/** "Presentar enmienda": the editor, at the paragraph the reader had on top. */
+/**
+ * The last paragraph the reader rested on inside the text. On a phone the
+ * header scrolls away with the text: going back up to it for "Presentar
+ * enmienda" passes over every paragraph above, so only a scroll that rests
+ * a moment (`READING_REST_MS`) counts.
+ */
+let lastReadBlockId: string | null = null;
+watch(
+  () => current.value?.id,
+  () => {
+    lastReadBlockId = null;
+  },
+);
+const noteReadingPosition = useDebounceFn(() => {
+  const root = textView.value?.root;
+  if (!root || !scrolledIntoText(root)) return;
+  lastReadBlockId = readingBlockId() ?? lastReadBlockId;
+}, READING_REST_MS);
+useEventListener("scroll", noteReadingPosition, {
+  capture: true,
+  passive: true,
+});
+
+/**
+ * "Presentar enmienda": the editor, at the paragraph the reader had on top,
+ * or the last one they read when they went back up to the header to press
+ * it (only where the header does not stay in view over the text).
+ */
 function amendPath(): string {
+  const root = textView.value?.root ?? null;
+  const header = headerEl.value;
   return amendDocumentPath(
     props.documentPath(current.value!),
-    readingBlockId(),
+    amendStartBlockId({
+      selected: null,
+      current: readingBlockId(),
+      lastRead: lastReadBlockId,
+      atHeader: Boolean(
+        root &&
+        header &&
+        root.offsetParent !== null &&
+        getComputedStyle(header).position !== "sticky" &&
+        scrollsWithText(root, header) &&
+        !scrolledIntoText(root),
+      ),
+    }),
   );
 }
 
@@ -373,6 +414,7 @@ function pick(slug: unknown): void {
                 :label="documentWindow.countdown.value.label"
                 icon="i-lucide-timer"
                 :urgent-hours="48"
+                dated
               />
             </template>
             <template v-else-if="documentWindow.closed.value">

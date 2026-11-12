@@ -1,13 +1,16 @@
 <script setup lang="ts">
+import { safeRedirectPath } from "~/middleware/-session";
+
 const { t } = useI18n();
 const { signInWithGoogle } = useAuth();
 const route = useRoute();
+const localePath = useLocalePath();
 const isSigningIn = ref(false);
 
-const redirectPath = computed(() => {
-  const r = route.query.redirect;
-  return typeof r === "string" && r.startsWith("/") ? r : "/";
-});
+/** Where Google sends back to: a path of this site, never another host. */
+const redirectPath = computed(
+  () => safeRedirectPath(route.query.redirect) ?? localePath("/"),
+);
 
 /**
  * Messages of the sign-in refusals better-auth sends back here as

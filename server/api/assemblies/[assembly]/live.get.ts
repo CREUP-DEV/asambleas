@@ -2,46 +2,27 @@ import {
   createEventStream,
   defineEventHandler,
   getRouterParam,
-  type EventStream,
   type EventStreamMessage,
 } from "h3";
 import { requireActor } from "../../../utils/domain/actor";
 import { toLiveEventDto } from "../../../utils/domain/assemblies";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 import { subscribeToAssembly } from "../../../utils/live/hub";
+import {
+  LIVE_HEARTBEAT_INTERVAL_MS,
+  liveHeartbeat,
+} from "../../../utils/live/sse";
 
-const HEARTBEAT_INTERVAL_MS = 25_000;
 /** Reconnection delay suggested to EventSource clients. */
 const RETRY_MS = 5_000;
-
-/**
- * Writes an SSE comment line (`: text`), which keeps proxies from closing an
- * idle connection without firing any event in the browser. h3 1.x only
- * formats `data:` messages, so this goes through the stream's own writer to
- * stay ordered with the pushed events; if those internals ever change, it
- * falls back to a named `ping` event that clients ignore.
- */
-function writeComment(stream: EventStream, text: string): Promise<unknown> {
-  const internals = stream as unknown as {
-    _writer?: WritableStreamDefaultWriter<Uint8Array>;
-    _encoder?: TextEncoder;
-    _writerIsClosed?: boolean;
-  };
-  if (internals._writer && internals._encoder) {
-    if (internals._writerIsClosed) return Promise.resolve();
-    return internals._writer
-      .write(internals._encoder.encode(`: ${text}\n\n`))
-      .catch(() => undefined);
-  }
-  return stream.push({ event: "ping", data: "" }).catch(() => undefined);
-}
 
 /**
  * Live updates of one assembly as server-sent events:
  * - `ready` once connected;
  * - `change` with a LiveEventDto for every recorded event (ids only: clients
  *   refetch through the permission-checked endpoints);
- * - a comment heartbeat every 25 s.
+ * - a `ping` heartbeat every 25 s (liveHeartbeat), which clients use to
+ *   tell a live stream from one that died in silence.
  */
 export default defineEventHandler(async (event) => {
   // Resolve first, so a 401 or 404 still answers as plain JSON.
@@ -62,8 +43,8 @@ export default defineEventHandler(async (event) => {
     push({ event: "change", data: JSON.stringify(toLiveEventDto(message)) });
   });
   const heartbeat = setInterval(() => {
-    void writeComment(stream, "heartbeat");
-  }, HEARTBEAT_INTERVAL_MS);
+    push(liveHeartbeat());
+  }, LIVE_HEARTBEAT_INTERVAL_MS);
 
   let cleaned = false;
   const cleanup = () => {

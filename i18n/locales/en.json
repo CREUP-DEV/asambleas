@@ -229,6 +229,11 @@
       "hour": "Hour",
       "minute": "Minutes",
       "empty": "Empty"
+    },
+    "countdown": {
+      "relativeAt": "{relative}, at {time}",
+      "tomorrowAt": "tomorrow at {time}",
+      "relativeOn": "{relative}, on {date} at {time}"
     }
   },
   "auth": {
@@ -1436,8 +1441,11 @@
         "accept": "Accepted. The assembly then votes on it.",
         "reject": "Not accepted. The assembly debates and votes on it.",
         "transact": "An agreed text is sought with whoever presents it.",
-        "acceptIncorporate": "Accepted and put in the text without a vote. It can be changed until the final vote."
+        "acceptIncorporate": "Accepted and put in the text without a vote. It can be changed until the final vote.",
+        "acceptWithdraws": "Transactional {list} is withdrawn; it comes back if the answer is changed before the final vote. | Transactionals {list} are withdrawn; they come back if the answer is changed before the final vote.",
+        "acceptRevealed": "It is approved, and everyone will see that, even while the answers are still private."
       },
+      "clashIncorporated": "Clashes with {list}, which is already in the text. | Clashes with {list}, which are already in the text.",
       "comment": "Comment",
       "commentPlaceholder": "Why (optional)",
       "save": "Save the answer",
@@ -1582,6 +1590,8 @@
       "closedByRejection": "Closed: a main author rejected it",
       "closedBySources": "Closed: one of the amendments it groups is already settled",
       "closedBySourcesDetail": "Settled amendment: {source}",
+      "restoredBySources": "Back on its way: an amendment it groups was reopened and all of them are open again",
+      "restoredBySourcesDetail": "Reopened amendment: {source}",
       "lapsedBySources": "Transactional {label} already replaced the same amendments",
       "lapsedBySourcesUnknown": "Another transactional already replaced the same amendments",
       "replacedBy": "Replaced by {label}",
@@ -2417,10 +2427,13 @@
     },
     "preferences": {
       "title": "Preferences",
-      "description": "Language, theme and how the text of documents and amendments looks. Every change applies at once.",
+      "description": "Language, theme, how the text of documents and amendments looks, and single-key shortcuts. Every change applies at once.",
       "language": "Language",
       "theme": "Theme",
-      "contentHint": "What follows only changes the text of documents and amendments."
+      "contentHint": "What follows only changes the text of documents and amendments.",
+      "singleKeyShortcuts": "Single-key shortcuts",
+      "singleKeyShortcutsHint": "Single letters such as A or L that act in the Mesa console and when answering amendments. Saved in this browser.",
+      "singleKeyShortcutsOff": "Off in this browser: single letters do nothing."
     },
     "help": {
       "open": "Help"
@@ -2680,7 +2693,8 @@
         "incorporatedBy": "{who} accepted {amendment}: it is already in the text without a vote.",
         "transactedBy": "Transactional {code} replaces {amendment} and is debated in its place.",
         "lapsedBy": "Lapsed: transactional {code} already replaces those amendments, so {amendment} does not go ahead.",
-        "closedBy": "Closed: {amendment} can no longer go ahead, because amendment {code}, which it grouped, was already decided or withdrawn."
+        "closedBy": "Closed: {amendment} can no longer go ahead, because amendment {code}, which it grouped, was already decided or withdrawn.",
+        "restoredBy": "{amendment} is back on its way: amendment {code} was reopened and every amendment it groups is open again."
       },
       "document": {
         "published": "The document was published: the whole assembly can read it now.",
@@ -3334,15 +3348,18 @@
     },
     "shortcuts": {
       "title": "Keyboard shortcuts",
-      "next": "Next amendment",
-      "previous": "Previous amendment",
       "assent": "Approve by assent",
       "vote": "Record a vote",
       "transact": "Draft a transactional",
       "lapse": "Mark as lapsed",
       "hint": "They act on the selected amendment and are off while you type.",
       "nothingFocused": "Select an amendment with J or K",
-      "unavailable": "That action is not available for {code}"
+      "unavailable": "That action is not available for {code}",
+      "selectNext": "Select the next one",
+      "selectPrevious": "Select the previous one",
+      "notDebatedTitle": "{code} is not the amendment under debate",
+      "notDebatedAssent": "The key acts on the selected amendment. Approve {code} by assent?",
+      "notDebatedLapse": "The key acts on the selected amendment. Mark {code} as lapsed?"
     },
     "agenda": {
       "title": "Agenda",
@@ -3520,7 +3537,11 @@
       "presentFromCount": "Members present from the headcount at {time}.",
       "presentCorrected": "Corrected for this vote. The headcount at {time} gives {present}.",
       "noHeadcount": "No headcount yet: enter the members present or take a headcount before voting.",
-      "headcountNoQuorum": "The latest headcount does not reach quorum: {present} present of {required} needed."
+      "headcountNoQuorum": "The latest headcount does not reach quorum: {present} present of {required} needed.",
+      "countMoment": "Headcount: {moment}",
+      "presentFromCountDay": "Members present from the latest headcount ({moment}).",
+      "presentCorrectedDay": "Corrected for this vote. The latest headcount ({moment}) gives {present}.",
+      "headcountOtherDay": "It is from another day: take a new one if the room has changed."
     },
     "admission": {
       "description": "The decision is recorded with its method and, when voted, with the count.",
@@ -3572,7 +3593,9 @@
       "skip": {
         "acceptances": "the transactional still lacks answers from main authors",
         "overlap_approved": "collides with {codes}, already approved",
-        "overlap_candidate": "collides with {codes} in this batch"
+        "overlap_candidate": "collides with {codes} in this batch",
+        "transactional_pending": "the transactional {codes} over it is pending | the transactionals {codes} over it are pending",
+        "transactional_clash": "collides with {codes}, still to be decided"
       },
       "submit": "Approve | Approve 1 amendment | Approve {count} amendments"
     },
@@ -3774,6 +3797,7 @@
         "incorporated": "Already in the text without a vote: the document's presenter accepted it. If they change their answer before the final vote, it becomes undecided again.",
         "superseded": "It can no longer go ahead: another transactional got there first or a decision was taken on {codes}. Withdraw it to close it.",
         "closed": "Closed automatically: {codes} was already decided or withdrawn, so this transactional could not go ahead.",
+        "closedReversible": "Closed automatically: {codes} was already decided or withdrawn, so this transactional could not go ahead. If {codes} is reopened before the final vote, it is back on its way.",
         "lapsedBy": "Lapsed: transactional {codes} got there first and already replaces the amendments this one grouped, so it cannot go ahead."
       },
       "document": {
@@ -3914,7 +3938,16 @@
         "sectorial": "Sectoral bodies, without a vote",
         "guest": "Guests, without a vote"
       },
-      "attending": "No sectoral body or guest in the room | 1 sectoral body or guest in the room, without a vote | {count} sectoral bodies or guests in the room, without a vote"
+      "attending": "No sectoral body or guest in the room | 1 sectoral body or guest in the room, without a vote | {count} sectoral bodies or guests in the room, without a vote",
+      "requiredDay": "Quorum: {required} · Count: {moment}",
+      "correctTitleDay": "Correct the headcount ({moment})"
+    },
+    "transactionalOver": {
+      "line": "A transactional over it is pending: {list}. | Transactionals over it are pending: {list}.",
+      "waitsFor": "{code}, waiting for {members}",
+      "waitsValidation": "{code}, waiting for the Secretaría",
+      "confirmTitle": "{code} has a pending transactional | {code} has pending transactionals",
+      "consequence": "If you go ahead, {codes} is withdrawn. If you reopen {code} before the final vote, it is back on its way, unless another amendment it groups has been decided. | If you go ahead, {codes} are withdrawn. If you reopen {code} before the final vote, they are back on their way, unless another amendment they group has been decided."
     }
   },
   "projection": {
@@ -3958,7 +3991,8 @@
     "attendance": {
       "present": "{present} of {eligible} present",
       "absolute": "Absolute: {count}",
-      "twoThirds": "Two thirds: {count}"
+      "twoThirds": "Two thirds: {count}",
+      "takenAtDay": "Count: {moment}"
     }
   },
   "documents": {
@@ -4372,7 +4406,9 @@
       "delegations": "No delegations | 1 delegation | {count} delegations",
       "votesThrough": "votes through",
       "notCounted": "Does not count: not in the room.",
-      "attending": "No sectoral body or guest | 1 sectoral body or guest in the room, without a vote | {count} sectoral bodies or guests in the room, without a vote"
+      "attending": "No sectoral body or guest | 1 sectoral body or guest in the room, without a vote | {count} sectoral bodies or guests in the room, without a vote",
+      "takenAtDay": "Headcount from {moment} · Quorum: {required}",
+      "takenAtDate": "Headcount of {moment} · Quorum: {required}"
     }
   },
   "transactional": {
@@ -4584,6 +4620,7 @@
       "commentHelpPending": "It is saved when you pick an answer.",
       "commentHelpAnswered": "If you change it, save it with “Save comment”.",
       "acceptHelpIncorporate": "Accepting it puts it into the text without a vote.",
+      "acceptRevealsApproval": "It is approved, and everyone will see that, even while the answers are still private.",
       "acceptHelpVote": "You support it: in the session the Mesa will propose approving it by assent; if anyone objects, the assembly will vote on it.",
       "reopenHelp": "As it is already in the text, it will come out of it.",
       "transactHelpMain": "You want to agree on another text with {member}, its main author, and propose it as a transactional amendment."
@@ -4719,7 +4756,9 @@
     "goneTransacted": "{label} no longer needs an answer: a transactional amendment replaced it and is answered in its place.",
     "mainAuthor": "main",
     "context": {
-      "pendingTransactional": "A pending transactional includes it: {list}. If it goes ahead, it will replace this amendment. | Pending transactionals include it: {list}. If one goes ahead, it will replace this amendment."
+      "pendingTransactional": "A pending transactional includes it: {list}. If it goes ahead, it will replace this amendment. | Pending transactionals include it: {list}. If one goes ahead, it will replace this amendment.",
+      "pendingTransactionalIncorporate": "A pending transactional includes it: {list}. If you accept this amendment, the transactional is withdrawn; it comes back if you change the answer before the final vote. | Pending transactionals include it: {list}. If you accept this amendment, the transactionals are withdrawn; they come back if you change the answer before the final vote.",
+      "clashIncorporated": "Clashes with {list}, which is already in the text. | Clashes with {list}, which are already in the text."
     }
   },
   "readMarks": {

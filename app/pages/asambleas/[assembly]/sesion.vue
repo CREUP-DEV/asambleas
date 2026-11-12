@@ -7,6 +7,10 @@ import {
   sessionTurnWho,
 } from "~/composables/session/sessionModel";
 import {
+  sessionShortcutNeedsConfirm,
+  shortcutKeyIgnoredAt,
+} from "~/composables/session/shortcutGuards";
+import {
   provideSessionConsole,
   useSessionConsole,
 } from "~/composables/session/useSessionConsole";
@@ -108,6 +112,21 @@ const projectionPath = computed(() =>
 
 // Keyboard shortcuts ----------------------------------------------------------
 
+/** Single-key shortcuts may be off in this browser (WCAG 2.1.4). */
+const { enabled: shortcutsEnabled } = useSingleKeyShortcuts();
+
+/**
+ * Whether a shortcut must do nothing now: switched off, a dialog of the
+ * console open, or the focus in a dialog, a popover or a field (the
+ * headcount's checkboxes and the dialogs' close buttons are buttons, which
+ * defineShortcuts does not skip).
+ */
+function shortcutsPaused(): boolean {
+  if (!shortcutsEnabled.value) return true;
+  if (session.anyDialogOpen.value || !session.canModerate.value) return true;
+  return shortcutKeyIgnoredAt(document.activeElement as HTMLElement | null);
+}
+
 function focusCard(id: string): void {
   void nextTick(() => {
     const element = document.getElementById(`session-amendment-${id}`);
@@ -124,7 +143,7 @@ function focusCard(id: string): void {
 }
 
 function move(step: 1 | -1): void {
-  if (session.anyDialogOpen.value || !session.canModerate.value) return;
+  if (shortcutsPaused()) return;
   const id = session.moveFocus(step);
   if (id) focusCard(id);
 }
@@ -142,17 +161,17 @@ function notAvailable(amendment: AmendmentDto): void {
 
 /**
  * Runs an action shortcut on the focused amendment: the row last clicked,
- * tabbed into or reached with j/k, or else the one under debate. A held key
- * (auto-repeat) acts once, and nothing is sent while a request for that
- * amendment is still in flight, so a double press never records the same
- * decision twice.
+ * tabbed into or reached with j/k, or else the one under debate (the
+ * selection follows the debate when it moves on). A held key (auto-repeat)
+ * acts once, and nothing is sent while a request for that amendment is
+ * still in flight, so a double press never records the same decision twice.
  */
 function withFocused(
   event: KeyboardEvent | undefined,
   run: (amendment: AmendmentDto) => void,
 ): void {
   if (event?.repeat) return;
-  if (session.anyDialogOpen.value || !session.canModerate.value) return;
+  if (shortcutsPaused()) return;
   const amendment = session.focused.value ?? session.debatedAmendment.value;
   if (!amendment) {
     toast.add({
@@ -167,15 +186,35 @@ function withFocused(
   run(amendment);
 }
 
+/**
+ * A decision by key ("a", "l") on an amendment that is not the one in
+ * debate asks first, naming it: the selection may have stayed on a row
+ * while the debate moved on. The console asks it in the same dialog that
+ * names a transactional in course over it, if any (confirmSettling), and
+ * then runs it on the amendment as it is now, if it still can be decided
+ * that way.
+ */
+function decideByKey(amendment: AmendmentDto, kind: "assent" | "lapse"): void {
+  const allowed = kind === "assent" ? isSessionDecidable : isSessionOpen;
+  if (!allowed(amendment)) {
+    notAvailable(amendment);
+    return;
+  }
+  const options = {
+    notDebated: sessionShortcutNeedsConfirm(
+      amendment.id,
+      session.liveState.value?.amendmentId,
+    ),
+  };
+  if (kind === "assent") void session.approve(amendment, "assent", options);
+  else void session.lapse(amendment, options);
+}
+
 defineShortcuts({
   j: () => move(1),
   k: () => move(-1),
   a: (event?: KeyboardEvent) =>
-    withFocused(event, (amendment) =>
-      isSessionDecidable(amendment)
-        ? void session.approve(amendment, "assent")
-        : notAvailable(amendment),
-    ),
+    withFocused(event, (amendment) => decideByKey(amendment, "assent")),
   v: (event?: KeyboardEvent) =>
     withFocused(event, (amendment) =>
       isSessionDecidable(amendment)
@@ -191,11 +230,7 @@ defineShortcuts({
   // Lapsing is a decision: not before the assembly agrees to treat a late
   // amendment, nor before the Secretaría validates it.
   l: (event?: KeyboardEvent) =>
-    withFocused(event, (amendment) =>
-      isSessionOpen(amendment)
-        ? void session.lapse(amendment)
-        : notAvailable(amendment),
-    ),
+    withFocused(event, (amendment) => decideByKey(amendment, "lapse")),
 });
 </script>
 

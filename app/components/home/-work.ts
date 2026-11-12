@@ -607,7 +607,13 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
           })
         : make("home.news.amendment.withdrawn");
     case "amendment_reopened":
-      return make("home.news.amendment.reopened");
+      // A transactional back on its own: the amendment whose settling had
+      // closed it was reopened, and the value names it.
+      return news.value
+        ? make("home.news.amendment.restoredBy", "neutral", null, phrase, {
+            code: news.value,
+          })
+        : make("home.news.amendment.reopened");
     case "document_published":
       return make("home.news.document.published", "success");
     case "document_correction_requested":

@@ -59,16 +59,20 @@ import {
   sessionLapseOffer,
   sessionNextAgendaTarget,
   sessionNextAmendmentId,
+  sessionPendingTransactionalIds,
   sessionQueueCounts,
   sessionQueueOrder,
+  sessionSettleConfirm,
   sessionValidationIds,
   type SessionAdmissionDecision,
   type SessionAgendaTarget,
   type SessionAmendmentStage,
+  type SessionSettleAction,
 } from "./sessionModel";
 import { agendaWithTitles } from "~/utils/agendaTitles";
 import { useHeadcounts } from "./useSessionHeadcounts";
 import { useSessionSpeakers } from "./useSessionSpeakers";
+import { useSessionTransactionalsOver } from "./useSessionTransactionalsOver";
 
 /**
  * Busy key of the "who sees the speaking turns" switch. It must not start
@@ -109,6 +113,48 @@ export interface SessionLapseDialog {
   lapse: string[];
   collisions: string[];
 }
+
+/** How a one-click decision was asked for. */
+export interface SettleOptions {
+  /**
+   * Taken by key on an amendment that is not the one in debate: its
+   * confirmation says so too (one dialog with the transactional's, if any).
+   */
+  notDebated?: boolean;
+}
+
+/**
+ * Wording and icon of the confirmation of each one-click decision. Only the
+ * decisions a key takes (assent with "a", lapse with "l") have a
+ * not-debated sentence: `notDebated` is ignored for the others.
+ */
+const SETTLE_CONFIRM: Record<
+  SessionSettleAction,
+  { label: string; icon: string; notDebated?: string }
+> = {
+  assent: {
+    label: "session.now.assent",
+    icon: "i-lucide-check",
+    notDebated: "session.shortcuts.notDebatedAssent",
+  },
+  formal: {
+    label: "session.actions.formal",
+    icon: "i-lucide-spell-check",
+  },
+  withdraw: {
+    label: "session.actions.withdraw",
+    icon: "i-lucide-undo-2",
+  },
+  lapse: {
+    label: "session.actions.lapse",
+    icon: "i-lucide-circle-slash",
+    notDebated: "session.shortcuts.notDebatedLapse",
+  },
+  incorporate: {
+    label: "amendment.position.options.accept",
+    icon: "i-lucide-thumbs-up",
+  },
+};
 
 interface OutcomeOptions {
   /** Offer to lapse what the decision leaves without object. Default true. */
@@ -309,6 +355,8 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       new Map(amendments.value.map((amendment) => [amendment.id, amendment])),
   );
   const base = computed(() => document.value?.baseVersion?.blocks ?? []);
+  /** The pending transactionals over an amendment, in words (SES-3). */
+  const transactionalsOver = useSessionTransactionalsOver(byId);
   /**
    * What an amendment the main presenter accepts becomes in this document:
    * "incorporate" puts it in the text at once, without a vote.
@@ -430,9 +478,27 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     });
   }
 
-  watch(documentId, () => {
-    focusedId.value = null;
+  // Another document clears the target, except the one in debate, whose
+  // debated amendment stays the target (the watcher below may run first
+  // when the debate jumps to another document).
+  watch(documentId, (id) => {
+    const live = liveState.value;
+    focusedId.value =
+      id && live?.documentId === id ? (live.amendmentId ?? null) : null;
   });
+
+  /**
+   * The shortcuts follow the debate: when it moves on (from this device or
+   * another), the amendment now debated becomes their target, or none when
+   * the debate is cleared, whatever row had been selected or has the DOM
+   * focus. `focused` resolves the id once its document's amendments arrive.
+   */
+  watch(
+    () => liveState.value?.amendmentId ?? null,
+    (id) => {
+      focusedId.value = id;
+    },
+  );
 
   /** Moves the keyboard focus through the queue (j/k). */
   function moveFocus(step: 1 | -1): string | null {
@@ -479,13 +545,12 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     enabled: canModerate,
     track,
   });
-  /** What a new vote form fills as the members present. */
-  const votePresent = computed<number | null>(() =>
-    settings.value.denominator === "present"
-      ? (headcounts.latest.value?.present ?? null)
-      : null,
-  );
-  /** The latest headcount for the vote forms (undefined until loaded). */
+  /**
+   * The latest headcount for the vote forms (undefined until loaded). They
+   * open with "present" empty, so it is the base of majorities on "present"
+   * (sessionFillPresent, as the server's fillPresent) until the Mesa types
+   * another figure.
+   */
   const voteHeadcount = computed(() =>
     headcounts.data.value ? headcounts.latest.value : undefined,
   );
@@ -824,6 +889,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     open: false,
     turn: null as SpeakingTurnDto | null,
   });
+  // The headcount form too: its checkboxes and close button are buttons,
+  // which defineShortcuts does not skip.
+  const headcountDialog = reactive({ open: false });
 
   // The document follows the live state, which another Mesa member can move.
   // A document-level dialog left open would then record or annul the final
@@ -854,6 +922,70 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     }
   }
 
+  /**
+   * Asks before a one-click decision when it needs it (sessionSettleConfirm):
+   * a pending transactional over the amendment would be withdrawn with it,
+   * or it was taken by key on an amendment that is not the one in debate.
+   * One dialog for both. True when nothing needs asking or it was confirmed.
+   */
+  async function confirmSettling(
+    amendment: AmendmentDto,
+    action: SessionSettleAction,
+    options: SettleOptions = {},
+  ): Promise<boolean> {
+    const wording = SETTLE_CONFIRM[action];
+    const notDebatedKey = options.notDebated ? wording.notDebated : undefined;
+    const pendingCount = sessionPendingTransactionalIds(
+      amendment,
+      byId.value,
+    ).length;
+    const plan = sessionSettleConfirm({
+      notDebated: Boolean(notDebatedKey),
+      pendingTransactionals: pendingCount,
+    });
+    if (!plan) return true;
+    const code = amendment.code ?? t("amendment.unnumberedLabel");
+    const sentences = plan.parts.map((part) =>
+      part === "not_debated" && notDebatedKey
+        ? t(notDebatedKey, { code })
+        : (transactionalsOver.consequence(amendment) ?? ""),
+    );
+    return confirm({
+      title:
+        plan.title === "not_debated"
+          ? t("session.shortcuts.notDebatedTitle", { code })
+          : t(
+              "session.transactionalOver.confirmTitle",
+              { code, count: pendingCount },
+              pendingCount,
+            ),
+      description: sentences.filter(Boolean).join(" "),
+      confirmLabel: t(wording.label),
+      confirmIcon: wording.icon,
+      confirmColor: plan.color,
+    });
+  }
+
+  /**
+   * Runs a one-click decision once confirmed (confirmSettling), on the
+   * amendment as it is then: another Mesa device may have decided it, or a
+   * request for it may be in flight, while the dialog was open.
+   */
+  async function settle<T>(
+    amendment: AmendmentDto,
+    action: SessionSettleAction,
+    options: SettleOptions,
+    allowed: (fresh: AmendmentDto) => boolean,
+    run: (fresh: AmendmentDto) => Promise<T | null>,
+  ): Promise<T | null> {
+    const before = byId.value.get(amendment.id) ?? amendment;
+    if (!allowed(before)) return null;
+    if (!(await confirmSettling(before, action, options))) return null;
+    const fresh = byId.value.get(amendment.id) ?? before;
+    if (busy.value[fresh.id] || !allowed(fresh)) return null;
+    return run(fresh);
+  }
+
   const anyDialogOpen = computed(
     () =>
       confirmOpen.value ||
@@ -865,7 +997,8 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       finalVoteAnnulDialog.open ||
       assentDialog.open ||
       lapseDialog.open ||
-      speakerRenameDialog.open,
+      speakerRenameDialog.open ||
+      headcountDialog.open,
   );
 
   function openVote(amendment: AmendmentDto): void {
@@ -1008,11 +1141,23 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     lapseDialog.open = true;
   }
 
+  /**
+   * Approves by assent or as a formal correction ("de forma"), asking first
+   * when a pending transactional over it would be withdrawn
+   * (confirmSettling). Nothing is sent once it is no longer open.
+   */
   function approve(
     amendment: AmendmentDto,
     method: "assent" | "proponent" | "formal",
+    options: SettleOptions = {},
   ) {
-    return runOutcome(amendment, { action: "approve", method });
+    return settle(
+      amendment,
+      method === "proponent" ? "incorporate" : method,
+      options,
+      isSessionOpen,
+      (fresh) => runOutcome(fresh, { action: "approve", method }),
+    );
   }
 
   function vote(amendment: AmendmentDto, input: VoteInput) {
@@ -1021,17 +1166,18 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
 
   // The outcome endpoint settles only what the Mesa can decide now:
   // validated and admitted. Nothing is lapsed before the Secretaría
-  // validates it or while the assembly has not agreed to treat it.
-  function withdraw(amendment: AmendmentDto) {
-    const fresh = byId.value.get(amendment.id) ?? amendment;
-    if (!isSessionOpen(fresh)) return Promise.resolve(null);
-    return runOutcome(amendment, { action: "withdraw" });
+  // validates it or while the assembly has not agreed to treat it. Both ask
+  // first when a pending transactional over it would be withdrawn.
+  function withdraw(amendment: AmendmentDto, options: SettleOptions = {}) {
+    return settle(amendment, "withdraw", options, isSessionOpen, (fresh) =>
+      runOutcome(fresh, { action: "withdraw" }),
+    );
   }
 
-  function lapse(amendment: AmendmentDto) {
-    const fresh = byId.value.get(amendment.id) ?? amendment;
-    if (!isSessionOpen(fresh)) return Promise.resolve(null);
-    return runOutcome(amendment, { action: "lapse" });
+  function lapse(amendment: AmendmentDto, options: SettleOptions = {}) {
+    return settle(amendment, "lapse", options, isSessionOpen, (fresh) =>
+      runOutcome(fresh, { action: "lapse" }),
+    );
   }
 
   /**
@@ -1115,6 +1261,11 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       for (const id of ids) {
         const amendment = byId.value.get(id);
         if (!amendment || !isSessionOpen(amendment)) continue;
+        // A transactional proposed over it since the plan was made: it
+        // would be withdrawn without anyone saying so.
+        if (sessionPendingTransactionalIds(amendment, byId.value).length > 0) {
+          continue;
+        }
         const result = await runOutcome(
           amendment,
           { action: "approve", method: "assent" },
@@ -1168,6 +1319,18 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     amendment: AmendmentDto,
     position: ProponentPosition,
   ): Promise<AmendmentDto | null> {
+    // Accepting where accepted amendments are incorporated approves it,
+    // which withdraws a pending transactional over it: ask first.
+    if (
+      position === "accept" &&
+      incorporatesAccepted.value &&
+      !(await confirmSettling(
+        byId.value.get(amendment.id) ?? amendment,
+        "incorporate",
+      ))
+    ) {
+      return null;
+    }
     const fresh = byId.value.get(amendment.id) ?? amendment;
     const body: PositionBody = {
       position,
@@ -1619,7 +1782,6 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     // speaking turns
     speakers,
     headcounts,
-    votePresent,
     voteHeadcount,
     // dialogs
     voteDialog,
@@ -1631,8 +1793,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     assentDialog,
     lapseDialog,
     speakerRenameDialog,
+    headcountDialog,
     anyDialogOpen,
     confirm,
+    transactionalsOver,
     openVote,
     openRelation,
     openAdmission,

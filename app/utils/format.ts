@@ -11,7 +11,10 @@ import {
   type CalendarDateTime,
   type DateValue,
 } from "@internationalized/date";
-import { ASSEMBLY_TIME_ZONE } from "~~/shared/utils/calendar";
+import {
+  ASSEMBLY_TIME_ZONE,
+  assemblyDayOffset,
+} from "~~/shared/utils/calendar";
 
 export const APP_TIME_ZONE = ASSEMBLY_TIME_ZONE;
 
@@ -121,21 +124,80 @@ export function formatTime(
   }).format(date);
 }
 
-const RELATIVE_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
-  ["year", 365 * 24 * 3600],
-  ["month", 30 * 24 * 3600],
-  ["week", 7 * 24 * 3600],
-  ["day", 24 * 3600],
-  ["hour", 3600],
+/**
+ * A past moment such as a headcount, with its day only when it is not today
+ * in the assemblies' time zone: "18:45" today, "ayer, 18:45" yesterday,
+ * "17 nov 2026, 18:45" before. `today` says which, so a sentence can choose
+ * its wording ("del recuento de las 18:45" against "del recuento de ayer,
+ * 18:45") and a view can warn when a count is from another day.
+ */
+export function formatMoment(
+  value: DateInput,
+  options: FormatOptions & { now?: DateInput } = {},
+): { text: string; today: boolean; dayOffset: number } {
+  const date = toDate(value);
+  if (!date) return { text: "", today: false, dayOffset: Number.NaN };
+  const now = toDate(options.now) ?? new Date();
+  const dayOffset = assemblyDayOffset(date, now);
+  const time = formatTime(date, options);
+  if (dayOffset === 0) return { text: time, today: true, dayOffset };
+  if (dayOffset === -1) {
+    const yesterday = relativeFormatter(
+      intlLocale(options.locale),
+      "auto",
+    ).format(-1, "day");
+    return {
+      text: `${yesterday}, ${time}`,
+      today: false,
+      dayOffset,
+    };
+  }
+  return {
+    text: formatDateTime(date, options),
+    today: false,
+    dayOffset,
+  };
+}
+
+const HOUR_SECONDS = 3600;
+const DAY_SECONDS = 24 * HOUR_SECONDS;
+
+/** Hours and shorter: these truncate, so a countdown never claims more. */
+const CLOCK_UNITS: [Intl.RelativeTimeFormatUnit, number][] = [
+  ["hour", HOUR_SECONDS],
   ["minute", 60],
   ["second", 1],
 ];
 
 /**
- * "dentro de 3 días", "hace 2 horas", "mañana". The smallest unit defaults
- * to minutes, so values closer than a minute read as "este minuto".
- * `maxUnit: "day"` counts days instead of weeks, months or years, so
- * deadlines a few days apart do not all read "el próximo mes".
+ * A cached relative formatter. `auto` words days ("mañana", "ayer"), which
+ * count calendar days here; weeks, months and years use `always` ("dentro de
+ * 2 semanas"), since "la próxima semana" or "el próximo mes" would name a
+ * calendar week or month that a count of days does not give.
+ */
+function relativeFormatter(
+  locale: string,
+  numeric: "auto" | "always",
+): Intl.RelativeTimeFormat {
+  const key = numeric === "auto" ? locale : `${locale}|always`;
+  let formatter = relativeCache.get(key);
+  if (!formatter) {
+    formatter = new Intl.RelativeTimeFormat(locale, { numeric });
+    relativeCache.set(key, formatter);
+  }
+  return formatter;
+}
+
+/**
+ * "dentro de 3 días", "hace 2 horas", "mañana". Within 24 hours it counts
+ * hours and minutes, truncated so a countdown never claims more time than is
+ * left; the smallest unit defaults to minutes, so values closer than a minute
+ * read as "este minuto". From 24 hours on it counts calendar days in the
+ * assemblies' time zone, whatever the hours: a deadline at 23:59 tomorrow
+ * reads "mañana" even 40 hours ahead, never "pasado mañana". Weeks start at
+ * 14 days, months at 30 and years at 365, each truncated ("dentro de 2
+ * semanas" for 20 days). `maxUnit: "day"` keeps counting days instead
+ * ("dentro de 35 días"), so deadlines a few days apart stay apart.
  */
 export function formatRelative(
   value: DateInput,
@@ -151,28 +213,57 @@ export function formatRelative(
   const seconds = (date.getTime() - now.getTime()) / 1000;
   const absolute = Math.abs(seconds);
   const minUnit = options.minUnit ?? "minute";
-
   const locale = intlLocale(options.locale);
-  let formatter = relativeCache.get(locale);
-  if (!formatter) {
-    formatter = new Intl.RelativeTimeFormat(locale, { numeric: "auto" });
-    relativeCache.set(locale, formatter);
+  const auto = relativeFormatter(locale, "auto");
+
+  // On the day the clocks go back, 24 hours may still be the same day: that
+  // one stays in hours rather than read "hoy".
+  const days = absolute >= DAY_SECONDS ? assemblyDayOffset(date, now) : 0;
+  if (days !== 0 && Number.isFinite(days)) {
+    const count = Math.abs(days);
+    const sign = Math.sign(days);
+    if (options.maxUnit !== "day") {
+      const always = relativeFormatter(locale, "always");
+      if (count >= 365) {
+        return always.format(sign * Math.trunc(count / 365), "year");
+      }
+      if (count >= 30) {
+        return always.format(sign * Math.trunc(count / 30), "month");
+      }
+      if (count >= 14) {
+        return always.format(sign * Math.trunc(count / 7), "week");
+      }
+    }
+    return auto.format(days, "day");
   }
 
-  for (const [unit, size] of RELATIVE_UNITS) {
-    if (options.maxUnit === "day" && size > 24 * 3600) continue;
+  for (const [unit, size] of CLOCK_UNITS) {
     if (unit === "second" && minUnit === "minute") break;
-    if (absolute >= size) {
-      // Days and above round to the nearest unit; shorter units truncate so a
-      // countdown never claims more time than is left.
-      const amount =
-        size >= 24 * 3600
-          ? Math.round(seconds / size)
-          : Math.trunc(seconds / size);
-      return formatter.format(amount, unit);
-    }
+    if (absolute >= size) return auto.format(Math.trunc(seconds / size), unit);
   }
-  return formatter.format(0, minUnit);
+  return auto.format(0, minUnit);
+}
+
+/**
+ * "19 nov" / "19 Nov", with the year only when it is not the year of `now`
+ * ("19 nov 2027"): a deadline's day next to a countdown.
+ */
+export function formatDayMonth(
+  value: DateInput,
+  options: FormatOptions & { now?: DateInput } = {},
+): string {
+  const date = toDate(value);
+  if (!date) return "";
+  const now = toDate(options.now) ?? new Date();
+  const locale = intlLocale(options.locale);
+  const year = dateFormatter(locale, { year: "numeric" });
+  const sameYear = year.format(date) === year.format(now);
+  return dateFormatter(
+    locale,
+    sameYear
+      ? { day: "numeric", month: "short" }
+      : { day: "numeric", month: "short", year: "numeric" },
+  ).format(date);
 }
 
 /**

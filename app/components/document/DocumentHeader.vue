@@ -245,6 +245,7 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
           :to="closesAt"
           :label="t('document.header.amendmentsClose')"
           icon="i-lucide-timer"
+          dated
           class="text-sm"
           @expired="expiredTick++"
         />
@@ -253,6 +254,7 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
           :to="opensAt"
           :label="t('document.header.amendmentsOpen')"
           icon="i-lucide-calendar-clock"
+          dated
           class="text-sm"
           @expired="expiredTick++"
         />

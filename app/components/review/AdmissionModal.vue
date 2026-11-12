@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import type { AdmissionBody, VoteInput } from "~~/shared/types/api";
+import type {
+  AdmissionBody,
+  HeadcountDto,
+  HeadcountsDto,
+  VoteInput,
+} from "~~/shared/types/api";
 import type { AssemblySettings } from "~~/shared/constants/domain";
 import type { AdmissionChoice } from "./-queue";
 import {
@@ -19,7 +24,10 @@ import {
  * names who decided: the Mesa, or the assembly by assent or vote. When every
  * amendment is already public (`allPublic`) it does not say they will be.
  * The parent sends the body (POST .../amendments/admission) on `confirm` and
- * closes the dialog when it succeeds.
+ * closes the dialog when it succeeds. With majorities on the members
+ * present, the vote counts on the latest headcount like the console's vote
+ * forms (and the server's withHeadcount), so the preview matches what is
+ * stored when "Presentes" is left empty.
  */
 type AdmissionDecision = AdmissionBody["decision"];
 type AdmissionMethod = "mesa" | "assent" | "vote";
@@ -35,18 +43,47 @@ const props = withDefaults(
     /** The decision the dialog opens with (the button that opened it). */
     initialDecision?: AdmissionDecision;
     settings: Pick<AssemblySettings, "denominator" | "tieRule">;
+    /** The assembly's id, to read its latest headcount for a vote. */
+    assemblyId?: string | null;
     busy?: boolean;
     /** Every amendment is already published: treating them only opens debate. */
     allPublic?: boolean;
   }>(),
-  { initialDecision: "admitted", busy: false, allPublic: false },
+  {
+    initialDecision: "admitted",
+    assemblyId: null,
+    busy: false,
+    allPublic: false,
+  },
 );
 
 const open = defineModel<boolean>("open", { default: false });
 const emit = defineEmits<{ confirm: [choice: AdmissionChoice] }>();
 
 const { t } = useI18n();
+const api = useApi();
 const formId = useId();
+
+/**
+ * The latest headcount, read when the dialog opens on an assembly whose
+ * majorities count the members present: undefined while unknown (the vote
+ * fields then say it fills from the headcount), null when there is none.
+ */
+const headcount = ref<HeadcountDto | null | undefined>(undefined);
+
+async function loadHeadcount(): Promise<void> {
+  headcount.value = undefined;
+  if (props.settings.denominator !== "present" || !props.assemblyId) return;
+  try {
+    const data = await api.get<HeadcountsDto>(
+      `/api/assemblies/${encodeURIComponent(props.assemblyId)}/headcounts`,
+    );
+    headcount.value = data.latest;
+  } catch {
+    // Without it the fields say the server fills the count, as before.
+    headcount.value = undefined;
+  }
+}
 
 const method = ref<AdmissionMethod | undefined>(undefined);
 const decision = ref<AdmissionDecision>(props.initialDecision);
@@ -59,6 +96,7 @@ watch(open, (isOpen) => {
   decision.value = props.initialDecision;
   vote.value = sessionEmptyVote("simple");
   note.value = "";
+  void loadHeadcount();
 });
 
 const methodItems = computed(() =>
@@ -80,7 +118,9 @@ const decisionItems = computed(() => [
   },
 ]);
 
-const outcome = computed(() => sessionVoteOutcome(vote.value, props.settings));
+const outcome = computed(() =>
+  sessionVoteOutcome(vote.value, props.settings, headcount.value),
+);
 const voteReady = computed(() => isSessionVoteReady(vote.value, outcome.value));
 
 /** What will be recorded, or null while the counts do not settle it. */
@@ -190,6 +230,7 @@ function submit() {
           <SessionVoteFields
             v-model="vote"
             :settings="props.settings"
+            :headcount="headcount"
             :show-majority="false"
             :show-note="false"
           />

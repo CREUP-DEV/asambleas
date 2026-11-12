@@ -562,6 +562,7 @@ async function askCorrection(): Promise<void> {
       document-title=""
       :all-public="amendment.publishedAt !== null"
       :settings="settings"
+      :assembly-id="assembly?.id ?? null"
       :busy="busy === 'admission'"
       @confirm="recordAdmission"
     />

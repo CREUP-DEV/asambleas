@@ -1,13 +1,16 @@
 <script setup lang="ts">
+import type { SessionAssentSkipReason } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 
 /**
  * Approves by assent (a vote nobody opposes), in one go, every admitted
  * amendment the document's main presenter accepted. Offered whenever there
  * are some: in a document that incorporates accepted amendments there are
- * none, since accepting already approved them. Amendments that would
- * collide with an approved one, or with an earlier one of the batch, are
- * left for the Mesa and listed.
+ * none, since accepting already approved them. Amendments with a
+ * pending transactional over them (approving them would withdraw it), or
+ * that would collide with an approved one, with a transactional still to be
+ * decided or with an earlier one of the batch, are left for the Mesa and
+ * listed with the reason (sessionAssentPlan).
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -20,13 +23,26 @@ const open = computed({
 });
 const plan = computed(() => session.assentPlan.value);
 
+/** Its code; one not published yet (a member's transactional) has none. */
+function codeOf(id: string): string {
+  const amendment = session.byId.value.get(id);
+  return amendment
+    ? (amendment.code ?? t("amendment.unnumberedLabel"))
+    : session.label(id);
+}
+
 function skipReason(
-  reason: "acceptances" | "overlap_approved" | "overlap_candidate",
+  reason: SessionAssentSkipReason,
   conflictsWith: string[],
 ): string {
-  return t(`session.assent.skip.${reason}`, {
-    codes: conflictsWith.map(session.label).join(", "),
-  });
+  return t(
+    `session.assent.skip.${reason}`,
+    {
+      codes: conflictsWith.map(codeOf).join(", "),
+      count: conflictsWith.length,
+    },
+    Math.max(conflictsWith.length, 1),
+  );
 }
 
 async function submit(): Promise<void> {

@@ -52,8 +52,44 @@ const writable = computed(() => {
   return status === "convened" || status === "in_session";
 });
 
+const now = useAppNow();
+
+/**
+ * When a count was taken: "18:45" today, "ayer, 18:45" or "16 nov 2026,
+ * 18:45" before (Europe/Madrid), since a session may last several days and
+ * the votes take the latest count whatever its day.
+ */
+function moment(headcount: HeadcountDto) {
+  return formatMoment(headcount.takenAt, {
+    locale: locale.value,
+    now: now.value,
+  });
+}
+
 function when(headcount: HeadcountDto): string {
-  return formatTime(headcount.takenAt, { locale: locale.value });
+  return moment(headcount).text;
+}
+
+/** "Quórum: 23 · Recuento de las 18:45", or with its day. */
+function requiredLine(headcount: HeadcountDto): string {
+  const { text, today } = moment(headcount);
+  return today
+    ? t("session.headcount.required", {
+        required: headcount.required,
+        time: text,
+      })
+    : t("session.headcount.requiredDay", {
+        required: headcount.required,
+        moment: text,
+      });
+}
+
+/** The title of the form that corrects a count. */
+function correctTitle(headcount: HeadcountDto): string {
+  const { text, today } = moment(headcount);
+  return today
+    ? t("session.headcount.correctTitle", { time: text })
+    : t("session.headcount.correctTitleDay", { moment: text });
 }
 
 function figures(headcount: {
@@ -121,7 +157,19 @@ const draftOfLatest = computed(
 
 // The form ---------------------------------------------------------------------
 
-const open = ref(false);
+// Kept in the console so anyDialogOpen pauses the page shortcuts while the
+// form is open.
+const open = computed({
+  get: () => session.headcountDialog.open,
+  set: (value: boolean) => {
+    session.headcountDialog.open = value;
+  },
+});
+// The panel moves between the wide and the narrow layout: the form the
+// other copy would open has no state (the draft is kept and offered again).
+onBeforeUnmount(() => {
+  session.headcountDialog.open = false;
+});
 /** The count being corrected; null for a new one. */
 const editing = ref<HeadcountDto | null>(null);
 const form = ref<HeadcountForm>({});
@@ -419,12 +467,7 @@ async function save(): Promise<void> {
           </span>
         </div>
         <p class="text-muted text-xs tabular-nums">
-          {{
-            t("session.headcount.required", {
-              required: latest.required,
-              time: when(latest),
-            })
-          }}
+          {{ requiredLine(latest) }}
           <template v-if="latest.note"> · {{ latest.note }}</template>
         </p>
       </div>
@@ -488,11 +531,7 @@ async function save(): Promise<void> {
 
     <UModal
       v-model:open="open"
-      :title="
-        editing
-          ? t('session.headcount.correctTitle', { time: when(editing) })
-          : t('session.headcount.newTitle')
-      "
+      :title="editing ? correctTitle(editing) : t('session.headcount.newTitle')"
       :description="t('session.headcount.description')"
       :ui="{ content: 'sm:max-w-2xl' }"
     >

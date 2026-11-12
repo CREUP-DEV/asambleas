@@ -2,6 +2,7 @@
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AmendmentDto } from "~~/shared/types/api";
 import {
+  isSessionClosureReversible,
   isSessionPublishable,
   isSessionReopenable,
   isSessionTransactable,
@@ -28,7 +29,9 @@ import { useSessionPosition } from "~/composables/session/useSessionPosition";
  * - open: approve by assent or vote (assent leads when the main presenter
  *   accepts it), plus transactional, withdrawal and lapse; the rest in
  *   "Más". On a phone only assent, vote, "Más" and "Siguiente" stay in the
- *   row: transactional, withdrawal and lapse move to the top of "Más";
+ *   row: transactional, withdrawal and lapse move to the top of "Más". A
+ *   pending transactional over it, which deciding it would withdraw, is
+ *   named under the status, with who it waits for;
  * - a transactional waiting for its main authors: recording their answers
  *   is the next step, so their list comes right under the status and no
  *   decision is offered; its withdrawal stays in "Más";
@@ -54,6 +57,11 @@ const props = defineProps<{ amendment: AmendmentDto }>();
 const session = useSessionConsoleContext();
 const answer = useSessionPosition(session);
 const { t } = useI18n();
+/** Shortcut letters show only while this browser keeps them on. */
+const { enabled: shortcutsEnabled } = useSingleKeyShortcuts();
+function kbdsOf(key: string): string[] | undefined {
+  return shortcutsEnabled.value ? [key] : undefined;
+}
 
 const id = computed(() => props.amendment.id);
 const code = computed(() => session.label(id.value));
@@ -116,11 +124,20 @@ const statusText = computed(() => {
         ),
       });
     case "closed":
-      return t("session.now.stage.closed", {
-        codes: codes(
-          sessionClosingSourceIds(props.amendment, session.byId.value),
-        ),
-      });
+      return t(
+        isSessionClosureReversible(
+          props.amendment,
+          session.byId.value,
+          voted.value,
+        )
+          ? "session.now.stage.closedReversible"
+          : "session.now.stage.closed",
+        {
+          codes: codes(
+            sessionClosingSourceIds(props.amendment, session.byId.value),
+          ),
+        },
+      );
     case "lapsed": {
       // Left behind because another transactional replaced its sources
       // first: name that one.
@@ -157,6 +174,15 @@ const outcomeDetail = computed(() => {
   }
   return parts.join(" · ");
 });
+/**
+ * A pending transactional over it, which deciding it would withdraw:
+ * "Hay una transaccional en curso sobre ella: T9, espera a UPV." The
+ * one-click decisions ask before (confirmSettling).
+ */
+const transactionalsLine = computed(() =>
+  session.transactionalsOver.line(props.amendment),
+);
+
 /**
  * Turned down or closed by the server: the status sentence already says
  * who or why, and what follows.
@@ -360,6 +386,17 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
       <p v-if="outcomeNote" class="text-muted text-sm italic">
         {{ outcomeNote }}
       </p>
+      <p
+        v-if="transactionalsLine"
+        class="text-default mt-1 flex items-start gap-1.5 text-sm"
+      >
+        <UIcon
+          name="i-lucide-git-merge"
+          class="text-warning mt-0.5 size-4 shrink-0"
+          aria-hidden="true"
+        />
+        {{ transactionalsLine }}
+      </p>
     </div>
 
     <!-- Waiting for its main authors: recording their answers comes next. -->
@@ -459,7 +496,7 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
     <!-- Actions that fit where it stands. -->
     <div class="flex flex-wrap items-center gap-2">
       <template v-if="open">
-        <UTooltip :text="t('session.now.assentHint')" :kbds="['a']">
+        <UTooltip :text="t('session.now.assentHint')" :kbds="kbdsOf('a')">
           <UButton
             size="lg"
             color="success"
@@ -471,7 +508,7 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
             @click="session.approve(amendment, 'assent')"
           />
         </UTooltip>
-        <UTooltip :text="t('session.actions.voteHint')" :kbds="['v']">
+        <UTooltip :text="t('session.actions.voteHint')" :kbds="kbdsOf('v')">
           <UButton
             size="lg"
             color="primary"

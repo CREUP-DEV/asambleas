@@ -1,6 +1,6 @@
 import { defineEventHandler, getRouterParam } from "h3";
 import type { SpeakersDto } from "~~/shared/types/api";
-import { requireActor } from "../../../../utils/domain/actor";
+import { requireViewer } from "../../../../utils/domain/roomView";
 import { resolveAssembly } from "../../../../utils/domain/resolvers";
 import { loadSpeakers } from "../../../../utils/domain/speakers";
 
@@ -9,7 +9,7 @@ import { loadSpeakers } from "../../../../utils/domain/speakers";
  * item in debate; attendees get it only while the Mesa makes it visible.
  */
 export default defineEventHandler(async (event): Promise<SpeakersDto> => {
-  const actor = await requireActor(event);
+  const actor = await requireViewer(event);
   const assembly = await resolveAssembly(
     actor,
     getRouterParam(event, "assembly"),

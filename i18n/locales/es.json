@@ -229,6 +229,11 @@
       "hour": "Hora",
       "minute": "Minutos",
       "empty": "Vacío"
+    },
+    "countdown": {
+      "relativeAt": "{relative}, a las {time}",
+      "tomorrowAt": "mañana a las {time}",
+      "relativeOn": "{relative}, el {date} a las {time}"
     }
   },
   "auth": {
@@ -1436,8 +1441,11 @@
         "accept": "Se acepta. Después la votará la asamblea.",
         "reject": "No se acepta. La debatirá y votará la asamblea.",
         "transact": "Se busca un texto de acuerdo con quien la presenta.",
-        "acceptIncorporate": "Se acepta y se incorpora al texto sin votación. Se puede cambiar hasta la votación final."
+        "acceptIncorporate": "Se acepta y se incorpora al texto sin votación. Se puede cambiar hasta la votación final.",
+        "acceptWithdraws": "Se retira la transaccional {list}; vuelve si se cambia la respuesta antes de la votación final. | Se retiran las transaccionales {list}; vuelven si se cambia la respuesta antes de la votación final.",
+        "acceptRevealed": "Queda aprobada y todos lo verán, aunque las respuestas aún sean reservadas."
       },
+      "clashIncorporated": "Choca con {list}, ya incorporada. | Choca con {list}, ya incorporadas.",
       "comment": "Comentario",
       "commentPlaceholder": "Por qué (opcional)",
       "save": "Guardar la respuesta",
@@ -1582,6 +1590,8 @@
       "closedByRejection": "Cerrada: la rechazó un autor principal",
       "closedBySources": "Cerrada: una de las enmiendas que agrupa ya está resuelta",
       "closedBySourcesDetail": "Enmienda resuelta: {source}",
+      "restoredBySources": "De nuevo en curso: se reabrió una enmienda que agrupa y todas vuelven a estar abiertas",
+      "restoredBySourcesDetail": "Enmienda reabierta: {source}",
       "lapsedBySources": "La transaccional {label} ya sustituyó a las mismas enmiendas",
       "lapsedBySourcesUnknown": "Otra transaccional ya sustituyó a las mismas enmiendas",
       "replacedBy": "La sustituye {label}",
@@ -2417,10 +2427,13 @@
     },
     "preferences": {
       "title": "Preferencias",
-      "description": "Idioma, tema y cómo se ve el texto de documentos y enmiendas. Cada cambio se aplica al momento.",
+      "description": "Idioma, tema, cómo se ve el texto de documentos y enmiendas, y los atajos de una tecla. Cada cambio se aplica al momento.",
       "language": "Idioma",
       "theme": "Tema",
-      "contentHint": "Lo siguiente solo cambia el texto de documentos y enmiendas."
+      "contentHint": "Lo siguiente solo cambia el texto de documentos y enmiendas.",
+      "singleKeyShortcuts": "Atajos de una tecla",
+      "singleKeyShortcutsHint": "Letras sueltas como A o L que actúan en la consola de la Mesa y al responder enmiendas. Se guarda en este navegador.",
+      "singleKeyShortcutsOff": "Desactivados en este navegador: las letras sueltas no hacen nada."
     },
     "help": {
       "open": "Ayuda"
@@ -2680,7 +2693,8 @@
         "incorporatedBy": "{who} aceptó {amendment}: ya está en el texto sin votación.",
         "transactedBy": "La transaccional {code} sustituye a {amendment} y se debate en su lugar.",
         "lapsedBy": "Ha decaído {amendment}: la transaccional {code} ya sustituye a esas enmiendas.",
-        "closedBy": "Se ha cerrado {amendment}: la enmienda {code}, que agrupaba, ya se decidió o se retiró, así que no puede seguir adelante."
+        "closedBy": "Se ha cerrado {amendment}: la enmienda {code}, que agrupaba, ya se decidió o se retiró, así que no puede seguir adelante.",
+        "restoredBy": "Vuelve a estar en curso {amendment}: se ha reabierto la enmienda {code} y todas las que agrupa vuelven a estar abiertas."
       },
       "document": {
         "published": "Se ha publicado el documento: ya lo puede leer toda la asamblea.",
@@ -3334,15 +3348,18 @@
     },
     "shortcuts": {
       "title": "Atajos de teclado",
-      "next": "Siguiente enmienda",
-      "previous": "Enmienda anterior",
       "assent": "Aprobar por asentimiento",
       "vote": "Registrar una votación",
       "transact": "Transaccionar",
       "lapse": "Marcar como decaída",
       "hint": "Actúan sobre la enmienda seleccionada y se desactivan mientras escribes.",
       "nothingFocused": "Selecciona una enmienda con J o K",
-      "unavailable": "Esa acción no está disponible para {code}"
+      "unavailable": "Esa acción no está disponible para {code}",
+      "selectNext": "Seleccionar la siguiente",
+      "selectPrevious": "Seleccionar la anterior",
+      "notDebatedTitle": "{code} no es la enmienda en debate",
+      "notDebatedAssent": "La tecla actúa sobre la enmienda seleccionada. ¿Aprobar {code} por asentimiento?",
+      "notDebatedLapse": "La tecla actúa sobre la enmienda seleccionada. ¿Marcar {code} como decaída?"
     },
     "agenda": {
       "title": "Orden del día",
@@ -3520,7 +3537,11 @@
       "presentFromCount": "Presentes del recuento de las {time}.",
       "presentCorrected": "Corregido para esta votación. El recuento de las {time} da {present}.",
       "noHeadcount": "Todavía no hay recuento: indica los presentes o haz un recuento antes de votar.",
-      "headcountNoQuorum": "El último recuento no llega al quórum: {present} presentes de {required} necesarios."
+      "headcountNoQuorum": "El último recuento no llega al quórum: {present} presentes de {required} necesarios.",
+      "countMoment": "Recuento: {moment}",
+      "presentFromCountDay": "Presentes del último recuento ({moment}).",
+      "presentCorrectedDay": "Corregido para esta votación. El último recuento ({moment}) da {present}.",
+      "headcountOtherDay": "Es de otro día: haz uno nuevo si la sala ha cambiado."
     },
     "admission": {
       "description": "La decisión queda registrada con su método y, si se vota, con el recuento.",
@@ -3572,7 +3593,9 @@
       "skip": {
         "acceptances": "a la transaccional le faltan respuestas de autores principales",
         "overlap_approved": "choca con {codes}, ya aprobada",
-        "overlap_candidate": "choca con {codes}, de este mismo lote"
+        "overlap_candidate": "choca con {codes}, de este mismo lote",
+        "transactional_pending": "tiene en curso la transaccional {codes} | tiene en curso las transaccionales {codes}",
+        "transactional_clash": "choca con {codes}, aún por decidir"
       },
       "submit": "Aprobar | Aprobar 1 enmienda | Aprobar {count} enmiendas"
     },
@@ -3774,6 +3797,7 @@
         "incorporated": "Ya está en el texto sin votación: quien presenta el documento la aceptó. Si cambia su respuesta antes de la votación final, vuelve a quedar pendiente.",
         "superseded": "Ya no puede seguir adelante: otra transaccional se adelantó o ya se decidió sobre {codes}. Retírala para cerrarla.",
         "closed": "Se cerró automáticamente: {codes} ya se decidió o se retiró, así que esta transaccional no podía seguir adelante.",
+        "closedReversible": "Se cerró automáticamente: {codes} ya se decidió o se retiró, así que esta transaccional no podía seguir adelante. Si se reabre {codes} antes de la votación final, vuelve a estar en curso.",
         "lapsedBy": "Ha decaído: la transaccional {codes} se adelantó y ya sustituye a las enmiendas que esta agrupaba, así que no puede seguir adelante."
       },
       "document": {
@@ -3914,7 +3938,16 @@
         "sectorial": "Sectoriales, sin voto",
         "guest": "Invitados, sin voto"
       },
-      "attending": "Ninguna sectorial ni invitado en la sala | 1 sectorial o invitado en la sala, sin voto | {count} sectoriales o invitados en la sala, sin voto"
+      "attending": "Ninguna sectorial ni invitado en la sala | 1 sectorial o invitado en la sala, sin voto | {count} sectoriales o invitados en la sala, sin voto",
+      "requiredDay": "Quórum: {required} · Recuento: {moment}",
+      "correctTitleDay": "Corregir el recuento ({moment})"
+    },
+    "transactionalOver": {
+      "line": "Hay una transaccional en curso sobre ella: {list}. | Hay transaccionales en curso sobre ella: {list}.",
+      "waitsFor": "{code}, espera a {members}",
+      "waitsValidation": "{code}, espera a la Secretaría",
+      "confirmTitle": "{code} tiene una transaccional en curso | {code} tiene transaccionales en curso",
+      "consequence": "Si sigues, se retira {codes}. Si reabres {code} antes de la votación final, vuelve a estar en curso, siempre que no se haya decidido otra de las enmiendas que agrupa. | Si sigues, se retiran {codes}. Si reabres {code} antes de la votación final, vuelven a estar en curso, siempre que no se haya decidido otra de las enmiendas que agrupan."
     }
   },
   "projection": {
@@ -3958,7 +3991,8 @@
     "attendance": {
       "present": "{present} de {eligible} presentes",
       "absolute": "Absoluta: {count}",
-      "twoThirds": "Dos tercios: {count}"
+      "twoThirds": "Dos tercios: {count}",
+      "takenAtDay": "Recuento: {moment}"
     }
   },
   "documents": {
@@ -4372,7 +4406,9 @@
       "delegations": "Sin delegaciones | 1 delegación | {count} delegaciones",
       "votesThrough": "vota a través de",
       "notCounted": "No cuenta: no está en la sala.",
-      "attending": "Ninguna sectorial ni invitado | 1 sectorial o invitado en la sala, sin voto | {count} sectoriales o invitados en la sala, sin voto"
+      "attending": "Ninguna sectorial ni invitado | 1 sectorial o invitado en la sala, sin voto | {count} sectoriales o invitados en la sala, sin voto",
+      "takenAtDay": "Recuento de {moment} · Quórum: {required}",
+      "takenAtDate": "Recuento del {moment} · Quórum: {required}"
     }
   },
   "transactional": {
@@ -4584,6 +4620,7 @@
       "commentHelpPending": "Se guarda al elegir una respuesta.",
       "commentHelpAnswered": "Si lo cambias, guárdalo con «Guardar comentario».",
       "acceptHelpIncorporate": "Al aceptarla se incorpora al texto sin votación.",
+      "acceptRevealsApproval": "Queda aprobada y todos lo verán, aunque las respuestas aún sean reservadas.",
       "acceptHelpVote": "La apoyas: en la sesión la Mesa propondrá aprobarla por asentimiento; si alguien se opone, la votará la asamblea.",
       "reopenHelp": "Como ya está incorporada, saldrá del texto.",
       "transactHelpMain": "Quieres acordar otro texto con {member}, su autor principal, y proponerlo como transaccional."
@@ -4719,7 +4756,9 @@
     "goneTransacted": "{label} ya no está pendiente: la ha sustituido una transaccional, que se responde en su lugar.",
     "mainAuthor": "principal",
     "context": {
-      "pendingTransactional": "Hay una transaccional pendiente que la incluye: {list}. Si sale adelante, sustituirá a esta enmienda. | Hay transaccionales pendientes que la incluyen: {list}. Si alguna sale adelante, sustituirá a esta enmienda."
+      "pendingTransactional": "Hay una transaccional pendiente que la incluye: {list}. Si sale adelante, sustituirá a esta enmienda. | Hay transaccionales pendientes que la incluyen: {list}. Si alguna sale adelante, sustituirá a esta enmienda.",
+      "pendingTransactionalIncorporate": "Hay una transaccional pendiente que la incluye: {list}. Si aceptas la enmienda, la transaccional se retira; vuelve si cambias la respuesta antes de la votación final. | Hay transaccionales pendientes que la incluyen: {list}. Si aceptas la enmienda, las transaccionales se retiran; vuelven si cambias la respuesta antes de la votación final.",
+      "clashIncorporated": "Choca con {list}, ya incorporada. | Choca con {list}, ya incorporadas."
     }
   },
   "readMarks": {

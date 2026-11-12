@@ -598,19 +598,49 @@ const composing = computed(
 );
 
 /**
- * Where the reader is in the text: the first paragraph of the base they
- * have selected, or else the one at the top of what they see. Null when the
- * text is not on screen (the editor then opens at the start).
+ * The last paragraph of the original text the reader rested on, inside the
+ * text. On a narrow screen the text scrolls with the page: going back up to
+ * the header to press "Presentar enmienda" passes over every paragraph above
+ * it, so only a scroll that rests a moment (`READING_REST_MS`) counts.
+ */
+let lastReadBlockId: string | null = null;
+const noteReadingPosition = useDebounceFn(() => {
+  const root = textView.value?.root;
+  if (!root || composing.value || textMode.value !== "original") return;
+  if (!scrolledIntoText(root)) return;
+  const known = new Set(base.value.map((block) => block.id));
+  lastReadBlockId =
+    blockAtReadingTop(root, (id) => known.has(id)) ?? lastReadBlockId;
+}, READING_REST_MS);
+useEventListener("scroll", noteReadingPosition, {
+  capture: true,
+  passive: true,
+});
+
+/**
+ * Where the reader is in the text (`amendStartBlockId`): the first paragraph
+ * of the base they have selected, else the one at the top of what they see,
+ * unless they went back up to the page's header (then the last one they
+ * read). Null when there is none (the editor then opens at the start).
  */
 function readingBlockId(): string | null {
   const view = textView.value;
-  if (!view?.root) return null;
+  const root = view?.root ?? null;
   const known = new Set(base.value.map((block) => block.id));
   const isBase = (id: string) => known.has(id);
-  return (
-    view.getSelectedBlockIds().find(isBase) ??
-    blockAtReadingTop(view.root, isBase)
-  );
+  const box = workspaceBox.value;
+  return amendStartBlockId({
+    selected: view?.getSelectedBlockIds().find(isBase) ?? null,
+    current: root ? blockAtReadingTop(root, isBase) : null,
+    lastRead: lastReadBlockId,
+    atHeader: Boolean(
+      root &&
+      box &&
+      root.offsetParent !== null &&
+      scrollsWithText(root, box) &&
+      !scrolledIntoText(root),
+    ),
+  });
 }
 
 /** The transactional composer takes the amendments panel, over the original text. */
