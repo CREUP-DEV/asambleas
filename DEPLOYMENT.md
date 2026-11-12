@@ -28,7 +28,7 @@ postgresql (PostgreSQL 18 compartido, base de datos asambleas)
 - `pg-boss` usa la misma base de datos para las exportaciones, para la sincronización diaria del listado de miembros (05:00, Europe/Madrid) y para la revisión diaria de accesos (05:30).
 - Los PDFs generados (`EXPORT_STORAGE_DIR`) y los PDFs e imágenes subidos a los documentos (`UPLOAD_STORAGE_DIR`, las imágenes en `images/`) viven en `asambleas/data/`, montado en el contenedor. Sin esos montajes se pierden al recrearlo.
 - La plataforma llama a la API de la Intranet por su URL pública, `https://intranet.creup.es/api/asambleas/v1`, con el token. También puede llamarla por dentro (más abajo). Cómo y por qué: [docs/intranet.md](docs/intranet.md), sección 5.8.
-- No hay Redis ni Mailpit.
+- Los avisos por correo salen por SMTP hacia el servidor de correo del VPS (docker-mailserver), con una dirección de `creup.org` (sección «Correo»).
 
 ## Requisitos
 
@@ -93,12 +93,21 @@ NUXT_INTRANET_API_TOKEN=<token asm_... del gestor de contraseñas>
 
 DATABASE_URL=postgresql://asambleas:<password>@postgresql:5432/asambleas
 DATABASE_MAX_CONNECTIONS=10
+
+# Avisos por correo (sección «Correo»)
+NUXT_SMTP_HOST=<host del servidor de correo>
+NUXT_SMTP_PORT=587
+NUXT_SMTP_SECURE=false
+NUXT_SMTP_USER=asambleas@creup.org
+NUXT_SMTP_PASS=<contraseña del buzón>
+NUXT_SMTP_FROM_EMAIL=asambleas@creup.org
+NUXT_SMTP_FROM_NAME=CREUP Asambleas
 ```
 
 Notas:
 
 - `NODE_ENV`, `TZ`, `EXPORT_STORAGE_DIR` y `UPLOAD_STORAGE_DIR` los fija el compose; no hace falta repetirlos.
-- `DATABASE_URL` usa el host `postgresql`, el servicio compartido. El clúster admite 100 conexiones para todos los proyectos. La app abre como mucho unas 16: `DATABASE_MAX_CONNECTIONS`, 3 de la cola de exportaciones, 2 de los trabajos diarios y 1 de las actualizaciones en directo. Durante un despliegue, las migraciones abren otra más.
+- `DATABASE_URL` usa el host `postgresql`, el servicio compartido. El clúster admite 100 conexiones para todos los proyectos. La app abre como mucho unas 18: `DATABASE_MAX_CONNECTIONS`, 3 de la cola de exportaciones, 2 de los trabajos diarios de la Intranet, 2 del resumen diario de avisos y 1 de las actualizaciones en directo. Durante un despliegue, las migraciones abren otra más.
 - No pongas `SEED_DEMO`: el seed de producción cargaría los datos de demostración.
 - `NUXT_SITE_URL` debe coincidir con el dominio real usado por OAuth.
 - `NUXT_INTRANET_API_TOKEN` es el token en claro; la Intranet solo guarda su hash. Sin token, la plataforma no puede saber si una cuenta se ha borrado en la Intranet y no retira el acceso a nadie.
@@ -247,9 +256,47 @@ cd ~ && docker compose up -d --no-deps asambleas-app
 
 `restart` conserva las variables viejas.
 
+## Correo
+
+Los avisos por correo (`/admin/notificaciones`, docs/design.md, «Email notifications») salen por SMTP con `nodemailer`, como los de la web. Sin `NUXT_SMTP_HOST` o sin `NUXT_SMTP_FROM_EMAIL` no se envía nada: los avisos quedan en el registro de envíos como «Sin servidor de correo», y no se acumulan para salir de golpe cuando se configure.
+
+En producción se usa el docker-mailserver del VPS, con un buzón propio de `creup.org`:
+
+1. Crea el buzón (el nombre del contenedor puede ser otro; `docker ps` lo dice):
+
+   ```bash
+   docker exec -it mailserver setup email add asambleas@creup.org
+   ```
+
+2. Pon en `~/asambleas/.env` las variables `NUXT_SMTP_*` de arriba: puerto 587 con STARTTLS (`NUXT_SMTP_SECURE=false`) o 465 con TLS directo (`NUXT_SMTP_SECURE=true`). Usa como host el nombre del certificado del servidor de correo (el `mail.` del dominio): si llamas al contenedor por su nombre de la red de Docker, el certificado no coincide y la conexión TLS falla.
+3. Comprueba que `creup.org` tiene SPF, DKIM y DMARC que cubran ese servidor, o los avisos acabarán en spam.
+4. Recrea el contenedor (`restart` conserva las variables viejas):
+
+   ```bash
+   cd ~ && docker compose up -d --no-deps asambleas-app
+   ```
+
+5. En `/admin/notificaciones`, «Enviarme una prueba» manda un correo a tu cuenta y lo anota en el registro. Si falla, el registro muestra el primer renglón del error del servidor (sin direcciones).
+
+Una carga masiva en producción por la API (como la recreación de la 80.ª AGO) dispara los avisos como cualquier otro cambio: «Documento asignado», «Documento publicado»… a cada miembro. Antes de una carga así, apaga el interruptor general en `/admin/notificaciones` y vuelve a encenderlo después; lo que se haga con el interruptor apagado no se avisa nunca.
+
+La versión que trae los avisos añade el permiso `notification:manage`: despliégala con `bash ./scripts/deploy.sh --seed` para que Secretaría y Presidencia lo reciban.
+
+Operación:
+
+```sql
+-- Eventos pendientes de repartir y envíos por estado
+SELECT count(*) FROM notification_outbox WHERE processed_at IS NULL;
+SELECT status, reason, count(*) FROM email_deliveries GROUP BY 1, 2;
+```
+
+En los logs, `email.sent`, `email.send_failed` y `email.digest` (el resumen diario, cola `notifications-digest` a las 08:00, Europe/Madrid) identifican la cuenta por `accountRef`, nunca por la dirección.
+
 ## Backups
 
 No hace falta nada propio: `~/ops/db-dump.sh` vuelca el clúster entero de PostgreSQL con `pg_dumpall` (incluida la base de datos `asambleas` y su rol) en `~/backups/`, y restic se lleva fuera esa carpeta y los ficheros del host, `~/asambleas/data/` incluido. Restic no entra en `/var/lib/docker`: los datos de la plataforma no pueden vivir en volúmenes de Docker.
+
+Además, cada `scripts/deploy.sh` vuelca la base de datos `asambleas` antes de migrar (`backups/db/asambleas-predeploy-<fecha>.dump`, formato custom de `pg_dump`, los 10 últimos), y restic se los lleva con el resto de `~/backups/`.
 
 Copia manual solo de esta base de datos:
 

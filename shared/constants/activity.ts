@@ -107,6 +107,19 @@ export const AUDIT_ACTIONS = {
    */
   CALENDAR_RULES_SEED: "calendar_rules.seed",
 
+  // Email notifications ---------------------------------------------------
+  /**
+   * PUT /api/admin/notifications: what is notified by email, to whom and
+   * how often. Target notification_settings/"email"; before and after
+   * {settings}.
+   */
+  NOTIFICATIONS_UPDATE: "notifications.update",
+  /**
+   * POST /api/admin/notifications/test: a test email to the caller's own
+   * address. Target notification_settings/"email"; after {status, reason}.
+   */
+  NOTIFICATIONS_TEST: "notifications.test",
+
   // Account and sign-in ---------------------------------------------------
   /** First Google sign-in created the account (better-auth user.create.after). Target user; source auth. */
   USER_CREATED: "user.created",
@@ -253,6 +266,8 @@ export const AUDIT_TARGET_TYPES = [
   "impersonation",
   /** The calendar rules of an assembly type, targetId the type ("AGO"). */
   "calendar_rules",
+  /** The email notification settings, targetId "email". */
+  "notification_settings",
 ] as const;
 export type AuditTargetType = (typeof AUDIT_TARGET_TYPES)[number];
 
@@ -406,6 +421,7 @@ export const ACTIVITY_CATEGORIES = [
   "member",
   "roles",
   "export",
+  "notifications",
   "other",
 ] as const;
 export type ActivityCategory = (typeof ACTIVITY_CATEGORIES)[number];
@@ -492,6 +508,8 @@ const AUDIT_CATEGORIES: Record<AuditAction, ActivityCategory> = {
   "documents.reslug": "document",
   "calendar_rules.update": "assembly",
   "calendar_rules.seed": "assembly",
+  "notifications.update": "notifications",
+  "notifications.test": "notifications",
   "user.created": "account",
   "user.role_sync": "account",
   "user.initial_admin": "account",

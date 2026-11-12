@@ -13,3 +13,4 @@ export * from "./readMarks";
 export * from "./documentNotes";
 export * from "./documentViews";
 export * from "./auditLog";
+export * from "./notifications";

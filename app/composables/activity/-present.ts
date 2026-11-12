@@ -167,6 +167,8 @@ export const ACTIVITY_ACTION_ICONS = {
   "documents.reslug": "i-lucide-link",
   "calendar_rules.update": "i-lucide-calendar-cog",
   "calendar_rules.seed": "i-lucide-calendar-cog",
+  "notifications.update": "i-lucide-mail-cog",
+  "notifications.test": "i-lucide-mail-check",
   "user.created": "i-lucide-user-plus",
   "user.role_sync": "i-lucide-refresh-cw",
   "user.initial_admin": "i-lucide-shield",
@@ -205,6 +207,7 @@ export const ACTIVITY_CATEGORY_ICONS = {
   member: "i-lucide-building-2",
   roles: "i-lucide-shield-check",
   export: "i-lucide-file-down",
+  notifications: "i-lucide-mail",
   other: "i-lucide-circle-dot",
 } satisfies Record<ActivityCategory, string>;
 

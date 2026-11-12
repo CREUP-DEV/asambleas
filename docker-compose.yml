@@ -38,5 +38,16 @@ services:
     environment:
       ADMINER_DEFAULT_SERVER: postgres
 
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: creup-asambleas-mailpit
+    restart: no
+    ports:
+      - "${MAILPIT_SMTP_PORT:-1225}:1025"
+      - "${MAILPIT_WEB_PORT:-8225}:8025"
+    environment:
+      MP_SMTP_AUTH_ACCEPT_ANY: "1"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "1"
+
 volumes:
   creup_asambleas_postgres_data:

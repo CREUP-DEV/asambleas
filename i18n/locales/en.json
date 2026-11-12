@@ -304,7 +304,8 @@
       "assemblyVoteResult": "Record assembly vote result",
       "sessionModerate": "Moderate the session: live state, admissions, votes and transactionals",
       "memberManage": "Sync and edit members",
-      "statsView": "See the reading and participation statistics of every account and member"
+      "statsView": "See the reading and participation statistics of every account and member",
+      "notificationManage": "Configure which notices go by email, to whom and how often"
     }
   },
   "assembly": {
@@ -2188,6 +2189,132 @@
       "markedOn": "Marked on {date}",
       "openedDetail": "Opened {count} time, {time} in all; first on {date} | Opened {count} times, {time} in all; first on {date}",
       "neverOpened": "Never opened"
+    },
+    "notifications": {
+      "title": "Email notices",
+      "cardDescription": "What is notified by email, to which roles and how often, and the delivery log.",
+      "intro": "Each notice reaches the accounts with access it concerns, never whoever made the change. The email is composed when it is sent, with what that account may see then, and never carries the text of documents or amendments.",
+      "enabled": "Email notices are on",
+      "disabled": "Email notices are off: none is sent",
+      "enabledLabel": "Turn email notices on",
+      "lastDay": "Last 24 hours: {sent} sent, {failed} failed, {pending} pending",
+      "smtp": {
+        "from": "Sender: {from}",
+        "unconfiguredTitle": "No mail server configured",
+        "unconfigured": "NUXT_SMTP_HOST or NUXT_SMTP_FROM_EMAIL is missing. Notices stay in the log as not sent until it is configured."
+      },
+      "groups": {
+        "leadership": {
+          "title": "Secretariat and Presidency",
+          "description": "What members present, as soon as they present it."
+        },
+        "mesa": {
+          "title": "Chair",
+          "description": "What was presented, once validated."
+        },
+        "transactionals": {
+          "title": "Transactional amendments",
+          "description": "Before validation: when every party accepts one and when each party is asked to accept it."
+        },
+        "presenters": {
+          "title": "Presenters",
+          "description": "The accounts of the member that presents the document or the amendment. They never get notices about what their own member does."
+        }
+      },
+      "kinds": {
+        "document_submitted": {
+          "title": "Document sent for validation",
+          "description": "Every document a member sends to the Secretariat."
+        },
+        "amendment_submitted": {
+          "title": "Amendment presented",
+          "description": "Every amendment presented. Transactional amendments have their own notice."
+        },
+        "transactional_ready": {
+          "title": "Transactional ready for validation",
+          "description": "When every party accepts a transactional amendment and it reaches the Secretariat. Those the Chair presents skip this."
+        },
+        "submission_validated": {
+          "title": "Document or amendment validated",
+          "description": "Every document published and every amendment validated. Late ones are flagged, since their admission is still pending."
+        },
+        "transactional_acceptance_requested": {
+          "title": "Accept a transactional",
+          "description": "To the parties of a transactional amendment (the main authors of what it groups), when it is proposed."
+        },
+        "presenter_assigned": {
+          "title": "Document assigned",
+          "description": "When a document is assigned to their member, as presenter or co-presenter."
+        },
+        "presenter_correction": {
+          "title": "Sent back for correction",
+          "description": "When the Secretariat sends their document or amendment back, with the note."
+        },
+        "presenter_validated": {
+          "title": "Validated or admitted",
+          "description": "When their document is published or their amendment validated or admitted."
+        },
+        "presenter_decided": {
+          "title": "Settled",
+          "description": "When their document is voted or their amendment is approved, rejected, declared inadmissible, lapses, is transacted or closed."
+        },
+        "presenter_changed": {
+          "title": "Substantial change",
+          "description": "When someone else reclassifies their amendment, corrects who presents it or changes their document's internal deadline."
+        }
+      },
+      "audience": {
+        "transactional_acceptance_requested": "The transactional's parties",
+        "presenter_assigned": "Whoever presents the document",
+        "presenter_correction": "Whoever presents it",
+        "presenter_validated": "Whoever presents it",
+        "presenter_decided": "Whoever presents it",
+        "presenter_changed": "Whoever presents it"
+      },
+      "frequencies": {
+        "immediate": "Immediately",
+        "daily": "Daily summary ({hour})"
+      },
+      "rolesLabel": "Roles that receive “{notice}”",
+      "rolesPlaceholder": "No role",
+      "frequencyLabel": "Frequency of “{notice}”",
+      "kindSwitchLabel": "Send “{notice}”",
+      "noRoles": "On, but with no role: it reaches nobody.",
+      "save": "Save",
+      "discard": "Discard changes",
+      "saved": "Email notices saved",
+      "saveError": "The email notices could not be saved",
+      "unsavedConfirm": "You have unsaved changes to the email notices. Leave without saving them?",
+      "test": {
+        "button": "Send me a test",
+        "sent": "Test email sent to your address",
+        "unconfigured": "Not sent: no mail server is configured",
+        "failed": "The mail server refused it; see the log"
+      },
+      "log": {
+        "title": "Delivery log",
+        "description": "The latest 50 emails, newest first. The address is never shown.",
+        "refresh": "Refresh",
+        "empty": "No email has been sent yet.",
+        "testKind": "Test email",
+        "deletedAccount": "Deleted account",
+        "daily": "in the daily summary",
+        "error": "Last error ({attempts} attempts): {error}",
+        "statuses": {
+          "pending": "Pending",
+          "sending": "Sending",
+          "sent": "Sent",
+          "failed": "Failed",
+          "skipped": "Not sent"
+        },
+        "reasons": {
+          "unconfigured": "No mail server",
+          "disabled": "Notice turned off",
+          "no_access": "Account without access",
+          "not_visible": "No longer visible to it",
+          "gone": "No longer exists"
+        }
+      }
     }
   },
   "export": {
@@ -2368,7 +2495,8 @@
       "members": "Members",
       "activity": "Activity",
       "calendarRules": "Regulatory deadlines",
-      "stats": "Statistics"
+      "stats": "Statistics",
+      "notifications": "Email notices"
     },
     "assembly": {
       "navLabel": "{assembly} sections",
@@ -4866,6 +4994,7 @@
       "member": "Members",
       "roles": "Roles and permissions",
       "export": "PDF downloads",
+      "notifications": "Email notices",
       "other": "Other"
     },
     "sources": {
@@ -4924,7 +5053,8 @@
       "assembly": "An assembly",
       "users": "Platform accounts",
       "calendarRules": "{type} calendar deadlines",
-      "calendarRulesNoType": "Calendar deadlines"
+      "calendarRulesNoType": "Calendar deadlines",
+      "notificationSettings": "Email notices"
     },
     "actor": {
       "intranet": "The CREUP intranet",
@@ -5206,6 +5336,10 @@
         "created": "Private note written",
         "updated": "Private note changed",
         "deleted": "Private note deleted"
+      },
+      "notifications": {
+        "update": "Email notices changed",
+        "test": "Test email sent"
       }
     },
     "changes": {

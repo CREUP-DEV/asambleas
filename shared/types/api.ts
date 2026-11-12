@@ -32,6 +32,12 @@ import type {
 } from "../constants/domain";
 import type { PermissionKey } from "../constants/permissions";
 import type {
+  EmailDeliveryStatus,
+  EmailSkipReason,
+  NotificationFrequency,
+  NotificationSettings,
+} from "../constants/notifications";
+import type {
   AccessRevokedReason,
   ActivityCategory,
   ActivityKind,
@@ -1905,4 +1911,53 @@ export interface StatsAccountDetailDto {
   member: MemberRef | null;
   documents: StatsReadItemDto[];
   amendments: StatsReadItemDto[];
+}
+
+// Email notifications (notification:manage) ----------------------------------
+
+/** GET /api/admin/notifications. */
+export interface NotificationSettingsDto {
+  settings: NotificationSettings;
+  /** For optimistic locking; null while nothing was stored. */
+  updatedAt: IsoDate | null;
+  /** The role names a `roles` notice may go to (roles.name). */
+  roles: string[];
+  smtp: {
+    /** NUXT_SMTP_HOST and NUXT_SMTP_FROM_EMAIL are set. */
+    configured: boolean;
+    /** The sender's address, null while unconfigured. */
+    from: string | null;
+  };
+  /** Deliveries of the last 24 hours by status. */
+  lastDay: Record<EmailDeliveryStatus, number>;
+}
+
+/** PUT /api/admin/notifications. */
+export interface NotificationSettingsBody {
+  settings: NotificationSettings;
+  updatedAt: IsoDate | null;
+}
+
+/** One email in the log of /admin/notificaciones, newest first. */
+export interface EmailDeliveryDto {
+  id: string;
+  /** A NotificationKind, or "test". */
+  kind: string;
+  status: EmailDeliveryStatus;
+  frequency: NotificationFrequency;
+  reason: EmailSkipReason | null;
+  /** The subject it went with; null until sent, and for viewers who may not read every document. */
+  subject: string | null;
+  recipient: { id: string; name: string } | null;
+  attempts: number;
+  /** The last SMTP error, shortened. */
+  error: string | null;
+  createdAt: IsoDate;
+  sentAt: IsoDate | null;
+}
+
+/** POST /api/admin/notifications/test: sent to the caller's own address. */
+export interface EmailTestResultDto {
+  status: "sent" | "failed" | "skipped";
+  reason: EmailSkipReason | null;
 }

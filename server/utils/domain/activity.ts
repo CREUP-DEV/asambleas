@@ -1029,6 +1029,9 @@ export const AUDIT_PAYLOAD_KEYS: Record<AuditAction, readonly string[]> = {
   // The regulations' deadlines: nothing personal in them.
   "calendar_rules.update": ["rules"],
   "calendar_rules.seed": ["rules"],
+  // Which notices go to which roles: nothing personal in them.
+  "notifications.update": ["settings"],
+  "notifications.test": ["status", "reason"],
   "user.created": ["roleName"],
   "user.role_sync": [
     "roleName",
@@ -2089,6 +2092,10 @@ function auditTarget(
       // The deadlines of the regulations: whoever reads the activity may
       // see that they changed and how.
       label = row.targetId;
+      visible = true;
+      break;
+    case "notification_settings":
+      // Which notices go by email and to which roles: nothing personal.
       visible = true;
       break;
     case "assembly": {

@@ -331,6 +331,8 @@ export function useActivityText() {
         return target.label
           ? t("activity.target.calendarRules", { type: target.label })
           : t("activity.target.calendarRulesNoType");
+      case "notification_settings":
+        return t("activity.target.notificationSettings");
       case "vote":
       case "decision":
       case "live":

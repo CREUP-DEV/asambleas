@@ -154,6 +154,15 @@ const adminItems = computed<NavigationMenuItem[]>(() => {
       active: isWithin(stats),
     });
   }
+  if (can(PERMISSION_KEYS.NOTIFICATION_MANAGE)) {
+    const notifications = localePath("/admin/notificaciones");
+    items.push({
+      label: t("shell.nav.notifications"),
+      icon: "i-lucide-mail",
+      to: notifications,
+      active: isWithin(notifications),
+    });
+  }
   // The whole activity log: Admins only, by their real role. Secretaría
   // and Presidencia hold every permission key, so no key opens it; while
   // an Admin acts as another account, `isAdmin` is that account's.

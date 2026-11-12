@@ -984,6 +984,61 @@ API over the rendered text (its HTML is never changed); pointing at it or
 pressing it shows the note. A browser without that API shows no marks, and
 the notes stay in the panel.
 
+## Email notifications
+
+The platform tells people by email what concerns them, as configured at
+`/admin/notificaciones` (`notification:manage`; the Secretaría and the
+Presidencia by default). Ten notices (`NOTIFICATION_KINDS`), in two
+audiences:
+
+| Notice                               | Event                                                                                                   | To (default)                       |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------- | ---------------------------------- |
+| `document_submitted`                 | `document_submitted`                                                                                    | Secretaría, Presidencia            |
+| `amendment_submitted`                | `amendment_submitted` (not a transactional)                                                             | Secretaría, Presidencia            |
+| `transactional_ready`                | a transactional every party accepted reaches the Secretaría (its submission, or the last acceptance)    | Secretaría, Presidencia, Moderador |
+| `submission_validated`               | `document_published`, `amendment_validated` (late ones flagged: the Mesa still records their admission) | Moderador                          |
+| `transactional_acceptance_requested` | a member proposes a transactional (`awaitsAuthors`)                                                     | its parties still to answer        |
+| `presenter_assigned`                 | `document_created`, a `document_updated` that names new presenters                                      | the new presenters                 |
+| `presenter_correction`               | `document_correction_requested`, `amendment_correction_requested`                                       | presenters or authors              |
+| `presenter_validated`                | `document_published`, `amendment_validated`, `amendment_admitted`                                       | presenters or authors              |
+| `presenter_decided`                  | `document_voted`, approved, rejected, inadmissible, lapsed, transacted, withdrawn                       | presenters or authors              |
+| `presenter_changed`                  | `amendment_reclassified`, `amendment_authors_changed`, a new internal deadline (`dueAt`)                | presenters or authors              |
+
+The roles of the first four are settings; the others go to the accounts
+linked to the members concerned. Each notice can be turned off, and goes
+at once (one email each) or in a daily summary at 08:00. All go at once by
+default except `amendment_submitted`, which goes in the daily summary:
+amendments come in bursts before the deadline. A
+general switch stops everything. The Mesa's own transactionals, admitted
+as it presents them, never notify. Nobody is told about their own act: not
+the account that did it, and for the members' notices no account of the
+member that did it.
+
+How it works:
+
+1. `recordEvent` adds the event to `notification_outbox` in the
+   transaction of the change (`eventMayNotify`), so a rolled-back change
+   sends nothing and a restart loses nothing.
+2. Once committed, the sender (woken by the live hub and every 30 s)
+   plans one `email_deliveries` row per account and notice under the
+   settings in force (`noticesForEvent`, `planDeliveries`), unique per
+   account and `dedupeKey`.
+3. Each email is composed when it goes, as its account sees things then
+   (visibility rules, offices as "CEA"), and sent over SMTP with retries
+   (five attempts, growing pauses). An account without access, something
+   it may no longer see, or something gone is skipped with its reason; so
+   is everything while no SMTP server is configured, rather than kept to
+   go out later.
+
+Emails are in Spanish only, with CREUP's template (the web's), a plain text
+part and a link to the platform. Every subject starts with its assembly in
+brackets ("[80.ª AGO] Enmienda presentada al documento «…»"), and a daily
+summary names each of its assemblies once; never the text of a document or an
+amendment. The admin page shows the switches, whether SMTP is configured,
+a test email to oneself and the last 50 deliveries (who, when, status;
+never an address). Since that log names every account,
+`notification:manage` sees the executive offices, as `stats:view` does.
+
 ## Traceability
 
 Every change leaves a record of who did it, acting for which member, when,
@@ -1110,7 +1165,9 @@ The existing keys stay, plus:
 
 - `member:manage`: sync and edit members;
 - `session:moderate`: Mesa actions such as live state, admissions, votes,
-  decisions and transactionals on behalf of parties.
+  decisions and transactionals on behalf of parties;
+- `notification:manage`: what is notified by email, to whom and how often
+  ("Email notifications").
 
 The default `Moderador` role gets `session:moderate`. The `CEA`, `CAS` and
 `Sectorial` roles (synced from the intranet types `CEA` and `Sectorial`, and
