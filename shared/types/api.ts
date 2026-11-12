@@ -181,6 +181,8 @@ export interface MeDto {
   permissions: PermissionKey[];
   isAdmin: boolean;
   member: MemberRef | null;
+  /** What its avatar reads without a photo (AdminUserDto.avatarText). */
+  avatarText: string | null;
   /**
    * Whether the account sees the CEA offices as they are
    * (canSeeExecutiveMembers). When false, every answer shows it the generic
@@ -1486,6 +1488,12 @@ export interface AdminUserDto {
   createdAt: IsoDate;
   role: { id: string; name: string } | null;
   member: MemberRef | null;
+  /**
+   * What its avatar reads without a photo (accountAvatarText): its
+   * university's acronym, or the acronym of the member it acts for. null
+   * leaves the initials of its name.
+   */
+  avatarText: string | null;
   /** Permissions granted on top of the role (user_permissions), in catalog order. */
   extraPermissions: PermissionKey[];
   /**
@@ -1798,6 +1806,8 @@ export interface StatsAccountDto {
   id: string;
   name: string;
   image: string | null;
+  /** What its avatar reads without a photo (AdminUserDto.avatarText). */
+  avatarText: string | null;
   role: string | null;
   memberId: string | null;
   /** The account lost access (deleted in the Intranet). */

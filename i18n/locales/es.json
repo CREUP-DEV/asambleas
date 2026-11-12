@@ -5106,7 +5106,8 @@
         "externalRole": "Tipo de cuenta en la intranet",
         "externalName": "Nombre en la intranet",
         "externalInitials": "Siglas en la intranet",
-        "university": "Universidad"
+        "university": "Universidad",
+        "universityAcronym": "Siglas de la universidad"
       },
       "empty": "(vacío)",
       "note": "Nota: «{note}»",

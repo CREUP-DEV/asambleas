@@ -10,6 +10,7 @@ interface StoredMember {
   acronym: string;
   name: string;
   university: string | null;
+  universityAcronym: string | null;
   region: string | null;
   intranetId: number | null;
   email: string | null;
@@ -32,6 +33,7 @@ const stored = (
   kind: "sectorial",
   name: overrides.acronym,
   university: null,
+  universityAcronym: null,
   region: null,
   intranetId: null,
   email: null,
@@ -195,6 +197,7 @@ describe("memberAuditState", () => {
       acronym: "CEUM",
       name: "Consejo antiguo",
       university: "Universidad de Murcia",
+      universityAcronym: "UM",
       region: "Región de Murcia",
       intranetId: 412,
       source: "intranet",
@@ -205,6 +208,7 @@ describe("memberAuditState", () => {
       acronym: "CEUM",
       name: "Consejo antiguo",
       university: "Universidad de Murcia",
+      universityAcronym: "UM",
       region: "Región de Murcia",
       intranetId: 412,
       source: "intranet",
@@ -479,6 +483,7 @@ describe("syncIntranetRoster with the CAS list", () => {
         acronym: "CoorCAS",
         name: "Coordinación del CAS",
         university: null,
+        universityAcronym: null,
         region: null,
         intranetId: 40,
         email: "cas@creup.es",

@@ -29,6 +29,8 @@ export const members = pgTable(
     acronym: text("acronym").notNull(),
     name: text("name").notNull(),
     university: text("university"),
+    /** The university's acronym (UGR, UVa), from the roster; asociados only. */
+    universityAcronym: text("university_acronym"),
     region: text("region"),
     /**
      * The Intranet account of an asociado, a sectorial or a CEA office (its

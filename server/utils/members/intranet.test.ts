@@ -232,6 +232,7 @@ describe("lookupIntranetRole", () => {
     name: "Consell de l'Estudiantat UB",
     initials: "CdEUB",
     university: "Universitat de Barcelona",
+    university_acronym: "UB",
   };
 
   beforeEach(() => {
@@ -290,7 +291,18 @@ describe("lookupIntranetRole", () => {
         name: null,
         initials: null,
         university: null,
+        university_acronym: null,
       },
+    });
+  });
+
+  it("reads an acronym longer than any as none", async () => {
+    stubFetch(() =>
+      Response.json({ ...account, university_acronym: "X".repeat(21) }),
+    );
+    expect(await lookupIntranetRole(EMAIL)).toMatchObject({
+      outcome: "ok",
+      account: { university_acronym: null },
     });
   });
 

@@ -126,7 +126,8 @@ export const AUDIT_ACTIONS = {
   /**
    * Intranet role sync changed something other than lastRoleSyncAt. Target
    * user; source intranet; before/after {roleName, externalRole,
-   * externalName, externalInitials, university, memberId}.
+   * externalName, externalInitials, university, universityAcronym,
+   * memberId}.
    */
   USER_ROLE_SYNC: "user.role_sync",
   /** INITIAL_ADMIN_EMAIL received Admin on sign-in. Target user; source intranet. */

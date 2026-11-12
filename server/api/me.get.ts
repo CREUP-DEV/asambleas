@@ -2,17 +2,28 @@ import { defineEventHandler } from "h3";
 import { eq } from "drizzle-orm";
 import type { MeDto, MeImpersonationDto } from "~~/shared/types/api";
 import { db } from "../db";
-import { members } from "../db/schema";
+import { members, users } from "../db/schema";
 import { requireActor } from "../utils/domain/actor";
 import { canSeeExecutiveMembers } from "../utils/domain/visibility";
 import { toMemberRef } from "../utils/members/dto";
+import { accountAvatarText } from "~~/shared/utils/accountAvatar";
 
 export default defineEventHandler(async (event): Promise<MeDto> => {
   const actor = await requireActor(event);
+  const account = await db.query.users.findFirst({
+    where: eq(users.id, actor.user.id),
+    columns: { universityAcronym: true },
+  });
   const member = actor.memberId
     ? await db.query.members.findFirst({
         where: eq(members.id, actor.memberId),
-        columns: { id: true, acronym: true, name: true, kind: true },
+        columns: {
+          id: true,
+          acronym: true,
+          name: true,
+          kind: true,
+          universityAcronym: true,
+        },
       })
     : undefined;
 
@@ -37,6 +48,10 @@ export default defineEventHandler(async (event): Promise<MeDto> => {
     permissions: [...actor.permissions],
     isAdmin: actor.isAdmin,
     member: member ? toMemberRef(member) : null,
+    avatarText: accountAvatarText(
+      { universityAcronym: account?.universityAcronym ?? null },
+      member ?? null,
+    ),
     seesExecutiveMembers: canSeeExecutiveMembers(actor),
     impersonation,
   };

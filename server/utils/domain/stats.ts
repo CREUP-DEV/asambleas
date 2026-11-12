@@ -28,6 +28,7 @@ import {
   users,
 } from "../../db/schema";
 import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
+import { accountAvatarText } from "~~/shared/utils/accountAvatar";
 import type { AmendmentStatus } from "~~/shared/constants/domain";
 import type {
   MemberRef,
@@ -426,6 +427,7 @@ interface AccountRow {
   id: string;
   name: string;
   image: string | null;
+  avatarText: string | null;
   role: string | null;
   memberId: string | null;
   revoked: boolean;
@@ -437,18 +439,42 @@ async function loadAccounts(userId?: string): Promise<AccountRow[]> {
       id: users.id,
       name: users.name,
       image: users.image,
+      universityAcronym: users.universityAcronym,
       role: roles.name,
       memberId: users.memberId,
+      memberKind: members.kind,
+      memberAcronym: members.acronym,
+      memberUniversityAcronym: members.universityAcronym,
       accessRevokedAt: users.accessRevokedAt,
     })
     .from(users)
     .leftJoin(roles, eq(roles.id, users.roleId))
+    .leftJoin(members, eq(members.id, users.memberId))
     .where(userId ? eq(users.id, userId) : undefined)
     .orderBy(users.name);
-  return rows.map(({ accessRevokedAt, ...row }) => ({
-    ...row,
-    revoked: accessRevokedAt !== null,
-  }));
+  return rows.map(
+    ({
+      accessRevokedAt,
+      universityAcronym,
+      memberKind,
+      memberAcronym,
+      memberUniversityAcronym,
+      ...row
+    }) => ({
+      ...row,
+      avatarText: accountAvatarText(
+        { universityAcronym },
+        memberKind && memberAcronym
+          ? {
+              kind: memberKind,
+              acronym: memberAcronym,
+              universityAcronym: memberUniversityAcronym,
+            }
+          : null,
+      ),
+      revoked: accessRevokedAt !== null,
+    }),
+  );
 }
 
 /** Sign-ins by account: how many were recorded and the latest. */

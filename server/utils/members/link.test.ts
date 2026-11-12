@@ -58,6 +58,7 @@ describe("newLinkedMember", () => {
   const identity = {
     name: "Consejo de Estudiantes",
     university: "Universidad de Murcia",
+    university_acronym: "UM",
   };
 
   it("creates councils from the intranet data, with the account's email", () => {
@@ -68,6 +69,7 @@ describe("newLinkedMember", () => {
       acronym: "CEUM",
       name: "Consejo de Estudiantes",
       university: "Universidad de Murcia",
+      universityAcronym: "UM",
       intranetId: null,
       email: "ceum@um.es",
       source: "intranet",

@@ -16,6 +16,9 @@ import {
   ALL_PERMISSION_KEYS,
   type PermissionKey,
 } from "~~/shared/constants/permissions";
+import type { MemberRef } from "~~/shared/types/api";
+import { accountAvatarText } from "~~/shared/utils/accountAvatar";
+import { toMemberRef } from "../members/dto";
 
 /**
  * The user row the admin users list returns (GET /api/admin/users), shared by
@@ -37,6 +40,7 @@ export const ADMIN_USER_COLUMNS = {
   externalName: true,
   externalInitials: true,
   university: true,
+  universityAcronym: true,
   lastRoleSyncAt: true,
   accessRevokedAt: true,
   accessRevokedReason: true,
@@ -107,7 +111,15 @@ export function adminUsersWhere(
 
 export const ADMIN_USER_RELATIONS = {
   role: { columns: { id: true, name: true } },
-  member: { columns: { id: true, acronym: true, name: true, kind: true } },
+  member: {
+    columns: {
+      id: true,
+      acronym: true,
+      name: true,
+      kind: true,
+      universityAcronym: true,
+    },
+  },
 } as const;
 
 function findAdminUser(userId: string) {
@@ -120,9 +132,9 @@ function findAdminUser(userId: string) {
 
 type AdminUserBase = NonNullable<Awaited<ReturnType<typeof findAdminUser>>>;
 
-export type AdminUserRow = AdminUserBase & {
-  extraPermissions: PermissionKey[];
-};
+export type AdminUserRow = Awaited<
+  ReturnType<typeof withExtraPermissions<AdminUserBase>>
+>[number];
 
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
 
@@ -153,14 +165,33 @@ export async function loadExtraPermissions(
   return result;
 }
 
-/** Adds `extraPermissions` to rows read with ADMIN_USER_COLUMNS. */
-export async function withExtraPermissions<T extends { id: string }>(
+/**
+ * Rows read with ADMIN_USER_COLUMNS and ADMIN_USER_RELATIONS as the client
+ * reads them: `extraPermissions`, `online` and `avatarText` added, the
+ * university acronyms folded into `avatarText`.
+ */
+export async function withExtraPermissions<
+  T extends {
+    id: string;
+    universityAcronym: string | null;
+    member: (MemberRef & { universityAcronym: string | null }) | null;
+  },
+>(
   rows: T[],
-): Promise<(T & { extraPermissions: PermissionKey[]; online: boolean })[]> {
+): Promise<
+  (Omit<T, "universityAcronym" | "member"> & {
+    member: MemberRef | null;
+    avatarText: string | null;
+    extraPermissions: PermissionKey[];
+    online: boolean;
+  })[]
+> {
   const extra = await loadExtraPermissions(rows.map((row) => row.id));
   const now = Date.now();
-  return rows.map((row) => ({
+  return rows.map(({ universityAcronym, member, ...row }) => ({
     ...row,
+    member: member ? toMemberRef(member) : null,
+    avatarText: accountAvatarText({ universityAcronym }, member),
     extraPermissions: extra.get(row.id) ?? [],
     // Whether it used the platform lately (server/utils/live/online.ts).
     online: isOnline(row.id, now),

@@ -1039,6 +1039,7 @@ export const AUDIT_PAYLOAD_KEYS: Record<AuditAction, readonly string[]> = {
     "externalName",
     "externalInitials",
     "university",
+    "universityAcronym",
     "memberId",
   ],
   "user.initial_admin": ["roleName"],

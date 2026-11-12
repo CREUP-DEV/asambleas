@@ -90,9 +90,10 @@ migrar hay que quitar `NUXT_ROLE_API_URL` (sección 8, paso 2).
     compara literalmente, distinguiendo mayúsculas: solo `Asociado`, `CEA` y
     `Sectorial` tienen efecto; `asociado` o `ASOCIADO` contarían como
     cualquier otro tipo;
-  - `name`, `initials`, `university`: string, `null` o ausente (un string
-    vacío cuenta como `null`). Un número u otro tipo invalida la respuesta
-    entera.
+  - `name`, `initials`, `university`, `university_acronym`: string, `null`
+    o ausente (un string vacío cuenta como `null`). Un número u otro tipo
+    invalida la respuesta entera. Unas siglas de universidad de más de 20
+    caracteres cuentan como `null`.
 
   Ignora cualquier otra clave, así que añadir campos es compatible.
 
@@ -107,7 +108,7 @@ migrar hay que quitar `NUXT_ROLE_API_URL` (sección 8, paso 2).
     HTML o un `not_found` con más claves;
   - `unconfigured`: no hay URL usable.
 - **Con `ok`:** guarda `externalRole`, `externalName`, `externalInitials`,
-  `university`, `intranetId` (solo si llega `id`: la ruta vieja nunca borra
+  `university`, `universityAcronym` (solo con universidad), `intranetId` (solo si llega `id`: la ruta vieja nunca borra
   uno guardado) y `lastRoleSyncAt`, y decide el rol:
   - `Asociado` da el rol `Asociado`; `Sectorial` da `Sectorial`; `CEA` da
     `CEA`; cualquier otro tipo (`Invitado`, `Desasociado`, `CdG`, `CAI`,
@@ -202,7 +203,8 @@ migrar hay que quitar `NUXT_ROLE_API_URL` (sección 8, paso 2).
 - **Respuesta que acepta:** `{ "data": Entry[], "generated_at"?: string | null }`
   con como mucho 5000 filas. Cada `Entry` es un objeto que puede traer `id`
   (entero de 1 a 2^31-1, `null` o ausente), `denomination`, `initials`,
-  `university` y `autonomous_community` (string, número, `null` o ausente) y
+  `university`, `university_acronym` y `autonomous_community` (string,
+  número, `null` o ausente) y
   `order` (**solo número**, `null` o ausente). Un `id` u `order` de otro tipo
   invalida la lista entera. Ignora el resto de claves.
 - **Qué hace:**
@@ -455,17 +457,19 @@ Respuesta 200:
   "role": "Asociado",
   "name": "Consell de l'Estudiantat Universitat de Barcelona UB",
   "initials": "CdEUB",
-  "university": "Universitat de Barcelona"
+  "university": "Universitat de Barcelona",
+  "university_acronym": "UB"
 }
 ```
 
-| Campo        | Tipo            | Origen             | Notas                                                                                                                                                                       |
-| ------------ | --------------- | ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`         | integer         | `users.id`         | Nuevo. La plataforma lo guarda en `users.intranet_id` y enlaza por él las cuentas Asociado y Sectorial con su miembro, aunque cambien las siglas. De 1 a 2^31-1.            |
-| `role`       | string no vacío | `users.type`       | Valores actuales: `Asociado`, `Desasociado`, `Invitado`, `Sectorial`, `CEA`, `CdG`, `CAI`, `Otros`. Tal cual, con estas mayúsculas: la plataforma los compara literalmente. |
-| `name`       | string \| null  | `users.name`       | Lo que ya devuelve hoy.                                                                                                                                                     |
-| `initials`   | string \| null  | `users.initials`   | Como mucho 20 caracteres útiles: la plataforma recorta a 20 y empareja por ellas.                                                                                           |
-| `university` | string \| null  | `users.university` |                                                                                                                                                                             |
+| Campo                | Tipo            | Origen                     | Notas                                                                                                                                                                       |
+| -------------------- | --------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                 | integer         | `users.id`                 | Nuevo. La plataforma lo guarda en `users.intranet_id` y enlaza por él las cuentas Asociado y Sectorial con su miembro, aunque cambien las siglas. De 1 a 2^31-1.            |
+| `role`               | string no vacío | `users.type`               | Valores actuales: `Asociado`, `Desasociado`, `Invitado`, `Sectorial`, `CEA`, `CdG`, `CAI`, `Otros`. Tal cual, con estas mayúsculas: la plataforma los compara literalmente. |
+| `name`               | string \| null  | `users.name`               | Lo que ya devuelve hoy.                                                                                                                                                     |
+| `initials`           | string \| null  | `users.initials`           | Como mucho 20 caracteres útiles: la plataforma recorta a 20 y empareja por ellas.                                                                                           |
+| `university`         | string \| null  | `users.university`         |                                                                                                                                                                             |
+| `university_acronym` | string \| null  | `users.university_acronym` | Las siglas de la universidad (UGR, UVa), no las de la cuenta: no se deducen del nombre de la universidad. `null` sin universidad. La plataforma las dibuja en el avatar.    |
 
 No se devuelve nada más: ni email, ni `google_id`, ni teléfono, ni datos
 personales de `personal_data`.
@@ -493,6 +497,7 @@ Respuesta 200:
       "denomination": "CdEUB",
       "initials": "CdEUB",
       "university": "Universitat de Barcelona",
+      "university_acronym": "UB",
       "autonomous_community": "Cataluña"
     }
   ],
@@ -506,6 +511,7 @@ Respuesta 200:
 | `denomination`         | string \| null | `users.designation`                                                                            |
 | `initials`             | string \| null | `users.initials`                                                                               |
 | `university`           | string \| null | `users.university`                                                                             |
+| `university_acronym`   | string \| null | `users.university_acronym` (UGR, UVa); `null` sin universidad                                  |
 | `autonomous_community` | string \| null | `users.autonomous_community`                                                                   |
 | `generated_at`         | string ISO8601 | Momento de la respuesta                                                                        |
 
@@ -528,8 +534,8 @@ Reglas:
 
 #### `GET /api/asambleas/v1/usuarios/sectoriales`
 
-Igual que asociados, con `users.type = 'Sectorial'`. `university` y
-`autonomous_community` van siempre a `null` (como hoy en la ruta pública, que
+Igual que asociados, con `users.type = 'Sectorial'`. `university`,
+`university_acronym` y `autonomous_community` van siempre a `null` (como hoy en la ruta pública, que
 no las envía): para las cuentas sectoriales ese dato no es fiable.
 
 ### 4.4 Medidas de seguridad

@@ -73,6 +73,8 @@ export const intranetRosterEntrySchema = z.object({
   denomination: optionalText,
   initials: optionalText,
   university: optionalText,
+  /** The university's acronym (UGR, UVa); asociados only, absent before. */
+  university_acronym: optionalText,
   autonomous_community: optionalText,
 });
 
@@ -118,6 +120,8 @@ export interface RosterMember {
   acronym: string;
   name: string;
   university: string | null;
+  /** Its university's acronym (UGR, UVa); null without a university. */
+  universityAcronym: string | null;
   region: string | null;
   /** The Intranet account (`users.id`), or null when the roster sends none. */
   intranetId: number | null;
@@ -180,11 +184,21 @@ export function normalizeRoster(
           ? entry.email
           : null;
       if (email) seenEmails.add(email);
+      const university = clip(entry.university, DETAIL_MAX_LENGTH);
+      const universityAcronym = university
+        ? (entry.university_acronym ?? null)
+        : null;
       byKey.set(key, {
         kind: list.kind,
         acronym,
         name: clip(entry.denomination, NAME_MAX_LENGTH) ?? acronym,
-        university: clip(entry.university, DETAIL_MAX_LENGTH),
+        university,
+        // An acronym longer than any is left out rather than cut short.
+        universityAcronym:
+          universityAcronym !== null &&
+          universityAcronym.length <= ACRONYM_MAX_LENGTH
+            ? universityAcronym
+            : null,
         region: clip(entry.autonomous_community, DETAIL_MAX_LENGTH),
         intranetId: entry.id,
         email,
@@ -201,6 +215,7 @@ export interface ExistingMember {
   acronym: string;
   name: string;
   university: string | null;
+  universityAcronym: string | null;
   region: string | null;
   intranetId: number | null;
   email: string | null;
@@ -440,6 +455,7 @@ export function planRosterSync(
       current.acronym !== values.acronym ||
       current.name !== values.name ||
       current.university !== values.university ||
+      current.universityAcronym !== values.universityAcronym ||
       current.region !== values.region ||
       current.intranetId !== values.intranetId ||
       current.email !== values.email;
