@@ -324,7 +324,7 @@ describe("templates", () => {
     subject: "Enmienda presentada al documento «<Ley>»",
     heading: "Nueva enmienda",
     lead: "CEUAH ha presentado una enmienda al documento «<Ley>».",
-    details: [{ label: "Asamblea", value: "80.ª AGO" }],
+    details: [{ label: "Documento", value: "Ley <de prueba>" }],
     note: { label: "Nota", text: "Línea 1\nLínea <2>" },
     action: { label: "Revisar", url: "https://asambleas.example/a?b=1&c=2" },
   };
@@ -339,8 +339,9 @@ describe("templates", () => {
       'href="https://asambleas.example/a?b=1&amp;c=2"',
     );
     expect(email.html).toContain(
-      "https://asambleas.example/marca/horizontal-completo-granate.png",
+      "https://asambleas.example/marca/correo-cabecera.png",
     );
+    expect(email.html).toContain(">80.ª AGO</span>");
     expect(email.text).toContain(
       "Revisar: https://asambleas.example/a?b=1&c=2",
     );

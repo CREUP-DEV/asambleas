@@ -432,7 +432,7 @@ export default defineNuxtConfig({
     ? {
         umami: {
           id: umamiId,
-          host: umamiHost,
+          host: umamiHost ?? undefined,
           autoTrack: true,
           ignoreLocalhost: true,
           enabled: true,

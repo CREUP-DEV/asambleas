@@ -121,10 +121,8 @@ function base(ctx: Context): {
   return {
     assemblyPath,
     documentPath: `${assemblyPath}/documentos/${encodeURIComponent(ctx.document.slug)}`,
-    details: [
-      { label: "Asamblea", value: formatAssemblyLabel(ctx.assembly) },
-      { label: "Documento", value: ctx.document.title },
-    ],
+    // The assembly is the email's badge (EmailNotice.tag).
+    details: [{ label: "Documento", value: ctx.document.title }],
   };
 }
 
