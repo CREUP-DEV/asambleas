@@ -23,7 +23,12 @@ import { formatListNumber, orderedListNumbers } from "./lists";
 import { groupTables, tableGrid, type TableGroup } from "./tables";
 import { changeKinds, globalReplaceOps, positionKey, validateOps } from "./ops";
 import { findOverlaps, overlapBetween } from "./overlaps";
-import { isShownFormatSegment, renderAnnotated, renderBlocks } from "./render";
+import {
+  isShownFormatSegment,
+  isTinyChange,
+  renderAnnotated,
+  renderBlocks,
+} from "./render";
 
 let counter = 0;
 const newId = () => `new${String(counter++).padStart(4, "0")}`;
@@ -447,6 +452,24 @@ describe("render", () => {
     expect(html).toContain(
       '<ins class="cx-ins" data-amendment-id="A">crearán</ins>',
     );
+  });
+
+  it("marks a tiny change apart, so a comma is not lost", () => {
+    const ops = diffText(
+      base[2]!,
+      base[2]!.text.replace("universidades", "universidades,"),
+    );
+    const { annotated } = consolidate(base, [{ id: "A", ops }]);
+    const html = renderAnnotated([annotated[2]!], { mode: "diff" });
+    expect(html).toContain(
+      '<ins class="cx-ins cx-tiny" data-amendment-id="A">,</ins>',
+    );
+    expect(isTinyChange(",")).toBe(true);
+    expect(isTinyChange(" ")).toBe(true);
+    expect(isTinyChange("«»")).toBe(true);
+    expect(isTinyChange("y")).toBe(true);
+    expect(isTinyChange("de la")).toBe(false);
+    expect(isTinyChange("habilitarán")).toBe(false);
   });
 
   it("reads diff labels before insertions and removals", () => {

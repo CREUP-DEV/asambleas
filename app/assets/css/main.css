@@ -791,6 +791,36 @@ html {
   }
 
   /*
+   * A tiny change (a comma, an accent, a space: `cx-tiny`, isTinyChange in
+   * render.ts) is lost on its tint inside a long paragraph. It becomes a
+   * pill, a ring of the line's hue around its tint and room on both
+   * sides. The glyph keeps the text's colour. Marks mode, which shows no
+   * tint, draws the ring in the text's own colour.
+   */
+  /* Inline, never inline-block: that would drop the spaces at its edges. */
+  .cx-ins.cx-tiny,
+  .cx-del.cx-tiny {
+    padding-inline: 0.2em;
+    margin-inline: 0.05em;
+    border-radius: 0.25rem;
+  }
+
+  .cx-ins.cx-tiny {
+    box-shadow: inset 0 0 0 1.5px var(--cx-ins-line);
+    text-decoration-thickness: 0.1em;
+  }
+
+  .cx-del.cx-tiny {
+    box-shadow: inset 0 0 0 1.5px var(--cx-del-line);
+    text-decoration-thickness: 0.1em;
+  }
+
+  .diff-marks .cx-ins.cx-tiny,
+  .diff-marks .cx-del.cx-tiny {
+    box-shadow: inset 0 0 0 1.5px currentColor;
+  }
+
+  /*
    * Text an amendment keeps and formats anew: shown once, in its new
    * format, with a dotted line of its own hue (no tint), so it never reads
    * as added or removed. A note at the end of the block (`cx-fmt-label`)
