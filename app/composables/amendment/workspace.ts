@@ -1144,8 +1144,8 @@ export function amendmentNeighbours(
  * where it stands with the Secretaría while it is a draft or waits for it
  * ("Sin enviar", "En revisión"), which says more than "Borrador" or
  * "Presentada"; otherwise its status (presented, or how it ended). A
- * published amendment only says so where asked (`showPublished`: the
- * actor's own list).
+ * published amendment only says so where asked (`showPublished`); the
+ * lists never ask: being public is the usual case.
  */
 export type AmendmentStatusLine =
   | { type: "review"; view: AmendmentReviewView }

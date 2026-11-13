@@ -1,4 +1,5 @@
 import type { AmendmentStatus } from "../constants/domain";
+import { amendmentCodeSeq } from "./amendmentCode";
 
 /**
  * Correcting who presents an amendment: the Secretaría changes the authors
@@ -49,13 +50,10 @@ export function authorsChange(input: {
 /**
  * The number of a code an amendment held before (`previousCode` of an
  * `amendment_authors_changed` event) when it belongs to the sequence with
- * this prefix ("CEUM 2" for "CEUM"), otherwise null.
+ * this prefix ("UGR2" or, from before, "CEUM 2"), otherwise null.
  */
 export function formerMemberSeq(code: unknown, prefix: string): number | null {
-  if (typeof code !== "string" || !code.startsWith(`${prefix} `)) return null;
-  const rest = code.slice(prefix.length + 1);
-  if (!/^[1-9]\d*$/.test(rest)) return null;
-  return Number(rest);
+  return amendmentCodeSeq(code, prefix);
 }
 
 /**

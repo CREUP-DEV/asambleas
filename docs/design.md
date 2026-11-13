@@ -154,13 +154,11 @@ Members of the other kinds read the same for everyone.
 - If an amendment was presented wrong, whoever reviews amendments
   (`amendment:review`) corrects its authors and its main author while it
   is presented and undecided (`changeAmendmentAuthors`,
-  `amendment_authors_changed`). The code of a published amendment follows
-  the new main author as after a correction (`numberingToKeep`), so it never
-  names an office, and a code given up once public is never handed to
-  another amendment (`nextMemberSeq`). One not published yet has no code to
-  follow.
+  `amendment_authors_changed`). The code follows the new main author as
+  after a correction (`numberingToKeep`), so it never names an office, and
+  the code given up is never handed to another amendment (`nextMemberSeq`).
 - Amendment codes never name the office: an amendment whose main author is an
-  office is coded `CEA n` for everyone, numbered per document across all the
+  office is coded `CEA1`, `CEA2`... for everyone, numbered per document across all the
   offices (`amendmentCodePrefix`). Migration `0017` renumbered the existing
   ones and rewrote the codes kept in event payloads; an older code that
   named an office and has no amendment to follow (deleted since, or no longer
@@ -394,18 +392,26 @@ space) is told only when it is its block's one change
   `transactional`.
 - Authors: `amendment_authors` (member ids; joint amendments have several).
 - Numbering: `number` per document and a counter per code prefix, shown as
-  `12 · CEUM 4`, both given on the amendment's first publication
-  (`numberOnPublication`), in publication order. What everyone reads runs
-  without gaps: an amendment withdrawn, declared inadmissible or abandoned
-  before it was published never takes a number, and until then its authors,
-  the Secretaría and the Mesa read it without one ("Sin número"). The
-  executive offices share the prefix `CEA` (`12 · CEA 4`), so a code never
-  names the office; a member whose prefix changed starts its own counter at 1
-  (the CAS, an office before, presents `CAS 1`). Transactionals are `T1`,
-  `T2`..., numbered when published too (a member's waits for its parties
-  without one). A code names one amendment of the document
-  (`amendments_document_code_unique`). Amendments numbered on presentation,
-  before this rule, keep their numbers.
+  `12 · UGR4`, both given when the amendment is presented
+  (`numberAmendments`), in the order of presentation. The prefix is the
+  acronym the presenter's avatar reads (`amendmentCodePrefix` in
+  `shared/utils/amendmentCode.ts`): a council's university acronym, else its
+  own acronym; a sectorial's or the CAS's acronym. The code has no space
+  (`formatAmendmentCode`). A number once given stays taken: an amendment
+  withdrawn, declared inadmissible, or sent back for correction and deleted
+  keeps its place, and a code given up by a change of main author is never
+  given again (`takenAmendmentCodes` reads the rows and the `code` and
+  `previousCode` of their events). Only drafts read without a code ("Sin
+  número"). The executive offices share the prefix `CEA` (`12 · CEA4`), so a
+  code never names the office; a member whose prefix changed starts its own
+  counter at 1. Transactionals are `T1`, `T2`..., numbered when presented too
+  (a member's while it waits for its parties). A code names one amendment of
+  the document (`amendments_document_code_unique`). Until November 2026
+  amendments were numbered on their first publication, with a space and the
+  council's own acronym (`CGEUGR 1`): migration `0032` numbered the ones
+  presented and not published by then, and `pnpm db:recode-amendments`
+  (`drizzle/recode-amendments.ts`) gives every presented amendment the code
+  of today's rule, once the roster sync has brought the university acronyms.
 - `submittedAt` is set by the server. `late` is computed from the window, never
   typed by hand.
 - `status`: `draft`, `submitted`, `inadmissible`, `withdrawn`, `transacted`

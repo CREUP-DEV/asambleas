@@ -418,6 +418,14 @@ docker compose run -T --rm --no-deps asambleas-app /app/ops/reslug-documents.mjs
 docker compose run -T --rm --no-deps asambleas-app /app/ops/reslug-documents.mjs </dev/null
 ```
 
+Recalcular los códigos de las enmiendas (`/app/ops/recode-amendments.mjs`, en local `pnpm db:recode-amendments`): da a cada enmienda presentada el código de la regla de hoy, sin espacio y con la sigla que muestra el avatar de quien la presenta (`UGR1`, `ANEM3`, `CEA2`), contando por sigla y documento en el orden en que se presentaron. Las enmiendas de antes se numeraban al publicarse y con la sigla del consejo (`CGEUGR 1`). La sigla de la universidad solo llega con la sincronización de miembros: se lanza después de "Sincronizar" en Miembros (y con la Intranet ya desplegada), o los consejos se quedan con su propia sigla. Cambia también los códigos guardados en el historial, deja `amendments.recode` en Actividad por cada documento que cambie y, si se repite, no cambia nada. No va en `scripts/deploy.sh`: se lanza a mano una vez, primero con `--dry-run`.
+
+```bash
+cd ~
+docker compose run -T --rm --no-deps asambleas-app /app/ops/recode-amendments.mjs --dry-run </dev/null
+docker compose run -T --rm --no-deps asambleas-app /app/ops/recode-amendments.mjs </dev/null
+```
+
 Cuentas sin acceso: una cuenta borrada en la Intranet pierde el acceso la próxima vez que inicia sesión o, si mantiene una sesión abierta, en la revisión de las 05:30; desde ese momento cada petición suya recibe 401 en todos sus dispositivos ([docs/intranet.md](docs/intranet.md), sección 1). Administración > Usuarios, con "Solo cuentas sin acceso", las lista. No hay forma de devolver el acceso a mano: lo recupera sola cuando la Intranet vuelve a tener la cuenta. Las cuentas `Admin`, `Secretaria`, `Presidencia` y `Moderador` nunca lo pierden; en su lugar queda `user.intranet_missing` en Actividad.
 
 ## Problemas Frecuentes

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AmendmentDto, ReclassifyBody } from "~~/shared/types/api";
+import type { AmendmentDto } from "~~/shared/types/api";
 import { reclassifyTarget } from "~~/shared/utils/amendmentReclassify";
 
 /**
@@ -23,34 +23,18 @@ const emit = defineEmits<{
 }>();
 
 const { t } = useI18n();
-const api = useApi();
-const toast = useToast();
+const { reclassify: send } = useReclassifyAmendment();
 
 const busy = ref(false);
 const target = computed(() => reclassifyTarget(props.amendment.kind));
 
 async function reclassify(): Promise<void> {
-  const kind = target.value;
-  if (!kind || busy.value) return;
+  if (!target.value || busy.value) return;
   busy.value = true;
   try {
-    const body: ReclassifyBody = {
-      kind,
-      updatedAt: props.amendment.updatedAt,
-    };
-    const updated = await api.send<AmendmentDto>(`${props.url}/reclassify`, {
-      body,
-    });
-    toast.add({
-      title: t(`amendment.reclassify.done.${kind}`),
-      description: t("amendment.reclassify.doneDescription"),
-      color: "success",
-      icon: "i-lucide-tags",
-    });
-    emit("updated", updated);
-  } catch (error) {
-    api.notifyError(error, "amendment.reclassify.failed");
-    if (api.isConflict(error)) emit("conflict");
+    const { updated, conflict } = await send(props.amendment, props.url);
+    if (updated) emit("updated", updated);
+    else if (conflict) emit("conflict");
   } finally {
     busy.value = false;
   }

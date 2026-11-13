@@ -8,7 +8,6 @@ import {
   inArray,
   isNotNull,
   isNull,
-  lte,
   ne,
   or,
   sql,
@@ -42,13 +41,9 @@ import type {
   ApprovalMethod,
   AssemblySettings,
   Majority,
-  MemberKind,
   RelationKind,
 } from "../../../shared/constants/domain";
-import {
-  EXECUTIVE_AMENDMENT_CODE_PREFIX,
-  amendmentVoteMajority,
-} from "../../../shared/constants/domain";
+import { amendmentVoteMajority } from "../../../shared/constants/domain";
 import { PERMISSION_KEYS } from "../../../shared/constants/permissions";
 import type {
   AcceptanceBody,
@@ -79,10 +74,12 @@ import type {
   VoteInput,
 } from "../../../shared/types/api";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
+import { authorsChange } from "../../../shared/utils/amendmentAuthors";
 import {
-  authorsChange,
-  formerMemberSeq,
-} from "../../../shared/utils/amendmentAuthors";
+  amendmentCodePrefix,
+  amendmentCodeSeq,
+  formatAmendmentCode,
+} from "../../../shared/utils/amendmentCode";
 import { reclassifyTarget } from "../../../shared/utils/amendmentReclassify";
 import {
   amendmentWindow,
@@ -391,31 +388,24 @@ export function buildAcceptanceParties(
 }
 
 /**
- * What the code of an amendment starts with: the acronym of its main author,
- * or "CEA" for every executive area, so the code never names the area
- * ("CEA 3" for everyone; docs/design.md, "Who sees the executive areas").
- */
-export function amendmentCodePrefix(member: {
-  acronym: string;
-  kind: MemberKind;
-}): string {
-  return member.kind === "executive"
-    ? EXECUTIVE_AMENDMENT_CODE_PREFIX
-    : member.acronym;
-}
-
-/**
- * "T{n}" with n = numbered transactionals + 1, skipping codes already taken.
- * One not published yet has no code (numberOnPublication) and does not count.
+ * "T{n}" with n = the highest "T" number ever given in the document + 1, so
+ * a number once taken (by a transactional withdrawn or deleted since) is
+ * never given again. `takenCodes` are every code the document's amendments
+ * hold or held (takenAmendmentCodes); a draft has none.
  */
 export function nextTransactionalCode(
-  existingCodes: (string | null)[],
+  takenCodes: Iterable<string | null>,
 ): string {
-  const codes = existingCodes.filter((code) => code !== null);
-  const taken = new Set(codes);
-  let n = codes.length + 1;
-  while (taken.has(`T${n}`)) n += 1;
-  return `T${n}`;
+  const taken = new Set<string>();
+  let max = 0;
+  for (const code of takenCodes) {
+    if (code === null) continue;
+    taken.add(code);
+    max = Math.max(max, amendmentCodeSeq(code, "T") ?? 0);
+  }
+  let n = max + 1;
+  while (taken.has(formatAmendmentCode("T", n))) n += 1;
+  return formatAmendmentCode("T", n);
 }
 
 /**
@@ -2245,6 +2235,25 @@ export async function deleteAmendmentDraft(
 
 // Submission and withdrawal ----------------------------------------------------
 
+/**
+ * The events of a document's amendments, also of those deleted since (their
+ * `amendment_deleted` carries the document): events store no document.
+ */
+function amendmentEventOfDocument(documentId: string) {
+  return or(
+    inArray(
+      events.entityId,
+      sql`(select ${amendments.id} from ${amendments} where ${amendments.documentId} = ${documentId})`,
+    ),
+    sql`${events.payload}->>'documentId' = ${documentId}`,
+  )!;
+}
+
+/**
+ * The next number of an amendment in the document: one past the highest
+ * ever given, also to an amendment deleted since (a draft sent back for
+ * correction may be deleted; its presentation recorded its number).
+ */
 async function nextNumber(tx: Tx, documentId: string): Promise<number> {
   const [row] = await tx
     .select({ value: sql<number>`coalesce(max(${amendments.number}), 0)` })
@@ -2255,7 +2264,84 @@ async function nextNumber(tx: Tx, documentId: string): Promise<number> {
         ne(amendments.kind, "transactional"),
       ),
     );
-  return Number(row?.value ?? 0) + 1;
+  const [given] = await tx
+    .select({
+      value: sql<number>`coalesce(max(case when ${events.payload}->>'number' ~ '^[0-9]+$' then (${events.payload}->>'number')::integer end), 0)`,
+    })
+    .from(events)
+    .where(
+      and(
+        eq(events.entityType, "amendment"),
+        amendmentEventOfDocument(documentId),
+        eq(events.type, "amendment_submitted"),
+      ),
+    );
+  return Math.max(Number(row?.value ?? 0), Number(given?.value ?? 0)) + 1;
+}
+
+/** A code an amendment of the document holds or held, and when. */
+interface TakenCode {
+  amendmentId: string;
+  code: string;
+  /** When it was recorded; null for the code the row holds now. */
+  at: Date | null;
+}
+
+/**
+ * Every code the amendments of a document hold or ever held: the ones on
+ * their rows, the ones their presentation recorded, the ones a correction of
+ * the main author gave up (`previousCode`) and those of deleted drafts. A
+ * code once given is never handed to another amendment.
+ */
+async function takenAmendmentCodes(
+  tx: Tx,
+  documentId: string,
+): Promise<TakenCode[]> {
+  const rows = await tx
+    .select({ id: amendments.id, code: amendments.code })
+    .from(amendments)
+    .where(
+      and(eq(amendments.documentId, documentId), isNotNull(amendments.code)),
+    );
+  const recorded = await tx
+    .select({
+      amendmentId: events.entityId,
+      payload: events.payload,
+      createdAt: events.createdAt,
+    })
+    .from(events)
+    .where(
+      and(
+        eq(events.entityType, "amendment"),
+        amendmentEventOfDocument(documentId),
+        inArray(events.type, [
+          "amendment_submitted",
+          "amendment_authors_changed",
+          "amendment_deleted",
+        ]),
+      ),
+    );
+  const taken: TakenCode[] = rows.map((row) => ({
+    amendmentId: row.id,
+    code: row.code!,
+    at: null,
+  }));
+  for (const event of recorded) {
+    const payload = (event.payload ?? {}) as {
+      code?: unknown;
+      previousCode?: unknown;
+    };
+    for (const code of [payload.code, payload.previousCode]) {
+      if (typeof code === "string" && code) {
+        taken.push({
+          amendmentId: event.amendmentId,
+          code,
+          at: event.createdAt,
+        });
+      }
+    }
+  }
+  return taken;
 }
 
 /**
@@ -2269,78 +2355,71 @@ async function lockNumbering(tx: Tx, documentId: string): Promise<void> {
 }
 
 /**
- * The next number of a code sequence of the document ("UGR n", "CEA n"):
- * one per prefix (amendmentCodePrefix), whoever holds it now. The offices of
- * the CEA share "CEA n"; a member whose prefix changed starts its own at 1
- * (the CAS, an office before, presents "CAS 1"), and its earlier codes keep
- * theirs taken.
- *
- * A code an amendment gave up when the Secretaría corrected its main author
- * (the `previousCode` of its `amendment_authors_changed` events) is never
- * handed to another amendment once everyone had seen it (the amendment was
- * published by then): `retired.prefix` is the prefix of the sequence, and
- * those numbers count as taken. Only the amendment that held one
- * (`retired.returningAmendmentId`) gets it back, when a later correction
+ * The next number of a code sequence of the document ("UGR4", "CEA2"): one
+ * per prefix (amendmentCodePrefix), whoever holds it now. The offices of the
+ * CEA share "CEA"; a member whose prefix changed starts its own at 1, and
+ * its earlier codes keep theirs taken. Every code ever given in the document
+ * counts (takenAmendmentCodes), so a number never goes to two amendments.
+ * Only the amendment that held a code of this sequence before
+ * (`returningAmendmentId`) gets its latest one back, when a correction
  * returns it to that sequence.
  */
 async function nextMemberSeq(
   tx: Tx,
   documentId: string,
-  retired: { prefix: string; returningAmendmentId?: string },
+  sequence: { prefix: string; returningAmendmentId?: string },
 ): Promise<number> {
-  const former = await tx
-    .select({
-      amendmentId: events.entityId,
-      payload: events.payload,
-    })
-    .from(events)
-    .innerJoin(amendments, eq(amendments.id, events.entityId))
-    .where(
-      and(
-        eq(amendments.documentId, documentId),
-        eq(events.entityType, "amendment"),
-        eq(events.type, "amendment_authors_changed"),
-        // Given up before its publication: nobody else had seen it.
-        isNotNull(amendments.publishedAt),
-        lte(amendments.publishedAt, events.createdAt),
-      ),
+  const taken = await takenAmendmentCodes(tx, documentId);
+  const own = taken
+    .filter(
+      (entry) =>
+        entry.amendmentId === sequence.returningAmendmentId &&
+        entry.at !== null &&
+        amendmentCodeSeq(entry.code, sequence.prefix) !== null,
     )
-    .orderBy(desc(events.createdAt));
-  let retiredMax = 0;
-  for (const event of former) {
-    const seq = formerMemberSeq(
-      (event.payload as { previousCode?: unknown }).previousCode,
-      retired.prefix,
-    );
-    if (seq === null) continue;
-    // Its own former code in this sequence, the latest one.
-    if (event.amendmentId === retired.returningAmendmentId) return seq;
-    retiredMax = Math.max(retiredMax, seq);
+    .sort((a, b) => b.at!.getTime() - a.at!.getTime())[0];
+  if (own) return amendmentCodeSeq(own.code, sequence.prefix)!;
+  const codes = new Set(taken.map((entry) => entry.code));
+  let max = 0;
+  for (const code of codes) {
+    max = Math.max(max, amendmentCodeSeq(code, sequence.prefix) ?? 0);
   }
-  const head = `${retired.prefix} `;
-  const [row] = await tx
-    .select({ value: sql<number>`coalesce(max(${amendments.memberSeq}), 0)` })
-    .from(amendments)
-    .where(
-      and(
-        eq(amendments.documentId, documentId),
-        ne(amendments.kind, "transactional"),
-        sql`left(${amendments.code}, ${head.length}) = ${head}`,
-      ),
-    );
-  return Math.max(Number(row?.value ?? 0), retiredMax) + 1;
+  // An acronym that ends where another begins ("UC" and "UC3") could meet
+  // one of the other's codes: skip it.
+  let seq = max + 1;
+  while (codes.has(formatAmendmentCode(sequence.prefix, seq))) seq += 1;
+  return seq;
 }
 
 /**
- * Numbers amendments on their first publication, so what everyone reads
- * runs without gaps: one withdrawn, declared inadmissible or abandoned
- * before anyone else saw it never takes a number. Gives each its number in
- * the document and its code ("UGR 3", "CEA 2", or "T1" for a transactional),
- * in the order they were presented when several are published at once.
- * What one already has stays (amendments numbered on presentation, before
- * this rule). Returns the code of each.
+ * The prefix of the codes a member presents (amendmentCodePrefix), or null
+ * for a member that is not there.
  */
-async function numberOnPublication(
+async function codePrefixOf(
+  tx: Tx,
+  memberId: string | null,
+): Promise<string | null> {
+  if (!memberId) return null;
+  const [member] = await tx
+    .select({
+      acronym: members.acronym,
+      kind: members.kind,
+      universityAcronym: members.universityAcronym,
+    })
+    .from(members)
+    .where(eq(members.id, memberId));
+  return member ? amendmentCodePrefix(member) : null;
+}
+
+/**
+ * Numbers amendments when they are presented: its number in the document
+ * and its code ("UGR3", "CEA2", or "T1" for a transactional), in the order
+ * they were presented. A number once given stays taken, whatever happens to
+ * the amendment. What one already has stays (presented again after a
+ * correction); publishing calls it too, for amendments presented before this
+ * rule, when they were numbered on publication. Returns the code of each.
+ */
+async function numberAmendments(
   tx: Tx,
   documentId: string,
   ids: readonly string[],
@@ -2373,16 +2452,8 @@ async function numberOnPublication(
     if (row.kind === "transactional") {
       let code = row.code;
       if (code === null) {
-        const existing = await tx
-          .select({ code: amendments.code })
-          .from(amendments)
-          .where(
-            and(
-              eq(amendments.documentId, documentId),
-              eq(amendments.kind, "transactional"),
-            ),
-          );
-        code = nextTransactionalCode(existing.map((other) => other.code));
+        const taken = await takenAmendmentCodes(tx, documentId);
+        code = nextTransactionalCode(taken.map((entry) => entry.code));
         await tx
           .update(amendments)
           .set({ code })
@@ -2391,23 +2462,19 @@ async function numberOnPublication(
       codes.set(row.id, code);
       continue;
     }
-    const presentingId = readMeta(row).presentingMemberId ?? null;
-    const [main] = presentingId
-      ? await tx
-          .select({ acronym: members.acronym, kind: members.kind })
-          .from(members)
-          .where(eq(members.id, presentingId))
-      : [];
+    const prefix = await codePrefixOf(
+      tx,
+      readMeta(row).presentingMemberId ?? null,
+    );
     const number = row.number ?? (await nextNumber(tx, documentId));
     let memberSeq = row.memberSeq;
     let code = row.code;
-    if (main && (code === null || memberSeq === null)) {
-      const prefix = amendmentCodePrefix(main);
+    if (prefix && (code === null || memberSeq === null)) {
       memberSeq = await nextMemberSeq(tx, documentId, {
         prefix,
         returningAmendmentId: row.id,
       });
-      code = `${prefix} ${memberSeq}`;
+      code = formatAmendmentCode(prefix, memberSeq);
     }
     if (
       number !== row.number ||
@@ -2525,15 +2592,18 @@ export async function submitAmendment(
         ...(!instant && approval !== "accepted" ? { awaitsAuthors: true } : {}),
       };
     } else {
-      // Numbered on its first publication (numberOnPublication), never
-      // here. One numbered on presentation before that rule and sent back
-      // for correction keeps its number and, while the same member presents
-      // it, its code.
-      const prefix = amendmentCodePrefix(presenting!.member);
+      // Numbered here, on presentation (numberAmendments, below). One sent
+      // back for correction keeps its number and, while its main author's
+      // prefix is the same, its code; otherwise it takes the next of the
+      // new prefix, and the old code stays taken.
+      const prefix =
+        (await codePrefixOf(tx, presenting!.memberId)) ??
+        amendmentCodePrefix(presenting!.member);
       const kept = numberingToKeep(amendment, prefix);
       const number = kept.number;
       const memberSeq = kept.memberSeq;
-      const code = memberSeq === null ? null : `${prefix} ${memberSeq}`;
+      const code =
+        memberSeq === null ? null : formatAmendmentCode(prefix, memberSeq);
       const late = submissionLate(amendment, isLateSubmission(ctx.window, now));
       // Never admitted here: the Secretaría validates it first (and admits
       // it if on time); a late one also waits for the Mesa.
@@ -2563,13 +2633,15 @@ export async function submitAmendment(
     }
     if (updated.length === 0) fail(409, "La enmienda ya se ha presentado");
     if (afterCorrection) payload.afterCorrection = true;
-    // A transactional the Mesa presents is published at once: numbered now.
-    const code = instant
-      ? ((await numberOnPublication(tx, document.id, [amendment.id])).get(
-          amendment.id,
-        ) ?? null)
-      : amendment.code;
-    if (transactional) payload.code = code;
+    // Numbered on presentation, every kind; the event records what it got,
+    // so the number stays taken whatever becomes of the amendment.
+    await numberAmendments(tx, document.id, [amendment.id]);
+    const [numbered] = await tx
+      .select({ number: amendments.number, code: amendments.code })
+      .from(amendments)
+      .where(eq(amendments.id, amendment.id));
+    payload.code = numbered?.code ?? null;
+    if (!transactional) payload.number = numbered?.number ?? null;
 
     await tx
       .insert(amendmentPositions)
@@ -2601,7 +2673,7 @@ export async function submitAmendment(
         documentId: document.id,
         actor,
         now,
-        transactional: { id: amendment.id, code },
+        transactional: { id: amendment.id, code: numbered?.code ?? null },
         ...replace,
       });
     }
@@ -2974,8 +3046,8 @@ export async function decideAmendmentAdmission(
         actor,
       });
     }
-    // Published now: numbered (numberOnPublication).
-    await numberOnPublication(tx, document.id, unpublished);
+    // Numbered on presentation; one presented before that rule is numbered now (numberAmendments).
+    await numberAmendments(tx, document.id, unpublished);
     for (const id of unpublished) {
       await recordEvent(tx, {
         assemblyId: ctx.assembly.id,
@@ -3210,13 +3282,9 @@ export async function validateAmendments(
       if (updated.length !== ids.length) {
         fail(409, "Las enmiendas han cambiado. Recarga la página");
       }
-      // Published now: numbered (numberOnPublication).
+      // Numbered on presentation; one presented before that rule is numbered now (numberAmendments).
       if (publish) {
-        for (const [id, code] of await numberOnPublication(
-          tx,
-          document.id,
-          ids,
-        )) {
+        for (const [id, code] of await numberAmendments(tx, document.id, ids)) {
           publishedCodes.set(id, code);
         }
       }
@@ -3294,7 +3362,7 @@ export async function publishAmendments(
     if (updated.length !== body.amendmentIds.length) {
       fail(409, "Las enmiendas han cambiado. Recarga la página");
     }
-    await numberOnPublication(tx, document.id, body.amendmentIds);
+    await numberAmendments(tx, document.id, body.amendmentIds);
     for (const id of body.amendmentIds) {
       await recordEvent(tx, {
         assemblyId: ctx.assembly.id,
@@ -3507,36 +3575,26 @@ export async function changeAmendmentAuthors(
     }
 
     // Only a new main author moves the code: with the same one it stays as
-    // it was presented, also if the member's acronym changed since. One not
-    // published yet has none to move (numberOnPublication); one numbered
-    // before that rule gives its code up and takes one on publication.
+    // it was presented, also if the member's acronym changed since. The old
+    // code stays taken (its `previousCode` is recorded below).
     let numbering: { memberSeq: number | null; code: string | null } | null =
       null;
     if (!transactional && change.mainChanged) {
-      const [main] = await tx
-        .select({
-          id: members.id,
-          acronym: members.acronym,
-          kind: members.kind,
-        })
-        .from(members)
-        .where(eq(members.id, nextMain));
-      const prefix = amendmentCodePrefix(main!);
+      const prefix = (await codePrefixOf(tx, nextMain))!;
       const kept = numberingToKeep(amendment, prefix).memberSeq;
       if (kept !== null) {
-        numbering = { memberSeq: kept, code: `${prefix} ${kept}` };
-      } else if (amendment.publishedAt === null) {
-        numbering = { memberSeq: null, code: null };
+        numbering = { memberSeq: kept, code: amendment.code };
       } else {
-        // Its row before the numbering lock, the order publishing takes
-        // them in (numberOnPublication), so the two never wait on each other.
+        // Its row before the numbering lock, the order presenting and
+        // publishing take them in (numberAmendments), so they never wait
+        // on each other.
         await lockAmendments(tx, document.id, [amendment.id]);
         await lockNumbering(tx, document.id);
         const memberSeq = await nextMemberSeq(tx, document.id, {
           prefix,
           returningAmendmentId: amendment.id,
         });
-        numbering = { memberSeq, code: `${prefix} ${memberSeq}` };
+        numbering = { memberSeq, code: formatAmendmentCode(prefix, memberSeq) };
       }
     }
     const codeChanged = numbering !== null && numbering.code !== amendment.code;
@@ -4434,10 +4492,10 @@ export async function createTransactionalAmendment(
       })
       .returning({ id: amendments.id });
     const amendmentId = row!.id;
-    // Its "T n" comes with its publication (numberOnPublication): at once
-    // when the Mesa presents it.
-    const code = instant
-      ? ((await numberOnPublication(tx, document.id, [amendmentId])).get(
+    // Its "T n" comes when it is presented (numberAmendments); a draft has
+    // none until then.
+    const code = submit
+      ? ((await numberAmendments(tx, document.id, [amendmentId])).get(
           amendmentId,
         ) ?? null)
       : null;
