@@ -2564,7 +2564,8 @@
       "theme": "Tema",
       "contentHint": "Lo siguiente solo cambia el texto de documentos y enmiendas.",
       "singleKeyShortcuts": "Atajos de una tecla",
-      "singleKeyShortcutsHint": "Letras sueltas como A o L que actúan en la consola de la Mesa y al responder enmiendas. Se guarda en este navegador.",
+      "singleKeyShortcutsHint": "Letras sueltas como J y K, que pasan de una enmienda a otra, y las que sirven al responder enmiendas. Se guarda en este navegador.",
+      "singleKeyShortcutsHintMesa": "Letras sueltas como J y K, que pasan de una enmienda a otra, y las que sirven al responder enmiendas y en la consola de la Mesa. Se guarda en este navegador.",
       "singleKeyShortcutsOff": "Desactivados en este navegador: las letras sueltas no hacen nada."
     },
     "help": {

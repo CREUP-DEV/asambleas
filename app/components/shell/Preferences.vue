@@ -7,10 +7,23 @@
  * dialog of the user menu and the last step of the welcome both show it.
  * Every choice applies at once; nothing here needs saving.
  */
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
+
 const { t, locale } = useI18n();
 const { localeItems, switchToLocale } = useLocaleSwitcher();
 const colorMode = useColorMode();
 const { enabled: singleKeyShortcuts } = useSingleKeyShortcuts();
+const me = useMe();
+
+/**
+ * Every reader has J and K between amendments; the Mesa console is named
+ * only to accounts that open it.
+ */
+const singleKeyShortcutsHint = computed(() =>
+  me.can(PERMISSION_KEYS.SESSION_MODERATE)
+    ? t("shell.preferences.singleKeyShortcutsHintMesa")
+    : t("shell.preferences.singleKeyShortcutsHint"),
+);
 
 const COLOR_MODES = [
   { value: "system", icon: "i-lucide-monitor" },
@@ -117,7 +130,7 @@ function labelOf(item: unknown): string {
     <USwitch
       v-model="singleKeyShortcuts"
       :label="t('shell.preferences.singleKeyShortcuts')"
-      :description="t('shell.preferences.singleKeyShortcutsHint')"
+      :description="singleKeyShortcutsHint"
     />
 
     <USeparator />
