@@ -2564,7 +2564,8 @@
       "theme": "Theme",
       "contentHint": "What follows only changes the text of documents and amendments.",
       "singleKeyShortcuts": "Single-key shortcuts",
-      "singleKeyShortcutsHint": "Single letters such as A or L that act in the Mesa console and when answering amendments. Saved in this browser.",
+      "singleKeyShortcutsHint": "Single letters such as J and K, which move from one amendment to the next, and those used when answering amendments. Saved in this browser.",
+      "singleKeyShortcutsHintMesa": "Single letters such as J and K, which move from one amendment to the next, and those used when answering amendments and in the Mesa console. Saved in this browser.",
       "singleKeyShortcutsOff": "Off in this browser: single letters do nothing."
     },
     "help": {
