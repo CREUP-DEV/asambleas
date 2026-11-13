@@ -4193,6 +4193,7 @@
       "help": "Al validar una enmienda puedes publicarla ya o dejarla validada y publicarla más tarde.",
       "none": "No hay enmiendas esperando tu validación.",
       "noCode": "Sin número",
+      "reclassifyHelp": "Queda en el historial y sus autores lo verán en sus novedades.",
       "sent": "Presentada",
       "waiting": "Espera tu validación. Hasta entonces solo la ven sus autores, la Secretaría y la Mesa.",
       "validatedHidden": "Validada, pero aún no la ve toda la asamblea. Publícala cuando quieras.",
@@ -5336,6 +5337,9 @@
       },
       "documents": {
         "reslug": "Enlaces de los documentos recalculados"
+      },
+      "amendments": {
+        "recode": "Códigos de las enmiendas recalculados"
       },
       "document_note": {
         "created": "Nota privada escrita",

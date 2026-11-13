@@ -199,6 +199,13 @@ export const AUDIT_ACTIONS = {
    * [{id, from, to}]} (the slugs carry titles, drafts' too: Admins only).
    */
   DOCUMENTS_RESLUG: "documents.reslug",
+  /**
+   * `pnpm db:recode-amendments` (drizzle/recode-amendments.ts) gave the
+   * amendments of a document the code of today's rule ("UGR1"). Source
+   * import; actor null; target the document; after {count, amendments:
+   * [{id, from, to}]} (codes of amendments not published yet: Admins only).
+   */
+  AMENDMENTS_RECODE: "amendments.recode",
 
   // Exports ---------------------------------------------------------------
   /** POST .../export. Target document or assembly; assemblyId set; after {jobId, variant, locale, documentId}. */
@@ -507,6 +514,7 @@ const AUDIT_CATEGORIES: Record<AuditAction, ActivityCategory> = {
   "document.import": "document",
   "document_images.cleanup": "document",
   "documents.reslug": "document",
+  "amendments.recode": "document",
   "calendar_rules.update": "assembly",
   "calendar_rules.seed": "assembly",
   "notifications.update": "notifications",

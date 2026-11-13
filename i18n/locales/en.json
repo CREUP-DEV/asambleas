@@ -4193,6 +4193,7 @@
       "help": "When you validate an amendment you can publish it right away, or keep it validated and publish it later.",
       "none": "No amendments are waiting for your validation.",
       "noCode": "No number",
+      "reclassifyHelp": "It stays in the history and its authors will see it in their news.",
       "sent": "Presented",
       "waiting": "Waiting for your validation. Until then only its authors, the Secretariat and the Mesa can see it.",
       "validatedHidden": "Validated, but the whole assembly cannot see it yet. Publish it whenever you want.",
@@ -5336,6 +5337,9 @@
       },
       "documents": {
         "reslug": "Document links recalculated"
+      },
+      "amendments": {
+        "recode": "Amendment codes recalculated"
       },
       "document_note": {
         "created": "Private note written",

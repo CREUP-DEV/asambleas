@@ -165,6 +165,7 @@ export const ACTIVITY_ACTION_ICONS = {
   "document.import": "i-lucide-file-input",
   "document_images.cleanup": "i-lucide-image-minus",
   "documents.reslug": "i-lucide-link",
+  "amendments.recode": "i-lucide-hash",
   "calendar_rules.update": "i-lucide-calendar-cog",
   "calendar_rules.seed": "i-lucide-calendar-cog",
   "notifications.update": "i-lucide-mail-cog",

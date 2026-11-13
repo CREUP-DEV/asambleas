@@ -1026,6 +1026,8 @@ export const AUDIT_PAYLOAD_KEYS: Record<AuditAction, readonly string[]> = {
   "document_images.cleanup": ["count"],
   // The slugs carry titles, drafts' included: the list is for Admins only.
   "documents.reslug": ["count"],
+  // Codes of amendments not published yet: the list is for Admins only.
+  "amendments.recode": ["count"],
   // The regulations' deadlines: nothing personal in them.
   "calendar_rules.update": ["rules"],
   "calendar_rules.seed": ["rules"],

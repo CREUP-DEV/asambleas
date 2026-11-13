@@ -1,5 +1,5 @@
 // Bundles the scripts the production image runs outside Nuxt (migrations,
-// the RBAC seed and the one-off slug recalculation) into self-contained files in dist/ops, packages included, so
+// the RBAC seed and the one-off slug and amendment code recalculations) into self-contained files in dist/ops, packages included, so
 // the image needs no node_modules for them. The Dockerfile copies them to
 // /app/ops, next to /app/drizzle, which migrate.mjs finds as ../drizzle.
 import { build } from "esbuild";
@@ -8,6 +8,7 @@ const ENTRIES = {
   migrate: "ops/migrate.mjs",
   seed: "drizzle/seed.ts",
   "reslug-documents": "drizzle/reslug-documents.ts",
+  "recode-amendments": "drizzle/recode-amendments.ts",
 };
 
 await build({

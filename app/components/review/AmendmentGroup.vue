@@ -331,8 +331,31 @@ async function sendCorrection(note: string) {
   }
 }
 
+// Kind -------------------------------------------------------------------------
+
+const { reclassify } = useReclassifyAmendment();
+const documentVoted = computed(() => Boolean(fullDocument.value?.finalVote));
+
+async function runReclassify(amendment: AmendmentDto) {
+  if (busy.value) return;
+  busy.value = { id: amendment.id, action: "reclassify" };
+  try {
+    const { updated, conflict } = await reclassify(
+      amendment,
+      `${documentUrl.value}/amendments/${encodeURIComponent(amendment.id)}`,
+    );
+    if (updated) emit("updated", [updated]);
+    else if (conflict) emit("conflict");
+  } finally {
+    busy.value = null;
+  }
+}
+
 function onAction(amendment: AmendmentDto, action: ReviewAmendmentAction) {
   switch (action) {
+    case "reclassify":
+      void runReclassify(amendment);
+      break;
     case "validate_publish":
       void runValidate([amendment.id], true, amendment.id);
       break;
@@ -505,6 +528,7 @@ const summary = computed(() =>
           :amendment="amendment"
           :base="base"
           :base-loading="documentPending"
+          :document-voted="documentVoted"
           :source-labels="sourceLabelsOf(amendment)"
           :busy="busyFor(amendment.id)"
           :disabled="busy !== null"
@@ -534,6 +558,7 @@ const summary = computed(() =>
             :amendment="amendment"
             :base="base"
             :base-loading="documentPending"
+            :document-voted="documentVoted"
             :source-labels="sourceLabelsOf(amendment)"
             :heading-level="6"
           />
@@ -556,6 +581,7 @@ const summary = computed(() =>
             :amendment="amendment"
             :base="base"
             :base-loading="documentPending"
+            :document-voted="documentVoted"
             :busy="busyFor(amendment.id)"
             :disabled="busy !== null"
             :multi-select="multiSelect"

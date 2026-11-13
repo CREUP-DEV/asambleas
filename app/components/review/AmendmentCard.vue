@@ -3,6 +3,10 @@ import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AmendmentDto } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
 import {
+  canReclassifyAmendment,
+  reclassifyTarget,
+} from "~~/shared/utils/amendmentReclassify";
+import {
   canRecordAdmission,
   isAwaitingAssembly,
   isAwaitingAuthors,
@@ -25,6 +29,9 @@ import {
  *   replace: none, its status line names who still has to answer;
  * - late and waiting for the assembly: "Tratarla" (main), "No tratarla" and,
  *   under "Más", "Publicar ya" while it is private.
+ * Its kind shows next to its code when it is not the usual content kind
+ * ("De forma"), and whoever reviews amendments finds "Pasar a enmienda de
+ * forma" (or "de contenido") under "Más", in any of those stages.
  * The main author is named first, then the co-authors. A transactional
  * lists the amendments it groups once the parent has loaded their codes.
  * The parent runs every action. The selection checkbox shows only when the
@@ -59,8 +66,11 @@ const props = withDefaults(
     selectBlockedBy?: string | null;
     /** h5 under the document's h4, h6 inside a subgroup's h5. */
     headingLevel?: 5 | 6;
+    /** The document had its final vote: its amendments keep their kind. */
+    documentVoted?: boolean;
   }>(),
   {
+    documentVoted: false,
     baseLoading: false,
     busy: null,
     disabled: false,
@@ -109,6 +119,21 @@ const canAct = computed(() => {
 });
 
 const isPublic = computed(() => props.amendment.publishedAt !== null);
+
+/** Its kind when it is not the usual content kind ("De forma"...). */
+const kindLabel = computed(() =>
+  props.amendment.kind === "partial"
+    ? null
+    : t(`amendment.kinds.${props.amendment.kind}`),
+);
+
+/** Those who review amendments move it between form and content. */
+const reclassifyTo = computed(() =>
+  props.amendment.can.review &&
+  canReclassifyAmendment(props.amendment, props.documentVoted)
+    ? reclassifyTarget(props.amendment.kind)
+    : null,
+);
 const isTransactional = computed(
   () => props.amendment.kind === "transactional",
 );
@@ -210,39 +235,47 @@ const selectBlocked = computed(
 );
 
 const moreItems = computed<DropdownMenuItem[]>(() => {
+  const items: DropdownMenuItem[] = [];
   // A transactional replaces public amendments: validating it publishes it.
-  if (stage.value === "validate" && !isTransactional.value) {
-    return [
-      {
-        label: t("review.amendments.validateOnly"),
-        description: t("review.amendments.validateOnlyHelp"),
-        icon: "i-lucide-check",
-        disabled: props.disabled,
-        onSelect: () => emit("action", "validate_only"),
-      },
-    ];
+  if (canAct.value && stage.value === "validate" && !isTransactional.value) {
+    items.push({
+      label: t("review.amendments.validateOnly"),
+      description: t("review.amendments.validateOnlyHelp"),
+      icon: "i-lucide-check",
+      disabled: props.disabled,
+      onSelect: () => emit("action", "validate_only"),
+    });
   }
   if (
+    canAct.value &&
     stage.value === "late" &&
     !isPublic.value &&
     props.amendment.can.publish
   ) {
-    return [
-      {
-        label: t("review.late.publishNow"),
-        description: t("review.late.publishNowHelp"),
-        icon: "i-lucide-megaphone",
-        disabled: props.disabled,
-        onSelect: () => emit("action", "publish"),
-      },
-    ];
+    items.push({
+      label: t("review.late.publishNow"),
+      description: t("review.late.publishNowHelp"),
+      icon: "i-lucide-megaphone",
+      disabled: props.disabled,
+      onSelect: () => emit("action", "publish"),
+    });
   }
-  return [];
+  if (reclassifyTo.value) {
+    items.push({
+      label: t(`amendment.reclassify.action.${reclassifyTo.value}`),
+      description: t("review.amendments.reclassifyHelp"),
+      icon: "i-lucide-tags",
+      disabled: props.disabled,
+      onSelect: () => emit("action", "reclassify"),
+    });
+  }
+  return items;
 });
 
 const moreBusy = computed(
   () =>
     props.busy === "validate_only" ||
+    props.busy === "reclassify" ||
     (stage.value === "late" && props.busy === "publish"),
 );
 </script>
@@ -272,11 +305,11 @@ const moreBusy = computed(
             {{ label }}
           </component>
           <UBadge
-            v-if="amendment.kind !== 'partial'"
+            v-if="kindLabel"
             color="neutral"
             variant="outline"
             size="sm"
-            :label="t(`amendment.kinds.${amendment.kind}`)"
+            :label="kindLabel"
           />
           <UBadge
             v-if="amendment.late"
@@ -488,8 +521,8 @@ const moreBusy = computed(
       </p>
     </div>
 
-    <div v-if="canAct" class="flex flex-wrap gap-2">
-      <template v-if="stage === 'validate'">
+    <div v-if="canAct || moreItems.length > 0" class="flex flex-wrap gap-2">
+      <template v-if="canAct && stage === 'validate'">
         <UButton
           icon="i-lucide-check-check"
           :label="t('review.amendments.validatePublish')"
@@ -510,7 +543,7 @@ const moreBusy = computed(
         />
       </template>
       <UButton
-        v-else-if="stage === 'publish'"
+        v-else-if="canAct && stage === 'publish'"
         icon="i-lucide-megaphone"
         :label="t('review.amendments.publish')"
         :aria-describedby="titleId"
@@ -518,7 +551,7 @@ const moreBusy = computed(
         :disabled="disabled && busy !== 'publish'"
         @click="emit('action', 'publish')"
       />
-      <template v-else-if="stage === 'late'">
+      <template v-else-if="canAct && stage === 'late'">
         <UButton
           icon="i-lucide-check"
           :label="t('review.late.treat')"

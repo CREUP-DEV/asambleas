@@ -2173,7 +2173,6 @@ const filteredBlockLabel = computed(() =>
                       :label-of="list.labelOf"
                       :selected="selectedId === item.id"
                       :status-of="amendmentStatusOf"
-                      show-published
                       @select="selectAmendment"
                     />
                   </li>

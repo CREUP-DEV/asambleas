@@ -9,6 +9,7 @@ import type {
   ProponentPosition,
 } from "~~/shared/constants/domain";
 import type { AmendmentReviewState } from "~~/shared/types/api";
+import { amendmentCodeSeq } from "~~/shared/utils/amendmentCode";
 
 /**
  * Pure rules of the Secretaría's review (docs/design.md, "Validation by the
@@ -695,9 +696,10 @@ export function numberingToKeep(
   },
   codePrefix: string,
 ): { number: number | null; memberSeq: number | null } {
+  // Codes from before carry a space ("CEUM 2"): still the same sequence.
   const sameMember =
     previous.memberSeq !== null &&
-    previous.code === `${codePrefix} ${previous.memberSeq}`;
+    amendmentCodeSeq(previous.code, codePrefix) === previous.memberSeq;
   return {
     number: previous.number,
     memberSeq: sameMember ? previous.memberSeq : null,

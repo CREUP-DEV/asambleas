@@ -859,7 +859,7 @@ All paths are under `/api/assemblies/[assembly]/documents/[document]/amendments`
 
 **Main author.** An amendment with co-authors has a main author
 (`AmendmentDto.mainAuthorId`, listed first in `authors`), stored as the
-presenting member: it drives the code (`CEUM 4`, or `CEA 4` for any
+presenting member: it drives the code (`UGR4`, or `CEA4` for any
 executive office) and alone answers the
 transactionals proposed over the amendment. With a single author it is that
 author; a transactional the Mesa drafts for nobody has none (null).
@@ -904,18 +904,21 @@ author; a transactional the Mesa drafts for nobody has none (null).
 - It computes `late` from `amendmentWindow` and `isLateSubmission`. An
   amendment the Secretaría sent back for correction keeps the timing of its
   first presentation: fixing it after the window closed does not make it late.
-- It assigns no number nor code: `number`, `memberSeq` and `code` come with
-  the first publication (`numberOnPublication`: validating with publication,
-  publishing, the Mesa admitting a late one, a transactional the Mesa
-  presents), so what everyone reads runs without gaps. Then `number` is the
-  next per document and `memberSeq` the next of the code's prefix in the
-  document, and `code` is `"{ACRONYM} {memberSeq}"`. When the main author is
-  an executive office the code is `"CEA {memberSeq}"` for everyone, and the
-  offices share that sequence (`amendmentCodePrefix`), so the code never
-  names the office. Several published at once are numbered in the order they
-  were presented. An amendment numbered on presentation before this rule and
-  sent back for correction keeps its `number`, and its `memberSeq` while the
-  same member presents it.
+- It numbers it (`numberAmendments`): `number` is the next per document and
+  `memberSeq` the next of the code's prefix in the document, and `code` is
+  `"{PREFIX}{memberSeq}"` with no space (`UGR3`). The prefix is the acronym
+  the presenter's avatar reads (`amendmentCodePrefix`): a council's
+  university acronym, else its own; a sectorial's or the CAS's acronym. When
+  the main author is an executive office the code is `"CEA{memberSeq}"` for
+  everyone, and the offices share that sequence, so the code never names the
+  office. A number once given is never given again, also when the amendment
+  is withdrawn or, sent back for correction, deleted (`takenAmendmentCodes`).
+  An amendment sent back for correction keeps its `number`, and its
+  `memberSeq` and `code` while its main author's prefix is the same;
+  otherwise it takes the next of the new prefix. A transactional takes the
+  next `T{n}`. The `amendment_submitted` event carries the `number` and
+  `code` it got. Publishing numbers only an amendment presented before this
+  rule that has none yet.
 - It never admits: `admission` stays `pending` and `validatedAt` and
   `publishedAt` stay null until the Secretaría validates it (see below).
 - It creates the `amendment_positions` row as `pending`.
@@ -978,17 +981,15 @@ admission }`, `publish` being what happened to that amendment, plus
   decided amendment and a voted document return 409, and a body that
   changes nothing 422. Members added must be active; offices are named by
   their real ids (reviewers see them). The number in the document stays.
-  The code of a published amendment follows the main author as when a
+  The code follows the main author as when a
   corrected draft is presented again (`numberingToKeep`): kept while its
-  prefix is the same, also from one office to another (both `CEA n`),
+  prefix is the same, also from one office to another (both `CEA`),
   otherwise the next of the new main author's sequence. The code only moves
-  when the main author changes. A code given up this way once public is
-  never handed to another amendment (the `previousCode` of these events
-  counts as taken in its sequence when the amendment was published by then,
-  `nextMemberSeq`); only the same amendment gets it back if a later
-  correction returns it to that sequence. One not published yet has no code
-  (or gives up one from before the rule and takes a new one on
-  publication). A transactional keeps its `T n`. The main author is a party of the transactionals over
+  when the main author changes. A code given up this way is never handed to
+  another amendment (the `previousCode` of these events counts as taken in
+  its sequence, `nextMemberSeq`); only the same amendment gets it back if a
+  later correction returns it to that sequence. A transactional keeps its
+  `T n`. The main author is a party of the transactionals over
   the amendment (or over the transactional, once it replaced its parents),
   so it cannot change while one of them is a draft or presented (409); its
   co-authors can. Proposing a transactional re-checks the main authors of

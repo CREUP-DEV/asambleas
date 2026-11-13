@@ -40,7 +40,9 @@ export type ReviewAmendmentAction =
   | "publish"
   | "correction"
   | "admit"
-  | "inadmit";
+  | "inadmit"
+  /** Between "de forma" and "de contenido" (reclassifyTarget). */
+  | "reclassify";
 
 /** The assembly's decision on late amendments, without the ids. */
 export type AdmissionChoice = Omit<AdmissionBody, "amendmentIds">;

@@ -14,9 +14,13 @@ import {
 
 /**
  * One amendment in the workspace list, kept to what tells them apart:
- * label, its main author (and how many more present it), one status (where
- * it stands with the Secretaría while it is a draft or waits for it, the
- * outcome otherwise: amendmentStatusLine) and one line of justification.
+ * label (its code already names the main author, so no member badge
+ * repeats it; how many more present it), "De forma" or a totality kind
+ * when it is not the usual content kind, one status only when it says
+ * something (where it stands with the Secretaría while it is a draft or
+ * waits for it, the outcome once decided: amendmentStatusLine; a presented,
+ * public amendment, the usual case, shows none) and one line of
+ * justification.
  * A presented transactional says instead, in one line, what it waits for
  * (the main authors still to answer, or who rejected it) or which
  * amendments it replaced.
@@ -27,7 +31,8 @@ import {
  * note when it asked for a correction, that a late amendment waits for the
  * assembly's decision, and that it came in late. Kind, change typology,
  * admission, the main presenter's answer, relations and transactional links
- * are in the detail.
+ * are in the detail. The content kind and the transactional one (its code
+ * is "T n") show no kind.
  *
  * An amendment that is not public yet has a dashed border and says who can
  * see it. The whole card is one button that selects the amendment
@@ -40,8 +45,6 @@ const props = withDefaults(
     label: string;
     labelOf: (id: string) => string;
     selected?: boolean;
-    /** Also say "Publicada" ("Mis enmiendas"), not only the private states. */
-    showPublished?: boolean;
     /**
      * Status of another amendment of the document (the workspace list), so
      * a transactional can tell whether it replaced the ones it combines.
@@ -50,7 +53,6 @@ const props = withDefaults(
   }>(),
   {
     selected: false,
-    showPublished: false,
     statusOf: undefined,
   },
 );
@@ -82,11 +84,18 @@ const authors = computed(() => amendmentAuthorsInOrder(props.amendment));
 const lateState = computed(() => amendmentLateState(props.amendment));
 const isPrivate = computed(() => isAmendmentPrivate(props.amendment));
 /** One status: the review badge while it says more, else the status. */
-const statusLine = computed(() =>
-  amendmentStatusLine(props.amendment, { showPublished: props.showPublished }),
-);
+const statusLine = computed(() => amendmentStatusLine(props.amendment));
 const showStatus = computed(
-  () => !hasProgress.value && statusLine.value.type === "status",
+  () =>
+    !hasProgress.value &&
+    statusLine.value.type === "status" &&
+    props.amendment.status !== "submitted",
+);
+/** "De forma", or a totality kind: what the code does not say. */
+const kindLabel = computed(() =>
+  props.amendment.kind === "partial" || props.amendment.kind === "transactional"
+    ? null
+    : t(`amendment.kinds.${props.amendment.kind}`),
 );
 const correctionNote = computed(() =>
   props.amendment.reviewState === "correction_requested"
@@ -131,7 +140,13 @@ const readMark = computed(() => {
       <span class="text-highlighted font-semibold tabular-nums">
         {{ label }}
       </span>
-      <CommonMemberBadge v-if="authors.main" :member="authors.main" size="xs" />
+      <UBadge
+        v-if="kindLabel"
+        color="neutral"
+        variant="outline"
+        size="xs"
+        :label="kindLabel"
+      />
       <span v-if="authors.others.length > 0" class="text-muted text-xs">
         {{
           t(
@@ -159,7 +174,6 @@ const readMark = computed(() => {
     />
     <AmendmentReviewBadge
       :amendment="amendment"
-      :show-published="showPublished"
       :show-badge="!hasProgress"
       class="mt-2"
     />

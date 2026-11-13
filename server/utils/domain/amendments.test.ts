@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { amendmentCodePrefix } from "../../../shared/utils/amendmentCode";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
 import {
   amendmentVoteMajority,
@@ -61,7 +62,6 @@ const {
   computeApprovalWarnings,
   evaluateVoteInput,
   insertedBlockIds,
-  amendmentCodePrefix,
   nextTransactionalCode,
   prepareAmendmentOps,
   reIdInsertedBlocks,
@@ -342,11 +342,17 @@ describe("nextTransactionalCode", () => {
     expect(nextTransactionalCode(["T1", "T2"])).toBe("T3");
   });
 
-  it("skips codes still in use after a draft was deleted", () => {
+  it("never gives again a number once taken, also by one deleted", () => {
     expect(nextTransactionalCode(["T2"])).toBe("T3");
+    // The same code recorded by several events counts once.
+    expect(nextTransactionalCode(["T1", "T1", "T1"])).toBe("T2");
   });
 
-  it("does not count transactionals not published yet (no code)", () => {
+  it("reads codes from before, with a space, and ignores member codes", () => {
+    expect(nextTransactionalCode(["T 4", "UGR7"])).toBe("T5");
+  });
+
+  it("does not count drafts (no code)", () => {
     expect(nextTransactionalCode([null, "T1", null])).toBe("T2");
     expect(nextTransactionalCode([null])).toBe("T1");
   });
