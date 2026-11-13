@@ -389,6 +389,21 @@ function srOnly(label: string | undefined): string {
   return label ? `<span class="sr-only">${escapeHtml(label)} </span>` : "";
 }
 
+/** Longest text, blanks aside, that still counts as a tiny change. */
+const TINY_CHANGE_MAX = 2;
+
+/**
+ * Whether an added or removed stretch is too small to see on its tint: a
+ * comma, an accent, a space, "y". Diffs mark it apart (`cx-tiny`), so a
+ * reader finds it in a long paragraph.
+ */
+export function isTinyChange(text: string): boolean {
+  const visible = text.replace(/\s+/g, "");
+  return (
+    [...visible].length <= TINY_CHANGE_MAX || /^[\p{P}\p{S}]+$/u.test(visible)
+  );
+}
+
 function segmentHtml(
   segment: Segment,
   inner: string,
@@ -397,13 +412,19 @@ function segmentHtml(
   notes?: string[],
   /** isShownFormatSegment: false leaves a blank format change unmarked. */
   shown = true,
+  /** Inside a block added or removed whole, which its border shows. */
+  wholeBlock = false,
 ): string {
   if (!segment.source) return inner;
   const id = escapeHtml(segment.source);
   const focused = options.focus === segment.source ? " cx-focus" : "";
+  const tiny =
+    options.mode === "diff" && !wholeBlock && isTinyChange(segment.text)
+      ? " cx-tiny"
+      : "";
   if (segment.removed) {
     return options.mode === "diff"
-      ? `<del class="cx-del${focused}" data-amendment-id="${id}">${srOnly(options.diffLabels?.removed)}${inner}</del>`
+      ? `<del class="cx-del${tiny}${focused}" data-amendment-id="${id}">${srOnly(options.diffLabels?.removed)}${inner}</del>`
       : "";
   }
   if (segment.format && options.mode === "diff") {
@@ -425,7 +446,7 @@ function segmentHtml(
     return `<span class="cx-fmt${focused}" data-amendment-id="${id}"${title}>${inner}</span>`;
   }
   if (options.mode === "diff") {
-    return `<ins class="cx-ins${focused}" data-amendment-id="${id}">${srOnly(options.diffLabels?.inserted)}${inner}</ins>`;
+    return `<ins class="cx-ins${tiny}${focused}" data-amendment-id="${id}">${srOnly(options.diffLabels?.inserted)}${inner}</ins>`;
   }
   if (options.mode === "provenance") {
     const label = options.label?.(segment.source);
@@ -456,9 +477,17 @@ export function renderAnnotated(
     let offset = 0;
     let inner = "";
     const notes: string[] = [];
+    const wholeBlock = block.status !== "kept";
     for (const segment of block.segments) {
       if (segment.removed) {
-        inner += segmentHtml(segment, escapeText(segment.text), options);
+        inner += segmentHtml(
+          segment,
+          escapeText(segment.text),
+          options,
+          undefined,
+          true,
+          wholeBlock,
+        );
         continue;
       }
       const text = renderInline(segment.text, block.marks, offset);
@@ -469,6 +498,7 @@ export function renderAnnotated(
         options,
         notes,
         isShownFormatSegment(block, segment),
+        wholeBlock,
       );
     }
 
