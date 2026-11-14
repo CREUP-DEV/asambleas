@@ -3451,7 +3451,12 @@
       "actionCount": "Review amendments: {count} pending | Review amendments: {count} pending"
     },
     "marginMarkers": "Amendments in the margin",
-    "amendHere": "Amend here"
+    "amendHere": "Amend here",
+    "selectionBar": {
+      "label": "Actions on the selected text",
+      "amend": "Amend",
+      "note": "Add note"
+    }
   },
   "session": {
     "title": "Session console",
@@ -5404,7 +5409,7 @@
     "addGeneral": "Add a general note",
     "addHere": "Add a note here",
     "empty": "You have no notes on this document yet",
-    "emptyHint": "To annotate a passage, select it in the text, right-click and choose “Add a note here”.",
+    "emptyHint": "To annotate a passage, select it in the text and choose “Add note” in the bar that appears above it.",
     "sections": {
       "general": "About the document",
       "placed": "On the text",

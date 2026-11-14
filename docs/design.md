@@ -990,7 +990,8 @@ account keeps private notes on the published documents (`document_notes`).
 On screen (`DocumentNotes`, on the document page and in the reader of an
 agenda item) "Notas" opens the list in a side panel, in the order of the
 text; "Añadir nota aquí" in the text's right-click menu writes one on the
-selection, or on the whole paragraph without one. A note on the text shows
+selection, or on the whole paragraph without one, and "Añadir nota" in the
+bar that shows over a selection (mouse or keyboard) writes one on it. A note on the text shows
 as a soft highlight with a dotted line, drawn with the CSS Custom Highlight
 API over the rendered text (its HTML is never changed); pointing at it or
 pressing it shows the note. A browser without that API shows no marks, and

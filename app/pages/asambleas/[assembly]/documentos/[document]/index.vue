@@ -49,7 +49,8 @@ import {
  * selected). Over the original text the same editor opens from the text
  * itself (AmendmentTextActions): a right click on it offers "Hacer
  * enmienda aquí", at that paragraph and with the text the reader had
- * selected, if any, selected in the editor too. Everything changed there is one amendment. Under the button,
+ * selected, if any, selected in the editor too; selecting text shows
+ * "Enmendar" in a bar over it. Everything changed there is one amendment. Under the button,
  * three links with a sentence each open the other ways to amend: changing a
  * word everywhere, sending the document back and proposing an alternative
  * text.
