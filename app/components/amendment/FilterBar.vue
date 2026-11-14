@@ -19,9 +19,10 @@ import {
 } from "~/composables/amendment/workspace";
 
 /**
- * What the amendments panel lists, as visible chips: "Todas", "Pendientes",
- * "Sin leer" (with how many are left, only while the account has some or
- * the filter is on) and "Fuera de plazo" set the filters
+ * What the amendments panel lists, as visible chips: "Contenido" (what the
+ * list opens on) and "Forma", each with how many there are, "Todas",
+ * "Pendientes", "Sin leer" (with how many are left, only while the account
+ * has some or the filter is on) and "Fuera de plazo" set the filters
  * (applyAmendmentQuickFilter), and
  * "Mías" switches to the actor's own amendments (`tab`: drafts,
  * corrections and where the rest stand), with how many wait for them.
@@ -56,6 +57,8 @@ const props = withDefaults(
     mineUrgent?: boolean;
     /** How many amendments the whole list holds. */
     total?: number | null;
+    /** How many of them are content and how many "de forma". */
+    kindTotals?: { content: number; formal: number } | null;
     /** How many of them the account still has to read. */
     unread?: number;
   }>(),
@@ -68,9 +71,20 @@ const props = withDefaults(
     mineWaiting: 0,
     mineUrgent: false,
     total: null,
+    kindTotals: null,
     unread: 0,
   },
 );
+
+/** The count a chip shows next to its name, if any. */
+function chipCount(value: AmendmentQuickFilter): number | null {
+  if (value === "all") return props.total;
+  if (value === "content" || value === "formal") {
+    return props.kindTotals?.[value] ?? null;
+  }
+  if (value === "unread") return props.unread > 0 ? props.unread : null;
+  return null;
+}
 
 const filters = defineModel<AmendmentFilters>({ required: true });
 /** The whole list, or the actor's own amendments. */
@@ -145,6 +159,9 @@ const popoverCount = computed(() =>
     ...(quick.value === "pending" ? { statuses: [] } : {}),
     ...(quick.value === "late" ? { late: "any" as const } : {}),
     ...(quick.value === "unread" ? { unread: false } : {}),
+    ...(quick.value === "content" || quick.value === "formal"
+      ? { kinds: [] }
+      : {}),
   }),
 );
 const anyActive = computed(() => activeAmendmentFilterCount(filters.value) > 0);
@@ -173,17 +190,8 @@ function clearAll(): void {
         @click="pick(value)"
       >
         {{ t(`amendment.filters.chips.${value}`) }}
-        <span
-          v-if="value === 'all' && total !== null"
-          class="text-muted tabular-nums"
-        >
-          {{ total }}
-        </span>
-        <span
-          v-else-if="value === 'unread' && unread > 0"
-          class="text-muted tabular-nums"
-        >
-          {{ unread }}
+        <span v-if="chipCount(value) !== null" class="text-muted tabular-nums">
+          {{ chipCount(value) }}
         </span>
       </UButton>
       <UButton
