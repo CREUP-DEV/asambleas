@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { TabsItem } from "@nuxt/ui";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import {
   DEFAULT_ASSEMBLY_SETTINGS,
@@ -24,11 +25,12 @@ import { affectsReviewQueue } from "~/components/review/-live";
 
 /**
  * The Secretaría's validation inbox (GET .../review): presented documents;
- * in "Enmiendas por revisar", the amendments nobody else sees until they
- * are validated and the transactionals still waiting for the main authors
- * of the amendments they would replace (with who is missing; one any of
- * them rejected is gone); in "Validadas sin publicar", the amendments it
- * validated and kept private, to publish them; and, in "Fuera de plazo",
+ * then "Enmiendas" in two tabs: "Por revisar", the amendments nobody else
+ * sees until they are validated and the transactionals still waiting for
+ * the main authors of the amendments they would replace (with who is
+ * missing; one any of them rejected is gone), and "Validadas sin publicar",
+ * the amendments it validated and kept private, to publish them; and, in
+ * "Fuera de plazo",
  * the late ones that wait for the assembly to decide whether to treat them.
  * Validating a transactional always publishes it: it replaces amendments
  * that are already public, and the help says so while one is listed.
@@ -128,6 +130,30 @@ const toPublishCount = computed(() =>
     0,
   ),
 );
+
+/** The two parts are tabs of "Enmiendas", each with its count. */
+type AmendmentTab = "review" | "publish";
+const amendmentTab = ref<AmendmentTab>("review");
+const amendmentTabItems = computed<TabsItem[]>(() => [
+  {
+    value: "review",
+    label: t("review.amendments.tabs.review"),
+    badge: {
+      label: String(toValidateCount.value),
+      color: "neutral",
+      variant: "soft",
+    },
+  },
+  {
+    value: "publish",
+    label: t("review.amendments.tabs.publish"),
+    badge: {
+      label: String(toPublishCount.value),
+      color: "neutral",
+      variant: "soft",
+    },
+  },
+]);
 /** A transactional is listed: say that validating one publishes it. */
 const transactionalListed = computed(() =>
   reviewGroups.value.some((group) =>
@@ -576,83 +602,69 @@ async function confirmBulkPublish() {
           class="space-y-4"
           aria-labelledby="review-amendments-heading"
         >
-          <div class="space-y-1">
-            <h3
-              id="review-amendments-heading"
-              class="text-highlighted flex items-center gap-2 text-lg font-semibold"
-            >
-              {{ t("review.amendments.title") }}
-              <UBadge
-                color="neutral"
-                variant="soft"
-                size="sm"
-                :label="String(toValidateCount)"
-              />
-            </h3>
+          <h3
+            id="review-amendments-heading"
+            class="text-highlighted text-lg font-semibold"
+          >
+            {{ t("review.amendments.title") }}
+          </h3>
+          <UTabs
+            v-model="amendmentTab"
+            :items="amendmentTabItems"
+            :content="false"
+            variant="link"
+            class="w-full"
+            :aria-label="t('review.amendments.tabs.label')"
+          />
+
+          <!-- Both stay mounted: switching never fetches the texts again. -->
+          <div v-show="amendmentTab === 'review'" class="space-y-4">
             <p v-if="toReviewListed > 0" class="text-muted max-w-3xl text-sm">
               {{ t("review.amendments.help") }}
               <template v-if="transactionalListed">
                 {{ t("review.amendments.transactionalsPublished") }}
               </template>
             </p>
-          </div>
-          <p v-if="toReviewListed === 0" class="text-muted text-sm">
-            {{ t("review.amendments.none") }}
-          </p>
-          <div v-else class="space-y-8">
-            <ReviewAmendmentGroup
-              v-for="group in parts.toReview"
-              :key="group.document.id"
-              :group="group"
-              :api-base="apiBase"
-              :assembly-id="assembly.id"
-              :document-path="documentPath(group.document.slug)"
-              @updated="onAmendmentsUpdated"
-              @removed="onAmendmentsRemoved"
-              @conflict="refresh"
-              @announce="announce"
-            />
-          </div>
-        </section>
-
-        <section
-          v-if="canAmendments"
-          class="space-y-4"
-          aria-labelledby="review-to-publish-heading"
-        >
-          <div class="space-y-1">
-            <h3
-              id="review-to-publish-heading"
-              class="text-highlighted flex items-center gap-2 text-lg font-semibold"
-            >
-              {{ t("review.toPublish.title") }}
-              <UBadge
-                color="neutral"
-                variant="soft"
-                size="sm"
-                :label="String(toPublishCount)"
+            <p v-else class="text-muted text-sm">
+              {{ t("review.amendments.none") }}
+            </p>
+            <div v-if="toReviewListed > 0" class="space-y-8">
+              <ReviewAmendmentGroup
+                v-for="group in parts.toReview"
+                :key="group.document.id"
+                :group="group"
+                :api-base="apiBase"
+                :assembly-id="assembly.id"
+                :document-path="documentPath(group.document.slug)"
+                @updated="onAmendmentsUpdated"
+                @removed="onAmendmentsRemoved"
+                @conflict="refresh"
+                @announce="announce"
               />
-            </h3>
+            </div>
+          </div>
+
+          <div v-show="amendmentTab === 'publish'" class="space-y-4">
             <p v-if="toPublishCount > 0" class="text-muted max-w-3xl text-sm">
               {{ t("review.toPublish.help") }}
             </p>
-          </div>
-          <p v-if="toPublishCount === 0" class="text-muted text-sm">
-            {{ t("review.toPublish.none") }}
-          </p>
-          <div v-else class="space-y-8">
-            <ReviewAmendmentGroup
-              v-for="group in parts.toPublish"
-              :key="group.document.id"
-              :group="group"
-              :api-base="apiBase"
-              :assembly-id="assembly.id"
-              :document-path="documentPath(group.document.slug)"
-              @updated="onAmendmentsUpdated"
-              @removed="onAmendmentsRemoved"
-              @conflict="refresh"
-              @announce="announce"
-            />
+            <p v-else class="text-muted text-sm">
+              {{ t("review.toPublish.none") }}
+            </p>
+            <div v-if="toPublishCount > 0" class="space-y-8">
+              <ReviewAmendmentGroup
+                v-for="group in parts.toPublish"
+                :key="group.document.id"
+                :group="group"
+                :api-base="apiBase"
+                :assembly-id="assembly.id"
+                :document-path="documentPath(group.document.slug)"
+                @updated="onAmendmentsUpdated"
+                @removed="onAmendmentsRemoved"
+                @conflict="refresh"
+                @announce="announce"
+              />
+            </div>
           </div>
         </section>
 

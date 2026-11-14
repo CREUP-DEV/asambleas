@@ -4196,7 +4196,12 @@
       "bulkConfirmFrozen": "Their texts are fixed: they can no longer be edited, and they get their reference if their kind has one."
     },
     "amendments": {
-      "title": "Amendments to review",
+      "title": "Amendments",
+      "tabs": {
+        "label": "Which amendments to show",
+        "review": "To review",
+        "publish": "Validated, not published"
+      },
       "help": "When you validate an amendment you can publish it right away, or keep it validated and publish it later: it then moves to “Validated, not published”.",
       "none": "No amendments are waiting for your validation.",
       "noCode": "No number",
@@ -4252,7 +4257,6 @@
       "transactionalsPublished": "Transactionals are always published when you validate them, because they replace amendments that are already public."
     },
     "toPublish": {
-      "title": "Validated, not published",
       "help": "Their authors, the presenters of the document, the CEA, the Secretariat and the Mesa see them. Publish them when you want the whole assembly to see them.",
       "none": "No validated amendments are waiting to be published."
     },
