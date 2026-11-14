@@ -248,6 +248,12 @@ are added or removed by inserting or deleting the blocks of their cells.
 The editor uses TipTap's tables with the ids kept on their nodes
 (`TableIdsExtension`), and a table menu in the toolbar.
 
+The editor writes Spanish quotes as one types (`SpanishQuotesExtension`):
+a straight `"` becomes « or », and “ ” inside an open «…»; typed over a
+selection within a paragraph it wraps it. Backspace right after brings the
+straight quote back. Only typing changes: pasted and stored text keep their
+quotes, so no amendment shows a change nobody wrote.
+
 Images are blocks too (`type: "image"`, `image: { asset, width, height,
 alt }`, empty text): a picture stored for the document in `document_images`
 and on disk under `UPLOAD_STORAGE_DIR/images/`, never a link to anything
