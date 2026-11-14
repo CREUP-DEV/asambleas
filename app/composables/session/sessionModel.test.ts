@@ -128,6 +128,7 @@ const am = (id: string, over: Partial<AmendmentDto>): AmendmentDto => ({
     review: true,
     validate: false,
     publish: false,
+    unvalidate: false,
   },
   ...over,
 });

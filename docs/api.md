@@ -828,6 +828,7 @@ All paths are under `/api/assemblies/[assembly]/documents/[document]/amendments`
 | POST   | `/validate`               | `amendment:review`                                   | `ValidateAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                              |
 | POST   | `/publish`                | `amendment:review`                                   | `PublishAmendmentsBody`. See validation below. Returns `DocumentAmendmentsDto`.                               |
 | POST   | `/[amendment]/correction` | `amendment:review`                                   | `CorrectionBody`. See validation below. Returns `AmendmentDto`.                                               |
+| POST   | `/[amendment]/unvalidate` | `amendment:review`                                   | `UndoValidationBody`. Takes a validation back. See validation below. Returns `AmendmentDto`.                  |
 | POST   | `/[amendment]/reclassify` | `amendment:review`                                   | `ReclassifyBody`. See reclassifying below. Returns `AmendmentDto`.                                            |
 | GET    | `/[amendment]/authors`    | author while the draft can be edited                 | `AmendmentComposerAuthorsDto`: the draft's real authors, for its composer only. See "Executive areas".        |
 | POST   | `/[amendment]/authors`    | `amendment:review`                                   | `AmendmentAuthorsBody`. See correcting who presents an amendment below. Returns `AmendmentDto`.               |
@@ -853,7 +854,8 @@ All paths are under `/api/assemblies/[assembly]/documents/[document]/amendments`
   publication) only their authors, the user who created them, the members
   involved in a transactional, reviewers and the Mesa see them. Once
   validated (`validatedAt`), an unpublished amendment is also visible to the
-  CEA's accounts (role `CEA`) and the presenters of the document
+  CEA's accounts (role `CEA`), whoever reads the control sheet
+  (`control_sheet:view` or `:edit`) and the presenters of the document
   (`seesValidatedAmendments`); their main presenter still answers it only
   once it is published. Visibility is per amendment: there is no
   assembly-wide policy any more.
@@ -960,11 +962,28 @@ admission }`, `publish` being what happened to that amendment, plus
   after the final vote (`can.publish` is the only capability left then).
 - `POST .../[amendment]/correction` (`CorrectionBody`: a note of 1 to 2000
   characters and the amendment's `updatedAt` for the optimistic lock) sends a
-  `submitted`, not yet validated amendment back to `draft` with the note in
-  `correctionNote` and `correctionRequestedAt`. `submittedAt` becomes null;
-  number, code and timing are kept (see submitting). Records
-  `amendment_correction_requested` (`{ note }`). A transactional still
-  waiting for its main authors returns 409.
+  `submitted` amendment back to `draft` with the note in `correctionNote` and
+  `correctionRequestedAt`: one not validated yet, or one validated, published
+  or not, that is still undecided (`can.unvalidate`, below). `submittedAt`
+  becomes null; number, code and timing are kept (see submitting): its
+  authors may fix it and present it again, on time if it was, or leave it
+  (a draft never counts). A validated one also loses `validatedAt`,
+  `publishedAt` and its admission, and its presenter's answer goes back to
+  pending. Records `amendment_correction_requested` (`{ note }`, plus
+  `afterValidation`, `published` and `positionReset` when they apply). A
+  transactional still waiting for its main authors returns 409.
+- `POST .../[amendment]/unvalidate` (`UndoValidationBody`: the amendment's
+  `updatedAt`) takes a validation back: the amendment stays `submitted` and
+  loses `validatedAt`, `publishedAt` and its admission, so the Secretaría
+  has it in «Por revisar» again and only its authors, the Secretaría and the
+  Mesa read it. The presenter's answer goes back to pending. Records
+  `amendment_validation_undone` (`{ published }`, plus `positionReset`). Both this and a
+  correction after validation need `can.unvalidate`
+  (`validationReopenBlocker`): validated, undecided, not a transactional,
+  not a late one the assembly admitted, the document not voted and the
+  assembly not closed; and they answer 409 while the Mesa has it on screen
+  or any transactional groups it, closed ones included (they could come
+  back over it), each with a `messageKey`.
 - Reclassifying: `POST .../[amendment]/reclassify` (`amendment:review` or
   `amendment:manage`; `session:moderate` alone answers 403. `ReclassifyBody`:
   the `kind` it becomes and the amendment's `updatedAt` for the optimistic

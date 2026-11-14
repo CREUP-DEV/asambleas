@@ -6,7 +6,7 @@ import { isUnanimousVote } from "~~/shared/utils/controlSheet";
  * One recorded vote in a cell of the control sheet: how it was voted, every
  * count that is not zero (blank and invalid ones too, as the minutes record
  * them) and its result. `label` names what was voted when a row holds
- * several (the reference of each document).
+ * several (the title of each document).
  */
 const props = defineProps<{
   vote: VoteDto;

@@ -959,12 +959,18 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
     "awaitsAuthors",
   ],
   amendment_withdrawn: ["by", "sourceCode", "sourceStatus"],
-  amendment_correction_requested: ["note"],
+  amendment_correction_requested: [
+    "note",
+    "afterValidation",
+    "published",
+    "positionReset",
+  ],
   amendment_reclassified: ["from", "to"],
   // The authors before and after stay with Admins and with the amendment's
   // own history, which masks the executive areas.
   amendment_authors_changed: ["code", "previousCode"],
   amendment_validated: ["publish", "admission", "method"],
+  amendment_validation_undone: ["published", "positionReset"],
   amendment_published: [],
   amendment_admitted: ["method", "voteResult", "validated"],
   amendment_inadmissible: ["method", "voteResult", "validated"],

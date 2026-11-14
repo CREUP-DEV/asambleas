@@ -1582,7 +1582,8 @@
         "amendment_published": "Published",
         "amendment_correction_requested": "The Secretariat asked for a correction",
         "amendment_reclassified": "The Secretariat changed the kind of amendment",
-        "amendment_authors_changed": "The Secretariat changed who presents it"
+        "amendment_authors_changed": "The Secretariat changed who presents it",
+        "amendment_validation_undone": "Validation undone by the Secretariat"
       },
       "admissionMethods": {
         "mesa": "By decision of the presiding board",
@@ -1603,7 +1604,10 @@
       "lapsedBySources": "Transactional {label} already replaced the same amendments",
       "lapsedBySourcesUnknown": "Another transactional already replaced the same amendments",
       "replacedBy": "Replaced by {label}",
-      "validatedPublished": "Published at the same time: the whole assembly can see it"
+      "validatedPublished": "Published at the same time: the whole assembly can see it",
+      "wasPublished": "It was published: it is no longer visible to everyone.",
+      "wasValidated": "It was validated: it no longer is.",
+      "positionReset": "The answer of whoever presents the document was cleared."
     },
     "vote": {
       "counts": "Count",
@@ -1830,6 +1834,25 @@
       "changed": {
         "formal": "From amendment of content to amendment of form",
         "partial": "From amendment of form to amendment of content"
+      }
+    },
+    "validationUndo": {
+      "label": "Amendment validation",
+      "stateValidated": "Validated by the Secretariat, not published.",
+      "statePublished": "Validated and published by the Secretariat.",
+      "undo": "Undo the validation",
+      "correct": "Send back for a correction",
+      "correctionHelp": "Explain why it cannot go on as it is. Its authors may fix it and present it again, or leave it.",
+      "undone": "Validation undone: it is pending review again",
+      "undoneHidden": "It is no longer visible to everyone.",
+      "failed": "The validation could not be undone",
+      "confirmTitle": "Undo the validation?",
+      "confirmDescription": "It will be pending review again and its authors will see it in their news.",
+      "hides": "It is published: it will no longer show in the assembly.",
+      "clearsAnswer": "The answer of whoever presents the document will be cleared.",
+      "errors": {
+        "onScreen": "The Mesa has it on screen. Ask them to take it off the projection and try again.",
+        "transactional": "A transactional amendment groups it: it can no longer go back to review."
       }
     }
   },
@@ -2835,7 +2858,8 @@
         "transactedBy": "Transactional {code} replaces {amendment} and is debated in its place.",
         "lapsedBy": "Lapsed: transactional {code} already replaces those amendments, so {amendment} does not go ahead.",
         "closedBy": "Closed: {amendment} can no longer go ahead, because amendment {code}, which it grouped, was already decided or withdrawn.",
-        "restoredBy": "{amendment} is back on its way: amendment {code} was reopened and every amendment it groups is open again."
+        "restoredBy": "{amendment} is back on its way: amendment {code} was reopened and every amendment it groups is open again.",
+        "validationUndone": "The Secretariat undid the validation of {amendment}: it is reviewing it again."
       },
       "document": {
         "published": "The document was published: the whole assembly can read it now.",
@@ -4250,7 +4274,8 @@
           "one": "{label} published",
           "many": "{count} amendments published"
         },
-        "correction": "A correction of {label} was requested"
+        "correction": "A correction of {label} was requested",
+        "unvalidated": "Validation of {label} undone"
       },
       "presentedBy": "Presented by",
       "groupsAmendments": "Groups {count} amendment | Groups {count} amendments",
@@ -4262,7 +4287,10 @@
       "countAwaitingAuthors": "{count} transactional waiting for its authors | {count} transactionals waiting for their authors",
       "sharesSourcesWith": "It shares amendments with {label}, which you already selected. Only one of them can replace them: validating one closes the other.",
       "bulkValidateOnlySkipsTransactionals": "The selected transactionals are left out: they are always published when validated.",
-      "transactionalsPublished": "Transactionals are always published when you validate them, because they replace amendments that are already public."
+      "transactionalsPublished": "Transactionals are always published when you validate them, because they replace amendments that are already public.",
+      "unvalidateHelp": "Back to “To review” as it is",
+      "correctValidatedHelp": "Back to its authors with a note to fix it",
+      "unvalidatedHint": "It is in “To review” again."
     },
     "toPublish": {
       "help": "Their authors, the presenters of the document, the CEA, the Secretariat and the Mesa see them. Publish them when you want the whole assembly to see them.",
@@ -5540,7 +5568,8 @@
       "notifications": {
         "update": "Email notices changed",
         "test": "Test email sent"
-      }
+      },
+      "amendment_validation_undone": "Amendment validation undone by the Secretariat"
     },
     "changes": {
       "milestoneNote": "Note on “{milestone}”",

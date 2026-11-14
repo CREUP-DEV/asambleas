@@ -81,6 +81,7 @@ export const NEWS_LIMIT = 30;
 /** Events about the member's own amendments that count as news. */
 export const NEWS_OUTCOME_TYPES = [
   "amendment_validated",
+  "amendment_validation_undone",
   "amendment_published",
   "amendment_correction_requested",
   "amendment_reclassified",

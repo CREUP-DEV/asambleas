@@ -124,7 +124,7 @@ const selectedDocument = computed(() => {
 const selectItems = computed(() =>
   documentOptions.value.map((document) => ({
     value: document.id,
-    label: document.reference ?? document.title,
+    label: document.title,
     description:
       document.undecided > 0
         ? t(

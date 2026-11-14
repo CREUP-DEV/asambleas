@@ -791,6 +791,16 @@ async function remove(): Promise<void> {
       @settled="onReviewSettled"
     />
 
+    <AmendmentValidationUndo
+      v-if="amendment.can.unvalidate"
+      :amendment="amendment"
+      :url="url"
+      @updated="emit('updated', $event)"
+      @corrected="onCorrected"
+      @conflict="emit('changed')"
+      @settled="onReviewSettled"
+    />
+
     <AmendmentReclassify
       v-if="canReclassify"
       :amendment="amendment"

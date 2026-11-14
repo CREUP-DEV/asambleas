@@ -142,6 +142,7 @@ export const ACTIVITY_ACTION_ICONS = {
   amendment_reclassified: "i-lucide-tags",
   amendment_authors_changed: "i-lucide-user-pen",
   amendment_validated: "i-lucide-badge-check",
+  amendment_validation_undone: "i-lucide-badge-x",
   amendment_published: "i-lucide-eye",
   amendment_admitted: "i-lucide-badge-check",
   amendment_inadmissible: "i-lucide-ban",

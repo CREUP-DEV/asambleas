@@ -33,6 +33,7 @@ export const REVIEW_LIVE_TYPES: ReadonlySet<string> = new Set([
   "amendment_created",
   "amendment_submitted",
   "amendment_validated",
+  "amendment_validation_undone",
   "amendment_published",
   "amendment_correction_requested",
   // The inbox shows the kind of each amendment.

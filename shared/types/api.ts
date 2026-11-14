@@ -851,6 +851,15 @@ export interface CorrectionBody {
   updatedAt: IsoDate;
 }
 
+/**
+ * POST .../amendments/[amendment]/unvalidate (amendment:review): the
+ * validation of an amendment is taken back and the Secretaría has it to
+ * review again (validationReopenBlocker). Returns the amendment.
+ */
+export interface UndoValidationBody {
+  updatedAt: IsoDate;
+}
+
 export interface DocumentContentBody {
   blocks: Block[];
   /** contentHash of the working version the client edited. */
@@ -947,6 +956,14 @@ export interface AmendmentCapabilities {
   validate: boolean;
   /** Make it visible to everyone (validated, not published yet). */
   publish: boolean;
+  /**
+   * Take its validation back, or send it back for a correction once
+   * validated: validated (published or not), undecided, not a
+   * transactional, not a late one the assembly admitted
+   * (validationReopenBlocker). The server also refuses one on screen or
+   * one a pending transactional builds on.
+   */
+  unvalidate: boolean;
 }
 
 /**

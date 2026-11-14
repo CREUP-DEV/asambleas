@@ -77,6 +77,7 @@ function amendment(
       review: true,
       validate: reviewState === "pending_validation",
       publish: reviewState === "validated",
+      unvalidate: false,
     },
     ...overrides,
   };

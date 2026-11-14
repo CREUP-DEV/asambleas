@@ -1582,7 +1582,8 @@
         "amendment_published": "Publicada",
         "amendment_correction_requested": "Secretaría pidió una corrección",
         "amendment_reclassified": "Secretaría cambió el tipo de enmienda",
-        "amendment_authors_changed": "Secretaría cambió quién la presenta"
+        "amendment_authors_changed": "Secretaría cambió quién la presenta",
+        "amendment_validation_undone": "Validación deshecha por Secretaría"
       },
       "admissionMethods": {
         "mesa": "Por decisión de la Mesa",
@@ -1603,7 +1604,10 @@
       "lapsedBySources": "La transaccional {label} ya sustituyó a las mismas enmiendas",
       "lapsedBySourcesUnknown": "Otra transaccional ya sustituyó a las mismas enmiendas",
       "replacedBy": "La sustituye {label}",
-      "validatedPublished": "Publicada a la vez: ya la ve toda la asamblea"
+      "validatedPublished": "Publicada a la vez: ya la ve toda la asamblea",
+      "wasPublished": "Estaba publicada: ha dejado de ser visible para todos.",
+      "wasValidated": "Estaba validada: ha dejado de estarlo.",
+      "positionReset": "Se borró la respuesta de quien presenta el documento."
     },
     "vote": {
       "counts": "Recuento",
@@ -1830,6 +1834,25 @@
       "changed": {
         "formal": "Pasa de enmienda de contenido a enmienda de forma",
         "partial": "Pasa de enmienda de forma a enmienda de contenido"
+      }
+    },
+    "validationUndo": {
+      "label": "Validación de la enmienda",
+      "stateValidated": "Validada por Secretaría, sin publicar.",
+      "statePublished": "Validada y publicada por Secretaría.",
+      "undo": "Deshacer la validación",
+      "correct": "Devolver para corregir",
+      "correctionHelp": "Explica por qué no puede seguir así. Sus autores podrán corregirla y volver a presentarla, o dejarla.",
+      "undone": "Validación deshecha: vuelve a estar por revisar",
+      "undoneHidden": "Ha dejado de ser visible para todos.",
+      "failed": "No se ha podido deshacer la validación",
+      "confirmTitle": "¿Deshacer la validación?",
+      "confirmDescription": "Volverá a estar por revisar y sus autores lo verán en sus novedades.",
+      "hides": "Está publicada: dejará de verse en la asamblea.",
+      "clearsAnswer": "Se borrará la respuesta de quien presenta el documento.",
+      "errors": {
+        "onScreen": "La Mesa la tiene en pantalla. Pide que la quite de la proyección y vuelve a intentarlo.",
+        "transactional": "Una enmienda transaccional la agrupa: ya no puede volver a revisión."
       }
     }
   },
@@ -2835,7 +2858,8 @@
         "transactedBy": "La transaccional {code} sustituye a {amendment} y se debate en su lugar.",
         "lapsedBy": "Ha decaído {amendment}: la transaccional {code} ya sustituye a esas enmiendas.",
         "closedBy": "Se ha cerrado {amendment}: la enmienda {code}, que agrupaba, ya se decidió o se retiró, así que no puede seguir adelante.",
-        "restoredBy": "Vuelve a estar en curso {amendment}: se ha reabierto la enmienda {code} y todas las que agrupa vuelven a estar abiertas."
+        "restoredBy": "Vuelve a estar en curso {amendment}: se ha reabierto la enmienda {code} y todas las que agrupa vuelven a estar abiertas.",
+        "validationUndone": "Secretaría ha deshecho la validación de {amendment}: vuelve a revisarla."
       },
       "document": {
         "published": "Se ha publicado el documento: ya lo puede leer toda la asamblea.",
@@ -4250,7 +4274,8 @@
           "one": "{label} publicada",
           "many": "{count} enmiendas publicadas"
         },
-        "correction": "Se ha pedido corregir {label}"
+        "correction": "Se ha pedido corregir {label}",
+        "unvalidated": "Validación de {label} deshecha"
       },
       "presentedBy": "Presentada por",
       "groupsAmendments": "Agrupa {count} enmienda | Agrupa {count} enmiendas",
@@ -4262,7 +4287,10 @@
       "countAwaitingAuthors": "{count} transaccional espera a sus autores | {count} transaccionales esperan a sus autores",
       "sharesSourcesWith": "Comparte enmiendas con {label}, que ya has seleccionado. Solo una de las dos puede sustituirlas: al validar una, la otra se cierra.",
       "bulkValidateOnlySkipsTransactionals": "Las transaccionales seleccionadas no se incluyen: al validarlas siempre se publican.",
-      "transactionalsPublished": "Las transaccionales se publican siempre al validarlas, porque sustituyen a enmiendas que ya son públicas."
+      "transactionalsPublished": "Las transaccionales se publican siempre al validarlas, porque sustituyen a enmiendas que ya son públicas.",
+      "unvalidateHelp": "Vuelve a «Por revisar» tal como está",
+      "correctValidatedHelp": "Vuelve a sus autores con una nota para que la corrijan",
+      "unvalidatedHint": "Vuelve a estar en «Por revisar»."
     },
     "toPublish": {
       "help": "Las ven sus autores, quienes presentan el documento, la CEA, la Secretaría y la Mesa. Publícalas cuando quieras que las vea toda la asamblea.",
@@ -5540,7 +5568,8 @@
       "notifications": {
         "update": "Avisos por correo cambiados",
         "test": "Correo de prueba enviado"
-      }
+      },
+      "amendment_validation_undone": "Validación de una enmienda deshecha por Secretaría"
     },
     "changes": {
       "milestoneNote": "Nota de «{milestone}»",

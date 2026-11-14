@@ -6,6 +6,7 @@ import type {
   PublishAmendmentsBody,
   ValidateAmendmentsBody,
   CorrectionBody,
+  UndoValidationBody,
 } from "~~/shared/types/api";
 import {
   blockedBySelection,
@@ -372,6 +373,33 @@ function onAction(amendment: AmendmentDto, action: ReviewAmendmentAction) {
     case "correction":
       correctionTarget.value = amendment;
       break;
+    case "unvalidate":
+      void runUnvalidate(amendment);
+      break;
+  }
+}
+
+/** Takes a validation back: the amendment goes to "Por revisar". */
+async function runUnvalidate(amendment: AmendmentDto) {
+  if (busy.value) return;
+  busy.value = { id: amendment.id, action: "unvalidate" };
+  try {
+    const body: UndoValidationBody = { updatedAt: amendment.updatedAt };
+    const updated = await api.send<AmendmentDto>(
+      `${documentUrl.value}/amendments/${encodeURIComponent(amendment.id)}/unvalidate`,
+      { method: "POST", body: { ...body } },
+    );
+    unselect([amendment.id]);
+    emit("updated", [updated]);
+    notify(
+      t("review.amendments.done.unvalidated", { label: labelOf(amendment) }),
+      t("review.amendments.unvalidatedHint"),
+    );
+  } catch (error) {
+    api.notifyError(error, "review.amendments.actionError");
+    if (api.isConflict(error)) emit("conflict");
+  } finally {
+    busy.value = null;
   }
 }
 

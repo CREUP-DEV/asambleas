@@ -690,14 +690,20 @@ reviews each presented amendment and:
   chooses per amendment whether it becomes visible to everyone right away or
   stays private until it publishes it later (`POST .../amendments/publish`);
 - or asks for a correction: the amendment goes back to draft with a note for
-  its authors. On the document page the Secretaría finds the ones it sent back
+  its authors. Once validated, published or not, and while undecided, it can
+  still undo the validation (back to "Por revisar" as it is) or send it back
+  for a correction; never for a transactional, a late one the assembly
+  admitted, one on screen or one a transactional groups. A
+  correction lets the authors fix it and present it again, keeping its
+  number, code and timing, or leave it as a draft that never counts. On the document page the Secretaría finds the ones it sent back
   under "N devueltas para corregir", next to what it still has to validate or
   publish, until the authors send them again.
 
 Until it is published, an amendment is visible only to its authors, its
 creator, the parties of a transactional and the Secretaría and Mesa; once
-validated, also to the CEA's accounts and the presenters of the document it
-amends, who read it but not its correction notes. A
+validated, also to the CEA's accounts, the control sheet's readers and the
+presenters of the document it amends, who read it but not its correction
+notes. A
 transactional created by the Mesa in session is validated and published at
 once. `reviewState` on `AmendmentDto` tells authors where their amendment
 stands. The time-based `amendmentVisibility` setting is gone.

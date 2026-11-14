@@ -569,6 +569,9 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
       return make("home.news.amendment.published");
     case "amendment_correction_requested":
       return make("home.news.amendment.correction");
+    case "amendment_validation_undone":
+      // The Secretaría took its validation back: it reviews it again.
+      return make("home.news.amendment.validationUndone");
     case "amendment_reclassified":
       // The Secretaría moved it between "de forma" and "de contenido".
       return news.value === "formal"

@@ -42,7 +42,9 @@ export type ReviewAmendmentAction =
   | "admit"
   | "inadmit"
   /** Between "de forma" and "de contenido" (reclassifyTarget). */
-  | "reclassify";
+  | "reclassify"
+  /** Take a validation back: it is reviewed again (can.unvalidate). */
+  | "unvalidate";
 
 /** The assembly's decision on late amendments, without the ids. */
 export type AdmissionChoice = Omit<AdmissionBody, "amendmentIds">;

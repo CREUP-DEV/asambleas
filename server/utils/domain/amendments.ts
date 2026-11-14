@@ -26,6 +26,7 @@ import {
   documentVersions,
   documents,
   events,
+  liveState,
   members,
   users,
   votes,
@@ -59,6 +60,7 @@ import type {
   AmendmentOutcomeDto,
   ApprovalWarnings,
   CorrectionBody,
+  UndoValidationBody,
   DocumentAmendmentsDto,
   EventDto,
   MemberRef,
@@ -167,6 +169,7 @@ import {
   transactionalSourcesMessage,
   unopenSourceReason,
   unopenSourcesMessage,
+  validationReopenBlocker,
 } from "./reviewState";
 import {
   closeTransactionalsOver,
@@ -541,6 +544,13 @@ export interface CapabilityInput {
    * its amendments changes any more, except publishing them.
    */
   voted?: boolean;
+  /** For validationReopenBlocker; absent reads as not reopenable. */
+  kind?: AmendmentKind;
+  late?: boolean;
+  /** The assembly is closed: nothing goes back to review. */
+  assemblyClosed?: boolean;
+  /** A transactional groups it: it never goes back to review. */
+  grouped?: boolean;
 }
 
 /**
@@ -556,6 +566,19 @@ export function amendmentCapabilities(
   return {
     validate: open && input.review && awaitsValidation(input),
     publish: input.review && isAmendmentPublishable(input),
+    unvalidate:
+      open &&
+      input.review &&
+      !input.assemblyClosed &&
+      !input.grouped &&
+      input.kind !== undefined &&
+      validationReopenBlocker({
+        status: input.status,
+        validatedAt: input.validatedAt,
+        kind: input.kind,
+        late: input.late ?? false,
+        admission: input.admission,
+      }) === null,
     edit: input.isAuthor && draft,
     submit: input.isAuthor && draft,
     withdraw: input.isAuthor && submitted,
@@ -1467,6 +1490,10 @@ export async function buildAmendmentDtos(
         rule: ctx.rule,
         sourcesOpen: transactionalSourcesOpen(row, sourceStates),
         voted,
+        kind: row.kind,
+        late: row.late,
+        assemblyClosed: ctx.assembly.status === "closed",
+        grouped: row.derived.length > 0,
       }),
     };
   });
@@ -3404,11 +3431,134 @@ export async function publishAmendments(
 }
 
 /**
- * The Secretaría sends a presented amendment that it has not validated yet
- * back to its authors (amendment:review), with a note: it returns to draft,
- * keeps its number, code and timing (see submitAmendment) and shows the note
- * to its authors until they present it again. Optimistic lock on the
- * amendment.
+ * What still keeps a validated amendment from going back to review, read
+ * under the document lock: the Mesa has it on screen, or a pending
+ * transactional builds on it (it builds only on published, admitted
+ * amendments; it is closed or turned down first). Null when nothing does.
+ */
+async function assertValidationReopenable(
+  tx: Executor,
+  amendmentId: string,
+  assemblyId: string,
+): Promise<void> {
+  // Under shareLockAssembly: PUT .../live-state (lockAssembly) waits, so
+  // the projection never points at it once it stops being public.
+  const [live] = await tx
+    .select({ amendmentId: liveState.amendmentId })
+    .from(liveState)
+    .where(eq(liveState.assemblyId, assemblyId));
+  if (live?.amendmentId === amendmentId) {
+    fail(409, "La Mesa la tiene en pantalla: quítala de la proyección antes", {
+      messageKey: "amendment.validationUndo.errors.onScreen",
+    });
+  }
+  // A transactional over it, whatever its state: one pending would build on
+  // something no longer public, and one closed could come back over a text
+  // that changed (transactionalsToRestore). Transactionals are created only
+  // under the document lock NO KEY UPDATE, which waits for this share lock.
+  const [grouped] = await tx
+    .select({ id: amendmentSources.transactionalId })
+    .from(amendmentSources)
+    .where(eq(amendmentSources.sourceId, amendmentId))
+    .limit(1);
+  if (grouped) {
+    fail(409, "Una transaccional la agrupa: ya no puede volver a revisión", {
+      messageKey: "amendment.validationUndo.errors.transactional",
+    });
+  }
+}
+
+/** The presenter answers it again: back to pending, under the row lock. */
+async function resetPosition(
+  tx: Executor,
+  amendmentId: string,
+): Promise<boolean> {
+  const reset = await tx
+    .update(amendmentPositions)
+    .set({ position: "pending", comment: null, decidedByUserId: null })
+    .where(
+      and(
+        eq(amendmentPositions.amendmentId, amendmentId),
+        ne(amendmentPositions.position, "pending"),
+      ),
+    )
+    .returning({ amendmentId: amendmentPositions.amendmentId });
+  return reset.length > 0;
+}
+
+/**
+ * Takes back the validation of an amendment (validationReopenBlocker): it
+ * stops being validated, published and admitted, so only its authors, the
+ * Secretaría and the Mesa read it again, and the Secretaría has it to
+ * review (amendment:review). `publishedAt` goes too, since nothing that is
+ * not validated is public. The presenter's answer goes back to pending: it
+ * answers once the amendment is public again, and an earlier acceptance
+ * would otherwise skip the "incorporate" rule. Records
+ * amendment_validation_undone with whether it was public and whether the
+ * answer was reset. Optimistic lock on the amendment.
+ */
+export async function undoAmendmentValidation(
+  ctx: AmendmentContext,
+  body: UndoValidationBody,
+): Promise<AmendmentDto> {
+  const { actor, amendment } = ctx;
+  assertReviewer(actor);
+  assertNotFinal(ctx);
+  if (ctx.assembly.status === "closed") fail(409, "La asamblea está cerrada");
+  const blocker = validationReopenBlocker(amendment);
+  if (blocker) fail(409, blocker);
+
+  await db.transaction(async (tx) => {
+    await shareLockAssembly(tx, ctx.assembly.id);
+    await lockDocument(tx, ctx.document.id, "share");
+    await assertValidationReopenable(tx, amendment.id, ctx.assembly.id);
+    const updated = await tx
+      .update(amendments)
+      .set({
+        validatedAt: null,
+        validatedByUserId: null,
+        publishedAt: null,
+        admission: "pending",
+      })
+      .where(
+        and(
+          eq(amendments.id, amendment.id),
+          eq(amendments.status, "submitted"),
+          isNotNull(amendments.validatedAt),
+          buildOptimisticLockCondition(amendments.updatedAt, body.updatedAt),
+        ),
+      )
+      .returning({ id: amendments.id });
+    if (updated.length === 0)
+      fail(409, "La enmienda ha cambiado. Recarga la página");
+    const positionReset = await resetPosition(tx, amendment.id);
+    await recordEvent(tx, {
+      assemblyId: ctx.assembly.id,
+      documentId: ctx.document.id,
+      entityType: "amendment",
+      entityId: amendment.id,
+      type: "amendment_validation_undone",
+      payload: {
+        published: amendment.publishedAt !== null,
+        ...(positionReset ? { positionReset: true } : {}),
+      },
+      actor,
+    });
+  });
+
+  return amendmentDto(ctx, amendment.id);
+}
+
+/**
+ * The Secretaría sends a presented amendment back to its authors
+ * (amendment:review), with a note saying why it cannot go as it is: one it
+ * has not validated yet, or one it validated, published or not, that is
+ * still undecided (validationReopenBlocker). It returns to draft, keeps its
+ * number, code and timing (see submitAmendment) and shows the note to its
+ * authors until they present it again; they may also leave it, and a
+ * draft never counts. A validated one also stops being validated,
+ * published and admitted, and the presenter's answer goes back to
+ * pending: the text may change. Optimistic lock on the amendment.
  */
 export async function requestAmendmentCorrection(
   ctx: AmendmentContext,
@@ -3418,16 +3568,25 @@ export async function requestAmendmentCorrection(
   assertReviewer(actor);
   const review = { ...amendment, authorsApproval: authorsApproval(amendment) };
   if (awaitsAuthors(review)) fail(409, AWAITS_AUTHORS_MESSAGE);
-  if (!awaitsValidation(review)) {
+  const validated = amendment.validatedAt !== null;
+  if (validated) {
+    const blocker = validationReopenBlocker(amendment);
+    if (blocker) fail(409, blocker);
+    if (ctx.assembly.status === "closed") fail(409, "La asamblea está cerrada");
+  } else if (!awaitsValidation(review)) {
     fail(
       409,
-      "Solo se puede pedir una corrección de una enmienda enviada y pendiente de validación",
+      "Solo se puede pedir una corrección de una enmienda presentada y sin decidir",
     );
   }
   assertNotFinal(ctx);
 
   await db.transaction(async (tx) => {
+    if (validated) await shareLockAssembly(tx, ctx.assembly.id);
     await lockDocument(tx, ctx.document.id, "share");
+    if (validated) {
+      await assertValidationReopenable(tx, amendment.id, ctx.assembly.id);
+    }
     const updated = await tx
       .update(amendments)
       .set({
@@ -3436,25 +3595,46 @@ export async function requestAmendmentCorrection(
         submittedByUserId: null,
         correctionNote: body.note,
         correctionRequestedAt: now,
+        validatedAt: null,
+        validatedByUserId: null,
+        publishedAt: null,
+        admission: "pending",
       })
       .where(
         and(
           eq(amendments.id, amendment.id),
           eq(amendments.status, "submitted"),
-          isNull(amendments.validatedAt),
+          validated
+            ? isNotNull(amendments.validatedAt)
+            : isNull(amendments.validatedAt),
           buildOptimisticLockCondition(amendments.updatedAt, body.updatedAt),
         ),
       )
       .returning({ id: amendments.id });
     if (updated.length === 0)
       fail(409, "La enmienda ha cambiado. Recarga la página");
+    // The text may change: the presenter answers it again once it is
+    // back. Read under the row lock the update took, so an answer recorded
+    // meanwhile is reset too.
+    const positionReset = validated
+      ? await resetPosition(tx, amendment.id)
+      : false;
     await recordEvent(tx, {
       assemblyId: ctx.assembly.id,
       documentId: ctx.document.id,
       entityType: "amendment",
       entityId: amendment.id,
       type: "amendment_correction_requested",
-      payload: { note: body.note },
+      payload: {
+        note: body.note,
+        ...(validated
+          ? {
+              afterValidation: true,
+              published: amendment.publishedAt !== null,
+            }
+          : {}),
+        ...(positionReset ? { positionReset: true } : {}),
+      },
       actor,
     });
   });

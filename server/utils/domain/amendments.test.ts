@@ -394,6 +394,42 @@ describe("amendmentCapabilities", () => {
     );
   });
 
+  it("lets reviewers take back the validation of an undecided amendment", () => {
+    const validated = {
+      ...input,
+      status: "submitted" as const,
+      review: true,
+      validatedAt: at,
+      kind: "partial" as const,
+      late: false,
+    };
+    expect(amendmentCapabilities(validated).unvalidate).toBe(true);
+    expect(
+      amendmentCapabilities({ ...validated, publishedAt: at }).unvalidate,
+    ).toBe(true);
+    // Not for those who do not review, nor once decided, voted or closed.
+    expect(
+      amendmentCapabilities({ ...validated, review: false }).unvalidate,
+    ).toBe(false);
+    expect(
+      amendmentCapabilities({ ...validated, status: "approved" }).unvalidate,
+    ).toBe(false);
+    expect(
+      amendmentCapabilities({ ...validated, voted: true }).unvalidate,
+    ).toBe(false);
+    expect(
+      amendmentCapabilities({ ...validated, assemblyClosed: true }).unvalidate,
+    ).toBe(false);
+    // Nor while a transactional groups it.
+    expect(
+      amendmentCapabilities({ ...validated, grouped: true }).unvalidate,
+    ).toBe(false);
+    // Nor before it is validated.
+    expect(
+      amendmentCapabilities({ ...validated, validatedAt: null }).unvalidate,
+    ).toBe(false);
+  });
+
   it("lets reviewers publish validated amendments not published yet", () => {
     const validated = {
       ...input,
@@ -953,7 +989,12 @@ describe("visibility", () => {
   type Role = "member" | "moderator" | "reviewer" | "manager";
 
   const actor = (role: Role, memberId: string | null = "m1") =>
-    ({ user: { id: `user-${role}` }, memberId, role }) as unknown as Actor;
+    ({
+      user: { id: `user-${role}` },
+      memberId,
+      role,
+      can: () => false,
+    }) as unknown as Actor;
   const roleOf = (value: Actor) => (value as unknown as { role: Role }).role;
 
   beforeAll(() => {
@@ -1002,6 +1043,14 @@ describe("visibility", () => {
       user: { id: "user-cea", role: { name: "CEA" } },
       memberId: "office",
       role: "cea",
+      can: () => false,
+    } as unknown as Actor;
+    /** Someone given the control sheet by hand, outside the CEA. */
+    const sheetReader = {
+      user: { id: "user-sheet", role: { name: "Asociado" } },
+      memberId: "council",
+      role: "member",
+      can: (key: string) => key === "control_sheet:view",
     } as unknown as Actor;
 
     it("shows a validated, unpublished amendment to the CEA and the document's presenters", () => {
@@ -1014,6 +1063,8 @@ describe("visibility", () => {
         expect(
           canSeeAmendment(actor("member", "co-presenter"), validated),
         ).toBe(true);
+        // So does whoever reads the control sheet, which lists them.
+        expect(canSeeAmendment(sheetReader, validated)).toBe(true);
         // Anyone else still waits for its publication.
         expect(canSeeAmendment(actor("member"), validated)).toBe(false);
         expect(canSeeAmendment(actor("member", null), validated)).toBe(false);
@@ -1023,6 +1074,7 @@ describe("visibility", () => {
     it("keeps an amendment waiting for validation from the CEA and the document's presenters", () => {
       const waiting = amendment("submitted");
       expect(canSeeAmendment(cea, waiting)).toBe(false);
+      expect(canSeeAmendment(sheetReader, waiting)).toBe(false);
       expect(canSeeAmendment(actor("member", "presenter"), waiting)).toBe(
         false,
       );

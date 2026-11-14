@@ -10,6 +10,7 @@ import { READING_BEAT_MAX_SECONDS } from "../documentViews";
 import type {
   BulkDocumentsBody,
   CorrectionBody,
+  UndoValidationBody,
   DocumentCreateBody,
   DocumentUpdateBody,
   FinalVoteAnnulBody,
@@ -116,6 +117,11 @@ export const correctionBodySchema = z.object({
   updatedAt: isoDateSchema,
 });
 
+/** Body of POST .../amendments/[amendment]/unvalidate (UndoValidationBody). */
+export const undoValidationBodySchema = z.object({
+  updatedAt: isoDateSchema,
+});
+
 /** SHA-256 hex digest, as produced by hashContent. */
 export const contentHashSchema = z.string().regex(/^[a-f0-9]{64}$/);
 
@@ -186,6 +192,7 @@ export type _DocumentSchemaChecks = [
   Assignable<BulkDocumentsBody, z.output<typeof bulkDocumentsSchema>>,
   Assignable<DocumentUpdateBody, z.output<typeof documentUpdateSchema>>,
   Assignable<CorrectionBody, z.output<typeof correctionBodySchema>>,
+  Assignable<UndoValidationBody, z.output<typeof undoValidationBodySchema>>,
   Assignable<FinalVoteBody, z.output<typeof finalVoteSchema>>,
   Assignable<FinalVoteAnnulBody, z.output<typeof finalVoteAnnulSchema>>,
 ];

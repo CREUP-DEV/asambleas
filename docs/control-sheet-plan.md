@@ -353,7 +353,7 @@ updatedAt }`, `session:moderate`, the same `assertStatusChange` checks
   CEA account keeps its single list). `AssemblySectionAccess` gains
   `controlSheet` and `recordSpeakers`, each with an explicit case.
 - Two tabs: «General» / «Overview», and «Enmiendas» with a document
-  selector (reference and pending count) instead of one tab per document.
+  selector (title and pending count) instead of one tab per document.
   A «Seguir el debate» switch (on during the session) opens the document in
   debate and marks the live row (aria-current and a ring) and scrolls to it.
 - General rows: items with documents, listed items and items with votes or
@@ -450,7 +450,7 @@ rows, visibleIds)` with a new exported finder (no drafts), final votes in
   cells capped at 32,767 characters, sheet names sanitized (31 characters,
   unique). Agenda numbers and codes as text, counts as numbers, times in
   Madrid.
-- Sheets: General; one per amended document (its reference); «Votaciones»
+- Sheets: General; one per amended document (its title, cut to 31 characters); «Votaciones»
   (one row per vote: item, subject, method, majority, present, each count
   as a number, result, unanimity, time); «Votaciones registradas» (one row
   per asociado and vote); «Mociones». A title row with the assembly; Sí/No

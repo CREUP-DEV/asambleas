@@ -259,6 +259,27 @@ const moreItems = computed<DropdownMenuItem[]>(() => {
       onSelect: () => emit("action", "publish"),
     });
   }
+  // Validated and private: its validation can be taken back, or it goes
+  // back to its authors with a note. Public or late ones do it from their
+  // detail, which asks first.
+  if (stage.value === "publish" && props.amendment.can.unvalidate) {
+    items.push(
+      {
+        label: t("amendment.validationUndo.undo"),
+        description: t("review.amendments.unvalidateHelp"),
+        icon: "i-lucide-badge-x",
+        disabled: props.disabled,
+        onSelect: () => emit("action", "unvalidate"),
+      },
+      {
+        label: t("amendment.validationUndo.correct"),
+        description: t("review.amendments.correctValidatedHelp"),
+        icon: "i-lucide-message-square-warning",
+        disabled: props.disabled,
+        onSelect: () => emit("action", "correction"),
+      },
+    );
+  }
   if (reclassifyTo.value) {
     items.push({
       label: t(`amendment.reclassify.action.${reclassifyTo.value}`),
@@ -274,6 +295,8 @@ const moreItems = computed<DropdownMenuItem[]>(() => {
 const moreBusy = computed(
   () =>
     props.busy === "reclassify" ||
+    props.busy === "unvalidate" ||
+    (stage.value === "publish" && props.busy === "correction") ||
     (stage.value === "late" && props.busy === "publish"),
 );
 </script>

@@ -142,8 +142,9 @@ export function isAmendmentInsider(
  * - Presented, not published yet (waiting for validation, validated but kept
  *   private, or decided before publication): its authors, its creator, the
  *   parties of a transactional, reviewers and the Mesa.
- * - Once validated, though not published: also the CEA's accounts and the
- *   presenters of the document it amends (`seesValidatedAmendments`). They
+ * - Once validated, though not published: also the CEA's accounts, the
+ *   control sheet's readers and the presenters of the document it amends
+ *   (`seesValidatedAmendments`). They
  *   read it, nothing more: its correction notes stay with the insiders.
  */
 export function canSeeAmendment(
@@ -164,7 +165,9 @@ export function canSeeAmendment(
 
 /**
  * Who reads an amendment the Secretaría validated and has not published:
- * the CEA's accounts (role CEA) and whoever presents the amended document.
+ * the CEA's accounts (role CEA), whoever reads the control sheet (it lists
+ * every validated amendment, published or not) and whoever presents the
+ * amended document.
  */
 export function seesValidatedAmendments(
   actor: Actor,
@@ -172,6 +175,8 @@ export function seesValidatedAmendments(
 ): boolean {
   return (
     actor.user.role?.name === SYSTEM_ROLES.CEA ||
+    actor.can(PERMISSION_KEYS.CONTROL_SHEET_VIEW) ||
+    actor.can(PERMISSION_KEYS.CONTROL_SHEET_EDIT) ||
     isDocumentPresenter(actor, document)
   );
 }

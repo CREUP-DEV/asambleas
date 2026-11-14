@@ -157,6 +157,7 @@ const ICONS: Record<string, string> = {
   amendment_updated: "i-lucide-pencil",
   amendment_submitted: "i-lucide-send",
   amendment_validated: "i-lucide-badge-check",
+  amendment_validation_undone: "i-lucide-badge-x",
   amendment_published: "i-lucide-eye",
   amendment_correction_requested: "i-lucide-message-square-warning",
   amendment_reclassified: "i-lucide-tags",
@@ -487,6 +488,20 @@ function detailOf(event: EventDto): string | null {
       return payload.publish === true
         ? t("amendment.history.validatedPublished")
         : null;
+    case "amendment_validation_undone":
+    case "amendment_correction_requested": {
+      const lines = [
+        event.type === "amendment_correction_requested" &&
+        payload.afterValidation === true
+          ? t("amendment.history.wasValidated")
+          : null,
+        payload.published === true ? t("amendment.history.wasPublished") : null,
+        payload.positionReset === true
+          ? t("amendment.history.positionReset")
+          : null,
+      ].filter((line): line is string => line !== null);
+      return lines.length > 0 ? lines.join(" ") : null;
+    }
     case "amendment_approved": {
       const method = text(payload.method);
       // Accepted by the main presenter under the "incorporate" rule.

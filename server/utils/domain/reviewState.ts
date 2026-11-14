@@ -227,6 +227,36 @@ export function awaitsPublication(
   );
 }
 
+/**
+ * Why the Secretaría may not take back the validation of an amendment
+ * (undo it, or send the amendment back for a correction), or null when it
+ * may: it must be validated, published or not, and still undecided. A
+ * transactional never goes back (validating it published it, and once
+ * accepted it replaced what it groups): it is withdrawn or turned down. A
+ * late amendment the assembly already admitted stays: the Mesa may declare
+ * it not admitted instead. The caller also refuses one the Mesa has on
+ * screen or one a pending transactional builds on (reopenValidationBlocker
+ * in amendments.ts).
+ */
+export function validationReopenBlocker(
+  row: Pick<AmendmentReviewFields, "status" | "validatedAt"> & {
+    kind: AmendmentKind;
+    late: boolean;
+    admission: AdmissionStatus;
+  },
+): string | null {
+  if (row.status !== "submitted" || row.validatedAt === null) {
+    return "Solo se puede deshacer la validación de una enmienda validada y sin decidir";
+  }
+  if (row.kind === "transactional") {
+    return "Una transaccional no vuelve a revisión: se retira o se rechaza";
+  }
+  if (row.late && row.admission === "admitted") {
+    return "La asamblea ya decidió tratarla: la Mesa puede declararla no admitida";
+  }
+  return null;
+}
+
 /** POST .../amendments/publish accepts any validated, unpublished amendment past draft. */
 export function isAmendmentPublishable(
   row: Pick<AmendmentReviewFields, "status" | "validatedAt" | "publishedAt">,
@@ -367,7 +397,8 @@ export function unopenSourcesMessage(
  * Why an amendment cannot be a direct source of a new transactional, or
  * null when it can: on top of being open (unopenSourceReason), it must be
  * published, since a transactional builds on what everyone can read
- * (publication is never undone, so the check holds once passed), and a
+ * (an amendment a transactional groups never goes back to review, so the
+ * check holds once passed: assertValidationReopenable), and a
  * transactional must already have replaced what it groups (its main authors
  * accepted it), or its originals would survive next to the new one.
  */

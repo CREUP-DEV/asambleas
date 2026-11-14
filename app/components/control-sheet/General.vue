@@ -13,6 +13,24 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ open: [row: GeneralSheetRow] }>();
 
+/**
+ * The row's own document when the item is just that document (its
+ * automatic sub-item, titled after it): the title links to it, and the
+ * list under it does not repeat it.
+ */
+function ownDocument(row: GeneralSheetRow): SheetRowDocument | null {
+  const [only] = row.documents;
+  return row.documents.length === 1 && only && only.title === row.title
+    ? only
+    : null;
+}
+
+/** The documents listed under the title: all but the row's own. */
+function listedDocuments(row: GeneralSheetRow): SheetRowDocument[] {
+  const own = ownDocument(row);
+  return own ? [] : row.documents;
+}
+
 /** "3.1. Title" for the button that opens a row. */
 const rowLabel = (row: GeneralSheetRow) =>
   numberedAgendaTitle(row.number, row.title, t("agenda.unlisted.inText"));
@@ -27,7 +45,7 @@ const votesOf = (row: GeneralSheetRow) =>
       vote: document.finalVote!,
       label:
         row.documents.filter((other) => other.finalVote).length > 1
-          ? (document.reference ?? document.title)
+          ? document.title
           : null,
     }));
 
@@ -99,7 +117,13 @@ const itemRows = computed(() =>
             <template v-else>
               <th scope="row" class="px-3 py-2 font-normal">
                 <p class="text-highlighted font-medium">
-                  {{ row.title }}
+                  <ULink
+                    v-if="ownDocument(row)"
+                    :to="documentPath(ownDocument(row)!)"
+                    class="underline-offset-2 hover:underline"
+                    >{{ row.title }}</ULink
+                  >
+                  <template v-else>{{ row.title }}</template>
                   <UBadge
                     v-if="row.live"
                     color="primary"
@@ -109,13 +133,19 @@ const itemRows = computed(() =>
                     :label="t('controlSheet.live')"
                   />
                 </p>
-                <ul v-if="row.documents.length > 0" class="mt-1 space-y-0.5">
-                  <li v-for="document in row.documents" :key="document.id">
+                <ul
+                  v-if="listedDocuments(row).length > 0"
+                  class="mt-1 space-y-0.5"
+                >
+                  <li
+                    v-for="document in listedDocuments(row)"
+                    :key="document.id"
+                  >
                     <ULink
                       :to="documentPath(document)"
                       class="text-muted hover:text-default text-xs underline-offset-2 hover:underline"
                     >
-                      {{ document.reference ?? document.title }}
+                      {{ document.title }}
                     </ULink>
                   </li>
                 </ul>
@@ -195,7 +225,13 @@ const itemRows = computed(() =>
           <div>
             <p class="text-highlighted font-medium">
               <AgendaItemNumber :number="row.number" />
-              {{ row.title }}
+              <ULink
+                v-if="ownDocument(row)"
+                :to="documentPath(ownDocument(row)!)"
+                class="underline-offset-2 hover:underline"
+                >{{ row.title }}</ULink
+              >
+              <template v-else>{{ row.title }}</template>
               <UBadge
                 v-if="row.live"
                 color="primary"
@@ -205,13 +241,13 @@ const itemRows = computed(() =>
                 :label="t('controlSheet.live')"
               />
             </p>
-            <ul v-if="row.documents.length > 0" class="mt-1 space-y-0.5">
-              <li v-for="document in row.documents" :key="document.id">
+            <ul v-if="listedDocuments(row).length > 0" class="mt-1 space-y-0.5">
+              <li v-for="document in listedDocuments(row)" :key="document.id">
                 <ULink
                   :to="documentPath(document)"
                   class="text-muted hover:text-default text-xs underline-offset-2 hover:underline"
                 >
-                  {{ document.reference ?? document.title }}
+                  {{ document.title }}
                 </ULink>
               </li>
             </ul>

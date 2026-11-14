@@ -94,6 +94,7 @@ const amendment = (
     review: false,
     validate: false,
     publish: false,
+    unvalidate: false,
   },
   ...over,
 });

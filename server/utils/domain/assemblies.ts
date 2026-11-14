@@ -920,7 +920,8 @@ export async function updateLiveState(
         );
       if (!amendment) fail(422, "La enmienda no pertenece a esta asamblea");
       // Every delegate follows the projection: it never points at an
-      // amendment they cannot read. Publication is never undone.
+      // amendment they cannot read. Taking a validation back unpublishes one,
+      // but only under shareLockAssembly, which waits for this lock.
       if (!amendment.publishedAt) {
         fail(
           409,

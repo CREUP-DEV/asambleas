@@ -43,7 +43,6 @@ export interface SheetRowDocument {
   id: string;
   slug: string;
   title: string;
-  reference: string | null;
   status: DocumentSummaryDto["status"];
   voted: boolean;
   finalVote: VoteDto | null;
@@ -95,7 +94,6 @@ export function buildGeneralRows(
       id: document.id,
       slug: document.slug,
       title: document.title,
-      reference: document.reference,
       status: document.status,
       voted: document.voted,
       finalVote: finalVotes.get(document.id) ?? null,

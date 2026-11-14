@@ -23,6 +23,7 @@ import {
   positionRecordedBy,
   publishOnValidation,
   POSITION_BLOCKER_MESSAGES,
+  validationReopenBlocker,
   replacesSources,
   submissionLate,
   transactionalReopenBlocker,
@@ -968,5 +969,36 @@ describe("awaitsPartyAnswer", () => {
     expect(awaitsPartyAnswer({ ...open, status: "withdrawn" })).toBe(false);
     expect(awaitsPartyAnswer({ ...open, status: "draft" })).toBe(false);
     expect(awaitsPartyAnswer({ ...open, voted: true })).toBe(false);
+  });
+});
+
+describe("validationReopenBlocker", () => {
+  const at = new Date("2026-03-10T12:00:00Z");
+  const row = {
+    status: "submitted" as const,
+    validatedAt: at,
+    kind: "partial" as const,
+    late: false,
+    admission: "admitted" as const,
+  };
+
+  it("lets a validated, undecided amendment go back, published or not", () => {
+    expect(validationReopenBlocker(row)).toBeNull();
+    expect(
+      validationReopenBlocker({ ...row, late: true, admission: "pending" }),
+    ).toBeNull();
+  });
+
+  it("refuses one not validated, decided, a transactional or admitted late", () => {
+    expect(
+      validationReopenBlocker({ ...row, validatedAt: null }),
+    ).not.toBeNull();
+    expect(
+      validationReopenBlocker({ ...row, status: "rejected" }),
+    ).not.toBeNull();
+    expect(
+      validationReopenBlocker({ ...row, kind: "transactional" }),
+    ).not.toBeNull();
+    expect(validationReopenBlocker({ ...row, late: true })).not.toBeNull();
   });
 });
