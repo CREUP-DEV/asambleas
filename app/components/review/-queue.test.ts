@@ -26,6 +26,7 @@ import {
   selectAllReviewIds,
   selectableReviewIds,
   shareSources,
+  splitReviewParts,
   splitReviewSelection,
   withoutSharedSources,
   blockedBySelection,
@@ -430,6 +431,42 @@ describe("groupReviewAmendments", () => {
     const groups = groupReviewAmendments([entry(docB, late("l"))]);
     expect(groups.map((group) => group.document.id)).toEqual(["b"]);
     expect(reviewGroupSize(groups[0]!)).toBe(0);
+  });
+});
+
+describe("splitReviewParts", () => {
+  it("puts what is not reviewed and what waits for publication apart, in document order", () => {
+    const groups = groupReviewAmendments([
+      entry(docB, amendment("b1", "validated")),
+      entry(docA, amendment("a1", "pending_validation")),
+      entry(docA, amendment("a2", "validated")),
+      entry(docA, amendment("t", "pending_authors", { kind: "transactional" })),
+      entry(docA, late("l")),
+    ]);
+    const { toReview, toPublish } = splitReviewParts(groups);
+
+    expect(toReview.map((group) => group.document.id)).toEqual(["a"]);
+    expect(toReview[0]!.toValidate.map((value) => value.id)).toEqual(["a1"]);
+    expect(toReview[0]!.awaitingAuthors.map((value) => value.id)).toEqual([
+      "t",
+    ]);
+    expect(toReview[0]!.toPublish).toEqual([]);
+
+    expect(toPublish.map((group) => group.document.id)).toEqual(["b", "a"]);
+    expect(toPublish[1]!.toPublish.map((value) => value.id)).toEqual(["a2"]);
+    expect(toPublish[1]!.toValidate).toEqual([]);
+    expect(toPublish[1]!.awaitingAuthors).toEqual([]);
+
+    // Late ones stay in "Fuera de plazo".
+    for (const group of [...toReview, ...toPublish]) {
+      expect(group.late).toEqual([]);
+    }
+  });
+
+  it("leaves both parts empty when there is only something late", () => {
+    expect(
+      splitReviewParts(groupReviewAmendments([entry(docB, late("l"))])),
+    ).toEqual({ toReview: [], toPublish: [] });
   });
 });
 

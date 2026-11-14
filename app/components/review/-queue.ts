@@ -251,6 +251,34 @@ export function groupReviewAmendments(
     .filter((group) => reviewGroupSize(group) + group.late.length > 0);
 }
 
+/**
+ * The inbox's two parts, each a list of documents in the same order: what
+ * the Secretaría has not reviewed yet (to validate, and the transactionals
+ * still waiting for their authors) and what it validated without
+ * publishing. A document appears in each part it has something in; late
+ * ones are listed apart and left out of both.
+ */
+export function splitReviewParts(groups: readonly ReviewDocumentGroup[]): {
+  toReview: ReviewDocumentGroup[];
+  toPublish: ReviewDocumentGroup[];
+} {
+  return {
+    toReview: groups
+      .filter(
+        (group) => group.toValidate.length + group.awaitingAuthors.length > 0,
+      )
+      .map((group) => ({ ...group, toPublish: [], late: [] })),
+    toPublish: groups
+      .filter((group) => group.toPublish.length > 0)
+      .map((group) => ({
+        ...group,
+        toValidate: [],
+        awaitingAuthors: [],
+        late: [],
+      })),
+  };
+}
+
 type SourcesLike = Pick<AmendmentDto, "id" | "kind" | "sourceIds">;
 
 /** Whether both are transactionals that group some amendment in common. */

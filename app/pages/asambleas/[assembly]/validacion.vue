@@ -16,19 +16,20 @@ import {
   groupReviewAmendments,
   removeReviewAmendments,
   removeReviewDocument,
-  reviewGroupActionable,
   reviewGroupSize,
   reviewQueueKey,
+  splitReviewParts,
 } from "~/components/review/-queue";
 import { affectsReviewQueue } from "~/components/review/-live";
 
 /**
- * The Secretaría's validation inbox (GET .../review): presented documents
- * and amendments that nobody else sees until they are validated, the
- * transactionals still waiting for the main authors of the amendments they
- * would replace (with who is missing; one any of them rejected is gone),
- * the amendments validated but kept private and, in "Fuera de plazo", the
- * late ones that wait for the assembly to decide whether to treat them.
+ * The Secretaría's validation inbox (GET .../review): presented documents;
+ * in "Enmiendas por revisar", the amendments nobody else sees until they
+ * are validated and the transactionals still waiting for the main authors
+ * of the amendments they would replace (with who is missing; one any of
+ * them rejected is gone); in "Validadas sin publicar", the amendments it
+ * validated and kept private, to publish them; and, in "Fuera de plazo",
+ * the late ones that wait for the assembly to decide whether to treat them.
  * Validating a transactional always publishes it: it replaces amendments
  * that are already public, and the help says so while one is listed.
  * Documents need document:manage, amendments amendment:review; each part
@@ -99,13 +100,31 @@ const amendmentCount = computed(() =>
   ),
 );
 /**
- * What the "Enmiendas" badge counts: those to validate or to publish, as the
- * home page does. Transactionals waiting for their authors are listed, but
- * nothing can be done with them yet.
+ * Amendments in two parts: not reviewed yet, and validated without
+ * publishing, each with its own documents.
  */
-const actionableCount = computed(() =>
-  reviewGroups.value.reduce(
-    (total, group) => total + reviewGroupActionable(group),
+const parts = computed(() => splitReviewParts(reviewGroups.value));
+/**
+ * What the "Por revisar" badge counts: those to validate. Transactionals
+ * waiting for their authors are listed, but nothing can be done with them
+ * yet (as on the home page); `toReviewListed` counts them too.
+ */
+const toValidateCount = computed(() =>
+  parts.value.toReview.reduce(
+    (total, group) => total + group.toValidate.length,
+    0,
+  ),
+);
+const toReviewListed = computed(() =>
+  parts.value.toReview.reduce(
+    (total, group) =>
+      total + group.toValidate.length + group.awaitingAuthors.length,
+    0,
+  ),
+);
+const toPublishCount = computed(() =>
+  parts.value.toPublish.reduce(
+    (total, group) => total + group.toPublish.length,
     0,
   ),
 );
@@ -567,22 +586,63 @@ async function confirmBulkPublish() {
                 color="neutral"
                 variant="soft"
                 size="sm"
-                :label="String(actionableCount)"
+                :label="String(toValidateCount)"
               />
             </h3>
-            <p v-if="amendmentCount > 0" class="text-muted max-w-3xl text-sm">
+            <p v-if="toReviewListed > 0" class="text-muted max-w-3xl text-sm">
               {{ t("review.amendments.help") }}
               <template v-if="transactionalListed">
                 {{ t("review.amendments.transactionalsPublished") }}
               </template>
             </p>
           </div>
-          <p v-if="amendmentCount === 0" class="text-muted text-sm">
+          <p v-if="toReviewListed === 0" class="text-muted text-sm">
             {{ t("review.amendments.none") }}
           </p>
           <div v-else class="space-y-8">
             <ReviewAmendmentGroup
-              v-for="group in reviewGroups"
+              v-for="group in parts.toReview"
+              :key="group.document.id"
+              :group="group"
+              :api-base="apiBase"
+              :assembly-id="assembly.id"
+              :document-path="documentPath(group.document.slug)"
+              @updated="onAmendmentsUpdated"
+              @removed="onAmendmentsRemoved"
+              @conflict="refresh"
+              @announce="announce"
+            />
+          </div>
+        </section>
+
+        <section
+          v-if="canAmendments"
+          class="space-y-4"
+          aria-labelledby="review-to-publish-heading"
+        >
+          <div class="space-y-1">
+            <h3
+              id="review-to-publish-heading"
+              class="text-highlighted flex items-center gap-2 text-lg font-semibold"
+            >
+              {{ t("review.toPublish.title") }}
+              <UBadge
+                color="neutral"
+                variant="soft"
+                size="sm"
+                :label="String(toPublishCount)"
+              />
+            </h3>
+            <p v-if="toPublishCount > 0" class="text-muted max-w-3xl text-sm">
+              {{ t("review.toPublish.help") }}
+            </p>
+          </div>
+          <p v-if="toPublishCount === 0" class="text-muted text-sm">
+            {{ t("review.toPublish.none") }}
+          </p>
+          <div v-else class="space-y-8">
+            <ReviewAmendmentGroup
+              v-for="group in parts.toPublish"
               :key="group.document.id"
               :group="group"
               :api-base="apiBase"

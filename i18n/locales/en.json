@@ -4196,8 +4196,8 @@
       "bulkConfirmFrozen": "Their texts are fixed: they can no longer be edited, and they get their reference if their kind has one."
     },
     "amendments": {
-      "title": "Amendments",
-      "help": "When you validate an amendment you can publish it right away, or keep it validated and publish it later.",
+      "title": "Amendments to review",
+      "help": "When you validate an amendment you can publish it right away, or keep it validated and publish it later: it then moves to “Validated, not published”.",
       "none": "No amendments are waiting for your validation.",
       "noCode": "No number",
       "reclassifyHelp": "It stays in the history and its authors will see it in their news.",
@@ -4222,8 +4222,6 @@
       "clearSelection": "Clear selection",
       "countToValidate": "{count} to validate | {count} to validate",
       "countToPublish": "{count} validated, not published | {count} validated, not published",
-      "toPublishTitle": "Validated, not published yet",
-      "toPublishHelp": "Only their authors, the Secretariat and the Mesa see them. Publish them when you want the whole assembly to see them.",
       "actionError": "Could not complete the action on the amendment",
       "correctionHint": "It goes back to its authors as a draft, with your note.",
       "done": {
@@ -4252,6 +4250,11 @@
       "sharesSourcesWith": "It shares amendments with {label}, which you already selected. Only one of them can replace them: validating one closes the other.",
       "bulkValidateOnlySkipsTransactionals": "The selected transactionals are left out: they are always published when validated.",
       "transactionalsPublished": "Transactionals are always published when you validate them, because they replace amendments that are already public."
+    },
+    "toPublish": {
+      "title": "Validated, not published",
+      "help": "Their authors, the presenters of the document, the CEA, the Secretariat and the Mesa see them. Publish them when you want the whole assembly to see them.",
+      "none": "No validated amendments are waiting to be published."
     },
     "correction": {
       "title": "Ask for a correction",
