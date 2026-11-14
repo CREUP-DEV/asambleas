@@ -19,6 +19,7 @@ import {
 import { BlockIdExtension } from "~/utils/editor/blockIdExtension";
 import { ListMarkerExtension } from "~/utils/editor/listMarkerExtension";
 import { TableIdsExtension } from "~/utils/editor/tableIdsExtension";
+import { SpanishQuotesExtension } from "~/utils/editor/spanishQuotesExtension";
 import {
   BlockImageExtension,
   type BlockImageAttrs,
@@ -188,6 +189,8 @@ const extensions = [
     types: ["heading", "paragraph"],
     alignments: ["left", "center", "right"],
   }),
+  // A typed " becomes « or » (“ ” inside), and wraps a selection.
+  SpanishQuotesExtension,
 ];
 
 /** Whether the cursor is in a table, and its cells' fill, for the swatches. */
@@ -1251,6 +1254,7 @@ defineExpose({
             'italic',
             'strike',
             'underline',
+            'spanishQuotes',
           ]"
           :enable-paste-rules="[
             'bold',
