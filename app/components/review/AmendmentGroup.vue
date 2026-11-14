@@ -19,14 +19,15 @@ import {
 } from "./-queue";
 
 /**
- * The amendments of one document in the validation inbox: those waiting for
- * validation, the transactionals still waiting for the main authors of the
- * amendments they would replace (shown with who is missing, not
- * actionable) and those validated but kept private, with their
- * changes over the published text (fetched once per document). When there
- * are several, they can be selected to validate or publish them at once:
- * the endpoints work per document. Late ones waiting for the assembly are
- * listed apart (LateGroup).
+ * The amendments of one document in one part of the validation inbox
+ * (splitReviewParts): in "Enmiendas por revisar", those waiting for
+ * validation and the transactionals still waiting for the main authors of
+ * the amendments they would replace (shown with who is missing, not
+ * actionable); in "Validadas sin publicar", those validated but kept
+ * private. Each with its changes over the published text (fetched once per
+ * document). When there are several, they can be selected to validate or
+ * publish them at once: the endpoints work per document. Late ones waiting
+ * for the assembly are listed apart (LateGroup).
  *
  * A transactional names the amendments it groups: they are published, so
  * not in the queue, and the document's amendment list is loaded for their
@@ -566,35 +567,25 @@ const summary = computed(() =>
       </ul>
     </div>
 
-    <div v-if="group.toPublish.length > 0" class="space-y-2">
-      <div>
-        <h5 class="text-highlighted text-sm font-semibold">
-          {{ t("review.amendments.toPublishTitle") }}
-        </h5>
-        <p class="text-muted text-sm">
-          {{ t("review.amendments.toPublishHelp") }}
-        </p>
-      </div>
-      <ul class="space-y-3">
-        <li v-for="amendment in group.toPublish" :key="amendment.id">
-          <ReviewAmendmentCard
-            :amendment="amendment"
-            :base="base"
-            :base-loading="documentPending"
-            :document-voted="documentVoted"
-            :busy="busyFor(amendment.id)"
-            :disabled="busy !== null"
-            :multi-select="multiSelect"
-            :selected="isSelected(amendment.id)"
-            :heading-level="6"
-            @update:selected="
-              (value: boolean) => setSelected(amendment.id, value)
-            "
-            @action="(action) => onAction(amendment, action)"
-          />
-        </li>
-      </ul>
-    </div>
+    <!-- Its own section of the inbox says what these are. -->
+    <ul v-if="group.toPublish.length > 0" class="space-y-3">
+      <li v-for="amendment in group.toPublish" :key="amendment.id">
+        <ReviewAmendmentCard
+          :amendment="amendment"
+          :base="base"
+          :base-loading="documentPending"
+          :document-voted="documentVoted"
+          :busy="busyFor(amendment.id)"
+          :disabled="busy !== null"
+          :multi-select="multiSelect"
+          :selected="isSelected(amendment.id)"
+          @update:selected="
+            (value: boolean) => setSelected(amendment.id, value)
+          "
+          @action="(action) => onAction(amendment, action)"
+        />
+      </li>
+    </ul>
 
     <ReviewCorrectionModal
       v-model:open="correctionOpen"

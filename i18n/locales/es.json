@@ -4196,8 +4196,8 @@
       "bulkConfirmFrozen": "Sus textos quedan fijados: ya no se podrán editar y recibirán su referencia si su tipo la lleva."
     },
     "amendments": {
-      "title": "Enmiendas",
-      "help": "Al validar una enmienda puedes publicarla ya o dejarla validada y publicarla más tarde.",
+      "title": "Enmiendas por revisar",
+      "help": "Al validar una enmienda puedes publicarla ya o dejarla validada y publicarla más tarde: entonces pasa a «Validadas sin publicar».",
       "none": "No hay enmiendas esperando tu validación.",
       "noCode": "Sin número",
       "reclassifyHelp": "Queda en el historial y sus autores lo verán en sus novedades.",
@@ -4222,8 +4222,6 @@
       "clearSelection": "Quitar selección",
       "countToValidate": "{count} por validar | {count} por validar",
       "countToPublish": "{count} validada sin publicar | {count} validadas sin publicar",
-      "toPublishTitle": "Validadas, sin publicar todavía",
-      "toPublishHelp": "Solo las ven sus autores, la Secretaría y la Mesa. Publícalas cuando quieras que las vea toda la asamblea.",
       "actionError": "No se ha podido completar la acción sobre la enmienda",
       "correctionHint": "Vuelve como borrador a sus autores, con tu nota.",
       "done": {
@@ -4252,6 +4250,11 @@
       "sharesSourcesWith": "Comparte enmiendas con {label}, que ya has seleccionado. Solo una de las dos puede sustituirlas: al validar una, la otra se cierra.",
       "bulkValidateOnlySkipsTransactionals": "Las transaccionales seleccionadas no se incluyen: al validarlas siempre se publican.",
       "transactionalsPublished": "Las transaccionales se publican siempre al validarlas, porque sustituyen a enmiendas que ya son públicas."
+    },
+    "toPublish": {
+      "title": "Validadas sin publicar",
+      "help": "Las ven sus autores, quienes presentan el documento, la CEA, la Secretaría y la Mesa. Publícalas cuando quieras que las vea toda la asamblea.",
+      "none": "No hay enmiendas validadas pendientes de publicar."
     },
     "correction": {
       "title": "Pedir corrección",
