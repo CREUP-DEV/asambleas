@@ -192,6 +192,11 @@ vi.mock("../domain/documents", async () => {
             visibility.canSeeAmendment(actor, {
               status: row.status,
               publishedAt: row.publishedAt,
+              validatedAt: row.publishedAt,
+              documentPresenters: {
+                proponentMemberId: "m-ceum",
+                coProponentMemberIds: ["m-pres"],
+              },
               createdByUserId: "secretaria",
               authorMemberIds: row.authors.map(
                 (_, index) => `m-${row.id}-${index}`,
@@ -277,6 +282,11 @@ describe("annotatedBody", () => {
       visibility.canSeeAmendment(secretaria, {
         status: "withdrawn",
         publishedAt: null,
+        validatedAt: null,
+        documentPresenters: {
+          proponentMemberId: null,
+          coProponentMemberIds: [],
+        },
         createdByUserId: null,
         authorMemberIds: [],
         partyMemberIds: [],

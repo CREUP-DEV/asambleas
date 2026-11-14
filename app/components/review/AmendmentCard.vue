@@ -234,18 +234,17 @@ const selectBlocked = computed(
   () => props.multiSelect && canAct.value && props.selectBlockedBy !== null,
 );
 
+/**
+ * Validating without publishing is a button of its own, next to "Validar y
+ * publicar". Not for a transactional: it replaces public amendments, so
+ * validating it publishes it.
+ */
+const canValidateOnly = computed(
+  () => canAct.value && stage.value === "validate" && !isTransactional.value,
+);
+
 const moreItems = computed<DropdownMenuItem[]>(() => {
   const items: DropdownMenuItem[] = [];
-  // A transactional replaces public amendments: validating it publishes it.
-  if (canAct.value && stage.value === "validate" && !isTransactional.value) {
-    items.push({
-      label: t("review.amendments.validateOnly"),
-      description: t("review.amendments.validateOnlyHelp"),
-      icon: "i-lucide-check",
-      disabled: props.disabled,
-      onSelect: () => emit("action", "validate_only"),
-    });
-  }
   if (
     canAct.value &&
     stage.value === "late" &&
@@ -274,7 +273,6 @@ const moreItems = computed<DropdownMenuItem[]>(() => {
 
 const moreBusy = computed(
   () =>
-    props.busy === "validate_only" ||
     props.busy === "reclassify" ||
     (stage.value === "late" && props.busy === "publish"),
 );
@@ -531,6 +529,21 @@ const moreBusy = computed(
           :disabled="disabled && busy !== 'validate_publish'"
           @click="emit('action', 'validate_publish')"
         />
+        <UTooltip
+          v-if="canValidateOnly"
+          :text="t('review.amendments.validateOnlyHelp')"
+        >
+          <UButton
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-eye-off"
+            :label="t('review.amendments.validateOnly')"
+            :aria-describedby="titleId"
+            :loading="busy === 'validate_only'"
+            :disabled="disabled && busy !== 'validate_only'"
+            @click="emit('action', 'validate_only')"
+          />
+        </UTooltip>
         <UButton
           color="neutral"
           variant="outline"

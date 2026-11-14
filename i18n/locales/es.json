@@ -1189,7 +1189,7 @@
         "to_validate": "Revísala: valídala o pide a quienes la presentan que la corrijan.",
         "pending": "Secretaría la está revisando. Hasta entonces, solo la veis quienes la presentáis, Secretaría y la Mesa.",
         "to_publish": "Está validada, pero el resto de la asamblea aún no la ve. Publícala cuando quieras.",
-        "validated": "Secretaría la ha validado. Todos la verán cuando se publique; hasta entonces, solo la veis quienes la presentáis, Secretaría y la Mesa.",
+        "validated": "Secretaría la ha validado. Todos la verán cuando se publique; hasta entonces, la veis quienes la presentáis, quienes presentan el documento, la CEA, Secretaría y la Mesa.",
         "published": "La puede ver toda la asamblea.",
         "pending_others": "Secretaría aún no la ha revisado. El resto de la asamblea todavía no la ve.",
         "validated_others": "Secretaría la ha validado, pero aún no la ha publicado: el resto de la asamblea todavía no la ve.",
@@ -1200,6 +1200,7 @@
       "noteFromSecretaria": "Nota de Secretaría",
       "audience": {
         "author": "Solo la veis quienes la presentáis, Secretaría y la Mesa.",
+        "authorValidated": "La veis quienes la presentáis, quienes presentan el documento, la CEA, Secretaría y la Mesa.",
         "others": "El resto de la asamblea no la ve."
       },
       "actions": {
@@ -1210,7 +1211,7 @@
         "sendCorrection": "Enviar la petición",
         "publish": "Publicar"
       },
-      "validateOnlyHint": "Si la validas sin publicarla, solo la verán quienes la presentan, Secretaría y la Mesa hasta que la publiques.",
+      "validateOnlyHint": "Si la validas sin publicarla, hasta que la publiques solo la verán quienes la presentan, quienes presentan el documento, la CEA, Secretaría y la Mesa.",
       "correctionNote": "Qué tienen que corregir",
       "correctionHelp": "Lo verán quienes la presentan. La enmienda vuelve a ser un borrador hasta que la envíen de nuevo.",
       "correctionPlaceholder": "Por ejemplo: el cambio afecta a otro artículo; indica cuál.",
@@ -4209,7 +4210,7 @@
       "textUnavailable": "No se ha podido cargar el texto del documento para mostrar los cambios.",
       "validatePublish": "Validar y publicar",
       "validateOnly": "Validar sin publicar",
-      "validateOnlyHelp": "Queda validada, pero solo la ven sus autores, la Secretaría y la Mesa hasta que la publiques.",
+      "validateOnlyHelp": "Queda validada, pero hasta que la publiques solo la ven sus autores, quienes presentan el documento, la CEA, la Secretaría y la Mesa.",
       "publish": "Publicar",
       "select": "Seleccionar {label}",
       "selectAll": "Seleccionar todas",

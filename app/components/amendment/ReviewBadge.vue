@@ -44,11 +44,15 @@ const showAudienceLine = computed(
     props.amendment.status !== "draft" &&
     isAmendmentPrivate(props.amendment),
 );
-const audience = computed(() =>
-  isAmendmentPresenter(props.amendment, member.value?.id ?? null)
-    ? t("amendment.review.audience.author")
-    : t("amendment.review.audience.others"),
-);
+/** Once validated, the CEA and the document's presenters read it too. */
+const audience = computed(() => {
+  if (!isAmendmentPresenter(props.amendment, member.value?.id ?? null)) {
+    return t("amendment.review.audience.others");
+  }
+  return props.amendment.validatedAt
+    ? t("amendment.review.audience.authorValidated")
+    : t("amendment.review.audience.author");
+});
 </script>
 
 <template>

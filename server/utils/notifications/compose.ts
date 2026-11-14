@@ -608,7 +608,7 @@ export async function composeNotice(input: {
 
   if (!canSeeAssembly(actor, assembly)) return { skip: "not_visible" };
   if (!canSeeDocument(actor, document)) return { skip: "not_visible" };
-  if (amendment && !canSeeLoadedAmendment(actor, amendment)) {
+  if (amendment && !canSeeLoadedAmendment(actor, amendment, document)) {
     return { skip: "not_visible" };
   }
 
@@ -637,7 +637,7 @@ export async function composeNotice(input: {
     members: new Map(memberRows.map((row) => [row.id, row])),
     sourceCodes: new Map(
       sources
-        .filter((source) => canSeeLoadedAmendment(actor, source))
+        .filter((source) => canSeeLoadedAmendment(actor, source, document))
         .map((source) => [source.id, code(source)]),
     ),
   };

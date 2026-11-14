@@ -1189,7 +1189,7 @@
         "to_validate": "Review it: validate it or ask its presenters to fix it.",
         "pending": "The Secretariat is checking it. Until then, only its presenters, the Secretariat and the Mesa can see it.",
         "to_publish": "It is validated, but the rest of the assembly cannot see it yet. Publish it whenever you want.",
-        "validated": "The Secretariat validated it. Everyone will see it once it is published; until then, only its presenters, the Secretariat and the Mesa can see it.",
+        "validated": "The Secretariat validated it. Everyone will see it once it is published; until then, its presenters, the presenters of the document, the CEA, the Secretariat and the Mesa can see it.",
         "published": "The whole assembly can see it.",
         "pending_others": "The Secretariat has not checked it yet. The rest of the assembly cannot see it yet.",
         "validated_others": "The Secretariat validated it but has not published it yet: the rest of the assembly cannot see it yet.",
@@ -1200,6 +1200,7 @@
       "noteFromSecretaria": "Note from the Secretariat",
       "audience": {
         "author": "Only its presenters, the Secretariat and the Mesa can see it.",
+        "authorValidated": "Its presenters, the presenters of the document, the CEA, the Secretariat and the Mesa can see it.",
         "others": "The rest of the assembly cannot see it."
       },
       "actions": {
@@ -1210,7 +1211,7 @@
         "sendCorrection": "Send the request",
         "publish": "Publish"
       },
-      "validateOnlyHint": "If you validate it without publishing it, only its presenters, the Secretariat and the Mesa will see it until you publish it.",
+      "validateOnlyHint": "If you validate it without publishing it, until you publish it only its presenters, the presenters of the document, the CEA, the Secretariat and the Mesa will see it.",
       "correctionNote": "What they need to fix",
       "correctionHelp": "Its presenters will see this. The amendment becomes a draft again until they send it again.",
       "correctionPlaceholder": "For example: the change affects another article; say which one.",
@@ -4209,7 +4210,7 @@
       "textUnavailable": "The document text could not be loaded to show the changes.",
       "validatePublish": "Validate and publish",
       "validateOnly": "Validate without publishing",
-      "validateOnlyHelp": "It stays validated, but only its authors, the Secretariat and the Mesa see it until you publish it.",
+      "validateOnlyHelp": "It stays validated, but until you publish it only its authors, the presenters of the document, the CEA, the Secretariat and the Mesa see it.",
       "publish": "Publish",
       "select": "Select {label}",
       "selectAll": "Select all",

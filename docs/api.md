@@ -849,8 +849,12 @@ All paths are under `/api/assemblies/[assembly]/documents/[document]/amendments`
   only once the Secretaría publishes them (`publishedAt`). Until then
   (waiting for validation, validated but kept private, or decided before
   publication) only their authors, the user who created them, the members
-  involved in a transactional, reviewers and the Mesa see them. Visibility
-  is per amendment: there is no assembly-wide policy any more.
+  involved in a transactional, reviewers and the Mesa see them. Once
+  validated (`validatedAt`), an unpublished amendment is also visible to the
+  CEA's accounts (role `CEA`) and the presenters of the document
+  (`seesValidatedAmendments`); their main presenter still answers it only
+  once it is published. Visibility is per amendment: there is no
+  assembly-wide policy any more.
 - The same rule drives `amendmentCount` in document summaries, the history
   and the admission decisions returned by `GET .../decisions`.
 - `correctionNote` is returned only to the authors, the creator, the members

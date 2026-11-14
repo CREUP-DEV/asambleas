@@ -560,7 +560,7 @@ export async function loadWorkNews(
       return (
         amendment !== undefined &&
         assembly !== undefined &&
-        canSeeLoadedAmendment(actor, amendment) &&
+        canSeeLoadedAmendment(actor, amendment, document) &&
         // The presenters always see the answers; the authors as the
         // assembly's policy says.
         (row.type !== "position_changed" ||
