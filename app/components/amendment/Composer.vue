@@ -965,9 +965,12 @@ const questionClass = "text-highlighted text-sm font-semibold";
 </script>
 
 <template>
+  <!-- On large screens it takes the height the document page leaves under
+       its header (flex-1 in that page), like the workspace it replaces: the
+       page never scrolls besides it. Under 24rem of room it scrolls. -->
   <section
     ref="root"
-    class="border-default flex flex-col gap-3 rounded-lg border p-3 sm:p-4 lg:h-[calc(100dvh-var(--shell-banner-height,0px)-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-3rem)] lg:min-h-[38rem]"
+    class="border-default flex flex-col gap-3 rounded-lg border p-3 sm:p-4 lg:min-h-96 lg:flex-1"
     :aria-labelledby="`${uid}-title`"
   >
     <header class="flex flex-wrap items-start gap-2">
