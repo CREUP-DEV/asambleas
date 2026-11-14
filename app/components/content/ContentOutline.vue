@@ -6,6 +6,9 @@ import type { OutlineEntry } from "./ContentView.vue";
  * screens): a burgundy button floating over the text, ringed in the page's
  * colour so it stands out on a burgundy heading too, that opens the headings
  * (ContentOutlineList). The section being read is marked when it opens.
+ * Pointed at, pressed or open it keeps its solid colour mixed with the page's
+ * (what Nuxt UI's translucent `bg-primary/75` looks like on a blank page),
+ * so the text under it never shows through.
  */
 const props = defineProps<{
   items: OutlineEntry[];
@@ -37,7 +40,7 @@ function pick(id: string): void {
       color="primary"
       size="sm"
       icon="i-lucide-list-tree"
-      class="shadow-lg ring-2 ring-(--ui-bg)"
+      class="shadow-lg ring-2 ring-(--ui-bg) hover:bg-[color-mix(in_oklab,var(--ui-primary)_75%,var(--ui-bg))] active:bg-[color-mix(in_oklab,var(--ui-primary)_75%,var(--ui-bg))] aria-expanded:bg-[color-mix(in_oklab,var(--ui-primary)_75%,var(--ui-bg))]"
       :label="t('common.content.outline.button')"
       :aria-label="t('common.content.outline.label')"
     />
