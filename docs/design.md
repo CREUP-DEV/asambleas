@@ -705,10 +705,10 @@ stands. The time-based `amendmentVisibility` setting is gone.
 each user has to do (expected documents, corrections requested) and where
 their documents and amendments stand. The Secretaría gets a validation inbox
 per assembly (`GET .../review`) and the tracking panel. The inbox lists the
-documents to validate, then the amendments in two parts, each by document:
-"Enmiendas por revisar" (to validate, and the transactionals still waiting
-for their authors) and "Validadas sin publicar" (validated and kept
-private, to publish them), and finally the late ones in "Fuera de plazo"
+documents to validate, then the amendments in two tabs, each by document:
+"Por revisar" (to validate, and the transactionals still waiting for their
+authors) and "Validadas sin publicar" (validated and kept private, to
+publish them), and finally the late ones in "Fuera de plazo"
 (`splitReviewParts` in `app/components/review/-queue.ts`).
 
 ## Reviewing amendments, transactionals and the session

@@ -4196,7 +4196,12 @@
       "bulkConfirmFrozen": "Sus textos quedan fijados: ya no se podrán editar y recibirán su referencia si su tipo la lleva."
     },
     "amendments": {
-      "title": "Enmiendas por revisar",
+      "title": "Enmiendas",
+      "tabs": {
+        "label": "Qué enmiendas ver",
+        "review": "Por revisar",
+        "publish": "Validadas sin publicar"
+      },
       "help": "Al validar una enmienda puedes publicarla ya o dejarla validada y publicarla más tarde: entonces pasa a «Validadas sin publicar».",
       "none": "No hay enmiendas esperando tu validación.",
       "noCode": "Sin número",
@@ -4252,7 +4257,6 @@
       "transactionalsPublished": "Las transaccionales se publican siempre al validarlas, porque sustituyen a enmiendas que ya son públicas."
     },
     "toPublish": {
-      "title": "Validadas sin publicar",
       "help": "Las ven sus autores, quienes presentan el documento, la CEA, la Secretaría y la Mesa. Publícalas cuando quieras que las vea toda la asamblea.",
       "none": "No hay enmiendas validadas pendientes de publicar."
     },
