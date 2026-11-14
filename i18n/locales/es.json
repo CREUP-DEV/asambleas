@@ -3451,7 +3451,12 @@
       "actionCount": "Revisar enmiendas: {count} pendiente | Revisar enmiendas: {count} pendientes"
     },
     "marginMarkers": "Enmiendas en el margen",
-    "amendHere": "Hacer enmienda aquí"
+    "amendHere": "Hacer enmienda aquí",
+    "selectionBar": {
+      "label": "Acciones sobre el texto seleccionado",
+      "amend": "Enmendar",
+      "note": "Añadir nota"
+    }
   },
   "session": {
     "title": "Consola de sesión",
@@ -5404,7 +5409,7 @@
     "addGeneral": "Añadir nota general",
     "addHere": "Añadir nota aquí",
     "empty": "Todavía no tienes notas en este documento",
-    "emptyHint": "Para anotar un fragmento, selecciónalo en el texto, haz clic derecho y elige «Añadir nota aquí».",
+    "emptyHint": "Para anotar un fragmento, selecciónalo en el texto y elige «Añadir nota» en la barra que aparece encima.",
     "sections": {
       "general": "Sobre el documento",
       "placed": "Sobre el texto",
