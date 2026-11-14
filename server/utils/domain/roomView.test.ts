@@ -122,6 +122,9 @@ describe("roomViewer", () => {
     const unpublished = {
       status: "submitted" as const,
       publishedAt: null,
+      // Validated: the room is not the CEA nor a presenter of its document.
+      validatedAt: new Date(),
+      documentPresenters: { proponentMemberId: null, coProponentMemberIds: [] },
       createdByUserId: MESA_ID,
       authorMemberIds: [],
       partyMemberIds: [],

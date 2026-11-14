@@ -512,9 +512,14 @@ async function loadWorkProponent(
     .orderBy(asc(documents.createdAt), asc(documents.id));
   if (rows.length === 0) return [];
 
+  // Every one of these documents has the actor's member as main presenter.
+  const presenters = {
+    proponentMemberId: actor.memberId,
+    coProponentMemberIds: [],
+  };
   const submitted = (
     await findSubmittedAmendments(rows.map((row) => row.id))
-  ).filter((row) => canSeeLoadedAmendment(actor, row));
+  ).filter((row) => canSeeLoadedAmendment(actor, row, presenters));
   const result: MeWorkProponentDto[] = [];
   for (const row of rows) {
     const positionsPending = countPositionsPending(
@@ -558,16 +563,24 @@ async function loadWorkAcceptances(
       slug: documents.slug,
       title: documents.title,
       assemblyId: documents.assemblyId,
+      proponentMemberId: documents.proponentMemberId,
     })
     .from(documents)
     .where(openPublishedDocuments([...byId.keys()]))
-    .orderBy(asc(documents.createdAt), asc(documents.id));
+    .orderBy(asc(documents.createdAt), asc(documents.id))
+    .then((list) => withCoProponentIds(list));
+  const documentById = new Map(documentRows.map((row) => [row.id, row]));
   const transactionals = (
     await findTransactionalsAwaitingMember(
       documentRows.map((row) => row.id),
       actor.memberId,
     )
-  ).filter((row) => canSeeLoadedAmendment(actor, row));
+  ).filter((row) => {
+    const document = documentById.get(row.documentId);
+    return (
+      document !== undefined && canSeeLoadedAmendment(actor, row, document)
+    );
+  });
   if (transactionals.length === 0) return [];
   const replaces = await membersSourcesOf(transactionals, actor.memberId);
 

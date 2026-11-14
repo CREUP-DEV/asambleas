@@ -652,7 +652,10 @@ interface AmendmentVisibilityRow extends AmendmentVisibilityContext {
   documentId: string;
 }
 
-/** Loads the amendments matching `where` with their authors and parties. */
+/**
+ * Loads the amendments matching `where` with their authors and parties, and
+ * the presenters of their documents.
+ */
 async function loadAmendmentVisibilityRows(
   executor: Executor,
   where: SQL | undefined,
@@ -663,30 +666,38 @@ async function loadAmendmentVisibilityRows(
       documentId: amendments.documentId,
       status: amendments.status,
       publishedAt: amendments.publishedAt,
+      validatedAt: amendments.validatedAt,
       createdByUserId: amendments.createdByUserId,
+      proponentMemberId: documents.proponentMemberId,
     })
     .from(amendments)
+    .innerJoin(documents, eq(documents.id, amendments.documentId))
     .where(where);
   if (rows.length === 0) return [];
 
   const ids = rows.map((row) => row.id);
-  const [authorRows, partyRows, sourceAuthors] = await Promise.all([
-    executor
-      .select({
-        amendmentId: amendmentAuthors.amendmentId,
-        memberId: amendmentAuthors.memberId,
-      })
-      .from(amendmentAuthors)
-      .where(inArray(amendmentAuthors.amendmentId, ids)),
-    executor
-      .select({
-        amendmentId: amendmentAcceptances.amendmentId,
-        memberId: amendmentAcceptances.memberId,
-      })
-      .from(amendmentAcceptances)
-      .where(inArray(amendmentAcceptances.amendmentId, ids)),
-    loadSourceAuthorIds(ids, executor),
-  ]);
+  const [authorRows, partyRows, sourceAuthors, coProponents] =
+    await Promise.all([
+      executor
+        .select({
+          amendmentId: amendmentAuthors.amendmentId,
+          memberId: amendmentAuthors.memberId,
+        })
+        .from(amendmentAuthors)
+        .where(inArray(amendmentAuthors.amendmentId, ids)),
+      executor
+        .select({
+          amendmentId: amendmentAcceptances.amendmentId,
+          memberId: amendmentAcceptances.memberId,
+        })
+        .from(amendmentAcceptances)
+        .where(inArray(amendmentAcceptances.amendmentId, ids)),
+      loadSourceAuthorIds(ids, executor),
+      loadCoProponentIds(
+        [...new Set(rows.map((row) => row.documentId))],
+        executor,
+      ),
+    ]);
   const group = (list: { amendmentId: string; memberId: string }[]) => {
     const map = new Map<string, string[]>();
     for (const row of list) {
@@ -698,8 +709,12 @@ async function loadAmendmentVisibilityRows(
   };
   const authors = group(authorRows);
   const parties = group(partyRows);
-  return rows.map((row) => ({
+  return rows.map(({ proponentMemberId, ...row }) => ({
     ...row,
+    documentPresenters: {
+      proponentMemberId,
+      coProponentMemberIds: coProponents.get(row.documentId) ?? [],
+    },
     authorMemberIds: authors.get(row.id) ?? [],
     partyMemberIds: [
       ...(parties.get(row.id) ?? []),

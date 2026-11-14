@@ -187,6 +187,7 @@ import {
   redactCorrectionNote,
   redactEventActor,
   redactPayloadMembers,
+  type DocumentPresenters,
 } from "./visibility";
 
 /**
@@ -888,7 +889,7 @@ function isVisible(
   ctx: DocumentAmendmentContext,
   row: LoadedAmendment,
 ): boolean {
-  return canSeeLoadedAmendment(ctx.actor, row);
+  return canSeeLoadedAmendment(ctx.actor, row, ctx.document);
 }
 
 /** Loads the `[amendment]` route param. Hidden amendments answer 404. */
@@ -1854,14 +1855,20 @@ export async function findSubmittedAmendments(
   );
 }
 
-/** canSeeAmendment for a loaded row, outside a document context. */
+/**
+ * canSeeAmendment for a loaded row, with the presenters of its document
+ * (they read it once validated, published or not).
+ */
 export function canSeeLoadedAmendment(
   actor: Actor,
   row: LoadedAmendment,
+  document: DocumentPresenters,
 ): boolean {
   return canSeeAmendment(actor, {
     status: row.status,
     publishedAt: row.publishedAt,
+    validatedAt: row.validatedAt,
+    documentPresenters: document,
     createdByUserId: row.createdByUserId,
     authorMemberIds: row.authors.map((author) => author.memberId),
     partyMemberIds: involvedMemberIds(row),

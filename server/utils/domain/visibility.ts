@@ -94,6 +94,10 @@ export interface AmendmentVisibilityContext {
   status: AmendmentStatus;
   /** Set by the Secretaría: the amendment is visible to everyone. */
   publishedAt: Date | null;
+  /** Set when the Secretaría validates it, published or not. */
+  validatedAt: Date | null;
+  /** Who presents the amended document (main presenter and co-presenters). */
+  documentPresenters: DocumentPresenters;
   createdByUserId: string | null;
   authorMemberIds: string[];
   /**
@@ -138,6 +142,9 @@ export function isAmendmentInsider(
  * - Presented, not published yet (waiting for validation, validated but kept
  *   private, or decided before publication): its authors, its creator, the
  *   parties of a transactional, reviewers and the Mesa.
+ * - Once validated, though not published: also the CEA's accounts and the
+ *   presenters of the document it amends (`seesValidatedAmendments`). They
+ *   read it, nothing more: its correction notes stay with the insiders.
  */
 export function canSeeAmendment(
   actor: Actor,
@@ -148,7 +155,25 @@ export function canSeeAmendment(
     return insider || canReviewAmendments(actor);
   }
   if (amendment.publishedAt) return true;
-  return insider || seesAllPresentedAmendments(actor);
+  if (insider || seesAllPresentedAmendments(actor)) return true;
+  return (
+    amendment.validatedAt !== null &&
+    seesValidatedAmendments(actor, amendment.documentPresenters)
+  );
+}
+
+/**
+ * Who reads an amendment the Secretaría validated and has not published:
+ * the CEA's accounts (role CEA) and whoever presents the amended document.
+ */
+export function seesValidatedAmendments(
+  actor: Actor,
+  document: DocumentPresenters,
+): boolean {
+  return (
+    actor.user.role?.name === SYSTEM_ROLES.CEA ||
+    isDocumentPresenter(actor, document)
+  );
 }
 
 /** Event types whose payload carries a correction note (`note`). */

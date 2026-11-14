@@ -1236,6 +1236,7 @@ export interface AmendmentInfo {
   code: string | null;
   status: AmendmentStatus;
   publishedAt: Date | null;
+  validatedAt: Date | null;
   createdByUserId: string | null;
   authorMemberIds: string[];
   partyMemberIds: string[];
@@ -1462,6 +1463,7 @@ async function loadAmendmentInfo(
         code: amendments.code,
         status: amendments.status,
         publishedAt: amendments.publishedAt,
+        validatedAt: amendments.validatedAt,
         createdByUserId: amendments.createdByUserId,
       })
       .from(amendments)
@@ -1786,7 +1788,7 @@ function amendmentVisible(
     amendment &&
     document &&
     canSeeDocument(actor, document) &&
-    canSeeAmendment(actor, amendment),
+    canSeeAmendment(actor, { ...amendment, documentPresenters: document }),
   );
 }
 
@@ -1952,7 +1954,10 @@ function eventTarget(
           ...base,
           visible:
             canSeeDocument(actor, document) &&
-            canSeeAmendment(actor, amendment),
+            canSeeAmendment(actor, {
+              ...amendment,
+              documentPresenters: document,
+            }),
           label,
           document,
           payload: redactCorrectionNote(

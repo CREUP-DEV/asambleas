@@ -986,10 +986,55 @@ describe("visibility", () => {
     ): AmendmentInput => ({
       status,
       publishedAt: null,
+      validatedAt: null,
+      documentPresenters: {
+        proponentMemberId: "presenter",
+        coProponentMemberIds: ["co-presenter"],
+      },
       createdByUserId: "user-author",
       authorMemberIds: ["author"],
       partyMemberIds: [],
       ...extra,
+    });
+    const validatedAt = new Date("2026-03-09T12:00:00Z");
+    /** A CEA account acting for an office that neither wrote nor presents. */
+    const cea = {
+      user: { id: "user-cea", role: { name: "CEA" } },
+      memberId: "office",
+      role: "cea",
+    } as unknown as Actor;
+
+    it("shows a validated, unpublished amendment to the CEA and the document's presenters", () => {
+      for (const status of ["submitted", "withdrawn", "approved"] as const) {
+        const validated = amendment(status, { validatedAt });
+        expect(canSeeAmendment(cea, validated)).toBe(true);
+        expect(canSeeAmendment(actor("member", "presenter"), validated)).toBe(
+          true,
+        );
+        expect(
+          canSeeAmendment(actor("member", "co-presenter"), validated),
+        ).toBe(true);
+        // Anyone else still waits for its publication.
+        expect(canSeeAmendment(actor("member"), validated)).toBe(false);
+        expect(canSeeAmendment(actor("member", null), validated)).toBe(false);
+      }
+    });
+
+    it("keeps an amendment waiting for validation from the CEA and the document's presenters", () => {
+      const waiting = amendment("submitted");
+      expect(canSeeAmendment(cea, waiting)).toBe(false);
+      expect(canSeeAmendment(actor("member", "presenter"), waiting)).toBe(
+        false,
+      );
+      expect(canSeeAmendment(actor("member", "co-presenter"), waiting)).toBe(
+        false,
+      );
+    });
+
+    it("keeps drafts from the CEA and the document's presenters, validated before or not", () => {
+      const draft = amendment("draft", { validatedAt });
+      expect(canSeeAmendment(cea, draft)).toBe(false);
+      expect(canSeeAmendment(actor("member", "presenter"), draft)).toBe(false);
     });
 
     it("hides presented amendments until the Secretaría publishes them", () => {
