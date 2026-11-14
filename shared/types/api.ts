@@ -15,6 +15,8 @@ import type {
   ApprovalMethod,
   AssemblySettings,
   AssemblyStatus,
+  CeaPosition,
+  ControlSheetManualResult,
   DecisionKind,
   DecisionMethod,
   DocumentFormat,
@@ -1424,6 +1426,151 @@ export interface SpeakingTurnUpdateBody {
   position?: number;
   speaker?: string | null;
   updatedAt: IsoDate;
+}
+
+// Control sheet ------------------------------------------------------------
+
+/** Who changed a field of the sheet and when (the account acted as). */
+export interface ControlSheetEditDto {
+  /** The account's name; null once the account is gone. */
+  by: string | null;
+  at: IsoDate;
+}
+
+/**
+ * What the control sheet notes about one agenda item. Every field edited
+ * on its own has its own lock token (`…UpdatedAt`, null while never set),
+ * sent back with the next change of that field.
+ */
+export interface ControlSheetItemRowDto {
+  /** The sheet row's own id (its history). */
+  id: string;
+  agendaItemId: string;
+  /** An item without documents shown on the sheet. */
+  listed: boolean;
+  listedUpdatedAt: IsoDate | null;
+  manualResult: ControlSheetManualResult | null;
+  resultUpdatedAt: IsoDate | null;
+  /** The Mesa's treated mark, when it set one. */
+  treated: ControlSheetEditDto | null;
+  progressUpdatedAt: IsoDate | null;
+  observations: string;
+  observationsEdited: ControlSheetEditDto | null;
+  observationsUpdatedAt: IsoDate | null;
+}
+
+/** What the control sheet notes about one amendment (lock tokens as above). */
+export interface ControlSheetAmendmentRowDto {
+  id: string;
+  amendmentId: string;
+  documentId: string;
+  ceaPosition: CeaPosition | null;
+  ceaPositionEdited: ControlSheetEditDto | null;
+  ceaPositionUpdatedAt: IsoDate | null;
+  treated: ControlSheetEditDto | null;
+  treatedUpdatedAt: IsoDate | null;
+  observations: string;
+  observationsEdited: ControlSheetEditDto | null;
+  observationsUpdatedAt: IsoDate | null;
+}
+
+/** A field of a sheet change with the lock token it was read with. */
+export interface ControlSheetField<T> {
+  value: T;
+  /** The field's token as read; null when it was never set. */
+  updatedAt: IsoDate | null;
+}
+
+/**
+ * PATCH /api/assemblies/[assembly]/control-sheet/items/[item]. Observations,
+ * `listed` and the result need control_sheet:edit (the result also
+ * session:moderate); `treated` is the Mesa's (session:moderate). Each field
+ * is checked with its own token; a stale one answers 409 with the row as it
+ * is (`data.row`). Returns the row.
+ */
+export interface ControlSheetItemBody {
+  observations?: ControlSheetField<string>;
+  listed?: ControlSheetField<boolean>;
+  result?: ControlSheetField<ControlSheetManualResult | null>;
+  treated?: ControlSheetField<boolean>;
+}
+
+/**
+ * PATCH /api/assemblies/[assembly]/control-sheet/amendments/[amendment]:
+ * the CEA position and the observations (control_sheet:edit) and the Mesa's
+ * treated mark (session:moderate), checked as ControlSheetItemBody.
+ */
+export interface ControlSheetAmendmentBody {
+  ceaPosition?: ControlSheetField<CeaPosition | null>;
+  observations?: ControlSheetField<string>;
+  treated?: ControlSheetField<boolean>;
+}
+
+/**
+ * One change in the history of a sheet row (GET .../control-sheet/history
+ * ?row=<id>): who, when and what. `text` is the observations it saved.
+ */
+export interface ControlSheetHistoryEntryDto {
+  id: string;
+  type: string;
+  at: IsoDate;
+  actorName: string | null;
+  /** The real Admin, only for the account acted as and for Admins. */
+  impersonatedBy?: UserRef | null;
+  text?: string;
+  ceaPosition?: { from: CeaPosition | null; to: CeaPosition | null };
+  result?: {
+    from: ControlSheetManualResult | null;
+    to: ControlSheetManualResult | null;
+  };
+  listed?: boolean;
+  treated?: boolean;
+}
+
+export interface ControlSheetHistoryDto {
+  entries: ControlSheetHistoryEntryDto[];
+}
+
+/**
+ * One document of the assembly as the control sheet reads it. Its title,
+ * status and item come from the agenda (AgendaDto.documents); this adds what
+ * the agenda does not carry.
+ */
+export interface ControlSheetDocumentDto {
+  id: string;
+  /** The final vote in force (documents.finalVoteId); null before it. */
+  finalVote: VoteDto | null;
+  /** Amendments past draft the reader can see. */
+  amendments: number;
+  /** Of those, the ones still presented and undecided. */
+  undecided: number;
+}
+
+/**
+ * GET /api/assemblies/[assembly]/control-sheet (control_sheet:view or
+ * control_sheet:edit): what the control sheet adds to the agenda, as the
+ * reader may see it. The rows and their wording are worked out on the
+ * client and for the Excel by shared/utils/controlSheet.ts.
+ */
+export interface ControlSheetDto {
+  /**
+   * When the assembly first went into session; null before. An amendment
+   * the Mesa settles from then on counts as treated.
+   */
+  sessionStartedAt: IsoDate | null;
+  documents: ControlSheetDocumentDto[];
+  /** Turns that took the floor (speaking or done), in the order they did. */
+  turns: SpeakingTurnDto[];
+  /** What the sheet noted about agenda items the reader gets. */
+  itemRows: ControlSheetItemRowDto[];
+  /** What the sheet noted about amendments the reader sees. */
+  amendmentRows: ControlSheetAmendmentRowDto[];
+  can: {
+    /** control_sheet:edit. */
+    edit: boolean;
+    /** session:moderate: the Mesa's marks. */
+    moderate: boolean;
+  };
 }
 
 export interface EventDto {

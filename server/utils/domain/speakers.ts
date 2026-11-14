@@ -1,5 +1,5 @@
 import { createError } from "h3";
-import { and, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "../../db";
 import {
   agendaItems,
@@ -168,6 +168,41 @@ export async function loadSpeakers(
       ? { history: speakerHistory(await loadTurnHistory(assemblyId)) }
       : {}),
   };
+}
+
+/**
+ * Every turn of the assembly that took the floor (speaking or done), in the
+ * order it did, as the actor may read it: the control sheet's speakers per
+ * agenda item. Callers check that the actor reads the sheet.
+ */
+export async function loadSpokenTurns(
+  actor: Actor,
+  assemblyId: string,
+): Promise<SpeakingTurnDto[]> {
+  const rows = await db
+    .select({
+      turn: speakingTurns,
+      member: {
+        id: members.id,
+        acronym: members.acronym,
+        name: members.name,
+        kind: members.kind,
+      },
+    })
+    .from(speakingTurns)
+    .leftJoin(members, eq(members.id, speakingTurns.memberId))
+    .where(
+      and(
+        eq(speakingTurns.assemblyId, assemblyId),
+        inArray(speakingTurns.status, ["speaking", "done"]),
+      ),
+    )
+    .orderBy(
+      sql`${speakingTurns.startedAt} asc nulls last`,
+      asc(speakingTurns.createdAt),
+      asc(speakingTurns.id),
+    );
+  return rows.map((row) => toTurnDto(actor, row));
 }
 
 /** Every turn of the assembly with a member, for speakerHistory (the Mesa). */

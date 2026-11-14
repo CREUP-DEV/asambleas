@@ -91,7 +91,8 @@ an account sees the offices when its role is Admin, Secretaría, Presidencia,
 Moderador (the Mesa gives them the floor) or CEA, when it holds a management
 permission (`document:manage`, `amendment:review`, `amendment:manage`,
 `assembly:manage`, `session:moderate`, `member:manage`,
-`user:manage_roles`), or when it acts for an office itself
+`user:manage_roles`, `stats:view`, `notification:manage`, `control_sheet:view`,
+`control_sheet:edit`), or when it acts for an office itself
 (`Actor.memberKind`). Everyone else (Asociado, Sectorial, Invitado, Otro) gets one
 generic presenter instead of any office:
 `{ id: GENERIC_EXECUTIVE_MEMBER_ID, acronym: "CEA", name: "Comisión Ejecutiva Ampliada", kind: "executive" }`.
@@ -1066,6 +1067,32 @@ a test email to oneself and the last 50 deliveries (who, when, status;
 never an address). Since that log names every account,
 `notification:manage` sees the executive offices, as `stats:view` does.
 
+## Control sheet
+
+The control sheet (hoja de control, `/asambleas/[assembly]/hoja-de-control`)
+replaces the spreadsheet the Mesa, the CEA, the Secretaría and the
+Presidencia kept during the session: one row per agenda item («General»,
+items with documents and the ones added by hand) and the amendments of one
+document («Enmiendas»), with whether each was treated, its result, how it was
+voted, who spoke and shared observations; for amendments, also the CEA's own
+position (aceptar, transaccionar, rechazar, decae). It is a live summary and
+the base of the minutes. The plan, with what is still to come (votes on
+items, procedural motions, registered votes, the order of the session,
+speakers per amendment, the Excel download), is `docs/control-sheet-plan.md`.
+
+- The sheet adds to the agenda; every piece goes through the usual
+  visibility rules, so the CEA and the Mesa may read different sheets.
+- What it notes (`control_sheet_items`, `control_sheet_amendments`) never
+  leaves it: no shared DTO, notification, PDF or projection carries the CEA
+  position, the observations or the marks.
+- Each field has its own lock token; observations keep every saved text with
+  who and when (`control_sheet_observation_revisions`), and the events carry
+  who and when only.
+- Treated: an item once every voted document has its final vote, its
+  documents were all withdrawn or postponed, a «Retirado» or «Decaído» was
+  noted, or the Mesa marks it; an amendment once the Mesa settled it during
+  the session, or the Mesa marks it.
+
 ## Traceability
 
 Every change leaves a record of who did it, acting for which member, when,
@@ -1194,7 +1221,9 @@ The existing keys stay, plus:
 - `session:moderate`: Mesa actions such as live state, admissions, votes,
   decisions and transactionals on behalf of parties;
 - `notification:manage`: what is notified by email, to whom and how often
-  ("Email notifications").
+  ("Email notifications");
+- `control_sheet:view` and `control_sheet:edit`: read and edit an assembly's
+  control sheet ("Control sheet"). The CEA and the Moderador hold both.
 
 The default `Moderador` role gets `session:moderate`. The `CEA`, `CAS` and
 `Sectorial` roles (synced from the intranet types `CEA` and `Sectorial`, and

@@ -131,6 +131,10 @@ export function useActivityText() {
       key = `document.majorities.${code}`;
     } else if (entity === "document" && field === "acceptedAmendments") {
       key = `document.acceptedRule.options.${code}`;
+    } else if (entity === "control_sheet" && field === "ceaPosition") {
+      key = `controlSheet.ceaPosition.options.${code}`;
+    } else if (entity === "control_sheet" && field === "result") {
+      key = `controlSheet.manualResult.${code}`;
     }
     return key && te(key) ? key : null;
   }

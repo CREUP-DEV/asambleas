@@ -85,7 +85,9 @@
       "executiveMain": "No puedes elegir a la CEA como principal. Pídeselo a la CEA o a la Secretaría.",
       "executiveAuthor": "«CEA» no es un miembro. Elige el cargo de la CEA por su nombre.",
       "executiveMember": "No puedes añadir a la CEA. Pídeselo a la CEA o a la Secretaría.",
-      "unknown": "No se ha podido completar la operación."
+      "unknown": "No se ha podido completar la operación.",
+      "controlSheetStale": "Alguien ha cambiado esta fila de la hoja a la vez. Se muestra lo que hay ahora.",
+      "controlSheetWithdrawn": "Un punto con documentos no se marca como retirado a mano: se retira el documento."
     },
     "content": {
       "empty": "No hay contenido que mostrar.",
@@ -303,6 +305,8 @@
       "amendmentReview": "Validar y publicar enmiendas, y anotar si se admiten",
       "assemblyVoteResult": "Registrar resultado de votación en asamblea",
       "sessionModerate": "Moderar la sesión: estado en directo, admisiones, votaciones y transaccionales",
+      "controlSheetView": "Ver la hoja de control de cada asamblea",
+      "controlSheetEdit": "Editar la hoja de control: observaciones, posición de la CEA y puntos añadidos a mano",
       "memberManage": "Sincronizar y editar miembros",
       "statsView": "Ver las estadísticas de lectura y participación de cada cuenta y miembro",
       "notificationManage": "Configurar qué avisos se envían por correo, a quién y con qué frecuencia"
@@ -2518,6 +2522,7 @@
       "settings": "Ajustes",
       "validation": "Validación",
       "tracking": "Seguimiento",
+      "controlSheet": "Hoja de control",
       "validationPending": "Validación: {count} por validar | Validación: {count} por validar",
       "live": "En directo",
       "liveNow": "Ahora",
@@ -3182,7 +3187,8 @@
       "blockedTitle": "Este punto no se puede eliminar",
       "blockedAmendments": "Un documento de este punto o de sus subpuntos tiene enmiendas. | {count} documentos de este punto o de sus subpuntos tienen enmiendas.",
       "blockedHelp": "Las enmiendas son trabajo de otros miembros y no se borran. Mueve antes esos documentos a otro punto.",
-      "blockedLive": "Ahora mismo se está tratando en la sesión este punto, un subpunto o uno de sus documentos. Inténtalo cuando la Mesa pase a otro punto."
+      "blockedLive": "Ahora mismo se está tratando en la sesión este punto, un subpunto o uno de sus documentos. Inténtalo cuando la Mesa pase a otro punto.",
+      "blockedSheet": "La hoja de control tiene anotaciones de este punto o de sus subpuntos (observaciones, un resultado anotado, la marca de tratado o que se añadió a la hoja). Quítalas en la hoja antes de eliminarlo."
     },
     "reader": {
       "label": "Documentos del punto",
@@ -4336,6 +4342,170 @@
     },
     "togetherWith": "junto con"
   },
+  "controlSheet": {
+    "title": "Hoja de control",
+    "intro": "Cómo va cada punto y cada enmienda: si se ha tratado, con qué resultado, cómo se votó y quién intervino.",
+    "forbiddenTitle": "No puedes ver la hoja de control",
+    "forbiddenDescription": "La ven la Mesa, la CEA, la Secretaría y la Presidencia.",
+    "loading": "Cargando la hoja de control",
+    "loadError": "No se ha podido cargar la hoja de control",
+    "retry": "Reintentar",
+    "follow": "Seguir el debate",
+    "followHint": "Abre lo que la Mesa tiene en debate y lo señala.",
+    "live": "En debate",
+    "noVote": "Sin votar",
+    "positionHidden": "No visible",
+    "emptyTitle": "Todavía no hay puntos con documentos",
+    "emptyDescription": "La hoja muestra los puntos del orden del día que tienen documentos presentados.",
+    "amendmentsEmpty": "Este documento no tiene enmiendas que puedas ver.",
+    "amendmentsLoadError": "No se han podido cargar las enmiendas",
+    "rowCount": "{count} punto en la hoja | {count} puntos en la hoja",
+    "amendmentCount": "{count} enmienda | {count} enmiendas",
+    "tabs": {
+      "label": "Partes de la hoja de control",
+      "general": "General",
+      "amendments": "Enmiendas"
+    },
+    "columns": {
+      "number": "Nº",
+      "item": "Punto",
+      "treated": "Tratado",
+      "result": "Resultado",
+      "votes": "Votaciones",
+      "speakers": "Intervinientes",
+      "code": "Enmienda",
+      "authors": "Presenta",
+      "position": "Respuesta del proponente",
+      "vote": "Votación",
+      "observations": "Observaciones",
+      "ceaPosition": "Posición CEA",
+      "open": "Abrir"
+    },
+    "treated": {
+      "yes": "Tratado",
+      "yesAmendment": "Tratada",
+      "no": "Pendiente"
+    },
+    "result": {
+      "approved": "Aprobado",
+      "approved_unanimous": "Aprobado (unanimidad)",
+      "rejected": "Rechazado",
+      "mixed": "Resultados distintos",
+      "withdrawn": "Retirado",
+      "postponed": "Pospuesto a otra asamblea",
+      "not_applicable": "No aplica",
+      "pending": "Pendiente",
+      "lapsed": "Decaído"
+    },
+    "approval": {
+      "assent": "Por asentimiento",
+      "formal": "De forma",
+      "proponent": "Incorporada sin votación",
+      "vote": "Por votación"
+    },
+    "document": {
+      "label": "Documento",
+      "search": "Buscar un documento",
+      "undecided": "{count} pendiente | {count} pendientes",
+      "total": "{count} enmienda | {count} enmiendas",
+      "noneTitle": "Ningún documento tiene enmiendas",
+      "none": "Cuando un documento tenga enmiendas que puedas ver, aparecerá aquí."
+    },
+    "speakers": {
+      "none": "Nadie",
+      "times": "{label} ({count} veces)",
+      "names": "{label}: ver quién habló"
+    },
+    "ceaPosition": {
+      "label": "Posición de la CEA",
+      "hint": "Lo que a la CEA le gustaría que saliera. Solo lo ven quienes leen la hoja.",
+      "none": "Sin posición",
+      "options": {
+        "accept": "Aceptar",
+        "transact": "Transaccionar",
+        "reject": "Rechazar",
+        "lapse": "Decae"
+      }
+    },
+    "manualResult": {
+      "label": "Resultado anotado a mano",
+      "hint": "Para lo que ninguna votación decide: un informe que decae, un punto retirado.",
+      "byVote": "Lo decide su votación.",
+      "none": "Sin anotar",
+      "withdrawn": "Retirado",
+      "lapsed": "Decaído",
+      "not_applicable": "No aplica"
+    },
+    "open": {
+      "item": "Abrir el punto {title}",
+      "amendment": "Abrir la enmienda {code}"
+    },
+    "panel": {
+      "itemTitle": "Punto de la hoja",
+      "amendmentTitle": "Enmienda de la hoja",
+      "close": "Cerrar",
+      "observations": "Observaciones",
+      "observationsHint": "Las ven y editan quienes leen la hoja. Se guarda quién escribió cada versión.",
+      "placeholder": "Mociones, intervenciones que deben constar en el acta, lo que se acordó...",
+      "save": "Guardar",
+      "saving": "Guardando",
+      "saved": "Guardado",
+      "unsaved": "Sin guardar",
+      "shortcut": "Ctrl + Intro para guardar",
+      "edited": "Última versión de {name}, {when}",
+      "editedNoName": "Última versión: {when}",
+      "saveFailed": "No se ha podido guardar",
+      "conflictTitle": "{name} ha cambiado las observaciones mientras escribías",
+      "conflictNoName": "Alguien ha cambiado las observaciones mientras escribías",
+      "conflictTheirs": "Su versión",
+      "conflictUseTheirs": "Quedarme con la suya",
+      "conflictKeepMine": "Guardar la mía encima",
+      "stale": "Alguien lo ha cambiado a la vez. Se muestra lo que hay ahora.",
+      "treated": "Tratado",
+      "treatedAmendment": "Tratada",
+      "treatedHint": "La Mesa lo marca cuando se ha tratado sin una votación.",
+      "treatedAuto": "Cuenta como tratado por su votación o lo que pasó con sus documentos.",
+      "treatedAutoAmendment": "Cuenta como tratada: la Mesa la resolvió durante la sesión.",
+      "treatedBy": "Lo marcó {name}, {when}",
+      "treatedByNoName": "Marcado: {when}",
+      "moderateOnly": "Solo la Mesa lo marca.",
+      "readOnly": "Puedes leer la hoja, pero no editarla.",
+      "listed": "En la hoja",
+      "listedHint": "Este punto no tiene documentos: está en la hoja porque se ha añadido a mano.",
+      "unlist": "Quitar de la hoja",
+      "history": "Historial",
+      "showHistory": "Ver el historial",
+      "hideHistory": "Ocultar el historial",
+      "historyEmpty": "Nadie ha cambiado nada todavía.",
+      "historyFailed": "No se ha podido cargar el historial",
+      "restore": "Recuperar este texto",
+      "restored": "Texto recuperado. Guárdalo para que quede.",
+      "impersonated": "{admin} actuando como esta cuenta",
+      "events": {
+        "control_sheet_observations_updated": "Observaciones",
+        "control_sheet_cea_position_changed": "Posición de la CEA",
+        "control_sheet_treated_changed": "Marca de tratado",
+        "control_sheet_result_changed": "Resultado a mano",
+        "control_sheet_listed_changed": "En la hoja"
+      },
+      "emptyText": "(sin texto)",
+      "change": "{from} → {to}",
+      "treatedByResult": "Cuenta como tratado por el resultado anotado a mano.",
+      "resultMesaOnly": "Solo la Mesa anota el resultado."
+    },
+    "add": {
+      "button": "Añadir punto",
+      "title": "Añadir un punto a la hoja",
+      "description": "Los puntos sin documentos solo salen en la hoja si los añades, por ejemplo uno que se vota.",
+      "label": "Punto",
+      "placeholder": "Elige un punto",
+      "none": "Todos los puntos sin documentos ya están en la hoja.",
+      "confirm": "Añadir",
+      "added": "Punto añadido a la hoja",
+      "failed": "No se ha podido añadir el punto"
+    },
+    "noObservations": "Sin observaciones"
+  },
   "tracking": {
     "title": "Seguimiento de la documentación",
     "intro": "Los documentos que se esperan en cada punto del orden del día: quién los presenta, su plazo interno y cómo van.",
@@ -5246,6 +5416,11 @@
       "speaking_turn_updated": "Turno de palabra cambiado",
       "vote_recorded": "Resultado de una votación anotado",
       "decision_recorded": "Decisión anotada",
+      "control_sheet_observations_updated": "Observaciones de la hoja de control cambiadas",
+      "control_sheet_cea_position_changed": "Posición de la CEA cambiada en la hoja de control",
+      "control_sheet_treated_changed": "Marca de tratado cambiada en la hoja de control",
+      "control_sheet_result_changed": "Resultado anotado a mano en la hoja de control",
+      "control_sheet_listed_changed": "Punto añadido o quitado de la hoja de control",
       "document_created": "Documento creado",
       "document_updated": "Datos del documento cambiados",
       "document_status_changed": "Estado del documento cambiado",
@@ -5407,6 +5582,10 @@
           "present": "Presentes",
           "required": "Quórum",
           "note": "Nota"
+        },
+        "control_sheet": {
+          "result": "Resultado",
+          "ceaPosition": "Posición de la CEA"
         }
       }
     }

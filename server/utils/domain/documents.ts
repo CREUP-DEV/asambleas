@@ -56,6 +56,7 @@ import {
   findRemovableAutoItem,
   insertAutoItem,
   lockAssembly,
+  moveSheetItemRow,
   removeAutoItem,
   syncAutoItemTitle,
   unbindAutoItem,
@@ -1598,20 +1599,21 @@ export async function updateDocument(
         changed = changed.filter((key) => key !== "agendaItemId");
         if (changed.length === 0) return;
       } else {
+        if (target.acceptsSubmissions) {
+          newItem = await insertAutoItem(tx, {
+            assemblyId: assembly.id,
+            parentId: target.id,
+            title: patch.title ?? current.title,
+          });
+          patch.agendaItemId = newItem.id;
+          // What the control sheet noted about the old sub-item follows the
+          // document to its new one.
+          if (ownItem) await moveSheetItemRow(tx, ownItem.id, newItem.id);
+        } else {
+          patch.agendaItemId = target.id;
+        }
         leftItem = await findRemovableAutoItem(tx, current);
         if (!leftItem) keptItem = ownItem;
-      }
-      if (!changed.includes("agendaItemId")) {
-        // Nothing moves.
-      } else if (target.acceptsSubmissions) {
-        newItem = await insertAutoItem(tx, {
-          assemblyId: assembly.id,
-          parentId: target.id,
-          title: patch.title ?? current.title,
-        });
-        patch.agendaItemId = newItem.id;
-      } else {
-        patch.agendaItemId = target.id;
       }
     } else if (!manager && changed.includes("kind")) {
       // A member's document stays of a kind its item takes.

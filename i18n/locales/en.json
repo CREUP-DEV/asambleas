@@ -85,7 +85,9 @@
       "executiveMain": "You cannot choose the CEA as the main one. Ask the CEA or the Secretaría to do it.",
       "executiveAuthor": "“CEA” is not a member. Choose the CEA office by its name.",
       "executiveMember": "You cannot add the CEA. Ask the CEA or the Secretaría to do it.",
-      "unknown": "The operation could not be completed."
+      "unknown": "The operation could not be completed.",
+      "controlSheetStale": "Someone changed this row of the sheet at the same time. What is there now is shown.",
+      "controlSheetWithdrawn": "An item with documents is not marked as withdrawn by hand: the document is withdrawn."
     },
     "content": {
       "empty": "There is no content to show.",
@@ -303,6 +305,8 @@
       "amendmentReview": "Validate and publish amendments, and record their admission",
       "assemblyVoteResult": "Record assembly vote result",
       "sessionModerate": "Moderate the session: live state, admissions, votes and transactionals",
+      "controlSheetView": "See the control sheet of each assembly",
+      "controlSheetEdit": "Edit the control sheet: observations, the CEA position and items added by hand",
       "memberManage": "Sync and edit members",
       "statsView": "See the reading and participation statistics of every account and member",
       "notificationManage": "Configure which notices go by email, to whom and how often"
@@ -2518,6 +2522,7 @@
       "settings": "Settings",
       "validation": "Validation",
       "tracking": "Tracking",
+      "controlSheet": "Control sheet",
       "validationPending": "Validation: {count} to validate | Validation: {count} to validate",
       "live": "Live",
       "liveNow": "Now",
@@ -3182,7 +3187,8 @@
       "blockedTitle": "This item cannot be deleted",
       "blockedAmendments": "A document under this item or its sub-items has amendments. | {count} documents under this item or its sub-items have amendments.",
       "blockedHelp": "Amendments are other members' work and are not deleted. Move those documents to another item first.",
-      "blockedLive": "This item, a sub-item or one of their documents is being dealt with in the session right now. Try again when the Mesa moves on to another item."
+      "blockedLive": "This item, a sub-item or one of their documents is being dealt with in the session right now. Try again when the Mesa moves on to another item.",
+      "blockedSheet": "The control sheet has notes on this item or its sub-items (observations, a result noted by hand, the dealt-with mark or that it was added to the sheet). Clear them on the sheet before deleting it."
     },
     "reader": {
       "label": "Documents of this item",
@@ -4336,6 +4342,170 @@
     },
     "togetherWith": "together with"
   },
+  "controlSheet": {
+    "title": "Control sheet",
+    "intro": "How each item and each amendment stands: whether it was dealt with, its result, how it was voted and who spoke.",
+    "forbiddenTitle": "You cannot see the control sheet",
+    "forbiddenDescription": "The Mesa, the CEA, the Secretariat and the Presidency see it.",
+    "loading": "Loading the control sheet",
+    "loadError": "The control sheet could not be loaded",
+    "retry": "Try again",
+    "follow": "Follow the debate",
+    "followHint": "Opens what the Mesa is debating and marks it.",
+    "live": "Under debate",
+    "noVote": "Not voted",
+    "positionHidden": "Not visible",
+    "emptyTitle": "No items with documents yet",
+    "emptyDescription": "The sheet shows the agenda items that have documents presented.",
+    "amendmentsEmpty": "This document has no amendments you can see.",
+    "amendmentsLoadError": "The amendments could not be loaded",
+    "rowCount": "{count} item on the sheet | {count} items on the sheet",
+    "amendmentCount": "{count} amendment | {count} amendments",
+    "tabs": {
+      "label": "Parts of the control sheet",
+      "general": "Overview",
+      "amendments": "Amendments"
+    },
+    "columns": {
+      "number": "No.",
+      "item": "Item",
+      "treated": "Dealt with",
+      "result": "Result",
+      "votes": "Votes",
+      "speakers": "Speakers",
+      "code": "Amendment",
+      "authors": "Presented by",
+      "position": "Presenter's answer",
+      "vote": "Vote",
+      "observations": "Observations",
+      "ceaPosition": "CEA position",
+      "open": "Open"
+    },
+    "treated": {
+      "yes": "Dealt with",
+      "yesAmendment": "Dealt with",
+      "no": "Pending"
+    },
+    "result": {
+      "approved": "Approved",
+      "approved_unanimous": "Approved (unanimously)",
+      "rejected": "Rejected",
+      "mixed": "Different results",
+      "withdrawn": "Withdrawn",
+      "postponed": "Postponed to another assembly",
+      "not_applicable": "Not applicable",
+      "pending": "Pending",
+      "lapsed": "Lapsed"
+    },
+    "approval": {
+      "assent": "By assent",
+      "formal": "As a matter of form",
+      "proponent": "Incorporated without a vote",
+      "vote": "By vote"
+    },
+    "document": {
+      "label": "Document",
+      "search": "Search for a document",
+      "undecided": "{count} pending | {count} pending",
+      "total": "{count} amendment | {count} amendments",
+      "noneTitle": "No document has amendments",
+      "none": "When a document has amendments you can see, it will appear here."
+    },
+    "speakers": {
+      "none": "Nobody",
+      "times": "{label} ({count} times)",
+      "names": "{label}: see who spoke"
+    },
+    "ceaPosition": {
+      "label": "CEA position",
+      "hint": "What the CEA would like the outcome to be. Only the sheet's readers see it.",
+      "none": "No position",
+      "options": {
+        "accept": "Accept",
+        "transact": "Negotiate",
+        "reject": "Reject",
+        "lapse": "Lapses"
+      }
+    },
+    "manualResult": {
+      "label": "Result noted by hand",
+      "hint": "For what no vote decides: a report that lapses, a withdrawn item.",
+      "byVote": "Its vote decides it.",
+      "none": "Not noted",
+      "withdrawn": "Withdrawn",
+      "lapsed": "Lapsed",
+      "not_applicable": "Not applicable"
+    },
+    "open": {
+      "item": "Open item {title}",
+      "amendment": "Open amendment {code}"
+    },
+    "panel": {
+      "itemTitle": "Sheet item",
+      "amendmentTitle": "Sheet amendment",
+      "close": "Close",
+      "observations": "Observations",
+      "observationsHint": "The sheet's readers see and edit them. Who wrote each version is kept.",
+      "placeholder": "Procedural motions, statements to put on record, what was agreed...",
+      "save": "Save",
+      "saving": "Saving",
+      "saved": "Saved",
+      "unsaved": "Not saved",
+      "shortcut": "Ctrl + Enter to save",
+      "edited": "Latest version by {name}, {when}",
+      "editedNoName": "Latest version: {when}",
+      "saveFailed": "Could not save",
+      "conflictTitle": "{name} changed the observations while you were typing",
+      "conflictNoName": "Someone changed the observations while you were typing",
+      "conflictTheirs": "Their version",
+      "conflictUseTheirs": "Keep theirs",
+      "conflictKeepMine": "Save mine over it",
+      "stale": "Someone changed it at the same time. What is there now is shown.",
+      "treated": "Dealt with",
+      "treatedAmendment": "Dealt with",
+      "treatedHint": "The Mesa marks it when it was dealt with without a vote.",
+      "treatedAuto": "It counts as dealt with because of its vote or what happened to its documents.",
+      "treatedAutoAmendment": "It counts as dealt with: the Mesa settled it during the session.",
+      "treatedBy": "Marked by {name}, {when}",
+      "treatedByNoName": "Marked: {when}",
+      "moderateOnly": "Only the Mesa marks it.",
+      "readOnly": "You can read the sheet but not edit it.",
+      "listed": "On the sheet",
+      "listedHint": "This item has no documents: it is on the sheet because it was added by hand.",
+      "unlist": "Remove from the sheet",
+      "history": "History",
+      "showHistory": "Show the history",
+      "hideHistory": "Hide the history",
+      "historyEmpty": "Nobody has changed anything yet.",
+      "historyFailed": "The history could not be loaded",
+      "restore": "Bring this text back",
+      "restored": "Text brought back. Save it to keep it.",
+      "impersonated": "{admin} acting as this account",
+      "events": {
+        "control_sheet_observations_updated": "Observations",
+        "control_sheet_cea_position_changed": "CEA position",
+        "control_sheet_treated_changed": "Dealt-with mark",
+        "control_sheet_result_changed": "Result by hand",
+        "control_sheet_listed_changed": "On the sheet"
+      },
+      "emptyText": "(no text)",
+      "change": "{from} to {to}",
+      "treatedByResult": "It counts as dealt with because of the result noted by hand.",
+      "resultMesaOnly": "Only the Mesa notes the result."
+    },
+    "add": {
+      "button": "Add item",
+      "title": "Add an item to the sheet",
+      "description": "Items without documents only show on the sheet if you add them, for example one that is voted.",
+      "label": "Item",
+      "placeholder": "Choose an item",
+      "none": "Every item without documents is already on the sheet.",
+      "confirm": "Add",
+      "added": "Item added to the sheet",
+      "failed": "The item could not be added"
+    },
+    "noObservations": "No observations"
+  },
   "tracking": {
     "title": "Documentation tracking",
     "intro": "The documents expected under each agenda item: who presents them, their internal deadline and how they are going.",
@@ -5246,6 +5416,11 @@
       "speaking_turn_updated": "Speaking turn changed",
       "vote_recorded": "Vote result recorded",
       "decision_recorded": "Decision recorded",
+      "control_sheet_observations_updated": "Control sheet observations changed",
+      "control_sheet_cea_position_changed": "CEA position changed on the control sheet",
+      "control_sheet_treated_changed": "Dealt-with mark changed on the control sheet",
+      "control_sheet_result_changed": "Result noted by hand on the control sheet",
+      "control_sheet_listed_changed": "Item added to or removed from the control sheet",
       "document_created": "Document created",
       "document_updated": "Document details changed",
       "document_status_changed": "Document status changed",
@@ -5407,6 +5582,10 @@
           "present": "Present",
           "required": "Quorum",
           "note": "Note"
+        },
+        "control_sheet": {
+          "result": "Result",
+          "ceaPosition": "CEA position"
         }
       }
     }

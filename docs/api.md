@@ -424,14 +424,14 @@ two, its only call otherwise. There is no first-call quorum.
 
 ## Agenda
 
-| Method | Path                                                 | Who               | Notes                                                                                                                                                                                                                                                                    |
-| ------ | ---------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| GET    | `/api/assemblies/[assembly]/agenda`                  | visible           | `AgendaDto`: flat items plus the documents the actor can see. Items that carry the title of a document the actor cannot see are left out, or sent with `titleHidden` (see "Automatic sub-items").                                                                        |
-| POST   | `/api/assemblies/[assembly]/agenda`                  | `assembly:manage` | `AgendaItemBody` (`title`, `parentId`, `description`, `acceptsSubmissions`, `submissionKinds`, `confirmFinal`). Returns `AgendaItemDto`.                                                                                                                                 |
-| PUT    | `/api/assemblies/[assembly]/agenda/[item]`           | `assembly:manage` | `AgendaItemBody` with `updatedAt`. Returns `AgendaItemDto`. A new title on an automatic sub-item sets `titleCustom`.                                                                                                                                                     |
-| DELETE | `/api/assemblies/[assembly]/agenda/[item]`           | `assembly:manage` | Deletes the item with its sub-items and every document under them. 409 `agenda_item_amendments` while any of those documents has an amendment of any status; 409 `agenda_item_live` during the session while one of them is being debated. See "Deleting an item" below. |
-| PUT    | `/api/assemblies/[assembly]/agenda/reorder`          | `assembly:manage` | `AgendaReorderBody`. Validates that every parent exists in the same assembly and that there are no cycles.                                                                                                                                                               |
-| POST   | `/api/assemblies/[assembly]/agenda/[item]/documents` | `document:manage` | `BulkDocumentsBody`. Creates several documents under the item, all or none. Returns 201 `BulkDocumentsDto`. See "Adding several documents" below.                                                                                                                        |
+| Method | Path                                                 | Who               | Notes                                                                                                                                                                                                                                                                                                                                                       |
+| ------ | ---------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/assemblies/[assembly]/agenda`                  | visible           | `AgendaDto`: flat items plus the documents the actor can see. Items that carry the title of a document the actor cannot see are left out, or sent with `titleHidden` (see "Automatic sub-items").                                                                                                                                                           |
+| POST   | `/api/assemblies/[assembly]/agenda`                  | `assembly:manage` | `AgendaItemBody` (`title`, `parentId`, `description`, `acceptsSubmissions`, `submissionKinds`, `confirmFinal`). Returns `AgendaItemDto`.                                                                                                                                                                                                                    |
+| PUT    | `/api/assemblies/[assembly]/agenda/[item]`           | `assembly:manage` | `AgendaItemBody` with `updatedAt`. Returns `AgendaItemDto`. A new title on an automatic sub-item sets `titleCustom`.                                                                                                                                                                                                                                        |
+| DELETE | `/api/assemblies/[assembly]/agenda/[item]`           | `assembly:manage` | Deletes the item with its sub-items and every document under them. 409 `agenda_item_amendments` while any of those documents has an amendment of any status; 409 `agenda_item_live` during the session while one of them is being debated; 409 `agenda_item_sheet` while the control sheet noted something about one of them. See "Deleting an item" below. |
+| PUT    | `/api/assemblies/[assembly]/agenda/reorder`          | `assembly:manage` | `AgendaReorderBody`. Validates that every parent exists in the same assembly and that there are no cycles.                                                                                                                                                                                                                                                  |
+| POST   | `/api/assemblies/[assembly]/agenda/[item]/documents` | `document:manage` | `BulkDocumentsBody`. Creates several documents under the item, all or none. Returns 201 `BulkDocumentsDto`. See "Adding several documents" below.                                                                                                                                                                                                           |
 
 Once the agenda is final (`agendaFinalizedAt`, the calendar's `agenda_final`
 date once it has come: `agendaFinalSince`), a change to the root items
@@ -551,7 +551,9 @@ changes. Published and voted documents without amendments go. While the
 assembly is `in_session` it is also refused, 409 with
 `data: { code: "agenda_item_live" }`, if the projection shows one of the
 items or documents or one of the items has a speaking turn waiting or in
-progress. Each document goes as in DELETE `documents/[document]`
+progress. It is refused too, 409 with `data: { code: "agenda_item_sheet" }`,
+while the control sheet noted something about one of the items (a listing, a
+result by hand, a treated mark or observations). Each document goes as in DELETE `documents/[document]`
 (`removeDocument`: its `document_deleted` event, the votes of its final vote,
 the projection, and its PDF and images once the delete commits), without
 `deleteBlocker` (a final vote does not keep it). Each item records its own
@@ -1579,6 +1581,42 @@ count (docs/design.md, "Headcounts and quorum"). Schemas:
 - **Votes.** With majorities on `present`, a vote whose body has no
   `present` takes the latest count's, and every vote with counts stores the
   latest count's id in `votes.headcountId`.
+
+## Control sheet
+
+| Method | Path                                                              | Who                  | Notes                                                               |
+| ------ | ----------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------- |
+| GET    | `/api/assemblies/[assembly]/control-sheet`                        | `control_sheet:view` | `ControlSheetDto`. Never with `?view=room` (403).                   |
+| PATCH  | `/api/assemblies/[assembly]/control-sheet/items/[item]`           | see below            | `ControlSheetItemBody`. Returns `ControlSheetItemRowDto`.           |
+| PATCH  | `/api/assemblies/[assembly]/control-sheet/amendments/[amendment]` | see below            | `ControlSheetAmendmentBody`. Returns `ControlSheetAmendmentRowDto`. |
+| GET    | `/api/assemblies/[assembly]/control-sheet/history?row=`           | `control_sheet:view` | `ControlSheetHistoryDto`: one sheet row's changes, newest first.    |
+
+`control_sheet:edit` also reads. Schemas: `shared/utils/schemas/controlSheet.ts`.
+
+- **Reading.** `ControlSheetDto` adds to the agenda (`GET .../agenda`) what
+  it lacks, as the reader may see it: each visible document's final vote and
+  how many of its amendments past draft the reader sees (and how many are
+  undecided), the turns that took the floor on items the reader gets, and
+  what the sheet noted about those items and amendments. `sessionStartedAt`
+  is the first time the assembly went into session.
+- **Writing.** Observations, `listed` and the CEA position need
+  `control_sheet:edit`; the result by hand and the
+  treated mark `session:moderate`; a «Retirado» by hand only on an item
+  without documents (422 `control_sheet_withdrawn_document`). Every field
+  travels with the lock token
+  it was read with (`updatedAt`, null when never set); a stale one answers
+  409 with `data.reason` `control_sheet_stale`, `data.fields` and the row as
+  it is (`data.row`), and nothing is written. An item or amendment the
+  reader does not get answers 404, as do drafts. Observations are trimmed
+  and up to 5,000 characters.
+- **Records.** Each field changed records an event of entity
+  `control_sheet` (entityId: the sheet row) with `subjectType` and
+  `subjectId`: `control_sheet_observations_updated` (`revisionId`,
+  `cleared`; the text stays in `control_sheet_observation_revisions`),
+  `control_sheet_cea_position_changed` and `control_sheet_result_changed`
+  (`changes`), `control_sheet_treated_changed` and
+  `control_sheet_listed_changed`. The activity shows them to the sheet's
+  readers only, for items and amendments they read.
 
 ## Speaking turns
 

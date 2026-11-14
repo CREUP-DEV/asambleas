@@ -32,6 +32,14 @@ export const AGENDA_DELETE_AMENDMENTS_CODE = "agenda_item_amendments";
  */
 export const AGENDA_DELETE_LIVE_CODE = "agenda_item_live";
 
+/**
+ * Stable `data.code` of the 409 a delete of an agenda item gets while the
+ * control sheet noted something about it or a sub-item (a listing, a
+ * result by hand, a treated mark or observations): the record of the
+ * session is never deleted along with the agenda.
+ */
+export const AGENDA_DELETE_SHEET_CODE = "agenda_item_sheet";
+
 /** More documents than this in one bulk request is surely a mistake. */
 export const BULK_DOCUMENTS_MAX = 30;
 

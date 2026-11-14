@@ -96,6 +96,11 @@ const REASON_KEYS: Record<string, string> = {
   // On an amendment or a transactional, where every CEA office is named
   // by itself: the generic "CEA" is never an author.
   executive_author: "common.errors.executiveAuthor",
+  // A sheet field someone else changed since it was read (the panel shows
+  // what is there now).
+  control_sheet_stale: "common.errors.controlSheetStale",
+  // A «Retirado» by hand on an item with documents.
+  control_sheet_withdrawn_document: "common.errors.controlSheetWithdrawn",
 };
 
 /**

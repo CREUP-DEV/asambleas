@@ -1856,6 +1856,23 @@ export async function findSubmittedAmendments(
 }
 
 /**
+ * Every amendment of these documents past draft, in text order, with their
+ * authors, acceptances and position. Callers filter them by visibility.
+ */
+export async function findPresentedAmendments(
+  documentIds: string[],
+): Promise<LoadedAmendment[]> {
+  if (documentIds.length === 0) return [];
+  return findAmendments(
+    db,
+    and(
+      inArray(amendments.documentId, documentIds),
+      ne(amendments.status, "draft"),
+    ),
+  );
+}
+
+/**
  * canSeeAmendment for a loaded row, with the presenters of its document
  * (they read it once validated, published or not).
  */

@@ -4,6 +4,7 @@ import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import {
   AGENDA_DELETE_AMENDMENTS_CODE,
   AGENDA_DELETE_LIVE_CODE,
+  AGENDA_DELETE_SHEET_CODE,
   agendaDeleteBlocker,
   carriesGuardedTitle,
 } from "~~/shared/utils/agendaSubmissions";
@@ -13,6 +14,7 @@ import { agendaItems, liveState, speakingTurns } from "../../../../db/schema";
 import { requireActor, requireCan } from "../../../../utils/domain/actor";
 import {
   lockAssembly,
+  sheetNotesIn,
   titleDocumentPayload,
 } from "../../../../utils/domain/agendaWrites";
 import {
@@ -132,6 +134,14 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
           message:
             "No se puede eliminar: hay documentos con enmiendas en este punto o en sus subpuntos",
           data: { code: AGENDA_DELETE_AMENDMENTS_CODE, ...blocker },
+        });
+      }
+      if (await sheetNotesIn(tx, itemIds)) {
+        throw createError({
+          statusCode: 409,
+          message:
+            "No se puede eliminar: la hoja de control tiene anotaciones de este punto o de sus subpuntos",
+          data: { code: AGENDA_DELETE_SHEET_CODE },
         });
       }
       if (

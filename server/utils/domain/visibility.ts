@@ -319,6 +319,9 @@ const EXECUTIVE_VISIBLE_PERMISSIONS = [
   PERMISSION_KEYS.STATS_VIEW,
   // The email log names every account and what it was told.
   PERMISSION_KEYS.NOTIFICATION_MANAGE,
+  // The control sheet feeds the minutes: who presents and who speaks.
+  PERMISSION_KEYS.CONTROL_SHEET_VIEW,
+  PERMISSION_KEYS.CONTROL_SHEET_EDIT,
 ] as const;
 
 /**

@@ -191,6 +191,9 @@ const plan = computed(() =>
 /** Why the item cannot be deleted, in words; null when it can. */
 const blocked = computed<string | null>(() => {
   if (refusal.value?.reason === "live") return t("agenda.delete.blockedLive");
+  if (refusal.value?.reason === "sheet") {
+    return t("agenda.delete.blockedSheet");
+  }
   const count =
     refusal.value?.reason === "amendments"
       ? Math.max(refusal.value.documents, plan.value.blockedBy.length, 1)
@@ -379,13 +382,17 @@ async function confirmDelete(): Promise<void> {
             icon="i-lucide-shield-alert"
             :title="blocked"
             :description="
-              refusal?.reason === 'live'
+              refusal?.reason === 'live' || refusal?.reason === 'sheet'
                 ? undefined
                 : t('agenda.delete.blockedHelp')
             "
           />
           <ul
-            v-if="refusal?.reason !== 'live' && plan.blockedBy.length > 0"
+            v-if="
+              refusal?.reason !== 'live' &&
+              refusal?.reason !== 'sheet' &&
+              plan.blockedBy.length > 0
+            "
             class="text-default list-disc space-y-1 ps-5 text-sm"
           >
             <li

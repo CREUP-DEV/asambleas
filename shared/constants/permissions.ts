@@ -10,6 +10,8 @@ export const PERMISSION_KEYS = {
   AMENDMENT_REVIEW: "amendment:review",
   ASSEMBLY_VOTE_RESULT: "assembly:vote_result",
   SESSION_MODERATE: "session:moderate",
+  CONTROL_SHEET_VIEW: "control_sheet:view",
+  CONTROL_SHEET_EDIT: "control_sheet:edit",
   MEMBER_MANAGE: "member:manage",
   STATS_VIEW: "stats:view",
   NOTIFICATION_MANAGE: "notification:manage",
@@ -39,6 +41,10 @@ export const PERMISSION_DESCRIPTION_I18N_KEYS: Record<PermissionKey, string> = {
     "permissions.descriptions.assemblyVoteResult",
   [PERMISSION_KEYS.SESSION_MODERATE]:
     "permissions.descriptions.sessionModerate",
+  [PERMISSION_KEYS.CONTROL_SHEET_VIEW]:
+    "permissions.descriptions.controlSheetView",
+  [PERMISSION_KEYS.CONTROL_SHEET_EDIT]:
+    "permissions.descriptions.controlSheetEdit",
   [PERMISSION_KEYS.MEMBER_MANAGE]: "permissions.descriptions.memberManage",
   [PERMISSION_KEYS.STATS_VIEW]: "permissions.descriptions.statsView",
   [PERMISSION_KEYS.NOTIFICATION_MANAGE]:
@@ -62,6 +68,8 @@ export const PERMISSION_ICONS: Record<PermissionKey, string> = {
   [PERMISSION_KEYS.AMENDMENT_REVIEW]: "i-lucide-badge-check",
   [PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT]: "i-lucide-vote",
   [PERMISSION_KEYS.SESSION_MODERATE]: "i-lucide-gavel",
+  [PERMISSION_KEYS.CONTROL_SHEET_VIEW]: "i-lucide-sheet",
+  [PERMISSION_KEYS.CONTROL_SHEET_EDIT]: "i-lucide-file-spreadsheet",
   [PERMISSION_KEYS.MEMBER_MANAGE]: "i-lucide-building-2",
   [PERMISSION_KEYS.STATS_VIEW]: "i-lucide-chart-column",
   [PERMISSION_KEYS.NOTIFICATION_MANAGE]: "i-lucide-mail",
@@ -72,7 +80,15 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
   Secretaría: [...ALL_PERMISSION_KEYS],
   // The association's Presidencia manages everything, users and roles included.
   Presidencia: [...ALL_PERMISSION_KEYS],
-  CEA: [PERMISSION_KEYS.DOCUMENT_CREATE, PERMISSION_KEYS.AMENDMENT_CREATE],
+  // The CEA keeps the control sheet with the Mesa. To leave it reading only,
+  // take CONTROL_SHEET_EDIT from the role at /admin/roles and out of here:
+  // the seed only adds grants, and adds back the defaults a role lacks.
+  CEA: [
+    PERMISSION_KEYS.DOCUMENT_CREATE,
+    PERMISSION_KEYS.AMENDMENT_CREATE,
+    PERMISSION_KEYS.CONTROL_SHEET_VIEW,
+    PERMISSION_KEYS.CONTROL_SHEET_EDIT,
+  ],
   Asociado: [PERMISSION_KEYS.DOCUMENT_CREATE, PERMISSION_KEYS.AMENDMENT_CREATE],
   // Internal motions are barred by member kind, not by a permission.
   Sectorial: [
@@ -81,7 +97,11 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
   ],
   // The Coordinación del CAS; internal motions are barred by member kind.
   CAS: [PERMISSION_KEYS.DOCUMENT_CREATE, PERMISSION_KEYS.AMENDMENT_CREATE],
-  Moderador: [PERMISSION_KEYS.SESSION_MODERATE],
+  Moderador: [
+    PERMISSION_KEYS.SESSION_MODERATE,
+    PERMISSION_KEYS.CONTROL_SHEET_VIEW,
+    PERMISSION_KEYS.CONTROL_SHEET_EDIT,
+  ],
   Invitado: [],
   CAI: [],
   CdG: [],

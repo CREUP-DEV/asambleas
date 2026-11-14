@@ -313,6 +313,12 @@ export const EVENT_TYPES = [
   "headcount_corrected",
   "vote_recorded",
   "decision_recorded",
+  // Control sheet (hoja de control)
+  "control_sheet_observations_updated",
+  "control_sheet_cea_position_changed",
+  "control_sheet_treated_changed",
+  "control_sheet_result_changed",
+  "control_sheet_listed_changed",
   // Documents
   "document_created",
   "document_updated",
@@ -461,6 +467,11 @@ const EVENT_CATEGORIES: Record<EventType, ActivityCategory> = {
   headcount_corrected: "session",
   vote_recorded: "session",
   decision_recorded: "session",
+  control_sheet_observations_updated: "session",
+  control_sheet_cea_position_changed: "session",
+  control_sheet_treated_changed: "session",
+  control_sheet_result_changed: "session",
+  control_sheet_listed_changed: "session",
   document_created: "document",
   document_updated: "document",
   document_status_changed: "document",
@@ -593,6 +604,7 @@ export const CHANGE_ENTITIES = [
   "agenda_item",
   "document",
   "headcount",
+  "control_sheet",
 ] as const;
 export type ChangeEntity = (typeof CHANGE_ENTITIES)[number];
 
@@ -603,6 +615,8 @@ export const CHANGE_EVENT_ENTITIES = {
   agenda_item_updated: "agenda_item",
   document_updated: "document",
   headcount_corrected: "headcount",
+  control_sheet_result_changed: "control_sheet",
+  control_sheet_cea_position_changed: "control_sheet",
 } as const satisfies Partial<Record<EventType, ChangeEntity>>;
 
 export const CHANGE_FIELDS: Record<
@@ -660,6 +674,11 @@ export const CHANGE_FIELDS: Record<
     present: "values",
     required: "values",
     note: "values",
+  },
+  // Shown only to the control sheet's readers (activity.ts, eventTarget).
+  control_sheet: {
+    result: "values",
+    ceaPosition: "values",
   },
 };
 

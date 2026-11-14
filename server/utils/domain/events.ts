@@ -21,7 +21,12 @@ export type EntityType =
   /** Speaking turns: entityId is the turn, or the assembly for visibility. */
   | "speakers"
   /** The Mesa's headcounts: entityId is the count. */
-  | "headcount";
+  | "headcount"
+  /**
+   * The control sheet: entityId is the sheet row (control_sheet_items or
+   * control_sheet_amendments), the item or amendment in payload.subjectId.
+   */
+  | "control_sheet";
 
 export interface LiveMessage {
   assemblyId: string;

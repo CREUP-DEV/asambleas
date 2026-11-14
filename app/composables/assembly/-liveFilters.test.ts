@@ -8,10 +8,15 @@ import {
 const event = (entityType: string, type = "updated") => ({ entityType, type });
 
 describe("mayChangeAssemblyData", () => {
-  it("skips speaking turns and the live state", () => {
+  it("skips speaking turns, the control sheet and the live state", () => {
     expect(mayChangeAssemblyData(event("speakers", "speaker_added"))).toBe(
       false,
     );
+    expect(
+      mayChangeAssemblyData(
+        event("control_sheet", "control_sheet_observations_updated"),
+      ),
+    ).toBe(false);
     expect(mayChangeAssemblyData(event("assembly", "live_changed"))).toBe(
       false,
     );

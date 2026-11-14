@@ -124,6 +124,9 @@ export function useAssemblySections(
       reviewAmendments: can(PERMISSION_KEYS.AMENDMENT_REVIEW),
       manage: current.can.manage,
       moderate: current.can.moderate,
+      controlSheet:
+        can(PERMISSION_KEYS.CONTROL_SHEET_VIEW) ||
+        can(PERMISSION_KEYS.CONTROL_SHEET_EDIT),
     });
     return groupAssemblySections(sections).map(({ group, sections: list }) => ({
       group,

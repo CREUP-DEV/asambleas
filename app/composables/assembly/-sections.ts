@@ -18,6 +18,7 @@ export const ASSEMBLY_SECTION_SEGMENTS = {
   calendar: "calendario",
   convocation: "convocatoria",
   session: "sesion",
+  controlSheet: "hoja-de-control",
   settings: "ajustes",
 } as const;
 
@@ -49,6 +50,9 @@ export const ASSEMBLY_SECTION_DEFS: readonly AssemblySectionDef[] = [
   { key: "tracking", group: "secretariat", icon: "i-lucide-list-checks" },
   { key: "settings", group: "secretariat", icon: "i-lucide-settings" },
   { key: "session", group: "mesa", icon: "i-lucide-gavel" },
+  // The CEA keeps it with the Mesa: a CEA account sees it in its single
+  // list, since it is not one of the STAFF_SECTIONS that turn groups on.
+  { key: "controlSheet", group: "mesa", icon: "i-lucide-sheet" },
   // Opens on its own window, typically on the projector. Everyone may open
   // it, so without the Mesa's console it sits in the single list.
   { key: "projection", group: "mesa", icon: "i-lucide-presentation" },
@@ -64,6 +68,8 @@ export interface AssemblySectionAccess {
   manage: boolean;
   /** `AssemblyDto.can.moderate`. */
   moderate: boolean;
+  /** `control_sheet:view` or `control_sheet:edit`: reads the control sheet. */
+  controlSheet: boolean;
 }
 
 function isVisible(
@@ -79,6 +85,8 @@ function isVisible(
       return access.manage;
     case "session":
       return access.moderate;
+    case "controlSheet":
+      return access.controlSheet;
     default:
       return true;
   }

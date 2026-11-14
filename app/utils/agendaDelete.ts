@@ -10,6 +10,7 @@
 import {
   AGENDA_DELETE_AMENDMENTS_CODE,
   AGENDA_DELETE_LIVE_CODE,
+  AGENDA_DELETE_SHEET_CODE,
 } from "~~/shared/utils/agendaSubmissions";
 import { agendaSubtreeIds, type AgendaTreeItem } from "./agendaTree";
 
@@ -72,7 +73,8 @@ export function planAgendaDelete<D extends AgendaDeleteDocument>(
 /** Why the server refused to delete an item. */
 export type AgendaDeleteRefusal =
   | { reason: "amendments"; documents: number; amendments: number }
-  | { reason: "live" };
+  | { reason: "live" }
+  | { reason: "sheet" };
 
 function count(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
@@ -103,5 +105,6 @@ export function agendaDeleteRefusal(
     };
   }
   if (data.code === AGENDA_DELETE_LIVE_CODE) return { reason: "live" };
+  if (data.code === AGENDA_DELETE_SHEET_CODE) return { reason: "sheet" };
   return null;
 }

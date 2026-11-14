@@ -1,6 +1,7 @@
 import { createError } from "h3";
 import { and, count, eq, inArray, isNull, ne, or, sql } from "drizzle-orm";
 import {
+  controlSheetItems,
   agendaItems,
   assemblies,
   documents,
@@ -146,8 +147,9 @@ export async function bindAutoItem(
 /**
  * The automatic sub-item of a document that goes with it when the document
  * is deleted or moved away: the item it hangs from, if that was created for
- * it and holds no other document and no sub-item. Null otherwise. Call it
- * before the delete or the move, and removeAutoItem after it.
+ * it and holds no other document, no sub-item and nothing the control sheet
+ * noted (sheetNotesIn). Null otherwise. Call it before the delete or the
+ * move, and removeAutoItem after it.
  */
 export async function findRemovableAutoItem(
   tx: Executor,
@@ -170,12 +172,45 @@ export async function findRemovableAutoItem(
       .from(agendaItems)
       .where(eq(agendaItems.parentId, item.id)),
   ]);
-  return autoItemRemovable(item, document.id, {
-    otherDocuments: Number(others?.total ?? 0),
-    children: Number(children?.total ?? 0),
-  })
-    ? item
-    : null;
+  if (
+    !autoItemRemovable(item, document.id, {
+      otherDocuments: Number(others?.total ?? 0),
+      children: Number(children?.total ?? 0),
+    })
+  ) {
+    return null;
+  }
+  // What the sheet noted about it is the record of the session: the item
+  // stays (unbindAutoItem) rather than take it away.
+  return (await sheetNotesIn(tx, [item.id])) ? null : item;
+}
+
+/**
+ * Whether the control sheet noted anything about these agenda items: a
+ * listing, a result by hand, a treated mark or observations. An empty row
+ * left by a change that changed nothing does not count.
+ */
+export async function sheetNotesIn(
+  tx: Executor,
+  itemIds: readonly string[],
+): Promise<boolean> {
+  if (itemIds.length === 0) return false;
+  const [row] = await tx
+    .select({ id: controlSheetItems.id })
+    .from(controlSheetItems)
+    .where(
+      and(
+        inArray(controlSheetItems.agendaItemId, [...itemIds]),
+        or(
+          eq(controlSheetItems.listed, true),
+          sql`${controlSheetItems.manualResult} is not null`,
+          sql`${controlSheetItems.treatedAt} is not null`,
+          ne(controlSheetItems.observations, ""),
+        ),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
 }
 
 /**
@@ -440,4 +475,24 @@ export async function syncAutoItemTitle(
     },
     actor: input.actor,
   });
+}
+
+/**
+ * When a document moves to a new automatic sub-item, what the sheet noted
+ * about its old one goes with it: both are the document's, with the same
+ * readers. `toItemId` is a sub-item created in the same transaction, so it
+ * has no row yet. Called by updateDocument before it decides whether the
+ * old sub-item goes (findRemovableAutoItem). A move to an ordinary item
+ * moves nothing: the old sub-item keeps its notes and stays.
+ */
+export async function moveSheetItemRow(
+  tx: Executor,
+  fromItemId: string,
+  toItemId: string,
+): Promise<void> {
+  if (fromItemId === toItemId) return;
+  await tx
+    .update(controlSheetItems)
+    .set({ agendaItemId: toItemId })
+    .where(eq(controlSheetItems.agendaItemId, fromItemId));
 }

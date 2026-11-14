@@ -11,12 +11,16 @@ type LiveEventLike = Pick<LiveEventDto, "type" | "entityType">;
 
 /**
  * Live events that change neither the AssemblyDto nor the agenda: the live
- * state (what the room is debating) and the speaking turns, which the Mesa
- * changes all session long. Section pages that show them still receive
- * every event through onLive.
+ * state (what the room is debating), the speaking turns, which the Mesa
+ * changes all session long, and the control sheet, whose notes reach no
+ * one else. Section pages that show them still receive every event through
+ * onLive.
  */
 const IGNORED_LIVE_TYPES: ReadonlySet<string> = new Set(["live_changed"]);
-const IGNORED_LIVE_ENTITIES: ReadonlySet<string> = new Set(["speakers"]);
+const IGNORED_LIVE_ENTITIES: ReadonlySet<string> = new Set([
+  "speakers",
+  "control_sheet",
+]);
 
 /** Whether an event may change the assembly or its agenda. */
 export function mayChangeAssemblyData(event: LiveEventLike): boolean {

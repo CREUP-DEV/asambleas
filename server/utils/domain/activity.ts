@@ -92,6 +92,7 @@ import {
   canManageAssemblies,
   canManageDocuments,
   canModerate,
+  canViewControlSheet,
   canReviewAmendments,
   type Actor,
 } from "./actor";
@@ -899,6 +900,12 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   agenda_reordered: ["moves", "afterFinal"],
   live_changed: ["changed", "speakersVisible"],
   speakers_visibility_changed: ["visible", "reason"],
+  // Never the observations' text nor the row's ids.
+  control_sheet_observations_updated: ["subjectType", "cleared"],
+  control_sheet_cea_position_changed: ["subjectType", "changes"],
+  control_sheet_treated_changed: ["subjectType", "treated"],
+  control_sheet_result_changed: ["subjectType", "changes"],
+  control_sheet_listed_changed: ["subjectType", "listed"],
   speaking_turn_added: ["position"],
   speaking_turn_started: ["from", "to", "position", "renamed"],
   speaking_turn_finished: ["from", "to", "reason"],
@@ -1362,6 +1369,18 @@ export function collectActivityIds(rows: RawActivityRow[]): ActivityIds {
           ids.decisions.add(row.targetId);
           for (const id of texts(payload.subjectIds)) ids.amendments.add(id);
           break;
+        case "control_sheet": {
+          const subjectId = text(payload.subjectId);
+          if (!subjectId) break;
+          if (payload.subjectType === "amendment") {
+            ids.amendments.add(subjectId);
+          } else {
+            ids.agendaItems.add(subjectId);
+            const documentId = autoItemDocumentId(payload);
+            if (documentId) ids.documents.add(documentId);
+          }
+          break;
+        }
         case "vote": {
           const subjectId = text(payload.subjectId);
           if (!subjectId) break;
@@ -2031,6 +2050,27 @@ function eventTarget(
     case "speakers":
       // The queue's history is the Mesa's: attendees only see who has the floor.
       return { ...base, visible: !actor || canModerate(actor) };
+    case "control_sheet": {
+      // The sheet's readers, and only for an item or amendment they read:
+      // the subject's own rule, then the sheet's key.
+      const subjectId = text(payload.subjectId);
+      if (!subjectId) return { ...base, visible: !actor };
+      const subject = eventTarget(
+        {
+          ...row,
+          targetType:
+            payload.subjectType === "amendment" ? "amendment" : "agenda_item",
+          targetId: subjectId,
+        },
+        lookups,
+        actor,
+      );
+      return {
+        ...subject,
+        payload,
+        visible: subject.visible && (!actor || canViewControlSheet(actor)),
+      };
+    }
     default:
       // live and any new entity: the assembly's.
       return { ...base, visible: true };

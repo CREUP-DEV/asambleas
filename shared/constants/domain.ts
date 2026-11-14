@@ -337,6 +337,26 @@ export const RELATION_KINDS = [
 ] as const;
 export type RelationKind = (typeof RELATION_KINDS)[number];
 
+/**
+ * What the CEA would like an amendment's outcome to be (control sheet,
+ * «Posición CEA»): its own line, shared among the sheet's readers, apart
+ * from the presenter's answer (PROPONENT_POSITIONS).
+ */
+export const CEA_POSITIONS = ["accept", "transact", "reject", "lapse"] as const;
+export type CeaPosition = (typeof CEA_POSITIONS)[number];
+
+/**
+ * A result the control sheet notes by hand for an agenda item that no vote
+ * settled: withdrawn («Retirado»), lapsed («Decaído») or not applicable.
+ */
+export const CONTROL_SHEET_MANUAL_RESULTS = [
+  "withdrawn",
+  "lapsed",
+  "not_applicable",
+] as const;
+export type ControlSheetManualResult =
+  (typeof CONTROL_SHEET_MANUAL_RESULTS)[number];
+
 export const VOTE_METHODS = [
   "assent",
   "show_of_hands",

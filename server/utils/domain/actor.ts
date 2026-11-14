@@ -104,6 +104,22 @@ export function canManageDocuments(actor: Actor): boolean {
   return actor.can(PERMISSION_KEYS.DOCUMENT_MANAGE);
 }
 
+/**
+ * Reading the control sheet of an assembly (hoja de control): whoever may
+ * edit it reads it too.
+ */
+export function canViewControlSheet(actor: Actor): boolean {
+  return (
+    actor.can(PERMISSION_KEYS.CONTROL_SHEET_VIEW) ||
+    actor.can(PERMISSION_KEYS.CONTROL_SHEET_EDIT)
+  );
+}
+
+/** Writing the control sheet: observations, the CEA position, its rows. */
+export function canEditControlSheet(actor: Actor): boolean {
+  return actor.can(PERMISSION_KEYS.CONTROL_SHEET_EDIT);
+}
+
 /** Admission review and amendment management (Secretaría). */
 export function canReviewAmendments(actor: Actor): boolean {
   return (

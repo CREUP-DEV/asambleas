@@ -279,6 +279,8 @@ Una carga masiva en producción por la API (como la recreación de la 80.ª AGO)
 
 La versión que trae los avisos añade el permiso `notification:manage`: despliégala con `bash ./scripts/deploy.sh --seed` para que Secretaría y Presidencia lo reciban.
 
+La versión que trae la hoja de control añade `control_sheet:view` y `control_sheet:edit`: despliégala también con `--seed`, para que la CEA, el Moderador, Secretaría y Presidencia los reciban. Sin él, nadie salvo un Admin ve la hoja.
+
 Operación:
 
 ```sql

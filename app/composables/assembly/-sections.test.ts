@@ -13,6 +13,7 @@ const NONE: AssemblySectionAccess = {
   reviewAmendments: false,
   manage: false,
   moderate: false,
+  controlSheet: false,
 };
 
 const keys = (access: AssemblySectionAccess) =>
@@ -52,6 +53,7 @@ describe("visibleAssemblySections", () => {
         reviewAmendments: true,
         manage: true,
         moderate: true,
+        controlSheet: true,
       }),
     ).toEqual([
       "overview",
@@ -64,8 +66,15 @@ describe("visibleAssemblySections", () => {
       "tracking",
       "settings",
       "session",
+      "controlSheet",
       "projection",
     ]);
+  });
+
+  it("adds the control sheet only to whoever may read it", () => {
+    expect(keys(NONE)).not.toContain("controlSheet");
+    expect(keys({ ...NONE, moderate: true })).not.toContain("controlSheet");
+    expect(keys({ ...NONE, controlSheet: true })).toContain("controlSheet");
   });
 });
 
@@ -100,6 +109,7 @@ describe("groupAssemblySections", () => {
         reviewAmendments: true,
         manage: true,
         moderate: true,
+        controlSheet: true,
       }),
     ).toEqual([
       [
@@ -107,7 +117,7 @@ describe("groupAssemblySections", () => {
         ["overview", "live", "agenda", "documents", "calendar", "convocation"],
       ],
       ["secretariat", ["validation", "tracking", "settings"]],
-      ["mesa", ["session", "projection"]],
+      ["mesa", ["session", "controlSheet", "projection"]],
     ]);
   });
 
@@ -115,6 +125,24 @@ describe("groupAssemblySections", () => {
     expect(
       grouped({ ...NONE, moderate: true }).map(([group]) => group),
     ).toEqual(["assembly", "mesa"]);
+  });
+
+  it("keeps one list without titles for a CEA account with the sheet", () => {
+    expect(grouped({ ...NONE, controlSheet: true })).toEqual([
+      [
+        null,
+        [
+          "overview",
+          "live",
+          "agenda",
+          "documents",
+          "calendar",
+          "convocation",
+          "controlSheet",
+          "projection",
+        ],
+      ],
+    ]);
   });
 
   it("returns nothing without sections", () => {
@@ -134,6 +162,9 @@ describe("paths", () => {
     );
     expect(assemblySectionPath("80-ago", "session")).toBe(
       "/asambleas/80-ago/sesion",
+    );
+    expect(assemblyPath("80-ago", "controlSheet")).toBe(
+      "/asambleas/80-ago/hoja-de-control",
     );
   });
 });
