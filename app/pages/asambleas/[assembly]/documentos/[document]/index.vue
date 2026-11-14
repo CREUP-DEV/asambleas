@@ -1441,7 +1441,11 @@ const filteredBlockLabel = computed(() =>
 </script>
 
 <template>
-  <div class="flex flex-col gap-4">
+  <div class="flex flex-col gap-4 lg:min-h-0 lg:flex-1">
+    <!-- On large screens this root fills the hub body, so the workspace
+         below takes what the header leaves and the page never scrolls
+         besides the text. min-h-0: its size comes from the body, never from
+         the text inside. -->
     <!-- Loading -->
     <div v-if="pending" class="flex flex-col gap-4" role="status">
       <span class="sr-only">{{ t("workspace.loading") }}</span>
@@ -1753,14 +1757,18 @@ const filteredBlockLabel = computed(() =>
           />
         </div>
 
-        <!-- As tall as the hub body's scroll area (viewport minus navbar,
-             section toolbar and padding), like the session console. -->
+        <!-- On large screens it takes the height the header above leaves in
+             the hub body (flex-1; it clips, so its text never stretches it):
+             the text and the list scroll inside it and the page does not, so
+             there is never a second scroll bar nor room below the text.
+             Under 20rem of room (a laptop of 768 px leaves some 25rem) the
+             page scrolls instead. -->
         <!-- Hidden, not removed, while the amendment composer is open: the
              text keeps its place for when it closes. -->
         <div
           v-show="!composer"
           ref="workspaceBox"
-          class="border-default flex flex-col overflow-hidden rounded-lg border lg:h-[calc(100dvh-var(--shell-banner-height,0px)-var(--ui-header-height)-var(--shell-breadcrumb-height,0px)-3rem)] lg:min-h-[32rem] lg:flex-row"
+          class="border-default flex flex-col overflow-hidden rounded-lg border lg:min-h-80 lg:flex-1 lg:flex-row"
         >
           <!-- Text -->
           <UDashboardPanel
