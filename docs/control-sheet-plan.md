@@ -297,7 +297,7 @@ DO NOTHING` of an empty row (assembly taken from the item or amendment,
 - Item result, in order: the decisive vote (the item's latest valid vote,
   or its documents' final votes: «Aprobado», «Aprobado (unanimidad)»,
   «Rechazado»); then the manual result (Decaído, No aplica, and Retirado for
-  items without documents; the Mesa or sheet editors); then derived values
+  items without documents; the Mesa, since it counts as treated); then derived values
   (a withdrawn document gives Retirado, a postponed one «Pospuesto a otra
   asamblea», a document that is not voted «No aplica»). While postponed in
   the session it reads «Aplazado».
@@ -410,8 +410,9 @@ rows, visibleIds)` with a new exported finder (no drafts), final votes in
   - `GET .../control-sheet/history?subjectType=&subjectId=` (view), built
     like `amendmentHistory` (`redactEventActor`, the impersonator only to
     the account acted as and to Admins);
-  - `PATCH .../control-sheet/items/[item]` (edit: observations, listed,
-    manual result; Mesa: treated, postponed), each field with its own
+  - `PATCH .../control-sheet/items/[item]` (edit: observations, listed;
+    Mesa: manual result, treated, postponed; a «Retirado» by hand only
+    without documents), each field with its own
     permission and token, the whole body refused if one fails;
   - `PATCH .../control-sheet/amendments/[amendment]` (edit: CEA position,
     observations; Mesa: treated);
