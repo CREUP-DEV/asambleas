@@ -21,10 +21,13 @@ import {
   amendmentNeighbours,
   amendmentReviewQueue,
   amendmentsAwaitingActor,
+  amendmentKindChipOf,
   applyAmendmentQuickFilter,
+  CONTENT_AMENDMENT_KINDS,
   consolidationInputs,
   isAmendmentAuthor,
   isAmendmentPrivate,
+  revealAmendmentKind,
   type AmendmentComposerMode,
   type AmendmentReviewFilter,
 } from "~/composables/amendment/workspace";
@@ -969,11 +972,25 @@ function scrollToAmendment(
   void nextTick(() => textView.value?.scrollToBlock(first, options));
 }
 
+/** "Contenido" and "Forma": how many of each the list holds. */
+const kindTotals = computed(() => {
+  const content = list.listed.value.filter((amendment) =>
+    CONTENT_AMENDMENT_KINDS.includes(amendment.kind),
+  ).length;
+  return { content, formal: list.listed.value.length - content };
+});
+
 function selectAmendment(
   id: string,
   options: { fromText?: boolean } = {},
 ): void {
   selectedId.value = id;
+  // One the kind chip hides (a "de forma" one under "Contenido") shows with
+  // every kind, so the list and its previous and next keep it.
+  const chosen = list.byId.value.get(id);
+  if (chosen) {
+    list.filters.value = revealAmendmentKind(list.filters.value, chosen);
+  }
   if (composing.value) return;
   if (!options.fromText) selectedIndex = shownIds().indexOf(id);
   detailOpen.value = true;
@@ -1345,11 +1362,13 @@ const showMarkersSwitch = computed(
 
 /** Markers count the listed amendments: filter those, not the returned ones. */
 function onMarkerClick(blockId: string): void {
-  const { review } = list.filters.value;
+  const { review, kinds } = list.filters.value;
   list.filters.value = {
     ...list.filters.value,
     blockId,
     review: review === "correction_requested" ? "any" : review,
+    // A marker counts every kind: the paragraph's list shows them all.
+    kinds: amendmentKindChipOf(kinds) ? [] : kinds,
   };
   listTab.value = "all";
   detailOpen.value = false;
@@ -2110,6 +2129,7 @@ const filteredBlockLabel = computed(() =>
                   :mine-waiting="mineWaiting"
                   :mine-urgent="corrections.length > 0"
                   :total="list.listed.value.length"
+                  :kind-totals="kindTotals"
                   :unread="list.unreadIds.value.length"
                 />
               </div>

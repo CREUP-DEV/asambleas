@@ -1338,6 +1338,8 @@
       "buttonActive": "More filters. In use: {count}",
       "chipsLabel": "Which amendments to show",
       "chips": {
+        "content": "Content",
+        "formal": "Form",
         "all": "All",
         "pending": "Undecided",
         "late": "Late",

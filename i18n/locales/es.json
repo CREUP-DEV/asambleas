@@ -1338,6 +1338,8 @@
       "buttonActive": "Más filtros. En uso: {count}",
       "chipsLabel": "Qué enmiendas ver",
       "chips": {
+        "content": "Contenido",
+        "formal": "Forma",
         "all": "Todas",
         "pending": "Pendientes",
         "late": "Fuera de plazo",

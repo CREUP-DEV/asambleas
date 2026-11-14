@@ -18,6 +18,10 @@ import {
   composerSyncState,
   consolidationInputs,
   emptyAmendmentFilters,
+  CONTENT_AMENDMENT_KINDS,
+  defaultAmendmentFilters,
+  openingAmendmentFilters,
+  revealAmendmentKind,
   filterAmendmentList,
   groupAmendmentsByOverlap,
   isAmendmentPrivate,
@@ -1861,10 +1865,12 @@ describe("reader", () => {
       amendmentQuickFilterOf({
         ...empty,
         statuses: ["submitted"],
-        kinds: ["formal"],
+        kinds: ["totality_return"],
       }),
     ).toBe("pending");
-    expect(amendmentQuickFilterOf({ ...empty, kinds: ["formal"] })).toBeNull();
+    expect(
+      amendmentQuickFilterOf({ ...empty, kinds: ["totality_return"] }),
+    ).toBeNull();
     expect(amendmentQuickFilterOf({ ...empty, blockId: "b1" })).toBeNull();
     // Combinations no chip stands for.
     expect(
@@ -1887,7 +1893,7 @@ describe("reader", () => {
     const current = {
       ...emptyAmendmentFilters(),
       query: "becas",
-      kinds: ["formal" as const],
+      kinds: ["totality_return" as const],
       late: "on_time" as const,
       mine: true,
       blockId: "b1",
@@ -1926,6 +1932,90 @@ describe("reader", () => {
         "pending",
       ).review,
     ).toBe("validated");
+  });
+
+  it("opens on the content amendments, or on every one when all are de forma", () => {
+    expect(defaultAmendmentFilters().kinds).toEqual([
+      ...CONTENT_AMENDMENT_KINDS,
+    ]);
+    expect(amendmentQuickFilterOf(defaultAmendmentFilters())).toBe("content");
+    expect(
+      amendmentQuickFilterOf(
+        openingAmendmentFilters([{ kind: "formal" }, { kind: "partial" }]),
+      ),
+    ).toBe("content");
+    expect(
+      amendmentQuickFilterOf(
+        openingAmendmentFilters([{ kind: "formal" }, { kind: "formal" }]),
+      ),
+    ).toBe("all");
+    // Nothing presented yet: "Todas", never an empty "Contenido".
+    expect(amendmentQuickFilterOf(openingAmendmentFilters([]))).toBe("all");
+  });
+
+  it("the kind chips stand for content and de forma", () => {
+    const empty = emptyAmendmentFilters();
+    expect(
+      amendmentQuickFilterOf({ ...empty, kinds: ["formal"], query: "becas" }),
+    ).toBe("formal");
+    expect(
+      amendmentQuickFilterOf({ ...empty, kinds: [...CONTENT_AMENDMENT_KINDS] }),
+    ).toBe("content");
+    // A kind chip with anything else is no chip's list.
+    expect(
+      amendmentQuickFilterOf({ ...empty, kinds: ["formal"], blockId: "b1" }),
+    ).toBeNull();
+    const current = { ...empty, query: "becas", late: "late" as const };
+    expect(applyAmendmentQuickFilter(current, "formal")).toEqual({
+      ...empty,
+      query: "becas",
+      kinds: ["formal"],
+    });
+    // "Pendientes" after "Contenido" lists every pending one.
+    const pending = applyAmendmentQuickFilter(
+      defaultAmendmentFilters(),
+      "pending",
+    );
+    expect(pending.kinds).toEqual([]);
+    expect(amendmentQuickFilterOf(pending)).toBe("pending");
+    expect(
+      applyAmendmentQuickFilter(defaultAmendmentFilters(), "unread").kinds,
+    ).toEqual([]);
+    expect(
+      applyAmendmentQuickFilter(defaultAmendmentFilters(), "late").kinds,
+    ).toEqual([]);
+    // Kinds chosen in "Más filtros" stay.
+    expect(
+      applyAmendmentQuickFilter(
+        { ...empty, kinds: ["totality_return"] },
+        "pending",
+      ).kinds,
+    ).toEqual(["totality_return"]);
+  });
+
+  it("the kind chips filter the list", () => {
+    const list = [
+      amendment("a1", []),
+      amendment("a2", [], { kind: "formal" }),
+      amendment("a3", [], { kind: "totality_return" }),
+    ];
+    const ids = (quick: "content" | "formal") =>
+      filterAmendmentList(
+        list,
+        applyAmendmentQuickFilter(emptyAmendmentFilters(), quick),
+        null,
+      ).map((item) => item.id);
+    expect(ids("content")).toEqual(["a1", "a3"]);
+    expect(ids("formal")).toEqual(["a2"]);
+  });
+
+  it("lets a kind chip go to show the amendment opened", () => {
+    const content = defaultAmendmentFilters();
+    expect(revealAmendmentKind(content, { kind: "formal" }).kinds).toEqual([]);
+    expect(revealAmendmentKind(content, { kind: "partial" })).toBe(content);
+    // Kinds chosen in "Más filtros" stay.
+    const chosen = { ...emptyAmendmentFilters(), kinds: ["partial" as const] };
+    expect(revealAmendmentKind(chosen, { kind: "formal" })).toBe(chosen);
   });
 
   it("the chips filter the list", () => {

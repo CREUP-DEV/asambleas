@@ -8,6 +8,7 @@
  */
 import {
   AMENDMENT_CLOSED_STATUSES,
+  AMENDMENT_KINDS,
   type AcceptedAmendmentRule,
   type AmendmentKind,
   type AmendmentStatus,
@@ -913,6 +914,71 @@ export function emptyAmendmentFilters(): AmendmentFilters {
   };
 }
 
+/** The content amendments: every kind but "de forma". */
+export const CONTENT_AMENDMENT_KINDS: readonly AmendmentKind[] =
+  AMENDMENT_KINDS.filter((kind) => kind !== "formal");
+/** The amendments "de forma". */
+export const FORMAL_AMENDMENT_KINDS: readonly AmendmentKind[] = ["formal"];
+
+/** The kinds the "Contenido" or "Forma" chip stands for. */
+function kindChipKinds(chip: "content" | "formal"): AmendmentKind[] {
+  return [
+    ...(chip === "content" ? CONTENT_AMENDMENT_KINDS : FORMAL_AMENDMENT_KINDS),
+  ];
+}
+
+/** The kind chip these kinds amount to, or null when they are no chip's. */
+export function amendmentKindChipOf(
+  kinds: readonly AmendmentKind[],
+): "content" | "formal" | null {
+  const same = (set: readonly AmendmentKind[]) =>
+    kinds.length === set.length && set.every((kind) => kinds.includes(kind));
+  if (same(CONTENT_AMENDMENT_KINDS)) return "content";
+  if (same(FORMAL_AMENDMENT_KINDS)) return "formal";
+  return null;
+}
+
+/**
+ * What a document's amendment list shows when it opens: the content
+ * amendments ("Contenido"), so they stand out over the "de forma" ones.
+ */
+export function defaultAmendmentFilters(): AmendmentFilters {
+  return { ...emptyAmendmentFilters(), kinds: kindChipKinds("content") };
+}
+
+/**
+ * The filters a document's list opens on, from its presented amendments:
+ * "Contenido" when some are content, otherwise "Todas" (only "de forma"
+ * ones, or none yet), so it never opens on an empty "Contenido".
+ */
+export function openingAmendmentFilters(
+  listed: readonly Pick<AmendmentDto, "kind">[],
+): AmendmentFilters {
+  return listed.some((amendment) =>
+    CONTENT_AMENDMENT_KINDS.includes(amendment.kind),
+  )
+    ? defaultAmendmentFilters()
+    : emptyAmendmentFilters();
+}
+
+/**
+ * The filters with a kind chip let go when it hides this amendment, so
+ * opening one (a link, the text) never leaves it out of the list. Kinds
+ * chosen in "Más filtros" stay.
+ */
+export function revealAmendmentKind(
+  filters: AmendmentFilters,
+  amendment: Pick<AmendmentDto, "kind">,
+): AmendmentFilters {
+  if (
+    filters.kinds.includes(amendment.kind) ||
+    amendmentKindChipOf(filters.kinds) === null
+  ) {
+    return filters;
+  }
+  return { ...filters, kinds: [] };
+}
+
 /** Number of filters in use, for the filter button badge. */
 export function activeAmendmentFilterCount(filters: AmendmentFilters): number {
   return (
@@ -1018,14 +1084,18 @@ export function filterAmendmentList(
 // Reader -----------------------------------------------------------------------
 
 /**
- * The filters offered as visible chips over the list: everything, only the
- * undecided ones, only the ones the account still has to read, only the
- * late ones. ("Mías" is the list of the actor's own amendments, a tab of
- * its own, not a filter.)
+ * The filters offered as visible chips over the list: the content
+ * amendments (what the list opens on), the "de forma" ones, everything,
+ * only the undecided ones, only the ones the account still has to read,
+ * only the late ones. ("Mías" is the list of the actor's own amendments, a
+ * tab of its own, not a filter.)
  */
-export type AmendmentQuickFilter = "all" | "pending" | "unread" | "late";
+export type AmendmentQuickFilter =
+  "content" | "formal" | "all" | "pending" | "unread" | "late";
 
 export const AMENDMENT_QUICK_FILTERS: readonly AmendmentQuickFilter[] = [
+  "content",
+  "formal",
   "all",
   "pending",
   "unread",
@@ -1035,17 +1105,27 @@ export const AMENDMENT_QUICK_FILTERS: readonly AmendmentQuickFilter[] = [
 /**
  * The chip the filters amount to, or null when they are a combination no
  * chip stands for:
+ * - `content` and `formal`: only that kind (CONTENT_AMENDMENT_KINDS,
+ *   FORMAL_AMENDMENT_KINDS), nothing else filtered;
  * - `all`: nothing filtered (a search apart);
  * - `pending`: only the presented, undecided ones, on time or late;
  * - `unread`: only the ones left to read, whatever their status or timing;
  * - `late`: only the late ones, whatever their status.
- * Filters with no chip (kind, member, review, paragraph) may narrow
- * `pending`, `unread` and `late` further; `all` means none is set.
+ * Filters with no chip (kinds chosen in "Más filtros", member, review,
+ * paragraph) may narrow `pending`, `unread` and `late` further; `all`
+ * means none is set.
  */
 export function amendmentQuickFilterOf(
   filters: AmendmentFilters,
 ): AmendmentQuickFilter | null {
   if (activeAmendmentFilterCount({ ...filters, query: "" }) === 0) return "all";
+  const kindChip = amendmentKindChipOf(filters.kinds);
+  if (
+    kindChip &&
+    activeAmendmentFilterCount({ ...filters, kinds: [], query: "" }) === 0
+  ) {
+    return kindChip;
+  }
   if (filters.mine) return null;
   if (filters.unread) {
     return filters.statuses.length === 0 && filters.late === "any"
@@ -1065,10 +1145,12 @@ export function amendmentQuickFilterOf(
 
 /**
  * The filters after pressing a chip. `all` clears every filter but the
- * search; the others set the status, the timing and whether only what is
- * left to read shows, and keep the rest. `pending` and `unread` leave the
- * drafts sent back for correction, which are neither presented nor
- * published.
+ * search, and `content` and `formal` keep only their kind; the others set
+ * the status, the timing and whether only what is left to read shows, and
+ * keep the rest, except the kind a chip chose (the list opens on
+ * "Contenido": "Pendientes" lists every pending one, not only those).
+ * `pending` and `unread` leave the drafts sent back for correction, which
+ * are neither presented nor published.
  */
 export function applyAmendmentQuickFilter(
   filters: AmendmentFilters,
@@ -1077,11 +1159,20 @@ export function applyAmendmentQuickFilter(
   if (quick === "all") {
     return { ...emptyAmendmentFilters(), query: filters.query };
   }
+  if (quick === "content" || quick === "formal") {
+    return {
+      ...emptyAmendmentFilters(),
+      kinds: kindChipKinds(quick),
+      query: filters.query,
+    };
+  }
+  const kinds = amendmentKindChipOf(filters.kinds) ? [] : filters.kinds;
   const review =
     filters.review === "correction_requested" ? "any" : filters.review;
   if (quick === "pending") {
     return {
       ...filters,
+      kinds,
       statuses: ["submitted"],
       late: "any",
       mine: false,
@@ -1092,6 +1183,7 @@ export function applyAmendmentQuickFilter(
   if (quick === "unread") {
     return {
       ...filters,
+      kinds,
       statuses: [],
       late: "any",
       mine: false,
@@ -1101,6 +1193,7 @@ export function applyAmendmentQuickFilter(
   }
   return {
     ...filters,
+    kinds,
     statuses: [],
     late: "late",
     mine: false,

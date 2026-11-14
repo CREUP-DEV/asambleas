@@ -21,6 +21,7 @@ import {
   filterAmendmentList,
   groupAmendmentsByOverlap,
   mineAmendments,
+  openingAmendmentFilters,
   sortAmendments,
   type AmendmentFilters,
 } from "./workspace";
@@ -104,7 +105,28 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
   // From the listed amendments, so a marker and the list it filters agree.
   const markers = computed(() => amendmentBlockMarkers(listed.value));
 
-  const filters = ref<AmendmentFilters>(emptyAmendmentFilters());
+  /**
+   * What the list opens on, until the reader picks something else: the
+   * content amendments ("Contenido") when there are some, otherwise every
+   * one ("Todas"), so it never opens on an empty "Contenido". Worked out
+   * from the amendments rather than written once they arrive, so the page
+   * rendered on the server and the one in the browser always agree. Another
+   * document starts over.
+   */
+  const openingFilters = computed<AmendmentFilters>(() =>
+    openingAmendmentFilters(listed.value),
+  );
+  /** What the reader picked; null while it is still the opening filter. */
+  const chosenFilters = ref<AmendmentFilters | null>(null);
+  watch(url, () => {
+    chosenFilters.value = null;
+  });
+  const filters = computed<AmendmentFilters>({
+    get: () => chosenFilters.value ?? openingFilters.value,
+    set: (value) => {
+      chosenFilters.value = value;
+    },
+  });
 
   // "Sin leer": the listed amendments the account still has to read (its
   // read marks: published, undecided, not its member's own).
@@ -164,6 +186,7 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     },
   );
 
+  /** "Quitar filtros": every amendment, as "Todas". */
   function resetFilters(): void {
     filters.value = emptyAmendmentFilters();
   }
