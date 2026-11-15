@@ -93,6 +93,7 @@ import {
   canManageDocuments,
   canModerate,
   canViewControlSheet,
+  canViewSeating,
   canReviewAmendments,
   type Actor,
 } from "./actor";
@@ -906,6 +907,25 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   control_sheet_treated_changed: ["subjectType", "treated"],
   control_sheet_result_changed: ["subjectType", "changes"],
   control_sheet_listed_changed: ["subjectType", "listed"],
+  // The room: counts, kinds and the names of fields, never a person's name
+  // nor the ids of groups, people or members.
+  seating_synced: ["status", "groups", "people"],
+  seating_layout_updated: [
+    "tables",
+    "seats",
+    "chairs",
+    "fixtures",
+    "template",
+    "released",
+  ],
+  seating_assignments_changed: ["placed", "moved", "removed"],
+  seating_group_created: ["kind"],
+  seating_group_updated: ["kind", "fields"],
+  seating_group_deleted: ["kind", "people", "released"],
+  seating_person_created: ["source", "kind"],
+  seating_person_updated: ["source", "fields", "needsSeat", "released"],
+  seating_person_deleted: ["source", "released"],
+  seating_source_changed: ["own"],
   speaking_turn_added: ["position"],
   speaking_turn_started: ["from", "to", "position", "renamed"],
   speaking_turn_finished: ["from", "to", "reason"],
@@ -2056,6 +2076,9 @@ function eventTarget(
     case "speakers":
       // The queue's history is the Mesa's: attendees only see who has the floor.
       return { ...base, visible: !actor || canModerate(actor) };
+    case "seating":
+      // The room is its readers' (seating:view or seating:edit).
+      return { ...base, visible: !actor || canViewSeating(actor) };
     case "control_sheet": {
       // The sheet's readers, and only for an item or amendment they read:
       // the subject's own rule, then the sheet's key.

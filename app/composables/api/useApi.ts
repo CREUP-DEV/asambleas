@@ -101,6 +101,12 @@ const REASON_KEYS: Record<string, string> = {
   control_sheet_stale: "common.errors.controlSheetStale",
   // A «Retirado» by hand on an item with documents.
   control_sheet_withdrawn_document: "common.errors.controlSheetWithdrawn",
+  // The room (Sala) changed under a write: the page shows what is there now.
+  seating_stale: "common.errors.seatingStale",
+  // A layout save that removes occupied seats, until the client confirms it.
+  seating_seats_occupied: "common.errors.seatingSeatsOccupied",
+  // A group, a person or a whole room that is no longer there (or an AGET).
+  seating_not_found: "common.errors.seatingNotFound",
 };
 
 /**

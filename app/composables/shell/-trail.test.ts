@@ -58,6 +58,17 @@ describe("breadcrumbTrail", () => {
     ]);
   });
 
+  it("names the room as a section of the assembly", () => {
+    expect(breadcrumbTrail("/asambleas/80-ago/sala")).toEqual({
+      steps: [
+        { kind: "assemblies", path: "/asambleas" },
+        { kind: "assembly", path: "/asambleas/80-ago", param: "80-ago" },
+        { kind: "section", path: "/asambleas/80-ago/sala", section: "seating" },
+      ],
+      exact: true,
+    });
+  });
+
   it("adds the document and the page open on it", () => {
     const base = "/asambleas/80-ago/documentos/resoluci%C3%B3n-x";
     expect(breadcrumbTrail(base)).toEqual({

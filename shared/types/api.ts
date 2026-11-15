@@ -28,10 +28,20 @@ import type {
   MilestoneKey,
   ProponentPosition,
   RelationKind,
+  SeatingGroupCategory,
+  SeatingGroupKind,
+  SeatingGroupSource,
+  SeatingManualGroupKind,
+  SeatingPersonSource,
+  SeatingPersonStatus,
+  SeatingSyncStatus,
   VoteMethod,
   VoteResult,
   VoteSubject,
 } from "../constants/domain";
+import type { SeatAssignment } from "../utils/seating/groups";
+import type { SeatingLayout, SeatingTemplate } from "../utils/seating/layout";
+import type { SeatingAssignmentOp } from "../utils/seating/proposal";
 import type { PermissionKey } from "../constants/permissions";
 import type {
   EmailDeliveryStatus,
@@ -1588,6 +1598,303 @@ export interface ControlSheetDto {
     /** session:moderate: the Mesa's marks. */
     moderate: boolean;
   };
+}
+
+// Seating ------------------------------------------------------------------
+
+/**
+ * The platform member a seating group stands for (`members.intranetId`),
+ * with the university the roll call reads (compareRollCall).
+ */
+export interface SeatingMemberRefDto extends MemberRef {
+  university: string | null;
+}
+
+/**
+ * A group of the seating view: an Intranet account that registered
+ * attendees, the Mesa, or one made by hand. Its colour comes from `kind`
+ * and `intranetType` together (seatingGroupColour).
+ */
+export interface SeatingGroupDto {
+  id: string;
+  source: SeatingGroupSource;
+  kind: SeatingGroupKind;
+  /** `users.type` as the Intranet sent it; null for the Mesa and manual groups. */
+  intranetType: string | null;
+  category: SeatingGroupCategory | null;
+  acronym: string;
+  name: string;
+  member: SeatingMemberRefDto | null;
+  /** The cached logo, served by this platform; null without one. */
+  imageUrl: string | null;
+  /** The Intranet's place of a CEA office; null otherwise. */
+  order: number | null;
+  /** The Intranet no longer lists it. */
+  goneAt: IsoDate | null;
+  /** Lock token for PATCH .../seating/groups/[group]. */
+  updatedAt: IsoDate;
+}
+
+/**
+ * A person who may take a seat. Names and photos are personal data: only
+ * seating readers get them, and never in events, logs or other exports.
+ */
+export interface SeatingPersonDto {
+  id: string;
+  groupId: string;
+  source: SeatingPersonSource;
+  /** Null for a placeholder («Plaza sin nombre»). */
+  firstName: string | null;
+  surname: string | null;
+  /** A cargo such as «Presidencia de la Mesa». */
+  label: string | null;
+  status: SeatingPersonStatus;
+  /** False for «No necesita asiento». */
+  needsSeat: boolean;
+  /** The Intranet no longer lists them («Ya no inscrito»). */
+  goneAt: IsoDate | null;
+  /** A platform account, for the Mesa. */
+  userId: string | null;
+  /** The cached photo, served by this platform; null without one. */
+  photoUrl: string | null;
+  /** Order inside the group. */
+  position: number;
+  /** Lock token for PATCH .../seating/people/[person]. */
+  updatedAt: IsoDate;
+}
+
+/** Who sits on a seat (a seat id of the layout). */
+export type SeatingAssignmentDto = SeatAssignment;
+
+/** How the last read of the Intranet's attendees went. */
+export interface SeatingSyncDto {
+  /** Null before the first sync. */
+  status: SeatingSyncStatus | null;
+  at: IsoDate | null;
+  /** The Intranet event's name, for the header. */
+  eventName: string | null;
+}
+
+/**
+ * GET /api/assemblies/[assembly]/seating (seating:view or seating:edit;
+ * never with ?view=room): the room and who sits where. An assembly without
+ * a plan answers an empty one (`planId` and `layout` null).
+ */
+export interface SeatingPlanDto {
+  planId: string | null;
+  layout: SeatingLayout | null;
+  /** Lock token for PUT .../seating/layout; null without a layout. */
+  layoutUpdatedAt: IsoDate | null;
+  /** The template the layout was generated from (layout.template). */
+  template: SeatingTemplate | null;
+  groups: SeatingGroupDto[];
+  people: SeatingPersonDto[];
+  assignments: SeatingAssignmentDto[];
+  sync: SeatingSyncDto;
+  /** Another assembly whose Intranet attendees this plan reads; null: its own. */
+  sourceAssemblyId: string | null;
+  can: {
+    /** seating:edit. */
+    edit: boolean;
+  };
+}
+
+/**
+ * PUT /api/assemblies/[assembly]/seating/layout (seating:edit). `updatedAt`
+ * is the layout's token as read: a stale one answers 409 `seating_stale`
+ * with SeatingLayoutStaleData. Null is valid only while the assembly has no
+ * layout yet; a null token when one exists is stale too (never the early
+ * return of assertOptimisticLock, which would overwrite it). Removing or
+ * disabling occupied seats answers 409 `seating_seats_occupied` with
+ * SeatingSeatsOccupiedData unless `releaseSeats` confirms every one of them
+ * (the seats and people that 409 named): those people then go back to the
+ * tray. Anyone seated there since answers the same 409 again, with the new
+ * list. Returns SeatingLayoutResultDto.
+ */
+export interface SeatingLayoutBody {
+  layout: SeatingLayout;
+  updatedAt: IsoDate | null;
+  releaseSeats?: SeatingAssignmentDto[];
+}
+
+export interface SeatingLayoutResultDto {
+  layout: SeatingLayout;
+  layoutUpdatedAt: IsoDate;
+  /** Who lost their seat with the edit (they are in the tray now). */
+  released: SeatingAssignmentDto[];
+}
+
+/** `data` of the 409 `seating_stale` of PUT .../seating/layout. */
+export interface SeatingLayoutStaleData {
+  layout: SeatingLayout | null;
+  layoutUpdatedAt: IsoDate | null;
+}
+
+/** `data` of the 409 `seating_seats_occupied`: the seats and their people. */
+export interface SeatingSeatsOccupiedData {
+  seats: SeatingAssignmentDto[];
+}
+
+/**
+ * POST /api/assemblies/[assembly]/seating/assignments (seating:edit): up to
+ * 600 seat changes, all or none. Each seat is compared with `expected`; a
+ * mismatch answers 409 `seating_stale` with SeatingAssignmentsStaleData.
+ * A person named in `next` who sits on a seat the batch does not empty
+ * (an op for that seat with another `next`) answers the same 409, naming
+ * that seat: a batch moves someone only by emptying their seat too, as
+ * assignmentOps does. Returns every assignment of the plan.
+ */
+export interface SeatingAssignmentsBody {
+  ops: SeatingAssignmentOp[];
+}
+
+export interface SeatingAssignmentsResultDto {
+  assignments: SeatingAssignmentDto[];
+}
+
+/** `data` of the 409 `seating_stale` of an assignment batch. */
+export interface SeatingAssignmentsStaleData {
+  /** The conflicting seats and who sits there now. */
+  seats: { seatId: string; personId: string | null }[];
+  /** Seats someone was sent to that the layout no longer has or disabled. */
+  unavailableSeatIds: string[];
+  /**
+   * People sent to a seat whom it may not seat: the plan no longer has them
+   * (deleted meanwhile), or they were marked «No necesita asiento».
+   */
+  unknownPersonIds: string[];
+}
+
+/** What a sync changed, counts only. */
+export interface SeatingSyncCounts {
+  groups: { created: number; updated: number; gone: number; back: number };
+  people: { created: number; updated: number; gone: number; back: number };
+}
+
+/**
+ * POST /api/assemblies/[assembly]/seating/sync (seating:edit), no body. It
+ * makes the plan (with the Mesa) if there is none. Within a minute of the
+ * last call to the Intranet, whatever it answered, it answers the stored
+ * plan without calling it again (`called` false, `counts` null). How the
+ * call went is `plan.sync.status`, always with a 200:
+ * - `ok`: groups and people synced (`counts`);
+ * - `not_found`: no Intranet event carries the assembly's type and number
+ *   (say so, and offer another assembly's attendees: PUT .../source);
+ * - `unavailable`: the Intranet does not have the route yet: the plan works
+ *   with groups made by hand, and nothing is worth a notice;
+ * - `failed`: the Intranet did not answer as it should (retry later);
+ * - `unconfigured`: no Intranet URL.
+ * Only `ok` changes groups and people; `counts` is null otherwise.
+ */
+export interface SeatingSyncResultDto {
+  called: boolean;
+  counts: SeatingSyncCounts | null;
+  plan: SeatingPlanDto;
+}
+
+/** POST /api/assemblies/[assembly]/seating/groups (seating:edit). */
+export interface SeatingGroupCreateBody {
+  acronym: string;
+  name: string;
+  /** `other` when left out; never `mesa`. */
+  kind?: SeatingManualGroupKind;
+  memberId?: string | null;
+}
+
+/**
+ * PATCH .../seating/groups/[group] (seating:edit): only groups made by
+ * hand, and the Mesa's kind never changes. Returns SeatingGroupDto; a stale
+ * `updatedAt` answers 409 `seating_stale` with SeatingGroupStaleData.
+ */
+export interface SeatingGroupUpdateBody {
+  updatedAt: IsoDate;
+  acronym?: string;
+  name?: string;
+  kind?: SeatingManualGroupKind;
+  memberId?: string | null;
+}
+
+/**
+ * POST .../seating/people (seating:edit): a person added by hand, or a seat
+ * kept without a name. Returns SeatingPersonDto.
+ */
+export type SeatingPersonCreateBody =
+  | {
+      source: "manual";
+      groupId: string;
+      firstName: string;
+      surname?: string | null;
+      label?: string | null;
+      needsSeat?: boolean;
+      userId?: string | null;
+    }
+  | {
+      source: "placeholder";
+      groupId: string;
+      label?: string | null;
+      needsSeat?: boolean;
+    };
+
+/**
+ * PATCH .../seating/people/[person] (seating:edit). Intranet people take
+ * only `needsSeat`, `label` and `position`; names and `userId` are for the
+ * ones added by hand and placeholders (a placeholder given a first name
+ * becomes a person added by hand). «No necesita asiento» (`needsSeat`
+ * false) frees the person's seat in the same write. Returns
+ * SeatingPersonResultDto; a stale `updatedAt` answers 409 `seating_stale`
+ * with SeatingPersonStaleData.
+ */
+export interface SeatingPersonUpdateBody {
+  updatedAt: IsoDate;
+  needsSeat?: boolean;
+  label?: string | null;
+  position?: number;
+  firstName?: string;
+  surname?: string | null;
+  userId?: string | null;
+}
+
+export interface SeatingPersonResultDto {
+  person: SeatingPersonDto;
+  /** The seat it freed («No necesita asiento»); empty otherwise. */
+  released: SeatingAssignmentDto[];
+}
+
+/** `data` of the 409 `seating_stale` of PATCH .../seating/groups/[group]. */
+export interface SeatingGroupStaleData {
+  group: SeatingGroupDto;
+}
+
+/** `data` of the 409 `seating_stale` of PATCH .../seating/people/[person]. */
+export interface SeatingPersonStaleData {
+  person: SeatingPersonDto;
+}
+
+/** DELETE .../seating/groups/[group] and .../people/[person]. */
+export interface SeatingDeleteResultDto {
+  /** The seats it freed. */
+  released: SeatingAssignmentDto[];
+}
+
+/**
+ * PUT /api/assemblies/[assembly]/seating/source (seating:edit): read
+ * another assembly's Intranet attendees (an AGE without an Intranet event
+ * of its own), or null for its own. `expected` is the source the client
+ * read, compared as it is (null is a value: the plan's own attendees, or
+ * no plan yet): another one answers 409 `seating_stale`.
+ */
+export interface SeatingSourceBody {
+  sourceAssemblyId: string | null;
+  expected: string | null;
+}
+
+export interface SeatingSourceResultDto {
+  sourceAssemblyId: string | null;
+}
+
+/** `data` of the 409 `seating_stale` of PUT .../seating/source. */
+export interface SeatingSourceStaleData {
+  sourceAssemblyId: string | null;
 }
 
 export interface EventDto {

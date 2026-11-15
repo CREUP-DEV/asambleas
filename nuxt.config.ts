@@ -54,6 +54,22 @@ const EXPORT_RATE_LIMIT = {
   tokensPerInterval: 1000,
   interval: 300_000,
 };
+// The room's cached logos and photos (Sala): one per account and attendee,
+// read by the CEA, the Mesa, the Secretaría and the Presidencia only. A
+// first load with an empty cache asks a few hundred each, and the browser
+// keeps them for good afterwards (the name carries the version).
+const SEATING_IMAGE_RATE_LIMIT = {
+  tokensPerInterval: 10_000,
+  interval: 300_000,
+};
+// A sync of the room reads the Intranet's attendees and queues their images.
+// The server calls the Intranet at most once a minute per assembly, but a
+// change of source starts that minute again: this bucket bounds the calls
+// whatever the client does. Only seating editors sync, a few at a time.
+const SEATING_SYNC_RATE_LIMIT = {
+  tokensPerInterval: 60,
+  interval: 300_000,
+};
 
 const routeRules = {
   "/admin/**": {
@@ -118,6 +134,16 @@ const routeRules = {
   "/api/assemblies/*/documents/*/export": {
     security: {
       rateLimiter: EXPORT_RATE_LIMIT,
+    },
+  },
+  "/api/assemblies/*/seating/images/*": {
+    security: {
+      rateLimiter: SEATING_IMAGE_RATE_LIMIT,
+    },
+  },
+  "/api/assemblies/*/seating/sync": {
+    security: {
+      rateLimiter: SEATING_SYNC_RATE_LIMIT,
     },
   },
   // Export status polling and downloads: authenticated and owner-checked,

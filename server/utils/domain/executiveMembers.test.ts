@@ -169,6 +169,8 @@ describe("canSeeExecutiveMembers", () => {
       PERMISSION_KEYS.NOTIFICATION_MANAGE,
       PERMISSION_KEYS.CONTROL_SHEET_VIEW,
       PERMISSION_KEYS.CONTROL_SHEET_EDIT,
+      PERMISSION_KEYS.SEATING_VIEW,
+      PERMISSION_KEYS.SEATING_EDIT,
     ]) {
       expect(
         canSeeExecutiveMembers(

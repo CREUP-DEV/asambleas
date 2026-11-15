@@ -1637,6 +1637,115 @@ count (docs/design.md, "Headcounts and quorum"). Schemas:
   `control_sheet_listed_changed`. The activity shows them to the sheet's
   readers only, for items and amendments they read.
 
+## Seating
+
+The room of an assembly and who sits where (`docs/seating-plan.md`). Every
+path is under `/api/assemblies/[assembly]/seating`. An AGET has no room:
+every path answers 404 with `data.reason` `seating_not_found`.
+
+| Method | Path                        | Who            | Notes                                                             |
+| ------ | --------------------------- | -------------- | ----------------------------------------------------------------- |
+| GET    | `…/seating`                 | `seating:view` | `SeatingPlanDto`. Never with `?view=room` (403). Creates nothing. |
+| PUT    | `…/seating/layout`          | `seating:edit` | `SeatingLayoutBody`. Returns `SeatingLayoutResultDto`.            |
+| POST   | `…/seating/assignments`     | `seating:edit` | `SeatingAssignmentsBody`. Returns `SeatingAssignmentsResultDto`.  |
+| POST   | `…/seating/sync`            | `seating:edit` | No body. Returns `SeatingSyncResultDto`, always 200.              |
+| PUT    | `…/seating/source`          | `seating:edit` | `SeatingSourceBody`. Returns `SeatingSourceResultDto`.            |
+| POST   | `…/seating/groups`          | `seating:edit` | `SeatingGroupCreateBody`. Returns `SeatingGroupDto`.              |
+| PATCH  | `…/seating/groups/[group]`  | `seating:edit` | `SeatingGroupUpdateBody`. Returns `SeatingGroupDto`.              |
+| DELETE | `…/seating/groups/[group]`  | `seating:edit` | Returns `SeatingDeleteResultDto`.                                 |
+| POST   | `…/seating/people`          | `seating:edit` | `SeatingPersonCreateBody`. Returns `SeatingPersonDto`.            |
+| PATCH  | `…/seating/people/[person]` | `seating:edit` | `SeatingPersonUpdateBody`. Returns `SeatingPersonResultDto`.      |
+| DELETE | `…/seating/people/[person]` | `seating:edit` | Returns `SeatingDeleteResultDto`.                                 |
+| GET    | `…/seating/images/[file]`   | `seating:view` | A cached WebP. Never with `?view=room` (403).                     |
+
+`seating:edit` also reads. Schemas: `shared/utils/schemas/seating.ts`;
+types: the «Seating» section of `shared/types/api.ts`.
+
+- **Reading.** An assembly without a plan answers an empty one (`planId`,
+  `layout` and `layoutUpdatedAt` null, no groups). Names, surnames, labels
+  and photo URLs of the people are personal data and go only to seating
+  readers, never to a log: the handlers log a failed query only by its
+  error's name and SQLSTATE (`throwSeatingError`). A group's `member` goes
+  through `redactMember`; `imageUrl` and `photoUrl` are null without a
+  cached file of the row's current version or for what the Intranet no
+  longer lists (`goneAt`). `can.edit` is `seating:edit`. Texts drop control
+  characters.
+- **The plan.** The first write or sync makes it, with the Mesa's group
+  (`kind` mesa) and its usual people for the type: at an AGO two
+  placeholders, «Presidencia de la Mesa» and «Vocalía de la Mesa». The
+  Mesa's group is never deleted and never changes kind.
+- **Layout.** `updatedAt` is `layoutUpdatedAt` as read, null only while
+  there is no layout; anything else answers 409 `seating_stale` with
+  `SeatingLayoutStaleData`. Seats the new layout removes or disables that
+  someone sits on answer 409 `seating_seats_occupied` with
+  `SeatingSeatsOccupiedData` (the seats and their people), unless
+  `releaseSeats` lists every one of them, seat and person, as that 409
+  named them: those people then lose their seat in the same write
+  (`released`). Anyone seated there since was not confirmed and answers
+  the same 409 again, with the new list. Records `seating_layout_updated`.
+- **Assignments.** Up to 600 ops, each seat once and each `next` person
+  once; all or none. Each seat must hold `expected` (null for empty); a
+  `next` person who sits on a seat the batch does not name, a seat the
+  layout lacks or disables, a person no longer in the plan or marked «No
+  necesita asiento», or another batch filling the same seat at the same
+  time, answer 409 `seating_stale` with `SeatingAssignmentsStaleData`
+  (`seats` with who sits there now, `unavailableSeatIds`,
+  `unknownPersonIds`). Emptying a seat is always allowed. A move empties
+  the old seat in the same batch (`assignmentOps`). The batch deletes only
+  the rows it saw (never a seat it saw empty), so a seat filled meanwhile
+  makes it fail rather than throw the other batch's person out.
+  Records one `seating_assignments_changed` (placed, moved and removed
+  counts, member ids) when anything changed.
+- **Sync.** Within a minute of the last call to the Intranet, whatever it
+  answered, `called` is false and nothing is asked. Otherwise it reads
+  `GET {NUXT_INTRANET_API_URL}/asambleas/{type}/{number}/asistentes` for the
+  assembly, or for `sourceAssemblyId`. `plan.sync.status`: `ok` (groups and
+  people synced, `counts`), `not_found` (no Intranet event with that type
+  and number: offer another assembly's attendees), `unavailable` (the
+  Intranet does not have the route yet: groups made by hand only; the
+  page's line says nothing, and only a sync pressed by hand says it, in a
+  toast), `failed` (try again later), `unconfigured`. Its own rate limiter
+  bucket (60 per 5 minutes per IP): a change of source starts the minute
+  again. Only `ok` writes
+  groups and people; groups made by hand, people added by hand and
+  placeholders, `needsSeat`, `label`, `position` and every assignment are
+  never touched; what the Intranet stops listing gets `goneAt` and keeps
+  its seat. Records `seating_synced` (status and counts) only when the
+  status or a row changed.
+- **Source.** `expected` is the source as read (null is a value), compared
+  with the plan row once locked (made if missing, never for its own
+  attendees while there is none); another answers 409 `seating_stale` with
+  `SeatingSourceStaleData`. The assembly
+  itself is refused (422), and so is one the editor cannot see. A change
+  clears the last sync, so the next one calls at once. Records
+  `seating_source_changed`.
+- **Groups and people.** PATCH takes `updatedAt` (409 `seating_stale` with
+  `SeatingGroupStaleData` or `SeatingPersonStaleData`). Only groups made by
+  hand change or go (422 for an Intranet account or the Mesa); a group's
+  `memberId` must be a real member (422 `executive_member` for the generic
+  «CEA»). Intranet people take only `needsSeat`, `label` and `position`
+  (422 otherwise) and are never deleted (mark them «No necesita asiento»);
+  a placeholder given a `firstName` becomes a person added by hand.
+  `userId` links only a person of the Mesa, and only to the editor's own
+  account (422 otherwise); null unlinks it.
+  `needsSeat` false frees the person's seat in the same write
+  (`released`). A group or person not in the plan answers 404
+  `seating_not_found`. Deleting frees their seats (`released`).
+- **Images.** `[file]` is `logo-<group>-<version>.webp` or
+  `photo-<person>-<version>.webp` that a row of this assembly's plan names
+  now, with that version (404 otherwise), served with `Cache-Control: private,
+max-age=31536000, immutable`, `nosniff` and `Content-Disposition: inline`.
+  Its own rate limiter bucket (10,000 per 5 minutes per IP).
+- **Records and live.** Every write records an event of entity `seating`
+  (entityId: the plan): `seating_synced`, `seating_layout_updated`,
+  `seating_assignments_changed`, `seating_group_created`, `_updated` and
+  `_deleted`, `seating_person_created`, `_updated` and `_deleted`,
+  `seating_source_changed`, with ids, kinds, counts and the names of the
+  fields changed, never a name. A new cached image sends a live
+  `seating_images_ready` with no history row. The hub ignores the entity
+  (`IGNORED_LIVE_ENTITIES`); the activity shows these events to seating
+  readers only.
+
 ## Speaking turns
 
 | Method | Path                                         | Who                | Notes                                                    |

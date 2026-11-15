@@ -120,6 +120,22 @@ export function canEditControlSheet(actor: Actor): boolean {
   return actor.can(PERMISSION_KEYS.CONTROL_SHEET_EDIT);
 }
 
+/**
+ * Reading the room of an assembly (Sala): who sits where, with names and
+ * photos. Whoever may edit it reads it too.
+ */
+export function canViewSeating(actor: Actor): boolean {
+  return (
+    actor.can(PERMISSION_KEYS.SEATING_VIEW) ||
+    actor.can(PERMISSION_KEYS.SEATING_EDIT)
+  );
+}
+
+/** Laying out the room and seating people. */
+export function canEditSeating(actor: Actor): boolean {
+  return actor.can(PERMISSION_KEYS.SEATING_EDIT);
+}
+
 /** Admission review and amendment management (Secretaría). */
 export function canReviewAmendments(actor: Actor): boolean {
   return (

@@ -120,6 +120,16 @@ export const ACTIVITY_ACTION_ICONS = {
   control_sheet_treated_changed: "i-lucide-circle-check",
   control_sheet_result_changed: "i-lucide-clipboard-check",
   control_sheet_listed_changed: "i-lucide-list-plus",
+  seating_synced: "i-lucide-refresh-cw",
+  seating_layout_updated: "i-lucide-layout-panel-top",
+  seating_assignments_changed: "i-lucide-armchair",
+  seating_group_created: "i-lucide-users-round",
+  seating_group_updated: "i-lucide-pencil",
+  seating_group_deleted: "i-lucide-user-round-x",
+  seating_person_created: "i-lucide-user-round-plus",
+  seating_person_updated: "i-lucide-user-round-pen",
+  seating_person_deleted: "i-lucide-user-round-minus",
+  seating_source_changed: "i-lucide-arrow-left-right",
   document_created: "i-lucide-file-plus",
   document_updated: "i-lucide-pencil",
   document_status_changed: "i-lucide-flag",
@@ -236,7 +246,8 @@ export type ActivityLinkSection =
   | "live"
   | "calendar"
   | "convocation"
-  | "controlSheet";
+  | "controlSheet"
+  | "seating";
 
 /**
  * Where an item leads, as parts of an unlocalized path: the assembly section
@@ -288,6 +299,8 @@ export function activityLink(
       return document ? at("documents", document) : at("live");
     case "control_sheet":
       return at("controlSheet");
+    case "seating":
+      return at("seating");
     default:
       break;
   }

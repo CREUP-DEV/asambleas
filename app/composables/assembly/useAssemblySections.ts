@@ -2,6 +2,7 @@ import type { NavigationMenuItem } from "@nuxt/ui";
 import type { MaybeRefOrGetter } from "vue";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { AssemblyDto } from "~~/shared/types/api";
+import { hasSeatingRoom } from "~~/shared/utils/seating/groups";
 import {
   REVIEW_BADGE_STATE_KEY,
   type ReviewBadgeState,
@@ -127,6 +128,9 @@ export function useAssemblySections(
       controlSheet:
         can(PERMISSION_KEYS.CONTROL_SHEET_VIEW) ||
         can(PERMISSION_KEYS.CONTROL_SHEET_EDIT),
+      seating:
+        can(PERMISSION_KEYS.SEATING_VIEW) || can(PERMISSION_KEYS.SEATING_EDIT),
+      online: !hasSeatingRoom(current.type),
     });
     return groupAssemblySections(sections).map(({ group, sections: list }) => ({
       group,

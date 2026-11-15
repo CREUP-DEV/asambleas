@@ -26,7 +26,7 @@ postgresql (PostgreSQL 18 compartido, base de datos asambleas)
 - Todo comparte la red de Docker `<usuario>_default`: nginx llega a la app como `asambleas-app:3000`, y la app puede llamar a la Intranet como `http://intranet`.
 - La imagen es `ghcr.io/creup-dev/asambleas:<commit>`. El compose la lee de `ASAMBLEAS_IMAGE`, en el `.env` del compose raíz, que escriben `scripts/deploy.sh` y `scripts/rollback.sh`.
 - `pg-boss` usa la misma base de datos para las exportaciones, para la sincronización diaria del listado de miembros (05:00, Europe/Madrid) y para la revisión diaria de accesos (05:30).
-- Los PDFs generados (`EXPORT_STORAGE_DIR`) y los PDFs e imágenes subidos a los documentos (`UPLOAD_STORAGE_DIR`, las imágenes en `images/`) viven en `asambleas/data/`, montado en el contenedor. Sin esos montajes se pierden al recrearlo.
+- Los PDFs generados (`EXPORT_STORAGE_DIR`) y los PDFs e imágenes subidos a los documentos (`UPLOAD_STORAGE_DIR`, las imágenes en `images/`, y las fotos y logos de la sala en `seating/`) viven en `asambleas/data/`, montado en el contenedor. Sin esos montajes se pierden al recrearlo.
 - La plataforma llama a la API de la Intranet por su URL pública, `https://intranet.creup.es/api/asambleas/v1`, con el token. También puede llamarla por dentro (más abajo). Cómo y por qué: [docs/intranet.md](docs/intranet.md), sección 5.8.
 - Los avisos por correo salen por SMTP hacia el servidor de correo del VPS (docker-mailserver), con una dirección de `creup.org` (sección «Correo»).
 
@@ -280,6 +280,8 @@ Una carga masiva en producción por la API (como la recreación de la 80.ª AGO)
 La versión que trae los avisos añade el permiso `notification:manage`: despliégala con `bash ./scripts/deploy.sh --seed` para que Secretaría y Presidencia lo reciban.
 
 La versión que trae la hoja de control añade `control_sheet:view` y `control_sheet:edit`: despliégala también con `--seed`, para que la CEA, el Moderador, Secretaría y Presidencia los reciban. Sin él, nadie salvo un Admin ve la hoja.
+
+La versión que trae la sala (`docs/seating-plan.md`) añade `seating:view` y `seating:edit` y la migración 0034, que va después de la 0033 de la hoja de control: no se despliega sin ella. Despliégala con `--seed`, para que la CEA, el Moderador, Secretaría y Presidencia reciban los permisos; sin él, nadie salvo un Admin ve la sala. La sala lee los inscritos de la Intranet (`GET .../asambleas/{tipo}/{número}/asistentes` y las rutas de imágenes, `docs/intranet.md`); mientras la Intranet no tenga esas rutas, la sala funciona con grupos hechos a mano y su línea no avisa de nada (solo quien pulsa «Sincronizar» ve un aviso). Las fotos y logos que guarda van en `UPLOAD_STORAGE_DIR/seating/`, dentro de `asambleas/data/uploads`, así que entran en las mismas copias.
 
 Operación:
 

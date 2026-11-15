@@ -4,13 +4,20 @@ import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { buildAssemblySlug } from "~~/shared/utils/slug";
 import { db } from "../../../db";
-import { agendaItems, assemblies, documents, events } from "../../../db/schema";
+import {
+  agendaItems,
+  assemblies,
+  documents,
+  events,
+  seatingPlans,
+} from "../../../db/schema";
 import { requireActor, requireCan } from "../../../utils/domain/actor";
 import { throwAssemblyMutationError } from "../../../utils/domain/assemblies";
 import { recordAudit } from "../../../utils/domain/audit";
 import { removeConvocationPdf } from "../../../utils/domain/convocation";
 import { recordEvent, type Executor } from "../../../utils/domain/events";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
+import { removeSeatingPlanImages } from "../../../utils/seating/images";
 
 /** Most events copied into the deletion's audit row (drafts hold few). */
 const DELETED_EVENTS_LIMIT = 1_000;
@@ -73,6 +80,12 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
     });
   }
 
+  // Its room's cached images go with it (the rows cascade).
+  const [seating] = await db
+    .select({ id: seatingPlans.id })
+    .from(seatingPlans)
+    .where(eq(seatingPlans.assemblyId, assembly.id));
+
   try {
     await db.transaction(async (tx) => {
       // Notify first: the event row needs the assembly and goes away with it,
@@ -118,6 +131,7 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
     });
     // Its signed convocatoria, if any, has nobody pointing to it any more.
     await removeConvocationPdf(assembly.convocationFileUrl);
+    if (seating) await removeSeatingPlanImages(seating.id);
     return { success: true };
   } catch (error) {
     throwAssemblyMutationError("assemblies.delete", error, event);

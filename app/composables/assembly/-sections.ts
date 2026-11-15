@@ -19,6 +19,7 @@ export const ASSEMBLY_SECTION_SEGMENTS = {
   convocation: "convocatoria",
   session: "sesion",
   controlSheet: "hoja-de-control",
+  seating: "sala",
   settings: "ajustes",
 } as const;
 
@@ -53,6 +54,9 @@ export const ASSEMBLY_SECTION_DEFS: readonly AssemblySectionDef[] = [
   // The CEA keeps it with the Mesa: a CEA account sees it in its single
   // list, since it is not one of the STAFF_SECTIONS that turn groups on.
   { key: "controlSheet", group: "mesa", icon: "i-lucide-sheet" },
+  // The room and who sits where: the CEA lays it out with the Mesa, so like
+  // the control sheet it is not a staff section.
+  { key: "seating", group: "mesa", icon: "i-lucide-armchair" },
   // Opens on its own window, typically on the projector. Everyone may open
   // it, so without the Mesa's console it sits in the single list.
   { key: "projection", group: "mesa", icon: "i-lucide-presentation" },
@@ -70,6 +74,10 @@ export interface AssemblySectionAccess {
   moderate: boolean;
   /** `control_sheet:view` or `control_sheet:edit`: reads the control sheet. */
   controlSheet: boolean;
+  /** `seating:view` or `seating:edit`: reads the room (Sala). */
+  seating: boolean;
+  /** The assembly is held online (an AGET): it has no room. */
+  online: boolean;
 }
 
 function isVisible(
@@ -87,6 +95,8 @@ function isVisible(
       return access.moderate;
     case "controlSheet":
       return access.controlSheet;
+    case "seating":
+      return access.seating && !access.online;
     default:
       return true;
   }

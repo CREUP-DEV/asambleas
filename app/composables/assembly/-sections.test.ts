@@ -14,6 +14,8 @@ const NONE: AssemblySectionAccess = {
   manage: false,
   moderate: false,
   controlSheet: false,
+  seating: false,
+  online: false,
 };
 
 const keys = (access: AssemblySectionAccess) =>
@@ -54,6 +56,8 @@ describe("visibleAssemblySections", () => {
         manage: true,
         moderate: true,
         controlSheet: true,
+        seating: true,
+        online: false,
       }),
     ).toEqual([
       "overview",
@@ -67,6 +71,7 @@ describe("visibleAssemblySections", () => {
       "settings",
       "session",
       "controlSheet",
+      "seating",
       "projection",
     ]);
   });
@@ -75,6 +80,15 @@ describe("visibleAssemblySections", () => {
     expect(keys(NONE)).not.toContain("controlSheet");
     expect(keys({ ...NONE, moderate: true })).not.toContain("controlSheet");
     expect(keys({ ...NONE, controlSheet: true })).toContain("controlSheet");
+  });
+
+  it("adds the room only to whoever may read it, never for an AGET", () => {
+    expect(keys(NONE)).not.toContain("seating");
+    expect(keys({ ...NONE, moderate: true })).not.toContain("seating");
+    expect(keys({ ...NONE, seating: true })).toContain("seating");
+    expect(keys({ ...NONE, seating: true, online: true })).not.toContain(
+      "seating",
+    );
   });
 });
 
@@ -110,6 +124,8 @@ describe("groupAssemblySections", () => {
         manage: true,
         moderate: true,
         controlSheet: true,
+        seating: true,
+        online: false,
       }),
     ).toEqual([
       [
@@ -117,7 +133,7 @@ describe("groupAssemblySections", () => {
         ["overview", "live", "agenda", "documents", "calendar", "convocation"],
       ],
       ["secretariat", ["validation", "tracking", "settings"]],
-      ["mesa", ["session", "controlSheet", "projection"]],
+      ["mesa", ["session", "controlSheet", "seating", "projection"]],
     ]);
   });
 
@@ -145,6 +161,25 @@ describe("groupAssemblySections", () => {
     ]);
   });
 
+  it("keeps one list without titles for a CEA account with the room", () => {
+    expect(grouped({ ...NONE, controlSheet: true, seating: true })).toEqual([
+      [
+        null,
+        [
+          "overview",
+          "live",
+          "agenda",
+          "documents",
+          "calendar",
+          "convocation",
+          "controlSheet",
+          "seating",
+          "projection",
+        ],
+      ],
+    ]);
+  });
+
   it("returns nothing without sections", () => {
     expect(groupAssemblySections([])).toEqual([]);
   });
@@ -166,5 +201,6 @@ describe("paths", () => {
     expect(assemblyPath("80-ago", "controlSheet")).toBe(
       "/asambleas/80-ago/hoja-de-control",
     );
+    expect(assemblyPath("80-ago", "seating")).toBe("/asambleas/80-ago/sala");
   });
 });

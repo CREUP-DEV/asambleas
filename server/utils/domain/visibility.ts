@@ -327,6 +327,9 @@ const EXECUTIVE_VISIBLE_PERMISSIONS = [
   // The control sheet feeds the minutes: who presents and who speaks.
   PERMISSION_KEYS.CONTROL_SHEET_VIEW,
   PERMISSION_KEYS.CONTROL_SHEET_EDIT,
+  // The room's seating names the offices and the people who act for them.
+  PERMISSION_KEYS.SEATING_VIEW,
+  PERMISSION_KEYS.SEATING_EDIT,
 ] as const;
 
 /**

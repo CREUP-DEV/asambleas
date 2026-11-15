@@ -357,6 +357,78 @@ export const CONTROL_SHEET_MANUAL_RESULTS = [
 export type ControlSheetManualResult =
   (typeof CONTROL_SHEET_MANUAL_RESULTS)[number];
 
+/**
+ * The room's seating view («Sala», docs/seating-plan.md, section 3). A
+ * group is what the tray lists and what a block of seats belongs to: an
+ * Intranet account that registered attendees, the Mesa, or a group made by
+ * hand (say «Prensa»). Its kind decides where Proponer reparto puts it;
+ * its colour comes from the kind and the Intranet type together
+ * (seatingGroupColour in shared/utils/seating/groups.ts).
+ */
+export const SEATING_GROUP_KINDS = [
+  "mesa",
+  "cea",
+  "asociado",
+  "sectorial",
+  "other",
+] as const;
+export type SeatingGroupKind = (typeof SEATING_GROUP_KINDS)[number];
+
+/** The kinds a group made by hand may take: the Mesa is the platform's own. */
+export const SEATING_MANUAL_GROUP_KINDS = [
+  "cea",
+  "asociado",
+  "sectorial",
+  "other",
+] as const satisfies readonly SeatingGroupKind[];
+export type SeatingManualGroupKind =
+  (typeof SEATING_MANUAL_GROUP_KINDS)[number];
+
+export const SEATING_GROUP_SOURCES = ["intranet", "manual"] as const;
+export type SeatingGroupSource = (typeof SEATING_GROUP_SOURCES)[number];
+
+/** The Intranet's account category: one person, or several («Multiusuario»). */
+export const SEATING_GROUP_CATEGORIES = ["individual", "multiuser"] as const;
+export type SeatingGroupCategory = (typeof SEATING_GROUP_CATEGORIES)[number];
+
+/**
+ * Where a person comes from: an Intranet registration, added by hand with a
+ * name, or a seat kept without a name («Plaza sin nombre»).
+ */
+export const SEATING_PERSON_SOURCES = [
+  "intranet",
+  "manual",
+  "placeholder",
+] as const;
+export type SeatingPersonSource = (typeof SEATING_PERSON_SOURCES)[number];
+
+/** An Intranet registration confirmed or pending; `manual` for the rest. */
+export const SEATING_PERSON_STATUSES = [
+  "confirmed",
+  "pending",
+  "manual",
+] as const;
+export type SeatingPersonStatus = (typeof SEATING_PERSON_STATUSES)[number];
+
+/**
+ * How the last read of the Intranet's attendees went:
+ * - `ok`: the attendees were read;
+ * - `not_found`: no Intranet event carries the assembly's type and number
+ *   (404 with exactly `{"error":"not_found"}`);
+ * - `unavailable`: the Intranet does not have the attendees route yet (any
+ *   other 404): the plan works with groups made by hand, quietly;
+ * - `failed`: a timeout, a 5xx or an answer that does not parse;
+ * - `unconfigured`: no usable Intranet URL.
+ */
+export const SEATING_SYNC_STATUSES = [
+  "ok",
+  "not_found",
+  "unavailable",
+  "failed",
+  "unconfigured",
+] as const;
+export type SeatingSyncStatus = (typeof SEATING_SYNC_STATUSES)[number];
+
 export const VOTE_METHODS = [
   "assent",
   "show_of_hands",

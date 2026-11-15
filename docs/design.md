@@ -92,7 +92,8 @@ Moderador (the Mesa gives them the floor) or CEA, when it holds a management
 permission (`document:manage`, `amendment:review`, `amendment:manage`,
 `assembly:manage`, `session:moderate`, `member:manage`,
 `user:manage_roles`, `stats:view`, `notification:manage`, `control_sheet:view`,
-`control_sheet:edit`), or when it acts for an office itself
+`control_sheet:edit`, `seating:view`, `seating:edit`), or when it acts for an
+office itself
 (`Actor.memberKind`). Everyone else (Asociado, Sectorial, Invitado, Otro) gets one
 generic presenter instead of any office:
 `{ id: GENERIC_EXECUTIVE_MEMBER_ID, acronym: "CEA", name: "Comisión Ejecutiva Ampliada", kind: "executive" }`.
@@ -1099,6 +1100,42 @@ speakers per amendment, the Excel download), is `docs/control-sheet-plan.md`.
   noted, or the Mesa marks it; an amendment once the Mesa settled it during
   the session, or the Mesa marks it.
 
+## Seating
+
+The room (Sala, `/asambleas/[assembly]/sala`) is the layout of the
+assembly's room and who sits where, for the CEA, the Mesa, the Secretaría
+and the Presidencia: tables with their seats, loose chairs and landmarks
+(usually a double U: the Mesa at the far end, the CEA at the base of the
+outer U), then every attendee placed on a seat. Attendees come from the
+Intranet (the event registration of the assembly's type and number), with
+their account as their group; the Mesa and anyone else are added by hand.
+An AGET, held online, has none. The plan and its phases are
+`docs/seating-plan.md`.
+
+- One plan per assembly, editable before and during the session. The
+  layout is JSON with its own schema version (`SeatingLayout`); seat ids are
+  stored and survive a change of the template's numbers.
+- Groups (`seating_groups`) are Intranet accounts, linked to the member with
+  the same Intranet id, the Mesa's own, or made by hand. People
+  (`seating_people`) are Intranet registrations, people added by hand or
+  seats kept without a name. A sync never touches what was made by hand,
+  never moves anyone and never empties a seat: someone the Intranet stops
+  listing is marked, not removed.
+- Names and photos are personal data. They leave the server only to the
+  room's readers, never in an event, a log, a live message, a notification
+  or another export, and never through the room view. Photos and logos are
+  fetched by the server from the Intranet and served from this origin as
+  small WebP files; one the Intranet no longer gives goes at the next sync.
+- Seat changes travel as batches compared seat by seat with what the editor
+  saw; a layout that removes occupied seats asks first, and the answer
+  covers only the people it named.
+- Proponer reparto seats the Mesa, then the CEA at the base of the outer U,
+  then the asociados and the sectoriales in roll-call order, the CAS right
+  after the sectoriales (user, 2026-11-15), and the rest. The place cards'
+  colours: burgundy for the CEA and the Mesa, green for the sectoriales and
+  the CAS, blue for the asociados and the CAI, beige for the CdG, the guests
+  and every other account (user, 2026-11-15).
+
 ## Traceability
 
 Every change leaves a record of who did it, acting for which member, when,
@@ -1230,6 +1267,8 @@ The existing keys stay, plus:
   ("Email notifications");
 - `control_sheet:view` and `control_sheet:edit`: read and edit an assembly's
   control sheet ("Control sheet"). The CEA and the Moderador hold both.
+- `seating:view` and `seating:edit`: read and edit an assembly's room and
+  who sits where ("Seating"). The CEA and the Moderador hold both.
 
 The default `Moderador` role gets `session:moderate`. The `CEA`, `CAS` and
 `Sectorial` roles (synced from the intranet types `CEA` and `Sectorial`, and

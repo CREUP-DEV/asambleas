@@ -8,7 +8,7 @@ import {
 const event = (entityType: string, type = "updated") => ({ entityType, type });
 
 describe("mayChangeAssemblyData", () => {
-  it("skips speaking turns, the control sheet and the live state", () => {
+  it("skips speaking turns, the control sheet, the room and the live state", () => {
     expect(mayChangeAssemblyData(event("speakers", "speaker_added"))).toBe(
       false,
     );
@@ -20,6 +20,12 @@ describe("mayChangeAssemblyData", () => {
     expect(mayChangeAssemblyData(event("assembly", "live_changed"))).toBe(
       false,
     );
+    expect(
+      mayChangeAssemblyData(event("seating", "seating_assignments_changed")),
+    ).toBe(false);
+    expect(
+      mayChangeAssemblyData(event("seating", "seating_images_ready")),
+    ).toBe(false);
   });
 
   it("keeps everything else", () => {
@@ -68,6 +74,18 @@ describe("shouldRefetchAgenda", () => {
         event("assembly", "live_changed"),
       ]),
     ).toBe(false);
+  });
+
+  it("ignores the room, however many seats move", () => {
+    expect(
+      shouldRefetchAgenda([
+        event("seating", "seating_assignments_changed"),
+        event("seating", "seating_synced"),
+      ]),
+    ).toBe(false);
+    expect(shouldRefetchAssembly([event("seating", "seating_synced")])).toBe(
+      false,
+    );
   });
 
   it("refetches on anything else", () => {

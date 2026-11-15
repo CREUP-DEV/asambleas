@@ -92,6 +92,10 @@
   --ui-primary: var(--color-creup-red-900);
   --ui-secondary: var(--color-creup-blue-950);
   --ui-sectorial: var(--color-creup-green-700);
+  /* The place cards of the CdG, the guests and every other account in the
+     room view (Sala): a tan ring, 4.3:1 on the plan's floor, and a pale tint
+     of it (SEATING_COLOUR_STYLES). */
+  --seating-beige: var(--color-creup-beige-600);
   --user-content-font: var(--font-sans);
   /* Nuxt UI's dimmed text (neutral-400 on white, 2.6:1) fails WCAG AA for
      the small hints and labels that use it; one step darker reaches 4.8:1. */
@@ -134,6 +138,8 @@ html {
   --ui-primary: var(--color-creup-red-400);
   --ui-secondary: var(--color-creup-blue-400);
   --ui-sectorial: var(--color-creup-green-400);
+  /* 6.3:1 on the plan's dark floor. */
+  --seating-beige: var(--color-creup-beige-400);
   /* neutral-500 on the dark background is 3.7:1; neutral-400 is 7:1. */
   --ui-text-dimmed: var(--ui-color-neutral-400);
   --ui-success: var(--ui-color-success-400);

@@ -26,7 +26,12 @@ export type EntityType =
    * The control sheet: entityId is the sheet row (control_sheet_items or
    * control_sheet_amendments), the item or amendment in payload.subjectId.
    */
-  | "control_sheet";
+  | "control_sheet"
+  /**
+   * The room (Sala): entityId is the seating plan; the group, the person or
+   * the counts in the payload, never a name.
+   */
+  | "seating";
 
 export interface LiveMessage {
   assemblyId: string;
@@ -87,6 +92,19 @@ export async function recordEvent(
     await executor.insert(notificationOutbox).values({ eventId: id });
   }
 
+  await notifyLive(executor, input);
+}
+
+/**
+ * Tells live listeners that something changed, without a history row: for
+ * what is not a change anyone made, such as a cached image of the seating
+ * view arriving (server/utils/seating/images.ts). Ids only, like every live
+ * message. recordEvent calls it for every event.
+ */
+export async function notifyLive(
+  executor: Executor,
+  input: LiveMessage,
+): Promise<void> {
   const message: LiveMessage = {
     assemblyId: input.assemblyId,
     entityType: input.entityType,

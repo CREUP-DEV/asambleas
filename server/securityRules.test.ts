@@ -162,6 +162,8 @@ const ROOM_PATHS = [
   "/api/assemblies/80-ago/documents/res-4/amendments/abc/position",
   "/api/assemblies/80-ago/headcounts",
   "/api/assemblies/80-ago/speakers",
+  "/api/assemblies/80-ago/seating",
+  "/api/assemblies/80-ago/seating/assignments",
   "/api/exports/0b9e/status",
   "/api/exports/0b9e/download",
   "/api/me",
@@ -194,6 +196,19 @@ const EXPORT_RULES: Record<string, string> = {
   "/api/assemblies/80-ago/export": "/api/assemblies/*/export",
   "/api/assemblies/80-ago/documents/res-4/export":
     "/api/assemblies/*/documents/*/export",
+};
+
+const SEATING_IMAGE_RULES: Record<string, string> = {
+  "/api/assemblies/80-ago/seating/images/photo-a1b2c3d4e5f6g7h8i9j0k1l2-9f2c.webp":
+    "/api/assemblies/*/seating/images/*",
+  "/api/assemblies/xk3j8q2m1n0p9o8i7u6y5t4r/seating/images/logo-a1b2c3d4e5f6g7h8i9j0k1l2-3f2a.webp":
+    "/api/assemblies/*/seating/images/*",
+};
+
+const SEATING_SYNC_RULES: Record<string, string> = {
+  "/api/assemblies/80-ago/seating/sync": "/api/assemblies/*/seating/sync",
+  "/api/assemblies/xk3j8q2m1n0p9o8i7u6y5t4r/seating/sync":
+    "/api/assemblies/*/seating/sync",
 };
 
 describe("rate limiter", () => {
@@ -231,6 +246,30 @@ describe("rate limiter", () => {
     (path, rule) => {
       expect(resolveRules(path).rateLimiter).toMatchObject({
         tokensPerInterval: 1000,
+        interval: 300_000,
+        driver: { name: "lruCache" },
+      });
+      expect(resolveBucket(path)).toBe(rule);
+    },
+  );
+
+  it.each(Object.entries(SEATING_IMAGE_RULES))(
+    "gives the room's images a bucket of their own: %s",
+    (path, rule) => {
+      expect(resolveRules(path).rateLimiter).toMatchObject({
+        tokensPerInterval: 10_000,
+        interval: 300_000,
+        driver: { name: "lruCache" },
+      });
+      expect(resolveBucket(path)).toBe(rule);
+    },
+  );
+
+  it.each(Object.entries(SEATING_SYNC_RULES))(
+    "gives the room's sync, which calls the Intranet, a bucket of its own: %s",
+    (path, rule) => {
+      expect(resolveRules(path).rateLimiter).toMatchObject({
+        tokensPerInterval: 60,
         interval: 300_000,
         driver: { name: "lruCache" },
       });
@@ -298,6 +337,8 @@ describe("xss validator", () => {
     ...LIMITED_PATHS,
     ...Object.keys(UPLOAD_RULES),
     ...Object.keys(EXPORT_RULES),
+    ...Object.keys(SEATING_IMAGE_RULES),
+    ...Object.keys(SEATING_SYNC_RULES),
   ])("is off: %s", (path) => {
     expect(resolveRules(path).xssValidator).toBe(false);
   });

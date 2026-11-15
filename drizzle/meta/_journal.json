@@ -239,6 +239,13 @@
       "when": 1794688427902,
       "tag": "0033_control_sheet",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794739067544,
+      "tag": "0034_seating",
+      "breakpoints": true
     }
   ]
 }

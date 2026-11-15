@@ -12,6 +12,8 @@ export const PERMISSION_KEYS = {
   SESSION_MODERATE: "session:moderate",
   CONTROL_SHEET_VIEW: "control_sheet:view",
   CONTROL_SHEET_EDIT: "control_sheet:edit",
+  SEATING_VIEW: "seating:view",
+  SEATING_EDIT: "seating:edit",
   MEMBER_MANAGE: "member:manage",
   STATS_VIEW: "stats:view",
   NOTIFICATION_MANAGE: "notification:manage",
@@ -45,6 +47,8 @@ export const PERMISSION_DESCRIPTION_I18N_KEYS: Record<PermissionKey, string> = {
     "permissions.descriptions.controlSheetView",
   [PERMISSION_KEYS.CONTROL_SHEET_EDIT]:
     "permissions.descriptions.controlSheetEdit",
+  [PERMISSION_KEYS.SEATING_VIEW]: "permissions.descriptions.seatingView",
+  [PERMISSION_KEYS.SEATING_EDIT]: "permissions.descriptions.seatingEdit",
   [PERMISSION_KEYS.MEMBER_MANAGE]: "permissions.descriptions.memberManage",
   [PERMISSION_KEYS.STATS_VIEW]: "permissions.descriptions.statsView",
   [PERMISSION_KEYS.NOTIFICATION_MANAGE]:
@@ -70,6 +74,8 @@ export const PERMISSION_ICONS: Record<PermissionKey, string> = {
   [PERMISSION_KEYS.SESSION_MODERATE]: "i-lucide-gavel",
   [PERMISSION_KEYS.CONTROL_SHEET_VIEW]: "i-lucide-sheet",
   [PERMISSION_KEYS.CONTROL_SHEET_EDIT]: "i-lucide-file-spreadsheet",
+  [PERMISSION_KEYS.SEATING_VIEW]: "i-lucide-armchair",
+  [PERMISSION_KEYS.SEATING_EDIT]: "i-lucide-move",
   [PERMISSION_KEYS.MEMBER_MANAGE]: "i-lucide-building-2",
   [PERMISSION_KEYS.STATS_VIEW]: "i-lucide-chart-column",
   [PERMISSION_KEYS.NOTIFICATION_MANAGE]: "i-lucide-mail",
@@ -83,11 +89,14 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
   // The CEA keeps the control sheet with the Mesa. To leave it reading only,
   // take CONTROL_SHEET_EDIT from the role at /admin/roles and out of here:
   // the seed only adds grants, and adds back the defaults a role lacks.
+  // The CEA and the Mesa lay out the room and seat everyone (Sala).
   CEA: [
     PERMISSION_KEYS.DOCUMENT_CREATE,
     PERMISSION_KEYS.AMENDMENT_CREATE,
     PERMISSION_KEYS.CONTROL_SHEET_VIEW,
     PERMISSION_KEYS.CONTROL_SHEET_EDIT,
+    PERMISSION_KEYS.SEATING_VIEW,
+    PERMISSION_KEYS.SEATING_EDIT,
   ],
   Asociado: [PERMISSION_KEYS.DOCUMENT_CREATE, PERMISSION_KEYS.AMENDMENT_CREATE],
   // Internal motions are barred by member kind, not by a permission.
@@ -101,6 +110,8 @@ export const DEFAULT_ROLE_PERMISSIONS: Record<string, PermissionKey[]> = {
     PERMISSION_KEYS.SESSION_MODERATE,
     PERMISSION_KEYS.CONTROL_SHEET_VIEW,
     PERMISSION_KEYS.CONTROL_SHEET_EDIT,
+    PERMISSION_KEYS.SEATING_VIEW,
+    PERMISSION_KEYS.SEATING_EDIT,
   ],
   Invitado: [],
   CAI: [],
