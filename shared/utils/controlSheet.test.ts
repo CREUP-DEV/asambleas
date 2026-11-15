@@ -4,10 +4,15 @@ import {
   controlSheetRows,
   isUnanimousVote,
   itemDocumentsOutcome,
+  itemHasVotedDocuments,
+  itemTakesOwnVote,
   itemOutcome,
+  latestItemVote,
+  ownVoteItemIds,
   sheetSpeakers,
   voteSheetResult,
   type SheetDocument,
+  type SheetItemVote,
   type SheetVote,
 } from "./controlSheet";
 
@@ -54,6 +59,18 @@ describe("isUnanimousVote", () => {
         vote({ result: "rejected", inFavor: 1, against: 0, abstentions: 0 }),
       ),
     ).toBe(false);
+  });
+
+  it("reads an assent unanimous once nobody objected", () => {
+    const assent = vote({
+      method: "assent",
+      inFavor: 0,
+      against: 0,
+      abstentions: 0,
+      unanimous: true,
+    });
+    expect(isUnanimousVote(assent)).toBe(true);
+    expect(voteSheetResult(assent)).toBe("approved_unanimous");
   });
 
   it("words the result", () => {
@@ -160,6 +177,99 @@ describe("itemOutcome", () => {
       treated: true,
       byVote: false,
     });
+  });
+});
+
+describe("the item's own vote", () => {
+  const itemVote = (over: Partial<SheetItemVote> = {}): SheetItemVote => ({
+    ...vote(),
+    id: "v1",
+    recordedAt: "2026-11-20T10:00:00.000Z",
+    voidedAt: null,
+    ...over,
+  });
+  const report = doc({ voted: false });
+
+  it("reads «Pendiente» for a report item that is voted, until its vote", () => {
+    expect(itemDocumentsOutcome([report], { voted: true, votes: [] })).toEqual({
+      result: null,
+      treated: false,
+      byVote: false,
+    });
+    expect(itemDocumentsOutcome([report], { voted: false, votes: [] })).toEqual(
+      { result: "not_applicable", treated: false, byVote: false },
+    );
+  });
+
+  it("takes the latest vote in force, whatever the switch says", () => {
+    const own = {
+      voted: false,
+      votes: [
+        itemVote({ id: "a", result: "rejected" }),
+        itemVote({
+          id: "b",
+          recordedAt: "2026-11-20T11:00:00.000Z",
+          result: "approved",
+        }),
+        itemVote({
+          id: "c",
+          recordedAt: "2026-11-20T12:00:00.000Z",
+          result: "rejected",
+          voidedAt: "2026-11-20T12:05:00.000Z",
+        }),
+      ],
+    };
+    expect(latestItemVote(own.votes)?.id).toBe("b");
+    expect(itemDocumentsOutcome([], own)).toEqual({
+      result: "approved",
+      treated: true,
+      byVote: true,
+    });
+    expect(itemDocumentsOutcome([report], own).result).toBe("approved");
+    // A vote by hand never replaces it.
+    expect(
+      itemOutcome([report], { manualResult: "lapsed", treated: false }, own)
+        .result,
+    ).toBe("approved");
+  });
+
+  it("ignores it while a document of the item is voted", () => {
+    const own = { voted: true, votes: [itemVote()] };
+    expect(itemDocumentsOutcome([doc()], own)).toEqual({
+      result: null,
+      treated: false,
+      byVote: false,
+    });
+    expect(itemHasVotedDocuments([doc()])).toBe(true);
+    expect(itemHasVotedDocuments([doc({ status: "draft" })])).toBe(false);
+    expect(itemHasVotedDocuments([doc({ status: "withdrawn" })])).toBe(false);
+    expect(itemHasVotedDocuments([report])).toBe(false);
+  });
+
+  it("takes no vote of its own where members present", () => {
+    expect(itemTakesOwnVote({ acceptsSubmissions: true }, [])).toBe(false);
+    expect(itemTakesOwnVote({ acceptsSubmissions: false }, [report])).toBe(
+      true,
+    );
+    expect(itemTakesOwnVote({ acceptsSubmissions: false }, [doc()])).toBe(
+      false,
+    );
+  });
+
+  it("lists the items voted by themselves", () => {
+    expect([
+      ...ownVoteItemIds(
+        [
+          { id: "i1", voted: true },
+          { id: "i2", voted: false },
+          { id: "i3", voted: false },
+        ],
+        [
+          { subjectId: "i2", voidedAt: null },
+          { subjectId: "i3", voidedAt: "2026-11-20T12:05:00.000Z" },
+        ],
+      ),
+    ]).toEqual(["i1", "i2"]);
   });
 });
 

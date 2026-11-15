@@ -7,11 +7,11 @@ import {
   sessionCleanVote,
   sessionEmptyVote,
   sessionFinalVoteBlockers,
-  sessionFillPresent,
   sessionFinalVoteResult,
   sessionVoteOutcome,
 } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
+import { useVoteBaseText } from "~/composables/session/useVoteBaseText";
 
 /**
  * Final vote on the whole text. The document's majority is the default, and
@@ -26,7 +26,7 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * not accepted) and the Secretaría (not validated yet).
  */
 const session = useSessionConsoleContext();
-const { t, locale } = useI18n();
+const { t } = useI18n();
 
 const open = computed({
   get: () => session.finalVoteDialog.open,
@@ -120,38 +120,16 @@ const outcome = computed(() =>
     session.voteHeadcount.value,
   ),
 );
-const now = useAppNow();
 /**
  * The base the result is counted on, for the confirmation: "Base de
- * cálculo: 40 miembros presentes", with the count's day when the base is a
- * count taken another day (Europe/Madrid).
+ * cálculo: 40 miembros presentes", with the count's day when it is not
+ * today's.
  */
-const baseText = computed(() => {
-  const counted = sessionFillPresent(
-    vote.value,
-    session.voteHeadcount.value,
-    session.settings.value,
-  );
-  const onPresent =
-    session.settings.value.denominator === "present" && counted.present != null;
-  const text = t("session.vote.denominator", {
-    count: outcome.value.denominator,
-    base: onPresent
-      ? t("session.vote.denominatorPresent")
-      : t("session.vote.denominatorValid"),
-  });
-  const headcount = session.voteHeadcount.value;
-  if (!onPresent || !headcount || counted.present !== headcount.present) {
-    return text;
-  }
-  const taken = formatMoment(headcount.takenAt, {
-    locale: locale.value,
-    now: now.value,
-  });
-  return taken.today
-    ? text
-    : `${text} · ${t("session.vote.countMoment", { moment: taken.text })}`;
-});
+const baseText = useVoteBaseText(
+  vote,
+  () => session.settings.value,
+  () => session.voteHeadcount.value,
+);
 const expected = computed(() =>
   sessionFinalVoteResult(vote.value, outcome.value),
 );

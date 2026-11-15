@@ -1,4 +1,8 @@
-import { visibleAgendaItems, type TitleSource } from "./agendaSubmissions";
+import {
+  hiddenTitleItemIds,
+  visibleAgendaItems,
+  type TitleSource,
+} from "./agendaSubmissions";
 
 /**
  * The numbers of the agenda ("1", "2", "17.1"...). They are never stored:
@@ -125,4 +129,19 @@ export function unlistedAgendaItemIds<
   return new Set(
     items.filter((item) => !listed.has(item.id)).map((item) => item.id),
   );
+}
+
+/**
+ * The items whose title a plain attendee does not read, out of the ones a
+ * viewer does (`AgendaItemDto.publicTitleHidden`): those it does not receive
+ * (unlistedAgendaItemIds) and those it receives without their title, a
+ * withheld one or one carrying a document that is not public. Both are
+ * hiddenTitleItemIds for that viewer: visibleAgendaItems only ever keeps
+ * some of those items, so the unlisted ones are always among them.
+ */
+export function publicTitleHiddenItemIds(
+  items: readonly (TitleSource & { id: string; parentId: string | null })[],
+  publicDocuments: readonly { id: string }[],
+): Set<string> {
+  return hiddenTitleItemIds(items, publicDocuments, false);
 }

@@ -11,6 +11,9 @@ import type {
   DocumentDto,
   FinalVoteAnnulBody,
   FinalVoteBody,
+  ItemVoteBody,
+  ItemVoteResultDto,
+  ItemVotesDto,
   LiveEventDto,
   LiveStateBody,
   LiveStateDto,
@@ -22,7 +25,10 @@ import type {
   SpeakingTurnDto,
   TransactionalBody,
   ValidateAmendmentsBody,
+  VoteDto,
   VoteInput,
+  VoteUnanimityBody,
+  VoteVoidBody,
 } from "~~/shared/types/api";
 import type { ConsolidationConflict } from "~~/shared/types/content";
 import {
@@ -50,6 +56,7 @@ import {
   isSessionTransactable,
   sessionAmendmentStage,
   sessionAssentPlan,
+  sessionCleanVote,
   sessionConnectionState,
   sessionConsolidatedPreview,
   sessionErrorData,
@@ -100,6 +107,33 @@ export type SessionFinalVoteResult =
       /** An approved totality return: the text goes back, no final vote. */
       totalityReturn: string | null;
     };
+
+/** What recording an agenda item's vote came to, for its dialog. */
+export type SessionItemVoteResult =
+  | { ok: true; vote: VoteDto }
+  | {
+      ok: false;
+      /** A tie the tie rule sends back to the vote: the dialog says so. */
+      tie: boolean;
+    };
+
+/**
+ * The `data.reason` of a failed request, nested by h3 under `data.data` or
+ * at `data` (same nesting as errorReasonKey in useApi).
+ */
+function errorReason(error: unknown): string | null {
+  const nested = sessionErrorData(error)?.reason;
+  if (typeof nested === "string") return nested;
+  const data =
+    error && typeof error === "object"
+      ? (error as { data?: unknown }).data
+      : null;
+  const reason =
+    data && typeof data === "object"
+      ? (data as { reason?: unknown }).reason
+      : null;
+  return typeof reason === "string" ? reason : null;
+}
 
 /** A document's amendments, tagged with the document they were fetched for. */
 export type SessionAmendmentsDto = DocumentAmendmentsDto & {
@@ -555,6 +589,38 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     headcounts.data.value ? headcounts.latest.value : undefined,
   );
 
+  // Agenda item votes: the votes on agenda items themselves (a
+  // ratification, an election), voided ones too, from which the item in
+  // debate reads its vote in force. Only the Mesa reads them, as itself:
+  // never with the room view. A failed read keeps the last good list; with
+  // none, the item offers its vote without a status line.
+  const itemVotesFetch = useAsyncData(
+    () => `session-item-votes-${param.value}`,
+    () =>
+      canModerate.value
+        ? api.get<ItemVotesDto>(`${assemblyUrl.value}/item-votes`)
+        : Promise.resolve(null),
+    { server: false, watch: [canModerate] },
+  );
+  const { data: itemVotesDto } = keepLastGoodData(itemVotesFetch, {
+    resetOn: param,
+  });
+  const itemVotes = computed<VoteDto[]>(() => itemVotesDto.value?.votes ?? []);
+
+  function refreshItemVotes(): Promise<void> {
+    return itemVotesFetch.refresh();
+  }
+
+  /** Puts a vote a mutation returned in the list, replacing its old copy. */
+  function storeItemVote(vote: VoteDto): void {
+    const current = itemVotesDto.value?.votes ?? [];
+    const index = current.findIndex((other) => other.id === vote.id);
+    const next = [...current];
+    if (index === -1) next.push(vote);
+    else next[index] = vote;
+    itemVotesDto.value = { votes: next };
+  }
+
   // Live updates --------------------------------------------------------------
 
   function refreshAll(): Promise<unknown> {
@@ -566,6 +632,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       refreshAmendments(),
       speakers.refresh(),
       headcounts.refresh(),
+      refreshItemVotes(),
     ]);
   }
 
@@ -580,6 +647,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
             refreshLive(),
             refreshDocument(),
             refreshAmendments(),
+            refreshItemVotes(),
           ])
         : refreshAll());
       return;
@@ -590,8 +658,18 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     let agendaChanged = false;
     let documentChanged = false;
     let amendmentsChanged = false;
+    let itemVotesChanged = false;
+    const projectedVoteId = liveState.value?.vote?.id ?? null;
     for (const event of events) {
       if (event.entityType === "live") live = true;
+      if (event.entityType === "vote") {
+        // A vote with no document is an agenda item's (recorded, voided or
+        // made unanimous, here or from the control sheet).
+        if (!event.documentId) itemVotesChanged = true;
+        // The vote on screen changed without the live state moving (its
+        // unanimity): read the live state again for its new copy.
+        if (event.entityId === projectedVoteId) live = true;
+      }
       if (event.entityType === "assembly") {
         assemblyChanged = true;
         agendaChanged = true;
@@ -618,6 +696,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     if (agendaChanged) void refreshAgenda();
     if (documentChanged) void refreshDocument();
     if (amendmentsChanged) void refreshAmendments();
+    if (itemVotesChanged) void refreshItemVotes();
   }
 
   let connected: Readonly<Ref<boolean>>;
@@ -892,6 +971,11 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   // The headcount form too: its checkboxes and close button are buttons,
   // which defineShortcuts does not skip.
   const headcountDialog = reactive({ open: false });
+  /** The vote on an agenda item, for the item it was opened on. */
+  const itemVoteDialog = reactive({
+    open: false,
+    agendaItemId: null as string | null,
+  });
 
   // The document follows the live state, which another Mesa member can move.
   // A document-level dialog left open would then record or annul the final
@@ -900,6 +984,16 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     finalVoteDialog.open = false;
     finalVoteAnnulDialog.open = false;
   });
+  // Likewise the item vote: once the debate moves to another item (from
+  // any Mesa device), it must not record a vote on the one the room left.
+  watch(
+    () => liveState.value?.agendaItemId ?? null,
+    (id) => {
+      if (itemVoteDialog.open && id !== itemVoteDialog.agendaItemId) {
+        itemVoteDialog.open = false;
+      }
+    },
+  );
 
   /** A confirmation (SessionConfirmDialog) is on screen. */
   const confirmOpen = ref(false);
@@ -998,12 +1092,19 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       assentDialog.open ||
       lapseDialog.open ||
       speakerRenameDialog.open ||
-      headcountDialog.open,
+      headcountDialog.open ||
+      itemVoteDialog.open,
   );
 
   function openVote(amendment: AmendmentDto): void {
     voteDialog.amendmentId = amendment.id;
     voteDialog.open = true;
+  }
+
+  /** Opens the vote on an agenda item (the one in debate). */
+  function openItemVote(itemId: string): void {
+    itemVoteDialog.agendaItemId = itemId;
+    itemVoteDialog.open = true;
   }
 
   function openRelation(amendment: AmendmentDto): void {
@@ -1711,6 +1812,185 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     }
   }
 
+  // Agenda item votes ---------------------------------------------------------------
+
+  /**
+   * Records a vote on an agenda item itself (POST .../agenda/[item]/votes)
+   * and asks the server to put it on screen. `itemId` is the item the dialog
+   * opened on, never the item in debate now: the server projects it only
+   * while that item is still in debate and stores it anyway (`projected`
+   * false, and the toast says so). A tie the tie rule repeats goes back to
+   * the dialog; an item that turned out to be voted through its documents,
+   * or any other refusal, is a toast.
+   */
+  async function recordItemVote(
+    itemId: string,
+    input: { question: string; vote: VoteInput },
+  ): Promise<SessionItemVoteResult> {
+    const body: ItemVoteBody = {
+      question: input.question.trim(),
+      vote: sessionCleanVote(input.vote),
+      project: true,
+    };
+    try {
+      const result = await track("item-vote", () =>
+        api.send<ItemVoteResultDto>(
+          `${assemblyUrl.value}/agenda/${encodeURIComponent(itemId)}/votes`,
+          { body },
+        ),
+      );
+      storeItemVote(result.vote);
+      void refreshItemVotes();
+      const approved = result.vote.result === "approved";
+      toast.add({
+        id: `session-item-vote-${result.vote.id}`,
+        title: approved
+          ? t("session.toasts.itemVoteApproved")
+          : t("session.toasts.itemVoteRejected"),
+        description: result.projected
+          ? undefined
+          : t("session.toasts.itemVoteNotProjected"),
+        color: result.projected && approved ? "success" : "warning",
+        icon: result.projected ? "i-lucide-gavel" : "i-lucide-monitor-off",
+      });
+      return { ok: true, vote: result.vote };
+    } catch (error) {
+      if (sessionErrorData(error)?.tie === true)
+        return { ok: false, tie: true };
+      if (errorReason(error) === "item_has_voted_documents") {
+        toast.add({
+          id: `session-item-vote-documents-${itemId}`,
+          title: t("session.errors.itemVote"),
+          description: t("session.errors.itemHasVotedDocuments"),
+          color: "warning",
+          icon: "i-lucide-file-check-2",
+        });
+        // The agenda the console holds did not show those documents voted.
+        void refreshAgenda();
+        return { ok: false, tie: false };
+      }
+      api.notifyError(error, "session.errors.itemVote");
+      if (api.isConflict(error)) {
+        void refreshAgenda();
+        void refreshItemVotes();
+      }
+      return { ok: false, tie: false };
+    }
+  }
+
+  /**
+   * Voids a wrongly recorded item vote (DELETE .../votes/[vote]) once the
+   * Mesa confirms it, naming the vote (`summary`, as the console words
+   * it). It stays in the record and no longer gives the item's result; the
+   * server takes it off the screen if it was there.
+   */
+  async function voidItemVote(
+    vote: VoteDto,
+    summary: string,
+  ): Promise<boolean> {
+    const confirmed = await confirm({
+      title: t("session.itemVote.voidTitle"),
+      description: t("session.itemVote.voidDescription", { vote: summary }),
+      confirmLabel: t("session.itemVote.voidConfirm"),
+      confirmIcon: "i-lucide-rotate-ccw",
+      confirmColor: "error",
+    });
+    if (!confirmed) return false;
+    // Its lock token as it is now: a live refresh may have arrived meanwhile.
+    const fresh = itemVotes.value.find((other) => other.id === vote.id) ?? vote;
+    if (fresh.voidedAt || busy.value[`vote-${fresh.id}`]) return false;
+    const body: VoteVoidBody = { updatedAt: fresh.updatedAt };
+    try {
+      const updated = await track(`vote-${fresh.id}`, () =>
+        api.send<VoteDto>(
+          `${assemblyUrl.value}/votes/${encodeURIComponent(fresh.id)}`,
+          { method: "DELETE", body },
+        ),
+      );
+      storeItemVote(updated);
+      void refreshItemVotes();
+      toast.add({
+        id: `session-item-vote-void-${updated.id}`,
+        title: t("session.toasts.itemVoteVoided"),
+        color: "success",
+        icon: "i-lucide-rotate-ccw",
+      });
+      return true;
+    } catch (error) {
+      api.notifyError(error, "session.errors.itemVoteVoid");
+      if (api.isConflict(error)) void refreshItemVotes();
+      return false;
+    }
+  }
+
+  /**
+   * Marks an assent vote in force as unanimous (nobody objected when the
+   * Mesa asked), or takes it back (PATCH .../votes/[vote]/unanimity): an
+   * agenda item's vote, or the final vote of the document the console shows.
+   * Its lock token is the one it holds now (a live refresh may have arrived
+   * meanwhile), and the copies of it the console keeps (the item votes, the
+   * document and the live state when it is on screen) take the new one.
+   */
+  async function setVoteUnanimity(
+    vote: VoteDto,
+    unanimous: boolean,
+  ): Promise<boolean> {
+    const isDocument = vote.subjectType === "document";
+    const current = document.value;
+    const fresh = isDocument
+      ? current?.id === vote.subjectId && current.finalVote?.id === vote.id
+        ? current.finalVote
+        : null
+      : (itemVotes.value.find((other) => other.id === vote.id) ?? vote);
+    // A document vote the console no longer shows as in force is left alone.
+    if (
+      !fresh ||
+      fresh.unanimous === unanimous ||
+      busy.value[`vote-${fresh.id}`]
+    ) {
+      return false;
+    }
+    const refreshHolder = (): void => {
+      if (isDocument) void refreshDocument();
+      else void refreshItemVotes();
+    };
+    const body: VoteUnanimityBody = { unanimous, updatedAt: fresh.updatedAt };
+    try {
+      const updated = await track(`vote-${fresh.id}`, () =>
+        api.send<VoteDto>(
+          `${assemblyUrl.value}/votes/${encodeURIComponent(fresh.id)}/unanimity`,
+          { method: "PATCH", body },
+        ),
+      );
+      if (isDocument) {
+        const shown = document.value;
+        if (shown?.finalVote?.id === updated.id) {
+          storeDocument({ ...shown, finalVote: updated });
+        }
+      } else {
+        storeItemVote(updated);
+      }
+      refreshHolder();
+      if (liveState.value?.vote?.id === updated.id) void refreshLive();
+      toast.add({
+        id: `session-vote-unanimity-${updated.id}`,
+        title: updated.unanimous
+          ? t("session.toasts.itemVoteUnanimous")
+          : t("session.toasts.itemVoteNotUnanimous"),
+        color: "success",
+        icon: "i-lucide-check-check",
+      });
+      return true;
+    } catch (error) {
+      api.notifyError(error, "session.errors.itemVoteUnanimity");
+      if (api.isConflict(error)) {
+        refreshHolder();
+        if (liveState.value?.vote?.id === fresh.id) void refreshLive();
+      }
+      return false;
+    }
+  }
+
   return {
     // data
     param,
@@ -1783,6 +2063,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     speakers,
     headcounts,
     voteHeadcount,
+    // agenda item votes
+    itemVotes,
+    refreshItemVotes,
     // dialogs
     voteDialog,
     relationDialog,
@@ -1794,6 +2077,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     lapseDialog,
     speakerRenameDialog,
     headcountDialog,
+    itemVoteDialog,
     anyDialogOpen,
     confirm,
     transactionalsOver,
@@ -1802,6 +2086,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     openAdmission,
     openComposer,
     openSpeakerRename,
+    openItemVote,
     // mutations
     approve,
     vote,
@@ -1821,6 +2106,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     setPosition,
     finalVote,
     annulFinalVote,
+    recordItemVote,
+    voidItemVote,
+    setVoteUnanimity,
   };
 }
 

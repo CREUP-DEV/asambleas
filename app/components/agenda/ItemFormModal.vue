@@ -24,6 +24,14 @@ import type { AgendaRootChangeRunner } from "~/utils/agendaTree";
  * the kinds it takes are one select, the usual ones first; none chosen
  * means every kind. The form of an automatic sub-item says that its title
  * follows the document's until it is changed here.
+ *
+ * "Se vota el punto" marks an item voted by itself (a ratification, an
+ * election), which the control sheet reads «Pendiente» until its vote. It
+ * is not offered while the item takes documents from members, and the save
+ * sends it off then, so a container never keeps one nobody sees. When the
+ * item already has voted documents (`votedThroughDocuments`) a quiet line
+ * says it is voted through them; the switch stays, since the server ignores
+ * it while those documents are voted and keeps it for when they are not.
  */
 const props = withDefaults(
   defineProps<{
@@ -40,8 +48,18 @@ const props = withDefaults(
      * the user says no. Without it the save is sent as is.
      */
     rootChange?: AgendaRootChangeRunner | null;
+    /**
+     * The item being edited has voted documents (itemHasVotedDocuments):
+     * those votes are the item's, so "Se vota el punto" says so.
+     */
+    votedThroughDocuments?: boolean;
   }>(),
-  { item: null, parent: null, rootChange: null },
+  {
+    item: null,
+    parent: null,
+    rootChange: null,
+    votedThroughDocuments: false,
+  },
 );
 
 const open = defineModel<boolean>("open", { default: false });
@@ -72,6 +90,7 @@ const schema = computed(() =>
       ),
     acceptsSubmissions: z.boolean(),
     submissionKinds: z.array(z.enum(DOCUMENT_KINDS)),
+    voted: z.boolean(),
   }),
 );
 
@@ -82,6 +101,7 @@ const state = reactive<ItemForm>({
   description: "",
   acceptsSubmissions: false,
   submissionKinds: [],
+  voted: false,
 });
 const saving = ref(false);
 watch(
@@ -92,6 +112,7 @@ watch(
     state.description = props.item?.description ?? "";
     state.acceptsSubmissions = props.item?.acceptsSubmissions ?? false;
     state.submissionKinds = [...(props.item?.submissionKinds ?? [])];
+    state.voted = props.item?.voted ?? false;
   },
   { immediate: true },
 );
@@ -187,6 +208,8 @@ async function onSubmit(event: FormSubmitEvent<ItemForm>) {
       event.data.acceptsSubmissions,
       event.data.submissionKinds,
     ),
+    // Not offered for a container: sent off so none keeps it unseen.
+    voted: !event.data.acceptsSubmissions && event.data.voted,
   };
   const item = props.item;
   // Root items change with a new root item or a new title of one.
@@ -301,6 +324,28 @@ async function onSubmit(event: FormSubmitEvent<ItemForm>) {
             />
           </UFormField>
         </template>
+        <UFormField v-else name="voted">
+          <USwitch
+            v-model="state.voted"
+            :label="t('agenda.itemVote.label')"
+            :description="
+              votedThroughDocuments ? undefined : t('agenda.itemVote.help')
+            "
+            data-testid="agenda-voted-switch"
+          />
+          <p
+            v-if="votedThroughDocuments"
+            class="text-muted mt-2 flex items-start gap-1.5 text-sm"
+            data-testid="agenda-voted-through-documents"
+          >
+            <UIcon
+              name="i-lucide-info"
+              class="mt-0.5 size-4 shrink-0"
+              aria-hidden="true"
+            />
+            <span>{{ t("agenda.itemVote.throughDocuments") }}</span>
+          </p>
+        </UFormField>
       </UForm>
     </template>
     <template #footer>

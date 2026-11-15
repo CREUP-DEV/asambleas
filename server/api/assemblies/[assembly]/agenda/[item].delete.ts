@@ -76,11 +76,13 @@ async function sessionIsOn(
  * Deletes an item with its sub-items and every document under them
  * (assembly:manage). Only amendments keep it: while any of those documents
  * has an amendment of any status (drafts and withdrawn ones included) the
- * answer is 409 `agenda_item_amendments` with how many. During the session
- * it is also refused (409 `agenda_item_live`) while the projection or an
- * open speaking turn is on one of them. A root item of a final agenda needs
- * `?confirmFinal=true` (409 `agenda_final` without it) and the event says
- * `afterFinal`.
+ * answer is 409 `agenda_item_amendments` with how many. What the session
+ * recorded about the items keeps it too (sheetNotesIn: the control sheet's
+ * notes, and votes on the items themselves, voided ones included): 409
+ * `agenda_item_sheet`. During the session it is also refused (409
+ * `agenda_item_live`) while the projection or an open speaking turn is on
+ * one of them. A root item of a final agenda needs `?confirmFinal=true`
+ * (409 `agenda_final` without it) and the event says `afterFinal`.
  *
  * Each document goes as in DELETE .../documents/[document] (removeDocument:
  * its `document_deleted`, votes, projection, then its PDF and images once
@@ -140,7 +142,7 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
         throw createError({
           statusCode: 409,
           message:
-            "No se puede eliminar: la hoja de control tiene anotaciones de este punto o de sus subpuntos",
+            "No se puede eliminar: hay votaciones o anotaciones de la hoja de control de este punto o de sus subpuntos",
           data: { code: AGENDA_DELETE_SHEET_CODE },
         });
       }

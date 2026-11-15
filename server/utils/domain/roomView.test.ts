@@ -214,6 +214,7 @@ const row = (
   order,
   acceptsSubmissions: false,
   submissionKinds: [],
+  voted: false,
   generatedForDocumentId: null,
   hiddenWithDocumentId: null,
   titleWithheld: false,
@@ -260,6 +261,8 @@ describe("withScreenItem", () => {
       title: "Title late",
       titleHidden: false,
       unlisted: true,
+      // The projection shows it; an attendee still does not read it.
+      publicTitleHidden: true,
       // Its title only: never what document it was created for.
       description: null,
       generatedForDocumentId: null,
@@ -336,6 +339,7 @@ describe("withScreenItem", () => {
         title: "Title holder",
         titleHidden: false,
         unlisted: false,
+        publicTitleHidden: true,
       });
       const after = numberAgendaItems(items);
       expect(after).toEqual(before);

@@ -13,6 +13,7 @@ import {
   hiddenTitleItemIds,
   isAutoItem,
   itemAcceptsKind,
+  normalizeItemVoted,
   normalizeSubmissionKinds,
   SUBMISSION_KIND_REFUSED_REASON,
   titleDocumentId,
@@ -57,6 +58,14 @@ describe("itemAcceptsKind", () => {
     expect(SUBMISSION_KIND_REFUSED_REASON).toBe("submission_kind");
     expect(AGENDA_DELETE_AMENDMENTS_CODE).toBe("agenda_item_amendments");
     expect(AGENDA_DELETE_LIVE_CODE).toBe("agenda_item_live");
+  });
+});
+
+describe("normalizeItemVoted", () => {
+  it("never keeps «Se vota el punto» on an item where members present", () => {
+    expect(normalizeItemVoted(true, true)).toBe(false);
+    expect(normalizeItemVoted(false, true)).toBe(true);
+    expect(normalizeItemVoted(false, false)).toBe(false);
   });
 });
 

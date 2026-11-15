@@ -89,6 +89,8 @@ export interface ExportVote {
   majority: Majority;
   result: VoteResult;
   method: VoteMethod;
+  /** An assent nobody objected to when unanimity was asked. */
+  unanimous: boolean;
   recordedAt: Date;
 }
 
@@ -501,11 +503,18 @@ function finalVoteLine(
     majority: t(`majorities.${vote.majority}`),
     counts: voteCounts(vote, t),
   };
+  // An assent counts nothing: it reads as the approval line does
+  // (approvedBy in approvalLine.ts), unanimity once nobody objected to it.
+  const key =
+    vote.result !== "approved"
+      ? "finalVote.rejected"
+      : vote.method !== "assent"
+        ? "finalVote.approved"
+        : vote.unanimous
+          ? "finalVote.unanimous"
+          : "finalVote.assent";
   return {
-    text: t(
-      vote.result === "approved" ? "finalVote.approved" : "finalVote.rejected",
-      params,
-    ),
+    text: t(key, params),
     style: "meta",
     bold: true,
     margin: [0, 2, 0, 1],

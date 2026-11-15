@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { AgendaItemDto } from "~~/shared/types/api";
+import { itemHasVotedDocuments } from "~~/shared/utils/controlSheet";
 import {
   agendaDeleteRefusal,
   planAgendaDelete,
@@ -20,7 +21,9 @@ import {
  *
  * - "Editar" and "Añadir subpunto" open the item form (AgendaItemFormModal).
  *   Renaming a root item of a final agenda asks "¿Cambiarlo igualmente?"
- *   first, and again if the server answers 409 `agenda_final`.
+ *   first, and again if the server answers 409 `agenda_final`. "Editar"
+ *   tells the form whether the item's own documents are voted, so "Se vota
+ *   el punto" says the item is voted through them.
  * - "Añadir documentos" opens the list of several documents
  *   (AgendaBulkDocumentsModal), for document managers. Not under the
  *   automatic sub-item of one document.
@@ -124,6 +127,15 @@ const formParent = ref<{
   title: string;
   number: string | null;
 } | null>(null);
+
+/** The item's own documents (not its sub-items') carry its votes. */
+const votedThroughDocuments = computed(() =>
+  itemHasVotedDocuments(
+    (agenda.value?.documents ?? []).filter(
+      (document) => document.agendaItemId === dto.value.id,
+    ),
+  ),
+);
 
 function openEdit(): void {
   formItem.value = dto.value;
@@ -347,6 +359,7 @@ async function confirmDelete(): Promise<void> {
       :item="formItem"
       :parent="formParent"
       :root-change="runRootChange"
+      :voted-through-documents="formItem ? votedThroughDocuments : false"
       @saved="onSaved"
       @conflict="refreshAgenda()"
     />

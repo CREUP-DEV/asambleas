@@ -23,6 +23,25 @@ export interface SheetVote {
   abstentions: number;
   blank: number;
   invalid: number;
+  /** An assent nobody objected to when unanimity was asked. */
+  unanimous?: boolean;
+}
+
+/** A vote on the agenda item itself, as the sheet reads it. */
+export interface SheetItemVote extends SheetVote {
+  id: string;
+  recordedAt: string;
+  /** Voided by the Mesa: it no longer gives the item's result. */
+  voidedAt: string | null;
+}
+
+/**
+ * What the item itself says about its vote: «Se vota el punto» (`voted`)
+ * and the votes on it, voided ones included.
+ */
+export interface SheetItemOwn {
+  voted: boolean;
+  votes: readonly SheetItemVote[];
 }
 
 /** What a document needs for the sheet to word its item. */
@@ -48,15 +67,18 @@ export type ControlSheetResult =
   | "not_applicable";
 
 /**
- * A counted vote nobody voted against or abstained in: the sheet reads it
- * «Aprobado (unanimidad)», with the rule the approval line of the PDFs uses
+ * A counted vote nobody voted against or abstained in, or an assent nobody
+ * objected to when unanimity was asked: the sheet reads it «Aprobado
+ * (unanimidad)», with the rule the approval line of the PDFs uses
  * (approvedBy in content/approvalLine.ts), so the minutes never disagree.
  * Blank and invalid ballots are no vote. An assent is not unanimity by
  * itself.
  */
 export function isUnanimousVote(vote: SheetVote): boolean {
+  if (vote.method === "assent") {
+    return vote.result === "approved" && vote.unanimous === true;
+  }
   return (
-    vote.method !== "assent" &&
     vote.result === "approved" &&
     vote.inFavor > 0 &&
     vote.against === 0 &&
@@ -73,6 +95,84 @@ export function voteSheetResult(vote: SheetVote): ControlSheetResult {
 /** Statuses that take a document out of this assembly's votes. */
 const SETTLED_ELSEWHERE: readonly DocumentStatus[] = ["withdrawn", "postponed"];
 
+/**
+ * A document whose final vote is one of its item's votes: voted, presented,
+ * and neither withdrawn nor postponed.
+ */
+export function isItemVotedDocument(document: {
+  voted: boolean;
+  status: DocumentStatus;
+}): boolean {
+  return (
+    document.voted &&
+    document.status !== "draft" &&
+    !SETTLED_ELSEWHERE.includes(document.status)
+  );
+}
+
+/**
+ * Whether the item is voted through its documents' final votes. Then it
+ * takes no vote of its own: the server refuses one (422
+ * `item_has_voted_documents`) and the console and the sheet offer none, all
+ * through this one rule.
+ */
+export function itemHasVotedDocuments(
+  documents: readonly { voted: boolean; status: DocumentStatus }[],
+): boolean {
+  return documents.some(isItemVotedDocument);
+}
+
+/**
+ * Whether the item takes a vote of its own: not an item where members
+ * present (each document is voted in its own sub-item) and not voted
+ * through its documents. The server refuses any other (422), and the console
+ * and the sheet offer none.
+ */
+export function itemTakesOwnVote(
+  item: { acceptsSubmissions: boolean },
+  documents: readonly { voted: boolean; status: DocumentStatus }[],
+): boolean {
+  return !item.acceptsSubmissions && !itemHasVotedDocuments(documents);
+}
+
+/**
+ * The vote on the item in force: the latest one not voided (by the time it
+ * was recorded, then by id), or null.
+ */
+export function latestItemVote<T extends SheetItemVote>(
+  votes: readonly T[],
+): T | null {
+  let latest: T | null = null;
+  for (const vote of votes) {
+    if (vote.voidedAt !== null) continue;
+    if (
+      !latest ||
+      vote.recordedAt > latest.recordedAt ||
+      (vote.recordedAt === latest.recordedAt && vote.id > latest.id)
+    ) {
+      latest = vote;
+    }
+  }
+  return latest;
+}
+
+/**
+ * The items the sheet lists for their own vote: «Se vota el punto», or a
+ * vote on them in force.
+ */
+export function ownVoteItemIds(
+  items: readonly { id: string; voted: boolean }[],
+  votes: readonly { subjectId: string; voidedAt: string | null }[],
+): Set<string> {
+  const ids = new Set(
+    items.filter((item) => item.voted).map((item) => item.id),
+  );
+  for (const vote of votes) {
+    if (vote.voidedAt === null) ids.add(vote.subjectId);
+  }
+  return ids;
+}
+
 export interface ItemOutcome {
   /** Null while it is still to be voted, or when nothing says. */
   result: ControlSheetResult | null;
@@ -82,22 +182,30 @@ export interface ItemOutcome {
 }
 
 /**
- * Where an agenda item stands by its documents alone. An item is voted when
- * one of its documents is (and was neither withdrawn nor postponed): it is
- * treated once each of those has its final vote, and reads their result. An
- * item whose documents were all withdrawn or postponed reads that and is
- * treated. One whose documents are not voted (reports) reads «No aplica»
- * and is still to be marked treated.
+ * Where an agenda item stands by its votes and its documents, before
+ * anything noted by hand. An item is voted through its documents when one
+ * of them is (isItemVotedDocument): it is treated once each of those has its
+ * final vote, and reads their result; a vote on the item itself counts for
+ * nothing then. Otherwise the vote on the item in force (latestItemVote)
+ * gives its result and treats it. An item whose documents were all
+ * withdrawn or postponed reads that and is treated. One whose documents are
+ * not voted (reports) reads «No aplica», unless «Se vota el punto» says it
+ * is still to be voted («Pendiente»); either way it is still to be marked
+ * treated.
  */
 export function itemDocumentsOutcome(
   documents: readonly SheetDocument[],
+  own: SheetItemOwn | null = null,
 ): ItemOutcome {
+  const voted = documents.filter(isItemVotedDocument);
+  if (voted.length === 0) {
+    const vote = own ? latestItemVote(own.votes) : null;
+    if (vote) {
+      return { result: voteSheetResult(vote), treated: true, byVote: true };
+    }
+  }
   if (documents.length === 0)
     return { result: null, treated: false, byVote: false };
-  const voted = documents.filter(
-    (document) =>
-      document.voted && !SETTLED_ELSEWHERE.includes(document.status),
-  );
   if (voted.length > 0) {
     const votes = voted.map((document) => document.finalVote);
     if (votes.some((vote) => vote === null)) {
@@ -125,6 +233,7 @@ export function itemDocumentsOutcome(
   ) {
     return { result: "mixed", treated: true, byVote: false };
   }
+  if (own?.voted) return { result: null, treated: false, byVote: false };
   return { result: "not_applicable", treated: false, byVote: false };
 }
 
@@ -136,15 +245,16 @@ export interface SheetItemNotes {
 }
 
 /**
- * Where an agenda item stands: its documents' votes first; then what the
- * sheet noted by hand (a «Decaído» or «Retirado» counts as treated); then
- * what its documents say otherwise.
+ * Where an agenda item stands: its votes first (its documents' or its own);
+ * then what the sheet noted by hand (a «Decaído» or «Retirado» counts as
+ * treated); then what its documents and «Se vota el punto» say otherwise.
  */
 export function itemOutcome(
   documents: readonly SheetDocument[],
   notes: SheetItemNotes | null,
+  own: SheetItemOwn | null = null,
 ): ItemOutcome {
-  const base = itemDocumentsOutcome(documents);
+  const base = itemDocumentsOutcome(documents, own);
   if (base.byVote || !notes) {
     return { ...base, treated: base.treated || Boolean(notes?.treated) };
   }

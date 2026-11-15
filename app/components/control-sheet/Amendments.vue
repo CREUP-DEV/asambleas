@@ -1,19 +1,54 @@
 <script setup lang="ts">
 import type { AmendmentDto, MemberRef } from "~~/shared/types/api";
 import { LIVE_STATE_COLORS } from "~/components/live-view/-model";
-import type { AmendmentSheetRow } from "./-model";
+import {
+  DEFAULT_AMENDMENT_SORT,
+  type AmendmentSortKey,
+  type SheetSort,
+} from "./-filters";
+import {
+  amendmentTreatedControl,
+  type AmendmentSheetRow,
+  type TreatedBox,
+} from "./-model";
 
 /**
  * «Enmiendas» of the control sheet for one document: its amendments in the
  * console's order, with who presents each, the presenter's answer (when
  * the reader may see it), whether it was treated, its result and its vote.
- * A table on large screens, a card per amendment below them.
+ * A table on large screens, a card per amendment below them. The Mesa
+ * (`canMark`) ticks «Tratada» right in the list; the page saves it.
+ * `rows` are the ones the page shows, already filtered and sorted; the
+ * headers sort by their column (`sort`).
  */
 const props = defineProps<{
   rows: AmendmentSheetRow[];
   amendmentPath: (amendment: AmendmentDto) => string;
+  canMark: boolean;
+  /**
+   * The reader edits something in a row's panel (control_sheet:edit or the
+   * Mesa): the button that opens it reads «Editar» with a pencil, «Ver» with
+   * an eye otherwise.
+   */
+  canEdit: boolean;
+  /** Marks on their way, by amendment id: the value the box shows meanwhile. */
+  treatedPending: Readonly<Record<string, boolean>>;
+  sort: SheetSort<AmendmentSortKey>;
 }>();
-const emit = defineEmits<{ open: [row: AmendmentSheetRow] }>();
+const emit = defineEmits<{
+  open: [row: AmendmentSheetRow];
+  treated: [row: AmendmentSheetRow, value: boolean];
+  sort: [column: AmendmentSortKey];
+}>();
+
+/** The row's box: what is on its way first, then what the sheet says. */
+function treatedOf(row: AmendmentSheetRow): TreatedBox {
+  const { treated, lock } = amendmentTreatedControl(row);
+  const pending = props.treatedPending[row.amendment.id];
+  return pending === undefined
+    ? { treated, lock, saving: false }
+    : { treated: pending, lock, saving: true };
+}
 
 const { t } = useI18n();
 
@@ -25,6 +60,24 @@ function authorsOf(amendment: AmendmentDto): string {
     return a.acronym.localeCompare(b.acronym);
   });
   return authors.map((author) => author.acronym).join(", ");
+}
+
+const openIcon = computed(() =>
+  props.canEdit ? "i-lucide-square-pen" : "i-lucide-eye",
+);
+const openButton = computed(() =>
+  props.canEdit
+    ? t("controlSheet.edit.button")
+    : t("controlSheet.columns.open"),
+);
+/** «Editar la enmienda UGR1», or «Ver…» for whoever only reads. */
+function openLabel(amendment: AmendmentDto): string {
+  return t(
+    props.canEdit
+      ? "controlSheet.edit.amendment"
+      : "controlSheet.open.amendment",
+    { code: codeOf(amendment) },
+  );
 }
 
 function codeOf(amendment: AmendmentDto): string {
@@ -40,6 +93,20 @@ function approvalWithoutVote(amendment: AmendmentDto): string | null {
 }
 
 const count = computed(() => props.rows.length);
+
+const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
+  { key: "code", label: "controlSheet.columns.code", class: "w-24" },
+  { key: "authors", label: "controlSheet.columns.authors", class: "w-32" },
+  {
+    key: "ceaPosition",
+    label: "controlSheet.columns.ceaPosition",
+    class: "w-32",
+  },
+  { key: "position", label: "controlSheet.columns.position", class: "w-44" },
+  { key: "treated", label: "controlSheet.columns.treated", class: "w-28" },
+  { key: "result", label: "controlSheet.columns.result", class: "min-w-48" },
+  { key: "vote", label: "controlSheet.columns.vote", class: "w-56" },
+];
 
 function positionLabel(row: AmendmentSheetRow): string {
   return row.sheet?.ceaPosition
@@ -61,27 +128,16 @@ function positionLabel(row: AmendmentSheetRow): string {
         </caption>
         <thead class="bg-elevated/50 text-muted text-xs">
           <tr>
-            <th scope="col" class="w-24 px-3 py-2 font-medium">
-              {{ t("controlSheet.columns.code") }}
-            </th>
-            <th scope="col" class="w-32 px-3 py-2 font-medium">
-              {{ t("controlSheet.columns.authors") }}
-            </th>
-            <th scope="col" class="w-32 px-3 py-2 font-medium">
-              {{ t("controlSheet.columns.ceaPosition") }}
-            </th>
-            <th scope="col" class="w-44 px-3 py-2 font-medium">
-              {{ t("controlSheet.columns.position") }}
-            </th>
-            <th scope="col" class="w-28 px-3 py-2 font-medium">
-              {{ t("controlSheet.columns.treated") }}
-            </th>
-            <th scope="col" class="min-w-48 px-3 py-2 font-medium">
-              {{ t("controlSheet.columns.result") }}
-            </th>
-            <th scope="col" class="w-56 px-3 py-2 font-medium">
-              {{ t("controlSheet.columns.vote") }}
-            </th>
+            <ControlSheetSortHeader
+              v-for="column in columns"
+              :key="column.key"
+              :class="column.class"
+              :label="t(column.label)"
+              :column="column.key"
+              :sort="sort"
+              :fallback="DEFAULT_AMENDMENT_SORT"
+              @sort="(key: AmendmentSortKey) => emit('sort', key)"
+            />
             <th scope="col" class="w-56 px-3 py-2 font-medium">
               {{ t("controlSheet.columns.observations") }}
             </th>
@@ -129,7 +185,17 @@ function positionLabel(row: AmendmentSheetRow): string {
               }}</span>
             </td>
             <td class="px-3 py-2">
-              <ControlSheetTreated :treated="row.treated" feminine />
+              <ControlSheetTreated
+                v-bind="treatedOf(row)"
+                :editable="canMark"
+                :label="
+                  t('controlSheet.treated.amendment', {
+                    code: codeOf(row.amendment),
+                  })
+                "
+                feminine
+                @change="(value) => emit('treated', row, value)"
+              />
             </td>
             <td class="space-y-1 px-3 py-2">
               <UBadge
@@ -172,13 +238,9 @@ function positionLabel(row: AmendmentSheetRow): string {
                   color="neutral"
                   variant="ghost"
                   size="xs"
-                  icon="i-lucide-panel-right-open"
+                  :icon="openIcon"
                   class="shrink-0"
-                  :aria-label="
-                    t('controlSheet.open.amendment', {
-                      code: codeOf(row.amendment),
-                    })
-                  "
+                  :aria-label="openLabel(row.amendment)"
                   @click="emit('open', row)"
                 />
               </div>
@@ -249,7 +311,19 @@ function positionLabel(row: AmendmentSheetRow): string {
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.treated") }}
               </dt>
-              <dd><ControlSheetTreated :treated="row.treated" feminine /></dd>
+              <dd>
+                <ControlSheetTreated
+                  v-bind="treatedOf(row)"
+                  :editable="canMark"
+                  :label="
+                    t('controlSheet.treated.amendment', {
+                      code: codeOf(row.amendment),
+                    })
+                  "
+                  feminine
+                  @change="(value) => emit('treated', row, value)"
+                />
+              </dd>
             </div>
             <div>
               <dt class="text-muted text-xs">
@@ -283,11 +357,9 @@ function positionLabel(row: AmendmentSheetRow): string {
             color="neutral"
             variant="outline"
             size="sm"
-            icon="i-lucide-panel-right-open"
-            :label="t('controlSheet.columns.open')"
-            :aria-label="
-              t('controlSheet.open.amendment', { code: codeOf(row.amendment) })
-            "
+            :icon="openIcon"
+            :label="openButton"
+            :aria-label="openLabel(row.amendment)"
             @click="emit('open', row)"
           />
         </UCard>

@@ -1,21 +1,28 @@
 <script setup lang="ts">
 import type { VoteDto } from "~~/shared/types/api";
-import { liveVoteCounts } from "~/components/live-view/-model";
+import { liveAssentKey, liveVoteCounts } from "~/components/live-view/-model";
 
 /**
- * The last vote the Mesa recorded, for the live view: what was voted, the
- * result in large type and the counts (or "por asentimiento").
+ * The last vote the Mesa recorded, for the live view: what was voted (and,
+ * for an agenda item, what the Mesa wrote it decided), the result in large
+ * type and the counts (or "por asentimiento", "por unanimidad").
  */
-const props = defineProps<{
-  vote: VoteDto;
-  /** What was voted, already localized ("Votación de la enmienda T1"). */
-  subject: string;
-}>();
+const props = withDefaults(
+  defineProps<{
+    vote: VoteDto;
+    /** What was voted, already localized ("Votación de la enmienda T1"). */
+    subject: string;
+    /** What an agenda item's vote decided (liveVoteQuestion), if anything. */
+    question?: string | null;
+  }>(),
+  { question: null },
+);
 
 const { t } = useI18n();
 
 const approved = computed(() => props.vote.result === "approved");
 const counts = computed(() => liveVoteCounts(props.vote));
+const assentKey = computed(() => liveAssentKey(props.vote));
 </script>
 
 <template>
@@ -26,6 +33,12 @@ const counts = computed(() => liveVoteCounts(props.vote));
     "
   >
     <p class="text-muted text-sm">{{ subject }}</p>
+    <p
+      v-if="question"
+      class="text-highlighted mt-0.5 font-medium whitespace-pre-line"
+    >
+      {{ question }}
+    </p>
     <p
       class="text-2xl font-bold"
       :class="
@@ -38,8 +51,8 @@ const counts = computed(() => liveVoteCounts(props.vote));
         approved ? t("projection.vote.approved") : t("projection.vote.rejected")
       }}
     </p>
-    <p v-if="vote.method === 'assent'" class="text-default mt-1">
-      {{ t("session.enums.approvalMethod.assent") }}
+    <p v-if="assentKey" class="text-default mt-1">
+      {{ t(assentKey) }}
     </p>
     <dl v-else class="mt-2 flex flex-wrap gap-x-6 gap-y-2">
       <div v-for="count in counts" :key="count.key">

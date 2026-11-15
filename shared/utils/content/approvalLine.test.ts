@@ -92,6 +92,24 @@ describe("isApprovalLine", () => {
   });
 });
 
+describe("an assent asked for unanimity", () => {
+  it("reads «unanimidad» once nobody objected", () => {
+    const assent = {
+      ...fill,
+      vote: { ...fill.vote, method: "assent" as const, unanimous: true },
+    };
+    expect(
+      filledApprovalText("Aprobado por [MAYORÍA] en la …", assent),
+    ).toContain("por unanimidad");
+    expect(
+      filledApprovalText("Aprobado por [MAYORÍA] en la …", {
+        ...assent,
+        vote: { ...assent.vote, unanimous: false },
+      }),
+    ).toContain("por asentimiento");
+  });
+});
+
 describe("filledApprovalText", () => {
   it("keeps the line's own opening and writes the vote's data", () => {
     expect(

@@ -7,7 +7,10 @@ import {
 import { and, eq } from "drizzle-orm";
 import type { AgendaItemDto } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
-import { normalizeSubmissionKinds } from "~~/shared/utils/agendaSubmissions";
+import {
+  normalizeItemVoted,
+  normalizeSubmissionKinds,
+} from "~~/shared/utils/agendaSubmissions";
 import { agendaItemBodySchema } from "~~/shared/utils/schemas/assembly";
 import { db } from "../../../../db";
 import { agendaItems } from "../../../../db/schema";
@@ -31,7 +34,7 @@ import { resolveAssembly } from "../../../../utils/domain/resolvers";
  * on a final agenda needs `confirmFinal` (409 `agenda_final` without it) and
  * its event says `afterFinal`. With `acceptsSubmissions` members present
  * documents under it, of the kinds in `submissionKinds` (none means every
- * kind).
+ * kind). `voted` («Se vota el punto») defaults to false.
  */
 export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
   const actor = await requireActor(event);
@@ -47,6 +50,7 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
     acceptsSubmissions,
     body.submissionKinds,
   );
+  const voted = normalizeItemVoted(acceptsSubmissions, body.voted ?? false);
 
   try {
     const item = await db.transaction(async (tx) => {
@@ -85,6 +89,7 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
           description: body.description ?? null,
           acceptsSubmissions,
           submissionKinds,
+          voted,
           order: await nextSiblingOrder(tx, assembly.id, parentId),
         })
         .returning();
@@ -106,6 +111,7 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
           ...(acceptsSubmissions
             ? { acceptsSubmissions, submissionKinds }
             : {}),
+          ...(voted ? { voted } : {}),
           ...(afterFinal ? { afterFinal: true } : {}),
         },
         actor,
@@ -114,12 +120,14 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
     });
 
     setResponseStatus(event, 201);
-    return toAgendaItemDto(
-      item,
-      false,
-      false,
-      await loadAgendaItemSlug(assembly.id, item.id),
-    );
+    // An item written by hand carries no document's title nor a withheld
+    // one: everyone gets it, with its title.
+    return toAgendaItemDto(item, {
+      titleHidden: false,
+      unlisted: false,
+      publicTitleHidden: false,
+      slug: await loadAgendaItemSlug(assembly.id, item.id),
+    });
   } catch (error) {
     throwAssemblyMutationError("agenda.create", error, event);
   }

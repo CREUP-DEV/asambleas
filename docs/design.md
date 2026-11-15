@@ -434,9 +434,14 @@ time, even when one office plays several roles:
   decision admits them, one by one or in bulk.
 - **Proponent position**: `amendment_positions` (`pending`, `accept`,
   `reject`, `transact`), comment, visibility.
-- **Votes**: `votes` with method (assent, show of hands, secret, roll call,
-  portal), counts, majority, denominator and the computed result. Ties follow
-  the assembly's tie rule; a closed vote always has a result.
+- **Votes**: `votes` with method (assent, show of hands, secret, registered
+  roll call, portal), counts, majority, denominator and the computed result.
+  Ties follow the assembly's tie rule; a closed vote always has a result. A
+  vote decides an amendment, a document (its final vote), an admission or an
+  agenda item itself (a ratification, an election: `question` says what);
+  an item vote is voided rather than unpointed, and the latest one not
+  voided is the item's. An assent may be marked unanimous (`unanimous`)
+  when nobody objects to unanimity.
 - **Relations**: `amendment_relations` with `incompatible`, `duplicate`,
   `depends_on`, `consequence_of`, `subsumed_by`, `same_in_other_document`,
   plus note, author and visibility.
@@ -532,6 +537,10 @@ replace or remove the PDF, from its "Más" menu.
   root items after confirming it (`confirmFinal`), and the event of that
   change carries `afterFinal: true`, which the activity shows. Sub-items are
   outside this: changing them is not changing the final agenda.
+- «Se vota el punto» (`voted`): an item voted by itself rather than through
+  its documents' final votes. It only tells the control sheet that the item
+  is still to be voted («Pendiente», not «No aplica»), and means nothing
+  while a document of the item is voted.
 - Agenda items where members present ("containers"): `acceptsSubmissions`
   with `submissionKinds`, the document kinds the item takes (empty means
   every kind; it binds members, not the Secretaría). Each document created
@@ -559,10 +568,11 @@ replace or remove the PDF, from its "Más" menu.
   `documents_close` binds it like any document a member chose to present.
 - Deleting an agenda item removes its sub-items and every document under
   them, each with its own event and the same clean-up as a single delete
-  (votes, projection, PDF and images). Only amendments keep it: one
-  amendment of any status on any of those documents refuses the delete.
-  During the session it is also refused while the item, a sub-item or one of
-  their documents is being debated. The Secretaría adds several documents
+  (votes, projection, PDF and images). Amendments keep it: one
+  amendment of any status on any of those documents refuses the delete. So
+  do the control sheet's notes and a vote on one of the items themselves,
+  voided too. During the session it is also refused while the item, a
+  sub-item or one of their documents is being debated. The Secretaría adds several documents
   to one item in one step (`POST .../agenda/[item]/documents`).
 - Per-assembly policies, with defaults from the research: who sees proponent
   positions, whether accepted amendments need a vote, the tie rule, and the
@@ -1083,9 +1093,11 @@ items with documents and the ones added by hand) and the amendments of one
 document («Enmiendas»), with whether each was treated, its result, how it was
 voted, who spoke and shared observations; for amendments, also the CEA's own
 position (aceptar, transaccionar, rechazar, decae). It is a live summary and
-the base of the minutes. The plan, with what is still to come (votes on
-items, procedural motions, registered votes, the order of the session,
-speakers per amendment, the Excel download), is `docs/control-sheet-plan.md`.
+the base of the minutes. Items voted by themselves take their own votes,
+from the console or the sheet; both tabs sort and filter. The plan, with
+what is still to come (procedural motions, registered votes with ballots,
+the order of the session, speakers per amendment, the Excel download), is
+`docs/control-sheet-plan.md`.
 
 - The sheet adds to the agenda; every piece goes through the usual
   visibility rules, so the CEA and the Mesa may read different sheets.

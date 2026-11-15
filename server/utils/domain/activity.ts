@@ -943,6 +943,9 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
     "changes",
   ],
   vote_recorded: ["subjectType", "result"],
+  // The result the voided vote gave, never its note nor what was voted.
+  vote_voided: ["subjectType", "result"],
+  vote_unanimity_changed: ["subjectType", "unanimous"],
   decision_recorded: ["kind", "method", "subjectIds"],
   document_created: ["title", "kind", "format", "acceptedAmendments"],
   document_updated: ["fields", "changes"],
@@ -1415,6 +1418,12 @@ export function collectActivityIds(rows: RawActivityRow[]): ActivityIds {
             ids.amendments.add(subjectId);
           }
           if (payload.subjectType === "decision") ids.decisions.add(subjectId);
+          if (payload.subjectType === "agenda_item") {
+            ids.agendaItems.add(subjectId);
+            // An item that carries a document's title is seen with it.
+            const documentId = autoItemDocumentId(payload);
+            if (documentId) ids.documents.add(documentId);
+          }
           break;
         }
       }
@@ -2061,7 +2070,20 @@ function eventTarget(
               visibleDecision(actor, lookups, decision) !== null),
         };
       }
-      return { ...base, visible: true };
+      if (payload.subjectType === "agenda_item" && subjectId) {
+        // A vote on an agenda item is public with the item: its events
+        // follow the item's own rule (the document whose title it carries,
+        // a withheld title), as the item's events do.
+        const subject = eventTarget(
+          { ...row, targetType: "agenda_item", targetId: subjectId },
+          lookups,
+          actor,
+        );
+        return { ...subject, payload };
+      }
+      // A subject this reader does not know yet: Admins only, so a new kind
+      // of vote never shows to everyone by default.
+      return { ...base, visible: !actor || actor.isAdmin };
     }
     case "decision": {
       const decision = decisionOfRow(row, lookups);

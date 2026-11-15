@@ -90,7 +90,16 @@
       "controlSheetWithdrawn": "Un punto con documentos no se marca como retirado a mano: se retira el documento.",
       "seatingStale": "Alguien ha cambiado la sala a la vez. Se muestra lo que hay ahora.",
       "seatingSeatsOccupied": "El cambio quita asientos en los que hay gente sentada.",
-      "seatingNotFound": "Eso ya no está en la sala. Se muestra lo que hay ahora."
+      "seatingNotFound": "Eso ya no está en la sala. Se muestra lo que hay ahora.",
+      "itemHasVotedDocuments": "Este punto se vota con sus documentos: registra la votación final de cada uno.",
+      "voteNotInSession": "No se registran votaciones en una asamblea en borrador o ya cerrada.",
+      "voteAssemblyClosed": "La asamblea ya está cerrada: sus votaciones no cambian.",
+      "voteVoided": "Esta votación está anulada: consta en el historial, pero ya no cuenta ni se proyecta.",
+      "voteNotVoidable": "Esta votación no se anula aquí: se reabre o se anula lo que decidió.",
+      "voteNotInForce": "Esta votación ya no está en vigor: se ha anulado.",
+      "voteUnanimityRefused": "Solo se marca por unanimidad una votación por asentimiento de un punto o la votación final de un documento.",
+      "itemIsContainer": "En este punto presentan documentos los miembros: cada uno se vota en su propio subpunto.",
+      "itemTakesNoVote": "Este punto no admite ahora una votación propia."
     },
     "content": {
       "empty": "No hay contenido que mostrar.",
@@ -1628,14 +1637,15 @@
         "assent": "Por asentimiento",
         "show_of_hands": "A mano alzada",
         "secret": "Secreta",
-        "roll_call": "Nominal",
+        "roll_call": "Registrada",
         "portal": "Portal de votación"
       },
       "majorities": {
         "simple": "Mayoría simple",
         "absolute": "Mayoría absoluta",
         "two_thirds": "Mayoría de dos tercios"
-      }
+      },
+      "unanimous": "@:projection.vote.unanimous"
     },
     "composer": {
       "titleNew": "Presentar una enmienda",
@@ -2376,7 +2386,9 @@
       "voteCounts": "votos a favor: {inFavor}, en contra: {against}, abstenciones: {abstentions}",
       "finalVote": {
         "approved": "Aprobado en la {assembly} el {date} por {majority} ({counts}).",
-        "rejected": "Rechazado en la {assembly} el {date} ({counts}); requería {majority}."
+        "rejected": "Rechazado en la {assembly} el {date} ({counts}); requería {majority}.",
+        "assent": "Aprobado en la {assembly} el {date} por asentimiento.",
+        "unanimous": "Aprobado en la {assembly} el {date} por unanimidad."
       },
       "majorities": {
         "simple": "mayoría simple",
@@ -3218,7 +3230,7 @@
       "blockedAmendments": "Un documento de este punto o de sus subpuntos tiene enmiendas. | {count} documentos de este punto o de sus subpuntos tienen enmiendas.",
       "blockedHelp": "Las enmiendas son trabajo de otros miembros y no se borran. Mueve antes esos documentos a otro punto.",
       "blockedLive": "Ahora mismo se está tratando en la sesión este punto, un subpunto o uno de sus documentos. Inténtalo cuando la Mesa pase a otro punto.",
-      "blockedSheet": "La hoja de control tiene anotaciones de este punto o de sus subpuntos (observaciones, un resultado anotado, la marca de tratado o que se añadió a la hoja). Quítalas en la hoja antes de eliminarlo."
+      "blockedSheet": "Este punto o sus subpuntos tienen votaciones o anotaciones de la hoja de control (observaciones, un resultado anotado, la marca de tratado o que se añadió a la hoja). Las anotaciones se quitan en la hoja; una votación, aunque se anule, consta en el acta, así que el punto ya no se puede eliminar."
     },
     "reader": {
       "label": "Documentos del punto",
@@ -3227,6 +3239,11 @@
       "viewAmendments": "Ver enmiendas",
       "loading": "Cargando el documento",
       "loadError": "No se ha podido cargar el documento"
+    },
+    "itemVote": {
+      "label": "Se vota el punto",
+      "help": "Para un punto que se vota por sí mismo, como una ratificación o una elección. En la hoja de control figura como «Pendiente» hasta que se vote.",
+      "throughDocuments": "Sus documentos ya se votan, así que el punto se vota con ellos."
     }
   },
   "calendar": {
@@ -3662,7 +3679,13 @@
       "validatedLate": "Llegó fuera de plazo: falta que la asamblea decida tratarla. | {count} llegaron fuera de plazo: falta que la asamblea decida tratarlas.",
       "published": "Enmienda publicada | {count} enmiendas publicadas",
       "incorporated": "{code} está en el texto: quien presenta el documento la aceptó",
-      "unincorporated": "{code} sale del texto y vuelve a quedar pendiente"
+      "unincorporated": "{code} sale del texto y vuelve a quedar pendiente",
+      "itemVoteApproved": "Punto aprobado",
+      "itemVoteRejected": "Punto rechazado",
+      "itemVoteNotProjected": "La votación se ha registrado, pero no se ha proyectado: el punto ya no está en debate.",
+      "itemVoteVoided": "Votación del punto anulada",
+      "itemVoteUnanimous": "La votación consta por unanimidad",
+      "itemVoteNotUnanimous": "La votación ya no consta por unanimidad"
     },
     "errors": {
       "live": "No se ha podido actualizar el debate",
@@ -3674,7 +3697,11 @@
       "finalVote": "No se ha podido registrar la votación final",
       "annulFinalVote": "No se ha podido anular la votación final",
       "validate": "No se ha podido validar la enmienda",
-      "publish": "No se ha podido publicar la enmienda"
+      "publish": "No se ha podido publicar la enmienda",
+      "itemVote": "No se ha podido registrar la votación del punto",
+      "itemVoteVoid": "No se ha podido anular la votación",
+      "itemVoteUnanimity": "No se ha podido cambiar la unanimidad",
+      "itemHasVotedDocuments": "@:common.errors.itemHasVotedDocuments"
     },
     "vote": {
       "title": "Votación de {code}",
@@ -3912,7 +3939,7 @@
         "assent": "Asentimiento",
         "show_of_hands": "Mano alzada",
         "secret": "Voto secreto",
-        "roll_call": "Votación nominal",
+        "roll_call": "Votación registrada",
         "portal": "Portal electrónico"
       },
       "acceptanceRole": {
@@ -3986,7 +4013,8 @@
       },
       "item": {
         "documents": "Este punto tiene 1 documento. Ponlo en debate para empezar. | Este punto tiene {count} documentos. Elige cuál se debate primero.",
-        "noDocuments": "Este punto no tiene documentos. Cuando termine el debate, pasa al siguiente."
+        "noDocuments": "Este punto no tiene documentos. Cuando termine el debate, pasa al siguiente.",
+        "toVote": "Se vota el punto. Cuando termine el debate, registra la votación."
       },
       "announce": "En debate: {what}",
       "announceAmendment": "En debate: {code}, de {who}. {status}.",
@@ -4125,6 +4153,32 @@
       "waitsValidation": "{code}, espera a la Secretaría",
       "confirmTitle": "{code} tiene una transaccional en curso | {code} tiene transaccionales en curso",
       "consequence": "Si sigues, se retira {codes}. Si reabres {code} antes de la votación final, vuelve a estar en curso, siempre que no se haya decidido otra de las enmiendas que agrupa. | Si sigues, se retiran {codes}. Si reabres {code} antes de la votación final, vuelven a estar en curso, siempre que no se haya decidido otra de las enmiendas que agrupan."
+    },
+    "itemVote": {
+      "open": "Registrar votación del punto",
+      "openAgain": "Registrar otra votación del punto",
+      "title": "Votación del punto",
+      "question": "Qué se vota",
+      "questionHelp": "La sala lo ve con el resultado.",
+      "questionRequired": "Escribe qué se vota.",
+      "assentText": "Por asentimiento no hay recuento: el punto queda aprobado.",
+      "unanimous": "@:projection.vote.unanimous",
+      "unanimousHint": "Nadie se opuso cuando la Mesa preguntó si había unanimidad.",
+      "submit": "Registrar votación",
+      "confirmDescription": "El resultado se proyecta en la sala. Si hay un error, la Mesa puede anular la votación.",
+      "void": "Anular votación",
+      "voidTitle": "Anular la votación del punto",
+      "voidDescription": "{vote}. La votación queda en el historial, pero deja de dar el resultado del punto y sale de la proyección.",
+      "voidConfirm": "Anular votación",
+      "markUnanimous": "Marcar por unanimidad",
+      "unmarkUnanimous": "Quitar la unanimidad",
+      "status": {
+        "approved": "Aprobado",
+        "rejected": "Rechazado",
+        "assent": "Aprobado por asentimiento",
+        "unanimous": "Aprobado por unanimidad",
+        "spoken": "{result}. {method}. A favor: {inFavor}; en contra: {against}; abstenciones: {abstentions}."
+      }
     }
   },
   "projection": {
@@ -4160,7 +4214,10 @@
       "abstentions": "Abstenciones",
       "blank": "En blanco",
       "invalid": "Nulos",
-      "majority": "Mayoría"
+      "majority": "Mayoría",
+      "agendaItem": "Votación del punto {title}",
+      "agendaItemUnknown": "Votación de un punto del orden del día",
+      "unanimous": "Por unanimidad"
     },
     "stale": "Mostrando los últimos datos recibidos",
     "loadFailed": "No se han podido cargar los datos",
@@ -4390,7 +4447,7 @@
     "noVote": "Sin votar",
     "positionHidden": "No visible",
     "emptyTitle": "Todavía no hay puntos con documentos",
-    "emptyDescription": "La hoja muestra los puntos del orden del día que tienen documentos presentados.",
+    "emptyDescription": "La hoja muestra los puntos del orden del día que tienen documentos presentados o que se votan.",
     "amendmentsEmpty": "Este documento no tiene enmiendas que puedas ver.",
     "amendmentsLoadError": "No se han podido cargar las enmiendas",
     "rowCount": "{count} punto en la hoja | {count} puntos en la hoja",
@@ -4413,12 +4470,11 @@
       "vote": "Votación",
       "observations": "Observaciones",
       "ceaPosition": "Posición CEA",
-      "open": "Abrir"
+      "open": "Ver"
     },
     "treated": {
-      "yes": "Tratado",
-      "yesAmendment": "Tratada",
-      "no": "Pendiente"
+      "item": "Tratado: {title}",
+      "amendment": "Tratada: {code}"
     },
     "result": {
       "approved": "Aprobado",
@@ -4471,8 +4527,8 @@
       "not_applicable": "No aplica"
     },
     "open": {
-      "item": "Abrir el punto {title}",
-      "amendment": "Abrir la enmienda {code}"
+      "item": "Ver el punto {title}",
+      "amendment": "Ver la enmienda {code}"
     },
     "panel": {
       "itemTitle": "Punto de la hoja",
@@ -4525,12 +4581,13 @@
       "emptyText": "(sin texto)",
       "change": "{from} → {to}",
       "treatedByResult": "Cuenta como tratado por el resultado anotado a mano.",
-      "resultMesaOnly": "Solo la Mesa anota el resultado."
+      "resultMesaOnly": "Solo la Mesa anota el resultado.",
+      "leftSheet": "El punto ha salido de la hoja: alguien lo ha cambiado a la vez."
     },
     "add": {
       "button": "Añadir punto",
       "title": "Añadir un punto a la hoja",
-      "description": "Los puntos sin documentos solo salen en la hoja si los añades, por ejemplo uno que se vota.",
+      "description": "Los puntos sin documentos salen en la hoja cuando se votan. Añade aquí cualquier otro que quieras seguir.",
       "label": "Punto",
       "placeholder": "Elige un punto",
       "none": "Todos los puntos sin documentos ya están en la hoja.",
@@ -4538,7 +4595,83 @@
       "added": "Punto añadido a la hoja",
       "failed": "No se ha podido añadir el punto"
     },
-    "noObservations": "Sin observaciones"
+    "noObservations": "Sin observaciones",
+    "sort": {
+      "label": "Ordenar por",
+      "asc": "ascendente",
+      "desc": "descendente",
+      "by": "Ordenar por {column}, {direction}",
+      "reset": "Quitar el orden por {column}",
+      "status": "Ordenado por {column}, {direction}"
+    },
+    "filters": {
+      "search": "Buscar en la hoja",
+      "searchGeneral": "Nº, punto, documento o interviniente",
+      "searchAmendments": "Código o quién la presenta",
+      "viewsGeneral": "Qué puntos ver",
+      "viewsAmendments": "Qué enmiendas ver",
+      "views": {
+        "general": {
+          "all": "Todos",
+          "pending": "Pendientes",
+          "treated": "Tratados",
+          "observations": "Con observaciones"
+        },
+        "amendments": {
+          "all": "Todas",
+          "pending": "Pendientes",
+          "treated": "Tratadas",
+          "noCeaPosition": "Sin posición CEA"
+        }
+      },
+      "button": "Filtros",
+      "buttonActive": "Filtros. En uso: {count}",
+      "any": "Cualquiera",
+      "clear": "Quitar filtros",
+      "count": "{shown} de {total} punto | {shown} de {total} puntos",
+      "amendmentCount": "{shown} de {total} enmienda | {shown} de {total} enmiendas",
+      "noMatchesTitle": "Ningún punto coincide con los filtros",
+      "noMatchesAmendments": "Ninguna enmienda coincide con los filtros",
+      "noMatchesDescription": "Prueba con otra búsqueda o quita los filtros.",
+      "under": "Dentro de {parent}"
+    },
+    "itemVotes": {
+      "title": "Votaciones del punto",
+      "byDocuments": "Este punto se vota con sus documentos: cuenta la votación final de cada uno.",
+      "container": "En este punto se presentan documentos: cada uno se vota en su subpunto.",
+      "empty": "Todavía no se ha votado.",
+      "record": "Registrar votación",
+      "recordTitle": "Votación del punto",
+      "question": "Qué se vota",
+      "questionHint": "Como constará en la hoja. Lo ve todo el mundo junto a la votación.",
+      "questionPlaceholder": "Por ejemplo: ratificación del nombramiento de la Secretaría",
+      "assentText": "Por asentimiento no hay recuento: lo que se vota queda aprobado.",
+      "unanimous": "Por unanimidad",
+      "unanimousHint": "Nadie se opuso cuando se preguntó si había unanimidad.",
+      "recorded": "Votación registrada",
+      "recordFailed": "No se ha podido registrar la votación",
+      "void": "Anular",
+      "voidLabel": "Anular la votación «{question}»",
+      "voidTitle": "¿Anular esta votación?",
+      "voidDescription": "Queda en la hoja como anulada y deja de dar el resultado del punto. No se puede deshacer.",
+      "voidConfirm": "Anular la votación",
+      "voided": "Anulada",
+      "voidedToast": "Votación anulada",
+      "voidFailed": "No se ha podido anular la votación",
+      "voidedAt": "Anulada: {when}",
+      "recordedAt": "Registrada: {when}",
+      "decides": "Es la que da el resultado",
+      "unanimityFailed": "No se ha podido cambiar la unanimidad",
+      "closed": "La asamblea está cerrada: sus votaciones ya no cambian.",
+      "draftAssembly": "Las votaciones se registran una vez convocada la asamblea.",
+      "fallbackQuestion": "Votación del punto",
+      "leftSheet": "El punto sale de la hoja: ya no tiene ninguna votación en vigor."
+    },
+    "edit": {
+      "button": "Editar",
+      "item": "Editar el punto {title}",
+      "amendment": "Editar la enmienda {code}"
+    }
   },
   "seating": {
     "title": "Sala",
@@ -5982,7 +6115,9 @@
         "update": "Avisos por correo cambiados",
         "test": "Correo de prueba enviado"
       },
-      "amendment_validation_undone": "Validación de una enmienda deshecha por Secretaría"
+      "amendment_validation_undone": "Validación de una enmienda deshecha por Secretaría",
+      "vote_voided": "Votación de un punto anulada",
+      "vote_unanimity_changed": "Unanimidad de una votación cambiada"
     },
     "changes": {
       "milestoneNote": "Nota de «{milestone}»",
@@ -6000,7 +6135,8 @@
           "description": "Descripción",
           "acceptsSubmissions": "Admite documentos de los miembros",
           "submissionKinds": "Tipos de documento que admite",
-          "parentId": "Lugar en el orden del día"
+          "parentId": "Lugar en el orden del día",
+          "voted": "Se vota el punto"
         },
         "document": {
           "title": "Título",

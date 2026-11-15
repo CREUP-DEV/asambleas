@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { DocumentSummaryDto } from "~~/shared/types/api";
-import { isSessionOpen } from "~/composables/session/sessionModel";
+import {
+  isSessionOpen,
+  sessionItemVotePlan,
+} from "~/composables/session/sessionModel";
 import { useFinalVoteReasonText } from "~/composables/session/useFinalVoteReasonText";
+import { useItemVoteText } from "~/composables/session/useItemVoteText";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import { useSessionStageLabel } from "~/composables/session/useSessionStageLabel";
 
@@ -12,7 +16,11 @@ import { useSessionStageLabel } from "~/composables/session/useSessionStageLabel
  * live state, so every Mesa device shows the same thing:
  *
  * - nothing yet: start with the first agenda item;
- * - an agenda item: its documents, or the next item;
+ * - an agenda item: its documents, or the next item; an item none of whose
+ *   documents is voted may take a vote of its own (a ratification, an
+ *   election), the main action when it is marked «Se vota el punto» and
+ *   has no vote in force, and then one line says how it went; "Más" votes
+ *   it again, voids the vote or changes its unanimity;
  * - a document: start with (or go on to) the next amendment the Mesa can
  *   decide, then the final vote, then the next item; "Más" takes it out of
  *   the debate and back to its item;
@@ -152,22 +160,104 @@ const documentMoreItems = computed<DropdownMenuItem[][]>(() => [
   ],
 ]);
 
-/** "Más" of an agenda item: end the debate altogether. */
-const itemMoreItems = computed<DropdownMenuItem[][]>(() => [
-  [
-    {
-      label: t("session.now.undebateItem"),
-      icon: "i-lucide-radio-tower",
-      onSelect: () => void session.clearDebate(),
-    },
-  ],
-]);
+// Agenda item under debate ---------------------------------------------------------
 
 const itemDocuments = computed(() =>
   (liveRow.value?.documents ?? []).filter(
     (document) => document.status === "published",
   ),
 );
+
+/**
+ * The item's own vote: whether it takes one (none of its documents the Mesa
+ * receives is voted, whatever their status, and it is not a container), the
+ * vote in force and whether recording it is the next step.
+ */
+const itemPlan = computed(() =>
+  liveRow.value
+    ? sessionItemVotePlan(
+        liveRow.value,
+        session.itemVotes.value,
+        session.assembly.value?.status,
+      )
+    : null,
+);
+const itemVote = computed(() => itemPlan.value?.vote ?? null);
+/** Recording is offered as a button until a vote is in force. */
+const offerItemVote = computed(
+  () => Boolean(itemPlan.value?.canRecord) && !itemVote.value,
+);
+/** «Se vota el punto» and no vote yet: the vote is the main action. */
+const itemVotePending = computed(() => Boolean(itemPlan.value?.pending));
+const itemVoteText = useItemVoteText();
+const itemVoteBusy = computed(
+  () =>
+    Boolean(session.busy.value["item-vote"]) ||
+    (itemVote.value
+      ? Boolean(session.busy.value[`vote-${itemVote.value.id}`])
+      : false),
+);
+
+function openItemVote(): void {
+  if (liveRow.value) session.openItemVote(liveRow.value.item.id);
+}
+
+/**
+ * "Más" of an agenda item: with a vote in force, vote it again, change its
+ * unanimity (an assent) or void it; and end the debate altogether.
+ */
+const itemMoreItems = computed<DropdownMenuItem[][]>(() => {
+  const groups: DropdownMenuItem[][] = [];
+  const plan = itemPlan.value;
+  const vote = itemVote.value;
+  if (plan && vote) {
+    const voteItems: DropdownMenuItem[] = [];
+    if (plan.canRecord) {
+      voteItems.push({
+        label: t("session.itemVote.openAgain"),
+        icon: "i-lucide-gavel",
+        onSelect: openItemVote,
+      });
+    }
+    if (plan.canChange && vote.method === "assent") {
+      voteItems.push({
+        label: vote.unanimous
+          ? t("session.itemVote.unmarkUnanimous")
+          : t("session.itemVote.markUnanimous"),
+        icon: vote.unanimous ? "i-lucide-minus" : "i-lucide-check-check",
+        disabled: itemVoteBusy.value,
+        onSelect: () => void session.setVoteUnanimity(vote, !vote.unanimous),
+      });
+    }
+    if (plan.canChange) {
+      voteItems.push({
+        label: t("session.itemVote.void"),
+        icon: "i-lucide-rotate-ccw",
+        disabled: itemVoteBusy.value,
+        onSelect: () =>
+          void session.voidItemVote(vote, itemVoteText.line(vote)),
+      });
+    }
+    if (voteItems.length > 0) groups.push(voteItems);
+  }
+  groups.push([
+    {
+      label: t("session.now.undebateItem"),
+      icon: "i-lucide-radio-tower",
+      onSelect: () => void session.clearDebate(),
+    },
+  ]);
+  return groups;
+});
+
+/** The sentence under the item's title. */
+const itemSentence = computed(() => {
+  const count = itemDocuments.value.length;
+  if (count > 0) return t("session.now.item.documents", { count }, count);
+  return itemVotePending.value
+    ? t("session.now.item.toVote")
+    : t("session.now.item.noDocuments");
+});
 
 // Screen readers ---------------------------------------------------------------
 
@@ -199,10 +289,14 @@ const announcement = computed(() => {
       const title = document.value?.title ?? liveDocumentSummary.value?.title;
       return title ? t("session.now.announce", { what: title }) : "";
     }
-    case "item":
-      return liveRow.value
-        ? t("session.now.announce", { what: rowLabel(liveRow.value) })
-        : "";
+    case "item": {
+      if (!liveRow.value) return "";
+      const what = t("session.now.announce", { what: rowLabel(liveRow.value) });
+      // A vote recorded here or on another Mesa device is announced too.
+      return itemVote.value
+        ? `${what}. ${itemVoteText.spoken(itemVote.value)}`
+        : what;
+    }
     default:
       return "";
   }
@@ -415,17 +509,25 @@ const announcement = computed(() => {
       <h3 class="text-highlighted text-2xl font-bold sm:text-3xl">
         {{ rowLabel(liveRow) }}
       </h3>
-      <p class="text-default">
-        {{
-          itemDocuments.length > 0
-            ? t(
-                "session.now.item.documents",
-                { count: itemDocuments.length },
-                itemDocuments.length,
-              )
-            : t("session.now.item.noDocuments")
-        }}
+      <p
+        v-if="itemVote"
+        class="text-default flex items-center gap-2 text-base font-medium"
+      >
+        <UIcon
+          :name="
+            itemVote.result === 'approved'
+              ? 'i-lucide-circle-check'
+              : 'i-lucide-circle-x'
+          "
+          class="size-5 shrink-0"
+          :class="
+            itemVote.result === 'approved' ? 'text-success' : 'text-error'
+          "
+          aria-hidden="true"
+        />
+        <span class="tabular-nums">{{ itemVoteText.line(itemVote) }}</span>
       </p>
+      <p class="text-default">{{ itemSentence }}</p>
       <ul v-if="itemDocuments.length > 0" class="space-y-2">
         <li
           v-for="(item, index) in itemDocuments"
@@ -441,8 +543,8 @@ const announcement = computed(() => {
             </span>
           </span>
           <UButton
-            :color="index === 0 ? 'primary' : 'neutral'"
-            :variant="index === 0 ? 'solid' : 'outline'"
+            :color="index === 0 && !itemVotePending ? 'primary' : 'neutral'"
+            :variant="index === 0 && !itemVotePending ? 'solid' : 'outline'"
             icon="i-lucide-radio"
             :label="t('session.agenda.debateDocument')"
             :aria-label="
@@ -455,10 +557,26 @@ const announcement = computed(() => {
       </ul>
       <div class="flex flex-wrap items-center gap-2">
         <UButton
+          v-if="offerItemVote"
+          :size="itemVotePending ? 'lg' : 'md'"
+          :color="itemVotePending ? 'primary' : 'neutral'"
+          :variant="itemVotePending ? 'solid' : 'outline'"
+          icon="i-lucide-gavel"
+          :label="t('session.itemVote.open')"
+          :loading="itemVoteBusy"
+          @click="openItemVote"
+        />
+        <UButton
           v-if="nextAgenda"
-          :size="itemDocuments.length === 0 ? 'lg' : 'md'"
-          :color="itemDocuments.length === 0 ? 'primary' : 'neutral'"
-          :variant="itemDocuments.length === 0 ? 'solid' : 'ghost'"
+          :size="itemDocuments.length === 0 && !itemVotePending ? 'lg' : 'md'"
+          :color="
+            itemDocuments.length === 0 && !itemVotePending
+              ? 'primary'
+              : 'neutral'
+          "
+          :variant="
+            itemDocuments.length === 0 && !itemVotePending ? 'solid' : 'ghost'
+          "
           trailing-icon="i-lucide-arrow-right"
           :label="t('session.now.nextItem', { title: nextAgendaLabel })"
           :loading="liveBusy"

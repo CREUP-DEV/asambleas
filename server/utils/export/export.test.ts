@@ -297,6 +297,7 @@ const meta: ExportDocumentMeta = {
     majority: "two_thirds",
     result: "approved",
     method: "show_of_hands",
+    unanimous: false,
     recordedAt: new Date("2026-11-22T12:00:00Z"),
   },
 };
@@ -883,6 +884,67 @@ describe("pdf rendering", () => {
     const pending = flatFor(null);
     expect(pending).not.toContain("[Mayoría]");
     expect(pending).toContain("Texto de la resolución.");
+
+    // An assent the Mesa marked unanimous reads so; a plain one, assent.
+    const assent = {
+      ...meta.finalVote!,
+      method: "assent" as const,
+      inFavor: 0,
+      against: 0,
+      abstentions: 0,
+    };
+    expect(flatFor({ ...assent, unanimous: true })).toContain(
+      "Aprobada por unanimidad en la 80.ª Asamblea General Ordinaria",
+    );
+    expect(flatFor(assent)).toContain(
+      "Aprobada por asentimiento en la 80.ª Asamblea General Ordinaria",
+    );
+  });
+
+  it("words a final vote by assent as the approval line does, without counts", () => {
+    const flatFor = (
+      finalVote: ExportDocumentMeta["finalVote"],
+      locale: "es" | "en" = "es",
+    ) =>
+      JSON.stringify(
+        buildDocumentPdf(
+          {
+            assembly,
+            document: { ...meta, finalVote },
+            body: {
+              variant: "clean",
+              source: "consolidated",
+              blocks: [p("body", "Texto de la resolución.")],
+            },
+            generatedAt: new Date(),
+          },
+          locale,
+        ).content as Content,
+      );
+    const assent = {
+      ...meta.finalVote!,
+      method: "assent" as const,
+      majority: "simple" as const,
+      inFavor: 0,
+      against: 0,
+      abstentions: 0,
+    };
+
+    const plain = flatFor(assent);
+    expect(plain).toContain(
+      "Aprobado en la 80.ª AGO el 22 de noviembre de 2026 por asentimiento.",
+    );
+    expect(plain).not.toContain("votos a favor");
+    expect(flatFor({ ...assent, unanimous: true })).toContain(
+      "Aprobado en la 80.ª AGO el 22 de noviembre de 2026 por unanimidad.",
+    );
+    expect(flatFor({ ...assent, unanimous: true }, "en")).toContain(
+      "Approved unanimously at the 80.ª AGO on 22 November 2026.",
+    );
+    // A counted vote keeps its majority and counts, whatever `unanimous`.
+    expect(flatFor({ ...meta.finalVote!, unanimous: true })).toContain(
+      "por mayoría de dos tercios (votos a favor: 40, en contra: 2, abstenciones: 1).",
+    );
   });
 });
 

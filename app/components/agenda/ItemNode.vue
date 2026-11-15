@@ -78,7 +78,8 @@ export function agendaChildrenId(itemId: string): string {
  * sub-items. The editing controls (move, add document and the item's
  * actions as buttons with their text: AgendaItemManageBar) appear only while
  * the page is in organize mode, which shows every item unfolded and item
- * and document apart, and says what members present under each item.
+ * and document apart, and says what members present under each item and,
+ * to managers, which items are voted by themselves ("Se vota el punto").
  * An item that is not in the agenda for everyone yet (`unlisted`) shows a
  * neutral mark where its number would be (AgendaItemNumber) and its labels
  * say so instead of a number; everything else works the same.
@@ -306,6 +307,20 @@ const containerLabel = computed(() => {
             aria-hidden="true"
           />
           <span>{{ containerLabel }}</span>
+        </p>
+
+        <!-- Organize mode only: the item is voted by itself -->
+        <p
+          v-if="showItemControls && item.voted"
+          class="text-muted flex items-center gap-1.5 text-xs"
+          data-testid="agenda-voted-label"
+        >
+          <UIcon
+            name="i-lucide-gavel"
+            class="size-4 shrink-0"
+            aria-hidden="true"
+          />
+          <span>{{ t("agenda.itemVote.label") }}</span>
         </p>
 
         <div class="ms-auto flex flex-wrap items-center justify-end gap-2">

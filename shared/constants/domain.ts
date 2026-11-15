@@ -441,11 +441,18 @@ export type VoteMethod = (typeof VOTE_METHODS)[number];
 export const VOTE_RESULTS = ["approved", "rejected"] as const;
 export type VoteResult = (typeof VOTE_RESULTS)[number];
 
+/**
+ * What a vote decides. New values go at the end (never in the middle, nor
+ * removed), and no migration of the release that adds one may use it: they
+ * all run in one transaction.
+ */
 export const VOTE_SUBJECTS = [
   "amendment",
   "document",
   "decision",
   "other",
+  "agenda_item",
+  "procedural_motion",
 ] as const;
 export type VoteSubject = (typeof VOTE_SUBJECTS)[number];
 

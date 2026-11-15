@@ -25,7 +25,10 @@ import type {
   CeaPosition,
   ControlSheetManualResult,
 } from "~~/shared/constants/domain";
-import { visibleAgendaItems } from "~~/shared/utils/agendaSubmissions";
+import {
+  hiddenTitleItemIds,
+  visibleAgendaItems,
+} from "~~/shared/utils/agendaSubmissions";
 import type {
   controlSheetAmendmentBodySchema,
   controlSheetItemBodySchema,
@@ -50,12 +53,13 @@ import {
   findPresentedAmendments,
 } from "./amendments";
 import { titleDocumentPayload } from "./agendaWrites";
-import { shareLockAssembly, toVoteDto } from "./documents";
+import { shareLockAssembly } from "./documents";
 import { recordEvent, type Executor } from "./events";
 import { impersonatedByFor, loadImpersonators } from "./impersonators";
 import { withCoProponentIds } from "./presenters";
 import { loadSpokenTurns } from "./speakers";
 import { canSeeDocument } from "./visibility";
+import { loadItemVoteRows, toItemVoteDto, toVoteDto } from "./votes";
 
 /**
  * The control sheet of an assembly (hoja de control): what the Mesa, the
@@ -194,22 +198,39 @@ async function loadVisibleDocuments(actor: Actor, assemblyId: string) {
   return rows.filter((row) => canSeeDocument(actor, row));
 }
 
-/** The agenda items the actor gets (visibleAgendaItems), by id. */
-async function loadVisibleItems(
+/**
+ * The agenda items the actor gets (visibleAgendaItems), by id, and those it
+ * gets without their title (hiddenTitleItemIds), as its agenda sends them:
+ * what the sheet lists, the items whose votes it may read or record, and
+ * the votes it reads without their question (toItemVoteDto).
+ */
+export async function loadReaderItems(
   actor: Actor,
   assemblyId: string,
   visibleDocuments?: Awaited<ReturnType<typeof loadVisibleDocuments>>,
-): Promise<Map<string, AgendaItemRow>> {
+): Promise<{ items: Map<string, AgendaItemRow>; titleHidden: Set<string> }> {
   const [items, seen] = await Promise.all([
     loadAgendaItems(assemblyId),
     visibleDocuments ?? loadVisibleDocuments(actor, assemblyId),
   ]);
-  return new Map(
-    visibleAgendaItems(items, seen, canManageDocuments(actor)).map((item) => [
-      item.id,
-      item,
-    ]),
-  );
+  const seesWithheld = canManageDocuments(actor);
+  const visible = visibleAgendaItems(items, seen, seesWithheld);
+  return {
+    items: new Map(visible.map((item) => [item.id, item])),
+    titleHidden: hiddenTitleItemIds(visible, seen, seesWithheld),
+  };
+}
+
+/**
+ * The agenda items the actor gets (visibleAgendaItems), by id: what the
+ * sheet lists, and the items whose votes it may read or record.
+ */
+export async function loadVisibleItems(
+  actor: Actor,
+  assemblyId: string,
+  visibleDocuments?: Awaited<ReturnType<typeof loadVisibleDocuments>>,
+): Promise<Map<string, AgendaItemRow>> {
+  return (await loadReaderItems(actor, assemblyId, visibleDocuments)).items;
 }
 
 /** When the assembly first went into session (its status event), or null. */
@@ -243,20 +264,28 @@ export async function loadControlSheet(
     .map((row) => row.finalVoteId)
     .filter((id): id is string => id !== null);
 
-  const [itemsById, amendmentRows, finalVoteRows, turns, itemSheet] =
-    await Promise.all([
-      loadVisibleItems(actor, assembly.id, visibleDocuments),
-      findPresentedAmendments(visibleDocuments.map((row) => row.id)),
-      finalVoteIds.length > 0
-        ? db.select().from(votes).where(inArray(votes.id, finalVoteIds))
-        : Promise.resolve([]),
-      loadSpokenTurns(actor, assembly.id),
-      db
-        .select()
-        .from(controlSheetItems)
-        .where(eq(controlSheetItems.assemblyId, assembly.id)),
-    ]);
+  const [
+    readerItems,
+    amendmentRows,
+    finalVoteRows,
+    turns,
+    itemSheet,
+    itemVoteRows,
+  ] = await Promise.all([
+    loadReaderItems(actor, assembly.id, visibleDocuments),
+    findPresentedAmendments(visibleDocuments.map((row) => row.id)),
+    finalVoteIds.length > 0
+      ? db.select().from(votes).where(inArray(votes.id, finalVoteIds))
+      : Promise.resolve([]),
+    loadSpokenTurns(actor, assembly.id),
+    db
+      .select()
+      .from(controlSheetItems)
+      .where(eq(controlSheetItems.assemblyId, assembly.id)),
+    loadItemVoteRows(assembly.id),
+  ]);
 
+  const itemsById = readerItems.items;
   const documentById = new Map(visibleDocuments.map((row) => [row.id, row]));
   const counts = new Map<string, { amendments: number; undecided: number }>();
   const visibleAmendments = new Map<string, string>();
@@ -312,6 +341,11 @@ export async function loadControlSheet(
     amendmentRows: amendmentSheet.map((row) =>
       toAmendmentRowDto(row, visibleAmendments.get(row.amendmentId)!, names),
     ),
+    // Votes of items the reader does not get stay out, as the items do, and
+    // those it gets without their title come without their question.
+    itemVotes: itemVoteRows
+      .filter((row) => itemsById.has(row.subjectId))
+      .map((row) => toItemVoteDto(row, readerItems.titleHidden)),
     can: { edit: canEditControlSheet(actor), moderate: canModerate(actor) },
   };
 }

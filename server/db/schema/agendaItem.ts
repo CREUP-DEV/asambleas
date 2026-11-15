@@ -38,6 +38,13 @@ export const agendaItems = pgTable(
       .notNull()
       .default([]),
     /**
+     * «Se vota el punto»: the item itself is voted (a ratification, an
+     * election), so the control sheet reads it «Pendiente» until its vote.
+     * It means nothing while a document of the item is voted: those votes
+     * are the item's.
+     */
+    voted: boolean("voted").notNull().default(false),
+    /**
      * Set on an automatic sub-item: the one the server created for this
      * document when it was presented under an item that accepts submissions.
      * Its title follows the document's until `titleCustom`.

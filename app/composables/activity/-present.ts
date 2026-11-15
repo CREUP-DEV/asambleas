@@ -114,6 +114,8 @@ export const ACTIVITY_ACTION_ICONS = {
   headcount_recorded: "i-lucide-users-round",
   headcount_corrected: "i-lucide-user-round-pen",
   vote_recorded: "i-lucide-vote",
+  vote_voided: "i-lucide-undo-2",
+  vote_unanimity_changed: "i-lucide-users-round",
   decision_recorded: "i-lucide-gavel",
   control_sheet_observations_updated: "i-lucide-notebook-pen",
   control_sheet_cea_position_changed: "i-lucide-flag",

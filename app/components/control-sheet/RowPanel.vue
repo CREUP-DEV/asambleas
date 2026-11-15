@@ -12,16 +12,27 @@ import type {
   ControlSheetHistoryDto,
   ControlSheetItemBody,
   ControlSheetItemRowDto,
+  VoteDto,
 } from "~~/shared/types/api";
 import { CONTROL_SHEET_OBSERVATIONS_MAX_LENGTH } from "~~/shared/utils/schemas/controlSheet";
-import type { AmendmentSheetRow, GeneralSheetRow } from "./-model";
+import {
+  amendmentTreatedControl,
+  itemTreatedControl,
+  staleSheetRow,
+  type AmendmentSheetRow,
+  type GeneralSheetRow,
+  type ItemVoteContext,
+  type TreatedControl,
+} from "./-model";
 
 /**
  * Everything one row of the control sheet edits, in a side panel: the
  * observations (shared, with who wrote each version and a way back to an
  * earlier one), the CEA position of an amendment, the result noted by
- * hand, the Mesa's treated mark, and the history. Each field saves on its
- * own with its own lock token; a field someone else changed meanwhile
+ * hand, the Mesa's treated mark, the votes on an item (ItemVotes), and the
+ * history. Each field saves on its
+ * own with its own lock token (the treated mark through the page, which
+ * also saves it from the lists: `treated`, `treatedPending`); a field someone else changed meanwhile
  * shows what is there now (and, for the observations, both texts to
  * choose). The draft is kept apart from fetched data, so a refetch while
  * typing never replaces it.
@@ -35,11 +46,19 @@ const props = defineProps<{
   target: RowPanelTarget | null;
   apiBase: string;
   can: { edit: boolean; moderate: boolean };
+  /** The treated mark on its way for this row (from here or the lists). */
+  treatedPending?: boolean;
+  /** What the votes on an item depend on besides the row. */
+  voteContext: ItemVoteContext;
 }>();
 const open = defineModel<boolean>("open", { required: true });
 const emit = defineEmits<{
   itemSaved: [row: ControlSheetItemRowDto];
   amendmentSaved: [row: ControlSheetAmendmentRowDto];
+  /** The Mesa changed the treated mark: the page saves it. */
+  treated: [value: boolean];
+  /** A vote on the item changed (null: a write failed, fetch again). */
+  voteChanged: [vote: VoteDto | null];
 }>();
 
 const { t, locale } = useI18n();
@@ -80,14 +99,6 @@ function editedLine(edit: ControlSheetEditDto | null): string {
   return edit.by
     ? t("controlSheet.panel.edited", { name: edit.by, when: when(edit) })
     : t("controlSheet.panel.editedNoName", { when: when(edit) });
-}
-
-/** The row of a stale-field 409 (`data.row`), or null for anything else. */
-function staleRow<T>(error: unknown): T | null {
-  if (!error || typeof error !== "object") return null;
-  const body = (error as { data?: Record<string, unknown> }).data;
-  const inner = (body?.data ?? body) as Record<string, unknown> | undefined;
-  return inner?.reason === "control_sheet_stale" ? (inner.row as T) : null;
 }
 
 type SheetRow = ControlSheetItemRowDto | ControlSheetAmendmentRowDto;
@@ -178,7 +189,7 @@ async function saveObservations(): Promise<void> {
     savedAt.value = Date.now();
     if (historyOpen.value) void loadHistory();
   } catch (error) {
-    const row = staleRow<SheetRow>(error);
+    const row = staleSheetRow<SheetRow>(error);
     if (row) {
       applySaved(kind, row);
       if (same()) {
@@ -256,7 +267,7 @@ async function saveField(
     if (historyOpen.value) void loadHistory();
     return true;
   } catch (error) {
-    const row = staleRow<SheetRow>(error);
+    const row = staleSheetRow<SheetRow>(error);
     if (row) {
       applySaved(kind, row);
       toast.add({
@@ -330,36 +341,45 @@ const manualResult = computed<string>({
   },
 });
 
-const autoTreated = computed(() => props.target?.row.autoTreated ?? false);
+/** The same box as the lists' (-model.ts), with its lock and token. */
+const treatedControl = computed<TreatedControl | null>(() => {
+  const target = props.target;
+  if (!target) return null;
+  return target.kind === "item"
+    ? itemTreatedControl(target.row)
+    : amendmentTreatedControl(target.row);
+});
+const autoTreated = computed(() => treatedControl.value?.lock === "auto");
 /** An item a «Retirado» or «Decaído» by hand counts as treated. */
-const treatedByResult = computed(
-  () =>
-    props.target?.kind === "item" &&
-    !props.target.row.autoTreated &&
-    (props.target.row.sheet?.manualResult === "withdrawn" ||
-      props.target.row.sheet?.manualResult === "lapsed"),
-);
+const treatedByResult = computed(() => treatedControl.value?.lock === "result");
 const treatedMark = computed(() => sheetRow.value?.treated ?? null);
-const treatedLocked = computed(
-  () => autoTreated.value || treatedByResult.value,
-);
+const treatedLocked = computed(() => Boolean(treatedControl.value?.lock));
 const treated = computed<boolean>({
-  get: () => treatedLocked.value || treatedMark.value !== null,
+  get: () => props.treatedPending ?? treatedControl.value?.treated ?? false,
   set: (value) => {
-    if (treatedLocked.value) return;
-    const token =
-      props.target?.kind === "item"
-        ? (itemRow.value?.progressUpdatedAt ?? null)
-        : (amendmentRow.value?.treatedUpdatedAt ?? null);
-    void saveField("treated", { treated: { value, updatedAt: token } });
+    const control = treatedControl.value;
+    if (!control || control.lock || props.treatedPending !== undefined) return;
+    emit("treated", value);
   },
 });
+// A new mark, whoever set it: the open history shows it.
+watch(
+  () => treatedControl.value?.token,
+  (token, previous) => {
+    if (token !== previous && historyOpen.value) void loadHistory();
+  },
+);
 
 const canWriteResult = computed(() => props.can.moderate);
+/**
+ * Taking an item added by hand off the sheet; not while «Se vota el punto»
+ * or a vote on it in force keeps it there anyway.
+ */
 const showUnlist = computed(
   () =>
     props.target?.kind === "item" &&
     props.target.row.documents.length === 0 &&
+    !props.target.row.ownListed &&
     itemRow.value?.listed === true &&
     props.can.edit,
 );
@@ -490,6 +510,7 @@ function historyDetail(
                 : t('controlSheet.panel.treated')
             "
             :disabled="!can.moderate || treatedLocked || busy !== null"
+            :aria-busy="treatedPending !== undefined || undefined"
           />
           <p class="text-muted text-xs">
             <template v-if="autoTreated">
@@ -522,6 +543,16 @@ function historyDetail(
             }}</template>
           </p>
         </div>
+
+        <!-- Votes on the item -->
+        <ControlSheetItemVotes
+          v-if="target.kind === 'item'"
+          :row="target.row"
+          :api-base="apiBase"
+          :can-write="can.edit || can.moderate"
+          :context="voteContext"
+          @changed="(vote) => emit('voteChanged', vote)"
+        />
 
         <!-- Result by hand (items) -->
         <UFormField

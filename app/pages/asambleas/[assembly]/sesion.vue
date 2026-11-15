@@ -410,6 +410,7 @@ defineShortcuts({
       <SessionAdmissionDialog />
       <SessionRelationDialog />
       <SessionFinalVoteDialog />
+      <SessionItemVoteDialog />
       <SessionLapseOfferDialog />
       <SessionBulkAssentDialog />
       <SessionTransactionalComposer />

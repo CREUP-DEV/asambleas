@@ -33,14 +33,11 @@ import {
   canModerate,
   type Actor,
 } from "./actor";
-import {
-  assemblySettings,
-  loadDocumentSummaries,
-  toVoteDto,
-} from "./documents";
+import { assemblySettings, loadDocumentSummaries } from "./documents";
 import { lockAssembly } from "./agendaWrites";
 import { coPresentedBy, withCoProponentIds } from "./presenters";
 import { canSeeDocument } from "./visibility";
+import { toVoteDto, VOTE_MESSAGE_KEYS } from "./votes";
 import {
   MILESTONE_KEYS,
   REGULATION_DOCUMENT_KINDS,
@@ -69,7 +66,10 @@ import {
   type Milestones,
 } from "~~/shared/utils/calendar";
 import { loadCalendarRules } from "./calendarRules";
-import { unlistedAgendaItemIds } from "~~/shared/utils/agendaNumbering";
+import {
+  publicTitleHiddenItemIds,
+  unlistedAgendaItemIds,
+} from "~~/shared/utils/agendaNumbering";
 import {
   hiddenTitleItemIds,
   isAutoItem,
@@ -491,21 +491,31 @@ export function assertDateRange(start: Date, end: Date): void {
 
 // Agenda ------------------------------------------------------------------------
 
-/**
- * `titleHidden`: the viewer must not read the item's title
- * (hiddenTitleItemIds): it is sent without it, without its description and
- * without the document it was created for. Document managers always get
- * them.
- *
- * `unlisted`: someone who sees only what is public does not receive the
- * item (unlistedAgendaItemIds), so it has no number for anyone.
- */
+/** What a viewer, and someone who sees only what is public, miss of an item. */
+export interface AgendaItemMarks {
+  /**
+   * The viewer must not read the item's title (hiddenTitleItemIds): it is
+   * sent without it, without its description and without the document it
+   * was created for. Document managers always get them.
+   */
+  titleHidden: boolean;
+  /**
+   * Someone who sees only what is public does not receive the item
+   * (unlistedAgendaItemIds), so it has no number for anyone.
+   */
+  unlisted: boolean;
+  /**
+   * That same viewer does not read its title (publicTitleHiddenItemIds),
+   * whoever asks.
+   */
+  publicTitleHidden: boolean;
+  /** From agendaItemSlugs over every item of the assembly; the id otherwise. */
+  slug?: string;
+}
+
 export function toAgendaItemDto(
   row: AgendaItemRow,
-  titleHidden = false,
-  unlisted = false,
-  /** From agendaItemSlugs over every item of the assembly. */
-  slug: string = row.id,
+  { titleHidden, unlisted, publicTitleHidden, slug = row.id }: AgendaItemMarks,
 ): AgendaItemDto {
   return {
     id: row.id,
@@ -515,10 +525,14 @@ export function toAgendaItemDto(
     title: titleHidden ? "" : row.title,
     titleHidden,
     unlisted,
+    // Never false while the item is unlisted.
+    publicTitleHidden: publicTitleHidden || unlisted,
     description: titleHidden ? null : row.description,
     order: row.order,
     acceptsSubmissions: row.acceptsSubmissions,
     submissionKinds: row.submissionKinds,
+    // A switch, never masked: it says nothing of the title.
+    voted: row.voted,
     auto: isAutoItem(row),
     generatedForDocumentId: titleHidden ? null : row.generatedForDocumentId,
     titleCustom: row.titleCustom,
@@ -590,23 +604,23 @@ export function agendaItemDtos(
     documentSummaries,
     seesWithheld,
   );
-  // The items someone who sees only the public documents would not get:
-  // the same rule, asked for that viewer. Everyone reads every public
-  // document, so the actor's own list holds them all.
-  const unlisted = unlistedAgendaItemIds(
-    items,
-    documentSummaries.filter((document) =>
-      isPublicDocumentStatus(document.status),
-    ),
+  // The items someone who sees only the public documents would not get,
+  // and those whose title it would not read: the same rules, asked for that
+  // viewer. Everyone reads every public document, so the actor's own list
+  // holds them all.
+  const publicDocuments = documentSummaries.filter((document) =>
+    isPublicDocumentStatus(document.status),
   );
+  const unlisted = unlistedAgendaItemIds(items, publicDocuments);
+  const publicTitleHidden = publicTitleHiddenItemIds(items, publicDocuments);
   const slugs = agendaItemSlugs(items);
   return visible.map((item) =>
-    toAgendaItemDto(
-      item,
-      hiddenTitles.has(item.id),
-      unlisted.has(item.id),
-      slugs.get(item.id),
-    ),
+    toAgendaItemDto(item, {
+      titleHidden: hiddenTitles.has(item.id),
+      unlisted: unlisted.has(item.id),
+      publicTitleHidden: publicTitleHidden.has(item.id),
+      slug: slugs.get(item.id),
+    }),
   );
 }
 
@@ -626,13 +640,14 @@ export async function loadAgendaDto(
 
 /**
  * The items of the assembly that someone who sees only the public documents
- * does not receive (unlistedAgendaItemIds), for an answer that carries one
- * item and not the whole agenda.
+ * does not receive (`unlisted`, unlistedAgendaItemIds) and those whose title
+ * it does not read (`titleHidden`, publicTitleHiddenItemIds), for an answer
+ * that carries one item and not the whole agenda.
  */
-export async function loadUnlistedItemIds(
+export async function loadPublicItemMarks(
   assemblyId: string,
   executor: Executor = db,
-): Promise<Set<string>> {
+): Promise<{ unlisted: Set<string>; titleHidden: Set<string> }> {
   const [items, publicDocuments] = await Promise.all([
     loadAgendaItems(assemblyId, executor),
     executor
@@ -645,7 +660,10 @@ export async function loadUnlistedItemIds(
         ),
       ),
   ]);
-  return unlistedAgendaItemIds(items, publicDocuments);
+  return {
+    unlisted: unlistedAgendaItemIds(items, publicDocuments),
+    titleHidden: publicTitleHiddenItemIds(items, publicDocuments),
+  };
 }
 
 /** The link slug of one item (agendaItemSlugs), for a mutation's answer. */
@@ -969,12 +987,19 @@ export async function updateLiveState(
 
     if (body.voteId) {
       const [vote] = await tx
-        .select({ id: votes.id })
+        .select({ id: votes.id, voidedAt: votes.voidedAt })
         .from(votes)
         .where(
           and(eq(votes.id, body.voteId), eq(votes.assemblyId, assemblyId)),
         );
       if (!vote) fail(422, "La votación no pertenece a esta asamblea");
+      // A voided vote is not put back on screen by hand. Voiding takes the
+      // assembly FOR SHARE, which waits for this lock.
+      if (vote.voidedAt) {
+        fail(409, "Esta votación está anulada", {
+          messageKey: VOTE_MESSAGE_KEYS.voided,
+        });
+      }
     }
 
     const changed = (Object.keys(next) as (keyof LiveStateFields)[]).filter(

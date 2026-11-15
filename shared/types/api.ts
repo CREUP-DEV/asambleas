@@ -518,6 +518,20 @@ export interface AgendaItemDto {
    */
   submissionKinds: DocumentKind[];
   /**
+   * «Se vota el punto»: the item itself is voted, so the control sheet
+   * reads it «Pendiente» until its vote. Ignored while a document of the
+   * item is voted (itemHasVotedDocuments): those votes are the item's.
+   */
+  voted: boolean;
+  /**
+   * Someone who sees only what is public does not read this item's title:
+   * it does not get the item (`unlisted`), or gets it without its title (a
+   * withheld title, or one carrying a document that is not public). Worked
+   * out for that viewer whoever asks, so a form that fills in text the room
+   * will read (an item vote's question) never fills in such a title.
+   */
+  publicTitleHidden: boolean;
+  /**
    * An automatic sub-item: the server created it for a document presented
    * under an item that accepts submissions. It goes when that document is
    * deleted or moved away, unless it holds something else by then.
@@ -637,6 +651,11 @@ export interface AgendaItemBody {
    * every kind. Stored empty while `acceptsSubmissions` is off.
    */
   submissionKinds?: DocumentKind[];
+  /**
+   * «Se vota el punto». Left out, a create stores false and an update
+   * keeps what is stored.
+   */
+  voted?: boolean;
   updatedAt?: IsoDate;
   /**
    * Go ahead although the agenda is final. Needed to create, move or rename
@@ -1156,6 +1175,12 @@ export interface VoteInput {
   present?: number | null;
   majority?: Majority;
   note?: string | null;
+  /**
+   * An assent vote nobody objected to when unanimity was asked. Only agenda
+   * item votes take it when they are recorded (ignored elsewhere and on any
+   * other method); PATCH .../votes/[vote]/unanimity sets it later.
+   */
+  unanimous?: boolean;
 }
 
 export type OutcomeAction =
@@ -1262,7 +1287,74 @@ export interface VoteDto {
   majority: Majority;
   result: VoteResult;
   note: string | null;
+  /**
+   * What an agenda item vote decides, as the Mesa wrote it; null on other
+   * votes, and for a reader who gets the item without its title (item
+   * votes, the control sheet). The live state carries it to the room with
+   * a projected vote.
+   */
+  question: string | null;
+  /** An assent vote nobody objected to when unanimity was asked. */
+  unanimous: boolean;
   recordedAt: IsoDate;
+  /** Lock token for voiding it and changing its unanimity. */
+  updatedAt: IsoDate;
+  /**
+   * When the Mesa voided it (agenda item votes only): it stays for the
+   * record and no longer gives the item's result.
+   */
+  voidedAt: IsoDate | null;
+}
+
+/**
+ * POST /api/assemblies/[assembly]/agenda/[item]/votes: a vote on the agenda
+ * item itself (session:moderate or control_sheet:edit). Refused (422
+ * `item_has_voted_documents`) while a document of the item is voted (422
+ * `item_takes_no_vote` instead for a caller who sees none of them), on an
+ * item where members present (422 `item_is_container`), and on a draft or
+ * closed assembly. `project` (the Mesa only) puts it on screen
+ * when the item is still the one in debate.
+ */
+export interface ItemVoteBody {
+  question: string;
+  vote: VoteInput;
+  project?: boolean;
+}
+
+/** Response of POST .../agenda/[item]/votes. */
+export interface ItemVoteResultDto {
+  vote: VoteDto;
+  /** It went on screen (asked for, and the item was still in debate). */
+  projected: boolean;
+}
+
+/**
+ * GET /api/assemblies/[assembly]/item-votes (session:moderate or a control
+ * sheet key): the votes on agenda items the reader gets, voided ones too,
+ * oldest first.
+ */
+export interface ItemVotesDto {
+  votes: VoteDto[];
+}
+
+/**
+ * DELETE /api/assemblies/[assembly]/votes/[vote]: voids an agenda item vote
+ * (session:moderate or control_sheet:edit; not once the assembly is
+ * closed). Other votes go through reopening or annulling what they decided.
+ * Returns VoteDto.
+ */
+export interface VoteVoidBody {
+  updatedAt: IsoDate;
+}
+
+/**
+ * PATCH /api/assemblies/[assembly]/votes/[vote]/unanimity: an assent vote
+ * in force becomes unanimous, or stops being so. The Mesa on any of them;
+ * control_sheet:edit on agenda item votes. Returns VoteDto.
+ */
+export interface VoteUnanimityBody {
+  unanimous: boolean;
+  updatedAt: IsoDate;
 }
 
 export interface DecisionDto {
@@ -1592,6 +1684,11 @@ export interface ControlSheetDto {
   itemRows: ControlSheetItemRowDto[];
   /** What the sheet noted about amendments the reader sees. */
   amendmentRows: ControlSheetAmendmentRowDto[];
+  /**
+   * Votes on agenda items the reader gets, voided ones too, oldest first
+   * (the same as GET .../item-votes).
+   */
+  itemVotes: VoteDto[];
   can: {
     /** control_sheet:edit. */
     edit: boolean;

@@ -21,6 +21,7 @@ const row = (
   order,
   acceptsSubmissions: false,
   submissionKinds: [],
+  voted: false,
   generatedForDocumentId: null,
   hiddenWithDocumentId: null,
   titleWithheld: false,
@@ -142,5 +143,61 @@ describe("agendaItemDtos", () => {
       "root",
       "next",
     ]);
+  });
+});
+
+describe("AgendaItemDto.publicTitleHidden", () => {
+  // A withheld title kept by its sub-item, and the sub-item of a submitted
+  // document kept by a published one inside it: everyone gets both, without
+  // their titles.
+  const guarded = [
+    ...items,
+    row("gone", "resolutions", 3, { titleWithheld: true }),
+    row("under", "gone", 0),
+    row("holder", "resolutions", 4, { generatedForDocumentId: "d-sub2" }),
+    row("inner", "holder", 0, { generatedForDocumentId: "d-in" }),
+  ];
+  const guardedDocuments = [
+    ...documents,
+    { id: "d-sub2", agendaItemId: "holder", status: "submitted" },
+    { id: "d-in", agendaItemId: "inner", status: "published" },
+  ];
+  const marks = (dtos: ReturnType<typeof agendaItemDtos>) =>
+    Object.fromEntries(
+      dtos.map((item) => [
+        item.id,
+        [item.titleHidden, item.unlisted, item.publicTitleHidden],
+      ]),
+    );
+
+  it("tells a manager which titles the public does not read", () => {
+    // [titleHidden, unlisted, publicTitleHidden]
+    expect(marks(agendaItemDtos(guarded, guardedDocuments, true))).toEqual({
+      first: [false, false, false],
+      resolutions: [false, false, false],
+      draft: [false, true, true],
+      published: [false, false, false],
+      submitted: [false, true, true],
+      last: [false, false, false],
+      gone: [false, false, true],
+      under: [false, false, false],
+      holder: [false, false, true],
+      inner: [false, false, false],
+    });
+  });
+
+  it("is the viewer's own titleHidden for someone who sees only what is public", () => {
+    const dtos = agendaItemDtos(
+      guarded,
+      guardedDocuments.filter((document) => document.status === "published"),
+      false,
+    );
+    for (const item of dtos) {
+      expect(item.publicTitleHidden).toBe(item.titleHidden);
+    }
+    expect(dtos.find((item) => item.id === "gone")).toMatchObject({
+      titleHidden: true,
+      publicTitleHidden: true,
+    });
   });
 });

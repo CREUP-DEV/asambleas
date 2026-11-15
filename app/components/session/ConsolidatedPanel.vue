@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { ConsolidationConflict } from "~~/shared/types/content";
+import { liveAssentKey } from "~/components/live-view/-model";
 import { useFinalVoteReasonText } from "~/composables/session/useFinalVoteReasonText";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 import { assemblyPath } from "~/components/shell/Navigation.vue";
@@ -10,6 +11,7 @@ import { assemblyPath } from "~/components/shell/Navigation.vue";
  * conflicts that stop amendments from applying together, and the final vote.
  * A wrongly recorded final vote can be annulled while the assembly is open:
  * the vote stays in the record and the text awaits its final vote again.
+ * An approved one by assent can be marked unanimous then, or no longer.
  *
  * While the final vote is blocked, each reason says who has to act: the
  * Mesa decides the amendments still open; the assembly decides whether to
@@ -44,6 +46,52 @@ const canAnnul = computed(
     Boolean(document.value?.can.moderate) &&
     session.assembly.value?.status !== "closed",
 );
+
+/**
+ * How the final vote went: «Por unanimidad» for a unanimous assent, else
+ * «Por asentimiento» or the counts.
+ */
+const finalVoteMethodText = computed(() => {
+  const vote = finalVote.value;
+  if (!vote) return "";
+  const assentKey = liveAssentKey(vote);
+  return assentKey
+    ? t(assentKey)
+    : t("session.card.voteCounts", {
+        inFavor: vote.inFavor,
+        against: vote.against,
+        abstentions: vote.abstentions,
+      });
+});
+
+/**
+ * An approved final vote by assent can be marked unanimous (nobody objected
+ * when the Mesa asked), or no longer, while the assembly is open: the same
+ * rule the server applies to the vote the document points at.
+ */
+const canChangeUnanimity = computed(
+  () =>
+    canAnnul.value &&
+    finalVote.value?.method === "assent" &&
+    finalVote.value.result === "approved" &&
+    !finalVote.value.voidedAt,
+);
+const unanimityBusy = computed(() =>
+  finalVote.value
+    ? Boolean(session.busy.value[`vote-${finalVote.value.id}`])
+    : false,
+);
+
+/**
+ * The button stays enabled while saving, so the focus stays on it (its
+ * label turns over when the change lands); a second press meanwhile is
+ * ignored by the console.
+ */
+function toggleUnanimity(): void {
+  const vote = finalVote.value;
+  if (vote) void session.setVoteUnanimity(vote, !vote.unanimous);
+}
+
 // Kept in the console so anyDialogOpen pauses the page shortcuts while the
 // modal is open.
 const annulOpen = computed({
@@ -142,26 +190,34 @@ const awaitingValidation = computed(
             }}
           </p>
           <p class="text-default text-sm tabular-nums">
-            {{
-              finalVote.method === "assent"
-                ? t("session.enums.approvalMethod.assent")
-                : t("session.card.voteCounts", {
-                    inFavor: finalVote.inFavor,
-                    against: finalVote.against,
-                    abstentions: finalVote.abstentions,
-                  })
-            }}
+            {{ finalVoteMethodText }}
           </p>
-          <UButton
-            v-if="canAnnul"
-            class="mt-2"
-            size="xs"
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-rotate-ccw"
-            :label="t('session.finalVote.annul')"
-            @click="annulOpen = true"
-          />
+          <div v-if="canAnnul" class="mt-2 flex flex-wrap items-center gap-2">
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-rotate-ccw"
+              :label="t('session.finalVote.annul')"
+              @click="annulOpen = true"
+            />
+            <UButton
+              v-if="canChangeUnanimity"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              :icon="
+                finalVote.unanimous ? 'i-lucide-minus' : 'i-lucide-check-check'
+              "
+              :label="
+                finalVote.unanimous
+                  ? t('session.itemVote.unmarkUnanimous')
+                  : t('session.itemVote.markUnanimous')
+              "
+              :aria-busy="unanimityBusy || undefined"
+              @click="toggleUnanimity"
+            />
+          </div>
         </div>
         <template v-else>
           <UButton

@@ -146,6 +146,8 @@ export const agendaItemBodySchema = z.object({
       message: "duplicate_kind",
     })
     .optional(),
+  // Never a default: a PUT that leaves it out keeps what is stored.
+  voted: z.boolean().optional(),
   updatedAt: isoDateTime.optional(),
   confirmFinal: z.boolean().optional(),
 });

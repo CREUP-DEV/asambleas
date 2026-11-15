@@ -1,24 +1,67 @@
 <script setup lang="ts">
 import type { TabsItem } from "@nuxt/ui";
+import { ASSEMBLY_TYPES } from "~~/shared/constants/assemblyTypes";
+import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type {
   AmendmentDto,
+  ControlSheetAmendmentBody,
   ControlSheetAmendmentRowDto,
   ControlSheetDto,
+  ControlSheetItemBody,
   ControlSheetItemRowDto,
   DocumentAmendmentsDto,
   LiveStateDto,
+  VoteDto,
 } from "~~/shared/types/api";
+import {
+  AMENDMENT_SORT_KEYS,
+  AMENDMENT_VIEWS,
+  DEFAULT_AMENDMENT_SORT,
+  DEFAULT_GENERAL_SORT,
+  EMPTY_AMENDMENT_FILTERS,
+  EMPTY_GENERAL_FILTERS,
+  GENERAL_SORT_KEYS,
+  GENERAL_VIEWS,
+  RESULT_FILTERS,
+  SHEET_QUERY,
+  activeFilterCount,
+  amendmentSheetQuery,
+  clearedSheetQuery,
+  filtersKey,
+  generalSheetQuery,
+  isDefaultSort,
+  keepSeen,
+  matchingAmendmentIds,
+  matchingGeneralIds,
+  nextSort,
+  parseAmendmentSheetQuery,
+  parseGeneralSheetQuery,
+  shownAmendmentRows,
+  shownGeneralRows,
+  type AmendmentSheetFilters,
+  type AmendmentSortKey,
+  type GeneralSheetFilters,
+  type GeneralSortKey,
+  type SheetQueryPatch,
+  type SheetSort,
+} from "~/components/control-sheet/-filters";
 import {
   affectsControlSheet,
   affectsLiveDebate,
   amendedDocuments,
+  amendmentTreatedControl,
   buildAmendmentRows,
   buildGeneralRows,
+  itemTreatedControl,
+  staleSheetRow,
   type AmendmentSheetRow,
   type GeneralSheetRow,
+  type ItemVoteContext,
   type SheetRowDocument,
+  type TreatedControl,
 } from "~/components/control-sheet/-model";
+import { LIVE_AMENDMENT_STATES } from "~/components/live-view/-model";
 import type { RowPanelTarget } from "~/components/control-sheet/RowPanel.vue";
 import {
   buildAgendaTree,
@@ -34,11 +77,13 @@ import {
  * the session and feeds the minutes (docs/control-sheet-plan.md).
  *
  * The agenda comes from the hub (useAssemblyAgenda); the sheet's own answer
- * adds the final votes, the amendment counts and who spoke. «Seguir el
- * debate» opens what the Mesa has on screen and marks its row.
+ * adds the final votes, the votes on items, the amendment counts and who
+ * spoke. «Seguir el debate» opens what the Mesa has on screen and marks its
+ * row. Each list sorts by its columns and filters (-filters.ts), both kept
+ * in the query next to the tab and the document.
  */
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const api = useApi();
 const toast = useToast();
 const route = useRoute();
@@ -95,14 +140,24 @@ const tab = computed<SheetTab>({
   get: () =>
     route.query[TAB_QUERY] === "enmiendas" ? "amendments" : "general",
   set: (value) => {
-    void router.replace({
-      query: {
-        ...route.query,
-        [TAB_QUERY]: value === "amendments" ? "enmiendas" : undefined,
-      },
-    });
+    void router.replace({ query: { ...route.query, ...tabQuery(value) } });
   },
 });
+
+/**
+ * The query that opens a tab. Each tab sorts and filters by its own
+ * columns: another tab starts in its default order, unfiltered, with the
+ * search box empty, so a search typed a moment before (still on its way to
+ * the query) is never written on the other tab.
+ */
+function tabQuery(value: SheetTab): SheetQueryPatch {
+  if (value === tab.value) return {};
+  clearSearchBox();
+  return {
+    ...clearedSheetQuery(),
+    [TAB_QUERY]: value === "amendments" ? "enmiendas" : undefined,
+  };
+}
 const tabItems = computed<TabsItem[]>(() => [
   { value: "general", label: t("controlSheet.tabs.general") },
   { value: "amendments", label: t("controlSheet.tabs.amendments") },
@@ -196,6 +251,319 @@ const amendmentRows = computed(() =>
   ),
 );
 
+// Sorting and filtering, kept in the query ------------------------------------
+
+const generalState = computed(() => parseGeneralSheetQuery(route.query));
+const amendmentState = computed(() => parseAmendmentSheetQuery(route.query));
+
+function replaceQuery(patch: SheetQueryPatch): void {
+  void router.replace({ query: { ...route.query, ...patch } });
+}
+
+function setGeneral(
+  sort: SheetSort<GeneralSortKey>,
+  filters: GeneralSheetFilters,
+): void {
+  replaceQuery(generalSheetQuery({ sort, filters }));
+}
+
+function setAmendments(
+  sort: SheetSort<AmendmentSortKey>,
+  filters: AmendmentSheetFilters,
+): void {
+  replaceQuery(amendmentSheetQuery({ sort, filters }));
+}
+
+const generalSort = computed<SheetSort<GeneralSortKey>>({
+  get: () => generalState.value.sort,
+  set: (sort) => setGeneral(sort, generalState.value.filters),
+});
+const generalView = computed<GeneralSheetFilters["view"]>({
+  get: () => generalState.value.filters.view,
+  set: (view) =>
+    setGeneral(generalSort.value, { ...generalState.value.filters, view }),
+});
+const generalResults = computed<GeneralSheetFilters["results"]>({
+  get: () => generalState.value.filters.results,
+  set: (results) =>
+    setGeneral(generalSort.value, { ...generalState.value.filters, results }),
+});
+const amendmentSort = computed<SheetSort<AmendmentSortKey>>({
+  get: () => amendmentState.value.sort,
+  set: (sort) => setAmendments(sort, amendmentState.value.filters),
+});
+const amendmentView = computed<AmendmentSheetFilters["view"]>({
+  get: () => amendmentState.value.filters.view,
+  set: (view) =>
+    setAmendments(amendmentSort.value, {
+      ...amendmentState.value.filters,
+      view,
+    }),
+});
+const amendmentStates = computed<AmendmentSheetFilters["states"]>({
+  get: () => amendmentState.value.filters.states,
+  set: (states) =>
+    setAmendments(amendmentSort.value, {
+      ...amendmentState.value.filters,
+      states,
+    }),
+});
+
+function onGeneralSort(column: GeneralSortKey): void {
+  generalSort.value = nextSort(generalSort.value, column, DEFAULT_GENERAL_SORT);
+}
+
+function onAmendmentSort(column: AmendmentSortKey): void {
+  amendmentSort.value = nextSort(
+    amendmentSort.value,
+    column,
+    DEFAULT_AMENDMENT_SORT,
+  );
+}
+
+/**
+ * The search box: what is typed, written to the query (`q`) once typing
+ * pauses. A change of the query from elsewhere (clearing, another tab, the
+ * browser's back) comes back to the box, but not the one this box just
+ * wrote, so nothing typed meanwhile is lost.
+ */
+const firstQueryValue = (value: unknown) =>
+  typeof value === "string"
+    ? value
+    : Array.isArray(value) && typeof value[0] === "string"
+      ? value[0]
+      : "";
+const searchDraft = ref(firstQueryValue(route.query[SHEET_QUERY.search]));
+const searchTyped = refDebounced(searchDraft, 300);
+let searchWritten: string | null = null;
+watch(searchTyped, (value) => {
+  const next = value.trim();
+  if (next === firstQueryValue(route.query[SHEET_QUERY.search]).trim()) return;
+  searchWritten = next;
+  replaceQuery({ [SHEET_QUERY.search]: next || undefined });
+});
+watch(
+  () => firstQueryValue(route.query[SHEET_QUERY.search]).trim(),
+  (value) => {
+    if (value === searchWritten) {
+      searchWritten = null;
+      return;
+    }
+    if (value !== searchDraft.value.trim()) searchDraft.value = value;
+  },
+);
+
+/**
+ * Empties the box and forgets what it wrote: the debounce settles on ""
+ * and writes nothing, and a write overtaken by the navigation that called
+ * this is not waited for.
+ */
+function clearSearchBox(): void {
+  searchDraft.value = "";
+  searchWritten = null;
+}
+
+function clearGeneralFilters(): void {
+  searchDraft.value = "";
+  setGeneral(generalSort.value, EMPTY_GENERAL_FILTERS);
+}
+
+function clearAmendmentFilters(): void {
+  searchDraft.value = "";
+  setAmendments(amendmentSort.value, EMPTY_AMENDMENT_FILTERS);
+}
+
+/**
+ * The rows seen under the filters in use stay until the filters change, so
+ * ticking «Tratado», a result coming in or an observation cleared never
+ * makes a row vanish under the reader's hand.
+ */
+const generalKept = shallowRef<ReadonlySet<string>>(new Set());
+watch(
+  [
+    () => filtersKey(generalState.value.filters),
+    () => matchingGeneralIds(generalRows.value, generalState.value.filters),
+  ],
+  ([key, matching], previous) => {
+    generalKept.value = keepSeen(
+      generalKept.value,
+      matching,
+      key !== previous?.[0],
+    );
+  },
+  { immediate: true },
+);
+const amendmentKept = shallowRef<ReadonlySet<string>>(new Set());
+watch(
+  [
+    () => filtersKey(amendmentState.value.filters),
+    () =>
+      matchingAmendmentIds(amendmentRows.value, amendmentState.value.filters),
+  ],
+  ([key, matching], previous) => {
+    amendmentKept.value = keepSeen(
+      amendmentKept.value,
+      matching,
+      key !== previous?.[0],
+    );
+  },
+  { immediate: true },
+);
+
+/**
+ * Whatever the filters, the row in debate stays («Seguir el debate» finds
+ * it on the page) and so does the one whose panel is open.
+ */
+const generalKeep = computed(() => {
+  const ids = new Set(generalKept.value);
+  const liveId = live.value?.agendaItemId;
+  if (liveId) ids.add(liveId);
+  if (panelOpen.value && panelSubject.value?.kind === "item") {
+    ids.add(panelSubject.value.id);
+  }
+  return ids;
+});
+const amendmentKeep = computed(() => {
+  const ids = new Set(amendmentKept.value);
+  const liveId = live.value?.amendmentId;
+  if (liveId) ids.add(liveId);
+  if (panelOpen.value && panelSubject.value?.kind === "amendment") {
+    ids.add(panelSubject.value.id);
+  }
+  return ids;
+});
+
+const shownGeneral = computed(() =>
+  shownGeneralRows(
+    generalRows.value,
+    generalState.value.sort,
+    generalState.value.filters,
+    generalKeep.value,
+    locale.value,
+  ),
+);
+const shownAmendments = computed(() =>
+  shownAmendmentRows(
+    amendmentRows.value,
+    amendmentState.value.sort,
+    amendmentState.value.filters,
+    amendmentKeep.value,
+    locale.value,
+  ),
+);
+const generalFlat = computed(
+  () => !isDefaultSort(generalState.value.sort, DEFAULT_GENERAL_SORT),
+);
+const generalTotal = computed(
+  () => generalRows.value.filter((row) => row.kind === "item").length,
+);
+const generalShownCount = computed(
+  () => shownGeneral.value.filter((row) => row.kind === "item").length,
+);
+
+const GENERAL_COLUMN_KEYS: Record<GeneralSortKey, string> = {
+  number: "controlSheet.columns.number",
+  item: "controlSheet.columns.item",
+  treated: "controlSheet.columns.treated",
+  result: "controlSheet.columns.result",
+  votes: "controlSheet.columns.votes",
+  speakers: "controlSheet.columns.speakers",
+};
+const AMENDMENT_COLUMN_KEYS: Record<AmendmentSortKey, string> = {
+  code: "controlSheet.columns.code",
+  authors: "controlSheet.columns.authors",
+  ceaPosition: "controlSheet.columns.ceaPosition",
+  position: "controlSheet.columns.position",
+  treated: "controlSheet.columns.treated",
+  result: "controlSheet.columns.result",
+  vote: "controlSheet.columns.vote",
+};
+
+const generalViewItems = computed(() =>
+  GENERAL_VIEWS.map((value) => ({
+    value,
+    label: t(`controlSheet.filters.views.general.${value}`),
+  })),
+);
+const amendmentViewItems = computed(() =>
+  AMENDMENT_VIEWS.map((value) => ({
+    value,
+    label: t(`controlSheet.filters.views.amendments.${value}`),
+  })),
+);
+const resultItems = computed(() =>
+  RESULT_FILTERS.map((value) => ({
+    value,
+    label: t(`controlSheet.result.${value}`),
+  })),
+);
+const stateItems = computed(() =>
+  LIVE_AMENDMENT_STATES.map((value) => ({
+    value,
+    label: t(`liveView.state.${value}.label`),
+  })),
+);
+const generalSortItems = computed(() =>
+  GENERAL_SORT_KEYS.map((value) => ({
+    value,
+    label: t(GENERAL_COLUMN_KEYS[value]),
+  })),
+);
+const amendmentSortItems = computed(() =>
+  AMENDMENT_SORT_KEYS.map((value) => ({
+    value,
+    label: t(AMENDMENT_COLUMN_KEYS[value]),
+  })),
+);
+
+const generalCount = computed(() =>
+  t(
+    "controlSheet.filters.count",
+    { shown: generalShownCount.value, total: generalTotal.value },
+    generalTotal.value,
+  ),
+);
+const amendmentCountText = computed(() =>
+  t(
+    "controlSheet.filters.amendmentCount",
+    { shown: shownAmendments.value.length, total: amendmentRows.value.length },
+    amendmentRows.value.length,
+  ),
+);
+const generalActive = computed(() =>
+  activeFilterCount(generalState.value.filters),
+);
+const amendmentActive = computed(() =>
+  activeFilterCount(amendmentState.value.filters),
+);
+
+/**
+ * What the live region says, written only when the order or the filters
+ * change (never on a refetch): «Ordenado por Resultado, ascendente · 12 de
+ * 30 puntos».
+ */
+const listStatus = ref("");
+const listStateKey = computed(() =>
+  tab.value === "general"
+    ? `general|${generalState.value.sort.key}|${generalState.value.sort.dir}|${filtersKey(generalState.value.filters)}`
+    : `amendments|${amendmentState.value.sort.key}|${amendmentState.value.sort.dir}|${filtersKey(amendmentState.value.filters)}`,
+);
+watch(
+  listStateKey,
+  () => {
+    const general = tab.value === "general";
+    const sort = general ? generalState.value.sort : amendmentState.value.sort;
+    const column = general
+      ? GENERAL_COLUMN_KEYS[sort.key as GeneralSortKey]
+      : AMENDMENT_COLUMN_KEYS[sort.key as AmendmentSortKey];
+    listStatus.value = `${t("controlSheet.sort.status", {
+      column: t(column),
+      direction: t(`controlSheet.sort.${sort.dir}`),
+    })} · ${general ? generalCount.value : amendmentCountText.value}`;
+  },
+  { flush: "post" },
+);
+
 // The row panel ------------------------------------------------------------------
 
 const canEdit = computed(() => sheet.value?.can.edit ?? false);
@@ -209,7 +577,10 @@ const freshPanelTarget = computed<RowPanelTarget | null>(() => {
   const subject = panelSubject.value;
   if (!subject) return null;
   if (subject.kind === "item") {
-    const row = generalRows.value.find((entry) => entry.id === subject.id);
+    // Only as a row of its own: an item left as a heading is off the sheet.
+    const row = generalRows.value.find(
+      (entry) => entry.id === subject.id && entry.kind === "item",
+    );
     return row ? { kind: "item", row } : null;
   }
   const row = amendmentRows.value.find(
@@ -226,7 +597,9 @@ const freshPanelTarget = computed<RowPanelTarget | null>(() => {
 /**
  * The panel's row: the fresh one while the lists hold it, the last one seen
  * otherwise (following the debate to another document, a refetch on the
- * way), so the panel and what is being typed in it never vanish.
+ * way), so the panel and what is being typed in it never vanish. An item
+ * the sheet no longer holds closes its panel (below); the last row only
+ * fills it while it closes.
  */
 const lastPanelTarget = shallowRef<RowPanelTarget | null>(null);
 watch(freshPanelTarget, (target) => {
@@ -241,6 +614,42 @@ const panelTarget = computed<RowPanelTarget | null>(() => {
   const id = last.kind === "item" ? last.row.id : last.row.amendment.id;
   return last.kind === subject.kind && id === subject.id ? last : null;
 });
+
+/**
+ * Closes the panel of an item that left the sheet, saying why: the vote
+ * that alone kept it there is no longer in force (`byVote`), or it went
+ * some other way (taken off by hand, deleted, left as a heading).
+ */
+function closeLeftItemPanel(byVote: boolean): void {
+  panelOpen.value = false;
+  toast.add({
+    title: byVote
+      ? t("controlSheet.itemVotes.leftSheet")
+      : t("controlSheet.panel.leftSheet"),
+    icon: "i-lucide-list-x",
+  });
+}
+
+// An item that leaves the sheet through someone else's write (its vote
+// voided on another device, taken off by hand elsewhere, deleted) closes
+// its panel once the sheet that says so has landed, rather than keep
+// offering to change a row that is no longer there. Amendments keep the
+// last row seen instead (following the debate to another document).
+watch(
+  [freshPanelTarget, () => sheetFetch.pending.value],
+  ([fresh, pending]) => {
+    const subject = panelSubject.value;
+    if (!panelOpen.value || subject?.kind !== "item" || fresh || pending) {
+      return;
+    }
+    const last = lastPanelTarget.value;
+    closeLeftItemPanel(
+      last?.kind === "item" &&
+        last.row.id === subject.id &&
+        last.row.itemVotes.some((vote) => vote.voidedAt === null),
+    );
+  },
+);
 
 function openItem(row: GeneralSheetRow): void {
   lastPanelTarget.value = { kind: "item", row };
@@ -258,7 +667,12 @@ function openAmendment(row: AmendmentSheetRow): void {
   panelOpen.value = true;
 }
 
-/** Puts a saved row in place at once; the live refetch follows. */
+/**
+ * Puts a saved row in place at once, then fetches the sheet again with any
+ * request already on its way cancelled: that one may have read the row
+ * before this write, and would put the old row back when it lands (its own
+ * live event only joins it).
+ */
 function onItemSaved(row: ControlSheetItemRowDto): void {
   const current = sheet.value;
   if (!current) return;
@@ -266,7 +680,60 @@ function onItemSaved(row: ControlSheetItemRowDto): void {
     ...current,
     itemRows: [...current.itemRows.filter((entry) => entry.id !== row.id), row],
   };
+  void sheetFetch.refresh({ dedupe: "cancel" });
 }
+
+/**
+ * A vote on an item recorded, voided or made unanimous from the panel: in
+ * place at once, then the sheet again, as onItemSaved. Null (a write
+ * failed) only fetches it again. Voiding the vote that alone kept an item
+ * on the sheet takes the item off it: so goes its panel, as when it is
+ * taken off by hand, rather than showing the vote still in force.
+ */
+function onVoteChanged(vote: VoteDto | null): void {
+  const current = sheet.value;
+  if (vote && current) {
+    sheet.value = {
+      ...current,
+      itemVotes: [
+        ...(current.itemVotes ?? []).filter((entry) => entry.id !== vote.id),
+        vote,
+      ],
+    };
+    const subject = panelSubject.value;
+    if (
+      panelOpen.value &&
+      subject?.kind === "item" &&
+      subject.id === vote.subjectId &&
+      !generalRows.value.some(
+        (row) => row.id === subject.id && row.kind === "item",
+      )
+    ) {
+      closeLeftItemPanel(true);
+    }
+  }
+  void sheetFetch.refresh({ dedupe: "cancel" });
+}
+
+/**
+ * The Mesa's latest headcount, the base of a vote on the members present
+ * (undefined until it loads, null when there is none), for those who
+ * record votes on items.
+ */
+const headcounts = useHeadcounts({
+  baseUrl: apiBase,
+  key: computed(() => String(route.params.assembly ?? "")),
+  enabled: computed(() => canEdit.value || canModerate.value),
+});
+const voteContext = computed<ItemVoteContext>(() => ({
+  status: assembly.value?.status ?? "draft",
+  type: assembly.value?.type ?? ASSEMBLY_TYPES.AGO,
+  settings: {
+    ...DEFAULT_ASSEMBLY_SETTINGS,
+    ...(assembly.value?.settings ?? {}),
+  },
+  headcount: headcounts.data.value ? headcounts.latest.value : undefined,
+}));
 
 function onAmendmentSaved(row: ControlSheetAmendmentRowDto): void {
   const current = sheet.value;
@@ -278,6 +745,88 @@ function onAmendmentSaved(row: ControlSheetAmendmentRowDto): void {
       row,
     ],
   };
+  void sheetFetch.refresh({ dedupe: "cancel" });
+}
+
+// Ticking «Tratado» in the lists ---------------------------------------------------
+
+/**
+ * The marks on their way, by item or amendment id (cuids never collide),
+ * from the lists and the panel alike: the box and the switch show the new
+ * value at once, and a second change of that row waits for the answer, so
+ * the two never send the same token and read their own write as someone
+ * else's.
+ */
+const treatedPending = ref<Record<string, boolean>>({});
+
+async function saveTreated(
+  kind: "item" | "amendment",
+  id: string,
+  control: TreatedControl,
+  value: boolean,
+): Promise<void> {
+  if (!canModerate.value || control.lock) return;
+  if (value === control.treated || id in treatedPending.value) return;
+  treatedPending.value = { ...treatedPending.value, [id]: value };
+  const body: ControlSheetItemBody | ControlSheetAmendmentBody = {
+    treated: { value, updatedAt: control.token },
+  };
+  const segment = kind === "item" ? "items" : "amendments";
+  const apply = (row: ControlSheetItemRowDto | ControlSheetAmendmentRowDto) =>
+    kind === "item"
+      ? onItemSaved(row as ControlSheetItemRowDto)
+      : onAmendmentSaved(row as ControlSheetAmendmentRowDto);
+  try {
+    apply(
+      await api.send<ControlSheetItemRowDto | ControlSheetAmendmentRowDto>(
+        `${apiBase.value}/control-sheet/${segment}/${encodeURIComponent(id)}`,
+        { method: "PATCH", body: { ...body } },
+      ),
+    );
+  } catch (error) {
+    const row = staleSheetRow<
+      ControlSheetItemRowDto | ControlSheetAmendmentRowDto
+    >(error);
+    if (row) {
+      apply(row);
+      toast.add({
+        title: t("controlSheet.panel.stale"),
+        color: "warning",
+        icon: "i-lucide-refresh-ccw",
+      });
+    } else {
+      api.notifyError(error, "controlSheet.panel.saveFailed");
+    }
+  } finally {
+    const { [id]: _done, ...rest } = treatedPending.value;
+    treatedPending.value = rest;
+  }
+}
+
+function onItemTreated(row: GeneralSheetRow, value: boolean): void {
+  void saveTreated("item", row.id, itemTreatedControl(row), value);
+}
+
+function onAmendmentTreated(row: AmendmentSheetRow, value: boolean): void {
+  void saveTreated(
+    "amendment",
+    row.amendment.id,
+    amendmentTreatedControl(row),
+    value,
+  );
+}
+
+/** The mark on its way for the panel's row, if any. */
+const panelTreatedPending = computed(() => {
+  const subject = panelSubject.value;
+  return subject ? treatedPending.value[subject.id] : undefined;
+});
+
+function onPanelTreated(value: boolean): void {
+  const target = panelTarget.value;
+  if (!target) return;
+  if (target.kind === "item") onItemTreated(target.row, value);
+  else onAmendmentTreated(target.row, value);
 }
 
 // Adding an item without documents ------------------------------------------------
@@ -285,21 +834,17 @@ function onAmendmentSaved(row: ControlSheetAmendmentRowDto): void {
 const addOpen = ref(false);
 const addChoice = ref<string | undefined>(undefined);
 const adding = ref(false);
+/**
+ * The items «Añadir punto» offers: those not on the sheet yet as a row of
+ * their own (by their documents, by hand, or by their own vote or «Se vota
+ * el punto»).
+ */
 const addItems = computed(() => {
-  const withDocuments = new Set(
-    agendaDocuments.value
-      .filter((document) => document.status !== "draft")
-      .map((document) => document.agendaItemId),
-  );
-  const listed = new Set(
-    (sheet.value?.itemRows ?? [])
-      .filter((row) => row.listed)
-      .map((row) => row.agendaItemId),
+  const onSheet = new Set(
+    generalRows.value.filter((row) => row.kind === "item").map((row) => row.id),
   );
   return flattenAgendaTree(buildAgendaTree(items.value))
-    .filter(
-      (node) => !withDocuments.has(node.item.id) && !listed.has(node.item.id),
-    )
+    .filter((node) => !onSheet.has(node.item.id))
     .map((node) => ({
       value: node.item.id,
       label: numberedAgendaTitle(
@@ -361,6 +906,7 @@ function refreshSheet(): void {
 }
 
 onLive((events) => {
+  headcounts.onLive(events);
   if (affectsControlSheet(events)) refreshSheet();
   if (affectsLiveDebate(events) && allowed.value) {
     void liveFetch.refresh({ dedupe: "defer" });
@@ -404,6 +950,7 @@ async function followDebate(): Promise<void> {
       await router.replace({
         query: {
           ...route.query,
+          ...tabQuery("amendments"),
           [TAB_QUERY]: "enmiendas",
           [DOCUMENT_QUERY]: document.slug,
         },
@@ -415,7 +962,7 @@ async function followDebate(): Promise<void> {
   if (state.agendaItemId) {
     if (tab.value !== "general") {
       await router.replace({
-        query: { ...route.query, [TAB_QUERY]: undefined },
+        query: { ...route.query, ...tabQuery("general") },
       });
     }
     scrollToRow(state.agendaItemId);
@@ -533,12 +1080,57 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
             :description="t('controlSheet.emptyDescription')"
             variant="outline"
           />
-          <ControlSheetGeneral
-            v-else
-            :rows="generalRows"
-            :document-path="documentPath"
-            @open="openItem"
-          />
+          <template v-else>
+            <ControlSheetToolbar
+              v-model:search="searchDraft"
+              v-model:view="generalView"
+              v-model:extra="generalResults"
+              v-model:sort="generalSort"
+              :search-label="t('controlSheet.filters.search')"
+              :search-placeholder="t('controlSheet.filters.searchGeneral')"
+              :views="generalViewItems"
+              :views-label="t('controlSheet.filters.viewsGeneral')"
+              :extra-items="resultItems"
+              :extra-label="t('controlSheet.columns.result')"
+              :sort-items="generalSortItems"
+              :fallback="DEFAULT_GENERAL_SORT"
+              :active="generalActive"
+              :count="generalActive > 0 ? generalCount : null"
+              :status="listStatus"
+              @clear="clearGeneralFilters"
+            />
+            <!-- A heading in debate is shown even when no item row is. -->
+            <CommonEmptyState
+              v-if="shownGeneral.length === 0"
+              icon="i-lucide-search-x"
+              :title="t('controlSheet.filters.noMatchesTitle')"
+              :description="t('controlSheet.filters.noMatchesDescription')"
+              variant="outline"
+            >
+              <template #action>
+                <UButton
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-filter-x"
+                  :label="t('controlSheet.filters.clear')"
+                  @click="clearGeneralFilters"
+                />
+              </template>
+            </CommonEmptyState>
+            <ControlSheetGeneral
+              v-else
+              :rows="shownGeneral"
+              :document-path="documentPath"
+              :can-mark="canModerate"
+              :can-edit="canEdit || canModerate"
+              :treated-pending="treatedPending"
+              :sort="generalSort"
+              :flat="generalFlat"
+              @open="openItem"
+              @treated="onItemTreated"
+              @sort="onGeneralSort"
+            />
+          </template>
           <div v-if="canEdit">
             <UButton
               color="neutral"
@@ -610,12 +1202,55 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
             >
               {{ t("controlSheet.amendmentsEmpty") }}
             </p>
-            <ControlSheetAmendments
-              v-else
-              :rows="amendmentRows"
-              :amendment-path="amendmentPath"
-              @open="openAmendment"
-            />
+            <template v-else>
+              <ControlSheetToolbar
+                v-model:search="searchDraft"
+                v-model:view="amendmentView"
+                v-model:extra="amendmentStates"
+                v-model:sort="amendmentSort"
+                :search-label="t('controlSheet.filters.search')"
+                :search-placeholder="t('controlSheet.filters.searchAmendments')"
+                :views="amendmentViewItems"
+                :views-label="t('controlSheet.filters.viewsAmendments')"
+                :extra-items="stateItems"
+                :extra-label="t('controlSheet.columns.result')"
+                :sort-items="amendmentSortItems"
+                :fallback="DEFAULT_AMENDMENT_SORT"
+                :active="amendmentActive"
+                :count="amendmentActive > 0 ? amendmentCountText : null"
+                :status="listStatus"
+                @clear="clearAmendmentFilters"
+              />
+              <CommonEmptyState
+                v-if="shownAmendments.length === 0"
+                icon="i-lucide-search-x"
+                :title="t('controlSheet.filters.noMatchesAmendments')"
+                :description="t('controlSheet.filters.noMatchesDescription')"
+                variant="outline"
+              >
+                <template #action>
+                  <UButton
+                    color="neutral"
+                    variant="outline"
+                    icon="i-lucide-filter-x"
+                    :label="t('controlSheet.filters.clear')"
+                    @click="clearAmendmentFilters"
+                  />
+                </template>
+              </CommonEmptyState>
+              <ControlSheetAmendments
+                v-else
+                :rows="shownAmendments"
+                :amendment-path="amendmentPath"
+                :can-mark="canModerate"
+                :can-edit="canEdit || canModerate"
+                :treated-pending="treatedPending"
+                :sort="amendmentSort"
+                @open="openAmendment"
+                @treated="onAmendmentTreated"
+                @sort="onAmendmentSort"
+              />
+            </template>
           </template>
         </template>
       </template>
@@ -625,8 +1260,12 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
         :target="panelTarget"
         :api-base="apiBase"
         :can="{ edit: canEdit, moderate: canModerate }"
+        :treated-pending="panelTreatedPending"
+        :vote-context="voteContext"
         @item-saved="onItemSaved"
         @amendment-saved="onAmendmentSaved"
+        @treated="onPanelTreated"
+        @vote-changed="onVoteChanged"
       />
 
       <UModal

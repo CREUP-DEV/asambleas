@@ -21,6 +21,7 @@ import {
   sessionTransactionalRejectors,
   sortSessionAmendments,
 } from "~/composables/session/sessionModel";
+import { numberedAgendaTitle } from "~/utils/agendaTree";
 
 // Speaking turns --------------------------------------------------------------
 
@@ -429,19 +430,32 @@ export type LiveVoteSubject =
   | { kind: "amendmentUnknown" }
   | { kind: "document"; title: string }
   | { kind: "documentUnknown" }
+  | { kind: "agendaItem"; number: string | null; title: string }
+  | { kind: "agendaItemUnknown" }
   | { kind: "decision" }
   | { kind: "other" };
 
+/** An agenda row as the viewer reads it: its number and title. */
+export interface LiveVoteAgendaRow {
+  item: { id: string; title: string };
+  /** Null for an item that is not in the agenda for everyone yet. */
+  number: string | null;
+}
+
 /**
  * What the vote was about: an amendment (by code, when it is among the
- * amendments the viewer can read), the final vote of the document shown, a
- * decision of the Mesa, or something else.
+ * amendments the viewer can read), the final vote of the document shown, an
+ * agenda item (by its number and title in the viewer's own agenda, which
+ * says what the viewer may read of it), a decision of the Mesa, or
+ * something else.
  */
 export function liveVoteSubject(
   vote: VoteDto,
   context: {
     amendments: readonly AmendmentDto[];
     document: { id: string; title: string; reference: string | null } | null;
+    /** The viewer's agenda rows, numbered (buildSessionAgendaRows). */
+    agenda?: readonly LiveVoteAgendaRow[];
   },
 ): LiveVoteSubject {
   switch (vote.subjectType) {
@@ -458,6 +472,14 @@ export function liveVoteSubject(
             title: context.document.reference ?? context.document.title,
           }
         : { kind: "documentUnknown" };
+    case "agenda_item": {
+      const row = context.agenda?.find(
+        (item) => item.item.id === vote.subjectId,
+      );
+      return row
+        ? { kind: "agendaItem", number: row.number, title: row.item.title }
+        : { kind: "agendaItemUnknown" };
+    }
     case "decision":
       return { kind: "decision" };
     default:
@@ -487,11 +509,82 @@ export function liveVoteSubjectText(
       return t("projection.vote.document", {
         title: t("projection.vote.documentUnknown"),
       });
+    case "agendaItem":
+      return t("projection.vote.agendaItem", {
+        title: numberedAgendaTitle(
+          subject.number,
+          subject.title,
+          t("agenda.unlisted.inText"),
+        ),
+      });
+    case "agendaItemUnknown":
+      return t("projection.vote.agendaItemUnknown");
     case "decision":
       return t("projection.vote.decision");
     default:
       return t("projection.vote.other");
   }
+}
+
+/** Spaces collapsed and case ignored, to compare two short texts. */
+function sameText(a: string, b: string): boolean {
+  const plain = (text: string) =>
+    text.replace(/\s+/g, " ").trim().toLocaleLowerCase();
+  return plain(a) === plain(b);
+}
+
+/**
+ * What an agenda item vote decided, as the Mesa wrote it ("Qué se vota"),
+ * to show under its heading. Null when there is none, or when it only
+ * repeats the item's title the heading already names (the console offers
+ * the numbered title as it).
+ */
+export function liveVoteQuestion(
+  vote: Pick<VoteDto, "question">,
+  subject: LiveVoteSubject,
+  unlistedMark: string,
+): string | null {
+  const question = vote.question?.trim();
+  if (!question) return null;
+  if (subject.kind === "agendaItem") {
+    const repeats = [
+      subject.title,
+      numberedAgendaTitle(subject.number, subject.title, unlistedMark),
+    ].some((title) => sameText(title, question));
+    if (repeats) return null;
+  }
+  return question;
+}
+
+/**
+ * The line an assent vote shows instead of counts: "Por unanimidad" when
+ * nobody objected once unanimity was asked, else "Por asentimiento". Null
+ * for a counted vote.
+ */
+export function liveAssentKey(
+  vote: Pick<VoteDto, "method" | "unanimous">,
+): string | null {
+  if (vote.method !== "assent") return null;
+  return vote.unanimous
+    ? "projection.vote.unanimous"
+    : "session.enums.approvalMethod.assent";
+}
+
+/**
+ * Whether a batch of live events changed the vote on screen itself: the
+ * live state still points at it, but its unanimity changed (an event of
+ * entity `vote` with its id), so the screens read the live state again.
+ */
+export function affectsLiveVote(
+  events: readonly LiveEventDto[],
+  voteId: string | null | undefined,
+): boolean {
+  return (
+    Boolean(voteId) &&
+    events.some(
+      (event) => event.entityType === "vote" && event.entityId === voteId,
+    )
+  );
 }
 
 export type LiveVoteCountKey =

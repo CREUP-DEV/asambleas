@@ -93,7 +93,13 @@ running on it.
   deploy's migrations in one transaction): no partial index, CHECK, default
   or backfill names them.
 - `votes` gains `unanimous` (default false), `updated_at` (lock token, set
-  explicitly), `voided_at`, `voided_by_user_id`.
+  explicitly), `voided_at`, `voided_by_user_id` and `question` (what an
+  item vote decides). Built in phase 3 (migration 0035).
+- `agenda_items` gains `voted` («Se vota el punto», default false): the
+  item is voted by itself, so the sheet lists it and reads it «Pendiente»
+  instead of «No aplica» until its vote. Ignored while a document of the
+  item is voted (`itemHasVotedDocuments`). Decided with the user on
+  2026-11-15; built in phase 3.
 - Which votes are valid: an amendment, document or admission vote only
   while `amendments.outcome_vote_id`, `documents.final_vote_id` or
   `decisions.vote_id` points at it; `voided_at` is the truth only for the
@@ -299,7 +305,8 @@ DO NOTHING` of an empty row (assembly taken from the item or amendment,
   «Rechazado»); then the manual result (Decaído, No aplica, and Retirado for
   items without documents; the Mesa, since it counts as treated); then derived values
   (a withdrawn document gives Retirado, a postponed one «Pospuesto a otra
-  asamblea», a document that is not voted «No aplica»). While postponed in
+  asamblea», a document that is not voted «No aplica», or «Pendiente» when
+  the item has «Se vota el punto»). While postponed in
   the session it reads «Aplazado».
 - Withdrawing a document or postponing it to another assembly in the
   session is a Mesa act on its real status: «Retirar documento» and
@@ -368,7 +375,11 @@ updatedAt }`, `session:moderate`, the same `assertStatusChange` checks
   Posición del proponente (read only, when the reader may see it), Tratado,
   Resultado, Votaciones, Intervinientes, Observaciones, in the console's
   order (`sortSessionAmendments`).
-- The table is compact and read only; a row opens a side panel
+- The table is compact and read only but for «Tratado», a box the Mesa
+  ticks right there (`ControlSheetTreated`, with the panel's lock token:
+  `itemTreatedControl`, `amendmentTreatedControl`); a row that counts as
+  treated by itself stays ticked and locked, the reason in a tooltip, and
+  everyone else reads the box disabled. A row opens a side panel
   (`USlideover`) with everything that row edits: CEA position, observations,
   the Mesa's marks, manual result, item votes and motions, speaker
   corrections, history (who and when, with earlier texts to bring back) and
@@ -468,6 +479,12 @@ rows, visibleIds)` with a new exported finder (no drafts), final votes in
    Phases 1 and 2 can ship on their own, ready for the next assembly.
 3. Votes: item votes (console and sheet), methods, assent rows and
    unanimity with every reader, voiding, one vote for several documents.
+   Built on 2026-11-15: «Se vota el punto», item votes from the console
+   (projected) and the sheet, «Registrada» for `roll_call`, unanimity on
+   assent votes (item votes and documents' final votes), voiding, the
+   projection and live view wording, and sorting and filtering in both
+   tabs of the sheet. Left for later: assent vote rows for amendments
+   approved by «a», «Aplicar a todos los documentos del punto».
 4. Registered votes with ballots.
 5. Procedural motions and the order of the session in the console.
 6. Speakers: amendment link, corrections, the new key and «Turnos de

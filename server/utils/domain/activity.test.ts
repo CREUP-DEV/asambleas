@@ -287,6 +287,16 @@ describe("payload allowlists", () => {
         consolidatedVersionId: "v",
       }),
     ).toEqual({ result: "approved" });
+    // A voided vote on an item: never which item nor the document behind it.
+    expect(
+      allowActivityPayload("event", "vote_voided", {
+        subjectType: "agenda_item",
+        subjectId: "item",
+        result: "rejected",
+        auto: true,
+        documentId: "doc",
+      }),
+    ).toEqual({ subjectType: "agenda_item", result: "rejected" });
   });
 
   it("narrows edits to the fields shown, ids only as changed", () => {
@@ -1541,6 +1551,96 @@ describe("automatic agenda sub-items", () => {
     const ids = collectActivityIds([row(created("draftdoc"))]);
     expect([...ids.documents]).toEqual(["draftdoc"]);
     expect([...ids.agendaItems]).toEqual(["item"]);
+  });
+});
+
+describe("votes on agenda items", () => {
+  const vote = (
+    action: string,
+    payload: Record<string, unknown>,
+  ): Partial<Row> => ({
+    action,
+    targetType: "vote",
+    targetId: "v1",
+    actorUserId: OTHER,
+    payload: { subjectType: "agenda_item", subjectId: "item", ...payload },
+  });
+
+  it("show to everyone who sees the assembly on an item written by hand", () => {
+    const data = lookups();
+    data.agendaItems.set("item", "Ratificación de la Mesa");
+    const item = meItem(
+      makeActor({ memberId: MEMBER }),
+      "member",
+      vote("vote_recorded", { result: "approved" }),
+      data,
+    )!;
+    expect(item.target.available).toBe(true);
+    expect(item.target.label).toBe("Ratificación de la Mesa");
+    expect(item.payload).toEqual({
+      subjectType: "agenda_item",
+      result: "approved",
+    });
+  });
+
+  it("follow the document whose title their item carries", () => {
+    const voided = vote("vote_voided", {
+      result: "approved",
+      auto: true,
+      documentId: "draftdoc",
+    });
+    expect(meItem(makeActor({ memberId: MEMBER }), "member", voided)).toBe(
+      null,
+    );
+    const presenter = meItem(
+      makeActor({ memberId: OTHER_MEMBER }),
+      "member",
+      voided,
+    )!;
+    expect(presenter.target.available).toBe(true);
+    expect(presenter.payload).toEqual({
+      subjectType: "agenda_item",
+      result: "approved",
+    });
+  });
+
+  it("keep a withheld title for document managers", () => {
+    const changed = vote("vote_unanimity_changed", {
+      unanimous: true,
+      titleWithheld: true,
+    });
+    expect(meItem(makeActor({ memberId: MEMBER }), "member", changed)).toBe(
+      null,
+    );
+    const manager = makeActor({
+      permissions: [PERMISSION_KEYS.DOCUMENT_MANAGE],
+    });
+    expect(meItem(manager, "member", changed)?.payload).toEqual({
+      subjectType: "agenda_item",
+      unanimous: true,
+    });
+  });
+
+  it("show a vote on a subject the reader does not know only to Admins", () => {
+    const unknown = vote("vote_recorded", {
+      subjectType: "procedural_motion",
+      subjectId: "m1",
+      result: "approved",
+    });
+    expect(meItem(makeActor({ memberId: MEMBER }), "member", unknown)).toBe(
+      null,
+    );
+    expect(
+      meItem(makeActor({ isAdmin: true }), "member", unknown)?.target.available,
+    ).toBe(true);
+  });
+
+  it("load the item and the document their events name", () => {
+    const ids = collectActivityIds([
+      row(vote("vote_recorded", { auto: true, documentId: "draftdoc" })),
+    ]);
+    expect([...ids.agendaItems]).toEqual(["item"]);
+    expect([...ids.documents]).toEqual(["draftdoc"]);
   });
 });
 

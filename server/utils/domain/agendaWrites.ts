@@ -7,6 +7,7 @@ import {
   documents,
   liveState,
   speakingTurns,
+  votes,
 } from "../../db/schema";
 import type { Actor } from "./actor";
 import { diffChanges } from "./changes";
@@ -16,6 +17,7 @@ import {
   deletedTitleWithheld,
   followsDocumentTitle,
   keepsDocumentTitle,
+  normalizeItemVoted,
 } from "~~/shared/utils/agendaSubmissions";
 
 /**
@@ -147,9 +149,9 @@ export async function bindAutoItem(
 /**
  * The automatic sub-item of a document that goes with it when the document
  * is deleted or moved away: the item it hangs from, if that was created for
- * it and holds no other document, no sub-item and nothing the control sheet
- * noted (sheetNotesIn). Null otherwise. Call it before the delete or the
- * move, and removeAutoItem after it.
+ * it and holds no other document, no sub-item, nothing the control sheet
+ * noted and no vote of its own (sheetNotesIn). Null otherwise. Call it
+ * before the delete or the move, and removeAutoItem after it.
  */
 export async function findRemovableAutoItem(
   tx: Executor,
@@ -180,37 +182,52 @@ export async function findRemovableAutoItem(
   ) {
     return null;
   }
-  // What the sheet noted about it is the record of the session: the item
-  // stays (unbindAutoItem) rather than take it away.
+  // What the sheet noted about it, and its votes, are the record of the
+  // session: the item stays (unbindAutoItem) rather than take them away.
   return (await sheetNotesIn(tx, [item.id])) ? null : item;
 }
 
 /**
- * Whether the control sheet noted anything about these agenda items: a
- * listing, a result by hand, a treated mark or observations. An empty row
- * left by a change that changed nothing does not count.
+ * Whether the session's record holds anything about these agenda items:
+ * what the control sheet noted (a listing, a result by hand, a treated mark
+ * or observations; an empty row left by a change that changed nothing does
+ * not count) or a vote on the item itself, a voided one included, since it
+ * stays for the record. Item votes point at their item with no foreign key,
+ * so whatever would delete the item asks this first.
  */
 export async function sheetNotesIn(
   tx: Executor,
   itemIds: readonly string[],
 ): Promise<boolean> {
   if (itemIds.length === 0) return false;
-  const [row] = await tx
-    .select({ id: controlSheetItems.id })
-    .from(controlSheetItems)
-    .where(
-      and(
-        inArray(controlSheetItems.agendaItemId, [...itemIds]),
-        or(
-          eq(controlSheetItems.listed, true),
-          sql`${controlSheetItems.manualResult} is not null`,
-          sql`${controlSheetItems.treatedAt} is not null`,
-          ne(controlSheetItems.observations, ""),
+  const [[note], [vote]] = await Promise.all([
+    tx
+      .select({ id: controlSheetItems.id })
+      .from(controlSheetItems)
+      .where(
+        and(
+          inArray(controlSheetItems.agendaItemId, [...itemIds]),
+          or(
+            eq(controlSheetItems.listed, true),
+            sql`${controlSheetItems.manualResult} is not null`,
+            sql`${controlSheetItems.treatedAt} is not null`,
+            ne(controlSheetItems.observations, ""),
+          ),
         ),
-      ),
-    )
-    .limit(1);
-  return row !== undefined;
+      )
+      .limit(1),
+    tx
+      .select({ id: votes.id })
+      .from(votes)
+      .where(
+        and(
+          eq(votes.subjectType, "agenda_item"),
+          inArray(votes.subjectId, [...itemIds]),
+        ),
+      )
+      .limit(1),
+  ]);
+  return note !== undefined || vote !== undefined;
 }
 
 /**
@@ -479,11 +496,16 @@ export async function syncAutoItemTitle(
 
 /**
  * When a document moves to a new automatic sub-item, what the sheet noted
- * about its old one goes with it: both are the document's, with the same
- * readers. `toItemId` is a sub-item created in the same transaction, so it
- * has no row yet. Called by updateDocument before it decides whether the
- * old sub-item goes (findRemovableAutoItem). A move to an ordinary item
- * moves nothing: the old sub-item keeps its notes and stays.
+ * about its old one and the votes on it go with it, and so does «Se vota el
+ * punto» (`voted`): both items are the document's, with the same readers.
+ * `toItemId` is a sub-item created in the same transaction, so it has no
+ * sheet row yet and takes no submissions. Called by updateDocument before it
+ * decides whether the old sub-item goes (findRemovableAutoItem). The old
+ * sub-item keeps its own switch: it stays only when it holds something else,
+ * and is then an ordinary item of its own. A move to an ordinary item moves
+ * nothing: the old sub-item keeps its notes and votes and stays. A vote
+ * moved gets a new lock token (`updatedAt`): a page holding the old one
+ * reloads it.
  */
 export async function moveSheetItemRow(
   tx: Executor,
@@ -491,8 +513,28 @@ export async function moveSheetItemRow(
   toItemId: string,
 ): Promise<void> {
   if (fromItemId === toItemId) return;
+  const [from] = await tx
+    .select({ voted: agendaItems.voted })
+    .from(agendaItems)
+    .where(eq(agendaItems.id, fromItemId));
+  // The new sub-item starts with it off (the column's default).
+  if (from && normalizeItemVoted(false, from.voted)) {
+    await tx
+      .update(agendaItems)
+      .set({ voted: true })
+      .where(eq(agendaItems.id, toItemId));
+  }
   await tx
     .update(controlSheetItems)
     .set({ agendaItemId: toItemId })
     .where(eq(controlSheetItems.agendaItemId, fromItemId));
+  await tx
+    .update(votes)
+    .set({ subjectId: toItemId })
+    .where(
+      and(
+        eq(votes.subjectType, "agenda_item"),
+        eq(votes.subjectId, fromItemId),
+      ),
+    );
 }

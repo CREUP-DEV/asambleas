@@ -424,14 +424,14 @@ two, its only call otherwise. There is no first-call quorum.
 
 ## Agenda
 
-| Method | Path                                                 | Who               | Notes                                                                                                                                                                                                                                                                                                                                                       |
-| ------ | ---------------------------------------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| GET    | `/api/assemblies/[assembly]/agenda`                  | visible           | `AgendaDto`: flat items plus the documents the actor can see. Items that carry the title of a document the actor cannot see are left out, or sent with `titleHidden` (see "Automatic sub-items").                                                                                                                                                           |
-| POST   | `/api/assemblies/[assembly]/agenda`                  | `assembly:manage` | `AgendaItemBody` (`title`, `parentId`, `description`, `acceptsSubmissions`, `submissionKinds`, `confirmFinal`). Returns `AgendaItemDto`.                                                                                                                                                                                                                    |
-| PUT    | `/api/assemblies/[assembly]/agenda/[item]`           | `assembly:manage` | `AgendaItemBody` with `updatedAt`. Returns `AgendaItemDto`. A new title on an automatic sub-item sets `titleCustom`.                                                                                                                                                                                                                                        |
-| DELETE | `/api/assemblies/[assembly]/agenda/[item]`           | `assembly:manage` | Deletes the item with its sub-items and every document under them. 409 `agenda_item_amendments` while any of those documents has an amendment of any status; 409 `agenda_item_live` during the session while one of them is being debated; 409 `agenda_item_sheet` while the control sheet noted something about one of them. See "Deleting an item" below. |
-| PUT    | `/api/assemblies/[assembly]/agenda/reorder`          | `assembly:manage` | `AgendaReorderBody`. Validates that every parent exists in the same assembly and that there are no cycles.                                                                                                                                                                                                                                                  |
-| POST   | `/api/assemblies/[assembly]/agenda/[item]/documents` | `document:manage` | `BulkDocumentsBody`. Creates several documents under the item, all or none. Returns 201 `BulkDocumentsDto`. See "Adding several documents" below.                                                                                                                                                                                                           |
+| Method | Path                                                 | Who               | Notes                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------ | ---------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| GET    | `/api/assemblies/[assembly]/agenda`                  | visible           | `AgendaDto`: flat items plus the documents the actor can see. Items that carry the title of a document the actor cannot see are left out, or sent with `titleHidden` (see "Automatic sub-items").                                                                                                                                                                                                                  |
+| POST   | `/api/assemblies/[assembly]/agenda`                  | `assembly:manage` | `AgendaItemBody` (`title`, `parentId`, `description`, `acceptsSubmissions`, `submissionKinds`, `confirmFinal`). Returns `AgendaItemDto`.                                                                                                                                                                                                                                                                           |
+| PUT    | `/api/assemblies/[assembly]/agenda/[item]`           | `assembly:manage` | `AgendaItemBody` with `updatedAt`. Returns `AgendaItemDto`. A new title on an automatic sub-item sets `titleCustom`.                                                                                                                                                                                                                                                                                               |
+| DELETE | `/api/assemblies/[assembly]/agenda/[item]`           | `assembly:manage` | Deletes the item with its sub-items and every document under them. 409 `agenda_item_amendments` while any of those documents has an amendment of any status; 409 `agenda_item_live` during the session while one of them is being debated; 409 `agenda_item_sheet` while the control sheet noted something about one of them or one of them has a vote of its own (voided ones too). See "Deleting an item" below. |
+| PUT    | `/api/assemblies/[assembly]/agenda/reorder`          | `assembly:manage` | `AgendaReorderBody`. Validates that every parent exists in the same assembly and that there are no cycles.                                                                                                                                                                                                                                                                                                         |
+| POST   | `/api/assemblies/[assembly]/agenda/[item]/documents` | `document:manage` | `BulkDocumentsBody`. Creates several documents under the item, all or none. Returns 201 `BulkDocumentsDto`. See "Adding several documents" below.                                                                                                                                                                                                                                                                  |
 
 Once the agenda is final (`agendaFinalizedAt`, the calendar's `agenda_final`
 date once it has come: `agendaFinalSince`), a change to the root items
@@ -443,8 +443,8 @@ DELETE, which has no body). Without it the answer is 409 with
 `data: { code: "agenda_final" }` (`AGENDA_FINAL_CONFLICT_CODE`) and nothing
 changes, so the client asks "El orden del día ya es definitivo. ¿Cambiarlo
 igualmente?" and sends the request again. The event of a confirmed change
-carries `afterFinal: true`. Sub-items, and the description and submissions
-switch of a root item, never need `confirmFinal` and never get `afterFinal`;
+carries `afterFinal: true`. Sub-items, and the description, the submissions
+switch and «Se vota el punto» of a root item, never need `confirmFinal` and never get `afterFinal`;
 on a provisional agenda `confirmFinal` is ignored (`confirmFinalRootChange`).
 
 Nobody marks the agenda as final or reopens it: moving the `agenda_final`
@@ -460,6 +460,17 @@ stored empty while `acceptsSubmissions` is off. The kinds bind members only:
 a member that creates a document of another kind there, moves one in or
 changes the kind of one already there gets 422 with
 `data: { reason: "submission_kind" }`; managers put any kind anywhere.
+
+**«Se vota el punto».** `voted` marks an item voted by itself (a
+ratification, an election) rather than through its documents' final votes.
+`AgendaItemBody.voted` is optional: left out, a POST stores false and a PUT
+keeps the stored value. It is never stored on an item where members present
+(`normalizeItemVoted`): turning submissions on clears it. It is never refused: while a document of the item is
+voted (`itemHasVotedDocuments` in `shared/utils/controlSheet.ts`) it means
+nothing, since those votes are the item's. It only makes the control sheet
+list the item and read it «Pendiente» instead of «No aplica» until its vote;
+recording a vote on the item never requires it (see "Votes on an agenda
+item").
 
 **Automatic sub-items.** Every document created under an item that accepts
 submissions, by a member or by a manager, gets its own sub-item in the same
@@ -542,7 +553,7 @@ item whose title is withheld carry `titleWithheld: true` and are the document
 managers'.
 
 **Deleting an item.** DELETE removes the item, its sub-items and every
-document under them, in one transaction. Only amendments keep it: while any
+document under them, in one transaction. Amendments keep it: while any
 of those documents has an amendment row of any status (drafts and withdrawn
 ones included) the answer is 409 with
 `data: { code: "agenda_item_amendments", documents, amendments }` (how many
@@ -553,7 +564,8 @@ assembly is `in_session` it is also refused, 409 with
 items or documents or one of the items has a speaking turn waiting or in
 progress. It is refused too, 409 with `data: { code: "agenda_item_sheet" }`,
 while the control sheet noted something about one of the items (a listing, a
-result by hand, a treated mark or observations). Each document goes as in DELETE `documents/[document]`
+result by hand, a treated mark or observations) or one of the items has a
+vote of its own, voided ones too (a vote stays in the minutes). Each document goes as in DELETE `documents/[document]`
 (`removeDocument`: its `document_deleted` event, the votes of its final vote,
 the projection, and its PDF and images once the delete commits), without
 `deleteBlocker` (a final vote does not keep it). Each item records its own
@@ -1531,12 +1543,16 @@ assembly has a `live_state` row (the session started), the server sets
   and its document;
 - an admission vote, which only replaces the vote;
 - a final vote, which also points the projection at the document, with no
-  amendment.
+  amendment;
+- a vote on an agenda item, only when the console asks for it (`project:
+true`, the Mesa) and that item is still the one in debate: it replaces
+  only the vote (`ItemVoteResultDto.projected` says whether it did). The
+  control sheet never projects.
 
 Choosing a new document also selects its agenda item, as with
 `PUT .../live-state`. When that vote is voided (the amendment is reopened, the
-final vote is annulled) and the projection still shows it, the server clears
-`voteId`. Each change records `live_changed` (`entityType: "live"`).
+final vote is annulled, an item vote is voided) and the projection still shows it, the server clears
+`voteId`; `PUT .../live-state` refuses a `voteId` of a voided item vote. Each change records `live_changed` (`entityType: "live"`).
 
 **Live state.** `LiveStateDto.speakersVisible` (false before the session
 starts) says whether attendees see who has the floor and who is next.
@@ -1609,14 +1625,65 @@ count (docs/design.md, "Headcounts and quorum"). Schemas:
 | PATCH  | `/api/assemblies/[assembly]/control-sheet/items/[item]`           | see below            | `ControlSheetItemBody`. Returns `ControlSheetItemRowDto`.           |
 | PATCH  | `/api/assemblies/[assembly]/control-sheet/amendments/[amendment]` | see below            | `ControlSheetAmendmentBody`. Returns `ControlSheetAmendmentRowDto`. |
 | GET    | `/api/assemblies/[assembly]/control-sheet/history?row=`           | `control_sheet:view` | `ControlSheetHistoryDto`: one sheet row's changes, newest first.    |
+| POST   | `/api/assemblies/[assembly]/agenda/[item]/votes`                  | see below            | `ItemVoteBody`. Returns `ItemVoteResultDto`.                        |
+| GET    | `/api/assemblies/[assembly]/item-votes`                           | see below            | `ItemVotesDto`. Never with `?view=room`.                            |
+| DELETE | `/api/assemblies/[assembly]/votes/[vote]`                         | see below            | `VoteVoidBody`. Voids an item vote. Returns `VoteDto`.              |
+| PATCH  | `/api/assemblies/[assembly]/votes/[vote]/unanimity`               | see below            | `VoteUnanimityBody`. Returns `VoteDto`.                             |
 
-`control_sheet:edit` also reads. Schemas: `shared/utils/schemas/controlSheet.ts`.
+`control_sheet:edit` also reads. Schemas: `shared/utils/schemas/controlSheet.ts`, and `shared/utils/schemas/vote.ts` for votes.
+
+**Votes on an agenda item.** An item is voted either once per voted
+document (their final votes, above) or by itself: a ratification, an
+election, an item without documents. Then the vote is on the item (subject
+`agenda_item`), and `ItemVoteBody.question` says what was voted (up to 500
+characters, public with the vote: the live state carries it).
+
+- **Who.** Recording and voiding: the Mesa (`session:moderate`) or
+  `control_sheet:edit`. Only the Mesa projects (`project: true`, from the
+  console). Unanimity: the Mesa on any assent vote in force (an item vote,
+  or a document's final vote by assent still pointed at), and
+  `control_sheet:edit` on item votes. Reading (`GET .../item-votes`): the
+  Mesa or a control sheet key.
+- **When.** Recording is refused on a draft or closed assembly; voiding and
+  unanimity on a closed one (409).
+- **Rule.** Refused (422 `data.reason: "item_has_voted_documents"`) while a
+  document of the item is voted, presented and neither withdrawn nor
+  postponed (`itemHasVotedDocuments`): its documents' final votes are the
+  item's votes. Refused too (422 `item_is_container`) on an item where
+  members present: each document is voted in its own sub-item
+  (`itemTakesOwnVote` holds both). A caller who neither moderates nor
+  manages documents and sees none of the item's voted documents (all of them
+  unpublished) gets a neutral 422 `item_takes_no_vote` instead, so nothing
+  tells it such a document exists. The item must be one the caller gets (404 otherwise).
+- **Question.** `GET .../item-votes` and `ControlSheetDto.itemVotes` send
+  `question: null` on the votes of an item the reader gets without its
+  title. The clients prefill a title only when the public reads it
+  (`AgendaItemDto.publicTitleHidden`). The
+  majority is simple unless the body says otherwise; the latest headcount
+  fills `present` as for every vote. `VoteInput.unanimous` is taken only
+  for an assent. Several votes on one item are allowed: the latest one not
+  voided gives its result (`latestItemVote`).
+- **Voiding.** `DELETE .../votes/[vote]` sets `voidedAt` on an item vote
+  (409 for any other vote, which goes through reopening or annulling what it
+  decided, and for one already voided); it stays for the record. A stale
+  `updatedAt` answers 409.
+- **Which votes are in force.** An amendment, document or admission vote
+  only while `amendments.outcomeVoteId`, `documents.finalVoteId` or
+  `decisions.voteId` points at it; an item vote while `voidedAt` is null.
+- **Records.** `vote_recorded`, `vote_voided` and `vote_unanimity_changed`,
+  of entity `vote`, with `subjectType`, `subjectId` and, for an item, the
+  document whose title it carries (`titleDocumentPayload`), never as the
+  event's `documentId`. The activity shows an item vote to whoever gets the
+  item, worded as the item reads to them. Deleting an item whose subtree
+  holds item votes answers 409 `agenda_item_sheet`; an automatic sub-item
+  holding them is kept, and they follow its document to its new sub-item.
 
 - **Reading.** `ControlSheetDto` adds to the agenda (`GET .../agenda`) what
   it lacks, as the reader may see it: each visible document's final vote and
   how many of its amendments past draft the reader sees (and how many are
   undecided), the turns that took the floor on items the reader gets, and
-  what the sheet noted about those items and amendments. `sessionStartedAt`
+  what the sheet noted about those items and amendments, and the votes on
+  those items (`itemVotes`, voided ones too). `sessionStartedAt`
   is the first time the assembly went into session.
 - **Writing.** Observations, `listed` and the CEA position need
   `control_sheet:edit`; the result by hand and the

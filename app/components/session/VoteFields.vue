@@ -38,12 +38,19 @@ const props = withDefaults(
     showNote?: boolean;
     /** The latest headcount; null when there is none yet. */
     headcount?: HeadcountDto | null;
+    /**
+     * What an assent vote means, shown instead of the counts. The default
+     * speaks of a text («el texto queda aprobado»); a vote on something
+     * else (an agenda item) says what it approves.
+     */
+    assentText?: string;
   }>(),
   {
     methods: () => VOTE_METHODS.filter((method) => method !== "assent"),
     showMajority: true,
     showNote: true,
     headcount: undefined,
+    assentText: undefined,
   },
 );
 
@@ -232,7 +239,7 @@ const denominatorText = computed(() =>
     </div>
 
     <p v-if="assent" class="text-muted text-sm">
-      {{ t("session.vote.assentNoCount") }}
+      {{ assentText ?? t("session.vote.assentNoCount") }}
     </p>
 
     <fieldset v-else class="space-y-3">

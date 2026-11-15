@@ -156,7 +156,11 @@ const vote: NonNullable<AmendmentDto["outcomeVote"]> = {
   majority: "simple",
   result: "rejected",
   note: null,
+  question: null,
+  unanimous: false,
   recordedAt: "2026-11-03T10:00:00.000Z",
+  updatedAt: "2026-11-03T10:00:00.000Z",
+  voidedAt: null,
 };
 
 describe("transactional sources", () => {
@@ -900,7 +904,11 @@ describe("transactional progress", () => {
         majority: "simple",
         result: "rejected",
         note: null,
+        question: null,
+        unanimous: false,
         recordedAt: "2026-11-03T10:00:00.000Z",
+        updatedAt: "2026-11-03T10:00:00.000Z",
+        voidedAt: null,
       },
       acceptances: [party("ceum", "author", "rejected")],
     });

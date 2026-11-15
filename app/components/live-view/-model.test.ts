@@ -9,7 +9,9 @@ import type {
 } from "~~/shared/types/api";
 import {
   affectsAgenda,
+  affectsLiveVote,
   affectsSpeakers,
+  liveAssentKey,
   liveAmendmentCode,
   liveAmendmentCounts,
   liveAmendmentNote,
@@ -20,6 +22,7 @@ import {
   liveReplacedBy,
   liveSpeakers,
   liveVoteCounts,
+  liveVoteQuestion,
   liveVoteSubject,
   liveVoteSubjectText,
 } from "./-model";
@@ -113,7 +116,11 @@ const vote = (over: Partial<VoteDto> = {}): VoteDto => ({
   majority: "simple",
   result: "approved",
   note: null,
+  question: null,
+  unanimous: false,
   recordedAt: "2026-11-14T10:30:00Z",
+  updatedAt: "2026-11-14T10:30:00Z",
+  voidedAt: null,
   ...over,
 });
 
@@ -562,10 +569,17 @@ describe("live position line", () => {
 });
 
 describe("live votes", () => {
+  const agenda = [
+    { item: { id: "i3", title: "Ratificación de cargos" }, number: "3" },
+    { item: { id: "i9", title: "Elección" }, number: null },
+  ];
   const context = {
     amendments: [amendment("a", { code: "T1" })],
     document: { id: "d1", title: "Resolución", reference: "RES 012/2026" },
+    agenda,
   };
+  const t = (key: string, params?: Record<string, unknown>) =>
+    params ? `${key}(${JSON.stringify(params)})` : key;
 
   it("names what was voted", () => {
     expect(liveVoteSubject(vote(), context)).toEqual({
@@ -595,9 +609,126 @@ describe("live votes", () => {
     });
   });
 
+  it("names an agenda item from the viewer's own agenda", () => {
+    const itemVote = (subjectId: string) =>
+      vote({ subjectType: "agenda_item", subjectId });
+    expect(liveVoteSubject(itemVote("i3"), context)).toEqual({
+      kind: "agendaItem",
+      number: "3",
+      title: "Ratificación de cargos",
+    });
+    expect(liveVoteSubject(itemVote("i9"), context)).toEqual({
+      kind: "agendaItem",
+      number: null,
+      title: "Elección",
+    });
+    // An item the viewer does not receive, or no agenda at all.
+    expect(liveVoteSubject(itemVote("gone"), context)).toEqual({
+      kind: "agendaItemUnknown",
+    });
+    expect(
+      liveVoteSubject(itemVote("i3"), { amendments: [], document: null }),
+    ).toEqual({ kind: "agendaItemUnknown" });
+  });
+
+  it("words an agenda item's vote with its number", () => {
+    const text = (key: string, params?: Record<string, unknown>) =>
+      key === "agenda.unlisted.inText"
+        ? "(sin publicar)"
+        : `${key}:${String(params?.title ?? "")}`;
+    expect(
+      liveVoteSubjectText(
+        { kind: "agendaItem", number: "3", title: "Ratificación" },
+        text,
+      ),
+    ).toBe("projection.vote.agendaItem:3. Ratificación");
+    expect(
+      liveVoteSubjectText(
+        { kind: "agendaItem", number: null, title: "Elección" },
+        text,
+      ),
+    ).toBe("projection.vote.agendaItem:Elección (sin publicar)");
+    expect(liveVoteSubjectText({ kind: "agendaItemUnknown" }, t)).toBe(
+      "projection.vote.agendaItemUnknown",
+    );
+  });
+
+  it("shows what was voted unless it repeats the item's title", () => {
+    const subject = {
+      kind: "agendaItem",
+      number: "3",
+      title: "Ratificación de cargos",
+    } as const;
+    const mark = "(sin publicar)";
+    expect(liveVoteQuestion(vote(), subject, mark)).toBeNull();
+    expect(liveVoteQuestion(vote({ question: "  " }), subject, mark)).toBe(
+      null,
+    );
+    expect(
+      liveVoteQuestion(
+        vote({ question: "3.  Ratificación de cargos " }),
+        subject,
+        mark,
+      ),
+    ).toBeNull();
+    expect(
+      liveVoteQuestion(
+        vote({ question: "ratificación de cargos" }),
+        subject,
+        mark,
+      ),
+    ).toBeNull();
+    expect(
+      liveVoteQuestion(
+        vote({ question: "Elección (sin publicar)" }),
+        { kind: "agendaItem", number: null, title: "Elección" },
+        mark,
+      ),
+    ).toBeNull();
+    expect(
+      liveVoteQuestion(
+        vote({ question: "Ratificar a María como tesorera" }),
+        subject,
+        mark,
+      ),
+    ).toBe("Ratificar a María como tesorera");
+    // Without a known item, the question is all the room has.
+    expect(
+      liveVoteQuestion(
+        vote({ question: "3. Ratificación de cargos" }),
+        { kind: "agendaItemUnknown" },
+        mark,
+      ),
+    ).toBe("3. Ratificación de cargos");
+  });
+
+  it("words an assent vote by its unanimity", () => {
+    expect(liveAssentKey(vote({ method: "assent" }))).toBe(
+      "session.enums.approvalMethod.assent",
+    );
+    expect(liveAssentKey(vote({ method: "assent", unanimous: true }))).toBe(
+      "projection.vote.unanimous",
+    );
+    expect(liveAssentKey(vote())).toBeNull();
+    expect(liveAssentKey(vote({ unanimous: true }))).toBeNull();
+  });
+
+  it("reads the live state again when the vote on screen changes", () => {
+    const event = (over: Partial<LiveEventDto>): LiveEventDto => ({
+      entityType: "vote",
+      entityId: "v1",
+      type: "vote_unanimity_changed",
+      ...over,
+    });
+    expect(affectsLiveVote([event({})], "v1")).toBe(true);
+    expect(affectsLiveVote([event({ entityId: "v2" })], "v1")).toBe(false);
+    expect(affectsLiveVote([event({ entityType: "amendment" })], "v1")).toBe(
+      false,
+    );
+    expect(affectsLiveVote([event({})], null)).toBe(false);
+  });
+
   it("words the heading through the translator", () => {
-    const t = (key: string, params?: Record<string, unknown>) =>
-      params ? `${key}(${JSON.stringify(params)})` : key;
     expect(liveVoteSubjectText({ kind: "amendment", code: "T1" }, t)).toBe(
       'projection.vote.amendment({"code":"T1"})',
     );

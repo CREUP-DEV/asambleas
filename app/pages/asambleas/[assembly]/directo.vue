@@ -19,11 +19,13 @@ import {
 import { buildSessionAgendaRows } from "~/composables/session/sessionModel";
 import {
   affectsAgenda,
+  affectsLiveVote,
   affectsSpeakers,
   liveAmendmentCode,
   liveAmendmentNote,
   liveAmendmentRows,
   liveSpeakers,
+  liveVoteQuestion,
   liveVoteSubject,
   liveVoteSubjectText,
 } from "~/components/live-view/-model";
@@ -255,7 +257,13 @@ const lastUpdate = ref<Date | null>(null);
 onLive((events) => {
   const refreshes: Promise<unknown>[] = [];
   const poll = events.some((event) => event.type === "poll");
-  if (poll || events.some((event) => event.entityType === "live")) {
+  // The vote on screen may change without the live state moving (its
+  // unanimity): its own event reads the live state again.
+  if (
+    poll ||
+    events.some((event) => event.entityType === "live") ||
+    affectsLiveVote(events, live.value?.vote?.id)
+  ) {
     refreshes.push(liveFetch.refresh());
   }
   if (affectsSpeakers(events)) refreshes.push(speakersFetch.refresh());
@@ -417,16 +425,29 @@ const speakers = computed(() =>
 );
 
 const vote = computed(() => live.value?.vote ?? null);
-const voteSubject = computed(() =>
+// An agenda item's vote names the item as this account reads it in its own
+// agenda; one it does not receive reads as "un punto del orden del día".
+const voteSubjectKind = computed(() =>
   vote.value
-    ? liveVoteSubjectText(
-        liveVoteSubject(vote.value, {
-          amendments: amendments.value,
-          document: document.value,
-        }),
-        t,
+    ? liveVoteSubject(vote.value, {
+        amendments: amendments.value,
+        document: document.value,
+        agenda: agendaRows.value,
+      })
+    : null,
+);
+const voteSubject = computed(() =>
+  voteSubjectKind.value ? liveVoteSubjectText(voteSubjectKind.value, t) : "",
+);
+/** What an agenda item's vote decided, unless the heading already says it. */
+const voteQuestion = computed(() =>
+  vote.value && voteSubjectKind.value
+    ? liveVoteQuestion(
+        vote.value,
+        voteSubjectKind.value,
+        t("agenda.unlisted.inText"),
       )
-    : "",
+    : null,
 );
 
 const documentPath = computed(() =>
@@ -705,7 +726,11 @@ watch(
         >
           {{ t("liveView.result.title") }}
         </h2>
-        <LiveViewVoteResult :vote="vote" :subject="voteSubject" />
+        <LiveViewVoteResult
+          :vote="vote"
+          :subject="voteSubject"
+          :question="voteQuestion"
+        />
       </section>
 
       <LiveViewAttendance v-if="headcountsDto" :attendance="attendance" />

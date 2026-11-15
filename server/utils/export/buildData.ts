@@ -31,6 +31,7 @@ import { loadAmendmentVisibility } from "../domain/documents";
 import { getImageDir, imageFileName } from "../domain/documentImages";
 import { logError } from "../core/logger";
 import { loadCoProponents, withCoProponentIds } from "../domain/presenters";
+import type { VoteRow } from "../domain/votes";
 import {
   canSeeAssembly,
   canSeeDocument,
@@ -72,7 +73,6 @@ import {
 
 type AssemblyRow = typeof assemblies.$inferSelect;
 type DocumentRow = typeof documents.$inferSelect;
-type VoteRow = typeof votes.$inferSelect;
 
 async function requireExportActor(userId: string): Promise<Actor> {
   const actor = await loadExportActor(userId);
@@ -114,6 +114,8 @@ function toExportVote(vote: VoteRow): ExportVote {
     majority: vote.majority,
     result: vote.result,
     method: vote.method,
+    // An assent the approval line words «unanimidad».
+    unanimous: vote.unanimous,
     recordedAt: vote.recordedAt,
   };
 }

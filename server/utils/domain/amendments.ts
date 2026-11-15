@@ -72,7 +72,6 @@ import type {
   RelationDto,
   TransactionalBody,
   ValidateAmendmentsBody,
-  VoteDto,
   VoteInput,
 } from "../../../shared/types/api";
 import type { AmendmentOp, Block } from "../../../shared/types/content";
@@ -125,6 +124,7 @@ import {
   shareLockAssembly,
 } from "./documents";
 import { recordEvent } from "./events";
+import { toVoteDto, type VoteRow } from "./votes";
 import {
   loadExecutiveMask,
   loadExecutiveMemberIds,
@@ -203,7 +203,6 @@ type Tx = Parameters<Parameters<typeof db.transaction>[0]>[0];
 type Executor = typeof db | Tx;
 type AssemblyRow = Awaited<ReturnType<typeof resolveAssembly>>;
 type DocumentRow = Awaited<ReturnType<typeof resolveDocument>>;
-type VoteRow = typeof votes.$inferSelect;
 
 /**
  * Amendment metadata as stored. `presentingMemberId` is the main author
@@ -692,25 +691,6 @@ function toMemberRef(member: MemberRef): MemberRef {
     acronym: member.acronym,
     name: member.name,
     kind: member.kind,
-  };
-}
-
-function toVoteDto(row: VoteRow): VoteDto {
-  return {
-    id: row.id,
-    subjectType: row.subjectType,
-    subjectId: row.subjectId,
-    method: row.method,
-    inFavor: row.inFavor,
-    against: row.against,
-    abstentions: row.abstentions,
-    blank: row.blank,
-    invalid: row.invalid,
-    present: row.present,
-    majority: row.majority,
-    result: row.result,
-    note: row.note,
-    recordedAt: row.recordedAt.toISOString(),
   };
 }
 

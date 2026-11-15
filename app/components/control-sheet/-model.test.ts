@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   AgendaItemDto,
   ControlSheetDto,
+  ControlSheetItemRowDto,
   DocumentSummaryDto,
   VoteDto,
 } from "~~/shared/types/api";
@@ -9,7 +10,12 @@ import {
   affectsControlSheet,
   affectsLiveDebate,
   amendedDocuments,
+  amendmentTreatedControl,
   buildGeneralRows,
+  itemTreatedControl,
+  rowVoteEntries,
+  staleSheetRow,
+  type AmendmentSheetRow,
 } from "./-model";
 
 const item = (over: Partial<AgendaItemDto>): AgendaItemDto =>
@@ -24,6 +30,7 @@ const item = (over: Partial<AgendaItemDto>): AgendaItemDto =>
     order: 0,
     acceptsSubmissions: false,
     submissionKinds: [],
+    voted: false,
     ...over,
   }) as AgendaItemDto;
 
@@ -53,7 +60,11 @@ const vote = (over: Partial<VoteDto> = {}): VoteDto => ({
   majority: "simple",
   result: "approved",
   note: null,
+  question: null,
+  unanimous: false,
   recordedAt: "2026-11-20T10:00:00.000Z",
+  updatedAt: "2026-11-20T10:00:00.000Z",
+  voidedAt: null,
   ...over,
 });
 
@@ -63,6 +74,7 @@ const sheet = (over: Partial<ControlSheetDto> = {}): ControlSheetDto => ({
   turns: [],
   itemRows: [],
   amendmentRows: [],
+  itemVotes: [],
   can: { edit: true, moderate: false },
   ...over,
 });
@@ -163,6 +175,281 @@ describe("listed items", () => {
       ["1", "lapsed"],
     ]);
     expect(rows[0]!.outcome.treated).toBe(true);
+  });
+});
+
+describe("item votes", () => {
+  const itemVote = (over: Partial<VoteDto> = {}) =>
+    vote({
+      subjectType: "agenda_item",
+      subjectId: "1",
+      question: "Ratificación",
+      ...over,
+    });
+
+  it("lists an item by «Se vota el punto», «Pendiente» until its vote", () => {
+    const rows = buildGeneralRows(
+      [item({ id: "1", voted: true }), item({ id: "2", order: 1 })],
+      [],
+      sheet(),
+      null,
+    );
+    expect(rows.map((row) => row.id)).toEqual(["1"]);
+    expect(rows[0]).toMatchObject({
+      voted: true,
+      ownListed: true,
+      takesOwnVote: true,
+      votedThroughDocuments: false,
+      outcome: { result: null, treated: false, byVote: false },
+      autoTreated: false,
+    });
+  });
+
+  it("reads the public's title flag, hidden when the agenda does not say", () => {
+    const rows = buildGeneralRows(
+      [
+        item({ id: "1", voted: true, publicTitleHidden: false }),
+        item({ id: "2", order: 1, voted: true, publicTitleHidden: true }),
+        // An agenda from before the flag: never taken as readable.
+        item({ id: "3", order: 2, voted: true }),
+      ],
+      [],
+      sheet(),
+      null,
+    );
+    expect(rows.map((row) => [row.id, row.publicTitleHidden])).toEqual([
+      ["1", false],
+      ["2", true],
+      ["3", true],
+    ]);
+  });
+
+  it("lists an item by a vote in force, which gives its result", () => {
+    const rows = buildGeneralRows(
+      [item({ id: "1" })],
+      [],
+      sheet({
+        itemVotes: [
+          itemVote({ id: "v1", result: "rejected" }),
+          itemVote({
+            id: "v2",
+            recordedAt: "2026-11-20T11:00:00.000Z",
+            method: "assent",
+            unanimous: true,
+          }),
+        ],
+      }),
+      null,
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]!.outcome).toEqual({
+      result: "approved_unanimous",
+      treated: true,
+      byVote: true,
+    });
+    expect(rows[0]!.autoTreated).toBe(true);
+    expect(itemTreatedControl(rows[0]!).lock).toBe("auto");
+    expect(
+      rowVoteEntries(rows[0]!).map((entry) => [
+        entry.id,
+        entry.label,
+        entry.decides,
+      ]),
+    ).toEqual([
+      ["v1", "Ratificación", false],
+      ["v2", "Ratificación", true],
+    ]);
+  });
+
+  it("leaves voided votes out of the result and the cell", () => {
+    const rows = buildGeneralRows(
+      [item({ id: "1" })],
+      [],
+      sheet({
+        itemVotes: [
+          itemVote({ id: "v1", voidedAt: "2026-11-20T12:00:00.000Z" }),
+        ],
+      }),
+      null,
+    );
+    // Voided, it no longer lists the item.
+    expect(rows).toEqual([]);
+    const listed = buildGeneralRows(
+      [item({ id: "1", voted: true })],
+      [],
+      sheet({
+        itemVotes: [
+          itemVote({ id: "v1", voidedAt: "2026-11-20T12:00:00.000Z" }),
+        ],
+      }),
+      null,
+    );
+    expect(listed[0]!.itemVotes.map((entry) => entry.id)).toEqual(["v1"]);
+    expect(listed[0]!.outcome.result).toBeNull();
+    expect(rowVoteEntries(listed[0]!)).toEqual([]);
+  });
+
+  it("takes no vote of its own while a document of it is voted, drafts aside", () => {
+    const [row] = buildGeneralRows(
+      [item({ id: "1", voted: true })],
+      [document({ id: "d1", agendaItemId: "1" })],
+      sheet({
+        itemVotes: [itemVote({ id: "v1", result: "rejected" })],
+      }),
+      null,
+    );
+    expect(row!.votedThroughDocuments).toBe(true);
+    expect(row!.takesOwnVote).toBe(false);
+    // The document's final vote is still to come: its own vote counts for nothing.
+    expect(row!.outcome.result).toBeNull();
+    expect(rowVoteEntries(row!)).toEqual([]);
+
+    const [withDraft] = buildGeneralRows(
+      [item({ id: "1", voted: true })],
+      [document({ id: "d1", agendaItemId: "1", status: "draft" })],
+      sheet(),
+      null,
+    );
+    expect(withDraft!.takesOwnVote).toBe(true);
+  });
+
+  it("offers no vote of its own on an item where members present", () => {
+    const [row] = buildGeneralRows(
+      [item({ id: "1", voted: true, acceptsSubmissions: true })],
+      [],
+      sheet(),
+      null,
+    );
+    expect(row!.takesOwnVote).toBe(false);
+    expect(row!.votedThroughDocuments).toBe(false);
+  });
+
+  it("gives each row its place, the items above and its parent", () => {
+    const rows = buildGeneralRows(
+      [
+        item({ id: "1", order: 0, title: "Informes" }),
+        item({ id: "2", order: 1, title: "Resoluciones" }),
+        item({ id: "2a", parentId: "2", order: 0, title: "RES 1" }),
+      ],
+      [document({ id: "d1", agendaItemId: "2a" })],
+      sheet(),
+      null,
+    );
+    expect(
+      rows.map((row) => [row.id, row.index, row.ancestorIds, row.parent]),
+    ).toEqual([
+      ["2", 1, [], null],
+      ["2a", 2, ["2"], { number: "2", title: "Resoluciones" }],
+    ]);
+  });
+});
+
+describe("treated controls", () => {
+  const itemRow = (over: Partial<ControlSheetItemRowDto>) => ({
+    id: "r1",
+    agendaItemId: "1",
+    listed: true,
+    listedUpdatedAt: "2026-11-20T10:00:00.000Z",
+    manualResult: null,
+    resultUpdatedAt: null,
+    treated: null,
+    progressUpdatedAt: null,
+    observations: "",
+    observationsEdited: null,
+    observationsUpdatedAt: null,
+    ...over,
+  });
+
+  it("locks an item its documents' votes treat", () => {
+    const [, row] = buildGeneralRows(
+      [item({ id: "1", order: 0 }), item({ id: "1a", parentId: "1" })],
+      [document({ id: "d1", agendaItemId: "1a" })],
+      sheet({
+        documents: [
+          { id: "d1", finalVote: vote(), amendments: 0, undecided: 0 },
+        ],
+      }),
+      null,
+    );
+    expect(itemTreatedControl(row!)).toEqual({
+      treated: true,
+      lock: "auto",
+      token: null,
+    });
+  });
+
+  it("locks an item a «Decaído» by hand treats", () => {
+    const [row] = buildGeneralRows(
+      [item({ id: "1" })],
+      [],
+      sheet({ itemRows: [itemRow({ manualResult: "lapsed" })] }),
+      null,
+    );
+    expect(itemTreatedControl(row!).lock).toBe("result");
+    expect(itemTreatedControl(row!).treated).toBe(true);
+  });
+
+  it("leaves the Mesa's mark free, with its token", () => {
+    const at = "2026-11-20T11:00:00.000Z";
+    const [row] = buildGeneralRows(
+      [item({ id: "1" })],
+      [],
+      sheet({
+        itemRows: [
+          itemRow({
+            treated: { by: "Mesa", at },
+            progressUpdatedAt: at,
+          }),
+        ],
+      }),
+      null,
+    );
+    expect(itemTreatedControl(row!)).toEqual({
+      treated: true,
+      lock: null,
+      token: at,
+    });
+  });
+
+  it("locks an amendment the Mesa settled in session", () => {
+    const row = {
+      treated: true,
+      autoTreated: true,
+      sheet: null,
+    } as unknown as AmendmentSheetRow;
+    expect(amendmentTreatedControl(row)).toEqual({
+      treated: true,
+      lock: "auto",
+      token: null,
+    });
+    const marked = {
+      treated: false,
+      autoTreated: false,
+      sheet: { treatedUpdatedAt: "2026-11-20T11:00:00.000Z" },
+    } as unknown as AmendmentSheetRow;
+    expect(amendmentTreatedControl(marked)).toEqual({
+      treated: false,
+      lock: null,
+      token: "2026-11-20T11:00:00.000Z",
+    });
+  });
+});
+
+describe("staleSheetRow", () => {
+  it("reads the row of a stale 409, however it is wrapped", () => {
+    const row = { id: "r1" };
+    expect(
+      staleSheetRow({ data: { data: { reason: "control_sheet_stale", row } } }),
+    ).toBe(row);
+    expect(
+      staleSheetRow({ data: { reason: "control_sheet_stale", row } }),
+    ).toBe(row);
+  });
+
+  it("ignores any other failure", () => {
+    expect(staleSheetRow({ data: { data: { reason: "other" } } })).toBeNull();
+    expect(staleSheetRow(new Error("boom"))).toBeNull();
+    expect(staleSheetRow(null)).toBeNull();
   });
 });
 

@@ -11,6 +11,7 @@ import type {
   MemberRef,
   RelationDto,
   SpeakingTurnDto,
+  VoteDto,
   VoteInput,
 } from "~~/shared/types/api";
 import type {
@@ -23,6 +24,8 @@ import type {
   AcceptedAmendmentRule,
   AmendmentStatus,
   AssemblySettings,
+  AssemblyStatus,
+  DocumentStatus,
   Majority,
 } from "~~/shared/constants/domain";
 import {
@@ -35,6 +38,7 @@ import {
   numberAgendaItems,
 } from "~~/shared/utils/agendaNumbering";
 import { consolidate } from "~~/shared/utils/content/consolidate";
+import { itemTakesOwnVote, latestItemVote } from "~~/shared/utils/controlSheet";
 import { copyShape, seedListStarts } from "~~/shared/utils/content/lists";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
 import {
@@ -1848,13 +1852,16 @@ export function sessionFinalVoteResult(
 
 /**
  * Counts without empty fields, so the request carries what was typed. Assent
- * has no counts, present members or majority: only the method and the note.
+ * has no counts, present members or majority: only the method, the note and
+ * whether it was unanimous (only an agenda item vote takes it). No other
+ * method carries unanimity.
  */
 export function sessionCleanVote(vote: VoteInput): VoteInput {
   const clean: VoteInput = { method: vote.method };
   if (vote.method === "assent") {
     const note = vote.note?.trim();
     if (note) clean.note = note;
+    if (vote.unanimous === true) clean.unanimous = true;
     return clean;
   }
   for (const key of [
@@ -1876,6 +1883,74 @@ export function sessionCleanVote(vote: VoteInput): VoteInput {
   const note = vote.note?.trim();
   if (note) clean.note = note;
   return clean;
+}
+
+// Agenda item votes ----------------------------------------------------------
+
+/** The votes on one agenda item, voided ones too, in the order given. */
+export function sessionItemVotes(
+  votes: readonly VoteDto[],
+  itemId: string,
+): VoteDto[] {
+  return votes.filter(
+    (vote) => vote.subjectType === "agenda_item" && vote.subjectId === itemId,
+  );
+}
+
+/** What «Ahora en debate» offers for an agenda item's own vote. */
+export interface SessionItemVotePlan {
+  /**
+   * The item takes a vote of its own: it is not a container and none of its
+   * documents is voted (itemHasVotedDocuments, the server's rule).
+   */
+  takesVote: boolean;
+  /** The vote on the item in force (latestItemVote), when it takes one. */
+  vote: VoteDto | null;
+  /** A vote can be recorded now: the assembly is convened or in session. */
+  canRecord: boolean;
+  /** A vote can be voided or its unanimity changed: not once closed. */
+  canChange: boolean;
+  /**
+   * «Se vota el punto» and no vote in force: recording it is the next step
+   * (the console's main action).
+   */
+  pending: boolean;
+}
+
+/** Assembly statuses in which the server records a vote. */
+const ITEM_VOTE_STATUSES: readonly AssemblyStatus[] = [
+  "convened",
+  "in_session",
+];
+
+/**
+ * The plan of an agenda item's own vote. `documents` are every document of
+ * the item the Mesa receives, whatever their status: drafts and withdrawn or
+ * postponed ones never make it voted through its documents. The server also
+ * counts documents the Mesa does not receive, so it may still refuse (422
+ * `item_has_voted_documents`).
+ */
+export function sessionItemVotePlan(
+  row: {
+    item: Pick<AgendaItemDto, "id" | "voted" | "acceptsSubmissions">;
+    documents: readonly { voted: boolean; status: DocumentStatus }[];
+  },
+  votes: readonly VoteDto[],
+  assemblyStatus: AssemblyStatus | null | undefined,
+): SessionItemVotePlan {
+  const takesVote = itemTakesOwnVote(row.item, row.documents);
+  const vote = takesVote
+    ? latestItemVote(sessionItemVotes(votes, row.item.id))
+    : null;
+  const open =
+    assemblyStatus != null && ITEM_VOTE_STATUSES.includes(assemblyStatus);
+  return {
+    takesVote,
+    vote,
+    canRecord: takesVote && open,
+    canChange: assemblyStatus != null && assemblyStatus !== "closed",
+    pending: takesVote && open && row.item.voted && vote === null,
+  };
 }
 
 // Agenda ---------------------------------------------------------------------

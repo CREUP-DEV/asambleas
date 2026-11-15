@@ -9,6 +9,11 @@
  * (`ignorePrefix`); import it explicitly.
  */
 
+import type { AssemblyType } from "~~/shared/constants/assemblyTypes";
+import type {
+  AssemblySettings,
+  AssemblyStatus,
+} from "~~/shared/constants/domain";
 import type {
   AgendaItemDto,
   AmendmentDto,
@@ -16,6 +21,7 @@ import type {
   ControlSheetDto,
   ControlSheetItemRowDto,
   DocumentSummaryDto,
+  HeadcountDto,
   LiveEventDto,
   VoteDto,
 } from "~~/shared/types/api";
@@ -23,9 +29,14 @@ import {
   amendmentTreatedInSession,
   controlSheetRows,
   itemDocumentsOutcome,
+  itemHasVotedDocuments,
+  itemTakesOwnVote,
   itemOutcome,
+  latestItemVote,
+  ownVoteItemIds,
   sheetSpeakers,
   type ItemOutcome,
+  type SheetItemOwn,
   type SheetSpeaker,
 } from "~~/shared/utils/controlSheet";
 import { buildAgendaTree, flattenAgendaTree } from "~/utils/agendaTree";
@@ -56,22 +67,85 @@ export interface GeneralSheetRow {
   number: string | null;
   unlisted: boolean;
   title: string;
+  /** The reader may not read its title: `title` is the neutral label. */
+  titleHidden: boolean;
+  /**
+   * Someone who sees only what is public does not read its title
+   * (AgendaItemDto.publicTitleHidden; true when the agenda does not say),
+   * whoever reads the sheet: a vote's question never starts from it.
+   */
+  publicTitleHidden: boolean;
   depth: number;
+  /**
+   * Its place in the agenda read in order (pre-order): the order of «Nº»,
+   * and what breaks ties in every other order.
+   */
+  index: number;
+  /** The items it hangs from, the nearest first. */
+  ancestorIds: string[];
+  /**
+   * The item it hangs from, for the orders that leave the headings out
+   * ("Dentro de 14. Resoluciones"); null for a root item.
+   */
+  parent: { number: string | null; title: string } | null;
   documents: SheetRowDocument[];
   outcome: ItemOutcome;
-  /** Treated by its documents' votes or results, whatever the Mesa marks. */
+  /**
+   * Treated by its votes (its documents' or its own) or by what became of
+   * its documents, whatever the Mesa marks.
+   */
   autoTreated: boolean;
   speakers: SheetSpeaker[];
   /** What the sheet noted about it; null while nothing was. */
   sheet: ControlSheetItemRowDto | null;
   /** The Mesa has it in debate. */
   live: boolean;
+  /** «Se vota el punto», from the agenda. */
+  voted: boolean;
+  /** The votes on the item itself, voided ones too, oldest first. */
+  itemVotes: VoteDto[];
+  /**
+   * A document of the item is voted (itemHasVotedDocuments, over every
+   * document of it the reader gets): those final votes are the item's, and
+   * a vote of its own counts for nothing.
+   */
+  votedThroughDocuments: boolean;
+  /**
+   * A vote of its own may be recorded here: it is not voted through its
+   * documents, and it is not an item where members present documents (a
+   * container), whose documents are voted in their own sub-items.
+   */
+  takesOwnVote: boolean;
+  /**
+   * On the sheet by its own vote: «Se vota el punto», or a vote on it in
+   * force (ownVoteItemIds), so taking it off by hand changes nothing.
+   */
+  ownListed: boolean;
+}
+
+/** The votes on agenda items by item, each list oldest first. */
+function itemVotesById(votes: readonly VoteDto[]): Map<string, VoteDto[]> {
+  const byItem = new Map<string, VoteDto[]>();
+  for (const vote of votes) {
+    if (vote.subjectType !== "agenda_item") continue;
+    const list = byItem.get(vote.subjectId) ?? [];
+    list.push(vote);
+    byItem.set(vote.subjectId, list);
+  }
+  for (const list of byItem.values()) {
+    list.sort(
+      (a, b) =>
+        a.recordedAt.localeCompare(b.recordedAt) || a.id.localeCompare(b.id),
+    );
+  }
+  return byItem;
 }
 
 /**
- * The rows of «General»: the items with documents past draft and the items
- * above them, numbered over the whole agenda (never over the rows shown),
- * with their documents' final votes and who spoke there.
+ * The rows of «General»: the items with documents past draft, the items on
+ * the sheet by their own vote or added by hand, and the items above them,
+ * numbered over the whole agenda (never over the rows shown), with their
+ * votes (their documents' final votes or their own) and who spoke there.
  */
 export function buildGeneralRows(
   items: readonly AgendaItemDto[],
@@ -81,6 +155,14 @@ export function buildGeneralRows(
 ): GeneralSheetRow[] {
   const nodes = flattenAgendaTree(buildAgendaTree(items));
   const presented = documents.filter((document) => document.status !== "draft");
+  const allDocumentsByItem = new Map<string, DocumentSummaryDto[]>();
+  for (const document of documents) {
+    const list = allDocumentsByItem.get(document.agendaItemId) ?? [];
+    list.push(document);
+    allDocumentsByItem.set(document.agendaItemId, list);
+  }
+  const itemVotes = sheet?.itemVotes ?? [];
+  const votesByItem = itemVotesById(itemVotes);
   const finalVotes = new Map(
     (sheet?.documents ?? []).map((document) => [
       document.id,
@@ -111,16 +193,17 @@ export function buildGeneralRows(
   const notes = new Map(
     (sheet?.itemRows ?? []).map((row) => [row.agendaItemId, row]),
   );
-  const listed = new Set(
-    (sheet?.itemRows ?? [])
-      .filter((row) => row.listed)
-      .map((row) => row.agendaItemId),
-  );
+  const ownListed = ownVoteItemIds(items, itemVotes);
+  const listed = new Set(ownListed);
+  for (const row of sheet?.itemRows ?? []) {
+    if (row.listed) listed.add(row.agendaItemId);
+  }
   const rows = controlSheetRows(
     nodes.map((node) => node.item),
     presented,
     listed,
   );
+  const indexById = new Map(nodes.map((node, index) => [node.item.id, index]));
   return rows.map(({ item, kind }) => {
     const node = nodeById.get(item.id)!;
     const rowDocuments = documentsByItem.get(item.id) ?? [];
@@ -129,26 +212,112 @@ export function buildGeneralRows(
       agendaItemId: item.id,
     }));
     const note = notes.get(item.id) ?? null;
+    const votes = votesByItem.get(item.id) ?? [];
+    const own: SheetItemOwn = { voted: item.voted, votes };
+    const votedThroughDocuments = itemHasVotedDocuments(
+      allDocumentsByItem.get(item.id) ?? [],
+    );
+    const ancestorIds: string[] = [];
+    let parentId = node.parentId;
+    while (parentId && !ancestorIds.includes(parentId)) {
+      ancestorIds.push(parentId);
+      parentId = nodeById.get(parentId)?.parentId ?? null;
+    }
+    const parentNode = node.parentId ? nodeById.get(node.parentId) : undefined;
     return {
       id: item.id,
       kind,
       number: node.number,
       unlisted: item.unlisted,
       title: item.title,
+      titleHidden: item.titleHidden,
+      publicTitleHidden: item.publicTitleHidden !== false,
       depth: node.depth,
+      index: indexById.get(item.id) ?? 0,
+      ancestorIds,
+      parent: parentNode
+        ? { number: parentNode.number, title: parentNode.item.title }
+        : null,
       documents: rowDocuments,
       outcome: itemOutcome(
         sheetDocuments,
         note
           ? { manualResult: note.manualResult, treated: note.treated !== null }
           : null,
+        own,
       ),
-      autoTreated: itemDocumentsOutcome(sheetDocuments).treated,
+      autoTreated: itemDocumentsOutcome(sheetDocuments, own).treated,
       speakers: sheetSpeakers(turnsByItem.get(item.id) ?? []),
       sheet: note,
       live: item.id === liveItemId,
+      voted: item.voted,
+      itemVotes: votes,
+      votedThroughDocuments,
+      takesOwnVote: itemTakesOwnVote(
+        item,
+        allDocumentsByItem.get(item.id) ?? [],
+      ),
+      ownListed: ownListed.has(item.id),
     };
   });
+}
+
+/**
+ * What recording, voiding and marking unanimous a vote on an item depend on
+ * besides the row: the assembly's state, type (the voting portal is for
+ * AGETs only) and settings, and the Mesa's latest headcount (undefined
+ * until it loads, null when there is none).
+ */
+export interface ItemVoteContext {
+  status: AssemblyStatus;
+  type: AssemblyType;
+  settings: AssemblySettings;
+  headcount: HeadcountDto | null | undefined;
+}
+
+/** One vote in the «Votaciones» cell of a row of «General». */
+export interface RowVoteEntry {
+  id: string;
+  vote: VoteDto;
+  /**
+   * What was voted: the document's title when several documents have their
+   * final vote, the question of a vote on the item; null otherwise.
+   */
+  label: string | null;
+  /** A vote on the item itself. */
+  ownVote: boolean;
+  /** The vote on the item that gives its result (the latest in force). */
+  decides: boolean;
+}
+
+/**
+ * What the «Votaciones» cell shows: the documents' final votes, or, for an
+ * item not voted through its documents, the votes on the item in force,
+ * oldest first (the latest gives the result). Voided votes stay in the
+ * panel only.
+ */
+export function rowVoteEntries(row: GeneralSheetRow): RowVoteEntry[] {
+  const documentVotes = row.documents.filter((document) => document.finalVote);
+  const entries: RowVoteEntry[] = documentVotes.map((document) => ({
+    id: document.id,
+    vote: document.finalVote!,
+    label: documentVotes.length > 1 ? document.title : null,
+    ownVote: false,
+    decides: false,
+  }));
+  if (row.votedThroughDocuments) return entries;
+  const latest = latestItemVote(row.itemVotes);
+  for (const vote of row.itemVotes) {
+    if (vote.voidedAt !== null) continue;
+    entries.push({
+      id: vote.id,
+      vote,
+      label: vote.question,
+      ownVote: true,
+      decides: vote.id === latest?.id,
+    });
+  }
+  return entries;
 }
 
 /** A row of «Enmiendas». */
@@ -195,6 +364,62 @@ export function buildAmendmentRows(
       live: row.current,
     };
   });
+}
+
+/**
+ * Why the Mesa cannot change a row's treated mark by hand: `auto` when it
+ * counts by itself (an item's documents' votes or what became of them; an
+ * amendment the Mesa settled in session), `result` when an item's «Retirado»
+ * or «Decaído» noted by hand makes it count. Null when the Mesa's mark
+ * decides.
+ */
+export type TreatedLock = "auto" | "result" | null;
+
+/** A row's treated mark as the box in the lists and the panel draw it. */
+export interface TreatedControl {
+  treated: boolean;
+  lock: TreatedLock;
+  /** The lock token a change of the mark sends (`treated.updatedAt`). */
+  token: string | null;
+}
+
+/** What the box draws: the value (the one on its way while it saves). */
+export interface TreatedBox {
+  treated: boolean;
+  lock: TreatedLock;
+  saving: boolean;
+}
+
+export function itemTreatedControl(row: GeneralSheetRow): TreatedControl {
+  const byResult =
+    row.sheet?.manualResult === "withdrawn" ||
+    row.sheet?.manualResult === "lapsed";
+  return {
+    treated: row.outcome.treated,
+    lock: row.autoTreated ? "auto" : byResult ? "result" : null,
+    token: row.sheet?.progressUpdatedAt ?? null,
+  };
+}
+
+export function amendmentTreatedControl(
+  row: AmendmentSheetRow,
+): TreatedControl {
+  return {
+    treated: row.treated,
+    lock: row.autoTreated ? "auto" : null,
+    token: row.sheet?.treatedUpdatedAt ?? null,
+  };
+}
+
+/**
+ * The row a write to the sheet answered 409 `control_sheet_stale` with (the
+ * row as it is now), or null for any other failure.
+ */
+export function staleSheetRow<T>(error: unknown): T | null {
+  if (!error || typeof error !== "object") return null;
+  const body = (error as { data?: Record<string, unknown> }).data;
+  const inner = (body?.data ?? body) as Record<string, unknown> | undefined;
+  return inner?.reason === "control_sheet_stale" ? (inner.row as T) : null;
 }
 
 /** The documents «Enmiendas» offers: those with amendments the reader sees. */

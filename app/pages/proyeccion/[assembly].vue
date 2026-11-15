@@ -25,11 +25,14 @@ import { agendaWithTitles } from "~/utils/agendaTitles";
 import { formatMoment, formatTime } from "~/utils/format";
 import {
   affectsAgenda,
+  affectsLiveVote,
   affectsSpeakers,
   liveAmendmentRows,
   liveAmendmentStats,
+  liveAssentKey,
   liveSpeakers,
   liveVoteCounts,
+  liveVoteQuestion,
   liveVoteSubject,
   liveVoteSubjectText,
 } from "~/components/live-view/-model";
@@ -279,7 +282,15 @@ function onLive(events: LiveEventDto[]): void {
   // Still unknown after the page opened (/api/me failed): every event or
   // poll tries again, and the sources follow once it loads (roomView).
   if (!me.loaded.value) void me.refresh();
-  if (poll || touches(["live"])) refreshes.push(refreshLive());
+  // The vote on screen may change without the live state moving (its
+  // unanimity): its own event reads the live state again.
+  if (
+    poll ||
+    touches(["live"]) ||
+    affectsLiveVote(events, live.value?.vote?.id)
+  ) {
+    refreshes.push(refreshLive());
+  }
   if (affectsSpeakers(events)) refreshes.push(refreshSpeakers());
   if (affectsHeadcounts(events)) refreshes.push(refreshHeadcounts());
   if (poll || touches(["assembly"])) refreshes.push(refreshAssembly());
@@ -438,16 +449,34 @@ const mode = computed<"amendment" | "document" | "idle">(() => {
   return "idle";
 });
 
-const voteSubject = computed(() =>
+// An agenda item's vote names the item as the room reads it, from the
+// room view's agenda (the item on screen is in it, with its title only
+// when the room may read it).
+const voteSubjectKind = computed(() =>
   vote.value
-    ? liveVoteSubjectText(
-        liveVoteSubject(vote.value, {
-          amendments: amendments.value,
-          document: document.value ?? null,
-        }),
-        t,
+    ? liveVoteSubject(vote.value, {
+        amendments: amendments.value,
+        document: document.value ?? null,
+        agenda: rows.value,
+      })
+    : null,
+);
+const voteSubject = computed(() =>
+  voteSubjectKind.value ? liveVoteSubjectText(voteSubjectKind.value, t) : "",
+);
+/** What an agenda item's vote decided, unless the heading already says it. */
+const voteQuestion = computed(() =>
+  vote.value && voteSubjectKind.value
+    ? liveVoteQuestion(
+        vote.value,
+        voteSubjectKind.value,
+        t("agenda.unlisted.inText"),
       )
-    : "",
+    : null,
+);
+/** "Por asentimiento", or "Por unanimidad" when nobody objected. */
+const voteAssentKey = computed(() =>
+  vote.value ? liveAssentKey(vote.value) : null,
 );
 
 const voteCounts = computed(() =>
@@ -727,6 +756,12 @@ useHead(() => ({
           {{ voteSubject }}
         </p>
         <p
+          v-if="voteQuestion"
+          class="text-highlighted mt-1 text-[clamp(1.125rem,1.8vw,2rem)] leading-snug font-semibold whitespace-pre-line"
+        >
+          {{ voteQuestion }}
+        </p>
+        <p
           class="text-[clamp(2.25rem,5vw,5.5rem)] leading-none font-extrabold tracking-tight uppercase"
           :class="
             vote.result === 'approved'
@@ -741,10 +776,10 @@ useHead(() => ({
           }}
         </p>
         <p
-          v-if="vote.method === 'assent'"
+          v-if="voteAssentKey"
           class="mt-[clamp(0.5rem,1vw,1rem)] text-[clamp(1.25rem,2vw,2.25rem)] leading-tight font-semibold"
         >
-          {{ t("session.enums.approvalMethod.assent") }}
+          {{ t(voteAssentKey) }}
         </p>
         <dl
           v-else

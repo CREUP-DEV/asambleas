@@ -246,6 +246,13 @@
       "when": 1794739067544,
       "tag": "0034_seating",
       "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794755901532,
+      "tag": "0035_agenda_item_votes",
+      "breakpoints": true
     }
   ]
 }

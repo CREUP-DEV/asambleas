@@ -18,6 +18,8 @@ const item = (
   order: 0,
   acceptsSubmissions: false,
   submissionKinds: [],
+  voted: false,
+  publicTitleHidden: false,
   auto: false,
   generatedForDocumentId: null,
   titleCustom: false,

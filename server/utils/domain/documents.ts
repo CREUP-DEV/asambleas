@@ -82,6 +82,7 @@ import {
   withCoProponentIds,
 } from "./presenters";
 import { resolveAssembly, resolveDocument } from "./resolvers";
+import { toVoteDto, type VoteRow } from "./votes";
 import {
   canSeeAmendment,
   canSeeDocument,
@@ -124,7 +125,6 @@ import type {
   FinalVoteBody,
   MemberRef,
   VersionDto,
-  VoteDto,
   VoteInput,
 } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
@@ -164,7 +164,6 @@ export type PresentedDocumentRow = DocumentRow & {
   coProponentMemberIds: string[];
 };
 type VersionRow = typeof documentVersions.$inferSelect;
-type VoteRow = typeof votes.$inferSelect;
 type MemberRow = typeof members.$inferSelect;
 
 type Executor = typeof db | Parameters<Parameters<typeof db.transaction>[0]>[0];
@@ -508,25 +507,6 @@ export function toVersionDto(version: VersionRow): VersionDto {
     blocks: version.blocks,
     contentHash: version.contentHash,
     createdAt: version.createdAt.toISOString(),
-  };
-}
-
-export function toVoteDto(vote: VoteRow): VoteDto {
-  return {
-    id: vote.id,
-    subjectType: vote.subjectType,
-    subjectId: vote.subjectId,
-    method: vote.method,
-    inFavor: vote.inFavor,
-    against: vote.against,
-    abstentions: vote.abstentions,
-    blank: vote.blank,
-    invalid: vote.invalid,
-    present: vote.present,
-    majority: vote.majority,
-    result: vote.result,
-    note: vote.note,
-    recordedAt: vote.recordedAt.toISOString(),
   };
 }
 
@@ -1606,8 +1586,8 @@ export async function updateDocument(
             title: patch.title ?? current.title,
           });
           patch.agendaItemId = newItem.id;
-          // What the control sheet noted about the old sub-item follows the
-          // document to its new one.
+          // What the control sheet noted about the old sub-item, its votes
+          // and its «Se vota el punto» follow the document to its new one.
           if (ownItem) await moveSheetItemRow(tx, ownItem.id, newItem.id);
         } else {
           patch.agendaItemId = target.id;
@@ -2359,6 +2339,11 @@ type LivePointer = Record<(typeof LIVE_FIELDS)[number], string | null>;
  * 4. acceptance rows;
  * 5. the live_state row (lockLiveState, the PUT .../live-state upsert).
  *
+ * A vote row (voiding a vote on an agenda item, or changing a vote's
+ * unanimity, itemVotes.ts) is locked NO KEY UPDATE after the assembly and
+ * the document it decides (FOR SHARE, the documents of an agenda item in id
+ * order), and before live_state.
+ *
  * Explicit locks are NO KEY UPDATE or FOR SHARE, never FOR UPDATE, except on
  * a row the transaction deletes (deleteDocument, and the agenda delete, which
  * locks the documents it removes after the assembly, in id order). The foreign
@@ -2376,12 +2361,16 @@ type LivePointer = Record<(typeof LIVE_FIELDS)[number], string | null>;
 export async function shareLockAssembly(
   tx: Executor,
   assemblyId: string,
-): Promise<void> {
-  await tx
-    .select({ id: assemblies.id })
+): Promise<Pick<AssemblyRow, "status" | "settings"> | null> {
+  // Agenda, headcount and status writes lock the row NO KEY UPDATE, so what
+  // is read under this lock (the status, the latest headcount) holds until
+  // the transaction ends.
+  const [row] = await tx
+    .select({ status: assemblies.status, settings: assemblies.settings })
     .from(assemblies)
     .where(eq(assemblies.id, assemblyId))
     .for("share");
+  return row ?? null;
 }
 
 /**
@@ -2468,9 +2457,38 @@ export async function pointLiveVote(
 }
 
 /**
+ * Projects a vote on an agenda item the Mesa has just recorded, inside the
+ * transaction that recorded it, only while the projection is still on that
+ * item: it replaces the vote and nothing else. Answers whether it went on
+ * screen (false without a live_state row or on another item). Records
+ * `live_changed` when it does.
+ */
+export async function projectItemVote(
+  tx: Executor,
+  input: {
+    assemblyId: string;
+    voteId: string;
+    agendaItemId: string;
+    actor: Actor;
+  },
+): Promise<boolean> {
+  const previous = await lockLiveState(tx, input.assemblyId);
+  if (!previous || previous.agendaItemId !== input.agendaItemId) return false;
+  await writeLiveState(
+    tx,
+    input.assemblyId,
+    previous,
+    { ...previous, voteId: input.voteId },
+    input.actor,
+  );
+  return true;
+}
+
+/**
  * Stops projecting a vote that has just been voided (amendment reopened,
- * final vote annulled). Leaves the projection alone when it shows anything
- * else. Records `live_changed` when it clears it.
+ * final vote annulled, a vote on an agenda item voided). Leaves the
+ * projection alone when it shows anything else. Records `live_changed` when
+ * it clears it.
  */
 export async function clearLiveVote(
   tx: Executor,

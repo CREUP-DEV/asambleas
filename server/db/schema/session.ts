@@ -157,12 +157,28 @@ export const votes = pgTable(
     majority: majorityEnum("majority").notNull(),
     result: voteResultEnum("result").notNull(),
     note: text("note"),
+    /** What an agenda item vote decides («Ratificación de la Mesa»). */
+    question: text("question"),
+    /** An assent vote nobody objected to when unanimity was asked. */
+    unanimous: boolean("unanimous").notNull().default(false),
     recordedByUserId: text("recorded_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),
     recordedAt: timestamp("recorded_at", { withTimezone: true, mode: "date" })
       .defaultNow()
       .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => sql`now()`),
+    /**
+     * An agenda item vote the Mesa voided: it stays, read as voided, and no
+     * longer gives the item's result. Other votes count while pointed at.
+     */
+    voidedAt: timestamp("voided_at", { withTimezone: true, mode: "date" }),
+    voidedByUserId: text("voided_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
   },
   (table) => [
     index("idx_votes_assembly").on(table.assemblyId),

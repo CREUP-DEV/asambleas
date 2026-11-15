@@ -1,17 +1,59 @@
 <script setup lang="ts">
-import type { GeneralSheetRow, SheetRowDocument } from "./-model";
+import {
+  DEFAULT_GENERAL_SORT,
+  type GeneralSortKey,
+  type SheetSort,
+} from "./-filters";
+import {
+  itemTreatedControl,
+  rowVoteEntries,
+  type GeneralSheetRow,
+  type SheetRowDocument,
+  type TreatedBox,
+} from "./-model";
 
 /**
  * «General» of the control sheet: one row per agenda item it lists, under
  * the items they hang from. A table on large screens, a card per row below
  * them, both with the same fields. The row the Mesa has in debate is
- * marked (aria-current and a ring).
+ * marked (aria-current and a ring). The Mesa (`canMark`) ticks «Tratado»
+ * right in the list; the page saves it.
+ *
+ * `rows` are the ones the page shows, already filtered and sorted; the
+ * headers sort by their column (`sort`). In any order but the agenda's
+ * (`flat`) there are no headings, so each row names the item it hangs
+ * from; the one exception is a heading the Mesa has in debate, kept in its
+ * sorted place and marked like any row in debate.
  */
 const props = defineProps<{
   rows: GeneralSheetRow[];
   documentPath: (document: SheetRowDocument) => string;
+  canMark: boolean;
+  /**
+   * The reader edits something in a row's panel (control_sheet:edit or the
+   * Mesa): the button that opens it reads «Editar» with a pencil, «Ver» with
+   * an eye otherwise.
+   */
+  canEdit: boolean;
+  /** Marks on their way, by item id: the value the box shows meanwhile. */
+  treatedPending: Readonly<Record<string, boolean>>;
+  sort: SheetSort<GeneralSortKey>;
+  flat: boolean;
 }>();
-const emit = defineEmits<{ open: [row: GeneralSheetRow] }>();
+const emit = defineEmits<{
+  open: [row: GeneralSheetRow];
+  treated: [row: GeneralSheetRow, value: boolean];
+  sort: [column: GeneralSortKey];
+}>();
+
+/** The row's box: what is on its way first, then what the sheet says. */
+function treatedOf(row: GeneralSheetRow): TreatedBox {
+  const { treated, lock } = itemTreatedControl(row);
+  const pending = props.treatedPending[row.id];
+  return pending === undefined
+    ? { treated, lock, saving: false }
+    : { treated: pending, lock, saving: true };
+}
 
 /**
  * The row's own document when the item is just that document (its
@@ -31,23 +73,68 @@ function listedDocuments(row: GeneralSheetRow): SheetRowDocument[] {
   return own ? [] : row.documents;
 }
 
+const openIcon = computed(() =>
+  props.canEdit ? "i-lucide-square-pen" : "i-lucide-eye",
+);
+const openButton = computed(() =>
+  props.canEdit
+    ? t("controlSheet.edit.button")
+    : t("controlSheet.columns.open"),
+);
+/** «Editar el punto 3.1. Title», or «Ver…» for whoever only reads. */
+function openLabel(row: GeneralSheetRow): string {
+  return t(
+    props.canEdit ? "controlSheet.edit.item" : "controlSheet.open.item",
+    {
+      title: rowLabel(row),
+    },
+  );
+}
+
 /** "3.1. Title" for the button that opens a row. */
 const rowLabel = (row: GeneralSheetRow) =>
   numberedAgendaTitle(row.number, row.title, t("agenda.unlisted.inText"));
 
 const { t } = useI18n();
 
-const votesOf = (row: GeneralSheetRow) =>
-  row.documents
-    .filter((document) => document.finalVote)
-    .map((document) => ({
-      id: document.id,
-      vote: document.finalVote!,
-      label:
-        row.documents.filter((other) => other.finalVote).length > 1
-          ? document.title
-          : null,
-    }));
+/**
+ * The documents' final votes, or the votes on the item in force (the
+ * latest gives the result), each named by its question. With more than one
+ * vote on the item in force, the one that gives the result says so
+ * (`decidesShown`), as in the panel.
+ */
+const votesOf = (row: GeneralSheetRow) => {
+  const entries = rowVoteEntries(row);
+  const ownInForce = entries.filter((entry) => entry.ownVote).length;
+  return entries.map((entry) => ({
+    ...entry,
+    label: entry.ownVote
+      ? (entry.label ?? t("controlSheet.itemVotes.fallbackQuestion"))
+      : entry.label,
+    decidesShown: entry.decides && ownInForce > 1,
+  }));
+};
+
+/** "Dentro de 14. Resoluciones", in the orders without headings. */
+function parentLine(row: GeneralSheetRow): string | null {
+  if (!props.flat || !row.parent) return null;
+  return t("controlSheet.filters.under", {
+    parent: numberedAgendaTitle(
+      row.parent.number,
+      row.parent.title,
+      t("agenda.unlisted.inText"),
+    ),
+  });
+}
+
+const columns: { key: GeneralSortKey; label: string; class: string }[] = [
+  { key: "number", label: "controlSheet.columns.number", class: "w-16" },
+  { key: "item", label: "controlSheet.columns.item", class: "min-w-64" },
+  { key: "treated", label: "controlSheet.columns.treated", class: "w-28" },
+  { key: "result", label: "controlSheet.columns.result", class: "w-40" },
+  { key: "votes", label: "controlSheet.columns.votes", class: "w-64" },
+  { key: "speakers", label: "controlSheet.columns.speakers", class: "w-48" },
+];
 
 const itemRows = computed(() =>
   props.rows.filter((row) => row.kind === "item"),
@@ -68,24 +155,16 @@ const itemRows = computed(() =>
         </caption>
         <thead class="bg-elevated/50 text-muted text-xs">
           <tr>
-            <th scope="col" class="w-16 px-3 py-2 font-medium">
-              {{ t("controlSheet.columns.number") }}
-            </th>
-            <th scope="col" class="min-w-64 px-3 py-2 font-medium">
-              {{ t("controlSheet.columns.item") }}
-            </th>
-            <th scope="col" class="w-28 px-3 py-2 font-medium">
-              {{ t("controlSheet.columns.treated") }}
-            </th>
-            <th scope="col" class="w-40 px-3 py-2 font-medium">
-              {{ t("controlSheet.columns.result") }}
-            </th>
-            <th scope="col" class="w-64 px-3 py-2 font-medium">
-              {{ t("controlSheet.columns.votes") }}
-            </th>
-            <th scope="col" class="w-48 px-3 py-2 font-medium">
-              {{ t("controlSheet.columns.speakers") }}
-            </th>
+            <ControlSheetSortHeader
+              v-for="column in columns"
+              :key="column.key"
+              :class="column.class"
+              :label="t(column.label)"
+              :column="column.key"
+              :sort="sort"
+              :fallback="DEFAULT_GENERAL_SORT"
+              @sort="(key: GeneralSortKey) => emit('sort', key)"
+            />
             <th scope="col" class="w-64 px-3 py-2 font-medium">
               {{ t("controlSheet.columns.observations") }}
             </th>
@@ -113,9 +192,20 @@ const itemRows = computed(() =>
               class="text-highlighted px-3 py-2 font-semibold"
             >
               {{ row.title }}
+              <UBadge
+                v-if="row.live"
+                color="primary"
+                variant="subtle"
+                size="xs"
+                class="ms-1 align-middle"
+                :label="t('controlSheet.live')"
+              />
             </th>
             <template v-else>
               <th scope="row" class="px-3 py-2 font-normal">
+                <p v-if="parentLine(row)" class="text-muted text-xs">
+                  {{ parentLine(row) }}
+                </p>
                 <p class="text-highlighted font-medium">
                   <ULink
                     v-if="ownDocument(row)"
@@ -151,18 +241,29 @@ const itemRows = computed(() =>
                 </ul>
               </th>
               <td class="px-3 py-2">
-                <ControlSheetTreated :treated="row.outcome.treated" />
+                <ControlSheetTreated
+                  v-bind="treatedOf(row)"
+                  :editable="canMark"
+                  :label="
+                    t('controlSheet.treated.item', { title: rowLabel(row) })
+                  "
+                  @change="(value) => emit('treated', row, value)"
+                />
               </td>
               <td class="px-3 py-2">
                 <ControlSheetResultBadge :result="row.outcome.result" />
               </td>
               <td class="space-y-2 px-3 py-2">
-                <ControlSheetVoteLine
-                  v-for="entry in votesOf(row)"
-                  :key="entry.id"
-                  :vote="entry.vote"
-                  :label="entry.label"
-                />
+                <div v-for="entry in votesOf(row)" :key="entry.id">
+                  <ControlSheetVoteLine
+                    :vote="entry.vote"
+                    :label="entry.label"
+                    clamp
+                  />
+                  <p v-if="entry.decidesShown" class="text-muted text-xs">
+                    {{ t("controlSheet.itemVotes.decides") }}
+                  </p>
+                </div>
                 <span
                   v-if="votesOf(row).length === 0"
                   class="text-dimmed text-sm"
@@ -187,11 +288,9 @@ const itemRows = computed(() =>
                     color="neutral"
                     variant="ghost"
                     size="xs"
-                    icon="i-lucide-panel-right-open"
+                    :icon="openIcon"
                     class="shrink-0"
-                    :aria-label="
-                      t('controlSheet.open.item', { title: rowLabel(row) })
-                    "
+                    :aria-label="openLabel(row)"
                     @click="emit('open', row)"
                   />
                 </div>
@@ -216,6 +315,14 @@ const itemRows = computed(() =>
         >
           <AgendaItemNumber :number="row.number" />
           {{ row.title }}
+          <UBadge
+            v-if="row.live"
+            color="primary"
+            variant="subtle"
+            size="xs"
+            class="ms-1 align-middle"
+            :label="t('controlSheet.live')"
+          />
         </p>
         <UCard
           v-else
@@ -223,6 +330,9 @@ const itemRows = computed(() =>
           :class="row.live ? 'ring-primary ring-2' : ''"
         >
           <div>
+            <p v-if="parentLine(row)" class="text-muted text-xs">
+              {{ parentLine(row) }}
+            </p>
             <p class="text-highlighted font-medium">
               <AgendaItemNumber :number="row.number" />
               <ULink
@@ -257,7 +367,16 @@ const itemRows = computed(() =>
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.treated") }}
               </dt>
-              <dd><ControlSheetTreated :treated="row.outcome.treated" /></dd>
+              <dd>
+                <ControlSheetTreated
+                  v-bind="treatedOf(row)"
+                  :editable="canMark"
+                  :label="
+                    t('controlSheet.treated.item', { title: rowLabel(row) })
+                  "
+                  @change="(value) => emit('treated', row, value)"
+                />
+              </dd>
             </div>
             <div>
               <dt class="text-muted text-xs">
@@ -270,12 +389,16 @@ const itemRows = computed(() =>
                 {{ t("controlSheet.columns.votes") }}
               </dt>
               <dd class="space-y-2">
-                <ControlSheetVoteLine
-                  v-for="entry in votesOf(row)"
-                  :key="entry.id"
-                  :vote="entry.vote"
-                  :label="entry.label"
-                />
+                <div v-for="entry in votesOf(row)" :key="entry.id">
+                  <ControlSheetVoteLine
+                    :vote="entry.vote"
+                    :label="entry.label"
+                    clamp
+                  />
+                  <p v-if="entry.decidesShown" class="text-muted text-xs">
+                    {{ t("controlSheet.itemVotes.decides") }}
+                  </p>
+                </div>
                 <span
                   v-if="votesOf(row).length === 0"
                   class="text-dimmed text-sm"
@@ -302,9 +425,9 @@ const itemRows = computed(() =>
             color="neutral"
             variant="outline"
             size="sm"
-            icon="i-lucide-panel-right-open"
-            :label="t('controlSheet.columns.open')"
-            :aria-label="t('controlSheet.open.item', { title: rowLabel(row) })"
+            :icon="openIcon"
+            :label="openButton"
+            :aria-label="openLabel(row)"
             @click="emit('open', row)"
           />
         </UCard>

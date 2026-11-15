@@ -312,6 +312,8 @@ export const EVENT_TYPES = [
   "headcount_recorded",
   "headcount_corrected",
   "vote_recorded",
+  "vote_voided",
+  "vote_unanimity_changed",
   "decision_recorded",
   // Control sheet (hoja de control)
   "control_sheet_observations_updated",
@@ -478,6 +480,8 @@ const EVENT_CATEGORIES: Record<EventType, ActivityCategory> = {
   headcount_recorded: "session",
   headcount_corrected: "session",
   vote_recorded: "session",
+  vote_voided: "session",
+  vote_unanimity_changed: "session",
   decision_recorded: "session",
   control_sheet_observations_updated: "session",
   control_sheet_cea_position_changed: "session",
@@ -670,6 +674,7 @@ export const CHANGE_FIELDS: Record<
     acceptsSubmissions: "values",
     // A list of kinds: shown as changed, without its values.
     submissionKinds: "changed",
+    voted: "values",
     parentId: "changed",
   },
   document: {

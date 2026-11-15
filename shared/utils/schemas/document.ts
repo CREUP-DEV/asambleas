@@ -4,7 +4,6 @@ import {
   DOCUMENT_FORMATS,
   DOCUMENT_KINDS,
   MAJORITIES,
-  VOTE_METHODS,
 } from "../../constants/domain";
 import { READING_BEAT_MAX_SECONDS } from "../documentViews";
 import type {
@@ -18,6 +17,7 @@ import type {
 } from "../../types/api";
 import { BULK_DOCUMENTS_MAX } from "../agendaSubmissions";
 import { blocksSchema } from "./content";
+import { voteInputSchema } from "./vote";
 
 /**
  * Request bodies of the document endpoints. They mirror the types in
@@ -148,19 +148,8 @@ export const documentActionSchema = z
   .object({ updatedAt: isoDateSchema.optional() })
   .default({});
 
-const voteCountSchema = z.number().int().min(0).max(100_000);
-
-export const voteInputSchema = z.object({
-  method: z.enum(VOTE_METHODS),
-  inFavor: voteCountSchema.optional(),
-  against: voteCountSchema.optional(),
-  abstentions: voteCountSchema.optional(),
-  blank: voteCountSchema.optional(),
-  invalid: voteCountSchema.optional(),
-  present: voteCountSchema.nullable().optional(),
-  majority: z.enum(MAJORITIES).optional(),
-  note: z.string().trim().max(2_000).nullable().optional(),
-});
+// One vote input for every vote body (./vote.ts).
+export { voteInputSchema };
 
 export const finalVoteSchema = z.object({
   vote: voteInputSchema,

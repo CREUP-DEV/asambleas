@@ -4,6 +4,7 @@ import type { AgendaItemDto } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import {
   isAutoItem,
+  normalizeItemVoted,
   normalizeSubmissionKinds,
 } from "~~/shared/utils/agendaSubmissions";
 import { agendaItemUpdateBodySchema } from "~~/shared/utils/schemas/assembly";
@@ -24,7 +25,7 @@ import {
   readAssemblyBody,
   throwAssemblyMutationError,
   loadAgendaItemSlug,
-  loadUnlistedItemIds,
+  loadPublicItemMarks,
   toAgendaItemDto,
 } from "../../../../utils/domain/assemblies";
 import { diffChanges } from "../../../../utils/domain/changes";
@@ -41,11 +42,12 @@ import { buildOptimisticLockCondition } from "../../../../utils/optimisticLock";
  * item or making a sub-item a root item needs `confirmFinal` (409
  * `agenda_final` without it) and the event says `afterFinal`.
  * `submissionKinds` left out keeps the stored kinds; they are emptied when
- * the item stops accepting submissions. A new title given to an automatic
- * sub-item makes it its own (`titleCustom`): it no longer follows the title
- * of its document. A new title given to an item that stayed after its
- * document moved away or was deleted makes it an ordinary one
- * (`hiddenWithDocumentId` and `titleWithheld` cleared).
+ * the item stops accepting submissions. `voted` («Se vota el punto») left
+ * out keeps the stored value, and never needs `confirmFinal`. A new title
+ * given to an automatic sub-item makes it its own (`titleCustom`): it no
+ * longer follows the title of its document. A new title given to an item
+ * that stayed after its document moved away or was deleted makes it an
+ * ordinary one (`hiddenWithDocumentId` and `titleWithheld` cleared).
  *
  * An account that may not read the item's title (canReadItemTitle:
  * `assembly:manage` without `document:manage`, on an item that carries the
@@ -77,6 +79,12 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
     acceptsSubmissions,
     body.submissionKinds ?? item.submissionKinds,
   );
+  // Left out (a partial body such as the submissions switch's), it keeps
+  // what is stored; never on an item where members present.
+  const voted = normalizeItemVoted(
+    acceptsSubmissions,
+    body.voted ?? item.voted,
+  );
   // The body's title is normalized (agendaItemBodySchema); the stored one
   // of an automatic sub-item is its document's, as written.
   const renamed =
@@ -95,7 +103,8 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
       const current = await lockAssembly(tx, assembly.id);
       let order: number | undefined;
       // What changes the root items: a move from or to the root level, and
-      // a new title of a root item. Description and submissions do not.
+      // a new title of a root item. Description, submissions and «Se vota
+      // el punto» do not.
       const changesRoots =
         (moved && (item.parentId === null || newParentId === null)) ||
         (item.parentId === null && body.title !== item.title);
@@ -132,6 +141,7 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
             : {}),
           acceptsSubmissions,
           submissionKinds,
+          voted,
           titleCustom,
           ...(releases
             ? { hiddenWithDocumentId: null, titleWithheld: false }
@@ -168,6 +178,7 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
               "description",
               "acceptsSubmissions",
               "submissionKinds",
+              "voted",
               "parentId",
             ],
           }),
@@ -182,16 +193,16 @@ export default defineEventHandler(async (event): Promise<AgendaItemDto> => {
       return row;
     });
 
-    const [unlisted, slug] = await Promise.all([
-      loadUnlistedItemIds(assembly.id),
+    const [publicMarks, slug] = await Promise.all([
+      loadPublicItemMarks(assembly.id),
       loadAgendaItemSlug(assembly.id, updated.id),
     ]);
-    return toAgendaItemDto(
-      updated,
-      !readsTitle,
-      unlisted.has(updated.id),
+    return toAgendaItemDto(updated, {
+      titleHidden: !readsTitle,
+      unlisted: publicMarks.unlisted.has(updated.id),
+      publicTitleHidden: publicMarks.titleHidden.has(updated.id),
       slug,
-    );
+    });
   } catch (error) {
     throwAssemblyMutationError("agenda.update", error, event);
   }

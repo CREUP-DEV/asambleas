@@ -170,10 +170,18 @@ export function withScreenItem(
       ? row.titleWithheld || !screenTitleReadable
       : true;
     const unlisted = have.get(row.id)?.unlisted ?? true;
+    // Never read by an attendee: one the room gets without its title, or
+    // does not get at all. The projection showing the title changes nothing.
+    const publicTitleHidden = have.get(row.id)?.publicTitleHidden ?? true;
     // The title is all the room reads of it: not its description nor the
     // document it was created for.
     added.set(row.id, {
-      ...toAgendaItemDto(row, titleHidden, unlisted, slugs.get(row.id)),
+      ...toAgendaItemDto(row, {
+        titleHidden,
+        unlisted,
+        publicTitleHidden,
+        slug: slugs.get(row.id),
+      }),
       description: null,
       generatedForDocumentId: null,
     });

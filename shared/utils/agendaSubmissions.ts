@@ -72,6 +72,18 @@ export function normalizeSubmissionKinds(
 }
 
 /**
+ * «Se vota el punto» as stored: never on an item where members present
+ * (its documents are voted in their own sub-items), so a partial update
+ * that turns submissions on clears it.
+ */
+export function normalizeItemVoted(
+  acceptsSubmissions: boolean,
+  voted: boolean,
+): boolean {
+  return acceptsSubmissions ? false : voted;
+}
+
+/**
  * Whether the item is an automatic sub-item: the one created for a document
  * presented under a container.
  */

@@ -77,6 +77,8 @@ export interface ApprovalFill {
     inFavor: number;
     against: number;
     abstentions: number;
+    /** An assent nobody objected to when unanimity was asked. */
+    unanimous?: boolean;
     recordedAt: Date;
   };
 }
@@ -93,9 +95,16 @@ const MAJORITY_NAMES: Record<Majority, string> = {
   two_thirds: "mayoría de dos tercios",
 };
 
-/** "asentimiento", "unanimidad" or the majority it needed. */
+/**
+ * "asentimiento", "unanimidad" or the majority it needed. An assent reads
+ * "unanimidad" once unanimity was asked and nobody objected; a counted vote,
+ * when nobody voted against or abstained (isUnanimousVote in the control
+ * sheet words it the same way).
+ */
 function approvedBy(vote: ApprovalFill["vote"]): string {
-  if (vote.method === "assent") return "asentimiento";
+  if (vote.method === "assent") {
+    return vote.unanimous ? "unanimidad" : "asentimiento";
+  }
   if (vote.inFavor > 0 && vote.against === 0 && vote.abstentions === 0) {
     return "unanimidad";
   }

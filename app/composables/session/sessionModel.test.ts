@@ -3,6 +3,7 @@ import type {
   AmendmentDto,
   DocumentSummaryDto,
   SpeakingTurnDto,
+  VoteDto,
 } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
 import { diffPassage } from "~~/shared/utils/content/diff";
@@ -73,6 +74,8 @@ import {
   sessionPendingTransactionalIds,
   sessionSettleConfirm,
   sessionTransactionalWaitsFor,
+  sessionItemVotePlan,
+  sessionItemVotes,
 } from "./sessionModel";
 
 const b = (id: string, text: string): Block => ({
@@ -483,10 +486,12 @@ describe("session model", () => {
       order,
       acceptsSubmissions: false,
       submissionKinds: [],
+      voted: false,
       auto: false,
       generatedForDocumentId: null,
       titleHidden: false,
       unlisted: false,
+      publicTitleHidden: false,
       titleCustom: false,
       updatedAt: "",
     });
@@ -504,7 +509,7 @@ describe("session model", () => {
     const mixed = buildSessionAgendaRows(
       [
         it("r", null, 0),
-        { ...it("draft", "r", 0), unlisted: true },
+        { ...it("draft", "r", 0), unlisted: true, publicTitleHidden: true },
         it("published", "r", 1),
       ],
       [],
@@ -614,6 +619,20 @@ describe("session model", () => {
       against: 12,
       majority: "simple",
     });
+  });
+
+  it("keeps unanimity only on an assent vote", () => {
+    const empty = sessionEmptyVote("simple");
+    expect(
+      sessionCleanVote({ ...empty, method: "assent", unanimous: true }),
+    ).toEqual({ method: "assent", unanimous: true });
+    expect(
+      sessionCleanVote({ ...empty, method: "assent", unanimous: false }),
+    ).toEqual({ method: "assent" });
+    // Counted votes never carry it, whatever the form held.
+    expect(
+      sessionCleanVote({ ...empty, inFavor: 10, unanimous: true }),
+    ).not.toHaveProperty("unanimous");
   });
 
   it("compares drafts and source sets", () => {
@@ -1555,10 +1574,12 @@ describe("session model", () => {
         order,
         acceptsSubmissions: false,
         submissionKinds: [],
+        voted: false,
         auto: false,
         generatedForDocumentId: null,
         titleHidden: false,
         unlisted: false,
+        publicTitleHidden: false,
         titleCustom: false,
         updatedAt: "",
       });
@@ -1918,5 +1939,139 @@ describe("the members present of a vote", () => {
     expect(sessionVoteOutcome(vote, settings)).toMatchObject({
       denominator: 32,
     });
+  });
+});
+
+describe("agenda item votes", () => {
+  const itemVote = (over: Partial<VoteDto> = {}): VoteDto => ({
+    id: "v1",
+    subjectType: "agenda_item",
+    subjectId: "i1",
+    method: "show_of_hands",
+    inFavor: 30,
+    against: 2,
+    abstentions: 1,
+    blank: 0,
+    invalid: 0,
+    present: null,
+    majority: "simple",
+    result: "approved",
+    note: null,
+    question: "3. Ratificación",
+    unanimous: false,
+    recordedAt: "2026-11-15T10:00:00Z",
+    updatedAt: "2026-11-15T10:00:00Z",
+    voidedAt: null,
+    ...over,
+  });
+  const row = (
+    over: {
+      voted?: boolean;
+      acceptsSubmissions?: boolean;
+      documents?: { voted: boolean; status: DocumentSummaryDto["status"] }[];
+    } = {},
+  ) => ({
+    item: {
+      id: "i1",
+      voted: over.voted ?? false,
+      acceptsSubmissions: over.acceptsSubmissions ?? false,
+    },
+    documents: over.documents ?? [],
+  });
+
+  it("keeps the votes on the item, voided ones too", () => {
+    const votes = [
+      itemVote({ id: "a" }),
+      itemVote({ id: "b", subjectId: "i2" }),
+      itemVote({ id: "c", subjectType: "document" }),
+      itemVote({ id: "d", voidedAt: "2026-11-15T11:00:00Z" }),
+    ];
+    expect(sessionItemVotes(votes, "i1").map((vote) => vote.id)).toEqual([
+      "a",
+      "d",
+    ]);
+  });
+
+  it("offers a vote of its own unless its documents are voted", () => {
+    expect(sessionItemVotePlan(row(), [], "in_session")).toEqual({
+      takesVote: true,
+      vote: null,
+      canRecord: true,
+      canChange: true,
+      pending: false,
+    });
+    // A voted document that is presented makes the item voted through it.
+    expect(
+      sessionItemVotePlan(
+        row({ documents: [{ voted: true, status: "published" }] }),
+        [],
+        "in_session",
+      ).takesVote,
+    ).toBe(false);
+    // Drafts, withdrawn and postponed documents, and unvoted ones, do not.
+    expect(
+      sessionItemVotePlan(
+        row({
+          documents: [
+            { voted: true, status: "draft" },
+            { voted: true, status: "withdrawn" },
+            { voted: true, status: "postponed" },
+            { voted: false, status: "published" },
+          ],
+        }),
+        [],
+        "in_session",
+      ).takesVote,
+    ).toBe(true);
+    // Nor a container, whose documents hang from their own sub-items.
+    expect(
+      sessionItemVotePlan(row({ acceptsSubmissions: true }), [], "in_session")
+        .takesVote,
+    ).toBe(false);
+  });
+
+  it("makes a flagged item's vote the next step until one is in force", () => {
+    expect(
+      sessionItemVotePlan(row({ voted: true }), [], "in_session").pending,
+    ).toBe(true);
+    const plan = sessionItemVotePlan(
+      row({ voted: true }),
+      [
+        itemVote({ id: "a", recordedAt: "2026-11-15T10:00:00Z" }),
+        itemVote({ id: "b", recordedAt: "2026-11-15T10:05:00Z" }),
+      ],
+      "in_session",
+    );
+    expect(plan.pending).toBe(false);
+    expect(plan.vote?.id).toBe("b");
+    // A voided vote gives nothing: the item is pending again.
+    const voided = sessionItemVotePlan(
+      row({ voted: true }),
+      [itemVote({ voidedAt: "2026-11-15T10:10:00Z" })],
+      "in_session",
+    );
+    expect(voided.vote).toBeNull();
+    expect(voided.pending).toBe(true);
+  });
+
+  it("records only while the assembly is convened or in session", () => {
+    for (const status of ["draft", "closed", null] as const) {
+      const plan = sessionItemVotePlan(row({ voted: true }), [], status);
+      expect(plan.canRecord).toBe(false);
+      expect(plan.pending).toBe(false);
+    }
+    expect(sessionItemVotePlan(row(), [], "convened").canRecord).toBe(true);
+    expect(sessionItemVotePlan(row(), [], "closed").canChange).toBe(false);
+    expect(sessionItemVotePlan(row(), [], "convened").canChange).toBe(true);
+  });
+
+  it("ignores votes on an item voted through its documents", () => {
+    const plan = sessionItemVotePlan(
+      row({ documents: [{ voted: true, status: "published" }] }),
+      [itemVote()],
+      "in_session",
+    );
+    expect(plan.vote).toBeNull();
+    expect(plan.canRecord).toBe(false);
   });
 });

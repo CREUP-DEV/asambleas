@@ -30,10 +30,19 @@ const counts = computed(() => {
 });
 
 const isAssent = computed(() => props.vote.method === "assent");
+/**
+ * How it was decided: the method, or "Por unanimidad" for an assent nobody
+ * objected to when unanimity was asked.
+ */
+const methodLabel = computed(() =>
+  isAssent.value && props.vote.unanimous
+    ? t("amendment.vote.unanimous")
+    : t(`amendment.vote.methods.${props.vote.method}`),
+);
 
 const summary = computed(() =>
   isAssent.value
-    ? t("amendment.vote.methods.assent")
+    ? methodLabel.value
     : t("amendment.vote.inline", {
         inFavor: props.vote.inFavor,
         against: props.vote.against,
@@ -52,7 +61,7 @@ const summary = computed(() =>
     <div class="flex flex-wrap items-center gap-2">
       <CommonStatusBadge kind="vote" :value="vote.result" />
       <span class="text-muted text-sm">
-        {{ t(`amendment.vote.methods.${vote.method}`) }}
+        {{ methodLabel }}
         ·
         {{ t(`amendment.vote.majorities.${vote.majority}`) }}
       </span>

@@ -283,6 +283,8 @@ La versión que trae la hoja de control añade `control_sheet:view` y `control_s
 
 La versión que trae la sala (`docs/seating-plan.md`) añade `seating:view` y `seating:edit` y la migración 0034, que va después de la 0033 de la hoja de control: no se despliega sin ella. Despliégala con `--seed`, para que la CEA, el Moderador, Secretaría y Presidencia reciban los permisos; sin él, nadie salvo un Admin ve la sala. La sala lee los inscritos de la Intranet (`GET .../asambleas/{tipo}/{número}/asistentes` y las rutas de imágenes, `docs/intranet.md`); mientras la Intranet no tenga esas rutas, la sala funciona con grupos hechos a mano y su línea no avisa de nada (solo quien pulsa «Sincronizar» ve un aviso). Las fotos y logos que guarda van en `UPLOAD_STORAGE_DIR/seating/`, dentro de `asambleas/data/uploads`, así que entran en las mismas copias.
 
+La versión que trae las votaciones de punto y «Se vota el punto» añade la migración 0035, que va después de la 0034 de la sala: no se despliega sin ella, ni antes. No añade permisos. Después de desplegarla, «Se vota el punto» está apagado en todos los puntos: actívalo (Orden del día, editar el punto) en los que se votan sin documentos que se voten, como la ratificación de la Mesa o las elecciones, o la hoja de control los seguirá leyendo «No aplica» hasta su votación. Volver con `scripts/rollback.sh --force` a una versión anterior deja las votaciones de punto sin palabras propias: la actividad las enseña a quien ve la asamblea, sin su punto, la proyección las llama «Votación» y un asentimiento marcado por unanimidad vuelve a leerse como asentimiento.
+
 Operación:
 
 ```sql

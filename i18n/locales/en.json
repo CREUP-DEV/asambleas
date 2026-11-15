@@ -90,7 +90,16 @@
       "controlSheetWithdrawn": "An item with documents is not marked as withdrawn by hand: the document is withdrawn.",
       "seatingStale": "Someone changed the room at the same time. What is there now is shown.",
       "seatingSeatsOccupied": "The change removes seats where people are sitting.",
-      "seatingNotFound": "That is no longer in the room. What is there now is shown."
+      "seatingNotFound": "That is no longer in the room. What is there now is shown.",
+      "itemHasVotedDocuments": "This item is voted through its documents: record each one’s final vote.",
+      "voteNotInSession": "Votes are not recorded in a draft or closed assembly.",
+      "voteAssemblyClosed": "The assembly is closed, so its votes no longer change.",
+      "voteVoided": "This vote is voided: it stays in the history, but it no longer counts or goes on screen.",
+      "voteNotVoidable": "This vote is not voided here: reopen or annul what it decided instead.",
+      "voteNotInForce": "This vote is no longer in force: it has been voided or annulled.",
+      "voteUnanimityRefused": "Only an assent vote on an item, or a document's final vote, can be marked unanimous.",
+      "itemIsContainer": "Members present documents in this item: each one is voted in its own sub-item.",
+      "itemTakesNoVote": "This item cannot take a vote of its own right now."
     },
     "content": {
       "empty": "There is no content to show.",
@@ -1628,14 +1637,15 @@
         "assent": "By assent",
         "show_of_hands": "Show of hands",
         "secret": "Secret ballot",
-        "roll_call": "Roll call",
+        "roll_call": "Registered",
         "portal": "Voting portal"
       },
       "majorities": {
         "simple": "Simple majority",
         "absolute": "Absolute majority",
         "two_thirds": "Two-thirds majority"
-      }
+      },
+      "unanimous": "@:projection.vote.unanimous"
     },
     "composer": {
       "titleNew": "Present an amendment",
@@ -2376,7 +2386,9 @@
       "voteCounts": "votes in favour: {inFavor}, against: {against}, abstentions: {abstentions}",
       "finalVote": {
         "approved": "Approved at the {assembly} on {date} by {majority} ({counts}).",
-        "rejected": "Rejected at the {assembly} on {date} ({counts}); it required a {majority}."
+        "rejected": "Rejected at the {assembly} on {date} ({counts}); it required a {majority}.",
+        "assent": "Approved by assent at the {assembly} on {date}.",
+        "unanimous": "Approved unanimously at the {assembly} on {date}."
       },
       "majorities": {
         "simple": "simple majority",
@@ -3218,7 +3230,7 @@
       "blockedAmendments": "A document under this item or its sub-items has amendments. | {count} documents under this item or its sub-items have amendments.",
       "blockedHelp": "Amendments are other members' work and are not deleted. Move those documents to another item first.",
       "blockedLive": "This item, a sub-item or one of their documents is being dealt with in the session right now. Try again when the Mesa moves on to another item.",
-      "blockedSheet": "The control sheet has notes on this item or its sub-items (observations, a result noted by hand, the dealt-with mark or that it was added to the sheet). Clear them on the sheet before deleting it."
+      "blockedSheet": "This item or its sub-items have votes or notes on the control sheet (observations, a result noted by hand, the dealt-with mark or that it was added to the sheet). Notes can be cleared on the sheet; a vote stays in the minutes even when voided, so the item can no longer be deleted."
     },
     "reader": {
       "label": "Documents of this item",
@@ -3227,6 +3239,11 @@
       "viewAmendments": "See amendments",
       "loading": "Loading the document",
       "loadError": "The document could not be loaded"
+    },
+    "itemVote": {
+      "label": "The item is voted on",
+      "help": "For an item voted on by itself, such as a ratification or an election. The control sheet shows it as “Pending” until it is voted on.",
+      "throughDocuments": "Its documents are already voted on, so the item is voted on through them."
     }
   },
   "calendar": {
@@ -3662,7 +3679,13 @@
       "validatedLate": "It came in late: the assembly still has to decide whether to treat it. | {count} came in late: the assembly still has to decide whether to treat them.",
       "published": "Amendment published | {count} amendments published",
       "incorporated": "{code} is in the text: the document's presenter accepted it",
-      "unincorporated": "{code} comes out of the text and is undecided again"
+      "unincorporated": "{code} comes out of the text and is undecided again",
+      "itemVoteApproved": "Item approved",
+      "itemVoteRejected": "Item rejected",
+      "itemVoteNotProjected": "The vote was recorded but not shown on screen: the item is no longer under debate.",
+      "itemVoteVoided": "Item vote voided",
+      "itemVoteUnanimous": "The vote is recorded as unanimous",
+      "itemVoteNotUnanimous": "The vote is no longer recorded as unanimous"
     },
     "errors": {
       "live": "The debate could not be updated",
@@ -3674,7 +3697,11 @@
       "finalVote": "The final vote could not be recorded",
       "annulFinalVote": "The final vote could not be annulled",
       "validate": "The amendment could not be validated",
-      "publish": "The amendment could not be published"
+      "publish": "The amendment could not be published",
+      "itemVote": "The item's vote could not be recorded",
+      "itemVoteVoid": "The vote could not be voided",
+      "itemVoteUnanimity": "The unanimity could not be changed",
+      "itemHasVotedDocuments": "@:common.errors.itemHasVotedDocuments"
     },
     "vote": {
       "title": "Vote on {code}",
@@ -3912,7 +3939,7 @@
         "assent": "Assent",
         "show_of_hands": "Show of hands",
         "secret": "Secret ballot",
-        "roll_call": "Roll call",
+        "roll_call": "Registered vote",
         "portal": "Online portal"
       },
       "acceptanceRole": {
@@ -3986,7 +4013,8 @@
       },
       "item": {
         "documents": "This item has 1 document. Put it under debate to begin. | This item has {count} documents. Choose which one is debated first.",
-        "noDocuments": "This item has no documents. When the debate ends, move on to the next one."
+        "noDocuments": "This item has no documents. When the debate ends, move on to the next one.",
+        "toVote": "This item is put to a vote. When the debate ends, record the vote."
       },
       "announce": "Under debate: {what}",
       "announceAmendment": "Under debate: {code}, by {who}. {status}.",
@@ -4125,6 +4153,32 @@
       "waitsValidation": "{code}, waiting for the Secretaría",
       "confirmTitle": "{code} has a pending transactional | {code} has pending transactionals",
       "consequence": "If you go ahead, {codes} is withdrawn. If you reopen {code} before the final vote, it is back on its way, unless another amendment it groups has been decided. | If you go ahead, {codes} are withdrawn. If you reopen {code} before the final vote, they are back on their way, unless another amendment they group has been decided."
+    },
+    "itemVote": {
+      "open": "Record the item's vote",
+      "openAgain": "Record another vote on the item",
+      "title": "Vote on the item",
+      "question": "What is voted",
+      "questionHelp": "The room sees it with the result.",
+      "questionRequired": "Write what is voted.",
+      "assentText": "Assent has no count: the item is approved.",
+      "unanimous": "@:projection.vote.unanimous",
+      "unanimousHint": "Nobody objected when the Mesa asked whether there was unanimity.",
+      "submit": "Record vote",
+      "confirmDescription": "The result is shown to the room. If there is a mistake, the Mesa can void the vote.",
+      "void": "Void vote",
+      "voidTitle": "Void the item's vote",
+      "voidDescription": "{vote}. The vote stays in the history, but it no longer gives the item's result and leaves the projection.",
+      "voidConfirm": "Void vote",
+      "markUnanimous": "Mark as unanimous",
+      "unmarkUnanimous": "Remove unanimity",
+      "status": {
+        "approved": "Approved",
+        "rejected": "Rejected",
+        "assent": "Approved by assent",
+        "unanimous": "Approved unanimously",
+        "spoken": "{result}. {method}. In favour: {inFavor}; against: {against}; abstentions: {abstentions}."
+      }
     }
   },
   "projection": {
@@ -4160,7 +4214,10 @@
       "abstentions": "Abstentions",
       "blank": "Blank",
       "invalid": "Invalid",
-      "majority": "Majority"
+      "majority": "Majority",
+      "agendaItem": "Vote on item {title}",
+      "agendaItemUnknown": "Vote on an agenda item",
+      "unanimous": "Unanimously"
     },
     "stale": "Showing the last data received",
     "loadFailed": "The data could not be loaded",
@@ -4390,7 +4447,7 @@
     "noVote": "Not voted",
     "positionHidden": "Not visible",
     "emptyTitle": "No items with documents yet",
-    "emptyDescription": "The sheet shows the agenda items that have documents presented.",
+    "emptyDescription": "The sheet shows the agenda items that have documents presented or are voted on.",
     "amendmentsEmpty": "This document has no amendments you can see.",
     "amendmentsLoadError": "The amendments could not be loaded",
     "rowCount": "{count} item on the sheet | {count} items on the sheet",
@@ -4413,12 +4470,11 @@
       "vote": "Vote",
       "observations": "Observations",
       "ceaPosition": "CEA position",
-      "open": "Open"
+      "open": "View"
     },
     "treated": {
-      "yes": "Dealt with",
-      "yesAmendment": "Dealt with",
-      "no": "Pending"
+      "item": "Dealt with: {title}",
+      "amendment": "Dealt with: {code}"
     },
     "result": {
       "approved": "Approved",
@@ -4471,8 +4527,8 @@
       "not_applicable": "Not applicable"
     },
     "open": {
-      "item": "Open item {title}",
-      "amendment": "Open amendment {code}"
+      "item": "View item {title}",
+      "amendment": "View amendment {code}"
     },
     "panel": {
       "itemTitle": "Sheet item",
@@ -4525,12 +4581,13 @@
       "emptyText": "(no text)",
       "change": "{from} to {to}",
       "treatedByResult": "It counts as dealt with because of the result noted by hand.",
-      "resultMesaOnly": "Only the Mesa notes the result."
+      "resultMesaOnly": "Only the Mesa notes the result.",
+      "leftSheet": "The item has left the sheet: someone changed it at the same time."
     },
     "add": {
       "button": "Add item",
       "title": "Add an item to the sheet",
-      "description": "Items without documents only show on the sheet if you add them, for example one that is voted.",
+      "description": "Items without documents show on the sheet when they are voted on. Add here any other one you want to follow.",
       "label": "Item",
       "placeholder": "Choose an item",
       "none": "Every item without documents is already on the sheet.",
@@ -4538,7 +4595,83 @@
       "added": "Item added to the sheet",
       "failed": "The item could not be added"
     },
-    "noObservations": "No observations"
+    "noObservations": "No observations",
+    "sort": {
+      "label": "Sort by",
+      "asc": "ascending",
+      "desc": "descending",
+      "by": "Sort by {column}, {direction}",
+      "reset": "Stop sorting by {column}",
+      "status": "Sorted by {column}, {direction}"
+    },
+    "filters": {
+      "search": "Search the sheet",
+      "searchGeneral": "No., item, document or speaker",
+      "searchAmendments": "Code or presenter",
+      "viewsGeneral": "Which items to show",
+      "viewsAmendments": "Which amendments to show",
+      "views": {
+        "general": {
+          "all": "All",
+          "pending": "Pending",
+          "treated": "Treated",
+          "observations": "With observations"
+        },
+        "amendments": {
+          "all": "All",
+          "pending": "Pending",
+          "treated": "Treated",
+          "noCeaPosition": "No CEA position"
+        }
+      },
+      "button": "Filters",
+      "buttonActive": "Filters. In use: {count}",
+      "any": "Any",
+      "clear": "Clear filters",
+      "count": "{shown} of {total} item | {shown} of {total} items",
+      "amendmentCount": "{shown} of {total} amendment | {shown} of {total} amendments",
+      "noMatchesTitle": "No item matches the filters",
+      "noMatchesAmendments": "No amendment matches the filters",
+      "noMatchesDescription": "Try another search or clear the filters.",
+      "under": "Under {parent}"
+    },
+    "itemVotes": {
+      "title": "Votes on the item",
+      "byDocuments": "This item is voted on through its documents: each one's final vote counts.",
+      "container": "Documents are presented under this item: each one is voted on in its own sub-item.",
+      "empty": "Not voted on yet.",
+      "record": "Record a vote",
+      "recordTitle": "Vote on the item",
+      "question": "What is voted on",
+      "questionHint": "As the sheet will record it. Everyone sees it with the vote.",
+      "questionPlaceholder": "For example: ratification of the Secretariat's appointment",
+      "assentText": "Assent has no count: what is voted on is approved.",
+      "unanimous": "Unanimous",
+      "unanimousHint": "Nobody objected when unanimity was asked.",
+      "recorded": "Vote recorded",
+      "recordFailed": "The vote could not be recorded",
+      "void": "Void",
+      "voidLabel": "Void the vote “{question}”",
+      "voidTitle": "Void this vote?",
+      "voidDescription": "It stays on the sheet as voided and no longer gives the item's result. It cannot be undone.",
+      "voidConfirm": "Void the vote",
+      "voided": "Voided",
+      "voidedToast": "Vote voided",
+      "voidFailed": "The vote could not be voided",
+      "voidedAt": "Voided: {when}",
+      "recordedAt": "Recorded: {when}",
+      "decides": "This one gives the result",
+      "unanimityFailed": "Unanimity could not be changed",
+      "closed": "The assembly is closed: its votes no longer change.",
+      "draftAssembly": "Votes are recorded once the assembly is convened.",
+      "fallbackQuestion": "Vote on the item",
+      "leftSheet": "The item leaves the sheet: it no longer has any vote in force."
+    },
+    "edit": {
+      "button": "Edit",
+      "item": "Edit item {title}",
+      "amendment": "Edit amendment {code}"
+    }
   },
   "seating": {
     "title": "Room",
@@ -5982,7 +6115,9 @@
         "update": "Email notices changed",
         "test": "Test email sent"
       },
-      "amendment_validation_undone": "Amendment validation undone by the Secretariat"
+      "amendment_validation_undone": "Amendment validation undone by the Secretariat",
+      "vote_voided": "Agenda item vote voided",
+      "vote_unanimity_changed": "Vote unanimity changed"
     },
     "changes": {
       "milestoneNote": "Note on “{milestone}”",
@@ -6000,7 +6135,8 @@
           "description": "Description",
           "acceptsSubmissions": "Accepts documents from members",
           "submissionKinds": "Document kinds it accepts",
-          "parentId": "Place in the agenda"
+          "parentId": "Place in the agenda",
+          "voted": "The item is voted"
         },
         "document": {
           "title": "Title",

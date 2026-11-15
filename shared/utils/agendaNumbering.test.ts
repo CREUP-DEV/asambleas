@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   agendaChildGroups,
   numberAgendaItems,
+  publicTitleHiddenItemIds,
   unlistedAgendaItemIds,
   type AgendaOrderItem,
 } from "./agendaNumbering";
@@ -229,6 +230,76 @@ describe("unlistedAgendaItemIds", () => {
     expect(forAttendee.size).toBe(3);
     for (const [id, number] of forAttendee) {
       expect(forManager.get(id)).toBe(number);
+    }
+  });
+});
+
+describe("publicTitleHiddenItemIds", () => {
+  const item = (
+    id: string,
+    parentId: string | null,
+    extra: {
+      generatedForDocumentId?: string | null;
+      hiddenWithDocumentId?: string | null;
+      titleWithheld?: boolean;
+    } = {},
+  ) => ({
+    id,
+    parentId,
+    generatedForDocumentId: extra.generatedForDocumentId ?? null,
+    hiddenWithDocumentId: extra.hiddenWithDocumentId ?? null,
+    titleWithheld: extra.titleWithheld ?? false,
+  });
+  const hidden = (
+    items: ReturnType<typeof item>[],
+    publicDocuments: { id: string; agendaItemId: string }[],
+  ) => [...publicTitleHiddenItemIds(items, publicDocuments)].sort();
+
+  const items = [
+    item("root", null),
+    item("plain", "root"),
+    item("draft", "root", { generatedForDocumentId: "d1" }),
+    item("published", "root", { generatedForDocumentId: "d2" }),
+    // Withheld after its document was deleted, kept by its sub-item.
+    item("withheld", "root", { titleWithheld: true }),
+    item("child", "withheld"),
+    // Kept after its document moved away, holding a public document.
+    item("kept", "root", { hiddenWithDocumentId: "d3" }),
+  ];
+  const publicDocuments = [
+    { id: "d2", agendaItemId: "published" },
+    { id: "d4", agendaItemId: "kept" },
+  ];
+
+  it("holds the unlisted items and those listed without their title", () => {
+    expect(hidden(items, publicDocuments)).toEqual([
+      "draft",
+      "kept",
+      "withheld",
+    ]);
+    const unlisted = unlistedAgendaItemIds(items, publicDocuments);
+    expect([...unlisted]).toEqual(["draft"]);
+    for (const id of unlisted) {
+      expect(publicTitleHiddenItemIds(items, publicDocuments).has(id)).toBe(
+        true,
+      );
+    }
+  });
+
+  it("is the titleless items the attendee itself gets", () => {
+    // What an attendee receives without its title is exactly what it would
+    // be told is hidden, whoever asks.
+    const attendee = visibleAgendaItems(items, publicDocuments);
+    const marks = publicTitleHiddenItemIds(items, publicDocuments);
+    expect(
+      attendee.filter((row) => marks.has(row.id)).map((row) => row.id),
+    ).toEqual(["withheld", "kept"]);
+  });
+
+  it("never hides a title written by hand or a public document's", () => {
+    const marks = publicTitleHiddenItemIds(items, publicDocuments);
+    for (const id of ["root", "plain", "published", "child"]) {
+      expect(marks.has(id)).toBe(false);
     }
   });
 });

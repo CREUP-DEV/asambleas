@@ -101,6 +101,13 @@ const REASON_KEYS: Record<string, string> = {
   control_sheet_stale: "common.errors.controlSheetStale",
   // A «Retirado» by hand on an item with documents.
   control_sheet_withdrawn_document: "common.errors.controlSheetWithdrawn",
+  // A vote on an agenda item while one of its documents is voted: the
+  // item is voted through the documents' final votes.
+  item_has_voted_documents: "common.errors.itemHasVotedDocuments",
+  // The same refusal for someone who may not see those documents yet: it
+  // names none.
+  item_takes_no_vote: "common.errors.itemTakesNoVote",
+  item_is_container: "common.errors.itemIsContainer",
   // The room (Sala) changed under a write: the page shows what is there now.
   seating_stale: "common.errors.seatingStale",
   // A layout save that removes occupied seats, until the client confirms it.
