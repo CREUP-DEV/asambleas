@@ -255,7 +255,6 @@ logs, out of CORS).
       "name": "…",
       "surname": "…",
       "status": "Confirmada",
-      "modality": "Regular - Asociado",
       "photo_version": "1be0…"
     }
   ],

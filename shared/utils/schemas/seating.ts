@@ -394,8 +394,9 @@ const intranetAccountSchema = z.object({
 });
 
 /**
- * An attendee: name, surnames and photo only. The modality the Intranet
- * also sends is dropped here, so it never reaches the database.
+ * An attendee: name, surnames and photo only. The Intranet stopped sending
+ * the modality (its name can say who sleeps at the hotel); were it to come
+ * back, it would be dropped here and never reach the database.
  */
 const intranetAttendeeSchema = z.object({
   id: intranetIdSchema,
