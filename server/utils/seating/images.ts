@@ -13,6 +13,11 @@ import { notifyLive, type Executor } from "../domain/events";
 import { getExportQueue } from "../export/queue";
 import { IntranetUnavailableError } from "../members/intranet";
 import {
+  rememberFailedSeatingImage,
+  seatingImageKey,
+  withoutFailedSeatingImages,
+} from "./failedImages";
+import {
   SEATING_IMAGE_VERSION_PATTERN,
   parseSeatingImageFileName,
   seatingImageDir,
@@ -200,8 +205,10 @@ export async function removeSeatingPlanImages(planId: string): Promise<void> {
  * throws: a missing queue only means the images come with a later sync.
  */
 export async function enqueueSeatingImages(
-  jobs: readonly SeatingImageJob[],
+  images: readonly SeatingImageJob[],
 ): Promise<void> {
+  // An image that failed for good at this version is not fetched again.
+  const jobs = withoutFailedSeatingImages(images);
   if (jobs.length === 0) return;
   try {
     const boss = await getExportQueue();
@@ -209,7 +216,7 @@ export async function enqueueSeatingImages(
       SEATING_IMAGES_QUEUE,
       jobs.map((data) => ({
         data,
-        singletonKey: `${data.kind}:${data.id}:${data.version}`,
+        singletonKey: seatingImageKey(data),
       })),
     );
   } catch (error) {
@@ -358,11 +365,13 @@ export async function processSeatingImageJob(
       kind: job.kind,
       reason: fetched.reason,
     });
+    rememberFailedSeatingImage(job);
     return "missing";
   }
   const picture = await renderSeatingImage(fetched.data, job.kind);
   if (!picture) {
     logWarn("seating.images", { outcome: "unreadable", kind: job.kind });
+    rememberFailedSeatingImage(job);
     return "unreadable";
   }
 

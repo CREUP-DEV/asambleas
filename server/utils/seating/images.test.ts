@@ -65,6 +65,10 @@ vi.mock("../core/logger", () => ({
   logInfo: vi.fn(),
 }));
 vi.mock("../domain/events", () => ({ notifyLive: vi.fn(async () => {}) }));
+const queueInsert = vi.fn(async () => []);
+vi.mock("../export/queue", () => ({
+  getExportQueue: vi.fn(async () => ({ insert: queueInsert })),
+}));
 vi.mock("./intranet", async (original) => ({
   ...(await original<typeof import("./intranet")>()),
   fetchSeatingImage: vi.fn(),
@@ -72,7 +76,9 @@ vi.mock("./intranet", async (original) => ({
 
 const { fetchSeatingImage } = await import("./intranet");
 const { IntranetUnavailableError } = await import("../members/intranet");
+const { forgetFailedSeatingImages } = await import("./failedImages");
 const {
+  enqueueSeatingImages,
   processSeatingImageJob,
   renderSeatingImage,
   sniffImageFormat,
@@ -269,5 +275,56 @@ describe("processSeatingImageJob", () => {
     await expect(processSeatingImageJob(job)).rejects.toBeInstanceOf(
       IntranetUnavailableError,
     );
+  });
+});
+
+describe("enqueueSeatingImages", () => {
+  beforeEach(() => {
+    queueInsert.mockClear();
+    forgetFailedSeatingImages();
+  });
+  afterEach(() => forgetFailedSeatingImages());
+
+  const queued = () =>
+    queueInsert.mock.calls.flatMap(
+      (call) => (call as unknown[])[1] as { singletonKey: string }[],
+    );
+
+  it("queues each image once per version", async () => {
+    await enqueueSeatingImages([job]);
+    expect(queued()).toEqual([
+      { data: job, singletonKey: `photo:${PERSON}:9f2c` },
+    ]);
+  });
+
+  it.each([
+    ["not served", { outcome: "missing", reason: "not_found" }],
+    ["too large", { outcome: "missing", reason: "too_large" }],
+    ["unreadable", { outcome: "ok", data: Buffer.from("<html></html>") }],
+  ] as const)(
+    "does not fetch again an image that failed for good (%s) until its version changes",
+    async (_case, answer) => {
+      vi.mocked(fetchSeatingImage).mockResolvedValue(
+        answer as Awaited<ReturnType<typeof fetchSeatingImage>>,
+      );
+      await processSeatingImageJob(job);
+      await enqueueSeatingImages([job]);
+      expect(queueInsert).not.toHaveBeenCalled();
+
+      const next = { ...job, version: "4b1c" };
+      await enqueueSeatingImages([job, next]);
+      expect(queued()).toEqual([expect.objectContaining({ data: next })]);
+    },
+  );
+
+  it("queues again an image whose failure may mend (the Intranet down)", async () => {
+    vi.mocked(fetchSeatingImage).mockRejectedValue(
+      new IntranetUnavailableError("asistentes/501/foto", "status 503"),
+    );
+    await expect(processSeatingImageJob(job)).rejects.toBeInstanceOf(
+      IntranetUnavailableError,
+    );
+    await enqueueSeatingImages([job]);
+    expect(queued()).toHaveLength(1);
   });
 });
