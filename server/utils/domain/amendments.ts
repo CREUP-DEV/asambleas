@@ -1488,10 +1488,14 @@ export async function buildAmendmentDtos(
  *   for (null when none), only for answers with no such event, compared
  *   with the document's current main presenter.
  */
-async function loadPositionRecorders(rows: LoadedAmendment[]): Promise<{
+export interface PositionRecorders {
   recordedAs: Map<string, string | null>;
   memberOf: Map<string, string | null>;
-}> {
+}
+
+export async function loadPositionRecorders(
+  rows: LoadedAmendment[],
+): Promise<PositionRecorders> {
   const answered = rows.filter((row) => row.position);
   const recordedAs = new Map<string, string | null>();
   if (answered.length > 0) {

@@ -20,9 +20,11 @@ import type {
   ControlSheetAmendmentRowDto,
   ControlSheetDto,
   ControlSheetItemRowDto,
+  ControlSheetPositionDto,
   DocumentSummaryDto,
   HeadcountDto,
   LiveEventDto,
+  PositionDto,
   VoteDto,
 } from "~~/shared/types/api";
 import {
@@ -330,7 +332,29 @@ export interface AmendmentSheetRow {
   /** Treated because the Mesa settled it in session. */
   autoTreated: boolean;
   sheet: ControlSheetAmendmentRowDto | null;
+  /**
+   * The main presenter's answer: the one the sheet's own answer carries
+   * (ControlSheetDto.positions, every sheet reader reads it), else the
+   * amendment's (AmendmentDto.position, null when the assembly's rule hides
+   * it from the reader).
+   */
+  position: PositionDto | null;
   live: boolean;
+}
+
+/**
+ * The presenter's answer to show: the sheet's and the amendment's come from
+ * two fetches that may land in any order, so the later one wins (the
+ * sheet's on a tie, since it reaches every sheet reader).
+ */
+export function newerPosition(
+  sheet: PositionDto | null,
+  amendment: PositionDto | null,
+): PositionDto | null {
+  if (!sheet || !amendment) return sheet ?? amendment;
+  return Date.parse(amendment.updatedAt) > Date.parse(sheet.updatedAt)
+    ? amendment
+    : sheet;
 }
 
 /** The amendments of a document past draft, in the console's order. */
@@ -339,8 +363,12 @@ export function buildAmendmentRows(
   sessionStartedAt: string | null,
   liveAmendmentId: string | null,
   sheetRows: readonly ControlSheetAmendmentRowDto[] = [],
+  positions: readonly ControlSheetPositionDto[] = [],
 ): AmendmentSheetRow[] {
   const notes = new Map(sheetRows.map((row) => [row.amendmentId, row]));
+  const answers = new Map(
+    positions.map((entry) => [entry.amendmentId, entry.position]),
+  );
   const rows: LiveAmendmentRow[] = sortSessionAmendments(
     list.filter((amendment) => amendment.status !== "draft"),
   ).map((amendment) => ({
@@ -361,6 +389,10 @@ export function buildAmendmentRows(
       treated: autoTreated || Boolean(sheet?.treated),
       autoTreated,
       sheet,
+      position: newerPosition(
+        answers.get(row.amendment.id) ?? null,
+        row.amendment.position,
+      ),
       live: row.current,
     };
   });

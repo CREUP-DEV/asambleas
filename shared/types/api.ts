@@ -251,6 +251,12 @@ export interface MeWorkProponentDto {
   document: { id: string; slug: string; title: string };
   /** Undecided amendments with no position from the main presenter yet. */
   positionsPending: number;
+  /**
+   * When the assembly starts (assemblies.startDate): the main presenter is
+   * expected to answer every amendment before then. null once the assembly
+   * is in session, when that moment has passed whatever the date says.
+   */
+  answerBy: IsoDate | null;
 }
 
 /** A transactional waiting for the user's member to accept or reject it. */
@@ -1670,6 +1676,12 @@ export interface ControlSheetDocumentDto {
   undecided: number;
 }
 
+/** The main presenter's answer to one amendment, as the sheet reads it. */
+export interface ControlSheetPositionDto {
+  amendmentId: string;
+  position: PositionDto;
+}
+
 /**
  * GET /api/assemblies/[assembly]/control-sheet (control_sheet:view or
  * control_sheet:edit): what the control sheet adds to the agenda, as the
@@ -1689,6 +1701,13 @@ export interface ControlSheetDto {
   itemRows: ControlSheetItemRowDto[];
   /** What the sheet noted about amendments the reader sees. */
   amendmentRows: ControlSheetAmendmentRowDto[];
+  /**
+   * The main presenter's answer to every amendment the reader sees that has
+   * one, as soon as it is given: every sheet reader reads it here, whatever
+   * the assembly's settings.positionVisibility (canSeePositions), which
+   * still rules AmendmentDto.position everywhere else.
+   */
+  positions: ControlSheetPositionDto[];
   /**
    * Votes on agenda items the reader gets, voided ones too, oldest first
    * (the same as GET .../item-votes).
@@ -2039,6 +2058,7 @@ export interface AdminUserDto {
   id: string;
   name: string;
   email: string;
+  /** The stored photo's URL, or null (MeDto.image). */
   image: string | null;
   roleId: string | null;
   /** The member the account acts for (users.memberId). */
@@ -2058,7 +2078,6 @@ export interface AdminUserDto {
   accessRevokedAt: IsoDate | null;
   /** Why it lost access; null exactly when `accessRevokedAt` is. */
   accessRevokedReason: AccessRevokedReason | null;
-  /** The stored photo's URL, or null (MeDto.image). */
   createdAt: IsoDate;
   role: { id: string; name: string } | null;
   member: MemberRef | null;
@@ -2379,6 +2398,7 @@ export interface StatsOpeningDto {
 export interface StatsAccountDto {
   id: string;
   name: string;
+  /** The stored photo's URL, or null (MeDto.image). */
   image: string | null;
   /** What its avatar reads without a photo (AdminUserDto.avatarText). */
   avatarText: string | null;
@@ -2398,7 +2418,6 @@ export interface StatsAccountDto {
   /** Amendments and documents of the assembly this account sent. */
   amendmentsSubmitted: number;
   documentsSubmitted: number;
-  /** The stored photo's URL, or null (MeDto.image). */
 }
 
 /** Amendments presented by a member (any author), by how they ended. */

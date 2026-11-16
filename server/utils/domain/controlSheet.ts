@@ -20,6 +20,7 @@ import type {
   ControlSheetHistoryDto,
   ControlSheetHistoryEntryDto,
   ControlSheetItemRowDto,
+  ControlSheetPositionDto,
 } from "~~/shared/types/api";
 import type {
   CeaPosition,
@@ -51,14 +52,18 @@ import {
   canSeeLoadedAmendment,
   findAmendmentsByIds,
   findPresentedAmendments,
+  loadPositionRecorders,
+  type LoadedAmendment,
+  type PositionRecorders,
 } from "./amendments";
 import { titleDocumentPayload } from "./agendaWrites";
 import { shareLockAssembly } from "./documents";
 import { recordEvent, type Executor } from "./events";
 import { impersonatedByFor, loadImpersonators } from "./impersonators";
 import { withCoProponentIds } from "./presenters";
+import { positionRecordedBy } from "./reviewState";
 import { loadSpokenTurns } from "./speakers";
-import { canSeeDocument } from "./visibility";
+import { canSeeDocument, type DocumentPresenters } from "./visibility";
 import { loadItemVoteRows, toItemVoteDto, toVoteDto } from "./votes";
 
 /**
@@ -250,6 +255,66 @@ async function loadSessionStartedAt(assemblyId: string): Promise<Date | null> {
   return row?.at ?? null;
 }
 
+/**
+ * The amendments among `rows` the actor sees (canSeeLoadedAmendment, with
+ * the presenters of their document), dropping those of a document it does
+ * not see (absent from `documentById`).
+ */
+export function visibleSheetAmendments(
+  actor: Actor,
+  rows: readonly LoadedAmendment[],
+  documentById: ReadonlyMap<string, DocumentPresenters>,
+): LoadedAmendment[] {
+  return rows.filter((row) => {
+    const document = documentById.get(row.documentId);
+    return !!document && canSeeLoadedAmendment(actor, row, document);
+  });
+}
+
+/**
+ * The main presenter's answer to each of `rows` that has one
+ * (ControlSheetDto.positions), mapped as AmendmentDto.position is
+ * (positionRecordedBy against the document's current main presenter).
+ * `rows` are only amendments the reader sees (visibleSheetAmendments): the
+ * sheet gives their answer to every one of its readers as soon as it is
+ * given, whatever canSeePositions says, which still rules
+ * AmendmentDto.position everywhere else. PositionDto carries no member
+ * (recordedBy says only "presenter" or "mesa"; the comment is the
+ * presenter's own text), so there is nothing to redact.
+ */
+export function sheetPositions(
+  rows: readonly LoadedAmendment[],
+  documentById: ReadonlyMap<
+    string,
+    Pick<DocumentPresenters, "proponentMemberId">
+  >,
+  recorders: PositionRecorders,
+): ControlSheetPositionDto[] {
+  const result: ControlSheetPositionDto[] = [];
+  for (const row of rows) {
+    const document = documentById.get(row.documentId);
+    if (!row.position || !document) continue;
+    const decidedBy = row.position.decidedByUserId;
+    result.push({
+      amendmentId: row.id,
+      position: {
+        position: row.position.position,
+        comment: row.position.comment,
+        recordedBy: positionRecordedBy({
+          decidedByUserId: decidedBy,
+          recordedAs: recorders.recordedAs.get(row.id),
+          recorderMemberId: decidedBy
+            ? recorders.memberOf.get(decidedBy)
+            : null,
+          mainPresenterId: document.proponentMemberId,
+        }),
+        updatedAt: row.position.updatedAt.toISOString(),
+      },
+    });
+  }
+  return result;
+}
+
 export async function loadControlSheet(
   actor: Actor,
   assembly: AssemblyRow,
@@ -289,9 +354,12 @@ export async function loadControlSheet(
   const documentById = new Map(visibleDocuments.map((row) => [row.id, row]));
   const counts = new Map<string, { amendments: number; undecided: number }>();
   const visibleAmendments = new Map<string, string>();
-  for (const row of amendmentRows) {
-    const document = documentById.get(row.documentId);
-    if (!document || !canSeeLoadedAmendment(actor, row, document)) continue;
+  const visibleRows = visibleSheetAmendments(
+    actor,
+    amendmentRows,
+    documentById,
+  );
+  for (const row of visibleRows) {
     visibleAmendments.set(row.id, row.documentId);
     const count = counts.get(row.documentId) ?? { amendments: 0, undecided: 0 };
     count.amendments += 1;
@@ -313,9 +381,9 @@ export async function loadControlSheet(
     },
   );
 
-  const amendmentSheet =
+  const [amendmentSheet, recorders] = await Promise.all([
     visibleAmendments.size > 0
-      ? await db
+      ? db
           .select()
           .from(controlSheetAmendments)
           .where(
@@ -323,7 +391,9 @@ export async function loadControlSheet(
               ...visibleAmendments.keys(),
             ]),
           )
-      : [];
+      : Promise.resolve([]),
+    loadPositionRecorders(visibleRows),
+  ]);
   // Rows of items the reader does not get stay out, as the items do.
   const itemRows = itemSheet.filter((row) => itemsById.has(row.agendaItemId));
   const names = await loadUserNames([
@@ -341,6 +411,7 @@ export async function loadControlSheet(
     amendmentRows: amendmentSheet.map((row) =>
       toAmendmentRowDto(row, visibleAmendments.get(row.amendmentId)!, names),
     ),
+    positions: sheetPositions(visibleRows, documentById, recorders),
     // Votes of items the reader does not get stay out, as the items do, and
     // those it gets without their title come without their question.
     itemVotes: itemVoteRows

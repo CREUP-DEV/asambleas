@@ -175,13 +175,13 @@ function positionLabel(row: AmendmentSheetRow): string {
             </td>
             <td class="px-3 py-2">
               <CommonStatusBadge
-                v-if="row.amendment.position"
+                v-if="row.position"
                 kind="position"
-                :value="row.amendment.position.position"
+                :value="row.position.position"
                 size="xs"
               />
               <span v-else class="text-dimmed text-sm">{{
-                t("controlSheet.positionHidden")
+                t("controlSheet.positionNone")
               }}</span>
             </td>
             <td class="px-3 py-2">
@@ -297,13 +297,13 @@ function positionLabel(row: AmendmentSheetRow): string {
               </dt>
               <dd>
                 <CommonStatusBadge
-                  v-if="row.amendment.position"
+                  v-if="row.position"
                   kind="position"
-                  :value="row.amendment.position.position"
+                  :value="row.position.position"
                   size="xs"
                 />
                 <span v-else class="text-dimmed text-sm">{{
-                  t("controlSheet.positionHidden")
+                  t("controlSheet.positionNone")
                 }}</span>
               </dd>
             </div>

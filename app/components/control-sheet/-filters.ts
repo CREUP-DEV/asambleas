@@ -95,7 +95,7 @@ export function nextSort<K extends string>(
 
 /**
  * A row's place in one column: a value to compare, or null for an empty
- * one (no vote, no CEA position, an answer the reader may not see), which
+ * one (no vote, no CEA position, no answer of the main presenter), which
  * goes last whichever the direction.
  */
 type SortValue = number | string | null;
@@ -201,7 +201,7 @@ function amendmentSortValue(
       return cea === null ? null : CEA_POSITIONS.indexOf(cea);
     }
     case "position": {
-      const answer = row.amendment.position;
+      const answer = row.position;
       return answer === null
         ? null
         : PROPONENT_POSITIONS.indexOf(answer.position);

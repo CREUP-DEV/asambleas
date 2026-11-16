@@ -21,6 +21,7 @@ import {
   homeWorkNewsItem,
   homeWorkNewsLink,
   homeWorkProponentCounts,
+  homeWorkProponentDueAt,
   homeWorkReviewPending,
   homeWorkReviewTotal,
   homeWorkTasks,
@@ -129,6 +130,7 @@ const presents = (
   assembly,
   document: { id, slug: id, title: id.toUpperCase() },
   positionsPending: 0,
+  answerBy: "2026-11-14T09:00:00Z",
   ...over,
 });
 
@@ -294,6 +296,46 @@ describe("home work", () => {
     expect(
       homeWorkProponentCounts(presents("a", { positionsPending: -1 })),
     ).toBe(null);
+  });
+
+  it("asks for the answers before the assembly starts", () => {
+    expect(homeWorkProponentDueAt(presents("a"), NOW)).toBe(
+      "2026-11-14T09:00:00Z",
+    );
+    // In session, or past its start: no deadline left to count down to.
+    expect(homeWorkProponentDueAt(presents("a", { answerBy: null }), NOW)).toBe(
+      null,
+    );
+    expect(
+      homeWorkProponentDueAt(
+        presents("a", { answerBy: "2026-11-05T11:59:00Z" }),
+        NOW,
+      ),
+    ).toBe(null);
+    expect(
+      homeWorkProponentDueAt(presents("a", { answerBy: "not a date" }), NOW),
+    ).toBe(null);
+
+    const tasks = homeWorkTasks(
+      empty({
+        proponent: [
+          presents("later", { positionsPending: 1 }),
+          presents("started", { positionsPending: 1, answerBy: null }, age),
+          presents(
+            "sooner",
+            { positionsPending: 2, answerBy: "2026-11-07T09:00:00Z" },
+            age,
+          ),
+        ],
+      }),
+      NOW,
+    );
+    // The soonest start first; one already in session after those ahead.
+    expect(tasks.map((task) => [task.key, task.dueAt, task.overdue])).toEqual([
+      ["proponent-sooner", "2026-11-07T09:00:00Z", false],
+      ["proponent-later", "2026-11-14T09:00:00Z", false],
+      ["proponent-started", null, false],
+    ]);
   });
 
   it("says where the rest stands", () => {

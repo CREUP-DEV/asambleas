@@ -55,6 +55,10 @@ R-SES-04, R-VOT-01/03/04, R-TRZ-03/04 and R-OTR-02 in
 - The CAS (role `CAS`) gets no access: the user did not list it.
 - «Decae» goes into the CEA position only. The presenter's answer stays as
   it is; an amendment that lapses is already a Mesa outcome.
+- Every sheet reader, the CEA included, reads the presenter's answer to
+  each amendment as soon as it is given, only in the sheet
+  (`ControlSheetDto.positions`); everywhere else the assembly's
+  `positionVisibility` still rules (user, 2026-11-15).
 - The Mesa may withdraw a document, or postpone it to another assembly,
   during the session (its real status), from the console and the sheet
   (user, 2026-11-14).

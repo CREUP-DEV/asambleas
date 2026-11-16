@@ -2801,6 +2801,7 @@
         "proponent_review": {
           "transactionals": "1 transactional amendment awaits your approval | {count} transactional amendments await your approval",
           "positions": "Answer its amendments: 1 is waiting for your answer | Answer its amendments: {count} are waiting for your answer",
+          "due": "Before the assembly starts, on {date},",
           "action": "Review amendments"
         },
         "transactional_answer": {
@@ -4445,7 +4446,7 @@
     "followHint": "Opens what the Mesa is debating and marks it.",
     "live": "Under debate",
     "noVote": "Not voted",
-    "positionHidden": "Not visible",
+    "positionNone": "No answer",
     "emptyTitle": "No items with documents yet",
     "emptyDescription": "The sheet shows the agenda items that have documents presented or are voted on.",
     "amendmentsEmpty": "This document has no amendments you can see.",

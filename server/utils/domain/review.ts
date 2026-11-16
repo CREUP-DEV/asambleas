@@ -103,6 +103,16 @@ function assemblyRef(assembly: AssemblyRow): MeWorkAssemblyRef {
   };
 }
 
+/**
+ * MeWorkProponentDto.answerBy: the main presenter is expected to answer
+ * every amendment before the assembly starts. Nothing once it is in session.
+ */
+function proponentAnswerBy(assembly: AssemblyRow): string | null {
+  return assembly.status === "in_session"
+    ? null
+    : assembly.startDate.toISOString();
+}
+
 // Validation inbox ---------------------------------------------------------------
 
 /**
@@ -537,10 +547,12 @@ async function loadWorkProponent(
       row.acceptedAmendments,
     );
     if (positionsPending === 0) continue;
+    const assembly = byId.get(row.assemblyId)!;
     result.push({
-      assembly: assemblyRef(byId.get(row.assemblyId)!),
+      assembly: assemblyRef(assembly),
       document: { id: row.id, slug: row.slug, title: row.title },
       positionsPending,
+      answerBy: proponentAnswerBy(assembly),
     });
   }
   return byAssemblyOrder(result, assemblyRows);

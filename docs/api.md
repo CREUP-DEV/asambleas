@@ -1463,7 +1463,12 @@ managers and the Mesa), soonest first:
   document the actor can see, the `submitted` ones without an answer that
   the main presenter can answer now (`positionBlocker`: validated,
   published, admitted if late, and for a transactional accepted by its main
-  authors), under either rule. Documents with 0 are left out;
+  authors), under either rule. Documents with 0 are left out. `answerBy` is
+  when the assembly starts (`startDate`), before which the main presenter
+  is expected to answer them all; null once the assembly is `in_session`.
+  The home task shows it as its deadline only while it is ahead, and never
+  as overdue (`homeWorkProponentDueAt`), since the Mesa can still record
+  answers in the room;
 - `acceptances`: the submitted transactionals the actor's member can
   still answer, as main author of an amendment they would replace
   (`awaitsPartyAnswer`: its answer pending, everything it groups still
@@ -1643,6 +1648,11 @@ count (docs/design.md, "Headcounts and quorum"). Schemas:
 | PATCH  | `/api/assemblies/[assembly]/votes/[vote]/unanimity`               | see below            | `VoteUnanimityBody`. Returns `VoteDto`.                             |
 
 `control_sheet:edit` also reads. Schemas: `shared/utils/schemas/controlSheet.ts`, and `shared/utils/schemas/vote.ts` for votes.
+
+`ControlSheetDto.positions` gives every sheet reader the main presenter's
+answer (`PositionDto`) to each amendment it sees that has one, as soon as it
+is given, whatever the assembly's `positionVisibility`. Only the sheet does:
+`AmendmentDto.position` and every other reader keep `canSeePositions`.
 
 **Votes on an agenda item.** An item is voted either once per voted
 document (their final votes, above) or by itself: a ratification, an

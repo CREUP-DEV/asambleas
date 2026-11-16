@@ -2801,6 +2801,7 @@
         "proponent_review": {
           "transactionals": "1 transaccional espera tu aprobación | {count} transaccionales esperan tu aprobación",
           "positions": "Responde a sus enmiendas: 1 espera tu respuesta | Responde a sus enmiendas: {count} esperan tu respuesta",
+          "due": "Antes de que empiece la asamblea, el {date},",
           "action": "Revisar enmiendas"
         },
         "transactional_answer": {
@@ -4445,7 +4446,7 @@
     "followHint": "Abre lo que la Mesa tiene en debate y lo señala.",
     "live": "En debate",
     "noVote": "Sin votar",
-    "positionHidden": "No visible",
+    "positionNone": "Sin respuesta",
     "emptyTitle": "Todavía no hay puntos con documentos",
     "emptyDescription": "La hoja muestra los puntos del orden del día que tienen documentos presentados o que se votan.",
     "amendmentsEmpty": "Este documento no tiene enmiendas que puedas ver.",

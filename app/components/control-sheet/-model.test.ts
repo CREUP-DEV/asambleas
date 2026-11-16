@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type {
   AgendaItemDto,
+  AmendmentDto,
   ControlSheetDto,
   ControlSheetItemRowDto,
   DocumentSummaryDto,
@@ -11,6 +12,8 @@ import {
   affectsLiveDebate,
   amendedDocuments,
   amendmentTreatedControl,
+  buildAmendmentRows,
+  newerPosition,
   buildGeneralRows,
   itemTreatedControl,
   rowVoteEntries,
@@ -74,6 +77,7 @@ const sheet = (over: Partial<ControlSheetDto> = {}): ControlSheetDto => ({
   turns: [],
   itemRows: [],
   amendmentRows: [],
+  positions: [],
   itemVotes: [],
   can: { edit: true, moderate: false },
   ...over,
@@ -450,6 +454,90 @@ describe("staleSheetRow", () => {
     expect(staleSheetRow({ data: { data: { reason: "other" } } })).toBeNull();
     expect(staleSheetRow(new Error("boom"))).toBeNull();
     expect(staleSheetRow(null)).toBeNull();
+  });
+});
+
+const amendment = (over: Partial<AmendmentDto>): AmendmentDto =>
+  ({
+    id: "a",
+    documentId: "d",
+    number: 1,
+    code: "UGR1",
+    kind: "partial",
+    status: "submitted",
+    admission: "admitted",
+    late: false,
+    positionKey: 0,
+    authors: [],
+    mainAuthorId: null,
+    approvalMethod: null,
+    decidedAt: null,
+    outcomeVote: null,
+    position: null,
+    sourceIds: [],
+    transactionalIds: [],
+    acceptances: [],
+    ...over,
+  }) as AmendmentDto;
+
+describe("buildAmendmentRows", () => {
+  const answer = (
+    position: "accept" | "reject",
+  ): NonNullable<AmendmentDto["position"]> => ({
+    position,
+    comment: null,
+    recordedBy: "presenter",
+    updatedAt: "2026-11-19T10:00:00.000Z",
+  });
+
+  it("shows the sheet's answer, else the amendment's", () => {
+    const rows = buildAmendmentRows(
+      [
+        // The assembly's rule hides a1's answer from this reader.
+        amendment({ id: "a1", positionKey: 0 }),
+        amendment({ id: "a2", positionKey: 1, position: answer("reject") }),
+        amendment({ id: "a3", positionKey: 2 }),
+      ],
+      null,
+      null,
+      [],
+      [{ amendmentId: "a1", position: answer("accept") }],
+    );
+    expect(
+      rows.map((row) => [row.amendment.id, row.position?.position ?? null]),
+    ).toEqual([
+      ["a1", "accept"],
+      ["a2", "reject"],
+      ["a3", null],
+    ]);
+    // The amendment itself is left as the server sent it.
+    expect(rows[0]!.amendment.position).toBeNull();
+  });
+
+  it("prefers the sheet's answer when both carry one", () => {
+    const [row] = buildAmendmentRows(
+      [amendment({ id: "a1", position: answer("reject") })],
+      null,
+      null,
+      [],
+      [{ amendmentId: "a1", position: answer("accept") }],
+    );
+    expect(row!.position?.position).toBe("accept");
+  });
+});
+
+describe("newerPosition", () => {
+  const answer = (position: "accept" | "pending", updatedAt: string) =>
+    ({ position, comment: null, updatedAt, recordedBy: "presenter" }) as never;
+  it("shows the later answer, the sheet's on a tie", () => {
+    const old = answer("pending", "2026-11-15T10:00:00.000Z");
+    const fresh = answer("accept", "2026-11-15T10:05:00.000Z");
+    expect(newerPosition(old, fresh)).toBe(fresh);
+    expect(newerPosition(fresh, old)).toBe(fresh);
+    expect(newerPosition(old, null)).toBe(old);
+    expect(newerPosition(null, fresh)).toBe(fresh);
+    const tie = answer("accept", "2026-11-15T10:00:00.000Z");
+    expect(newerPosition(tie, old)).toBe(tie);
   });
 });
 

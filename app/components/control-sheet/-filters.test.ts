@@ -398,27 +398,29 @@ const amendment = (
   id: string,
   over: Partial<AmendmentSheetRow> = {},
   dto: Partial<AmendmentDto> = {},
-): AmendmentSheetRow =>
-  ({
-    amendment: {
-      id,
-      code: id.toUpperCase(),
-      authors: [
-        { id: "m1", acronym: "UGR", name: "Granada", kind: "asociado" },
-      ],
-      mainAuthorId: "m1",
-      position: { position: "pending", comment: null, recordedBy: "presenter" },
-      outcomeVote: null,
-      ...dto,
-    },
+): AmendmentSheetRow => {
+  const full = {
+    id,
+    code: id.toUpperCase(),
+    authors: [{ id: "m1", acronym: "UGR", name: "Granada", kind: "asociado" }],
+    mainAuthorId: "m1",
+    position: { position: "pending", comment: null, recordedBy: "presenter" },
+    outcomeVote: null,
+    ...dto,
+  } as AmendmentDto;
+  return {
+    amendment: full,
     state: "pending",
     note: null,
     treated: false,
     autoTreated: false,
     sheet: null,
+    // The answer the row shows: the amendment's unless a test gives one.
+    position: full.position ?? null,
     live: false,
     ...over,
-  }) as AmendmentSheetRow;
+  } as AmendmentSheetRow;
+};
 
 const amendments: AmendmentSheetRow[] = [
   amendment(
@@ -476,7 +478,7 @@ describe("shownAmendmentRows", () => {
     ).toEqual(["a1", "a2", "a3"]);
   });
 
-  it("puts hidden answers and no CEA position last either way", () => {
+  it("puts no answer and no CEA position last either way", () => {
     for (const dir of ["asc", "desc"] as const) {
       expect(
         amendmentIds(
@@ -523,6 +525,32 @@ describe("shownAmendmentRows", () => {
         shownAmendmentRows(
           amendments,
           { key: "vote", dir: "asc" },
+          EMPTY_AMENDMENT_FILTERS,
+        ),
+      ),
+    ).toEqual(["a3", "a1", "a2"]);
+  });
+
+  it("sorts by the answer the row shows, the sheet's own first", () => {
+    // The sheet gave a2's answer though the amendment carries none.
+    const withSheetAnswer = amendments.map((entry) =>
+      entry.amendment.id === "a2"
+        ? {
+            ...entry,
+            position: {
+              position: "reject" as const,
+              comment: null,
+              recordedBy: "presenter" as const,
+              updatedAt: "",
+            },
+          }
+        : entry,
+    );
+    expect(
+      amendmentIds(
+        shownAmendmentRows(
+          withSheetAnswer,
+          { key: "position", dir: "asc" },
           EMPTY_AMENDMENT_FILTERS,
         ),
       ),

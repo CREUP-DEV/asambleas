@@ -40,8 +40,9 @@ const TASK_ICONS: Record<HomeWorkTaskKind, string> = {
  * says what to do (for a main presenter, how many amendments wait for an
  * answer; for a transactional, which of the user's amendments it would
  * replace), the Secretaría's note when it asked for a correction, the
- * deadline of an expected document, and one button that goes where it is
- * done. With `primary`, the first row carries the screen's primary action;
+ * deadline of an expected document (for a main presenter, the start of the
+ * assembly, before which it should answer), and one button that goes where
+ * it is done. With `primary`, the first row carries the screen's primary action;
  * every other button stays secondary.
  */
 const props = withDefaults(
@@ -122,6 +123,18 @@ function dueDate(task: HomeWorkTask): string {
   return formatDate(task.dueAt, { locale: locale.value, style: "medium" });
 }
 
+/**
+ * The deadline line: an expected document's internal deadline, or, for a
+ * main presenter, the start of the assembly, before which its amendments
+ * should be answered.
+ */
+function dueText(task: HomeWorkTask): string {
+  const date = dueDate(task);
+  return task.kind === "proponent_review"
+    ? t("home.work.tasks.proponent_review.due", { date })
+    : t("home.work.due", { date });
+}
+
 const isCorrection = (task: HomeWorkTask) =>
   task.kind === "document_correction" || task.kind === "amendment_correction";
 </script>
@@ -186,7 +199,7 @@ const isCorrection = (task: HomeWorkTask) =>
               {{ t("home.work.overdue", { date: dueDate(task) }) }}
             </template>
             <template v-else>
-              <span>{{ t("home.work.due", { date: dueDate(task) }) }}</span>
+              <span>{{ dueText(task) }}</span>
               <CommonCountdown :to="task.dueAt" :urgent-hours="72" />
             </template>
           </p>

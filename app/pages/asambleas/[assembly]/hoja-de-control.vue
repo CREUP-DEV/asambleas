@@ -248,6 +248,7 @@ const amendmentRows = computed(() =>
     sheet.value?.sessionStartedAt ?? null,
     live.value?.amendmentId ?? null,
     sheet.value?.amendmentRows ?? [],
+    sheet.value?.positions ?? [],
   ),
 );
 

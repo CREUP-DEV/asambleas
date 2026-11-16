@@ -99,7 +99,10 @@ export interface HomeWorkTask {
   counts: HomeWorkProponentCounts | null;
   /** The Secretaría's note when it asked for a correction. */
   note: string | null;
-  /** Internal deadline of an expected document. */
+  /**
+   * Internal deadline of an expected document; for `proponent_review`, the
+   * start of the assembly while it is ahead (homeWorkProponentDueAt).
+   */
   dueAt: string | null;
   /** The deadline has passed and the document was not presented. */
   overdue: boolean;
@@ -162,6 +165,20 @@ export function homeWorkProponentCounts(
 ): HomeWorkProponentCounts | null {
   const positions = Math.max(0, entry.positionsPending);
   return positions > 0 ? { positions } : null;
+}
+
+/**
+ * By when the main presenter should answer: the start of the assembly
+ * (`answerBy`), while it is still ahead. Null once the assembly is in
+ * session or its start has passed: the answers are still welcome, but
+ * there is no deadline left to count down to.
+ */
+export function homeWorkProponentDueAt(
+  entry: MeWorkProponentDto,
+  now: number,
+): string | null {
+  const at = time(entry.answerBy);
+  return at !== null && at > now ? entry.answerBy : null;
 }
 
 const TASK_RANK: Record<HomeWorkTaskKind, number> = {
@@ -233,7 +250,9 @@ export function homeWorkTasks(work: MeWorkDto, now: number): HomeWorkTask[] {
       replaces: [],
       counts,
       note: null,
-      dueAt: null,
+      // Before the assembly starts; never overdue: once it has started the
+      // line goes and the Mesa can still take the answers in the room.
+      dueAt: homeWorkProponentDueAt(entry, now),
       overdue: false,
       target: "review",
     });
