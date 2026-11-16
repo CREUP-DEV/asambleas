@@ -989,6 +989,29 @@ of an assembly page left open). Only the real person counts, never an account
 an Admin acts as. The platform keeps it in memory and nowhere else, so after
 a restart everyone reads offline until they do something.
 
+## Account photos
+
+An account's photo is its Google picture, stored here so that no browser
+loads it from Google (user, 2026-11-16). better-auth keeps the picture's URL
+in `users.image`; the server fetches it once from Google's photo host
+(`lh3.googleusercontent.com` only, never following a redirect, at most
+5 MB), keeps a 192 × 192 WebP without metadata under
+`UPLOAD_STORAGE_DIR/avatars/` and names it in `user_avatars` (apart from
+`users`, which better-auth reads whole on every request). Every answer that
+carries a photo sends that file's URL, served only to signed-in accounts;
+without one the avatar reads its text (`avatarText`).
+
+- A photo is fetched after a sign-in when its picture is not stored yet,
+  and once per boot for every account in that case (the pg-boss queue
+  `user-avatars`). A picture that gives nothing usable (gone, not an image,
+  too large) is not tried again until `users.image` changes.
+- better-auth writes `users.image` when the account is created and does
+  not update it on later sign-ins (`overrideUserInfoOnSignIn` stays off: it
+  would also overwrite the name the history shows), so a photo changed in
+  Google later does not arrive by itself.
+- An account that loses access loses its stored photo with it; one whose
+  `users.image` turns null loses it at its next sign-in or the next boot.
+
 ## Private notes
 
 Reading a document to prepare an assembly means writing things down: what

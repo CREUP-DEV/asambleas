@@ -1,6 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import { db } from "../../db";
-import { users, roles, sessions } from "../../db/schema";
+import { users, roles, sessions, userAvatars } from "../../db/schema";
 import {
   AUDIT_ACTIONS,
   type AccessRevokedReason,
@@ -20,6 +20,7 @@ import {
   linkUserToIntranetMember,
 } from "../members/link";
 import { endImpersonations } from "./impersonation";
+import { removeAvatarFiles } from "./avatarFiles";
 
 /**
  * How the intranet role lookup went, recorded on the `auth.sign_in` audit
@@ -398,15 +399,17 @@ export function lostAccess(result: IntranetNotFoundResult): boolean {
  * ("intranet_deleted") are set together, the role becomes Otro (or none
  * when that row is missing), the member link is cleared, every session of
  * the account is deleted (signed out everywhere), the open impersonations
- * of it are closed (`revoked`), and `user.access_revoked` records it
- * (source intranet, no actor). Its intranet data stay as the last lookup
- * left them. Calling it again changes nothing.
+ * of it are closed (`revoked`), its stored photo goes (user_avatars, the
+ * file once committed), and `user.access_revoked` records it (source
+ * intranet, no actor). Its intranet data stay as the last lookup left
+ * them. Calling it again changes nothing.
  */
 export async function applyIntranetNotFound(
   userId: string,
   log: { accountRef: string | null } = { accountRef: null },
   now: Date = new Date(),
 ): Promise<IntranetNotFoundResult> {
+  let avatarFile: string | null = null;
   const result = await db.transaction(
     async (tx): Promise<IntranetNotFoundResult> => {
       await tx.execute(
@@ -468,6 +471,12 @@ export async function applyIntranetNotFound(
         .where(eq(sessions.userId, userId))
         .returning({ id: sessions.id });
       const closed = await endImpersonations(tx, { userId }, "revoked");
+      // Its photo goes with its access (the file once committed).
+      const [avatar] = await tx
+        .delete(userAvatars)
+        .where(eq(userAvatars.userId, userId))
+        .returning({ file: userAvatars.file });
+      avatarFile = avatar?.file ?? null;
 
       const outcome = {
         kind: "revoked" as const,
@@ -498,6 +507,7 @@ export async function applyIntranetNotFound(
   );
 
   if (result.kind === "revoked") {
+    if (avatarFile) await removeAvatarFiles([avatarFile]);
     logWarn("roleSync.access", {
       action: "access revoked",
       reason: INTRANET_DELETED,

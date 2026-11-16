@@ -54,6 +54,29 @@ describe("getAuthUserWithRole", () => {
     resolveImpersonation.mockReset();
   });
 
+  it("sends the stored photo's URL as `image`, never the Google picture", async () => {
+    const file = "AbCdEfGhIjKlMnOpQrStUvWxYz012345-0123456789abcdef.webp";
+    const me = user("u1", "Asociado");
+    getSession.mockResolvedValue({
+      user: { id: "u1" },
+      session: { id: "s1" },
+    });
+    findFirst.mockResolvedValue({
+      ...row(me),
+      image: "https://lh3.googleusercontent.com/a/photo=s96-c",
+      avatar: { file },
+    });
+    resolveImpersonation.mockResolvedValue(null);
+
+    const loaded = await getAuthUserWithRole(fakeEvent());
+    expect(loaded).toEqual({ ...me, image: `/api/uploads/avatars/${file}` });
+    expect(loaded).not.toHaveProperty("avatar");
+    expect(findFirst.mock.calls[0]![0]).toMatchObject({
+      with: { avatar: { columns: { file: true } } },
+    });
+    expect(findFirst.mock.calls[0]![0].columns).not.toHaveProperty("image");
+  });
+
   it("keeps the signed-in user when nobody is impersonating", async () => {
     const me = user("u1", "Asociado");
     getSession.mockResolvedValue({

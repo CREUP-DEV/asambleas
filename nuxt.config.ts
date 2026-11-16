@@ -62,6 +62,15 @@ const SEATING_IMAGE_RATE_LIMIT = {
   tokensPerInterval: 10_000,
   interval: 300_000,
 };
+// The accounts' stored photos (GET /api/uploads/avatars/[file]): every
+// signed-in device reads the ones of its menus and lists, so a whole room
+// behind one IP may load its own photo at once and the admin lists a few
+// dozen each; the browser keeps each one for good afterwards (the name
+// carries the version). A bucket of its own, out of the global one.
+const AVATAR_IMAGE_RATE_LIMIT = {
+  tokensPerInterval: 10_000,
+  interval: 300_000,
+};
 // A sync of the room reads the Intranet's attendees and queues their images.
 // The server calls the Intranet at most once a minute per assembly, but a
 // change of source starts that minute again: this bucket bounds the calls
@@ -144,6 +153,11 @@ const routeRules = {
   "/api/assemblies/*/seating/sync": {
     security: {
       rateLimiter: SEATING_SYNC_RATE_LIMIT,
+    },
+  },
+  "/api/uploads/avatars/*": {
+    security: {
+      rateLimiter: AVATAR_IMAGE_RATE_LIMIT,
     },
   },
   // Export status polling and downloads: authenticated and owner-checked,
@@ -284,12 +298,9 @@ export default defineNuxtConfig({
         "script-src": ["'self'", "'nonce-{{nonce}}'", "'strict-dynamic'"],
         "style-src": ["'self'", "'unsafe-inline'"],
         "style-src-attr": ["'unsafe-inline'"],
-        "img-src": [
-          "'self'",
-          "data:",
-          "blob:",
-          "https://lh3.googleusercontent.com",
-        ],
+        // Account photos are stored and served here (user_avatars), never
+        // loaded from Google.
+        "img-src": ["'self'", "data:", "blob:"],
         "font-src": ["'self'", "data:"],
         "connect-src": ["'self'", ...(umamiOrigin ? [umamiOrigin] : [])],
         // The document page frames its uploaded PDF; every other page still

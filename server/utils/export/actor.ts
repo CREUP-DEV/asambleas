@@ -17,7 +17,6 @@ export async function loadExportActor(userId: string): Promise<Actor | null> {
       id: true,
       name: true,
       email: true,
-      image: true,
       roleId: true,
       externalRole: true,
       externalName: true,
@@ -37,7 +36,8 @@ export async function loadExportActor(userId: string): Promise<Actor | null> {
   const permissions: PermissionKey[] = await getEffectivePermissions(user);
 
   return {
-    user,
+    // A PDF draws no photo: `image` stays null (never users.image).
+    user: { ...user, image: null },
     memberId: user.memberId,
     // The PDF hides the executive areas from a requester who may not see them.
     memberKind: await loadMemberKind(user.memberId),

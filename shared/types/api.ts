@@ -188,6 +188,11 @@ export interface MeDto {
   id: string;
   name: string;
   email: string;
+  /**
+   * The account's stored photo (GET /api/uploads/avatars/[file],
+   * user_avatars), never the Google picture; null until one is stored, and
+   * the avatar then reads `avatarText`.
+   */
   image: string | null;
   role: string | null;
   permissions: PermissionKey[];
@@ -2053,6 +2058,7 @@ export interface AdminUserDto {
   accessRevokedAt: IsoDate | null;
   /** Why it lost access; null exactly when `accessRevokedAt` is. */
   accessRevokedReason: AccessRevokedReason | null;
+  /** The stored photo's URL, or null (MeDto.image). */
   createdAt: IsoDate;
   role: { id: string; name: string } | null;
   member: MemberRef | null;
@@ -2392,6 +2398,7 @@ export interface StatsAccountDto {
   /** Amendments and documents of the assembly this account sent. */
   amendmentsSubmitted: number;
   documentsSubmitted: number;
+  /** The stored photo's URL, or null (MeDto.image). */
 }
 
 /** Amendments presented by a member (any author), by how they ended. */

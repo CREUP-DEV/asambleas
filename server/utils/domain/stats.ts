@@ -25,10 +25,12 @@ import {
   members,
   roles,
   speakingTurns,
+  userAvatars,
   users,
 } from "../../db/schema";
 import { AUDIT_ACTIONS } from "~~/shared/constants/activity";
 import { accountAvatarText } from "~~/shared/utils/accountAvatar";
+import { avatarUrl } from "../auth/avatarFiles";
 import type { AmendmentStatus } from "~~/shared/constants/domain";
 import type {
   MemberRef,
@@ -438,7 +440,7 @@ async function loadAccounts(userId?: string): Promise<AccountRow[]> {
     .select({
       id: users.id,
       name: users.name,
-      image: users.image,
+      avatarFile: userAvatars.file,
       universityAcronym: users.universityAcronym,
       role: roles.name,
       memberId: users.memberId,
@@ -450,11 +452,13 @@ async function loadAccounts(userId?: string): Promise<AccountRow[]> {
     .from(users)
     .leftJoin(roles, eq(roles.id, users.roleId))
     .leftJoin(members, eq(members.id, users.memberId))
+    .leftJoin(userAvatars, eq(userAvatars.userId, users.id))
     .where(userId ? eq(users.id, userId) : undefined)
     .orderBy(users.name);
   return rows.map(
     ({
       accessRevokedAt,
+      avatarFile,
       universityAcronym,
       memberKind,
       memberAcronym,
@@ -462,6 +466,8 @@ async function loadAccounts(userId?: string): Promise<AccountRow[]> {
       ...row
     }) => ({
       ...row,
+      // The stored photo (user_avatars), never the Google picture.
+      image: avatarUrl(avatarFile),
       avatarText: accountAvatarText(
         { universityAcronym },
         memberKind && memberAcronym

@@ -13,6 +13,7 @@ const checkSignInAccess = vi.fn(
     lookup: null,
   }),
 );
+const refreshUserAvatar = vi.fn(async (..._args: unknown[]) => undefined);
 const tx = { tx: true };
 const transaction = vi.fn(async (run: (tx: unknown) => Promise<unknown>) =>
   run(tx),
@@ -26,6 +27,7 @@ vi.mock("../../db", () => ({ db: { transaction } }));
 vi.mock("../domain/audit", () => ({ recordAudit }));
 vi.mock("./impersonation", () => ({ endImpersonations }));
 vi.mock("./roleSync", () => ({ checkSignInAccess, syncUserRole }));
+vi.mock("./avatars", () => ({ refreshUserAvatar }));
 vi.mock("../core/logger", () => ({
   logError: vi.fn(),
   logInfo: vi.fn(),
@@ -81,6 +83,7 @@ beforeEach(() => {
   endImpersonations.mockClear();
   syncUserRole.mockClear();
   checkSignInAccess.mockClear();
+  refreshUserAvatar.mockClear();
   transaction.mockClear();
 });
 
@@ -301,6 +304,20 @@ describe("the sign-in access gate", () => {
 });
 
 describe("databaseHooks", () => {
+  it("queues the account's photo after signing in, without waiting for it", async () => {
+    let finish: () => void = () => undefined;
+    refreshUserAvatar.mockImplementationOnce(
+      () =>
+        new Promise<undefined>(
+          (resolve) => (finish = () => resolve(undefined)),
+        ),
+    );
+    await hooks.session.create.after({ id: "s1", userId: "u1" }, null);
+    expect(refreshUserAvatar).toHaveBeenCalledWith("u1");
+    // The hook returned while the photo was still pending.
+    finish();
+  });
+
   it("records the sign-in after role sync, even when the sync throws", async () => {
     syncUserRole.mockRejectedValueOnce(new Error("intranet down"));
     await hooks.session.create.after({ id: "s1", userId: "u1" }, null);

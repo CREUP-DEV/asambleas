@@ -23,6 +23,7 @@ import {
   type RoleSyncOutcome,
 } from "./roleSync";
 import type { IntranetRoleLookup } from "../members/intranet";
+import { refreshUserAvatar } from "./avatars";
 import { logError, logInfo } from "../core/logger";
 
 // Traceability of the auth layer ----------------------------------------------
@@ -282,7 +283,8 @@ export async function guardSessionCreate(session: {
 
 /**
  * better-auth session.create.after: role sync with the lookup the before
- * hook made, then `auth.sign_in`. Neither ever blocks signing in.
+ * hook made, then `auth.sign_in`, then the account's photo
+ * (refreshUserAvatar). None of them ever blocks signing in.
  */
 export async function afterSessionCreate(session: {
   id: string;
@@ -308,6 +310,9 @@ export async function afterSessionCreate(session: {
   } catch (error) {
     logError("auth.hook.signIn", error);
   }
+  // The account's photo is stored here, never loaded from Google by a
+  // browser: queued, not awaited, so it never delays signing in.
+  void refreshUserAvatar(session.userId);
 }
 
 function getAuthBaseUrl() {

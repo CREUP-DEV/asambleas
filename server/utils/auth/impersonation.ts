@@ -3,7 +3,7 @@ import { createError, getRequestHeader } from "h3";
 import { and, eq, isNull, lte, or, sql, type SQL } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { db } from "../../db";
-import { impersonations, roles, users } from "../../db/schema";
+import { impersonations, roles, userAvatars, users } from "../../db/schema";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import {
   ACTING_USER_HEADER_NAME,
@@ -21,6 +21,7 @@ import type { Executor } from "../domain/events";
 import { isUniqueConstraintViolation } from "../errors";
 import { logError, logInfo } from "../core/logger";
 import type { AuthEventContext, AuthUserWithRole } from "./requireAuth";
+import { avatarUrl } from "./avatarFiles";
 
 /**
  * An Admin acting as another account. The pointer is an `impersonations`
@@ -310,6 +311,7 @@ const impersonationColumns = {
 
 const targetUsers = alias(users, "impersonation_target");
 const targetRoles = alias(roles, "impersonation_target_role");
+const targetAvatars = alias(userAvatars, "impersonation_target_avatar");
 
 /**
  * The open impersonation of an Admin session (expired or not, so a stale
@@ -332,7 +334,6 @@ export async function findOpenImpersonation(
         id: targetUsers.id,
         name: targetUsers.name,
         email: targetUsers.email,
-        image: targetUsers.image,
         roleId: targetUsers.roleId,
         externalRole: targetUsers.externalRole,
         externalName: targetUsers.externalName,
@@ -343,10 +344,12 @@ export async function findOpenImpersonation(
       },
       targetRole: { id: targetRoles.id, name: targetRoles.name },
       targetAccessRevokedAt: targetUsers.accessRevokedAt,
+      targetAvatarFile: targetAvatars.file,
     })
     .from(impersonations)
     .leftJoin(targetUsers, eq(targetUsers.id, impersonations.targetUserId))
     .leftJoin(targetRoles, eq(targetRoles.id, targetUsers.roleId))
+    .leftJoin(targetAvatars, eq(targetAvatars.userId, targetUsers.id))
     .where(
       and(
         eq(impersonations.sessionId, sessionId),
@@ -355,8 +358,13 @@ export async function findOpenImpersonation(
     )
     .limit(1);
   if (!found) return null;
+  // `image` is the stored photo's URL, as getAuthUserWithRole loads it.
   const target = found.target?.id
-    ? { ...found.target, role: found.targetRole?.id ? found.targetRole : null }
+    ? {
+        ...found.target,
+        image: avatarUrl(found.targetAvatarFile),
+        role: found.targetRole?.id ? found.targetRole : null,
+      }
     : null;
   return {
     row: found.row,

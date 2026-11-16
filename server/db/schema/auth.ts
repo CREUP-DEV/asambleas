@@ -176,6 +176,36 @@ export const verifications = pgTable(
   (table) => [index("idx_verifications_expires_at").on(table.expiresAt)],
 );
 
+/**
+ * The account's photo as the platform stores it (server/utils/auth/avatars.ts):
+ * a 192 × 192 WebP fetched once from `users.image` (the Google picture
+ * better-auth stored), so no browser loads it from Google. Apart from
+ * `users`, since better-auth selects every column of that row on each
+ * request.
+ *
+ * `sourceUrl` is the `users.image` fetched and `version` a hash of it, which
+ * names the file (`<userId>-<version>.webp`). `file` is null when that
+ * source gave no usable picture (gone, too large, not an image): the row
+ * keeps it from being fetched again until `users.image` changes. The row
+ * goes when `users.image` turns null or the account loses access.
+ */
+export const userAvatars = pgTable("user_avatars", {
+  userId: text("user_id")
+    .primaryKey()
+    .references(() => users.id, { onDelete: "cascade" }),
+  sourceUrl: text("source_url").notNull(),
+  file: text("file"),
+  version: text("version").notNull(),
+  fetchedAt: timestamp("fetched_at", {
+    withTimezone: true,
+    mode: "date",
+  }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+    .defaultNow()
+    .notNull()
+    .$onUpdate(() => sql`now()`),
+});
+
 export const usersRelations = relations(users, ({ one, many }) => ({
   role: one(roles, {
     fields: [users.roleId],
@@ -185,8 +215,16 @@ export const usersRelations = relations(users, ({ one, many }) => ({
     fields: [users.memberId],
     references: [members.id],
   }),
+  avatar: one(userAvatars),
   sessions: many(sessions),
   accounts: many(accounts),
+}));
+
+export const userAvatarsRelations = relations(userAvatars, ({ one }) => ({
+  user: one(users, {
+    fields: [userAvatars.userId],
+    references: [users.id],
+  }),
 }));
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({

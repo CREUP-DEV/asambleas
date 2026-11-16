@@ -455,6 +455,20 @@ describe("resolveImpersonation", () => {
     expect(dbState.updates).toHaveLength(0);
   });
 
+  it("gives the target its stored photo's URL, never users.image", async () => {
+    const file = "AbCdEfGhIjKlMnOpQrStUvWxYz012345-0123456789abcdef.webp";
+    dbState.selectRows = [{ ...found(), targetAvatarFile: file }];
+    const result = await resolveImpersonation(fakeEvent("GET"), {
+      sessionId: "session-1",
+      realUser: admin,
+      now: NOW,
+    });
+    expect(result?.user).toEqual({
+      ...target,
+      image: `/api/uploads/avatars/${file}`,
+    });
+  });
+
   it("closes an expired row lazily and runs as the Admin", async () => {
     dbState.selectRows = [found({ expiresAt: EARLIER })];
     dbState.updateRows = [row({ expiresAt: EARLIER, endedAt: EARLIER })];

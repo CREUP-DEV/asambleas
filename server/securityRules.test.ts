@@ -205,6 +205,11 @@ const SEATING_IMAGE_RULES: Record<string, string> = {
     "/api/assemblies/*/seating/images/*",
 };
 
+const AVATAR_IMAGE_RULES: Record<string, string> = {
+  "/api/uploads/avatars/AbCdEfGhIjKlMnOpQrStUvWxYz012345-0123456789abcdef.webp":
+    "/api/uploads/avatars/*",
+};
+
 const SEATING_SYNC_RULES: Record<string, string> = {
   "/api/assemblies/80-ago/seating/sync": "/api/assemblies/*/seating/sync",
   "/api/assemblies/xk3j8q2m1n0p9o8i7u6y5t4r/seating/sync":
@@ -255,6 +260,18 @@ describe("rate limiter", () => {
 
   it.each(Object.entries(SEATING_IMAGE_RULES))(
     "gives the room's images a bucket of their own: %s",
+    (path, rule) => {
+      expect(resolveRules(path).rateLimiter).toMatchObject({
+        tokensPerInterval: 10_000,
+        interval: 300_000,
+        driver: { name: "lruCache" },
+      });
+      expect(resolveBucket(path)).toBe(rule);
+    },
+  );
+
+  it.each(Object.entries(AVATAR_IMAGE_RULES))(
+    "gives the accounts' stored photos a bucket of their own: %s",
     (path, rule) => {
       expect(resolveRules(path).rateLimiter).toMatchObject({
         tokensPerInterval: 10_000,
@@ -338,6 +355,7 @@ describe("xss validator", () => {
     ...Object.keys(UPLOAD_RULES),
     ...Object.keys(EXPORT_RULES),
     ...Object.keys(SEATING_IMAGE_RULES),
+    ...Object.keys(AVATAR_IMAGE_RULES),
     ...Object.keys(SEATING_SYNC_RULES),
   ])("is off: %s", (path) => {
     expect(resolveRules(path).xssValidator).toBe(false);

@@ -5,6 +5,7 @@ import { db } from "../../db";
 import { users } from "../../db/schema";
 import { auth } from "./auth";
 import { markSeen } from "../live/online";
+import { avatarUrl } from "./avatarFiles";
 import { resolveImpersonation } from "./impersonation";
 import type { ImpersonationContext } from "./impersonation";
 import type { PermissionKey } from "~~/shared/constants/permissions";
@@ -15,6 +16,10 @@ export interface AuthUserWithRole {
   id: string;
   name: string;
   email: string;
+  /**
+   * The URL of the account's stored photo (avatarUrl, user_avatars), never
+   * the Google picture in `users.image`; null until one is stored.
+   */
   image: string | null;
   roleId: string | null;
   externalRole: string | null;
@@ -79,7 +84,7 @@ export async function requireAuth(event: H3Event) {
 /**
  * The signed-in account with its role, and whether it lost access
  * (users.access_revoked_at). The flag stays out of AuthUserWithRole, so it
- * never reaches a DTO.
+ * never reaches a DTO. `image` is the stored photo's URL (user_avatars).
  */
 async function loadUserWithRole(
   userId: string,
@@ -90,7 +95,6 @@ async function loadUserWithRole(
       id: true,
       name: true,
       email: true,
-      image: true,
       roleId: true,
       externalRole: true,
       externalName: true,
@@ -102,11 +106,15 @@ async function loadUserWithRole(
     },
     with: {
       role: { columns: { id: true, name: true } },
+      avatar: { columns: { file: true } },
     },
   });
   if (!row) return null;
-  const { accessRevokedAt, ...user } = row;
-  return { user, accessRevoked: accessRevokedAt !== null };
+  const { accessRevokedAt, avatar, ...user } = row;
+  return {
+    user: { ...user, image: avatarUrl(avatar?.file) },
+    accessRevoked: accessRevokedAt !== null,
+  };
 }
 
 /**

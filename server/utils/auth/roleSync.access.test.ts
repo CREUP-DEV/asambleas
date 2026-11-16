@@ -25,6 +25,8 @@ const state = vi.hoisted(() => ({
   account: null as Record<string, unknown> | null,
   updates: [] as Record<string, unknown>[],
   sessions: [] as string[],
+  /** The stored photo's file, while user_avatars has a row. */
+  avatar: undefined as { file: string | null } | undefined,
   roleRow: { id: "role-invitado" } as { id: string } | undefined,
 }));
 
@@ -44,9 +46,14 @@ const tx = vi.hoisted(() => {
         },
       }),
     }),
-    delete: () => ({
+    delete: (table: Record<symbol, unknown>) => ({
       where: () => ({
         returning: async () => {
+          if (table[Symbol.for("drizzle:Name")] === "user_avatars") {
+            const rows = state.avatar ? [state.avatar] : [];
+            state.avatar = undefined;
+            return rows;
+          }
           const rows = state.sessions.map((id) => ({ id }));
           state.sessions = [];
           return rows;
@@ -74,6 +81,8 @@ const endImpersonations = vi.hoisted(() =>
   vi.fn(async (): Promise<{ id: string }[]> => []),
 );
 vi.mock("./impersonation", () => ({ endImpersonations }));
+const removeAvatarFiles = vi.hoisted(() => vi.fn(async () => undefined));
+vi.mock("./avatarFiles", () => ({ removeAvatarFiles }));
 const linkUserToIntranetMember = vi.hoisted(() =>
   vi.fn(async (): Promise<string | null> => null),
 );
@@ -165,6 +174,8 @@ beforeEach(() => {
   state.account = account() as unknown as Record<string, unknown>;
   state.updates = [];
   state.sessions = ["s1", "s2"];
+  state.avatar = undefined;
+  removeAvatarFiles.mockClear();
   state.roleRow = { id: "role-invitado" };
   recordAudit.mockClear();
   endImpersonations.mockReset();
@@ -287,6 +298,33 @@ describe("an account deleted in the intranet", () => {
         accountRef: expect.stringMatching(/^[0-9a-f]{12}$/),
       }),
     );
+  });
+
+  it("loses its stored photo, the file once committed", async () => {
+    const file = "u1aaaaaaaaaaaaaaaaaaaa-0123456789abcdef.webp";
+    state.avatar = { file };
+    answer(NOT_FOUND, 404);
+    expect((await applyIntranetNotFound("u1")).kind).toBe("revoked");
+    expect(state.avatar).toBeUndefined();
+    expect(removeAvatarFiles).toHaveBeenCalledWith([file]);
+    // The sessions still end, counted as before.
+    expect(auditOf(AUDIT_ACTIONS.USER_ACCESS_REVOKED)?.after).toMatchObject({
+      sessionsEnded: 2,
+    });
+  });
+
+  it("removes no file when it had no stored photo, or kept its access", async () => {
+    answer(NOT_FOUND, 404);
+    await applyIntranetNotFound("u1");
+    expect(removeAvatarFiles).not.toHaveBeenCalled();
+
+    state.account = account({
+      role: { name: SYSTEM_ROLES.ADMIN },
+    }) as unknown as Record<string, unknown>;
+    state.avatar = { file: "u1aaaaaaaaaaaaaaaaaaaa-0123456789abcdef.webp" };
+    expect((await applyIntranetNotFound("u1")).kind).toBe("protected");
+    expect(state.avatar).toBeDefined();
+    expect(removeAvatarFiles).not.toHaveBeenCalled();
   });
 
   it("is revoked once: a second answer changes and records nothing", async () => {

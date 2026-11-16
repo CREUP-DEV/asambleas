@@ -19,6 +19,7 @@ import {
 import type { MemberRef } from "~~/shared/types/api";
 import { accountAvatarText } from "~~/shared/utils/accountAvatar";
 import { toMemberRef } from "../members/dto";
+import { avatarUrl } from "./avatarFiles";
 
 /**
  * The user row the admin users list returns (GET /api/admin/users), shared by
@@ -27,13 +28,13 @@ import { toMemberRef } from "../members/dto";
  * (users.memberId); `extraPermissions` are the permissions granted to the
  * user on top of their role (user_permissions), in catalog order;
  * `accessRevokedAt` and `accessRevokedReason` say when and why the account
- * lost access to the platform (null while it has access).
+ * lost access to the platform (null while it has access). `image` is the
+ * stored photo's URL (ADMIN_USER_RELATIONS `avatar`), never `users.image`.
  */
 export const ADMIN_USER_COLUMNS = {
   id: true,
   name: true,
   email: true,
-  image: true,
   roleId: true,
   memberId: true,
   externalRole: true,
@@ -120,6 +121,7 @@ export const ADMIN_USER_RELATIONS = {
       universityAcronym: true,
     },
   },
+  avatar: { columns: { file: true } },
 } as const;
 
 function findAdminUser(userId: string) {
@@ -168,19 +170,22 @@ export async function loadExtraPermissions(
 /**
  * Rows read with ADMIN_USER_COLUMNS and ADMIN_USER_RELATIONS as the client
  * reads them: `extraPermissions`, `online` and `avatarText` added, the
- * university acronyms folded into `avatarText`.
+ * university acronyms folded into `avatarText` and the stored photo into
+ * `image` (its URL, or null).
  */
 export async function withExtraPermissions<
   T extends {
     id: string;
     universityAcronym: string | null;
     member: (MemberRef & { universityAcronym: string | null }) | null;
+    avatar: { file: string | null } | null;
   },
 >(
   rows: T[],
 ): Promise<
-  (Omit<T, "universityAcronym" | "member"> & {
+  (Omit<T, "universityAcronym" | "member" | "avatar"> & {
     member: MemberRef | null;
+    image: string | null;
     avatarText: string | null;
     extraPermissions: PermissionKey[];
     online: boolean;
@@ -188,9 +193,10 @@ export async function withExtraPermissions<
 > {
   const extra = await loadExtraPermissions(rows.map((row) => row.id));
   const now = Date.now();
-  return rows.map(({ universityAcronym, member, ...row }) => ({
+  return rows.map(({ universityAcronym, member, avatar, ...row }) => ({
     ...row,
     member: member ? toMemberRef(member) : null,
+    image: avatarUrl(avatar?.file),
     avatarText: accountAvatarText({ universityAcronym }, member),
     extraPermissions: extra.get(row.id) ?? [],
     // Whether it used the platform lately (server/utils/live/online.ts).
