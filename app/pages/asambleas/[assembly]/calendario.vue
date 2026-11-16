@@ -214,6 +214,18 @@ function defaultHint(key: MilestoneKey): string {
 
 // Saving --------------------------------------------------------------------
 
+const saveBar = useTemplateRef<HTMLElement>("saveBar");
+const heading = useTemplateRef<HTMLElement>("heading");
+
+/**
+ * The bar goes once nothing is left to save: a focus inside it would be
+ * lost, so it moves to the page's heading.
+ */
+function keepFocusOffBar(): void {
+  if (!import.meta.client) return;
+  if (saveBar.value?.contains(document.activeElement)) heading.value?.focus();
+}
+
 async function save() {
   const value = assembly.value;
   if (!value || !dirty.value) return;
@@ -237,6 +249,7 @@ async function save() {
       },
     );
     current.setAssembly(updated);
+    keepFocusOffBar();
     resetForm(updated);
     announcement.value = t("calendar.saved");
     toast.add({
@@ -253,6 +266,7 @@ async function save() {
 }
 
 function discard() {
+  keepFocusOffBar();
   resetForm(assembly.value);
   announcement.value = t("calendar.discarded");
 }
@@ -272,7 +286,11 @@ const fieldId = (key: MilestoneKey, field: "at" | "note" | "label") =>
   <div v-if="assembly" class="space-y-6">
     <div class="flex flex-wrap items-start justify-between gap-3">
       <div class="min-w-0 space-y-1">
-        <h2 class="text-highlighted text-xl font-semibold">
+        <h2
+          ref="heading"
+          tabindex="-1"
+          class="text-highlighted text-xl font-semibold focus:outline-none"
+        >
           {{ t("calendar.title") }}
         </h2>
         <p class="text-muted max-w-prose text-sm">
@@ -429,27 +447,40 @@ const fieldId = (key: MilestoneKey, field: "at" | "note" | "label") =>
         </ul>
       </UCard>
 
-      <div
-        class="bg-default/90 border-default sticky bottom-0 z-10 -mx-4 flex flex-wrap items-center justify-end gap-2 border-t px-4 py-3 backdrop-blur sm:mx-0 sm:rounded-lg sm:border"
+      <!--
+        Only while there is something to save. It sticks to the panel's
+        bottom edge, across the body's padding (-bottom/-mx/-mb of the
+        hub's p-4 sm:p-6), so no strip of the page shows under it.
+      -->
+      <Transition
+        enter-active-class="motion-safe:transition motion-safe:duration-150"
+        enter-from-class="motion-safe:translate-y-2 opacity-0"
+        leave-active-class="motion-safe:transition motion-safe:duration-150"
+        leave-to-class="motion-safe:translate-y-2 opacity-0"
       >
-        <span v-if="dirty" class="text-muted me-auto text-sm">
-          {{ t("calendar.unsaved", { count: changeCount }, changeCount) }}
-        </span>
-        <UButton
-          color="neutral"
-          variant="ghost"
-          :label="t('common.discard')"
-          :disabled="!dirty || saving"
-          @click="discard"
-        />
-        <UButton
-          type="submit"
-          icon="i-lucide-save"
-          :label="t('common.save')"
-          :loading="saving"
-          :disabled="!dirty"
-        />
-      </div>
+        <div
+          v-if="dirty || saving"
+          ref="saveBar"
+          class="bg-default/95 border-default sticky -bottom-4 z-10 -mx-4 -mb-4 flex flex-wrap items-center justify-end gap-2 border-t px-4 py-3 backdrop-blur sm:-bottom-6 sm:-mx-6 sm:-mb-6 sm:px-6"
+        >
+          <span class="text-muted me-auto text-sm">
+            {{ t("calendar.unsaved", { count: changeCount }, changeCount) }}
+          </span>
+          <UButton
+            color="neutral"
+            variant="ghost"
+            :label="t('common.discard')"
+            :disabled="saving"
+            @click="discard"
+          />
+          <UButton
+            type="submit"
+            icon="i-lucide-save"
+            :label="t('common.save')"
+            :loading="saving"
+          />
+        </div>
+      </Transition>
     </form>
 
     <p class="sr-only" aria-live="polite" role="status">{{ announcement }}</p>
