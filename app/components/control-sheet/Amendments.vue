@@ -277,7 +277,9 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
                 >
                   {{ row.sheet.observations }}
                 </p>
-                <span v-else class="text-dimmed text-sm">{{
+                <!-- Nothing written: the cell stays empty, said only to screen
+                     readers. -->
+                <span v-else class="sr-only">{{
                   t("controlSheet.noObservations")
                 }}</span>
                 <UButton
@@ -285,7 +287,7 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
                   variant="ghost"
                   size="xs"
                   :icon="openIcon"
-                  class="shrink-0"
+                  class="ms-auto shrink-0"
                   :aria-label="openLabel(row.amendment)"
                   @click="emit('open', row)"
                 />

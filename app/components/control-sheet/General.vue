@@ -302,7 +302,9 @@ const itemRows = computed(() =>
                   >
                     {{ row.sheet.observations }}
                   </p>
-                  <span v-else class="text-dimmed text-sm">{{
+                  <!-- Nothing written: the cell stays empty, said only to screen
+                       readers. -->
+                  <span v-else class="sr-only">{{
                     t("controlSheet.noObservations")
                   }}</span>
                   <UButton
@@ -310,7 +312,7 @@ const itemRows = computed(() =>
                     variant="ghost"
                     size="xs"
                     :icon="openIcon"
-                    class="shrink-0"
+                    class="ms-auto shrink-0"
                     :aria-label="openLabel(row)"
                     @click="emit('open', row)"
                   />
