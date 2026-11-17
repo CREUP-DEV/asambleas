@@ -41,6 +41,13 @@ export interface Breadcrumb {
 }
 
 /** Names registered by pages, by `document:<slug or id>`. Client only. */
+/**
+ * Longest label of a document or an agenda item in the trail. The trail has
+ * the navbar's width on large screens, so this only stops an endless title;
+ * what does not fit is cut by the breadcrumb itself, as wide as it can.
+ */
+const CRUMB_MAX = 160;
+
 const LABELS_STATE_KEY = "breadcrumb-labels";
 
 function useBreadcrumbLabels() {
@@ -268,7 +275,9 @@ export function useBreadcrumbs() {
         return t(`shell.assembly.${step.section}`);
       case "document": {
         const label = labels.value[`document:${step.param}`];
-        return label ? truncateLabel(label) : t("shell.breadcrumb.document");
+        return label
+          ? truncateLabel(label, CRUMB_MAX)
+          : t("shell.breadcrumb.document");
       }
       case "documentView":
         return t(`shell.breadcrumb.views.${step.view}`);
@@ -276,7 +285,7 @@ export function useBreadcrumbs() {
         const chain = agendaChains.value[step.param];
         const own = chain?.[chain.length - 1];
         return own
-          ? truncateLabel(own.label)
+          ? truncateLabel(own.label, CRUMB_MAX)
           : t("shell.breadcrumb.agendaItem");
       }
       case "myActivity":
@@ -315,7 +324,7 @@ export function useBreadcrumbs() {
             current: false,
           },
           ...documentChain.map((item) => ({
-            label: truncateLabel(item.label, 32),
+            label: truncateLabel(item.label, CRUMB_MAX),
             to: localePath(`${agenda}/${encodeURIComponent(item.id)}`),
             current: false,
           })),
@@ -328,7 +337,7 @@ export function useBreadcrumbs() {
       const above = (agendaChains.value[step.param] ?? []).slice(0, -1);
       return [
         ...above.map((item) => ({
-          label: truncateLabel(item.label, 32),
+          label: truncateLabel(item.label, CRUMB_MAX),
           to: localePath(`${section}/${encodeURIComponent(item.id)}`),
           current: false,
         })),

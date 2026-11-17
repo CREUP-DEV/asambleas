@@ -13,10 +13,12 @@ import { affectsReviewQueue } from "~/components/review/-live";
 /**
  * Assembly hub: loads the assembly by slug (or id), shares it with the
  * section pages through useCurrentAssembly, and renders its dashboard panel
- * (navbar with label, status and, from lg, the breadcrumb; toolbar with the
- * section navigation below lg) around <NuxtPage />. Status changes live in
- * their sections (AssemblyStatusActions). From lg the breadcrumb sits in
- * the navbar, so the panel has no breadcrumb row to take off there.
+ * (navbar with label and status, the label giving way from lg to the
+ * breadcrumb, which starts with the assembly and takes the navbar's width;
+ * toolbar with the section navigation below lg) around <NuxtPage />. Status
+ * changes live in their sections (AssemblyStatusActions). From lg the
+ * breadcrumb sits in the navbar, so the panel has no breadcrumb row to take
+ * off there.
  *
  * Section pages with `definePageMeta({ print: true })` (the convocatoria,
  * projection views) are rendered alone, without the hub chrome; they also
@@ -263,15 +265,25 @@ watch(() => route.path, revealActiveSection);
     class="lg:[--shell-breadcrumb-height:0px]"
   >
     <template #header>
-      <!-- The label never truncates: the centre line gives way instead. -->
+      <!-- From lg the label gives way to the breadcrumb, which names the
+           assembly as its second step and takes the whole width; the label
+           stays the page's heading for screen readers. -->
       <UDashboardNavbar
-        :title="assembly?.label ?? t('assembly.hub.loading')"
-        :ui="{ left: 'shrink-0', title: 'shrink-0', center: 'min-w-0' }"
+        :ui="{
+          left: 'min-w-0 flex-1',
+          title: assembly ? 'shrink-0 lg:sr-only' : 'shrink-0',
+        }"
       >
         <template #leading>
           <UDashboardSidebarCollapse />
         </template>
+        <template #title>
+          {{ assembly?.label ?? t("assembly.hub.loading") }}
+        </template>
         <template #trailing>
+          <div v-if="assembly" class="hidden min-w-0 flex-1 lg:flex">
+            <ShellBreadcrumbs placement="inline" />
+          </div>
           <template v-if="assembly">
             <!-- "Convocada" is the usual state and says nothing new: only
                  the others (draft, in session, closed) are shown. -->
@@ -326,11 +338,6 @@ watch(() => route.path, revealActiveSection);
             />
           </template>
         </template>
-
-        <!-- Centre (large screens): where this page is. -->
-        <div v-if="assembly" class="hidden min-w-0 lg:flex">
-          <ShellBreadcrumbs placement="inline" />
-        </div>
       </UDashboardNavbar>
 
       <!-- Where this page is, below lg (the navbar shows it from lg).
