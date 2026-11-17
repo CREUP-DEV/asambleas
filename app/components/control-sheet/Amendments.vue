@@ -60,6 +60,25 @@ const { t } = useI18n();
 /** «De forma» or «De contenido» (every other kind, CONTENT_AMENDMENT_KINDS). */
 const kindOf = amendmentSheetKind;
 
+/**
+ * «Tipo» in grey, so it does not read as a council's blue tag: content
+ * filled, "de forma" outlined.
+ */
+const KIND_BADGES = {
+  content: { color: "neutral", variant: "subtle" },
+  formal: { color: "neutral", variant: "outline" },
+} as const;
+
+/**
+ * «Pendiente» as in «General»: amber and outlined, nothing settled yet
+ * (a lapsed one is amber and filled).
+ */
+function stateBadge(state: keyof typeof LIVE_STATE_COLORS) {
+  return state === "pending"
+    ? ({ color: "warning", variant: "outline" } as const)
+    : ({ color: LIVE_STATE_COLORS[state], variant: "subtle" } as const);
+}
+
 /** The main author, then the rest by acronym (shown as «+N»). */
 function authorsOf(amendment: AmendmentDto): {
   main: MemberRef[];
@@ -197,8 +216,7 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
             </td>
             <td class="px-3 py-2 text-center">
               <UBadge
-                :color="kindOf(row.amendment) === 'formal' ? 'neutral' : 'info'"
-                variant="subtle"
+                v-bind="KIND_BADGES[kindOf(row.amendment)]"
                 size="sm"
                 class="whitespace-nowrap"
                 :label="t(`controlSheet.kind.${kindOf(row.amendment)}`)"
@@ -226,8 +244,7 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
             </td>
             <td class="space-y-1 px-3 py-2 text-center">
               <UBadge
-                :color="LIVE_STATE_COLORS[row.state]"
-                variant="subtle"
+                v-bind="stateBadge(row.state)"
                 size="sm"
                 class="whitespace-nowrap"
                 :label="t(`liveView.state.${row.state}.label`)"
@@ -296,8 +313,7 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
               {{ codeOf(row.amendment) }}
             </ULink>
             <UBadge
-              :color="LIVE_STATE_COLORS[row.state]"
-              variant="subtle"
+              v-bind="stateBadge(row.state)"
               size="sm"
               :label="t(`liveView.state.${row.state}.label`)"
             />
@@ -325,10 +341,7 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
               </dt>
               <dd>
                 <UBadge
-                  :color="
-                    kindOf(row.amendment) === 'formal' ? 'neutral' : 'info'
-                  "
-                  variant="subtle"
+                  v-bind="KIND_BADGES[kindOf(row.amendment)]"
                   size="sm"
                   :label="t(`controlSheet.kind.${kindOf(row.amendment)}`)"
                 />

@@ -25,7 +25,8 @@ const COLORS: Record<
   not_applicable: "neutral",
 };
 
-const color = computed(() => (props.result ? COLORS[props.result] : "neutral"));
+/** «Pendiente» amber and outlined: nothing settled yet. */
+const color = computed(() => (props.result ? COLORS[props.result] : "warning"));
 </script>
 
 <template>

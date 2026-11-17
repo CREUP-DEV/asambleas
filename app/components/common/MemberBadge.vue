@@ -26,10 +26,14 @@ const props = withDefaults(
  * everyone else (the CEA's offices, the CAS and any other) in the grey-blue
  * of `secondary`.
  */
-const KIND_COLORS: Record<MemberKind, "info" | "sectorial" | "secondary"> = {
+/** The CEA's offices in burgundy, as in the room and the platform's brand. */
+const KIND_COLORS: Record<
+  MemberKind,
+  "info" | "sectorial" | "primary" | "secondary"
+> = {
   asociado: "info",
   sectorial: "sectorial",
-  executive: "secondary",
+  executive: "primary",
   other: "secondary",
 };
 
