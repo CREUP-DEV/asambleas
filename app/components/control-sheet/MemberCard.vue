@@ -4,9 +4,12 @@ import { accountAvatarText } from "~~/shared/utils/accountAvatar";
 
 /**
  * A member as the control sheet's hover cards show it: its avatar (the
- * text accounts acting for it read), its whole denomination, never cut,
- * and under it its kind with a council's university or who holds a CEA
- * office (only those who see the offices receive it). `member` is what the
+ * text accounts acting for it read) and, never cut, what tells it apart:
+ * a council's university first, with its kind and its denomination under
+ * it, since councils share the same or nearly the same denomination
+ * (user's decision of 2026-11-17); any other member's denomination, with
+ * its kind and who holds a CEA office under it (only those who see the
+ * offices receive the holder). `member` is what the
  * server sent (an office reads "CEA" to whoever may not see it); `members`
  * adds the university and the holder, and a member missing from it shows
  * what it carries. `tag` puts its acronym tag before the name, for lists
@@ -35,21 +38,32 @@ const avatarText = computed(() =>
 );
 
 /** Its denomination, unless it repeats the acronym. */
-const name = computed(() =>
+const denomination = computed(() =>
   memberNameRepeatsAcronym(props.member) ? null : props.member.name.trim(),
 );
 
+/** A council's university (any member but an office with one). */
+const university = computed(() =>
+  props.member.kind === "executive"
+    ? null
+    : full.value?.university?.trim() || null,
+);
+
+/** The line in bold: the university when there is one. */
+const name = computed(() => university.value ?? denomination.value);
+
 /**
- * "Asociado · Universidad de Granada", "CEA · Ana Pérez García" (who holds
- * the office), or just the kind without either.
+ * "Asociado · Consejo de Estudiantes" under a university, "CEA · Ana
+ * Pérez García" (who holds the office), or just the kind.
  */
 const detail = computed(() => {
   const kind = t(`shell.memberKinds.${props.member.kind}`);
-  const extra =
-    props.member.kind === "executive"
+  const extra = university.value
+    ? denomination.value
+    : props.member.kind === "executive"
       ? full.value?.holderName?.trim()
-      : full.value?.university?.trim();
-  return extra && extra !== props.member.name ? `${kind} · ${extra}` : kind;
+      : null;
+  return extra && extra !== name.value ? `${kind} · ${extra}` : kind;
 });
 </script>
 
