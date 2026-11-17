@@ -15,6 +15,7 @@ import {
 import type {
   ControlSheetAmendmentRowDto,
   ControlSheetDocumentDto,
+  ControlSheetDocumentObservationsDto,
   ControlSheetDto,
   ControlSheetEditDto,
   ControlSheetHistoryDto,
@@ -56,7 +57,7 @@ import {
   type PositionRecorders,
 } from "./amendments";
 import { titleDocumentPayload } from "./agendaWrites";
-import { shareLockAssembly } from "./documents";
+import { shareLockAssembly, type DocumentRow } from "./documents";
 import { recordEvent, type Executor } from "./events";
 import { impersonatedByFor, loadImpersonators } from "./impersonators";
 import { withCoProponentIds } from "./presenters";
@@ -409,6 +410,93 @@ export async function loadControlSheet(
       .filter((row) => itemsById.has(row.subjectId))
       .map((row) => toItemVoteDto(row, readerItems.titleHidden)),
     can: { edit: canEditControlSheet(actor), moderate: canModerate(actor) },
+  };
+}
+
+/**
+ * The sheet's observations about one document, for its page (user's
+ * decision of 2026-11-17: whoever reads the sheet reads them there too):
+ * those of its agenda item, when the reader gets that item, and those of
+ * each of its amendments the reader sees (visibleSheetAmendments). Only
+ * rows with something written. Same reader and visibility rules as
+ * loadControlSheet; the caller resolved the document for the actor.
+ */
+export async function loadDocumentSheetObservations(
+  actor: Actor,
+  assembly: AssemblyRow,
+  document: DocumentRow & DocumentPresenters,
+): Promise<ControlSheetDocumentObservationsDto> {
+  requireControlSheetReader(actor);
+  const [items, amendmentRows] = await Promise.all([
+    loadVisibleItems(actor, assembly.id),
+    findPresentedAmendments([document.id]),
+  ]);
+  const visible = visibleSheetAmendments(
+    actor,
+    amendmentRows,
+    new Map([[document.id, document]]),
+  );
+  const itemId =
+    document.agendaItemId && items.has(document.agendaItemId)
+      ? document.agendaItemId
+      : null;
+  const [itemRows, amendmentSheet] = await Promise.all([
+    itemId
+      ? db
+          .select()
+          .from(controlSheetItems)
+          .where(eq(controlSheetItems.agendaItemId, itemId))
+      : Promise.resolve([]),
+    visible.length > 0
+      ? db
+          .select()
+          .from(controlSheetAmendments)
+          .where(
+            inArray(
+              controlSheetAmendments.amendmentId,
+              visible.map((row) => row.id),
+            ),
+          )
+      : Promise.resolve([]),
+  ]);
+  const itemRow = itemRows.find((row) => row.observations.trim() !== "");
+  const codeOf = new Map(visible.map((row) => [row.id, row.code]));
+  const order = new Map(
+    [...visible]
+      .sort((a, b) => (a.number ?? Infinity) - (b.number ?? Infinity))
+      .map((row, index) => [row.id, index]),
+  );
+  const written = amendmentSheet
+    .filter((row) => row.observations.trim() !== "")
+    .sort(
+      (a, b) =>
+        (order.get(a.amendmentId) ?? 0) - (order.get(b.amendmentId) ?? 0),
+    );
+  const names = await loadUserNames([
+    itemRow?.observationsUpdatedByUserId ?? null,
+    ...written.map((row) => row.observationsUpdatedByUserId),
+  ]);
+  return {
+    item: itemRow
+      ? {
+          text: itemRow.observations,
+          edited: editOf(
+            itemRow.observationsUpdatedAt,
+            itemRow.observationsUpdatedByUserId,
+            names,
+          ),
+        }
+      : null,
+    amendments: written.map((row) => ({
+      amendmentId: row.amendmentId,
+      code: codeOf.get(row.amendmentId) ?? null,
+      text: row.observations,
+      edited: editOf(
+        row.observationsUpdatedAt,
+        row.observationsUpdatedByUserId,
+        names,
+      ),
+    })),
   };
 }
 

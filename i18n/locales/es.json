@@ -1908,7 +1908,9 @@
         "sheet": "Observación en la hoja de control",
         "sheetHint": "La leerá todo el que lea la hoja de control. Se añade debajo de las observaciones que ya tenga la enmienda, sin borrarlas.",
         "save": "Añadir a la hoja"
-      }
+      },
+      "sheetTitle": "En la hoja de control",
+      "sheetEdited": "Última edición: {name}, {when}"
     }
   },
   "admin": {
@@ -6308,6 +6310,13 @@
       "label": "Nota",
       "placeholder": "Escribe aquí lo que quieras recordar",
       "save": "Guardar nota"
+    },
+    "sheet": {
+      "title": "En la hoja de control",
+      "hint": "Lo que la hoja de control dice sobre este documento y sus enmiendas. Lo leen todos los que leen la hoja.",
+      "item": "Sobre el documento",
+      "amendment": "Enmienda {code}",
+      "edited": "Última edición: {name}, {when}"
     }
   }
 }

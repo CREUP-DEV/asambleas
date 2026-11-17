@@ -1049,10 +1049,12 @@ Amendments take private notes too (`amendment_notes`), always about the
 whole amendment: an amendment is short and its diff changes with the view,
 so a stretch of it would be no anchor. The same rules hold (per account,
 never recorded, 4000 characters, 50 per amendment), and «Mis notas» lists
-them under the amendment's detail. A CEA account that edits the control
+them under the amendment's detail. An account that edits the control
 sheet may send a new note to the amendment's observations in the sheet
 instead, which every reader of the sheet reads: it is added below what is
-there, never in its place.
+there, never in its place. Whoever reads the sheet also reads on the
+document's page what the sheet says about it and its amendments, read
+only, next to its own notes.
 
 On screen (`DocumentNotes`, on the document page and in the reader of an
 agenda item) "Notas" opens the list in a side panel, in the order of the

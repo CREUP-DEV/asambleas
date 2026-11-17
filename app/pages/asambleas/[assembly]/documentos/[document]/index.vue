@@ -48,6 +48,7 @@ import {
   documentAudience,
   documentProgress,
 } from "~/composables/document/documentProgress";
+import { provideSheetObservations } from "~/composables/document/useSheetObservations";
 
 /**
  * Document workspace (inside the assembly hub). Its one primary action, for
@@ -827,6 +828,9 @@ useDocumentReading(() =>
 );
 // Reaching the end of its text marks the document read.
 const textEnd = useTemplateRef<HTMLElement>("textEnd");
+// The control sheet's observations about it, for whoever reads the sheet:
+// the notes panel and each amendment's detail show them.
+provideSheetObservations(() => document.value?.id);
 useAutoReadMark("document", () => document.value?.id, textEnd);
 
 /** Their marks go on the original text only: the other views show another. */

@@ -1635,6 +1635,27 @@ export interface ControlSheetEditDto {
   at: IsoDate;
 }
 
+/** What the control sheet says about one row, and who said it last. */
+export interface ControlSheetObservationDto {
+  text: string;
+  edited: ControlSheetEditDto | null;
+}
+
+/**
+ * GET .../control-sheet/documents/[document] (sheet readers only): the
+ * sheet's observations about a document, to read them on its page: those of
+ * its agenda item, and those of each of its amendments the reader sees.
+ * Only rows with something written. Never with `?view=room`.
+ */
+export interface ControlSheetDocumentObservationsDto {
+  item: ControlSheetObservationDto | null;
+  /** In the order of the document's amendments; `code` as AmendmentDto's. */
+  amendments: (ControlSheetObservationDto & {
+    amendmentId: string;
+    code: string | null;
+  })[];
+}
+
 /**
  * What the control sheet notes about one agenda item. Every field edited
  * on its own has its own lock token (`…UpdatedAt`, null while never set),

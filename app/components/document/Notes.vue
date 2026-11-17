@@ -14,6 +14,7 @@ import {
   locateNote,
   placeNotes,
 } from "~~/shared/utils/documentNotes";
+import { useSheetObservations } from "~/composables/document/useSheetObservations";
 
 /**
  * The account's private notes on a published document: the button that
@@ -33,6 +34,10 @@ import {
  *
  * Nobody else reads them. The server answers `available: false` while the
  * document is not published: nothing shows here then.
+ *
+ * Whoever reads the control sheet also finds in the panel what the sheet
+ * says about the document and its amendments (useSheetObservations, which
+ * the document page provides), read only.
  */
 const props = withDefaults(
   defineProps<{
@@ -51,9 +56,42 @@ const emit = defineEmits<{
   locate: [blockId: string];
 }>();
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const api = useApi();
 const toast = useToast();
+
+/** The control sheet's observations, for its readers, by row. */
+const sheet = useSheetObservations();
+const sheetObservations = computed(() => {
+  const data = sheet?.observations.value;
+  if (!data) return null;
+  const edited = (edit: { by: string | null; at: string } | null) => {
+    if (!edit) return null;
+    const when = formatMoment(edit.at, { locale: locale.value }).text;
+    return edit.by ? t("notes.sheet.edited", { name: edit.by, when }) : when;
+  };
+  const rows = [
+    ...(data.item
+      ? [
+          {
+            key: "item",
+            label: t("notes.sheet.item"),
+            text: data.item.text,
+            edited: edited(data.item.edited),
+          },
+        ]
+      : []),
+    ...data.amendments.map((row) => ({
+      key: row.amendmentId,
+      label: t("notes.sheet.amendment", {
+        code: row.code ?? t("amendment.unnumberedLabel"),
+      }),
+      text: row.text,
+      edited: edited(row.edited),
+    })),
+  ];
+  return rows.length > 0 ? rows : null;
+});
 
 // Data -------------------------------------------------------------------------------
 
@@ -443,6 +481,39 @@ defineExpose({ annotate, available });
             :title="t('notes.empty')"
             :description="blocks.length > 0 ? t('notes.emptyHint') : undefined"
           />
+
+          <!-- What the control sheet says about it, for its readers. -->
+          <section
+            v-if="sheetObservations"
+            class="flex flex-col gap-2"
+            aria-labelledby="notes-sheet"
+            data-testid="document-sheet-observations"
+          >
+            <h3
+              id="notes-sheet"
+              class="text-muted text-xs font-semibold tracking-wide uppercase"
+            >
+              {{ t("notes.sheet.title") }}
+            </h3>
+            <p class="text-muted text-sm">{{ t("notes.sheet.hint") }}</p>
+            <ul class="flex flex-col gap-2">
+              <li
+                v-for="row in sheetObservations"
+                :key="row.key"
+                class="border-default flex flex-col gap-1 rounded-lg border border-dashed p-3"
+              >
+                <p class="text-highlighted text-xs font-semibold">
+                  {{ row.label }}
+                </p>
+                <p class="text-default text-sm break-words whitespace-pre-line">
+                  {{ row.text }}
+                </p>
+                <p v-if="row.edited" class="text-muted text-xs">
+                  {{ row.edited }}
+                </p>
+              </li>
+            </ul>
+          </section>
 
           <template
             v-for="section in [

@@ -1694,6 +1694,7 @@ count (docs/design.md, "Headcounts and quorum"). Schemas:
 | GET    | `/api/assemblies/[assembly]/control-sheet/history?row=`           | `control_sheet:view` | `ControlSheetHistoryDto`: one sheet row's changes, newest first.    |
 | GET    | `/api/assemblies/[assembly]/control-sheet/activity`               | `control_sheet:view` | `ActivityPageDto`: the sheet's «Historial» (below).                 |
 | GET    | `/api/assemblies/[assembly]/control-sheet/activity/people`        | `control_sheet:view` | `UserRef[]`: whoever recorded a row of the «Historial».             |
+| GET    | `/api/assemblies/[assembly]/control-sheet/documents/[document]`   | `control_sheet:view` | `ControlSheetDocumentObservationsDto`: see below.                   |
 | POST   | `/api/assemblies/[assembly]/agenda/[item]/votes`                  | see below            | `ItemVoteBody`. Returns `ItemVoteResultDto`.                        |
 | GET    | `/api/assemblies/[assembly]/item-votes`                           | see below            | `ItemVotesDto`. Never with `?view=room`.                            |
 | DELETE | `/api/assemblies/[assembly]/votes/[vote]`                         | see below            | `VoteVoidBody`. Voids an item vote. Returns `VoteDto`.              |
@@ -1706,8 +1707,15 @@ adds a text below the amendment's observations, a blank line apart,
 whatever they are now: it replaces nothing, so it takes no lock token, and
 it records `control_sheet_observations_updated` and a revision like any
 other save. 422 (`data.reason` `control_sheet_observations_too_long`) when
-the result would pass 5000 characters. The amendment's notes send it for a
-CEA account that edits the sheet.
+the result would pass 5000 characters. The amendment's notes send it for
+an account that edits the sheet.
+
+`GET .../control-sheet/documents/[document]` gives a sheet reader what the
+sheet says about one document it sees, for the document's page: the
+observations of its agenda item (when the reader gets that item) and of
+each of its amendments the reader sees, only rows with something written,
+the amendments in their order with their code, each with who wrote last
+and when. Never with `?view=room`.
 
 `ControlSheetDto.positions` gives every sheet reader the main presenter's
 answer (`PositionDto`) to each amendment it sees that has one, as soon as it

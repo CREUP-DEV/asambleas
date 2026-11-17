@@ -1908,7 +1908,9 @@
         "sheet": "Observation in the control sheet",
         "sheetHint": "Everyone who reads the control sheet will read it. It goes below the observations the amendment already has, without deleting them.",
         "save": "Add to the sheet"
-      }
+      },
+      "sheetTitle": "In the control sheet",
+      "sheetEdited": "Last edited by {name}, {when}"
     }
   },
   "admin": {
@@ -6308,6 +6310,13 @@
       "label": "Note",
       "placeholder": "Write here what you want to remember",
       "save": "Save note"
+    },
+    "sheet": {
+      "title": "In the control sheet",
+      "hint": "What the control sheet says about this document and its amendments. Everyone who reads the sheet reads it.",
+      "item": "About the document",
+      "amendment": "Amendment {code}",
+      "edited": "Last edited by {name}, {when}"
     }
   }
 }

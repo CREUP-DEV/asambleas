@@ -5,17 +5,19 @@ import type {
   AmendmentNotesDto,
 } from "~~/shared/types/api";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
-import { SYSTEM_ROLES } from "~~/shared/constants/roles";
+import { useSheetObservations } from "~/composables/document/useSheetObservations";
 import { AMENDMENT_NOTE_MAX_LENGTH } from "~~/shared/utils/amendmentNotes";
 import { CONTROL_SHEET_OBSERVATIONS_MAX_LENGTH } from "~~/shared/utils/schemas/controlSheet";
 
 /**
  * The account's private notes on an amendment, about the whole of it
  * (docs/design.md, "Private notes"): listed under its detail, written,
- * changed and deleted here. A CEA account that edits the control sheet may
+ * changed and deleted here. An account that edits the control sheet may
  * send a new note to the amendment's observations in the sheet instead
  * (user's decision of 2026-11-17): it is added after what the sheet already
  * says there, never in its place, and every reader of the sheet reads it.
+ * Whoever reads the sheet also reads here what it says about the amendment
+ * (useSheetObservations, provided by the document page).
  */
 const props = defineProps<{
   amendment: AmendmentDto;
@@ -26,7 +28,12 @@ const props = defineProps<{
 const { t, locale } = useI18n();
 const api = useApi();
 const toast = useToast();
-const { me, can } = useMe();
+const { can } = useMe();
+const sheet = useSheetObservations();
+/** What the control sheet says about this amendment, for its readers. */
+const sheetObservation = computed(
+  () => sheet?.amendment(props.amendment.id) ?? null,
+);
 const { apiBase } = useCurrentAssembly();
 
 const notesUrl = computed(
@@ -42,12 +49,8 @@ const { data, refresh } = useAsyncData(
 const notes = computed<AmendmentNoteDto[]>(() => data.value?.notes ?? []);
 const available = computed(() => Boolean(data.value?.available));
 
-/** A CEA account that edits the control sheet may write there instead. */
-const sendsToSheet = computed(
-  () =>
-    me.value?.role === SYSTEM_ROLES.CEA &&
-    can(PERMISSION_KEYS.CONTROL_SHEET_EDIT),
-);
+/** Whoever edits the control sheet may write there instead. */
+const sendsToSheet = computed(() => can(PERMISSION_KEYS.CONTROL_SHEET_EDIT));
 
 type Destination = "note" | "sheet";
 
@@ -128,6 +131,7 @@ async function save(): Promise<void> {
         color: "success",
         icon: "i-lucide-clipboard-check",
       });
+      void sheet?.refresh();
     } else if (target.id === null) {
       await api.send(notesUrl.value, { method: "POST", body: { body: text } });
       toast.add({
@@ -245,6 +249,35 @@ async function remove(note: AmendmentNoteDto): Promise<void> {
     <p v-else-if="!editing" class="text-muted text-sm">
       {{ t("amendment.notes.empty") }}
     </p>
+
+    <!-- What the control sheet says about it, for whoever reads the sheet. -->
+    <div
+      v-if="sheetObservation"
+      class="border-default flex flex-col gap-1 rounded-md border border-dashed px-3 py-2"
+      data-testid="amendment-sheet-observation"
+    >
+      <p class="text-muted flex items-center gap-1.5 text-xs font-semibold">
+        <UIcon
+          name="i-lucide-clipboard-list"
+          class="size-3.5 shrink-0"
+          aria-hidden="true"
+        />
+        {{ t("amendment.notes.sheetTitle") }}
+      </p>
+      <p class="text-default text-sm whitespace-pre-line">
+        {{ sheetObservation.text }}
+      </p>
+      <p v-if="sheetObservation.edited" class="text-muted text-xs">
+        {{
+          sheetObservation.edited.by
+            ? t("amendment.notes.sheetEdited", {
+                name: sheetObservation.edited.by,
+                when: formatWhen(sheetObservation.edited.at),
+              })
+            : formatWhen(sheetObservation.edited.at)
+        }}
+      </p>
+    </div>
 
     <form
       v-if="editing"
