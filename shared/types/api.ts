@@ -96,6 +96,13 @@ export interface MemberRef {
 
 export interface MemberDto extends MemberRef {
   university: string | null;
+  /** The university's acronym (UGR, UVa), from the roster; asociados only. */
+  universityAcronym: string | null;
+  /**
+   * Who holds a CEA office (name and surnames, from the Intranet); null for
+   * any other member, and for everyone who may not see the offices.
+   */
+  holderName: string | null;
   region: string | null;
   source: MemberSource;
   active: boolean;

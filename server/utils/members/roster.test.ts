@@ -17,6 +17,7 @@ const existing = (overrides: Partial<ExistingMember>): ExistingMember => ({
   name: "Consejo de Estudiantes de la Universidad de Murcia",
   university: "Universidad de Murcia",
   universityAcronym: "UM",
+  holderName: null,
   region: "Región de Murcia",
   intranetId: null,
   email: null,
@@ -31,6 +32,7 @@ const entry = (overrides: Partial<RosterMember>): RosterMember => ({
   name: "Consejo de Estudiantes de la Universidad de Murcia",
   university: "Universidad de Murcia",
   universityAcronym: "UM",
+  holderName: null,
   region: "Región de Murcia",
   intranetId: null,
   email: null,
@@ -44,6 +46,7 @@ const listed = (member: ExistingMember): RosterMember => ({
   name: member.name,
   university: member.university,
   universityAcronym: member.universityAcronym,
+  holderName: member.holderName,
   region: member.region,
   intranetId: member.intranetId,
   email: member.email,
@@ -68,6 +71,7 @@ describe("intranetRosterResponseSchema", () => {
       initials: "CEUM",
       university: null,
       autonomous_community: null,
+      holder_name: null,
     });
     expect(parsed.data[1]?.initials).toBeNull();
   });
@@ -111,6 +115,7 @@ describe("normalizeRoster", () => {
             university: "UM",
             university_acronym: null,
             autonomous_community: "Murcia",
+            holder_name: null,
           },
           {
             id: 11,
@@ -121,6 +126,7 @@ describe("normalizeRoster", () => {
             university: null,
             university_acronym: null,
             autonomous_community: null,
+            holder_name: null,
           },
         ],
       },
@@ -136,6 +142,7 @@ describe("normalizeRoster", () => {
             university: null,
             university_acronym: null,
             autonomous_community: null,
+            holder_name: null,
           },
           {
             id: null,
@@ -146,6 +153,7 @@ describe("normalizeRoster", () => {
             university: null,
             university_acronym: null,
             autonomous_community: null,
+            holder_name: null,
           },
         ],
       },
@@ -160,6 +168,7 @@ describe("normalizeRoster", () => {
         name: "Consejo A",
         university: "UM",
         universityAcronym: null,
+        holderName: null,
         region: "Murcia",
         intranetId: 10,
         email: null,
@@ -170,6 +179,7 @@ describe("normalizeRoster", () => {
         name: "CEEM",
         university: null,
         universityAcronym: null,
+        holderName: null,
         region: null,
         intranetId: null,
         email: null,
@@ -185,6 +195,7 @@ describe("normalizeRoster", () => {
       university: null,
       university_acronym: null,
       autonomous_community: null,
+      holder_name: null,
     };
     const roster = normalizeRoster([
       { kind: "asociado", entries: [{ ...row, id: 7, initials: "A" }] },
@@ -201,6 +212,7 @@ describe("normalizeRoster", () => {
       order: null,
       denomination: null,
       autonomous_community: null,
+      holder_name: null,
     };
     const roster = normalizeRoster([
       {
@@ -244,6 +256,7 @@ describe("normalizeRoster", () => {
       university: null,
       university_acronym: null,
       autonomous_community: null,
+      holder_name: null,
     };
     const roster = normalizeRoster([
       {
@@ -649,6 +662,7 @@ describe("planRosterSync with the CEA list", () => {
       kind: "executive",
       university: null,
       universityAcronym: null,
+      holderName: null,
       region: null,
       ...overrides,
     });
@@ -662,6 +676,7 @@ describe("planRosterSync with the CEA list", () => {
     name,
     university: null,
     universityAcronym: null,
+    holderName: null,
     region: null,
     intranetId,
     email: null,
@@ -746,5 +761,59 @@ describe("planRosterSync with the CEA list", () => {
       ["asociado", "sectorial"],
     );
     expect(plan.deactivate).toEqual([]);
+  });
+});
+
+describe("an office's holder", () => {
+  const row = (initials: string, holder: string | null) => ({
+    id: null,
+    email: null,
+    order: null,
+    denomination: initials,
+    initials,
+    university: null,
+    university_acronym: null,
+    autonomous_community: null,
+    holder_name: holder,
+  });
+
+  it("is kept for the CEA's offices only", () => {
+    const roster = normalizeRoster([
+      { kind: "asociado", entries: [row("CEUM", "Ruido")] },
+      { kind: "executive", entries: [row("PRES", "Ana Pérez García")] },
+      { kind: "other", entries: [row("CAS", "Luis Gil")] },
+    ]);
+    expect(
+      roster.members.map((member) => [member.acronym, member.holderName]),
+    ).toEqual([
+      ["CEUM", null],
+      ["PRES", "Ana Pérez García"],
+      ["CAS", null],
+    ]);
+  });
+
+  it("updates an office whose holder changed", () => {
+    const office = existing({
+      id: "m-pres",
+      kind: "executive",
+      acronym: "PRES",
+      name: "Presidencia",
+      university: null,
+      universityAcronym: null,
+      region: null,
+      intranetId: 7,
+      holderName: "Ana Pérez García",
+    });
+    const plan = planRosterSync(
+      [{ ...listed(office), holderName: "Luis Gil Mora" }],
+      [office],
+      ["executive"],
+    );
+    expect(plan.update).toEqual([
+      {
+        id: "m-pres",
+        values: { ...listed(office), holderName: "Luis Gil Mora" },
+      },
+    ]);
   });
 });

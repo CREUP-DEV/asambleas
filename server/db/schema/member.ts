@@ -31,6 +31,13 @@ export const members = pgTable(
     university: text("university"),
     /** The university's acronym (UGR, UVa), from the roster; asociados only. */
     universityAcronym: text("university_acronym"),
+    /**
+     * Who holds a CEA office: the name and surnames the Intranet account's
+     * holder put in its profile (`holder_name` of /usuarios/cea); null for
+     * every other member. Personal data: only those who see the offices
+     * read it, and never an audit row nor a log.
+     */
+    holderName: text("holder_name"),
     region: text("region"),
     /**
      * The Intranet account of an asociado, a sectorial or a CEA office (its

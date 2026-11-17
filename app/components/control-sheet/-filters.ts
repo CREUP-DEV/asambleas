@@ -41,6 +41,7 @@ export interface SheetSort<K extends string> {
 export const GENERAL_SORT_KEYS = [
   "number",
   "item",
+  "proponent",
   "treated",
   "result",
   "votes",
@@ -167,6 +168,11 @@ function generalSortValue(
       return row.index;
     case "item":
       return row.title;
+    case "proponent":
+      return (
+        row.documents.find((document) => document.proponent)?.proponent
+          ?.acronym ?? null
+      );
     case "treated":
       return row.outcome.treated ? 1 : 0;
     case "result":
@@ -303,9 +309,9 @@ const NUMBER_TOKEN = /^\d+(?:\.\d+)*\.?$/;
 
 /**
  * Whether a row of «General» passes the search: every word is in its
- * title, its documents' titles or its speakers. A word that looks like a
- * number also passes when it is the row's number or one above it ("14"
- * finds 14, 14.1 and 14.2, never 4 or 114).
+ * title, its documents' titles, their presenters or its speakers. A
+ * word that looks like a number also passes when it is the row's number or
+ * one above it ("14" finds 14, 14.1 and 14.2, never 4 or 114).
  */
 function generalMatchesQuery(row: GeneralSheetRow, query: string): boolean {
   const tokens = searchTokens(query);
@@ -313,7 +319,12 @@ function generalMatchesQuery(row: GeneralSheetRow, query: string): boolean {
   const text = fold(
     [
       row.title,
-      ...row.documents.map((document) => document.title),
+      ...row.documents.flatMap((document) => [
+        document.title,
+        ...[document.proponent, ...document.coProponents].flatMap((member) =>
+          member ? [member.acronym, member.name] : [],
+        ),
+      ]),
       ...row.speakers.flatMap((speaker) => [speaker.label, ...speaker.names]),
     ].join(" "),
   );
@@ -496,6 +507,7 @@ export const SHEET_FILTER_QUERY_KEYS: readonly string[] =
 const GENERAL_SORT_SLUGS: Record<GeneralSortKey, string> = {
   number: "numero",
   item: "punto",
+  proponent: "proponente",
   treated: "tratado",
   result: "resultado",
   votes: "votaciones",

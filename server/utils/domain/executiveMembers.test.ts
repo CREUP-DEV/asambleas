@@ -506,6 +506,8 @@ describe("the members list", () => {
   const dto = (member: MemberRef, active = true): MemberDto => ({
     ...member,
     university: null,
+    universityAcronym: null,
+    holderName: null,
     region: null,
     source: "manual",
     active,

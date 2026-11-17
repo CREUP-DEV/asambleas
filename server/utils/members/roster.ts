@@ -76,6 +76,8 @@ export const intranetRosterEntrySchema = z.object({
   /** The university's acronym (UGR, UVa); asociados only, absent before. */
   university_acronym: optionalText,
   autonomous_community: optionalText,
+  /** Who holds a CEA office (/usuarios/cea only); absent before. */
+  holder_name: optionalText,
 });
 
 export const intranetRosterResponseSchema = z.object({
@@ -122,6 +124,11 @@ export interface RosterMember {
   university: string | null;
   /** Its university's acronym (UGR, UVa); null without a university. */
   universityAcronym: string | null;
+  /**
+   * Who holds a CEA office; null for any other kind. Never put in an audit
+   * row nor a log.
+   */
+  holderName: string | null;
   region: string | null;
   /** The Intranet account (`users.id`), or null when the roster sends none. */
   intranetId: number | null;
@@ -199,6 +206,10 @@ export function normalizeRoster(
           universityAcronym.length <= ACRONYM_MAX_LENGTH
             ? universityAcronym
             : null,
+        holderName:
+          list.kind === "executive"
+            ? clip(entry.holder_name ?? null, NAME_MAX_LENGTH)
+            : null,
         region: clip(entry.autonomous_community, DETAIL_MAX_LENGTH),
         intranetId: entry.id,
         email,
@@ -216,6 +227,7 @@ export interface ExistingMember {
   name: string;
   university: string | null;
   universityAcronym: string | null;
+  holderName: string | null;
   region: string | null;
   intranetId: number | null;
   email: string | null;
@@ -456,6 +468,7 @@ export function planRosterSync(
       current.name !== values.name ||
       current.university !== values.university ||
       current.universityAcronym !== values.universityAcronym ||
+      current.holderName !== values.holderName ||
       current.region !== values.region ||
       current.intranetId !== values.intranetId ||
       current.email !== values.email;

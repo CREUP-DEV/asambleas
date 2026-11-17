@@ -4,8 +4,9 @@ import type { MemberRef } from "~~/shared/types/api";
 
 /**
  * A member (student council, sectorial, executive office) shown by its acronym,
- * with the full name in a tooltip. Screen readers get the full name instead
- * of the acronym.
+ * with the full name in a tooltip (`tooltip: false` leaves it to a card the
+ * caller wraps it in). Screen readers get the full name instead of the
+ * acronym.
  */
 const props = withDefaults(
   defineProps<{
@@ -15,8 +16,9 @@ const props = withDefaults(
     variant?: "solid" | "outline" | "soft" | "subtle";
     /** Shows the full name next to the acronym. */
     showName?: boolean;
+    tooltip?: boolean;
   }>(),
-  { size: "sm", variant: "subtle", showName: false },
+  { size: "sm", variant: "subtle", showName: false, tooltip: true },
 );
 
 /**
@@ -36,7 +38,9 @@ const color = computed(() =>
 );
 /** A name that only repeats the acronym is not shown twice. */
 const nameRepeats = computed(() => memberNameRepeatsAcronym(props.member));
-const tooltipDisabled = computed(() => props.showName || nameRepeats.value);
+const tooltipDisabled = computed(
+  () => !props.tooltip || props.showName || nameRepeats.value,
+);
 </script>
 
 <template>

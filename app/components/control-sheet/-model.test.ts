@@ -524,6 +524,16 @@ describe("buildAmendmentRows", () => {
     );
     expect(row!.position?.position).toBe("accept");
   });
+
+  it("leaves out the live view's sentence for one out of time", () => {
+    const [row] = buildAmendmentRows(
+      [amendment({ id: "a1", late: true, admission: "pending" })],
+      null,
+      null,
+    );
+    expect(row!.state).toBe("late");
+    expect(row!.note).toBeNull();
+  });
 });
 
 describe("newerPosition", () => {

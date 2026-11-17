@@ -12,6 +12,7 @@ import type {
   ControlSheetItemRowDto,
   DocumentAmendmentsDto,
   LiveStateDto,
+  MemberDto,
   VoteDto,
 } from "~~/shared/types/api";
 import {
@@ -125,6 +126,23 @@ const liveFetch = useFetch<LiveStateDto>(() => `${apiBase.value}/live-state`, {
 
 const agenda = useAssemblyAgenda();
 await Promise.all([sheetFetch, liveFetch, agenda]);
+
+/**
+ * Every member, inactive ones too, for the card a presenter's tag opens
+ * (its university and avatar). Lazy: the tags show without it.
+ */
+const membersFetch = useLazyFetch<MemberDto[]>("/api/members", {
+  key: "control-sheet-members",
+  query: { all: 1 },
+  server: false,
+  default: () => [],
+});
+const membersById = computed<ReadonlyMap<string, MemberDto>>(
+  () =>
+    new Map(
+      (membersFetch.data.value ?? []).map((member) => [member.id, member]),
+    ),
+);
 
 const live = computed(() => liveFetch.data.value ?? null);
 const items = computed(() => agenda.data.value?.items ?? []);
@@ -465,6 +483,7 @@ const generalShownCount = computed(
 const GENERAL_COLUMN_KEYS: Record<GeneralSortKey, string> = {
   number: "controlSheet.columns.number",
   item: "controlSheet.columns.item",
+  proponent: "controlSheet.columns.proponent",
   treated: "controlSheet.columns.treated",
   result: "controlSheet.columns.result",
   votes: "controlSheet.columns.votes",
@@ -472,7 +491,7 @@ const GENERAL_COLUMN_KEYS: Record<GeneralSortKey, string> = {
 };
 const AMENDMENT_COLUMN_KEYS: Record<AmendmentSortKey, string> = {
   code: "controlSheet.columns.code",
-  authors: "controlSheet.columns.authors",
+  authors: "controlSheet.columns.proponent",
   ceaPosition: "controlSheet.columns.ceaPosition",
   position: "controlSheet.columns.position",
   treated: "controlSheet.columns.treated",
@@ -749,14 +768,13 @@ function onAmendmentSaved(row: ControlSheetAmendmentRowDto): void {
   void sheetFetch.refresh({ dedupe: "cancel" });
 }
 
-// Ticking «Tratado» in the lists ---------------------------------------------------
+// Marking «Tratado» from the panel ----------------------------------------------
 
 /**
- * The marks on their way, by item or amendment id (cuids never collide),
- * from the lists and the panel alike: the box and the switch show the new
- * value at once, and a second change of that row waits for the answer, so
- * the two never send the same token and read their own write as someone
- * else's.
+ * The marks on their way, by item or amendment id (cuids never collide):
+ * the panel's switch and the list's box show the new value at once, and a
+ * second change of that row waits for the answer, so two changes never
+ * send the same token and read their own write as someone else's.
  */
 const treatedPending = ref<Record<string, boolean>>({});
 
@@ -804,19 +822,6 @@ async function saveTreated(
   }
 }
 
-function onItemTreated(row: GeneralSheetRow, value: boolean): void {
-  void saveTreated("item", row.id, itemTreatedControl(row), value);
-}
-
-function onAmendmentTreated(row: AmendmentSheetRow, value: boolean): void {
-  void saveTreated(
-    "amendment",
-    row.amendment.id,
-    amendmentTreatedControl(row),
-    value,
-  );
-}
-
 /** The mark on its way for the panel's row, if any. */
 const panelTreatedPending = computed(() => {
   const subject = panelSubject.value;
@@ -826,8 +831,21 @@ const panelTreatedPending = computed(() => {
 function onPanelTreated(value: boolean): void {
   const target = panelTarget.value;
   if (!target) return;
-  if (target.kind === "item") onItemTreated(target.row, value);
-  else onAmendmentTreated(target.row, value);
+  if (target.kind === "item") {
+    void saveTreated(
+      "item",
+      target.row.id,
+      itemTreatedControl(target.row),
+      value,
+    );
+  } else {
+    void saveTreated(
+      "amendment",
+      target.row.amendment.id,
+      amendmentTreatedControl(target.row),
+      value,
+    );
+  }
 }
 
 // Adding an item without documents ------------------------------------------------
@@ -1122,13 +1140,12 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
               v-else
               :rows="shownGeneral"
               :document-path="documentPath"
-              :can-mark="canModerate"
+              :members="membersById"
               :can-edit="canEdit || canModerate"
               :treated-pending="treatedPending"
               :sort="generalSort"
               :flat="generalFlat"
               @open="openItem"
-              @treated="onItemTreated"
               @sort="onGeneralSort"
             />
           </template>
@@ -1243,12 +1260,11 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
                 v-else
                 :rows="shownAmendments"
                 :amendment-path="amendmentPath"
-                :can-mark="canModerate"
+                :members="membersById"
                 :can-edit="canEdit || canModerate"
                 :treated-pending="treatedPending"
                 :sort="amendmentSort"
                 @open="openAmendment"
-                @treated="onAmendmentTreated"
                 @sort="onAmendmentSort"
               />
             </template>

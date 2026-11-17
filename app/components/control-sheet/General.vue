@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { MemberDto } from "~~/shared/types/api";
 import {
   DEFAULT_GENERAL_SORT,
   type GeneralSortKey,
@@ -16,8 +17,8 @@ import {
  * «General» of the control sheet: one row per agenda item it lists, under
  * the items they hang from. A table on large screens, a card per row below
  * them, both with the same fields. The row the Mesa has in debate is
- * marked (aria-current and a ring). The Mesa (`canMark`) ticks «Tratado»
- * right in the list; the page saves it.
+ * marked (aria-current and a ring). «Tratado» only shows here; the Mesa
+ * marks it in the row's panel.
  *
  * `rows` are the ones the page shows, already filtered and sorted; the
  * headers sort by their column (`sort`). In any order but the agenda's
@@ -28,31 +29,33 @@ import {
 const props = defineProps<{
   rows: GeneralSheetRow[];
   documentPath: (document: SheetRowDocument) => string;
-  canMark: boolean;
+  /** Every member by id, for the presenters' cards (empty while loading). */
+  members: ReadonlyMap<string, MemberDto>;
   /**
    * The reader edits something in a row's panel (control_sheet:edit or the
    * Mesa): the button that opens it reads «Editar» with a pencil, «Ver» with
    * an eye otherwise.
    */
   canEdit: boolean;
-  /** Marks on their way, by item id: the value the box shows meanwhile. */
+  /**
+   * Marks the panel has on their way, by item id: the value the box shows
+   * meanwhile.
+   */
   treatedPending: Readonly<Record<string, boolean>>;
   sort: SheetSort<GeneralSortKey>;
   flat: boolean;
 }>();
 const emit = defineEmits<{
   open: [row: GeneralSheetRow];
-  treated: [row: GeneralSheetRow, value: boolean];
   sort: [column: GeneralSortKey];
 }>();
 
 /** The row's box: what is on its way first, then what the sheet says. */
 function treatedOf(row: GeneralSheetRow): TreatedBox {
-  const { treated, lock } = itemTreatedControl(row);
   const pending = props.treatedPending[row.id];
   return pending === undefined
-    ? { treated, lock, saving: false }
-    : { treated: pending, lock, saving: true };
+    ? { treated: itemTreatedControl(row).treated, saving: false }
+    : { treated: pending, saving: true };
 }
 
 /**
@@ -130,8 +133,21 @@ function parentLine(row: GeneralSheetRow): string | null {
 const columns: { key: GeneralSortKey; label: string; class: string }[] = [
   { key: "number", label: "controlSheet.columns.number", class: "w-16" },
   { key: "item", label: "controlSheet.columns.item", class: "min-w-64" },
-  { key: "treated", label: "controlSheet.columns.treated", class: "w-28" },
-  { key: "result", label: "controlSheet.columns.result", class: "w-40" },
+  {
+    key: "proponent",
+    label: "controlSheet.columns.proponent",
+    class: "w-28 text-center",
+  },
+  {
+    key: "treated",
+    label: "controlSheet.columns.treated",
+    class: "w-28 text-center",
+  },
+  {
+    key: "result",
+    label: "controlSheet.columns.result",
+    class: "w-40 text-center",
+  },
   { key: "votes", label: "controlSheet.columns.votes", class: "w-64" },
   { key: "speakers", label: "controlSheet.columns.speakers", class: "w-48" },
 ];
@@ -147,7 +163,7 @@ const itemRows = computed(() =>
     <div
       class="border-default hidden overflow-x-auto rounded-lg border lg:block"
     >
-      <table class="w-full min-w-[72rem] text-left text-sm">
+      <table class="w-full min-w-[78rem] text-left text-sm">
         <caption class="sr-only">
           {{
             t("controlSheet.tabs.general")
@@ -188,7 +204,7 @@ const itemRows = computed(() =>
             <th
               v-if="row.kind === 'heading'"
               scope="row"
-              colspan="6"
+              colspan="7"
               class="text-highlighted px-3 py-2 font-semibold"
             >
               {{ row.title }}
@@ -240,17 +256,22 @@ const itemRows = computed(() =>
                   </li>
                 </ul>
               </th>
-              <td class="px-3 py-2">
+              <td class="px-3 py-2 text-center">
+                <ControlSheetProponents
+                  :documents="row.documents"
+                  :members="members"
+                  class="justify-center"
+                />
+              </td>
+              <td class="px-3 py-2 text-center">
                 <ControlSheetTreated
                   v-bind="treatedOf(row)"
-                  :editable="canMark"
                   :label="
                     t('controlSheet.treated.item', { title: rowLabel(row) })
                   "
-                  @change="(value) => emit('treated', row, value)"
                 />
               </td>
-              <td class="px-3 py-2">
+              <td class="px-3 py-2 text-center">
                 <ControlSheetResultBadge :result="row.outcome.result" />
               </td>
               <td class="space-y-2 px-3 py-2">
@@ -363,6 +384,17 @@ const itemRows = computed(() =>
             </ul>
           </div>
           <dl class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div v-if="row.documents.length > 0">
+              <dt class="text-muted text-xs">
+                {{ t("controlSheet.columns.proponent") }}
+              </dt>
+              <dd>
+                <ControlSheetProponents
+                  :documents="row.documents"
+                  :members="members"
+                />
+              </dd>
+            </div>
             <div>
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.treated") }}
@@ -370,11 +402,9 @@ const itemRows = computed(() =>
               <dd>
                 <ControlSheetTreated
                   v-bind="treatedOf(row)"
-                  :editable="canMark"
                   :label="
                     t('controlSheet.treated.item', { title: rowLabel(row) })
                   "
-                  @change="(value) => emit('treated', row, value)"
                 />
               </dd>
             </div>

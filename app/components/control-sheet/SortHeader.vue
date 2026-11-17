@@ -6,7 +6,9 @@ import { nextSort, type SheetSort } from "./-filters";
  * `aria-sort` on the sorted column only, and a button named after the
  * column and what pressing it does («Ordenar por Resultado, descendente»,
  * «Quitar el orden por Resultado»), since a fixed «Ordenar por» never says
- * which way. Classes given to it go on the `<th>`.
+ * which way. Classes given to it go on the `<th>`; a label that wraps
+ * follows its alignment (`text-center` on a centred column), the icon
+ * after its last word.
  */
 const props = defineProps<{
   label: string;
@@ -20,6 +22,11 @@ const emit = defineEmits<{ sort: [column: K] }>();
 const { t } = useI18n();
 
 const sorted = computed(() => props.sort.key === props.column);
+/** The label up to its last word, and that word, which keeps the icon. */
+const words = computed(() => {
+  const cut = props.label.lastIndexOf(" ") + 1;
+  return { head: props.label.slice(0, cut), tail: props.label.slice(cut) };
+});
 const ariaSort = computed(() => {
   if (!sorted.value) return undefined;
   return props.sort.dir === "asc" ? "ascending" : "descending";
@@ -46,17 +53,19 @@ const action = computed(() => {
   <th scope="col" :aria-sort="ariaSort" class="px-3 py-2 font-medium">
     <button
       type="button"
-      class="hover:text-default focus-visible:outline-primary -mx-1 inline-flex items-center gap-1 rounded px-1 py-0.5 text-left focus-visible:outline-2"
+      class="hover:text-default focus-visible:outline-primary -mx-1 rounded px-1 py-0.5 [text-align:inherit] focus-visible:outline-2"
       :class="sorted ? 'text-highlighted' : ''"
       :aria-label="action"
       @click="emit('sort', column)"
     >
-      <span>{{ label }}</span>
-      <UIcon
-        :name="icon"
-        :class="['size-3.5 shrink-0', sorted ? '' : 'text-dimmed']"
-        aria-hidden="true"
-      />
+      {{ words.head
+      }}<span class="whitespace-nowrap"
+        >{{ words.tail
+        }}<UIcon
+          :name="icon"
+          :class="['ms-1 size-3.5 align-middle', sorted ? '' : 'text-dimmed']"
+          aria-hidden="true"
+      /></span>
     </button>
   </th>
 </template>

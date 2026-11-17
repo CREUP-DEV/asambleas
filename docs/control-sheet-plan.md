@@ -372,18 +372,20 @@ updatedAt }`, `session:moderate`, the same `assertStatusChange` checks
   `numberAgendaItems` over every item before filtering; unlisted ones read
   «Sin publicar»; withheld titles stay masked. «Añadir punto» (sheet
   editors) lists items without documents.
-- General columns: Nº, Punto (its documents as links), Tratado, Resultado,
+- General columns: Nº, Punto (its documents as links), Proponente (the
+  main presenters of its documents by acronym, each once, as the server redacts it),
+  Tratado, Resultado,
   Votaciones (method, every non-zero count, unanimity, motions marked as
   such, the roll call in a popover), Intervinientes, Observaciones.
-- Enmiendas columns: Nº (code or «Sin número»), Presenta, Posición CEA,
+- Enmiendas columns: Nº (code or «Sin número»), Proponente (the authors
+  as member tags, the main one first), Posición CEA,
   Posición del proponente (read only, when the reader may see it), Tratado,
   Resultado, Votaciones, Intervinientes, Observaciones, in the console's
   order (`sortSessionAmendments`).
-- The table is compact and read only but for «Tratado», a box the Mesa
-  ticks right there (`ControlSheetTreated`, with the panel's lock token:
-  `itemTreatedControl`, `amendmentTreatedControl`); a row that counts as
-  treated by itself stays ticked and locked, the reason in a tooltip, and
-  everyone else reads the box disabled. A row opens a side panel
+- The table is compact and read only. «Tratado» shows there as a disabled
+  box (`ControlSheetTreated`); the Mesa marks it only in the row's panel,
+  with its lock token (`itemTreatedControl`, `amendmentTreatedControl`). A
+  row opens a side panel
   (`USlideover`) with everything that row edits: CEA position, observations,
   the Mesa's marks, manual result, item votes and motions, speaker
   corrections, history (who and when, with earlier texts to bring back) and

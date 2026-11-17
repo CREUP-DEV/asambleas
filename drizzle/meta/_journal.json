@@ -260,6 +260,13 @@
       "when": 1794866261991,
       "tag": "0036_user_avatars",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794918107513,
+      "tag": "0037_member_holder_name",
+      "breakpoints": true
     }
   ]
 }

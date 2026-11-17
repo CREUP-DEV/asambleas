@@ -19,6 +19,8 @@ export function toMemberDto(member: MemberRow): MemberDto {
   return {
     ...toMemberRef(member),
     university: member.university,
+    universityAcronym: member.universityAcronym,
+    holderName: member.holderName,
     region: member.region,
     source: member.source,
     active: member.active,
@@ -37,6 +39,8 @@ export function genericExecutiveMemberDto(areas: MemberDto[]): MemberDto {
   return {
     ...GENERIC_EXECUTIVE_MEMBER,
     university: null,
+    universityAcronym: null,
+    holderName: null,
     region: null,
     source: "manual",
     active: areas.some((area) => area.active),

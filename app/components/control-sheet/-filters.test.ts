@@ -105,6 +105,20 @@ const rows: GeneralSheetRow[] = [
         status: "published",
         voted: true,
         finalVote: vote({ result: "rejected" }),
+        proponent: {
+          id: "m1",
+          acronym: "UCM",
+          name: "Delegación Central de Estudiantes de la UCM",
+          kind: "asociado",
+        },
+        coProponents: [
+          {
+            id: "m2",
+            acronym: "CEUVa",
+            name: "Consejo de Estudiantes de la UVa",
+            kind: "asociado",
+          },
+        ],
       },
     ],
     outcome: { result: "rejected", treated: true, byVote: true },
@@ -295,12 +309,29 @@ describe("shownGeneralRows", () => {
     ).toEqual(["3", "1", "2a", "2b"]);
   });
 
+  it("sorts by main presenter, rows without one last either way", () => {
+    for (const dir of ["asc", "desc"] as const) {
+      expect(
+        ids(
+          shownGeneralRows(
+            rows,
+            { key: "proponent", dir },
+            EMPTY_GENERAL_FILTERS,
+          ),
+        ),
+      ).toEqual(["2a", "1", "2b", "3"]);
+    }
+  });
+
   it("searches numbers, titles, documents and speakers, accents aside", () => {
     const find = (query: string) =>
       [...matchingGeneralIds(rows, general({ query }))].sort();
     expect(find("2")).toEqual(["2a", "2b"]);
     expect(find("2.1")).toEqual(["2a"]);
     expect(find("becas")).toEqual(["2a"]);
+    expect(find("ucm")).toEqual(["2a"]);
+    expect(find("delegacion central")).toEqual(["2a"]);
+    expect(find("ceuva")).toEqual(["2a"]);
     expect(find("ana")).toEqual(["1"]);
     expect(find("informe presidencia")).toEqual(["1"]);
     expect(find("ELECCIÓN")).toEqual(["3"]);

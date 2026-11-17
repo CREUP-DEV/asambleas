@@ -23,8 +23,9 @@ import {
  * `?for=amendment` is the one exception, for the composers of amendments
  * and transactionals only: an account that presents amendments
  * (canNameExecutiveAuthors) gets the active members with the real areas,
- * to name them as authors. It carries members, never who acts for them,
- * and what that account reads outside the composer is the generic "CEA".
+ * to name them as authors. It carries members, never who acts for them
+ * nor who holds an office, and what that account reads outside the
+ * composer is the generic "CEA".
  */
 export default defineEventHandler(async (event): Promise<MemberDto[]> => {
   const actor = await requireActor(event);
@@ -44,7 +45,11 @@ export default defineEventHandler(async (event): Promise<MemberDto[]> => {
     .orderBy(desc(members.active), asc(members.acronym));
   // The general order of every list of members: asociados, sectorials, the
   // others and the offices (the generic "CEA" among them), each by acronym.
-  if (forAmendment) return orderMembers(rows.map(toMemberDto));
+  if (forAmendment) {
+    return orderMembers(
+      rows.map((row) => ({ ...toMemberDto(row), holderName: null })),
+    );
+  }
 
   return orderMembers(
     collapseExecutive(actor, rows.map(toMemberDto), genericExecutiveMemberDto),

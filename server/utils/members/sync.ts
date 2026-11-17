@@ -34,7 +34,8 @@ import {
  * roster sync changes. `updatedAt` and `syncedAt` are left out, since every
  * write moves them: an edit that changes nothing then writes no row
  * (recordAudit skips equal before/after). `intranetId` is kept, so a sync
- * that only stores or replaces the Intranet id still leaves its row.
+ * that only stores or replaces the Intranet id still leaves its row. The
+ * email and an office's holder are personal data and never kept.
  */
 export function memberAuditState(
   member: Pick<
@@ -243,6 +244,7 @@ export async function syncIntranetRoster(options: {
         name: members.name,
         university: members.university,
         universityAcronym: members.universityAcronym,
+        holderName: members.holderName,
         region: members.region,
         intranetId: members.intranetId,
         email: members.email,

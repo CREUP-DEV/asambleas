@@ -31,9 +31,9 @@ import {
  * earlier one), the CEA position of an amendment, the result noted by
  * hand, the Mesa's treated mark, the votes on an item (ItemVotes), and the
  * history. Each field saves on its
- * own with its own lock token (the treated mark through the page, which
- * also saves it from the lists: `treated`, `treatedPending`); a field someone else changed meanwhile
- * shows what is there now (and, for the observations, both texts to
+ * own with its own lock token (the treated mark through the page:
+ * `treated`, `treatedPending`; the lists only show it); a field someone else
+ * changed meanwhile shows what is there now (and, for the observations, both texts to
  * choose). The draft is kept apart from fetched data, so a refetch while
  * typing never replaces it.
  */
@@ -46,7 +46,7 @@ const props = defineProps<{
   target: RowPanelTarget | null;
   apiBase: string;
   can: { edit: boolean; moderate: boolean };
-  /** The treated mark on its way for this row (from here or the lists). */
+  /** The treated mark on its way for this row. */
   treatedPending?: boolean;
   /** What the votes on an item depend on besides the row. */
   voteContext: ItemVoteContext;

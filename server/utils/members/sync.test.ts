@@ -11,6 +11,7 @@ interface StoredMember {
   name: string;
   university: string | null;
   universityAcronym: string | null;
+  holderName: string | null;
   region: string | null;
   intranetId: number | null;
   email: string | null;
@@ -25,6 +26,7 @@ interface RosterRow {
   denomination: string | null;
   university?: string | null;
   autonomous_community?: string | null;
+  holder_name?: string | null;
 }
 
 const stored = (
@@ -34,6 +36,7 @@ const stored = (
   name: overrides.acronym,
   university: null,
   universityAcronym: null,
+  holderName: null,
   region: null,
   intranetId: null,
   email: null,
@@ -484,6 +487,7 @@ describe("syncIntranetRoster with the CAS list", () => {
         name: "Coordinación del CAS",
         university: null,
         universityAcronym: null,
+        holderName: null,
         region: null,
         intranetId: 40,
         email: "cas@creup.example",

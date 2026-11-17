@@ -24,6 +24,7 @@ import type {
   DocumentSummaryDto,
   HeadcountDto,
   LiveEventDto,
+  MemberRef,
   PositionDto,
   VoteDto,
 } from "~~/shared/types/api";
@@ -59,6 +60,10 @@ export interface SheetRowDocument {
   status: DocumentSummaryDto["status"];
   voted: boolean;
   finalVote: VoteDto | null;
+  /** The main presenter, as the server redacts it (offices may read "CEA"). */
+  proponent: MemberRef | null;
+  /** Those who present it with the main presenter, redacted the same way. */
+  coProponents: MemberRef[];
 }
 
 /** A row of «General». */
@@ -181,6 +186,8 @@ export function buildGeneralRows(
       status: document.status,
       voted: document.voted,
       finalVote: finalVotes.get(document.id) ?? null,
+      proponent: document.proponent,
+      coProponents: document.coProponents,
     });
     documentsByItem.set(document.agendaItemId, list);
   }
@@ -326,7 +333,10 @@ export function rowVoteEntries(row: GeneralSheetRow): RowVoteEntry[] {
 export interface AmendmentSheetRow {
   amendment: AmendmentDto;
   state: LiveAmendmentState;
-  /** What the badge alone does not say (replaced by T1, incorporated...). */
+  /**
+   * What the badge alone does not say (replaced by T1, incorporated...);
+   * never for one out of time, whose badge says it.
+   */
   note: LiveAmendmentNote | null;
   treated: boolean;
   /** Treated because the Mesa settled it in session. */
@@ -385,7 +395,8 @@ export function buildAmendmentRows(
     return {
       amendment: row.amendment,
       state: row.state,
-      note: liveAmendmentNote(row, rows),
+      // «Fuera de plazo» says it all: the live view's sentence is left out.
+      note: row.state === "late" ? null : liveAmendmentNote(row, rows),
       treated: autoTreated || Boolean(sheet?.treated),
       autoTreated,
       sheet,
@@ -407,7 +418,7 @@ export function buildAmendmentRows(
  */
 export type TreatedLock = "auto" | "result" | null;
 
-/** A row's treated mark as the box in the lists and the panel draw it. */
+/** A row's treated mark as the panel edits it and the lists show it. */
 export interface TreatedControl {
   treated: boolean;
   lock: TreatedLock;
@@ -415,10 +426,9 @@ export interface TreatedControl {
   token: string | null;
 }
 
-/** What the box draws: the value (the one on its way while it saves). */
+/** What the box in the lists draws: the value (the one on its way while it saves). */
 export interface TreatedBox {
   treated: boolean;
-  lock: TreatedLock;
   saving: boolean;
 }
 

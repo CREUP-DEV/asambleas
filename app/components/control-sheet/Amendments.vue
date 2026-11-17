@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AmendmentDto, MemberRef } from "~~/shared/types/api";
+import type { AmendmentDto, MemberDto, MemberRef } from "~~/shared/types/api";
 import { LIVE_STATE_COLORS } from "~/components/live-view/-model";
 import {
   DEFAULT_AMENDMENT_SORT,
@@ -14,52 +14,62 @@ import {
 
 /**
  * «Enmiendas» of the control sheet for one document: its amendments in the
- * console's order, with who presents each, the presenter's answer (when
- * the reader may see it), whether it was treated, its result and its vote.
- * A table on large screens, a card per amendment below them. The Mesa
- * (`canMark`) ticks «Tratada» right in the list; the page saves it.
- * `rows` are the ones the page shows, already filtered and sorted; the
- * headers sort by their column (`sort`).
+ * console's order, with who presents each («Proponente», tags with a card
+ * on hover, the main author first), the presenter's answer (when the
+ * reader may see it), whether it was treated, its result and its vote. A
+ * table on large screens, a card per amendment below them. «Tratada» only
+ * shows here; the Mesa marks it in the row's panel. `rows` are the ones
+ * the page shows, already filtered and sorted; the headers sort by their
+ * column (`sort`).
  */
 const props = defineProps<{
   rows: AmendmentSheetRow[];
   amendmentPath: (amendment: AmendmentDto) => string;
-  canMark: boolean;
+  /** Every member by id, for the presenters' cards (empty while loading). */
+  members: ReadonlyMap<string, MemberDto>;
   /**
    * The reader edits something in a row's panel (control_sheet:edit or the
    * Mesa): the button that opens it reads «Editar» with a pencil, «Ver» with
    * an eye otherwise.
    */
   canEdit: boolean;
-  /** Marks on their way, by amendment id: the value the box shows meanwhile. */
+  /**
+   * Marks the panel has on their way, by amendment id: the value the box
+   * shows meanwhile.
+   */
   treatedPending: Readonly<Record<string, boolean>>;
   sort: SheetSort<AmendmentSortKey>;
 }>();
 const emit = defineEmits<{
   open: [row: AmendmentSheetRow];
-  treated: [row: AmendmentSheetRow, value: boolean];
   sort: [column: AmendmentSortKey];
 }>();
 
 /** The row's box: what is on its way first, then what the sheet says. */
 function treatedOf(row: AmendmentSheetRow): TreatedBox {
-  const { treated, lock } = amendmentTreatedControl(row);
   const pending = props.treatedPending[row.amendment.id];
   return pending === undefined
-    ? { treated, lock, saving: false }
-    : { treated: pending, lock, saving: true };
+    ? { treated: amendmentTreatedControl(row).treated, saving: false }
+    : { treated: pending, saving: true };
 }
 
 const { t } = useI18n();
 
 /** The main author first, then the rest by acronym. */
-function authorsOf(amendment: AmendmentDto): string {
-  const authors: MemberRef[] = [...amendment.authors].sort((a, b) => {
-    if (a.id === amendment.mainAuthorId) return -1;
-    if (b.id === amendment.mainAuthorId) return 1;
-    return a.acronym.localeCompare(b.acronym);
-  });
-  return authors.map((author) => author.acronym).join(", ");
+/** The main author, then the rest by acronym (shown as «+N»). */
+function authorsOf(amendment: AmendmentDto): {
+  main: MemberRef[];
+  others: MemberRef[];
+} {
+  const main =
+    amendment.authors.find((author) => author.id === amendment.mainAuthorId) ??
+    amendment.authors[0];
+  return {
+    main: main ? [main] : [],
+    others: amendment.authors
+      .filter((author) => author.id !== main?.id)
+      .sort((a, b) => a.acronym.localeCompare(b.acronym)),
+  };
 }
 
 const openIcon = computed(() =>
@@ -96,15 +106,31 @@ const count = computed(() => props.rows.length);
 
 const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
   { key: "code", label: "controlSheet.columns.code", class: "w-24" },
-  { key: "authors", label: "controlSheet.columns.authors", class: "w-32" },
+  {
+    key: "authors",
+    label: "controlSheet.columns.proponent",
+    class: "w-32 text-center",
+  },
   {
     key: "ceaPosition",
     label: "controlSheet.columns.ceaPosition",
-    class: "w-32",
+    class: "w-32 text-center",
   },
-  { key: "position", label: "controlSheet.columns.position", class: "w-44" },
-  { key: "treated", label: "controlSheet.columns.treated", class: "w-28" },
-  { key: "result", label: "controlSheet.columns.result", class: "min-w-48" },
+  {
+    key: "position",
+    label: "controlSheet.columns.position",
+    class: "w-44 text-center",
+  },
+  {
+    key: "treated",
+    label: "controlSheet.columns.treated",
+    class: "w-28 text-center",
+  },
+  {
+    key: "result",
+    label: "controlSheet.columns.result",
+    class: "min-w-48 text-center",
+  },
   { key: "vote", label: "controlSheet.columns.vote", class: "w-56" },
 ];
 
@@ -162,8 +188,14 @@ function positionLabel(row: AmendmentSheetRow): string {
                 {{ codeOf(row.amendment) }}
               </ULink>
             </th>
-            <td class="px-3 py-2">{{ authorsOf(row.amendment) }}</td>
             <td class="px-3 py-2">
+              <ControlSheetMemberTags
+                v-bind="authorsOf(row.amendment)"
+                :members="members"
+                class="justify-center"
+              />
+            </td>
+            <td class="px-3 py-2 text-center">
               <span
                 v-if="row.sheet?.ceaPosition"
                 class="text-default text-sm font-medium"
@@ -173,31 +205,27 @@ function positionLabel(row: AmendmentSheetRow): string {
                 t("controlSheet.ceaPosition.none")
               }}</span>
             </td>
-            <td class="px-3 py-2">
+            <td class="px-3 py-2 text-center">
               <CommonStatusBadge
                 v-if="row.position"
                 kind="position"
                 :value="row.position.position"
-                size="xs"
               />
               <span v-else class="text-dimmed text-sm">{{
                 t("controlSheet.positionNone")
               }}</span>
             </td>
-            <td class="px-3 py-2">
+            <td class="px-3 py-2 text-center">
               <ControlSheetTreated
                 v-bind="treatedOf(row)"
-                :editable="canMark"
                 :label="
                   t('controlSheet.treated.amendment', {
                     code: codeOf(row.amendment),
                   })
                 "
-                feminine
-                @change="(value) => emit('treated', row, value)"
               />
             </td>
-            <td class="space-y-1 px-3 py-2">
+            <td class="space-y-1 px-3 py-2 text-center">
               <UBadge
                 :color="LIVE_STATE_COLORS[row.state]"
                 variant="subtle"
@@ -281,9 +309,14 @@ function positionLabel(row: AmendmentSheetRow): string {
           <dl class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div>
               <dt class="text-muted text-xs">
-                {{ t("controlSheet.columns.authors") }}
+                {{ t("controlSheet.columns.proponent") }}
               </dt>
-              <dd class="text-sm">{{ authorsOf(row.amendment) }}</dd>
+              <dd>
+                <ControlSheetMemberTags
+                  v-bind="authorsOf(row.amendment)"
+                  :members="members"
+                />
+              </dd>
             </div>
             <div>
               <dt class="text-muted text-xs">
@@ -300,7 +333,6 @@ function positionLabel(row: AmendmentSheetRow): string {
                   v-if="row.position"
                   kind="position"
                   :value="row.position.position"
-                  size="xs"
                 />
                 <span v-else class="text-dimmed text-sm">{{
                   t("controlSheet.positionNone")
@@ -314,14 +346,11 @@ function positionLabel(row: AmendmentSheetRow): string {
               <dd>
                 <ControlSheetTreated
                   v-bind="treatedOf(row)"
-                  :editable="canMark"
                   :label="
                     t('controlSheet.treated.amendment', {
                       code: codeOf(row.amendment),
                     })
                   "
-                  feminine
-                  @change="(value) => emit('treated', row, value)"
                 />
               </dd>
             </div>
