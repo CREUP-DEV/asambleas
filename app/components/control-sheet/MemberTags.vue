@@ -12,13 +12,17 @@ const props = defineProps<{
   others: MemberRef[];
   /** Every member by id, for the cards. */
   members: ReadonlyMap<string, MemberDto>;
+  /** Names the list for screen readers («Proponente», «Presenta»). */
+  label: string;
+  /** Heads the list «+N» opens («Otros proponentes»). */
+  othersTitle: string;
 }>();
 
 const { t } = useI18n();
 
 const othersText = computed(() =>
   t(
-    "controlSheet.morePresenters",
+    "controlSheet.moreMembers",
     {
       count: props.others.length,
       names: props.others.map((member) => member.name).join(", "),
@@ -32,7 +36,7 @@ const othersText = computed(() =>
   <ul
     v-if="main.length + others.length > 0"
     class="flex flex-wrap items-center gap-1 text-sm"
-    :aria-label="t('controlSheet.columns.proponent')"
+    :aria-label="label"
   >
     <li v-for="member in main" :key="member.id" class="flex items-center">
       <ControlSheetMemberTag :member="member" :members="members" />
@@ -46,7 +50,7 @@ const othersText = computed(() =>
         <template #content>
           <div class="max-w-xs space-y-2 p-3" aria-hidden="true">
             <p class="text-muted text-xs font-medium">
-              {{ t("controlSheet.otherPresenters") }}
+              {{ othersTitle }}
             </p>
             <ul class="space-y-1.5">
               <li v-for="member in others" :key="member.id">

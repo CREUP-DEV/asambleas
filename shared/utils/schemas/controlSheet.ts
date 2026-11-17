@@ -1,8 +1,5 @@
 import { z } from "zod/v4";
-import {
-  CEA_POSITIONS,
-  CONTROL_SHEET_MANUAL_RESULTS,
-} from "../../constants/domain";
+import { CONTROL_SHEET_MANUAL_RESULTS } from "../../constants/domain";
 import type {
   ControlSheetAmendmentBody,
   ControlSheetItemBody,
@@ -41,7 +38,6 @@ export const controlSheetItemBodySchema = z
 /** PATCH .../control-sheet/amendments/[amendment] (ControlSheetAmendmentBody). */
 export const controlSheetAmendmentBodySchema = z
   .strictObject({
-    ceaPosition: field(z.enum(CEA_POSITIONS).nullable()).optional(),
     observations: field(observations).optional(),
     treated: field(z.boolean()).optional(),
   })

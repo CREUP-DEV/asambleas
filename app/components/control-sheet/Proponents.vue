@@ -44,6 +44,8 @@ const missing = computed(() =>
       :main="presenters.main"
       :others="presenters.others"
       :members="members"
+      :label="t('controlSheet.columns.proponent')"
+      :others-title="t('controlSheet.otherPresenters')"
       class="[justify-content:inherit]"
     />
     <span v-if="missing" class="text-dimmed text-sm">{{

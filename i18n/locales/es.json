@@ -4454,8 +4454,10 @@
     "noVote": "Sin votar",
     "positionNone": "Sin respuesta",
     "proponentNone": "Sin proponente",
-    "morePresenters": "{count} proponente más: {names} | {count} proponentes más: {names}",
+    "moreMembers": "{count} más: {names}",
     "otherPresenters": "Otros proponentes",
+    "otherAuthors": "También la presentan",
+    "documentPresenter": "Proponente del documento",
     "emptyTitle": "Todavía no hay puntos con documentos",
     "emptyDescription": "La hoja muestra los puntos del orden del día que tienen documentos presentados o que se votan.",
     "amendmentsEmpty": "Este documento no tiene enmiendas que puedas ver.",
@@ -4476,10 +4478,10 @@
       "votes": "Votaciones",
       "speakers": "Intervinientes",
       "code": "Enmienda",
+      "authors": "Presenta",
       "position": "Respuesta del proponente",
       "vote": "Votación",
       "observations": "Observaciones",
-      "ceaPosition": "Posición CEA",
       "open": "Ver"
     },
     "treated": {
@@ -4515,17 +4517,6 @@
       "none": "Nadie",
       "times": "{label} ({count} veces)",
       "names": "{label}: ver quién habló"
-    },
-    "ceaPosition": {
-      "label": "Posición de la CEA",
-      "hint": "Lo que a la CEA le gustaría que saliera. Solo lo ven quienes leen la hoja.",
-      "none": "Sin posición",
-      "options": {
-        "accept": "Aceptar",
-        "transact": "Transaccionar",
-        "reject": "Rechazar",
-        "lapse": "Decae"
-      }
     },
     "manualResult": {
       "label": "Resultado anotado a mano",
@@ -4583,7 +4574,6 @@
       "impersonated": "{admin} actuando como esta cuenta",
       "events": {
         "control_sheet_observations_updated": "Observaciones",
-        "control_sheet_cea_position_changed": "Posición de la CEA",
         "control_sheet_treated_changed": "Marca de tratado",
         "control_sheet_result_changed": "Resultado a mano",
         "control_sheet_listed_changed": "En la hoja"
@@ -4630,8 +4620,7 @@
         "amendments": {
           "all": "Todas",
           "pending": "Pendientes",
-          "treated": "Tratadas",
-          "noCeaPosition": "Sin posición CEA"
+          "treated": "Tratadas"
         }
       },
       "button": "Filtros",
@@ -5991,7 +5980,6 @@
       "vote_recorded": "Resultado de una votación anotado",
       "decision_recorded": "Decisión anotada",
       "control_sheet_observations_updated": "Observaciones de la hoja de control cambiadas",
-      "control_sheet_cea_position_changed": "Posición de la CEA cambiada en la hoja de control",
       "control_sheet_treated_changed": "Marca de tratado cambiada en la hoja de control",
       "control_sheet_result_changed": "Resultado anotado a mano en la hoja de control",
       "control_sheet_listed_changed": "Punto añadido o quitado de la hoja de control",
@@ -6172,8 +6160,7 @@
           "note": "Nota"
         },
         "control_sheet": {
-          "result": "Resultado",
-          "ceaPosition": "Posición de la CEA"
+          "result": "Resultado"
         }
       }
     }

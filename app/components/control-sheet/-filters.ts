@@ -16,7 +16,7 @@
  */
 
 import type { LocationQuery } from "vue-router";
-import { CEA_POSITIONS, PROPONENT_POSITIONS } from "~~/shared/constants/domain";
+import { PROPONENT_POSITIONS } from "~~/shared/constants/domain";
 import type { ControlSheetResult } from "~~/shared/utils/controlSheet";
 import {
   LIVE_AMENDMENT_STATES,
@@ -53,7 +53,6 @@ export type GeneralSortKey = (typeof GENERAL_SORT_KEYS)[number];
 export const AMENDMENT_SORT_KEYS = [
   "code",
   "authors",
-  "ceaPosition",
   "position",
   "treated",
   "result",
@@ -202,10 +201,6 @@ function amendmentSortValue(
       return position;
     case "authors":
       return mainAuthorAcronym(row);
-    case "ceaPosition": {
-      const cea = row.sheet?.ceaPosition ?? null;
-      return cea === null ? null : CEA_POSITIONS.indexOf(cea);
-    }
     case "position": {
       const answer = row.position;
       return answer === null
@@ -233,12 +228,7 @@ export const GENERAL_VIEWS = [
 export type GeneralView = (typeof GENERAL_VIEWS)[number];
 
 /** The chips of «Enmiendas». «Pendientes» are the ones not treated yet. */
-export const AMENDMENT_VIEWS = [
-  "all",
-  "pending",
-  "treated",
-  "noCeaPosition",
-] as const;
+export const AMENDMENT_VIEWS = ["all", "pending", "treated"] as const;
 export type AmendmentView = (typeof AMENDMENT_VIEWS)[number];
 
 /** A result «General» filters by: one of the sheet's, or «Pendiente». */
@@ -363,7 +353,6 @@ export function amendmentRowMatches(
 ): boolean {
   if (filters.view === "pending" && row.treated) return false;
   if (filters.view === "treated" && !row.treated) return false;
-  if (filters.view === "noCeaPosition" && row.sheet?.ceaPosition) return false;
   if (filters.states.length > 0 && !filters.states.includes(row.state)) {
     return false;
   }
@@ -516,7 +505,6 @@ const GENERAL_SORT_SLUGS: Record<GeneralSortKey, string> = {
 const AMENDMENT_SORT_SLUGS: Record<AmendmentSortKey, string> = {
   code: "enmienda",
   authors: "presenta",
-  ceaPosition: "posicion-cea",
   position: "respuesta",
   treated: "tratada",
   result: "resultado",
@@ -532,7 +520,6 @@ const AMENDMENT_VIEW_SLUGS: Record<AmendmentView, string> = {
   all: "todas",
   pending: "pendientes",
   treated: "tratadas",
-  noCeaPosition: "sin-posicion-cea",
 };
 const RESULT_SLUGS: Record<ResultFilter, string> = {
   pending: "pendiente",

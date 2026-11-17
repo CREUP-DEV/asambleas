@@ -32,7 +32,8 @@ R-SES-04, R-VOT-01/03/04, R-TRZ-03/04 and R-OTR-02 in
   plus a way for someone outside the Mesa to write them down («esto puedes
   proponerme algo mejor»).
 - «Posición CEA» per amendment, new and shared: Aceptar, Transaccionar,
-  Rechazar, Decae.
+  Rechazar, Decae. Removed on 2026-11-17 (the presenter's answer is
+  enough); its columns wait for a release to drop them.
 - Used live and afterwards for the minutes. Excel download.
 
 ## Decisions taken from the user's words
@@ -53,8 +54,8 @@ R-SES-04, R-VOT-01/03/04, R-TRZ-03/04 and R-OTR-02 in
 - `portal` is offered only in AGETs (they vote through the portal); the
   other types get the four methods the user named.
 - The CAS (role `CAS`) gets no access: the user did not list it.
-- «Decae» goes into the CEA position only. The presenter's answer stays as
-  it is; an amendment that lapses is already a Mesa outcome.
+- An amendment that lapses is a Mesa outcome; the presenter's answer stays
+  as it is.
 - Every sheet reader, the CEA included, reads the presenter's answer to
   each amendment as soon as it is given, only in the sheet
   (`ControlSheetDto.positions`); everywhere else the assembly's
@@ -131,9 +132,7 @@ running on it.
   `observations_updated_by_user_id`), `result_updated_at`, `updated_at`
   (bookkeeping, never compared).
 - `control_sheet_amendments`: `id` (cuid), `amendment_id` (unique),
-  `assembly_id`, `cea_position` (`accept`, `transact`, `reject`, `lapse`)
-  with `cea_position_updated_at` and `_by_user_id`, the observations, the
-  manual treated mark with `treated_updated_at`, `updated_at`.
+  `assembly_id`, the observations, the manual treated mark with `treated_updated_at`, `updated_at`.
 - `control_sheet_observation_revisions`: every saved text with who and
   when (and the impersonation), readable with the view key, so an earlier
   text can be brought back. Text never goes into an event.
@@ -377,16 +376,16 @@ updatedAt }`, `session:moderate`, the same `assertStatusChange` checks
   Tratado, Resultado,
   Votaciones (method, every non-zero count, unanimity, motions marked as
   such, the roll call in a popover), Intervinientes, Observaciones.
-- Enmiendas columns: Nº (code or «Sin número»), Proponente (the authors
-  as member tags, the main one first), Posición CEA,
-  Posición del proponente (read only, when the reader may see it), Tratado,
+- Enmiendas columns: Nº (code or «Sin número»), Presenta (the authors as
+  member tags, the main one first), Respuesta del proponente (the answer of
+  the document's main presenter, named under the selector), Tratado,
   Resultado, Votaciones, Intervinientes, Observaciones, in the console's
   order (`sortSessionAmendments`).
 - The table is compact and read only. «Tratado» shows there as a disabled
   box (`ControlSheetTreated`); the Mesa marks it only in the row's panel,
   with its lock token (`itemTreatedControl`, `amendmentTreatedControl`). A
   row opens a side panel
-  (`USlideover`) with everything that row edits: CEA position, observations,
+  (`USlideover`) with everything that row edits: observations,
   the Mesa's marks, manual result, item votes and motions, speaker
   corrections, history (who and when, with earlier texts to bring back) and
   the 409 merge view. Observations: Enter makes a new line; saved with
@@ -414,7 +413,7 @@ rows, visibleIds)` with a new exported finder (no drafts), final votes in
   one query, item votes, motions, ballots, sheet rows of visible items and
   amendments only, turns through `toTurnDto`. A document whose amendments
   are all hidden from the reader gets no entry.
-- CEA positions, observations, marks and their editors live only in
+- Observations, marks and their editors live only in
   `ControlSheetDto` and the Excel, never in a shared DTO (amendment, agenda,
   live state, turns).
 - Every sheet endpoint resolves its subject with the reader's visibility
@@ -431,16 +430,15 @@ rows, visibleIds)` with a new exported finder (no drafts), final votes in
     Mesa: manual result, treated, postponed; a «Retirado» by hand only
     without documents), each field with its own
     permission and token, the whole body refused if one fails;
-  - `PATCH .../control-sheet/amendments/[amendment]` (edit: CEA position,
+  - `PATCH .../control-sheet/amendments/[amendment]` (edit:
     observations; Mesa: treated);
   - `GET .../session-progress` (moderate);
   - the vote and motion endpoints of sections 3 and 4.
 - Events:
   - entity `control_sheet`, entityId the sheet row's own id (so the stream
-    never tells which amendment the CEA is setting), payload `subjectType`
+    never tells which amendment someone wrote about), payload `subjectType`
     plus `titleDocumentPayload(item)` for items:
     `control_sheet_observations_updated` (`cleared` only),
-    `control_sheet_cea_position_changed` (changes),
     `control_sheet_treated_changed`, `control_sheet_postponed_changed`,
     `control_sheet_result_changed`, `control_sheet_listed_changed`;
   - entity `procedural_motion`: `procedural_motion_recorded` and
@@ -480,7 +478,7 @@ rows, visibleIds)` with a new exported finder (no drafts), final votes in
 ## 11. Phases (one commit each, verified)
 
 1. Permissions, section, read-only sheet from today's data, live.
-2. Sheet edits: observations with revisions, CEA position, listed items,
+2. Sheet edits: observations with revisions, listed items,
    manual result, the Mesa's marks, history, activity.
    Phases 1 and 2 can ship on their own, ready for the next assembly.
 3. Votes: item votes (console and sheet), methods, assent rows and

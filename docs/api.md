@@ -1708,7 +1708,7 @@ characters, public with the vote: the live state carries it).
   what the sheet noted about those items and amendments, and the votes on
   those items (`itemVotes`, voided ones too). `sessionStartedAt`
   is the first time the assembly went into session.
-- **Writing.** Observations, `listed` and the CEA position need
+- **Writing.** Observations and `listed` need
   `control_sheet:edit`; the result by hand and the
   treated mark `session:moderate`; a «Retirado» by hand only on an item
   without documents (422 `control_sheet_withdrawn_document`). Every field
@@ -1722,8 +1722,7 @@ characters, public with the vote: the live state carries it).
   `control_sheet` (entityId: the sheet row) with `subjectType` and
   `subjectId`: `control_sheet_observations_updated` (`revisionId`,
   `cleared`; the text stays in `control_sheet_observation_revisions`),
-  `control_sheet_cea_position_changed` and `control_sheet_result_changed`
-  (`changes`), `control_sheet_treated_changed` and
+  `control_sheet_result_changed` (`changes`), `control_sheet_treated_changed` and
   `control_sheet_listed_changed`. The activity shows them to the sheet's
   readers only, for items and amendments they read.
 

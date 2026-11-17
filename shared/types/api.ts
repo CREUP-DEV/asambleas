@@ -15,7 +15,6 @@ import type {
   ApprovalMethod,
   AssemblySettings,
   AssemblyStatus,
-  CeaPosition,
   ControlSheetManualResult,
   DecisionKind,
   DecisionMethod,
@@ -1601,9 +1600,6 @@ export interface ControlSheetAmendmentRowDto {
   id: string;
   amendmentId: string;
   documentId: string;
-  ceaPosition: CeaPosition | null;
-  ceaPositionEdited: ControlSheetEditDto | null;
-  ceaPositionUpdatedAt: IsoDate | null;
   treated: ControlSheetEditDto | null;
   treatedUpdatedAt: IsoDate | null;
   observations: string;
@@ -1634,11 +1630,10 @@ export interface ControlSheetItemBody {
 
 /**
  * PATCH /api/assemblies/[assembly]/control-sheet/amendments/[amendment]:
- * the CEA position and the observations (control_sheet:edit) and the Mesa's
- * treated mark (session:moderate), checked as ControlSheetItemBody.
+ * the observations (control_sheet:edit) and the Mesa's treated mark
+ * (session:moderate), checked as ControlSheetItemBody.
  */
 export interface ControlSheetAmendmentBody {
-  ceaPosition?: ControlSheetField<CeaPosition | null>;
   observations?: ControlSheetField<string>;
   treated?: ControlSheetField<boolean>;
 }
@@ -1655,7 +1650,6 @@ export interface ControlSheetHistoryEntryDto {
   /** The real Admin, only for the account acted as and for Admins. */
   impersonatedBy?: UserRef | null;
   text?: string;
-  ceaPosition?: { from: CeaPosition | null; to: CeaPosition | null };
   result?: {
     from: ControlSheetManualResult | null;
     to: ControlSheetManualResult | null;

@@ -491,8 +491,7 @@ const GENERAL_COLUMN_KEYS: Record<GeneralSortKey, string> = {
 };
 const AMENDMENT_COLUMN_KEYS: Record<AmendmentSortKey, string> = {
   code: "controlSheet.columns.code",
-  authors: "controlSheet.columns.proponent",
-  ceaPosition: "controlSheet.columns.ceaPosition",
+  authors: "controlSheet.columns.authors",
   position: "controlSheet.columns.position",
   treated: "controlSheet.columns.treated",
   result: "controlSheet.columns.result",
@@ -1187,6 +1186,27 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
                 class="w-full"
               />
             </UFormField>
+            <!-- Who answers the amendments: the document's main presenter. -->
+            <div
+              v-if="selectedDocument"
+              class="flex flex-wrap items-center gap-2 text-sm"
+            >
+              <span class="text-muted">{{
+                t("controlSheet.documentPresenter")
+              }}</span>
+              <ControlSheetMemberTags
+                :main="
+                  selectedDocument.proponent ? [selectedDocument.proponent] : []
+                "
+                :others="selectedDocument.coProponents"
+                :members="membersById"
+                :label="t('controlSheet.documentPresenter')"
+                :others-title="t('controlSheet.otherPresenters')"
+              />
+              <span v-if="!selectedDocument.proponent" class="text-dimmed">{{
+                t("controlSheet.proponentNone")
+              }}</span>
+            </div>
             <div
               v-if="amendmentsFetch.pending.value && !amendmentsData"
               class="space-y-3"

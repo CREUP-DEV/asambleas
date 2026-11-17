@@ -15,12 +15,20 @@ import { assemblies } from "./assembly";
 import { agendaItems } from "./agendaItem";
 import { amendments } from "./amendment";
 import { impersonations } from "./impersonation";
-import {
-  CEA_POSITIONS,
-  CONTROL_SHEET_MANUAL_RESULTS,
-} from "../../../shared/constants/domain";
+import { CONTROL_SHEET_MANUAL_RESULTS } from "../../../shared/constants/domain";
 
-export const ceaPositionEnum = pgEnum("cea_position", CEA_POSITIONS);
+/**
+ * The control sheet's old «Posición CEA», removed from the platform: the
+ * enum and the three cea_position columns below are no longer read nor
+ * written, and stay only until the next release drops them (a release must
+ * still run on the schema of the next one, AGENTS.md).
+ */
+export const ceaPositionEnum = pgEnum("cea_position", [
+  "accept",
+  "transact",
+  "reject",
+  "lapse",
+]);
 export const controlSheetResultEnum = pgEnum(
   "control_sheet_result",
   CONTROL_SHEET_MANUAL_RESULTS,
@@ -95,6 +103,7 @@ export const controlSheetAmendments = pgTable(
     amendmentId: text("amendment_id")
       .notNull()
       .references(() => amendments.id, { onDelete: "cascade" }),
+    /** Unused, waiting to be dropped (see ceaPositionEnum). */
     ceaPosition: ceaPositionEnum("cea_position"),
     ceaPositionUpdatedAt: at("cea_position_updated_at"),
     ceaPositionUpdatedByUserId: text(

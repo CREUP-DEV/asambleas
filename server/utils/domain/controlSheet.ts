@@ -22,10 +22,7 @@ import type {
   ControlSheetItemRowDto,
   ControlSheetPositionDto,
 } from "~~/shared/types/api";
-import type {
-  CeaPosition,
-  ControlSheetManualResult,
-} from "~~/shared/constants/domain";
+import type { ControlSheetManualResult } from "~~/shared/constants/domain";
 import {
   hiddenTitleItemIds,
   visibleAgendaItems,
@@ -160,13 +157,6 @@ function toAmendmentRowDto(
     id: row.id,
     amendmentId: row.amendmentId,
     documentId,
-    ceaPosition: row.ceaPosition,
-    ceaPositionEdited: editOf(
-      row.ceaPositionUpdatedAt,
-      row.ceaPositionUpdatedByUserId,
-      names,
-    ),
-    ceaPositionUpdatedAt: iso(row.ceaPositionUpdatedAt),
     treated: editOf(row.treatedAt, row.treatedByUserId, names),
     treatedUpdatedAt: iso(row.treatedUpdatedAt),
     observations: row.observations,
@@ -184,7 +174,6 @@ const itemRowUsers = (row: ItemSheetRow) => [
   row.observationsUpdatedByUserId,
 ];
 const amendmentRowUsers = (row: AmendmentSheetRow) => [
-  row.ceaPositionUpdatedByUserId,
   row.treatedByUserId,
   row.observationsUpdatedByUserId,
 ];
@@ -680,9 +669,8 @@ export async function updateSheetItem(
 }
 
 /**
- * Changes what the sheet notes about an amendment: the CEA position and
- * the observations (the sheet's editors) and the treated mark (the Mesa),
- * as updateSheetItem.
+ * Changes what the sheet notes about an amendment: the observations (the
+ * sheet's editors) and the treated mark (the Mesa), as updateSheetItem.
  */
 export async function updateSheetAmendment(
   actor: Actor,
@@ -690,7 +678,7 @@ export async function updateSheetAmendment(
   amendment: { id: string; documentId: string },
   body: AmendmentBody,
 ): Promise<ControlSheetAmendmentRowDto> {
-  if (body.ceaPosition || body.observations) requireEdit(actor);
+  if (body.observations) requireEdit(actor);
   if (body.treated) requireModerate(actor);
 
   return db.transaction(async (tx) => {
@@ -707,12 +695,6 @@ export async function updateSheetAmendment(
     if (!row) fail(404, "Enmienda no encontrada");
 
     const stale: string[] = [];
-    if (
-      body.ceaPosition &&
-      !sameToken(row.ceaPositionUpdatedAt, body.ceaPosition.updatedAt)
-    ) {
-      stale.push("ceaPosition");
-    }
     if (
       body.observations &&
       !sameToken(row.observationsUpdatedAt, body.observations.updatedAt)
@@ -741,19 +723,6 @@ export async function updateSheetAmendment(
     const now = new Date();
     const set: Partial<typeof controlSheetAmendments.$inferInsert> = {};
     const changes: SheetEvent[] = [];
-    if (body.ceaPosition && body.ceaPosition.value !== row.ceaPosition) {
-      set.ceaPosition = body.ceaPosition.value;
-      set.ceaPositionUpdatedAt = now;
-      set.ceaPositionUpdatedByUserId = actor.user.id;
-      changes.push({
-        type: "control_sheet_cea_position_changed",
-        payload: {
-          changes: {
-            ceaPosition: { from: row.ceaPosition, to: body.ceaPosition.value },
-          },
-        },
-      });
-    }
     if (body.observations && body.observations.value !== row.observations) {
       const text = body.observations.value;
       set.observations = text;
@@ -811,8 +780,6 @@ export async function updateSheetAmendment(
 
 // History ---------------------------------------------------------------
 
-const asPosition = (value: unknown): CeaPosition | null =>
-  typeof value === "string" ? (value as CeaPosition) : null;
 const asResult = (value: unknown): ControlSheetManualResult | null =>
   typeof value === "string" ? (value as ControlSheetManualResult) : null;
 
@@ -915,12 +882,6 @@ export async function loadSheetHistory(
     };
     if (typeof payload.revisionId === "string") {
       entry.text = textById.get(payload.revisionId) ?? "";
-    }
-    if (changes.ceaPosition) {
-      entry.ceaPosition = {
-        from: asPosition(changes.ceaPosition.from),
-        to: asPosition(changes.ceaPosition.to),
-      };
     }
     if (changes.result) {
       entry.result = {

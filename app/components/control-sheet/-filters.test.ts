@@ -469,9 +469,7 @@ const amendments: AmendmentSheetRow[] = [
   ),
   amendment(
     "a2",
-    {
-      sheet: { ceaPosition: "reject" } as AmendmentSheetRow["sheet"],
-    },
+    {},
     {
       position: null,
       authors: [
@@ -509,7 +507,7 @@ describe("shownAmendmentRows", () => {
     ).toEqual(["a1", "a2", "a3"]);
   });
 
-  it("puts no answer and no CEA position last either way", () => {
+  it("puts no answer last either way", () => {
     for (const dir of ["asc", "desc"] as const) {
       expect(
         amendmentIds(
@@ -519,15 +517,6 @@ describe("shownAmendmentRows", () => {
             EMPTY_AMENDMENT_FILTERS,
           ),
         ).at(-1),
-      ).toBe("a2");
-      expect(
-        amendmentIds(
-          shownAmendmentRows(
-            amendments,
-            { key: "ceaPosition", dir },
-            EMPTY_AMENDMENT_FILTERS,
-          ),
-        )[0],
       ).toBe("a2");
     }
   });
@@ -588,7 +577,7 @@ describe("shownAmendmentRows", () => {
     ).toEqual(["a3", "a1", "a2"]);
   });
 
-  it("filters by code, presenter, treated, CEA position and state", () => {
+  it("filters by code, presenter, treated and state", () => {
     const find = (filters: Partial<AmendmentSheetFilters>) =>
       amendmentIds(
         shownAmendmentRows(
@@ -601,7 +590,6 @@ describe("shownAmendmentRows", () => {
     expect(find({ query: "medicina" })).toEqual(["a2"]);
     expect(find({ view: "pending" })).toEqual(["a2"]);
     expect(find({ view: "treated" })).toEqual(["a1", "a3"]);
-    expect(find({ view: "noCeaPosition" })).toEqual(["a1", "a3"]);
     expect(find({ states: ["rejected", "approved"] })).toEqual(["a1", "a3"]);
   });
 
@@ -684,7 +672,7 @@ describe("the query", () => {
     const state = {
       sort: DEFAULT_AMENDMENT_SORT,
       filters: amendmentFilters({
-        view: "noCeaPosition",
+        view: "treated",
         states: ["late", "debating"],
       }),
     };
@@ -693,13 +681,13 @@ describe("the query", () => {
       orden: undefined,
       sentido: undefined,
       q: undefined,
-      ver: "sin-posicion-cea",
+      ver: "tratadas",
       resultado: undefined,
       estado: "en-debate,fuera-de-plazo",
     });
     expect(
       parseAmendmentSheetQuery({
-        ver: "sin-posicion-cea",
+        ver: "tratadas",
         estado: "en-debate,fuera-de-plazo",
       }),
     ).toEqual({
@@ -719,7 +707,7 @@ describe("the query", () => {
       parseGeneralSheetQuery({
         orden: "nada",
         sentido: "desc",
-        ver: "sin-posicion-cea",
+        ver: "tratadas",
         resultado: ["aprobado,raro", "decaido"],
       }),
     ).toEqual({

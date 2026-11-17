@@ -14,9 +14,9 @@ import {
 
 /**
  * «Enmiendas» of the control sheet for one document: its amendments in the
- * console's order, with who presents each («Proponente», tags with a card
- * on hover, the main author first), the presenter's answer (when the
- * reader may see it), whether it was treated, its result and its vote. A
+ * console's order, with who presents each («Presenta», tags with a card
+ * on hover, the main author first), the answer of the document's main
+ * presenter (when the reader may see it), whether it was treated, its result and its vote. A
  * table on large screens, a card per amendment below them. «Tratada» only
  * shows here; the Mesa marks it in the row's panel. `rows` are the ones
  * the page shows, already filtered and sorted; the headers sort by their
@@ -108,12 +108,7 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
   { key: "code", label: "controlSheet.columns.code", class: "w-24" },
   {
     key: "authors",
-    label: "controlSheet.columns.proponent",
-    class: "w-32 text-center",
-  },
-  {
-    key: "ceaPosition",
-    label: "controlSheet.columns.ceaPosition",
+    label: "controlSheet.columns.authors",
     class: "w-32 text-center",
   },
   {
@@ -133,12 +128,6 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
   },
   { key: "vote", label: "controlSheet.columns.vote", class: "w-56" },
 ];
-
-function positionLabel(row: AmendmentSheetRow): string {
-  return row.sheet?.ceaPosition
-    ? t(`controlSheet.ceaPosition.options.${row.sheet.ceaPosition}`)
-    : t("controlSheet.ceaPosition.none");
-}
 </script>
 
 <template>
@@ -192,18 +181,10 @@ function positionLabel(row: AmendmentSheetRow): string {
               <ControlSheetMemberTags
                 v-bind="authorsOf(row.amendment)"
                 :members="members"
+                :label="t('controlSheet.columns.authors')"
+                :others-title="t('controlSheet.otherAuthors')"
                 class="justify-center"
               />
-            </td>
-            <td class="px-3 py-2 text-center">
-              <span
-                v-if="row.sheet?.ceaPosition"
-                class="text-default text-sm font-medium"
-                >{{ positionLabel(row) }}</span
-              >
-              <span v-else class="text-dimmed text-sm">{{
-                t("controlSheet.ceaPosition.none")
-              }}</span>
             </td>
             <td class="px-3 py-2 text-center">
               <CommonStatusBadge
@@ -309,20 +290,16 @@ function positionLabel(row: AmendmentSheetRow): string {
           <dl class="grid grid-cols-1 gap-2 sm:grid-cols-2">
             <div>
               <dt class="text-muted text-xs">
-                {{ t("controlSheet.columns.proponent") }}
+                {{ t("controlSheet.columns.authors") }}
               </dt>
               <dd>
                 <ControlSheetMemberTags
                   v-bind="authorsOf(row.amendment)"
                   :members="members"
+                  :label="t('controlSheet.columns.authors')"
+                  :others-title="t('controlSheet.otherAuthors')"
                 />
               </dd>
-            </div>
-            <div>
-              <dt class="text-muted text-xs">
-                {{ t("controlSheet.columns.ceaPosition") }}
-              </dt>
-              <dd class="text-sm">{{ positionLabel(row) }}</dd>
             </div>
             <div>
               <dt class="text-muted text-xs">

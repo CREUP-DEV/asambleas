@@ -118,7 +118,6 @@ export const ACTIVITY_ACTION_ICONS = {
   vote_unanimity_changed: "i-lucide-users-round",
   decision_recorded: "i-lucide-gavel",
   control_sheet_observations_updated: "i-lucide-notebook-pen",
-  control_sheet_cea_position_changed: "i-lucide-flag",
   control_sheet_treated_changed: "i-lucide-circle-check",
   control_sheet_result_changed: "i-lucide-clipboard-check",
   control_sheet_listed_changed: "i-lucide-list-plus",
@@ -490,7 +489,6 @@ function eventDetails(
     case "document_updated":
     case "headcount_corrected":
     case "control_sheet_result_changed":
-    case "control_sheet_cea_position_changed":
       return changeDetails(action, payload);
     case "agenda_item_created":
       return [...autoItemDetails(payload), ...afterFinalDetails(payload)];

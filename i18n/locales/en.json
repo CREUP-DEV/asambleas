@@ -4454,8 +4454,10 @@
     "noVote": "Not voted",
     "positionNone": "No answer",
     "proponentNone": "No presenter",
-    "morePresenters": "{count} more presenter: {names} | {count} more presenters: {names}",
+    "moreMembers": "{count} more: {names}",
     "otherPresenters": "Other presenters",
+    "otherAuthors": "Also presented by",
+    "documentPresenter": "Document presenter",
     "emptyTitle": "No items with documents yet",
     "emptyDescription": "The sheet shows the agenda items that have documents presented or are voted on.",
     "amendmentsEmpty": "This document has no amendments you can see.",
@@ -4476,10 +4478,10 @@
       "votes": "Votes",
       "speakers": "Speakers",
       "code": "Amendment",
+      "authors": "Presented by",
       "position": "Presenter's answer",
       "vote": "Vote",
       "observations": "Observations",
-      "ceaPosition": "CEA position",
       "open": "View"
     },
     "treated": {
@@ -4515,17 +4517,6 @@
       "none": "Nobody",
       "times": "{label} ({count} times)",
       "names": "{label}: see who spoke"
-    },
-    "ceaPosition": {
-      "label": "CEA position",
-      "hint": "What the CEA would like the outcome to be. Only the sheet's readers see it.",
-      "none": "No position",
-      "options": {
-        "accept": "Accept",
-        "transact": "Negotiate",
-        "reject": "Reject",
-        "lapse": "Lapses"
-      }
     },
     "manualResult": {
       "label": "Result noted by hand",
@@ -4583,7 +4574,6 @@
       "impersonated": "{admin} acting as this account",
       "events": {
         "control_sheet_observations_updated": "Observations",
-        "control_sheet_cea_position_changed": "CEA position",
         "control_sheet_treated_changed": "Dealt-with mark",
         "control_sheet_result_changed": "Result by hand",
         "control_sheet_listed_changed": "On the sheet"
@@ -4630,8 +4620,7 @@
         "amendments": {
           "all": "All",
           "pending": "Pending",
-          "treated": "Treated",
-          "noCeaPosition": "No CEA position"
+          "treated": "Treated"
         }
       },
       "button": "Filters",
@@ -5991,7 +5980,6 @@
       "vote_recorded": "Vote result recorded",
       "decision_recorded": "Decision recorded",
       "control_sheet_observations_updated": "Control sheet observations changed",
-      "control_sheet_cea_position_changed": "CEA position changed on the control sheet",
       "control_sheet_treated_changed": "Dealt-with mark changed on the control sheet",
       "control_sheet_result_changed": "Result noted by hand on the control sheet",
       "control_sheet_listed_changed": "Item added to or removed from the control sheet",
@@ -6172,8 +6160,7 @@
           "note": "Note"
         },
         "control_sheet": {
-          "result": "Result",
-          "ceaPosition": "CEA position"
+          "result": "Result"
         }
       }
     }

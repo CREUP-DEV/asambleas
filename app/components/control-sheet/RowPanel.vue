@@ -1,8 +1,6 @@
 <script setup lang="ts">
 import {
-  CEA_POSITIONS,
   CONTROL_SHEET_MANUAL_RESULTS,
-  type CeaPosition,
   type ControlSheetManualResult,
 } from "~~/shared/constants/domain";
 import type {
@@ -28,13 +26,12 @@ import {
 /**
  * Everything one row of the control sheet edits, in a side panel: the
  * observations (shared, with who wrote each version and a way back to an
- * earlier one), the CEA position of an amendment, the result noted by
- * hand, the Mesa's treated mark, the votes on an item (ItemVotes), and the
- * history. Each field saves on its
+ * earlier one), the result noted by hand, the Mesa's treated mark, the
+ * votes on an item (ItemVotes), and the history. Each field saves on its
  * own with its own lock token (the treated mark through the page:
- * `treated`, `treatedPending`; the lists only show it); a field someone else
- * changed meanwhile shows what is there now (and, for the observations, both texts to
- * choose). The draft is kept apart from fetched data, so a refetch while
+ * `treated`, `treatedPending`; the lists only show it); a field someone
+ * else changed meanwhile shows what is there now (and, for the
+ * observations, both texts to choose). The draft is kept apart from fetched data, so a refetch while
  * typing never replaces it.
  */
 
@@ -284,34 +281,11 @@ async function saveField(
   }
 }
 
-const amendmentRow = computed(() =>
-  props.target?.kind === "amendment" ? (props.target.row.sheet ?? null) : null,
-);
 const itemRow = computed(() =>
   props.target?.kind === "item" ? (props.target.row.sheet ?? null) : null,
 );
 
 const NONE = "none";
-const positionItems = computed(() => [
-  { value: NONE, label: t("controlSheet.ceaPosition.none") },
-  ...CEA_POSITIONS.map((value) => ({
-    value,
-    label: t(`controlSheet.ceaPosition.options.${value}`),
-  })),
-]);
-const position = computed<string>({
-  get: () => amendmentRow.value?.ceaPosition ?? NONE,
-  set: (value) => {
-    const next = value === NONE ? null : (value as CeaPosition);
-    if (next === (amendmentRow.value?.ceaPosition ?? null)) return;
-    void saveField("ceaPosition", {
-      ceaPosition: {
-        value: next,
-        updatedAt: amendmentRow.value?.ceaPositionUpdatedAt ?? null,
-      },
-    });
-  },
-});
 
 /** A «Retirado» by hand is for items without documents only. */
 const resultItems = computed(() => {
@@ -440,16 +414,6 @@ function historyDetail(
   entry: ControlSheetHistoryDto["entries"][number],
 ): string {
   const word = (value: boolean) => t(value ? "common.yes" : "common.no");
-  if (entry.ceaPosition) {
-    const label = (value: CeaPosition | null) =>
-      value
-        ? t(`controlSheet.ceaPosition.options.${value}`)
-        : t("controlSheet.ceaPosition.none");
-    return t("controlSheet.panel.change", {
-      from: label(entry.ceaPosition.from),
-      to: label(entry.ceaPosition.to),
-    });
-  }
   if (entry.result) {
     const label = (value: ControlSheetManualResult | null) =>
       value
@@ -483,22 +447,6 @@ function historyDetail(
         <p v-if="!can.edit && !can.moderate" class="text-muted text-sm">
           {{ t("controlSheet.panel.readOnly") }}
         </p>
-
-        <!-- CEA position (amendments) -->
-        <UFormField
-          v-if="target.kind === 'amendment'"
-          :label="t('controlSheet.ceaPosition.label')"
-          :description="t('controlSheet.ceaPosition.hint')"
-          :help="editedLine(amendmentRow?.ceaPositionEdited ?? null)"
-        >
-          <USelect
-            v-model="position"
-            :items="positionItems"
-            value-key="value"
-            :disabled="!can.edit || busy !== null"
-            class="w-full sm:w-64"
-          />
-        </UFormField>
 
         <!-- Treated -->
         <div class="space-y-1">

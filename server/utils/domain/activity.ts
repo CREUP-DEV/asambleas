@@ -903,7 +903,6 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   speakers_visibility_changed: ["visible", "reason"],
   // Never the observations' text nor the row's ids.
   control_sheet_observations_updated: ["subjectType", "cleared"],
-  control_sheet_cea_position_changed: ["subjectType", "changes"],
   control_sheet_treated_changed: ["subjectType", "treated"],
   control_sheet_result_changed: ["subjectType", "changes"],
   control_sheet_listed_changed: ["subjectType", "listed"],
