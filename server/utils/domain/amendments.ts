@@ -3514,6 +3514,41 @@ export async function publishAmendments(
 }
 
 /**
+ * Accepts by itself, as it would have the moment it became answerable, every
+ * formal amendment among `ids` of the document that can be answered now and
+ * has no answer yet (autoAcceptFormal): for the ones that became answerable
+ * before the automatic answer existed (backfillFormalAnswers). The same
+ * locks as publishAmendments; `ctx.actor` is who made them answerable.
+ */
+export async function acceptAnswerableFormalAmendments(
+  ctx: DocumentAmendmentContext,
+  ids: string[],
+): Promise<void> {
+  if (ids.length === 0) return;
+  const { document } = ctx;
+  await db.transaction(async (tx) => {
+    const documentRow = await lockDocumentRow(tx, document.id, "share");
+    const sourceMap = await loadSourceMap(tx, document.id);
+    const overIds = transactionalsOverIds(sourceMap, ids);
+    const lockedAll = await lockAmendments(
+      tx,
+      document.id,
+      unique([...ids, ...overIds]),
+    );
+    const parties =
+      overIds.length > 0 ? await lockParties(tx, overIds, "share") : [];
+    await autoAcceptFormal(tx, ctx, {
+      ids,
+      lockedIds: lockedAll.map((row) => row.id),
+      sourceMap,
+      parties,
+      rule: documentRow.acceptedAmendments,
+      voted: documentVoted(documentRow),
+    });
+  });
+}
+
+/**
  * What still keeps a validated amendment from going back to review, read
  * under the document lock: the Mesa has it on screen, or a pending
  * transactional builds on it (it builds only on published, admitted
