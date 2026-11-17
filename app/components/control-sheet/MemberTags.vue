@@ -4,9 +4,10 @@ import type { MemberDto, MemberRef } from "~~/shared/types/api";
 /**
  * Who presents something in the control sheet: the main presenters as
  * tags with their card (ControlSheetMemberTag), then «+N» for the rest,
- * listed when the pointer is over it with their whole denomination, never
- * cut, and a council's university under it (councils share their
- * denominations). Screen readers read the same from the «+N» itself.
+ * listed when the pointer is over it as the same cards with their acronym
+ * tag (ControlSheetMemberCard: avatar, whole denomination never cut, a
+ * council's university, since councils share their denominations).
+ * Screen readers read the names from the «+N» itself.
  */
 const props = defineProps<{
   main: MemberRef[];
@@ -20,11 +21,6 @@ const props = defineProps<{
 }>();
 
 const { t } = useI18n();
-
-/** Its denomination, unless it repeats the acronym. */
-function nameOf(member: MemberRef): string | null {
-  return memberNameRepeatsAcronym(member) ? null : member.name.trim();
-}
 
 /** A council's university, from the full member list. */
 function universityOf(member: MemberRef): string | null {
@@ -75,28 +71,13 @@ const othersText = computed(() =>
             <p class="text-muted text-xs font-medium">
               {{ othersTitle }}
             </p>
-            <ul class="space-y-2">
-              <li
-                v-for="member in others"
-                :key="member.id"
-                class="flex items-start gap-2"
-              >
-                <CommonMemberBadge
+            <ul class="space-y-3">
+              <li v-for="member in others" :key="member.id">
+                <ControlSheetMemberCard
                   :member="member"
-                  size="sm"
-                  :tooltip="false"
+                  :members="members"
+                  tag
                 />
-                <div class="min-w-0 text-sm">
-                  <p v-if="nameOf(member)" class="text-default break-words">
-                    {{ nameOf(member) }}
-                  </p>
-                  <p
-                    v-if="universityOf(member)"
-                    class="text-muted text-xs break-words"
-                  >
-                    {{ universityOf(member) }}
-                  </p>
-                </div>
               </li>
             </ul>
           </div>
