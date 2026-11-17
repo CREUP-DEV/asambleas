@@ -27,9 +27,11 @@ import {
   hiddenTitleItemIds,
   visibleAgendaItems,
 } from "~~/shared/utils/agendaSubmissions";
-import type {
-  controlSheetAmendmentBodySchema,
-  controlSheetItemBodySchema,
+import {
+  appendObservations,
+  CONTROL_SHEET_OBSERVATIONS_MAX_LENGTH,
+  type controlSheetAmendmentBodySchema,
+  type controlSheetItemBodySchema,
 } from "~~/shared/utils/schemas/controlSheet";
 import { getOptimisticLockTimestampMs } from "../optimisticLock";
 import { validateCuid } from "../validation";
@@ -496,6 +498,10 @@ interface SheetEvent {
   payload: Record<string, unknown>;
 }
 
+/** Reason of the 422 an addition to observations already near full gets. */
+export const CONTROL_SHEET_OBSERVATIONS_TOO_LONG_REASON =
+  "control_sheet_observations_too_long";
+
 /** Reason of the 422 a «Retirado» by hand gets on an item with documents. */
 export const CONTROL_SHEET_WITHDRAWN_REASON =
   "control_sheet_withdrawn_document";
@@ -671,6 +677,11 @@ export async function updateSheetItem(
 /**
  * Changes what the sheet notes about an amendment: the observations (the
  * sheet's editors) and the treated mark (the Mesa), as updateSheetItem.
+ * `observationsAppend` adds a text after the observations, whatever they
+ * are now (a note an editor sends from the amendment, which never sees the
+ * sheet's lock token): nothing is replaced, so it takes no token, and the
+ * earlier text stays in the row's history. 422 when the result would be
+ * longer than CONTROL_SHEET_OBSERVATIONS_MAX_LENGTH.
  */
 export async function updateSheetAmendment(
   actor: Actor,
@@ -678,7 +689,7 @@ export async function updateSheetAmendment(
   amendment: { id: string; documentId: string },
   body: AmendmentBody,
 ): Promise<ControlSheetAmendmentRowDto> {
-  if (body.observations) requireEdit(actor);
+  if (body.observations || body.observationsAppend) requireEdit(actor);
   if (body.treated) requireModerate(actor);
 
   return db.transaction(async (tx) => {
@@ -723,8 +734,24 @@ export async function updateSheetAmendment(
     const now = new Date();
     const set: Partial<typeof controlSheetAmendments.$inferInsert> = {};
     const changes: SheetEvent[] = [];
-    if (body.observations && body.observations.value !== row.observations) {
-      const text = body.observations.value;
+    const observationsText = body.observationsAppend
+      ? appendObservations(row.observations, body.observationsAppend)
+      : body.observations?.value;
+    if (
+      observationsText !== undefined &&
+      observationsText.length > CONTROL_SHEET_OBSERVATIONS_MAX_LENGTH
+    ) {
+      fail(
+        422,
+        "Las observaciones de esta enmienda en la hoja ya son demasiado largas para añadir este texto",
+        { reason: CONTROL_SHEET_OBSERVATIONS_TOO_LONG_REASON },
+      );
+    }
+    if (
+      observationsText !== undefined &&
+      observationsText !== row.observations
+    ) {
+      const text = observationsText;
       set.observations = text;
       set.observationsUpdatedAt = now;
       set.observationsUpdatedByUserId = actor.user.id;

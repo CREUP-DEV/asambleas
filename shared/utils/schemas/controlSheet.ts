@@ -39,9 +39,26 @@ export const controlSheetItemBodySchema = z
 export const controlSheetAmendmentBodySchema = z
   .strictObject({
     observations: field(observations).optional(),
+    observationsAppend: observations
+      .refine((value) => value.length > 0)
+      .optional(),
     treated: field(z.boolean()).optional(),
   })
-  .refine(atLeastOne, { message: "Nada que cambiar" });
+  .refine(atLeastOne, { message: "Nada que cambiar" })
+  .refine(
+    (value) =>
+      value.observations === undefined ||
+      value.observationsAppend === undefined,
+    { message: "O se reemplazan las observaciones o se añade a ellas" },
+  );
+
+/**
+ * The observations once `addition` is added after them, a blank line
+ * apart (ControlSheetAmendmentBody.observationsAppend).
+ */
+export function appendObservations(current: string, addition: string): string {
+  return current.trim() === "" ? addition : `${current}\n\n${addition}`;
+}
 
 /** GET .../control-sheet/history: one row of the sheet. */
 export const controlSheetHistoryQuerySchema = z.strictObject({

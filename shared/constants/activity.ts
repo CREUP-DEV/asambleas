@@ -241,6 +241,14 @@ export const AUDIT_ACTIONS = {
   DOCUMENT_NOTE_CREATED: "document_note.created",
   DOCUMENT_NOTE_UPDATED: "document_note.updated",
   DOCUMENT_NOTE_DELETED: "document_note.deleted",
+  /**
+   * POST, PUT and DELETE .../amendments/[amendment]/notes: the account
+   * wrote, changed or deleted a private note on an amendment. Target the
+   * amendment's document; assemblyId set; no payload: never its text.
+   */
+  AMENDMENT_NOTE_CREATED: "amendment_note.created",
+  AMENDMENT_NOTE_UPDATED: "amendment_note.updated",
+  AMENDMENT_NOTE_DELETED: "amendment_note.deleted",
 
   // Roles seed ------------------------------------------------------------
   /** `pnpm db:seed` added grants. Target role; source seed; after {added: keys}. */
@@ -587,6 +595,9 @@ const AUDIT_CATEGORIES: Record<AuditAction, ActivityCategory> = {
   "document_note.created": "document",
   "document_note.updated": "document",
   "document_note.deleted": "document",
+  "amendment_note.created": "document",
+  "amendment_note.updated": "document",
+  "amendment_note.deleted": "document",
   "rbac.seed": "roles",
   "impersonation.start": "access",
   "impersonation.stop": "access",

@@ -281,6 +281,13 @@
       "when": 1794939174978,
       "tag": "0039_assembly_settings_default",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1794943988913,
+      "tag": "0040_amendment_notes",
+      "breakpoints": true
     }
   ]
 }

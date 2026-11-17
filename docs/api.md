@@ -1427,6 +1427,17 @@ is that account). While the document is not published, GET answers
 | PUT    | `/api/assemblies/[assembly]/documents/[document]/notes/[note]` | visible    | `DocumentNoteUpdateBody` (`body`, `updatedAt`). Only the text changes. 404 if it is not the account's; 409 if `updatedAt` is no longer the stored one. Records `document_note.updated`. Returns `DocumentNoteDto`.         |
 | DELETE | `/api/assemblies/[assembly]/documents/[document]/notes/[note]` | visible    | 404 if it is not the account's. Records `document_note.deleted`. Returns `{ success: true }`.                                                                                                                              |
 
+The account's private notes on an amendment it reads, about the whole
+amendment (no anchor), under
+`/api/assemblies/[assembly]/documents/[document]/amendments/[amendment]/notes`
+(the amendment answers 404 to an account that may not read it). GET answers
+`AmendmentNotesDto` (`available` false, with no notes, for a draft); POST
+takes `AmendmentNoteCreateBody` (`body`, up to 4000 characters; 409 past 50
+notes on the amendment); PUT `.../[note]` takes `AmendmentNoteUpdateBody`
+(`body`, `updatedAt`); DELETE `.../[note]` returns `{ success: true }`. They
+record `amendment_note.created`, `.updated` and `.deleted`, with the
+amendment's document as target and no payload.
+
 ## Statistics
 
 Read only, for whoever holds `stats:view` (by default the Secretaría and
@@ -1689,6 +1700,14 @@ count (docs/design.md, "Headcounts and quorum"). Schemas:
 | PATCH  | `/api/assemblies/[assembly]/votes/[vote]/unanimity`               | see below            | `VoteUnanimityBody`. Returns `VoteDto`.                             |
 
 `control_sheet:edit` also reads. Schemas: `shared/utils/schemas/controlSheet.ts`, and `shared/utils/schemas/vote.ts` for votes.
+
+`ControlSheetAmendmentBody.observationsAppend` (never with `observations`)
+adds a text below the amendment's observations, a blank line apart,
+whatever they are now: it replaces nothing, so it takes no lock token, and
+it records `control_sheet_observations_updated` and a revision like any
+other save. 422 (`data.reason` `control_sheet_observations_too_long`) when
+the result would pass 5000 characters. The amendment's notes send it for a
+CEA account that edits the sheet.
 
 `ControlSheetDto.positions` gives every sheet reader the main presenter's
 answer (`PositionDto`) to each amendment it sees that has one, as soon as it

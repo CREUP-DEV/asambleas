@@ -664,6 +664,36 @@ export interface DocumentNoteUpdateBody {
   updatedAt: IsoDate;
 }
 
+/** A private note of the account on an amendment, about all of it. */
+export interface AmendmentNoteDto {
+  id: string;
+  body: string;
+  createdAt: IsoDate;
+  updatedAt: IsoDate;
+}
+
+/**
+ * GET .../amendments/[amendment]/notes: the account's own notes on the
+ * amendment, oldest first. `available` is false, with no notes, for a
+ * draft.
+ */
+export interface AmendmentNotesDto {
+  available: boolean;
+  notes: AmendmentNoteDto[];
+}
+
+/** POST .../amendments/[amendment]/notes. */
+export interface AmendmentNoteCreateBody {
+  body: string;
+}
+
+/** PUT .../amendments/[amendment]/notes/[note]: only its text changes. */
+export interface AmendmentNoteUpdateBody {
+  body: string;
+  /** The `updatedAt` the client saw (409 when it is no longer that). */
+  updatedAt: IsoDate;
+}
+
 export interface AgendaItemBody {
   parentId?: string | null;
   title: string;
@@ -1667,6 +1697,13 @@ export interface ControlSheetItemBody {
  */
 export interface ControlSheetAmendmentBody {
   observations?: ControlSheetField<string>;
+  /**
+   * Text added after the observations already there, a blank line apart,
+   * whatever they are now: it never replaces them, so it takes no lock
+   * token (the amendment's notes, «Añadir a la hoja de control»). Never
+   * with `observations`.
+   */
+  observationsAppend?: string;
   treated?: ControlSheetField<boolean>;
 }
 

@@ -860,6 +860,9 @@ async function remove(): Promise<void> {
       @conflict="emit('changed')"
     />
 
+    <!-- The account's own notes on it, about all of it. -->
+    <AmendmentNotes :amendment="amendment" :amendments-url="amendmentsUrl" />
+
     <!-- Everything else, folded. -->
     <div class="flex flex-col gap-4">
       <UButton

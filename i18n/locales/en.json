@@ -1893,6 +1893,21 @@
         "onScreen": "The Mesa has it on screen. Ask them to take it off the projection and try again.",
         "transactional": "A transactional amendment groups it: it can no longer go back to review."
       }
+    },
+    "notes": {
+      "add": "Add note",
+      "edit": "Change",
+      "delete": "Delete",
+      "empty": "You have no notes on this amendment yet.",
+      "sheetSaved": "Added to the control sheet's observations",
+      "sheetError": "It could not be added to the control sheet",
+      "destination": {
+        "legend": "Where to keep it",
+        "note": "Private note",
+        "sheet": "Observation in the control sheet",
+        "sheetHint": "Everyone who reads the control sheet will read it. It goes below the observations the amendment already has, without deleting them.",
+        "save": "Add to the sheet"
+      }
     }
   },
   "admin": {
@@ -6202,6 +6217,11 @@
         "created": "Private note written",
         "updated": "Private note changed",
         "deleted": "Private note deleted"
+      },
+      "amendment_note": {
+        "created": "Private note on an amendment written",
+        "updated": "Private note on an amendment changed",
+        "deleted": "Private note on an amendment deleted"
       },
       "notifications": {
         "update": "Email notices changed",

@@ -1893,6 +1893,21 @@
         "onScreen": "La Mesa la tiene en pantalla. Pide que la quite de la proyección y vuelve a intentarlo.",
         "transactional": "Una enmienda transaccional la agrupa: ya no puede volver a revisión."
       }
+    },
+    "notes": {
+      "add": "Añadir nota",
+      "edit": "Cambiar",
+      "delete": "Borrar",
+      "empty": "Todavía no tienes notas en esta enmienda.",
+      "sheetSaved": "Añadido a las observaciones de la hoja de control",
+      "sheetError": "No se ha podido añadir a la hoja de control",
+      "destination": {
+        "legend": "Dónde guardarla",
+        "note": "Nota privada",
+        "sheet": "Observación en la hoja de control",
+        "sheetHint": "La leerá todo el que lea la hoja de control. Se añade debajo de las observaciones que ya tenga la enmienda, sin borrarlas.",
+        "save": "Añadir a la hoja"
+      }
     }
   },
   "admin": {
@@ -6202,6 +6217,11 @@
         "created": "Nota privada escrita",
         "updated": "Nota privada cambiada",
         "deleted": "Nota privada borrada"
+      },
+      "amendment_note": {
+        "created": "Nota privada sobre una enmienda escrita",
+        "updated": "Nota privada sobre una enmienda cambiada",
+        "deleted": "Nota privada sobre una enmienda borrada"
       },
       "notifications": {
         "update": "Avisos por correo cambiados",
