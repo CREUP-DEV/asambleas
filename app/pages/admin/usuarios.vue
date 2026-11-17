@@ -47,7 +47,8 @@ import { roleLabelKey } from "~/components/shell/RoleBadge.vue";
  * `accessRevokedAt`) shows "Sin acceso" under its name, with the reason and
  * the date, and never offers "Acceder como" (the server refuses it too).
  * The access filter (`?access=revoked`, so it can be linked) lists only
- * those accounts; the server filters, since the list is paged.
+ * those accounts, and the role filter (`?role=<id>`) only those holding a
+ * role; the server filters, since the list is paged.
  *
  * The search runs as the person types (300 ms after the last key): the
  * field shows a spinner while it does, and a search that finds nobody says
@@ -148,10 +149,33 @@ const accessFilter = computed<AccessFilter>({
   },
 });
 
+/** Sentinel for "every role" in the role filter. */
+const ALL_ROLES = "__all__";
+
+/**
+ * The role filter, kept in the URL (`?role=<id>`) like the access filter.
+ * A role the list does not know shows no account.
+ */
+const roleFilter = computed<string>({
+  get: () => {
+    const raw = route.query.role;
+    const value = Array.isArray(raw) ? raw[0] : raw;
+    return typeof value === "string" && value ? value : ALL_ROLES;
+  },
+  set: (value) => {
+    void router.replace({
+      query: {
+        ...route.query,
+        role: value === ALL_ROLES ? undefined : value,
+      },
+    });
+  },
+});
+
 // A new filter starts again from the first page. Sync, so the list is
 // fetched once with both changes.
 watch(
-  accessFilter,
+  [accessFilter, roleFilter],
   () => {
     page.value = 1;
   },
@@ -196,6 +220,7 @@ const {
     pageSize: PAGE_SIZE,
     access: accessFilter.value === "revoked" ? "revoked" : undefined,
     q: searchQuery.value.trim() || undefined,
+    role: roleFilter.value === ALL_ROLES ? undefined : roleFilter.value,
   })),
 });
 
@@ -339,6 +364,24 @@ function revokedDetail(user: UserRow): string {
 
 function selectAccessFilter(value: unknown): void {
   accessFilter.value = value === "revoked" ? "revoked" : "all";
+}
+
+/** «Todos los roles», then every role by the name it reads. */
+const roleFilterItems = computed(() => [
+  { label: t("admin.users.roleFilter.all"), value: ALL_ROLES },
+  ...(rolesData.value?.data ?? []).map((role) => ({
+    label: roleName(role.name),
+    value: role.id,
+  })),
+]);
+
+function selectRoleFilter(value: unknown): void {
+  roleFilter.value =
+    typeof value === "string" && value !== "" ? value : ALL_ROLES;
+}
+
+function showAllRoles(): void {
+  roleFilter.value = ALL_ROLES;
 }
 
 function showAllAccounts(): void {
@@ -973,6 +1016,15 @@ function goToPage(next: number): void {
               class="w-52"
               @update:model-value="selectAccessFilter"
             />
+            <USelect
+              :model-value="roleFilter"
+              :items="roleFilterItems"
+              icon="i-lucide-shield"
+              :aria-label="t('admin.users.roleFilter.label')"
+              :ui="{ content: 'min-w-fit' }"
+              class="w-56"
+              @update:model-value="selectRoleFilter"
+            />
           </div>
         </template>
       </UDashboardToolbar>
@@ -1220,7 +1272,23 @@ function goToPage(next: number): void {
 
         <template #empty>
           <CommonEmptyState
-            v-if="accessFilter === 'revoked' && !activeSearch"
+            v-if="roleFilter !== ALL_ROLES && !activeSearch"
+            icon="i-lucide-shield-off"
+            :title="t('admin.users.roleFilter.none')"
+          >
+            <template #action>
+              <UButton
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-filter-x"
+                @click="showAllRoles"
+              >
+                {{ t("admin.users.roleFilter.showAll") }}
+              </UButton>
+            </template>
+          </CommonEmptyState>
+          <CommonEmptyState
+            v-else-if="accessFilter === 'revoked' && !activeSearch"
             icon="i-lucide-user-check"
             :title="t('admin.users.access.noneRevoked')"
           >

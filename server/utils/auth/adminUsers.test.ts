@@ -8,6 +8,7 @@ const {
   ADMIN_USER_COLUMNS,
   adminUsersAccessWhere,
   adminUsersQuerySchema,
+  adminUsersRoleWhere,
   adminUsersSearchWhere,
   adminUsersWhere,
 } = await import("./adminUsers");
@@ -97,5 +98,25 @@ describe("adminUsersSearchWhere", () => {
     const query = dialect.sqlToQuery(adminUsersWhere("revoked", "SE")!);
     expect(query.sql).toContain('"users"."access_revoked_at" is not null');
     expect(query.sql).toContain('"users"."name" ilike');
+  });
+
+  it("filters by role, alone or with the others", () => {
+    expect(adminUsersRoleWhere(undefined)).toBeUndefined();
+    const alone = dialect.sqlToQuery(adminUsersWhere("all", undefined, "r1")!);
+    expect(alone.sql).toBe('"users"."role_id" = $1');
+    expect(alone.params).toEqual(["r1"]);
+    const all = dialect.sqlToQuery(adminUsersWhere("revoked", "SE", "r1")!);
+    expect(all.sql).toContain('"users"."access_revoked_at" is not null');
+    expect(all.sql).toContain('"users"."role_id" =');
+  });
+});
+
+describe("the role filter in the query", () => {
+  it("reads a role id, blank being no filter", () => {
+    expect(adminUsersQuerySchema.parse({ role: " r1 " }).role).toBe("r1");
+    expect(adminUsersQuerySchema.parse({ role: "  " }).role).toBeUndefined();
+    expect(
+      adminUsersQuerySchema.safeParse({ role: "x".repeat(65) }).success,
+    ).toBe(false);
   });
 });

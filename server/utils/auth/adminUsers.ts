@@ -70,6 +70,12 @@ export const adminUsersQuerySchema = z.object({
     .max(100)
     .optional()
     .transform((value) => value?.trim() || undefined),
+  /** A role's id: only the accounts that hold it. */
+  role: z
+    .string()
+    .max(64)
+    .optional()
+    .transform((value) => value?.trim() || undefined),
 });
 
 /** The `where` of the users list for an access filter; none for `all`. */
@@ -102,12 +108,24 @@ export function adminUsersSearchWhere(q: string | undefined): SQL | undefined {
   );
 }
 
-/** Both filters of the users list together. */
+/** The `where` of the role filter: the accounts holding it; none without one. */
+export function adminUsersRoleWhere(
+  roleId: string | undefined,
+): SQL | undefined {
+  return roleId ? eq(users.roleId, roleId) : undefined;
+}
+
+/** Every filter of the users list together. */
 export function adminUsersWhere(
   access: AdminUsersAccessFilter,
   q: string | undefined,
+  roleId?: string,
 ): SQL | undefined {
-  return and(adminUsersAccessWhere(access), adminUsersSearchWhere(q));
+  return and(
+    adminUsersAccessWhere(access),
+    adminUsersSearchWhere(q),
+    adminUsersRoleWhere(roleId),
+  );
 }
 
 export const ADMIN_USER_RELATIONS = {

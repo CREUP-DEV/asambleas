@@ -1974,6 +1974,12 @@
         "showAll": "Ver todas las cuentas",
         "roleLocked": "Esta cuenta no tiene acceso, así que su rol no se puede cambiar."
       },
+      "roleFilter": {
+        "label": "Filtrar por rol",
+        "all": "Todos los roles",
+        "none": "Ninguna cuenta tiene este rol",
+        "showAll": "Ver todos los roles"
+      },
       "errors": {
         "targetRevoked": "Esta cuenta ya no tiene acceso porque la intranet la ha borrado, así que su rol no se puede cambiar."
       },

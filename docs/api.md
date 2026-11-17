@@ -254,7 +254,8 @@ at 05:00 Europe/Madrid with no actor, and it never confirms.
 default 50) and `access`: `all` (the default) or `revoked`, the accounts whose
 `access_revoked_at` is set. `q` searches, case-insensitively, the name, the email,
 the intranet initials and the acronym or name of the member the account
-acts for (at most 100 characters; blank is no search). Order is by name. An invalid value answers 400
+acts for (at most 100 characters; blank is no search). `role` (a role's id)
+lists only the accounts holding it; an unknown id lists none. Order is by name. An invalid value answers 400
 ("Paginación o filtro inválidos"). Each row (`AdminUserDto`) carries
 `accessRevokedAt` and `accessRevokedReason` (`intranet_deleted`), null while
 the account has access; `PUT .../member` and `.../permissions` return the

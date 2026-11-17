@@ -1974,6 +1974,12 @@
         "showAll": "Show all accounts",
         "roleLocked": "This account has no access, so its role cannot be changed."
       },
+      "roleFilter": {
+        "label": "Filter by role",
+        "all": "All roles",
+        "none": "No account has this role",
+        "showAll": "Show every role"
+      },
       "errors": {
         "targetRevoked": "This account no longer has access because the intranet deleted it, so its role cannot be changed."
       },

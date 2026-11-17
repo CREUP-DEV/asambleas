@@ -15,7 +15,7 @@ import { requireAnyPermission } from "../../../utils/auth/rbac";
  * `?access=revoked` lists only the accounts that lost access to the
  * platform (users.access_revoked_at set); the default lists every account.
  * `?q=` searches the name, the email, the intranet initials and the member
- * the account acts for.
+ * the account acts for; `?role=` (a role's id) lists only who holds it.
  */
 export default defineEventHandler(async (event) => {
   await requireAnyPermission(event, [PERMISSION_KEYS.USER_MANAGE_ROLES]);
@@ -28,13 +28,13 @@ export default defineEventHandler(async (event) => {
     });
   }
 
-  const { page, pageSize, access, q } = parsed.data;
+  const { page, pageSize, access, q, role } = parsed.data;
   const offset = (page - 1) * pageSize;
 
   const users = await db.query.users.findMany({
     columns: ADMIN_USER_COLUMNS,
     with: ADMIN_USER_RELATIONS,
-    where: adminUsersWhere(access, q),
+    where: adminUsersWhere(access, q, role),
     orderBy: (u, { asc }) => [asc(u.name)],
     limit: pageSize + 1,
     offset,
