@@ -1171,7 +1171,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
           <template v-else>
             <UFormField
               :label="t('controlSheet.document.label')"
-              class="max-w-xl"
+              class="max-w-3xl"
             >
               <USelectMenu
                 v-model="selectedDocumentId"
@@ -1179,6 +1179,10 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
                 value-key="value"
                 :search-input="{
                   placeholder: t('controlSheet.document.search'),
+                }"
+                :ui="{
+                  value: 'whitespace-normal text-start',
+                  itemLabel: 'whitespace-normal',
                 }"
                 class="w-full"
               />
