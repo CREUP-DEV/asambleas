@@ -944,14 +944,18 @@ export function defaultAmendmentFilters(): AmendmentFilters {
 
 /**
  * The filters a document's list opens on, from its presented amendments:
- * "Contenido" when some are content, otherwise "Todas" (only "de forma"
- * ones, or none yet), so it never opens on an empty "Contenido".
+ * "Contenido" when some are content (withdrawn ones apart, which it never
+ * lists), otherwise "Todas" (only "de forma" ones, or none yet), so it
+ * never opens on an empty "Contenido".
  */
 export function openingAmendmentFilters(
-  listed: readonly Pick<AmendmentDto, "kind">[],
+  listed: readonly (Pick<AmendmentDto, "kind"> &
+    Partial<Pick<AmendmentDto, "status">>)[],
 ): AmendmentFilters {
-  return listed.some((amendment) =>
-    CONTENT_AMENDMENT_KINDS.includes(amendment.kind),
+  return listed.some(
+    (amendment) =>
+      amendment.status !== "withdrawn" &&
+      CONTENT_AMENDMENT_KINDS.includes(amendment.kind),
   )
     ? defaultAmendmentFilters()
     : emptyAmendmentFilters();
@@ -964,15 +968,34 @@ export function openingAmendmentFilters(
  */
 export function revealAmendmentKind(
   filters: AmendmentFilters,
-  amendment: Pick<AmendmentDto, "kind">,
+  amendment: Pick<AmendmentDto, "kind"> & Partial<Pick<AmendmentDto, "status">>,
 ): AmendmentFilters {
+  if (amendmentKindChipOf(filters.kinds) === null) return filters;
+  // A kind chip never lists the withdrawn ones (withdrawnApart).
   if (
-    filters.kinds.includes(amendment.kind) ||
-    amendmentKindChipOf(filters.kinds) === null
+    filters.kinds.includes(amendment.kind) &&
+    !withdrawnApart(filters, amendment)
   ) {
     return filters;
   }
   return { ...filters, kinds: [] };
+}
+
+/**
+ * Withdrawn amendments have a section of their own ("Retiradas", for
+ * whoever reads them): "Contenido" and "Forma" never list them (user's
+ * decision of 2026-11-17), unless a status chosen in the filters asks for
+ * them.
+ */
+function withdrawnApart(
+  filters: AmendmentFilters,
+  amendment: Partial<Pick<AmendmentDto, "status">>,
+): boolean {
+  return (
+    amendment.status === "withdrawn" &&
+    amendmentKindChipOf(filters.kinds) !== null &&
+    !filters.statuses.includes("withdrawn")
+  );
 }
 
 /** Number of filters in use, for the filter button badge. */
@@ -1029,6 +1052,7 @@ export function filterAmendmentList(
     if (filters.kinds.length > 0 && !filters.kinds.includes(amendment.kind)) {
       return false;
     }
+    if (withdrawnApart(filters, amendment)) return false;
     if (
       filters.memberIds.length > 0 &&
       !amendment.authors.some((author) => filters.memberIds.includes(author.id))
@@ -1083,11 +1107,12 @@ export function filterAmendmentList(
  * The filters offered as visible chips over the list: the content
  * amendments (what the list opens on), the "de forma" ones, everything,
  * only the undecided ones, only the ones the account still has to read,
- * only the late ones. ("Mías" is the list of the actor's own amendments, a
- * tab of its own, not a filter.)
+ * only the late ones, only the withdrawn ones (shown only to whoever reads
+ * some). ("Mías" is the list of the actor's own amendments, a tab of its
+ * own, not a filter.)
  */
 export type AmendmentQuickFilter =
-  "content" | "formal" | "all" | "pending" | "unread" | "late";
+  "content" | "formal" | "all" | "pending" | "unread" | "late" | "withdrawn";
 
 export const AMENDMENT_QUICK_FILTERS: readonly AmendmentQuickFilter[] = [
   "content",
@@ -1096,6 +1121,7 @@ export const AMENDMENT_QUICK_FILTERS: readonly AmendmentQuickFilter[] = [
   "pending",
   "unread",
   "late",
+  "withdrawn",
 ];
 
 /**
@@ -1106,7 +1132,8 @@ export const AMENDMENT_QUICK_FILTERS: readonly AmendmentQuickFilter[] = [
  * - `all`: nothing filtered (a search apart);
  * - `pending`: only the presented, undecided ones, on time or late;
  * - `unread`: only the ones left to read, whatever their status or timing;
- * - `late`: only the late ones, whatever their status.
+ * - `late`: only the late ones, whatever their status;
+ * - `withdrawn`: only the withdrawn ones, on time or late.
  * Filters with no chip (kinds chosen in "Más filtros", member, review,
  * paragraph) may narrow `pending`, `unread` and `late` further; `all`
  * means none is set.
@@ -1128,12 +1155,9 @@ export function amendmentQuickFilterOf(
       ? "unread"
       : null;
   }
-  if (
-    filters.statuses.length === 1 &&
-    filters.statuses[0] === "submitted" &&
-    filters.late === "any"
-  ) {
-    return "pending";
+  if (filters.statuses.length === 1 && filters.late === "any") {
+    if (filters.statuses[0] === "submitted") return "pending";
+    if (filters.statuses[0] === "withdrawn") return "withdrawn";
   }
   if (filters.late === "late" && filters.statuses.length === 0) return "late";
   return null;
@@ -1165,11 +1189,11 @@ export function applyAmendmentQuickFilter(
   const kinds = amendmentKindChipOf(filters.kinds) ? [] : filters.kinds;
   const review =
     filters.review === "correction_requested" ? "any" : filters.review;
-  if (quick === "pending") {
+  if (quick === "pending" || quick === "withdrawn") {
     return {
       ...filters,
       kinds,
-      statuses: ["submitted"],
+      statuses: [quick === "pending" ? "submitted" : "withdrawn"],
       late: "any",
       mine: false,
       unread: false,

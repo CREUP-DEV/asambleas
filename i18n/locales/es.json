@@ -1397,7 +1397,8 @@
         "late": "Fuera de plazo",
         "mine": "Mías",
         "mineWaiting": "Mías. Hay 1 que espera por ti | Mías. Hay {count} que esperan por ti",
-        "unread": "Sin leer"
+        "unread": "Sin leer",
+        "withdrawn": "Retiradas"
       },
       "status": "En qué punto está",
       "kind": "Tipo de enmienda",

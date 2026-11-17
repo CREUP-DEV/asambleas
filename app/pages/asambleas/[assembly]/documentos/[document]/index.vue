@@ -1038,11 +1038,22 @@ function scrollToAmendment(
 }
 
 /** "Contenido" and "Forma": how many of each the list holds. */
+/** "Contenido" and "Forma" leave the withdrawn ones to "Retiradas". */
+const withdrawnTotal = computed(
+  () =>
+    list.listed.value.filter((amendment) => amendment.status === "withdrawn")
+      .length,
+);
 const kindTotals = computed(() => {
-  const content = list.listed.value.filter((amendment) =>
-    CONTENT_AMENDMENT_KINDS.includes(amendment.kind),
+  const content = list.listed.value.filter(
+    (amendment) =>
+      amendment.status !== "withdrawn" &&
+      CONTENT_AMENDMENT_KINDS.includes(amendment.kind),
   ).length;
-  return { content, formal: list.listed.value.length - content };
+  return {
+    content,
+    formal: list.listed.value.length - withdrawnTotal.value - content,
+  };
 });
 
 function selectAmendment(
@@ -2205,6 +2216,7 @@ const filteredBlockLabel = computed(() =>
                   :total="list.listed.value.length"
                   :kind-totals="kindTotals"
                   :unread="list.unreadIds.value.length"
+                  :withdrawn="withdrawnTotal"
                 />
               </div>
             </template>

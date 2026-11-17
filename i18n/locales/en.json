@@ -1397,7 +1397,8 @@
         "late": "Late",
         "mine": "Mine",
         "mineWaiting": "Mine. 1 waits for you | Mine. {count} wait for you",
-        "unread": "Unread"
+        "unread": "Unread",
+        "withdrawn": "Withdrawn"
       },
       "status": "Where it stands",
       "kind": "Kind of amendment",

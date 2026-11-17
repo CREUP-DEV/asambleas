@@ -1940,6 +1940,47 @@ describe("reader", () => {
     expect(ids("formal")).toEqual(["a2"]);
   });
 
+  it("keeps the withdrawn ones in a section of their own", () => {
+    const list = [
+      amendment("a1", []),
+      amendment("a2", [], { kind: "formal" }),
+      amendment("w1", [], { status: "withdrawn" }),
+      amendment("w2", [], { kind: "formal", status: "withdrawn" }),
+    ];
+    const ids = (quick: "content" | "formal" | "all" | "withdrawn") =>
+      filterAmendmentList(
+        list,
+        applyAmendmentQuickFilter(emptyAmendmentFilters(), quick),
+        null,
+      ).map((item) => item.id);
+    // Never in "Contenido" nor "Forma"; in "Todas" and "Retiradas".
+    expect(ids("content")).toEqual(["a1"]);
+    expect(ids("formal")).toEqual(["a2"]);
+    expect(ids("all")).toEqual(["a1", "a2", "w1", "w2"]);
+    expect(ids("withdrawn")).toEqual(["w1", "w2"]);
+    expect(
+      amendmentQuickFilterOf(
+        applyAmendmentQuickFilter(defaultAmendmentFilters(), "withdrawn"),
+      ),
+    ).toBe("withdrawn");
+    // Only withdrawn content: the list does not open on an empty "Contenido".
+    expect(
+      amendmentQuickFilterOf(
+        openingAmendmentFilters([
+          { kind: "partial", status: "withdrawn" },
+          { kind: "formal", status: "submitted" },
+        ]),
+      ),
+    ).toBe("all");
+    // Opening a withdrawn one lets the kind chip go.
+    expect(
+      revealAmendmentKind(defaultAmendmentFilters(), {
+        kind: "partial",
+        status: "withdrawn",
+      }).kinds,
+    ).toEqual([]);
+  });
+
   it("lets a kind chip go to show the amendment opened", () => {
     const content = defaultAmendmentFilters();
     expect(revealAmendmentKind(content, { kind: "formal" }).kinds).toEqual([]);

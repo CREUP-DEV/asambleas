@@ -61,6 +61,8 @@ const props = withDefaults(
     kindTotals?: { content: number; formal: number } | null;
     /** How many of them the account still has to read. */
     unread?: number;
+    /** How many of them are withdrawn (only who reads them gets any). */
+    withdrawn?: number;
   }>(),
   {
     canFilterMine: false,
@@ -73,6 +75,7 @@ const props = withDefaults(
     total: null,
     kindTotals: null,
     unread: 0,
+    withdrawn: 0,
   },
 );
 
@@ -83,6 +86,7 @@ function chipCount(value: AmendmentQuickFilter): number | null {
     return props.kindTotals?.[value] ?? null;
   }
   if (value === "unread") return props.unread > 0 ? props.unread : null;
+  if (value === "withdrawn") return props.withdrawn;
   return null;
 }
 
@@ -135,11 +139,18 @@ const quick = computed(() =>
   showingMine.value ? null : amendmentQuickFilterOf(filters.value),
 );
 
-/** "Sin leer" only while something is left, or while it is on. */
+/**
+ * "Sin leer" only while something is left, and "Retiradas" only while some
+ * are listed, or while either is on.
+ */
 const quickFilters = computed(() =>
-  AMENDMENT_QUICK_FILTERS.filter(
-    (value) => value !== "unread" || props.unread > 0 || filters.value.unread,
-  ),
+  AMENDMENT_QUICK_FILTERS.filter((value) => {
+    if (value === "unread") return props.unread > 0 || filters.value.unread;
+    if (value === "withdrawn") {
+      return props.withdrawn > 0 || quick.value === "withdrawn";
+    }
+    return true;
+  }),
 );
 
 function pick(value: AmendmentQuickFilter): void {
@@ -156,7 +167,9 @@ const popoverCount = computed(() =>
     ...filters.value,
     query: "",
     blockId: null,
-    ...(quick.value === "pending" ? { statuses: [] } : {}),
+    ...(quick.value === "pending" || quick.value === "withdrawn"
+      ? { statuses: [] }
+      : {}),
     ...(quick.value === "late" ? { late: "any" as const } : {}),
     ...(quick.value === "unread" ? { unread: false } : {}),
     ...(quick.value === "content" || quick.value === "formal"
