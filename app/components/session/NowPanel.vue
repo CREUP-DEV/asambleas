@@ -105,7 +105,7 @@ const lateCount = computed(() => session.queue.value.pending.length);
 const undecidedOpen = computed(
   () => session.amendments.value.filter(isSessionOpen).length,
 );
-const reasonText = useFinalVoteReasonText(session.label);
+const reasonText = useFinalVoteReasonText();
 const finalVote = computed(() => document.value?.finalVote ?? null);
 const finalVoteReasons = computed(() =>
   session.finalVoteReasons.value

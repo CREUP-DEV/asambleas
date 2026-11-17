@@ -672,12 +672,7 @@ describe("documentAgendaTrail", () => {
 describe("amendmentSheetKind", () => {
   it("reads «De forma» only for a formal amendment", () => {
     expect(amendmentSheetKind({ kind: "formal" })).toBe("formal");
-    for (const kind of [
-      "partial",
-      "totality_return",
-      "totality_alternative",
-      "transactional",
-    ] as const) {
+    for (const kind of ["partial", "transactional"] as const) {
       expect(amendmentSheetKind({ kind })).toBe("content");
     }
   });

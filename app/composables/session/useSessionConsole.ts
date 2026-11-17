@@ -104,8 +104,6 @@ export type SessionFinalVoteResult =
       conflicts: ConsolidationConflict[];
       undecided: string[];
       tie: boolean;
-      /** An approved totality return: the text goes back, no final vote. */
-      totalityReturn: string | null;
     };
 
 /** What recording an agenda item's vote came to, for its dialog. */
@@ -442,7 +440,6 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     sessionFinalVoteReasons({
       document: document.value ?? null,
       amendmentsLoaded: Boolean(amendmentsDto.value),
-      totalityReturnId: preview.value.totalityReturn?.id ?? null,
       blockers: finalVoteBlockers.value,
     }),
   );
@@ -1753,24 +1750,11 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         : [];
       const undecidedIds = sessionErrorIds(error, "undecided");
       const tie = data?.tie === true;
-      const totalityReturn =
-        typeof data?.totalityReturn === "string" ? data.totalityReturn : null;
-      if (
-        conflicts.length === 0 &&
-        undecidedIds.length === 0 &&
-        !tie &&
-        !totalityReturn
-      ) {
+      if (conflicts.length === 0 && undecidedIds.length === 0 && !tie) {
         api.notifyError(error, "session.errors.finalVote");
       }
       onConflict(error);
-      return {
-        ok: false,
-        conflicts,
-        undecided: undecidedIds,
-        tie,
-        totalityReturn,
-      };
+      return { ok: false, conflicts, undecided: undecidedIds, tie };
     }
   }
 

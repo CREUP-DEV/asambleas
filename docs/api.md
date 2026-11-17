@@ -813,8 +813,6 @@ removes them all.
 
 - Needs a published document with `voted`, in an assembly that is neither
   `draft` nor `closed`, and no final vote yet.
-- An approved totality return (devolución) sends the text back: it returns
-  409 with `{ totalityReturn: id }`, whatever the vote.
 - Every amendment must be decided first: otherwise 409 with
   `{ undecided: ids }`.
 - Records the vote on the whole text, whatever its result, as `finalVoteId`.
@@ -1014,14 +1012,25 @@ admission }`, `publish` being what happened to that amendment, plus
   `amendment:manage`; `session:moderate` alone answers 403. `ReclassifyBody`:
   the `kind` it becomes and the amendment's `updatedAt` for the optimistic
   lock) moves a `submitted` amendment between "de forma" (`formal`) and the
-  content kind (`partial`), whatever its review state. Only those two kinds
-  have a counterpart (`reclassifyTarget` in
-  `shared/utils/amendmentReclassify.ts`): a totality amendment or a
-  transactional, a `kind` that is not the other one of the two, a draft, a
-  decided amendment and a voted document all return 409. Nothing else about
-  the amendment changes. Records `amendment_reclassified`
-  (`{ from, to }`), shown in the amendment's history and in its authors'
-  news.
+  content kind (`partial`), whatever its review state, and also one the
+  main presenter's acceptance incorporated (`approved` with
+  `approvalMethod: "proponent"`), which changing that answer would reopen
+  (`canReclassifyAmendment`). Only those two kinds have a counterpart
+  (`reclassifyTarget` in `shared/utils/amendmentReclassify.ts`): a
+  transactional, a `kind` that is not the other one of the two, a draft,
+  any other decided amendment and a voted document all return 409. Records
+  `amendment_reclassified` (`{ from, to }`), shown in the amendment's
+  history and in its authors' news. Only the answer may change with it
+  (`reclassifyPositionPlan`): made `formal` while it can be answered and
+  nobody answered it, it is accepted by itself (see the automatic answer
+  below); made `partial` while its answer is still that automatic
+  acceptance (`accept`, and its latest `position_changed` has
+  `by: "auto"`), the answer goes back to `pending` (`position_changed`
+  with `by: "auto"`), which reopens it if that acceptance had incorporated
+  it (`amendment_reopened` with `reason: "position_changed"` and
+  `by: "auto"`). An answer given by hand stays. Locks: the document
+  (share), the amendment with the transactionals over it and what they
+  group, their acceptances, then its position row.
 - Correcting who presents an amendment: `POST .../[amendment]/authors`
   (`amendment:review` or `amendment:manage`; `session:moderate` alone
   answers 403. `AmendmentAuthorsBody`: `authorMemberIds`, at least one,
@@ -1135,7 +1144,8 @@ reject, transact, or back to pending, with an optional comment). Returns the
   it, with `by: "moderator"`), which the home page's news credit.
   `PositionDto.recordedBy` says who recorded the answer, as it was then:
   `"mesa"` when the amendment's latest `position_changed` has
-  `by: "moderator"`, `"presenter"` when it has `by: "proponent"`, so an
+  `by: "moderator"`, `"presenter"` when it has `by: "proponent"`, `"auto"`
+  when it has `by: "auto"` (the automatic answer below), so an
   answer keeps its author when the document later gets another main
   presenter. Without that event it compares the member of the user stored
   in `amendment_positions.decidedByUserId` with the document's current main
@@ -1166,6 +1176,28 @@ memberId }`, the main presenter) after `position_changed`, and closes the
 - Locks: the document (share), the amendment (and what a transactional
   replaces, with the other transactionals over that or over the amendment)
   in id order, its acceptances, then its position row.
+- The automatic answer: a "de forma" amendment (`kind: "formal"`) does not
+  wait for the main presenter. The moment it can be answered
+  (`positionBlocker`) with no answer yet (none, or `pending`), it is
+  accepted by itself, exactly as if the main presenter had accepted it
+  (`shouldAutoAcceptPosition`, `autoAcceptFormal`, which shares
+  `recordPosition` with this endpoint): the stored answer (with
+  `decidedByUserId` the user whose act made it answerable),
+  `position_changed` with `by: "auto"` (and `memberId`, the main
+  presenter) and, under the `incorporate` rule, the approval
+  (`amendment_approved` with `{ method: "proponent", byPosition: true,
+memberId, reason: "formal" }`) that closes the pending transactionals
+  over it. It runs at the end of the transaction that made it answerable,
+  under that path's locks plus the transactionals over it, their
+  acceptances and its position row: validating it with `publish`,
+  publishing it (not once the document is voted), admitting it (also a
+  readmission, or a failed vote to declare it inadmissible), the Mesa's
+  `reopen`, and reclassifying it as `formal`. Never a content amendment nor
+  a transactional, never after the final vote. The presenters see it
+  (`recordedBy: "auto"`) and change it with this endpoint like any answer
+  until the final vote. `position_changed` sends no email; the
+  `amendment_approved` email says it was accepted automatically, and the
+  news name nobody for it (`automatic`).
 
 **Outcome.** The body is an `OutcomeBody`; the response is an
 `AmendmentOutcomeDto`.
@@ -1514,7 +1546,10 @@ managers and the Mesa), soonest first:
   itself or came back by itself (`amendment_withdrawn` with
   `by: "sources_closed"`, `amendment_lapsed` with
   `reason: "sources_transacted"`, `amendment_reopened` with
-  `reason: "source_reopened"`), which nobody decided; the party, for an answer to a transactional; the main
+  `reason: "source_reopened"`) and for the automatic answer to a formal
+  amendment (`position_changed` or `amendment_reopened` with `by: "auto"`,
+  `amendment_approved` with `reason: "formal"`, which also carry
+  `automatic: true`), which nobody decided; the party, for an answer to a transactional; the main
   presenter, also when the Mesa recorded it, for an answer to an amendment
   (`position_changed`), for an amendment its acceptance incorporated
   (`amendment_approved` with method `proponent`) and for one a new answer
@@ -1644,6 +1679,8 @@ count (docs/design.md, "Headcounts and quorum"). Schemas:
 | PATCH  | `/api/assemblies/[assembly]/control-sheet/items/[item]`           | see below            | `ControlSheetItemBody`. Returns `ControlSheetItemRowDto`.           |
 | PATCH  | `/api/assemblies/[assembly]/control-sheet/amendments/[amendment]` | see below            | `ControlSheetAmendmentBody`. Returns `ControlSheetAmendmentRowDto`. |
 | GET    | `/api/assemblies/[assembly]/control-sheet/history?row=`           | `control_sheet:view` | `ControlSheetHistoryDto`: one sheet row's changes, newest first.    |
+| GET    | `/api/assemblies/[assembly]/control-sheet/activity`               | `control_sheet:view` | `ActivityPageDto`: the sheet's «Historial» (below).                 |
+| GET    | `/api/assemblies/[assembly]/control-sheet/activity/people`        | `control_sheet:view` | `UserRef[]`: whoever recorded a row of the «Historial».             |
 | POST   | `/api/assemblies/[assembly]/agenda/[item]/votes`                  | see below            | `ItemVoteBody`. Returns `ItemVoteResultDto`.                        |
 | GET    | `/api/assemblies/[assembly]/item-votes`                           | see below            | `ItemVotesDto`. Never with `?view=room`.                            |
 | DELETE | `/api/assemblies/[assembly]/votes/[vote]`                         | see below            | `VoteVoidBody`. Voids an item vote. Returns `VoteDto`.              |
@@ -1655,6 +1692,20 @@ count (docs/design.md, "Headcounts and quorum"). Schemas:
 answer (`PositionDto`) to each amendment it sees that has one, as soon as it
 is given, public or not yet. Only the sheet does:
 `AmendmentDto.position` and every other reader keep `canSeePositions`.
+
+**«Historial».** `GET .../control-sheet/activity` lists what changed in
+the sheet or about it, by anyone, newest first and paged like "Mi
+actividad" (`cursor`, `limit` up to 100): the sheet's notes, the main
+presenters' answers (`position_changed`) and the votes and decisions that
+settle items, documents and amendments (`CONTROL_SHEET_ACTIVITY_GROUPS`,
+`controlSheetActivityQuerySchema`). Filters: `group` (`sheet`, `answers`,
+`votes`, comma-separated), `subject` (`item:<id>` with its documents and
+their amendments, `document:<id>` with its amendments, or
+`amendment:<id>`), `actor` (a user id, from `.../activity/people`), and
+`from`/`to`. Each row is judged again for the reader as in "Mi actividad"
+(`toMeActivityItem`): what it may not read is left out, except the
+answers, which every sheet reader reads, as `ControlSheetDto.positions`.
+Never with `?view=room`.
 
 **Votes on an agenda item.** An item is voted either once per voted
 document (their final votes, above) or by itself: a ratification, an
@@ -1976,11 +2027,10 @@ the executive offices read as "CEA", and nothing unpublished goes in.
 The amendment template lists the document, where it changes ("título,
 sección o líneas": the headings above each change, `amendmentLocations`),
 the typology (supresión, adición or both, `amendmentTypology` over
-`changeKinds`; a totality return is a supresión of the whole document), who
-presents it (main author first), the amendments a transactional groups and,
-once settled, its outcome; then the change over the published text as the
-platform marks it (`previewAmendment`, added text underlined, removed text
-struck through) and its explanation.
+`changeKinds`), who presents it (main author first), the amendments a
+transactional groups and, once settled, its outcome; then the change over
+the published text as the platform marks it (`previewAmendment`, added
+text underlined, removed text struck through) and its explanation.
 
 **How it is built.** `server/utils/export/package/`: `planPackage` (pure)
 gives every path a piece and every piece a key, a hash of all it shows and

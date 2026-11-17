@@ -415,14 +415,12 @@ describe("amendment typology", () => {
   });
 
   it("reads the template's three typologies from the operations", () => {
-    expect(
-      amendmentTypology("partial", [{ op: "delete", blockIds: ["a2p"] }]),
-    ).toBe("suppression");
-    expect(amendmentTypology("partial", [replace("", 16, 22)])).toBe(
+    expect(amendmentTypology([{ op: "delete", blockIds: ["a2p"] }])).toBe(
       "suppression",
     );
+    expect(amendmentTypology([replace("", 16, 22)])).toBe("suppression");
     expect(
-      amendmentTypology("partial", [
+      amendmentTypology([
         {
           op: "insert",
           afterBlockId: "a2p",
@@ -430,11 +428,9 @@ describe("amendment typology", () => {
         },
       ]),
     ).toBe("addition");
-    expect(amendmentTypology("partial", [replace("Sevilla", 16, 22)])).toBe(
-      "both",
-    );
+    expect(amendmentTypology([replace("Sevilla", 16, 22)])).toBe("both");
     expect(
-      amendmentTypology("partial", [
+      amendmentTypology([
         { op: "delete", blockIds: ["a1p"] },
         {
           op: "insert",
@@ -443,7 +439,6 @@ describe("amendment typology", () => {
         },
       ]),
     ).toBe("both");
-    expect(amendmentTypology("totality_return", [])).toBe("suppression");
   });
 
   it("locates each change under its headings, each place once", () => {
@@ -577,7 +572,7 @@ describe("package PDFs", () => {
           transactedInto: [],
           justification: "Primer motivo.\n\nSegundo motivo.",
         },
-        typology: amendmentTypology("partial", ops),
+        typology: amendmentTypology(ops),
         locations: amendmentLocations(regulation, ops),
         fragment: previewAmendment(regulation, { id: "am1", ops }),
       },
@@ -599,40 +594,6 @@ describe("package PDFs", () => {
       expect(text).toContain(expected);
     }
     expect(text).not.toContain('"sup":true');
-  });
-
-  it("renders a totality return, which changes no text", async () => {
-    const definition = buildAmendmentPdf(
-      {
-        assembly: pdfAssembly,
-        document: {
-          title: "Posicionamiento",
-          reference: null,
-          kind: "positioning",
-        },
-        amendment: {
-          code: "ANEM1",
-          kind: "totality_return",
-          status: "submitted",
-          approvalMethod: null,
-          authors: ["ANEM"],
-          sourceCodes: [],
-          transactedInto: [],
-          justification: "",
-        },
-        typology: "suppression",
-        locations: [],
-        fragment: [],
-      },
-      "es",
-      brand,
-    );
-    const text = JSON.stringify(definition.content);
-    await render(definition);
-    expect(text).toContain("Todo el documento");
-    expect(text).toContain("Propone devolver el texto en su totalidad.");
-    expect(text).toContain("Sin explicación.");
-    expect(text).not.toContain("Resultado");
   });
 });
 

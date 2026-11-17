@@ -64,6 +64,9 @@ import {
  * - For the presenters of a document (main and co-presenters): what the
  *   Secretaría, the Mesa or the assembly settled about it
  *   (NEWS_DOCUMENT_TYPES), with no amendment.
+ * - For the same readers as the main presenter's answers: the automatic
+ *   answer to a formal amendment (isAutomaticAnswer), which is nobody's
+ *   decision either (`by` null, `automatic`).
  * Decisions the member took itself are left out, and so is anything the
  * actor cannot see. A transactional closing or coming back by itself is
  * nobody's decision (isAutomaticChange): it names nobody (`by` null) and
@@ -147,6 +150,25 @@ export function isAutomaticRestore(
   payload: Record<string, unknown>,
 ): boolean {
   return type === "amendment_reopened" && payload.reason === "source_reopened";
+}
+
+/**
+ * The automatic answer to a formal amendment, not the main presenter's
+ * decision (autoAcceptFormal in amendments.ts): accepted by itself
+ * (position_changed with `by: "auto"`), incorporated by that acceptance
+ * (amendment_approved with `reason: "formal"`), or back to unanswered and
+ * out of the text once it stopped being formal (position_changed and
+ * amendment_reopened with `by: "auto"`).
+ */
+export function isAutomaticAnswer(
+  type: string,
+  payload: Record<string, unknown>,
+): boolean {
+  return (
+    ((type === "position_changed" || type === "amendment_reopened") &&
+      payload.by === "auto") ||
+    (type === "amendment_approved" && payload.reason === "formal")
+  );
 }
 
 /** A transactional that closed or came back by itself. */
@@ -252,6 +274,8 @@ export function newsValue(
  * - nobody for a transactional that closed or came back by itself
  *   (isAutomaticChange): whoever settled or reopened what it grouped did
  *   not decide about it;
+ * - nobody for the automatic answer to a formal amendment
+ *   (isAutomaticAnswer);
  * - the party that answered a transactional (payload.memberId);
  * - the main presenter for its answer to an amendment, for the amendment
  *   its acceptance incorporated (amendment_approved with method
@@ -268,6 +292,7 @@ export function newsByMemberId(
   mainPresenterId: string | null = null,
 ): string | null {
   if (isAutomaticChange(type, payload)) return null;
+  if (isAutomaticAnswer(type, payload)) return null;
   if (type === "acceptance_recorded") return text(payload.memberId);
   if (type === "position_changed") {
     const memberId = text(payload.memberId);
@@ -314,6 +339,7 @@ export function isOthersDecision(
   mainPresenterId: string | null = null,
 ): boolean {
   if (isAutomaticChange(event.type, event.payload)) return true;
+  if (isAutomaticAnswer(event.type, event.payload)) return true;
   if (event.actorUserId === actor.userId) return Boolean(event.impersonationId);
   return (
     newsByMemberId(
@@ -486,6 +512,12 @@ export async function loadWorkNews(
             eq(events.type, "amendment_reopened"),
             sql`${events.payload}->>'reason' = 'source_reopened'`,
           ),
+          // Nor the automatic answer to a formal amendment (isAutomaticAnswer).
+          sql`${events.payload}->>'by' = 'auto'`,
+          and(
+            eq(events.type, "amendment_approved"),
+            sql`${events.payload}->>'reason' = 'formal'`,
+          ),
         ),
       ),
     )
@@ -628,6 +660,7 @@ export async function loadWorkNews(
       by: member ? redactMember(actor, toMemberRef(member)) : null,
       impersonatedBy: impersonatedByFor(self, row, impersonators),
       value: newsValue(row.type, row.payload),
+      ...(isAutomaticAnswer(row.type, row.payload) ? { automatic: true } : {}),
       at: row.createdAt.toISOString(),
     };
   });

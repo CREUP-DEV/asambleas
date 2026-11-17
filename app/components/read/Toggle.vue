@@ -1,9 +1,11 @@
 <script setup lang="ts">
 /**
- * "Marcar como leído": the account says by hand that it has read a
- * published document or amendment, and takes it back with the same button
- * ("Leído"). Opening one never marks it. Nothing shows for what takes no
- * mark (a draft, something not published) or before the marks load.
+ * The account's read mark of a published document or amendment. Reading
+ * one to its end marks it read (useAutoReadMark), so the button mostly
+ * takes that back («Marcar como no leído»); before that, or once taken
+ * back, it marks it read.
+ * Nothing shows for what takes no mark (a draft, something not published)
+ * or before the marks load.
  */
 const props = withDefaults(
   defineProps<{
@@ -59,12 +61,12 @@ async function toggle(): Promise<void> {
   <span v-if="mark" class="inline-flex">
     <UButton
       :size="size"
-      :color="read ? 'neutral' : 'primary'"
-      :variant="read ? 'outline' : 'soft'"
-      :icon="read ? 'i-lucide-check' : 'i-lucide-circle'"
-      :label="read ? t(`readMarks.read.${kind}`) : t(`readMarks.mark.${kind}`)"
-      :title="read ? t(`readMarks.unmark.${kind}`) : undefined"
-      :aria-pressed="read"
+      color="neutral"
+      :variant="read ? 'ghost' : 'soft'"
+      :icon="read ? 'i-lucide-eye-off' : 'i-lucide-check'"
+      :label="
+        read ? t(`readMarks.unmark.${kind}`) : t(`readMarks.mark.${kind}`)
+      "
       :loading="busy"
       data-testid="read-toggle"
       @click="toggle"

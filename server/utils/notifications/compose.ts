@@ -438,10 +438,13 @@ const COMPOSERS: Record<NotificationKind, Composer> = {
     switch (ctx.event.type) {
       case "amendment_approved":
         heading = "Tu enmienda está aprobada";
+        // A formal amendment is accepted by itself, not by the presenter.
         lead =
-          payload.method === "proponent"
-            ? `Quien presenta el documento ha aceptado tu enmienda ${c} ${of}, que queda incorporada al texto.`
-            : `La asamblea ha aprobado tu enmienda ${c} ${of}.`;
+          payload.method !== "proponent"
+            ? `La asamblea ha aprobado tu enmienda ${c} ${of}.`
+            : payload.reason === "formal"
+              ? `Tu enmienda de forma ${c} ${of} se ha aceptado automáticamente y queda incorporada al texto. Quien presenta el documento todavía puede cambiar esa respuesta.`
+              : `Quien presenta el documento ha aceptado tu enmienda ${c} ${of}, que queda incorporada al texto.`;
         break;
       case "amendment_rejected":
         heading = "Tu enmienda está rechazada";

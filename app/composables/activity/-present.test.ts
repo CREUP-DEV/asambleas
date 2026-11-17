@@ -253,6 +253,14 @@ describe("activityDetails", () => {
     expect(
       activityDetails(
         item({
+          action: "position_changed",
+          payload: { position: "accept", by: "auto" },
+        }),
+      ),
+    ).toEqual([{ type: "position", position: "accept", auto: true }]);
+    expect(
+      activityDetails(
+        item({
           action: "acceptance_recorded",
           payload: { decision: "rejected" },
         }),

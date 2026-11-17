@@ -4,8 +4,7 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
 /**
  * After a decision, offers to mark as lapsed ("decae") the undecided
  * amendments it leaves without object: those that change the same text,
- * incompatible or duplicate ones, those that depended on a rejected one, or
- * every other one once a totality return is approved.
+ * incompatible or duplicate ones, or those that depended on a rejected one.
  * Approved amendments that collide with the new one are shown as a warning,
  * because the final consolidation would refuse them.
  */
@@ -60,9 +59,7 @@ async function submit(): Promise<void> {
     :description="
       target?.status === 'rejected'
         ? t('session.lapse.descriptionRejected')
-        : target?.kind === 'totality_return'
-          ? t('session.lapse.descriptionTotality')
-          : t('session.lapse.descriptionApproved')
+        : t('session.lapse.descriptionApproved')
     "
   >
     <template #body>

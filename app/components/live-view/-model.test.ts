@@ -559,6 +559,14 @@ describe("live position line", () => {
     });
   });
 
+  it("says a formal amendment was accepted by itself", () => {
+    expect(livePositionLine(answered("accept", "auto"), presenter)).toEqual({
+      key: "amendment.position.answerAuto",
+      params: {},
+    });
+    expect(livePositionLine(answered("pending", "auto"), presenter)).toBeNull();
+  });
+
   it("says nothing without an answer, a position or a main presenter", () => {
     expect(livePositionLine(answered("pending"), presenter)).toBeNull();
     expect(livePositionLine(answered("pending", "mesa"), presenter)).toBeNull();

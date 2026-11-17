@@ -434,7 +434,6 @@ function voteCreated(): void {
           icon="i-lucide-file-question"
           size="sm"
           :title="t('session.composer.noPassage')"
-          :description="t('session.composer.noPassageHint')"
         />
         <div v-else class="grid gap-4 xl:grid-cols-2">
           <section class="min-w-0 space-y-2">

@@ -253,13 +253,12 @@ export const DOCUMENT_KIND_DEFAULTS: Record<
   },
 };
 
-export const AMENDMENT_KINDS = [
-  "partial",
-  "formal",
-  "totality_return",
-  "totality_alternative",
-  "transactional",
-] as const;
+/**
+ * The kinds of amendment. Amendments to the whole text (returning the
+ * document, an alternative text) were removed on 2026-11-17; their enum
+ * values stay in the database, unused (amendmentKindEnum).
+ */
+export const AMENDMENT_KINDS = ["partial", "formal", "transactional"] as const;
 export type AmendmentKind = (typeof AMENDMENT_KINDS)[number];
 
 export const AMENDMENT_STATUSES = [

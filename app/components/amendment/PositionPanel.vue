@@ -171,12 +171,16 @@ const isMainPresenter = computed(
 );
 const answer = computed(() => props.amendment.position?.position ?? "pending");
 /**
- * Who said it: the main presenter ("Respuesta de CEUM: la acepta"), or the
- * Mesa on its behalf ("La Mesa, en nombre de CEUM, la aceptó").
+ * Who said it: the main presenter ("Respuesta de CEUM: la acepta"), the
+ * Mesa on its behalf ("La Mesa, en nombre de CEUM, la aceptó"), or nobody
+ * (a formal amendment, accepted by itself).
  */
 const answerText = computed(() => {
   const value = answer.value;
   if (value === "pending") return null;
+  if (props.amendment.position?.recordedBy === "auto" && value === "accept") {
+    return t("amendment.position.answerAuto");
+  }
   return props.amendment.position?.recordedBy === "mesa"
     ? t(`amendment.position.answersByMesa.${value}`, {
         member: presenter.value,

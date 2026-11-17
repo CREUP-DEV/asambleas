@@ -1,9 +1,4 @@
 <script setup lang="ts">
-import {
-  ASSEMBLY_STATUSES,
-  ASSEMBLY_STATUS_TRANSITIONS,
-  type AssemblyStatus,
-} from "~~/shared/constants/domain";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type { AssemblyDto, ReviewQueueDto } from "~~/shared/types/api";
 import { errorStatus } from "~/composables/api/useApi";
@@ -18,8 +13,10 @@ import { affectsReviewQueue } from "~/components/review/-live";
 /**
  * Assembly hub: loads the assembly by slug (or id), shares it with the
  * section pages through useCurrentAssembly, and renders its dashboard panel
- * (navbar with label, status and status actions; toolbar with the section
- * navigation) around <NuxtPage />.
+ * (navbar with label, status and, from lg, the breadcrumb; toolbar with the
+ * section navigation below lg) around <NuxtPage />. Status changes live in
+ * their sections (AssemblyStatusActions). From lg the breadcrumb sits in
+ * the navbar, so the panel has no breadcrumb row to take off there.
  *
  * Section pages with `definePageMeta({ print: true })` (the convocatoria,
  * projection views) are rendered alone, without the hub chrome; they also
@@ -56,10 +53,9 @@ definePageMeta({
 
 const route = useRoute();
 const routeBaseName = useRouteBaseName();
-const { t, locale } = useI18n();
+const { t } = useI18n();
 const localePath = useLocalePath();
 const toast = useToast();
-const api = useApi();
 
 const routeParam = () => String(route.params.assembly ?? "");
 
@@ -234,106 +230,6 @@ useHead({
   title: () => assembly.value?.label ?? t("assembly.hub.loading"),
 });
 
-// Header ------------------------------------------------------------------
-
-const typeName = computed(() =>
-  assembly.value ? t(`assembly.types.${assembly.value.type}`) : "",
-);
-const dateRange = computed(() =>
-  assembly.value
-    ? formatAssemblyDateRange(
-        assembly.value.startDate,
-        assembly.value.endDate,
-        locale.value,
-      )
-    : "",
-);
-
-// Status transitions ----------------------------------------------------------
-
-interface TransitionAction {
-  to: AssemblyStatus;
-  key: string;
-  forward: boolean;
-}
-
-const transitions = computed<TransitionAction[]>(() => {
-  const value = assembly.value;
-  if (!value?.can.manage) return [];
-  const rank = (status: AssemblyStatus) => ASSEMBLY_STATUSES.indexOf(status);
-  return ASSEMBLY_STATUS_TRANSITIONS[value.status].map((to) => ({
-    to,
-    key: `${value.status}_${to}`,
-    forward: rank(to) > rank(value.status),
-  }));
-});
-
-const forwardTransitions = computed(() =>
-  transitions.value.filter((transition) => transition.forward),
-);
-
-/**
- * Tinted, not solid, so they never compete with the section's own main
- * action; closing the assembly is never the most prominent button.
- */
-function transitionButtonStyle(transition: TransitionAction) {
-  return transition.key === "in_session_closed"
-    ? { color: "neutral" as const, variant: "outline" as const }
-    : { color: "primary" as const, variant: "soft" as const };
-}
-
-const backwardItems = computed(() =>
-  transitions.value
-    .filter((transition) => !transition.forward)
-    .map((transition) => ({
-      label: t(`assembly.transitions.${transition.key}.label`),
-      icon: "i-lucide-undo-2",
-      onSelect: () => askTransition(transition),
-    })),
-);
-
-const pendingTransition = ref<TransitionAction | null>(null);
-const confirmOpen = ref(false);
-const transitionBusy = ref(false);
-const statusMessage = ref("");
-
-function askTransition(transition: TransitionAction) {
-  pendingTransition.value = transition;
-  confirmOpen.value = true;
-}
-
-async function confirmTransition() {
-  const transition = pendingTransition.value;
-  const value = assembly.value;
-  if (!transition || !value) return;
-  transitionBusy.value = true;
-  try {
-    const updated = await api.send<AssemblyDto>(
-      `/api/assemblies/${value.id}/status`,
-      {
-        method: "PUT",
-        body: { status: transition.to, updatedAt: value.updatedAt },
-      },
-    );
-    current.setAssembly(updated);
-    confirmOpen.value = false;
-    statusMessage.value = t(`assembly.transitions.${transition.key}.done`);
-    toast.add({
-      title: statusMessage.value,
-      color: "success",
-      icon: "i-lucide-check",
-    });
-  } catch (failure) {
-    api.notifyError(failure, "assembly.hub.statusError");
-    if (api.isConflict(failure)) {
-      confirmOpen.value = false;
-      await refresh();
-    }
-  } finally {
-    transitionBusy.value = false;
-  }
-}
-
 // Sections ------------------------------------------------------------------
 
 // The same list the sidebar shows (useAssemblySections), without its group
@@ -361,7 +257,11 @@ watch(() => route.path, revealActiveSection);
 <template>
   <NuxtPage v-if="isPrintView && assembly" />
 
-  <UDashboardPanel v-else id="assembly-hub">
+  <UDashboardPanel
+    v-else
+    id="assembly-hub"
+    class="lg:[--shell-breadcrumb-height:0px]"
+  >
     <template #header>
       <!-- The label never truncates: the centre line gives way instead. -->
       <UDashboardNavbar
@@ -427,63 +327,16 @@ watch(() => route.path, revealActiveSection);
           </template>
         </template>
 
-        <!-- Centre (large screens): what, when and where. -->
-        <p
-          v-if="assembly"
-          class="text-muted flex min-w-0 items-center gap-x-3 text-sm"
-        >
-          <span class="truncate">{{ typeName }}</span>
-          <span class="inline-flex items-center gap-1 whitespace-nowrap">
-            <UIcon
-              name="i-lucide-calendar-days"
-              class="size-4"
-              aria-hidden="true"
-            />
-            <span class="sr-only">{{ t("assembly.hub.dates") }}</span>
-            {{ dateRange }}
-          </span>
-          <span class="inline-flex min-w-0 items-center gap-1">
-            <UIcon name="i-lucide-map-pin" class="size-4" aria-hidden="true" />
-            <span class="sr-only">{{ t("assembly.hub.location") }}</span>
-            <span class="truncate">{{ assembly.location }}</span>
-          </span>
-        </p>
-
-        <template #right>
-          <div v-if="transitions.length > 0" class="flex items-center gap-1.5">
-            <!-- Phones show these with their text in the body instead. -->
-            <UButton
-              v-for="transition in forwardTransitions"
-              :key="transition.key"
-              v-bind="transitionButtonStyle(transition)"
-              icon="i-lucide-arrow-right-circle"
-              class="hidden sm:inline-flex"
-              :aria-label="t(`assembly.transitions.${transition.key}.label`)"
-              @click="askTransition(transition)"
-            >
-              <span class="hidden sm:inline">{{
-                t(`assembly.transitions.${transition.key}.label`)
-              }}</span>
-            </UButton>
-            <UDropdownMenu
-              v-if="backwardItems.length > 0"
-              :items="backwardItems"
-              :content="{ align: 'end' }"
-            >
-              <UButton
-                color="neutral"
-                variant="ghost"
-                icon="i-lucide-ellipsis-vertical"
-                :aria-label="t('assembly.hub.moreStatusActions')"
-              />
-            </UDropdownMenu>
-          </div>
-        </template>
+        <!-- Centre (large screens): where this page is. -->
+        <div v-if="assembly" class="hidden min-w-0 lg:flex">
+          <ShellBreadcrumbs placement="inline" />
+        </div>
       </UDashboardNavbar>
 
-      <!-- Where this page is. Section pages register nothing: the trail
-           comes from the route, and a document page adds its own name. -->
-      <ShellBreadcrumbs />
+      <!-- Where this page is, below lg (the navbar shows it from lg).
+           Section pages register nothing: the trail comes from the route,
+           and a document page adds its own name. -->
+      <ShellBreadcrumbs placement="compact" />
 
       <!-- On large screens the sidebar lists these same sections; repeating
            them here only crowded the header. Phones keep them, since the
@@ -540,119 +393,26 @@ watch(() => route.path, revealActiveSection);
       />
 
       <template v-else>
-        <!-- What, when and where on small screens (the navbar shows it on large ones). -->
-        <dl
-          class="text-muted flex flex-wrap items-center gap-x-4 gap-y-1 text-sm lg:hidden"
+        <!-- The next deadline on small screens. Not on a document's pages
+             (they show that document's own deadline) nor on the overview
+             (it has its own block). -->
+        <p
+          v-if="assembly.nextMilestone && !onDocumentPage && !onOverview"
+          class="text-muted flex flex-wrap items-center gap-1.5 text-sm lg:hidden"
         >
-          <div class="flex items-center gap-1.5">
-            <dt class="sr-only">{{ t("assembly.hub.type") }}</dt>
-            <dd>{{ typeName }}</dd>
-          </div>
-          <div class="flex items-center gap-1.5">
-            <dt class="flex">
-              <UIcon
-                name="i-lucide-calendar-days"
-                class="size-4"
-                aria-hidden="true"
-              />
-              <span class="sr-only">{{ t("assembly.hub.dates") }}</span>
-            </dt>
-            <dd>{{ dateRange }}</dd>
-          </div>
-          <div class="flex min-w-0 items-center gap-1.5">
-            <dt class="flex">
-              <UIcon
-                name="i-lucide-map-pin"
-                class="size-4"
-                aria-hidden="true"
-              />
-              <span class="sr-only">{{ t("assembly.hub.location") }}</span>
-            </dt>
-            <dd class="truncate">{{ assembly.location }}</dd>
-          </div>
-          <!-- Not on a document's pages (they show that document's own
-               deadline) nor on the overview (it has its own block). -->
-          <div
-            v-if="assembly.nextMilestone && !onDocumentPage && !onOverview"
-            class="flex items-center gap-1.5"
-          >
-            <dt class="flex">
-              <UIcon
-                name="i-lucide-hourglass"
-                class="size-4"
-                aria-hidden="true"
-              />
-              <span class="sr-only">{{ t("assembly.hub.nextMilestone") }}</span>
-            </dt>
-            <dd class="flex flex-wrap items-center gap-1">
-              <span>{{
-                t(`calendar.milestones.${assembly.nextMilestone.key}`)
-              }}</span>
-              <CommonCountdown :to="assembly.nextMilestone.at" dated />
-            </dd>
-          </div>
-        </dl>
-
-        <!-- The status actions on phones, where the header has no room for
-             their text. Only on the overview: the other sections keep to
-             their own subject. -->
-        <div
-          v-if="forwardTransitions.length > 0 && onOverview"
-          class="flex flex-wrap gap-2 sm:hidden"
-        >
-          <UButton
-            v-for="transition in forwardTransitions"
-            :key="transition.key"
-            v-bind="transitionButtonStyle(transition)"
-            icon="i-lucide-arrow-right-circle"
-            :label="t(`assembly.transitions.${transition.key}.label`)"
-            @click="askTransition(transition)"
+          <UIcon
+            name="i-lucide-hourglass"
+            class="size-4 shrink-0"
+            aria-hidden="true"
           />
-        </div>
-
-        <p class="sr-only" aria-live="polite" role="status">
-          {{ statusMessage }}
+          <span class="sr-only">{{ t("assembly.hub.nextMilestone") }}</span>
+          <span>{{
+            t(`calendar.milestones.${assembly.nextMilestone.key}`)
+          }}</span>
+          <CommonCountdown :to="assembly.nextMilestone.at" dated />
         </p>
 
         <NuxtPage />
-
-        <UModal
-          v-model:open="confirmOpen"
-          :title="
-            pendingTransition
-              ? t(`assembly.transitions.${pendingTransition.key}.title`)
-              : ''
-          "
-          :description="
-            pendingTransition
-              ? t(`assembly.transitions.${pendingTransition.key}.description`, {
-                  label: assembly.label,
-                })
-              : ''
-          "
-          :dismissible="!transitionBusy"
-        >
-          <template #footer>
-            <div class="flex w-full flex-wrap justify-end gap-2">
-              <UButton
-                color="neutral"
-                variant="outline"
-                :label="t('common.cancel')"
-                :disabled="transitionBusy"
-                @click="confirmOpen = false"
-              />
-              <UButton
-                v-if="pendingTransition"
-                :color="pendingTransition.forward ? 'primary' : 'warning'"
-                :label="
-                  t(`assembly.transitions.${pendingTransition.key}.label`)
-                "
-                :loading="transitionBusy"
-                @click="confirmTransition"
-              />
-            </div>
-          </template>
-        </UModal>
       </template>
     </template>
   </UDashboardPanel>

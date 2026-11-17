@@ -67,6 +67,7 @@ const {
   collectActivityIds,
   collectActivityPage,
   containsPattern,
+  controlSheetActivityTypes,
   emptyActivityLookups,
   meActivityBranches,
   roleTenure,
@@ -533,6 +534,28 @@ describe("payload allowlists", () => {
 });
 
 // Role tenure ---------------------------------------------------------------------------
+
+describe("controlSheetActivityTypes", () => {
+  it("lists every group's events without a choice, and only the chosen ones", () => {
+    const all = controlSheetActivityTypes(undefined);
+    expect(all).toContain("control_sheet_observations_updated");
+    expect(all).toContain("position_changed");
+    expect(all).toContain("vote_recorded");
+    expect(controlSheetActivityTypes([])).toEqual(all);
+    expect(controlSheetActivityTypes(["answers"])).toEqual([
+      "position_changed",
+    ]);
+    const sheet = controlSheetActivityTypes(["sheet"]);
+    expect(sheet.every((type) => type.startsWith("control_sheet_"))).toBe(true);
+    expect(sheet).not.toContain("position_changed");
+  });
+
+  it("lists only event types the activity knows", () => {
+    for (const type of controlSheetActivityTypes(undefined)) {
+      expect(EVENT_TYPES).toContain(type);
+    }
+  });
+});
 
 describe("roleTenure", () => {
   const created = "2026-01-01T00:00:00.000000Z";
@@ -1015,6 +1038,27 @@ describe("toMeActivityItem", () => {
       payload: { position: "accept", by: "moderator", memberId: OTHER_MEMBER },
     })!;
     expect(position.payload).toEqual({});
+    // The control sheet's «Historial» reads every answer, as the sheet does.
+    const onSheet = toMeActivityItem(
+      viewer,
+      "member",
+      row({
+        action: "position_changed",
+        targetType: "amendment",
+        targetId: "public",
+        actorUserId: OTHER,
+        payload: {
+          position: "accept",
+          by: "moderator",
+          memberId: OTHER_MEMBER,
+        },
+      }),
+      lookups(),
+      undefined,
+      undefined,
+      true,
+    )!;
+    expect(onSheet.payload).toMatchObject({ position: "accept" });
     // Its own amendment's note stays.
     const own = meItem(viewer, "by", { ...correction, targetId: "mine" })!;
     expect(own.payload).toEqual({ note: "Revisa el artículo 3" });

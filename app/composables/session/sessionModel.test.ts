@@ -456,11 +456,7 @@ describe("session model", () => {
     // Passage in the middle
     const seed2 = sessionTransactionalSeed(base, [a1], () => "q");
     expect(seed2.anchorBefore).toBe("b1");
-    const seed3 = sessionTransactionalSeed(
-      base,
-      [am("t", { kind: "totality_return" })],
-      () => "q",
-    );
+    const seed3 = sessionTransactionalSeed(base, [am("t", {})], () => "q");
     expect(seed3.passage).toEqual([]);
     const del = am("d1", { ops: [{ op: "delete", blockIds: ["b3"] }] });
     const seed4 = sessionTransactionalSeed(base, [del, a1], () => "q");
@@ -527,9 +523,9 @@ describe("session model", () => {
     ).toEqual({ tie: true });
     expect(
       sessionErrorData({
-        data: { statusCode: 409, data: { totalityReturn: "t1" } },
+        data: { statusCode: 409, data: { undecided: ["a1"] } },
       }),
-    ).toEqual({ totalityReturn: "t1" });
+    ).toEqual({ undecided: ["a1"] });
     expect(sessionErrorData(new Error("x"))).toBe(null);
   });
 
@@ -570,23 +566,6 @@ describe("session model", () => {
     // Requested ids the server would refuse are left out.
     expect(ids("admitted", ["a1", "p1"])).toEqual(["a4"]);
     expect(ids("inadmissible", ["i1"])).toEqual(["a4"]);
-  });
-
-  it("offers to lapse everything after a totality return", () => {
-    const ret = am("t1", {
-      kind: "totality_return",
-      status: "approved",
-      positionKey: 0,
-    });
-    const decided = am("w1", { status: "withdrawn", positionKey: 5 });
-    const offer = sessionLapseOffer(ret, [ret, a2, a1, a4, decided, a5], []);
-    // a4 is late: until the assembly agrees to treat it, it cannot lapse.
-    expect(offer.lapse).toEqual(["a1", "a2"]);
-    expect(offer.collisions).toEqual([]);
-    // A rejected return offers nothing.
-    expect(
-      sessionLapseOffer({ ...ret, status: "rejected" }, [ret, a1], []).lapse,
-    ).toEqual([]);
   });
 
   it("records a final vote by assent", () => {
@@ -740,7 +719,6 @@ describe("session model", () => {
         sessionFinalVoteReasons({
           document: { voted: true, status: "published" },
           amendmentsLoaded: true,
-          totalityReturnId: null,
           blockers,
         }),
       ).toEqual([
@@ -999,7 +977,6 @@ describe("session model", () => {
         sessionFinalVoteReasons({
           document: { voted: true, status: "published" },
           amendmentsLoaded: true,
-          totalityReturnId: null,
           blockers: sessionFinalVoteBlockers(list),
         }).map((reason) => reason.key),
       ).toEqual(["undecided", "superseded"]);
@@ -1613,7 +1590,6 @@ describe("session model", () => {
         sessionFinalVoteReasons({
           document: { voted: true, status: "published" },
           amendmentsLoaded: true,
-          totalityReturnId: null,
           blockers,
           ...over,
         }).map((reason) => reason.key);
@@ -1627,7 +1603,6 @@ describe("session model", () => {
       expect(reasons({ amendmentsLoaded: false })).toEqual([
         "amendmentsLoading",
       ]);
-      expect(reasons({ totalityReturnId: "t1" })).toEqual(["totalityReturn"]);
       expect(reasons({})).toEqual(["undecided"]);
       const decided = { ...a1, status: "approved" as const };
       expect(

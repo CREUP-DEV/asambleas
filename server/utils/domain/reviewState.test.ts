@@ -22,6 +22,8 @@ import {
   positionEffect,
   positionRecordedBy,
   publishOnValidation,
+  reclassifyPositionPlan,
+  shouldAutoAcceptPosition,
   POSITION_BLOCKER_MESSAGES,
   validationReopenBlocker,
   replacesSources,
@@ -838,6 +840,17 @@ describe("agendaPositions", () => {
 });
 
 describe("positionRecordedBy", () => {
+  it("says an answer given by itself is automatic", () => {
+    expect(
+      positionRecordedBy({
+        decidedByUserId: "secretaria",
+        recordedAs: "auto",
+        recorderMemberId: "se",
+        mainPresenterId: "main",
+      }),
+    ).toBe("auto");
+  });
+
   it("says the main presenter answered when its own account did", () => {
     expect(
       positionRecordedBy({
@@ -1000,5 +1013,136 @@ describe("validationReopenBlocker", () => {
       validationReopenBlocker({ ...row, kind: "transactional" }),
     ).not.toBeNull();
     expect(validationReopenBlocker({ ...row, late: true })).not.toBeNull();
+  });
+});
+
+describe("automatic answer to formal amendments", () => {
+  const row = {
+    status: "submitted" as const,
+    admission: "admitted" as const,
+    validatedAt: at,
+    publishedAt: at,
+    approvalMethod: null,
+  };
+  const answerable = { ...row, kind: "formal" as const };
+
+  it("accepts a formal amendment once it can be answered and nobody did", () => {
+    expect(shouldAutoAcceptPosition(answerable, null, "vote")).toBe(true);
+    expect(shouldAutoAcceptPosition(answerable, "pending", "incorporate")).toBe(
+      true,
+    );
+  });
+
+  it("keeps an answer already given", () => {
+    for (const position of ["accept", "reject", "transact"] as const) {
+      expect(shouldAutoAcceptPosition(answerable, position, "vote")).toBe(
+        false,
+      );
+    }
+  });
+
+  it("waits until it can be answered, and never after the final vote", () => {
+    expect(
+      shouldAutoAcceptPosition(
+        { ...answerable, publishedAt: null },
+        null,
+        "vote",
+      ),
+    ).toBe(false);
+    expect(
+      shouldAutoAcceptPosition(
+        { ...answerable, admission: "pending" },
+        null,
+        "vote",
+      ),
+    ).toBe(false);
+    expect(shouldAutoAcceptPosition(answerable, null, "vote", true)).toBe(
+      false,
+    );
+    expect(
+      shouldAutoAcceptPosition(
+        { ...answerable, status: "lapsed" },
+        "pending",
+        "vote",
+      ),
+    ).toBe(false);
+  });
+
+  it("never answers content amendments nor transactionals", () => {
+    expect(
+      shouldAutoAcceptPosition(
+        { ...answerable, kind: "partial" },
+        null,
+        "vote",
+      ),
+    ).toBe(false);
+    expect(
+      shouldAutoAcceptPosition(
+        {
+          ...answerable,
+          kind: "transactional",
+          authorsApproval: "accepted",
+        },
+        null,
+        "vote",
+      ),
+    ).toBe(false);
+  });
+
+  it("accepts a content amendment made formal while unanswered", () => {
+    expect(reclassifyPositionPlan(row, "formal", null, undefined, "vote")).toBe(
+      "accept",
+    );
+    expect(
+      reclassifyPositionPlan(row, "formal", "reject", "proponent", "vote"),
+    ).toBeNull();
+    // Not answerable yet: validating and publishing it will.
+    expect(
+      reclassifyPositionPlan(
+        { ...row, validatedAt: null, admission: "pending", publishedAt: null },
+        "formal",
+        "pending",
+        undefined,
+        "vote",
+      ),
+    ).toBeNull();
+    expect(
+      reclassifyPositionPlan(row, "formal", null, undefined, "vote", true),
+    ).toBeNull();
+  });
+
+  it("takes back the automatic acceptance when it stops being formal", () => {
+    expect(
+      reclassifyPositionPlan(row, "partial", "accept", "auto", "vote"),
+    ).toBe("pending");
+    // Incorporated by that acceptance: going back to pending reopens it.
+    const incorporated = {
+      ...row,
+      status: "approved" as const,
+      approvalMethod: "proponent" as const,
+    };
+    expect(
+      reclassifyPositionPlan(
+        incorporated,
+        "partial",
+        "accept",
+        "auto",
+        "incorporate",
+      ),
+    ).toBe("pending");
+    expect(positionEffect(incorporated, "pending", "incorporate")).toBe(
+      "reopen",
+    );
+  });
+
+  it("keeps an answer given by hand when it stops being formal", () => {
+    for (const by of ["proponent", "moderator", undefined]) {
+      expect(
+        reclassifyPositionPlan(row, "partial", "accept", by, "vote"),
+      ).toBeNull();
+    }
+    expect(
+      reclassifyPositionPlan(row, "partial", "pending", "auto", "vote"),
+    ).toBeNull();
   });
 });

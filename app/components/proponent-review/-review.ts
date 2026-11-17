@@ -459,12 +459,26 @@ export function answeredByMesa(
 }
 
 /**
+ * The answer on record is the acceptance a formal amendment gets by itself
+ * as soon as it can be answered, not anyone's choice. Only for an answer.
+ */
+export function answeredAutomatically(
+  amendment: Pick<AmendmentDto, "position">,
+): boolean {
+  return (
+    positionAnswer(amendment) === "accept" &&
+    amendment.position?.recordedBy === "auto"
+  );
+}
+
+/**
  * Where the state sentence of a step comes from, as the key under
  * `proponentReview.state`: what the answer leaves behind under the
  * document's rule. With `forMember` (the Mesa answering for the main
  * presenter) the sentence names the member instead of "you". An answer the
  * Mesa recorded says so (`ByMesa`): "La Mesa, en tu nombre, la ha
  * aceptado", or for the Mesa "La Mesa, en nombre de CEUM, la ha aceptado".
+ * An automatic acceptance of a formal amendment says so (`Auto`).
  */
 export function stateKey(
   amendment: Pick<AmendmentDto, "position" | "status" | "approvalMethod">,
@@ -478,6 +492,7 @@ export function stateKey(
     else if (rule === "vote") key = "acceptVote";
   }
   if (answeredByMesa(amendment)) key = `${key}ByMesa`;
+  else if (answeredAutomatically(amendment)) key = `${key}Auto`;
   return forMember ? `${key}For` : key;
 }
 
@@ -491,7 +506,8 @@ export function stateKey(
  * - `answered.<status>`: the main presenter answered ("CEA-AC la aceptó el
  *   5 nov");
  * - `answeredByMesa.<status>`: the Mesa answered on its behalf ("La Mesa,
- *   en nombre de CEA-AC, la aceptó el 5 nov").
+ *   en nombre de CEA-AC, la aceptó el 5 nov");
+ * - `answeredAuto.<status>`: a formal amendment accepted by itself.
  */
 export function presenterAnswerKey(
   amendment: Pick<AmendmentDto, "position" | "status" | "approvalMethod">,
@@ -501,6 +517,7 @@ export function presenterAnswerKey(
   }
   const status = answerStatus(amendment);
   if (status === "pending") return "pending";
+  if (answeredAutomatically(amendment)) return `answeredAuto.${status}`;
   return answeredByMesa(amendment)
     ? `answeredByMesa.${status}`
     : `answered.${status}`;

@@ -93,7 +93,7 @@ _(leído: convocatorias, RRI 2025 art. 11.2, Acta 34 AGE)_. Las AGE y las AGET a
   - 80 AGO: las enmiendas se abren antes del cierre de resoluciones, así que una resolución presentada el último día solo tiene unos 4 días de enmiendas.
 - **Reglas que no cuadran entre sí:**
   - la convocatoria excepcional de 4 días de la AGE telemática (RRI 2025 art. 11.2) no figura en los Estatutos (art. 15.2), de rango superior;
-  - las enmiendas a la totalidad de una reforma se admiten hasta 8 días antes (RRI 2025 art. 65.4), antes que las parciales (4 días, RFAG 2025 art. 20.1). La plataforma aún no aplica este cierre propio (pendiente): una enmienda a la totalidad cuenta como en plazo hasta el cierre de la ventana del documento;
+  - las enmiendas a la totalidad de una reforma se admiten hasta 8 días antes (RRI 2025 art. 65.4), antes que las parciales (4 días, RFAG 2025 art. 20.1). La plataforma no recoge enmiendas a la totalidad;
   - el cierre de enmiendas era de 48 h según el RFAG 2020 y es de 4 días desde la reforma de la 28 AGET (2025).
 
 ## 4. Ciclo de vida de una enmienda

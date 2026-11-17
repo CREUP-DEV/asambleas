@@ -34,6 +34,8 @@ import {
 import {
   AUDIT_ACTIONS,
   AUDIT_ACTION_VALUES,
+  CONTROL_SHEET_ACTIVITY_GROUP_KEYS,
+  CONTROL_SHEET_ACTIVITY_GROUPS,
   EVENT_TYPES,
   IMPERSONATION_NOTICE_DAYS,
   IMPERSONATION_SESSION_ACTION,
@@ -45,6 +47,7 @@ import {
   type ActivityKind,
   type AuditAction,
   type AuditSource,
+  type ControlSheetActivityGroup,
   type EventType,
   type MeActivityTab,
 } from "~~/shared/constants/activity";
@@ -74,7 +77,10 @@ import type {
   MemberRef,
   UserRef,
 } from "~~/shared/types/api";
-import { encodeActivityCursor } from "~~/shared/utils/schemas/activity";
+import {
+  encodeActivityCursor,
+  type ControlSheetActivityQuery,
+} from "~~/shared/utils/schemas/activity";
 import {
   buildAssemblySlug,
   formatAssemblyLabel,
@@ -1008,7 +1014,7 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
     "abstentions",
   ],
   amendment_rejected: ["method", "inFavor", "against", "abstentions"],
-  amendment_reopened: ["previousStatus", "reason", "sourceCode"],
+  amendment_reopened: ["by", "previousStatus", "reason", "sourceCode"],
   // The transactional that replaced it was published when validated.
   amendment_transacted: ["code"],
   amendment_lapsed: ["reason", "by", "code"],
@@ -1909,6 +1915,8 @@ function eventTarget(
   row: RawActivityRow,
   lookups: ActivityLookups,
   actor: Actor | null,
+  /** The control sheet's readers read every answer (ControlSheetDto.positions). */
+  seesAllPositions = false,
 ): TargetView {
   const payload = row.payload ?? {};
   const assembly = row.assemblyId
@@ -2003,10 +2011,12 @@ function eventTarget(
         const notes =
           seesAllPresentedAmendments(actor) ||
           isAmendmentInsider(actor, amendment);
-        const positions = canSeePositions(actor, {
-          document,
-          isPresenter: isDocumentPresenter(actor, document),
-        });
+        const positions =
+          seesAllPositions ||
+          canSeePositions(actor, {
+            document,
+            isPresenter: isDocumentPresenter(actor, document),
+          });
         return {
           ...base,
           visible:
@@ -2252,8 +2262,11 @@ function targetView(
   row: RawActivityRow,
   lookups: ActivityLookups,
   actor: Actor | null,
+  seesAllPositions = false,
 ): TargetView {
-  if (row.kind === "event") return eventTarget(row, lookups, actor);
+  if (row.kind === "event") {
+    return eventTarget(row, lookups, actor, seesAllPositions);
+  }
   if (row.kind === "audit") return auditTarget(row, lookups, actor);
   return windowTarget(row, lookups);
 }
@@ -2370,13 +2383,14 @@ export function toMeActivityItem(
   all: ActivityLookups,
   now: Date = new Date(),
   mask: ExecutiveMask = executiveMaskOf(actor, all),
+  seesAllPositions = false,
 ): ActivityItemDto | null {
   const me = actor.user.id;
   // For an account that may not see the executive areas, every area reads
   // as the generic "CEA": the member acted for, the members a payload
   // names and a member the row is about.
   const lookups = mask ? { ...all, members: maskedMembers(all.members) } : all;
-  const view = targetView(row, lookups, actor);
+  const view = targetView(row, lookups, actor, seesAllPositions);
   if (!view.visible && tab === "member") return null;
   const aboutArea =
     mask !== null && row.targetType === "member" && mask.has(row.targetId);
@@ -2561,6 +2575,142 @@ export async function loadMeActivity(
     loadRecentImpersonations(actor.user.id, now),
   ]);
   return { ...page, recentImpersonations };
+}
+
+// Control sheet history ----------------------------------------------------------
+
+/** The event types of the groups asked for; every group without any. */
+export function controlSheetActivityTypes(
+  groups: readonly ControlSheetActivityGroup[] | undefined,
+): string[] {
+  const keys = groups?.length ? groups : CONTROL_SHEET_ACTIVITY_GROUP_KEYS;
+  return keys.flatMap((key) => [...CONTROL_SHEET_ACTIVITY_GROUPS[key]]);
+}
+
+/**
+ * The ids a subject of the history stands for: an agenda item with its
+ * documents and their amendments, a document with its amendments, or one
+ * amendment. Only rows of this assembly.
+ */
+async function controlSheetSubjectIds(
+  assemblyId: string,
+  subject: NonNullable<ControlSheetActivityQuery["subject"]>,
+): Promise<string[]> {
+  if (subject.type === "amendment") return [subject.id];
+  const documentRows =
+    subject.type === "document"
+      ? await db
+          .select({ id: documents.id })
+          .from(documents)
+          .where(
+            and(
+              eq(documents.id, subject.id),
+              eq(documents.assemblyId, assemblyId),
+            ),
+          )
+      : await db
+          .select({ id: documents.id })
+          .from(documents)
+          .where(
+            and(
+              eq(documents.agendaItemId, subject.id),
+              eq(documents.assemblyId, assemblyId),
+            ),
+          );
+  const documentIds = documentRows.map((row) => row.id);
+  const amendmentRows =
+    documentIds.length > 0
+      ? await db
+          .select({ id: amendments.id })
+          .from(amendments)
+          .where(inArray(amendments.documentId, documentIds))
+      : [];
+  return [
+    ...(subject.type === "item" ? [subject.id] : []),
+    ...documentIds,
+    ...amendmentRows.map((row) => row.id),
+  ];
+}
+
+/** Rows about any of `ids`: as their entity, `subjectId` or `subjectIds`. */
+function aboutAnyOf(ids: readonly string[]): SQL {
+  return or(
+    inArray(events.entityId, [...ids]),
+    inArray(sql`${events.payload}->>'subjectId'`, [...ids]),
+    ...ids.map(
+      (id) => sql`jsonb_exists(${events.payload}->'subjectIds', ${id})`,
+    ),
+  )!;
+}
+
+/**
+ * GET .../control-sheet/activity: the control sheet's «Historial» (user's
+ * decision of 2026-11-17), what changed in it or about it, newest first:
+ * the sheet's notes, the main presenters' answers and the votes and
+ * decisions (CONTROL_SHEET_ACTIVITY_GROUPS), by anyone. Each row is judged
+ * again for the reader as in "Mi actividad" (toMeActivityItem, rows it may
+ * not read are left out), except that the sheet's readers read every
+ * answer, as the sheet shows them. The caller checks the reader
+ * (requireControlSheetReader).
+ */
+export async function loadControlSheetActivity(
+  actor: Actor,
+  assemblyId: string,
+  query: ControlSheetActivityQuery,
+): Promise<ActivityPageDto> {
+  const now = new Date();
+  const where: SQL[] = [
+    eq(events.assemblyId, assemblyId),
+    inArray(events.type, controlSheetActivityTypes(query.group)),
+  ];
+  if (query.from) {
+    where.push(sql`${events.createdAt} >= ${query.from}::timestamptz`);
+  }
+  if (query.to) where.push(sql`${events.createdAt} < ${query.to}::timestamptz`);
+  if (query.actor) where.push(eq(events.actorUserId, query.actor));
+  if (query.subject) {
+    const ids = await controlSheetSubjectIds(assemblyId, query.subject);
+    if (ids.length === 0) return { items: [], nextCursor: null };
+    where.push(aboutAnyOf(ids));
+  }
+  const branches: ActivityBranch[] = [{ kind: "event", where }];
+  const mask = await loadExecutiveMask(actor);
+  return collectActivityPage({
+    cursor: query.cursor,
+    limit: query.limit,
+    fetch: (cursor, size) => fetchActivityRows(branches, cursor, size),
+    build: async (rows) => {
+      const lookups = await loadActivityLookups(rows);
+      return rows.map((row) =>
+        toMeActivityItem(actor, "member", row, lookups, now, mask, true),
+      );
+    },
+  });
+}
+
+/**
+ * The people the «Historial» can be filtered by: whoever recorded any of
+ * its rows in the assembly, by name. The sheet's readers see who acts for
+ * the CEA's offices (canSeeExecutiveMembers), so no mask applies.
+ */
+export async function loadControlSheetActivityPeople(
+  assemblyId: string,
+): Promise<UserRef[]> {
+  const rows = await db
+    .selectDistinct({ id: events.actorUserId })
+    .from(events)
+    .where(
+      and(
+        eq(events.assemblyId, assemblyId),
+        inArray(events.type, controlSheetActivityTypes(undefined)),
+        isNotNull(events.actorUserId),
+      ),
+    );
+  const ids = rows.flatMap((row) => (row.id ? [row.id] : []));
+  const people = await loadUserRefs(ids);
+  return [...people.values()].sort((a, b) =>
+    a.name.localeCompare(b.name, "es"),
+  );
 }
 
 const CUID_PATTERN = /^[a-z0-9]{20,32}$/;

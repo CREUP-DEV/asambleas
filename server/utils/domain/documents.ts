@@ -2669,8 +2669,6 @@ export function evaluateFinalVote(
 /**
  * The final vote on the whole text (session:moderate).
  *
- * - An approved totality return (devolución) sends the text back: there is
- *   nothing left to vote, 409 `{ totalityReturn: id }`.
  * - Every amendment must be decided first: 409 `{ undecided: ids }`.
  * - Approved amendments are consolidated over the base in approval order, or
  *   in `body.order`, which must list exactly those amendments. Conflicts
@@ -2726,14 +2724,6 @@ export async function recordFinalVote(
       })
       .from(amendments)
       .where(eq(amendments.documentId, document.id));
-    const totalityReturn = rows.find(
-      (row) => row.status === "approved" && row.kind === "totality_return",
-    );
-    if (totalityReturn) {
-      fail(409, "Se ha aprobado la devolución del texto", {
-        totalityReturn: totalityReturn.id,
-      });
-    }
     const undecided = rows
       .filter((row) => row.status === "submitted")
       .map((row) => row.id);

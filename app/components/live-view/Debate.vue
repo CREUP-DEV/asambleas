@@ -14,10 +14,9 @@ import {
  * co-presenters before "N más") and, when there is one, the amendment with
  * its change in readable type, a sentence on where it stands, how the
  * document's main presenter answered it (when the room may see it) and its
- * justification
- * (folded away, unless the amendment changes no text and the justification
- * is all there is to read). Nothing here is announced by itself: the page keeps one
- * short aria-live line for that, so a refresh never reads the passage aloud.
+ * justification, folded away. Nothing here is announced by itself: the page
+ * keeps one short aria-live line for that, so a refresh never reads the
+ * passage aloud.
  */
 const props = defineProps<{
   row: SessionAgendaRow | null;
@@ -49,12 +48,6 @@ const code = computed(() => liveAmendmentCode(props.amendment));
 const justification = computed(
   () => props.amendment?.justification.trim() || "",
 );
-/**
- * No text to compare (a totality amendment returning the document): the
- * diff box only says so, and the justification is the whole substance of
- * the amendment, so it shows unfolded instead of behind a toggle.
- */
-const noTextChange = computed(() => (props.amendment?.ops.length ?? 0) === 0);
 const justificationOpen = ref(false);
 
 watch(
@@ -202,18 +195,7 @@ const amendmentLink = computed(() =>
           />
         </div>
 
-        <div v-if="justification && noTextChange" class="flex flex-col gap-1">
-          <h4 class="text-highlighted font-semibold">
-            {{ t("liveView.now.justification") }}
-          </h4>
-          <p class="live-justification text-default whitespace-pre-line">
-            {{ justification }}
-          </p>
-        </div>
-        <UCollapsible
-          v-else-if="justification"
-          v-model:open="justificationOpen"
-        >
+        <UCollapsible v-if="justification" v-model:open="justificationOpen">
           <UButton
             color="neutral"
             variant="link"
@@ -276,15 +258,8 @@ const amendmentLink = computed(() =>
   margin-top: 0.75em;
 }
 
-/* Unfolded justification of a totality return: the same reading size. */
-.live-justification {
-  font-size: 1.125rem;
-  line-height: 1.65;
-}
-
 @media (min-width: 640px) {
-  .live-text :deep(.rich-text),
-  .live-justification {
+  .live-text :deep(.rich-text) {
     font-size: 1.25rem;
   }
 }

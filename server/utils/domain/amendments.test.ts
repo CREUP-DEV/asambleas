@@ -171,44 +171,13 @@ describe("reIdInsertedBlocks", () => {
 });
 
 describe("prepareAmendmentOps", () => {
-  it("accepts a devolution with no operations and refuses one with operations", () => {
-    expect(
-      prepareAmendmentOps({
-        kind: "totality_return",
-        ops: [],
-        base,
-        takenIds: [],
-      }),
-    ).toEqual({
-      ops: [],
-      errors: [],
-    });
-    const withOps = prepareAmendmentOps({
-      kind: "totality_return",
-      ops: [replace("b1", 0, 6, "Inicial")],
-      base,
-      takenIds: [],
-    });
-    expect(withOps.errors.map((error) => error.reason)).toEqual([
-      "totality_return_ops",
-    ]);
-  });
-
-  it("requires at least one operation for every other kind", () => {
-    for (const kind of [
-      "partial",
-      "formal",
-      "totality_alternative",
-      "transactional",
-    ] as const) {
-      const result = prepareAmendmentOps({ kind, ops: [], base, takenIds: [] });
-      expect(result.errors.map((error) => error.reason)).toContain("empty");
-    }
+  it("requires at least one operation", () => {
+    const result = prepareAmendmentOps({ ops: [], base, takenIds: [] });
+    expect(result.errors.map((error) => error.reason)).toContain("empty");
   });
 
   it("reports operations that are not anchored to the base", () => {
     const result = prepareAmendmentOps({
-      kind: "partial",
       ops: [{ op: "delete", blockIds: ["missing"] }],
       base,
       takenIds: [],
@@ -220,7 +189,6 @@ describe("prepareAmendmentOps", () => {
 
   it("re-ids colliding inserted blocks before validating", () => {
     const result = prepareAmendmentOps({
-      kind: "partial",
       ops: [
         {
           op: "insert",
@@ -238,29 +206,9 @@ describe("prepareAmendmentOps", () => {
 });
 
 describe("amendmentSortKey", () => {
-  it("puts totality amendments first", () => {
-    const partial = amendmentSortKey(
-      "partial",
-      [{ op: "insert", afterBlockId: null, blocks: [block("n1", "A")] }],
-      base,
-    );
-    const alternative = amendmentSortKey(
-      "totality_alternative",
-      [replace("b1", 0, 6, "X")],
-      base,
-    );
-    const devolution = amendmentSortKey("totality_return", [], base);
-    expect(devolution).toBeLessThan(alternative);
-    expect(alternative).toBeLessThan(partial);
-  });
-
-  it("orders partial amendments by where they act", () => {
-    const first = amendmentSortKey("partial", [replace("b1", 0, 6, "X")], base);
-    const third = amendmentSortKey(
-      "partial",
-      [{ op: "delete", blockIds: ["b3"] }],
-      base,
-    );
+  it("orders amendments by where they act", () => {
+    const first = amendmentSortKey([replace("b1", 0, 6, "X")], base);
+    const third = amendmentSortKey([{ op: "delete", blockIds: ["b3"] }], base);
     expect(first).toBeLessThan(third);
   });
 });

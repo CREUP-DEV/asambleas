@@ -226,8 +226,7 @@ const sentAbsolute = computed(() =>
   }),
 );
 
-// The changes start open, except a whole alternative text, which is long.
-const changesOpen = ref(props.amendment.kind !== "totality_alternative");
+const changesOpen = ref(true);
 
 /** Shown with the checkbox only: the reason it cannot be selected now. */
 const selectBlocked = computed(
@@ -511,17 +510,7 @@ const moreBusy = computed(
               :id="amendment.id"
               :base="base"
               :ops="amendment.ops"
-            >
-              <template v-if="amendment.kind === 'totality_return'" #note>
-                <UAlert
-                  color="neutral"
-                  variant="subtle"
-                  icon="i-lucide-file-x"
-                  :title="t('amendment.kinds.totality_return')"
-                  :description="t('amendment.detail.returnNote')"
-                />
-              </template>
-            </ContentAmendmentDiff>
+            />
           </div>
         </div>
       </template>

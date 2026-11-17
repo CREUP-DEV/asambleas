@@ -167,11 +167,7 @@ export function approvalOrder<T extends AnnexAmendment>(amendments: T[]): T[] {
     });
 }
 
-/**
- * What consolidate applies: approved amendments in decision order. An
- * approved totality return has no operations and changes no text, so it is
- * left out rather than reported as no longer fitting the base.
- */
+/** What consolidate applies: approved amendments in decision order. */
 export function consolidationInput(
   amendments: (AnnexAmendment & { ops: AmendmentOp[] })[],
 ): AmendmentInput[] {

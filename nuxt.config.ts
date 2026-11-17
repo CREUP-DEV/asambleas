@@ -99,7 +99,7 @@ const routeRules = {
       "X-Robots-Tag": "noindex, nofollow, noarchive",
     },
   },
-  // Whole documents travel as JSON blocks (drafts, totality amendments), and
+  // Whole documents travel as JSON blocks (drafts, amendments), and
   // DOCX imports and PDFs go up as multipart. nuxt-security's defaults (2 MB
   // JSON, 8 MB uploads) would answer 413 before the handlers' own limits.
   "/api/assemblies/**": {

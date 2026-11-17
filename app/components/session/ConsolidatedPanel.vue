@@ -138,7 +138,7 @@ function focusAmendment(id: string): void {
 }
 
 /** Why the final vote cannot be opened yet: one sentence per reason. */
-const reasonText = useFinalVoteReasonText(session.label);
+const reasonText = useFinalVoteReasonText();
 const finalBlockedReasons = computed<string[]>(() =>
   session.finalVoteReasons.value.map(reasonText),
 );
@@ -261,17 +261,6 @@ const awaitingValidation = computed(
         :title="t('session.preview.fileDocument')"
       />
       <template v-else>
-        <UAlert
-          v-if="preview.totalityReturn"
-          color="warning"
-          variant="subtle"
-          icon="i-lucide-undo-2"
-          :title="
-            t('session.preview.totalityReturn', {
-              code: session.label(preview.totalityReturn.id),
-            })
-          "
-        />
         <UAlert
           v-if="preview.conflicts.length > 0"
           color="error"

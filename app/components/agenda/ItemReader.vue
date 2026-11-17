@@ -136,6 +136,9 @@ useDocumentReading(() =>
     ? `${apiBase.value}/documents/${encodeURIComponent(current.value.id)}/reading`
     : null,
 );
+// Reaching the end of its text marks it read, as on its own page.
+const textEnd = useTemplateRef<HTMLElement>("textEnd");
+useAutoReadMark("document", () => current.value?.id, textEnd);
 
 // What the header says ---------------------------------------------------------------
 
@@ -537,6 +540,8 @@ function pick(slug: unknown): void {
           <p v-else class="text-muted text-sm">
             {{ t("workspace.text.empty") }}
           </p>
+          <!-- Reaching it marks the document read (useAutoReadMark). -->
+          <div :key="detail.id" ref="textEnd" aria-hidden="true" class="h-px" />
         </template>
       </div>
     </article>

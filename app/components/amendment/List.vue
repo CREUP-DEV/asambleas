@@ -5,9 +5,9 @@ import { transactionalGroupSources } from "~/composables/amendment/transactional
 import type { AmendmentGroup } from "~/composables/amendment/workspace";
 
 /**
- * Amendments in text order, grouped by the passage they act on: totality
- * amendments first, then each overlap cluster ("Mismo pasaje · 3 enmiendas")
- * or single amendment where it falls in the text. A cluster is a named
+ * Amendments in text order, grouped by the passage they act on: each
+ * overlap cluster ("Mismo pasaje · 3 enmiendas") or single amendment where
+ * it falls in the text. A cluster is a named
  * group, not a landmark: two clusters may share a name. Whoever can propose a
  * transactional gets, on a group with two or more amendments that can be
  * combined, a quiet "Combinar en una transaccional" (`transact`).
@@ -50,13 +50,11 @@ const groupSources = computed(() => {
 });
 
 function groupLabel(group: AmendmentGroup<AmendmentDto>): string {
-  return group.kind === "overlap"
-    ? t(
-        "amendment.list.overlapGroup",
-        { count: group.amendments.length },
-        group.amendments.length,
-      )
-    : t("amendment.list.totalityGroup");
+  return t(
+    "amendment.list.overlapGroup",
+    { count: group.amendments.length },
+    group.amendments.length,
+  );
 }
 </script>
 
@@ -64,31 +62,18 @@ function groupLabel(group: AmendmentGroup<AmendmentDto>): string {
   <ul class="flex flex-col gap-3" :aria-label="t('amendment.list.label')">
     <li v-for="group in groups" :key="group.key">
       <div
-        v-if="group.kind !== 'single'"
+        v-if="group.kind === 'overlap'"
         role="group"
-        class="rounded-xl border p-2"
-        :class="
-          group.kind === 'overlap'
-            ? 'border-warning/50 bg-warning/5'
-            : 'border-default bg-elevated/40'
-        "
+        class="border-warning/50 bg-warning/5 rounded-xl border p-2"
         :aria-label="groupLabel(group)"
       >
         <div class="mb-2 flex flex-wrap items-center gap-x-2 gap-y-1 px-1">
           <p
-            class="flex items-center gap-1.5 text-xs font-semibold"
-            :class="
-              group.kind === 'overlap' ? 'text-highlighted' : 'text-muted'
-            "
+            class="text-highlighted flex items-center gap-1.5 text-xs font-semibold"
           >
             <UIcon
-              :name="
-                group.kind === 'overlap'
-                  ? 'i-lucide-layers'
-                  : 'i-lucide-file-stack'
-              "
-              class="size-4"
-              :class="{ 'text-warning': group.kind === 'overlap' }"
+              name="i-lucide-layers"
+              class="text-warning size-4"
               aria-hidden="true"
             />
             {{ groupLabel(group) }}

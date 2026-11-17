@@ -661,7 +661,7 @@ export function isSessionPositionByMesa(
   );
 }
 
-/** Text order (totality amendments first, as positionKey encodes), then number. */
+/** Text order (as positionKey encodes it), then number. */
 export function sortSessionAmendments(list: AmendmentDto[]): AmendmentDto[] {
   return [...list].sort(
     (a, b) =>
@@ -894,7 +894,6 @@ export type SessionFinalVoteReason =
   | { key: "notVoted" }
   | { key: "notPublished" }
   | { key: "amendmentsLoading" }
-  | { key: "totalityReturn"; id: string }
   | { key: "undecided"; count: number }
   | { key: "superseded"; count: number }
   | { key: "late"; count: number }
@@ -905,13 +904,11 @@ export type SessionFinalVoteReason =
  * Why the final vote on a document cannot be recorded yet, one reason per
  * party that has to act. Empty when it can. Until the document's amendments
  * arrive, an empty list would read as "nothing undecided", so that is a
- * reason too. An approved totality return comes before the undecided
- * count: the text goes back and there is no final vote at all.
+ * reason too.
  */
 export function sessionFinalVoteReasons(input: {
   document: { voted: boolean; status: string } | null;
   amendmentsLoaded: boolean;
-  totalityReturnId: string | null;
   blockers: ReturnType<typeof sessionFinalVoteBlockers>;
 }): SessionFinalVoteReason[] {
   const { document, blockers } = input;
@@ -919,9 +916,6 @@ export function sessionFinalVoteReasons(input: {
   if (!document.voted) return [{ key: "notVoted" }];
   if (document.status !== "published") return [{ key: "notPublished" }];
   if (!input.amendmentsLoaded) return [{ key: "amendmentsLoading" }];
-  if (input.totalityReturnId) {
-    return [{ key: "totalityReturn", id: input.totalityReturnId }];
-  }
   const reasons: SessionFinalVoteReason[] = [];
   for (const key of [
     "undecided",
@@ -1247,8 +1241,6 @@ function unique(ids: string[]): string[] {
  *   as incompatible, duplicate, or subsumed by it, become lapse candidates;
  *   approved ones that hard-overlap it are reported as collisions (the final
  *   consolidation would refuse them).
- * - an approved totality return: the text goes back to its proponent, so
- *   every other undecided amendment is left without object.
  * - rejected: undecided amendments that depend on it, or are a consequence of
  *   it, become lapse candidates.
  * The server's `warnings` are merged in. A transactional's own sources are
@@ -1270,15 +1262,6 @@ export function sessionLapseOffer(
       !excluded.has(id) && amendment !== undefined && isSessionOpen(amendment)
     );
   };
-
-  if (target.status === "approved" && target.kind === "totality_return") {
-    return {
-      lapse: sortSessionAmendments(list)
-        .map((amendment) => amendment.id)
-        .filter(undecided),
-      collisions: [],
-    };
-  }
 
   if (target.status === "rejected") {
     const dependants = relations
@@ -1508,8 +1491,6 @@ export function sessionSettleConfirm(input: {
 export interface SessionConsolidatedPreview extends ConsolidationResult {
   /** Approved amendments with text, in the order they were applied. */
   order: string[];
-  /** An approved totality return: the text goes back to its proponent. */
-  totalityReturn: AmendmentDto | null;
 }
 
 function decidedTime(amendment: AmendmentDto): number {
@@ -1519,7 +1500,6 @@ function decidedTime(amendment: AmendmentDto): number {
 /**
  * The text as it stands: the base with every approved amendment applied in
  * approval order (decidedAt, then number), as the final vote does.
- * Totality returns carry no text and are left out.
  */
 export function sessionConsolidatedPreview(
   base: Block[],
@@ -1534,10 +1514,7 @@ export function sessionConsolidatedPreview(
           (b.number ?? Number.MAX_SAFE_INTEGER) ||
         compareAmendmentCodes(a.code, b.code),
     );
-  const withText = approved.filter(
-    (amendment) =>
-      amendment.kind !== "totality_return" && amendment.ops.length > 0,
-  );
+  const withText = approved.filter((amendment) => amendment.ops.length > 0);
   const result = consolidate(
     base,
     withText.map((amendment) => ({ id: amendment.id, ops: amendment.ops })),
@@ -1545,9 +1522,6 @@ export function sessionConsolidatedPreview(
   return {
     ...result,
     order: withText.map((amendment) => amendment.id),
-    totalityReturn:
-      approved.find((amendment) => amendment.kind === "totality_return") ??
-      null,
   };
 }
 

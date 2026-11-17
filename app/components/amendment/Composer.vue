@@ -25,7 +25,6 @@ import {
   amendmentLateOnSend,
   amendmentSentNotice,
   changedBlockCount,
-  composerAmendmentKind,
   composerAuthorMemberIds,
   composerAuthorSeed,
   composerAuthorSet,
@@ -37,7 +36,6 @@ import {
   composerSyncState,
   documentAmendmentOps,
   seedComposerFromDraft,
-  totalityAlternativeOps,
   type AmendmentComposerMode,
 } from "~/composables/amendment/workspace";
 import { useComposerLeaveGuard } from "~/composables/amendment/useComposerLeaveGuard";
@@ -54,9 +52,8 @@ import { useComposerLeaveGuard } from "~/composables/amendment/useComposerLeaveG
  * - on the right (below on a phone), a panel that stays in view with three
  *   questions: what kind of amendment it is (content or form, content for a
  *   new one), who presents it (alone or with other members, and then
- *   who the main author is) and why (optional, except for a return to the text: its justification is
- *   all it says). Under them, how many paragraphs change
- *   and "Revisar y enviar" (on a narrower screen, a bar kept at the foot of
+ *   who the main author is) and why (optional). Under them, how many
+ *   paragraphs change and "Revisar y enviar" (on a narrower screen, a bar kept at the foot of
  *   the screen while the composer is on it).
  *
  * "Revisar y enviar" shows the changes as everybody else will see them, what
@@ -65,10 +62,9 @@ import { useComposerLeaveGuard } from "~/composables/amendment/useComposerLeaveG
  * else sees it. A draft sent back for correction shows the Secretaría's note
  * on top.
  *
- * Three other ways to amend open here from their links in the page, with
- * their own form in place of the editor: one word changed everywhere
- * (`global`, globalReplaceOps) and the totality amendments (`return`, only a
- * justification; `alternative`, a full replacement text).
+ * Another way to amend opens here from its link in the page, with its own
+ * form in place of the editor: one word changed everywhere (`global`,
+ * globalReplaceOps).
  *
  * A stored draft opens with the text as it leaves it (its operations
  * applied), so the author goes on editing; saving diffs it against the base
@@ -173,9 +169,6 @@ const settle = composerEditSettler(
 
 /** The whole text as the author has it in the editor. */
 const edited = shallowRef<Block[]>(documentSeed);
-const alternativeBlocks = shallowRef<Block[]>(
-  seed?.mode === "alternative" ? seed.edited : [],
-);
 const find = ref(seed?.find ?? "");
 const replacement = ref(seed?.replace ?? "");
 /**
@@ -266,26 +259,12 @@ function pooledIds(): () => string {
 }
 
 function computeOps(): AmendmentOp[] {
-  switch (mode) {
-    case "document":
-      return documentAmendmentOps(
-        props.base,
-        settle(edited.value),
-        pooledIds(),
-      );
-    case "global":
-      return find.value.trim()
-        ? globalReplaceOps(props.base, find.value.trim(), replacement.value)
-        : [];
-    case "alternative":
-      return totalityAlternativeOps(
-        props.base,
-        alternativeBlocks.value,
-        pooledIds(),
-      );
-    default:
-      return [];
+  if (mode === "document") {
+    return documentAmendmentOps(props.base, settle(edited.value), pooledIds());
   }
+  return find.value.trim()
+    ? globalReplaceOps(props.base, find.value.trim(), replacement.value)
+    : [];
 }
 
 const ops = shallowRef<AmendmentOp[]>(computeOps());
@@ -304,7 +283,7 @@ const scheduleOps = useDebounceFn(
 );
 
 const serverReasons = ref<string[]>([]);
-watch([edited, alternativeBlocks, find, replacement], () => {
+watch([edited, find, replacement], () => {
   serverReasons.value = [];
   void scheduleOps();
 });
@@ -329,9 +308,6 @@ const sameParagraphs = computed(() =>
     : [],
 );
 
-/** Whether the question "content or form" applies (never to a totality). */
-const asksKind = mode === "document" || mode === "global";
-
 /** What the author still has to do before anything is saved. */
 const issues = computed(() =>
   composerIssues({
@@ -340,7 +316,6 @@ const issues = computed(() =>
     ops: ops.value,
     find: find.value,
     replacement: replacement.value,
-    alternative: alternativeBlocks.value,
   }),
 );
 /** The ones about the text itself: with any, there is nothing to show. */
@@ -349,7 +324,7 @@ const textIssues = computed(() =>
 );
 
 const opReasons = computed<string[]>(() => {
-  if (mode === "return" || textIssues.value.length > 0) return [];
+  if (textIssues.value.length > 0) return [];
   return [...new Set(validateOps(props.base, ops.value).map((e) => e.reason))];
 });
 
@@ -622,9 +597,6 @@ const stage = ref<"edit" | "review">("edit");
 const attempted = ref(false);
 const heading = useTemplateRef<HTMLElement>("heading");
 const reviewHeading = useTemplateRef<HTMLElement>("reviewHeading");
-const justificationRef = useTemplateRef<{ textareaRef?: HTMLTextAreaElement }>(
-  "justificationInput",
-);
 
 const blocked = computed(
   () =>
@@ -636,13 +608,6 @@ const blocked = computed(
     syncBlocked.value,
 );
 const justificationEmpty = computed(() => !justification.value.trim());
-/**
- * The justification is optional, except for a return to the text: it is all
- * that amendment says.
- */
-const justificationMissing = computed(
-  () => mode === "return" && justificationEmpty.value,
-);
 
 /** What stops the amendment from being saved, in plain words. */
 const problems = computed<string[]>(() => {
@@ -670,10 +635,9 @@ const authorNames = computed(() =>
     .join(", "),
 );
 
-const kindLabel = computed(() => {
-  if (!asksKind) return t(`amendment.composer.modes.${mode}`);
-  return kind.value ? t(`amendment.composer.kind.${kind.value}`) : null;
-});
+const kindLabel = computed(() =>
+  kind.value ? t(`amendment.composer.kind.${kind.value}`) : null,
+);
 
 async function openReview(): Promise<void> {
   refreshOps();
@@ -695,7 +659,7 @@ function draftBody(): Omit<AmendmentDraftBody, "kind"> & {
   kind: AmendmentDraftBody["kind"] | null;
 } {
   return {
-    kind: composerAmendmentKind(mode, kind.value),
+    kind: kind.value,
     ops: ops.value,
     justification: justification.value.trim(),
     // A co-author editing someone else's draft stays among its authors.
@@ -785,10 +749,6 @@ async function saveDraft(): Promise<void> {
 
 async function present(): Promise<void> {
   attempted.value = true;
-  if (justificationMissing.value) {
-    justificationRef.value?.textareaRef?.focus();
-    return;
-  }
   busy.value = "submit";
   try {
     const saved = await persist();
@@ -821,13 +781,6 @@ async function present(): Promise<void> {
   } finally {
     busy.value = null;
   }
-}
-
-function copyOriginal(): void {
-  alternativeBlocks.value = props.base.map((block) => ({
-    ...block,
-    marks: block.marks.map((mark) => ({ ...mark })),
-  }));
 }
 
 // Leaving ------------------------------------------------------------------------
@@ -1103,7 +1056,7 @@ const questionClass = "text-highlighted text-sm font-semibold";
         ref="scroller"
         class="min-h-0 min-w-0 overflow-y-auto p-0.5 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:h-full"
         :class="
-          mode === 'document' || mode === 'alternative'
+          mode === 'document'
             ? 'max-lg:h-[calc(70dvh-4rem)] max-lg:scroll-pb-16'
             : ''
         "
@@ -1124,7 +1077,7 @@ const questionClass = "text-highlighted text-sm font-semibold";
         </ClientOnly>
 
         <!-- One word everywhere -->
-        <div v-else-if="mode === 'global'" class="flex flex-col gap-3">
+        <div v-else class="flex flex-col gap-3">
           <div class="grid gap-3 sm:grid-cols-2">
             <UFormField :label="t('amendment.composer.find')" required>
               <UInput
@@ -1159,43 +1112,6 @@ const questionClass = "text-highlighted text-sm font-semibold";
               {{ t("amendment.composer.globalHint") }}
             </span>
           </p>
-        </div>
-
-        <!-- Totality: send the document back -->
-        <UAlert
-          v-else-if="mode === 'return'"
-          color="neutral"
-          variant="subtle"
-          icon="i-lucide-file-x"
-          :description="t('amendment.composer.returnNote')"
-        />
-
-        <!-- Totality: alternative text -->
-        <div v-else class="flex flex-col gap-2">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <p class="text-muted text-sm">
-              {{ t("amendment.composer.alternativeHint") }}
-            </p>
-            <UButton
-              icon="i-lucide-copy"
-              color="neutral"
-              variant="outline"
-              size="xs"
-              :label="t('amendment.composer.copyOriginal')"
-              @click="copyOriginal"
-            />
-          </div>
-          <ClientOnly>
-            <ContentBlockEditor
-              ref="editor"
-              v-model="alternativeBlocks"
-              :label="t('amendment.composer.alternativeLabel')"
-              :placeholder="t('amendment.composer.alternativePlaceholder')"
-            />
-            <template #fallback>
-              <USkeleton aria-hidden="true" class="h-48 w-full" />
-            </template>
-          </ClientOnly>
         </div>
       </div>
 
@@ -1276,7 +1192,7 @@ const questionClass = "text-highlighted text-sm font-semibold";
           </dd>
         </dl>
 
-        <div v-if="mode !== 'return'" class="flex flex-col gap-2">
+        <div class="flex flex-col gap-2">
           <h4 class="text-highlighted text-sm font-semibold">
             {{ t("amendment.composer.review.changes") }}
           </h4>
@@ -1299,13 +1215,6 @@ const questionClass = "text-highlighted text-sm font-semibold";
             </p>
           </div>
         </div>
-        <UAlert
-          v-else
-          color="neutral"
-          variant="subtle"
-          icon="i-lucide-file-x"
-          :description="t('amendment.composer.returnNote')"
-        />
 
         <!-- Why, after what changes (as in the amendment's detail): a
              justification may run to several paragraphs. -->
@@ -1313,11 +1222,7 @@ const questionClass = "text-highlighted text-sm font-semibold";
           <h4 class="text-highlighted text-sm font-semibold">
             {{ t("amendment.composer.review.why") }}
           </h4>
-          <p
-            v-if="justificationEmpty"
-            class="text-muted text-sm"
-            :class="{ 'text-error': justificationMissing }"
-          >
+          <p v-if="justificationEmpty" class="text-muted text-sm">
             {{ t("amendment.composer.review.noWhy") }}
           </p>
           <p
@@ -1338,12 +1243,6 @@ const questionClass = "text-highlighted text-sm font-semibold";
               aria-hidden="true"
             />
             {{ t("amendment.composer.reviewNotice") }}
-          </p>
-          <p
-            v-if="justificationMissing && !blocked"
-            class="text-default text-sm"
-          >
-            {{ t("amendment.composer.justificationRequired") }}
           </p>
           <div class="flex flex-wrap items-center gap-2">
             <UButton
@@ -1385,7 +1284,7 @@ const questionClass = "text-highlighted text-sm font-semibold";
           class="flex min-h-0 flex-1 flex-col gap-5 p-3 sm:p-4 lg:overflow-y-auto"
         >
           <!-- 1. Content or form -->
-          <div v-if="asksKind" class="flex flex-col gap-1.5">
+          <div class="flex flex-col gap-1.5">
             <URadioGroup
               :model-value="kind ?? undefined"
               :items="kindItems"
@@ -1567,28 +1466,13 @@ const questionClass = "text-highlighted text-sm font-semibold";
           </div>
 
           <!-- 3. Why -->
-          <UFormField
-            :required="mode === 'return'"
-            :error="
-              attempted && justificationMissing
-                ? t('amendment.composer.justificationRequired')
-                : undefined
-            "
-            :help="
-              justificationMissing
-                ? t('amendment.composer.why.help')
-                : mode === 'return'
-                  ? undefined
-                  : t('amendment.composer.why.optional')
-            "
-          >
+          <UFormField :help="t('amendment.composer.why.optional')">
             <template #label>
               <span :class="questionClass">
                 {{ t("amendment.composer.why.question") }}
               </span>
             </template>
             <UTextarea
-              ref="justificationInput"
               v-model="justification"
               :rows="4"
               autoresize

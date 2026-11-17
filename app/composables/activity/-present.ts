@@ -360,7 +360,8 @@ export type ActivityDetail =
   | { type: "note"; text: string }
   | { type: "late" }
   | { type: "result"; result: string }
-  | { type: "position"; position: string }
+  /** `auto`: the answer a formal amendment gets by itself (`by: "auto"`). */
+  | { type: "position"; position: string; auto?: boolean }
   | { type: "acceptance"; decision: string }
   /** The kind an amendment was reclassified to ("formal" or "partial"). */
   | { type: "reclassified"; to: string }
@@ -554,7 +555,10 @@ function eventDetails(
     }
     case "position_changed": {
       const position = oneOf(PROPONENT_POSITIONS, payload.position);
-      return position ? [{ type: "position", position }] : [];
+      if (!position) return [];
+      return payload.by === "auto"
+        ? [{ type: "position", position, auto: true }]
+        : [{ type: "position", position }];
     }
     case "acceptance_recorded": {
       const decision = oneOf(ACCEPTANCE_DECISIONS, payload.decision);

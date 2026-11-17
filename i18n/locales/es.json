@@ -105,8 +105,6 @@
       "empty": "No hay contenido que mostrar.",
       "markerCount": "{count} enmienda sobre este párrafo. Verla | {count} enmiendas sobre este párrafo. Verlas",
       "markerOverlap": "Hay enmiendas que se solapan",
-      "totalityTitle": "Enmienda a la totalidad",
-      "totalityNote": "Esta enmienda no propone cambios concretos sobre el texto: pide su devolución en conjunto.",
       "previewUnavailable": "No se pueden mostrar los cambios",
       "previewUnavailableDescription": "Las operaciones de esta enmienda ya no encajan con el texto base del documento.",
       "inserted": "Se añade:",
@@ -508,7 +506,11 @@
       "intro": "Datos básicos de la asamblea y normas de funcionamiento que se aplican solo a ella.",
       "forbiddenTitle": "No puedes cambiar los ajustes",
       "forbiddenDescription": "Solo quienes gestionan la asamblea pueden editar sus datos y normas.",
-      "backToOverview": "Volver al resumen"
+      "backToOverview": "Volver al resumen",
+      "status": {
+        "title": "Estado de la asamblea",
+        "description": "Convocarla, abrir y cerrar su sesión o volver atrás. Abrir y cerrar la sesión también se hace desde «Sesión», y convocar desde «Convocatoria»."
+      }
     },
     "basics": {
       "title": "Datos básicos",
@@ -1340,8 +1342,6 @@
     "kinds": {
       "partial": "Parcial",
       "formal": "De forma",
-      "totality_return": "A la totalidad de devolución",
-      "totality_alternative": "A la totalidad con texto alternativo",
       "transactional": "Transaccional"
     },
     "changeKinds": {
@@ -1374,7 +1374,6 @@
     "list": {
       "label": "Enmiendas en orden del texto",
       "overlapGroup": "Mismo pasaje · una enmienda | Mismo pasaje · {count} enmiendas",
-      "totalityGroup": "A la totalidad",
       "count": "Ninguna enmienda | Una enmienda | {count} enmiendas",
       "loading": "Cargando enmiendas",
       "error": "No se han podido cargar las enmiendas",
@@ -1387,8 +1386,8 @@
     "filters": {
       "search": "Buscar enmiendas",
       "searchPlaceholder": "Código, miembro o justificación",
-      "button": "Más filtros",
-      "buttonActive": "Más filtros. En uso: {count}",
+      "button": "Filtros",
+      "buttonActive": "Filtros en uso: {count}",
       "chipsLabel": "Qué enmiendas ver",
       "chips": {
         "content": "Contenido",
@@ -1440,7 +1439,6 @@
       "changes": "Cambios propuestos",
       "globalReplace": "Sustituye «{find}» por «{replace}» en todo el texto",
       "occurrences": "una aparición | {count} apariciones",
-      "returnNote": "Propone devolver el documento a quien lo presentó: no modifica el texto y solo lleva justificación.",
       "justification": "Justificación",
       "noJustification": "Sin justificación todavía.",
       "authors": "Quién la presenta",
@@ -1481,7 +1479,8 @@
       },
       "replacedBy": "La sustituye la transaccional {list}. | La sustituyen las transaccionales {list}.",
       "replacedByUnknown": "La sustituye una enmienda transaccional.",
-      "approvedByMesa": "Aprobada sin votación: la aceptó la Mesa en nombre de quien presenta el documento"
+      "approvedByMesa": "Aprobada sin votación: la aceptó la Mesa en nombre de quien presenta el documento",
+      "approvedAuto": "Aprobada sin votación: es de forma y se aceptó automáticamente"
     },
     "position": {
       "title": "Respuesta de quien presenta el documento",
@@ -1518,6 +1517,8 @@
         "pending": "Falta la respuesta de {member}.",
         "none": "No hubo respuesta de {member}."
       },
+      "answerAuto": "Aceptada automáticamente: es de forma",
+      "answerAutoCleared": "Vuelve a quedar sin respuesta: ya no es de forma",
       "blocked": {
         "publication": "Se podrá responder cuando Secretaría la publique."
       },
@@ -1645,6 +1646,7 @@
         "inadmission": "Votación para declararla inadmisible"
       },
       "byPresenter": "Sin votación: la aceptó quien presenta el documento",
+      "byFormalRule": "Sin votación: se aceptó automáticamente por ser de forma",
       "closedByRejection": "Cerrada: la rechazó un autor principal",
       "closedBySources": "Cerrada: una de las enmiendas que agrupa ya está resuelta",
       "closedBySourcesDetail": "Enmienda resuelta: {source}",
@@ -1687,14 +1689,10 @@
       "titleEdit": "Seguir con el borrador",
       "close": "Cerrar sin enviar",
       "modes": {
-        "global": "Cambiar una palabra en todo el documento",
-        "return": "Devolver el documento",
-        "alternative": "Proponer un texto alternativo"
+        "global": "Cambiar una palabra en todo el documento"
       },
       "modeDescriptions": {
-        "global": "La palabra o expresión cambia en todo el documento («y en lo sucesivo»).",
-        "return": "Propones devolver el documento a quien lo presentó, sin cambiar el texto. Solo explicas por qué.",
-        "alternative": "Propones cambiar el documento entero por un texto nuevo."
+        "global": "La palabra o expresión cambia en todo el documento («y en lo sucesivo»)."
       },
       "editorLabel": "Texto del documento",
       "editorPlaceholder": "Escribe el texto que propones",
@@ -1704,22 +1702,15 @@
       "replacePlaceholder": "Déjalo vacío para suprimirlo",
       "globalHint": "Escribe el término para ver cuántas veces aparece.",
       "occurrences": "Ninguna aparición | Una aparición (párrafos afectados: {blocks}) | {count} apariciones (párrafos afectados: {blocks})",
-      "returnNote": "Esta enmienda no cambia el texto: explica abajo por qué hay que devolver el documento.",
-      "alternativeHint": "Escribe el texto completo que propones en lugar del actual.",
-      "alternativeLabel": "Texto alternativo completo",
-      "alternativePlaceholder": "Escribe aquí el texto alternativo",
-      "copyOriginal": "Partir del texto actual",
       "issues": {
         "no_changes": "Todavía no has cambiado nada.",
         "find_empty": "Escribe el término que quieres reemplazar.",
         "same_term": "El nuevo término es igual al actual.",
         "no_matches": "El término no aparece en el texto (se buscan palabras completas, distinguiendo mayúsculas).",
-        "alternative_empty": "Escribe el texto alternativo.",
         "kind_missing": "Elige qué tipo de enmienda es."
       },
       "errorsTitle": "La enmienda no se puede guardar así",
       "justificationPlaceholder": "Explica por qué propones este cambio",
-      "justificationRequired": "Explica por qué la propones antes de enviarla.",
       "onBehalf": "Presentar en nombre de",
       "onBehalfPlaceholder": "Elige el miembro que la presenta",
       "onBehalfHint": "Para enmiendas dictadas en la sesión. Quedará constancia de quién la registró.",
@@ -1789,7 +1780,6 @@
       },
       "why": {
         "question": "¿Por qué?",
-        "help": "Hace falta para enviarla.",
         "optional": "Es opcional, pero ayuda a entenderla."
       },
       "changed": "Todavía no has cambiado nada | Has cambiado un párrafo | Has cambiado {count} párrafos",
@@ -1834,7 +1824,6 @@
       "noop": "Algún cambio deja el texto igual que estaba.",
       "replace_in_deleted_block": "Modifica un párrafo que la misma enmienda suprime.",
       "overlapping_ops": "Dos cambios de la enmienda se solapan.",
-      "totality_return_ops": "Una enmienda de devolución no puede modificar el texto.",
       "inconsistent_counts": "Los votos emitidos superan a los miembros presentes.",
       "unknown": "La enmienda no es válida.",
       "format_shape": "Un cambio de formato no está bien indicado.",
@@ -1868,8 +1857,8 @@
     "reclassify": {
       "label": "Tipo de enmienda",
       "current": {
-        "partial": "Está como enmienda de contenido. Si solo corrige la forma, puedes cambiarla.",
-        "formal": "Está como enmienda de forma. Si cambia el contenido, puedes cambiarla."
+        "partial": "Está como enmienda de contenido. Si solo corrige la forma, puedes cambiarla: si nadie la ha respondido, se aceptará automáticamente.",
+        "formal": "Está como enmienda de forma. Si cambia el contenido, puedes cambiarla: si se aceptó automáticamente, volverá a esperar respuesta."
       },
       "action": {
         "formal": "Pasar a enmienda de forma",
@@ -2496,8 +2485,6 @@
       "amendmentKinds": {
         "partial": "Parcial",
         "formal": "De forma",
-        "totality_return": "Totalidad de devolución",
-        "totality_alternative": "Totalidad de texto alternativo",
         "transactional": "Transaccional"
       },
       "documentKinds": {
@@ -2560,7 +2547,6 @@
           "wholeDocument": "Todo el documento",
           "passage": "Párrafo que empieza «{text}»",
           "documentStart": "Inicio del documento",
-          "totalityReturn": "Propone devolver el texto en su totalidad.",
           "noChange": "El cambio ya no encaja en el texto publicado."
         }
       }
@@ -2919,7 +2905,9 @@
         "accept": "{who} aceptó {amendment}.",
         "reject": "{who} rechazó {amendment}. La asamblea la votará igualmente.",
         "transact": "{who} propone una transaccional sobre {amendment}.",
-        "pending": "{who} retiró su respuesta a {amendment}: vuelve a estar pendiente."
+        "pending": "{who} retiró su respuesta a {amendment}: vuelve a estar pendiente.",
+        "autoAccept": "Se ha aceptado automáticamente {amendment}: las enmiendas de forma se aceptan sin esperar respuesta.",
+        "autoPending": "Se retira la aceptación automática de {amendment}: ya no es de forma y vuelve a esperar respuesta."
       },
       "acceptance": {
         "accepted": "{who} aceptó {amendment}: sustituirá a las enmiendas originales cuando la acepten todos y esté validada.",
@@ -2947,6 +2935,7 @@
         "other": "Hay cambios en {amendment}.",
         "validatedLate": "Se ha validado {amendment}, pero llegó fuera de plazo: falta que la asamblea decida tratarla.",
         "incorporatedBy": "{who} aceptó {amendment}: ya está en el texto sin votación.",
+        "incorporatedAuto": "Se ha aceptado automáticamente {amendment} por ser de forma: ya está en el texto sin votación.",
         "transactedBy": "La transaccional {code} sustituye a {amendment} y se debate en su lugar.",
         "lapsedBy": "Ha decaído {amendment}: la transaccional {code} ya sustituye a esas enmiendas.",
         "closedBy": "Se ha cerrado {amendment}: la enmienda {code}, que agrupaba, ya se decidió o se retiró, así que no puede seguir adelante.",
@@ -3553,11 +3542,7 @@
       "present": "Presentar enmienda",
       "otherWays": "Otras formas de enmendar",
       "global": "Cambiar una palabra en todo el documento",
-      "globalHint": "Cambia una palabra o expresión cada vez que aparece.",
-      "return": "Devolver el documento",
-      "returnHint": "Pide que vuelva a quien lo presentó, sin cambiar el texto.",
-      "alternative": "Texto alternativo",
-      "alternativeHint": "Propone un texto nuevo en lugar de todo el documento."
+      "globalHint": "Cambia una palabra o expresión cada vez que aparece."
     },
     "more": {
       "label": "Más",
@@ -3859,8 +3844,7 @@
       "candidates": "Enmiendas afectadas",
       "select": "Marcar {code} como decaída",
       "keep": "Mantenerlas",
-      "submit": "Marcar como decaídas | Marcar 1 como decaída | Marcar {count} como decaídas",
-      "descriptionTotality": "Se ha aprobado la devolución del texto: el resto de enmiendas quedan sin objeto. ¿Las marcas como decaídas?"
+      "submit": "Marcar como decaídas | Marcar 1 como decaída | Marcar {count} como decaídas"
     },
     "assent": {
       "title": "Aprobar por asentimiento las aceptadas",
@@ -3906,7 +3890,6 @@
       "skipped": "No se ha podido aplicar {codes} junto con las anteriores: el texto parte de la primera que encaja. Ajústalo a mano.",
       "noSources": "Elige las enmiendas que se transaccionan",
       "noPassage": "Estas enmiendas no cambian ningún pasaje",
-      "noPassageHint": "Las enmiendas a la totalidad sin texto no se pueden transaccionar aquí.",
       "text": "Texto transaccional",
       "reset": "Volver al texto inicial",
       "diff": "Cambios sobre el texto base",
@@ -3935,7 +3918,6 @@
       "title": "Texto consolidado",
       "noDocument": "Ningún documento seleccionado",
       "fileDocument": "Documento en PDF: no hay texto que consolidar",
-      "totalityReturn": "{code}, enmienda a la totalidad de devolución, está aprobada",
       "conflictsTitle": "1 enmienda aprobada no se puede aplicar | {count} enmiendas aprobadas no se pueden aplicar",
       "conflictWith": "{code} choca con {others}",
       "conflictInvalid": "{code} ya no encaja en el texto base",
@@ -3946,7 +3928,6 @@
       "notVoted": "Este documento no se somete a votación",
       "notPublished": "El documento no está publicado",
       "undecided": "Queda 1 enmienda por decidir | Quedan {count} enmiendas por decidir",
-      "totalityReturnBlocked": "{code}, enmienda a la totalidad de devolución, está aprobada: el texto se devuelve y no hay votación final. Reábrela si se aprobó por error.",
       "amendmentsLoading": "Cargando las enmiendas del documento…",
       "awaitingValidation": "1 enmienda está pendiente de validar por Secretaría: tiene que validarla o devolverla a sus autores antes de la votación final. | {count} enmiendas están pendientes de validar por Secretaría: tiene que validarlas o devolverlas a sus autores antes de la votación final.",
       "awaitingProponent": "1 transaccional espera la aprobación de quien presenta el documento. | {count} transaccionales esperan la aprobación de quien presenta el documento.",
@@ -3975,8 +3956,6 @@
       "amendmentKind": {
         "partial": "Parcial",
         "formal": "De forma",
-        "totality_return": "Totalidad (devolución)",
-        "totality_alternative": "Totalidad (texto alternativo)",
         "transactional": "Transaccional"
       },
       "approvalMethod": {
@@ -4160,6 +4139,7 @@
     "position": {
       "by": "Respuesta de {member}:",
       "byMesa": "La Mesa, en nombre de {member}:",
+      "auto": "Respuesta automática, por ser de forma:",
       "waitsPublication": "Espera a que Secretaría la publique",
       "waitsPublicationFor": "Respuesta de {member}: se podrá dar cuando Secretaría la publique."
     },
@@ -4535,7 +4515,36 @@
     "tabs": {
       "label": "Partes de la hoja de control",
       "general": "General",
-      "amendments": "Enmiendas"
+      "amendments": "Enmiendas",
+      "history": "Historial"
+    },
+    "history": {
+      "title": "Historial de cambios",
+      "description": "Lo que ha cambiado en la hoja o sobre ella, de lo más reciente a lo más antiguo: lo que se anota, las respuestas de quienes presentan los documentos, y las votaciones y decisiones.",
+      "document": "Documento",
+      "groups": {
+        "sheet": "Anotaciones de la hoja",
+        "answers": "Respuestas de quien presenta",
+        "votes": "Votaciones y decisiones"
+      },
+      "filters": {
+        "groups": "Qué cambios",
+        "allGroups": "Todos",
+        "subject": "Punto o documento",
+        "allSubjects": "Toda la hoja",
+        "searchSubject": "Buscar un punto o documento",
+        "amendment": "Enmienda",
+        "allAmendments": "Todas sus enmiendas",
+        "person": "Quién",
+        "anyone": "Cualquiera",
+        "searchPerson": "Buscar una persona",
+        "from": "Desde",
+        "to": "Hasta",
+        "clear": "Quitar filtros"
+      },
+      "loadError": "No se ha podido cargar el historial",
+      "empty": "Todavía no hay cambios",
+      "noMatches": "Ningún cambio coincide con los filtros"
     },
     "columns": {
       "number": "Nº",
@@ -5553,7 +5562,13 @@
       "acceptVoteByMesaFor": "La Mesa, en nombre de {member}, la ha aceptado. La votará la asamblea y puedes cambiar la respuesta hasta entonces.",
       "incorporatedByMesaFor": "La Mesa, en nombre de {member}, la ha aceptado y ya está incorporada al texto. Si cambias la respuesta antes de la votación final, saldrá del texto.",
       "rejectByMesaFor": "La Mesa, en nombre de {member}, la ha rechazado: se debatirá y votará. Puedes cambiar la respuesta hasta que se decida.",
-      "transactByMesaFor": "La Mesa, en nombre de {member}, ha propuesto transaccionarla. Cuando se acuerde otro texto con quien la presenta, se puede proponer como transaccional desde el documento."
+      "transactByMesaFor": "La Mesa, en nombre de {member}, ha propuesto transaccionarla. Cuando se acuerde otro texto con quien la presenta, se puede proponer como transaccional desde el documento.",
+      "acceptAuto": "Se aceptó automáticamente por ser de forma. Puedes cambiar la respuesta hasta que se decida.",
+      "acceptVoteAuto": "Se aceptó automáticamente por ser de forma. La votará la asamblea y puedes cambiar la respuesta hasta entonces.",
+      "incorporatedAuto": "Se aceptó automáticamente por ser de forma y ya está incorporada al texto. Si cambias la respuesta antes de la votación final, saldrá del texto.",
+      "acceptAutoFor": "Se aceptó automáticamente en nombre de {member} por ser de forma. Puedes cambiar la respuesta hasta que se decida.",
+      "acceptVoteAutoFor": "Se aceptó automáticamente en nombre de {member} por ser de forma. La votará la asamblea y puedes cambiar la respuesta hasta entonces.",
+      "incorporatedAutoFor": "Se aceptó automáticamente en nombre de {member} por ser de forma y ya está incorporada al texto. Si cambias la respuesta antes de la votación final, saldrá del texto."
     },
     "change": {
       "where": "Dónde: {place}",
@@ -5700,6 +5715,10 @@
         "incorporated": "La Mesa, en nombre de {member}, la aceptó el {date} y se incorporó al texto sin votación.",
         "reject": "La Mesa, en nombre de {member}, la rechazó el {date}.",
         "transact": "La Mesa, en nombre de {member}, propuso transaccionarla el {date}."
+      },
+      "answeredAuto": {
+        "accept": "Se aceptó automáticamente en nombre de {member} el {date}, por ser de forma.",
+        "incorporated": "Se aceptó automáticamente en nombre de {member} el {date}, por ser de forma, y se incorporó al texto sin votación."
       }
     },
     "waiting": {
@@ -5737,8 +5756,8 @@
       "amendment": "Leída"
     },
     "unmark": {
-      "document": "Quitar la marca de leído",
-      "amendment": "Quitar la marca de leída"
+      "document": "Marcar como no leído",
+      "amendment": "Marcar como no leída"
     },
     "unread": {
       "document": "Sin leer",

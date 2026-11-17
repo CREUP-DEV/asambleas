@@ -19,6 +19,7 @@ vi.mock("./visibility", () => ({
 const {
   NEWS_DOCUMENT_TYPES,
   NEWS_OUTCOME_TYPES,
+  isAutomaticAnswer,
   isAutomaticChange,
   isAutomaticClosure,
   isAutomaticRestore,
@@ -561,6 +562,64 @@ describe("isAutomaticRestore", () => {
       isOthersDecision(
         { ...event, actorUserId: "u1", actorMemberId: "m1" },
         { userId: "u1", memberId: "m1" },
+      ),
+    ).toBe(true);
+  });
+});
+
+describe("automatic answer to formal amendments", () => {
+  const accepted = { position: "accept", by: "auto", memberId: "presenter" };
+  const approved = {
+    method: "proponent",
+    byPosition: true,
+    memberId: "presenter",
+    reason: "formal",
+  };
+  const reopened = {
+    previousStatus: "approved",
+    reason: "position_changed",
+    by: "auto",
+  };
+
+  it("tells it apart from the main presenter's answers", () => {
+    expect(isAutomaticAnswer("position_changed", accepted)).toBe(true);
+    expect(isAutomaticAnswer("amendment_approved", approved)).toBe(true);
+    expect(isAutomaticAnswer("amendment_reopened", reopened)).toBe(true);
+    expect(
+      isAutomaticAnswer("position_changed", { ...accepted, by: "proponent" }),
+    ).toBe(false);
+    expect(
+      isAutomaticAnswer("amendment_approved", {
+        method: "proponent",
+        reason: "rule_changed",
+      }),
+    ).toBe(false);
+  });
+
+  it("credits nobody, not the main presenter", () => {
+    expect(
+      newsByMemberId("position_changed", accepted, "secretaria", "presenter"),
+    ).toBeNull();
+    expect(
+      newsByMemberId("amendment_approved", approved, "secretaria", "presenter"),
+    ).toBeNull();
+    expect(
+      newsByMemberId("amendment_reopened", reopened, "secretaria", "presenter"),
+    ).toBeNull();
+  });
+
+  it("is nobody's decision, so it reaches the main presenter's own member", () => {
+    const me = { userId: "me", memberId: "presenter" };
+    expect(
+      isOthersDecision(
+        {
+          type: "position_changed",
+          payload: accepted,
+          actorUserId: "me",
+          actorMemberId: "presenter",
+        },
+        me,
+        "presenter",
       ),
     ).toBe(true);
   });

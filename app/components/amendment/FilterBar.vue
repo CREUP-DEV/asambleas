@@ -19,21 +19,21 @@ import {
 } from "~/composables/amendment/workspace";
 
 /**
- * What the amendments panel lists, as visible chips: "Contenido" (what the
- * list opens on) and "Forma", each with how many there are, "Todas",
- * "Pendientes", "Sin leer" (with how many are left, only while the account
- * has some or the filter is on) and "Fuera de plazo" set the filters
- * (applyAmendmentQuickFilter), and
- * "Mías" switches to the actor's own amendments (`tab`: drafts,
- * corrections and where the rest stand), with how many wait for them.
- *
- * Under them, for the whole list only: the search box and "Más filtros", a
- * popover with the rest (where it stands, where it stands with the
- * Secretaría when the actor sees amendments that are not public, with
- * "Devueltas para corregir" only when some were sent back and the actor
- * cannot edit them, kind, who presents it, on time or late, and "only
- * mine"). A block filter set from the text gutter shows as a removable
- * chip.
+ * What the amendments panel lists, in one row to keep the list tall: the
+ * search box (whole list only) and a «Filtros» button named after what is
+ * on show («Contenido», «Mías»...), with how many more filters are in use
+ * and how many of the actor's own wait for them. It opens a popover with
+ * the chips first: "Contenido" (what the list opens on) and "Forma", each
+ * with how many there are, "Todas", "Pendientes", "Sin leer" (with how many
+ * are left, only while the account has some or the filter is on) and
+ * "Fuera de plazo" set the filters (applyAmendmentQuickFilter), and "Mías"
+ * switches to the actor's own amendments (`tab`: drafts, corrections and
+ * where the rest stand). Under them, for the whole list: where it stands,
+ * where it stands with the Secretaría when the actor sees amendments that
+ * are not public, with "Devueltas para corregir" only when some were sent
+ * back and the actor cannot edit them, kind, who presents it, on time or
+ * late, and "only mine". A block filter set from the text gutter shows as a
+ * removable chip.
  *
  * Each chip carries `data-amendment-chip`, so the page can give focus back
  * to the pressed one.
@@ -166,6 +166,23 @@ const popoverCount = computed(() =>
 );
 const anyActive = computed(() => activeAmendmentFilterCount(filters.value) > 0);
 
+/** What the button says is on show: the chip, «Mías», or «Filtros». */
+const buttonLabel = computed(() => {
+  if (showingMine.value) return t("amendment.filters.chips.mine");
+  return quick.value
+    ? t(`amendment.filters.chips.${quick.value}`)
+    : t("amendment.filters.button");
+});
+
+/** The button's name for screen readers, with the filters in use. */
+const buttonAria = computed(() =>
+  popoverCount.value > 0
+    ? `${buttonLabel.value}. ${t("amendment.filters.buttonActive", {
+        count: popoverCount.value,
+      })}`
+    : buttonLabel.value,
+);
+
 function clearAll(): void {
   filters.value = emptyAmendmentFilters();
 }
@@ -173,60 +190,9 @@ function clearAll(): void {
 
 <template>
   <div class="flex flex-col gap-2">
-    <div
-      class="flex flex-wrap items-center gap-1.5"
-      role="group"
-      :aria-label="t('amendment.filters.chipsLabel')"
-    >
-      <UButton
-        v-for="value in quickFilters"
-        :key="value"
-        size="sm"
-        :color="quick === value ? 'primary' : 'neutral'"
-        :variant="quick === value ? 'subtle' : 'outline'"
-        :aria-pressed="quick === value"
-        :data-testid="`amendment-chip-${value}`"
-        data-amendment-chip
-        @click="pick(value)"
-      >
-        {{ t(`amendment.filters.chips.${value}`) }}
-        <span v-if="chipCount(value) !== null" class="text-muted tabular-nums">
-          {{ chipCount(value) }}
-        </span>
-      </UButton>
-      <UButton
-        v-if="showMine"
-        size="sm"
-        :color="showingMine ? 'primary' : 'neutral'"
-        :variant="showingMine ? 'subtle' : 'outline'"
-        :aria-pressed="showingMine"
-        :aria-label="
-          mineWaiting > 0
-            ? t(
-                'amendment.filters.chips.mineWaiting',
-                { count: mineWaiting },
-                mineWaiting,
-              )
-            : undefined
-        "
-        data-amendment-chip
-        @click="tab = 'mine'"
-      >
-        {{ t("amendment.filters.chips.mine") }}
-        <UBadge
-          v-if="mineWaiting > 0"
-          size="sm"
-          :color="mineUrgent ? 'warning' : 'neutral'"
-          variant="subtle"
-          class="tabular-nums"
-          :label="String(mineWaiting)"
-          aria-hidden="true"
-        />
-      </UButton>
-    </div>
-
-    <div v-if="!showingMine" class="flex items-center gap-2">
+    <div class="flex items-center gap-2">
       <UInput
+        v-if="!showingMine"
         :model-value="filters.query"
         icon="i-lucide-search"
         size="sm"
@@ -241,127 +207,194 @@ function clearAll(): void {
           color="neutral"
           variant="outline"
           size="sm"
-          :label="t('amendment.filters.button')"
-          :aria-label="
-            popoverCount > 0
-              ? t('amendment.filters.buttonActive', { count: popoverCount })
-              : t('amendment.filters.button')
-          "
+          :label="buttonLabel"
+          :aria-label="buttonAria"
         >
-          <template v-if="popoverCount > 0" #trailing>
-            <UBadge size="xs" color="primary" :label="String(popoverCount)" />
+          <template v-if="popoverCount > 0 || mineWaiting > 0" #trailing>
+            <UBadge
+              v-if="popoverCount > 0"
+              size="xs"
+              color="primary"
+              :label="String(popoverCount)"
+            />
+            <UBadge
+              v-if="mineWaiting > 0 && !showingMine"
+              size="xs"
+              :color="mineUrgent ? 'warning' : 'neutral'"
+              variant="subtle"
+              icon="i-lucide-user-round"
+              :label="String(mineWaiting)"
+            />
           </template>
         </UButton>
 
         <template #content>
           <div class="flex w-80 max-w-[90vw] flex-col gap-3 p-3">
-            <UFormField :label="t('amendment.filters.status')">
-              <USelectMenu
-                :model-value="filters.statuses"
-                :items="statusItems"
-                value-key="value"
-                multiple
-                :search-input="false"
-                class="w-full"
-                :placeholder="t('amendment.filters.any')"
-                :aria-label="
-                  selectMenuLabel(
-                    t('amendment.filters.status'),
-                    statusItems,
-                    filters.statuses,
-                    t('amendment.filters.any'),
-                  )
-                "
-                @update:model-value="patch({ statuses: $event })"
-              />
-            </UFormField>
-            <UFormField
-              v-if="
-                showReviewFilter ||
-                showReturnedFilter ||
-                filters.review !== 'any'
-              "
-              :label="t('amendment.filters.review')"
+            <div
+              class="flex flex-wrap items-center gap-1.5"
+              role="group"
+              :aria-label="t('amendment.filters.chipsLabel')"
             >
-              <USelect
-                :model-value="filters.review"
-                :items="reviewItems"
-                class="w-full"
-                @update:model-value="
-                  patch({ review: $event as AmendmentReviewFilter })
-                "
-              />
-            </UFormField>
-            <UFormField :label="t('amendment.filters.kind')">
-              <USelectMenu
-                :model-value="filters.kinds"
-                :items="kindItems"
-                value-key="value"
-                multiple
-                :search-input="false"
-                class="w-full"
-                :placeholder="t('amendment.filters.any')"
+              <UButton
+                v-for="value in quickFilters"
+                :key="value"
+                size="sm"
+                :color="quick === value ? 'primary' : 'neutral'"
+                :variant="quick === value ? 'subtle' : 'outline'"
+                :aria-pressed="quick === value"
+                :data-testid="`amendment-chip-${value}`"
+                data-amendment-chip
+                @click="pick(value)"
+              >
+                {{ t(`amendment.filters.chips.${value}`) }}
+                <span
+                  v-if="chipCount(value) !== null"
+                  class="text-muted tabular-nums"
+                >
+                  {{ chipCount(value) }}
+                </span>
+              </UButton>
+              <UButton
+                v-if="showMine"
+                size="sm"
+                :color="showingMine ? 'primary' : 'neutral'"
+                :variant="showingMine ? 'subtle' : 'outline'"
+                :aria-pressed="showingMine"
                 :aria-label="
-                  selectMenuLabel(
-                    t('amendment.filters.kind'),
-                    kindItems,
-                    filters.kinds,
-                    t('amendment.filters.any'),
-                  )
+                  mineWaiting > 0
+                    ? t(
+                        'amendment.filters.chips.mineWaiting',
+                        { count: mineWaiting },
+                        mineWaiting,
+                      )
+                    : undefined
                 "
-                @update:model-value="patch({ kinds: $event })"
+                data-amendment-chip
+                @click="tab = 'mine'"
+              >
+                {{ t("amendment.filters.chips.mine") }}
+                <UBadge
+                  v-if="mineWaiting > 0"
+                  size="sm"
+                  :color="mineUrgent ? 'warning' : 'neutral'"
+                  variant="subtle"
+                  class="tabular-nums"
+                  :label="String(mineWaiting)"
+                  aria-hidden="true"
+                />
+              </UButton>
+            </div>
+
+            <template v-if="!showingMine">
+              <USeparator />
+              <UFormField :label="t('amendment.filters.status')">
+                <USelectMenu
+                  :model-value="filters.statuses"
+                  :items="statusItems"
+                  value-key="value"
+                  multiple
+                  :search-input="false"
+                  class="w-full"
+                  :placeholder="t('amendment.filters.any')"
+                  :aria-label="
+                    selectMenuLabel(
+                      t('amendment.filters.status'),
+                      statusItems,
+                      filters.statuses,
+                      t('amendment.filters.any'),
+                    )
+                  "
+                  @update:model-value="patch({ statuses: $event })"
+                />
+              </UFormField>
+              <UFormField
+                v-if="
+                  showReviewFilter ||
+                  showReturnedFilter ||
+                  filters.review !== 'any'
+                "
+                :label="t('amendment.filters.review')"
+              >
+                <USelect
+                  :model-value="filters.review"
+                  :items="reviewItems"
+                  class="w-full"
+                  @update:model-value="
+                    patch({ review: $event as AmendmentReviewFilter })
+                  "
+                />
+              </UFormField>
+              <UFormField :label="t('amendment.filters.kind')">
+                <USelectMenu
+                  :model-value="filters.kinds"
+                  :items="kindItems"
+                  value-key="value"
+                  multiple
+                  :search-input="false"
+                  class="w-full"
+                  :placeholder="t('amendment.filters.any')"
+                  :aria-label="
+                    selectMenuLabel(
+                      t('amendment.filters.kind'),
+                      kindItems,
+                      filters.kinds,
+                      t('amendment.filters.any'),
+                    )
+                  "
+                  @update:model-value="patch({ kinds: $event })"
+                />
+              </UFormField>
+              <UFormField :label="t('amendment.filters.member')">
+                <USelectMenu
+                  :model-value="filters.memberIds"
+                  :items="memberItems"
+                  value-key="value"
+                  :ui="MEMBER_MENU_UI"
+                  :filter-fields="MEMBER_MENU_FILTER_FIELDS"
+                  multiple
+                  class="w-full"
+                  :placeholder="t('amendment.filters.any')"
+                  :aria-label="
+                    selectMenuLabel(
+                      t('amendment.filters.member'),
+                      memberItems,
+                      filters.memberIds,
+                      t('amendment.filters.any'),
+                    )
+                  "
+                  :search-input="
+                    labelledSearch(t('amendment.filters.memberSearch'))
+                  "
+                  @update:model-value="patch({ memberIds: $event })"
+                />
+              </UFormField>
+              <UFormField :label="t('amendment.filters.late')">
+                <USelect
+                  :model-value="filters.late"
+                  :items="lateItems"
+                  class="w-full"
+                  @update:model-value="
+                    patch({ late: $event as AmendmentLateFilter })
+                  "
+                />
+              </UFormField>
+              <USwitch
+                v-if="canFilterMine"
+                :model-value="filters.mine"
+                :label="t('amendment.filters.mine')"
+                @update:model-value="patch({ mine: Boolean($event) })"
               />
-            </UFormField>
-            <UFormField :label="t('amendment.filters.member')">
-              <USelectMenu
-                :model-value="filters.memberIds"
-                :items="memberItems"
-                value-key="value"
-                :ui="MEMBER_MENU_UI"
-                :filter-fields="MEMBER_MENU_FILTER_FIELDS"
-                multiple
-                class="w-full"
-                :placeholder="t('amendment.filters.any')"
-                :aria-label="
-                  selectMenuLabel(
-                    t('amendment.filters.member'),
-                    memberItems,
-                    filters.memberIds,
-                    t('amendment.filters.any'),
-                  )
-                "
-                :search-input="
-                  labelledSearch(t('amendment.filters.memberSearch'))
-                "
-                @update:model-value="patch({ memberIds: $event })"
+              <UButton
+                v-if="anyActive"
+                icon="i-lucide-filter-x"
+                color="neutral"
+                variant="ghost"
+                size="sm"
+                class="self-start"
+                :label="t('amendment.filters.clear')"
+                @click="clearAll"
               />
-            </UFormField>
-            <UFormField :label="t('amendment.filters.late')">
-              <USelect
-                :model-value="filters.late"
-                :items="lateItems"
-                class="w-full"
-                @update:model-value="
-                  patch({ late: $event as AmendmentLateFilter })
-                "
-              />
-            </UFormField>
-            <USwitch
-              v-if="canFilterMine"
-              :model-value="filters.mine"
-              :label="t('amendment.filters.mine')"
-              @update:model-value="patch({ mine: Boolean($event) })"
-            />
-            <UButton
-              v-if="anyActive"
-              icon="i-lucide-filter-x"
-              color="neutral"
-              variant="ghost"
-              size="sm"
-              class="self-start"
-              :label="t('amendment.filters.clear')"
-              @click="clearAll"
-            />
+            </template>
           </div>
         </template>
       </UPopover>

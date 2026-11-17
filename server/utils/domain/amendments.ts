@@ -42,6 +42,7 @@ import type {
   ApprovalMethod,
   AssemblySettings,
   Majority,
+  ProponentPosition,
   RelationKind,
 } from "../../../shared/constants/domain";
 import { amendmentVoteMajority } from "../../../shared/constants/domain";
@@ -81,7 +82,10 @@ import {
   amendmentCodeSeq,
   formatAmendmentCode,
 } from "../../../shared/utils/amendmentCode";
-import { reclassifyTarget } from "../../../shared/utils/amendmentReclassify";
+import {
+  canReclassifyAmendment,
+  reclassifyTarget,
+} from "../../../shared/utils/amendmentReclassify";
 import {
   amendmentWindow,
   isLateSubmission,
@@ -164,6 +168,8 @@ import {
   publishOnValidation,
   positionEffect,
   positionRecordedBy,
+  reclassifyPositionPlan,
+  shouldAutoAcceptPosition,
   submissionLate,
   transactionalReopenBlocker,
   transactionalSourcesMessage,
@@ -329,24 +335,14 @@ export function reIdInsertedBlocks(
 
 /**
  * Re-ids inserted blocks and validates the operations against the base.
- * A devolution (`totality_return`) has no operations at all; every other kind
- * needs at least one, which `validateOps` reports as "empty".
+ * An amendment needs at least one, which `validateOps` reports as "empty".
  */
 export function prepareAmendmentOps(input: {
-  kind: AmendmentKind;
   ops: AmendmentOp[];
   base: Block[];
   takenIds: Iterable<string>;
   newId?: () => string;
 }): { ops: AmendmentOp[]; errors: OpError[] } {
-  if (input.kind === "totality_return") {
-    return input.ops.length === 0
-      ? { ops: [], errors: [] }
-      : {
-          ops: input.ops,
-          errors: [{ index: -1, reason: "totality_return_ops" }],
-        };
-  }
   const ops = reIdInsertedBlocks(
     input.ops,
     input.base,
@@ -356,18 +352,8 @@ export function prepareAmendmentOps(input: {
   return { ops, errors: validateOps(input.base, ops) };
 }
 
-/**
- * Sort key by position in the base. Totality amendments go first: an
- * approved return leaves nothing else to vote (usual practice; no rule in
- * force fixes the order).
- */
-export function amendmentSortKey(
-  kind: AmendmentKind,
-  ops: AmendmentOp[],
-  base: Block[],
-): number {
-  if (kind === "totality_return") return -2;
-  if (kind === "totality_alternative") return -1;
+/** Sort key by position in the base. */
+export function amendmentSortKey(ops: AmendmentOp[], base: Block[]): number {
   return ops.length > 0 ? positionKey(ops, base) : base.length;
 }
 
@@ -940,23 +926,38 @@ async function lockDocument(
   tx: Tx,
   documentId: string,
   mode: "no key update" | "share" = "no key update",
-): Promise<{ agendaItemId: string | null }> {
+): Promise<{ agendaItemId: string | null; rule: AcceptedAmendmentRule }> {
+  const row = await lockDocumentRow(tx, documentId, mode);
+  assertNotVoted(row);
+  if (mode === "no key update" && row.status !== "published") {
+    fail(409, "El documento no admite enmiendas");
+  }
+  return { agendaItemId: row.agendaItemId, rule: row.acceptedAmendments };
+}
+
+/**
+ * The document row under a row lock (lockDocument), without refusing a
+ * voted one: publishing still runs after the final vote, and only needs to
+ * know whether the answers are closed (`voted`) and the document's rule.
+ */
+async function lockDocumentRow(
+  tx: Tx,
+  documentId: string,
+  mode: "no key update" | "share",
+) {
   const [row] = await tx
     .select({
       status: documents.status,
       finalVoteId: documents.finalVoteId,
       consolidatedVersionId: documents.consolidatedVersionId,
       agendaItemId: documents.agendaItemId,
+      acceptedAmendments: documents.acceptedAmendments,
     })
     .from(documents)
     .where(eq(documents.id, documentId))
     .for(mode);
   if (!row) fail(404, "Documento no encontrado");
-  assertNotVoted(row);
-  if (mode === "no key update" && row.status !== "published") {
-    fail(409, "El documento no admite enmiendas");
-  }
-  return { agendaItemId: row.agendaItemId };
+  return row;
 }
 
 /**
@@ -968,25 +969,43 @@ async function lockDocument(
  * fields, never their key.
  */
 function lockAmendments(tx: Tx, documentId: string, ids: string[]) {
+  return selectAmendmentRows(tx, documentId, ids).for("no key update");
+}
+
+/** What lockAmendments reads of each row. */
+const LOCKED_AMENDMENT_COLUMNS = {
+  id: amendments.id,
+  kind: amendments.kind,
+  code: amendments.code,
+  status: amendments.status,
+  admission: amendments.admission,
+  late: amendments.late,
+  validatedAt: amendments.validatedAt,
+  publishedAt: amendments.publishedAt,
+  decidedAt: amendments.decidedAt,
+  approvalMethod: amendments.approvalMethod,
+  outcomeVoteId: amendments.outcomeVoteId,
+};
+
+function selectAmendmentRows(tx: Tx, documentId: string, ids: string[]) {
   return tx
-    .select({
-      id: amendments.id,
-      code: amendments.code,
-      status: amendments.status,
-      admission: amendments.admission,
-      late: amendments.late,
-      validatedAt: amendments.validatedAt,
-      publishedAt: amendments.publishedAt,
-      decidedAt: amendments.decidedAt,
-      approvalMethod: amendments.approvalMethod,
-      outcomeVoteId: amendments.outcomeVoteId,
-    })
+    .select(LOCKED_AMENDMENT_COLUMNS)
     .from(amendments)
     .where(
       and(eq(amendments.documentId, documentId), inArray(amendments.id, ids)),
     )
     .orderBy(asc(amendments.id))
-    .for("no key update");
+    .$dynamic();
+}
+
+/**
+ * The rows of amendments this transaction already locked (lockAmendments),
+ * read again after it changed them: the locked snapshot still shows them
+ * as they were before.
+ */
+function rereadLocked(tx: Tx, documentId: string, ids: string[]) {
+  if (ids.length === 0) return Promise.resolve([] as LockedAmendment[]);
+  return selectAmendmentRows(tx, documentId, ids);
 }
 
 type LockedAmendment = Awaited<ReturnType<typeof lockAmendments>>[number];
@@ -1928,7 +1947,6 @@ export async function createAmendmentDraft(
   const id = await db.transaction(async (tx) => {
     await lockDocument(tx, document.id);
     const { ops, errors } = prepareAmendmentOps({
-      kind: body.kind,
       ops: body.ops,
       base,
       takenIds: await otherInsertedIds(tx, document.id),
@@ -1952,7 +1970,7 @@ export async function createAmendmentDraft(
         ops,
         meta,
         justification: body.justification,
-        positionKey: amendmentSortKey(body.kind, ops, base),
+        positionKey: amendmentSortKey(ops, base),
         createdByUserId: actor.user.id,
       })
       .returning({ id: amendments.id });
@@ -2144,7 +2162,6 @@ export async function updateAmendmentDraft(
   await db.transaction(async (tx) => {
     await lockDocument(tx, document.id);
     const { ops, errors } = prepareAmendmentOps({
-      kind,
       ops: body.ops ?? amendment.ops,
       base,
       takenIds: await otherInsertedIds(tx, document.id, amendment.id),
@@ -2160,7 +2177,7 @@ export async function updateAmendmentDraft(
         ops,
         meta: nextMeta,
         justification: body.justification ?? amendment.justification,
-        positionKey: amendmentSortKey(kind, ops, base),
+        positionKey: amendmentSortKey(ops, base),
       })
       .where(
         and(
@@ -2825,6 +2842,12 @@ function assertValidatedForAdmission(
   }
 }
 
+/**
+ * The Secretaría or the Mesa decides whether late amendments are treated,
+ * or declares amendments inadmissible, by itself or by a vote (docs/api.md,
+ * "Admission"). Admitting publishes them, and a formal one admitted is
+ * answered by itself (autoAcceptFormal).
+ */
 export async function decideAmendmentAdmission(
   ctx: DocumentAmendmentContext,
   body: AdmissionBody,
@@ -2879,7 +2902,7 @@ export async function decideAmendmentAdmission(
   const result = await db.transaction(async (tx) => {
     // A vote is projected: assembly before document ("Row locks").
     if (evaluated) await shareLockAssembly(tx, ctx.assembly.id);
-    await lockDocument(tx, document.id, "share");
+    const { rule } = await lockDocument(tx, document.id, "share");
     // In id order, as an approval locks its lineage: the update below then
     // only touches rows this transaction already holds. The check above ran
     // before the lock, so a concurrent decision may have committed since.
@@ -2898,9 +2921,18 @@ export async function decideAmendmentAdmission(
     const dependents =
       admission === "inadmissible"
         ? await findCompetitors(tx, document.id, null, body.amendmentIds)
-        : readmitting.length > 0
-          ? await findCompetitors(tx, document.id, null, readmitting)
-          : { sourceMap: new Map<string, string[]>(), ids: [] };
+        : await findCompetitors(tx, document.id, null, readmitting);
+    // Admitted, a formal amendment is answered by itself, and under the
+    // "incorporate" rule that acceptance closes the transactionals over it
+    // (autoAcceptFormal): those are locked too, with their acceptances.
+    const sourceMap =
+      admission === "admitted" && dependents.sourceMap.size === 0
+        ? await loadSourceMap(tx, document.id)
+        : dependents.sourceMap;
+    const overIds =
+      admission === "admitted"
+        ? transactionalsOverIds(sourceMap, body.amendmentIds)
+        : [];
     const requested = new Set(body.amendmentIds);
     const lockedAll = await lockAmendments(
       tx,
@@ -2908,18 +2940,13 @@ export async function decideAmendmentAdmission(
       unique([
         ...body.amendmentIds,
         ...(admission === "inadmissible" ? dependents.ids : []),
-        ...restoreLockIds(dependents.sourceMap, readmitting),
+        ...restoreLockIds(sourceMap, readmitting),
+        ...overIds,
       ]),
     );
     const locked = lockedAll.filter((row) => requested.has(row.id));
     const restoreParties =
-      readmitting.length > 0
-        ? await lockParties(
-            tx,
-            transactionalsOverIds(dependents.sourceMap, readmitting),
-            "share",
-          )
-        : [];
+      overIds.length > 0 ? await lockParties(tx, overIds, "share") : [];
     const seen = new Map(rows.map((row) => [row.id, row]));
     if (
       locked.length !== body.amendmentIds.length ||
@@ -3110,12 +3137,23 @@ export async function decideAmendmentAdmission(
       await restoreDependents(
         tx,
         ctx,
-        dependents.sourceMap,
+        sourceMap,
         lockedAll,
         restoreParties,
         locked.filter((row) => row.status === "inadmissible"),
         { admission: "admitted" },
       );
+    }
+    if (admission === "admitted") {
+      // Admitted and published: a formal one is answered by itself.
+      await autoAcceptFormal(tx, ctx, {
+        ids: body.amendmentIds,
+        lockedIds: lockedAll.map((row) => row.id),
+        sourceMap,
+        parties: restoreParties,
+        rule,
+        voted: false,
+      });
     }
     if (voteRow) {
       await pointLiveVote(tx, {
@@ -3175,9 +3213,10 @@ async function assertDocumentAmendments(
  * (publishOnValidation): it replaces what it groups, which must still be
  * open (replaceSources), and the other transactionals over those amendments
  * lapse. Two transactionals over the same amendment in one batch are
- * refused (409). Locks the document (share), then the amendments, those
- * sources and the other transactionals over them in id order, then the
- * acceptances.
+ * refused (409). A formal amendment it publishes is answered by itself
+ * (autoAcceptFormal). Locks the document (share), then the amendments,
+ * those sources and the other transactionals over them in id order, then
+ * the acceptances, then the answers of the formal ones.
  */
 export async function validateAmendments(
   ctx: DocumentAmendmentContext,
@@ -3189,7 +3228,7 @@ export async function validateAmendments(
   await assertDocumentAmendments(document.id, body.amendmentIds);
 
   await db.transaction(async (tx) => {
-    await lockDocument(tx, document.id, "share");
+    const { rule } = await lockDocument(tx, document.id, "share");
     const sourceMap = await loadSourceMap(tx, document.id);
     // Both would replace the same amendment: one at a time, and the other
     // one is closed when the first replaces it.
@@ -3210,6 +3249,10 @@ export async function validateAmendments(
         ),
       ),
     };
+    // The transactionals over the amendments themselves, which a formal
+    // one's automatic acceptance would close (autoAcceptFormal; none
+    // groups an amendment that was never published).
+    const overIds = transactionalsOverIds(sourceMap, body.amendmentIds);
     // One ordered pass: the amendments, what the transactionals among them
     // replace and the other transactionals over those.
     const lockedById = new Map(
@@ -3217,7 +3260,12 @@ export async function validateAmendments(
         await lockAmendments(
           tx,
           document.id,
-          unique([...body.amendmentIds, ...sourceIds, ...competitors.ids]),
+          unique([
+            ...body.amendmentIds,
+            ...sourceIds,
+            ...competitors.ids,
+            ...overIds,
+          ]),
         )
       ).map((row) => [row.id, row]),
     );
@@ -3245,10 +3293,9 @@ export async function validateAmendments(
     const transactionalIds = locked
       .filter((row) => row.kind === "transactional")
       .map((row) => row.id);
+    const partyIds = unique([...transactionalIds, ...overIds]);
     const partyRows =
-      transactionalIds.length > 0
-        ? await lockParties(tx, transactionalIds, "share")
-        : [];
+      partyIds.length > 0 ? await lockParties(tx, partyIds, "share") : [];
     const rows = locked.map((row) => ({
       ...row,
       authorsApproval: authorsApproval({
@@ -3351,6 +3398,15 @@ export async function validateAmendments(
         competitors: lockedCompetitors(competitors, lockedById.values()),
       });
     }
+    // A formal amendment published now is answered by itself.
+    await autoAcceptFormal(tx, ctx, {
+      ids: body.amendmentIds,
+      lockedIds: [...lockedById.keys()],
+      sourceMap,
+      parties: partyRows,
+      rule,
+      voted: false,
+    });
   });
 
   return listDocumentAmendments(ctx);
@@ -3361,7 +3417,10 @@ export async function validateAmendments(
  * the document (amendment:review). Each one must be validated, past draft
  * and not published yet. Publishing only changes who sees the amendment, so
  * it is still allowed after the final vote: an amendment decided before it
- * was published can be shown afterwards.
+ * was published can be shown afterwards. Before it, a formal amendment it
+ * makes answerable is answered by itself (autoAcceptFormal). Locks the
+ * document (share, voted or not), then the amendments with the
+ * transactionals over them, then their acceptances and answers.
  */
 export async function publishAmendments(
   ctx: DocumentAmendmentContext,
@@ -3372,7 +3431,20 @@ export async function publishAmendments(
   await assertDocumentAmendments(document.id, body.amendmentIds);
 
   await db.transaction(async (tx) => {
-    const locked = await lockAmendments(tx, document.id, body.amendmentIds);
+    // Shared, before the amendments ("Row locks"): a final vote waits, and
+    // tells whether a formal amendment published now is still answered.
+    const documentRow = await lockDocumentRow(tx, document.id, "share");
+    const sourceMap = await loadSourceMap(tx, document.id);
+    const overIds = transactionalsOverIds(sourceMap, body.amendmentIds);
+    const requested = new Set(body.amendmentIds);
+    const lockedAll = await lockAmendments(
+      tx,
+      document.id,
+      unique([...body.amendmentIds, ...overIds]),
+    );
+    const parties =
+      overIds.length > 0 ? await lockParties(tx, overIds, "share") : [];
+    const locked = lockedAll.filter((row) => requested.has(row.id));
     if (
       locked.length !== body.amendmentIds.length ||
       !locked.every(isAmendmentPublishable)
@@ -3405,6 +3477,16 @@ export async function publishAmendments(
         actor,
       });
     }
+    // A formal amendment answerable now is answered by itself, unless the
+    // document was voted.
+    await autoAcceptFormal(tx, ctx, {
+      ids: body.amendmentIds,
+      lockedIds: lockedAll.map((row) => row.id),
+      sourceMap,
+      parties,
+      rule: documentRow.acceptedAmendments,
+      voted: documentVoted(documentRow),
+    });
   });
 
   return listDocumentAmendments(ctx);
@@ -3625,9 +3707,18 @@ export async function requestAmendmentCorrection(
 /**
  * The Secretaría (amendment:review; the Mesa alone cannot) moves a
  * presented, undecided amendment between "de forma" (`formal`) and the
- * content kind (`partial`): reclassifyTarget. Nothing else about it changes
- * (operations, number, code, timing, review state, answer). Optimistic lock
- * on the amendment; the event carries both kinds.
+ * content kind (`partial`): reclassifyTarget. One the main presenter's
+ * acceptance incorporated still counts as undecided (canReclassifyAmendment).
+ * Nothing else about it changes (operations, number, code, timing, review
+ * state), except its answer (reclassifyPositionPlan): made formal while
+ * answerable and unanswered, it is accepted by itself; made a content
+ * amendment while its answer is still that automatic acceptance, the
+ * answer goes back to pending, which reopens it if the acceptance had
+ * incorporated it (recordPosition). An answer given by hand stays.
+ * Optimistic lock on the amendment; the event carries both kinds. Locks
+ * the document (share), then the amendment with the transactionals over
+ * it and what they group (restoreLockIds), then their acceptances, then
+ * its answer.
  */
 export async function reclassifyAmendment(
   ctx: AmendmentContext,
@@ -3644,7 +3735,7 @@ export async function reclassifyAmendment(
     );
   }
   if (body.kind !== to) fail(409, "La enmienda ya es de ese tipo");
-  if (amendment.status !== "submitted") {
+  if (!canReclassifyAmendment(amendment, false)) {
     fail(
       409,
       "Solo se puede cambiar el tipo de una enmienda presentada y sin decidir",
@@ -3653,14 +3744,30 @@ export async function reclassifyAmendment(
   assertNotFinal(ctx);
 
   await db.transaction(async (tx) => {
-    await lockDocument(tx, ctx.document.id, "share");
+    const { rule } = await lockDocument(tx, ctx.document.id, "share");
+    const sourceMap = await loadSourceMap(tx, ctx.document.id);
+    const locked = await lockAmendments(
+      tx,
+      ctx.document.id,
+      unique([amendment.id, ...restoreLockIds(sourceMap, [amendment.id])]),
+    );
+    const overIds = transactionalsOverIds(sourceMap, [amendment.id]);
+    const parties =
+      overIds.length > 0 ? await lockParties(tx, overIds, "share") : [];
+    const stored = (await lockPositions(tx, [amendment.id])).get(amendment.id);
     const updated = await tx
       .update(amendments)
       .set({ kind: to })
       .where(
         and(
           eq(amendments.id, amendment.id),
-          eq(amendments.status, "submitted"),
+          or(
+            eq(amendments.status, "submitted"),
+            and(
+              eq(amendments.status, "approved"),
+              eq(amendments.approvalMethod, "proponent"),
+            ),
+          ),
           eq(amendments.kind, from),
           buildOptimisticLockCondition(amendments.updatedAt, body.updatedAt),
         ),
@@ -3677,6 +3784,32 @@ export async function reclassifyAmendment(
       payload: { from, to },
       actor,
     });
+
+    const current = locked.find((row) => row.id === amendment.id);
+    if (!current) fail(409, "La enmienda ha cambiado. Recarga la página");
+    const position = stored?.position ?? null;
+    const plan = reclassifyPositionPlan(
+      current,
+      to,
+      position,
+      position === "accept"
+        ? await latestPositionBy(tx, amendment.id)
+        : undefined,
+      rule,
+    );
+    if (plan) {
+      await recordPosition(tx, ctx, {
+        current: { ...current, kind: to },
+        rule,
+        position: plan,
+        comment: null,
+        by: "auto",
+        sourceIds: [],
+        competitors: { sourceMap, ids: overIds },
+        locked,
+        parties,
+      });
+    }
   });
 
   return amendmentDto(ctx, amendment.id);
@@ -3843,20 +3976,299 @@ export async function changeAmendmentAuthors(
 // Position -------------------------------------------------------------------
 
 /**
+ * Who gave an answer (position_changed's `by`): the main presenter, the Mesa
+ * on its behalf, or nobody ("auto": the acceptance a formal amendment gets
+ * by itself, autoAcceptFormal, and its undoing when it stops being formal).
+ */
+type PositionBy = "proponent" | "moderator" | "auto";
+
+/**
+ * The stored answers of these amendments, locked for the change in id
+ * order, after their amendment rows ("Row locks"). Missing rows read as
+ * absent.
+ */
+async function lockPositions(
+  tx: Tx,
+  amendmentIds: string[],
+): Promise<Map<string, { position: ProponentPosition; updatedAt: Date }>> {
+  if (amendmentIds.length === 0) return new Map();
+  const rows = await tx
+    .select({
+      amendmentId: amendmentPositions.amendmentId,
+      position: amendmentPositions.position,
+      updatedAt: amendmentPositions.updatedAt,
+    })
+    .from(amendmentPositions)
+    .where(inArray(amendmentPositions.amendmentId, amendmentIds))
+    .orderBy(asc(amendmentPositions.amendmentId))
+    .for("no key update");
+  return new Map(rows.map(({ amendmentId, ...row }) => [amendmentId, row]));
+}
+
+/**
+ * Records the main presenter's answer and what it does under the document's
+ * rule (positionEffect): under "incorporate" accepting approves an
+ * undecided amendment (approval method "proponent"), with what a
+ * transactional replaces and the pending transactionals over it closed, and
+ * moving an amendment approved that way away from "accept" reopens it, with
+ * what its incorporation closed brought back. The one path for an answer,
+ * given by hand (setAmendmentPosition) or by itself (autoAcceptFormal,
+ * reclassifyAmendment): the caller checked it may be given
+ * (positionBlocker) and holds the document lock, the rows of `locked` (the
+ * amendment, what a transactional groups, the transactionals over the
+ * amendment and restoreLockIds, in one ordered pass), the acceptances of
+ * those transactionals (`parties`) and the position row. `current` is the
+ * amendment's row as it is now.
+ */
+async function recordPosition(
+  tx: Tx,
+  ctx: DocumentAmendmentContext,
+  input: {
+    current: LockedAmendment;
+    rule: AcceptedAmendmentRule;
+    position: ProponentPosition;
+    comment: string | null;
+    by: PositionBy;
+    sourceIds: string[];
+    competitors: Competitors;
+    locked: LockedAmendment[];
+    parties: Awaited<ReturnType<typeof lockParties>>;
+  },
+): Promise<void> {
+  const { actor, document, now } = ctx;
+  const { current } = input;
+  const auto = input.by === "auto";
+  const effect = positionEffect(current, input.position, input.rule);
+  const values = {
+    position: input.position,
+    comment: input.comment,
+    // The automatic answer keeps who made the amendment answerable (the
+    // Secretaría or the Mesa); `by: "auto"` says nobody chose it.
+    decidedByUserId: actor.user.id,
+    updatedAt: new Date(),
+  };
+  await tx
+    .insert(amendmentPositions)
+    .values({ amendmentId: current.id, ...values })
+    .onConflictDoUpdate({
+      target: amendmentPositions.amendmentId,
+      set: values,
+    });
+  const base = {
+    assemblyId: ctx.assembly.id,
+    documentId: document.id,
+    entityType: "amendment" as const,
+    entityId: current.id,
+    actor,
+  };
+  await recordEvent(tx, {
+    ...base,
+    type: "position_changed",
+    payload: {
+      position: input.position,
+      by: input.by,
+      // Whose answer it is, also when the Mesa records it or it is given
+      // by itself: the main presenter (the news of co-presenters and
+      // authors name it, unless it is automatic).
+      memberId: document.proponentMemberId,
+    },
+  });
+
+  if (effect === "approve") {
+    const updated = await tx
+      .update(amendments)
+      .set({
+        status: "approved",
+        approvalMethod: "proponent",
+        outcomeVoteId: null,
+        outcomeNote: null,
+        decidedAt: now,
+      })
+      .where(
+        and(
+          eq(amendments.id, current.id),
+          eq(amendments.status, "submitted"),
+          eq(amendments.admission, "admitted"),
+        ),
+      )
+      .returning({ id: amendments.id });
+    if (updated.length === 0)
+      fail(409, "La enmienda ha cambiado. Recarga la página");
+    await recordEvent(tx, {
+      ...base,
+      type: "amendment_approved",
+      // The main presenter's acceptance incorporated it, also when the
+      // Mesa recorded it (the news credit it). The automatic one says why
+      // (`reason: "formal"`) and credits nobody.
+      payload: {
+        method: "proponent",
+        byPosition: true,
+        memberId: document.proponentMemberId,
+        ...(auto ? { reason: "formal" } : {}),
+      },
+    });
+    if (input.sourceIds.length > 0) {
+      await replaceSources(tx, {
+        assemblyId: ctx.assembly.id,
+        documentId: document.id,
+        actor,
+        now,
+        transactional: { id: current.id, code: current.code },
+        sources: input.locked.filter((row) => input.sourceIds.includes(row.id)),
+        competitors: lockedCompetitors(input.competitors, input.locked),
+        allowTransacted: true,
+      });
+    }
+    await closeDependents(tx, ctx, input.competitors, input.locked, [
+      { id: current.id, code: current.code, status: "approved" },
+    ]);
+  } else if (effect === "reopen") {
+    const updated = await tx
+      .update(amendments)
+      .set({
+        status: "submitted",
+        approvalMethod: null,
+        outcomeNote: null,
+        decidedAt: null,
+      })
+      .where(
+        and(
+          eq(amendments.id, current.id),
+          eq(amendments.status, "approved"),
+          eq(amendments.approvalMethod, "proponent"),
+        ),
+      )
+      .returning({ id: amendments.id });
+    if (updated.length === 0)
+      fail(409, "La enmienda ha cambiado. Recarga la página");
+    await recordEvent(tx, {
+      ...base,
+      type: "amendment_reopened",
+      payload: {
+        previousStatus: "approved",
+        reason: "position_changed",
+        ...(auto ? { by: "auto" } : {}),
+      },
+    });
+    // What its incorporation closed comes back.
+    await restoreDependents(
+      tx,
+      ctx,
+      input.competitors.sourceMap,
+      input.locked,
+      input.parties,
+      [current],
+    );
+  }
+}
+
+/**
+ * Accepts by itself, as if its main presenter had, every formal amendment
+ * among `ids` that has just become answerable with no answer yet
+ * (shouldAutoAcceptPosition; docs/api.md, "The main presenter's answer"): the
+ * position_changed says `by: "auto"`, and under the "incorporate" rule it
+ * is approved at once like any acceptance (recordPosition). Runs at the
+ * end of the transaction that made it answerable (a validation that
+ * publishes, a publication, an admission, the Mesa's reopening), after
+ * that path's own writes. The caller holds the document lock (`voted` and
+ * `rule` read under it) and, in its one ordered pass, the rows of `ids`,
+ * of the transactionals over them and of restoreLockIds (`lockedIds`),
+ * then the acceptances of those transactionals (`parties`). The position
+ * rows are locked here, last. Every row is read again first: the locked
+ * snapshot predates the path's own changes.
+ */
+async function autoAcceptFormal(
+  tx: Tx,
+  ctx: DocumentAmendmentContext,
+  input: {
+    ids: string[];
+    lockedIds: string[];
+    sourceMap: Map<string, string[]>;
+    parties: Awaited<ReturnType<typeof lockParties>>;
+    rule: AcceptedAmendmentRule;
+    voted: boolean;
+  },
+): Promise<void> {
+  if (input.voted || input.ids.length === 0) return;
+  const documentId = ctx.document.id;
+  const lockedIds = unique([...input.ids, ...input.lockedIds]);
+  const formalIds = (await rereadLocked(tx, documentId, input.ids))
+    .filter((row) => row.kind === "formal")
+    .map((row) => row.id)
+    .sort();
+  if (formalIds.length === 0) return;
+  const positions = await lockPositions(tx, formalIds);
+  for (const id of formalIds) {
+    // Again for each one: an earlier acceptance may have closed
+    // transactionals over the next.
+    const locked = await rereadLocked(tx, documentId, lockedIds);
+    const current = locked.find((row) => row.id === id);
+    if (
+      !current ||
+      !shouldAutoAcceptPosition(
+        current,
+        positions.get(id)?.position ?? null,
+        input.rule,
+      )
+    ) {
+      continue;
+    }
+    await recordPosition(tx, ctx, {
+      current,
+      rule: input.rule,
+      position: "accept",
+      comment: null,
+      by: "auto",
+      sourceIds: [],
+      competitors: {
+        sourceMap: input.sourceMap,
+        ids: transactionalsOverIds(input.sourceMap, [id]),
+      },
+      locked,
+      parties: input.parties,
+    });
+  }
+}
+
+/**
+ * The `by` of the latest position_changed of an amendment ("proponent",
+ * "moderator", "auto"), or undefined when it has none.
+ */
+async function latestPositionBy(
+  tx: Executor,
+  amendmentId: string,
+): Promise<unknown> {
+  const [row] = await tx
+    .select({ payload: events.payload })
+    .from(events)
+    .where(
+      and(
+        eq(events.entityType, "amendment"),
+        eq(events.entityId, amendmentId),
+        eq(events.type, "position_changed"),
+      ),
+    )
+    .orderBy(desc(events.createdAt), desc(events.id))
+    .limit(1);
+  return (row?.payload as Record<string, unknown> | undefined)?.by;
+}
+
+/**
  * The main presenter's answer to an amendment (or the Mesa's, for it):
  * only once it is validated, published and, if late, admitted, and for a
  * transactional once its main authors accepted it (positionBlocker).
  * `positionUpdatedAt` is the optimistic lock on the stored answer. Under the
  * document's "incorporate" rule accepting approves the amendment at once
  * (approval method "proponent"), which closes the pending transactionals
- * over it, and moving away from "accept" reopens it (positionEffect); after
- * the final vote nothing changes.
+ * over it, and moving away from "accept" reopens it (positionEffect,
+ * recordPosition); after the final vote nothing changes. The automatic
+ * acceptance of a formal amendment changes here like any other answer.
  */
 export async function setAmendmentPosition(
   ctx: AmendmentContext,
   body: PositionBody,
 ): Promise<AmendmentDto> {
-  const { actor, amendment, document, now } = ctx;
+  const { actor, amendment, document } = ctx;
   if (!ctx.isProponent && !canModerate(actor)) {
     fail(
       403,
@@ -3914,13 +4326,8 @@ export async function setAmendmentPosition(
     };
     const lockedBlocker = positionBlocker(fields, ctx.rule);
     if (lockedBlocker) fail(409, POSITION_BLOCKER_MESSAGES[lockedBlocker]);
-    const effect = positionEffect(fields, body.position, ctx.rule);
 
-    const [stored] = await tx
-      .select({ updatedAt: amendmentPositions.updatedAt })
-      .from(amendmentPositions)
-      .where(eq(amendmentPositions.amendmentId, amendment.id))
-      .for("no key update");
+    const stored = (await lockPositions(tx, [amendment.id])).get(amendment.id);
     if (
       body.positionUpdatedAt !== undefined &&
       getOptimisticLockTimestampMs(stored?.updatedAt ?? null) !==
@@ -3932,113 +4339,17 @@ export async function setAmendmentPosition(
       );
     }
 
-    const values = {
+    await recordPosition(tx, ctx, {
+      current,
+      rule: ctx.rule,
       position: body.position,
       comment: body.comment ?? null,
-      decidedByUserId: actor.user.id,
-      updatedAt: new Date(),
-    };
-    await tx
-      .insert(amendmentPositions)
-      .values({ amendmentId: amendment.id, ...values })
-      .onConflictDoUpdate({
-        target: amendmentPositions.amendmentId,
-        set: values,
-      });
-    const base = {
-      assemblyId: ctx.assembly.id,
-      documentId: document.id,
-      entityType: "amendment" as const,
-      entityId: amendment.id,
-      actor,
-    };
-    await recordEvent(tx, {
-      ...base,
-      type: "position_changed",
-      payload: {
-        position: body.position,
-        by: ctx.isProponent ? "proponent" : "moderator",
-        // Whose answer it is, also when the Mesa records it: the main
-        // presenter (the news of co-presenters and authors name it).
-        memberId: document.proponentMemberId,
-      },
+      by: ctx.isProponent ? "proponent" : "moderator",
+      sourceIds,
+      competitors,
+      locked,
+      parties,
     });
-
-    if (effect === "approve") {
-      const updated = await tx
-        .update(amendments)
-        .set({
-          status: "approved",
-          approvalMethod: "proponent",
-          outcomeVoteId: null,
-          outcomeNote: null,
-          decidedAt: now,
-        })
-        .where(
-          and(
-            eq(amendments.id, amendment.id),
-            eq(amendments.status, "submitted"),
-            eq(amendments.admission, "admitted"),
-          ),
-        )
-        .returning({ id: amendments.id });
-      if (updated.length === 0)
-        fail(409, "La enmienda ha cambiado. Recarga la página");
-      await recordEvent(tx, {
-        ...base,
-        type: "amendment_approved",
-        // The main presenter's acceptance incorporated it, also when the
-        // Mesa recorded it (the news credit it).
-        payload: {
-          method: "proponent",
-          byPosition: true,
-          memberId: document.proponentMemberId,
-        },
-      });
-      if (sourceIds.length > 0) {
-        await replaceSources(tx, {
-          assemblyId: ctx.assembly.id,
-          documentId: document.id,
-          actor,
-          now,
-          transactional: { id: amendment.id, code: amendment.code },
-          sources: locked.filter((row) => sourceIds.includes(row.id)),
-          competitors: lockedCompetitors(competitors, locked),
-          allowTransacted: true,
-        });
-      }
-      await closeDependents(tx, ctx, competitors, locked, [
-        { id: amendment.id, code: amendment.code, status: "approved" },
-      ]);
-    } else if (effect === "reopen") {
-      const updated = await tx
-        .update(amendments)
-        .set({
-          status: "submitted",
-          approvalMethod: null,
-          outcomeNote: null,
-          decidedAt: null,
-        })
-        .where(
-          and(
-            eq(amendments.id, amendment.id),
-            eq(amendments.status, "approved"),
-            eq(amendments.approvalMethod, "proponent"),
-          ),
-        )
-        .returning({ id: amendments.id });
-      if (updated.length === 0)
-        fail(409, "La enmienda ha cambiado. Recarga la página");
-      await recordEvent(tx, {
-        ...base,
-        type: "amendment_reopened",
-        payload: { previousStatus: "approved", reason: "position_changed" },
-      });
-      // What its incorporation closed comes back.
-      await restoreDependents(tx, ctx, competitors.sourceMap, locked, parties, [
-        current,
-      ]);
-    }
   });
 
   return amendmentDto(ctx, amendment.id);
@@ -4382,7 +4693,7 @@ export async function applyAmendmentOutcome(
     // The projection may stop showing the voided vote, which is only known
     // under the amendment lock: assembly before document ("Row locks").
     await shareLockAssembly(tx, ctx.assembly.id);
-    await lockDocument(tx, document.id, "share");
+    const { rule } = await lockDocument(tx, document.id, "share");
     // The row also tells which vote this reopening voids. A transactional
     // keeps what it replaced: its sources stay transacted. One that never
     // replaced them needs them still open, and one a main author rejected
@@ -4456,6 +4767,16 @@ export async function applyAmendmentOutcome(
     await restoreDependents(tx, ctx, dependents.sourceMap, locked, parties, [
       current,
     ]);
+    // Undecided again and still unanswered: a formal one is answered by
+    // itself (the transactionals over it are in restoreLockIds).
+    await autoAcceptFormal(tx, ctx, {
+      ids: [amendment.id],
+      lockedIds: locked.map((row) => row.id),
+      sourceMap: dependents.sourceMap,
+      parties,
+      rule,
+      voted: false,
+    });
 
     await clearLiveVote(tx, {
       assemblyId: ctx.assembly.id,
@@ -4645,7 +4966,6 @@ export async function createTransactionalAmendment(
       );
     }
     const { ops, errors } = prepareAmendmentOps({
-      kind: "transactional",
       ops: body.ops,
       base,
       takenIds: await otherInsertedIds(tx, document.id),
@@ -4669,7 +4989,7 @@ export async function createTransactionalAmendment(
         ops,
         meta,
         justification: body.justification,
-        positionKey: amendmentSortKey("transactional", ops, base),
+        positionKey: amendmentSortKey(ops, base),
         createdByUserId: actor.user.id,
         submittedByUserId: submit ? actor.user.id : null,
         submittedAt: submit ? now : null,

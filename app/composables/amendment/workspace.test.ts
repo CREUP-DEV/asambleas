@@ -29,14 +29,12 @@ import {
   mineAmendments,
   seedComposerFromDraft,
   changedBlockCount,
-  composerAmendmentKind,
   composerDocumentSeed,
   composerStartBlockId,
   composerEditSettler,
   composerIssues,
   documentAmendmentOps,
   showAmendmentAdmission,
-  totalityAlternativeOps,
   amendmentLateOnSend,
   amendmentReviewQueue,
   amendmentReviewSentenceKey,
@@ -344,24 +342,6 @@ describe("whole-document operations", () => {
     ).toBe(5);
     expect(changedBlockCount([])).toBe(0);
   });
-
-  it("builds a full alternative text with fresh ids", () => {
-    const ops = totalityAlternativeOps(
-      base,
-      [p("b1", "Texto nuevo."), p("x1", "   "), p("x2", "Otro.")],
-      newId,
-    );
-    expect(validateOps(base, ops)).toEqual([]);
-    expect(ops[0]).toEqual({
-      op: "delete",
-      blockIds: ["b1", "b2", "b3", "b4"],
-    });
-    const inserted = ops[1]!.op === "insert" ? ops[1]!.blocks : [];
-    expect(inserted.map((b) => b.text)).toEqual(["Texto nuevo.", "Otro."]);
-    expect(inserted[0]!.id).not.toBe("b1");
-    const { blocks } = consolidate(base, [{ id: "t", ops }]);
-    expect(blocks.map((b) => b.text)).toEqual(["Texto nuevo.", "Otro."]);
-  });
 });
 
 describe("draft re-seeding", () => {
@@ -382,11 +362,7 @@ describe("draft re-seeding", () => {
 
   it("opens the whole text as the draft leaves it", () => {
     const ops = draftOps();
-    const seed = seedComposerFromDraft(base, {
-      kind: "partial",
-      ops,
-      globalReplace: null,
-    });
+    const seed = seedComposerFromDraft(base, { ops, globalReplace: null });
     expect(seed.mode).toBe("document");
     expect(seed.edited.map((block) => block.id)).toEqual([
       "b1",
@@ -461,10 +437,9 @@ describe("draft re-seeding", () => {
     expect(composerDocumentSeed(base, stale)).toEqual(base);
   });
 
-  it("recognizes delete, global, return and alternative drafts", () => {
+  it("recognizes delete and global drafts", () => {
     // A draft that only removes paragraphs is one more edit of the text.
     const deleted = seedComposerFromDraft(base, {
-      kind: "partial",
       ops: [{ op: "delete", blockIds: ["b2", "b3"] }],
       globalReplace: null,
     });
@@ -472,30 +447,10 @@ describe("draft re-seeding", () => {
     expect(deleted.edited.map((block) => block.id)).toEqual(["b1", "b4"]);
     expect(
       seedComposerFromDraft(base, {
-        kind: "formal",
         ops: [replace("b2", 3, 10, "Comité")],
         globalReplace: { find: "Consejo", replace: "Comité" },
       }),
     ).toMatchObject({ mode: "global", find: "Consejo", replace: "Comité" });
-    expect(
-      seedComposerFromDraft(base, {
-        kind: "totality_return",
-        ops: [],
-        globalReplace: null,
-      }).mode,
-    ).toBe("return");
-    const alternative = totalityAlternativeOps(
-      base,
-      [p("z1", "Nuevo.")],
-      newId,
-    );
-    expect(
-      seedComposerFromDraft(base, {
-        kind: "totality_alternative",
-        ops: alternative,
-        globalReplace: null,
-      }),
-    ).toMatchObject({ mode: "alternative", edited: [p("z1", "Nuevo.")] });
   });
 });
 
@@ -540,36 +495,6 @@ describe("composer checks", () => {
       }),
     ).toEqual([]);
   });
-
-  it("never asks a totality amendment for its kind", () => {
-    expect(composerIssues({ mode: "return", kind: null, ops: [] })).toEqual([]);
-    expect(
-      composerIssues({
-        mode: "alternative",
-        kind: null,
-        ops: [],
-        alternative: [p("x", "  ")],
-      }),
-    ).toEqual(["alternative_empty"]);
-    expect(
-      composerIssues({
-        mode: "alternative",
-        kind: null,
-        ops: [],
-        alternative: [p("x", "Texto.")],
-      }),
-    ).toEqual([]);
-  });
-
-  it("sends the kind the mode asks for", () => {
-    expect(composerAmendmentKind("document", null)).toBeNull();
-    expect(composerAmendmentKind("document", "formal")).toBe("formal");
-    expect(composerAmendmentKind("global", "partial")).toBe("partial");
-    expect(composerAmendmentKind("return", null)).toBe("totality_return");
-    expect(composerAmendmentKind("alternative", "formal")).toBe(
-      "totality_alternative",
-    );
-  });
 });
 
 describe("markers and groups", () => {
@@ -582,20 +507,16 @@ describe("markers and groups", () => {
     positionKey: 3,
     status: "rejected",
   });
-  const totality = amendment("t", [], {
-    kind: "totality_return",
-    positionKey: -2,
-  });
 
   it("counts undecided amendments per block and flags overlaps", () => {
-    expect(amendmentBlockMarkers([a, b, c, closed, totality])).toEqual({
+    expect(amendmentBlockMarkers([a, b, c, closed])).toEqual({
       b2: { count: 2, overlap: true },
       b4: { count: 1, overlap: false },
     });
   });
 
   it("lists the undecided amendments on some paragraphs", () => {
-    const list = [c, b, a, closed, totality];
+    const list = [c, b, a, closed];
     expect(amendmentsOnBlocks(list, ["b2"]).map((x) => x.id)).toEqual([
       "a",
       "b",
@@ -608,10 +529,9 @@ describe("markers and groups", () => {
     expect(amendmentsOnBlocks(list, ["b1"])).toEqual([]);
   });
 
-  it("groups by overlap cluster in text order, totality first", () => {
-    const groups = groupAmendmentsByOverlap([c, b, totality, a]);
+  it("groups by overlap cluster in text order", () => {
+    const groups = groupAmendmentsByOverlap([c, b, a]);
     expect(groups.map((g) => [g.kind, g.amendments.map((x) => x.id)])).toEqual([
-      ["totality", ["t"]],
       ["overlap", ["a", "b"]],
       ["single", ["c"]],
     ]);
@@ -1866,11 +1786,11 @@ describe("reader", () => {
       amendmentQuickFilterOf({
         ...empty,
         statuses: ["submitted"],
-        kinds: ["totality_return"],
+        kinds: ["transactional"],
       }),
     ).toBe("pending");
     expect(
-      amendmentQuickFilterOf({ ...empty, kinds: ["totality_return"] }),
+      amendmentQuickFilterOf({ ...empty, kinds: ["transactional"] }),
     ).toBeNull();
     expect(amendmentQuickFilterOf({ ...empty, blockId: "b1" })).toBeNull();
     // Combinations no chip stands for.
@@ -1894,7 +1814,7 @@ describe("reader", () => {
     const current = {
       ...emptyAmendmentFilters(),
       query: "becas",
-      kinds: ["totality_return" as const],
+      kinds: ["transactional" as const],
       late: "on_time" as const,
       mine: true,
       blockId: "b1",
@@ -1988,17 +1908,17 @@ describe("reader", () => {
     // Kinds chosen in "Más filtros" stay.
     expect(
       applyAmendmentQuickFilter(
-        { ...empty, kinds: ["totality_return"] },
+        { ...empty, kinds: ["transactional"] },
         "pending",
       ).kinds,
-    ).toEqual(["totality_return"]);
+    ).toEqual(["transactional"]);
   });
 
   it("the kind chips filter the list", () => {
     const list = [
       amendment("a1", []),
       amendment("a2", [], { kind: "formal" }),
-      amendment("a3", [], { kind: "totality_return" }),
+      amendment("a3", [], { kind: "transactional" }),
     ];
     const ids = (quick: "content" | "formal") =>
       filterAmendmentList(

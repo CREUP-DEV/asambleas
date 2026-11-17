@@ -402,14 +402,11 @@ export type AmendmentTypology = "suppression" | "addition" | "both";
 /**
  * The typology the template asks for, from the operations: only removals
  * are a suppression, only insertions an addition, anything else (text
- * replaced, or formatting changed) both. A totality return, which has no
- * operations, takes the whole text out.
+ * replaced, or formatting changed) both.
  */
 export function amendmentTypology(
-  kind: AmendmentKind,
   ops: readonly AmendmentOp[],
 ): AmendmentTypology {
-  if (kind === "totality_return") return "suppression";
   const kinds = changeKinds([...ops]);
   if (kinds.length === 1 && kinds[0] === "suppression") return "suppression";
   if (kinds.length === 1 && kinds[0] === "addition") return "addition";
@@ -612,7 +609,7 @@ export function buildAmendmentPdf(
     ],
     [
       t("package.amendment.location"),
-      amendment.kind === "totality_return" || data.locations.length === 0
+      data.locations.length === 0
         ? t("package.amendment.wholeDocument")
         : data.locations
             .map((location) => locationText(location, t))
@@ -689,10 +686,7 @@ export function buildAmendmentPdf(
     );
   } else {
     content.push({
-      text:
-        amendment.kind === "totality_return"
-          ? t("package.amendment.totalityReturn")
-          : t("package.amendment.noChange"),
+      text: t("package.amendment.noChange"),
       style: "note",
     });
   }

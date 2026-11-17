@@ -16,9 +16,7 @@ describe("reclassifyTarget", () => {
     }
   });
 
-  it("leaves totality amendments and transactionals alone", () => {
-    expect(reclassifyTarget("totality_return")).toBeNull();
-    expect(reclassifyTarget("totality_alternative")).toBeNull();
+  it("leaves transactionals alone", () => {
     expect(reclassifyTarget("transactional")).toBeNull();
     // Every kind is either reclassifiable or not: none is forgotten.
     for (const kind of AMENDMENT_KINDS) {
@@ -38,6 +36,21 @@ describe("canReclassifyAmendment", () => {
     }
   });
 
+  it("also once the presenter's acceptance incorporated it", () => {
+    expect(
+      canReclassifyAmendment(
+        { kind: "formal", status: "approved", approvalMethod: "proponent" },
+        false,
+      ),
+    ).toBe(true);
+    expect(
+      canReclassifyAmendment(
+        { kind: "formal", status: "approved", approvalMethod: "assent" },
+        false,
+      ),
+    ).toBe(false);
+  });
+
   it("never once the document is voted, nor for other kinds", () => {
     expect(
       canReclassifyAmendment({ kind: "formal", status: "submitted" }, true),
@@ -45,12 +58,6 @@ describe("canReclassifyAmendment", () => {
     expect(
       canReclassifyAmendment(
         { kind: "transactional", status: "submitted" },
-        false,
-      ),
-    ).toBe(false);
-    expect(
-      canReclassifyAmendment(
-        { kind: "totality_return", status: "submitted" },
         false,
       ),
     ).toBe(false);
@@ -71,7 +78,7 @@ describe("reclassifyBodySchema", () => {
   });
 
   it("refuses any other kind and a missing version", () => {
-    for (const kind of ["transactional", "totality_return", "", null]) {
+    for (const kind of ["transactional", "", null]) {
       expect(reclassifyBodySchema.safeParse({ kind, updatedAt }).success).toBe(
         false,
       );

@@ -264,6 +264,8 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
             target="_blank"
           />
         </template>
+        <!-- Convening, or taking it back to draft -->
+        <AssemblyStatusActions :only="['draft_convened', 'convened_draft']" />
         <UDropdownMenu
           v-if="moreItems.length > 0"
           :items="moreItems"

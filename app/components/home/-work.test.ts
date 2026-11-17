@@ -500,6 +500,39 @@ describe("home work", () => {
       });
     });
 
+    it("says a formal amendment was answered by itself, naming nobody", () => {
+      const automatic = { ...mine, by: null, automatic: true };
+      expect(
+        words(homeWorkNewsItem(news("n", { ...automatic, value: "accept" }))),
+      ).toEqual({
+        sentence: "home.news.position.autoAccept",
+        who: null,
+        phrase: ["home.news.phrase.yourAmendment", { code: "CEUM 2" }],
+        tone: "success",
+      });
+      expect(
+        words(homeWorkNewsItem(news("n", { ...automatic, value: "pending" }))),
+      ).toMatchObject({
+        sentence: "home.news.position.autoPending",
+        who: null,
+      });
+      expect(
+        words(
+          homeWorkNewsItem(
+            news("n", {
+              ...automatic,
+              type: "amendment_approved",
+              value: "proponent",
+            }),
+          ),
+        ),
+      ).toMatchObject({
+        sentence: "home.news.amendment.incorporatedAuto",
+        who: null,
+        tone: "success",
+      });
+    });
+
     it("leads co-presenters to the review of the main presenter's answers", () => {
       // A co-presenter reads the answer to someone else's amendment in the
       // read-only review, on that amendment.

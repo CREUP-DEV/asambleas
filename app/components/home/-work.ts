@@ -515,6 +515,27 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
     case "position_changed": {
       const value =
         news.value && POSITION_VALUES.has(news.value) ? news.value : "pending";
+      // A formal amendment answered by itself, or back to unanswered once
+      // it stopped being formal: nobody to name.
+      if (news.automatic) {
+        return value === "accept"
+          ? make(
+              "home.news.position.autoAccept",
+              "success",
+              null,
+              phrase,
+              {},
+              mine ? "document" : "review",
+            )
+          : make(
+              "home.news.position.autoPending",
+              "neutral",
+              null,
+              phrase,
+              {},
+              mine ? "document" : "review",
+            );
+      }
       const who: HomeWorkPhrase = by
         ? { key: "home.news.who.mainPresenter", params: { member: by } }
         : { key: "home.news.who.mainPresenterUnknown", params: {} };
@@ -569,6 +590,10 @@ export function homeWorkNewsItem(news: MeWorkNewsDto): HomeWorkNews {
       // Accepted by the document's main presenter, in a document that
       // incorporates accepted amendments: named when known.
       if (news.value === "proponent") {
+        // A formal amendment accepted by itself.
+        if (news.automatic) {
+          return make("home.news.amendment.incorporatedAuto", "success");
+        }
         return by
           ? make("home.news.amendment.incorporatedBy", "success", {
               key: "home.news.who.mainPresenter",

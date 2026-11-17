@@ -19,9 +19,8 @@ import { useVoteBaseText } from "~/composables/session/useVoteBaseText";
  * without counts. Recording takes two steps: the Mesa checks the result
  * before confirming it. When approved, the server consolidates the approved
  * amendments; if they cannot be applied together it answers 409 and the
- * conflicts are listed. An approved totality return blocks the vote: the
- * text goes back to its proponent. Amendments still open block it too,
- * listed by who has to act: the Mesa (undecided), the assembly (late ones
+ * conflicts are listed. Amendments still open block the vote, listed by
+ * who has to act: the Mesa (undecided), the assembly (late ones
  * it has not agreed to treat), the main authors (transactionals they have
  * not accepted) and the Secretaría (not validated yet).
  */
@@ -43,7 +42,6 @@ const vote = ref<VoteInput>(sessionEmptyVote("simple"));
 const serverConflicts = ref<ConsolidationConflict[]>([]);
 const serverUndecided = ref<string[]>([]);
 const serverTie = ref(false);
-const serverTotalityReturn = ref<string | null>(null);
 /** Second step: the result is shown for a last check before recording. */
 const confirming = ref(false);
 const summary = useTemplateRef<HTMLElement>("summary");
@@ -55,7 +53,6 @@ watch(open, (isOpen) => {
   serverConflicts.value = [];
   serverUndecided.value = [];
   serverTie.value = false;
-  serverTotalityReturn.value = null;
   confirming.value = false;
 });
 
@@ -109,9 +106,6 @@ const conflicts = computed(() =>
     ? serverConflicts.value
     : session.preview.value.conflicts,
 );
-const totalityReturn = computed(
-  () => session.preview.value.totalityReturn?.id ?? serverTotalityReturn.value,
-);
 // An empty "present" counts on the latest headcount, as on the server.
 const outcome = computed(() =>
   sessionVoteOutcome(
@@ -138,10 +132,9 @@ const blocked = computed(
   () =>
     !document.value ||
     // The amendments of this document have not loaded: an empty list would
-    // hide undecided amendments and a totality return.
+    // hide undecided amendments.
     !session.amendmentsDto.value ||
     undecided.value.length > 0 ||
-    Boolean(totalityReturn.value) ||
     !isSessionFinalVoteReady(vote.value, outcome.value),
 );
 
@@ -184,7 +177,6 @@ async function record(): Promise<void> {
   serverConflicts.value = result.conflicts;
   serverUndecided.value = result.undecided;
   serverTie.value = result.tie;
-  serverTotalityReturn.value = result.totalityReturn;
 }
 </script>
 
@@ -202,17 +194,6 @@ async function record(): Promise<void> {
         class="space-y-4"
         @submit.prevent="review"
       >
-        <UAlert
-          v-if="totalityReturn"
-          color="error"
-          variant="subtle"
-          icon="i-lucide-undo-2"
-          :title="
-            t('session.preview.totalityReturnBlocked', {
-              code: session.label(totalityReturn),
-            })
-          "
-        />
         <UAlert
           v-if="blockers.undecided.length > 0"
           color="warning"

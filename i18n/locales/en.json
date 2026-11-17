@@ -105,8 +105,6 @@
       "empty": "There is no content to show.",
       "markerCount": "{count} amendment on this paragraph. See it | {count} amendments on this paragraph. See them",
       "markerOverlap": "Some amendments overlap",
-      "totalityTitle": "Amendment to the whole text",
-      "totalityNote": "This amendment proposes no specific changes to the text: it asks for the whole text to be sent back.",
       "previewUnavailable": "The changes cannot be shown",
       "previewUnavailableDescription": "The operations of this amendment no longer match the base text of the document.",
       "inserted": "Added:",
@@ -508,7 +506,11 @@
       "intro": "Basic data of the assembly and the procedural rules that apply to it alone.",
       "forbiddenTitle": "You cannot change the settings",
       "forbiddenDescription": "Only the people who manage the assembly can edit its data and rules.",
-      "backToOverview": "Back to the overview"
+      "backToOverview": "Back to the overview",
+      "status": {
+        "title": "Assembly status",
+        "description": "Convene it, open and close its session, or go back. Opening and closing the session can also be done from «Session», and convening from «Notice of meeting»."
+      }
     },
     "basics": {
       "title": "Basic data",
@@ -1340,8 +1342,6 @@
     "kinds": {
       "partial": "Partial",
       "formal": "Formal",
-      "totality_return": "Total rejection (return)",
-      "totality_alternative": "Alternative full text",
       "transactional": "Transactional"
     },
     "changeKinds": {
@@ -1374,7 +1374,6 @@
     "list": {
       "label": "Amendments in text order",
       "overlapGroup": "Same passage · one amendment | Same passage · {count} amendments",
-      "totalityGroup": "To the whole text",
       "count": "No amendments | One amendment | {count} amendments",
       "loading": "Loading amendments",
       "error": "The amendments could not be loaded",
@@ -1387,8 +1386,8 @@
     "filters": {
       "search": "Search amendments",
       "searchPlaceholder": "Code, member or justification",
-      "button": "More filters",
-      "buttonActive": "More filters. In use: {count}",
+      "button": "Filters",
+      "buttonActive": "Filters in use: {count}",
       "chipsLabel": "Which amendments to show",
       "chips": {
         "content": "Content",
@@ -1440,7 +1439,6 @@
       "changes": "Proposed changes",
       "globalReplace": "Replaces “{find}” with “{replace}” throughout the text",
       "occurrences": "one occurrence | {count} occurrences",
-      "returnNote": "Proposes returning the document to its proponent: it does not change the text and only carries a justification.",
       "justification": "Justification",
       "noJustification": "No justification yet.",
       "authors": "Who presents it",
@@ -1481,7 +1479,8 @@
       },
       "replacedBy": "Transactional amendment {list} replaces it. | Transactional amendments {list} replace it.",
       "replacedByUnknown": "A transactional amendment replaces it.",
-      "approvedByMesa": "Approved without a vote: the Mesa accepted it on behalf of the document's presenter"
+      "approvedByMesa": "Approved without a vote: the Mesa accepted it on behalf of the document's presenter",
+      "approvedAuto": "Approved without a vote: a formal amendment, accepted automatically"
     },
     "position": {
       "title": "Answer from the document's presenter",
@@ -1518,6 +1517,8 @@
         "pending": "Waiting for an answer from {member}.",
         "none": "No answer from {member}."
       },
+      "answerAuto": "Accepted automatically: formal amendment",
+      "answerAutoCleared": "Unanswered again: no longer a formal amendment",
       "blocked": {
         "publication": "It can be answered once the Secretariat publishes it."
       },
@@ -1645,6 +1646,7 @@
         "inadmission": "Vote to declare it inadmissible"
       },
       "byPresenter": "Without a vote: the document's presenter accepted it",
+      "byFormalRule": "Without a vote: accepted automatically as a formal amendment",
       "closedByRejection": "Closed: a main author rejected it",
       "closedBySources": "Closed: one of the amendments it groups is already settled",
       "closedBySourcesDetail": "Settled amendment: {source}",
@@ -1687,14 +1689,10 @@
       "titleEdit": "Continue the draft",
       "close": "Close without sending",
       "modes": {
-        "global": "Change a word throughout the document",
-        "return": "Send the document back",
-        "alternative": "Propose an alternative text"
+        "global": "Change a word throughout the document"
       },
       "modeDescriptions": {
-        "global": "The word or phrase changes throughout the document.",
-        "return": "You propose sending the document back to whoever presented it, without changing the text. You only explain why.",
-        "alternative": "You propose replacing the whole document with a new text."
+        "global": "The word or phrase changes throughout the document."
       },
       "editorLabel": "Text of the document",
       "editorPlaceholder": "Write the text you propose",
@@ -1704,22 +1702,15 @@
       "replacePlaceholder": "Leave it empty to remove it",
       "globalHint": "Type the term to see how often it appears.",
       "occurrences": "No occurrences | One occurrence (paragraphs affected: {blocks}) | {count} occurrences (paragraphs affected: {blocks})",
-      "returnNote": "This amendment does not change the text: explain below why the document should be sent back.",
-      "alternativeHint": "Write the full text you propose instead of the current one.",
-      "alternativeLabel": "Full alternative text",
-      "alternativePlaceholder": "Write the alternative text here",
-      "copyOriginal": "Start from the current text",
       "issues": {
         "no_changes": "You have not changed anything yet.",
         "find_empty": "Type the term you want to replace.",
         "same_term": "The new term is the same as the current one.",
         "no_matches": "The term does not appear in the text (whole words, case-sensitive).",
-        "alternative_empty": "Write the alternative text.",
         "kind_missing": "Choose what kind of amendment it is."
       },
       "errorsTitle": "The amendment cannot be saved like this",
       "justificationPlaceholder": "Explain why you propose this change",
-      "justificationRequired": "Explain why you propose it before sending it.",
       "onBehalf": "Submit on behalf of",
       "onBehalfPlaceholder": "Choose the presenting member",
       "onBehalfHint": "For amendments dictated in session. Who recorded it is kept on record.",
@@ -1789,7 +1780,6 @@
       },
       "why": {
         "question": "Why?",
-        "help": "You need it to send the amendment.",
         "optional": "Optional, but it helps others understand it."
       },
       "changed": "You have not changed anything yet | You have changed one paragraph | You have changed {count} paragraphs",
@@ -1834,7 +1824,6 @@
       "noop": "A change leaves the text as it was.",
       "replace_in_deleted_block": "It changes a paragraph that the same amendment deletes.",
       "overlapping_ops": "Two changes of the amendment overlap.",
-      "totality_return_ops": "A return amendment cannot change the text.",
       "inconsistent_counts": "The votes cast exceed the members present.",
       "unknown": "The amendment is not valid.",
       "format_shape": "A formatting change is not stated properly.",
@@ -1868,8 +1857,8 @@
     "reclassify": {
       "label": "Kind of amendment",
       "current": {
-        "partial": "It is filed as an amendment of content. If it only fixes the form, you can change it.",
-        "formal": "It is filed as an amendment of form. If it changes the content, you can change it."
+        "partial": "It is a content amendment. If it only corrects the form, you can change it: if nobody has answered it, it will be accepted automatically.",
+        "formal": "It is a formal amendment. If it changes the content, you can change it: if it was accepted automatically, it will wait for an answer again."
       },
       "action": {
         "formal": "Change to amendment of form",
@@ -2496,8 +2485,6 @@
       "amendmentKinds": {
         "partial": "Partial",
         "formal": "Formal",
-        "totality_return": "Whole text: return",
-        "totality_alternative": "Whole text: alternative",
         "transactional": "Transactional"
       },
       "documentKinds": {
@@ -2560,7 +2547,6 @@
           "wholeDocument": "The whole document",
           "passage": "Passage beginning “{text}”",
           "documentStart": "Start of the document",
-          "totalityReturn": "It proposes returning the whole text.",
           "noChange": "The change no longer fits the published text."
         }
       }
@@ -2919,7 +2905,9 @@
         "accept": "{who} accepted {amendment}.",
         "reject": "{who} rejected {amendment}. The assembly will still vote on it.",
         "transact": "{who} proposes a transactional over {amendment}.",
-        "pending": "{who} withdrew their answer to {amendment}: it is pending again."
+        "pending": "{who} withdrew their answer to {amendment}: it is pending again.",
+        "autoAccept": "Automatic acceptance of {amendment}: formal amendments are accepted without waiting for an answer.",
+        "autoPending": "The automatic acceptance of {amendment} is withdrawn: it is no longer formal and waits for an answer again."
       },
       "acceptance": {
         "accepted": "{who} accepted {amendment}: it will replace the original amendments once everyone accepts it and it is validated.",
@@ -2947,6 +2935,7 @@
         "other": "There is news about {amendment}.",
         "validatedLate": "Validated, but {amendment} came in late: the assembly still has to decide whether to treat it.",
         "incorporatedBy": "{who} accepted {amendment}: it is already in the text without a vote.",
+        "incorporatedAuto": "Automatic acceptance of {amendment} as a formal amendment: it is already in the text without a vote.",
         "transactedBy": "Transactional {code} replaces {amendment} and is debated in its place.",
         "lapsedBy": "Lapsed: transactional {code} already replaces those amendments, so {amendment} does not go ahead.",
         "closedBy": "Closed: {amendment} can no longer go ahead, because amendment {code}, which it grouped, was already decided or withdrawn.",
@@ -3553,11 +3542,7 @@
       "present": "Present an amendment",
       "otherWays": "Other ways to amend",
       "global": "Change a word throughout the document",
-      "globalHint": "Changes a word or phrase every time it appears.",
-      "return": "Send the document back",
-      "returnHint": "Asks for it to go back to whoever presented it, without changing the text.",
-      "alternative": "Alternative text",
-      "alternativeHint": "Proposes a new text in place of the whole document."
+      "globalHint": "Changes a word or phrase every time it appears."
     },
     "more": {
       "label": "More",
@@ -3859,8 +3844,7 @@
       "candidates": "Affected amendments",
       "select": "Mark {code} as lapsed",
       "keep": "Keep them",
-      "submit": "Mark as lapsed | Mark 1 as lapsed | Mark {count} as lapsed",
-      "descriptionTotality": "The return of the text was approved: the other amendments are left without object. Mark them as lapsed?"
+      "submit": "Mark as lapsed | Mark 1 as lapsed | Mark {count} as lapsed"
     },
     "assent": {
       "title": "Approve accepted amendments by assent",
@@ -3906,7 +3890,6 @@
       "skipped": "{codes} could not be applied together with the earlier ones: the text starts from the first one that fits. Adjust it by hand.",
       "noSources": "Choose the amendments to transact",
       "noPassage": "These amendments change no passage",
-      "noPassageHint": "Totality amendments without text cannot be transacted here.",
       "text": "Transactional text",
       "reset": "Back to the initial text",
       "diff": "Changes to the base text",
@@ -3935,7 +3918,6 @@
       "title": "Consolidated text",
       "noDocument": "No document selected",
       "fileDocument": "PDF document: there is no text to consolidate",
-      "totalityReturn": "{code}, a totality amendment returning the text, is approved",
       "conflictsTitle": "1 approved amendment cannot be applied | {count} approved amendments cannot be applied",
       "conflictWith": "{code} collides with {others}",
       "conflictInvalid": "{code} no longer fits the base text",
@@ -3946,7 +3928,6 @@
       "notVoted": "This document is not put to a vote",
       "notPublished": "The document is not published",
       "undecided": "1 amendment is still undecided | {count} amendments are still undecided",
-      "totalityReturnBlocked": "{code}, a totality amendment returning the text, is approved: the text goes back and there is no final vote. Reopen it if it was approved by mistake.",
       "amendmentsLoading": "Loading the document's amendments…",
       "awaitingValidation": "1 amendment is waiting for the Secretariat: it has to validate it or send it back to its authors before the final vote. | {count} amendments are waiting for the Secretariat: it has to validate them or send them back to their authors before the final vote.",
       "awaitingProponent": "1 transactional awaits approval from the document's presenter. | {count} transactionals await approval from the document's presenter.",
@@ -3975,8 +3956,6 @@
       "amendmentKind": {
         "partial": "Partial",
         "formal": "Formal",
-        "totality_return": "Totality (return)",
-        "totality_alternative": "Totality (alternative text)",
         "transactional": "Transactional"
       },
       "approvalMethod": {
@@ -4160,6 +4139,7 @@
     "position": {
       "by": "Answer from {member}:",
       "byMesa": "The Mesa, on behalf of {member}:",
+      "auto": "Automatic answer, as a formal amendment:",
       "waitsPublication": "Waits for the Secretariat to publish it",
       "waitsPublicationFor": "Answer from {member}: it can be given once the Secretariat publishes it."
     },
@@ -4535,7 +4515,36 @@
     "tabs": {
       "label": "Parts of the control sheet",
       "general": "Overview",
-      "amendments": "Amendments"
+      "amendments": "Amendments",
+      "history": "History"
+    },
+    "history": {
+      "title": "Change history",
+      "description": "What changed in the sheet or about it, newest first: what is noted, the answers of the documents' presenters, and the votes and decisions.",
+      "document": "Document",
+      "groups": {
+        "sheet": "Sheet notes",
+        "answers": "Presenters' answers",
+        "votes": "Votes and decisions"
+      },
+      "filters": {
+        "groups": "Which changes",
+        "allGroups": "All",
+        "subject": "Item or document",
+        "allSubjects": "The whole sheet",
+        "searchSubject": "Search an item or document",
+        "amendment": "Amendment",
+        "allAmendments": "All its amendments",
+        "person": "Who",
+        "anyone": "Anyone",
+        "searchPerson": "Search a person",
+        "from": "From",
+        "to": "To",
+        "clear": "Clear filters"
+      },
+      "loadError": "The history could not be loaded",
+      "empty": "No changes yet",
+      "noMatches": "No change matches the filters"
     },
     "columns": {
       "number": "No.",
@@ -5553,7 +5562,13 @@
       "acceptVoteByMesaFor": "The Mesa, on behalf of {member}, accepted it. The assembly will vote on it, and you can change the answer until then.",
       "incorporatedByMesaFor": "The Mesa, on behalf of {member}, accepted it and it is already in the text. If you change the answer before the final vote, it will come out of the text.",
       "rejectByMesaFor": "The Mesa, on behalf of {member}, rejected it: it will be debated and voted on. You can change the answer until it is decided.",
-      "transactByMesaFor": "The Mesa, on behalf of {member}, chose to propose a transactional. Once another text is agreed with whoever presents it, it can be proposed from the document."
+      "transactByMesaFor": "The Mesa, on behalf of {member}, chose to propose a transactional. Once another text is agreed with whoever presents it, it can be proposed from the document.",
+      "acceptAuto": "It was accepted automatically as a formal amendment. You can change the answer until it is decided.",
+      "acceptVoteAuto": "It was accepted automatically as a formal amendment. The assembly will vote on it, and you can change the answer until then.",
+      "incorporatedAuto": "It was accepted automatically as a formal amendment and is already in the text. If you change the answer before the final vote, it will come out of the text.",
+      "acceptAutoFor": "It was accepted automatically on behalf of {member} as a formal amendment. You can change the answer until it is decided.",
+      "acceptVoteAutoFor": "It was accepted automatically on behalf of {member} as a formal amendment. The assembly will vote on it, and you can change the answer until then.",
+      "incorporatedAutoFor": "It was accepted automatically on behalf of {member} as a formal amendment and is already in the text. If you change the answer before the final vote, it will come out of the text."
     },
     "change": {
       "where": "Where: {place}",
@@ -5700,6 +5715,10 @@
         "incorporated": "The Mesa, on behalf of {member}, accepted it on {date} and it went into the text without a vote.",
         "reject": "The Mesa, on behalf of {member}, rejected it on {date}.",
         "transact": "The Mesa, on behalf of {member}, chose to propose a transactional on {date}."
+      },
+      "answeredAuto": {
+        "accept": "It was accepted automatically on behalf of {member} on {date}, as a formal amendment.",
+        "incorporated": "It was accepted automatically on behalf of {member} on {date}, as a formal amendment, and went into the text without a vote."
       }
     },
     "waiting": {
@@ -5737,8 +5756,8 @@
       "amendment": "Read"
     },
     "unmark": {
-      "document": "Remove the read mark",
-      "amendment": "Remove the read mark"
+      "document": "Mark as unread",
+      "amendment": "Mark as unread"
     },
     "unread": {
       "document": "Unread",

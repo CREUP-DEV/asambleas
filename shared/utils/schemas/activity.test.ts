@@ -2,12 +2,14 @@ import { describe, expect, it } from "vitest";
 import {
   ACTIVITY_PAGE_DEFAULT_LIMIT,
   ADMIN_ACTIVITY_MAX_LIMIT,
+  CONTROL_SHEET_ACTIVITY_MAX_LIMIT,
   IMPERSONATION_REASON_MAX_LENGTH,
   ME_ACTIVITY_MAX_LIMIT,
 } from "../../constants/activity";
 import {
   adminActivityQuerySchema,
   adminImpersonationQuerySchema,
+  controlSheetActivityQuerySchema,
   decodeActivityCursor,
   encodeActivityCursor,
   impersonationStartBodySchema,
@@ -214,5 +216,44 @@ describe("adminImpersonationQuerySchema", () => {
     expect(
       adminImpersonationQuerySchema.safeParse({ target: "nope" }).success,
     ).toBe(false);
+  });
+});
+
+describe("controlSheetActivityQuerySchema", () => {
+  it("reads the groups, the subject, the person and the dates", () => {
+    expect(
+      controlSheetActivityQuerySchema.parse({
+        group: "answers,votes",
+        subject: `amendment:${CUID}`,
+        actor: USER_ID,
+        from: "2026-11-01T00:00:00Z",
+        to: "2026-11-02T00:00:00Z",
+      }),
+    ).toEqual({
+      group: ["answers", "votes"],
+      subject: { type: "amendment", id: CUID },
+      actor: USER_ID,
+      from: "2026-11-01T00:00:00Z",
+      to: "2026-11-02T00:00:00Z",
+      limit: ACTIVITY_PAGE_DEFAULT_LIMIT,
+    });
+    expect(
+      controlSheetActivityQuerySchema.parse({ subject: `item:${CUID}` })
+        .subject,
+    ).toEqual({ type: "item", id: CUID });
+  });
+
+  it("refuses unknown groups, subjects, an inverted range and a large page", () => {
+    for (const query of [
+      { group: "audit" },
+      { subject: `member:${CUID}` },
+      { subject: "document:x" },
+      { from: "2026-11-02T00:00:00Z", to: "2026-11-01T00:00:00Z" },
+      { limit: String(CONTROL_SHEET_ACTIVITY_MAX_LIMIT + 1) },
+    ]) {
+      expect(controlSheetActivityQuerySchema.safeParse(query).success).toBe(
+        false,
+      );
+    }
   });
 });

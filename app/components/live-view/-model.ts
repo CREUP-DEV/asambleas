@@ -400,8 +400,9 @@ export function liveAmendmentNote(
 
 /**
  * How the document's main presenter answered the amendment, as one sentence
- * naming it by its acronym ("Respuesta de CEUM: la acepta"), or saying the
- * Mesa recorded it on its behalf ("La Mesa, en nombre de CEUM, la aceptó").
+ * naming it by its acronym ("Respuesta de CEUM: la acepta"), saying the
+ * Mesa recorded it on its behalf ("La Mesa, en nombre de CEUM, la aceptó"),
+ * or that a formal amendment was accepted by itself.
  * Null while nobody has answered, when the viewer does not receive the
  * answer (the server sends no position) or the document has no main
  * presenter. Whether the room may see it is the caller's rule.
@@ -412,6 +413,10 @@ export function livePositionLine(
 ): LiveAmendmentNote | null {
   const position = amendment.position;
   if (!position || !presenter || position.position === "pending") return null;
+  // A formal amendment accepted by itself: nobody answered it.
+  if (position.recordedBy === "auto" && position.position === "accept") {
+    return { key: "amendment.position.answerAuto", params: {} };
+  }
   const group =
     position.recordedBy === "mesa"
       ? "amendment.position.answersByMesa"

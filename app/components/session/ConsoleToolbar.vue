@@ -187,6 +187,17 @@ const SHORTCUTS = [
           @click="session.refreshAll()"
         />
 
+        <!-- Opening, suspending, closing or reopening the session -->
+        <AssemblyStatusActions
+          :only="[
+            'convened_in_session',
+            'in_session_convened',
+            'in_session_closed',
+            'closed_in_session',
+          ]"
+          size="sm"
+        />
+
         <UButton
           v-if="projectionPath"
           :to="projectionPath"

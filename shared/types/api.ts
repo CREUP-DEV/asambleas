@@ -307,6 +307,12 @@ export interface MeWorkNewsDto {
   impersonatedBy?: UserRef | null;
   /** The decision in short: the position, the acceptance decision, the status. */
   value: string | null;
+  /**
+   * Nobody decided it: the automatic answer to a formal amendment (accepted
+   * by itself, incorporated by that acceptance, or back to unanswered once
+   * it stopped being formal). `by` is null then.
+   */
+  automatic?: boolean;
   at: IsoDate;
 }
 
@@ -1005,8 +1011,13 @@ export interface AcceptanceDto {
 export interface PositionDto {
   position: ProponentPosition;
   comment: string | null;
-  /** The main presenter answered, or the Mesa recorded it on its behalf. */
-  recordedBy: "presenter" | "mesa";
+  /**
+   * The main presenter answered, the Mesa recorded it on its behalf, or it
+   * was given by itself ("auto": a formal amendment is accepted as soon as
+   * it can be answered; also set when that answer went back to pending
+   * because the amendment stopped being formal). Meaningless while pending.
+   */
+  recordedBy: "presenter" | "mesa" | "auto";
   updatedAt: IsoDate;
 }
 

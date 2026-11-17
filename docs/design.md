@@ -396,8 +396,9 @@ on hover), never inside the line. A change of format on blank text alone (a
 space) is told only when it is its block's one change
 (`isShownFormatSegment`); it is still applied.
 
-- `kind`: `partial`, `formal`, `totality_return`, `totality_alternative`,
-  `transactional`.
+- `kind`: `partial`, `formal`, `transactional`. The database enum still
+  holds `totality_return` and `totality_alternative`, unused: amendments to
+  the whole text were removed from the platform.
 - Authors: `amendment_authors` (member ids; joint amendments have several).
 - Numbering: `number` per document and a counter per code prefix, shown as
   `12 · UGR4`, both given when the amendment is presented
@@ -1434,9 +1435,9 @@ themselves stay per browser (the locale cookie, the colour mode and
       reading bar (previous, next, "Marcar como leído") hides while it is
       open. Leaving with changes that were not saved asks first, going to
       another document of the assembly included.
-  - Changing a word everywhere, sending the document back and proposing an
-    alternative text are links under that button, each with a sentence, and
-    open the same composer with their own form in place of the editor.
+  - Changing a word everywhere is an entry of the "Más" menu, with a
+    sentence, and opens the same composer with its own form in place of the
+    editor.
   - The amendment list is ordered by position, filterable, and grouped by
     overlap cluster.
 - **Session console** (Mesa): agenda progress, the current document's

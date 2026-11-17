@@ -228,6 +228,11 @@ export function useActivityText() {
       case "result":
         return t(`common.status.vote.${detail.result}`);
       case "position":
+        if (detail.auto) {
+          return detail.position === "accept"
+            ? t("amendment.position.answerAuto")
+            : t("amendment.position.answerAutoCleared");
+        }
         return t(`amendment.position.options.${detail.position}`);
       case "acceptance":
         return t(`common.status.acceptance.${detail.decision}`);

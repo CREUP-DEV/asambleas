@@ -322,13 +322,20 @@ function isPosition(value: string | null): value is ProponentPosition {
 /**
  * The main presenter's answer. When the Mesa recorded it on the
  * presenter's behalf (`by: "moderator"`), that is said in full, also when it
- * set the answer back to none ("pending"); otherwise the event's actor
- * already says who answered. Hidden positions come with an empty payload,
- * and an unknown value is left out rather than shown raw.
+ * set the answer back to none ("pending"); so is the answer a formal
+ * amendment gets by itself (`by: "auto"`), whose actor only made it
+ * answerable; otherwise the event's actor already says who answered.
+ * Hidden positions come with an empty payload, and an unknown value is left
+ * out rather than shown raw.
  */
 function positionDetail(payload: Record<string, unknown>): string | null {
   const position = text(payload.position);
   if (!isPosition(position)) return null;
+  if (payload.by === "auto") {
+    return position === "accept"
+      ? t("amendment.position.answerAuto")
+      : t("amendment.position.answerAutoCleared");
+  }
   if (payload.by !== "moderator") {
     return t(`amendment.position.options.${position}`);
   }
@@ -504,8 +511,13 @@ function detailOf(event: EventDto): string | null {
     }
     case "amendment_approved": {
       const method = text(payload.method);
-      // Accepted by the main presenter under the "incorporate" rule.
-      if (method === "proponent") return t("amendment.history.byPresenter");
+      // Accepted by the main presenter under the "incorporate" rule, or by
+      // itself when it is formal.
+      if (method === "proponent") {
+        return payload.reason === "formal"
+          ? t("amendment.history.byFormalRule")
+          : t("amendment.history.byPresenter");
+      }
       return method ? t(`amendment.approvalMethods.${method}`) : null;
     }
     case "amendment_submitted":

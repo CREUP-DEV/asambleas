@@ -37,6 +37,11 @@ export function useSessionPosition(session: SessionConsole) {
   );
 
   function label(amendment: AmendmentDto): string {
+    // A formal amendment accepted by itself: nobody answered it.
+    const position = amendment.position;
+    if (position?.recordedBy === "auto" && position.position === "accept") {
+      return t("session.position.auto");
+    }
     return isSessionPositionByMesa(amendment.position)
       ? t("session.position.byMesa", { member: presenter.value })
       : t("session.position.by", { member: presenter.value });

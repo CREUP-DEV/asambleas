@@ -54,9 +54,12 @@ const approvedText = computed(() => {
   const method = props.amendment.approvalMethod;
   if (props.amendment.status !== "approved" || !method) return null;
   if (method === "proponent") {
-    return props.amendment.position?.recordedBy === "mesa"
-      ? t("amendment.detail.approvedByMesa")
-      : t("amendment.detail.approvedByPresenter");
+    const recordedBy = props.amendment.position?.recordedBy;
+    return recordedBy === "auto"
+      ? t("amendment.detail.approvedAuto")
+      : recordedBy === "mesa"
+        ? t("amendment.detail.approvedByMesa")
+        : t("amendment.detail.approvedByPresenter");
   }
   return t("amendment.detail.approvedBy", {
     method: t(`amendment.approvalMethods.${method}`),

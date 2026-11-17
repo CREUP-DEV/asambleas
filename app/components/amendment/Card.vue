@@ -15,8 +15,8 @@ import {
 /**
  * One amendment in the workspace list, kept to what tells them apart:
  * label (its code already names the main author, so no member badge
- * repeats it; how many more present it), "De forma" or a totality kind
- * when it is not the usual content kind, one status only when it says
+ * repeats it; how many more present it), "De forma" when it is not the
+ * usual content kind, one status only when it says
  * something (where it stands with the Secretaría while it is a draft or
  * waits for it, the outcome once decided: amendmentStatusLine; a presented,
  * public amendment, the usual case, shows none) and one line of
@@ -91,11 +91,9 @@ const showStatus = computed(
     statusLine.value.type === "status" &&
     props.amendment.status !== "submitted",
 );
-/** "De forma", or a totality kind: what the code does not say. */
+/** "De forma": what the code does not say. */
 const kindLabel = computed(() =>
-  props.amendment.kind === "partial" || props.amendment.kind === "transactional"
-    ? null
-    : t(`amendment.kinds.${props.amendment.kind}`),
+  props.amendment.kind === "formal" ? t("amendment.kinds.formal") : null,
 );
 const correctionNote = computed(() =>
   props.amendment.reviewState === "correction_requested"

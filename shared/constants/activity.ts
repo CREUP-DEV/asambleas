@@ -757,6 +757,46 @@ export const ACTIVITY_PAGE_DEFAULT_LIMIT = 50;
 export const ME_ACTIVITY_MAX_LIMIT = 100;
 /** Largest page of GET /api/admin/activity and GET /api/admin/impersonations. */
 export const ADMIN_ACTIVITY_MAX_LIMIT = 200;
+/** Largest page of GET .../control-sheet/activity. */
+export const CONTROL_SHEET_ACTIVITY_MAX_LIMIT = 100;
+
+/**
+ * What the control sheet's «Historial» lists, by group (user's decision of
+ * 2026-11-17): what the sheet notes, the main presenters' answers, and the
+ * votes and decisions that settle items, documents and amendments.
+ */
+export const CONTROL_SHEET_ACTIVITY_GROUPS = {
+  sheet: [
+    "control_sheet_observations_updated",
+    "control_sheet_treated_changed",
+    "control_sheet_result_changed",
+    "control_sheet_listed_changed",
+  ],
+  answers: ["position_changed"],
+  votes: [
+    "vote_recorded",
+    "vote_voided",
+    "vote_unanimity_changed",
+    "decision_recorded",
+    "document_voted",
+    "final_vote_annulled",
+    "document_status_changed",
+    "amendment_admitted",
+    "amendment_inadmissible",
+    "amendment_approved",
+    "amendment_rejected",
+    "amendment_lapsed",
+    "amendment_withdrawn",
+    "amendment_transacted",
+    "amendment_reopened",
+  ],
+} as const satisfies Record<string, readonly EventType[]>;
+export type ControlSheetActivityGroup =
+  keyof typeof CONTROL_SHEET_ACTIVITY_GROUPS;
+export const CONTROL_SHEET_ACTIVITY_GROUP_KEYS = Object.keys(
+  CONTROL_SHEET_ACTIVITY_GROUPS,
+) as ControlSheetActivityGroup[];
+
 /** "Mi actividad" warns when an Admin acted as the account within this many days. */
 export const IMPERSONATION_NOTICE_DAYS = 30;
 /** Length of the reason an Admin gives to start an impersonation. */

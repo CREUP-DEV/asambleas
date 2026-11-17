@@ -222,7 +222,7 @@ const finalVoteReady = computed(
 const stuck = computed(
   () => decided.value && !next.value && !finalVoteReady.value,
 );
-const reasonText = useFinalVoteReasonText(session.label);
+const reasonText = useFinalVoteReasonText();
 /** Why the final vote waits, when nothing else can be debated now. */
 const waitingReasons = computed(() =>
   stuck.value && !voted.value

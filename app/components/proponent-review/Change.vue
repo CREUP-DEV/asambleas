@@ -8,12 +8,11 @@ import { blockLabels } from "~~/shared/utils/content/render";
  * The change an amendment makes, in large type, over the document's
  * published text: where it acts ("3. Devolución · párrafo 2"), the global
  * replacement it stands for, and the diff of the touched paragraphs. A
- * toggle adds the paragraph before and after, for context. A return to the
- * proponent has no text to compare and says so.
+ * toggle adds the paragraph before and after, for context.
  */
 const props = withDefaults(
   defineProps<{
-    amendment: Pick<AmendmentDto, "id" | "kind" | "ops" | "globalReplace">;
+    amendment: Pick<AmendmentDto, "id" | "ops" | "globalReplace">;
     base: Block[];
     /** Heading of the section; "Cambios propuestos" by default. */
     title?: string;
@@ -28,11 +27,7 @@ const titleId = useId();
 
 const withContext = ref(false);
 
-const hasText = computed(
-  () =>
-    props.amendment.ops.length > 0 &&
-    props.amendment.kind !== "totality_return",
-);
+const hasText = computed(() => props.amendment.ops.length > 0);
 
 /** "3. Devolución · párrafo 2", from the first paragraph it touches. */
 const place = computed(() => {
@@ -103,17 +98,7 @@ const place = computed(() => {
         :base="base"
         :ops="amendment.ops"
         :context="withContext ? 1 : 0"
-      >
-        <template v-if="amendment.kind === 'totality_return'" #note>
-          <UAlert
-            color="neutral"
-            variant="subtle"
-            icon="i-lucide-file-x"
-            :title="t('amendment.kinds.totality_return')"
-            :description="t('amendment.detail.returnNote')"
-          />
-        </template>
-      </ContentAmendmentDiff>
+      />
     </div>
   </section>
 </template>

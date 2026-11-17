@@ -525,15 +525,16 @@ export const POSITION_BLOCKER_MESSAGES: Record<
 
 /**
  * Who recorded the main presenter's answer (PositionDto.recordedBy): the
- * main presenter itself, or the Mesa on its behalf. The amendment's latest
- * `position_changed` event says it as it was when recorded (`by`:
- * "moderator" is the Mesa), so an answer keeps its author when the document
- * later gets another main presenter. With no such event, it falls back to
- * comparing the member of the user who recorded it
- * (amendment_positions.decidedByUserId) with the document's current main
- * presenter. The row created as pending on submission has nobody behind it,
- * and neither has one whose user was deleted: both count as the
- * presenter's unless the event says otherwise.
+ * main presenter itself, the Mesa on its behalf, or nobody ("auto": a
+ * formal amendment accepted by itself, shouldAutoAcceptPosition). The
+ * amendment's latest `position_changed` event says it as it was when
+ * recorded (`by`: "moderator" is the Mesa, "auto" the automatic answer), so
+ * an answer keeps its author when the document later gets another main
+ * presenter. With no such event, it falls back to comparing the member of
+ * the user who recorded it (amendment_positions.decidedByUserId) with the
+ * document's current main presenter. The row created as pending on
+ * submission has nobody behind it, and neither has one whose user was
+ * deleted: both count as the presenter's unless the event says otherwise.
  */
 export function positionRecordedBy(input: {
   decidedByUserId: string | null;
@@ -542,7 +543,8 @@ export function positionRecordedBy(input: {
   /** The member the recording user acts for, null or unknown when none. */
   recorderMemberId: string | null | undefined;
   mainPresenterId: string | null;
-}): "presenter" | "mesa" {
+}): "presenter" | "mesa" | "auto" {
+  if (input.recordedAs === "auto") return "auto";
   if (input.recordedAs === "moderator") return "mesa";
   if (input.recordedAs === "proponent") return "presenter";
   if (!input.decidedByUserId) return "presenter";
@@ -574,6 +576,61 @@ export function positionEffect(
     return "reopen";
   }
   return null;
+}
+
+/**
+ * Whether a formal amendment ("de forma") gets the main presenter's
+ * acceptance by itself now: it is answerable (positionBlocker, with the
+ * document's final vote as `voted`), still undecided (`submitted`: one the
+ * acceptance already incorporated is answered) and nobody answered it yet
+ * (no position row, or "pending"). Never a content amendment nor a
+ * transactional: those wait for the presenter.
+ */
+export function shouldAutoAcceptPosition(
+  row: Parameters<typeof positionBlocker>[0] & { kind: AmendmentKind },
+  position: ProponentPosition | null,
+  rule: AcceptedAmendmentRule,
+  voted = false,
+): boolean {
+  return (
+    row.kind === "formal" &&
+    row.status === "submitted" &&
+    (position === null || position === "pending") &&
+    positionBlocker(row, rule, voted) === null
+  );
+}
+
+/**
+ * What reclassifying an amendment does to the main presenter's answer, once
+ * its kind is `to`:
+ * - "accept": it became formal, is answerable and has no answer yet
+ *   (shouldAutoAcceptPosition), so it is accepted by itself;
+ * - "pending": it stopped being formal and its answer is still the
+ *   automatic acceptance (`accept`, and the latest position_changed says
+ *   `by: "auto"`), so it goes back to unanswered (which reopens it when
+ *   that acceptance incorporated it, positionEffect);
+ * - null: the answer stays, an answer given by hand above all.
+ */
+export function reclassifyPositionPlan(
+  row: Parameters<typeof positionBlocker>[0],
+  to: AmendmentKind,
+  position: ProponentPosition | null,
+  /** `by` of the amendment's latest position_changed event, if any. */
+  recordedAs: unknown,
+  rule: AcceptedAmendmentRule,
+  voted = false,
+): "accept" | "pending" | null {
+  if (voted) return null;
+  if (to === "formal") {
+    return shouldAutoAcceptPosition({ ...row, kind: to }, position, rule)
+      ? "accept"
+      : null;
+  }
+  return position === "accept" &&
+    recordedAs === "auto" &&
+    positionBlocker(row, rule) === null
+    ? "pending"
+    : null;
 }
 
 /**

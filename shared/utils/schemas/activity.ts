@@ -5,6 +5,8 @@ import {
   ACTIVITY_PAGE_DEFAULT_LIMIT,
   ADMIN_ACTIVITY_MAX_LIMIT,
   AUDIT_SOURCES,
+  CONTROL_SHEET_ACTIVITY_GROUP_KEYS,
+  CONTROL_SHEET_ACTIVITY_MAX_LIMIT,
   IMPERSONATION_REASON_MAX_LENGTH,
   ME_ACTIVITY_MAX_LIMIT,
   ME_ACTIVITY_TABS,
@@ -223,6 +225,39 @@ export const adminActivityQuerySchema = z
     limit: limitParam(ADMIN_ACTIVITY_MAX_LIMIT),
   })
   .refine(fromBeforeTo, fromBeforeToIssue);
+
+/**
+ * GET .../control-sheet/activity (control sheet readers): the sheet's
+ * «Historial». `group` keeps those groups (CONTROL_SHEET_ACTIVITY_GROUPS);
+ * `subject` one agenda item (with its documents and their amendments), one
+ * document (with its amendments) or one amendment, as "item:<id>",
+ * "document:<id>" or "amendment:<id>"; `actor` who did it.
+ */
+export const controlSheetActivityQuerySchema = z
+  .object({
+    group: listParam(z.enum(CONTROL_SHEET_ACTIVITY_GROUP_KEYS)),
+    subject: z
+      .string()
+      .regex(/^(item|document|amendment):[a-z0-9]{20,32}$/)
+      .optional()
+      .transform((value) => {
+        if (!value) return undefined;
+        const [type, id] = value.split(":") as [
+          "item" | "document" | "amendment",
+          string,
+        ];
+        return { type, id };
+      }),
+    actor: userId.optional(),
+    from: isoDateTime.optional(),
+    to: isoDateTime.optional(),
+    cursor: activityCursorSchema.optional(),
+    limit: limitParam(CONTROL_SHEET_ACTIVITY_MAX_LIMIT),
+  })
+  .refine(fromBeforeTo, fromBeforeToIssue);
+export type ControlSheetActivityQuery = z.output<
+  typeof controlSheetActivityQuerySchema
+>;
 
 // Compile-time checks: every parsed body or query is assignable to its API type.
 type Assignable<T, U extends T> = U;

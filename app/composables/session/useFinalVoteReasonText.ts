@@ -3,9 +3,8 @@ import type { SessionFinalVoteReason } from "./sessionModel";
 /**
  * Puts a reason that blocks the final vote into words, saying who has to
  * act. Shared by the console's "Ahora en debate" and the consolidated text.
- * `label` turns an amendment id into its code.
  */
-export function useFinalVoteReasonText(label: (id: string) => string) {
+export function useFinalVoteReasonText() {
   const { t } = useI18n();
 
   return (reason: SessionFinalVoteReason): string => {
@@ -16,10 +15,6 @@ export function useFinalVoteReasonText(label: (id: string) => string) {
         return t("session.preview.notPublished");
       case "amendmentsLoading":
         return t("session.preview.amendmentsLoading");
-      case "totalityReturn":
-        return t("session.preview.totalityReturnBlocked", {
-          code: label(reason.id),
-        });
       case "undecided":
       case "superseded":
       case "late":

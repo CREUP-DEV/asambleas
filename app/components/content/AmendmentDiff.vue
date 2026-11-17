@@ -8,9 +8,8 @@ import { validateOps } from "~~/shared/utils/content/ops";
  * touched blocks (plus `context` blocks around them) with insertions and
  * removals marked as the user's diff preference says.
  *
- * Totality amendments without operations have no text to compare: the `note`
- * slot is shown instead (with a generic note by default). Operations that no
- * longer apply to `base` show a warning instead of a broken preview.
+ * Operations that no longer apply to `base` show a warning instead of a
+ * broken preview.
  * Headings in the excerpt are styled text, not page headings.
  */
 const props = withDefaults(
@@ -52,18 +51,8 @@ const annotated = computed(() =>
 
 <template>
   <div class="min-w-0">
-    <slot v-if="!hasOps" name="note">
-      <UAlert
-        color="neutral"
-        variant="subtle"
-        icon="i-lucide-file-text"
-        :title="t('common.content.totalityTitle')"
-        :description="t('common.content.totalityNote')"
-      />
-    </slot>
-
     <UAlert
-      v-else-if="invalid"
+      v-if="invalid"
       color="warning"
       variant="subtle"
       icon="i-lucide-triangle-alert"
@@ -72,7 +61,7 @@ const annotated = computed(() =>
     />
 
     <ContentView
-      v-else
+      v-else-if="hasOps"
       :annotated="annotated"
       mode="diff"
       :focus="focus"

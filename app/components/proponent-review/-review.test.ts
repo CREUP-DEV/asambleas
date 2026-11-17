@@ -41,6 +41,7 @@ import {
   savedKey,
   seenPositionAt,
   stateKey,
+  answeredAutomatically,
   stepAfter,
   stepBefore,
   stepCounter,
@@ -762,6 +763,31 @@ describe("stateKey", () => {
         true,
       ),
     ).toBe("incorporatedByMesaFor");
+  });
+
+  it("says when a formal amendment was accepted by itself", () => {
+    const auto = answered("accept", "auto");
+    expect(stateKey(amendment("a", { position: auto }), "vote", false)).toBe(
+      "acceptVoteAuto",
+    );
+    expect(
+      stateKey(incorporated("a", { position: auto }), "incorporate", false),
+    ).toBe("incorporatedAuto");
+    expect(
+      stateKey(amendment("a", { position: auto }), "incorporate", true),
+    ).toBe("acceptAutoFor");
+    expect(presenterAnswerKey(amendment("a", { position: auto }))).toBe(
+      "answeredAuto.accept",
+    );
+    expect(presenterAnswerKey(incorporated("a", { position: auto }))).toBe(
+      "answeredAuto.incorporated",
+    );
+    expect(answeredAutomatically(amendment("a", { position: auto }))).toBe(
+      true,
+    );
+    expect(
+      answeredAutomatically(amendment("a", { position: answered("accept") })),
+    ).toBe(false);
   });
 
   it("names nobody while the answer is pending or hidden", () => {

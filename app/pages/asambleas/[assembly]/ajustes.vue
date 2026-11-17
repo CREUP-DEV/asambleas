@@ -329,6 +329,25 @@ async function confirmDelete() {
         </p>
       </div>
 
+      <!-- Status: every change, also offered in «Sesión» and «Convocatoria» -->
+      <UCard as="section" aria-labelledby="settings-status-title">
+        <template #header>
+          <div class="flex flex-wrap items-center gap-2">
+            <h3
+              id="settings-status-title"
+              class="text-highlighted font-semibold"
+            >
+              {{ t("assembly.settingsPage.status.title") }}
+            </h3>
+            <CommonStatusBadge kind="assembly" :value="assembly.status" />
+          </div>
+        </template>
+        <p class="text-muted mb-3 text-sm">
+          {{ t("assembly.settingsPage.status.description") }}
+        </p>
+        <AssemblyStatusActions />
+      </UCard>
+
       <!-- Basic data -->
       <UCard as="section" aria-labelledby="settings-basics-title">
         <template #header>

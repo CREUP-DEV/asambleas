@@ -174,8 +174,8 @@ describe("transactional sources", () => {
         amendment("a", change, { reviewState: null }),
       ),
     ).toBe(true);
-    const no = (extra: Partial<AmendmentDto>, ops = change) =>
-      transactionalSourceEligible(amendment("a", ops, extra));
+    const no = (extra: Partial<AmendmentDto>) =>
+      transactionalSourceEligible(amendment("a", change, extra));
     expect(no({ status: "draft", reviewState: null })).toBe(false);
     expect(no({ reviewState: "pending_validation" })).toBe(false);
     expect(no({ reviewState: "validated" })).toBe(false);
@@ -185,8 +185,6 @@ describe("transactional sources", () => {
     expect(no({ status: "approved", decidedAt: "2026-11-02" })).toBe(false);
     expect(no({ status: "withdrawn" })).toBe(false);
     expect(no({ status: "transacted" })).toBe(false);
-    // A "devolución" has no passage to start from.
-    expect(no({ kind: "totality_return" }, [])).toBe(false);
   });
 
   it("leaves out a transactional its main authors have not all accepted", () => {

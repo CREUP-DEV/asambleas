@@ -7,7 +7,8 @@ import { readNeighbours } from "~~/shared/utils/readMarks";
  * Reading the documentation one document after another: where this document
  * sits among the published ones, in the order of the agenda, with the ones
  * before and after it, what is left to read (which opens the next one with
- * something left) and "Marcar como leído". It stands above the document's
+ * something left) and its read mark (reading it to its end marks it read;
+ * the button takes that back). It stands above the document's
  * title, so going through every document never needs the lists. The page
  * of an agenda item shows it over its reader, and there the documents open
  * in that reader (`to`) instead of on their own page.

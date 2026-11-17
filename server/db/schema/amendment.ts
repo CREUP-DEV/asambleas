@@ -21,14 +21,26 @@ import {
   ACCEPTANCE_DECISIONS,
   ACCEPTANCE_ROLES,
   ADMISSION_STATUSES,
-  AMENDMENT_KINDS,
   AMENDMENT_STATUSES,
   APPROVAL_METHODS,
   PROPONENT_POSITIONS,
   RELATION_KINDS,
+  type AmendmentKind,
 } from "../../../shared/constants/domain";
 
-export const amendmentKindEnum = pgEnum("amendment_kind", AMENDMENT_KINDS);
+/**
+ * The kinds of amendment (AMENDMENT_KINDS). The enum still holds
+ * `totality_return` and `totality_alternative`, the amendments to the whole
+ * text, removed from the platform (no amendment was ever stored with them):
+ * Postgres cannot drop an enum value, and the code never writes them.
+ */
+export const amendmentKindEnum = pgEnum("amendment_kind", [
+  "partial",
+  "formal",
+  "totality_return",
+  "totality_alternative",
+  "transactional",
+]);
 export const amendmentStatusEnum = pgEnum(
   "amendment_status",
   AMENDMENT_STATUSES,
@@ -77,7 +89,11 @@ export const amendments = pgTable(
     memberSeq: integer("member_seq"),
     /** Display code, e.g. "CEUM 4" or "T1". */
     code: text("code"),
-    kind: amendmentKindEnum("kind").notNull().default("partial"),
+    // Typed as the kinds still in use: the enum keeps two removed ones.
+    kind: amendmentKindEnum("kind")
+      .$type<AmendmentKind>()
+      .notNull()
+      .default("partial"),
     status: amendmentStatusEnum("status").notNull().default("draft"),
     admission: admissionStatusEnum("admission").notNull().default("pending"),
     /** Submitted after the window closed. Computed by the server. */

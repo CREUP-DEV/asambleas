@@ -497,7 +497,7 @@ describe("annex", () => {
       {
         ...amendment({
           id: "ret",
-          kind: "totality_return",
+          kind: "partial",
           status: "approved",
           decidedAt: new Date("2026-11-21T08:00:00Z"),
         }),

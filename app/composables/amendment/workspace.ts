@@ -44,15 +44,6 @@ type AmendmentLike = Pick<
 
 // Status and labels ------------------------------------------------------------
 
-export const AMENDMENT_TOTALITY_KINDS: readonly AmendmentKind[] = [
-  "totality_return",
-  "totality_alternative",
-];
-
-export function isTotalityAmendment(kind: AmendmentKind): boolean {
-  return AMENDMENT_TOTALITY_KINDS.includes(kind);
-}
-
 /** Drafts and submitted amendments: still to be decided. */
 export function isAmendmentOpen(amendment: Pick<AmendmentDto, "status">) {
   return !AMENDMENT_CLOSED_STATUSES.includes(amendment.status);
@@ -663,12 +654,9 @@ export function sortAmendments<T extends AmendmentLike>(list: T[]): T[] {
 
 // Overlaps ---------------------------------------------------------------------
 
-/** Amendments that act on concrete passages (totality ones act on everything). */
+/** Amendments that act on concrete passages. */
 function passageAmendments<T extends AmendmentLike>(list: T[]): T[] {
-  return list.filter(
-    (amendment) =>
-      !isTotalityAmendment(amendment.kind) && amendment.ops.length > 0,
-  );
+  return list.filter((amendment) => amendment.ops.length > 0);
 }
 
 export interface AmendmentOverlap {
@@ -738,11 +726,10 @@ export function amendmentOverlapIndex(
 export interface AmendmentGroup<T extends AmendmentLike = AmendmentDto> {
   key: string;
   /**
-   * - `totality`: amendments to the whole text, always first (usual practice);
    * - `overlap`: amendments acting on the same passage;
    * - `single`: an amendment that overlaps with none of the others.
    */
-  kind: "totality" | "overlap" | "single";
+  kind: "overlap" | "single";
   amendments: T[];
 }
 
@@ -754,14 +741,8 @@ export function groupAmendmentsByOverlap<T extends AmendmentLike>(
   list: T[],
 ): AmendmentGroup<T>[] {
   const sorted = sortAmendments(list);
-  const totality = sorted.filter((amendment) =>
-    isTotalityAmendment(amendment.kind),
-  );
-  const rest = sorted.filter(
-    (amendment) => !isTotalityAmendment(amendment.kind),
-  );
   const { clusters } = findOverlaps(
-    passageAmendments(rest).map(({ id, ops }) => ({ id, ops })),
+    passageAmendments(sorted).map(({ id, ops }) => ({ id, ops })),
   );
   const clusterOf = new Map<string, number>();
   clusters.forEach((cluster, i) =>
@@ -769,11 +750,8 @@ export function groupAmendmentsByOverlap<T extends AmendmentLike>(
   );
 
   const groups: AmendmentGroup<T>[] = [];
-  if (totality.length > 0) {
-    groups.push({ key: "totality", kind: "totality", amendments: totality });
-  }
   const byCluster = new Map<number, AmendmentGroup<T>>();
-  for (const amendment of rest) {
+  for (const amendment of sorted) {
     const cluster = clusterOf.get(amendment.id);
     if (cluster === undefined) {
       groups.push({
@@ -808,8 +786,7 @@ export interface AmendmentBlockMarker {
 
 /**
  * How many undecided amendments touch each base block, and whether two of
- * them overlap there. Totality amendments are left out: they touch every
- * block and are listed apart.
+ * them overlap there.
  */
 export function amendmentBlockMarkers(
   list: AmendmentLike[],
@@ -843,9 +820,8 @@ export function amendmentBlockMarkers(
 /**
  * The undecided amendments that act on any of these base blocks, in text
  * order: what someone changing those paragraphs should read first, so they
- * do not propose what is already presented. Totality amendments are left
- * out (they touch every block), and so is `exceptId` (the draft being
- * written).
+ * do not propose what is already presented. `exceptId` (the draft being
+ * written) is left out.
  */
 export function amendmentsOnBlocks<T extends AmendmentLike>(
   list: T[],
@@ -1386,60 +1362,19 @@ export function changedBlockCount(ops: AmendmentOp[]): number {
   return touched.size + added;
 }
 
-/**
- * "Texto alternativo": deletes the whole base and inserts the new text at the
- * start. Empty blocks are dropped and ids already used by the base are renewed.
- */
-export function totalityAlternativeOps(
-  base: Block[],
-  blocks: Block[],
-  newId: () => string,
-): AmendmentOp[] {
-  const taken = new Set(base.map((block) => block.id));
-  const fresh = blocks
-    // An image has no text and still counts.
-    .filter((block) => block.text.trim() !== "" || block.type === "image")
-    .map((block) => {
-      let id = block.id;
-      while (taken.has(id)) id = newId();
-      taken.add(id);
-      return id === block.id ? block : { ...block, id };
-    });
-  const ops: AmendmentOp[] = [];
-  if (base.length > 0) {
-    ops.push({ op: "delete", blockIds: base.map((block) => block.id) });
-  }
-  if (fresh.length > 0) {
-    ops.push({ op: "insert", afterBlockId: null, blocks: fresh });
-  }
-  return ops;
-}
-
-/** The blocks a "texto alternativo" inserts. */
-export function insertedBlocksOf(ops: AmendmentOp[]): Block[] {
-  return ops.flatMap((op) => (op.op === "insert" ? op.blocks : []));
-}
-
 // Composer seed ------------------------------------------------------------------
 
 /**
  * What the composer writes:
  * - `document`: the whole text in an editor; everything changed there is one
  *   amendment;
- * - `global`: one word or expression changed everywhere;
- * - `return` and `alternative`: totality amendments.
+ * - `global`: one word or expression changed everywhere.
  */
-export type AmendmentComposerMode =
-  "document" | "global" | "return" | "alternative";
-
-export const AMENDMENT_TOTALITY_MODES: readonly AmendmentComposerMode[] = [
-  "return",
-  "alternative",
-];
+export type AmendmentComposerMode = "document" | "global";
 
 export interface AmendmentComposerSeed {
   mode: AmendmentComposerMode;
-  /** Editor content (document and alternative modes). */
+  /** Editor content (document mode). */
   edited: Block[];
   find: string;
   replace: string;
@@ -1448,17 +1383,9 @@ export interface AmendmentComposerSeed {
 /** Composer state to keep editing an existing draft. */
 export function seedComposerFromDraft(
   base: Block[],
-  draft: Pick<AmendmentDto, "kind" | "ops" | "globalReplace">,
+  draft: Pick<AmendmentDto, "ops" | "globalReplace">,
 ): AmendmentComposerSeed {
   const empty = { edited: [], find: "", replace: "" };
-  if (draft.kind === "totality_return") return { ...empty, mode: "return" };
-  if (draft.kind === "totality_alternative") {
-    return {
-      ...empty,
-      mode: "alternative",
-      edited: insertedBlocksOf(draft.ops).map(cloneBlock),
-    };
-  }
   if (draft.globalReplace) {
     return {
       ...empty,
@@ -1481,17 +1408,10 @@ export function seedComposerFromDraft(
  * order it is said:
  * - `no_changes`: the text is as it was;
  * - `find_empty`, `same_term`, `no_matches`: the word to change everywhere;
- * - `alternative_empty`: no alternative text yet;
- * - `kind_missing`: content or form was not chosen (never asked of a
- *   totality amendment).
+ * - `kind_missing`: content or form was not chosen.
  */
 export type ComposerIssue =
-  | "no_changes"
-  | "find_empty"
-  | "same_term"
-  | "no_matches"
-  | "alternative_empty"
-  | "kind_missing";
+  "no_changes" | "find_empty" | "same_term" | "no_matches" | "kind_missing";
 
 export function composerIssues(input: {
   mode: AmendmentComposerMode;
@@ -1500,7 +1420,6 @@ export function composerIssues(input: {
   ops: AmendmentOp[];
   find?: string;
   replacement?: string;
-  alternative?: Block[];
 }): ComposerIssue[] {
   const issues: ComposerIssue[] = [];
   const find = (input.find ?? "").trim();
@@ -1513,31 +1432,9 @@ export function composerIssues(input: {
       else if (find === (input.replacement ?? "")) issues.push("same_term");
       else if (input.ops.length === 0) issues.push("no_matches");
       break;
-    case "alternative":
-      if (
-        !(input.alternative ?? []).some(
-          (block) => block.text.trim() !== "" || block.type === "image",
-        )
-      ) {
-        issues.push("alternative_empty");
-      }
-      break;
-    default:
-      break;
   }
-  const asksKind = input.mode === "document" || input.mode === "global";
-  if (asksKind && input.kind === null) issues.push("kind_missing");
+  if (input.kind === null) issues.push("kind_missing");
   return issues;
-}
-
-/** The kind to send: the totality kinds follow the mode. */
-export function composerAmendmentKind(
-  mode: AmendmentComposerMode,
-  kind: "partial" | "formal" | null,
-): Exclude<AmendmentKind, "transactional"> | null {
-  if (mode === "return") return "totality_return";
-  if (mode === "alternative") return "totality_alternative";
-  return kind;
 }
 
 // Composer authors ---------------------------------------------------------------
@@ -1764,7 +1661,6 @@ export const AMENDMENT_ERROR_REASONS = [
   "noop",
   "replace_in_deleted_block",
   "overlapping_ops",
-  "totality_return_ops",
   "inconsistent_counts",
   "format_shape",
   "format_image",

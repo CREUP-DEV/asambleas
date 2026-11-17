@@ -64,8 +64,7 @@ function acceptedByMainAuthors(
 /**
  * Whether an amendment can be combined into a transactional: published (or
  * recorded before validation existed, hence public), admitted and still
- * undecided, and changing some passage of the text (a "devolución" has no
- * text to start from). Late amendments still waiting for the assembly's
+ * undecided, and changing some passage of the text. Late amendments still waiting for the assembly's
  * decision are left out, as the server does. A transactional is a source
  * only once its main authors accepted it (it then replaced what it groups):
  * one still waiting for them, such as the Mesa's live one, published at

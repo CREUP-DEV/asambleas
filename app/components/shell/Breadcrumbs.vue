@@ -12,7 +12,20 @@ import type { BreadcrumbItem } from "@nuxt/ui";
  * The row's height is `--shell-breadcrumb-height`, set on <main> by the
  * default layout, so pages that size themselves to the viewport can take
  * it off.
+ *
+ * `placement`:
+ * - `row` (default): the row described above, at every width;
+ * - `inline`: the whole trail alone, no row, for a navbar's centre on large
+ *   screens (the assembly hub);
+ * - `compact`: the row below `lg` only, for a page that shows `inline` on
+ *   large screens; a panel using both sets `--shell-breadcrumb-height` to 0
+ *   from `lg`.
  */
+const props = withDefaults(
+  defineProps<{ placement?: "row" | "inline" | "compact" }>(),
+  { placement: "row" },
+);
+
 const { t } = useI18n();
 const { crumbs, parent } = useBreadcrumbs();
 
@@ -26,10 +39,20 @@ const items = computed<BreadcrumbItem[]>(() =>
 </script>
 
 <template>
+  <UBreadcrumb
+    v-if="props.placement === 'inline' && crumbs.length > 0"
+    :items="items"
+    color="neutral"
+    class="min-w-0 print:hidden"
+    :aria-label="t('shell.breadcrumb.label')"
+  />
   <div
-    v-if="crumbs.length > 0"
-    class="border-default h-(--shell-breadcrumb-height) shrink-0 items-center border-b px-4 sm:px-6 lg:flex print:hidden"
-    :class="parent ? 'flex' : 'hidden'"
+    v-else-if="props.placement !== 'inline' && crumbs.length > 0"
+    class="border-default h-(--shell-breadcrumb-height) shrink-0 items-center border-b px-4 sm:px-6 print:hidden"
+    :class="[
+      parent ? 'flex' : 'hidden',
+      props.placement === 'compact' ? 'lg:hidden' : 'lg:flex',
+    ]"
   >
     <UBreadcrumb
       :items="items"

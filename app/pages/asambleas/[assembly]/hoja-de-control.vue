@@ -153,13 +153,23 @@ const agendaDocuments = computed(() => agenda.data.value?.documents ?? []);
 
 // Tabs and the document of «Enmiendas» live in the query ----------------------
 
-type SheetTab = "general" | "amendments";
+type SheetTab = "general" | "amendments" | "history";
+/** The query value of each tab but «General», the default. */
+const TAB_SLUGS: Partial<Record<SheetTab, string>> = {
+  amendments: "enmiendas",
+  history: "historial",
+};
 const TAB_QUERY = "vista";
 const DOCUMENT_QUERY = "documento";
 
 const tab = computed<SheetTab>({
-  get: () =>
-    route.query[TAB_QUERY] === "enmiendas" ? "amendments" : "general",
+  get: () => {
+    const slug = route.query[TAB_QUERY];
+    const match = (Object.keys(TAB_SLUGS) as SheetTab[]).find(
+      (key) => TAB_SLUGS[key] === slug,
+    );
+    return match ?? "general";
+  },
   set: (value) => {
     void router.replace({ query: { ...route.query, ...tabQuery(value) } });
   },
@@ -176,12 +186,13 @@ function tabQuery(value: SheetTab): SheetQueryPatch {
   clearSearchBox();
   return {
     ...clearedSheetQuery(),
-    [TAB_QUERY]: value === "amendments" ? "enmiendas" : undefined,
+    [TAB_QUERY]: TAB_SLUGS[value],
   };
 }
 const tabItems = computed<TabsItem[]>(() => [
   { value: "general", label: t("controlSheet.tabs.general") },
   { value: "amendments", label: t("controlSheet.tabs.amendments") },
+  { value: "history", label: t("controlSheet.tabs.history") },
 ]);
 
 const documentOptions = computed(() =>
@@ -574,6 +585,7 @@ const listStateKey = computed(() =>
 watch(
   listStateKey,
   () => {
+    if (tab.value === "history") return;
     const general = tab.value === "general";
     const sort = general ? generalState.value.sort : amendmentState.value.sort;
     const column = general
@@ -1182,7 +1194,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
           </div>
         </template>
 
-        <template v-else>
+        <template v-else-if="tab === 'amendments'">
           <CommonEmptyState
             v-if="documentOptions.length === 0"
             icon="i-lucide-file-pen-line"
@@ -1350,6 +1362,26 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
             </template>
           </template>
         </template>
+
+        <!-- Its first page loads with it (async setup): a skeleton meanwhile. -->
+        <Suspense v-else>
+          <ControlSheetHistory
+            :api-base="apiBase"
+            :items="items"
+            :documents="agendaDocuments"
+          />
+          <template #fallback>
+            <div class="space-y-3" role="status">
+              <span class="sr-only">{{ t("controlSheet.loading") }}</span>
+              <USkeleton
+                v-for="n in 4"
+                :key="n"
+                aria-hidden="true"
+                class="h-12 w-full"
+              />
+            </div>
+          </template>
+        </Suspense>
       </template>
 
       <ControlSheetRowPanel

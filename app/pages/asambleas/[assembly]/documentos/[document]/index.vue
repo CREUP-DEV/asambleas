@@ -821,6 +821,9 @@ useDocumentReading(() =>
     ? amendmentsUrl.value.replace(/\/amendments$/, "/reading")
     : null,
 );
+// Reaching the end of its text marks the document read.
+const textEnd = useTemplateRef<HTMLElement>("textEnd");
+useAutoReadMark("document", () => document.value?.id, textEnd);
 
 /** Their marks go on the original text only: the other views show another. */
 function notesRoot(): HTMLElement | null {
@@ -933,23 +936,17 @@ function onComposerSubmitted(amendment: AmendmentDto): void {
 }
 
 /**
- * The other ways to amend, in the menu of one button next to the main one,
- * each with a sentence that says what it does.
+ * The other ways to amend, in the "Más" menu, with a sentence that says what
+ * each does: one word changed everywhere.
  */
-const OTHER_WAY_ICONS = {
-  global: "i-lucide-replace-all",
-  return: "i-lucide-undo-2",
-  alternative: "i-lucide-file-pen-line",
-} as const;
-
-const otherWays = computed(() =>
-  (["global", "return", "alternative"] as const).map((mode) => ({
-    label: t(`workspace.cta.${mode}`),
-    description: t(`workspace.cta.${mode}Hint`),
-    icon: OTHER_WAY_ICONS[mode],
-    onSelect: () => openComposer({ mode }),
-  })),
-);
+const otherWays = computed(() => [
+  {
+    label: t("workspace.cta.global"),
+    description: t("workspace.cta.globalHint"),
+    icon: "i-lucide-replace-all",
+    onSelect: () => openComposer({ mode: "global" }),
+  },
+]);
 
 // Amendment detail -----------------------------------------------------------------
 
@@ -1715,6 +1712,15 @@ const filteredBlockLabel = computed(() =>
         :pending-description="t('workspace.text.filePending')"
         :open-button="false"
       />
+      <!-- Nothing outside a PDF follows its pages: having it whole on show
+           marks it read (useAutoReadMark). -->
+      <div
+        v-if="document.format === 'file'"
+        :key="document.id"
+        ref="textEnd"
+        aria-hidden="true"
+        class="h-px"
+      />
 
       <!-- Not published yet -->
       <template v-else-if="!isPublished">
@@ -2031,15 +2037,7 @@ const filteredBlockLabel = computed(() =>
                     </div>
                   </div>
                   <UAlert
-                    v-if="selectedAmendment.kind === 'totality_return'"
-                    color="neutral"
-                    variant="subtle"
-                    icon="i-lucide-file-x"
-                    :title="t('amendment.kinds.totality_return')"
-                    :description="t('amendment.detail.returnNote')"
-                  />
-                  <UAlert
-                    v-else-if="!amendedAnnotated"
+                    v-if="!amendedAnnotated"
                     color="warning"
                     variant="subtle"
                     icon="i-lucide-triangle-alert"
@@ -2165,6 +2163,14 @@ const filteredBlockLabel = computed(() =>
                   </section>
                 </div>
               </div>
+              <!-- Reaching it marks the document read (useAutoReadMark). -->
+              <div
+                v-if="textMode !== 'amended' || selectedAmendment"
+                :key="document.id"
+                ref="textEnd"
+                aria-hidden="true"
+                class="h-px"
+              />
             </template>
           </UDashboardPanel>
 

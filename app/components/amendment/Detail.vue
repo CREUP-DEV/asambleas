@@ -559,6 +559,10 @@ function onReviewSettled(): void {
   heading.value?.focus();
 }
 
+// Reading it down to its justification's end marks it read.
+const readEnd = useTemplateRef<HTMLElement>("readEnd");
+useAutoReadMark("amendment", () => props.amendment.id, readEnd);
+
 defineExpose({
   /** For the page, when it opens this amendment in place of something else. */
   focusHeading: () => heading.value?.focus(),
@@ -738,17 +742,7 @@ async function remove(): Promise<void> {
           :base="base"
           :ops="amendment.ops"
           :context="1"
-        >
-          <template v-if="amendment.kind === 'totality_return'" #note>
-            <UAlert
-              color="neutral"
-              variant="subtle"
-              icon="i-lucide-file-x"
-              :title="t('amendment.kinds.totality_return')"
-              :description="t('amendment.detail.returnNote')"
-            />
-          </template>
-        </ContentAmendmentDiff>
+        />
       </div>
       <UButton
         v-if="amendment.ops.length > 0"
@@ -776,6 +770,8 @@ async function remove(): Promise<void> {
       <p v-else class="text-muted text-sm">
         {{ t("amendment.detail.noJustification") }}
       </p>
+      <!-- Reaching it marks the amendment read (useAutoReadMark). -->
+      <div :key="amendment.id" ref="readEnd" aria-hidden="true" class="h-px" />
     </section>
 
     <!-- 4. What is the viewer's turn. Never folded. -->
@@ -957,9 +953,11 @@ async function remove(): Promise<void> {
             class="text-sm"
           >
             {{
-              amendment.position?.recordedBy === "mesa"
-                ? t("amendment.detail.approvedByMesa")
-                : t("amendment.detail.approvedByPresenter")
+              amendment.position?.recordedBy === "auto"
+                ? t("amendment.detail.approvedAuto")
+                : amendment.position?.recordedBy === "mesa"
+                  ? t("amendment.detail.approvedByMesa")
+                  : t("amendment.detail.approvedByPresenter")
             }}
           </p>
           <p

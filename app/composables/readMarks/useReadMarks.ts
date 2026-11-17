@@ -55,6 +55,7 @@ export function provideReadMarks(
 ): ReadMarksContext {
   const { assembly, apiBase, onLive } = current;
   const api = useApi();
+  const nuxtApp = useNuxtApp();
 
   const url = computed(() => `${apiBase.value}/read-marks`);
   const result = useFetch<ReadMarksDto>(url, {
@@ -105,6 +106,15 @@ export function provideReadMarks(
         method: "PUT",
         body: { ...targets, read } satisfies ReadMarksBody,
       });
+      // A read that left before this write (the page's first load, a live
+      // refetch) would land after it and put the old marks back: a fresh
+      // one cancels it. While the page hydrates a refresh hands back the
+      // copy the page loaded with, from before this write, so it waits.
+      if (nuxtApp.isHydrating) {
+        onNuxtReady(() => void result.refresh({ dedupe: "cancel" }));
+      } else {
+        void result.refresh({ dedupe: "cancel" });
+      }
       return true;
     } catch (error) {
       api.notifyError(error, "readMarks.error");

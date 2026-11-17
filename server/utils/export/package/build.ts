@@ -472,7 +472,7 @@ class PieceRenderer {
           transactedInto: amendment.transactedInto,
           justification: stored.justification,
         },
-        typology: amendmentTypology(amendment.kind, stored.ops),
+        typology: amendmentTypology(stored.ops),
         locations: amendmentLocations(base, stored.ops),
         fragment,
         images: await loadExportImages(
