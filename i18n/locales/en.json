@@ -1170,6 +1170,18 @@
         "vote": "The amendments that went into the text because {member} accepted them will be undecided again, for the assembly to vote on.",
         "presenterFallback": "the presenter"
       }
+    },
+    "positions": {
+      "publish": "Publish the presenter's answers",
+      "publishHint": "The whole assembly will see now how it answers each amendment. They are published by themselves once its agenda item is debated.",
+      "unpublish": "Make the answers private again",
+      "unpublishHint": "Only its presenters, the Mesa and the Secretariat will see them until its agenda item is debated.",
+      "publishedToast": "Presenter's answers published",
+      "unpublishedToast": "Presenter's answers made private again",
+      "failed": "The presenter's answers could not be changed",
+      "errors": {
+        "debateStarted": "The debate of its agenda item has started: the answers are public and cannot be made private again."
+      }
     }
   },
   "amendment": {
@@ -4480,10 +4492,15 @@
       "speakers": "Speakers",
       "code": "Amendment",
       "authors": "Presented by",
+      "kind": "Type",
       "position": "Presenter's answer",
       "vote": "Vote",
       "observations": "Observations",
       "open": "View"
+    },
+    "kind": {
+      "formal": "Formal",
+      "content": "Content"
     },
     "treated": {
       "item": "Dealt with: {title}",
@@ -5434,8 +5451,7 @@
     "saveFailed": "The answer could not be saved",
     "commentSaved": "{label}: comment saved",
     "visibility": {
-      "mesa": "Only the document's presenters, the Mesa and the Secretariat see your answer and your comment.",
-      "session": "The document's presenters, the Mesa and the Secretariat see your answer and your comment now; the rest of the assembly, once the session starts.",
+      "reserved": "The document's presenters, the Mesa and the Secretariat see your answer and your comment now; the rest of the assembly, once its agenda item is debated, or before if the Secretariat publishes them.",
       "public": "The whole assembly sees your answer and your comment."
     },
     "progress": {
@@ -6004,6 +6020,9 @@
       "document_submitted": "Document sent to the Secretariat",
       "document_correction_requested": "The Secretariat asked for the document to be corrected",
       "document_published": "Document published",
+      "document_positions_published": "Presenter's answers made public",
+      "document_positions_unpublished": "Presenter's answers made private again",
+      "document_positions_debate_started": "Presenter's answers public as the debate started",
       "document_deleted": "Document deleted",
       "document_voted": "Final vote on the document",
       "final_vote_annulled": "Final vote annulled",

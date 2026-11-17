@@ -153,27 +153,21 @@ const onBehalfOf = computed(() => {
 });
 
 /**
- * Who reads the answers, from the assembly's policy and, as on the server
- * (canSeePositions), its status: under the "session" policy everyone sees
- * them once the assembly is in session or closed (positionVisibilityKey).
+ * Who reads the answers: everyone once the document's answers are public
+ * (published by the Secretaría, or its agenda item's debate started), as
+ * on the server (canSeePositions, positionVisibilityKey).
  */
-const visibilityPolicy = computed(
-  () => assembly.value?.settings.positionVisibility ?? "session",
-);
 const visibilityNote = computed(() =>
-  t(
-    `proponentReview.visibility.${positionVisibilityKey(
-      visibilityPolicy.value,
-      assembly.value?.status,
-    )}`,
-  ),
+  document.value
+    ? t(`proponentReview.visibility.${positionVisibilityKey(document.value)}`)
+    : "",
 );
 /**
  * The answers are still reserved: an acceptance that incorporates an
  * amendment still shows to everyone as its approval.
  */
 const reserved = computed(() =>
-  answersReserved(visibilityPolicy.value, assembly.value?.status),
+  document.value ? answersReserved(document.value) : true,
 );
 
 /** What an amendment the main presenter accepts becomes. */

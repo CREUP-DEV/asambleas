@@ -58,8 +58,9 @@ R-SES-04, R-VOT-01/03/04, R-TRZ-03/04 and R-OTR-02 in
   as it is.
 - Every sheet reader, the CEA included, reads the presenter's answer to
   each amendment as soon as it is given, only in the sheet
-  (`ControlSheetDto.positions`); everywhere else the assembly's
-  `positionVisibility` still rules (user, 2026-11-15).
+  (`ControlSheetDto.positions`); everywhere else they are public per
+  document, once the Secretaría publishes them or the debate of the
+  document's agenda item starts (`canSeePositions`).
 - The Mesa may withdraw a document, or postpone it to another assembly,
   during the session (its real status), from the console and the sheet
   (user, 2026-11-14).
@@ -377,7 +378,9 @@ updatedAt }`, `session:moderate`, the same `assertStatusChange` checks
   Votaciones (method, every non-zero count, unanimity, motions marked as
   such, the roll call in a popover), Intervinientes, Observaciones.
 - Enmiendas columns: Nº (code or «Sin número»), Presenta (the authors as
-  member tags, the main one first), Respuesta del proponente (the answer of
+  member tags, the main one first; «+N» lists the rest with their whole
+  denomination and a council's university), Tipo («De forma» or «De
+  contenido», `amendmentSheetKind`), Respuesta del proponente (the answer of
   the document's main presenter, named under the selector), Tratado,
   Resultado, Votaciones, Intervinientes, Observaciones, in the console's
   order (`sortSessionAmendments`).

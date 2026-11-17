@@ -9,6 +9,7 @@ import type {
   SpeakersDto,
 } from "~~/shared/types/api";
 import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
+import { positionsArePublic } from "~~/shared/utils/positions";
 import { errorStatus } from "~/composables/api/useApi";
 import { agendaWithTitles } from "~/utils/agendaTitles";
 import { isDocumentLiveBatch } from "~/composables/document/useDocument";
@@ -382,14 +383,15 @@ const debatedNote = computed(() => {
 /**
  * The room may see the main presenter's answers. The Mesa, the Secretaría
  * and the presenters always receive them, but this page shows what the room
- * sees, so it follows the assembly's policy rather than what arrived.
+ * sees, so it follows whether the document's answers are public
+ * (positionsArePublic) rather than what arrived.
  */
 const settings = computed(() => ({
   ...DEFAULT_ASSEMBLY_SETTINGS,
   ...assembly.value?.settings,
 }));
-const showPosition = computed(
-  () => settings.value.positionVisibility !== "mesa",
+const showPosition = computed(() =>
+  document.value ? positionsArePublic(document.value) : false,
 );
 /** The Mesa's latest headcount, public; null before its first count. */
 const attendance = computed(() =>

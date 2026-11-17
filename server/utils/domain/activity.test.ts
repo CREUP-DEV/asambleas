@@ -152,7 +152,7 @@ function lookups(): Lookups {
     number: 80,
     type: "AGO",
     status: "convened",
-    settings: { ...DEFAULT_ASSEMBLY_SETTINGS, positionVisibility: "mesa" },
+    settings: DEFAULT_ASSEMBLY_SETTINGS,
   });
   result.assemblies.set("draftasm", {
     id: "draftasm",
@@ -170,6 +170,8 @@ function lookups(): Lookups {
     proponentMemberId: OTHER_MEMBER,
     submittedByUserId: null,
     coProponentMemberIds: [],
+    positionsPublishedAt: null,
+    positionsDebateStartedAt: null,
   });
   result.documents.set("draftdoc", {
     id: "draftdoc",
@@ -180,6 +182,8 @@ function lookups(): Lookups {
     proponentMemberId: OTHER_MEMBER,
     submittedByUserId: null,
     coProponentMemberIds: [],
+    positionsPublishedAt: null,
+    positionsDebateStartedAt: null,
   });
   // Presented by OTHER_MEMBER, not published yet.
   result.amendments.set("hidden", {

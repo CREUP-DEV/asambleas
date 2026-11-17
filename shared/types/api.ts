@@ -706,6 +706,16 @@ export interface DocumentSummaryDto {
   status: DocumentStatus;
   /** The main presenter: it answers the amendments to the document. */
   proponent: MemberRef | null;
+  /**
+   * When the Secretaría made the main presenter's answers public; null
+   * otherwise (and after it took that back).
+   */
+  positionsPublishedAt: IsoDate | null;
+  /**
+   * When the debate of the document's agenda item started in session: its
+   * answers are public from then on, for good (positionsArePublic).
+   */
+  positionsDebateStartedAt: IsoDate | null;
   /** Members presenting it jointly with the main presenter. */
   coProponents: MemberRef[];
   amendable: boolean;
@@ -894,6 +904,17 @@ export interface DocumentUpdateBody {
  */
 export interface CorrectionBody {
   note: string;
+  updatedAt: IsoDate;
+}
+
+/**
+ * PUT .../documents/[document]/positions (document:manage): the Secretaría
+ * makes the main presenter's answers to the amendments public before their
+ * debate (`public: true`), or takes that back (`false`, 409 once the debate
+ * started). Optimistic lock on the document. Returns the DocumentDto.
+ */
+export interface PositionsPublicationBody {
+  public: boolean;
   updatedAt: IsoDate;
 }
 
@@ -1704,9 +1725,9 @@ export interface ControlSheetDto {
   amendmentRows: ControlSheetAmendmentRowDto[];
   /**
    * The main presenter's answer to every amendment the reader sees that has
-   * one, as soon as it is given: every sheet reader reads it here, whatever
-   * the assembly's settings.positionVisibility (canSeePositions), which
-   * still rules AmendmentDto.position everywhere else.
+   * one, as soon as it is given: every sheet reader reads it here, public
+   * or not yet (canSeePositions, which still rules AmendmentDto.position
+   * everywhere else).
    */
   positions: ControlSheetPositionDto[];
   /**

@@ -267,6 +267,13 @@
       "when": 1794918107513,
       "tag": "0037_member_holder_name",
       "breakpoints": true
+    },
+    {
+      "idx": 38,
+      "version": "7",
+      "when": 1794935950701,
+      "tag": "0038_document_positions_publication",
+      "breakpoints": true
     }
   ]
 }

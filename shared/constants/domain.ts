@@ -468,11 +468,12 @@ export type DecisionMethod = (typeof DECISION_METHODS)[number];
 /**
  * Per-assembly policies. Who sees a presented amendment is no longer a
  * policy: the Secretaría validates and publishes each one (see
- * amendments.publishedAt).
+ * amendments.publishedAt); nor who sees the presenter's answers, public per
+ * document (documents.positions_published_at and
+ * positions_debate_started_at). A stored `positionVisibility` is from
+ * before and is dropped when read (assemblySettings).
  */
 export interface AssemblySettings {
-  /** Who sees the proponent's position on each amendment. */
-  positionVisibility: "mesa" | "session" | "public";
   /** Outcome of a tied vote. */
   tieRule: "rejected" | "repeat";
   /** Denominator for majorities. */
@@ -480,7 +481,6 @@ export interface AssemblySettings {
 }
 
 export const DEFAULT_ASSEMBLY_SETTINGS: AssemblySettings = {
-  positionVisibility: "session",
   tieRule: "rejected",
   denominator: "present",
 };

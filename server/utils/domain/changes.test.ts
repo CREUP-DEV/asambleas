@@ -93,20 +93,12 @@ describe("diffChanges", () => {
   it("prefixes keys, as for settings", () => {
     expect(
       diffChanges(
-        {
-          positionVisibility: "session",
-          tieRule: "rejected",
-          denominator: "valid_votes",
-        },
-        {
-          positionVisibility: "public",
-          tieRule: "rejected",
-          denominator: "valid_votes",
-        },
+        { tieRule: "rejected", denominator: "valid_votes" },
+        { tieRule: "repeat", denominator: "valid_votes" },
         { prefix: "settings." },
       ),
     ).toEqual({
-      "settings.positionVisibility": { from: "session", to: "public" },
+      "settings.tieRule": { from: "rejected", to: "repeat" },
     });
   });
 

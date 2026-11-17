@@ -1170,6 +1170,18 @@
         "vote": "Las enmiendas que entraron en el texto porque {member} las aceptó volverán a quedar pendientes, para que las vote la asamblea.",
         "presenterFallback": "quien presenta el documento"
       }
+    },
+    "positions": {
+      "publish": "Publicar las respuestas del proponente",
+      "publishHint": "Toda la asamblea verá ya qué responde a cada enmienda. Se publican solas cuando empieza el debate de su punto.",
+      "unpublish": "Reservar de nuevo las respuestas",
+      "unpublishHint": "Solo las verán quienes lo presentan, la Mesa y la Secretaría hasta que empiece el debate de su punto.",
+      "publishedToast": "Respuestas del proponente publicadas",
+      "unpublishedToast": "Respuestas del proponente reservadas de nuevo",
+      "failed": "No se han podido cambiar las respuestas del proponente",
+      "errors": {
+        "debateStarted": "Ya ha empezado el debate de su punto: las respuestas son públicas y no se pueden reservar."
+      }
     }
   },
   "amendment": {
@@ -4480,10 +4492,15 @@
       "speakers": "Intervinientes",
       "code": "Enmienda",
       "authors": "Presenta",
+      "kind": "Tipo",
       "position": "Respuesta del proponente",
       "vote": "Votación",
       "observations": "Observaciones",
       "open": "Ver"
+    },
+    "kind": {
+      "formal": "De forma",
+      "content": "De contenido"
     },
     "treated": {
       "item": "Tratado: {title}",
@@ -5434,8 +5451,7 @@
     "saveFailed": "No se ha podido guardar la respuesta",
     "commentSaved": "{label}: comentario guardado",
     "visibility": {
-      "mesa": "Tu respuesta y tu comentario solo los ven quienes presentan el documento, la Mesa y Secretaría.",
-      "session": "Quienes presentan el documento, la Mesa y Secretaría ven ya tu respuesta y tu comentario; el resto de la asamblea, cuando empiece la sesión.",
+      "reserved": "Quienes presentan el documento, la Mesa y la Secretaría ya ven tu respuesta y tu comentario; el resto de la asamblea, cuando empiece el debate de su punto, o antes si la Secretaría las publica.",
       "public": "Toda la asamblea ve tu respuesta y tu comentario."
     },
     "progress": {
@@ -6004,6 +6020,9 @@
       "document_submitted": "Documento enviado a Secretaría",
       "document_correction_requested": "Secretaría pidió corregir el documento",
       "document_published": "Documento publicado",
+      "document_positions_published": "Respuestas del proponente publicadas",
+      "document_positions_unpublished": "Respuestas del proponente reservadas de nuevo",
+      "document_positions_debate_started": "Respuestas del proponente públicas al empezar el debate",
       "document_deleted": "Documento borrado",
       "document_voted": "Votación final del documento",
       "final_vote_annulled": "Votación final anulada",

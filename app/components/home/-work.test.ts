@@ -50,6 +50,8 @@ const doc = (
     status: "draft",
     proponent: null,
     coProponents: [],
+    positionsPublishedAt: null,
+    positionsDebateStartedAt: null,
     amendable: false,
     acceptedAmendments: "vote",
     voted: false,

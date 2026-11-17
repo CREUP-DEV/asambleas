@@ -77,6 +77,28 @@ export const documents = pgTable(
     acceptedAmendments: acceptedAmendmentRuleEnum("accepted_amendments")
       .notNull()
       .default("vote"),
+    /**
+     * The Secretaría made the main presenter's answers to the amendments
+     * public before their debate (positionsArePublic,
+     * shared/utils/positions.ts). Cleared when it takes that back, which it
+     * may only until the debate starts.
+     */
+    positionsPublishedAt: timestamp("positions_published_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
+    positionsPublishedByUserId: text(
+      "positions_published_by_user_id",
+    ).references(() => users.id, { onDelete: "set null" }),
+    /**
+     * When the agenda item the document hangs from, the document or one of
+     * its amendments first went into debate during the session: the
+     * answers are public from then on, for good. Never cleared.
+     */
+    positionsDebateStartedAt: timestamp("positions_debate_started_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     /** Override of the assembly amendment window for this document. */
     amendmentsOpenAt: timestamp("amendments_open_at", {
       withTimezone: true,

@@ -23,6 +23,7 @@ import {
   type LiveAmendmentState,
 } from "~/components/live-view/-model";
 import {
+  amendmentSheetKind,
   rowVoteEntries,
   type AmendmentSheetRow,
   type GeneralSheetRow,
@@ -53,6 +54,7 @@ export type GeneralSortKey = (typeof GENERAL_SORT_KEYS)[number];
 export const AMENDMENT_SORT_KEYS = [
   "code",
   "authors",
+  "kind",
   "position",
   "treated",
   "result",
@@ -201,6 +203,8 @@ function amendmentSortValue(
       return position;
     case "authors":
       return mainAuthorAcronym(row);
+    case "kind":
+      return amendmentSheetKind(row.amendment) === "formal" ? 1 : 0;
     case "position": {
       const answer = row.position;
       return answer === null
@@ -505,6 +509,7 @@ const GENERAL_SORT_SLUGS: Record<GeneralSortKey, string> = {
 const AMENDMENT_SORT_SLUGS: Record<AmendmentSortKey, string> = {
   code: "enmienda",
   authors: "presenta",
+  kind: "tipo",
   position: "respuesta",
   treated: "tratada",
   result: "resultado",

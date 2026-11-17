@@ -117,6 +117,12 @@ export const correctionBodySchema = z.object({
   updatedAt: isoDateSchema,
 });
 
+/** Body of PUT .../documents/[document]/positions (PositionsPublicationBody). */
+export const positionsPublicationBodySchema = z.object({
+  public: z.boolean(),
+  updatedAt: isoDateSchema,
+});
+
 /** Body of POST .../amendments/[amendment]/unvalidate (UndoValidationBody). */
 export const undoValidationBodySchema = z.object({
   updatedAt: isoDateSchema,
