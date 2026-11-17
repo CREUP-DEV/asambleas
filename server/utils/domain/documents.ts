@@ -710,8 +710,9 @@ async function loadAmendmentVisibilityRows(
 /**
  * Amendments past draft that the actor can see, per document. The Secretaría
  * and the Mesa see all of them, counted in SQL. Everyone else sees the
- * published ones, also counted in SQL, plus the unpublished ones they wrote,
- * created or are a party to, as `canSeeAmendment` decides.
+ * published ones but the withdrawn, also counted in SQL, plus the
+ * unpublished and withdrawn ones `canSeeAmendment` lets them read (they
+ * wrote, created or are a party to them; the CEA reads the withdrawn).
  */
 async function countVisibleAmendments(
   actor: Actor,
@@ -730,14 +731,28 @@ async function countVisibleAmendments(
       .select({ documentId: amendments.documentId, total: count() })
       .from(amendments)
       .where(
-        and(presented, seesAll ? undefined : isNotNull(amendments.publishedAt)),
+        and(
+          presented,
+          seesAll
+            ? undefined
+            : and(
+                isNotNull(amendments.publishedAt),
+                ne(amendments.status, "withdrawn"),
+              ),
+        ),
       )
       .groupBy(amendments.documentId),
     seesAll
       ? Promise.resolve([])
       : loadAmendmentVisibilityRows(
           executor,
-          and(presented, isNull(amendments.publishedAt)),
+          and(
+            presented,
+            or(
+              isNull(amendments.publishedAt),
+              eq(amendments.status, "withdrawn"),
+            ),
+          ),
         ),
   ]);
   for (const row of totals) counts.set(row.documentId, Number(row.total));

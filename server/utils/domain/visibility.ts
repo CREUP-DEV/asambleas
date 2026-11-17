@@ -141,6 +141,9 @@ export function isAmendmentInsider(
  *   transactional and reviewers (amendment:review or amendment:manage). The
  *   Mesa alone does not read members' private drafts; the drafts it creates
  *   itself are covered by `createdByUserId`.
+ * - Withdrawn: never public, published or not: its authors, its creator,
+ *   the parties of a transactional, reviewers, the Mesa, the CEA's
+ *   accounts and the control sheet's readers (`seesWithdrawnAmendments`).
  * - Presented and published (`publishedAt`): everyone.
  * - Presented, not published yet (waiting for validation, validated but kept
  *   private, or decided before publication): its authors, its creator, the
@@ -158,11 +161,31 @@ export function canSeeAmendment(
   if (amendment.status === "draft") {
     return insider || canReviewAmendments(actor);
   }
+  if (amendment.status === "withdrawn") {
+    return (
+      insider ||
+      seesAllPresentedAmendments(actor) ||
+      seesWithdrawnAmendments(actor)
+    );
+  }
   if (amendment.publishedAt) return true;
   if (insider || seesAllPresentedAmendments(actor)) return true;
   return (
     amendment.validatedAt !== null &&
     seesValidatedAmendments(actor, amendment.documentPresenters)
+  );
+}
+
+/**
+ * Who reads a withdrawn amendment besides its insiders, reviewers and the
+ * Mesa: the CEA's accounts (role CEA) and whoever reads the control sheet.
+ * Withdrawn amendments are never public (user's decision of 2026-11-17).
+ */
+export function seesWithdrawnAmendments(actor: Actor): boolean {
+  return (
+    actor.user.role?.name === SYSTEM_ROLES.CEA ||
+    actor.can(PERMISSION_KEYS.CONTROL_SHEET_VIEW) ||
+    actor.can(PERMISSION_KEYS.CONTROL_SHEET_EDIT)
   );
 }
 

@@ -1054,7 +1054,7 @@ describe("visibility", () => {
     } as unknown as Actor;
 
     it("shows a validated, unpublished amendment to the CEA and the document's presenters", () => {
-      for (const status of ["submitted", "withdrawn", "approved"] as const) {
+      for (const status of ["submitted", "approved"] as const) {
         const validated = amendment(status, { validatedAt });
         expect(canSeeAmendment(cea, validated)).toBe(true);
         expect(canSeeAmendment(actor("member", "presenter"), validated)).toBe(
@@ -1068,6 +1068,26 @@ describe("visibility", () => {
         // Anyone else still waits for its publication.
         expect(canSeeAmendment(actor("member"), validated)).toBe(false);
         expect(canSeeAmendment(actor("member", null), validated)).toBe(false);
+      }
+    });
+
+    it("never makes a withdrawn amendment public, published or not", () => {
+      for (const extra of [{}, { validatedAt }, { validatedAt, publishedAt }]) {
+        const withdrawn = amendment("withdrawn", extra);
+        // Its insiders, the CEA, the sheet's readers and the staff read it.
+        expect(canSeeAmendment(actor("member", "author"), withdrawn)).toBe(
+          true,
+        );
+        expect(canSeeAmendment(cea, withdrawn)).toBe(true);
+        expect(canSeeAmendment(sheetReader, withdrawn)).toBe(true);
+        for (const role of ["moderator", "reviewer", "manager"] as const) {
+          expect(canSeeAmendment(actor(role), withdrawn)).toBe(true);
+        }
+        // Nobody else, not even the document's presenters.
+        expect(canSeeAmendment(actor("member"), withdrawn)).toBe(false);
+        expect(canSeeAmendment(actor("member", "presenter"), withdrawn)).toBe(
+          false,
+        );
       }
     });
 
