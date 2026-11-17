@@ -342,8 +342,10 @@ function positionDetail(payload: Record<string, unknown>): string | null {
   const memberId = text(payload.memberId);
   const member =
     (memberId
-      ? (props.members.find((item) => item.id === memberId)?.acronym ??
-        genericExecutiveAcronym(memberId))
+      ? ((() => {
+          const found = props.members.find((item) => item.id === memberId);
+          return found ? memberSpokenName(found) : null;
+        })() ?? genericExecutiveAcronym(memberId))
       : null) ?? t("amendment.position.thePresenter");
   return t(`amendment.position.answersByMesa.${position}`, { member });
 }

@@ -22,6 +22,7 @@ import {
   sortSessionAmendments,
 } from "~/composables/session/sessionModel";
 import { numberedAgendaTitle } from "~/utils/agendaTree";
+import { memberSpokenName, positionRecorderKey } from "~/utils/format";
 
 // Speaking turns --------------------------------------------------------------
 
@@ -409,7 +410,7 @@ export function liveAmendmentNote(
  */
 export function livePositionLine(
   amendment: Pick<AmendmentDto, "position">,
-  presenter: Pick<MemberRef, "acronym"> | null | undefined,
+  presenter: Pick<MemberRef, "acronym" | "name"> | null | undefined,
 ): LiveAmendmentNote | null {
   const position = amendment.position;
   if (!position || !presenter || position.position === "pending") return null;
@@ -419,11 +420,11 @@ export function livePositionLine(
   }
   const group =
     position.recordedBy === "mesa"
-      ? "amendment.position.answersByMesa"
+      ? `amendment.position.answersBy${positionRecorderKey(position)}`
       : "amendment.position.answers";
   return {
     key: `${group}.${position.position}`,
-    params: { member: presenter.acronym },
+    params: { member: memberSpokenName(presenter) },
   };
 }
 

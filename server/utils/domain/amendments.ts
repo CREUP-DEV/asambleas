@@ -28,6 +28,7 @@ import {
   events,
   liveState,
   members,
+  roles,
   users,
   votes,
   type AmendmentMeta,
@@ -169,6 +170,7 @@ import {
   publishOnValidation,
   positionEffect,
   positionRecordedBy,
+  positionRecorder,
   reclassifyPositionPlan,
   shouldAutoAcceptPosition,
   submissionLate,
@@ -197,6 +199,7 @@ import {
   redactCorrectionNote,
   redactEventActor,
   redactPayloadMembers,
+  seesAnswerRecord,
   type DocumentPresenters,
 } from "./visibility";
 
@@ -1449,19 +1452,16 @@ export async function buildAmendmentDtos(
         : null,
       position:
         ctx.positionsVisible && row.position
-          ? {
-              position: row.position.position,
-              comment: row.position.comment,
-              recordedBy: positionRecordedBy({
-                decidedByUserId: row.position.decidedByUserId,
-                recordedAs: recorders.recordedAs.get(row.id),
-                recorderMemberId: row.position.decidedByUserId
-                  ? recorders.memberOf.get(row.position.decidedByUserId)
-                  : null,
-                mainPresenterId: ctx.document.proponentMemberId,
+          ? toPositionDto(
+              row.position,
+              row.id,
+              ctx.document.proponentMemberId,
+              recorders,
+              seesAnswerRecord(ctx.actor, {
+                insider: isAmendmentAuthor(ctx.actor, row),
+                isPresenter: ctx.isPresenter,
               }),
-              updatedAt: row.position.updatedAt.toISOString(),
-            }
+            )
           : null,
       sourceIds: row.sources.map((source) => source.sourceId).filter(keep),
       transactionalIds: row.derived
@@ -1512,12 +1512,48 @@ export async function buildAmendmentDtos(
  *   position_changed event, which says whether the Mesa recorded the
  *   answer, as it was then (every answer is recorded with one);
  * - `memberOf`, by user id: the member the user who recorded an answer acts
- *   for (null when none), only for answers with no such event, compared
- *   with the document's current main presenter.
+ *   for (null when none), compared with the document's current main
+ *   presenter for answers with no such event;
+ * - `roleOf`, by user id: the role of that user now, which tells the Mesa
+ *   from the Secretaría and the Presidencia (positionRecorder).
  */
 export interface PositionRecorders {
   recordedAs: Map<string, string | null>;
   memberOf: Map<string, string | null>;
+  roleOf?: Map<string, string | null>;
+}
+
+/**
+ * The main presenter's answer as a reader gets it (PositionDto): who gave
+ * it and when only when `seesRecord` (seesAnswerRecord), the answer alone
+ * otherwise.
+ */
+export function toPositionDto(
+  position: NonNullable<LoadedAmendment["position"]>,
+  amendmentId: string,
+  mainPresenterId: string | null,
+  recorders: PositionRecorders,
+  seesRecord: boolean,
+): PositionDto {
+  const decidedBy = position.decidedByUserId;
+  const recordedBy = positionRecordedBy({
+    decidedByUserId: decidedBy,
+    recordedAs: recorders.recordedAs.get(amendmentId),
+    recorderMemberId: decidedBy ? recorders.memberOf.get(decidedBy) : null,
+    mainPresenterId,
+  });
+  return {
+    position: position.position,
+    comment: position.comment,
+    recordedBy: seesRecord ? recordedBy : null,
+    recorder: seesRecord
+      ? positionRecorder(
+          recordedBy,
+          decidedBy ? recorders.roleOf?.get(decidedBy) : null,
+        )
+      : null,
+    updatedAt: seesRecord ? position.updatedAt.toISOString() : null,
+  };
 }
 
 export async function loadPositionRecorders(
@@ -1547,20 +1583,25 @@ export async function loadPositionRecorders(
   }
   const userIds = unique(
     answered
-      .filter((row) => !recordedAs.has(row.id))
       .map((row) => row.position?.decidedByUserId ?? null)
       .filter((id): id is string => id !== null),
   );
   const recorders =
     userIds.length > 0
       ? await db
-          .select({ id: users.id, memberId: users.memberId })
+          .select({
+            id: users.id,
+            memberId: users.memberId,
+            role: roles.name,
+          })
           .from(users)
+          .leftJoin(roles, eq(roles.id, users.roleId))
           .where(inArray(users.id, userIds))
       : [];
   return {
     recordedAs,
     memberOf: new Map(recorders.map((row) => [row.id, row.memberId])),
+    roleOf: new Map(recorders.map((row) => [row.id, row.role])),
   };
 }
 

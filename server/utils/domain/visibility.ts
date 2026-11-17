@@ -123,6 +123,28 @@ export function seesAllPresentedAmendments(actor: Actor): boolean {
   return canReviewAmendments(actor) || canModerate(actor);
 }
 
+/**
+ * Who reads who gave the main presenter's answer to an amendment and when
+ * (PositionDto.recordedBy, recorder, updatedAt; user's decision of
+ * 2026-11-18): its authors, the presenters of its document, the CEA's
+ * accounts, the Mesa and those who manage documents or review amendments
+ * (the Secretaría, the Presidencia). Everyone else who reads the answer
+ * reads it alone.
+ */
+export function seesAnswerRecord(
+  actor: Actor,
+  context: { insider: boolean; isPresenter: boolean },
+): boolean {
+  return (
+    context.insider ||
+    context.isPresenter ||
+    actor.user.role?.name === SYSTEM_ROLES.CEA ||
+    canModerate(actor) ||
+    canManageDocuments(actor) ||
+    canReviewAmendments(actor)
+  );
+}
+
 /** The actor wrote the amendment, created it or is a party of the transactional. */
 export function isAmendmentInsider(
   actor: Actor,

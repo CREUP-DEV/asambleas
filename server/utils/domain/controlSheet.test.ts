@@ -113,6 +113,7 @@ describe("control sheet positions", () => {
           position: "accept",
           comment: "De acuerdo",
           recordedBy: "presenter",
+          recorder: null,
           updatedAt: "2026-11-02T12:00:00.000Z",
         },
       },
@@ -189,5 +190,51 @@ describe("control sheet positions", () => {
       ["a2", "mesa"],
       ["a3", "presenter"],
     ]);
+  });
+
+  it("name the Secretaría or the Presidencia when they answered for the presenter", () => {
+    const documents = new Map([["doc", DOCUMENT]]);
+    const recorders: PositionRecorders = {
+      recordedAs: new Map([
+        ["a1", "moderator"],
+        ["a2", "moderator"],
+        ["a3", "moderator"],
+      ]),
+      memberOf: new Map(),
+      roleOf: new Map([
+        ["sec", "Secretaría"],
+        ["pres", "Presidencia"],
+        ["mod", "Moderador"],
+      ]),
+    };
+    const answered = (id: string, decidedByUserId: string) =>
+      amendment(id, {
+        position: {
+          position: "accept",
+          comment: null,
+          decidedByUserId,
+          updatedAt: new Date("2026-11-03T08:00:00Z"),
+        } as LoadedAmendment["position"],
+      });
+    const rows = [
+      answered("a1", "sec"),
+      answered("a2", "pres"),
+      answered("a3", "mod"),
+    ];
+    expect(
+      sheetPositions(rows, documents, recorders).map(
+        (entry) => entry.position.recorder,
+      ),
+    ).toEqual(["secretaria", "presidencia", "mesa"]);
+    // A reader not told who answered nor when reads the answer alone.
+    expect(
+      sheetPositions(rows, documents, recorders, () => false)[0]!.position,
+    ).toEqual({
+      position: "accept",
+      comment: null,
+      recordedBy: null,
+      recorder: null,
+      updatedAt: null,
+    });
   });
 });

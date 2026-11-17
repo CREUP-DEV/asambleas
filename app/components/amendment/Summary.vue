@@ -58,7 +58,9 @@ const approvedText = computed(() => {
     return recordedBy === "auto"
       ? t("amendment.detail.approvedAuto")
       : recordedBy === "mesa"
-        ? t("amendment.detail.approvedByMesa")
+        ? t(
+            `amendment.detail.approvedBy${positionRecorderKey(props.amendment.position)}`,
+          )
         : t("amendment.detail.approvedByPresenter");
   }
   return t("amendment.detail.approvedBy", {

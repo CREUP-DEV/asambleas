@@ -959,7 +959,9 @@ async function remove(): Promise<void> {
               amendment.position?.recordedBy === "auto"
                 ? t("amendment.detail.approvedAuto")
                 : amendment.position?.recordedBy === "mesa"
-                  ? t("amendment.detail.approvedByMesa")
+                  ? t(
+                      `amendment.detail.approvedBy${positionRecorderKey(amendment.position)}`,
+                    )
                   : t("amendment.detail.approvedByPresenter")
             }}
           </p>

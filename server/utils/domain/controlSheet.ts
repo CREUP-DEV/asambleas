@@ -53,6 +53,7 @@ import {
   findAmendmentsByIds,
   findPresentedAmendments,
   loadPositionRecorders,
+  toPositionDto,
   type LoadedAmendment,
   type PositionRecorders,
 } from "./amendments";
@@ -61,9 +62,14 @@ import { shareLockAssembly, type DocumentRow } from "./documents";
 import { recordEvent, type Executor } from "./events";
 import { impersonatedByFor, loadImpersonators } from "./impersonators";
 import { withCoProponentIds } from "./presenters";
-import { positionRecordedBy } from "./reviewState";
 import { loadSpokenTurns } from "./speakers";
-import { canSeeDocument, type DocumentPresenters } from "./visibility";
+import {
+  canSeeDocument,
+  isAmendmentInsider,
+  isDocumentPresenter,
+  seesAnswerRecord,
+  type DocumentPresenters,
+} from "./visibility";
 import { loadItemVoteRows, toItemVoteDto, toVoteDto } from "./votes";
 
 /**
@@ -281,27 +287,22 @@ export function sheetPositions(
     Pick<DocumentPresenters, "proponentMemberId">
   >,
   recorders: PositionRecorders,
+  /** Who gave each answer and when, for this reader (seesAnswerRecord). */
+  seesRecord: (row: LoadedAmendment) => boolean = () => true,
 ): ControlSheetPositionDto[] {
   const result: ControlSheetPositionDto[] = [];
   for (const row of rows) {
     const document = documentById.get(row.documentId);
     if (!row.position || !document) continue;
-    const decidedBy = row.position.decidedByUserId;
     result.push({
       amendmentId: row.id,
-      position: {
-        position: row.position.position,
-        comment: row.position.comment,
-        recordedBy: positionRecordedBy({
-          decidedByUserId: decidedBy,
-          recordedAs: recorders.recordedAs.get(row.id),
-          recorderMemberId: decidedBy
-            ? recorders.memberOf.get(decidedBy)
-            : null,
-          mainPresenterId: document.proponentMemberId,
-        }),
-        updatedAt: row.position.updatedAt.toISOString(),
-      },
+      position: toPositionDto(
+        row.position,
+        row.id,
+        document.proponentMemberId,
+        recorders,
+        seesRecord(row),
+      ),
     });
   }
   return result;
@@ -403,7 +404,17 @@ export async function loadControlSheet(
     amendmentRows: amendmentSheet.map((row) =>
       toAmendmentRowDto(row, visibleAmendments.get(row.amendmentId)!, names),
     ),
-    positions: sheetPositions(visibleRows, documentById, recorders),
+    positions: sheetPositions(visibleRows, documentById, recorders, (row) => {
+      const document = documentById.get(row.documentId);
+      return seesAnswerRecord(actor, {
+        insider: isAmendmentInsider(actor, {
+          createdByUserId: row.createdByUserId,
+          authorMemberIds: row.authors.map((author) => author.memberId),
+          partyMemberIds: [],
+        }),
+        isPresenter: !!document && isDocumentPresenter(actor, document),
+      });
+    }),
     // Votes of items the reader does not get stay out, as the items do, and
     // those it gets without their title come without their question.
     itemVotes: itemVoteRows

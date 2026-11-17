@@ -142,7 +142,9 @@ const incorporates = computed(() =>
  * notice above the answer and in the state sentence: by its acronym, as
  * everywhere else in the review.
  */
-const onBehalfName = computed(() => props.onBehalfOf?.acronym ?? "");
+const onBehalfName = computed(() =>
+  props.onBehalfOf ? memberSpokenName(props.onBehalfOf) : "",
+);
 
 /**
  * Where it stands, and what happens next under the document's rule; for the

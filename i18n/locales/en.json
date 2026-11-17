@@ -1481,6 +1481,8 @@
       "replacedBy": "Transactional amendment {list} replaces it. | Transactional amendments {list} replace it.",
       "replacedByUnknown": "A transactional amendment replaces it.",
       "approvedByMesa": "Approved without a vote: the Mesa accepted it on behalf of the document's presenter",
+      "approvedBySecretaria": "Approved without a vote: the Secretariat accepted it on behalf of the document's presenter",
+      "approvedByPresidencia": "Approved without a vote: the Presidency accepted it on behalf of the document's presenter",
       "approvedAuto": "Approved without a vote: a formal amendment, accepted automatically"
     },
     "position": {
@@ -1539,6 +1541,18 @@
         "reject": "The Mesa rejected it on behalf of {member}",
         "transact": "The Mesa proposed a transactional on behalf of {member}",
         "pending": "The Mesa left it unanswered on behalf of {member}"
+      },
+      "answersBySecretaria": {
+        "accept": "The Secretariat accepted it on behalf of {member}",
+        "reject": "The Secretariat rejected it on behalf of {member}",
+        "transact": "The Secretariat proposed a transactional on behalf of {member}",
+        "pending": "The Secretariat left it unanswered on behalf of {member}"
+      },
+      "answersByPresidencia": {
+        "accept": "The Presidency accepted it on behalf of {member}",
+        "reject": "The Presidency rejected it on behalf of {member}",
+        "transact": "The Presidency proposed a transactional on behalf of {member}",
+        "pending": "The Presidency left it unanswered on behalf of {member}"
       }
     },
     "acceptances": {
@@ -4157,6 +4171,8 @@
     "position": {
       "by": "Answer from {member}:",
       "byMesa": "The Mesa, on behalf of {member}:",
+      "bySecretaria": "The Secretariat, on behalf of {member}:",
+      "byPresidencia": "The Presidency, on behalf of {member}:",
       "auto": "Automatic answer, as a formal amendment:",
       "waitsPublication": "Waits for the Secretariat to publish it",
       "waitsPublicationFor": "Answer from {member}: it can be given once the Secretariat publishes it."
@@ -5572,15 +5588,35 @@
       "rejectFor": "{member} rejected it: it will be debated and voted on. You can change the answer until it is decided.",
       "transactFor": "{member} chose to propose a transactional. Once another text is agreed with whoever presents it, it can be proposed from the document.",
       "acceptByMesa": "The Mesa accepted it on your behalf. You can change the answer until it is decided.",
+      "acceptBySecretaria": "The Secretariat accepted it on your behalf. You can change the answer until it is decided.",
+      "acceptByPresidencia": "The Presidency accepted it on your behalf. You can change the answer until it is decided.",
       "acceptVoteByMesa": "The Mesa accepted it on your behalf. The assembly will vote on it, and you can change the answer until then.",
+      "acceptVoteBySecretaria": "The Secretariat accepted it on your behalf. The assembly will vote on it, and you can change the answer until then.",
+      "acceptVoteByPresidencia": "The Presidency accepted it on your behalf. The assembly will vote on it, and you can change the answer until then.",
       "incorporatedByMesa": "The Mesa accepted it on your behalf and it is already in the text. If you change the answer before the final vote, it will come out of the text.",
+      "incorporatedBySecretaria": "The Secretariat accepted it on your behalf and it is already in the text. If you change the answer before the final vote, it will come out of the text.",
+      "incorporatedByPresidencia": "The Presidency accepted it on your behalf and it is already in the text. If you change the answer before the final vote, it will come out of the text.",
       "rejectByMesa": "The Mesa rejected it on your behalf: it will be debated and voted on. You can change the answer until it is decided.",
+      "rejectBySecretaria": "The Secretariat rejected it on your behalf: it will be debated and voted on. You can change the answer until it is decided.",
+      "rejectByPresidencia": "The Presidency rejected it on your behalf: it will be debated and voted on. You can change the answer until it is decided.",
       "transactByMesa": "The Mesa, on your behalf, chose to propose a transactional. Once you agree on another text with whoever presents it, propose it from the document.",
+      "transactBySecretaria": "The Secretariat, on your behalf, chose to propose a transactional. Once you agree on another text with whoever presents it, propose it from the document.",
+      "transactByPresidencia": "The Presidency, on your behalf, chose to propose a transactional. Once you agree on another text with whoever presents it, propose it from the document.",
       "acceptByMesaFor": "The Mesa, on behalf of {member}, accepted it. You can change the answer until it is decided.",
+      "acceptBySecretariaFor": "The Secretariat, on behalf of {member}, accepted it. You can change the answer until it is decided.",
+      "acceptByPresidenciaFor": "The Presidency, on behalf of {member}, accepted it. You can change the answer until it is decided.",
       "acceptVoteByMesaFor": "The Mesa, on behalf of {member}, accepted it. The assembly will vote on it, and you can change the answer until then.",
+      "acceptVoteBySecretariaFor": "The Secretariat, on behalf of {member}, accepted it. The assembly will vote on it, and you can change the answer until then.",
+      "acceptVoteByPresidenciaFor": "The Presidency, on behalf of {member}, accepted it. The assembly will vote on it, and you can change the answer until then.",
       "incorporatedByMesaFor": "The Mesa, on behalf of {member}, accepted it and it is already in the text. If you change the answer before the final vote, it will come out of the text.",
+      "incorporatedBySecretariaFor": "The Secretariat, on behalf of {member}, accepted it and it is already in the text. If you change the answer before the final vote, it will come out of the text.",
+      "incorporatedByPresidenciaFor": "The Presidency, on behalf of {member}, accepted it and it is already in the text. If you change the answer before the final vote, it will come out of the text.",
       "rejectByMesaFor": "The Mesa, on behalf of {member}, rejected it: it will be debated and voted on. You can change the answer until it is decided.",
+      "rejectBySecretariaFor": "The Secretariat, on behalf of {member}, rejected it: it will be debated and voted on. You can change the answer until it is decided.",
+      "rejectByPresidenciaFor": "The Presidency, on behalf of {member}, rejected it: it will be debated and voted on. You can change the answer until it is decided.",
       "transactByMesaFor": "The Mesa, on behalf of {member}, chose to propose a transactional. Once another text is agreed with whoever presents it, it can be proposed from the document.",
+      "transactBySecretariaFor": "The Secretariat, on behalf of {member}, chose to propose a transactional. Once another text is agreed with whoever presents it, it can be proposed from the document.",
+      "transactByPresidenciaFor": "The Presidency, on behalf of {member}, chose to propose a transactional. Once another text is agreed with whoever presents it, it can be proposed from the document.",
       "acceptAuto": "It was accepted automatically as a formal amendment. You can change the answer until it is decided.",
       "acceptVoteAuto": "It was accepted automatically as a formal amendment. The assembly will vote on it, and you can change the answer until then.",
       "incorporatedAuto": "It was accepted automatically as a formal amendment and is already in the text. If you change the answer before the final vote, it will come out of the text.",
@@ -5733,6 +5769,18 @@
         "incorporated": "The Mesa, on behalf of {member}, accepted it on {date} and it went into the text without a vote.",
         "reject": "The Mesa, on behalf of {member}, rejected it on {date}.",
         "transact": "The Mesa, on behalf of {member}, chose to propose a transactional on {date}."
+      },
+      "answeredBySecretaria": {
+        "accept": "The Secretariat, on behalf of {member}, accepted it on {date}.",
+        "incorporated": "The Secretariat, on behalf of {member}, accepted it on {date} and it went into the text without a vote.",
+        "reject": "The Secretariat, on behalf of {member}, rejected it on {date}.",
+        "transact": "The Secretariat, on behalf of {member}, chose to propose a transactional on {date}."
+      },
+      "answeredByPresidencia": {
+        "accept": "The Presidency, on behalf of {member}, accepted it on {date}.",
+        "incorporated": "The Presidency, on behalf of {member}, accepted it on {date} and it went into the text without a vote.",
+        "reject": "The Presidency, on behalf of {member}, rejected it on {date}.",
+        "transact": "The Presidency, on behalf of {member}, chose to propose a transactional on {date}."
       },
       "answeredAuto": {
         "accept": "It was accepted automatically on behalf of {member} on {date}, as a formal amendment.",

@@ -161,9 +161,10 @@ const items = computed(() =>
 );
 
 /** Who answers: the main presenter, by its acronym. */
-const presenter = computed(
-  () =>
-    props.document.proponent?.acronym ?? t("amendment.position.thePresenter"),
+const presenter = computed(() =>
+  props.document.proponent
+    ? memberSpokenName(props.document.proponent)
+    : t("amendment.position.thePresenter"),
 );
 const isMainPresenter = computed(
   () =>
@@ -183,9 +184,10 @@ const answerText = computed(() => {
     return t("amendment.position.answerAuto");
   }
   return props.amendment.position?.recordedBy === "mesa"
-    ? t(`amendment.position.answersByMesa.${value}`, {
-        member: presenter.value,
-      })
+    ? t(
+        `amendment.position.answersBy${positionRecorderKey(props.amendment.position)}.${value}`,
+        { member: presenter.value },
+      )
     : t(`amendment.position.answers.${value}`, { member: presenter.value });
 });
 const answeredAt = computed(() =>

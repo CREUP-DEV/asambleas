@@ -8,6 +8,7 @@ import type {
   ApprovalMethod,
   ProponentPosition,
 } from "~~/shared/constants/domain";
+import { SYSTEM_ROLES } from "~~/shared/constants/roles";
 import type { AmendmentReviewState } from "~~/shared/types/api";
 import { amendmentCodeSeq } from "~~/shared/utils/amendmentCode";
 
@@ -564,6 +565,22 @@ export function positionRecordedBy(input: {
     input.recorderMemberId === input.mainPresenterId
     ? "presenter"
     : "mesa";
+}
+
+/**
+ * Who recorded an answer on the main presenter's behalf
+ * (PositionDto.recorder), by the role of the account that did: the
+ * Secretaría or the Presidencia, which hold every permission, and the Mesa
+ * for anyone else (`session:moderate`). Null when nobody answered for it.
+ */
+export function positionRecorder(
+  recordedBy: "presenter" | "mesa" | "auto",
+  recorderRole: string | null | undefined,
+): "mesa" | "secretaria" | "presidencia" | null {
+  if (recordedBy !== "mesa") return null;
+  if (recorderRole === SYSTEM_ROLES.SECRETARIA) return "secretaria";
+  if (recorderRole === SYSTEM_ROLES.PRESIDENCIA) return "presidencia";
+  return "mesa";
 }
 
 /**

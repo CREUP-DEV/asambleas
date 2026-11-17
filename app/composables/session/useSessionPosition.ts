@@ -29,12 +29,13 @@ const POSITION_ICONS = {
 export function useSessionPosition(session: SessionConsole) {
   const { t } = useI18n();
 
-  /** The main presenter, by its acronym. */
-  const presenter = computed(
-    () =>
-      session.document.value?.proponent?.acronym ??
-      t("amendment.position.thePresenter"),
-  );
+  /** The main presenter, by its name. */
+  const presenter = computed(() => {
+    const proponent = session.document.value?.proponent;
+    return proponent
+      ? memberSpokenName(proponent)
+      : t("amendment.position.thePresenter");
+  });
 
   function label(amendment: AmendmentDto): string {
     // A formal amendment accepted by itself: nobody answered it.
@@ -43,7 +44,9 @@ export function useSessionPosition(session: SessionConsole) {
       return t("session.position.auto");
     }
     return isSessionPositionByMesa(amendment.position)
-      ? t("session.position.byMesa", { member: presenter.value })
+      ? t(`session.position.by${positionRecorderKey(amendment.position)}`, {
+          member: presenter.value,
+        })
       : t("session.position.by", { member: presenter.value });
   }
 

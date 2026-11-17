@@ -30,6 +30,7 @@ import type {
   ProponentPosition,
 } from "~~/shared/constants/domain";
 import type { AmendmentDto, PositionBody } from "~~/shared/types/api";
+import { positionRecorderKey } from "~/utils/format";
 import {
   positionsArePublic,
   type PositionsPublication,
@@ -494,8 +495,9 @@ export function stateKey(
     if (isIncorporated(amendment)) key = "incorporated";
     else if (rule === "vote") key = "acceptVote";
   }
-  if (answeredByMesa(amendment)) key = `${key}ByMesa`;
-  else if (answeredAutomatically(amendment)) key = `${key}Auto`;
+  if (answeredByMesa(amendment)) {
+    key = `${key}By${positionRecorderKey(amendment.position)}`;
+  } else if (answeredAutomatically(amendment)) key = `${key}Auto`;
   return forMember ? `${key}For` : key;
 }
 
@@ -522,7 +524,7 @@ export function presenterAnswerKey(
   if (status === "pending") return "pending";
   if (answeredAutomatically(amendment)) return `answeredAuto.${status}`;
   return answeredByMesa(amendment)
-    ? `answeredByMesa.${status}`
+    ? `answeredBy${positionRecorderKey(amendment.position)}.${status}`
     : `answered.${status}`;
 }
 

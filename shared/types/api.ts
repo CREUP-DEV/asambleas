@@ -1046,10 +1046,21 @@ export interface PositionDto {
    * was given by itself ("auto": a formal amendment is accepted as soon as
    * it can be answered; also set when that answer went back to pending
    * because the amendment stopped being formal). Meaningless while pending.
+   * Null, with `recorder` and `updatedAt`, for whoever may read the answer
+   * but not who gave it nor when (seesAnswerRecord, visibility.ts).
    */
-  recordedBy: "presenter" | "mesa" | "auto";
-  updatedAt: IsoDate;
+  recordedBy: "presenter" | "mesa" | "auto" | null;
+  /**
+   * With `recordedBy: "mesa"`, who recorded it on the main presenter's
+   * behalf: the Mesa, the Secretaría or the Presidencia, by the role of the
+   * account that did (positionRecorder). Null otherwise.
+   */
+  recorder?: PositionRecorder | null;
+  /** When it was answered; also the lock token for a new answer. */
+  updatedAt: IsoDate | null;
 }
+
+export type PositionRecorder = "mesa" | "secretaria" | "presidencia";
 
 export interface AmendmentCapabilities {
   edit: boolean;

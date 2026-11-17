@@ -362,6 +362,8 @@ export function newerPosition(
   amendment: PositionDto | null,
 ): PositionDto | null {
   if (!sheet || !amendment) return sheet ?? amendment;
+  // Without a time (a reader not told when), the sheet's stands.
+  if (!amendment.updatedAt || !sheet.updatedAt) return sheet;
   return Date.parse(amendment.updatedAt) > Date.parse(sheet.updatedAt)
     ? amendment
     : sheet;

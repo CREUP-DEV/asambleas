@@ -54,8 +54,10 @@ const { t, locale } = useI18n();
 const titleId = useId();
 
 /** "CEA-AC", or a plain description when the document names no one. */
-const presenterName = computed(
-  () => props.presenter?.acronym ?? t("proponentReview.coPresenter.someone"),
+const presenterName = computed(() =>
+  props.presenter
+    ? memberSpokenName(props.presenter)
+    : t("proponentReview.coPresenter.someone"),
 );
 
 /** Nothing can be answered any more: the page reads in the past tense. */

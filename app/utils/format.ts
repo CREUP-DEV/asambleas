@@ -347,3 +347,34 @@ export const MEMBER_MENU_UI = {
 
 /** The fields a member menu searches: the acronym, the name, the university. */
 export const MEMBER_MENU_FILTER_FIELDS = ["label", "description"];
+
+/**
+ * Who answered for a document's main presenter, as the suffix of the i18n
+ * keys that say it ("answersByMesa", "answersBySecretaria"...): the Mesa,
+ * the Secretaría or the Presidencia (PositionDto.recorder; the Mesa when
+ * the server does not say).
+ */
+export function positionRecorderKey(
+  position:
+    | { recorder?: "mesa" | "secretaria" | "presidencia" | null }
+    | null
+    | undefined,
+): "Mesa" | "Secretaria" | "Presidencia" {
+  switch (position?.recorder) {
+    case "secretaria":
+      return "Secretaria";
+    case "presidencia":
+      return "Presidencia";
+    default:
+      return "Mesa";
+  }
+}
+
+/**
+ * A member named in a sentence ("en nombre de Presidencia"): its name, not
+ * its acronym (user's decision of 2026-11-18), or the acronym when the name
+ * only repeats it.
+ */
+export function memberSpokenName(member: MemberNames): string {
+  return memberNameRepeatsAcronym(member) ? member.acronym : member.name.trim();
+}

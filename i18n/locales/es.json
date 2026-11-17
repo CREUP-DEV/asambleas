@@ -1481,6 +1481,8 @@
       "replacedBy": "La sustituye la transaccional {list}. | La sustituyen las transaccionales {list}.",
       "replacedByUnknown": "La sustituye una enmienda transaccional.",
       "approvedByMesa": "Aprobada sin votación: la aceptó la Mesa en nombre de quien presenta el documento",
+      "approvedBySecretaria": "Aprobada sin votación: la aceptó la Secretaría en nombre de quien presenta el documento",
+      "approvedByPresidencia": "Aprobada sin votación: la aceptó la Presidencia en nombre de quien presenta el documento",
       "approvedAuto": "Aprobada sin votación: es de forma y se aceptó automáticamente"
     },
     "position": {
@@ -1539,6 +1541,18 @@
         "reject": "La Mesa, en nombre de {member}, la rechazó",
         "transact": "La Mesa, en nombre de {member}, propuso una transaccional",
         "pending": "La Mesa, en nombre de {member}, la dejó sin respuesta"
+      },
+      "answersBySecretaria": {
+        "accept": "La Secretaría, en nombre de {member}, la aceptó",
+        "reject": "La Secretaría, en nombre de {member}, la rechazó",
+        "transact": "La Secretaría, en nombre de {member}, propuso una transaccional",
+        "pending": "La Secretaría, en nombre de {member}, la dejó sin respuesta"
+      },
+      "answersByPresidencia": {
+        "accept": "La Presidencia, en nombre de {member}, la aceptó",
+        "reject": "La Presidencia, en nombre de {member}, la rechazó",
+        "transact": "La Presidencia, en nombre de {member}, propuso una transaccional",
+        "pending": "La Presidencia, en nombre de {member}, la dejó sin respuesta"
       }
     },
     "acceptances": {
@@ -4157,6 +4171,8 @@
     "position": {
       "by": "Respuesta de {member}:",
       "byMesa": "La Mesa, en nombre de {member}:",
+      "bySecretaria": "La Secretaría, en nombre de {member}:",
+      "byPresidencia": "La Presidencia, en nombre de {member}:",
       "auto": "Respuesta automática, por ser de forma:",
       "waitsPublication": "Espera a que Secretaría la publique",
       "waitsPublicationFor": "Respuesta de {member}: se podrá dar cuando Secretaría la publique."
@@ -5572,15 +5588,35 @@
       "rejectFor": "{member} la ha rechazado: se debatirá y votará. Puedes cambiar la respuesta hasta que se decida.",
       "transactFor": "{member} ha propuesto transaccionarla. Cuando se acuerde otro texto con quien la presenta, se puede proponer como transaccional desde el documento.",
       "acceptByMesa": "La Mesa, en tu nombre, la ha aceptado. Puedes cambiar la respuesta hasta que se decida.",
+      "acceptBySecretaria": "La Secretaría, en tu nombre, la ha aceptado. Puedes cambiar la respuesta hasta que se decida.",
+      "acceptByPresidencia": "La Presidencia, en tu nombre, la ha aceptado. Puedes cambiar la respuesta hasta que se decida.",
       "acceptVoteByMesa": "La Mesa, en tu nombre, la ha aceptado. La votará la asamblea y puedes cambiar la respuesta hasta entonces.",
+      "acceptVoteBySecretaria": "La Secretaría, en tu nombre, la ha aceptado. La votará la asamblea y puedes cambiar la respuesta hasta entonces.",
+      "acceptVoteByPresidencia": "La Presidencia, en tu nombre, la ha aceptado. La votará la asamblea y puedes cambiar la respuesta hasta entonces.",
       "incorporatedByMesa": "La Mesa, en tu nombre, la ha aceptado y ya está incorporada al texto. Si cambias la respuesta antes de la votación final, saldrá del texto.",
+      "incorporatedBySecretaria": "La Secretaría, en tu nombre, la ha aceptado y ya está incorporada al texto. Si cambias la respuesta antes de la votación final, saldrá del texto.",
+      "incorporatedByPresidencia": "La Presidencia, en tu nombre, la ha aceptado y ya está incorporada al texto. Si cambias la respuesta antes de la votación final, saldrá del texto.",
       "rejectByMesa": "La Mesa, en tu nombre, la ha rechazado: se debatirá y votará. Puedes cambiar la respuesta hasta que se decida.",
+      "rejectBySecretaria": "La Secretaría, en tu nombre, la ha rechazado: se debatirá y votará. Puedes cambiar la respuesta hasta que se decida.",
+      "rejectByPresidencia": "La Presidencia, en tu nombre, la ha rechazado: se debatirá y votará. Puedes cambiar la respuesta hasta que se decida.",
       "transactByMesa": "La Mesa, en tu nombre, ha propuesto transaccionarla. Cuando acordéis otro texto con quien la presenta, proponedlo como transaccional desde el documento.",
+      "transactBySecretaria": "La Secretaría, en tu nombre, ha propuesto transaccionarla. Cuando acordéis otro texto con quien la presenta, proponedlo como transaccional desde el documento.",
+      "transactByPresidencia": "La Presidencia, en tu nombre, ha propuesto transaccionarla. Cuando acordéis otro texto con quien la presenta, proponedlo como transaccional desde el documento.",
       "acceptByMesaFor": "La Mesa, en nombre de {member}, la ha aceptado. Puedes cambiar la respuesta hasta que se decida.",
+      "acceptBySecretariaFor": "La Secretaría, en nombre de {member}, la ha aceptado. Puedes cambiar la respuesta hasta que se decida.",
+      "acceptByPresidenciaFor": "La Presidencia, en nombre de {member}, la ha aceptado. Puedes cambiar la respuesta hasta que se decida.",
       "acceptVoteByMesaFor": "La Mesa, en nombre de {member}, la ha aceptado. La votará la asamblea y puedes cambiar la respuesta hasta entonces.",
+      "acceptVoteBySecretariaFor": "La Secretaría, en nombre de {member}, la ha aceptado. La votará la asamblea y puedes cambiar la respuesta hasta entonces.",
+      "acceptVoteByPresidenciaFor": "La Presidencia, en nombre de {member}, la ha aceptado. La votará la asamblea y puedes cambiar la respuesta hasta entonces.",
       "incorporatedByMesaFor": "La Mesa, en nombre de {member}, la ha aceptado y ya está incorporada al texto. Si cambias la respuesta antes de la votación final, saldrá del texto.",
+      "incorporatedBySecretariaFor": "La Secretaría, en nombre de {member}, la ha aceptado y ya está incorporada al texto. Si cambias la respuesta antes de la votación final, saldrá del texto.",
+      "incorporatedByPresidenciaFor": "La Presidencia, en nombre de {member}, la ha aceptado y ya está incorporada al texto. Si cambias la respuesta antes de la votación final, saldrá del texto.",
       "rejectByMesaFor": "La Mesa, en nombre de {member}, la ha rechazado: se debatirá y votará. Puedes cambiar la respuesta hasta que se decida.",
+      "rejectBySecretariaFor": "La Secretaría, en nombre de {member}, la ha rechazado: se debatirá y votará. Puedes cambiar la respuesta hasta que se decida.",
+      "rejectByPresidenciaFor": "La Presidencia, en nombre de {member}, la ha rechazado: se debatirá y votará. Puedes cambiar la respuesta hasta que se decida.",
       "transactByMesaFor": "La Mesa, en nombre de {member}, ha propuesto transaccionarla. Cuando se acuerde otro texto con quien la presenta, se puede proponer como transaccional desde el documento.",
+      "transactBySecretariaFor": "La Secretaría, en nombre de {member}, ha propuesto transaccionarla. Cuando se acuerde otro texto con quien la presenta, se puede proponer como transaccional desde el documento.",
+      "transactByPresidenciaFor": "La Presidencia, en nombre de {member}, ha propuesto transaccionarla. Cuando se acuerde otro texto con quien la presenta, se puede proponer como transaccional desde el documento.",
       "acceptAuto": "Se aceptó automáticamente por ser de forma. Puedes cambiar la respuesta hasta que se decida.",
       "acceptVoteAuto": "Se aceptó automáticamente por ser de forma. La votará la asamblea y puedes cambiar la respuesta hasta entonces.",
       "incorporatedAuto": "Se aceptó automáticamente por ser de forma y ya está incorporada al texto. Si cambias la respuesta antes de la votación final, saldrá del texto.",
@@ -5733,6 +5769,18 @@
         "incorporated": "La Mesa, en nombre de {member}, la aceptó el {date} y se incorporó al texto sin votación.",
         "reject": "La Mesa, en nombre de {member}, la rechazó el {date}.",
         "transact": "La Mesa, en nombre de {member}, propuso transaccionarla el {date}."
+      },
+      "answeredBySecretaria": {
+        "accept": "La Secretaría, en nombre de {member}, la aceptó el {date}.",
+        "incorporated": "La Secretaría, en nombre de {member}, la aceptó el {date} y se incorporó al texto sin votación.",
+        "reject": "La Secretaría, en nombre de {member}, la rechazó el {date}.",
+        "transact": "La Secretaría, en nombre de {member}, propuso transaccionarla el {date}."
+      },
+      "answeredByPresidencia": {
+        "accept": "La Presidencia, en nombre de {member}, la aceptó el {date}.",
+        "incorporated": "La Presidencia, en nombre de {member}, la aceptó el {date} y se incorporó al texto sin votación.",
+        "reject": "La Presidencia, en nombre de {member}, la rechazó el {date}.",
+        "transact": "La Presidencia, en nombre de {member}, propuso transaccionarla el {date}."
       },
       "answeredAuto": {
         "accept": "Se aceptó automáticamente en nombre de {member} el {date}, por ser de forma.",

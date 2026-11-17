@@ -1142,6 +1142,11 @@ reject, transact, or back to pending, with an optional comment). Returns the
   presenter) but cannot give it. The `position_changed` event names whose
   answer it is (`memberId`: the main presenter, also when the Mesa records
   it, with `by: "moderator"`), which the home page's news credit.
+  `PositionDto.recorder` names who recorded it on the presenter's behalf
+  (`mesa`, `secretaria` or `presidencia`, by that account's role), and
+  `recordedBy`, `recorder` and `updatedAt` are null for a reader other than
+  the amendment's authors, the document's presenters, the CEA's accounts,
+  the Mesa, the Secretaría and the Presidencia (`seesAnswerRecord`).
   `PositionDto.recordedBy` says who recorded the answer, as it was then:
   `"mesa"` when the amendment's latest `position_changed` has
   `by: "moderator"`, `"presenter"` when it has `by: "proponent"`, `"auto"`

@@ -525,7 +525,7 @@ describe("live amendments", () => {
 });
 
 describe("live position line", () => {
-  const presenter = { acronym: "CEUM" };
+  const presenter = { acronym: "CEUM", name: "Consejo de Estudiantes" };
   const answered = (
     position: PositionDto["position"],
     recordedBy: PositionDto["recordedBy"] = "presenter",
@@ -540,9 +540,10 @@ describe("live position line", () => {
     });
 
   it("names the main presenter and its answer", () => {
+    // By its name, never its acronym.
     expect(livePositionLine(answered("accept"), presenter)).toEqual({
       key: "amendment.position.answers.accept",
-      params: { member: "CEUM" },
+      params: { member: "Consejo de Estudiantes" },
     });
     expect(livePositionLine(answered("reject"), presenter)?.key).toBe(
       "amendment.position.answers.reject",
@@ -555,8 +556,14 @@ describe("live position line", () => {
   it("says when the Mesa recorded the answer on its behalf", () => {
     expect(livePositionLine(answered("reject", "mesa"), presenter)).toEqual({
       key: "amendment.position.answersByMesa.reject",
-      params: { member: "CEUM" },
+      params: { member: "Consejo de Estudiantes" },
     });
+    // The Secretaría, when it was the one who answered.
+    const bySecretaria = answered("reject", "mesa");
+    bySecretaria.position!.recorder = "secretaria";
+    expect(livePositionLine(bySecretaria, presenter)?.key).toBe(
+      "amendment.position.answersBySecretaria.reject",
+    );
   });
 
   it("says a formal amendment was accepted by itself", () => {
