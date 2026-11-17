@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import {
+  positionsArePublic,
+  positionsUnpublishable,
+} from "~~/shared/utils/positions";
 import type { OutlineEntry } from "~/components/content/ContentView.vue";
 import type {
   AmendmentComposerAuthorsDto,
@@ -154,6 +158,7 @@ interface TransactionalState {
 
 const { t } = useI18n();
 const api = useApi();
+const toast = useToast();
 const route = useRoute();
 const router = useRouter();
 const { member } = useMe();
@@ -360,6 +365,7 @@ interface MoreItem {
   description?: string;
   icon?: string;
   to?: string;
+  disabled?: boolean;
   onSelect?: () => void;
 }
 
@@ -368,6 +374,48 @@ interface MoreItem {
  * when nothing waits there, the PDF, the record, and the less usual ways to
  * amend, each with what it does.
  */
+// The presenter's answers ------------------------------------------------------
+
+/**
+ * What the Secretaría (can.manage) may do with the main presenter's answers
+ * to a published document's amendments: publish them before their debate,
+ * or take that back while the debate of its agenda item has not started.
+ * Nothing once it started: they are public for good.
+ */
+const positionsAction = computed<"publish" | "unpublish" | null>(() => {
+  const current = document.value;
+  if (!current?.can.manage || !current.amendable) return null;
+  if (current.status !== "published") return null;
+  if (positionsUnpublishable(current)) return "unpublish";
+  return positionsArePublic(current) ? null : "publish";
+});
+const positionsBusy = ref(false);
+
+async function setPositionsPublic(value: boolean): Promise<void> {
+  const current = document.value;
+  if (!current || positionsBusy.value) return;
+  positionsBusy.value = true;
+  try {
+    await api.send(amendmentsUrl.value.replace(/\/amendments$/, "/positions"), {
+      method: "PUT",
+      body: { public: value, updatedAt: current.updatedAt },
+    });
+    toast.add({
+      title: t(
+        value
+          ? "document.positions.publishedToast"
+          : "document.positions.unpublishedToast",
+      ),
+      icon: value ? "i-lucide-megaphone" : "i-lucide-eye-off",
+    });
+    await refreshAll();
+  } catch (error) {
+    api.notifyError(error, "document.positions.failed");
+  } finally {
+    positionsBusy.value = false;
+  }
+}
+
 const moreItems = computed<MoreItem[][]>(() => {
   const work: MoreItem[] = [];
   if (showReviewEntry.value && !reviewIsPrimary.value) {
@@ -389,6 +437,22 @@ const moreItems = computed<MoreItem[][]>(() => {
       label: t("workspace.more.transactional"),
       icon: "i-lucide-git-merge",
       onSelect: () => startTransactional([]),
+    });
+  }
+  if (positionsAction.value) {
+    const publish = positionsAction.value === "publish";
+    work.push({
+      label: t(
+        publish ? "document.positions.publish" : "document.positions.unpublish",
+      ),
+      description: t(
+        publish
+          ? "document.positions.publishHint"
+          : "document.positions.unpublishHint",
+      ),
+      icon: publish ? "i-lucide-megaphone" : "i-lucide-eye-off",
+      disabled: positionsBusy.value,
+      onSelect: () => void setPositionsPublic(publish),
     });
   }
 

@@ -275,7 +275,7 @@ describe("assemblySettings", () => {
   it("merges stored values over the defaults", () => {
     expect(
       assemblySettings({ settings: { tieRule: "repeat" } as never }),
-    ).toMatchObject({ tieRule: "repeat", positionVisibility: "session" });
+    ).toMatchObject({ tieRule: "repeat", denominator: "present" });
     expect(assemblySettings({ settings: null as never }).tieRule).toBe(
       "rejected",
     );
@@ -289,7 +289,8 @@ describe("assemblySettings", () => {
       } as never,
     });
     expect(settings).not.toHaveProperty("amendmentVisibility");
-    expect(settings.positionVisibility).toBe("public");
+    // Who sees the answers is decided per document now.
+    expect(settings).not.toHaveProperty("positionVisibility");
   });
 });
 

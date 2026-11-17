@@ -35,6 +35,7 @@ import {
 } from "./actor";
 import { assemblySettings, loadDocumentSummaries } from "./documents";
 import { lockAssembly } from "./agendaWrites";
+import { stampDebateStarted } from "./positionsPublication";
 import { coPresentedBy, withCoProponentIds } from "./presenters";
 import { canSeeDocument } from "./visibility";
 import { toVoteDto, VOTE_MESSAGE_KEYS } from "./votes";
@@ -1038,6 +1039,18 @@ export async function updateLiveState(
         entityId: assemblyId,
         type: "speakers_visibility_changed",
         payload: { visible: next.speakersVisible },
+        actor,
+      });
+    }
+    // What goes into debate makes its presenters' answers public for good.
+    if (
+      next.agendaItemId !== previous.agendaItemId ||
+      next.documentId !== previous.documentId
+    ) {
+      await stampDebateStarted(tx, {
+        assemblyId,
+        agendaItemId: next.agendaItemId,
+        documentId: next.documentId,
         actor,
       });
     }

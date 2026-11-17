@@ -27,11 +27,13 @@
  */
 import type {
   AcceptedAmendmentRule,
-  AssemblySettings,
-  AssemblyStatus,
   ProponentPosition,
 } from "~~/shared/constants/domain";
 import type { AmendmentDto, PositionBody } from "~~/shared/types/api";
+import {
+  positionsArePublic,
+  type PositionsPublication,
+} from "~~/shared/utils/positions";
 import {
   amendmentAwaitsPosition,
   amendmentPositionBlocker,
@@ -398,16 +400,15 @@ export function incorporatedClashIds(
 
 /**
  * Who reads the main presenter's answers now, as the key under
- * `proponentReview.visibility`: the assembly's policy and, as on the server
- * (canSeePositions), its status, since under "session" everyone reads them
- * once the assembly is in session or closed.
+ * `proponentReview.visibility`: everyone once the document's answers are
+ * public (the Secretaría published them, or the debate of its agenda item
+ * started), as on the server (canSeePositions); otherwise only the
+ * presenters, the Mesa and the Secretaría.
  */
 export function positionVisibilityKey(
-  policy: AssemblySettings["positionVisibility"],
-  status: AssemblyStatus | null | undefined,
-): "mesa" | "session" | "public" {
-  const started = status === "in_session" || status === "closed";
-  return policy === "session" && started ? "public" : policy;
+  document: PositionsPublication,
+): "reserved" | "public" {
+  return positionsArePublic(document) ? "public" : "reserved";
 }
 
 /**
@@ -415,11 +416,8 @@ export function positionVisibilityKey(
  * Secretaría (positionVisibilityKey), yet an acceptance that incorporates
  * an amendment shows to everyone as its approval: the accept help says so.
  */
-export function answersReserved(
-  policy: AssemblySettings["positionVisibility"],
-  status: AssemblyStatus | null | undefined,
-): boolean {
-  return positionVisibilityKey(policy, status) !== "public";
+export function answersReserved(document: PositionsPublication): boolean {
+  return !positionsArePublic(document);
 }
 
 /**

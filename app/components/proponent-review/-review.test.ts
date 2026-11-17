@@ -1272,14 +1272,17 @@ describe("what accepting sets off", () => {
   });
 
   it("tells when the answers are still reserved, as the server does", () => {
-    expect(positionVisibilityKey("mesa", "in_session")).toBe("mesa");
-    expect(positionVisibilityKey("session", "convened")).toBe("session");
-    expect(positionVisibilityKey("session", "in_session")).toBe("public");
-    expect(positionVisibilityKey("session", "closed")).toBe("public");
-    expect(positionVisibilityKey("public", "draft")).toBe("public");
-    expect(answersReserved("mesa", "closed")).toBe(true);
-    expect(answersReserved("session", undefined)).toBe(true);
-    expect(answersReserved("session", "in_session")).toBe(false);
-    expect(answersReserved("public", "convened")).toBe(false);
+    const reserved = {
+      positionsPublishedAt: null,
+      positionsDebateStartedAt: null,
+    };
+    const published = { ...reserved, positionsPublishedAt: "2026-11-18" };
+    const debated = { ...reserved, positionsDebateStartedAt: "2026-11-19" };
+    expect(positionVisibilityKey(reserved)).toBe("reserved");
+    expect(positionVisibilityKey(published)).toBe("public");
+    expect(positionVisibilityKey(debated)).toBe("public");
+    expect(answersReserved(reserved)).toBe(true);
+    expect(answersReserved(published)).toBe(false);
+    expect(answersReserved(debated)).toBe(false);
   });
 });

@@ -834,11 +834,7 @@ export function buildDocumentAmendmentContext(
     window: amendmentWindow(document, milestones),
     isProponent: isDocumentProponent(actor, document),
     isPresenter,
-    positionsVisible: canSeePositions(actor, {
-      settings,
-      assemblyStatus: assembly.status,
-      isPresenter,
-    }),
+    positionsVisible: canSeePositions(actor, { document, isPresenter }),
     rule: document.acceptedAmendments,
     now,
   };

@@ -521,6 +521,23 @@ describe("shownAmendmentRows", () => {
     }
   });
 
+  it("sorts by type, content before form", () => {
+    const rows = [
+      amendment("x1", {}, { kind: "formal" }),
+      amendment("x2", {}, { kind: "partial" }),
+      amendment("x3", {}, { kind: "formal" }),
+    ];
+    expect(
+      amendmentIds(
+        shownAmendmentRows(
+          rows,
+          { key: "kind", dir: "asc" },
+          EMPTY_AMENDMENT_FILTERS,
+        ),
+      ),
+    ).toEqual(["x2", "x1", "x3"]);
+  });
+
   it("sorts by presenter, state and vote, ties in the console's order", () => {
     expect(
       amendmentIds(

@@ -54,7 +54,13 @@ const props = defineProps<{
   amendment: AmendmentDto;
   /** URL of the amendment: .../amendments/{id}. */
   url: string;
-  document: Pick<DocumentDto, "proponent" | "acceptedAmendments"> &
+  document: Pick<
+    DocumentDto,
+    | "proponent"
+    | "acceptedAmendments"
+    | "positionsPublishedAt"
+    | "positionsDebateStartedAt"
+  > &
     Partial<Pick<DocumentDto, "finalVote">>;
   /** Labels of the approved amendments it overlaps with (incorporatedClashIds). */
   clashes?: string[];
@@ -71,7 +77,6 @@ const { t, locale } = useI18n();
 const api = useApi();
 const toast = useToast();
 const { member } = useMe();
-const { assembly } = useCurrentAssembly();
 
 const titleId = useId();
 const editing = ref(false);
@@ -118,10 +123,7 @@ const incorporates = computed(() =>
 const acceptConsequences = computed(() => {
   if (!incorporates.value) return [];
   const withdraws = props.withdraws ?? [];
-  const reserved = answersReserved(
-    assembly.value?.settings.positionVisibility ?? "session",
-    assembly.value?.status,
-  );
+  const reserved = answersReserved(props.document);
   return [
     withdraws.length > 0
       ? t(

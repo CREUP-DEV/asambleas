@@ -521,6 +521,8 @@ export async function loadWorkNews(
         status: documents.status,
         proponentMemberId: documents.proponentMemberId,
         submittedByUserId: documents.submittedByUserId,
+        positionsPublishedAt: documents.positionsPublishedAt,
+        positionsDebateStartedAt: documents.positionsDebateStartedAt,
       })
       .from(documents)
       .where(
@@ -562,12 +564,11 @@ export async function loadWorkNews(
         amendment !== undefined &&
         assembly !== undefined &&
         canSeeLoadedAmendment(actor, amendment, document) &&
-        // The presenters always see the answers; the authors as the
-        // assembly's policy says.
+        // The presenters always see the answers; the authors once the
+        // document's answers are public.
         (row.type !== "position_changed" ||
           canSeePositions(actor, {
-            settings: assembly.settings,
-            assemblyStatus: assembly.status,
+            document,
             isPresenter: isDocumentPresenter(actor, document),
           }))
       );

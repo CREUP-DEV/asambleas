@@ -813,9 +813,9 @@ result, who has the floor when visible, and the status of every amendment of
 the current document with the provisional consolidated text. Under the
 amendment in debate it says in one line how the document's main presenter
 answered it ("Respuesta de CEUM: la acepta"), or that the Mesa recorded the
-answer on its behalf, without the comment. It shows this only when the
-assembly does not keep answers to the Mesa (`positionVisibility` other than
-"mesa"), since the page shows what the room sees.
+answer on its behalf, without the comment. It shows this only once
+the document's answers are public (the Secretaría published them, or the
+debate of its agenda item started), since the page shows what the room sees.
 
 **Roles and per-user permissions.** The association's Secretaría and
 Presidencia hold every permission, users and roles included. The Mesa's

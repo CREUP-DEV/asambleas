@@ -464,6 +464,17 @@ export function staleSheetRow<T>(error: unknown): T | null {
   return inner?.reason === "control_sheet_stale" ? (inner.row as T) : null;
 }
 
+/**
+ * Whether an amendment changes the form or the content, as «Tipo» in
+ * «Enmiendas» reads it: «De forma» for a formal one, «De contenido» for
+ * every other kind (CONTENT_AMENDMENT_KINDS).
+ */
+export function amendmentSheetKind(
+  amendment: Pick<AmendmentDto, "kind">,
+): "formal" | "content" {
+  return amendment.kind === "formal" ? "formal" : "content";
+}
+
 /** One step of the agenda trail of a document, the root item first. */
 export interface AgendaTrailStep {
   id: string;

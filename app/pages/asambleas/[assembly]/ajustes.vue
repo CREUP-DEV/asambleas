@@ -173,7 +173,6 @@ type SettingKey = keyof AssemblySettings;
 // Whether accepted amendments are voted or incorporated is no longer an
 // assembly policy: each document decides it (its advanced options).
 const SETTING_OPTIONS: { [K in SettingKey]: AssemblySettings[K][] } = {
-  positionVisibility: ["mesa", "session", "public"],
   tieRule: ["rejected", "repeat"],
   denominator: ["valid_votes", "present"],
 };

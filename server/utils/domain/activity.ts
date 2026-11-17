@@ -98,7 +98,7 @@ import {
   type Actor,
 } from "./actor";
 import { redactAmendmentEventPayload } from "./amendments";
-import { assemblySettings, canSeeDocumentCorrection } from "./documents";
+import { canSeeDocumentCorrection } from "./documents";
 import { loadExecutiveMask } from "./executiveMembers";
 import { loadCoProponentIds, loadSourceAuthorIds } from "./presenters";
 import { resolveAssembly } from "./resolvers";
@@ -956,6 +956,9 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   document_submitted: ["submittedAt", "afterCorrection"],
   document_correction_requested: ["note"],
   document_published: ["reference", "republished", "from"],
+  document_positions_published: ["alreadyPublic"],
+  document_positions_unpublished: [],
+  document_positions_debate_started: ["alreadyPublic"],
   document_deleted: ["title", "kind", "format"],
   document_voted: [
     "result",
@@ -1263,6 +1266,8 @@ export interface DocumentInfo {
   proponentMemberId: string | null;
   submittedByUserId: string | null;
   coProponentMemberIds: string[];
+  positionsPublishedAt: Date | null;
+  positionsDebateStartedAt: Date | null;
 }
 
 export interface AmendmentInfo {
@@ -1578,6 +1583,8 @@ async function loadDocumentInfo(
         status: documents.status,
         proponentMemberId: documents.proponentMemberId,
         submittedByUserId: documents.submittedByUserId,
+        positionsPublishedAt: documents.positionsPublishedAt,
+        positionsDebateStartedAt: documents.positionsDebateStartedAt,
       })
       .from(documents)
       .where(inArray(documents.id, ids)),
@@ -1996,13 +2003,10 @@ function eventTarget(
         const notes =
           seesAllPresentedAmendments(actor) ||
           isAmendmentInsider(actor, amendment);
-        const positions =
-          assembly !== null &&
-          canSeePositions(actor, {
-            settings: assemblySettings(assembly),
-            assemblyStatus: assembly.status,
-            isPresenter: isDocumentPresenter(actor, document),
-          });
+        const positions = canSeePositions(actor, {
+          document,
+          isPresenter: isDocumentPresenter(actor, document),
+        });
         return {
           ...base,
           visible:

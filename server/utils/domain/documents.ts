@@ -64,6 +64,7 @@ import {
 } from "./agendaWrites";
 import { diffChanges, sortedIds } from "./changes";
 import { recordEvent } from "./events";
+import { stampDebateStarted } from "./positionsPublication";
 import { loadExecutiveMask, resolveBodyMembers } from "./executiveMembers";
 import { withHeadcount } from "./headcounts";
 import {
@@ -114,6 +115,7 @@ import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import type {
   AmendmentWindowDto,
   CorrectionBody,
+  PositionsPublicationBody,
   DecisionDto,
   DocumentCapabilities,
   DocumentContentBody,
@@ -538,6 +540,8 @@ export function toDocumentSummaryDto(
     status: document.status,
     proponent: extra.proponent,
     coProponents: extra.coProponents,
+    positionsPublishedAt: toIso(document.positionsPublishedAt),
+    positionsDebateStartedAt: toIso(document.positionsDebateStartedAt),
     amendable: document.amendable,
     acceptedAmendments: document.acceptedAmendments,
     voted: document.voted,
@@ -610,8 +614,7 @@ export function toDocumentDto(input: DocumentDtoInput): DocumentDto {
       : null,
     finalVote: input.finalVote ? toVoteDto(input.finalVote) : null,
     positionsVisible: canSeePositions(actor, {
-      settings: assemblySettings(assembly),
-      assemblyStatus: assembly.status,
+      document,
       isPresenter: isDocumentPresenter(actor, document),
     }),
     can: documentCapabilities(
@@ -2038,6 +2041,83 @@ export async function requestDocumentCorrection(
 }
 
 /**
+ * The Secretaría (document:manage) makes the main presenter's answers to a
+ * published document's amendments public before their debate, or takes
+ * that back. Taking it back is refused once the debate of its agenda item
+ * started (`positions_debate_started_at`): the answers are public for good
+ * then. Takes the assembly FOR SHARE, so a debate starting at that instant
+ * (updateLiveState holds the assembly lock) is seen.
+ */
+export async function setPositionsPublication(
+  ctx: DocumentRouteContext,
+  body: PositionsPublicationBody,
+): Promise<DocumentDto> {
+  const { actor, assembly } = ctx;
+  if (!canManageDocuments(actor)) {
+    fail(403, "No tienes permiso para publicar las respuestas");
+  }
+
+  await db.transaction(async (tx) => {
+    await shareLockAssembly(tx, assembly.id);
+    const current = await lockDocument(tx, ctx.document.id);
+    assertOptimisticLock(
+      body.updatedAt,
+      current.updatedAt,
+      STALE_DOCUMENT_MESSAGE,
+    );
+    if (current.status !== "published") {
+      fail(
+        409,
+        "Solo se pueden publicar las respuestas de un documento publicado",
+      );
+    }
+    if (body.public) {
+      if (current.positionsPublishedAt !== null) return;
+      await tx
+        .update(documents)
+        .set({
+          positionsPublishedAt: new Date(),
+          positionsPublishedByUserId: actor.user.id,
+        })
+        .where(eq(documents.id, current.id));
+      await recordEvent(tx, {
+        assemblyId: assembly.id,
+        entityType: "document",
+        entityId: current.id,
+        documentId: current.id,
+        type: "document_positions_published",
+        payload: { alreadyPublic: current.positionsDebateStartedAt !== null },
+        actor,
+      });
+      return;
+    }
+    if (current.positionsDebateStartedAt !== null) {
+      fail(
+        409,
+        "Ya ha empezado el debate de este documento: sus respuestas son públicas",
+        { messageKey: "document.positions.errors.debateStarted" },
+      );
+    }
+    if (current.positionsPublishedAt === null) return;
+    await tx
+      .update(documents)
+      .set({ positionsPublishedAt: null, positionsPublishedByUserId: null })
+      .where(eq(documents.id, current.id));
+    await recordEvent(tx, {
+      assemblyId: assembly.id,
+      entityType: "document",
+      entityId: current.id,
+      documentId: current.id,
+      type: "document_positions_unpublished",
+      payload: {},
+      actor,
+    });
+  });
+
+  return loadDocumentDto(assembly, ctx.document.id, actor);
+}
+
+/**
  * Publishes a document (document:manage). A structured text is frozen as an
  * immutable `base` version, which amendments anchor to. Kinds with a
  * reference prefix get "{PREFIX} {NNN}/{YYYY}". Publishing again a withdrawn
@@ -2421,6 +2501,15 @@ async function writeLiveState(
     payload: { changed, ...next },
     actor,
   });
+  // As in updateLiveState: what goes into debate makes its answers public.
+  if (changed.includes("agendaItemId") || changed.includes("documentId")) {
+    await stampDebateStarted(tx, {
+      assemblyId,
+      agendaItemId: next.agendaItemId,
+      documentId: next.documentId,
+      actor,
+    });
+  }
 }
 
 /**
@@ -2928,8 +3017,7 @@ export async function filterVisibleDecisions(
 /** Whether the actor sees proponent positions on this document's amendments. */
 export function documentPositionsVisible(ctx: DocumentRouteContext): boolean {
   return canSeePositions(ctx.actor, {
-    settings: assemblySettings(ctx.assembly),
-    assemblyStatus: ctx.assembly.status,
+    document: ctx.document,
     isPresenter: isDocumentPresenter(ctx.actor, ctx.document),
   });
 }

@@ -11,6 +11,7 @@ import {
   affectsControlSheet,
   affectsLiveDebate,
   amendedDocuments,
+  amendmentSheetKind,
   amendmentTreatedControl,
   buildAmendmentRows,
   newerPosition,
@@ -665,5 +666,19 @@ describe("documentAgendaTrail", () => {
     expect(
       documentAgendaTrail(agenda, { id: "d9", agendaItemId: "zz" }),
     ).toEqual([]);
+  });
+});
+
+describe("amendmentSheetKind", () => {
+  it("reads «De forma» only for a formal amendment", () => {
+    expect(amendmentSheetKind({ kind: "formal" })).toBe("formal");
+    for (const kind of [
+      "partial",
+      "totality_return",
+      "totality_alternative",
+      "transactional",
+    ] as const) {
+      expect(amendmentSheetKind({ kind })).toBe("content");
+    }
   });
 });

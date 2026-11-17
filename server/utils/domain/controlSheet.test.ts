@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { SYSTEM_ROLES } from "~~/shared/constants/roles";
-import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
 import type { Actor } from "./actor";
 import type { LoadedAmendment, PositionRecorders } from "./amendments";
 import type { DocumentPresenters } from "./visibility";
@@ -91,11 +90,13 @@ const NO_RECORDERS: PositionRecorders = {
 
 describe("control sheet positions", () => {
   it("reach a sheet reader whom the assembly's rule hides them from", () => {
-    // Before the session, under «mesa», the CEA reads no answer elsewhere.
+    // Before the answers are public, the CEA reads none elsewhere.
     expect(
       canSeePositions(CEA_READER, {
-        settings: { ...DEFAULT_ASSEMBLY_SETTINGS, positionVisibility: "mesa" },
-        assemblyStatus: "convened",
+        document: {
+          positionsPublishedAt: null,
+          positionsDebateStartedAt: null,
+        },
         isPresenter: false,
       }),
     ).toBe(false);

@@ -495,6 +495,7 @@ const GENERAL_COLUMN_KEYS: Record<GeneralSortKey, string> = {
 const AMENDMENT_COLUMN_KEYS: Record<AmendmentSortKey, string> = {
   code: "controlSheet.columns.code",
   authors: "controlSheet.columns.authors",
+  kind: "controlSheet.columns.kind",
   position: "controlSheet.columns.position",
   treated: "controlSheet.columns.treated",
   result: "controlSheet.columns.result",

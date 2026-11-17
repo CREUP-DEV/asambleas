@@ -2,7 +2,6 @@ import {
   GENERIC_EXECUTIVE_MEMBER,
   GENERIC_EXECUTIVE_MEMBER_ID,
   type AmendmentStatus,
-  type AssemblySettings,
   type AssemblyStatus,
   type DecisionKind,
   type DocumentStatus,
@@ -15,6 +14,10 @@ import type {
   MemberRef,
 } from "~~/shared/types/api";
 import { isPublicDocumentStatus } from "~~/shared/utils/agendaSubmissions";
+import {
+  positionsArePublic,
+  type PositionsPublication,
+} from "~~/shared/utils/positions";
 import {
   actsFor,
   canManageAssemblies,
@@ -278,26 +281,19 @@ export function filterDecisionsByAmendment(
 }
 
 /**
- * Who sees the main presenter's position on amendments: its presenters
- * (main and co-presenters, who follow what the main one decides), the Mesa
- * and the Secretaría always; everyone else per the assembly's policy.
+ * Who sees the main presenter's position on a document's amendments: its
+ * presenters (main and co-presenters, who follow what the main one
+ * decides), the Mesa and whoever reviews amendments always; everyone else
+ * once they are public (positionsArePublic: the Secretaría published them,
+ * or the debate of the document's agenda item started).
  */
 export function canSeePositions(
   actor: Actor,
-  options: {
-    settings: AssemblySettings;
-    assemblyStatus: AssemblyStatus;
-    isPresenter: boolean;
-  },
+  options: { document: PositionsPublication; isPresenter: boolean },
 ): boolean {
   if (options.isPresenter || canModerate(actor) || canReviewAmendments(actor))
     return true;
-  if (options.settings.positionVisibility === "public") return true;
-  return (
-    options.settings.positionVisibility === "session" &&
-    (options.assemblyStatus === "in_session" ||
-      options.assemblyStatus === "closed")
-  );
+  return positionsArePublic(options.document);
 }
 
 // Executive areas ------------------------------------------------------------

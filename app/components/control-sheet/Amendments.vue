@@ -7,6 +7,7 @@ import {
   type SheetSort,
 } from "./-filters";
 import {
+  amendmentSheetKind,
   amendmentTreatedControl,
   type AmendmentSheetRow,
   type TreatedBox,
@@ -56,6 +57,9 @@ function treatedOf(row: AmendmentSheetRow): TreatedBox {
 const { t } = useI18n();
 
 /** The main author first, then the rest by acronym. */
+/** «De forma» or «De contenido» (every other kind, CONTENT_AMENDMENT_KINDS). */
+const kindOf = amendmentSheetKind;
+
 /** The main author, then the rest by acronym (shown as «+N»). */
 function authorsOf(amendment: AmendmentDto): {
   main: MemberRef[];
@@ -109,6 +113,11 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
   {
     key: "authors",
     label: "controlSheet.columns.authors",
+    class: "w-32 text-center",
+  },
+  {
+    key: "kind",
+    label: "controlSheet.columns.kind",
     class: "w-32 text-center",
   },
   {
@@ -184,6 +193,15 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
                 :label="t('controlSheet.columns.authors')"
                 :others-title="t('controlSheet.otherAuthors')"
                 class="justify-center"
+              />
+            </td>
+            <td class="px-3 py-2 text-center">
+              <UBadge
+                :color="kindOf(row.amendment) === 'formal' ? 'neutral' : 'info'"
+                variant="subtle"
+                size="sm"
+                class="whitespace-nowrap"
+                :label="t(`controlSheet.kind.${kindOf(row.amendment)}`)"
               />
             </td>
             <td class="px-3 py-2 text-center">
@@ -298,6 +316,21 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
                   :members="members"
                   :label="t('controlSheet.columns.authors')"
                   :others-title="t('controlSheet.otherAuthors')"
+                />
+              </dd>
+            </div>
+            <div>
+              <dt class="text-muted text-xs">
+                {{ t("controlSheet.columns.kind") }}
+              </dt>
+              <dd>
+                <UBadge
+                  :color="
+                    kindOf(row.amendment) === 'formal' ? 'neutral' : 'info'
+                  "
+                  variant="subtle"
+                  size="sm"
+                  :label="t(`controlSheet.kind.${kindOf(row.amendment)}`)"
                 />
               </dd>
             </div>
