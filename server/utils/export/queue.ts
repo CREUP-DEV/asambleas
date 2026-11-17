@@ -65,6 +65,16 @@ async function startExportQueue(attempts: number): Promise<PgBoss> {
       deleteAfterSeconds: 7 * 24 * 3600,
     });
   }
+  // One package build per assembly, language and variant running and one
+  // waiting (its singletonKey): asking again while one waits adds nothing,
+  // and the waiting one builds the latest state when its turn comes.
+  await instance.createQueue(PACKAGE_QUEUE_NAME, {
+    policy: "stately",
+    retryLimit: 1,
+    retryDelay: 30,
+    expireInSeconds: 3600,
+    deleteAfterSeconds: 24 * 3600,
+  });
 
   boss = instance;
   return boss;
@@ -78,6 +88,9 @@ export const EXPORT_QUEUE_NAMES = {
   ASSEMBLY_EXPORT: "assembly-export",
   DOCUMENT_EXPORT: "document-export",
 } as const;
+
+/** The documentation package of an assembly (package/build.ts). */
+export const PACKAGE_QUEUE_NAME = "assembly-package";
 
 export type ExportQueueName =
   (typeof EXPORT_QUEUE_NAMES)[keyof typeof EXPORT_QUEUE_NAMES];
@@ -107,3 +120,11 @@ export const documentExportJobSchema = assemblyExportJobSchema.extend({
 
 export type AssemblyExportJobData = z.infer<typeof assemblyExportJobSchema>;
 export type DocumentExportJobData = z.infer<typeof documentExportJobSchema>;
+
+export const packageJobSchema = z.object({
+  assemblyId: z.string().min(1),
+  locale: z.enum(EXPORT_LOCALES),
+  editable: z.boolean(),
+});
+
+export type PackageJobData = z.infer<typeof packageJobSchema>;

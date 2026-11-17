@@ -283,22 +283,25 @@ function pageCount(t: Translate): ContentText[] {
  * the worker has no brand files), the "internal document" band down the
  * left edge, and the website, email and page count in the footer.
  */
-function frame(input: {
+export function frame(input: {
   locale: ExportLocale;
   t: Translate;
   assembly: ExportAssembly;
   title: string;
   content: Content[];
   brand?: ExportBrand;
-  /** What the band down the left edge says. */
-  bandLabel: string;
+  /** What the band down the left edge says; null for a page without one. */
+  bandLabel: string | null;
   /** The first page is a cover: no letterhead, and pages count from the next. */
   cover?: boolean;
   /** A draft's watermark ("BORRADOR"). */
   watermark?: string;
 }): TDocumentDefinitions {
   const { locale, t, assembly, brand } = input;
-  const band = bandSvg(input.bandLabel, brand?.labelFont);
+  const band =
+    input.bandLabel === null
+      ? null
+      : bandSvg(input.bandLabel, brand?.labelFont);
   // Drawn as outlines with the letterhead's font; without it, pdfmake's own
   // (text) watermark stands in.
   const watermark =
@@ -350,12 +353,16 @@ function frame(input: {
               },
             ]
           : []),
-        {
-          svg: band.svg,
-          width: band.width,
-          height: band.height,
-          absolutePosition: { x: band.x, y: band.y },
-        },
+        ...(band
+          ? [
+              {
+                svg: band.svg,
+                width: band.width,
+                height: band.height,
+                absolutePosition: { x: band.x, y: band.y },
+              },
+            ]
+          : []),
       ],
     }),
     header: perPage<DynamicContent>(
@@ -983,7 +990,7 @@ export function buildAssemblyPdf(
 }
 
 /** Adds the text's images to the PDF's (the letterhead's logos stay). */
-function withContentImages(
+export function withContentImages(
   definition: TDocumentDefinitions,
   images: Record<string, ExportImage> | undefined,
 ): TDocumentDefinitions {

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AssemblyDto } from "~~/shared/types/api";
+import { assemblyOrdinal } from "~~/shared/utils/slug";
 
 /**
  * The convocatoria of the assembly, inside the hub like any other section.

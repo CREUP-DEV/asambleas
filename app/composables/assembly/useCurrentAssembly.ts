@@ -260,21 +260,6 @@ export function useAssemblyAgenda() {
 
 // Formatting --------------------------------------------------------------
 
-/** "80.ª" in Spanish, "80th" in English. */
-export function assemblyOrdinal(value: number, locale: string): string {
-  if (locale.startsWith("en")) {
-    const mod100 = value % 100;
-    const suffix =
-      mod100 >= 11 && mod100 <= 13
-        ? "th"
-        : (({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[
-            value % 10
-          ] ?? "th");
-    return `${value}${suffix}`;
-  }
-  return `${value}.ª`;
-}
-
 /**
  * "14–16 de noviembre de 2026", or a single date when both fall on the same
  * day, always in the assemblies' time zone.

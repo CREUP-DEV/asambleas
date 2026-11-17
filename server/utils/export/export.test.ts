@@ -65,6 +65,8 @@ import {
   PDF_RENDER_LIMITS,
   PdfRenderLimitError,
   renderPdf,
+  renderPdfBatch,
+  splitBatch,
   unansweredRenderError,
   withRenderSlot,
 } from "./pdfRender";
@@ -1678,6 +1680,32 @@ describe("render process", () => {
     expect(result.waitedMs).toBeGreaterThanOrEqual(0);
     expect(result.maxRssKb).toBeGreaterThan(0);
   }, 60_000);
+
+  it("renders a batch in one process, each PDF as it renders alone", async () => {
+    const definitions = cases.map(([, build]) => build());
+    const [{ pdfs }, ...alone] = await Promise.all([
+      renderPdfBatch(
+        cases.map(([, build]) => build()),
+        fonts,
+      ),
+      ...definitions.map((definition) =>
+        pdfmake.createPdf(definition).getBuffer(),
+      ),
+    ]);
+    expect(pdfs).toHaveLength(cases.length);
+    pdfs.forEach((pdf, index) => {
+      expect(stable(pdf)).toBe(stable(alone[index]!));
+    });
+  }, 60_000);
+
+  it("refuses a batch answer whose sizes do not add up", () => {
+    const body = Buffer.from("aaabb");
+    expect(splitBatch(body, 5, [3, 2], 2)?.map(String)).toEqual(["aaa", "bb"]);
+    expect(splitBatch(body, 5, [3, 2], 3)).toBeNull();
+    expect(splitBatch(body, 5, [3, 1], 2)).toBeNull();
+    expect(splitBatch(body, 4, [3, 2], 2)).toBeNull();
+    expect(splitBatch(body, 5, undefined, 2)).toBeNull();
+  });
 
   it("retries a render the kernel killed, never one out of heap", () => {
     // Killed from outside (the container out of memory): may be another

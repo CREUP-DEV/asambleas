@@ -208,9 +208,18 @@ export const AUDIT_ACTIONS = {
   AMENDMENTS_RECODE: "amendments.recode",
 
   // Exports ---------------------------------------------------------------
-  /** POST .../export. Target document or assembly; assemblyId set; after {jobId, variant, locale, documentId}. */
+  /**
+   * POST .../export. Target document or assembly; assemblyId set; after
+   * {jobId, variant, locale, documentId}. POST .../package (the
+   * documentation package): target the assembly; after {package, locale,
+   * editable}.
+   */
   EXPORT_REQUEST: "export.request",
-  /** GET /api/exports/[jobId]/download. Target document or assembly; after {jobId}. */
+  /**
+   * GET /api/exports/[jobId]/download. Target document or assembly; after
+   * {jobId}. GET .../package/download: target the assembly; after {package,
+   * locale, editable}.
+   */
   EXPORT_DOWNLOAD: "export.download",
 
   // Read marks ------------------------------------------------------------

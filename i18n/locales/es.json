@@ -594,6 +594,29 @@
       "typeLabel": "Escribe {label} para confirmar",
       "deleted": "{label} eliminada",
       "deleteError": "No se ha podido eliminar la asamblea"
+    },
+    "package": {
+      "button": "Descargar documentación",
+      "title": "Descargar la documentación",
+      "description": "Un ZIP con la convocatoria, el orden del día y una carpeta por punto con sus documentos publicados y, en PDF, sus enmiendas.",
+      "editable": "Incluir también una versión editable (Word) de los textos",
+      "editableHelp": "Los documentos que se subieron en PDF van solo en PDF.",
+      "preparing": "Preparando la documentación…",
+      "progress": "{done} de {total} archivos",
+      "queued": "En cola: empezará en cuanto termine lo que se está generando.",
+      "ready": "Documentación lista",
+      "builtAt": "Preparada: {date}.",
+      "download": "Descargar ZIP ({size})",
+      "olderAvailable": "Mientras se prepara, puedes descargar la versión anterior (preparada: {date}), que no recoge los últimos cambios.",
+      "downloadOlder": "Descargar la versión anterior ({size})",
+      "failed": "No se ha podido preparar la documentación.",
+      "retry": "Volver a intentarlo",
+      "error": "No se ha podido pedir la documentación",
+      "notPublic": "La asamblea todavía no es pública.",
+      "notReady": "La documentación todavía se está preparando.",
+      "background": "Puedes cerrar esta ventana y seguir navegando: te avisaremos cuando esté lista.",
+      "readyToast": "Ya puedes descargar la documentación de la asamblea.",
+      "downloadShort": "Descargar"
     }
   },
   "document": {
@@ -2508,6 +2531,38 @@
       "dateRange": "Del {start} al {end}",
       "filename": {
         "annotated": "anotado"
+      },
+      "package": {
+        "root": "Documentación {assembly}",
+        "convocation": "Convocatoria",
+        "agenda": "Orden del día",
+        "agendaHeading": "Orden del día de la {assembly}",
+        "session": "Sesión",
+        "consolidated": "texto consolidado",
+        "amendments": "Enmiendas",
+        "amendment": {
+          "title": "Solicitud de enmienda",
+          "titleWithCode": "Solicitud de enmienda {code}",
+          "document": "Documento a enmendar",
+          "location": "Título, sección o líneas",
+          "typology": "Tipología",
+          "typologies": {
+            "suppression": "Supresión",
+            "addition": "Adición",
+            "both": "Supresión y adición"
+          },
+          "proponent": "Proponente",
+          "sources": "Enmiendas que agrupa",
+          "outcome": "Resultado",
+          "change": "Texto de la enmienda",
+          "explanation": "Explicación de la misma",
+          "noExplanation": "Sin explicación.",
+          "wholeDocument": "Todo el documento",
+          "passage": "Párrafo que empieza «{text}»",
+          "documentStart": "Inicio del documento",
+          "totalityReturn": "Propone devolver el texto en su totalidad.",
+          "noChange": "El cambio ya no encaja en el texto publicado."
+        }
       }
     }
   },

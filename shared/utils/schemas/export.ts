@@ -25,3 +25,18 @@ export const documentExportSchema = assemblyExportSchema.extend({
 
 export type AssemblyExportBody = z.input<typeof assemblyExportSchema>;
 export type DocumentExportBody = z.input<typeof documentExportSchema>;
+
+/**
+ * Body of POST /api/assemblies/[assembly]/package and query of its status
+ * and download: the language of the package and whether it carries the
+ * Word versions of the texts.
+ */
+export const assemblyPackageSchema = z.object({
+  locale: z.enum(EXPORT_LOCALES).default("es"),
+  editable: z
+    .union([z.boolean(), z.enum(["true", "false", "1", "0"])])
+    .default(false)
+    .transform((value) => value === true || value === "true" || value === "1"),
+});
+
+export type AssemblyPackageBody = z.input<typeof assemblyPackageSchema>;

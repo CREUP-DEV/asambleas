@@ -26,7 +26,7 @@ postgresql (PostgreSQL 18 compartido, base de datos asambleas)
 - Todo comparte la red de Docker `<usuario>_default`: nginx llega a la app como `asambleas-app:3000`, y la app puede llamar a la Intranet como `http://intranet`.
 - La imagen es `ghcr.io/creup-dev/asambleas:<commit>`. El compose la lee de `ASAMBLEAS_IMAGE`, en el `.env` del compose raíz, que escriben `scripts/deploy.sh` y `scripts/rollback.sh`.
 - `pg-boss` usa la misma base de datos para las exportaciones, para la sincronización diaria del listado de miembros (05:00, Europe/Madrid) y para la revisión diaria de accesos (05:30).
-- Los PDFs generados (`EXPORT_STORAGE_DIR`) y los PDFs e imágenes subidos a los documentos (`UPLOAD_STORAGE_DIR`, las imágenes en `images/`, las fotos y logos de la sala en `seating/` y las fotos de las cuentas en `avatars/`) viven en `asambleas/data/`, montado en el contenedor. Sin esos montajes se pierden al recrearlo.
+- Los PDFs generados (`EXPORT_STORAGE_DIR`; dentro, `packages/` guarda los ZIP de «Descargar documentación» y sus piezas, que se pueden volver a generar y no necesitan copia) y los PDFs e imágenes subidos a los documentos (`UPLOAD_STORAGE_DIR`, las imágenes en `images/`, las fotos y logos de la sala en `seating/` y las fotos de las cuentas en `avatars/`) viven en `asambleas/data/`, montado en el contenedor. Sin esos montajes se pierden al recrearlo.
 - La plataforma llama a la API de la Intranet por su URL pública, `https://intranet.creup.es/api/asambleas/v1`, con el token. También puede llamarla por dentro (más abajo). Cómo y por qué: [docs/intranet.md](docs/intranet.md), sección 5.8.
 - Los avisos por correo salen por SMTP hacia el servidor de correo del VPS (docker-mailserver), con una dirección de `creup.org` (sección «Correo»).
 
@@ -145,7 +145,7 @@ Desde tu máquina:
 scp deploy/nginx/asambleas.creup.es.conf <usuario>@<host del VPS>:config/nginx/conf.d/
 ```
 
-El vhost usa el certificado comodín `*.creup.es` (`/etc/letsencrypt/live/creup.es`), y el servidor por defecto de `creup.es.conf` ya redirige el puerto 80 a HTTPS. Resuelve `asambleas-app` en cada petición, así que nginx carga aunque la app no exista todavía; mientras tanto el sitio responde 502. Para aplicarlo:
+El vhost usa el certificado comodín `*.creup.es` (`/etc/letsencrypt/live/creup.es`), y el servidor por defecto de `creup.es.conf` ya redirige el puerto 80 a HTTPS. Resuelve `asambleas-app` en cada petición, así que nginx carga aunque la app no exista todavía; mientras tanto el sitio muestra la página «Estamos actualizando la plataforma» (503). Para aplicarlo:
 
 ```bash
 cd ~ && docker compose exec nginx nginx -t && docker compose exec nginx nginx -s reload
@@ -157,6 +157,7 @@ Lo que hace el vhost:
 
 - No duplica CSP ni HSTS: las pone `nuxt-security`.
 - Bloquea `/api/health` desde fuera.
+- Mientras no llega a la app (un despliegue, un rollback, la app caída) responde 503 con una página propia, «Estamos actualizando la plataforma», que se recarga sola cuando la app vuelve. No responde 502 porque Cloudflare cambia todo 502 del origen por su página «Bad gateway» y deja pasar los 503. Solo cubre los errores de nginx: los 502 y 503 de la propia app ("Sincronizar") llegan tal cual.
 - No guarda en búfer las actualizaciones en directo (`/api/assemblies/<asamblea>/live`, eventos SSE con latido cada 25 s, por debajo de los 100 s de Cloudflare).
 - Deja pasar cuerpos de hasta 25 MB, por encima del límite de la propia app (21 MB para un PDF y 16 MB para importar un DOCX), que es la que responde con un error claro.
 - No toca la IP del visitante: la recupera el `nginx.conf` compartido (`snippets/cloudflare-realip.conf`, en el bloque `http`), así que `X-Forwarded-For` ya lleva la del visitante y no la de Cloudflare. Por eso toda una sede tras un mismo NAT comparte IP, y el límite por IP de nuxt-security está apagado en `/api/assemblies/**`, `/api/exports/**` y `/api/me/**`. Lo que sigue limitado tiene un cupo por IP y regla: subidas (importar, PDF, imágenes, convocatoria) 300 cada 5 min; peticiones de exportación 1.000 cada 5 min; páginas, `/api/auth`, `/api/members` y ficheros subidos 12.000 cada 5 min entre todos.
@@ -214,7 +215,7 @@ Con la primera imagen publicada, el paquete `ghcr.io/creup-dev/asambleas` aparec
 
 Para volver a desplegar una imagen ya publicada sin compilar: `DEPLOY_SKIP_BUILD=1 DEPLOY_SKIP_VERIFY=1 IMAGE=ghcr.io/creup-dev/asambleas:<etiqueta> bash ./scripts/deploy.sh`. Sin `DEPLOY_SKIP_VERIFY=1` verifica el árbol local, aunque no sea el de esa imagen.
 
-Recrear el contenedor corta el servicio unos segundos. Evita desplegar durante una sesión de asamblea: por eso `scripts/deploy.sh` pregunta antes, y el VPS lo vuelve a comprobar antes de migrar.
+Recrear el contenedor corta el servicio unos segundos; mientras tanto nginx muestra la página de actualización. Evita desplegar durante una sesión de asamblea: por eso `scripts/deploy.sh` pregunta antes, y el VPS lo vuelve a comprobar antes de migrar.
 
 ### Rollback
 
@@ -448,7 +449,7 @@ Cuentas sin acceso: una cuenta borrada en la Intranet pierde el acceso la próxi
 | "the remote deploy stopped before its last step"                | El script remoto terminó antes de tiempo (conexión cortada o un comando que se comió la entrada): revisar la salida y repetir                                                                                                                                                                                                        |
 | La app no llega a `healthy`                                     | Los logs que imprime el script: `APP_SECRET`, `DATABASE_URL`, credenciales OAuth. Para volver, lo que diga el script: `scripts/rollback.sh` si no se migró nada; si se aplicó alguna migración, restaurar antes el volcado que nombra (sección «Restaurar») o `scripts/rollback.sh --force` si la versión anterior convive con ellas |
 | `scripts/deploy.sh` se para: "entered session during the build" | Se abrió una sesión mientras se verificaba y construía; no se ha migrado nada. Repetir el despliegue (la imagen ya está publicada: `DEPLOY_SKIP_BUILD=1 DEPLOY_SKIP_VERIFY=1 IMAGE=...`) y confirmar, o esperar a que acabe la sesión                                                                                                |
-| 502 en `asambleas.creup.es`                                     | `docker compose ps asambleas-app`; el contenedor tiene que estar en la red del compose raíz                                                                                                                                                                                                                                          |
+| «Estamos actualizando la plataforma» fuera de un despliegue     | `docker compose ps asambleas-app`; el contenedor tiene que estar en la red del compose raíz                                                                                                                                                                                                                                          |
 | OAuth falla                                                     | Callback en Google, `NUXT_SITE_URL`, cabecera `X-Forwarded-Proto` en el vhost                                                                                                                                                                                                                                                        |
 | Las actualizaciones en directo no llegan                        | El `location` de `/live` del vhost (`proxy_buffering off`) y que Cloudflare no lo esté desafiando                                                                                                                                                                                                                                    |
 | Export PDF falla                                                | `asambleas/data/exports` existe y es del uid 1000                                                                                                                                                                                                                                                                                    |

@@ -26,7 +26,8 @@ import {
  * de plazo"...), only those that some document has, and shows only when
  * there are two or more to choose from. "Solo lo que me queda
  * por leer" keeps the documents the account has not marked as read, or that
- * have amendments it has not read.
+ * have amendments it has not read. "Descargar documentación" offers the
+ * package of everything published, as the overview and the agenda do.
  */
 
 const { t } = useI18n();
@@ -34,6 +35,8 @@ const me = useMe();
 const now = useAppNow();
 const current = useCurrentAssembly();
 const { assembly, sectionPath } = current;
+/** The documentation package's dialog (ExportPackageDialog). */
+const packageOpen = ref(false);
 
 useHead({
   title: () =>
@@ -219,14 +222,30 @@ function documentEditPath(document: DocumentSummaryDto): string | null {
           {{ t("agenda.documentsCount", total) }}
         </p>
       </div>
-      <UButton
-        color="neutral"
-        variant="outline"
-        icon="i-lucide-list-tree"
-        :label="t('documents.byAgenda')"
-        :to="sectionPath('orden-del-dia')"
-      />
+      <div class="flex flex-wrap items-center gap-2">
+        <UButton
+          v-if="assembly.status !== 'draft'"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-folder-down"
+          :label="t('assembly.package.button')"
+          data-testid="documents-package"
+          @click="packageOpen = true"
+        />
+        <UButton
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-list-tree"
+          :label="t('documents.byAgenda')"
+          :to="sectionPath('orden-del-dia')"
+        />
+      </div>
     </div>
+
+    <ExportPackageDialog
+      v-model:open="packageOpen"
+      :api-base="current.apiBase.value"
+    />
 
     <div
       v-if="total > 0"

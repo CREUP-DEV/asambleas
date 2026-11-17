@@ -95,7 +95,7 @@ async function requireExportAssembly(
   return assembly;
 }
 
-function toExportAssembly(assembly: AssemblyRow): ExportAssembly {
+export function toExportAssembly(assembly: AssemblyRow): ExportAssembly {
   return {
     label: formatAssemblyLabel(assembly),
     number: assembly.number,
@@ -106,7 +106,7 @@ function toExportAssembly(assembly: AssemblyRow): ExportAssembly {
   };
 }
 
-function toExportVote(vote: VoteRow): ExportVote {
+export function toExportVote(vote: VoteRow): ExportVote {
   return {
     inFavor: vote.inFavor,
     against: vote.against,
@@ -120,7 +120,7 @@ function toExportVote(vote: VoteRow): ExportVote {
   };
 }
 
-async function loadVotes(
+export async function loadVotes(
   ids: (string | null)[],
 ): Promise<Map<string, VoteRow>> {
   const wanted = [...new Set(ids.filter((id): id is string => Boolean(id)))];
@@ -129,7 +129,9 @@ async function loadVotes(
   return new Map(rows.map((row) => [row.id, row]));
 }
 
-async function loadVersionBlocks(ids: string[]): Promise<Map<string, Block[]>> {
+export async function loadVersionBlocks(
+  ids: string[],
+): Promise<Map<string, Block[]>> {
   if (ids.length === 0) return new Map();
   const rows = await db
     .select({ id: documentVersions.id, blocks: documentVersions.blocks })
@@ -193,7 +195,7 @@ function visibleCoAcronyms(
  * it once). Always the requester, for every PDF: the Secretaría's and the
  * Mesa's read the real offices, a delegate's the generic "CEA".
  */
-function documentMeta(
+export function documentMeta(
   actor: Actor,
   document: DocumentRow & { proponent: AcronymMember | null },
   agenda: AgendaTree,
@@ -333,7 +335,7 @@ export async function annotatedBody(
  * (assertImagesBelong), and this keeps it so. One missing on disk is left
  * out (the PDF shows its description instead) and logged.
  */
-async function loadExportImages(
+export async function loadExportImages(
   documentIds: string[],
   blocks: { type: string; image?: { asset: string } }[],
 ): Promise<Record<string, ExportImage>> {
@@ -470,6 +472,58 @@ export async function buildDocumentExportData(
 // Assembly export -------------------------------------------------------------
 
 /**
+ * The agenda as everyone reads it, with the documents it publishes: the
+ * published ones (`documents`, agenda order in `agenda.documentOrder`) and
+ * the postponed ones (`postponed`), which everyone reads in the platform but
+ * no export prints. An item that carries the title of a document that is
+ * not public (its automatic sub-item, or one kept after it moved away or
+ * was deleted) is left out, or kept without that title (`titleHidden`) when
+ * it holds something published. The same for every requester, managers
+ * included: the dossier and the documentation package go round.
+ */
+export async function loadPublishedAgenda(assemblyId: string) {
+  const [allAgendaRows, documentRows, postponedRows] = await Promise.all([
+    loadAgenda(assemblyId),
+    db.query.documents.findMany({
+      where: and(
+        eq(documents.assemblyId, assemblyId),
+        eq(documents.status, "published"),
+      ),
+      with: { proponent: { columns: { acronym: true, kind: true } } },
+      orderBy: [asc(documents.createdAt), asc(documents.id)],
+    }),
+    db.query.documents.findMany({
+      where: and(
+        eq(documents.assemblyId, assemblyId),
+        eq(documents.status, "postponed"),
+      ),
+      columns: {
+        id: true,
+        agendaItemId: true,
+        title: true,
+        reference: true,
+      },
+      orderBy: [asc(documents.createdAt), asc(documents.id)],
+    }),
+  ]);
+  // The items that carry a postponed document's title keep it.
+  const publicDocuments = [...documentRows, ...postponedRows];
+  const keptRows = visibleAgendaItems(allAgendaRows, publicDocuments);
+  const hiddenTitles = hiddenTitleItemIds(keptRows, publicDocuments);
+  const agendaRows = keptRows.map((row) =>
+    hiddenTitles.has(row.id)
+      ? { ...row, title: "", description: null, titleHidden: true }
+      : row,
+  );
+  return {
+    agendaRows,
+    documentRows,
+    postponed: postponedRows,
+    agenda: buildAgendaTree(agendaRows, documentRows),
+  };
+}
+
+/**
  * Cover, agenda and every published document in agenda order. Only
  * published documents are listed, so the dossier never reveals drafts or
  * submissions under review, whoever requests it. Only managers request it,
@@ -486,42 +540,9 @@ export async function buildAssemblyExportData(
   }
   const assembly = await requireExportAssembly(actor, job.assemblyId);
 
-  const [allAgendaRows, documentRows, postponedRows] = await Promise.all([
-    loadAgenda(assembly.id),
-    db.query.documents.findMany({
-      where: and(
-        eq(documents.assemblyId, assembly.id),
-        eq(documents.status, "published"),
-      ),
-      with: { proponent: { columns: { acronym: true, kind: true } } },
-      orderBy: [asc(documents.createdAt), asc(documents.id)],
-    }),
-    db
-      .select({ id: documents.id, agendaItemId: documents.agendaItemId })
-      .from(documents)
-      .where(
-        and(
-          eq(documents.assemblyId, assembly.id),
-          eq(documents.status, "postponed"),
-        ),
-      ),
-  ]);
-  // A postponed document is not printed, but everyone reads it in the
-  // platform (canSeeDocument), so the items that carry its title keep it.
-  const publicDocuments = [...documentRows, ...postponedRows];
-  // An item that carries the title of a document that is not public (its
-  // automatic sub-item, or one kept after it moved away or was deleted) is
-  // left out, or printed without that title when it holds something
-  // published. The same for every requester, managers included.
-  const keptRows = visibleAgendaItems(allAgendaRows, publicDocuments);
-  const hiddenTitles = hiddenTitleItemIds(keptRows, publicDocuments);
-  const agendaRows = keptRows.map((row) =>
-    hiddenTitles.has(row.id)
-      ? { ...row, title: "", description: null, titleHidden: true }
-      : row,
+  const { agendaRows, documentRows, agenda } = await loadPublishedAgenda(
+    assembly.id,
   );
-
-  const agenda = buildAgendaTree(agendaRows, documentRows);
   const agendaTitles = new Map(agendaRows.map((row) => [row.id, row.title]));
   const versionOf = (document: DocumentRow) =>
     document.format === "structured"

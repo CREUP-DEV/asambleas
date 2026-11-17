@@ -60,6 +60,19 @@ export function createTranslator(locale: ExportLocale): Translate {
 }
 
 /**
+ * Any key of the locale files by its full path, falling back to Spanish:
+ * for a PDF that says what a page of the platform says (the generated
+ * convocatoria reads `convocation.*`), so the two never drift apart.
+ */
+export function createAppTranslator(locale: ExportLocale): Translate {
+  return (key, params) => {
+    const message =
+      lookup(MESSAGES[locale], key) ?? lookup(MESSAGES.es, key) ?? key;
+    return interpolate(message, params);
+  };
+}
+
+/**
  * What a formatting change does, in words: the labels the platform shows
  * next to it (`common.content.format`), so the PDF reads the same.
  */

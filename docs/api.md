@@ -1941,6 +1941,66 @@ The PDF builder renders blocks:
 - "Presentado por" names the main presenter, then the co-presenters;
 - labels come from the locale files.
 
+### Documentation package
+
+"Descargar documentación" (the agenda block of the overview, the agenda's
+"Más" and the documents page): a ZIP of everything the assembly has published, for any
+account that sees the assembly (not a draft: 404
+`assembly.package.notPublic`). `locale` (`es`, `en`) and `editable` (the
+Word version of every text) choose the package, in the body of the POST and
+the query of the GETs (`AssemblyPackageStatusDto`, `assemblyPackageSchema`).
+
+| Method | Path                                          | Who     | Notes                                                                                                                      |
+| ------ | --------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------- |
+| POST   | `/api/assemblies/[assembly]/package`          | visible | Queues a build unless the current one is there or one waits. Records `export.request` `{ package, locale, editable }`.     |
+| GET    | `/api/assemblies/[assembly]/package/status`   | visible | `ready`, `building` (with `progress`), `failed` or `idle`, and `file`, the ZIP that can be downloaded now.                 |
+| GET    | `/api/assemblies/[assembly]/package/download` | visible | Streams `file` (`application/zip`). 409 `assembly.package.notReady` without one. Records `export.download` (same payload). |
+
+**What it holds.** One package for everyone, built as a reader who sees only
+what is public (`publicExportActor`, `server/utils/export/package/load.ts`):
+the executive offices read as "CEA", and nothing unpublished goes in.
+
+- `00 Convocatoria.pdf`: the signed convocatoria as uploaded, otherwise the
+  one generated from the assembly (`buildConvocationPdf`, the wording of
+  `ConvocationSheet`).
+- `00 Orden del día.pdf`: the numbered items (`buildAgendaPdf`).
+- A folder per numbered item that holds something, nested as the agenda and
+  named by its number (`03.10 …`, so it sorts) and title. Inside, each
+  published document: an uploaded PDF as it is; a text as presented (no
+  approval line) and, once voted, its consolidated text with the approval
+  line (`(texto consolidado)`), as PDF and, with `editable`, as Word
+  (`buildDocumentDocx`); and its published amendments, one PDF each on
+  CREUP's amendment template (`buildAmendmentPdf`) in `Enmiendas/`.
+  Postponed documents are listed in the convocatoria, not included.
+
+The amendment template lists the document, where it changes ("título,
+sección o líneas": the headings above each change, `amendmentLocations`),
+the typology (supresión, adición or both, `amendmentTypology` over
+`changeKinds`; a totality return is a supresión of the whole document), who
+presents it (main author first), the amendments a transactional groups and,
+once settled, its outcome; then the change over the published text as the
+platform marks it (`previewAmendment`, added text underlined, removed text
+struck through) and its explanation.
+
+**How it is built.** `server/utils/export/package/`: `planPackage` (pure)
+gives every path a piece and every piece a key, a hash of all it shows and
+`PACKAGE_RENDERER_VERSION`; the plan's fingerprint changes when any path or
+key does. A build (pg-boss queue `assembly-package`, policy `stately`, one
+per assembly, language and variant running and one waiting) renders only
+the pieces not on disk, one after another (a document's amendments in
+batches of 20 in one render process, `renderPdfBatch`), and writes the ZIP
+stored, not compressed, and streamed (`writeZip`). Everything lives under
+`EXPORT_STORAGE_DIR/packages/<assemblyId>/` and is swept after each build
+(`sweepPackageDir`); it can always be built again, so it needs no backup.
+A committed change of a convened or sitting assembly builds its Spanish
+packages two minutes after the last one (`server/plugins/assembly-packages.ts`).
+
+**Older packages.** While the current package builds, `file` may be the
+last one built, only if everything in it is still public as it was: the same
+documents with the same texts and PDFs, the same amendments, the same
+signed convocatoria (`packageStillPublic`). Otherwise nothing is offered
+until the build ends.
+
 ## Activity and impersonation
 
 Contract in `shared/types/api.ts`, schemas in `shared/utils/schemas/activity.ts`.

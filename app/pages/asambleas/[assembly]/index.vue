@@ -30,7 +30,8 @@ import { formatDateTime } from "~/utils/format";
  *    documentation the account still has to read, with "Seguir leyendo",
  *    which opens the first document with something left; each item says
  *    how much of that is under it. It is part of this block, never a
- *    fourth one.
+ *    fourth one. The header also offers "Descargar documentación", the
+ *    package of everything published (ExportPackageDialog).
  * 3. Beside it on large screens, under it on phones, the calendar: the next
  *    milestone and its countdown in the header, then every milestone (with
  *    its warnings for managers). The key figures follow it in the same
@@ -41,6 +42,8 @@ import { formatDateTime } from "~/utils/format";
 
 const { t, locale } = useI18n();
 const localePath = useLocalePath();
+/** The documentation package's dialog, from the agenda block's header. */
+const packageOpen = ref(false);
 const { me } = useMe();
 const current = useCurrentAssembly();
 const { assembly, sectionPath } = current;
@@ -442,6 +445,11 @@ const warnedKeys = computed(() =>
       </p>
     </section>
 
+    <ExportPackageDialog
+      v-model:open="packageOpen"
+      :api-base="current.apiBase.value"
+    />
+
     <AgendaNewDocumentModal
       v-model:open="addDocument.open.value"
       :api-base="current.apiBase.value"
@@ -458,18 +466,30 @@ const warnedKeys = computed(() =>
       <UCard as="section" aria-labelledby="overview-agenda-title">
         <template #header>
           <div class="flex flex-wrap items-center justify-between gap-2">
-            <h3
-              id="overview-agenda-title"
-              class="text-highlighted font-semibold"
-            >
-              {{ t("assembly.overview.agendaTitle") }}
-            </h3>
-            <UBadge
-              v-if="!assembly.agendaFinalizedAt"
-              color="neutral"
-              variant="subtle"
+            <div class="flex flex-wrap items-center gap-2">
+              <h3
+                id="overview-agenda-title"
+                class="text-highlighted font-semibold"
+              >
+                {{ t("assembly.overview.agendaTitle") }}
+              </h3>
+              <UBadge
+                v-if="!assembly.agendaFinalizedAt"
+                color="neutral"
+                variant="subtle"
+                size="sm"
+                :label="t('agenda.provisional')"
+              />
+            </div>
+            <UButton
+              v-if="assembly.status !== 'draft'"
               size="sm"
-              :label="t('agenda.provisional')"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-folder-down"
+              :label="t('assembly.package.button')"
+              data-testid="overview-package"
+              @click="packageOpen = true"
             />
           </div>
           <!-- How much of the documentation is left to read -->

@@ -2950,6 +2950,26 @@ export async function loadAmendmentVisibility(
 }
 
 /**
+ * The amendments of several documents that `actor` may read
+ * (canSeeAmendment), in one round of queries: what loadAmendmentVisibility
+ * answers for one document. The caller checks the documents themselves.
+ */
+export async function loadVisibleAmendmentIds(
+  actor: Actor,
+  documentIds: readonly string[],
+  executor: Executor = db,
+): Promise<Set<string>> {
+  if (documentIds.length === 0) return new Set();
+  const rows = await loadAmendmentVisibilityRows(
+    executor,
+    inArray(amendments.documentId, [...documentIds]),
+  );
+  return new Set(
+    rows.filter((row) => canSeeAmendment(actor, row)).map((row) => row.id),
+  );
+}
+
+/**
  * Procedural decisions as the actor may read them (filterDecisionsByAmendment):
  * an admission decision only names the amendments the actor can see, with the
  * same rules as the amendment endpoints (the document must be visible too),

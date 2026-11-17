@@ -86,11 +86,14 @@ export async function withRenderSlot<T>(task: () => Promise<T>): Promise<T> {
 
 /**
  * The render process (CommonJS, run with `node -e`). It reads one JSON line
- * (the fonts, base64, and the font families) and then the definition as JSON
- * from stdin, loads pdfmake from the path in argv, and writes one JSON header
- * line followed by the PDF. Remote URLs and local files stay forbidden, as
- * registerPdfFonts sets them. On Linux it asks to be the first process the
- * kernel kills when memory runs out.
+ * (the fonts, base64, and the font families) and then one definition per
+ * line as JSON from stdin (JSON never holds a raw newline), loads pdfmake
+ * from the path in argv, renders them one after another and writes one JSON
+ * header line (the size of each PDF) followed by the PDFs back to back.
+ * Starting the process and loading pdfmake and the fonts takes most of the
+ * time of a short PDF, so a batch of short ones shares it. Remote URLs and
+ * local files stay forbidden, as registerPdfFonts sets them. On Linux it
+ * asks to be the first process the kernel kills when memory runs out.
  */
 const RENDER_SCRIPT = `"use strict";
 if (process.platform === "linux") {
@@ -115,7 +118,7 @@ process.stdin.on("end", () => {
     reply({ status: "unavailable" });
     return;
   }
-  let definition;
+  let lines;
   try {
     const bytes = Buffer.concat(input.splice(0));
     const newline = bytes.indexOf(10);
@@ -126,35 +129,56 @@ process.stdin.on("end", () => {
     pdfmake.setFonts(setup.families);
     pdfmake.setUrlAccessPolicy(() => false);
     pdfmake.setLocalAccessPolicy(() => false);
-    definition = parseDefinition(bytes.subarray(newline + 1).toString("utf8"));
+    lines = bytes.subarray(newline + 1).toString("utf8").split("\\n");
+    if (lines.length === 0 || lines.some((line) => line.length === 0)) {
+      throw new Error("no definition");
+    }
   } catch {
     reply({ status: "invalid" });
     return;
   }
-  Promise.resolve()
-    .then(() => pdfmake.createPdf(definition).getBuffer())
-    .then(
-      (pdf) =>
-        reply(
-          {
-            status: "ok",
-            bytes: pdf.length,
-            maxRssKb: process.resourceUsage().maxRSS,
-          },
-          pdf,
-        ),
-      (error) =>
+  (async () => {
+    const pdfs = [];
+    for (let index = 0; index < lines.length; index += 1) {
+      let definition;
+      try {
+        definition = parseDefinition(lines[index]);
+        lines[index] = "";
+      } catch {
+        reply({ status: "invalid", index });
+        return;
+      }
+      try {
+        pdfs.push(await pdfmake.createPdf(definition).getBuffer());
+      } catch (error) {
         reply({
           status: "failed",
+          index,
           message: String((error && error.message) || error).slice(0, 500),
-        }),
+        });
+        return;
+      }
+    }
+    const body = Buffer.concat(pdfs);
+    reply(
+      {
+        status: "ok",
+        bytes: body.length,
+        sizes: pdfs.map((pdf) => pdf.length),
+        maxRssKb: process.resourceUsage().maxRSS,
+      },
+      body,
     );
+  })();
 });
 `;
 
 const renderHeaderSchema = z.object({
   status: z.enum(["ok", "invalid", "failed", "unavailable"]),
   bytes: z.number().int().min(1).optional(),
+  sizes: z.array(z.number().int().min(1)).optional(),
+  /** The definition of the batch that could not be read or rendered. */
+  index: z.number().int().min(0).optional(),
   maxRssKb: z.number().int().min(0).optional(),
   message: z.string().max(500).optional(),
 });
@@ -204,9 +228,9 @@ function renderEnv(): NodeJS.ProcessEnv {
 
 let pdfmakeEntry: string | undefined;
 
-/** What the render process reads from stdin: setup line, then definition. */
+/** What the render process reads from stdin: setup line, then definitions. */
 function renderInput(
-  definition: TDocumentDefinitions,
+  definitions: readonly TDocumentDefinitions[],
   fonts: Record<RalewayFile, Buffer>,
 ): Buffer {
   const setup = {
@@ -219,7 +243,9 @@ function renderInput(
     families: { Raleway: { ...RALEWAY_FILES } },
   };
   return Buffer.from(
-    `${JSON.stringify(setup)}\n${serializePdfDefinition(definition)}`,
+    [JSON.stringify(setup), ...definitions.map(serializePdfDefinition)].join(
+      "\n",
+    ),
     "utf8",
   );
 }
@@ -238,6 +264,36 @@ export async function renderPdf(
   fonts: Record<RalewayFile, Buffer>,
   limits: PdfRenderLimits = PDF_RENDER_LIMITS,
 ): Promise<PdfRenderResult> {
+  const { pdfs, maxRssKb, waitedMs } = await renderPdfBatch(
+    [definition],
+    fonts,
+    limits,
+  );
+  return { pdf: pdfs[0]!, maxRssKb, waitedMs };
+}
+
+export interface PdfBatchResult {
+  /** One PDF per definition, in the same order. */
+  pdfs: Buffer[];
+  maxRssKb: number | null;
+  waitedMs: number;
+}
+
+/**
+ * Renders several definitions in one render process, as renderPdf does one:
+ * the process starts and loads pdfmake and the fonts once. The limits apply
+ * to the whole batch, so callers keep batches of short PDFs small (a few
+ * dozen) and render long ones alone. One definition that fails fails the
+ * batch.
+ */
+export async function renderPdfBatch(
+  definitions: readonly TDocumentDefinitions[],
+  fonts: Record<RalewayFile, Buffer>,
+  limits: PdfRenderLimits = PDF_RENDER_LIMITS,
+): Promise<PdfBatchResult> {
+  if (definitions.length === 0) {
+    return { pdfs: [], maxRssKb: null, waitedMs: 0 };
+  }
   const asked = performance.now();
   return withRenderSlot(async () => {
     const waitedMs = Math.round(performance.now() - asked);
@@ -245,16 +301,17 @@ export async function renderPdf(
     // copy, and before the process starts: a definition JSON cannot carry
     // throws here, with the path of what it could not carry. The timeout
     // starts with the process, never while waiting.
-    const input = renderInput(definition, fonts);
-    const answer = await runRenderProcess(input, limits);
+    const input = renderInput(definitions, fonts);
+    const answer = await runRenderProcess(input, definitions.length, limits);
     return { ...answer, waitedMs };
   });
 }
 
 function runRenderProcess(
   input: Buffer,
+  count: number,
   limits: PdfRenderLimits,
-): Promise<Omit<PdfRenderResult, "waitedMs">> {
+): Promise<Omit<PdfBatchResult, "waitedMs">> {
   return new Promise((resolve, reject) => {
     let child: ReturnType<typeof spawn>;
     try {
@@ -336,13 +393,16 @@ function runRenderProcess(
             header = null;
           }
         }
-        const pdf = bytes.subarray(newline + 1);
+        const body = bytes.subarray(newline + 1);
         if (header?.status === "ok" && code === 0) {
-          if (pdf.length === header.bytes) {
-            resolve({ pdf, maxRssKb: header.maxRssKb ?? null });
-          } else reject(new Error("PDF render answer does not add up"));
+          const pdfs = splitBatch(body, header.bytes, header.sizes, count);
+          if (pdfs) resolve({ pdfs, maxRssKb: header.maxRssKb ?? null });
+          else reject(new Error("PDF render answer does not add up"));
         } else if (header?.status === "failed") {
-          logWarn("export.render", { reason: header.message ?? "failed" });
+          logWarn("export.render", {
+            reason: header.message ?? "failed",
+            index: header.index ?? null,
+          });
           reject(new Error("PDF render failed"));
         } else if (header) {
           reject(new Error(`PDF render ${header.status}`));
@@ -356,4 +416,25 @@ function runRenderProcess(
 
     child.stdin?.end(input);
   });
+}
+
+/**
+ * The PDFs of a batch's answer, or null when the header and the bytes do not
+ * add up: one size per definition, every size counted, nothing left over.
+ */
+export function splitBatch(
+  body: Buffer,
+  total: number | undefined,
+  sizes: readonly number[] | undefined,
+  count: number,
+): Buffer[] | null {
+  if (!sizes || sizes.length !== count || body.length !== total) return null;
+  if (sizes.reduce((sum, size) => sum + size, 0) !== body.length) return null;
+  const pdfs: Buffer[] = [];
+  let offset = 0;
+  for (const size of sizes) {
+    pdfs.push(body.subarray(offset, offset + size));
+    offset += size;
+  }
+  return pdfs;
 }
