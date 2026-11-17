@@ -1,0 +1,1 @@
+ALTER TABLE "assemblies" ALTER COLUMN "settings" SET DEFAULT '{"tieRule":"rejected","denominator":"present"}'::jsonb;

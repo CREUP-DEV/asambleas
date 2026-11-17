@@ -274,6 +274,13 @@
       "when": 1794935950701,
       "tag": "0038_document_positions_publication",
       "breakpoints": true
+    },
+    {
+      "idx": 39,
+      "version": "7",
+      "when": 1794939174978,
+      "tag": "0039_assembly_settings_default",
+      "breakpoints": true
     }
   ]
 }
