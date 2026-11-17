@@ -1290,14 +1290,17 @@ describe("session model", () => {
         waitsPublication: true,
         acceptBlocked: false,
       });
-      // Even where the server would still take the answer.
-      expect(
-        sessionPositionMenu(
-          { ...hidden, can: can({ position: true }) },
-          "vote",
-          false,
-        ),
-      ).toEqual({ waitsPublication: true, acceptBlocked: false });
+      // Unless the server takes the answer already: an office of the CEA
+      // presents the document, and its main presenter reads it validated.
+      for (const rule of ["vote", "incorporate"] as const) {
+        expect(
+          sessionPositionMenu(
+            { ...hidden, can: can({ position: true }) },
+            rule,
+            false,
+          ),
+        ).toEqual({ waitsPublication: false, acceptBlocked: false });
+      }
       // Nobody else is shown anything.
       expect(
         sessionPositionMenu({ ...hidden, can: can({}) }, "vote", false),

@@ -1054,7 +1054,12 @@ describe("presenterAnswerItems", () => {
     expect(
       presenterAnswerItems(
         [
-          amendment("late", { late: true, admission: "pending" }),
+          amendment("late", {
+            late: true,
+            admission: "pending",
+            reviewState: "pending_validation",
+            validatedAt: null,
+          }),
           transactional("t", {
             acceptances: [party(CEUM, "accepted"), party(CEA)],
           }),
@@ -1063,6 +1068,19 @@ describe("presenterAnswerItems", () => {
         "vote",
       ),
     ).toEqual([]);
+    // Validated and late: answered before its admission, so listed.
+    expect(
+      presenterAnswerItems(
+        [amendment("late", { late: true, admission: "pending" })],
+        "vote",
+      ).map((item) => item.id),
+    ).toEqual(["late"]);
+    // Private, but an office of the CEA presents the document.
+    expect(
+      presenterAnswerItems([privateOne("private")], "vote", {
+        context: { presenterSeesValidated: true },
+      }).map((item) => item.id),
+    ).toEqual(["private"]);
   });
 
   it("lists an answer the Mesa recorded like any other", () => {

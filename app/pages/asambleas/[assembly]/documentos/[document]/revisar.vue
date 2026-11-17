@@ -245,7 +245,13 @@ const waiting = computed(() =>
  * (listed under it), all decided, or none presented yet.
  */
 const emptyDescription = computed(() => {
-  switch (emptyReviewReason(list.amendments.value, acceptedRule.value)) {
+  switch (
+    emptyReviewReason(
+      list.amendments.value,
+      acceptedRule.value,
+      positionContext.value,
+    )
+  ) {
     case "waiting":
       return t("proponentReview.empty.waitingDescription");
     case "allDecided":
@@ -262,6 +268,7 @@ const presenterItems = computed(() =>
   readsAnswers.value
     ? presenterAnswerItems(list.amendments.value, acceptedRule.value, {
         answeredOnly: readOnly.value || closed.value,
+        context: positionContext.value,
       })
     : [],
 );
@@ -368,14 +375,20 @@ watch(sequence, (steps, previous) => {
     lastIndex = index;
     return;
   }
-  // No context on purpose: the document may not be refreshed yet.
+  // Without the final vote on purpose: the document may not be refreshed
+  // yet. Who presents it is stable.
   const fresh = list.byId.value.get(id);
   if (
     !handled.has(id) &&
     !showSummary.value &&
     !readOnly.value &&
     !closed.value &&
-    !(fresh && isPositionAnswerable(fresh, acceptedRule.value))
+    !(
+      fresh &&
+      isPositionAnswerable(fresh, acceptedRule.value, {
+        presenterSeesValidated: positionContext.value.presenterSeesValidated,
+      })
+    )
   ) {
     notifyGone(id, previous?.find((item) => item.id === id) ?? null);
   }

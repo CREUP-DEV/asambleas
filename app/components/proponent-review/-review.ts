@@ -226,8 +226,9 @@ export type EmptyReviewReason = "waiting" | "allDecided" | "none";
 export function emptyReviewReason(
   amendments: readonly AnswerableInput[],
   rule: AcceptedAmendmentRule,
+  context: PositionContext = {},
 ): EmptyReviewReason {
-  const counts = positionWaitCounts(amendments, rule);
+  const counts = positionWaitCounts(amendments, rule, context);
   if (Object.values(counts).some((count) => count > 0)) return "waiting";
   return amendments.some((amendment) => amendment.status !== "draft")
     ? "allDecided"
@@ -331,7 +332,9 @@ export function positionConflict(
   if (stillInReview) {
     return seenPositionAt(fresh) !== sentPositionAt ? "answered" : "changed";
   }
-  const reason = positionWaitReason(fresh, rule);
+  const reason = positionWaitReason(fresh, rule, {
+    presenterSeesValidated: context.presenterSeesValidated,
+  });
   if (reason === "decided") return "gone";
   return reason ?? "changed";
 }
@@ -544,15 +547,16 @@ export function proponentReviewItems(
 ): ProponentReviewItem[] {
   if (context.finalVoted) return [];
   return sortAmendments([...amendments])
-    .filter((amendment) => isPositionReviewable(amendment, rule))
+    .filter((amendment) => isPositionReviewable(amendment, rule, context))
     .map(toItem);
 }
 
 /**
  * The main presenter's answers as a co-presenter reads them, in text order,
  * whoever looks (nothing depends on the viewer's capabilities, which a
- * co-presenter lacks): every presented, admitted amendment the main
- * presenter answered, settled or not, and every one it can answer now.
+ * co-presenter lacks): every presented amendment the main presenter
+ * answered, settled or not, and every one it can answer now (a late one
+ * before its admission too).
  * Amendments a transactional replaced are left out (the transactional
  * carries the answer that counts), as are the inadmissible ones. With
  * `answeredOnly` (the document was voted or closed) only the answers stay.
@@ -560,21 +564,24 @@ export function proponentReviewItems(
 export function presenterAnswerItems(
   amendments: readonly AmendmentDto[],
   rule: AcceptedAmendmentRule,
-  options: { answeredOnly?: boolean } = {},
+  options: { answeredOnly?: boolean; context?: PositionContext } = {},
 ): ProponentReviewItem[] {
   return sortAmendments([...amendments])
     .filter((amendment) => {
       if (
         amendment.status === "draft" ||
         amendment.status === "transacted" ||
-        amendment.admission !== "admitted"
+        amendment.status === "inadmissible"
       ) {
         return false;
       }
       if (isPositionAnswered(amendment) || isIncorporated(amendment)) {
         return true;
       }
-      return !options.answeredOnly && isPositionAnswerable(amendment, rule);
+      return (
+        !options.answeredOnly &&
+        isPositionAnswerable(amendment, rule, options.context)
+      );
     })
     .map(toItem);
 }

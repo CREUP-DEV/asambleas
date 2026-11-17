@@ -631,8 +631,12 @@ export function sessionPositionMenu(
   if (amendment.status !== "submitted" && !isSessionIncorporated(amendment)) {
     return null;
   }
-  const acceptBlocked = amendmentAcceptBlocked(amendment, rule);
-  if (amendment.publishedAt === null) {
+  // The server lets the main presenter answer what it sees: a validated,
+  // private amendment when an office of the CEA presents the document
+  // (`can.position`), which may then be accepted.
+  const acceptBlocked =
+    amendmentAcceptBlocked(amendment, rule) && !amendment.can.position;
+  if (amendment.publishedAt === null && !amendment.can.position) {
     // Validated, admitted and accepted by every main author, only private:
     // the Mesa sees why it cannot answer it yet.
     const reached =
