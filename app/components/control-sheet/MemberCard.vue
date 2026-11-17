@@ -9,12 +9,12 @@ import { accountAvatarText } from "~~/shared/utils/accountAvatar";
  * it, since councils share the same or nearly the same denomination
  * (user's decision of 2026-11-17); any other member's denomination, with
  * its kind and who holds a CEA office under it (only those who see the
- * offices receive the holder). `member` is what the
- * server sent (an office reads "CEA" to whoever may not see it); `members`
- * adds the university and the holder, and a member missing from it shows
- * what it carries. `tag` puts its acronym tag before the name, for lists
- * where the avatar alone would not name it (a council's avatar reads its
- * university's acronym).
+ * offices receive the holder). `member` is what the server sent (an office
+ * reads "CEA" to whoever may not see it); `members` adds the university
+ * and the holder, and a member missing from it shows what it carries.
+ * `tag` starts the line under the name with its acronym tag (the name is
+ * never split by it), where the avatar alone would not name it (a
+ * council's avatar reads its university's acronym).
  */
 const props = defineProps<{
   member: MemberRef;
@@ -71,10 +71,13 @@ const detail = computed(() => {
   <div class="flex items-center gap-3">
     <CommonAccountAvatar :alt="member.name" :text="avatarText" size="md" />
     <div class="min-w-0">
-      <!-- The tag beside the name, which wraps in its own column, so the
-           tag never sits inside it. -->
+      <!-- The name alone, across the whole width; the tag goes with the
+           kind on the line under it, so it never splits the name. -->
+      <p class="text-highlighted text-sm font-semibold break-words">
+        {{ name ?? member.acronym }}
+      </p>
       <p
-        class="text-highlighted flex items-start gap-1.5 text-sm font-semibold"
+        class="text-muted flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs"
       >
         <CommonMemberBadge
           v-if="tag"
@@ -83,9 +86,8 @@ const detail = computed(() => {
           :tooltip="false"
           class="shrink-0"
         />
-        <span v-if="name" class="min-w-0 break-words">{{ name }}</span>
+        <span class="break-words">{{ detail }}</span>
       </p>
-      <p class="text-muted text-xs break-words">{{ detail }}</p>
     </div>
   </div>
 </template>
