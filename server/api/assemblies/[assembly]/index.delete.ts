@@ -18,6 +18,7 @@ import { removeConvocationPdf } from "../../../utils/domain/convocation";
 import { recordEvent, type Executor } from "../../../utils/domain/events";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 import { removeSeatingPlanImages } from "../../../utils/seating/images";
+import { removeAssemblyPackages } from "../../../utils/export/package/storage";
 
 /** Most events copied into the deletion's audit row (drafts hold few). */
 const DELETED_EVENTS_LIMIT = 1_000;
@@ -132,6 +133,7 @@ export default defineEventHandler(async (event): Promise<{ success: true }> => {
     // Its signed convocatoria, if any, has nobody pointing to it any more.
     await removeConvocationPdf(assembly.convocationFileUrl);
     if (seating) await removeSeatingPlanImages(seating.id);
+    await removeAssemblyPackages(assembly.id);
     return { success: true };
   } catch (error) {
     throwAssemblyMutationError("assemblies.delete", error, event);

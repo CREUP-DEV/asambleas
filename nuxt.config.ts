@@ -54,6 +54,14 @@ const EXPORT_RATE_LIMIT = {
   tokensPerInterval: 1000,
   interval: 300_000,
 };
+// Downloads of the documentation package (a ZIP of every published text):
+// built once per state and served from disk, but each one is a large file,
+// and the whole room may download it at once before the session. A bucket
+// of its own, room for every device to download it a few times.
+const PACKAGE_DOWNLOAD_RATE_LIMIT = {
+  tokensPerInterval: 600,
+  interval: 300_000,
+};
 // The room's cached logos and photos (Sala): one per account and attendee,
 // read by the CEA, the Mesa, the Secretaría and the Presidencia only. A
 // first load with an empty cache asks a few hundred each, and the browser
@@ -143,6 +151,18 @@ const routeRules = {
   "/api/assemblies/*/documents/*/export": {
     security: {
       rateLimiter: EXPORT_RATE_LIMIT,
+    },
+  },
+  // Asking for the documentation package may queue a build: the export
+  // requests' bucket. Its status, polled while it builds, stays off.
+  "/api/assemblies/*/package": {
+    security: {
+      rateLimiter: EXPORT_RATE_LIMIT,
+    },
+  },
+  "/api/assemblies/*/package/download": {
+    security: {
+      rateLimiter: PACKAGE_DOWNLOAD_RATE_LIMIT,
     },
   },
   "/api/assemblies/*/seating/images/*": {

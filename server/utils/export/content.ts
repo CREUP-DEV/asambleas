@@ -167,8 +167,11 @@ export interface PdfContentContext {
 }
 
 export interface AnnotatedContext extends PdfContentContext {
-  /** Short code shown in superscript for an amendment id, e.g. "CEUM 4". */
-  codeOf: (amendmentId: string) => string;
+  /**
+   * Short code shown in superscript for an amendment id, e.g. "CEUM 4".
+   * Without it no code is shown: the text of a single amendment.
+   */
+  codeOf?: (amendmentId: string) => string;
   /** What a formatting change does, in words ("becomes bold"). */
   formatLabel?: (change: FormatChange) => string;
 }
@@ -838,15 +841,15 @@ export function annotatedToPdf(
         (label) => `[${label}]`,
       );
       if (note) {
-        inlines.push(
-          note,
-          {
+        inlines.push(note);
+        if (ctx.codeOf) {
+          inlines.push({
             text: ctx.codeOf(block.format.source),
             sup: true,
             style: "amendmentRef",
-          },
-          { text: " " },
-        );
+          });
+        }
+        inlines.push({ text: " " });
       }
     }
     let offset = 0;
@@ -884,7 +887,7 @@ export function annotatedToPdf(
         offset += segment.text.length;
       }
       const next = block.segments[index + 1];
-      if (segment.source && next?.source !== segment.source) {
+      if (ctx.codeOf && segment.source && next?.source !== segment.source) {
         inlines.push({
           text: ctx.codeOf(segment.source),
           sup: true,

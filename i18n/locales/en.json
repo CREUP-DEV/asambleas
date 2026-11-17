@@ -594,6 +594,29 @@
       "typeLabel": "Type {label} to confirm",
       "deleted": "{label} deleted",
       "deleteError": "The assembly could not be deleted"
+    },
+    "package": {
+      "button": "Download documentation",
+      "title": "Download the documentation",
+      "description": "A ZIP with the convocation, the agenda and a folder per item with its published documents and, as PDF, their amendments.",
+      "editable": "Also include an editable (Word) version of the texts",
+      "editableHelp": "Documents uploaded as PDF come as PDF only.",
+      "preparing": "Preparing the documentation…",
+      "progress": "{done} of {total} files",
+      "queued": "Queued: it starts as soon as what is being prepared finishes.",
+      "ready": "Documentation ready",
+      "builtAt": "Prepared: {date}.",
+      "download": "Download ZIP ({size})",
+      "olderAvailable": "While it is prepared, you can download the earlier version (prepared: {date}), which misses the latest changes.",
+      "downloadOlder": "Download the earlier version ({size})",
+      "failed": "The documentation could not be prepared.",
+      "retry": "Try again",
+      "error": "The documentation could not be requested",
+      "notPublic": "The assembly is not public yet.",
+      "notReady": "The documentation is still being prepared.",
+      "background": "You can close this window and keep browsing: we will let you know when it is ready.",
+      "readyToast": "The assembly's documentation can now be downloaded.",
+      "downloadShort": "Download"
     }
   },
   "document": {
@@ -2496,6 +2519,38 @@
       "dateRange": "From {start} to {end}",
       "filename": {
         "annotated": "annotated"
+      },
+      "package": {
+        "root": "Documentation {assembly}",
+        "convocation": "Convocation",
+        "agenda": "Agenda",
+        "agendaHeading": "Agenda of the {assembly}",
+        "session": "Session",
+        "consolidated": "consolidated text",
+        "amendments": "Amendments",
+        "amendment": {
+          "title": "Amendment request",
+          "titleWithCode": "Amendment request {code}",
+          "document": "Document amended",
+          "location": "Title, section or lines",
+          "typology": "Type",
+          "typologies": {
+            "suppression": "Deletion",
+            "addition": "Addition",
+            "both": "Deletion and addition"
+          },
+          "proponent": "Proposed by",
+          "sources": "Amendments it brings together",
+          "outcome": "Outcome",
+          "change": "Text of the amendment",
+          "explanation": "Explanation",
+          "noExplanation": "No explanation given.",
+          "wholeDocument": "The whole document",
+          "passage": "Passage beginning “{text}”",
+          "documentStart": "Start of the document",
+          "totalityReturn": "It proposes returning the whole text.",
+          "noChange": "The change no longer fits the published text."
+        }
       }
     }
   },

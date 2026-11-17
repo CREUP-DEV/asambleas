@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { assemblyOrdinal } from "~~/shared/utils/slug";
+
 /**
  * The generated convocatoria alone, ready to print. It leaves the app shell
  * (`layout: false`) and the hub renders it without its chrome

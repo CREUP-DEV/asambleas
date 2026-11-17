@@ -2573,3 +2573,23 @@ export interface EmailTestResultDto {
   status: "sent" | "failed" | "skipped";
   reason: EmailSkipReason | null;
 }
+
+/**
+ * GET .../package/status and POST .../package: the assembly's documentation
+ * package (a ZIP of what is public), in one language, with or without the
+ * Word versions of its texts.
+ * - `ready`: the package of the current state can be downloaded.
+ * - `building`: it is being built; `file` may still offer an earlier one.
+ * - `failed`: the last build failed; asking again retries it.
+ * - `idle`: not built yet, or out of date and nobody asked for it.
+ */
+export interface AssemblyPackageStatusDto {
+  status: "ready" | "building" | "failed" | "idle";
+  /**
+   * The ZIP that can be downloaded now: the current one, or an earlier one
+   * (`current` false) whose content is all still public.
+   */
+  file: { builtAt: IsoDate; bytes: number; current: boolean } | null;
+  /** Pieces rendered so far while building, when known. */
+  progress: { done: number; total: number } | null;
+}

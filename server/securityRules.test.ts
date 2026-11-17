@@ -164,6 +164,7 @@ const ROOM_PATHS = [
   "/api/assemblies/80-ago/speakers",
   "/api/assemblies/80-ago/seating",
   "/api/assemblies/80-ago/seating/assignments",
+  "/api/assemblies/80-ago/package/status",
   "/api/exports/0b9e/status",
   "/api/exports/0b9e/download",
   "/api/me",
@@ -196,6 +197,14 @@ const EXPORT_RULES: Record<string, string> = {
   "/api/assemblies/80-ago/export": "/api/assemblies/*/export",
   "/api/assemblies/80-ago/documents/res-4/export":
     "/api/assemblies/*/documents/*/export",
+  "/api/assemblies/80-ago/package": "/api/assemblies/*/package",
+};
+
+const PACKAGE_DOWNLOAD_RULES: Record<string, string> = {
+  "/api/assemblies/80-ago/package/download":
+    "/api/assemblies/*/package/download",
+  "/api/assemblies/xk3j8q2m1n0p9o8i7u6y5t4r/package/download":
+    "/api/assemblies/*/package/download",
 };
 
 const SEATING_IMAGE_RULES: Record<string, string> = {
@@ -251,6 +260,18 @@ describe("rate limiter", () => {
     (path, rule) => {
       expect(resolveRules(path).rateLimiter).toMatchObject({
         tokensPerInterval: 1000,
+        interval: 300_000,
+        driver: { name: "lruCache" },
+      });
+      expect(resolveBucket(path)).toBe(rule);
+    },
+  );
+
+  it.each(Object.entries(PACKAGE_DOWNLOAD_RULES))(
+    "gives documentation package downloads a bucket of their own: %s",
+    (path, rule) => {
+      expect(resolveRules(path).rateLimiter).toMatchObject({
+        tokensPerInterval: 600,
         interval: 300_000,
         driver: { name: "lruCache" },
       });

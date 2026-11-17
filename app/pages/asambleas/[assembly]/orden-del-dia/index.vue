@@ -86,7 +86,13 @@ interface MoreItem {
   to?: string;
   onSelect?: () => void;
 }
-/** What the header keeps out of its first plane: the convocation. */
+/** The documentation package's dialog (ExportPackageDialog). */
+const packageOpen = ref(false);
+/**
+ * What the header keeps out of its first plane: the convocation and the
+ * documentation package, which everyone may download once the assembly is
+ * public.
+ */
 const moreItems = computed<MoreItem[]>(() => {
   const list: MoreItem[] = [];
   if (!organizing.value) {
@@ -95,6 +101,15 @@ const moreItems = computed<MoreItem[]>(() => {
       icon: "i-lucide-scroll-text",
       to: sectionPath("convocatoria"),
     });
+    if (assembly.value && assembly.value.status !== "draft") {
+      list.push({
+        label: t("assembly.package.button"),
+        icon: "i-lucide-folder-down",
+        onSelect: () => {
+          packageOpen.value = true;
+        },
+      });
+    }
   }
   return list;
 });
@@ -798,5 +813,7 @@ const documentTotal = computed(() => agenda.value?.documents.length ?? 0);
         </div>
       </template>
     </UModal>
+
+    <ExportPackageDialog v-model:open="packageOpen" :api-base="apiBase" />
   </div>
 </template>

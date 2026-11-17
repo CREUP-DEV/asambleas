@@ -2,6 +2,7 @@
 import type { AssemblyDto, DocumentSummaryDto } from "~~/shared/types/api";
 import { PUBLIC_DOCUMENT_STATUSES } from "~~/shared/utils/agendaSubmissions";
 import { CONVOCATION_INTRO_MAX_LENGTH } from "~~/shared/utils/schemas/assembly";
+import { assemblyOrdinal } from "~~/shared/utils/slug";
 
 /**
  * The convocatoria generated from the assembly, its agenda and its
