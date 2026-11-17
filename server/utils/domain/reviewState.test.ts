@@ -420,7 +420,7 @@ describe("position of the main presenter", () => {
     approvalMethod: null,
   };
 
-  it("waits for the Secretaría and, when late, for the assembly", () => {
+  it("waits for the Secretaría, not for the assembly to admit a late one", () => {
     expect(positionBlocker(answerable, "vote")).toBeNull();
     expect(
       positionBlocker(
@@ -428,18 +428,43 @@ describe("position of the main presenter", () => {
         "vote",
       ),
     ).toBe("not_validated");
+    // Late and validated: answered before the assembly decides.
+    for (const rule of ["vote", "incorporate"] as const) {
+      expect(
+        positionBlocker({ ...answerable, admission: "pending" }, rule),
+      ).toBeNull();
+    }
+    // Admitted by the Mesa before the Secretaría validated it (published
+    // at once): answered as before.
     expect(
-      positionBlocker({ ...answerable, admission: "pending" }, "vote"),
-    ).toBe("not_admitted");
+      positionBlocker({ ...answerable, validatedAt: null }, "vote"),
+    ).toBeNull();
   });
 
-  it("answers only what every delegate can read, under either rule", () => {
+  it("answers only what the main presenter can read, under either rule", () => {
     const kept = { ...answerable, publishedAt: null };
     expect(positionBlocker(kept, "vote")).toBe("not_published");
     expect(positionBlocker(kept, "incorporate")).toBe("not_published");
-    // A late one waits for the assembly first: admitting it publishes it.
+    // An office of the CEA reads it once validated, and answers it then.
+    const seen = { ...kept, presenterSeesValidated: true };
+    expect(positionBlocker(seen, "vote")).toBeNull();
+    expect(positionBlocker(seen, "incorporate")).toBeNull();
+    expect(
+      positionBlocker(
+        { ...seen, admission: "pending", validatedAt: null },
+        "vote",
+      ),
+    ).toBe("not_validated");
+    expect(
+      positionBlocker({ ...seen, admission: "pending" }, "vote"),
+    ).toBeNull();
+    // Admitted by the Mesa but never validated: the office still waits.
+    expect(positionBlocker({ ...seen, validatedAt: null }, "vote")).toBe(
+      "not_published",
+    );
+    // A late one kept private waits for its publication too.
     expect(positionBlocker({ ...kept, admission: "pending" }, "vote")).toBe(
-      "not_admitted",
+      "not_published",
     );
   });
 
@@ -486,13 +511,26 @@ describe("position of the main presenter", () => {
   });
 
   it("incorporates an accepted amendment and reopens it when the answer changes", () => {
-    const submitted = { status: "submitted" as const, approvalMethod: null };
+    const submitted = {
+      status: "submitted" as const,
+      approvalMethod: null,
+      admission: "admitted" as const,
+    };
     const incorporated = {
       status: "approved" as const,
       approvalMethod: "proponent" as const,
+      admission: "admitted" as const,
     };
     expect(positionEffect(submitted, "accept", "incorporate")).toBe("approve");
     expect(positionEffect(submitted, "reject", "incorporate")).toBeNull();
+    // A late one waits for the assembly to admit it before going in.
+    expect(
+      positionEffect(
+        { ...submitted, admission: "pending" },
+        "accept",
+        "incorporate",
+      ),
+    ).toBeNull();
     expect(positionEffect(incorporated, "reject", "incorporate")).toBe(
       "reopen",
     );
@@ -505,7 +543,7 @@ describe("position of the main presenter", () => {
   it("decides nothing when accepted amendments are voted", () => {
     expect(
       positionEffect(
-        { status: "submitted", approvalMethod: null },
+        { status: "submitted", approvalMethod: null, admission: "admitted" },
         "accept",
         "vote",
       ),
@@ -553,7 +591,8 @@ describe("countPositionsPending", () => {
             validatedAt: null,
             publishedAt: null,
           }),
-          // Late, waiting for the assembly's decision.
+          // Late, validated, waiting for the assembly's decision: it can
+          // be answered already.
           amendment({ admission: "pending" }),
           // A transactional its main authors have not accepted yet.
           amendment({ authorsApproval: "pending" }),
@@ -564,7 +603,7 @@ describe("countPositionsPending", () => {
         ],
         "vote",
       ),
-    ).toBe(1);
+    ).toBe(2);
   });
 
   it("waits for publication under either rule", () => {
@@ -1049,9 +1088,25 @@ describe("automatic answer to formal amendments", () => {
         "vote",
       ),
     ).toBe(false);
+    // Validated is enough when an office of the CEA presents the document.
+    expect(
+      shouldAutoAcceptPosition(
+        { ...answerable, publishedAt: null, presenterSeesValidated: true },
+        null,
+        "vote",
+      ),
+    ).toBe(true);
+    // Late and validated: answered before the assembly decides.
     expect(
       shouldAutoAcceptPosition(
         { ...answerable, admission: "pending" },
+        null,
+        "vote",
+      ),
+    ).toBe(true);
+    expect(
+      shouldAutoAcceptPosition(
+        { ...answerable, admission: "pending", validatedAt: null },
         null,
         "vote",
       ),

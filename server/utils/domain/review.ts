@@ -47,6 +47,7 @@ import {
   membersSourcesOf,
 } from "./amendments";
 import { loadAgendaItems, visibleDocumentsCondition } from "./assemblies";
+import { loadExecutiveMemberIds } from "./executiveMembers";
 import {
   assemblySettings,
   buildDocumentSummaries,
@@ -173,7 +174,10 @@ export async function loadReviewQueue(
 
   const amendmentDtos: ReviewQueueAmendmentDto[] = [];
   if (reviewAmendments) {
-    const pending = await findAmendmentsAwaitingReview(visible);
+    const [pending, executiveIds] = await Promise.all([
+      findAmendmentsAwaitingReview(visible),
+      loadExecutiveMemberIds(),
+    ]);
     for (const document of visible) {
       const own = pending.filter((row) => row.documentId === document.id);
       if (own.length === 0) continue;
@@ -182,6 +186,8 @@ export async function loadReviewQueue(
         assembly,
         document,
         milestones,
+        document.proponentMemberId !== null &&
+          executiveIds.has(document.proponentMemberId),
         now,
       );
       const ref = {
@@ -542,6 +548,8 @@ async function loadWorkProponent(
           publishedAt: amendment.publishedAt,
           approvalMethod: amendment.approvalMethod,
           authorsApproval: authorsApproval(amendment),
+          // The actor's own member presents every one of these documents.
+          presenterSeesValidated: actor.memberKind === "executive",
           position: amendment.position?.position ?? null,
         })),
       row.acceptedAmendments,

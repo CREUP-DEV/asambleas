@@ -1152,12 +1152,14 @@ reject, transact, or back to pending, with an optional comment). Returns the
   presenter (`"presenter"` for the pending row created on submission, which
   nobody recorded).
 - Only once the amendment can be answered (`positionBlocker`), 409
-  otherwise: presented and undecided, validated by the Secretaría and, if
-  late, admitted by the assembly (`admission: "admitted"`), for a
-  transactional once every main author accepted it, and published, so the
-  answer is about something every delegate can read (under either rule;
-  a late one is published when the assembly admits it). The message says
-  what is missing. `can.position` follows the same rule, and is false once
+  otherwise: presented and undecided, validated by the Secretaría, for a
+  transactional once every main author accepted it, and seen by the main
+  presenter (user's decision of 2026-11-17): published, or only validated
+  when an office of the CEA presents the document, since the CEA's
+  accounts read validated amendments. A late one is answered before the
+  assembly decides whether to treat it; under "incorporate" its acceptance
+  is kept and incorporates it when the assembly admits it. The message
+  says what is missing. `can.position` follows the same rule, and is false once
   the document is voted.
 - `positionUpdatedAt` is the `PositionDto.updatedAt` the client saw (null
   when there was no answer): when it is sent and the stored answer changed

@@ -9,6 +9,7 @@ import {
 import type { AcceptedAmendmentRule } from "~~/shared/constants/domain";
 import type { Actor } from "./actor";
 import { recordEvent } from "./events";
+import { loadAnswersOnValidation } from "./executiveMembers";
 import { acceptedRulePlan, authorsApproval } from "./reviewState";
 import {
   closeTransactionalsOver,
@@ -152,9 +153,14 @@ export async function applyAcceptedAmendmentsRule(
   );
   const keepsSources = new Set(sources.map((row) => row.transactionalId));
 
+  const presenterSeesValidated = await loadAnswersOnValidation(
+    { proponentMemberId: input.mainPresenterId },
+    tx,
+  );
   const plan = acceptedRulePlan(
     locked.map((row) => ({
       ...row,
+      presenterSeesValidated,
       authorsApproval: authorsApproval({
         kind: row.kind,
         acceptances: parties.filter((party) => party.amendmentId === row.id),

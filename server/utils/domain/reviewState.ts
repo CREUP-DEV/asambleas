@@ -460,10 +460,15 @@ export function transactionalSourcesMessage(
 /**
  * Why the main presenter (or the Mesa for it) cannot answer an amendment
  * now, or null when it can (docs/design.md, "Amendment flow"): it must be
- * presented and undecided, validated by the Secretaría and, when it came
- * late, admitted by the assembly; a transactional must also be accepted by
- * every main author of what it replaces; and it must be published, so the
- * answer is about something every delegate can read. Under the
+ * presented and undecided and validated by the Secretaría (one that came
+ * late is answered before the assembly decides whether to treat it, user's
+ * decision of 2026-11-17: positionEffect incorporates it only once
+ * admitted); a transactional must also be accepted by
+ * every main author of what it replaces; and the main presenter must see
+ * it (user's decision of 2026-11-17): once published, or as soon as it is
+ * validated when an office of the CEA presents the document, since the
+ * CEA's accounts read validated amendments (`presenterSeesValidated`,
+ * seesValidatedAmendments). Under the
  * "incorporate" rule an amendment the presenter's acceptance approved
  * (approval method "proponent") can still be answered: changing the answer
  * reopens it. Once the document's final vote is recorded (`voted`) no
@@ -477,6 +482,11 @@ export function positionBlocker(
     publishedAt: Date | null;
     approvalMethod: ApprovalMethod | null;
     authorsApproval?: AcceptanceDecision | null;
+    /**
+     * The document's main presenter reads it once validated, before it is
+     * published: an office of the CEA (answersOnValidation).
+     */
+    presenterSeesValidated?: boolean;
   },
   rule: AcceptedAmendmentRule,
   voted = false,
@@ -484,7 +494,6 @@ export function positionBlocker(
   | "voted"
   | "decided"
   | "not_validated"
-  | "not_admitted"
   | "awaits_authors"
   | "not_published"
   | null {
@@ -497,13 +506,18 @@ export function positionBlocker(
     return null;
   }
   if (row.status !== "submitted") return "decided";
-  if (row.admission !== "admitted") {
-    return row.validatedAt === null ? "not_validated" : "not_admitted";
+  // Admitted by the Mesa before the Secretaría validated it, published at
+  // once, it is answered as before; otherwise the Secretaría validates first.
+  if (row.validatedAt === null && row.admission !== "admitted") {
+    return "not_validated";
   }
   if (row.authorsApproval === "pending" || row.authorsApproval === "rejected") {
     return "awaits_authors";
   }
-  return row.publishedAt === null ? "not_published" : null;
+  if (row.publishedAt !== null) return null;
+  return row.presenterSeesValidated && row.validatedAt !== null
+    ? null
+    : "not_published";
 }
 
 /** Messages for positionBlocker. */
@@ -515,8 +529,6 @@ export const POSITION_BLOCKER_MESSAGES: Record<
   decided: "Esta enmienda ya está decidida",
   not_validated:
     "La Secretaría todavía no ha validado esta enmienda: podrás responderla cuando lo haga",
-  not_admitted:
-    "Esta enmienda llegó fuera de plazo y la asamblea todavía no ha decidido si se trata",
   awaits_authors:
     "Los autores principales de las enmiendas que sustituye todavía no han aceptado esta transaccional",
   not_published:
@@ -559,15 +571,27 @@ export function positionRecordedBy(input: {
  * recording it. Under the "incorporate" rule, accepting an undecided
  * amendment approves it at once (approval method "proponent") and moving an
  * amendment approved that way away from "accept" reopens it (back to
- * submitted). Under "vote" an answer never decides anything.
+ * submitted). A late one the assembly has not admitted yet keeps the
+ * acceptance and is approved when admitted (incorporateOnAdmission). Under
+ * "vote" an answer never decides anything.
  */
 export function positionEffect(
-  row: { status: AmendmentStatus; approvalMethod: ApprovalMethod | null },
+  row: {
+    status: AmendmentStatus;
+    approvalMethod: ApprovalMethod | null;
+    admission: AdmissionStatus;
+  },
   position: ProponentPosition,
   rule: AcceptedAmendmentRule,
 ): "approve" | "reopen" | null {
   if (rule !== "incorporate") return null;
-  if (row.status === "submitted" && position === "accept") return "approve";
+  if (
+    row.status === "submitted" &&
+    row.admission === "admitted" &&
+    position === "accept"
+  ) {
+    return "approve";
+  }
   if (
     row.status === "approved" &&
     row.approvalMethod === "proponent" &&
@@ -656,6 +680,7 @@ export function acceptedRulePlan(
     publishedAt: Date | null;
     approvalMethod: ApprovalMethod | null;
     authorsApproval: AcceptanceDecision | null;
+    presenterSeesValidated?: boolean;
     /** The main presenter's answer, null when there is no position row. */
     position: ProponentPosition | null;
     keepsSources?: boolean;
@@ -731,9 +756,9 @@ export const TRANSACTIONAL_REOPEN_MESSAGES: Record<
  * How many amendments the main presenter of a published document still has
  * to answer (its review mode, MeWorkProponentDto.positionsPending), over the
  * amendments it can see: presented, undecided, without an answer yet, and
- * answerable now (positionBlocker), which needs them published: a validated
- * one the Secretaría keeps private waits until it publishes it, under
- * either rule.
+ * answerable now (positionBlocker), which needs them published unless an
+ * office of the CEA presents the document: a validated one the Secretaría
+ * keeps private waits until it publishes it, under either rule.
  */
 export function countPositionsPending(
   rows: {
@@ -743,6 +768,7 @@ export function countPositionsPending(
     publishedAt: Date | null;
     approvalMethod: ApprovalMethod | null;
     authorsApproval: AcceptanceDecision | null;
+    presenterSeesValidated?: boolean;
     /** The main presenter's answer, null when there is no position row. */
     position: ProponentPosition | null;
   }[],

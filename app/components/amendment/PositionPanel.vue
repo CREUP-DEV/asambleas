@@ -9,6 +9,7 @@ import {
   amendmentAwaitsPosition,
   amendmentPositionBlocker,
   amendmentPositionNext,
+  presenterSeesValidated,
   type AmendmentPositionContext,
 } from "~/composables/amendment/workspace";
 import {
@@ -198,6 +199,7 @@ const answeredAt = computed(() =>
 /** Nothing is answered once the document was voted. */
 const context = computed<AmendmentPositionContext>(() => ({
   finalVoted: Boolean(props.document.finalVote),
+  presenterSeesValidated: presenterSeesValidated(props.document),
 }));
 const reachable = computed(() =>
   amendmentAwaitsPosition(

@@ -748,10 +748,13 @@ presenter itself or the Secretaría changes who the main presenter is.
 2. The Secretaría validates it (or asks for a correction) and publishes it,
    now or later.
 3. If it is late, the assembly decides whether to treat it; the Secretaría
-   (or the Mesa) records that decision. Until then it cannot go further.
+   (or the Mesa) records that decision. Until then it is not decided nor
+   grouped into a transactional.
 4. The document's main presenter accepts or rejects it (its position, with an
-   optional comment), only once it is validated, published and, if late,
-   admitted, and never after the document's final vote. The Mesa can record
+   optional comment) once it sees it: validated and published, or only
+   validated when an office of the CEA presents the document. A late one is
+   answered before its admission, and an acceptance that incorporates it
+   waits for the admission. Never after the document's final vote. The Mesa can record
    the answer on its behalf, and everyone sees who recorded it.
 5. The assembly votes it. Each document has a rule for accepted amendments
    (`documents.acceptedAmendments`, default from its kind): with

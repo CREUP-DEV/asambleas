@@ -1001,16 +1001,17 @@ describe("visibility", () => {
       can: (key: string) => key === "control_sheet:view",
     } as unknown as Actor;
 
-    it("shows a validated, unpublished amendment to the CEA and the document's presenters", () => {
+    it("shows a validated, unpublished amendment to the CEA, not to the document's other presenters", () => {
       for (const status of ["submitted", "approved"] as const) {
         const validated = amendment(status, { validatedAt });
         expect(canSeeAmendment(cea, validated)).toBe(true);
+        // A presenter that is not the CEA waits for its publication.
         expect(canSeeAmendment(actor("member", "presenter"), validated)).toBe(
-          true,
+          false,
         );
         expect(
           canSeeAmendment(actor("member", "co-presenter"), validated),
-        ).toBe(true);
+        ).toBe(false);
         // So does whoever reads the control sheet, which lists them.
         expect(canSeeAmendment(sheetReader, validated)).toBe(true);
         // Anyone else still waits for its publication.

@@ -1380,7 +1380,12 @@ describe("the main presenter's review", () => {
         },
       }),
       amendment("unchecked", [], { can, reviewState: "pending_validation" }),
-      amendment("lateWaiting", [], { can, late: true, admission: "pending" }),
+      amendment("lateWaiting", [], {
+        can,
+        late: true,
+        admission: "pending",
+        reviewState: "pending_validation",
+      }),
       amendment("decided", [], { can, status: "rejected" }),
       amendment("incorporated", [], {
         can,

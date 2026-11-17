@@ -47,6 +47,25 @@ export async function loadExecutiveMemberIds(
 }
 
 /**
+ * Whether the main presenter of a document answers its amendments once they
+ * are validated, before they are published (user's decision of
+ * 2026-11-17): it may answer what it sees, and only the CEA's accounts read
+ * validated amendments (seesValidatedAmendments), so only when an office of
+ * the CEA presents it.
+ */
+export async function loadAnswersOnValidation(
+  document: { proponentMemberId: string | null },
+  executor: Executor = db,
+): Promise<boolean> {
+  if (document.proponentMemberId === null) return false;
+  const [row] = await executor
+    .select({ kind: members.kind })
+    .from(members)
+    .where(eq(members.id, document.proponentMemberId));
+  return row?.kind === "executive";
+}
+
+/**
  * What is hidden from the actor: null when it sees the areas, otherwise the
  * ids of all of them (redactMemberId, redactPayloadMembers).
  */

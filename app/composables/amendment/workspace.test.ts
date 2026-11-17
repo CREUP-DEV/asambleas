@@ -815,7 +815,7 @@ describe("the main presenter's answer", () => {
   } as const;
   const rules = ["vote", "incorporate"] as const;
 
-  it("is offered once validated and admitted", () => {
+  it("is offered once validated, a late one before its admission", () => {
     for (const rule of rules) {
       expect(amendmentAwaitsPosition(amendment("a", []), rule)).toBe(true);
       // Recorded before validation existed.
@@ -834,13 +834,13 @@ describe("the main presenter's answer", () => {
           rule,
         ),
       ).toBe(false);
-      // Late and the assembly has not decided to treat it.
+      // Late, published and the assembly has not decided to treat it yet.
       expect(
         amendmentAwaitsPosition(
           amendment("a", [], { late: true, admission: "pending" }),
           rule,
         ),
-      ).toBe(false);
+      ).toBe(true);
       expect(
         amendmentAwaitsPosition(
           amendment("a", [], { status: "withdrawn" }),
@@ -859,7 +859,7 @@ describe("the main presenter's answer", () => {
       expect(amendmentPositionBlocker(private_, rule)).toBe("publication");
       expect(amendmentPositionNext(private_, rule)).toBeNull();
     }
-    // Late, validated and private: the assembly decides first.
+    // Late, validated and private: it waits for its publication too.
     expect(
       amendmentPositionBlocker(
         amendment("a", [], {
@@ -869,7 +869,15 @@ describe("the main presenter's answer", () => {
         }),
         "vote",
       ),
-    ).toBe("admission");
+    ).toBe("publication");
+    // An office of the CEA presents the document: validated is enough.
+    for (const rule of rules) {
+      expect(
+        amendmentAwaitsPosition(private_, rule, {
+          presenterSeesValidated: true,
+        }),
+      ).toBe(true);
+    }
     // A transactional validated before it was always published: same rule.
     expect(
       amendmentPositionBlocker(
@@ -984,12 +992,13 @@ describe("the main presenter's answer", () => {
         "vote",
       ),
     ).toBe("validation");
+    // Late and published: answered before the assembly decides.
     expect(
       amendmentPositionBlocker(
         amendment("a", [], { late: true, admission: "pending" }),
         "vote",
       ),
-    ).toBe("admission");
+    ).toBeNull();
     // Older rows: no review state, and not validated yet.
     expect(
       amendmentPositionBlocker(
@@ -997,6 +1006,7 @@ describe("the main presenter's answer", () => {
         "vote",
       ),
     ).toBe("validation");
+    // Validated: a late one is answered before its admission.
     expect(
       amendmentPositionBlocker(
         amendment("a", [], {
@@ -1006,7 +1016,7 @@ describe("the main presenter's answer", () => {
         }),
         "vote",
       ),
-    ).toBe("admission");
+    ).toBeNull();
     expect(
       amendmentPositionBlocker(
         amendment("a", [], { status: "rejected" }),

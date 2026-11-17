@@ -31,6 +31,7 @@ import {
   consolidationInputs,
   isAmendmentAuthor,
   isAmendmentPrivate,
+  presenterSeesValidated,
   revealAmendmentKind,
   type AmendmentComposerMode,
   type AmendmentReviewFilter,
@@ -290,7 +291,10 @@ const reviewBacklog = computed(() =>
   proponentReviewBacklog(
     list.listed.value,
     document.value?.acceptedAmendments ?? "vote",
-    { finalVoted: Boolean(document.value?.finalVote) },
+    {
+      finalVoted: Boolean(document.value?.finalVote),
+      presenterSeesValidated: presenterSeesValidated(document.value),
+    },
   ),
 );
 /** Status of any amendment, so a transactional tells whether it replaced its sources. */

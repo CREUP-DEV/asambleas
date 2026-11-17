@@ -130,6 +130,7 @@ import {
 import { recordEvent } from "./events";
 import { toVoteDto, type VoteRow } from "./votes";
 import {
+  loadAnswersOnValidation,
   loadExecutiveMask,
   loadExecutiveMemberIds,
   requireAmendmentBodyMembers,
@@ -518,6 +519,8 @@ export interface CapabilityInput {
   authorsApproval?: AcceptanceDecision | null;
   /** The document's rule for accepted amendments. */
   rule: AcceptedAmendmentRule;
+  /** The main presenter reads it once validated (answersOnValidation). */
+  presenterSeesValidated?: boolean;
   /**
    * For a transactional, whether everything it groups is still open
    * (sourcesAreOpen): once one of them is decided or replaced by another
@@ -794,6 +797,11 @@ export interface DocumentAmendmentContext {
   positionsVisible: boolean;
   /** What an amendment the main presenter accepts becomes. */
   rule: AcceptedAmendmentRule;
+  /**
+   * The main presenter reads the amendments once validated, so it may
+   * answer them before they are published (answersOnValidation).
+   */
+  presenterSeesValidated: boolean;
   now: Date;
 }
 
@@ -808,6 +816,7 @@ export function buildDocumentAmendmentContext(
   assembly: AssemblyRow,
   document: DocumentRow,
   milestones: Milestones,
+  presenterSeesValidated: boolean,
   now = new Date(),
 ): DocumentAmendmentContext {
   const settings = assemblySettings(assembly);
@@ -822,6 +831,7 @@ export function buildDocumentAmendmentContext(
     isPresenter,
     positionsVisible: canSeePositions(actor, { document, isPresenter }),
     rule: document.acceptedAmendments,
+    presenterSeesValidated,
     now,
   };
 }
@@ -844,6 +854,7 @@ export async function loadAmendmentDocumentContext(
     assembly,
     document,
     await loadMilestones(assembly.id),
+    await loadAnswersOnValidation(document),
   );
 }
 
@@ -1483,6 +1494,7 @@ export async function buildAmendmentDtos(
         publishedAt: row.publishedAt,
         authorsApproval: approval,
         rule: ctx.rule,
+        presenterSeesValidated: ctx.presenterSeesValidated,
         sourcesOpen: transactionalSourcesOpen(row, sourceStates),
         voted,
         kind: row.kind,
@@ -3145,12 +3157,20 @@ export async function decideAmendmentAdmission(
       );
     }
     if (admission === "admitted") {
-      // Admitted and published: a formal one is answered by itself.
+      // A formal one nobody answered yet is answered by itself, and under
+      // "incorporate" the accepted ones go into the text now.
       await autoAcceptFormal(tx, ctx, {
         ids: body.amendmentIds,
         lockedIds: lockedAll.map((row) => row.id),
         sourceMap,
         parties: restoreParties,
+        rule,
+        voted: false,
+      });
+      await incorporateOnAdmission(tx, ctx, {
+        ids: body.amendmentIds,
+        lockedIds: lockedAll.map((row) => row.id),
+        sourceMap,
         rule,
         voted: false,
       });
@@ -3398,7 +3418,8 @@ export async function validateAmendments(
         competitors: lockedCompetitors(competitors, lockedById.values()),
       });
     }
-    // A formal amendment published now is answered by itself.
+    // A formal amendment answerable now (published, or validated when an
+    // office of the CEA presents the document) is answered by itself.
     await autoAcceptFormal(tx, ctx, {
       ids: body.amendmentIds,
       lockedIds: [...lockedById.keys()],
@@ -3789,7 +3810,7 @@ export async function reclassifyAmendment(
     if (!current) fail(409, "La enmienda ha cambiado. Recarga la página");
     const position = stored?.position ?? null;
     const plan = reclassifyPositionPlan(
-      current,
+      { ...current, presenterSeesValidated: ctx.presenterSeesValidated },
       to,
       position,
       position === "accept"
@@ -4035,7 +4056,7 @@ async function recordPosition(
     parties: Awaited<ReturnType<typeof lockParties>>;
   },
 ): Promise<void> {
-  const { actor, document, now } = ctx;
+  const { actor, document } = ctx;
   const { current } = input;
   const auto = input.by === "auto";
   const effect = positionEffect(current, input.position, input.rule);
@@ -4075,53 +4096,13 @@ async function recordPosition(
   });
 
   if (effect === "approve") {
-    const updated = await tx
-      .update(amendments)
-      .set({
-        status: "approved",
-        approvalMethod: "proponent",
-        outcomeVoteId: null,
-        outcomeNote: null,
-        decidedAt: now,
-      })
-      .where(
-        and(
-          eq(amendments.id, current.id),
-          eq(amendments.status, "submitted"),
-          eq(amendments.admission, "admitted"),
-        ),
-      )
-      .returning({ id: amendments.id });
-    if (updated.length === 0)
-      fail(409, "La enmienda ha cambiado. Recarga la página");
-    await recordEvent(tx, {
-      ...base,
-      type: "amendment_approved",
-      // The main presenter's acceptance incorporated it, also when the
-      // Mesa recorded it (the news credit it). The automatic one says why
-      // (`reason: "formal"`) and credits nobody.
-      payload: {
-        method: "proponent",
-        byPosition: true,
-        memberId: document.proponentMemberId,
-        ...(auto ? { reason: "formal" } : {}),
-      },
+    await incorporateAcceptance(tx, ctx, {
+      current,
+      auto,
+      sourceIds: input.sourceIds,
+      competitors: input.competitors,
+      locked: input.locked,
     });
-    if (input.sourceIds.length > 0) {
-      await replaceSources(tx, {
-        assemblyId: ctx.assembly.id,
-        documentId: document.id,
-        actor,
-        now,
-        transactional: { id: current.id, code: current.code },
-        sources: input.locked.filter((row) => input.sourceIds.includes(row.id)),
-        competitors: lockedCompetitors(input.competitors, input.locked),
-        allowTransacted: true,
-      });
-    }
-    await closeDependents(tx, ctx, input.competitors, input.locked, [
-      { id: current.id, code: current.code, status: "approved" },
-    ]);
   } else if (effect === "reopen") {
     const updated = await tx
       .update(amendments)
@@ -4159,6 +4140,133 @@ async function recordPosition(
       input.parties,
       [current],
     );
+  }
+}
+
+/**
+ * Approves an undecided, admitted amendment its main presenter accepted
+ * under the "incorporate" rule (approval method "proponent"), with what a
+ * transactional replaces and the pending transactionals over it closed:
+ * the "approve" of positionEffect, from recordPosition or, for a late one
+ * accepted before the assembly admitted it, from incorporateOnAdmission.
+ * The caller holds the locks recordPosition names.
+ */
+async function incorporateAcceptance(
+  tx: Tx,
+  ctx: DocumentAmendmentContext,
+  input: {
+    current: LockedAmendment;
+    /** The acceptance was the automatic one of a formal amendment. */
+    auto: boolean;
+    sourceIds: string[];
+    competitors: Competitors;
+    locked: LockedAmendment[];
+  },
+): Promise<void> {
+  const { actor, document, now } = ctx;
+  const { current } = input;
+  const updated = await tx
+    .update(amendments)
+    .set({
+      status: "approved",
+      approvalMethod: "proponent",
+      outcomeVoteId: null,
+      outcomeNote: null,
+      decidedAt: now,
+    })
+    .where(
+      and(
+        eq(amendments.id, current.id),
+        eq(amendments.status, "submitted"),
+        eq(amendments.admission, "admitted"),
+      ),
+    )
+    .returning({ id: amendments.id });
+  if (updated.length === 0)
+    fail(409, "La enmienda ha cambiado. Recarga la página");
+  await recordEvent(tx, {
+    assemblyId: ctx.assembly.id,
+    documentId: document.id,
+    entityType: "amendment",
+    entityId: current.id,
+    actor,
+    type: "amendment_approved",
+    // The main presenter's acceptance incorporated it, also when the
+    // Mesa recorded it (the news credit it). The automatic one says why
+    // (`reason: "formal"`) and credits nobody.
+    payload: {
+      method: "proponent",
+      byPosition: true,
+      memberId: document.proponentMemberId,
+      ...(input.auto ? { reason: "formal" } : {}),
+    },
+  });
+  if (input.sourceIds.length > 0) {
+    await replaceSources(tx, {
+      assemblyId: ctx.assembly.id,
+      documentId: document.id,
+      actor,
+      now,
+      transactional: { id: current.id, code: current.code },
+      sources: input.locked.filter((row) => input.sourceIds.includes(row.id)),
+      competitors: lockedCompetitors(input.competitors, input.locked),
+      allowTransacted: true,
+    });
+  }
+  await closeDependents(tx, ctx, input.competitors, input.locked, [
+    { id: current.id, code: current.code, status: "approved" },
+  ]);
+}
+
+/**
+ * Under the "incorporate" rule, approves the late amendments among `ids`
+ * the assembly has just admitted that their main presenter had already
+ * accepted (user's decision of 2026-11-17: a late one is answered once
+ * validated, and the acceptance waits for the admission to incorporate
+ * it). Same locks as autoAcceptFormal, which runs before it; the position
+ * rows it locks are read here again.
+ */
+async function incorporateOnAdmission(
+  tx: Tx,
+  ctx: DocumentAmendmentContext,
+  input: {
+    ids: string[];
+    lockedIds: string[];
+    sourceMap: Map<string, string[]>;
+    rule: AcceptedAmendmentRule;
+    voted: boolean;
+  },
+): Promise<void> {
+  if (input.voted || input.rule !== "incorporate" || input.ids.length === 0) {
+    return;
+  }
+  const documentId = ctx.document.id;
+  const lockedIds = unique([...input.ids, ...input.lockedIds]);
+  const ids = [...input.ids].sort();
+  const positions = await lockPositions(tx, ids);
+  for (const id of ids) {
+    if (positions.get(id)?.position !== "accept") continue;
+    // Again for each one: an earlier approval may have closed
+    // transactionals over the next.
+    const locked = await rereadLocked(tx, documentId, lockedIds);
+    const current = locked.find((row) => row.id === id);
+    if (
+      !current ||
+      current.kind === "transactional" ||
+      positionEffect(current, "accept", input.rule) !== "approve"
+    ) {
+      continue;
+    }
+    await incorporateAcceptance(tx, ctx, {
+      current,
+      auto: (await latestPositionBy(tx, id)) === "auto",
+      sourceIds: [],
+      competitors: {
+        sourceMap: input.sourceMap,
+        ids: transactionalsOverIds(input.sourceMap, [id]),
+      },
+      locked,
+    });
   }
 }
 
@@ -4206,7 +4314,7 @@ async function autoAcceptFormal(
     if (
       !current ||
       !shouldAutoAcceptPosition(
-        current,
+        { ...current, presenterSeesValidated: ctx.presenterSeesValidated },
         positions.get(id)?.position ?? null,
         input.rule,
       )
@@ -4277,7 +4385,11 @@ export async function setAmendmentPosition(
   }
   assertNotFinal(ctx);
   const blocker = positionBlocker(
-    { ...amendment, authorsApproval: authorsApproval(amendment) },
+    {
+      ...amendment,
+      authorsApproval: authorsApproval(amendment),
+      presenterSeesValidated: ctx.presenterSeesValidated,
+    },
     ctx.rule,
   );
   if (blocker) fail(409, POSITION_BLOCKER_MESSAGES[blocker]);
@@ -4317,6 +4429,7 @@ export async function setAmendmentPosition(
       partyIds.length > 0 ? await lockParties(tx, partyIds, "share") : [];
     const fields = {
       ...current,
+      presenterSeesValidated: ctx.presenterSeesValidated,
       authorsApproval: authorsApproval({
         kind: amendment.kind,
         acceptances: parties.filter(

@@ -412,13 +412,27 @@ export type AmendmentPositionBlocker =
  */
 export interface AmendmentPositionContext {
   finalVoted?: boolean;
+  /**
+   * An office of the CEA presents the document: its main presenter reads
+   * the amendments once validated and answers them then
+   * (presenterSeesValidated).
+   */
+  presenterSeesValidated?: boolean;
+}
+
+/** Whether a document's main presenter answers its amendments once validated. */
+export function presenterSeesValidated(
+  document: { proponent: { kind: string } | null } | null | undefined,
+): boolean {
+  return document?.proponent?.kind === "executive";
 }
 
 /**
  * Agrees with the server's positionBlocker (server/utils/domain/reviewState.ts)
  * on whether an amendment can be answered, as decided for the presenter's
- * answers (design.md, "Amendment flow"): only published amendments,
- * validated and, when late, admitted, and nothing after the final vote.
+ * answers (design.md, "Amendment flow"): validated, and published unless an
+ * office of the CEA presents the document (`presenterSeesValidated`); a late
+ * one before the assembly admits it; nothing after the final vote.
  * The reason given may differ: a transactional its main authors have not
  * all accepted waits for them first (`authors`), because the Secretaría
  * does not check it until they do, while the server reports it as not
@@ -452,12 +466,18 @@ function positionWait(
   const state = amendment.reviewState;
   const validated = state === "validated" || state === "published";
   if (!validated && state !== null) return "validation";
-  if (amendment.admission !== "admitted") {
-    return validated || amendment.validatedAt !== null
-      ? "admission"
-      : "validation";
+  // A late one is answered once validated, before the assembly decides
+  // whether to treat it (its acceptance incorporates it once admitted).
+  if (
+    amendment.admission !== "admitted" &&
+    !validated &&
+    amendment.validatedAt === null
+  ) {
+    return "validation";
   }
-  if (state === "validated") return "publication";
+  if (state === "validated" && !context.presenterSeesValidated) {
+    return "publication";
+  }
   return null;
 }
 

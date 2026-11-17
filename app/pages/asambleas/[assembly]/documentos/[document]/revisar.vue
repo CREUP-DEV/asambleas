@@ -2,6 +2,7 @@
 import type { RouteLocationRaw } from "vue-router";
 import type { AmendmentDto } from "~~/shared/types/api";
 import { transactionalSourceEligible } from "~/composables/amendment/transactional";
+import { presenterSeesValidated } from "~/composables/amendment/workspace";
 import {
   answersReserved,
   commentUnsaved,
@@ -115,6 +116,7 @@ const readOnly = computed(() => Boolean(document.value?.finalVote));
 /** What the answering rule needs to know about the document. */
 const positionContext = computed<PositionContext>(() => ({
   finalVoted: readOnly.value,
+  presenterSeesValidated: presenterSeesValidated(document.value),
 }));
 /** Withdrawn or postponed: nothing to answer any more. */
 const closed = computed(() => document.value?.status !== "published");

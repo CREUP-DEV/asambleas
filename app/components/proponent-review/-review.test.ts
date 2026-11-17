@@ -289,10 +289,22 @@ describe("positions", () => {
     ).toBeNull();
   });
 
-  it("waits for the assembly to admit a late amendment", () => {
+  it("answers a late amendment before the assembly admits it", () => {
     const late = amendment("a", { late: true, admission: "pending" });
-    expect(isPositionReviewable(late, "vote")).toBe(false);
-    expect(positionWaitReason(late, "vote")).toBe("admission");
+    expect(isPositionReviewable(late, "vote")).toBe(true);
+    expect(positionWaitReason(late, "vote")).toBeNull();
+    // Not validated yet: still with the Secretaría.
+    expect(
+      positionWaitReason(
+        amendment("a", {
+          late: true,
+          admission: "pending",
+          reviewState: "pending_validation",
+          validatedAt: null,
+        }),
+        "vote",
+      ),
+    ).toBe("validation");
     expect(
       isPositionReviewable(
         amendment("a", { late: true, admission: "admitted" }),
@@ -304,7 +316,7 @@ describe("positions", () => {
         [
           late,
           amendment("b"),
-          // Still with the Secretaría: not the assembly's call yet.
+          // Still with the Secretaría.
           amendment("c", {
             late: true,
             admission: "pending",
@@ -319,7 +331,7 @@ describe("positions", () => {
         ],
         "vote",
       ),
-    ).toEqual({ admission: 1, validation: 1, authors: 0, publication: 0 });
+    ).toEqual({ admission: 0, validation: 1, authors: 0, publication: 0 });
   });
 
   it("keeps an incorporated amendment while its answer can still change", () => {
@@ -606,11 +618,16 @@ describe("saving", () => {
     expect(
       positionConflict(
         sent,
-        amendment("a", { late: true, admission: "pending" }),
+        amendment("a", {
+          late: true,
+          admission: "pending",
+          reviewState: "pending_validation",
+          validatedAt: null,
+        }),
         false,
         "vote",
       ),
-    ).toBe("admission");
+    ).toBe("validation");
     expect(
       positionConflict(
         sent,
@@ -876,7 +893,13 @@ describe("proponentReviewItems", () => {
       admission: "pending",
     }),
     privateOne("private", { positionKey: 6 }),
-    amendment("waiting", { positionKey: 7, late: true, admission: "pending" }),
+    amendment("waiting", {
+      positionKey: 7,
+      late: true,
+      admission: "pending",
+      reviewState: "pending_validation",
+      validatedAt: null,
+    }),
     transactional("3", {
       positionKey: 1,
       acceptances: [party(CEUM)],
@@ -948,16 +971,17 @@ describe("proponentReviewItems", () => {
   });
 
   it("counts what is still on its way to the presenter", () => {
+    // A late one waits only for its validation: never for its admission.
     expect(positionWaitCounts(list, "incorporate")).toEqual({
       authors: 1,
-      validation: 1,
-      admission: 1,
+      validation: 2,
+      admission: 0,
       publication: 1,
     });
     expect(positionWaitCounts(list, "vote")).toEqual({
       authors: 1,
-      validation: 1,
-      admission: 1,
+      validation: 2,
+      admission: 0,
       publication: 1,
     });
   });
@@ -1236,7 +1260,12 @@ describe("emptyReviewReason", () => {
       emptyReviewReason(
         [
           amendment("a", { status: "rejected" }),
-          amendment("b", { late: true, admission: "pending" }),
+          amendment("b", {
+            late: true,
+            admission: "pending",
+            reviewState: "pending_validation",
+            validatedAt: null,
+          }),
         ],
         "vote",
       ),
