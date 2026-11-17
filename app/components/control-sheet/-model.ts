@@ -464,6 +464,52 @@ export function staleSheetRow<T>(error: unknown): T | null {
   return inner?.reason === "control_sheet_stale" ? (inner.row as T) : null;
 }
 
+/** One step of the agenda trail of a document, the root item first. */
+export interface AgendaTrailStep {
+  id: string;
+  slug: string;
+  number: string | null;
+  title: string;
+  /**
+   * The document's own automatic sub-item, titled after it: shown by its
+   * number alone, so the trail never repeats the document's title.
+   */
+  ownItem: boolean;
+}
+
+/**
+ * Where a document hangs in the agenda: the item it hangs from and every
+ * item above it, root first, numbered over the whole agenda as everywhere
+ * else (numberAgendaItems). Empty when its item is not in the agenda the
+ * reader gets.
+ */
+export function documentAgendaTrail(
+  items: readonly AgendaItemDto[],
+  document: Pick<DocumentSummaryDto, "id" | "agendaItemId">,
+): AgendaTrailStep[] {
+  const nodes = new Map(
+    flattenAgendaTree(buildAgendaTree(items)).map((node) => [
+      node.item.id,
+      node,
+    ]),
+  );
+  const trail: AgendaTrailStep[] = [];
+  const seen = new Set<string>();
+  let node = nodes.get(document.agendaItemId);
+  while (node && !seen.has(node.item.id)) {
+    seen.add(node.item.id);
+    trail.unshift({
+      id: node.item.id,
+      slug: node.item.slug,
+      number: node.number,
+      title: node.item.title,
+      ownItem: node.item.generatedForDocumentId === document.id,
+    });
+    node = node.parentId ? nodes.get(node.parentId) : undefined;
+  }
+  return trail;
+}
+
 /** The documents «Enmiendas» offers: those with amendments the reader sees. */
 export function amendedDocuments(
   documents: readonly DocumentSummaryDto[],

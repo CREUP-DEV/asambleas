@@ -54,8 +54,10 @@ import {
   amendmentTreatedControl,
   buildAmendmentRows,
   buildGeneralRows,
+  documentAgendaTrail,
   itemTreatedControl,
   staleSheetRow,
+  type AgendaTrailStep,
   type AmendmentSheetRow,
   type GeneralSheetRow,
   type ItemVoteContext,
@@ -63,6 +65,7 @@ import {
   type TreatedControl,
 } from "~/components/control-sheet/-model";
 import { LIVE_AMENDMENT_STATES } from "~/components/live-view/-model";
+import { agendaItemPath } from "~/composables/document/agendaReturn";
 import type { RowPanelTarget } from "~/components/control-sheet/RowPanel.vue";
 import {
   buildAgendaTree,
@@ -904,6 +907,25 @@ async function addItem(): Promise<void> {
   }
 }
 
+/** Where the chosen document hangs in the agenda, root first. */
+const selectedTrail = computed<AgendaTrailStep[]>(() =>
+  selectedDocument.value
+    ? documentAgendaTrail(items.value, selectedDocument.value)
+    : [],
+);
+
+/**
+ * "2. Posicionamientos" for an item above the document, its own number
+ * alone for the document's automatic sub-item ("2.2"), which carries its
+ * title.
+ */
+function trailLabel(step: AgendaTrailStep): string {
+  const unlisted = t("agenda.unlisted.inText");
+  return step.ownItem
+    ? (step.number ?? unlisted)
+    : numberedAgendaTitle(step.number, step.title, unlisted);
+}
+
 function documentPath(document: SheetRowDocument): string {
   return sectionPath(`documentos/${encodeURIComponent(document.slug)}`);
 }
@@ -1186,27 +1208,60 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
                 class="w-full"
               />
             </UFormField>
-            <!-- Who answers the amendments: the document's main presenter. -->
-            <div
+            <!--
+              Where the document is in the agenda, and who answers its
+              amendments: its main presenter.
+            -->
+            <dl
               v-if="selectedDocument"
-              class="flex flex-wrap items-center gap-2 text-sm"
+              class="grid grid-cols-1 gap-x-3 gap-y-1.5 text-sm sm:grid-cols-[auto_1fr] sm:items-center"
             >
-              <span class="text-muted">{{
-                t("controlSheet.documentPresenter")
-              }}</span>
-              <ControlSheetMemberTags
-                :main="
-                  selectedDocument.proponent ? [selectedDocument.proponent] : []
-                "
-                :others="selectedDocument.coProponents"
-                :members="membersById"
-                :label="t('controlSheet.documentPresenter')"
-                :others-title="t('controlSheet.otherPresenters')"
-              />
-              <span v-if="!selectedDocument.proponent" class="text-dimmed">{{
-                t("controlSheet.proponentNone")
-              }}</span>
-            </div>
+              <template v-if="selectedTrail.length > 0">
+                <dt class="text-muted">
+                  {{ t("controlSheet.documentItem") }}
+                </dt>
+                <dd>
+                  <ol class="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                    <li
+                      v-for="(step, index) in selectedTrail"
+                      :key="step.id"
+                      class="flex items-center gap-1.5"
+                    >
+                      <UIcon
+                        v-if="index > 0"
+                        name="i-lucide-chevron-right"
+                        class="text-dimmed size-3.5 shrink-0"
+                        aria-hidden="true"
+                      />
+                      <ULink
+                        :to="agendaItemPath(sectionPath(), step)"
+                        class="text-default underline-offset-2 hover:underline"
+                        >{{ trailLabel(step) }}</ULink
+                      >
+                    </li>
+                  </ol>
+                </dd>
+              </template>
+              <dt class="text-muted">
+                {{ t("controlSheet.documentPresenter") }}
+              </dt>
+              <dd class="flex flex-wrap items-center gap-2">
+                <ControlSheetMemberTags
+                  :main="
+                    selectedDocument.proponent
+                      ? [selectedDocument.proponent]
+                      : []
+                  "
+                  :others="selectedDocument.coProponents"
+                  :members="membersById"
+                  :label="t('controlSheet.documentPresenter')"
+                  :others-title="t('controlSheet.otherPresenters')"
+                />
+                <span v-if="!selectedDocument.proponent" class="text-dimmed">{{
+                  t("controlSheet.proponentNone")
+                }}</span>
+              </dd>
+            </dl>
             <div
               v-if="amendmentsFetch.pending.value && !amendmentsData"
               class="space-y-3"

@@ -4457,6 +4457,7 @@
     "moreMembers": "{count} more: {names}",
     "otherPresenters": "Other presenters",
     "otherAuthors": "Also presented by",
+    "documentItem": "Agenda item",
     "documentPresenter": "Document presenter",
     "emptyTitle": "No items with documents yet",
     "emptyDescription": "The sheet shows the agenda items that have documents presented or are voted on.",

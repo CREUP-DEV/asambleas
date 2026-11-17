@@ -15,6 +15,7 @@ import {
   buildAmendmentRows,
   newerPosition,
   buildGeneralRows,
+  documentAgendaTrail,
   itemTreatedControl,
   rowVoteEntries,
   staleSheetRow,
@@ -597,5 +598,72 @@ describe("live filters", () => {
   it("follows the debate on screen moves", () => {
     expect(affectsLiveDebate([{ type: "live_changed" }])).toBe(true);
     expect(affectsLiveDebate([{ type: "vote_recorded" }])).toBe(false);
+  });
+});
+
+describe("documentAgendaTrail", () => {
+  const agenda = [
+    item({ id: "a", slug: "informes", title: "Informes", order: 0 }),
+    item({
+      id: "b",
+      slug: "posicionamientos",
+      title: "Posicionamientos",
+      order: 1,
+      acceptsSubmissions: true,
+    }),
+    item({
+      id: "b1",
+      slug: "becas",
+      parentId: "b",
+      title: "Sistema de Becas",
+      order: 0,
+      generatedForDocumentId: "d1",
+    }),
+    item({
+      id: "b2",
+      slug: "movilidad",
+      parentId: "b",
+      title: "Movilidad",
+      order: 1,
+      generatedForDocumentId: "d2",
+    }),
+  ];
+
+  it("names the items above the document, root first, as numbered", () => {
+    expect(
+      documentAgendaTrail(agenda, { id: "d2", agendaItemId: "b2" }),
+    ).toEqual([
+      {
+        id: "b",
+        slug: "posicionamientos",
+        number: "2",
+        title: "Posicionamientos",
+        ownItem: false,
+      },
+      {
+        id: "b2",
+        slug: "movilidad",
+        number: "2.2",
+        title: "Movilidad",
+        ownItem: true,
+      },
+    ]);
+  });
+
+  it("keeps an ordinary item as such, and knows no item it is not given", () => {
+    expect(
+      documentAgendaTrail(agenda, { id: "d9", agendaItemId: "a" }),
+    ).toEqual([
+      {
+        id: "a",
+        slug: "informes",
+        number: "1",
+        title: "Informes",
+        ownItem: false,
+      },
+    ]);
+    expect(
+      documentAgendaTrail(agenda, { id: "d9", agendaItemId: "zz" }),
+    ).toEqual([]);
   });
 });

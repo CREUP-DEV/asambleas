@@ -4457,6 +4457,7 @@
     "moreMembers": "{count} más: {names}",
     "otherPresenters": "Otros proponentes",
     "otherAuthors": "También la presentan",
+    "documentItem": "Punto del orden del día",
     "documentPresenter": "Proponente del documento",
     "emptyTitle": "Todavía no hay puntos con documentos",
     "emptyDescription": "La hoja muestra los puntos del orden del día que tienen documentos presentados o que se votan.",
