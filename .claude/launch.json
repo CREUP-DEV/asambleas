@@ -3,9 +3,15 @@
   "configurations": [
     {
       "name": "dev",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev", "--port", "3001"],
-      "port": 3001
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "node_modules/nuxt/bin/nuxt.mjs",
+        "dev",
+        "--port",
+        "3001"
+      ],
+      "port": 3001,
+      "autoPort": false
     }
   ]
 }
