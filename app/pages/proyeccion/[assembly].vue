@@ -850,6 +850,7 @@ useHead(() => ({
               :member="author"
               size="xl"
               variant="solid"
+              :tooltip="false"
               show-name
             />
             <CommonStatusBadge
@@ -909,6 +910,7 @@ useHead(() => ({
               size="xl"
               variant="solid"
               show-name
+              :tooltip="false"
             />
           </div>
           <p v-if="live?.amendmentId && !debated" class="text-muted">

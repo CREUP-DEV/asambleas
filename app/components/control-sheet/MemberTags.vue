@@ -5,7 +5,7 @@ import type { MemberDto, MemberRef } from "~~/shared/types/api";
  * Who presents something in the control sheet: the main presenters as
  * tags with their card (ControlSheetMemberTag), then «+N» for the rest,
  * listed when the pointer is over it as the same cards with their acronym
- * tag (ControlSheetMemberCard: avatar, and a council's university first,
+ * tag (CommonMemberCard: avatar, and a council's university first,
  * since councils share their denominations, never cut).
  * Screen readers read the names from the «+N» itself.
  */

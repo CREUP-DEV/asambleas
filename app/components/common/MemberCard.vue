@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { MemberDto, MemberRef } from "~~/shared/types/api";
 import { accountAvatarText } from "~~/shared/utils/accountAvatar";
+import { useMemberDirectory } from "~/composables/members/useMemberDirectory";
 
 /**
- * A member as the control sheet's hover cards show it: its avatar (the
+ * A member as the card its acronym opens on hover shows it (CommonMemberBadge,
+ * the control sheet's lists): its avatar (the
  * text accounts acting for it read) and, never cut, what tells it apart:
  * a council's university first, with its kind and its denomination under
  * it, since councils share the same or nearly the same denomination
@@ -11,27 +13,39 @@ import { accountAvatarText } from "~~/shared/utils/accountAvatar";
  * its kind and who holds a CEA office under it (only those who see the
  * offices receive the holder). `member` is what the server sent (an office
  * reads "CEA" to whoever may not see it); `members` adds the university
- * and the holder, and a member missing from it shows what it carries.
+ * and the holder (by default every member the account reads,
+ * useMemberDirectory, fetched when a card first shows), and a member
+ * missing from it shows what it carries.
  * `tag` starts the line under the name with its acronym tag (the name is
  * never split by it), where the avatar alone would not name it (a
  * council's avatar reads its university's acronym).
  */
 const props = defineProps<{
-  member: MemberRef;
-  members: ReadonlyMap<string, MemberDto>;
+  member: Pick<MemberRef, "acronym" | "name"> &
+    Partial<Pick<MemberRef, "id" | "kind">>;
+  members?: ReadonlyMap<string, MemberDto>;
   tag?: boolean;
 }>();
 
 const { t } = useI18n();
+const directory = useMemberDirectory();
+onMounted(() => {
+  if (!props.members) void directory.load();
+});
 
-const full = computed(() => props.members.get(props.member.id));
+const full = computed(() =>
+  props.member.id
+    ? (props.members ?? directory.byId.value).get(props.member.id)
+    : undefined,
+);
 
 /** The text of the member's avatar, as accounts acting for it read it. */
 const avatarText = computed(() =>
   accountAvatarText(
     { universityAcronym: null },
     {
-      ...props.member,
+      acronym: props.member.acronym,
+      kind: props.member.kind ?? "other",
       universityAcronym: full.value?.universityAcronym ?? null,
     },
   ),
@@ -57,13 +71,16 @@ const name = computed(() => university.value ?? denomination.value);
  * Pérez García" (who holds the office), or just the kind.
  */
 const detail = computed(() => {
-  const kind = t(`shell.memberKinds.${props.member.kind}`);
+  const kind = props.member.kind
+    ? t(`shell.memberKinds.${props.member.kind}`)
+    : "";
   const extra = university.value
     ? denomination.value
     : props.member.kind === "executive"
       ? full.value?.holderName?.trim()
       : null;
-  return extra && extra !== name.value ? `${kind} · ${extra}` : kind;
+  if (!extra || extra === name.value) return kind;
+  return kind ? `${kind} · ${extra}` : extra;
 });
 </script>
 

@@ -541,8 +541,8 @@ const detailSections = computed(() => {
       >
         <template #member-cell="{ row }">
           <div class="min-w-40">
-            <p class="text-highlighted font-semibold tracking-wide">
-              {{ row.original.member.acronym }}
+            <p class="flex flex-wrap items-center gap-1.5">
+              <CommonMemberBadge :member="row.original.member" />
               <UBadge
                 v-if="!row.original.member.active"
                 :label="t('admin.stats.inactive')"
@@ -829,12 +829,10 @@ const detailSections = computed(() => {
         </template>
 
         <template #presenter-cell="{ row }">
-          <span
+          <CommonMemberBadge
             v-if="row.original.presenter"
-            class="font-semibold tracking-wide"
-          >
-            {{ row.original.presenter.acronym }}
-          </span>
+            :member="row.original.presenter"
+          />
           <span v-else class="text-dimmed text-sm">–</span>
         </template>
 
