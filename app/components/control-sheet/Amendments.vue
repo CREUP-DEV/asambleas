@@ -70,13 +70,15 @@ const KIND_BADGES = {
 } as const;
 
 /**
- * «Pendiente» as in «General»: amber and outlined, nothing settled yet
- * (a lapsed one is amber and filled).
+ * «Pendiente» as in «General», in amber; «Decaído» then in grey, so the
+ * two never look alike.
  */
 function stateBadge(state: keyof typeof LIVE_STATE_COLORS) {
-  return state === "pending"
-    ? ({ color: "warning", variant: "outline" } as const)
-    : ({ color: LIVE_STATE_COLORS[state], variant: "subtle" } as const);
+  if (state === "pending")
+    return { color: "warning", variant: "subtle" } as const;
+  if (state === "lapsed")
+    return { color: "neutral", variant: "subtle" } as const;
+  return { color: LIVE_STATE_COLORS[state], variant: "subtle" } as const;
 }
 
 /** The main author, then the rest by acronym (shown as «+N»). */

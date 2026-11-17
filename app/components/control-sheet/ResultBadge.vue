@@ -20,19 +20,20 @@ const COLORS: Record<
   rejected: "error",
   mixed: "secondary",
   withdrawn: "neutral",
-  lapsed: "warning",
+  // Grey, so it never looks like «Pendiente» (amber).
+  lapsed: "neutral",
   postponed: "warning",
   not_applicable: "neutral",
 };
 
-/** «Pendiente» amber and outlined: nothing settled yet. */
+/** «Pendiente» in amber: nothing settled yet. */
 const color = computed(() => (props.result ? COLORS[props.result] : "warning"));
 </script>
 
 <template>
   <UBadge
     :color="color"
-    :variant="result ? 'subtle' : 'outline'"
+    variant="subtle"
     size="sm"
     class="whitespace-nowrap"
     :label="t(`controlSheet.result.${result ?? 'pending'}`)"
