@@ -71,16 +71,19 @@ const detail = computed(() => {
   <div class="flex items-center gap-3">
     <CommonAccountAvatar :alt="member.name" :text="avatarText" size="md" />
     <div class="min-w-0">
-      <!-- The tag starts the line and a long name wraps after it. -->
-      <p class="text-highlighted text-sm font-semibold break-words">
+      <!-- The tag beside the name, which wraps in its own column, so the
+           tag never sits inside it. -->
+      <p
+        class="text-highlighted flex items-start gap-1.5 text-sm font-semibold"
+      >
         <CommonMemberBadge
           v-if="tag"
           :member="member"
           size="sm"
           :tooltip="false"
-          class="me-1.5 align-middle"
+          class="shrink-0"
         />
-        <span v-if="name" class="align-middle">{{ name }}</span>
+        <span v-if="name" class="min-w-0 break-words">{{ name }}</span>
       </p>
       <p class="text-muted text-xs break-words">{{ detail }}</p>
     </div>
