@@ -67,20 +67,11 @@ const othersText = computed(() =>
           <span class="sr-only">{{ othersText }}</span>
         </UBadge>
         <template #content>
-          <div class="w-max max-w-sm space-y-2 p-3" aria-hidden="true">
-            <p class="text-muted text-xs font-medium">
-              {{ othersTitle }}
-            </p>
-            <ul class="space-y-3">
-              <li v-for="member in others" :key="member.id">
-                <ControlSheetMemberCard
-                  :member="member"
-                  :members="members"
-                  tag
-                />
-              </li>
-            </ul>
-          </div>
+          <ControlSheetMemberCardList
+            :list="others"
+            :members="members"
+            :title="othersTitle"
+          />
         </template>
       </UPopover>
     </li>
