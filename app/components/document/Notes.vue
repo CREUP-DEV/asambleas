@@ -125,6 +125,14 @@ const available = computed(() => data.value?.available === true);
 const notes = computed(() => data.value?.notes ?? []);
 const listed = computed(() => placeNotes(notes.value, props.blocks));
 const total = computed(() => notes.value.length);
+/**
+ * What the button counts: the account's notes, and what the control sheet
+ * says about the document, which counts as one (user's decision of
+ * 2026-11-18).
+ */
+const shownCount = computed(
+  () => total.value + (sheetObservations.value ? 1 : 0),
+);
 
 function replace(list: DocumentNoteDto[]): void {
   if (data.value) data.value = { ...data.value, notes: list };
@@ -437,20 +445,21 @@ defineExpose({ annotate, available });
       icon="i-lucide-sticky-note"
       :label="t('notes.button')"
       :aria-label="
-        total > 0 ? t('notes.buttonCount', { count: total }, total) : undefined
+        shownCount > 0
+          ? t('notes.buttonCount', { count: shownCount }, shownCount)
+          : undefined
       "
       data-testid="document-notes-open"
       @click="drawerOpen = true"
     >
-      <template v-if="total > 0" #trailing>
-        <UBadge
-          :label="String(total)"
-          color="neutral"
-          variant="subtle"
-          size="sm"
-          class="tabular-nums"
+      <template v-if="shownCount > 0" #trailing>
+        <!-- A round count, as on a notification. -->
+        <span
+          class="bg-inverted text-inverted inline-flex size-5 shrink-0 items-center justify-center rounded-full text-[11px] leading-none font-semibold tabular-nums"
           aria-hidden="true"
-        />
+        >
+          {{ shownCount }}
+        </span>
       </template>
     </UButton>
 
