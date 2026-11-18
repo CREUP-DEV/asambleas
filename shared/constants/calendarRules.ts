@@ -35,10 +35,10 @@ export const CALENDAR_RULES_PERMISSION = PERMISSION_KEYS.ASSEMBLY_MANAGE;
  *   20.1);
  * - candidacies_close: 96 hours before the start (RRI art. 41.1).
  *
- * reports_close, the deadline of the reports (kind `report`), has neither
- * a minimum nor a default: the regulations set none, and a report comes in
- * however late (it is only marked so, never put to the assembly). Each
- * type gets one at /admin/calendario, each assembly on its calendar.
+ * reports_close, the deadline of the reports (kind `report`), is not in
+ * the regulations: 5 days before by default and no later than 48 hours
+ * before (the Secretaría's choice of 2026-11-18). A report comes in however
+ * late; it is only marked so, never put to the assembly.
  *
  * An extraordinary assembly convened with less than 5 days must send every
  * document with the convocation (RRI art. 13.1.a, RFAG art. 10.1.a). A
@@ -70,6 +70,7 @@ export const INITIAL_CALENDAR_RULES: Record<AssemblyType, CalendarRules> = {
       documents_publish: { days: 12 },
       amendments_open: { days: 12 },
       documents_close: { days: 8 },
+      reports_close: { days: 5 },
       amendments_close: { days: 4 },
       candidacies_close: { hours: 96 },
     },
@@ -78,6 +79,7 @@ export const INITIAL_CALENDAR_RULES: Record<AssemblyType, CalendarRules> = {
       agenda_final: { days: 14 },
       documents_publish: { days: 12 },
       documents_close: { days: 8 },
+      reports_close: { hours: 48 },
       amendments_close: { hours: 72 },
       candidacies_close: { hours: 96 },
     },
@@ -90,6 +92,7 @@ export const INITIAL_CALENDAR_RULES: Record<AssemblyType, CalendarRules> = {
       convocation: { days: 15 },
       agenda_final: { days: 7 },
       documents_close: { days: 7 },
+      reports_close: { days: 5 },
       documents_publish: { days: 5 },
       amendments_open: { days: 5 },
       amendments_close: { days: 4 },
@@ -100,6 +103,7 @@ export const INITIAL_CALENDAR_RULES: Record<AssemblyType, CalendarRules> = {
       agenda_final: { days: 7 },
       documents_publish: { days: 5 },
       documents_close: { days: 5 },
+      reports_close: { hours: 48 },
       amendments_close: { hours: 72 },
       candidacies_close: { hours: 96 },
     },
@@ -112,6 +116,7 @@ export const INITIAL_CALENDAR_RULES: Record<AssemblyType, CalendarRules> = {
       convocation: { days: 7 },
       agenda_final: { days: 7 },
       documents_close: { days: 6 },
+      reports_close: { days: 5 },
       documents_publish: { days: 5 },
       amendments_open: { days: 5 },
       amendments_close: { days: 4 },
@@ -121,6 +126,7 @@ export const INITIAL_CALENDAR_RULES: Record<AssemblyType, CalendarRules> = {
       agenda_final: { days: 7 },
       documents_publish: { days: 5 },
       documents_close: { days: 5 },
+      reports_close: { hours: 48 },
       amendments_close: { hours: 72 },
       candidacies_close: { hours: 96 },
     },

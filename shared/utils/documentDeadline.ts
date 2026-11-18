@@ -5,8 +5,8 @@ import type { DocumentKind, MilestoneKey } from "../constants/domain";
  * (the «Fuera de plazo» of the validation page): `candidacies_close` for
  * candidacies and venues, `reports_close` for reports, `documents_close`
  * for everything else. Reports have a deadline of their own, set per
- * assembly type (/admin/calendario) and per assembly; without it a report
- * is never late, whatever `documents_close` says.
+ * assembly type (/admin/calendario) and per assembly; an assembly without
+ * it never reads a report late, whatever `documents_close` says.
  */
 export function documentDeadlineKey(kind: DocumentKind): MilestoneKey {
   if (kind === "candidacy" || kind === "venue") return "candidacies_close";
