@@ -19,8 +19,6 @@ export type VoteRow = typeof votes.$inferSelect;
  * answer, worded by useApi().notifyError in the console and the sheet.
  */
 export const VOTE_MESSAGE_KEYS = {
-  /** Recording a vote on a draft or closed assembly. */
-  notInSession: "common.errors.voteNotInSession",
   /** Voiding a vote or changing its unanimity once the assembly closed. */
   closed: "common.errors.voteAssemblyClosed",
   /** Voiding it again, or putting a voided vote on screen. */

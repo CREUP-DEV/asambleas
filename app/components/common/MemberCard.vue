@@ -65,7 +65,9 @@ const university = computed(() =>
 );
 
 /** The line in bold: the university when there is one. */
-const name = computed(() => university.value ?? denomination.value);
+const name = computed(() =>
+  memberHighlight(props.member, full.value?.university),
+);
 
 /**
  * "Asociado · Consejo de Estudiantes" under a university, "CEA · Ana

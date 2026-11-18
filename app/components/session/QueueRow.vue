@@ -179,7 +179,7 @@ function focusRow(): void {
         icon="i-lucide-radio"
         class="shrink-0"
         :aria-label="t('session.queue.debateNamed', { code })"
-        :disabled="busy"
+        :disabled="busy || !session.inSession.value"
         @click.stop="session.requestDebate(amendment)"
       >
         <span class="hidden sm:inline">{{ t("session.queue.debate") }}</span>

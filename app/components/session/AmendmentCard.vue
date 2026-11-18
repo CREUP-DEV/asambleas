@@ -706,7 +706,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
               icon="i-lucide-check"
               :label="t('session.actions.assent')"
               :loading="busy"
-              :disabled="busy"
+              :disabled="busy || !session.inSession.value"
               @click="session.approve(amendment, 'assent')"
             />
           </UTooltip>
@@ -717,7 +717,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
               variant="soft"
               icon="i-lucide-gavel"
               :label="t('session.actions.vote')"
-              :disabled="busy"
+              :disabled="busy || !session.inSession.value"
               @click="session.openVote(amendment)"
             />
           </UTooltip>

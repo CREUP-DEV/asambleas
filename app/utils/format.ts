@@ -297,6 +297,24 @@ export function memberNameRepeatsAcronym(member: MemberNames): boolean {
   return name === "" || name === member.acronym.trim().toLowerCase();
 }
 
+/**
+ * The line that tells a member apart, set in bold where it is named with
+ * its avatar (CommonMemberCard, the Mesa's member grids): a council's
+ * university, since councils share the same or nearly the same
+ * denomination (user's decision of 2026-11-17), and any other member's
+ * denomination. Null when there is nothing but the acronym. An office of
+ * the CEA never shows a university.
+ */
+export function memberHighlight(
+  member: MemberNames & { kind?: string | null },
+  university?: string | null,
+): string | null {
+  const ownUniversity =
+    member.kind === "executive" ? null : university?.trim() || null;
+  if (ownUniversity) return ownUniversity;
+  return memberNameRepeatsAcronym(member) ? null : member.name.trim();
+}
+
 /** "PRES · Presidencia", or just "VDT" when the name repeats the acronym. */
 export function memberLabel(member: MemberNames): string {
   return memberNameRepeatsAcronym(member)

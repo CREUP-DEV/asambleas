@@ -5,6 +5,7 @@ import {
   formatMoment,
   formatRelative,
   fromAppWallTime,
+  memberHighlight,
   memberLabel,
   memberNameRepeatsAcronym,
   toAppWallTime,
@@ -248,5 +249,34 @@ describe("formatMoment", () => {
     expect(moment.dayOffset).toBe(-2);
     expect(moment.text).toContain("18:45");
     expect(moment.text).toContain("16");
+  });
+});
+
+describe("memberHighlight", () => {
+  it("puts a council's university first, any other member's name", () => {
+    const council = {
+      acronym: "CEUGR",
+      name: "Consejo de Estudiantes",
+      kind: "asociado",
+    };
+    expect(memberHighlight(council, " Universidad de Granada ")).toBe(
+      "Universidad de Granada",
+    );
+    expect(memberHighlight(council, null)).toBe("Consejo de Estudiantes");
+    expect(
+      memberHighlight({
+        acronym: "ANEM",
+        name: "Asociación",
+        kind: "sectorial",
+      }),
+    ).toBe("Asociación");
+    // An office never reads as a university, and an acronym alone is none.
+    expect(
+      memberHighlight(
+        { acronym: "PRES", name: "Presidencia", kind: "executive" },
+        "Universidad de Granada",
+      ),
+    ).toBe("Presidencia");
+    expect(memberHighlight({ acronym: "VDT", name: "VDT" })).toBe(null);
   });
 });

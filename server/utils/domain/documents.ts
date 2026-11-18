@@ -64,6 +64,7 @@ import {
 } from "./agendaWrites";
 import { diffChanges, sortedIds } from "./changes";
 import { recordEvent } from "./events";
+import { assertSessionOpen } from "./sessionOpen";
 import { stampDebateStarted } from "./positionsPublication";
 import { loadExecutiveMask, resolveBodyMembers } from "./executiveMembers";
 import { withHeadcount } from "./headcounts";
@@ -2685,9 +2686,7 @@ export async function recordFinalVote(
   const { actor, assembly } = ctx;
   if (!canModerate(actor))
     fail(403, "No tienes permiso para registrar votaciones");
-  if (assembly.status === "draft" || assembly.status === "closed") {
-    fail(409, "La asamblea no está en curso");
-  }
+  assertSessionOpen(assembly.status);
   // The members present come from the Mesa's latest headcount unless typed.
   const based = await withHeadcount(
     assembly.id,

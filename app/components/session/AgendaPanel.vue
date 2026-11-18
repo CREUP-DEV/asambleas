@@ -135,7 +135,10 @@ function itemDone(documents: DocumentSummaryDto[]): boolean {
                 :aria-label="
                   t('session.agenda.debateItem', { title: row.item.title })
                 "
-                :disabled="liveItemId === row.item.id && !liveDocumentId"
+                :disabled="
+                  !session.inSession.value ||
+                  (liveItemId === row.item.id && !liveDocumentId)
+                "
                 @click="session.debateAgendaItem(row.item.id)"
               />
             </UTooltip>
@@ -201,6 +204,7 @@ function itemDone(documents: DocumentSummaryDto[]): boolean {
                         title: document.title,
                       })
                     "
+                    :disabled="!session.inSession.value"
                     @click="session.debateDocument(document)"
                   />
                 </UTooltip>

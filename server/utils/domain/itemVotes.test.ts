@@ -210,14 +210,14 @@ describe("recordItemVote", () => {
     ).rejects.toMatchObject({ statusCode: 403 });
   });
 
-  it("refuses a draft or closed assembly, read under the lock", async () => {
-    for (const status of ["draft", "closed"]) {
+  it("refuses an assembly whose session is not open, read under the lock", async () => {
+    for (const status of ["draft", "convened", "closed"]) {
       recording(status);
       await expect(
         recordItemVote(mesa, assembly, item, body({ method: "assent" })),
       ).rejects.toMatchObject({
         statusCode: 409,
-        data: { messageKey: "common.errors.voteNotInSession" },
+        data: { messageKey: "common.errors.sessionNotOpen" },
       });
     }
     expect(state.inserted).toEqual([]);
@@ -289,7 +289,7 @@ describe("recordItemVote", () => {
   });
 
   it("takes withdrawn, postponed and draft documents as not voting it", async () => {
-    recording("convened", [
+    recording("in_session", [
       { voted: true, status: "withdrawn" },
       { voted: true, status: "postponed" },
       { voted: true, status: "draft" },

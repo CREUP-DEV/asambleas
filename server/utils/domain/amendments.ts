@@ -132,6 +132,7 @@ import {
   shareLockAssembly,
 } from "./documents";
 import { recordEvent } from "./events";
+import { assertSessionOpen } from "./sessionOpen";
 import { toVoteDto, type VoteRow } from "./votes";
 import {
   loadAnswersOnValidation,
@@ -4685,6 +4686,9 @@ export async function applyAmendmentOutcome(
   const { actor, amendment, document, now } = ctx;
   assertModerator(actor);
   assertNotFinal(ctx);
+  // The Mesa decides in the room: only while the session is open. Reopening
+  // a decision recorded by mistake corrects the record and may wait.
+  if (body.action !== "reopen") assertSessionOpen(ctx.assembly.status);
   const lock = buildOptimisticLockCondition(
     amendments.updatedAt,
     body.updatedAt,

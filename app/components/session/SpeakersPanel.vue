@@ -14,7 +14,8 @@ import {
 
 /**
  * Speaking turns: the Mesa writes down who asks for the floor (a member,
- * found by acronym or name, and optionally the person), gives the floor,
+ * picked from a grid of every member who may ask, SessionSpeakerAddDialog,
+ * and optionally the person), gives the floor,
  * ends it and keeps the queue in order. Every Mesa device sees the same
  * list, live. Who has the floor and the one next step lead; a switch at the
  * bottom (a setting that rarely changes) decides whether the attendees see
@@ -25,7 +26,9 @@ import {
  * happens in an explicit mode with up and down buttons that keep the
  * keyboard focus on the turn being moved. Mistakes are mended from "Más":
  * the floor given to the wrong person goes back to the head of the list,
- * and a misspelt name is corrected.
+ * and a misspelt name is corrected. Until the session is open nobody is
+ * written down nor given the floor; while it is suspended the Mesa may
+ * still end the floor and take turns off the list.
  */
 const session = useSessionConsoleContext();
 const speakers = session.speakers;
@@ -69,6 +72,9 @@ function setVisible(value: boolean): void {
 
 // Adding a turn --------------------------------------------------------------
 
+/** Nothing is written down or given before the session opens. */
+const closed = computed(() => !session.inSession.value);
+
 const { data: members, status: membersStatus } = useLazyFetch<MemberDto[]>(
   "/api/members",
   {
@@ -78,81 +84,15 @@ const { data: members, status: membersStatus } = useLazyFetch<MemberDto[]>(
   },
 );
 
-/**
- * The councils and sectorials at the latest headcount, in the room or
- * delegated (whoever holds the delegation may speak for them), or null
- * before the first one: then every member is offered.
- */
-const inRoom = computed<Set<string> | null>(() => {
-  const latest = session.headcounts.latest.value;
-  if (!latest) return null;
-  return new Set(latest.entries.map((entry) => entry.member.id));
+function openAdd(): void {
+  if (!session.requireInSession()) return;
+  session.speakerAddDialog.open = true;
+}
+// The panel moves between the wide and the narrow layout: the dialog the
+// other copy would open goes with it.
+onBeforeUnmount(() => {
+  session.speakerAddDialog.open = false;
 });
-
-/** Whether the headcount says who of this kind is in the room. */
-const COUNTED_KINDS = new Set<MemberDto["kind"]>(["asociado", "sectorial"]);
-
-/** How many turns a member has had the floor in, in this assembly. */
-function spoken(memberId: string): number {
-  return speakers.history.value.get(memberId)?.spoken ?? 0;
-}
-
-/**
- * Who may ask for the floor: the active members, councils and sectorials
- * only while in the room or delegated (the CEA's offices and the others are not counted,
- * so they are always there). Those who have spoken most in the assembly go
- * first; the rest keep the general order. Never the generic "CEA": it is
- * not a member the Mesa gives the floor to.
- */
-const memberItems = computed(() =>
-  addableMembers(members.value ?? [])
-    .filter(
-      (member) =>
-        member.active &&
-        (inRoom.value === null ||
-          !COUNTED_KINDS.has(member.kind) ||
-          inRoom.value.has(member.id)),
-    )
-    .map((member, index) => ({ member, index }))
-    .sort(
-      (a, b) => spoken(b.member.id) - spoken(a.member.id) || a.index - b.index,
-    )
-    .map(({ member }) => memberMenuItem(member)),
-);
-
-/** The people already written down for the member chosen, latest first. */
-const speakerSuggestions = computed(() =>
-  memberId.value
-    ? (speakers.history.value.get(memberId.value)?.speakers ?? [])
-    : [],
-);
-const speakerListId = useId();
-
-const memberId = ref<string | undefined>(undefined);
-const speakerName = ref("");
-const memberInput = useTemplateRef<{ inputRef?: HTMLInputElement | null }>(
-  "memberInput",
-);
-const adding = computed(() => Boolean(session.busy.value["speaker-add"]));
-const canAdd = computed(
-  () =>
-    !adding.value &&
-    (Boolean(memberId.value) || speakerName.value.trim() !== ""),
-);
-
-/** Writes the turn down, clears the form and goes back to the search. */
-async function addTurn(): Promise<void> {
-  if (!canAdd.value) return;
-  const ok = await speakers.add({
-    memberId: memberId.value ?? null,
-    speaker: speakerName.value.trim() || null,
-  });
-  if (!ok) return;
-  memberId.value = undefined;
-  speakerName.value = "";
-  await nextTick();
-  memberInput.value?.inputRef?.focus();
-}
 
 // The floor ------------------------------------------------------------------
 
@@ -170,6 +110,8 @@ const mainAction = computed(() => {
       icon: "i-lucide-mic",
       busy:
         busyFor(first) || (speaking.value ? busyFor(speaking.value) : false),
+      // Giving the floor waits for the session to open.
+      blocked: closed.value,
     };
   }
   if (speaking.value) {
@@ -177,6 +119,7 @@ const mainAction = computed(() => {
       label: t("session.speakers.finish"),
       icon: "i-lucide-mic-off",
       busy: busyFor(speaking.value),
+      blocked: false,
     };
   }
   return null;
@@ -185,6 +128,7 @@ const mainAction = computed(() => {
 const renameItem = (turn: SpeakingTurnDto): DropdownMenuItem => ({
   label: t("session.speakers.rename"),
   icon: "i-lucide-pencil",
+  disabled: closed.value,
   onSelect: () => session.openSpeakerRename(turn),
 });
 
@@ -211,6 +155,7 @@ function turnMenu(turn: SpeakingTurnDto): DropdownMenuItem[][] {
       {
         label: t("session.speakers.giveNow"),
         icon: "i-lucide-mic",
+        disabled: closed.value,
         onSelect: () => void giveFloorNow(turn),
       },
       renameItem(turn),
@@ -233,6 +178,7 @@ function speakingMenu(turn: SpeakingTurnDto): DropdownMenuItem[][] {
       {
         label: t("session.speakers.backToQueue"),
         icon: "i-lucide-undo-2",
+        disabled: closed.value,
         onSelect: () => void speakers.returnToQueue(turn),
       },
       renameItem(turn),
@@ -435,7 +381,7 @@ function duration(turn: SpeakingTurnDto): string | null {
             :icon="mainAction.icon"
             :label="mainAction.label"
             :loading="mainAction.busy"
-            :disabled="anyTurnBusy"
+            :disabled="anyTurnBusy || mainAction.blocked"
             @click="speakers.next()"
           />
           <UButton
@@ -450,64 +396,20 @@ function duration(turn: SpeakingTurnDto): string | null {
         </div>
       </section>
 
-      <!-- Write a turn down: member search, optional person, Enter. -->
-      <form
-        class="space-y-2"
-        :aria-label="t('session.speakers.addTitle')"
-        @submit.prevent="addTurn"
-      >
-        <UFormField
-          :label="t('session.speakers.member')"
-          :help="inRoom ? t('session.speakers.memberInRoom') : undefined"
-          name="session-speaker-member"
-        >
-          <UInputMenu
-            ref="memberInput"
-            v-model="memberId"
-            :items="memberItems"
-            value-key="value"
-            :ui="MEMBER_MENU_UI"
-            :filter-fields="MEMBER_MENU_FILTER_FIELDS"
-            :loading="membersStatus === 'pending'"
-            :placeholder="t('session.speakers.memberPlaceholder')"
-            icon="i-lucide-search"
-            :trailing="false"
-            open-on-click
-            class="w-full"
-          />
-        </UFormField>
-        <UFormField
-          :label="t('session.speakers.person')"
-          :hint="t('session.vote.optional')"
-          name="session-speaker-name"
-        >
-          <UInput
-            v-model="speakerName"
-            :maxlength="SPEAKER_NAME_MAX_LENGTH"
-            autocomplete="off"
-            :list="speakerSuggestions.length > 0 ? speakerListId : undefined"
-            class="w-full"
-          />
-          <!-- The names already written for this member, to pick again -->
-          <datalist v-if="speakerSuggestions.length > 0" :id="speakerListId">
-            <option
-              v-for="name in speakerSuggestions"
-              :key="name"
-              :value="name"
-            />
-          </datalist>
-        </UFormField>
-        <UButton
-          type="submit"
-          block
-          color="neutral"
-          variant="soft"
-          icon="i-lucide-plus"
-          :label="t('session.speakers.add')"
-          :loading="adding"
-          :disabled="!canAdd"
-        />
-      </form>
+      <!-- Write a turn down: a grid of members, optional person. -->
+      <UButton
+        block
+        color="neutral"
+        variant="soft"
+        icon="i-lucide-plus"
+        :label="t('session.speakers.addOpen')"
+        :disabled="closed"
+        @click="openAdd"
+      />
+      <SessionSpeakerAddDialog
+        :members="members ?? []"
+        :loading="membersStatus === 'pending'"
+      />
 
       <!-- Waiting turns. -->
       <section class="space-y-2" aria-labelledby="session-speakers-waiting">
@@ -652,7 +554,7 @@ function duration(turn: SpeakingTurnDto): string | null {
       <USwitch
         :model-value="visible"
         :loading="visibleBusy"
-        :disabled="visibleBusy"
+        :disabled="visibleBusy || (closed && !visible)"
         :label="t('session.speakers.visible')"
         :description="
           visible

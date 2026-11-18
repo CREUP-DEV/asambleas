@@ -39,6 +39,7 @@ import { loadCalendarRules } from "./calendarRules";
 import { diffChanges } from "./changes";
 import type { Executor } from "./events";
 import { recordEvent } from "./events";
+import { assertSessionOpen } from "./sessionOpen";
 
 /**
  * Headcounts the Mesa takes during the session (docs/api.md, "Headcounts"):
@@ -80,11 +81,9 @@ function fail(statusCode: number, message: string, data?: unknown): never {
   throw createError({ statusCode, message, data });
 }
 
+/** Counts are taken, and corrected, only while the session is open. */
 function assertCountable(assembly: Pick<AssemblyRow, "status">): void {
-  if (assembly.status === "closed") fail(409, "La asamblea está cerrada");
-  if (assembly.status === "draft") {
-    fail(409, "La asamblea todavía no está convocada");
-  }
+  assertSessionOpen(assembly.status);
 }
 
 /**

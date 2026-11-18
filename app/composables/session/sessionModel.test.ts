@@ -54,7 +54,9 @@ import {
   sessionElapsedSeconds,
   sessionFinalVoteReasons,
   sessionFormatDuration,
+  sessionItemDocuments,
   sessionNextAgendaTarget,
+  sessionNextItemDocument,
   sessionNextAmendmentId,
   sessionSpeakers,
   sessionTurnDuration,
@@ -1584,6 +1586,23 @@ describe("session model", () => {
       expect(target("i2")).toEqual(["i3", null]);
       expect(target("i3")).toBe(null);
       expect(target("missing")).toEqual(["i1", null]);
+
+      // Within an item, the next published document, then nothing.
+      const i3 = rows.find((row) => row.item.id === "i3");
+      expect(sessionItemDocuments(i3).map((document) => document.id)).toEqual([
+        "d3",
+        "d4",
+      ]);
+      expect(sessionNextItemDocument(i3, "d3")?.id).toBe("d4");
+      expect(sessionNextItemDocument(i3, "d4")).toBe(null);
+      expect(sessionNextItemDocument(i3, null)).toBe(null);
+      // A draft is never debated, nor is a document of another item.
+      const i2 = rows.find((row) => row.item.id === "i2");
+      expect(sessionItemDocuments(i2).map((document) => document.id)).toEqual([
+        "d1",
+      ]);
+      expect(sessionNextItemDocument(i2, "d1")).toBe(null);
+      expect(sessionNextItemDocument(i2, "d3")).toBe(null);
     });
 
     it("explains why the final vote waits", () => {

@@ -3,7 +3,9 @@ import type { DropdownMenuItem } from "@nuxt/ui";
 import type { DocumentSummaryDto } from "~~/shared/types/api";
 import {
   isSessionOpen,
+  sessionItemDocuments,
   sessionItemVotePlan,
+  sessionNextItemDocument,
 } from "~/composables/session/sessionModel";
 import { useFinalVoteReasonText } from "~/composables/session/useFinalVoteReasonText";
 import { useItemVoteText } from "~/composables/session/useItemVoteText";
@@ -22,12 +24,15 @@ import { useSessionStageLabel } from "~/composables/session/useSessionStageLabel
  *   has no vote in force, and then one line says how it went; "Más" votes
  *   it again, voids the vote or changes its unanimity;
  * - a document: start with (or go on to) the next amendment the Mesa can
- *   decide, then the final vote, then the next item; "Más" takes it out of
- *   the debate and back to its item;
+ *   decide, then the final vote, then the item's next document, then the
+ *   next item; the item's other documents are one click away above them,
+ *   and "Más" takes it out of the debate and back to its item;
  * - an amendment: its change and the actions that fit (NowAmendment).
  *
  * When this device is looking at another document than the one in debate,
- * it says so and offers to go back.
+ * it says so and offers to go back. Until the session is open nothing is
+ * debated: the buttons that would put something on screen are disabled
+ * (the console says why above).
  *
  * One region that is always there tells screen readers what is debated now
  * and where it stands, so a change made from another Mesa device is
@@ -38,6 +43,8 @@ const { t } = useI18n();
 
 const live = computed(() => session.liveState.value);
 const liveBusy = computed(() => Boolean(session.busy.value.live));
+/** Nothing goes on screen or is recorded before the session opens. */
+const closed = computed(() => !session.inSession.value);
 
 const liveRow = computed(() => {
   const id = live.value?.agendaItemId;
@@ -95,6 +102,16 @@ const nextAgendaLabel = computed(() =>
   nextAgenda.value ? rowLabel(nextAgenda.value.row) : "",
 );
 
+/** The published documents of the item in debate, in the agenda's order. */
+const itemDocuments = computed(() => sessionItemDocuments(liveRow.value));
+/** The item's document after the one in debate, before the next item. */
+const nextDocument = computed(() =>
+  sessionNextItemDocument(liveRow.value, live.value?.documentId ?? null),
+);
+/** How a document is named on a button: its reference, else its title. */
+const documentName = (document: DocumentSummaryDto) =>
+  document.reference ?? document.title;
+
 // Document under debate ------------------------------------------------------------
 
 const document = computed(() => session.document.value ?? null);
@@ -149,6 +166,18 @@ const documentStatus = computed(() => {
   return t("session.now.document.waiting");
 });
 
+/**
+ * The one main step of a document: its next amendment, its final vote,
+ * then the item's next document, then the next item.
+ */
+const documentStep = computed<"amendment" | "final" | "document" | "item">(
+  () => {
+    if (next.value) return "amendment";
+    if (finalVoteReady.value) return "final";
+    return nextDocument.value ? "document" : "item";
+  },
+);
+
 /** "Más" of a document: back to its agenda item, out of the debate. */
 const documentMoreItems = computed<DropdownMenuItem[][]>(() => [
   [
@@ -161,12 +190,6 @@ const documentMoreItems = computed<DropdownMenuItem[][]>(() => [
 ]);
 
 // Agenda item under debate ---------------------------------------------------------
-
-const itemDocuments = computed(() =>
-  (liveRow.value?.documents ?? []).filter(
-    (document) => document.status === "published",
-  ),
-);
 
 /**
  * The item's own vote: whether it takes one (none of its documents the Mesa
@@ -341,7 +364,13 @@ const announcement = computed(() => {
         {{ t("session.now.idle") }}
       </h3>
       <p class="text-default">
-        {{ nextAgenda ? t("session.now.idleHint") : t("session.agenda.empty") }}
+        {{
+          !nextAgenda
+            ? t("session.agenda.empty")
+            : closed
+              ? t("session.now.idleClosed")
+              : t("session.now.idleHint")
+        }}
       </p>
       <UButton
         v-if="nextAgenda"
@@ -349,6 +378,7 @@ const announcement = computed(() => {
         icon="i-lucide-play"
         :label="t('session.now.start', { title: nextAgendaLabel })"
         :loading="liveBusy"
+        :disabled="closed"
         @click="session.debateAgendaTarget(nextAgenda)"
       />
     </template>
@@ -418,6 +448,43 @@ const announcement = computed(() => {
         </p>
       </div>
 
+      <!-- The item's other documents, one click away. -->
+      <nav
+        v-if="itemDocuments.length >= 2"
+        class="space-y-1.5"
+        :aria-label="t('session.now.itemDocuments')"
+      >
+        <p class="text-muted text-xs font-medium">
+          {{ t("session.now.itemDocuments") }}
+        </p>
+        <ol class="flex flex-wrap gap-1.5">
+          <li v-for="(item, index) in itemDocuments" :key="item.id">
+            <UButton
+              size="sm"
+              :color="item.id === live?.documentId ? 'primary' : 'neutral'"
+              :variant="item.id === live?.documentId ? 'soft' : 'outline'"
+              :icon="
+                item.id === live?.documentId ? 'i-lucide-radio' : undefined
+              "
+              :label="`${index + 1}. ${documentName(item)}`"
+              :aria-current="item.id === live?.documentId ? 'true' : undefined"
+              :aria-label="
+                item.id === live?.documentId
+                  ? t('session.now.documentInDebate', { title: item.title })
+                  : t('session.agenda.debateDocumentNamed', {
+                      title: item.title,
+                    })
+              "
+              :disabled="closed || liveBusy"
+              class="max-w-full text-start whitespace-normal"
+              @click="
+                item.id !== live?.documentId && session.debateDocument(item)
+              "
+            />
+          </li>
+        </ol>
+      </nav>
+
       <div
         v-if="!document || (!amendmentsLoaded && document.amendable)"
         class="space-y-2"
@@ -472,6 +539,7 @@ const announcement = computed(() => {
               t('session.now.startWith', { code: session.label(next.id) })
             "
             :loading="liveBusy"
+            :disabled="closed"
             @click="session.debateNext()"
           />
           <UButton
@@ -479,16 +547,33 @@ const announcement = computed(() => {
             size="lg"
             icon="i-lucide-gavel"
             :label="t('session.finalVote.open')"
+            :disabled="closed"
             @click="session.finalVoteDialog.open = true"
           />
           <UButton
+            v-if="nextDocument"
+            :size="documentStep === 'document' ? 'lg' : 'md'"
+            :color="documentStep === 'document' ? 'primary' : 'neutral'"
+            :variant="documentStep === 'document' ? 'solid' : 'outline'"
+            trailing-icon="i-lucide-arrow-right"
+            :label="
+              t('session.now.nextDocument', {
+                title: documentName(nextDocument),
+              })
+            "
+            :loading="liveBusy && documentStep === 'document'"
+            :disabled="closed"
+            @click="session.debateDocument(nextDocument)"
+          />
+          <UButton
             v-if="nextAgenda"
-            :size="!next && !finalVoteReady ? 'lg' : 'md'"
-            :color="!next && !finalVoteReady ? 'primary' : 'neutral'"
-            :variant="!next && !finalVoteReady ? 'solid' : 'ghost'"
+            :size="documentStep === 'item' ? 'lg' : 'md'"
+            :color="documentStep === 'item' ? 'primary' : 'neutral'"
+            :variant="documentStep === 'item' ? 'solid' : 'ghost'"
             trailing-icon="i-lucide-arrow-right"
             :label="t('session.now.nextItem', { title: nextAgendaLabel })"
-            :loading="liveBusy && !next"
+            :loading="liveBusy && documentStep === 'item'"
+            :disabled="closed"
             @click="session.debateAgendaTarget(nextAgenda)"
           />
           <UDropdownMenu :items="documentMoreItems" :content="{ align: 'end' }">
@@ -550,7 +635,7 @@ const announcement = computed(() => {
             :aria-label="
               t('session.agenda.debateDocumentNamed', { title: item.title })
             "
-            :disabled="liveBusy"
+            :disabled="closed || liveBusy"
             @click="session.debateDocument(item)"
           />
         </li>
@@ -564,6 +649,7 @@ const announcement = computed(() => {
           icon="i-lucide-gavel"
           :label="t('session.itemVote.open')"
           :loading="itemVoteBusy"
+          :disabled="closed"
           @click="openItemVote"
         />
         <UButton
@@ -580,6 +666,7 @@ const announcement = computed(() => {
           trailing-icon="i-lucide-arrow-right"
           :label="t('session.now.nextItem', { title: nextAgendaLabel })"
           :loading="liveBusy"
+          :disabled="closed"
           @click="session.debateAgendaTarget(nextAgenda)"
         />
         <UDropdownMenu :items="itemMoreItems" :content="{ align: 'end' }">

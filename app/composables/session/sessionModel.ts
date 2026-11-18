@@ -1066,6 +1066,30 @@ export function sessionNextAgendaTarget(
   return { row, document: published.length === 1 ? published[0]! : null };
 }
 
+/** The published documents of an agenda item, in the agenda's order. */
+export function sessionItemDocuments(
+  row: Pick<SessionAgendaRow, "documents"> | null | undefined,
+): DocumentSummaryDto[] {
+  return (row?.documents ?? []).filter(
+    (document) => document.status === "published",
+  );
+}
+
+/**
+ * The published document of the same agenda item after `documentId`, which
+ * the Mesa moves the debate to before the next item. Null after the last
+ * one, or when the document is not one of the item's.
+ */
+export function sessionNextItemDocument(
+  row: Pick<SessionAgendaRow, "documents"> | null | undefined,
+  documentId: string | null,
+): DocumentSummaryDto | null {
+  if (!documentId) return null;
+  const documents = sessionItemDocuments(row);
+  const index = documents.findIndex((document) => document.id === documentId);
+  return index === -1 ? null : (documents[index + 1] ?? null);
+}
+
 // Live connection ------------------------------------------------------------
 
 export type SessionConnection = "live" | "polling" | "connecting" | "offline";

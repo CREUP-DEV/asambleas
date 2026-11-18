@@ -36,6 +36,10 @@ import {
   type AssemblySettings,
   type ProponentPosition,
 } from "~~/shared/constants/domain";
+import {
+  isSessionInProgress,
+  liveStateClearsOnly,
+} from "~~/shared/utils/sessionGate";
 import { useApi } from "../api/useApi";
 import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
 import {
@@ -271,6 +275,11 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     ...(assembly.value?.settings ?? {}),
   }));
   const canModerate = computed(() => assembly.value?.can.moderate ?? false);
+  /**
+   * The session is open: only then does the Mesa project or record
+   * anything (shared/utils/sessionGate.ts; the server refuses it too).
+   */
+  const inSession = computed(() => isSessionInProgress(assembly.value?.status));
 
   const agendaRows = computed(() =>
     buildSessionAgendaRows(
@@ -549,6 +558,23 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   /** Mutations in flight, by amendment id or action name. */
   const busy = ref<Record<string, boolean>>({});
 
+  /**
+   * Whether the session is open, saying so when it is not: the buttons that
+   * project or record are disabled then, and this stops what a menu, a
+   * shortcut or a dialog left open would still send.
+   */
+  function requireInSession(): boolean {
+    if (inSession.value) return true;
+    toast.add({
+      id: "session-not-open",
+      title: t("session.notInSession"),
+      description: t("common.errors.sessionNotOpen"),
+      color: "warning",
+      icon: "i-lucide-lock",
+    });
+    return false;
+  }
+
   async function track<T>(key: string, run: () => Promise<T>): Promise<T> {
     busy.value = { ...busy.value, [key]: true };
     try {
@@ -769,6 +795,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     body: LiveStateBody,
     options: { silent?: boolean; key?: string } = {},
   ): Promise<boolean> {
+    if (!liveStateClearsOnly(body) && !requireInSession()) return false;
     try {
       liveState.value = await track(options.key ?? "live", () =>
         api.send<LiveStateDto>(`${assemblyUrl.value}/live-state`, {
@@ -968,6 +995,8 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   // The headcount form too: its checkboxes and close button are buttons,
   // which defineShortcuts does not skip.
   const headcountDialog = reactive({ open: false });
+  /** The grid that writes down who asks for the floor. */
+  const speakerAddDialog = reactive({ open: false });
   /** The vote on an agenda item, for the item it was opened on. */
   const itemVoteDialog = reactive({
     open: false,
@@ -1089,17 +1118,20 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       assentDialog.open ||
       lapseDialog.open ||
       speakerRenameDialog.open ||
+      speakerAddDialog.open ||
       headcountDialog.open ||
       itemVoteDialog.open,
   );
 
   function openVote(amendment: AmendmentDto): void {
+    if (!requireInSession()) return;
     voteDialog.amendmentId = amendment.id;
     voteDialog.open = true;
   }
 
   /** Opens the vote on an agenda item (the one in debate). */
   function openItemVote(itemId: string): void {
+    if (!requireInSession()) return;
     itemVoteDialog.agendaItemId = itemId;
     itemVoteDialog.open = true;
   }
@@ -1125,6 +1157,8 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
 
   /** Opens the transactional composer over the sources it can take. */
   function openComposer(sourceIds: string[]): void {
+    // The Mesa's transactional is presented in the room.
+    if (!requireInSession()) return;
     composer.sourceIds = sourceIds.filter((id) => {
       const amendment = byId.value.get(id);
       return amendment ? isSessionTransactable(amendment) : false;
@@ -1153,6 +1187,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     action: OutcomeAction,
     options: OutcomeOptions = {},
   ): Promise<AmendmentOutcomeDto | null> {
+    // Reopening corrects the record; every other outcome is decided in the
+    // room.
+    if (action.action !== "reopen" && !requireInSession()) return null;
     const fresh = byId.value.get(amendment.id) ?? amendment;
     try {
       const result = await track(amendment.id, () =>
@@ -1727,6 +1764,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   async function finalVote(
     body: FinalVoteBody,
   ): Promise<SessionFinalVoteResult> {
+    if (!requireInSession()) {
+      return { ok: false, conflicts: [], undecided: [], tie: false };
+    }
     try {
       const updated = await track("final-vote", () =>
         api.send<DocumentDto>(documentApi("/final-vote"), { body }),
@@ -1811,6 +1851,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     itemId: string,
     input: { question: string; vote: VoteInput },
   ): Promise<SessionItemVoteResult> {
+    if (!requireInSession()) return { ok: false, tie: false };
     const body: ItemVoteBody = {
       question: input.question.trim(),
       vote: sessionCleanVote(input.vote),
@@ -1982,6 +2023,8 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     assemblyPending,
     settings,
     canModerate,
+    inSession,
+    requireInSession,
     agenda,
     agendaStatus,
     agendaError,
@@ -2061,6 +2104,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     lapseDialog,
     speakerRenameDialog,
     headcountDialog,
+    speakerAddDialog,
     itemVoteDialog,
     anyDialogOpen,
     confirm,

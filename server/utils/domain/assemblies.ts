@@ -27,6 +27,7 @@ import {
 } from "../../db/schema";
 import { isUniqueConstraintViolation, throwMutationError } from "../errors";
 import { recordEvent, type Executor, type LiveMessage } from "./events";
+import { assertSessionOpen } from "./sessionOpen";
 import {
   canManageAssemblies,
   canManageDocuments,
@@ -66,6 +67,7 @@ import {
   type CalendarRules,
   type Milestones,
 } from "~~/shared/utils/calendar";
+import { liveStateClearsOnly } from "~~/shared/utils/sessionGate";
 import { loadCalendarRules } from "./calendarRules";
 import {
   publicTitleHiddenItemIds,
@@ -896,7 +898,10 @@ export async function updateLiveState(
   body: LiveStateBody,
 ): Promise<LiveStateDto> {
   await db.transaction(async (tx) => {
-    await lockAssembly(tx, assemblyId);
+    const locked = await lockAssembly(tx, assemblyId);
+    // Nothing goes on screen before the session opens, nor while it is
+    // suspended; taking things off it and the message always may.
+    if (!liveStateClearsOnly(body)) assertSessionOpen(locked.status);
     const [current] = await tx
       .select()
       .from(liveState)

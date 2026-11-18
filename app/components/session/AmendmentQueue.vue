@@ -245,13 +245,18 @@ const failed = computed(
     />
 
     <template v-else-if="document">
-      <CommonEmptyState
-        v-if="!document.amendable || document.format === 'file'"
-        icon="i-lucide-file-lock"
-        size="sm"
-        :title="t('session.queue.notAmendable')"
-        :description="t('session.queue.notAmendableHint')"
-      />
+      <!-- No amendments to take: the Mesa reads the text itself. -->
+      <template v-if="!document.amendable || document.format === 'file'">
+        <p class="text-muted flex items-start gap-1.5 text-sm" role="note">
+          <UIcon
+            name="i-lucide-file-lock"
+            class="mt-0.5 size-4 shrink-0"
+            aria-hidden="true"
+          />
+          {{ t("session.queue.notAmendable") }}
+        </p>
+        <SessionDocumentPreview :document="document" />
+      </template>
       <CommonEmptyState
         v-else-if="counts.total === 0 && awaitingValidation.length === 0"
         icon="i-lucide-inbox"

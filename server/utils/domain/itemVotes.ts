@@ -22,6 +22,7 @@ import {
   shareLockAssembly,
 } from "./documents";
 import { recordEvent, type Executor } from "./events";
+import { assertSessionOpen } from "./sessionOpen";
 import { fillPresent, latestHeadcount } from "./headcounts";
 import { resolveAgendaItem } from "./resolvers";
 import {
@@ -189,11 +190,7 @@ export async function recordItemVote(
     // and headcount writes wait for it.
     const locked = await shareLockAssembly(tx, assembly.id);
     if (!locked) fail(404, "Asamblea no encontrada");
-    if (locked.status === "draft" || locked.status === "closed") {
-      fail(409, "La asamblea no está en curso", {
-        messageKey: VOTE_MESSAGE_KEYS.notInSession,
-      });
-    }
+    assertSessionOpen(locked.status);
     // Agenda writes wait for the assembly lock: the item is there until
     // this commits.
     const [current] = await tx

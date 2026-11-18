@@ -224,7 +224,9 @@ const awaitingValidation = computed(
             block
             icon="i-lucide-gavel"
             :label="t('session.finalVote.open')"
-            :disabled="finalBlocked || !document.can.moderate"
+            :disabled="
+              finalBlocked || !document.can.moderate || !session.inSession.value
+            "
             :aria-describedby="finalBlocked ? reasonsId : undefined"
             @click="session.finalVoteDialog.open = true"
           />

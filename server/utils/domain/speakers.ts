@@ -22,6 +22,8 @@ import { lockAssembly } from "./agendaWrites";
 import type { AssemblyRow } from "./assemblies";
 import type { Executor } from "./events";
 import { recordEvent } from "./events";
+import { assertSessionOpen } from "./sessionOpen";
+import { speakerUpdateClearsOnly } from "~~/shared/utils/sessionGate";
 import {
   planTurnUpdate,
   sortTurns,
@@ -82,8 +84,17 @@ function toTurnDto(
   };
 }
 
-function assertOpen(assembly: Pick<AssemblyRow, "status">): void {
+/**
+ * Turns are written down and given only while the session is open; while
+ * it is suspended the Mesa may still end the floor or take turns off the
+ * list (`clears`), so a break never leaves someone speaking.
+ */
+function assertOpen(
+  assembly: Pick<AssemblyRow, "status">,
+  clears = false,
+): void {
   if (assembly.status === "closed") fail(409, "La asamblea está cerrada");
+  if (!clears) assertSessionOpen(assembly.status);
 }
 
 async function readLiveSpeakers(
@@ -358,10 +369,11 @@ export async function updateSpeakingTurn(
   turnId: string,
   body: SpeakingTurnUpdateBody,
 ): Promise<SpeakersDto> {
-  assertOpen(assembly);
+  const clears = speakerUpdateClearsOnly(body);
+  assertOpen(assembly, clears);
 
   await db.transaction(async (tx) => {
-    assertOpen(await lockAssembly(tx, assembly.id));
+    assertOpen(await lockAssembly(tx, assembly.id), clears);
     const [turn] = await tx
       .select()
       .from(speakingTurns)

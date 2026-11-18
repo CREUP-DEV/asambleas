@@ -67,6 +67,8 @@ const id = computed(() => props.amendment.id);
 const code = computed(() => session.label(id.value));
 const stage = computed(() => session.stageOf(props.amendment));
 const busy = computed(() => Boolean(session.busy.value[id.value]));
+/** Nothing is decided before the session opens (the console says why). */
+const closed = computed(() => !session.inSession.value);
 const missing = computed(() => sessionMissingAcceptances(props.amendment));
 /** The Mesa can approve, vote, transact, withdraw or lapse it now. */
 const open = computed(() => stage.value === "open");
@@ -504,7 +506,7 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
             icon="i-lucide-check"
             :label="t('session.now.assent')"
             :loading="busy"
-            :disabled="busy"
+            :disabled="busy || closed"
             @click="session.approve(amendment, 'assent')"
           />
         </UTooltip>
@@ -515,7 +517,7 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
             :variant="assentFirst ? 'outline' : 'solid'"
             icon="i-lucide-gavel"
             :label="t('session.actions.vote')"
-            :disabled="busy"
+            :disabled="busy || closed"
             @click="session.openVote(amendment)"
           />
         </UTooltip>
@@ -526,7 +528,7 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
             variant="ghost"
             icon="i-lucide-git-merge"
             :label="t('session.actions.transact')"
-            :disabled="busy"
+            :disabled="busy || closed"
             @click="session.openComposer([amendment.id])"
           />
           <UButton
@@ -534,7 +536,7 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
             variant="ghost"
             icon="i-lucide-undo-2"
             :label="t('session.actions.withdraw')"
-            :disabled="busy"
+            :disabled="busy || closed"
             @click="session.withdraw(amendment)"
           />
           <UButton
@@ -542,7 +544,7 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
             variant="ghost"
             icon="i-lucide-circle-slash"
             :label="t('session.actions.lapse')"
-            :disabled="busy"
+            :disabled="busy || closed"
             @click="session.lapse(amendment)"
           />
         </template>
@@ -576,7 +578,7 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
           size="lg"
           trailing-icon="i-lucide-arrow-right"
           :label="t('session.now.next', { code: session.label(next.id) })"
-          :disabled="Boolean(session.busy.value.live)"
+          :disabled="Boolean(session.busy.value.live) || closed"
           @click="session.debateNext()"
         />
         <UButton
@@ -584,6 +586,7 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
           size="lg"
           icon="i-lucide-gavel"
           :label="t('session.finalVote.open')"
+          :disabled="closed"
           @click="session.finalVoteDialog.open = true"
         />
         <!-- Nothing to debate next: the late ones first, else the document. -->
@@ -629,7 +632,7 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
         variant="outline"
         trailing-icon="i-lucide-arrow-right"
         :label="t('session.now.next', { code: session.label(next.id) })"
-        :disabled="Boolean(session.busy.value.live)"
+        :disabled="Boolean(session.busy.value.live) || closed"
         @click="session.debateNext()"
       />
     </div>
