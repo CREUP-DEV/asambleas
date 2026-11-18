@@ -703,6 +703,14 @@
       "amendmentsOpen": "Amendments open",
       "amendmentsClose": "Amendments close"
     },
+    "details": {
+      "label": "Document details",
+      "kind": "Type",
+      "published": "Published",
+      "window": "Amendments",
+      "windowRange": "From {opens} to {closes}",
+      "windowUntil": "Until {closes}"
+    },
     "stats": {
       "words": "no words | {count} word | {count} words",
       "paragraphs": "no paragraphs | {count} paragraph | {count} paragraphs"
@@ -3601,6 +3609,7 @@
       "actionCount": "Review amendments: {count} pending | Review amendments: {count} pending"
     },
     "marginMarkers": "Amendments in the margin",
+    "viewOptions": "View",
     "amendHere": "Amend here",
     "selectionBar": {
       "label": "Actions on the selected text",

@@ -59,8 +59,21 @@ const props = withDefaults(
      * the title follows.
      */
     showReference?: boolean;
+    /**
+     * Folded while the document is read: the title on one line beside the
+     * actions, without the lines under it, so the text takes the room.
+     */
+    folded?: boolean;
+    /**
+     * Who presents it, its kind and reference, when it was published and
+     * its amendment window behind an icon beside the title (DocumentDetails)
+     * instead of a line under it.
+     */
+    detailsCard?: boolean;
   }>(),
   {
+    folded: false,
+    detailsCard: false,
     showAssembly: false,
     headingLevel: 2,
     progress: true,
@@ -76,7 +89,11 @@ defineSlots<{
   default?: () => unknown;
   /** Extra badges after the status and the proponent. */
   badges?: () => unknown;
+  /** Before the title, on its line (the folded header's way through). */
+  lead?: () => unknown;
 }>();
+
+const slots = useSlots();
 
 const { t } = useI18n();
 /** Shared client clock: SSR-consistent, ticks every minute. */
@@ -170,6 +187,28 @@ const amendableText = computed(
     props.document.status === "published",
 );
 
+/**
+ * Whether the line under the title has anything: with the details in their
+ * card, only a status, a countdown or extra badges keep it.
+ */
+const statusLine = computed(
+  () =>
+    !props.detailsCard ||
+    pending.value ||
+    showStatus.value ||
+    (windowState.value === "open" && Boolean(closesAt.value)) ||
+    (windowState.value === "upcoming" && Boolean(opensAt.value)) ||
+    Boolean(slots.badges),
+);
+
+/** Anything under the title at all. */
+const hasLines = computed(
+  () =>
+    statusLine.value ||
+    (Boolean(answerer.value) && !props.detailsCard) ||
+    showSentence.value,
+);
+
 const opensAt = computed(() => toDate(props.document.window.opensAt));
 const closesAt = computed(() => toDate(props.document.window.closesAt));
 
@@ -192,13 +231,18 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
 </script>
 
 <template>
+  <!-- Folded, the lines under the title stay mounted (their countdowns
+       keep ticking), folded away with an animation, and come back as they
+       were. -->
   <header
-    class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"
+    class="flex flex-col gap-3 sm:flex-row sm:justify-between"
+    :class="folded ? 'sm:items-center' : 'sm:items-start'"
   >
-    <div class="min-w-0 flex-1 space-y-1.5">
+    <div class="min-w-0 flex-1">
       <p
         v-if="eyebrow.length > 0"
-        class="text-muted flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm"
+        v-show="!folded"
+        class="text-muted mb-1.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm"
       >
         <template v-if="showAssembly">
           <NuxtLink
@@ -219,103 +263,122 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
         </template>
       </p>
 
-      <component
-        :is="headingLevel === 1 ? 'h1' : 'h2'"
-        class="text-highlighted text-xl font-semibold text-pretty break-words sm:text-2xl"
-      >
-        {{ document.title }}
-      </component>
+      <div class="flex min-w-0 items-center gap-1">
+        <slot name="lead" />
+        <component
+          :is="headingLevel === 1 ? 'h1' : 'h2'"
+          class="text-highlighted min-w-0 font-semibold motion-safe:transition-[font-size] motion-safe:duration-300"
+          :class="
+            folded
+              ? 'truncate text-lg'
+              : 'text-xl text-pretty break-words sm:text-2xl'
+          "
+          :title="folded ? document.title : undefined"
+        >
+          {{ document.title }}
+        </component>
+        <DocumentDetails v-if="detailsCard" :document="document" />
+      </div>
 
-      <div class="flex flex-wrap items-center gap-2">
-        <UBadge
-          v-if="pending"
-          :color="status.color"
-          variant="subtle"
-          size="sm"
-          :label="status.label"
-        />
-        <CommonStatusBadge
-          v-else-if="showStatus"
-          kind="document"
-          :value="document.status"
-        />
-        <DocumentPresenters :document="document" labelled show-name />
+      <CommonCollapse v-if="hasLines" :open="!folded">
+        <div class="space-y-1.5 pt-1.5">
+          <div v-if="statusLine" class="flex flex-wrap items-center gap-2">
+            <UBadge
+              v-if="pending"
+              :color="status.color"
+              variant="subtle"
+              size="sm"
+              :label="status.label"
+            />
+            <CommonStatusBadge
+              v-else-if="showStatus"
+              kind="document"
+              :value="document.status"
+            />
+            <DocumentPresenters
+              v-if="!detailsCard"
+              :document="document"
+              labelled
+              show-name
+            />
 
-        <CommonCountdown
-          v-if="windowState === 'open' && closesAt"
-          :to="closesAt"
-          :label="t('document.header.amendmentsClose')"
-          icon="i-lucide-timer"
-          dated
-          class="text-sm"
-          @expired="expiredTick++"
-        />
-        <CommonCountdown
-          v-else-if="windowState === 'upcoming' && opensAt"
-          :to="opensAt"
-          :label="t('document.header.amendmentsOpen')"
-          icon="i-lucide-calendar-clock"
-          dated
-          class="text-sm"
-          @expired="expiredTick++"
-        />
-        <!-- A closed window says nothing here: the composer warns whoever
+            <CommonCountdown
+              v-if="windowState === 'open' && closesAt"
+              :to="closesAt"
+              :label="t('document.header.amendmentsClose')"
+              icon="i-lucide-timer"
+              dated
+              class="text-sm"
+              @expired="expiredTick++"
+            />
+            <CommonCountdown
+              v-else-if="windowState === 'upcoming' && opensAt"
+              :to="opensAt"
+              :label="t('document.header.amendmentsOpen')"
+              icon="i-lucide-calendar-clock"
+              dated
+              class="text-sm"
+              @expired="expiredTick++"
+            />
+            <!-- A closed window says nothing here: the composer warns whoever
              goes to present one that it will be late. -->
 
-        <slot name="badges" />
-      </div>
+            <slot name="badges" />
+          </div>
 
-      <!-- Several presenters: which one is the main presenter -->
-      <i18n-t
-        v-if="answerer"
-        keypath="document.presenters.answers"
-        tag="p"
-        scope="global"
-        class="text-muted text-sm"
-        data-testid="document-answerer"
-      >
-        <!-- By name, as the presenters line above it -->
-        <template #member>
-          <span class="text-default font-medium">
-            {{
-              memberNameRepeatsAcronym(answerer)
-                ? answerer.acronym
-                : answerer.name
-            }}
-          </span>
-        </template>
-      </i18n-t>
+          <!-- Several presenters: which one is the main presenter -->
+          <i18n-t
+            v-if="answerer && !detailsCard"
+            keypath="document.presenters.answers"
+            tag="p"
+            scope="global"
+            class="text-muted text-sm"
+            data-testid="document-answerer"
+          >
+            <!-- By name, as the presenters line above it -->
+            <template #member>
+              <span class="text-default font-medium">
+                {{
+                  memberNameRepeatsAcronym(answerer)
+                    ? answerer.acronym
+                    : answerer.name
+                }}
+              </span>
+            </template>
+          </i18n-t>
 
-      <!-- Where it stands and what comes next (before publication) -->
-      <div
-        v-if="showSentence"
-        class="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-0.5"
-      >
-        <p
-          class="flex min-w-0 items-start gap-1.5 text-sm"
-          :class="SENTENCE_COLORS[status.color]"
-          role="status"
-          aria-live="polite"
-          data-testid="document-progress"
-        >
-          <UIcon
-            :name="status.icon"
-            class="mt-0.5 size-4 shrink-0"
-            aria-hidden="true"
-          />
-          <span class="break-words whitespace-pre-line">
-            {{ status.sentence }}
-          </span>
-        </p>
-        <UButton
-          v-if="callToAction && editTo"
-          :to="editTo"
-          size="sm"
-          :color="status.state === 'correction' ? 'warning' : 'primary'"
-          trailing-icon="i-lucide-arrow-right"
-          :label="callToAction"
-        />
-      </div>
+          <!-- Where it stands and what comes next (before publication) -->
+          <div
+            v-if="showSentence"
+            class="flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-0.5"
+          >
+            <p
+              class="flex min-w-0 items-start gap-1.5 text-sm"
+              :class="SENTENCE_COLORS[status.color]"
+              role="status"
+              aria-live="polite"
+              data-testid="document-progress"
+            >
+              <UIcon
+                :name="status.icon"
+                class="mt-0.5 size-4 shrink-0"
+                aria-hidden="true"
+              />
+              <span class="break-words whitespace-pre-line">
+                {{ status.sentence }}
+              </span>
+            </p>
+            <UButton
+              v-if="callToAction && editTo"
+              :to="editTo"
+              size="sm"
+              :color="status.state === 'correction' ? 'warning' : 'primary'"
+              trailing-icon="i-lucide-arrow-right"
+              :label="callToAction"
+            />
+          </div>
+        </div>
+      </CommonCollapse>
     </div>
 
     <div

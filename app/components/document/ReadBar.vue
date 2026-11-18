@@ -21,8 +21,15 @@ const props = withDefaults(
     document: Pick<DocumentSummaryDto, "id">;
     /** Where another document opens; its own page when left out. */
     to?: (document: DocumentSummaryDto) => RouteLocationRaw;
+    /**
+     * Only the way through: the documents before and after it and its
+     * position, for the folded header of a document being read.
+     */
+    compact?: boolean;
+    /** Folded away, animated (CommonCollapse): its height, or compact its width. */
+    hidden?: boolean;
   }>(),
-  { to: undefined },
+  { to: undefined, compact: false, hidden: false },
 );
 
 const { t } = useI18n();
@@ -58,27 +65,30 @@ const amendmentsHere = computed(
 </script>
 
 <template>
-  <nav
+  <CommonCollapse
     v-if="mark && position.index >= 0"
-    class="border-default bg-elevated/40 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-2 py-1.5 text-sm"
-    :aria-label="t('readMarks.bar.label')"
-    data-testid="document-read-bar"
+    :open="!hidden"
+    :axis="compact ? 'x' : 'y'"
   >
-    <UButton
-      icon="i-lucide-chevron-left"
-      color="neutral"
-      variant="ghost"
-      size="sm"
-      rel="prev"
-      :to="position.previous ? pathOf(position.previous) : undefined"
-      :disabled="!position.previous"
-      :label="t('common.previous')"
-      :title="position.previous?.title"
-      data-testid="read-bar-previous"
-    />
-
-    <p class="text-muted flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-      <span class="text-default font-medium whitespace-nowrap tabular-nums">
+    <nav
+      v-if="compact"
+      class="flex shrink-0 items-center gap-0.5 text-sm"
+      :aria-label="t('readMarks.bar.label')"
+      data-testid="document-read-bar"
+    >
+      <UButton
+        icon="i-lucide-chevron-left"
+        color="neutral"
+        variant="ghost"
+        size="sm"
+        rel="prev"
+        :to="position.previous ? pathOf(position.previous) : undefined"
+        :disabled="!position.previous"
+        :aria-label="t('common.previous')"
+        :title="position.previous?.title"
+        data-testid="read-bar-previous"
+      />
+      <span class="text-muted px-1 whitespace-nowrap tabular-nums">
         {{
           t("readMarks.bar.position", {
             index: position.index + 1,
@@ -86,77 +96,119 @@ const amendmentsHere = computed(
           })
         }}
       </span>
-      <template v-if="left">
-        <span aria-hidden="true">·</span>
-        <ULink
-          v-if="position.nextLeft"
-          :to="pathOf(position.nextLeft)"
-          class="text-primary hover:underline"
-          :title="
-            t('readMarks.bar.nextLeft', { title: position.nextLeft.title })
-          "
-          data-testid="read-bar-left"
-        >
-          {{ t("readMarks.bar.left", { items: left }) }}
-        </ULink>
-        <span v-else data-testid="read-bar-left">
-          {{ t("readMarks.bar.left", { items: left }) }}
-        </span>
-      </template>
-      <span
-        v-else
-        class="inline-flex items-center gap-1"
-        data-testid="read-bar-done"
-      >
-        <span aria-hidden="true">·</span>
-        <UIcon
-          name="i-lucide-check-check"
-          class="text-success size-4 shrink-0"
-          aria-hidden="true"
-        />
-        {{ t("readMarks.allRead") }}
-      </span>
-    </p>
-
-    <div class="ms-auto flex flex-wrap items-center gap-x-3 gap-y-2">
-      <span
-        v-if="mark.state === 'changed' && !mark.own"
-        class="text-default inline-flex items-center gap-1.5"
-        data-testid="read-bar-changed"
-      >
-        <UIcon
-          name="i-lucide-refresh-cw"
-          class="text-warning size-4 shrink-0"
-          aria-hidden="true"
-        />
-        {{ t("readMarks.changedNote.document") }}
-      </span>
-      <span
-        v-else-if="amendmentsHere > 0"
-        class="text-muted"
-        data-testid="read-bar-amendments"
-      >
-        {{
-          t(
-            "readMarks.amendmentsHere",
-            { count: amendmentsHere },
-            amendmentsHere,
-          )
-        }}
-      </span>
-      <ReadToggle :id="document.id" kind="document" />
       <UButton
-        trailing-icon="i-lucide-chevron-right"
+        icon="i-lucide-chevron-right"
         color="neutral"
         variant="ghost"
         size="sm"
         rel="next"
         :to="position.next ? pathOf(position.next) : undefined"
         :disabled="!position.next"
-        :label="t('common.next')"
+        :aria-label="t('common.next')"
         :title="position.next?.title"
         data-testid="read-bar-next"
       />
-    </div>
-  </nav>
+    </nav>
+    <nav
+      v-else
+      class="border-default bg-elevated/40 flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg border px-2 py-1.5 text-sm"
+      :aria-label="t('readMarks.bar.label')"
+      data-testid="document-read-bar"
+    >
+      <UButton
+        icon="i-lucide-chevron-left"
+        color="neutral"
+        variant="ghost"
+        size="sm"
+        rel="prev"
+        :to="position.previous ? pathOf(position.previous) : undefined"
+        :disabled="!position.previous"
+        :label="t('common.previous')"
+        :title="position.previous?.title"
+        data-testid="read-bar-previous"
+      />
+
+      <p class="text-muted flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+        <span class="text-default font-medium whitespace-nowrap tabular-nums">
+          {{
+            t("readMarks.bar.position", {
+              index: position.index + 1,
+              total: position.total,
+            })
+          }}
+        </span>
+        <template v-if="left">
+          <span aria-hidden="true">·</span>
+          <ULink
+            v-if="position.nextLeft"
+            :to="pathOf(position.nextLeft)"
+            class="text-primary hover:underline"
+            :title="
+              t('readMarks.bar.nextLeft', { title: position.nextLeft.title })
+            "
+            data-testid="read-bar-left"
+          >
+            {{ t("readMarks.bar.left", { items: left }) }}
+          </ULink>
+          <span v-else data-testid="read-bar-left">
+            {{ t("readMarks.bar.left", { items: left }) }}
+          </span>
+        </template>
+        <span
+          v-else
+          class="inline-flex items-center gap-1"
+          data-testid="read-bar-done"
+        >
+          <span aria-hidden="true">·</span>
+          <UIcon
+            name="i-lucide-check-check"
+            class="text-success size-4 shrink-0"
+            aria-hidden="true"
+          />
+          {{ t("readMarks.allRead") }}
+        </span>
+      </p>
+
+      <div class="ms-auto flex flex-wrap items-center gap-x-3 gap-y-2">
+        <span
+          v-if="mark.state === 'changed' && !mark.own"
+          class="text-default inline-flex items-center gap-1.5"
+          data-testid="read-bar-changed"
+        >
+          <UIcon
+            name="i-lucide-refresh-cw"
+            class="text-warning size-4 shrink-0"
+            aria-hidden="true"
+          />
+          {{ t("readMarks.changedNote.document") }}
+        </span>
+        <span
+          v-else-if="amendmentsHere > 0"
+          class="text-muted"
+          data-testid="read-bar-amendments"
+        >
+          {{
+            t(
+              "readMarks.amendmentsHere",
+              { count: amendmentsHere },
+              amendmentsHere,
+            )
+          }}
+        </span>
+        <ReadToggle :id="document.id" kind="document" />
+        <UButton
+          trailing-icon="i-lucide-chevron-right"
+          color="neutral"
+          variant="ghost"
+          size="sm"
+          rel="next"
+          :to="position.next ? pathOf(position.next) : undefined"
+          :disabled="!position.next"
+          :label="t('common.next')"
+          :title="position.next?.title"
+          data-testid="read-bar-next"
+        />
+      </div>
+    </nav>
+  </CommonCollapse>
 </template>

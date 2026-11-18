@@ -703,6 +703,14 @@
       "amendmentsOpen": "Apertura de enmiendas",
       "amendmentsClose": "Cierre de enmiendas"
     },
+    "details": {
+      "label": "Detalles del documento",
+      "kind": "Tipo",
+      "published": "Publicado",
+      "window": "Enmiendas",
+      "windowRange": "Del {opens} al {closes}",
+      "windowUntil": "Hasta el {closes}"
+    },
     "stats": {
       "words": "ninguna palabra | {count} palabra | {count} palabras",
       "paragraphs": "ningún párrafo | {count} párrafo | {count} párrafos"
@@ -3601,6 +3609,7 @@
       "actionCount": "Revisar enmiendas: {count} pendiente | Revisar enmiendas: {count} pendientes"
     },
     "marginMarkers": "Enmiendas en el margen",
+    "viewOptions": "Vista",
     "amendHere": "Hacer enmienda aquí",
     "selectionBar": {
       "label": "Acciones sobre el texto seleccionado",

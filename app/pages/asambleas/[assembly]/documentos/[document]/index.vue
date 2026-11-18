@@ -1,5 +1,11 @@
 <script setup lang="ts">
 import {
+  UNFOLDED,
+  foldOnScroll,
+  settleFold,
+  type FoldState,
+} from "~/components/document/-fold";
+import {
   positionsArePublic,
   positionsUnpublishable,
 } from "~~/shared/utils/positions";
@@ -640,6 +646,62 @@ const composerDraft = computed(() =>
 );
 const composing = computed(
   () => composer.value !== null || transactional.value !== null,
+);
+
+// Folding the header while reading ---------------------------------------------
+
+/**
+ * On large screens the text scrolls inside the workspace and the header
+ * above it stays, so going down into the text folds the reading bar and the
+ * header into one line (the way through, the title and the actions), with
+ * an animation, and the text takes their room; starting to go back up
+ * unfolds them (`foldOnScroll`). On a narrow screen the page itself scrolls
+ * and the header goes up with it.
+ */
+const TEXT_PANEL_ID = "dashboard-panel-document-workspace-text";
+/** How long the fold animates (CommonCollapse), and a little more. */
+const FOLD_SETTLE_MS = 350;
+const fold = ref<FoldState>(UNFOLDED);
+let foldSettlesAt = 0;
+const folded = computed(
+  () =>
+    fold.value.folded &&
+    isDesktop.value &&
+    isPublished.value &&
+    !composing.value,
+);
+useEventListener(
+  workspaceBox,
+  "scroll",
+  (event: Event) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (!target.closest(`#${TEXT_PANEL_ID}`)) return;
+    const scrollTop = target.scrollTop;
+    // The panel grows or shrinks while it animates, which may move the
+    // scroll by itself: that is no reader going up or down.
+    if (performance.now() < foldSettlesAt) {
+      fold.value = settleFold(fold.value, scrollTop);
+      return;
+    }
+    const next = foldOnScroll(
+      fold.value,
+      scrollTop,
+      target.scrollHeight - target.clientHeight,
+    );
+    if (next.folded !== fold.value.folded) {
+      foldSettlesAt = performance.now() + FOLD_SETTLE_MS;
+    }
+    fold.value = next;
+  },
+  { capture: true, passive: true },
+);
+// Another document opens at its top, unfolded.
+watch(
+  () => document.value?.id,
+  () => {
+    fold.value = UNFOLDED;
+  },
 );
 
 /**
@@ -1564,7 +1626,15 @@ const filteredBlockLabel = computed(() =>
     <template v-else>
       <!-- Reading the documents one after another, and "Marcar como leído" -->
       <!-- Not while an amendment is being written: it takes the page. -->
-      <DocumentReadBar v-if="!composing" :document="document" />
+      <!-- Folded while reading (`folded`), animated: this bar goes up
+           (its margin cancels the page's gap) and its way through comes in
+           before the title, so the title and the actions keep one line. -->
+      <DocumentReadBar
+        v-if="!composing"
+        :document="document"
+        :hidden="folded"
+        :class="{ '-mb-4': folded }"
+      />
 
       <DocumentHeader
         :document="document"
@@ -1572,7 +1642,12 @@ const filteredBlockLabel = computed(() =>
         :edit-to="canEditDraft ? documentPath('editar') : null"
         :show-kind="false"
         :show-reference="false"
+        :folded="folded"
+        details-card
       >
+        <template v-if="!composing && isDesktop" #lead>
+          <DocumentReadBar :document="document" compact :hidden="!folded" />
+        </template>
         <div class="flex flex-col items-start gap-1.5 sm:items-end">
           <div class="flex flex-wrap items-center gap-2">
             <!-- The presenter's review, only while something waits for the
@@ -1683,12 +1758,15 @@ const filteredBlockLabel = computed(() =>
         </div>
       </DocumentHeader>
 
-      <p
+      <CommonCollapse
         v-if="document.summary && !composer"
-        class="text-muted max-w-3xl text-sm whitespace-pre-line"
+        :open="!folded"
+        :class="{ '-mt-4': folded }"
       >
-        {{ document.summary }}
-      </p>
+        <p class="text-muted max-w-3xl text-sm whitespace-pre-line">
+          {{ document.summary }}
+        </p>
+      </CommonCollapse>
 
       <!-- Uploaded PDF -->
       <DocumentPdfViewer
@@ -1893,55 +1971,88 @@ const filteredBlockLabel = computed(() =>
                   "
                   #right
                 >
-                  <USwitch
-                    v-if="showMarkersSwitch"
-                    v-model="marginMarkers"
-                    size="sm"
-                    :label="t('workspace.marginMarkers')"
-                    data-testid="margin-markers"
-                  />
-                  <USwitch
-                    v-if="textMode === 'compare'"
-                    v-model="compareDiff"
-                    size="sm"
-                    :label="t('workspace.compare.diff')"
-                    data-testid="compare-diff"
-                  />
-                  <USwitch
-                    v-if="showAcceptedSwitch"
-                    v-model="includeAccepted"
-                    size="sm"
-                    :label="t('workspace.includeAccepted')"
-                  />
-                  <UButton
-                    v-if="showAmendmentsToggle"
-                    color="neutral"
-                    variant="ghost"
-                    size="sm"
-                    :icon="
-                      listHidden
-                        ? 'i-lucide-panel-right-open'
-                        : 'i-lucide-panel-right-close'
+                  <!-- How the text shows, behind one button, so the tabs and
+                       these fit on one line beside the list. -->
+                  <UPopover
+                    v-if="
+                      showMarkersSwitch ||
+                      showAcceptedSwitch ||
+                      textMode === 'compare'
                     "
-                    :label="
-                      listHidden
-                        ? t('workspace.panes.show')
-                        : t('workspace.panes.hide')
-                    "
-                    :aria-expanded="!listHidden"
-                    aria-controls="dashboard-panel-document-workspace-amendments"
-                    data-testid="amendments-toggle"
-                    @click="toggleAmendments"
+                    :content="{ align: 'end' }"
                   >
-                    <template v-if="listHidden" #trailing>
-                      <UBadge
-                        :label="String(list.listed.value.length)"
-                        color="neutral"
-                        variant="subtle"
-                        size="sm"
-                      />
+                    <UButton
+                      color="neutral"
+                      variant="ghost"
+                      size="sm"
+                      icon="i-lucide-sliders-horizontal"
+                      trailing-icon="i-lucide-chevron-down"
+                      :label="t('workspace.viewOptions')"
+                      data-testid="view-options"
+                    />
+                    <template #content>
+                      <div class="flex max-w-80 flex-col gap-3 p-3">
+                        <USwitch
+                          v-if="showMarkersSwitch"
+                          v-model="marginMarkers"
+                          size="sm"
+                          :label="t('workspace.marginMarkers')"
+                          data-testid="margin-markers"
+                        />
+                        <USwitch
+                          v-if="textMode === 'compare'"
+                          v-model="compareDiff"
+                          size="sm"
+                          :label="t('workspace.compare.diff')"
+                          data-testid="compare-diff"
+                        />
+                        <USwitch
+                          v-if="showAcceptedSwitch"
+                          v-model="includeAccepted"
+                          size="sm"
+                          :label="t('workspace.includeAccepted')"
+                        />
+                      </div>
                     </template>
-                  </UButton>
+                  </UPopover>
+                  <!-- Beside the list, only its icon (the tooltip and the
+                       label for screen readers name it); with the list
+                       hidden there is room for the words and the count. -->
+                  <UTooltip
+                    v-if="showAmendmentsToggle"
+                    :text="listHidden ? undefined : t('workspace.panes.hide')"
+                    :disabled="listHidden"
+                  >
+                    <UButton
+                      color="neutral"
+                      variant="ghost"
+                      size="sm"
+                      :icon="
+                        listHidden
+                          ? 'i-lucide-panel-right-open'
+                          : 'i-lucide-panel-right-close'
+                      "
+                      :label="
+                        listHidden ? t('workspace.panes.show') : undefined
+                      "
+                      :aria-label="
+                        listHidden ? undefined : t('workspace.panes.hide')
+                      "
+                      :aria-expanded="!listHidden"
+                      aria-controls="dashboard-panel-document-workspace-amendments"
+                      data-testid="amendments-toggle"
+                      @click="toggleAmendments"
+                    >
+                      <template v-if="listHidden" #trailing>
+                        <UBadge
+                          :label="String(list.listed.value.length)"
+                          color="neutral"
+                          variant="subtle"
+                          size="sm"
+                        />
+                      </template>
+                    </UButton>
+                  </UTooltip>
                 </template>
               </UDashboardToolbar>
             </template>
