@@ -99,6 +99,14 @@ export const documents = pgTable(
       withTimezone: true,
       mode: "date",
     }),
+    /**
+     * When the Mesa first put the document itself on screen during the
+     * session: the console marks it as projected. Never cleared.
+     */
+    firstProjectedAt: timestamp("first_projected_at", {
+      withTimezone: true,
+      mode: "date",
+    }),
     /** Override of the assembly amendment window for this document. */
     amendmentsOpenAt: timestamp("amendments_open_at", {
       withTimezone: true,

@@ -419,6 +419,16 @@ const nothingInDebate = computed(
 );
 
 const message = computed(() => live.value?.message?.trim() || null);
+/** A recess the Mesa called, and when the session resumes if it said. */
+const recessLine = computed(() => {
+  const recess = live.value?.recess;
+  if (!recess) return null;
+  return recess.until
+    ? t("liveView.recessUntil", {
+        time: formatTime(recess.until, { locale: locale.value }),
+      })
+    : t("liveView.recess");
+});
 
 const speakers = computed(() =>
   inSession.value
@@ -656,6 +666,15 @@ watch(
           </template>
         </p>
       </ClientOnly>
+
+      <!-- A recess -->
+      <UAlert
+        v-if="recessLine"
+        color="warning"
+        variant="subtle"
+        icon="i-lucide-coffee"
+        :title="recessLine"
+      />
 
       <!-- The Mesa's notice -->
       <UAlert

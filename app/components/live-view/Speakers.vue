@@ -66,11 +66,18 @@ const headingTag = computed(() => `h${props.headingLevel}`);
               class="text-muted inline-flex items-center gap-1.5 font-medium"
             >
               <UIcon
-                name="i-lucide-timer"
+                :name="
+                  speakers.current.limitSeconds
+                    ? 'i-lucide-hourglass'
+                    : 'i-lucide-timer'
+                "
                 class="size-5 shrink-0"
                 aria-hidden="true"
               />
-              <SessionSpeakerTimer :started-at="speakers.current.startedAt" />
+              <SessionSpeakerTimer
+                :started-at="speakers.current.startedAt"
+                :limit-seconds="speakers.current.limitSeconds"
+              />
             </span>
           </ClientOnly>
         </p>
@@ -130,11 +137,18 @@ const headingTag = computed(() => `h${props.headingLevel}`);
               class="text-muted inline-flex items-center gap-[0.3em] font-semibold"
             >
               <UIcon
-                name="i-lucide-timer"
+                :name="
+                  speakers.current.limitSeconds
+                    ? 'i-lucide-hourglass'
+                    : 'i-lucide-timer'
+                "
                 class="size-[0.9em] shrink-0"
                 aria-hidden="true"
               />
-              <SessionSpeakerTimer :started-at="speakers.current.startedAt" />
+              <SessionSpeakerTimer
+                :started-at="speakers.current.startedAt"
+                :limit-seconds="speakers.current.limitSeconds"
+              />
             </span>
           </ClientOnly>
         </p>

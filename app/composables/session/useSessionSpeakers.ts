@@ -173,6 +173,14 @@ export function useSessionSpeakers(options: SessionSpeakersOptions) {
     return update(turn, { speaker: speaker.trim() || null });
   }
 
+  /** Gives a turn a time limit in seconds, or takes it away (null). */
+  function setLimit(
+    turn: SpeakingTurnDto,
+    limitSeconds: number | null,
+  ): Promise<boolean> {
+    return update(turn, { limitSeconds });
+  }
+
   /**
    * Writes a turn down again at `place` of the waiting list: the same
    * member, person and agenda item, as a new turn. True once it is back on
@@ -311,6 +319,7 @@ export function useSessionSpeakers(options: SessionSpeakersOptions) {
     giveFloor,
     finish,
     rename,
+    setLimit,
     remove,
     returnToQueue,
     move,

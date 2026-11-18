@@ -1474,6 +1474,23 @@ export interface DecisionDto {
   decidedAt: IsoDate;
 }
 
+/**
+ * GET /api/assemblies/[assembly]/session-progress (session:moderate): the
+ * documents the Mesa has put on screen during the session and the agenda
+ * items its mark in the control sheet says are treated (set by hand or as
+ * the debate moved on).
+ */
+export interface SessionProgressDto {
+  projectedDocumentIds: string[];
+  treatedItemIds: string[];
+}
+
+/** A recess the Mesa called: since when and, if it said, until when. */
+export interface LiveRecessDto {
+  startedAt: IsoDate;
+  until: IsoDate | null;
+}
+
 export interface LiveStateDto {
   agendaItemId: string | null;
   documentId: string | null;
@@ -1482,6 +1499,10 @@ export interface LiveStateDto {
   message: string | null;
   /** Attendees see who has the floor and who is next. */
   speakersVisible: boolean;
+  /** The room is in a recess; the projection says so and when it resumes. */
+  recess: LiveRecessDto | null;
+  /** The time a speaking turn with a limit gets unless the Mesa changes it. */
+  speakingLimitSeconds: number;
   updatedAt: IsoDate | null;
 }
 
@@ -1492,6 +1513,13 @@ export interface LiveStateBody {
   voteId?: string | null;
   message?: string | null;
   speakersVisible?: boolean;
+  /**
+   * Starts a recess (or changes when it resumes, `until` optional), or ends
+   * it with null. Only while the session is open; ending it, always.
+   */
+  recess?: { until: IsoDate | null } | null;
+  /** The default limit of a speaking turn, in seconds. */
+  speakingLimitSeconds?: number;
 }
 
 // Headcounts ---------------------------------------------------------------
@@ -1627,6 +1655,13 @@ export interface SpeakingTurnDto {
   position: number;
   startedAt: IsoDate | null;
   endedAt: IsoDate | null;
+  /**
+   * The time the turn has, when the Mesa gave it a limit; null for none.
+   * Its clock counts down and then counts the time over.
+   */
+  limitSeconds: number | null;
+  /** Written down ahead of the queue (it jumped it). */
+  priority: boolean;
   createdAt: IsoDate;
   updatedAt: IsoDate;
 }
@@ -1663,6 +1698,13 @@ export interface SpeakingTurnBody {
   speaker?: string | null;
   /** Defaults to the agenda item in debate (live state). */
   agendaItemId?: string | null;
+  /** The turn gets the default limit (LiveStateDto.speakingLimitSeconds). */
+  limited?: boolean;
+  /**
+   * A priority turn: it goes ahead of the queue, after the priority turns
+   * already waiting at its head, instead of at its end.
+   */
+  priority?: boolean;
 }
 
 /**
@@ -1674,6 +1716,8 @@ export interface SpeakingTurnUpdateBody {
   status?: SpeakingTurnStatus;
   position?: number;
   speaker?: string | null;
+  /** The turn's limit in seconds; null takes it away. */
+  limitSeconds?: number | null;
   updatedAt: IsoDate;
 }
 
@@ -2179,6 +2223,27 @@ export interface EventDto {
   impersonatedBy?: UserRef | null;
   createdAt: IsoDate;
 }
+
+/**
+ * Where in a document the Mesa is: a block of its text, or a page of its
+ * PDF, and how far into it (0 at its top, 1 at its bottom). Relative to the
+ * block or page, so screens of any size line up.
+ */
+export type LiveScrollAnchor =
+  { block: string; offset: number } | { page: number; offset: number };
+
+/**
+ * Where the Mesa has the document in debate scrolled: the `scroll` event of
+ * GET .../live, GET .../live-scroll (the last one) and the body of POST
+ * .../live-scroll (session:moderate), without `at` there.
+ */
+export interface LiveScrollDto {
+  documentId: string;
+  anchor: LiveScrollAnchor;
+  at: IsoDate;
+}
+
+export type LiveScrollBody = Omit<LiveScrollDto, "at">;
 
 /** Server-sent event pushed on GET /api/assemblies/[assembly]/live. */
 export interface LiveEventDto {

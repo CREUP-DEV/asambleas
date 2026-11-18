@@ -326,6 +326,9 @@ export default defineNuxtConfig({
         // The document page frames its uploaded PDF; every other page still
         // refuses to be framed (frame-ancestors).
         "frame-src": ["'self'"],
+        // pdf.js draws the PDFs the session follows in a worker of our own
+        // origin (DocumentPdfPages).
+        "worker-src": ["'self'", "blob:"],
         "frame-ancestors": ["'none'"],
         "object-src": ["'none'"],
         "base-uri": ["'self'"],

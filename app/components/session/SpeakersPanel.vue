@@ -3,6 +3,11 @@ import type { DropdownMenuItem } from "@nuxt/ui";
 import type { MemberDto, SpeakingTurnDto } from "~~/shared/types/api";
 import { SPEAKER_NAME_MAX_LENGTH } from "~~/shared/utils/schemas/speakers";
 import {
+  DEFAULT_SPEAKING_LIMIT_SECONDS,
+  SPEAKING_LIMIT_MAX_SECONDS,
+  SPEAKING_LIMIT_MIN_SECONDS,
+} from "~~/shared/utils/schemas/assembly";
+import {
   sessionFormatDuration,
   sessionTurnDuration,
   sessionTurnWho,
@@ -15,7 +20,9 @@ import {
 /**
  * Speaking turns: the Mesa writes down who asks for the floor (a member,
  * picked from a grid of every member who may ask, SessionSpeakerAddDialog,
- * and optionally the person), gives the floor,
+ * and optionally the person), gives the floor (with a time limit when
+ * the Mesa marks the turn as limited: the assembly's default, changed per
+ * turn; its clock counts down and then the time over),
  * ends it and keeps the queue in order. Every Mesa device sees the same
  * list, live. Who has the floor and the one next step lead; a switch at the
  * bottom (a setting that rarely changes) decides whether the attendees see
@@ -69,6 +76,57 @@ function setVisible(value: boolean): void {
   if (visibleBusy.value || value === visible.value) return;
   void session.setSpeakersVisible(value);
 }
+
+// Time limits ------------------------------------------------------------------
+
+/**
+ * The default limit, in seconds: the time a turn gets when the Mesa marks
+ * it as limited (not every turn is). Changed here, for the whole assembly.
+ */
+const defaultLimit = computed(
+  () =>
+    session.liveState.value?.speakingLimitSeconds ??
+    DEFAULT_SPEAKING_LIMIT_SECONDS,
+);
+const limitBusy = computed(() => Boolean(session.busy.value["speaking-limit"]));
+/** Minutes, as the fields read them (half minutes allowed). */
+const toMinutes = (seconds: number) => Math.round(seconds / 30) / 2;
+const toSeconds = (minutes: number) =>
+  Math.min(
+    SPEAKING_LIMIT_MAX_SECONDS,
+    Math.max(SPEAKING_LIMIT_MIN_SECONDS, Math.round(minutes * 60)),
+  );
+const defaultMinutes = ref(toMinutes(defaultLimit.value));
+watch(defaultLimit, (seconds) => {
+  defaultMinutes.value = toMinutes(seconds);
+});
+function saveDefaultLimit(): void {
+  const minutes = Number(defaultMinutes.value);
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    defaultMinutes.value = toMinutes(defaultLimit.value);
+    return;
+  }
+  const seconds = toSeconds(minutes);
+  if (seconds !== defaultLimit.value) void session.setSpeakingLimit(seconds);
+}
+
+/** The limit of the turn with the floor, changed from its popover. */
+const limitOpen = ref(false);
+const turnMinutes = ref(toMinutes(DEFAULT_SPEAKING_LIMIT_SECONDS));
+watch(limitOpen, (isOpen) => {
+  if (!isOpen || !speaking.value) return;
+  turnMinutes.value = toMinutes(
+    speaking.value.limitSeconds ?? defaultLimit.value,
+  );
+});
+async function saveTurnLimit(seconds: number | null): Promise<void> {
+  const turn = speaking.value;
+  if (!turn) return;
+  if (await speakers.setLimit(turn, seconds)) limitOpen.value = false;
+}
+
+/** "3:00" for a limit in seconds. */
+const limitText = (seconds: number) => sessionFormatDuration(seconds);
 
 // Adding a turn --------------------------------------------------------------
 
@@ -149,6 +207,24 @@ async function giveFloorNow(turn: SpeakingTurnDto): Promise<void> {
   }
 }
 
+/** Gives a waiting turn the default limit, or takes its limit away. */
+const limitItem = (turn: SpeakingTurnDto): DropdownMenuItem =>
+  turn.limitSeconds
+    ? {
+        label: t("session.speakers.limitRemove"),
+        icon: "i-lucide-timer-off",
+        disabled: closed.value,
+        onSelect: () => void speakers.setLimit(turn, null),
+      }
+    : {
+        label: t("session.speakers.limitAdd", {
+          time: limitText(defaultLimit.value),
+        }),
+        icon: "i-lucide-hourglass",
+        disabled: closed.value,
+        onSelect: () => void speakers.setLimit(turn, defaultLimit.value),
+      };
+
 function turnMenu(turn: SpeakingTurnDto): DropdownMenuItem[][] {
   return [
     [
@@ -159,6 +235,7 @@ function turnMenu(turn: SpeakingTurnDto): DropdownMenuItem[][] {
         onSelect: () => void giveFloorNow(turn),
       },
       renameItem(turn),
+      limitItem(turn),
     ],
     [
       {
@@ -350,6 +427,7 @@ function duration(turn: SpeakingTurnDto): string | null {
             </p>
             <SessionSpeakerTimer
               :started-at="speaking.startedAt"
+              :limit-seconds="speaking.limitSeconds"
               class="text-highlighted text-2xl font-semibold"
             />
             <UDropdownMenu
@@ -375,6 +453,62 @@ function duration(turn: SpeakingTurnDto): string | null {
               : t("session.speakers.empty")
           }}
         </p>
+
+        <!-- The limit of the turn with the floor: on, off or another time. -->
+        <UPopover v-if="speaking" v-model:open="limitOpen">
+          <UButton
+            class="mt-2"
+            size="xs"
+            color="neutral"
+            :variant="speaking.limitSeconds ? 'soft' : 'outline'"
+            :icon="
+              speaking.limitSeconds ? 'i-lucide-hourglass' : 'i-lucide-timer'
+            "
+            :label="
+              speaking.limitSeconds
+                ? t('session.speakers.limitOf', {
+                    time: limitText(speaking.limitSeconds),
+                  })
+                : t('session.speakers.limitNone')
+            "
+            :disabled="closed || busyFor(speaking)"
+          />
+          <template #content>
+            <form
+              class="w-64 space-y-3 p-3"
+              @submit.prevent="saveTurnLimit(toSeconds(Number(turnMinutes)))"
+            >
+              <UFormField
+                :label="t('session.speakers.limitMinutes')"
+                name="session-turn-limit"
+              >
+                <UInputNumber
+                  v-model="turnMinutes"
+                  :min="0.5"
+                  :max="60"
+                  :step="0.5"
+                  class="w-full"
+                />
+              </UFormField>
+              <div class="flex flex-wrap justify-end gap-2">
+                <UButton
+                  v-if="speaking.limitSeconds"
+                  color="neutral"
+                  variant="ghost"
+                  size="sm"
+                  :label="t('session.speakers.limitRemove')"
+                  @click="saveTurnLimit(null)"
+                />
+                <UButton
+                  type="submit"
+                  size="sm"
+                  :label="t('session.speakers.limitApply')"
+                  :loading="busyFor(speaking)"
+                />
+              </div>
+            </form>
+          </template>
+        </UPopover>
 
         <div v-if="mainAction" class="mt-3 flex flex-wrap gap-2">
           <UButton
@@ -472,6 +606,24 @@ function duration(turn: SpeakingTurnDto): string | null {
               >
                 {{ turn.speaker ?? t("session.speakers.unnamed") }}
               </span>
+              <UBadge
+                v-if="turn.priority"
+                color="warning"
+                variant="subtle"
+                size="sm"
+                icon="i-lucide-zap"
+                :label="t('session.speakers.priority')"
+              />
+              <UIcon
+                v-if="turn.limitSeconds"
+                name="i-lucide-hourglass"
+                class="text-muted size-3.5 shrink-0"
+                :aria-label="
+                  t('session.speakers.limitOf', {
+                    time: limitText(turn.limitSeconds),
+                  })
+                "
+              />
             </span>
             <template v-if="reordering">
               <UButton
@@ -549,8 +701,24 @@ function duration(turn: SpeakingTurnDto): string | null {
       </section>
     </template>
 
-    <!-- Who sees the turns: the Mesa decides. A setting, so it comes last. -->
-    <div class="border-default border-t pt-3">
+    <!-- Who sees the turns and the default limit: settings, so they come last. -->
+    <div class="border-default space-y-3 border-t pt-3">
+      <UFormField
+        :label="t('session.speakers.limitDefault')"
+        :description="t('session.speakers.limitDefaultHint')"
+        name="session-speaking-limit"
+      >
+        <UInputNumber
+          v-model="defaultMinutes"
+          :min="0.5"
+          :max="60"
+          :step="0.5"
+          :disabled="limitBusy"
+          class="w-40"
+          @blur="saveDefaultLimit"
+          @keydown.enter.prevent="saveDefaultLimit"
+        />
+      </UFormField>
       <USwitch
         :model-value="visible"
         :loading="visibleBusy"

@@ -484,11 +484,25 @@ const announcement = computed(() => {
         >
           <div class="flex flex-wrap items-center gap-2">
             <span class="min-w-0 flex-1">
-              <span class="text-highlighted block truncate font-medium">
+              <span
+                class="block truncate font-medium"
+                :class="
+                  item.id !== selectedId &&
+                  session.documentProgress(item.id) === 'treated'
+                    ? 'text-muted'
+                    : 'text-highlighted'
+                "
+              >
                 {{ item.title }}
               </span>
-              <span v-if="item.reference" class="text-muted text-xs">
-                {{ item.reference }}
+              <span class="flex flex-wrap items-center gap-x-2">
+                <span v-if="item.reference" class="text-muted text-xs">
+                  {{ item.reference }}
+                </span>
+                <SessionProgressMark
+                  v-if="item.id !== selectedId"
+                  :progress="session.documentProgress(item.id)"
+                />
               </span>
             </span>
             <!-- A toggle: pressed again, it takes the document out. -->

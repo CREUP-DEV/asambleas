@@ -6,6 +6,7 @@ import type {
   DocumentDto,
   HeadcountsDto,
   LiveEventDto,
+  LiveScrollDto,
   LiveStateDto,
   SpeakersDto,
   VoteDto,
@@ -23,6 +24,7 @@ import {
 } from "~/composables/session/sessionModel";
 import { agendaWithTitles } from "~/utils/agendaTitles";
 import { formatMoment, formatTime } from "~/utils/format";
+import { applyScrollAnchor } from "~/utils/scrollAnchor";
 import {
   affectsAgenda,
   affectsLiveVote,
@@ -306,7 +308,47 @@ function onLive(events: LiveEventDto[]): void {
   });
 }
 
-const { connected, polling } = useAssemblyLive(() => assemblyId, onLive);
+// Where the Mesa has the document in debate scrolled ----------------------------
+
+/**
+ * The projection shows the part of the document the Mesa has in view in
+ * its console (user's decision of 2026-11-18): the block or page at the
+ * top of the Mesa's box and how far into it, applied to this box whatever
+ * its size. Each position arrives on the stream (`scroll`); a projection
+ * that opens, or moves to another document, reads the last one.
+ */
+const documentBox = ref<HTMLElement | null>(null);
+const mesaScroll = ref<LiveScrollDto | null>(null);
+
+function followMesaScroll(): void {
+  const scroll = mesaScroll.value;
+  const box = documentBox.value;
+  if (!scroll || !box || scroll.documentId !== documentId.value) return;
+  applyScrollAnchor(box, scroll.anchor);
+}
+
+function onMesaScroll(scroll: LiveScrollDto): void {
+  mesaScroll.value = scroll;
+  followMesaScroll();
+}
+
+async function readMesaScroll(): Promise<void> {
+  if (!documentId.value) return;
+  try {
+    const scroll = await read<LiveScrollDto | null>(
+      `${assemblyUrl.value}/live-scroll`,
+    );
+    if (scroll) onMesaScroll(scroll);
+  } catch {
+    // The next position the Mesa sends puts it right.
+  }
+}
+watch(documentId, () => void readMesaScroll(), { immediate: true });
+watch(documentBox, () => followMesaScroll(), { flush: "post" });
+
+const { connected, polling } = useAssemblyLive(() => assemblyId, onLive, {
+  onScroll: onMesaScroll,
+});
 
 // Until the first connection is ready the screen is connecting, not
 // offline: the room must not see an alarm while the page opens.
@@ -441,24 +483,29 @@ const debated = computed(() =>
     : null,
 );
 const base = computed(() => document.value?.baseVersion?.blocks ?? []);
+/** The document's text as the console shows it: voted, or as published. */
+const previewBlocks = computed(
+  () =>
+    document.value?.consolidatedVersion?.blocks ??
+    document.value?.baseVersion?.blocks ??
+    [],
+);
 const vote = computed<VoteDto | null>(() => live.value?.vote ?? null);
 const message = computed(() => live.value?.message?.trim() || null);
 
-const mode = computed<"amendment" | "document" | "idle">(() => {
+/** A recess the Mesa called: the screen says so until it ends. */
+const recess = computed(() => live.value?.recess ?? null);
+
+const mode = computed<"recess" | "amendment" | "document" | "idle">(() => {
+  if (recess.value) return "recess";
   if (debated.value) return "amendment";
   if (document.value) return "document";
   return "idle";
 });
 /** The page takes the screen's height exactly: its box scrolls itself. */
-const fitsScreen = computed(() => mode.value !== "idle");
-
-/**
- * The browser's viewer without its toolbar and side panel, the page as wide
- * as the frame: the room reads the PDF, it does not work with it.
- */
-function pdfPreviewUrl(url: string): string {
-  return `${url.split("#")[0]}#toolbar=0&navpanes=0&view=FitH`;
-}
+const fitsScreen = computed(
+  () => mode.value === "amendment" || mode.value === "document",
+);
 
 // Beside a document the agenda keeps to the screen's height: it scrolls
 // itself so the item in debate stays in view.
@@ -675,6 +722,26 @@ onBeforeUnmount(() => {
 
 const clock = computed(() => formatTime(now.value, { locale: locale.value }));
 
+/** "17:30", or with its day when it is not today. */
+const recessResumes = computed(() => {
+  const until = recess.value?.until;
+  return until
+    ? formatMoment(until, { locale: locale.value, now: now.value }).text
+    : null;
+});
+/**
+ * The minutes left, whole and never more than are left (the shared clock
+ * ticks each minute); once the time comes, that it resumes shortly.
+ */
+const recessLeft = computed(() => {
+  const until = recess.value?.until;
+  if (!until) return null;
+  const left = new Date(until).getTime() - now.value;
+  if (left <= 60_000) return t("projection.recess.soon");
+  const minutes = Math.floor(left / 60_000);
+  return t("projection.recess.minutesLeft", { count: minutes }, minutes);
+});
+
 const {
   isFullscreen,
   isSupported: fullscreenSupported,
@@ -767,7 +834,7 @@ useHead(() => ({
       :class="{ 'min-h-0': fitsScreen }"
     >
       <section
-        v-if="vote"
+        v-if="vote && mode !== 'recess'"
         role="status"
         aria-live="polite"
         aria-atomic="true"
@@ -846,8 +913,40 @@ useHead(() => ({
         </p>
       </section>
 
+      <!-- A recess takes the whole screen: when the session resumes. -->
       <section
-        v-if="mode === 'amendment' && debated"
+        v-if="mode === 'recess' && recess"
+        class="flex flex-1 flex-col items-center justify-center gap-[clamp(0.75rem,1.5vw,1.5rem)] text-center"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        <UIcon
+          name="i-lucide-coffee"
+          class="text-primary size-[clamp(3rem,6vw,6rem)]"
+          aria-hidden="true"
+        />
+        <h1
+          class="text-[clamp(3rem,7vw,7.5rem)] leading-none font-extrabold tracking-tight"
+        >
+          {{ t("projection.recess.title") }}
+        </h1>
+        <p
+          v-if="recessResumes"
+          class="text-[clamp(1.5rem,3vw,3.25rem)] leading-tight font-semibold tabular-nums"
+        >
+          {{ t("projection.recess.resumesAt", { time: recessResumes }) }}
+        </p>
+        <p
+          v-if="recessLeft"
+          class="text-muted text-[clamp(1.25rem,2vw,2.25rem)] tabular-nums"
+        >
+          {{ recessLeft }}
+        </p>
+      </section>
+
+      <section
+        v-else-if="mode === 'amendment' && debated"
         class="flex min-h-0 flex-1 flex-col gap-[clamp(0.75rem,1.5vw,1.5rem)]"
         aria-live="polite"
       >
@@ -964,25 +1063,31 @@ useHead(() => ({
               }}
             </p>
           </div>
-          <!-- The document itself, filling what is left: the browser's own
-               viewer for a PDF, the text as presented otherwise. The Mesa
-               may scroll it from the laptop; a new document starts at the
-               top (keyed). -->
+          <!-- The document itself, filling what is left: its PDF drawn page
+               by page, its text otherwise. It follows where the Mesa has it
+               scrolled in the console (followMesaScroll); a new document
+               starts at the top (keyed). -->
           <template v-if="document.format === 'file'">
-            <iframe
+            <div
               v-if="document.fileUrl"
               :key="document.id"
-              :src="pdfPreviewUrl(document.fileUrl)"
-              :title="t('workspace.text.pdfFrame', { title: document.title })"
-              class="border-default bg-elevated block min-h-0 w-full flex-1 rounded-2xl border"
-            />
+              ref="documentBox"
+              class="projection-scroll border-default bg-elevated min-h-0 flex-1 overflow-y-auto rounded-2xl border p-[clamp(0.5rem,1vw,1rem)]"
+            >
+              <DocumentPdfPages
+                :url="document.fileUrl"
+                :title="document.title"
+                @ready="followMesaScroll"
+              />
+            </div>
             <p v-else class="text-muted">
               {{ t("projection.pdfPending") }}
             </p>
           </template>
           <div
-            v-else-if="base.length > 0"
+            v-else-if="previewBlocks.length > 0"
             :key="document.id"
+            ref="documentBox"
             role="region"
             tabindex="0"
             :aria-label="
@@ -990,7 +1095,7 @@ useHead(() => ({
             "
             class="projection-document projection-scroll border-default focus-visible:outline-primary min-h-0 flex-1 overflow-y-auto rounded-2xl border p-[clamp(1rem,2.5vw,2.5rem)] focus-visible:outline-2"
           >
-            <ContentView :blocks="base" />
+            <ContentView :blocks="previewBlocks" />
           </div>
         </div>
         <nav
@@ -1028,7 +1133,11 @@ useHead(() => ({
         out: the document and the agenda take that room.
       -->
       <div
-        v-if="speakers && (speakers.current || speakers.next.length > 0)"
+        v-if="
+          mode !== 'recess' &&
+          speakers &&
+          (speakers.current || speakers.next.length > 0)
+        "
         class="bg-default sticky bottom-0 z-10 mt-auto pt-2 pb-[clamp(0.25rem,0.5vw,0.5rem)]"
       >
         <LiveViewSpeakers

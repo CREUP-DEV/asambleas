@@ -423,6 +423,16 @@
     "sections": {
       "label": "Secciones de la asamblea"
     },
+    "adjourn": {
+      "button": "Levantar la sesión",
+      "title": "¿Levantar la sesión?",
+      "description": "Elige si la sesión se retomará más adelante o si la asamblea termina aquí.",
+      "legend": "Qué pasa después",
+      "resume": "Se retomará más adelante",
+      "finish": "Se finaliza la asamblea",
+      "confirmResume": "Levantar la sesión",
+      "confirmFinish": "Finalizar la asamblea"
+    },
     "transitions": {
       "draft_convened": {
         "label": "Convocar",
@@ -443,10 +453,10 @@
         "done": "Sesión de la asamblea abierta"
       },
       "in_session_convened": {
-        "label": "Suspender sesión",
-        "title": "¿Suspender la sesión?",
-        "description": "La {label} volverá al estado de convocada. Mientras esté suspendida no se proyecta ni se registra nada; solo se puede quitar lo proyectado y terminar los turnos de palabra. Podrás reabrir la sesión más tarde.",
-        "done": "Sesión suspendida"
+        "label": "Levantar la sesión",
+        "title": "¿Levantar la sesión?",
+        "description": "La {label} volverá al estado de convocada hasta que se reabra la sesión, por ejemplo al día siguiente. Mientras tanto no se proyecta ni se registra nada; solo se puede quitar lo proyectado y terminar los turnos de palabra. Para una pausa corta, usa «Receso».",
+        "done": "Sesión levantada"
       },
       "in_session_closed": {
         "label": "Finalizar asamblea",
@@ -622,6 +632,9 @@
     }
   },
   "document": {
+    "pdfPages": {
+      "failed": "No se ha podido mostrar el PDF."
+    },
     "title": "Documentos",
     "create": "Crear documento",
     "edit": "Editar documento",
@@ -3619,6 +3632,21 @@
     }
   },
   "session": {
+    "progress": {
+      "projected": "Proyectado",
+      "treated": "Tratado"
+    },
+    "recess": {
+      "button": "Receso",
+      "active": "En receso",
+      "activeUntil": "Receso hasta las {time}",
+      "hint": "Una pausa corta: la proyección muestra el receso y, si la indicas, la hora a la que se retoma. Para dejar la sesión hasta otro día, usa «Levantar la sesión».",
+      "activeHint": "La proyección muestra el receso. Puedes cambiar la hora a la que se retoma o retomar ya.",
+      "until": "Se retoma a las",
+      "start": "Empezar el receso",
+      "change": "Cambiar la hora",
+      "end": "Retomar la sesión"
+    },
     "title": "Consola de sesión",
     "pageTitle": "Sesión · {label}",
     "loadError": "No se ha podido cargar la asamblea",
@@ -4187,6 +4215,19 @@
       "done": "Ya han hablado ({count})",
       "unnamed": "Sin nombre",
       "elapsed": "Tiempo de palabra: {time}",
+      "remaining": "Tiempo que le queda: {time}",
+      "overtime": "Ha pasado su límite: {time}",
+      "limitOf": "Límite: {time}",
+      "limitNone": "Sin límite de tiempo",
+      "limitAdd": "Ponerle límite ({time})",
+      "limitRemove": "Quitar el límite",
+      "limitMinutes": "Límite de este turno, en minutos",
+      "limitApply": "Aplicar",
+      "limitDefault": "Límite por defecto, en minutos",
+      "limitDefaultHint": "El tiempo de un turno con límite, salvo que lo cambies en ese turno.",
+      "limitedTurn": "Con límite de tiempo ({time})",
+      "priority": "Prioritaria",
+      "priorityTurn": "Prioritaria: se salta la cola",
       "summarySpeaking": "Habla {who}",
       "summaryWaiting": "1 en espera | {count} en espera",
       "summaryEmpty": "Nadie ha pedido la palabra",
@@ -4310,6 +4351,12 @@
     }
   },
   "projection": {
+    "recess": {
+      "title": "Receso",
+      "resumesAt": "Se retoma a las {time}",
+      "soon": "Se retoma en breve",
+      "minutesLeft": "Queda 1 minuto | Quedan {count} minutos"
+    },
     "pageTitle": "Proyección · {label}",
     "notFound": "Esta asamblea no existe o no tienes acceso a ella.",
     "logo": "Logotipo de CREUP",
@@ -5357,6 +5404,8 @@
     }
   },
   "liveView": {
+    "recess": "La sesión está en receso.",
+    "recessUntil": "La sesión está en receso hasta las {time}.",
     "title": "En directo",
     "message": "Aviso de la Mesa",
     "notStarted": {

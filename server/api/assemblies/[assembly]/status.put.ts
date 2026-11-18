@@ -8,6 +8,7 @@ import { db } from "../../../db";
 import { assemblies } from "../../../db/schema";
 import { requireActor, requireCan } from "../../../utils/domain/actor";
 import {
+  endRecess,
   ensureLiveState,
   loadAssemblyDto,
   readAssemblyBody,
@@ -63,6 +64,10 @@ export default defineEventHandler(async (event): Promise<AssemblyDto> => {
       // be ended afterwards (closed assemblies refuse speakers writes).
       if (body.status === "closed") {
         await closeSpeakingTurns(tx, assembly.id, actor);
+      }
+      // Adjourned or closed: a recess ends with the session.
+      if (assembly.status === "in_session" && body.status !== "in_session") {
+        await endRecess(tx, assembly.id, actor);
       }
 
       await recordEvent(tx, {

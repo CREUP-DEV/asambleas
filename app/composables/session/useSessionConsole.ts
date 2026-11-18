@@ -14,6 +14,7 @@ import type {
   ItemVoteBody,
   ItemVoteResultDto,
   ItemVotesDto,
+  SessionProgressDto,
   LiveEventDto,
   LiveStateBody,
   LiveStateDto,
@@ -634,6 +635,55 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     return itemVotesFetch.refresh();
   }
 
+  // How far the session has gone: the documents projected and the items
+  // treated (the Mesa's mark in the control sheet, also set as the debate
+  // moves on). The Mesa only, as itself; a failed read keeps the last good
+  // marks, and with none the console marks nothing.
+  const progressFetch = useAsyncData(
+    () => `session-progress-${param.value}`,
+    () =>
+      canModerate.value
+        ? api.get<SessionProgressDto>(`${assemblyUrl.value}/session-progress`)
+        : Promise.resolve(null),
+    { server: false, watch: [canModerate] },
+  );
+  const { data: progressDto } = keepLastGoodData(progressFetch, {
+    resetOn: param,
+  });
+  const projectedDocumentIds = computed(
+    () => new Set(progressDto.value?.projectedDocumentIds ?? []),
+  );
+  const treatedItemIds = computed(
+    () => new Set(progressDto.value?.treatedItemIds ?? []),
+  );
+
+  function refreshProgress(): Promise<void> {
+    return progressFetch.refresh();
+  }
+
+  /** Each document's automatic sub-item: its mark in the sheet is the document's. */
+  const autoItemOfDocument = computed(
+    () =>
+      new Map(
+        (agenda.value?.items ?? [])
+          .filter((item) => item.generatedForDocumentId)
+          .map((item) => [item.generatedForDocumentId!, item.id]),
+      ),
+  );
+
+  /**
+   * Where a document stands in the session: `treated` once its automatic
+   * sub-item is marked treated, `projected` once the Mesa put it on screen,
+   * else null.
+   */
+  function documentProgress(
+    documentId: string,
+  ): "treated" | "projected" | null {
+    const autoItem = autoItemOfDocument.value.get(documentId);
+    if (autoItem && treatedItemIds.value.has(autoItem)) return "treated";
+    return projectedDocumentIds.value.has(documentId) ? "projected" : null;
+  }
+
   /** Puts a vote a mutation returned in the list, replacing its old copy. */
   function storeItemVote(vote: VoteDto): void {
     const current = itemVotesDto.value?.votes ?? [];
@@ -656,6 +706,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       speakers.refresh(),
       headcounts.refresh(),
       refreshItemVotes(),
+      refreshProgress(),
     ]);
   }
 
@@ -671,6 +722,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
             refreshDocument(),
             refreshAmendments(),
             refreshItemVotes(),
+            refreshProgress(),
           ])
         : refreshAll());
       return;
@@ -682,9 +734,15 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     let documentChanged = false;
     let amendmentsChanged = false;
     let itemVotesChanged = false;
+    let progressChanged = false;
     const projectedVoteId = liveState.value?.vote?.id ?? null;
     for (const event of events) {
       if (event.entityType === "live") live = true;
+      // A document goes on screen or the debate moves on (live), or the
+      // Mesa ticks an item in the sheet (control_sheet).
+      if (event.entityType === "live" || event.entityType === "control_sheet") {
+        progressChanged = true;
+      }
       if (event.entityType === "vote") {
         // A vote with no document is an agenda item's (recorded, voided or
         // made unanimous, here or from the control sheet).
@@ -720,6 +778,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     if (documentChanged) void refreshDocument();
     if (amendmentsChanged) void refreshAmendments();
     if (itemVotesChanged) void refreshItemVotes();
+    if (progressChanged) void refreshProgress();
   }
 
   let connected: Readonly<Ref<boolean>>;
@@ -952,6 +1011,24 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
 
   function setMessage(message: string | null): Promise<boolean> {
     return setLive({ message: message?.trim() ? message.trim() : null });
+  }
+
+  /**
+   * Calls a recess, or changes when it resumes (an ISO instant, or null when
+   * the Mesa does not say); null ends it. The projection shows it.
+   */
+  function setRecess(
+    recess: { until: string | null } | null,
+  ): Promise<boolean> {
+    return setLive({ recess }, { key: "recess" });
+  }
+
+  /** The default limit of a speaking turn, in seconds. */
+  function setSpeakingLimit(seconds: number): Promise<boolean> {
+    return setLive(
+      { speakingLimitSeconds: seconds },
+      { key: "speaking-limit" },
+    );
   }
 
   // Votes on the projection are the server's job: it points the live state at
@@ -2085,6 +2162,8 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     debateNext,
     debateAgendaTarget,
     setMessage,
+    setRecess,
+    setSpeakingLimit,
     setSpeakersVisible,
     // speaking turns
     speakers,
@@ -2093,6 +2172,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     // agenda item votes
     itemVotes,
     refreshItemVotes,
+    // how far the session has gone
+    projectedDocumentIds,
+    treatedItemIds,
+    documentProgress,
     // dialogs
     voteDialog,
     relationDialog,

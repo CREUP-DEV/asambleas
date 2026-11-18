@@ -13,6 +13,7 @@ import type {
   AssemblyStatusBody,
   AssemblyUpdateBody,
   CalendarBody,
+  LiveScrollBody,
   LiveStateBody,
 } from "../../types/api";
 import { normalizeText } from "./content";
@@ -29,6 +30,11 @@ export const AGENDA_TITLE_MAX_LENGTH = 300;
 export const AGENDA_DESCRIPTION_MAX_LENGTH = 5_000;
 export const AGENDA_MAX_ITEMS = 500;
 export const LIVE_MESSAGE_MAX_LENGTH = 500;
+/** A speaking turn's limit: from 10 seconds to an hour. */
+export const SPEAKING_LIMIT_MIN_SECONDS = 10;
+export const SPEAKING_LIMIT_MAX_SECONDS = 3600;
+/** The default limit of a speaking turn: three minutes (the column's default). */
+export const DEFAULT_SPEAKING_LIMIT_SECONDS = 180;
 export const MILESTONE_NOTE_MAX_LENGTH = 500;
 export const ASSEMBLY_LIST_PAGE_SIZE = 20;
 
@@ -198,6 +204,28 @@ export const liveStateBodySchema = z.object({
   voteId: assemblyEntityId.nullable().optional(),
   message: multiLine(LIVE_MESSAGE_MAX_LENGTH).nullable().optional(),
   speakersVisible: z.boolean().optional(),
+  recess: z.object({ until: isoDateTime.nullable() }).nullable().optional(),
+  speakingLimitSeconds: z
+    .number()
+    .int()
+    .min(SPEAKING_LIMIT_MIN_SECONDS)
+    .max(SPEAKING_LIMIT_MAX_SECONDS)
+    .optional(),
+});
+
+/** POST .../live-scroll: where the Mesa has the document in debate. */
+export const liveScrollBodySchema = z.object({
+  documentId: assemblyEntityId,
+  anchor: z.union([
+    z.object({
+      block: z.string().min(1).max(100),
+      offset: z.number().min(0).max(1),
+    }),
+    z.object({
+      page: z.number().int().min(1).max(10_000),
+      offset: z.number().min(0).max(1),
+    }),
+  ]),
 });
 
 // Compile-time checks: every parsed body is assignable to its API type.
@@ -211,4 +239,5 @@ export type _AssemblySchemaChecks = [
   Assignable<AgendaItemBody, z.output<typeof agendaItemUpdateBodySchema>>,
   Assignable<AgendaReorderBody, z.output<typeof agendaReorderBodySchema>>,
   Assignable<LiveStateBody, z.output<typeof liveStateBodySchema>>,
+  Assignable<LiveScrollBody, z.output<typeof liveScrollBodySchema>>,
 ];

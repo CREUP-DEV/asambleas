@@ -295,6 +295,20 @@
       "when": 1794983874845,
       "tag": "0041_reports_close",
       "breakpoints": true
+    },
+    {
+      "idx": 42,
+      "version": "7",
+      "when": 1795014320711,
+      "tag": "0042_recess_speaking_limits",
+      "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1795017677816,
+      "tag": "0043_priority_speaking_turns",
+      "breakpoints": true
     }
   ]
 }

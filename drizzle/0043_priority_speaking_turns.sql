@@ -1,0 +1,1 @@
+ALTER TABLE "speaking_turns" ADD COLUMN "priority" boolean DEFAULT false NOT NULL;

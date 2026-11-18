@@ -1659,6 +1659,8 @@ describe("session model", () => {
       position: 0,
       startedAt: null,
       endedAt: null,
+      limitSeconds: null,
+      priority: false,
       createdAt: "2026-01-01T10:00:00Z",
       updatedAt: "2026-01-01T10:00:00Z",
       ...over,

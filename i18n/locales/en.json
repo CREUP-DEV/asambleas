@@ -423,6 +423,16 @@
     "sections": {
       "label": "Assembly sections"
     },
+    "adjourn": {
+      "button": "Adjourn the session",
+      "title": "Adjourn the session?",
+      "description": "Choose whether the session resumes later or the assembly ends here.",
+      "legend": "What happens next",
+      "resume": "It resumes later",
+      "finish": "The assembly finishes",
+      "confirmResume": "Adjourn the session",
+      "confirmFinish": "Finish the assembly"
+    },
     "transitions": {
       "draft_convened": {
         "label": "Convene",
@@ -443,10 +453,10 @@
         "done": "Assembly session opened"
       },
       "in_session_convened": {
-        "label": "Suspend session",
-        "title": "Suspend the session?",
-        "description": "The {label} will go back to convened. While it is suspended nothing is projected or recorded; only what is on screen can be taken off and speaking turns ended. You can reopen the session later.",
-        "done": "Session suspended"
+        "label": "Adjourn the session",
+        "title": "Adjourn the session?",
+        "description": "The {label} will go back to convened until the session reopens, for instance the next day. Meanwhile nothing is projected or recorded; only what is on screen can be taken off and speaking turns ended. For a short break, use “Recess”.",
+        "done": "Session adjourned"
       },
       "in_session_closed": {
         "label": "Finish assembly",
@@ -622,6 +632,9 @@
     }
   },
   "document": {
+    "pdfPages": {
+      "failed": "The PDF could not be shown."
+    },
     "title": "Documents",
     "create": "Create document",
     "edit": "Edit document",
@@ -3619,6 +3632,21 @@
     }
   },
   "session": {
+    "progress": {
+      "projected": "Projected",
+      "treated": "Treated"
+    },
+    "recess": {
+      "button": "Recess",
+      "active": "In recess",
+      "activeUntil": "Recess until {time}",
+      "hint": "A short break: the projection shows the recess and, if you set it, the time the session resumes. To leave the session until another day, use “Adjourn the session”.",
+      "activeHint": "The projection shows the recess. You can change when it resumes or resume now.",
+      "until": "Resumes at",
+      "start": "Start the recess",
+      "change": "Change the time",
+      "end": "Resume the session"
+    },
     "title": "Session console",
     "pageTitle": "Session · {label}",
     "loadError": "The assembly could not be loaded",
@@ -4187,6 +4215,19 @@
       "done": "Already spoke ({count})",
       "unnamed": "No name",
       "elapsed": "Speaking time: {time}",
+      "remaining": "Time left: {time}",
+      "overtime": "Over the limit: {time}",
+      "limitOf": "Limit: {time}",
+      "limitNone": "No time limit",
+      "limitAdd": "Give it a limit ({time})",
+      "limitRemove": "Remove the limit",
+      "limitMinutes": "This turn's limit, in minutes",
+      "limitApply": "Apply",
+      "limitDefault": "Default limit, in minutes",
+      "limitDefaultHint": "The time a turn with a limit gets, unless you change it for that turn.",
+      "limitedTurn": "With a time limit ({time})",
+      "priority": "Priority",
+      "priorityTurn": "Priority: jumps the queue",
       "summarySpeaking": "{who} is speaking",
       "summaryWaiting": "1 waiting | {count} waiting",
       "summaryEmpty": "Nobody has asked for the floor",
@@ -4310,6 +4351,12 @@
     }
   },
   "projection": {
+    "recess": {
+      "title": "Recess",
+      "resumesAt": "Resumes at {time}",
+      "soon": "Resuming shortly",
+      "minutesLeft": "1 minute left | {count} minutes left"
+    },
     "pageTitle": "Projection · {label}",
     "notFound": "This assembly does not exist or you cannot see it.",
     "logo": "CREUP logo",
@@ -5357,6 +5404,8 @@
     }
   },
   "liveView": {
+    "recess": "The session is in recess.",
+    "recessUntil": "The session is in recess until {time}.",
     "title": "Live",
     "message": "Notice from the Mesa",
     "notStarted": {

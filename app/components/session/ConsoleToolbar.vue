@@ -1,14 +1,17 @@
 <script setup lang="ts">
 import { LIVE_MESSAGE_MAX_LENGTH } from "~~/shared/utils/schemas/assembly";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
+import { formatTime } from "~/utils/format";
+import { recessTimeOf, recessUntilFromTime } from "~/utils/recess";
 
 /**
  * Top bar of the Mesa console: assembly status, live connection, the
- * projection link, the message shown on the projection and the keyboard
- * shortcuts. What is under debate leads the console itself (NowPanel).
+ * projection link, the message shown on the projection, a recess (with
+ * the time it resumes, optional) and the keyboard shortcuts. What is under
+ * debate leads the console itself (NowPanel).
  */
 const session = useSessionConsoleContext();
-const { t } = useI18n();
+const { t, locale } = useI18n();
 const localePath = useLocalePath();
 
 const assembly = computed(() => session.assembly.value);
@@ -42,6 +45,37 @@ watch(messageOpen, (isOpen) => {
 async function saveMessage(value: string | null): Promise<void> {
   const ok = await session.setMessage(value);
   if (ok) messageOpen.value = false;
+}
+
+// Recess: a short break, projected with when the session resumes. Leaving
+// the session for another day is «Levantar la sesión».
+const recess = computed(() => live.value?.recess ?? null);
+const recessOpen = ref(false);
+const recessTime = ref("");
+watch(recessOpen, (isOpen) => {
+  if (isOpen) recessTime.value = recessTimeOf(recess.value?.until);
+});
+const recessBusy = computed(() => Boolean(session.busy.value.recess));
+const recessLabel = computed(() =>
+  recess.value
+    ? recess.value.until
+      ? t("session.recess.activeUntil", {
+          time: formatTime(recess.value.until, { locale: locale.value }),
+        })
+      : t("session.recess.active")
+    : t("session.recess.button"),
+);
+
+async function startRecess(): Promise<void> {
+  const ok = await session.setRecess({
+    until: recessUntilFromTime(recessTime.value),
+  });
+  if (ok) recessOpen.value = false;
+}
+
+async function endRecess(): Promise<void> {
+  const ok = await session.setRecess(null);
+  if (ok) recessOpen.value = false;
 }
 
 /** Single-key shortcuts may be off in this browser (WCAG 2.1.4). */
@@ -125,6 +159,60 @@ const SHORTCUTS = [
                   size="sm"
                   :label="t('session.toolbar.messageSave')"
                   :loading="Boolean(session.busy.value.live)"
+                />
+              </div>
+            </form>
+          </template>
+        </UPopover>
+
+        <UPopover v-model:open="recessOpen">
+          <UButton
+            :color="recess ? 'warning' : 'neutral'"
+            :variant="recess ? 'soft' : 'ghost'"
+            icon="i-lucide-coffee"
+            :label="recessLabel"
+            size="sm"
+            :disabled="!recess && !session.inSession.value"
+          />
+          <template #content>
+            <form
+              class="w-80 max-w-[calc(100vw-2rem)] space-y-3 p-3"
+              @submit.prevent="startRecess"
+            >
+              <p class="text-default text-sm">
+                {{
+                  recess
+                    ? t("session.recess.activeHint")
+                    : t("session.recess.hint")
+                }}
+              </p>
+              <UFormField
+                :label="t('session.recess.until')"
+                :hint="t('session.vote.optional')"
+                name="session-recess-until"
+              >
+                <UInput v-model="recessTime" type="time" class="w-full" />
+              </UFormField>
+              <div class="flex flex-wrap justify-end gap-2">
+                <UButton
+                  v-if="recess"
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                  icon="i-lucide-play"
+                  :label="t('session.recess.end')"
+                  :loading="recessBusy"
+                  @click="endRecess"
+                />
+                <UButton
+                  type="submit"
+                  size="sm"
+                  :label="
+                    recess
+                      ? t('session.recess.change')
+                      : t('session.recess.start')
+                  "
+                  :loading="recessBusy"
                 />
               </div>
             </form>

@@ -7,6 +7,7 @@ import {
   desc,
   eq,
   inArray,
+  isNotNull,
   ne,
   notInArray,
   or,
@@ -37,6 +38,7 @@ import {
 import { assemblySettings, loadDocumentSummaries } from "./documents";
 import { lockAssembly } from "./agendaWrites";
 import { stampDebateStarted } from "./positionsPublication";
+import { markLeftItemsTreated, stampProjected } from "./sessionProgress";
 import { coPresentedBy, withCoProponentIds } from "./presenters";
 import { canSeeDocument } from "./visibility";
 import { toVoteDto, VOTE_MESSAGE_KEYS } from "./votes";
@@ -84,6 +86,7 @@ import {
 import {
   AGENDA_FINAL_CONFLICT_CODE,
   ASSEMBLY_LIST_PAGE_SIZE,
+  DEFAULT_SPEAKING_LIMIT_SECONDS,
 } from "~~/shared/utils/schemas/assembly";
 import {
   agendaItemSlugs,
@@ -834,6 +837,8 @@ const EMPTY_LIVE_STATE: LiveStateDto = {
   vote: null,
   message: null,
   speakersVisible: false,
+  recess: null,
+  speakingLimitSeconds: DEFAULT_SPEAKING_LIMIT_SECONDS,
   updatedAt: null,
 };
 
@@ -860,8 +865,47 @@ export async function loadLiveStateDto(
     vote: row.vote ? toVoteDto(row.vote) : null,
     message: row.state.message,
     speakersVisible: row.state.speakersVisible,
+    recess: row.state.recessStartedAt
+      ? {
+          startedAt: row.state.recessStartedAt.toISOString(),
+          until: row.state.recessUntil?.toISOString() ?? null,
+        }
+      : null,
+    speakingLimitSeconds: row.state.speakingLimitSeconds,
     updatedAt: row.state.updatedAt.toISOString(),
   };
+}
+
+/**
+ * Ends a recess when the session stops (it is adjourned or the assembly
+ * closes), in that transaction: a session reopened the next day never
+ * starts in the recess of the day before. Records `live_changed` when there
+ * was one.
+ */
+export async function endRecess(
+  tx: Executor,
+  assemblyId: string,
+  actor: Actor,
+): Promise<void> {
+  const ended = await tx
+    .update(liveState)
+    .set({ recessStartedAt: null, recessUntil: null, updatedAt: sql`now()` })
+    .where(
+      and(
+        eq(liveState.assemblyId, assemblyId),
+        isNotNull(liveState.recessStartedAt),
+      ),
+    )
+    .returning({ assemblyId: liveState.assemblyId });
+  if (ended.length === 0) return;
+  await recordEvent(tx, {
+    assemblyId,
+    entityType: "live",
+    entityId: assemblyId,
+    type: "live_changed",
+    payload: { changed: ["recess"], recess: false },
+    actor,
+  });
 }
 
 /** Creates the live_state row when the session starts. Keeps an existing one. */
@@ -881,6 +925,11 @@ type LiveStateFields = {
     K in "agendaItemId" | "documentId" | "amendmentId" | "voteId" | "message"
   ]-?: Exclude<LiveStateBody[K], undefined>;
 } & { speakersVisible: boolean };
+
+/** Whether two instants are the same (both null counts). */
+function sameMoment(a: Date | null, b: Date | null): boolean {
+  return (a?.getTime() ?? null) === (b?.getTime() ?? null);
+}
 
 /**
  * Applies a partial live-state change: `undefined` keeps a field, `null`
@@ -927,6 +976,29 @@ export async function updateLiveState(
     if (body.speakersVisible !== undefined) {
       next.speakersVisible = body.speakersVisible;
     }
+    // A recess keeps when it started while the Mesa changes when it ends.
+    const recessStartedAt =
+      body.recess === undefined
+        ? (current?.recessStartedAt ?? null)
+        : body.recess === null
+          ? null
+          : (current?.recessStartedAt ?? new Date());
+    const recessUntil =
+      body.recess === undefined
+        ? (current?.recessUntil ?? null)
+        : body.recess?.until
+          ? new Date(body.recess.until)
+          : null;
+    const recessChanged =
+      !sameMoment(recessStartedAt, current?.recessStartedAt ?? null) ||
+      !sameMoment(recessUntil, current?.recessUntil ?? null);
+    const speakingLimitSeconds =
+      body.speakingLimitSeconds ??
+      current?.speakingLimitSeconds ??
+      DEFAULT_SPEAKING_LIMIT_SECONDS;
+    const limitChanged =
+      speakingLimitSeconds !==
+      (current?.speakingLimitSeconds ?? DEFAULT_SPEAKING_LIMIT_SECONDS);
 
     if (body.amendmentId) {
       const [amendment] = await tx
@@ -1008,11 +1080,16 @@ export async function updateLiveState(
       }
     }
 
-    const changed = (Object.keys(next) as (keyof LiveStateFields)[]).filter(
-      (key) => next[key] !== previous[key],
-    );
+    const changed: string[] = (
+      Object.keys(next) as (keyof LiveStateFields)[]
+    ).filter((key) => next[key] !== previous[key]);
+    if (recessChanged) changed.push("recess");
+    if (limitChanged) changed.push("speakingLimitSeconds");
     const values = {
       ...next,
+      recessStartedAt,
+      recessUntil,
+      speakingLimitSeconds,
       updatedByUserId: actor.user.id,
       updatedAt: sql`now()`,
     };
@@ -1034,6 +1111,8 @@ export async function updateLiveState(
         amendmentId: next.amendmentId,
         voteId: next.voteId,
         speakersVisible: next.speakersVisible,
+        recess: recessStartedAt !== null,
+        ...(limitChanged ? { speakingLimitSeconds } : {}),
       },
       actor,
     });
@@ -1046,6 +1125,21 @@ export async function updateLiveState(
         payload: { visible: next.speakersVisible },
         actor,
       });
+    }
+    // In session, a document on screen is marked projected, and the item the
+    // debate leaves is marked treated with its documents (sessionProgress.ts).
+    if (locked.status === "in_session") {
+      if (next.documentId && next.documentId !== previous.documentId) {
+        await stampProjected(tx, next.documentId);
+      }
+      if (next.agendaItemId !== previous.agendaItemId) {
+        await markLeftItemsTreated(tx, {
+          assemblyId,
+          leftId: previous.agendaItemId,
+          nextId: next.agendaItemId,
+          actor,
+        });
+      }
     }
     // What goes into debate makes its presenters' answers public for good.
     if (

@@ -142,6 +142,17 @@ export const liveState = pgTable("live_state", {
   message: text("message"),
   /** The Mesa shows who has the floor (and who is next) to attendees. */
   speakersVisible: boolean("speakers_visible").notNull().default(false),
+  /** A recess the Mesa called, until it resumes; null while there is none. */
+  recessStartedAt: timestamp("recess_started_at", {
+    withTimezone: true,
+    mode: "date",
+  }),
+  /** When the Mesa said the session resumes, if it did. */
+  recessUntil: timestamp("recess_until", { withTimezone: true, mode: "date" }),
+  /** The time a turn with a limit gets unless the Mesa changes it. */
+  speakingLimitSeconds: integer("speaking_limit_seconds")
+    .notNull()
+    .default(180),
   updatedByUserId: text("updated_by_user_id").references(() => users.id, {
     onDelete: "set null",
   }),

@@ -297,6 +297,10 @@ export const speakingTurns = pgTable(
     position: integer("position").notNull().default(0),
     startedAt: timestamp("started_at", { withTimezone: true, mode: "date" }),
     endedAt: timestamp("ended_at", { withTimezone: true, mode: "date" }),
+    /** The time it has, when the Mesa gave it a limit; null for none. */
+    limitSeconds: integer("limit_seconds"),
+    /** Written down ahead of the queue (a point of order, an allusion). */
+    priority: boolean("priority").notNull().default(false),
     createdByUserId: text("created_by_user_id").references(() => users.id, {
       onDelete: "set null",
     }),

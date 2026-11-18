@@ -1,5 +1,5 @@
 import type { MaybeRefOrGetter, Ref } from "vue";
-import type { LiveEventDto } from "~~/shared/types/api";
+import type { LiveEventDto, LiveScrollDto } from "~~/shared/types/api";
 import {
   LIVE_ONLINE_JITTER_MS,
   LIVE_WATCHDOG_TICK_MS,
@@ -87,6 +87,14 @@ function dedupe(events: LiveEventDto[]): LiveEventDto[] {
 export function useAssemblyLive(
   assemblyId: MaybeRefOrGetter<string | undefined>,
   onChange: (events: LiveEventDto[]) => void,
+  options: {
+    /**
+     * Where the Mesa has the document in debate scrolled, as it moves (the
+     * stream's `scroll` events; the projection follows them). Never
+     * batched: each one is delivered as it comes.
+     */
+    onScroll?: (scroll: LiveScrollDto) => void;
+  } = {},
 ): { connected: Readonly<Ref<boolean>>; polling: Readonly<Ref<boolean>> } {
   const connected = ref(false);
   const polling = ref(false);
@@ -242,6 +250,19 @@ export function useAssemblyLive(
       lastMessageAt = Date.now();
       const change = parseChange((event as MessageEvent).data);
       if (change) enqueue(change);
+    });
+
+    stream.addEventListener("scroll", (event) => {
+      if (gen !== generation || source !== stream) return;
+      lastMessageAt = Date.now();
+      if (!options.onScroll) return;
+      try {
+        options.onScroll(
+          JSON.parse((event as MessageEvent).data as string) as LiveScrollDto,
+        );
+      } catch {
+        // A malformed position is dropped; the next one comes soon.
+      }
     });
 
     // The heartbeat: nothing to deliver, only proof the stream is alive.

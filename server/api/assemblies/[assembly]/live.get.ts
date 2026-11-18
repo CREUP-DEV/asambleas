@@ -9,6 +9,7 @@ import { toLiveEventDto } from "../../../utils/domain/assemblies";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 import type { AuthEventContext } from "../../../utils/auth/requireAuth";
 import { subscribeToAssembly } from "../../../utils/live/hub";
+import { subscribeToLiveScroll } from "../../../utils/live/scroll";
 import { markSeen } from "../../../utils/live/online";
 import {
   LIVE_HEARTBEAT_INTERVAL_MS,
@@ -23,6 +24,8 @@ const RETRY_MS = 5_000;
  * - `ready` once connected;
  * - `change` with a LiveEventDto for every recorded event (ids only: clients
  *   refetch through the permission-checked endpoints);
+ * - `scroll` with a LiveScrollDto whenever the Mesa scrolls the document in
+ *   debate (server/utils/live/scroll.ts), never recorded;
  * - a `ping` heartbeat every 25 s (liveHeartbeat), which clients use to
  *   tell a live stream from one that died in silence, and which keeps the
  *   viewer online (server/utils/live/online.ts) while the page stays open.
@@ -45,6 +48,9 @@ export default defineEventHandler(async (event) => {
   const unsubscribe = subscribeToAssembly(assembly.id, (message) => {
     push({ event: "change", data: JSON.stringify(toLiveEventDto(message)) });
   });
+  const unsubscribeScroll = subscribeToLiveScroll(assembly.id, (scroll) => {
+    push({ event: "scroll", data: JSON.stringify(scroll) });
+  });
   // A page with the stream open keeps its person online while idle; the
   // real user, never the account an Admin acts as.
   const viewerId = (event.context as AuthEventContext).realUser?.id ?? null;
@@ -59,6 +65,7 @@ export default defineEventHandler(async (event) => {
     cleaned = true;
     clearInterval(heartbeat);
     unsubscribe();
+    unsubscribeScroll();
     stream.close().catch(() => undefined);
   };
   stream.onClosed(cleanup);

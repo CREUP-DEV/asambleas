@@ -2,6 +2,8 @@
 import type { MemberKind } from "~~/shared/constants/domain";
 import type { MemberDto } from "~~/shared/types/api";
 import { SPEAKER_NAME_MAX_LENGTH } from "~~/shared/utils/schemas/speakers";
+import { DEFAULT_SPEAKING_LIMIT_SECONDS } from "~~/shared/utils/schemas/assembly";
+import { sessionFormatDuration } from "~/composables/session/sessionModel";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 
 /**
@@ -102,6 +104,24 @@ const groups = computed(() =>
 /** The members picked, in the order they asked for the floor. */
 const memberIds = ref<string[]>([]);
 const speakerName = ref("");
+/**
+ * The turns written down get the assembly's default limit: not every turn
+ * has one, so the Mesa marks it (and changes it per turn in the panel).
+ */
+const limited = ref(false);
+/**
+ * A priority turn (a point of order, an allusion) jumps the queue: it goes
+ * ahead of everyone waiting but the priority turns already there. Offered
+ * once there is a queue to jump.
+ */
+const priority = ref(false);
+const queueLength = computed(() => speakers.view.value.waiting.length);
+const defaultLimit = computed(() =>
+  sessionFormatDuration(
+    session.liveState.value?.speakingLimitSeconds ??
+      DEFAULT_SPEAKING_LIMIT_SECONDS,
+  ),
+);
 /** Who was just written down, and how many. */
 const added = ref<{ who: string; count: number } | null>(null);
 /** While the turns go out one after another. */
@@ -138,6 +158,8 @@ watch(open, (isOpen) => {
   filter.value = "";
   memberIds.value = [];
   speakerName.value = "";
+  limited.value = false;
+  priority.value = false;
   added.value = null;
 });
 
@@ -192,6 +214,8 @@ async function addTurn(): Promise<void> {
       const ok = await speakers.add({
         memberId: member?.id ?? null,
         speaker: name,
+        limited: limited.value,
+        priority: priority.value && queueLength.value > 0,
       });
       if (!ok) break;
       written.push(member?.acronym ?? name ?? "");
@@ -327,6 +351,17 @@ async function addTurn(): Promise<void> {
             <option v-for="name in suggestions" :key="name" :value="name" />
           </datalist>
         </UFormField>
+        <USwitch
+          v-if="queueLength > 0"
+          v-model="priority"
+          :label="t('session.speakers.priorityTurn')"
+          class="self-center"
+        />
+        <USwitch
+          v-model="limited"
+          :label="t('session.speakers.limitedTurn', { time: defaultLimit })"
+          class="self-center"
+        />
         <UButton
           type="submit"
           form="session-speaker-add"

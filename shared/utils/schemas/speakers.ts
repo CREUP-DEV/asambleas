@@ -2,6 +2,10 @@ import { z } from "zod/v4";
 import { SPEAKING_TURN_STATUSES } from "../../constants/domain";
 import type { SpeakingTurnBody, SpeakingTurnUpdateBody } from "../../types/api";
 import { normalizeText } from "./content";
+import {
+  SPEAKING_LIMIT_MAX_SECONDS,
+  SPEAKING_LIMIT_MIN_SECONDS,
+} from "./assembly";
 
 /**
  * Request bodies of the speaking turns API (docs/api.md, "Speaking turns").
@@ -32,6 +36,8 @@ export const speakingTurnBodySchema = z.object({
   memberId: entityId.nullable().optional(),
   speaker: speakerNameSchema,
   agendaItemId: entityId.nullable().optional(),
+  limited: z.boolean().optional(),
+  priority: z.boolean().optional(),
 });
 
 /** PUT /api/assemblies/[assembly]/speakers/[turn] (SpeakingTurnUpdateBody). */
@@ -39,6 +45,13 @@ export const speakingTurnUpdateBodySchema = z.object({
   status: z.enum(SPEAKING_TURN_STATUSES).optional(),
   position: z.number().int().min(0).max(MAX_QUEUE_POSITION).optional(),
   speaker: speakerNameSchema,
+  limitSeconds: z
+    .number()
+    .int()
+    .min(SPEAKING_LIMIT_MIN_SECONDS)
+    .max(SPEAKING_LIMIT_MAX_SECONDS)
+    .nullable()
+    .optional(),
   updatedAt: z.iso.datetime({ offset: true }),
 });
 

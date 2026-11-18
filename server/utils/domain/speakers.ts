@@ -14,6 +14,7 @@ import type {
   SpeakingTurnUpdateBody,
 } from "~~/shared/types/api";
 import { SPEAKING_QUEUE_MAX_LENGTH } from "~~/shared/utils/schemas/speakers";
+import { DEFAULT_SPEAKING_LIMIT_SECONDS } from "~~/shared/utils/schemas/assembly";
 import { getOptimisticLockTimestampMs } from "../optimisticLock";
 import { toMemberRef } from "../members/dto";
 import { canModerate, type Actor } from "./actor";
@@ -79,6 +80,8 @@ function toTurnDto(
     position: turn.position,
     startedAt: iso(turn.startedAt),
     endedAt: iso(turn.endedAt),
+    limitSeconds: turn.limitSeconds,
+    priority: turn.priority,
     createdAt: turn.createdAt.toISOString(),
     updatedAt: turn.updatedAt.toISOString(),
   };
@@ -320,7 +323,24 @@ export async function addSpeakingTurn(
     if (queue.length >= SPEAKING_QUEUE_MAX_LENGTH) {
       fail(409, "La lista de palabras está llena");
     }
+    // A turn with a limit takes the assembly's default (live_state).
+    let limitSeconds: number | null = null;
+    if (body.limited) {
+      const [state] = await tx
+        .select({ seconds: liveState.speakingLimitSeconds })
+        .from(liveState)
+        .where(eq(liveState.assemblyId, assembly.id));
+      limitSeconds = state?.seconds ?? DEFAULT_SPEAKING_LIMIT_SECONDS;
+    }
 
+    // A priority turn goes ahead of the queue, after the priority turns
+    // already waiting at its head; any other at its end.
+    const priority = body.priority === true;
+    let position = queue.length;
+    if (priority) {
+      position = 0;
+      while (queue[position]?.priority) position++;
+    }
     const [created] = await tx
       .insert(speakingTurns)
       .values({
@@ -329,16 +349,17 @@ export async function addSpeakingTurn(
         memberId,
         speaker,
         status: "waiting",
-        position: queue.length,
+        position,
+        limitSeconds,
+        priority,
         createdByUserId: actor.user.id,
       })
       .returning({ id: speakingTurns.id });
-    // Close any gap left by an older queue, so positions stay 0..n-1.
-    await renumberQueue(
-      tx,
-      queue,
-      queue.map((turn) => turn.id),
-    );
+    // The others make room, and any gap left by an older queue closes, so
+    // positions stay 0..n-1.
+    const order = queue.map((turn) => turn.id);
+    order.splice(position, 0, created!.id);
+    await renumberQueue(tx, queue, order, created!.id);
 
     await recordEvent(tx, {
       assemblyId: assembly.id,
@@ -346,7 +367,13 @@ export async function addSpeakingTurn(
       entityId: created!.id,
       type: "speaking_turn_added",
       // Ids only: the person's name is read through GET .../speakers.
-      payload: { memberId, agendaItemId, position: queue.length },
+      payload: {
+        memberId,
+        agendaItemId,
+        position,
+        ...(limitSeconds !== null ? { limitSeconds } : {}),
+        ...(priority ? { priority: true } : {}),
+      },
       actor,
     });
   });
@@ -419,7 +446,11 @@ export async function updateSpeakingTurn(
     const position = plan.queue.indexOf(turn.id);
     const moved = position >= 0 && position !== turn.position;
     const renamed = speaker !== turn.speaker;
-    const changed = plan.status !== turn.status || moved || renamed;
+    const limitSeconds =
+      body.limitSeconds === undefined ? turn.limitSeconds : body.limitSeconds;
+    const limitChanged = limitSeconds !== turn.limitSeconds;
+    const changed =
+      plan.status !== turn.status || moved || renamed || limitChanged;
     if (!changed) return;
 
     for (const id of plan.finishIds) {
@@ -433,6 +464,7 @@ export async function updateSpeakingTurn(
       .set({
         status: plan.status,
         speaker,
+        limitSeconds,
         ...(position >= 0 ? { position } : {}),
         ...(plan.start ? { startedAt: now, endedAt: null } : {}),
         ...(plan.end ? { endedAt: now } : {}),
@@ -461,6 +493,7 @@ export async function updateSpeakingTurn(
         to: plan.status,
         ...(position >= 0 ? { position } : {}),
         ...(renamed ? { renamed: true } : {}),
+        ...(limitChanged ? { limitSeconds } : {}),
       },
       actor,
     });

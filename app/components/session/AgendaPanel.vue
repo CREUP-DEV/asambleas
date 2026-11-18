@@ -5,7 +5,11 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
 /**
  * Agenda progress: every item with its documents. "Debate" points the live
  * state (and the projection) at an item or a document; selecting a document
- * only changes what the console shows.
+ * only changes what the console shows. An item reads treated (a check) when
+ * its voted documents all have their final vote or the Mesa's mark in the
+ * control sheet says so, which the debate sets as it moves on; a document
+ * reads «Proyectado» once on screen and «Tratado» once its own sub-item is
+ * marked, and a treated one dims.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -40,6 +44,15 @@ function select(document: DocumentSummaryDto): void {
 function itemDone(documents: DocumentSummaryDto[]): boolean {
   const voted = documents.filter((document) => document.voted);
   return voted.length > 0 && voted.every((document) => document.consolidated);
+}
+
+function itemTreated(row: {
+  item: { id: string };
+  documents: DocumentSummaryDto[];
+}): boolean {
+  return (
+    itemDone(row.documents) || session.treatedItemIds.value.has(row.item.id)
+  );
 }
 </script>
 
@@ -102,7 +115,7 @@ function itemDone(documents: DocumentSummaryDto[]): boolean {
           >
             <UIcon
               :name="
-                itemDone(row.documents)
+                itemTreated(row)
                   ? 'i-lucide-circle-check'
                   : liveItemId === row.item.id
                     ? 'i-lucide-circle-dot'
@@ -110,7 +123,7 @@ function itemDone(documents: DocumentSummaryDto[]): boolean {
               "
               class="mt-0.5 size-4 shrink-0"
               :class="
-                itemDone(row.documents)
+                itemTreated(row)
                   ? 'text-success'
                   : liveItemId === row.item.id
                     ? 'text-primary'
@@ -118,9 +131,19 @@ function itemDone(documents: DocumentSummaryDto[]): boolean {
               "
               aria-hidden="true"
             />
-            <span class="text-highlighted min-w-0 flex-1 text-sm font-medium">
+            <span
+              class="min-w-0 flex-1 text-sm font-medium"
+              :class="
+                itemTreated(row) && liveItemId !== row.item.id
+                  ? 'text-muted'
+                  : 'text-highlighted'
+              "
+            >
               <AgendaItemNumber :number="row.number" class="text-muted" />
               {{ row.item.title }}
+              <span v-if="itemTreated(row)" class="sr-only">
+                · {{ t("session.progress.treated") }}
+              </span>
             </span>
             <!-- Its own tooltip and icon: it must not pass for the button
                  of a document with the same title. -->
@@ -161,7 +184,15 @@ function itemDone(documents: DocumentSummaryDto[]): boolean {
                   :aria-pressed="session.documentId.value === document.id"
                   @click="select(document)"
                 >
-                  <span class="text-default block truncate">
+                  <span
+                    class="block truncate"
+                    :class="
+                      session.documentProgress(document.id) === 'treated' &&
+                      liveDocumentId !== document.id
+                        ? 'text-muted'
+                        : 'text-default'
+                    "
+                  >
                     {{ document.title }}
                   </span>
                   <span
@@ -188,6 +219,12 @@ function itemDone(documents: DocumentSummaryDto[]): boolean {
                     >
                       {{ t("session.agenda.inDebate") }}
                     </span>
+                    <SessionProgressMark
+                      v-if="
+                        !document.consolidated && liveDocumentId !== document.id
+                      "
+                      :progress="session.documentProgress(document.id)"
+                    />
                   </span>
                 </button>
                 <UTooltip :text="t('session.agenda.debateDocument')">

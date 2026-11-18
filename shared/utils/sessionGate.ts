@@ -20,14 +20,18 @@ export const SESSION_NOT_OPEN_MESSAGE_KEY = "common.errors.sessionNotOpen";
 
 /**
  * A change of the live state that only takes things off the screen: no
- * agenda item, document, amendment or vote is pointed at, and the speaking
- * turns are not shown. The message to the room may change at any time.
+ * agenda item, document, amendment or vote is pointed at, the speaking
+ * turns are not shown and no recess starts (ending one clears the screen).
+ * The message to the room and the default limit of a turn may change at
+ * any time.
  */
 export function liveStateClearsOnly(body: LiveStateBody): boolean {
   return (
     (["agendaItemId", "documentId", "amendmentId", "voteId"] as const).every(
       (key) => body[key] === undefined || body[key] === null,
-    ) && body.speakersVisible !== true
+    ) &&
+    body.speakersVisible !== true &&
+    (body.recess === undefined || body.recess === null)
   );
 }
 
@@ -39,6 +43,7 @@ export function speakerUpdateClearsOnly(body: SpeakingTurnUpdateBody): boolean {
   return (
     (body.status === "done" || body.status === "cancelled") &&
     body.position === undefined &&
-    body.speaker === undefined
+    body.speaker === undefined &&
+    body.limitSeconds === undefined
   );
 }

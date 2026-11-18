@@ -99,6 +99,11 @@ const NON_RECORDING_MUTATIONS: Readonly<Record<string, string>> = {
   // would fill the history every 30 seconds per reader.
   "server/api/assemblies/[assembly]/documents/[document]/reading.post.ts":
     "reading heartbeat, the document_views row is the record",
+  // Where the Mesa has the document in debate scrolled, several times a
+  // second while it scrolls: memory only (server/utils/live/scroll.ts), so
+  // the projection follows. It changes nothing of the assembly.
+  "server/api/assemblies/[assembly]/live-scroll.post.ts":
+    "scroll position for the projection, memory only",
 };
 
 interface ModuleInfo {
