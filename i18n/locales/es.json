@@ -1155,24 +1155,24 @@
       },
       "coLabel": "Otros miembros que lo presentan",
       "coHelp": {
-        "presenter": "Podrán preparar el texto contigo y verán siempre lo que se decida sobre las enmiendas. Solo quien responde a las enmiendas o Secretaría pueden cambiar quién responde.",
-        "manager": "Prepararán el texto juntos y verán siempre lo que se decida sobre las enmiendas. Solo quien responde a las enmiendas o Secretaría pueden cambiar quién responde."
+        "presenter": "Podrán preparar el texto contigo y responder a las enmiendas. Solo el proponente principal o Secretaría pueden cambiar quién es el proponente principal.",
+        "manager": "Prepararán el texto juntos y podrán responder a las enmiendas. Solo el proponente principal o Secretaría pueden cambiar quién es el proponente principal."
       },
       "coPlaceholder": "Elige los miembros",
-      "main": "Quién responde a las enmiendas (proponente principal)",
-      "mainHelp": "Solo este miembro acepta o rechaza las enmiendas. Los demás verán siempre qué decidió y cuándo.",
+      "main": "Proponente principal",
+      "mainHelp": "Figura como proponente del documento. Él y los demás miembros que lo presentan pueden aceptar o rechazar las enmiendas, y todos ven quién respondió y cuándo.",
       "mainLockedHelp": "Solo ese miembro o Secretaría pueden cambiarlo.",
-      "mainRequired": "Elige quién responde a las enmiendas.",
+      "mainRequired": "Elige el proponente principal.",
       "yours": "Tu miembro",
       "sentence": "Presenta {main} con {others}",
       "short": "{main} con {others}",
       "more": "{count} más",
       "workingWith": "Lo presentas junto con {members}, que también pueden editar el borrador.",
-      "mainIsYours": "Respondes tú a las enmiendas, en nombre de {member}, como proponente principal.",
-      "mainIsOther": "{member} responde a las enmiendas como proponente principal; verás siempre lo que decida.",
+      "mainIsYours": "{member} es el proponente principal. Quienes lo presentan contigo también pueden responder a las enmiendas.",
+      "mainIsOther": "{member} es el proponente principal. Tú también puedes responder a las enmiendas.",
       "moreLabel": "{count} más: ver quién más lo presenta | {count} más: ver quiénes más lo presentan",
-      "handOver": "Si lo dejas así, {member} responderá a las enmiendas y solo {member} o Secretaría podrán cambiarlo.",
-      "answers": "{member} responde a las enmiendas.",
+      "handOver": "Si lo dejas así, {member} será el proponente principal y solo {member} o Secretaría podrán cambiarlo.",
+      "answers": "Proponente principal: {member}.",
       "droppedWithoutLead": "Si no lo presenta nadie, se quita también {members}. | Si no lo presenta nadie, se quitan también {members}."
     },
     "acceptedRule": {
@@ -1523,7 +1523,10 @@
       "answerAuto": "Aceptada automáticamente: es de forma",
       "answerAutoCleared": "Vuelve a quedar sin respuesta: ya no es de forma",
       "blocked": {
-        "publication": "Se podrá responder cuando Secretaría la publique."
+        "publication": "Se podrá responder cuando Secretaría la publique.",
+        "validation": "Se podrá responder cuando Secretaría la valide.",
+        "authors": "Se podrá responder cuando la acepten los autores principales de las enmiendas que agrupa.",
+        "admission": "Se podrá responder cuando la asamblea decida tratarla."
       },
       "next": {
         "incorporateIfAccepted": "Si la acepta quien presenta el documento, se incorpora sin votación. Si no, la votará la asamblea.",
@@ -3579,8 +3582,7 @@
     "more": {
       "label": "Más",
       "consolidated": "Texto consolidado y PDF",
-      "transactional": "Proponer una transaccional",
-      "answers": "Ver las respuestas"
+      "transactional": "Proponer una transaccional"
     },
     "corrections": {
       "title": "Secretaría te pide que corrijas una enmienda | Secretaría te pide que corrijas {count} enmiendas",
@@ -4698,7 +4700,9 @@
       "change": "{from} → {to}",
       "treatedByResult": "Cuenta como tratado por el resultado anotado a mano.",
       "resultMesaOnly": "Solo la Mesa anota el resultado.",
-      "leftSheet": "El punto ha salido de la hoja: alguien lo ha cambiado a la vez."
+      "leftSheet": "El punto ha salido de la hoja: alguien lo ha cambiado a la vez.",
+      "positionFor": "Respondes en nombre de {member}. Queda registrado quién la cambia y cuándo.",
+      "positionHint": "Queda registrado quién la cambia y cuándo."
     },
     "add": {
       "button": "Añadir punto",
@@ -5693,7 +5697,7 @@
     },
     "noAccess": {
       "title": "No puedes responder a estas enmiendas",
-      "description": "Solo quien presenta principalmente el documento y la Mesa responden a sus enmiendas."
+      "description": "Solo quienes presentan el documento y la Mesa responden a sus enmiendas."
     },
     "closed": {
       "title": "Este documento ya no está en debate",
@@ -5729,63 +5733,6 @@
       "publicationDescription": "Secretaría todavía no la ha publicado. Podrás responderla cuando la publique.",
       "voted": "{label}: no se ha guardado la respuesta",
       "votedDescription": "El documento se ha votado mientras tanto, así que las respuestas ya no se pueden cambiar."
-    },
-    "coPresenter": {
-      "pageTitle": "Respuestas a las enmiendas: {title}",
-      "heading": "Respuestas a las enmiendas",
-      "title": "Las enmiendas las responde {member}",
-      "description": "Como {member} presenta principalmente el documento, es quien acepta o rechaza las enmiendas (o la Mesa en su nombre). Aquí ves qué decide y cuándo. Las enmiendas las votará la asamblea.",
-      "descriptionIncorporate": "Como {member} presenta principalmente el documento, es quien acepta o rechaza las enmiendas (o la Mesa en su nombre). Aquí ves qué decide y cuándo. Las que acepta se incorporan al texto sin votación.",
-      "someone": "Quien presenta principalmente el documento",
-      "listTitle": "Qué ha respondido",
-      "awaitingAdmission": "{count} enmienda fuera de plazo espera a que la asamblea decida si la trata. Después se podrá responder. | {count} enmiendas fuera de plazo esperan a que la asamblea decida si las trata. Después se podrán responder.",
-      "empty": "Todavía no hay enmiendas que responder",
-      "emptyDescription": "Cuando Secretaría publique enmiendas a este documento, aquí verás qué responde quien lo presenta principalmente.",
-      "comment": "Comentario",
-      "hidden": "Todavía no puedes ver la respuesta de {member}.",
-      "answered": {
-        "accept": "{member} la aceptó el {date}.",
-        "incorporated": "{member} la aceptó el {date} y se incorporó al texto sin votación.",
-        "reject": "{member} la rechazó el {date}.",
-        "transact": "{member} propuso transaccionarla el {date}."
-      },
-      "titleDone": "Estas fueron las respuestas de {member}",
-      "descriptionReadOnly": "El documento ya se ha votado: estas respuestas ya no se pueden cambiar.",
-      "descriptionClosed": "El documento se ha retirado o aplazado: sus enmiendas ya no necesitan respuesta.",
-      "listTitleDone": "Qué se respondió",
-      "emptyDone": "No se respondió ninguna enmienda",
-      "emptyDoneDescription": "{member} no llegó a responder ninguna enmienda de este documento.",
-      "outcome": {
-        "approved": "La asamblea la aprobó.",
-        "approvedFormal": "Se aprobó como corrección de forma.",
-        "rejected": "La asamblea la rechazó.",
-        "withdrawn": "Quien la presentaba la retiró.",
-        "lapsed": "Decayó y ya no se votará."
-      },
-      "pending": "{member} todavía no la ha respondido.",
-      "awaitingPublication": "{count} enmienda validada espera a que Secretaría la publique. Después se podrá responder. | {count} enmiendas validadas esperan a que Secretaría las publique. Después se podrán responder.",
-      "answeredByMesa": {
-        "accept": "La Mesa, en nombre de {member}, la aceptó el {date}.",
-        "incorporated": "La Mesa, en nombre de {member}, la aceptó el {date} y se incorporó al texto sin votación.",
-        "reject": "La Mesa, en nombre de {member}, la rechazó el {date}.",
-        "transact": "La Mesa, en nombre de {member}, propuso transaccionarla el {date}."
-      },
-      "answeredBySecretaria": {
-        "accept": "La Secretaría, en nombre de {member}, la aceptó el {date}.",
-        "incorporated": "La Secretaría, en nombre de {member}, la aceptó el {date} y se incorporó al texto sin votación.",
-        "reject": "La Secretaría, en nombre de {member}, la rechazó el {date}.",
-        "transact": "La Secretaría, en nombre de {member}, propuso transaccionarla el {date}."
-      },
-      "answeredByPresidencia": {
-        "accept": "La Presidencia, en nombre de {member}, la aceptó el {date}.",
-        "incorporated": "La Presidencia, en nombre de {member}, la aceptó el {date} y se incorporó al texto sin votación.",
-        "reject": "La Presidencia, en nombre de {member}, la rechazó el {date}.",
-        "transact": "La Presidencia, en nombre de {member}, propuso transaccionarla el {date}."
-      },
-      "answeredAuto": {
-        "accept": "Se aceptó automáticamente en nombre de {member} el {date}, por ser de forma.",
-        "incorporated": "Se aceptó automáticamente en nombre de {member} el {date}, por ser de forma, y se incorporó al texto sin votación."
-      }
     },
     "waiting": {
       "authors": "{count} transaccional espera a que la acepten los autores principales de las enmiendas que sustituye. | {count} transaccionales esperan a que las acepten los autores principales de las enmiendas que sustituyen.",

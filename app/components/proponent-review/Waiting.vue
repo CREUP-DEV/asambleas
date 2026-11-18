@@ -2,22 +2,16 @@
 import type { PositionWaitCounts } from "./-review";
 
 /**
- * What is still on its way to the main presenter, one calm sentence per
+ * What is still on its way to the presenters, one calm sentence per
  * reason (positionWaitCounts): late amendments the assembly has not decided
  * to treat, transactionals their main authors have not accepted, and, for
  * the Mesa and the Secretaría (the only ones who see them), amendments the
  * Secretaría has not validated or published yet. Nothing renders when
- * nothing waits. `reader` words it for a co-presenter, who never answers:
- * the lines that promise an answer ("podrás responderla") say instead that
- * it can be answered afterwards.
+ * nothing waits.
  */
-const props = withDefaults(
-  defineProps<{
-    counts: PositionWaitCounts;
-    reader?: boolean;
-  }>(),
-  { reader: false },
-);
+const props = defineProps<{
+  counts: PositionWaitCounts;
+}>();
 
 const { t } = useI18n();
 
@@ -29,9 +23,7 @@ const lines = computed(() => {
       count: admission,
       icon: "i-lucide-clock-alert",
       text: t(
-        props.reader
-          ? "proponentReview.coPresenter.awaitingAdmission"
-          : "proponentReview.progress.awaitingAdmission",
+        "proponentReview.progress.awaitingAdmission",
         { count: admission },
         admission,
       ),
@@ -47,9 +39,7 @@ const lines = computed(() => {
       count: publication,
       icon: "i-lucide-eye-off",
       text: t(
-        props.reader
-          ? "proponentReview.coPresenter.awaitingPublication"
-          : "proponentReview.waiting.publication",
+        "proponentReview.waiting.publication",
         { count: publication },
         publication,
       ),

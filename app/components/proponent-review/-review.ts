@@ -501,33 +501,6 @@ export function stateKey(
   return forMember ? `${key}For` : key;
 }
 
-/**
- * The sentence a co-presenter reads for the main presenter's answer, as the
- * key under `proponentReview.coPresenter` (with `member` and, for an answer,
- * `date`):
- * - `hidden`: the viewer cannot see the answer yet (an incorporated one
- *   still says so, by its status);
- * - `pending`: not answered yet;
- * - `answered.<status>`: the main presenter answered ("CEA-AC la aceptó el
- *   5 nov");
- * - `answeredByMesa.<status>`: the Mesa answered on its behalf ("La Mesa,
- *   en nombre de CEA-AC, la aceptó el 5 nov");
- * - `answeredAuto.<status>`: a formal amendment accepted by itself.
- */
-export function presenterAnswerKey(
-  amendment: Pick<AmendmentDto, "position" | "status" | "approvalMethod">,
-): string {
-  if (isPositionHidden(amendment) && !isIncorporated(amendment)) {
-    return "hidden";
-  }
-  const status = answerStatus(amendment);
-  if (status === "pending") return "pending";
-  if (answeredAutomatically(amendment)) return `answeredAuto.${status}`;
-  return answeredByMesa(amendment)
-    ? `answeredBy${positionRecorderKey(amendment.position)}.${status}`
-    : `answered.${status}`;
-}
-
 // Queue -------------------------------------------------------------------------
 
 function toItem(amendment: AmendmentDto): ProponentReviewItem {
@@ -553,41 +526,6 @@ export function proponentReviewItems(
     .map(toItem);
 }
 
-/**
- * The main presenter's answers as a co-presenter reads them, in text order,
- * whoever looks (nothing depends on the viewer's capabilities, which a
- * co-presenter lacks): every presented amendment the main presenter
- * answered, settled or not, and every one it can answer now (a late one
- * before its admission too).
- * Amendments a transactional replaced are left out (the transactional
- * carries the answer that counts), as are the inadmissible ones. With
- * `answeredOnly` (the document was voted or closed) only the answers stay.
- */
-export function presenterAnswerItems(
-  amendments: readonly AmendmentDto[],
-  rule: AcceptedAmendmentRule,
-  options: { answeredOnly?: boolean; context?: PositionContext } = {},
-): ProponentReviewItem[] {
-  return sortAmendments([...amendments])
-    .filter((amendment) => {
-      if (
-        amendment.status === "draft" ||
-        amendment.status === "transacted" ||
-        amendment.status === "inadmissible"
-      ) {
-        return false;
-      }
-      if (isPositionAnswered(amendment) || isIncorporated(amendment)) {
-        return true;
-      }
-      return (
-        !options.answeredOnly &&
-        isPositionAnswerable(amendment, rule, options.context)
-      );
-    })
-    .map(toItem);
-}
-
 export interface ProponentReviewProgress {
   /** Amendments answered (a position given). */
   answered: number;
@@ -603,28 +541,6 @@ export function proponentReviewProgress(
     answered: items.filter((item) => item.answered).length,
     total: items.length,
   };
-}
-
-/**
- * The answer cannot be seen by the viewer (positions hidden from it): not
- * the same as unanswered.
- */
-export function isPositionHidden(
-  amendment: Pick<AmendmentDto, "position">,
-): boolean {
-  return amendment.position === null;
-}
-
-/**
- * A co-presenter's progress line, over the answers it can see: one hidden
- * from it is neither answered nor waiting as far as it can tell.
- */
-export function visibleAnswerProgress(
-  items: readonly ProponentReviewItem[],
-): ProponentReviewProgress {
-  return proponentReviewProgress(
-    items.filter((item) => !isPositionHidden(item.amendment)),
-  );
 }
 
 function emptyCounts(): Record<ProponentPosition, number> {

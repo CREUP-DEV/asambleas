@@ -85,7 +85,7 @@ import {
  *   back there when the document is published, or with this modal open on
  *   the next item ("Publicar y añadir otro", "Guardar y añadir otro").
  * - Both may add co-presenters ("¿Lo presentáis varios miembros?", folded);
- *   with several presenters, who answers the amendments is a required
+ *   with several presenters, the main presenter is a required
  *   choice, which starts on the member presenting it (or the manager's
  *   "Quién lo presenta"). A member always stays among the presenters of
  *   what it presents. For managers "Quién lo presenta" is the main

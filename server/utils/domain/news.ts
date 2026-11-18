@@ -44,9 +44,10 @@ import {
 /**
  * "Novedades" on the home page (MeWorkDto.news): what others decided about
  * the work of the user's member in the last days (docs/api.md, "Home page").
- * - For a co-presenter: the main presenter's answers to the amendments of
- *   the document (position_changed).
- * - For the authors of an amendment: the main presenter's answer to it
+ * - For the presenters of a document (main and co-presenters): the answers
+ *   to its amendments another presenter gave, or the Mesa for them
+ *   (position_changed).
+ * - For the authors of an amendment: the presenters' answer to it
  *   (position_changed), when the assembly's policy lets them see positions
  *   (canSeePositions).
  * - For the authors of an amendment: the main authors' answers to the
@@ -183,8 +184,11 @@ export function isAutomaticChange(
 export interface NewsScope {
   /** A document the member presents (main presenter or co-presenter). */
   presented: boolean;
-  /** An amendment to a document the member co-presents, not as main presenter. */
-  coPresented: boolean;
+  /**
+   * An amendment to a document the member presents (main presenter or
+   * co-presenter): any of them answers it, and the others are told.
+   */
+  answered: boolean;
   /** An amendment the member wrote (main author or co-author). */
   authored: boolean;
   /** A transactional over an amendment the member wrote. */
@@ -212,7 +216,7 @@ export function isNewsEvent(
     );
   }
   if (event.entityType !== "amendment") return false;
-  if (type === "position_changed") return scope.coPresented || scope.authored;
+  if (type === "position_changed") return scope.answered || scope.authored;
   if (type === "acceptance_recorded") return scope.authored || scope.overOwn;
   if (!(NEWS_OUTCOME_TYPES as readonly string[]).includes(type)) return false;
   // The rejection that closed it already says it.
@@ -277,12 +281,13 @@ export function newsValue(
  * - nobody for the automatic answer to a formal amendment
  *   (isAutomaticAnswer);
  * - the party that answered a transactional (payload.memberId);
- * - the main presenter for its answer to an amendment, for the amendment
- *   its acceptance incorporated (amendment_approved with method
- *   "proponent") and for one a new answer took out again
- *   (amendment_reopened with reason "position_changed"), also when the
- *   Mesa recorded it: payload.memberId, or the document's current main
- *   presenter (`mainPresenterId`) for events recorded before it was named;
+ * - the presenter (main or co-presenter) whose answer it is, for an answer
+ *   to an amendment, for the amendment its acceptance incorporated
+ *   (amendment_approved with method "proponent") and for one a new answer
+ *   took out again (amendment_reopened with reason "position_changed"),
+ *   also when the Mesa recorded it (for the main presenter):
+ *   payload.memberId, or the document's current main presenter
+ *   (`mainPresenterId`) for events recorded before it was named;
  * - otherwise the member the actor acted for.
  */
 export function newsByMemberId(
@@ -303,7 +308,7 @@ export function newsByMemberId(
     return text(payload.memberId) ?? mainPresenterId;
   }
   if (type === "amendment_reopened" && payload.reason === "position_changed") {
-    return mainPresenterId;
+    return text(payload.memberId) ?? mainPresenterId;
   }
   return actorMemberId;
 }
@@ -368,7 +373,7 @@ export async function loadWorkNews(
   );
   const inAssemblies = inArray(documents.assemblyId, assemblyIds);
 
-  const [presented, coPresented, authored, overOwn] = await Promise.all([
+  const [presented, answered, authored, overOwn] = await Promise.all([
     // Documents the member presents, as main presenter or co-presenter.
     db
       .select({ id: documents.id })
@@ -382,7 +387,8 @@ export async function loadWorkNews(
           ),
         ),
       ),
-    // Amendments to documents the member co-presents (not as main presenter).
+    // Amendments to documents the member presents, as main presenter or
+    // co-presenter: whichever of them answers, the others are told.
     db
       .select({ id: amendments.id })
       .from(amendments)
@@ -390,10 +396,9 @@ export async function loadWorkNews(
       .where(
         and(
           inAssemblies,
-          coPresentedBy(memberId),
           or(
-            isNull(documents.proponentMemberId),
-            ne(documents.proponentMemberId, memberId),
+            eq(documents.proponentMemberId, memberId),
+            coPresentedBy(memberId),
           ),
         ),
       ),
@@ -417,14 +422,14 @@ export async function loadWorkNews(
       .where(and(inAssemblies, eq(amendmentAuthors.memberId, memberId))),
   ]);
   const presentedIds = new Set(presented.map((row) => row.id));
-  const coPresentedIds = new Set(coPresented.map((row) => row.id));
+  const answeredIds = new Set(answered.map((row) => row.id));
   const authoredIds = new Set(authored.map((row) => row.id));
   const overOwnIds = new Set(overOwn.map((row) => row.id));
 
   // Broad scopes for the query; isNewsEvent decides on each row.
   const onAmendments = eq(events.entityType, "amendment");
   const scopes: SQL[] = [];
-  const positionIds = [...new Set([...coPresentedIds, ...authoredIds])];
+  const positionIds = [...new Set([...answeredIds, ...authoredIds])];
   if (positionIds.length > 0) {
     scopes.push(
       and(
@@ -527,7 +532,7 @@ export async function loadWorkNews(
   const candidates = rows.filter((row) =>
     isNewsEvent(row, {
       presented: presentedIds.has(row.entityId),
-      coPresented: coPresentedIds.has(row.entityId),
+      answered: answeredIds.has(row.entityId),
       authored: authoredIds.has(row.entityId),
       overOwn: overOwnIds.has(row.entityId),
     }),

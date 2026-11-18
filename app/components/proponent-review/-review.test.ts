@@ -32,8 +32,6 @@ import {
   positionVisibilityKey,
   positionWaitCounts,
   positionWaitReason,
-  presenterAnswerItems,
-  presenterAnswerKey,
   proponentReviewItems,
   proponentReviewProgress,
   recordedPositionCounts,
@@ -45,7 +43,6 @@ import {
   stepAfter,
   stepBefore,
   stepCounter,
-  visibleAnswerProgress,
   wasReopened,
 } from "./-review";
 
@@ -793,12 +790,6 @@ describe("stateKey", () => {
     expect(
       stateKey(amendment("a", { position: auto }), "incorporate", true),
     ).toBe("acceptAutoFor");
-    expect(presenterAnswerKey(amendment("a", { position: auto }))).toBe(
-      "answeredAuto.accept",
-    );
-    expect(presenterAnswerKey(incorporated("a", { position: auto }))).toBe(
-      "answeredAuto.incorporated",
-    );
     expect(answeredAutomatically(amendment("a", { position: auto }))).toBe(
       true,
     );
@@ -845,38 +836,6 @@ describe("answeredByMesa", () => {
         }),
       ),
     ).toBe(false);
-  });
-});
-
-describe("presenterAnswerKey", () => {
-  it("reads what the main presenter answered", () => {
-    expect(presenterAnswerKey(amendment("a"))).toBe("pending");
-    expect(
-      presenterAnswerKey(amendment("a", { position: answered("accept") })),
-    ).toBe("answered.accept");
-    expect(
-      presenterAnswerKey(amendment("a", { position: answered("transact") })),
-    ).toBe("answered.transact");
-    expect(presenterAnswerKey(incorporated("a"))).toBe("answered.incorporated");
-  });
-
-  it("says when the Mesa answered on its behalf", () => {
-    expect(
-      presenterAnswerKey(amendment("a", { position: byMesa("reject") })),
-    ).toBe("answeredByMesa.reject");
-    expect(
-      presenterAnswerKey(incorporated("a", { position: byMesa("accept") })),
-    ).toBe("answeredByMesa.incorporated");
-  });
-
-  it("does not pass a hidden answer for an unanswered one", () => {
-    expect(presenterAnswerKey(amendment("a", { position: null }))).toBe(
-      "hidden",
-    );
-    // Incorporated: its status already tells the answer, without who gave it.
-    expect(presenterAnswerKey(incorporated("a", { position: null }))).toBe(
-      "answered.incorporated",
-    );
   });
 });
 
@@ -940,17 +899,6 @@ describe("proponentReviewItems", () => {
     ]);
   });
 
-  it("gives a co-presenter the answers without the right to answer", () => {
-    const readOnly = list.map((item) => ({
-      ...item,
-      can: { ...item.can, position: false },
-    }));
-    expect(proponentReviewItems(readOnly, "incorporate")).toEqual([]);
-    expect(
-      presenterAnswerItems(readOnly, "incorporate").map((item) => item.id),
-    ).toEqual(["first", "2", "in", "late"]);
-  });
-
   it("counts the progress over the amendments to answer", () => {
     const items = proponentReviewItems(list, "incorporate");
     expect(proponentReviewProgress(items)).toEqual({ answered: 2, total: 4 });
@@ -984,143 +932,6 @@ describe("proponentReviewItems", () => {
       admission: 0,
       publication: 1,
     });
-  });
-});
-
-describe("presenterAnswerItems", () => {
-  it("keeps the main presenter's answers once the amendments are settled", () => {
-    const items = presenterAnswerItems(
-      [
-        // Answered "reject", then voted down by the assembly.
-        amendment("voted", {
-          positionKey: 1,
-          status: "rejected",
-          decidedAt: "2026-11-03T10:00:00.000Z",
-          position: answered("reject"),
-        }),
-        amendment("approved", {
-          positionKey: 2,
-          status: "approved",
-          approvalMethod: "vote",
-          position: answered("accept"),
-        }),
-        amendment("withdrawn", {
-          positionKey: 3,
-          status: "withdrawn",
-          position: answered("transact"),
-        }),
-        // Settled without an answer: nothing the presenter decided.
-        amendment("lapsed", { positionKey: 4, status: "lapsed" }),
-        // Replaced by a transactional, or never admitted: left out.
-        amendment("replaced", {
-          positionKey: 5,
-          status: "transacted",
-          position: answered("transact"),
-        }),
-        amendment("inadmissible", {
-          positionKey: 6,
-          status: "inadmissible",
-          admission: "inadmissible",
-          position: answered("reject"),
-        }),
-        amendment("draft", { positionKey: 7, status: "draft" }),
-        amendment("open", { positionKey: 8 }),
-      ],
-      "vote",
-    );
-    expect(items.map((item) => item.id)).toEqual([
-      "voted",
-      "approved",
-      "withdrawn",
-      "open",
-    ]);
-  });
-
-  it("keeps only the answers once the document is voted or closed", () => {
-    expect(
-      presenterAnswerItems(
-        [
-          amendment("a", { positionKey: 1, position: answered("accept") }),
-          amendment("b", { positionKey: 2 }),
-          incorporated("c", { positionKey: 3, position: null }),
-        ],
-        "incorporate",
-        { answeredOnly: true },
-      ).map((item) => item.id),
-    ).toEqual(["a", "c"]);
-  });
-
-  it("does not list what the presenter cannot answer yet", () => {
-    expect(
-      presenterAnswerItems(
-        [
-          amendment("late", {
-            late: true,
-            admission: "pending",
-            reviewState: "pending_validation",
-            validatedAt: null,
-          }),
-          transactional("t", {
-            acceptances: [party(CEUM, "accepted"), party(CEA)],
-          }),
-          privateOne("private"),
-        ],
-        "vote",
-      ),
-    ).toEqual([]);
-    // Validated and late: answered before its admission, so listed.
-    expect(
-      presenterAnswerItems(
-        [amendment("late", { late: true, admission: "pending" })],
-        "vote",
-      ).map((item) => item.id),
-    ).toEqual(["late"]);
-    // Private, but an office of the CEA presents the document.
-    expect(
-      presenterAnswerItems([privateOne("private")], "vote", {
-        context: { presenterSeesValidated: true },
-      }).map((item) => item.id),
-    ).toEqual(["private"]);
-  });
-
-  it("lists an answer the Mesa recorded like any other", () => {
-    const items = presenterAnswerItems(
-      [amendment("a", { position: byMesa("accept") })],
-      "vote",
-    );
-    expect(items.map((item) => [item.id, item.answered])).toEqual([
-      ["a", true],
-    ]);
-    expect(presenterAnswerKey(items[0]!.amendment)).toBe(
-      "answeredByMesa.accept",
-    );
-  });
-
-  it("shows a transactional's answer in place of the amendments it replaced", () => {
-    const list = [
-      amendment("s1", {
-        positionKey: 1,
-        status: "transacted",
-        position: answered("transact"),
-      }),
-      amendment("s2", { positionKey: 2, status: "transacted" }),
-      transactional("1", { positionKey: 3, position: answered("accept") }),
-    ];
-    expect(
-      presenterAnswerItems(list, "vote").map((item) => [
-        item.id,
-        item.answered,
-      ]),
-    ).toEqual([["1", true]]);
-    // Accepted under "incorporate": approved at once, and still listed once
-    // the document is voted, its answer hidden or not.
-    expect(
-      presenterAnswerItems(
-        [incorporated("t", { kind: "transactional", position: null })],
-        "incorporate",
-        { answeredOnly: true },
-      ).map((item) => item.id),
-    ).toEqual(["t"]);
   });
 });
 
@@ -1254,21 +1065,6 @@ describe("answerStatus", () => {
       "accept",
     );
     expect(answerStatus(incorporated("a"))).toBe("incorporated");
-  });
-});
-
-describe("visibleAnswerProgress", () => {
-  it("leaves answers hidden from the viewer out of the count", () => {
-    const items = presenterAnswerItems(
-      [
-        amendment("a", { positionKey: 1, position: answered("accept") }),
-        amendment("b", { positionKey: 2 }),
-        amendment("c", { positionKey: 3, position: null }),
-      ],
-      "vote",
-    );
-    expect(items).toHaveLength(3);
-    expect(visibleAnswerProgress(items)).toEqual({ answered: 1, total: 2 });
   });
 });
 

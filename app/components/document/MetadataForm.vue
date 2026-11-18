@@ -59,7 +59,7 @@ import {
  * keep this form after publication, when the text is frozen. Text or PDF
  * is not chosen here: the page shows DocumentFormatSwitch above the text.
  *
- * With several presenters, who answers the amendments (the main presenter)
+ * With several presenters, the main presenter
  * is a required choice; it starts on the lead (the presenter's own member,
  * or the manager's "Quién lo presenta"). For managers "Quién lo presenta"
  * is the main presenter: choosing another one to answer swaps it in, so the

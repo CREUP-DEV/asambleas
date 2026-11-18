@@ -740,7 +740,10 @@ export interface DocumentSummaryDto {
   title: string;
   reference: string | null;
   status: DocumentStatus;
-  /** The main presenter: it answers the amendments to the document. */
+  /**
+   * The main presenter, the document's proponent. It and the
+   * co-presenters answer the amendments to the document.
+   */
   proponent: MemberRef | null;
   /**
    * When the Secretaría made the main presenter's answers public; null
@@ -1058,6 +1061,13 @@ export interface PositionDto {
   recorder?: PositionRecorder | null;
   /** When it was answered; also the lock token for a new answer. */
   updatedAt: IsoDate | null;
+  /**
+   * With `recordedBy: "presenter"`, the member id of the presenter who
+   * answered: the main presenter or a co-presenter (any of them answers).
+   * An office the reader does not see reads as the generic "CEA" id, as in
+   * the document's presenters. Null otherwise, and with `recordedBy` null.
+   */
+  answeredBy?: string | null;
 }
 
 export type PositionRecorder = "mesa" | "secretaria" | "presidencia";

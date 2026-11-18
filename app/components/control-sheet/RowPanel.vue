@@ -4,12 +4,14 @@ import {
   type ControlSheetManualResult,
 } from "~~/shared/constants/domain";
 import type {
+  AmendmentDto,
   ControlSheetAmendmentBody,
   ControlSheetAmendmentRowDto,
   ControlSheetEditDto,
   ControlSheetHistoryDto,
   ControlSheetItemBody,
   ControlSheetItemRowDto,
+  DocumentSummaryDto,
   VoteDto,
 } from "~~/shared/types/api";
 import { CONTROL_SHEET_OBSERVATIONS_MAX_LENGTH } from "~~/shared/utils/schemas/controlSheet";
@@ -27,7 +29,9 @@ import {
  * Everything one row of the control sheet edits, in a side panel: the
  * observations (shared, with who wrote each version and a way back to an
  * earlier one), the result noted by hand, the Mesa's treated mark, the
- * votes on an item (ItemVotes), and the history. Each field saves on its
+ * votes on an item (ItemVotes), the presenter's answer to an amendment
+ * (PositionAnswer, for whoever may answer it), and the history. Each field
+ * saves on its
  * own with its own lock token (the treated mark through the page:
  * `treated`, `treatedPending`; the lists only show it); a field someone
  * else changed meanwhile shows what is there now (and, for the
@@ -47,6 +51,8 @@ const props = defineProps<{
   treatedPending?: boolean;
   /** What the votes on an item depend on besides the row. */
   voteContext: ItemVoteContext;
+  /** The document of an amendment's row: who answers it, and its rule. */
+  document?: DocumentSummaryDto | null;
 }>();
 const open = defineModel<boolean>("open", { required: true });
 const emit = defineEmits<{
@@ -56,6 +62,8 @@ const emit = defineEmits<{
   treated: [value: boolean];
   /** A vote on the item changed (null: a write failed, fetch again). */
   voteChanged: [vote: VoteDto | null];
+  /** The presenter's answer to the amendment changed. */
+  positionSaved: [amendment: AmendmentDto];
 }>();
 
 const { t, locale } = useI18n();
@@ -130,6 +138,28 @@ const conflict = ref<{
 } | null>(null);
 
 const dirty = computed(() => draft.value.trim() !== base.value.text);
+
+/** The presenter's answer chosen in the panel, saved with the rest. */
+const positionAnswer = ref<{
+  editable: boolean;
+  dirty: boolean;
+  saving: boolean;
+  save: () => Promise<boolean>;
+} | null>(null);
+const positionDirty = computed(() => Boolean(positionAnswer.value?.dirty));
+/** Anything in the panel waiting for «Guardar». */
+const anyDirty = computed(() => dirty.value || positionDirty.value);
+const anySaving = computed(
+  () => saving.value || Boolean(positionAnswer.value?.saving),
+);
+
+/** The one «Guardar»: the observations and the answer, whichever changed. */
+async function saveAll(): Promise<void> {
+  await Promise.all([
+    dirty.value ? saveObservations() : Promise.resolve(),
+    positionDirty.value ? positionAnswer.value?.save() : Promise.resolve(true),
+  ]);
+}
 
 /** Takes the row's text and token as the start of the draft. */
 function syncDraft(): void {
@@ -223,27 +253,27 @@ function keepMine(): void {
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
     event.preventDefault();
-    void saveObservations();
+    void saveAll();
   }
 }
 
-// Leaving with unsaved text saves it (closing the panel, going to another
-// page); closing the tab asks first.
+// Leaving with unsaved changes saves them (closing the panel, going to
+// another page); closing the tab asks first.
 watch(open, (value) => {
-  if (!value && dirty.value) void saveObservations();
+  if (!value && anyDirty.value) void saveAll();
 });
 onBeforeRouteLeave(() => {
-  if (dirty.value) void saveObservations();
+  if (anyDirty.value) void saveAll();
 });
 if (import.meta.client) {
   useEventListener(window, "beforeunload", (event: BeforeUnloadEvent) => {
-    if (dirty.value) event.preventDefault();
+    if (anyDirty.value) event.preventDefault();
   });
 }
 
 const status = computed(() => {
-  if (saving.value) return t("controlSheet.panel.saving");
-  if (dirty.value) return t("controlSheet.panel.unsaved");
+  if (anySaving.value) return t("controlSheet.panel.saving");
+  if (anyDirty.value) return t("controlSheet.panel.unsaved");
   if (savedAt.value) return t("controlSheet.panel.saved");
   return "";
 });
@@ -492,6 +522,16 @@ function historyDetail(
           </p>
         </div>
 
+        <!-- The presenter's answer to the amendment -->
+        <ControlSheetPositionAnswer
+          v-if="target.kind === 'amendment'"
+          ref="positionAnswer"
+          :row="target.row"
+          :document="document ?? null"
+          :api-base="apiBase"
+          @saved="(amendment) => emit('positionSaved', amendment)"
+        />
+
         <!-- Votes on the item -->
         <ControlSheetItemVotes
           v-if="target.kind === 'item'"
@@ -599,14 +639,15 @@ function historyDetail(
             <p class="text-muted text-xs">
               {{ editedLine(sheetRow?.observationsEdited ?? null) }}
             </p>
+            <!-- The panel's one save: the observations and the answer. -->
             <UButton
-              v-if="can.edit"
+              v-if="can.edit || positionAnswer?.editable"
               size="sm"
               icon="i-lucide-save"
               :label="t('controlSheet.panel.save')"
-              :loading="saving"
-              :disabled="!dirty || conflict !== null"
-              @click="saveObservations"
+              :loading="anySaving"
+              :disabled="!anyDirty || (conflict !== null && !positionDirty)"
+              @click="saveAll"
             />
           </div>
         </div>

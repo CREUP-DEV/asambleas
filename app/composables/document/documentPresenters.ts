@@ -60,7 +60,7 @@ export function showsDocumentStatus(
 
 /**
  * What a presenter of the document is told about the members it works
- * with: the other presenters and who answers the amendments. Null when the
+ * with: the other presenters and the main presenter. Null when the
  * member is not a presenter or presents it alone.
  */
 export function presenterPartners(
@@ -85,7 +85,7 @@ export function presenterPartners(
  *   "Quién lo presenta", or the presenter's own member, which they cannot
  *   remove;
  * - `coIds`: the other presenting members;
- * - `mainId`: who answers the amendments, chosen only when there are
+ * - `mainId`: the main presenter, chosen only when there are
  *   several presenters (a lone presenter is the main one).
  */
 export interface PresenterChoice {

@@ -92,7 +92,6 @@ import {
   filterDecisionsByAmendment,
   isAmendmentInsider,
   isDocumentPresenter,
-  isDocumentProponent,
   redactCorrectionNote,
   redactDocumentChanges,
   redactEventActor,
@@ -478,10 +477,11 @@ export function documentCapabilities(
       canManageDocuments(actor) &&
       deleteBlocker(document, hasAmendments) === null,
     amend: canAmendDocument(actor, assembly, document, window, now),
-    // Only the main presenter answers the amendments (or the Mesa for it).
+    // Its presenters answer the amendments, the main presenter or a
+    // co-presenter (or the Mesa for them).
     position:
       document.status === "published" &&
-      (isDocumentProponent(actor, document) || canModerate(actor)),
+      (isDocumentPresenter(actor, document) || canModerate(actor)),
     moderate: canModerate(actor),
   };
 }

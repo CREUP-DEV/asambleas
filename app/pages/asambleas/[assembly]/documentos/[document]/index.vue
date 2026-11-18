@@ -64,16 +64,13 @@ import { provideSheetObservations } from "~/composables/document/useSheetObserva
  * word everywhere, sending the document back and proposing an alternative
  * text.
  *
- * The document's main presenter (and the Mesa, which can answer for it) get
- * "Revisar enmiendas", with how many amendments wait for the main
- * presenter's answer (published, admitted if late, and for a transactional,
- * accepted by the main authors; none once the document was voted), which
- * leads to the guided review
- * (.../revisar). For the main presenter with something pending it is the
- * primary button instead of "Presentar una enmienda". Its co-presenters,
- * who do not answer, find "Ver las respuestas" in the "Más" menu: the same
- * page, read-only, with what the main presenter (or the Mesa for it)
- * answered.
+ * The document's presenters, main and co-presenters (and the Mesa, which
+ * can answer for them), get "Revisar enmiendas", with how many amendments
+ * wait for the presenters' answer (validated and published, a late one
+ * before its admission too, and for a transactional, accepted by the main
+ * authors; none once the document was voted), which leads to the guided
+ * review (.../revisar). For a presenter with something pending it is the
+ * primary button instead of "Presentar una enmienda".
  *
  * "Proponer una transaccional" (any member who can amend, the document's
  * presenter, and the Mesa) is a secondary action with a visible button: in
@@ -247,11 +244,22 @@ const decisionsUrl = computed(() =>
 );
 const labels = computed(() => blockLabels(base.value));
 
-/** The document's main presenter: it answers the amendments to it. */
-const proponentMemberId = computed(() => document.value?.proponent?.id ?? null);
+/**
+ * The viewer's member presents the document, as main presenter or
+ * co-presenter: any of them answers the amendments to it.
+ */
+const isDocumentPresenter = computed(() => {
+  const doc = document.value;
+  const memberId = member.value?.id ?? null;
+  if (!doc || memberId === null) return false;
+  return (
+    doc.proponent?.id === memberId ||
+    doc.coProponents.some((coProponent) => coProponent.id === memberId)
+  );
+});
 
 /**
- * Any member who can amend, the document's main presenter and the Mesa may
+ * Any member who can amend, the document's presenters and the Mesa may
  * propose a transactional over published, undecided amendments while the
  * text is open. The server also lets the authors of the chosen amendments
  * do it; it checks the rest.
@@ -268,20 +276,13 @@ const canTransact = computed(() => {
     return false;
   }
   if (doc.can.moderate) return true;
-  const memberId = member.value?.id ?? null;
-  if (!memberId) return false;
-  return doc.can.amend || proponentMemberId.value === memberId;
+  if (!member.value) return false;
+  return doc.can.amend || isDocumentPresenter.value;
 });
 const transactionalCandidates = computed(() =>
   canTransact.value ? transactionalSourceCandidates(list.listed.value) : [],
 );
 
-/** The viewer's member is the document's main presenter. */
-const isDocumentPresenter = computed(
-  () =>
-    proponentMemberId.value !== null &&
-    proponentMemberId.value === member.value?.id,
-);
 /**
  * What waits for the main presenter's answer (document.proponent) in the
  * review mode, by the document's rule: the review mode's pending steps.
@@ -309,28 +310,6 @@ const showReviewEntry = computed(
     isPublished.value &&
     list.listed.value.length > 0,
 );
-/**
- * A co-presenter reads the main presenter's answers on the review page,
- * read-only: the member presents the document jointly and neither answers
- * nor moderates (the review page's own rule, `readsAnswers`).
- */
-const showAnswersEntry = computed(() => {
-  const doc = document.value;
-  const memberId = member.value?.id ?? null;
-  if (
-    !doc ||
-    memberId === null ||
-    !isStructured.value ||
-    !isPublished.value ||
-    list.listed.value.length === 0 ||
-    doc.can.position ||
-    doc.can.moderate ||
-    isDocumentPresenter.value
-  ) {
-    return false;
-  }
-  return doc.coProponents.some((coProponent) => coProponent.id === memberId);
-});
 /**
  * "Revisar enmiendas" leads for the presenter with something pending,
  * unless a composer is open.
@@ -426,13 +405,6 @@ const moreItems = computed<MoreItem[][]>(() => {
   if (showReviewEntry.value && !reviewIsPrimary.value) {
     work.push({
       label: t("workspace.proponentReview.action"),
-      icon: "i-lucide-list-checks",
-      to: documentPath("revisar"),
-    });
-  }
-  if (showAnswersEntry.value) {
-    work.push({
-      label: t("workspace.more.answers"),
       icon: "i-lucide-list-checks",
       to: documentPath("revisar"),
     });

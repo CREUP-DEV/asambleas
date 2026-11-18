@@ -20,7 +20,6 @@ import {
   positionCounts,
   positionVisibilityKey,
   positionWaitCounts,
-  presenterAnswerItems,
   proponentReviewItems,
   proponentReviewProgress,
   recordedPositionCounts,
@@ -121,36 +120,35 @@ const positionContext = computed<PositionContext>(() => ({
 /** Withdrawn or postponed: nothing to answer any more. */
 const closed = computed(() => document.value?.status !== "published");
 
-/** The actor's member presents the document as main presenter. */
-const isMainPresenter = computed(
-  () =>
-    actorMemberId.value !== null &&
-    document.value?.proponent?.id === actorMemberId.value,
-);
+/**
+ * The actor's member presents the document, as main presenter or
+ * co-presenter: either answers its amendments.
+ */
+const isPresenter = computed(() => {
+  const doc = document.value;
+  const id = actorMemberId.value;
+  if (!doc || id === null) return false;
+  return (
+    doc.proponent?.id === id ||
+    doc.coProponents.some((coProponent) => coProponent.id === id)
+  );
+});
 
 /**
- * Whoever answers the amendments: the main presenter's member, or the Mesa.
- * The main presenter keeps the page when the document is withdrawn (it is
- * then told so), hence the member check besides `can.position`.
+ * Whoever answers the amendments: a presenter's member, or the Mesa. The
+ * presenters keep the page when the document is withdrawn (they are then
+ * told so), hence the member check besides `can.position`.
  */
 const mayReview = computed(() => {
   const doc = document.value;
   if (!doc) return false;
-  return doc.can.position || doc.can.moderate || isMainPresenter.value;
+  return doc.can.position || doc.can.moderate || isPresenter.value;
 });
 
-/** Presents the document with the main presenter, who answers for both. */
-const readsAnswers = computed(() => {
-  const doc = document.value;
-  const id = actorMemberId.value;
-  if (!doc || id === null || mayReview.value) return false;
-  return doc.coProponents.some((coProponent) => coProponent.id === id);
-});
-
-/** The Mesa answers for the main presenter's member when it is not that member. */
+/** The Mesa answers for the main presenter's member when it presents nothing. */
 const onBehalfOf = computed(() => {
   const proponent = document.value?.proponent ?? null;
-  if (!proponent || proponent.id === actorMemberId.value) return null;
+  if (!proponent || isPresenter.value) return null;
   return proponent;
 });
 
@@ -196,7 +194,7 @@ const canProposeTransactional = computed(() => {
   }
   return (
     doc.can.moderate ||
-    (Boolean(member.value) && (doc.can.amend || isMainPresenter.value))
+    (Boolean(member.value) && (doc.can.amend || isPresenter.value))
   );
 });
 
@@ -209,11 +207,6 @@ function transactLink(amendment: AmendmentDto): RouteLocationRaw | null {
   if (!canProposeTransactional.value) return null;
   if (!transactionalSourceEligible(amendment)) return null;
   return { path: documentPath(), query: { transaccional: amendment.id } };
-}
-
-/** An amendment in the document workspace. */
-function amendmentLink(id: string): RouteLocationRaw {
-  return { path: documentPath(), query: { enmienda: id } };
 }
 
 // Steps -------------------------------------------------------------------------
@@ -260,18 +253,6 @@ const emptyDescription = computed(() => {
       return t("proponentReview.empty.description");
   }
 });
-/**
- * The main presenter's answers, as a co-presenter reads them; once the
- * document is voted, withdrawn or postponed, only the answers given.
- */
-const presenterItems = computed(() =>
-  readsAnswers.value
-    ? presenterAnswerItems(list.amendments.value, acceptedRule.value, {
-        answeredOnly: readOnly.value || closed.value,
-        context: positionContext.value,
-      })
-    : [],
-);
 
 /** The review screen is on (not a guard, loading or empty state). */
 const reviewing = computed(
@@ -802,12 +783,7 @@ defineShortcuts({
 useHead({
   title: () =>
     document.value
-      ? t(
-          readsAnswers.value
-            ? "proponentReview.coPresenter.pageTitle"
-            : "proponentReview.pageTitle",
-          { title: document.value.title },
-        )
+      ? t("proponentReview.pageTitle", { title: document.value.title })
       : t("proponentReview.title"),
 });
 </script>
@@ -868,11 +844,7 @@ useHead({
           />
         </div>
         <h2 class="text-highlighted text-xl font-bold sm:text-2xl">
-          {{
-            readsAnswers
-              ? t("proponentReview.coPresenter.heading")
-              : t("proponentReview.title")
-          }}
+          {{ t("proponentReview.title") }}
         </h2>
         <p class="text-muted text-sm">
           <span v-if="document.reference" class="tabular-nums">
@@ -900,9 +872,9 @@ useHead({
         variant="outline"
       />
 
-      <!-- Neither its main presenter, a co-presenter nor the Mesa -->
+      <!-- Neither one of its presenters nor the Mesa -->
       <CommonEmptyState
-        v-else-if="!mayReview && !readsAnswers"
+        v-else-if="!mayReview"
         icon="i-lucide-lock"
         :title="t('proponentReview.noAccess.title')"
         :description="t('proponentReview.noAccess.description')"
@@ -938,23 +910,6 @@ useHead({
             },
           },
         ]"
-      />
-
-      <!--
-        Co-presenter: the main presenter's answers, read only (in the past
-        tense once the document is voted, withdrawn or postponed)
-      -->
-      <ProponentReviewPresenterAnswers
-        v-else-if="readsAnswers"
-        :items="presenterItems"
-        :presenter="document.proponent"
-        :accepted-amendments="acceptedRule"
-        :waiting="waiting"
-        :amendment-to="amendmentLink"
-        :document-to="documentPath()"
-        :read-only="readOnly"
-        :closed="closed"
-        class="max-w-4xl"
       />
 
       <!-- Voted: what was answered, nothing to change -->

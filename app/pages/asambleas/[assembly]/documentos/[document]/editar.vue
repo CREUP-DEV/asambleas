@@ -327,7 +327,7 @@ const publishPrimary = computed(() => {
 
 /**
  * A presenter sharing the document with other members: who they are and
- * who answers the amendments (null when presenting it alone).
+ * who the main presenter is (null when presenting it alone).
  */
 const partners = computed(() =>
   document.value

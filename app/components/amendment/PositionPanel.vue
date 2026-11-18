@@ -18,17 +18,19 @@ import {
 } from "~/components/proponent-review/-review";
 
 /**
- * The answer of the document's main presenter to an amendment (accept,
- * reject, propose a transactional), said as who, what and when, so its
- * co-presenters always see what it decided. An answer the Mesa recorded on
+ * The answer of the document's presenters to an amendment (accept, reject,
+ * propose a transactional), given by the main presenter or a co-presenter
+ * and said as who (`answeredBy`), what and when, so every presenter sees
+ * what the others decided. An answer the Mesa recorded on
  * the presenter's behalf says so ("La Mesa, en nombre de CEUM, la
  * aceptó"). Then what happens next by the document's rule ("Si la acepta
  * quien presenta el documento, se incorpora sin votación" / "La votará la
  * asamblea").
  *
- * It can be answered (`can.position`: the main presenter, or the Mesa for
- * it) only once the amendment reached it: published by the Secretaría (so
- * validated), admitted if late, and for a transactional, accepted by the
+ * It can be answered (`can.position`: any presenter, or the Mesa for them)
+ * only once the amendment reached it: published by the Secretaría (so
+ * validated; a late one before the assembly admits it), and for a
+ * transactional, accepted by the
  * main authors (amendmentAwaitsPosition), and never after the document's
  * final vote. Until then it only says it can be answered later: the review
  * panel above already says what it waits for, except publication, which
@@ -44,7 +46,7 @@ import {
  * the answers are still reserved (answersReserved), that everyone sees the
  * approval anyway.
  *
- * Answering is the main action for the main presenter while nobody has
+ * Answering is the main action for a presenter while nobody has
  * answered yet ("Responder", solid); changing an answer, or the Mesa
  * recording one for it, is a small secondary action. Saving sends the
  * answer seen when the form opened (`positionUpdatedAt`), so two people
@@ -58,6 +60,7 @@ const props = defineProps<{
   document: Pick<
     DocumentDto,
     | "proponent"
+    | "coProponents"
     | "acceptedAmendments"
     | "positionsPublishedAt"
     | "positionsDebateStartedAt"
@@ -166,11 +169,28 @@ const presenter = computed(() =>
     ? memberSpokenName(props.document.proponent)
     : t("amendment.position.thePresenter"),
 );
-const isMainPresenter = computed(
-  () =>
-    props.document.proponent !== null &&
-    props.document.proponent.id === member.value?.id,
-);
+/** The viewer acts for a presenter: the main one or a co-presenter. */
+const isPresenter = computed(() => {
+  const id = member.value?.id;
+  if (!id) return false;
+  return (
+    props.document.proponent?.id === id ||
+    props.document.coProponents.some((presenter) => presenter.id === id)
+  );
+});
+/**
+ * Who gave a presenter's answer: the co-presenter that answered, named as
+ * the document names it, else the main presenter.
+ */
+const answerer = computed(() => {
+  const id = props.amendment.position?.answeredBy;
+  const found = id
+    ? [props.document.proponent, ...props.document.coProponents].find(
+        (presenter) => presenter?.id === id,
+      )
+    : null;
+  return found ? memberSpokenName(found) : presenter.value;
+});
 const answer = computed(() => props.amendment.position?.position ?? "pending");
 /**
  * Who said it: the main presenter ("Respuesta de CEUM: la acepta"), the
@@ -188,7 +208,7 @@ const answerText = computed(() => {
         `amendment.position.answersBy${positionRecorderKey(props.amendment.position)}.${value}`,
         { member: presenter.value },
       )
-    : t(`amendment.position.answers.${value}`, { member: presenter.value });
+    : t(`amendment.position.answers.${value}`, { member: answerer.value });
 });
 const answeredAt = computed(() =>
   answer.value !== "pending" && props.amendment.position
@@ -231,12 +251,12 @@ const nextKey = computed(() =>
 const canEdit = computed(
   () => props.amendment.can.position && reachable.value && !editing.value,
 );
-/** The main presenter's first answer: the main action of the detail. */
+/** A presenter's first answer: the main action of the detail. */
 const answerFirst = computed(
-  () => canEdit.value && isMainPresenter.value && answer.value === "pending",
+  () => canEdit.value && isPresenter.value && answer.value === "pending",
 );
 const editLabel = computed(() => {
-  if (!isMainPresenter.value) {
+  if (!isPresenter.value) {
     return t("amendment.position.recordFor", { member: presenter.value });
   }
   return answer.value === "pending"
@@ -251,7 +271,7 @@ const laterText = computed(() => {
   if (blocker.value === "publication") {
     return t("amendment.position.blocked.publication");
   }
-  return isMainPresenter.value
+  return isPresenter.value
     ? t("amendment.position.laterYou")
     : t("amendment.position.later", { member: presenter.value });
 });

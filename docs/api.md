@@ -658,9 +658,9 @@ kind and `format: "file"`, or a `PUT` that switches such a document to
 stays editable by its presenters, who may always switch it back to text.
 
 **Presenters.** A document has a main presenter (`proponentMemberId`,
-`DocumentSummaryDto.proponent`), who alone answers its amendments, and may
-have co-presenters (`document_proponents`, `DocumentSummaryDto.coProponents`
-by acronym), who prepare the text with it and see what it decides. Bodies
+`DocumentSummaryDto.proponent`), and may have co-presenters
+(`document_proponents`, `DocumentSummaryDto.coProponents` by acronym), who
+prepare the text with it and answer its amendments as it does. Bodies
 carry `proponentMemberId` and `coProponentMemberIds` (never the main
 presenter; up to 20, no repeats). The rules (`planPresenters` in
 `server/utils/domain/presenters.ts`):
@@ -1132,16 +1132,19 @@ inadmissible, for instance).
 - A vote is projected live (see the live session below).
 - Returns `AmendmentAdmissionDto`.
 
-**The main presenter's answer.** `PUT .../[amendment]/position` with a
-`PositionBody` records the answer of the document's main presenter (accept,
+**The presenters' answer.** `PUT .../[amendment]/position` with a
+`PositionBody` records the answer of the document's presenters (accept,
 reject, transact, or back to pending, with an optional comment). Returns the
 `AmendmentDto`.
 
-- Only the main presenter's member answers, or the Mesa for it (403
-  otherwise); co-presenters see the answer (`positionsVisible` holds for every
-  presenter) but cannot give it. The `position_changed` event names whose
-  answer it is (`memberId`: the main presenter, also when the Mesa records
-  it, with `by: "moderator"`), which the home page's news credit.
+- A presenter's member answers, the main presenter or a co-presenter, or the
+  Mesa for them (403 otherwise). The `position_changed` event names whose
+  answer it is (`memberId`: the presenter the actor acts for, or the main
+  presenter when the Mesa records it, with `by: "moderator"`), and so do
+  the `amendment_approved` and `amendment_reopened` it sets off, which the
+  home page's news credit. `PositionDto.answeredBy` gives that member for a
+  presenter's answer to the readers of `recordedBy` (the generic `CEA` id
+  for an office the reader does not see).
   `PositionDto.recorder` names who recorded it on the presenter's behalf
   (`mesa`, `secretaria` or `presidencia`, by that account's role), and
   `recordedBy`, `recorder` and `updatedAt` are null for a reader other than
@@ -1530,9 +1533,10 @@ managers and the Mesa), soonest first:
   nobody's behalf);
 - `news` ("Novedades"): what others decided about the member's work in the
   last 30 days, newest first, at most 30 (`MeWorkNewsDto`):
-  - for a co-presenter, the main presenter's answers to the document's
-    amendments (`position_changed`);
-  - for the authors of an amendment, the main presenter's answer to it
+  - for the presenters of a document (main and co-presenters), the answers
+    another presenter, or the Mesa for them, gave to its amendments
+    (`position_changed`);
+  - for the authors of an amendment, the presenters' answer to it
     (`position_changed`), once the document's answers are public to them
     (`canSeePositions`);
   - for the authors of an amendment, the main authors' answers to the

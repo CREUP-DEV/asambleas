@@ -952,6 +952,24 @@ function amendmentPath(amendment: AmendmentDto): string {
 
 // Live -----------------------------------------------------------------------
 
+/** The document of the amendment in the panel: who answers it, its rule. */
+const panelDocument = computed(() => {
+  const target = panelTarget.value;
+  if (target?.kind !== "amendment") return null;
+  const id = target.row.amendment.documentId;
+  return agendaDocuments.value.find((document) => document.id === id) ?? null;
+});
+
+/**
+ * An answer given from the panel: the sheet and the amendments again, so
+ * the row, its badge and the panel show it (the sheet's own answer first,
+ * newerPosition), without waiting for the live event.
+ */
+function onPositionSaved(): void {
+  void sheetFetch.refresh({ dedupe: "cancel" });
+  if (amendmentsUrl.value) void amendmentsFetch.refresh({ dedupe: "cancel" });
+}
+
 function refreshSheet(): void {
   if (!allowed.value) return;
   void sheetFetch.refresh({ dedupe: "defer" });
@@ -1391,10 +1409,12 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
         :can="{ edit: canEdit, moderate: canModerate }"
         :treated-pending="panelTreatedPending"
         :vote-context="voteContext"
+        :document="panelDocument"
         @item-saved="onItemSaved"
         @amendment-saved="onAmendmentSaved"
         @treated="onPanelTreated"
         @vote-changed="onVoteChanged"
+        @position-saved="onPositionSaved"
       />
 
       <UModal

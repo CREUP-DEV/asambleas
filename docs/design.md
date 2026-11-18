@@ -780,7 +780,7 @@ or more of them:
    amendments that are already public);
 4. once validated and accepted by every main author, it replaces those
    amendments (they become `transacted`) and follows the normal amendment
-   flow: the document's main presenter answers it and the assembly votes it
+   flow: the document's presenters answer it and the assembly votes it
    (or it is incorporated, per the document's rule).
 
 The Mesa can still draft one live in the console: it is validated and

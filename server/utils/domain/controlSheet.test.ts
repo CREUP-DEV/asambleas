@@ -115,6 +115,8 @@ describe("control sheet positions", () => {
           recordedBy: "presenter",
           recorder: null,
           updatedAt: "2026-11-02T12:00:00.000Z",
+          // No event names who answered: the main presenter.
+          answeredBy: DOCUMENT.proponentMemberId,
         },
       },
     ]);
@@ -235,6 +237,7 @@ describe("control sheet positions", () => {
       recordedBy: null,
       recorder: null,
       updatedAt: null,
+      answeredBy: null,
     });
   });
 });

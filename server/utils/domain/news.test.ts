@@ -159,6 +159,41 @@ describe("newsByMemberId", () => {
     ).toBe("presenter");
   });
 
+  it("credits the co-presenter who answered, and tells the main presenter", () => {
+    const answer = {
+      type: "position_changed",
+      payload: { memberId: "co", by: "proponent", position: "reject" },
+      actorUserId: "co-user",
+      actorMemberId: "co",
+    };
+    expect(newsByMemberId(answer.type, answer.payload, "co", "main")).toBe(
+      "co",
+    );
+    expect(
+      isOthersDecision(
+        answer,
+        { userId: "main-user", memberId: "main" },
+        "main",
+      ),
+    ).toBe(true);
+    expect(
+      isOthersDecision(answer, { userId: "other", memberId: "co" }, "main"),
+    ).toBe(false);
+    // What its new answer took out of the text names it too.
+    expect(
+      newsByMemberId(
+        "amendment_reopened",
+        {
+          previousStatus: "approved",
+          reason: "position_changed",
+          memberId: "co",
+        },
+        "co",
+        "main",
+      ),
+    ).toBe("co");
+  });
+
   it("credits the document's main presenter for an older answer the Mesa recorded", () => {
     expect(
       newsByMemberId("position_changed", { by: "moderator" }, "mesa"),
@@ -388,7 +423,7 @@ describe("isOthersDecision", () => {
 describe("isNewsEvent", () => {
   const none = {
     presented: false,
-    coPresented: false,
+    answered: false,
     authored: false,
     overOwn: false,
   };
@@ -401,9 +436,9 @@ describe("isNewsEvent", () => {
     payload,
   });
 
-  it("tells co-presenters and authors the main presenter's answer", () => {
+  it("tells the presenters and authors a presenter's answer", () => {
     const answer = onAmendment("position_changed", { position: "accept" });
-    expect(isNewsEvent(answer, { ...none, coPresented: true })).toBe(true);
+    expect(isNewsEvent(answer, { ...none, answered: true })).toBe(true);
     expect(isNewsEvent(answer, { ...none, authored: true })).toBe(true);
     expect(isNewsEvent(answer, { ...none, overOwn: true })).toBe(false);
     expect(isNewsEvent(answer, none)).toBe(false);
@@ -547,7 +582,7 @@ describe("isAutomaticRestore", () => {
     };
     const none = {
       presented: false,
-      coPresented: false,
+      answered: false,
       authored: false,
       overOwn: false,
     };

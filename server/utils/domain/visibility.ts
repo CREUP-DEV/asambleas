@@ -41,8 +41,8 @@ export function canSeeAssembly(
 
 /**
  * Who presents a document: its main presenter (`documents.proponentMemberId`),
- * who answers the amendments, and its co-presenters (document_proponents),
- * who prepare the text with it and follow what it decides.
+ * its proponent, and its co-presenters (document_proponents), who prepare
+ * the text with it; any of them answers the amendments.
  */
 export interface DocumentPresenters {
   proponentMemberId: string | null;
@@ -83,8 +83,9 @@ export function canSeeDocument(
 }
 
 /**
- * The actor acts for the main presenter, the only one who answers the
- * amendments to the document (its position) and appears as its proponent.
+ * The actor acts for the main presenter, who appears as the document's
+ * proponent (its co-presenters answer the amendments too:
+ * isDocumentPresenter).
  */
 export function isDocumentProponent(
   actor: Actor,

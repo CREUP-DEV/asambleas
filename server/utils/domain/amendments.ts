@@ -46,7 +46,10 @@ import type {
   ProponentPosition,
   RelationKind,
 } from "../../../shared/constants/domain";
-import { amendmentVoteMajority } from "../../../shared/constants/domain";
+import {
+  amendmentVoteMajority,
+  GENERIC_EXECUTIVE_MEMBER_ID,
+} from "../../../shared/constants/domain";
 import { PERMISSION_KEYS } from "../../../shared/constants/permissions";
 import type {
   AcceptanceBody,
@@ -201,6 +204,7 @@ import {
   redactPayloadMembers,
   seesAnswerRecord,
   type DocumentPresenters,
+  type ExecutiveMask,
 } from "./visibility";
 
 /**
@@ -506,8 +510,11 @@ export interface CapabilityInput {
   admission: AdmissionStatus;
   approvalMethod: ApprovalMethod | null;
   isAuthor: boolean;
-  /** The actor acts for the document's main presenter. */
-  isProponent: boolean;
+  /**
+   * The actor acts for one of the document's presenters (main or
+   * co-presenter), any of whom answers its amendments.
+   */
+  isPresenter: boolean;
   moderate: boolean;
   review: boolean;
   actorMemberId: string | null;
@@ -581,7 +588,7 @@ export function amendmentCapabilities(
       voted: Boolean(input.voted),
     }),
     position:
-      (input.isProponent || input.moderate) &&
+      (input.isPresenter || input.moderate) &&
       positionBlocker(input, input.rule, input.voted) === null,
     moderate: input.moderate,
     review: input.review,
@@ -793,9 +800,12 @@ export interface DocumentAmendmentContext {
   settings: AssemblySettings;
   /** Effective amendment window; `late` is computed with `isLateSubmission`. */
   window: AmendmentWindow;
-  /** The actor acts for the main presenter, who answers the amendments. */
+  /** The actor acts for the main presenter. */
   isProponent: boolean;
-  /** The actor acts for the main presenter or a co-presenter. */
+  /**
+   * The actor acts for the main presenter or a co-presenter: either
+   * answers the amendments (setAmendmentPosition).
+   */
   isPresenter: boolean;
   positionsVisible: boolean;
   /** What an amendment the main presenter accepts becomes. */
@@ -1400,6 +1410,7 @@ export async function buildAmendmentDtos(
   const sourceStates = await loadSourceStates(rows);
   const recorders = await loadPositionRecorders(
     ctx.positionsVisible ? rows : [],
+    ctx.actor,
   );
   const acceptanceRecorders = await loadAcceptanceRecorders(rows);
   const moderate = canModerate(ctx.actor);
@@ -1485,7 +1496,7 @@ export async function buildAmendmentDtos(
         admission: row.admission,
         approvalMethod: row.approvalMethod,
         isAuthor: isAmendmentAuthor(ctx.actor, row),
-        isProponent: ctx.isProponent,
+        isPresenter: ctx.isPresenter,
         moderate,
         review,
         actorMemberId: ctx.actor.memberId,
@@ -1521,6 +1532,13 @@ export interface PositionRecorders {
   recordedAs: Map<string, string | null>;
   memberOf: Map<string, string | null>;
   roleOf?: Map<string, string | null>;
+  /**
+   * By amendment id: the presenter the latest answer was given for (its
+   * position_changed's memberId), main presenter or co-presenter.
+   */
+  answeredFor?: Map<string, string | null>;
+  /** The executive offices the reader does not see (loadExecutiveMask). */
+  mask?: ExecutiveMask;
 }
 
 /**
@@ -1542,6 +1560,16 @@ export function toPositionDto(
     recorderMemberId: decidedBy ? recorders.memberOf.get(decidedBy) : null,
     mainPresenterId,
   });
+  // A presenter's own answer names that presenter; an office the reader
+  // does not see reads as the generic "CEA", as on the document.
+  const answeredFor =
+    recordedBy === "presenter"
+      ? (recorders.answeredFor?.get(amendmentId) ?? mainPresenterId)
+      : null;
+  const answeredBy =
+    answeredFor && recorders.mask?.has(answeredFor)
+      ? GENERIC_EXECUTIVE_MEMBER_ID
+      : answeredFor;
   return {
     position: position.position,
     comment: position.comment,
@@ -1553,19 +1581,27 @@ export function toPositionDto(
         )
       : null,
     updatedAt: seesRecord ? position.updatedAt.toISOString() : null,
+    answeredBy: seesRecord ? answeredBy : null,
   };
 }
 
+/**
+ * What toPositionDto needs to say who gave each answer. With `actor`, the
+ * offices it does not see are masked in `answeredBy`.
+ */
 export async function loadPositionRecorders(
   rows: LoadedAmendment[],
+  actor?: Actor,
 ): Promise<PositionRecorders> {
   const answered = rows.filter((row) => row.position);
   const recordedAs = new Map<string, string | null>();
+  const answeredFor = new Map<string, string | null>();
   if (answered.length > 0) {
     const latest = await db
       .selectDistinctOn([events.entityId], {
         amendmentId: events.entityId,
         by: sql<string | null>`${events.payload}->>'by'`,
+        memberId: sql<string | null>`${events.payload}->>'memberId'`,
       })
       .from(events)
       .where(
@@ -1579,7 +1615,10 @@ export async function loadPositionRecorders(
         ),
       )
       .orderBy(events.entityId, desc(events.createdAt), desc(events.id));
-    for (const row of latest) recordedAs.set(row.amendmentId, row.by);
+    for (const row of latest) {
+      recordedAs.set(row.amendmentId, row.by);
+      answeredFor.set(row.amendmentId, row.memberId);
+    }
   }
   const userIds = unique(
     answered
@@ -1602,6 +1641,8 @@ export async function loadPositionRecorders(
     recordedAs,
     memberOf: new Map(recorders.map((row) => [row.id, row.memberId])),
     roleOf: new Map(recorders.map((row) => [row.id, row.role])),
+    answeredFor,
+    mask: actor && answered.length > 0 ? await loadExecutiveMask(actor) : null,
   };
 }
 
@@ -2181,6 +2222,7 @@ export async function updateAmendmentDraft(
       partyMemberIds: [
         ...involvedMemberIds(amendment),
         document.proponentMemberId,
+        ...document.coProponentMemberIds,
       ],
       executiveIds: await loadExecutiveMemberIds(),
     }).length > 0
@@ -4136,6 +4178,13 @@ async function recordPosition(
   const { current } = input;
   const auto = input.by === "auto";
   const effect = positionEffect(current, input.position, input.rule);
+  // Whose answer it is: the presenter the actor acts for (the main
+  // presenter or a co-presenter), else the main presenter, for whom the
+  // Mesa records it or the automatic answer is given.
+  const answeredFor =
+    input.by === "proponent" && actor.memberId
+      ? actor.memberId
+      : document.proponentMemberId;
   const values = {
     position: input.position,
     comment: input.comment,
@@ -4164,10 +4213,9 @@ async function recordPosition(
     payload: {
       position: input.position,
       by: input.by,
-      // Whose answer it is, also when the Mesa records it or it is given
-      // by itself: the main presenter (the news of co-presenters and
-      // authors name it, unless it is automatic).
-      memberId: document.proponentMemberId,
+      // Whose answer it is (`answeredFor`): the news of the other
+      // presenters and of the authors name it, unless it is automatic.
+      memberId: answeredFor,
     },
   });
 
@@ -4175,6 +4223,7 @@ async function recordPosition(
     await incorporateAcceptance(tx, ctx, {
       current,
       auto,
+      memberId: answeredFor,
       sourceIds: input.sourceIds,
       competitors: input.competitors,
       locked: input.locked,
@@ -4204,6 +4253,8 @@ async function recordPosition(
       payload: {
         previousStatus: "approved",
         reason: "position_changed",
+        // The presenter whose new answer took it out (newsByMemberId).
+        memberId: answeredFor,
         ...(auto ? { by: "auto" } : {}),
       },
     });
@@ -4234,6 +4285,8 @@ async function incorporateAcceptance(
     current: LockedAmendment;
     /** The acceptance was the automatic one of a formal amendment. */
     auto: boolean;
+    /** The presenter whose acceptance it is (position_changed's memberId). */
+    memberId: string | null;
     sourceIds: string[];
     competitors: Competitors;
     locked: LockedAmendment[];
@@ -4267,13 +4320,13 @@ async function incorporateAcceptance(
     entityId: current.id,
     actor,
     type: "amendment_approved",
-    // The main presenter's acceptance incorporated it, also when the
-    // Mesa recorded it (the news credit it). The automatic one says why
-    // (`reason: "formal"`) and credits nobody.
+    // A presenter's acceptance incorporated it, also when the Mesa
+    // recorded it (the news credit that presenter). The automatic one says
+    // why (`reason: "formal"`) and credits nobody.
     payload: {
       method: "proponent",
       byPosition: true,
-      memberId: document.proponentMemberId,
+      memberId: input.memberId,
       ...(input.auto ? { reason: "formal" } : {}),
     },
   });
@@ -4335,7 +4388,7 @@ async function incorporateOnAdmission(
     }
     await incorporateAcceptance(tx, ctx, {
       current,
-      auto: (await latestPositionBy(tx, id)) === "auto",
+      ...(await latestPositionAnswer(tx, id, ctx.document.proponentMemberId)),
       sourceIds: [],
       competitors: {
         sourceMap: input.sourceMap,
@@ -4414,14 +4467,11 @@ async function autoAcceptFormal(
   }
 }
 
-/**
- * The `by` of the latest position_changed of an amendment ("proponent",
- * "moderator", "auto"), or undefined when it has none.
- */
-async function latestPositionBy(
+/** The payload of the latest position_changed of an amendment, if any. */
+async function latestPositionPayload(
   tx: Executor,
   amendmentId: string,
-): Promise<unknown> {
+): Promise<Record<string, unknown> | undefined> {
   const [row] = await tx
     .select({ payload: events.payload })
     .from(events)
@@ -4434,11 +4484,41 @@ async function latestPositionBy(
     )
     .orderBy(desc(events.createdAt), desc(events.id))
     .limit(1);
-  return (row?.payload as Record<string, unknown> | undefined)?.by;
+  return row?.payload as Record<string, unknown> | undefined;
 }
 
 /**
- * The main presenter's answer to an amendment (or the Mesa's, for it):
+ * The `by` of the latest position_changed of an amendment ("proponent",
+ * "moderator", "auto"), or undefined when it has none.
+ */
+async function latestPositionBy(
+  tx: Executor,
+  amendmentId: string,
+): Promise<unknown> {
+  return (await latestPositionPayload(tx, amendmentId))?.by;
+}
+
+/**
+ * Who gave the stored acceptance of an amendment, for its incorporation
+ * once the assembly admits it: automatic or not, and the presenter it was
+ * given for (the main presenter for answers recorded before it was named).
+ */
+async function latestPositionAnswer(
+  tx: Executor,
+  amendmentId: string,
+  mainPresenterId: string | null,
+): Promise<{ auto: boolean; memberId: string | null }> {
+  const payload = await latestPositionPayload(tx, amendmentId);
+  const memberId = payload?.memberId;
+  return {
+    auto: payload?.by === "auto",
+    memberId: typeof memberId === "string" ? memberId : mainPresenterId,
+  };
+}
+
+/**
+ * The presenters' answer to an amendment, given by the main presenter or a
+ * co-presenter (or by the Mesa, for them):
  * only once it is validated, published and, if late, admitted, and for a
  * transactional once its main authors accepted it (positionBlocker).
  * `positionUpdatedAt` is the optimistic lock on the stored answer. Under the
@@ -4453,10 +4533,10 @@ export async function setAmendmentPosition(
   body: PositionBody,
 ): Promise<AmendmentDto> {
   const { actor, amendment, document } = ctx;
-  if (!ctx.isProponent && !canModerate(actor)) {
+  if (!ctx.isPresenter && !canModerate(actor)) {
     fail(
       403,
-      "Solo quien presenta principalmente el documento o la Mesa pueden responder a las enmiendas",
+      "Solo quienes presentan el documento o la Mesa pueden responder a las enmiendas",
     );
   }
   assertNotFinal(ctx);
@@ -4533,7 +4613,7 @@ export async function setAmendmentPosition(
       rule: ctx.rule,
       position: body.position,
       comment: body.comment ?? null,
-      by: ctx.isProponent ? "proponent" : "moderator",
+      by: ctx.isPresenter ? "proponent" : "moderator",
       sourceIds,
       competitors,
       locked,
@@ -5062,7 +5142,7 @@ export async function createTransactionalAmendment(
       moderate,
       canCreate,
       actorMemberId: actor.memberId,
-      isParty: ctx.isProponent || actsFor(actor, sourceAuthorIds),
+      isParty: ctx.isPresenter || actsFor(actor, sourceAuthorIds),
     })
   ) {
     fail(403, "No tienes permiso para proponer transaccionales");
@@ -5086,7 +5166,11 @@ export async function createTransactionalAmendment(
       unauthorizedTransactionalAuthors(authorIds, {
         actorMemberId: actor.memberId,
         currentAuthorIds: [],
-        partyMemberIds: [...sourceAuthorIds, document.proponentMemberId],
+        partyMemberIds: [
+          ...sourceAuthorIds,
+          document.proponentMemberId,
+          ...document.coProponentMemberIds,
+        ],
         executiveIds: body.authorMemberIds?.length
           ? await loadExecutiveMemberIds()
           : undefined,

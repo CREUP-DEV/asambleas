@@ -385,7 +385,7 @@ export async function loadControlSheet(
             ]),
           )
       : Promise.resolve([]),
-    loadPositionRecorders(visibleRows),
+    loadPositionRecorders(visibleRows, actor),
   ]);
   // Rows of items the reader does not get stay out, as the items do.
   const itemRows = itemSheet.filter((row) => itemsById.has(row.agendaItemId));

@@ -4,6 +4,7 @@ import type { AmendmentOp, Block } from "../../../shared/types/content";
 import {
   amendmentVoteMajority,
   DOCUMENT_KIND_DEFAULTS,
+  GENERIC_EXECUTIVE_MEMBER_ID,
   REGULATION_DOCUMENT_KINDS,
 } from "../../../shared/constants/domain";
 
@@ -68,6 +69,7 @@ const {
   redactAmendmentEventPayload,
   requestedDraftAuthorIds,
   sourcesAreOpen,
+  toPositionDto,
   sourcesToReplace,
   transactionalsShareSources,
   unauthorizedTransactionalAuthors,
@@ -312,7 +314,7 @@ describe("amendmentCapabilities", () => {
     admission: "pending" as const,
     approvalMethod: null,
     isAuthor: false,
-    isProponent: false,
+    isPresenter: false,
     moderate: false,
     review: false,
     actorMemberId: "m1",
@@ -410,7 +412,7 @@ describe("amendmentCapabilities", () => {
     const caps = amendmentCapabilities({
       ...admitted,
       isAuthor: true,
-      isProponent: true,
+      isPresenter: true,
     });
     expect(caps).toMatchObject({
       edit: false,
@@ -424,25 +426,25 @@ describe("amendmentCapabilities", () => {
     const presenter = {
       ...input,
       status: "submitted" as const,
-      isProponent: true,
+      isPresenter: true,
     };
     expect(amendmentCapabilities(presenter).position).toBe(false);
     expect(
       amendmentCapabilities({ ...presenter, validatedAt: at }).position,
     ).toBe(false);
     expect(
-      amendmentCapabilities({ ...admitted, isProponent: true }).position,
+      amendmentCapabilities({ ...admitted, isPresenter: true }).position,
     ).toBe(true);
   });
 
   it("asks for an answer only once the Secretaría published the amendment", () => {
-    const kept = { ...admitted, publishedAt: null, isProponent: true };
+    const kept = { ...admitted, publishedAt: null, isPresenter: true };
     expect(amendmentCapabilities(kept).position).toBe(false);
     expect(
       amendmentCapabilities({ ...kept, rule: "incorporate" }).position,
     ).toBe(false);
     expect(
-      amendmentCapabilities({ ...kept, isProponent: false, moderate: true })
+      amendmentCapabilities({ ...kept, isPresenter: false, moderate: true })
         .position,
     ).toBe(false);
   });
@@ -452,7 +454,7 @@ describe("amendmentCapabilities", () => {
       ...admitted,
       status: "approved" as const,
       approvalMethod: "proponent" as const,
-      isProponent: true,
+      isPresenter: true,
       rule: "incorporate" as const,
       voted: true,
     };
@@ -491,7 +493,7 @@ describe("amendmentCapabilities", () => {
       ...admitted,
       status: "approved" as const,
       approvalMethod: "proponent" as const,
-      isProponent: true,
+      isPresenter: true,
     };
     expect(
       amendmentCapabilities({ ...incorporated, rule: "incorporate" }).position,
@@ -554,14 +556,14 @@ describe("amendmentCapabilities", () => {
     expect(
       amendmentCapabilities({
         ...admitted,
-        isProponent: true,
+        isPresenter: true,
         authorsApproval: "pending",
       }).position,
     ).toBe(false);
     expect(
       amendmentCapabilities({
         ...admitted,
-        isProponent: true,
+        isPresenter: true,
         authorsApproval: "accepted",
       }).position,
     ).toBe(true);
@@ -730,6 +732,43 @@ describe("acceptanceRecordedBy", () => {
     expect(acceptanceRecordedBy(null)).toBe("party");
     expect(acceptanceRecordedBy(undefined)).toBe("party");
     expect(acceptanceRecordedBy("")).toBe("party");
+  });
+});
+
+describe("toPositionDto", () => {
+  const stored = {
+    position: "accept" as const,
+    comment: null,
+    decidedByUserId: "user",
+    updatedAt: new Date("2026-11-18T10:00:00Z"),
+  } as unknown as Parameters<typeof toPositionDto>[0];
+  const recorders = (memberId: string | null, mask?: Set<string>) => ({
+    recordedAs: new Map([["a", "proponent"]]),
+    memberOf: new Map([["user", memberId]]),
+    answeredFor: new Map([["a", memberId]]),
+    mask: mask ?? null,
+  });
+
+  it("names the co-presenter who answered", () => {
+    const dto = toPositionDto(stored, "a", "main", recorders("co"), true);
+    expect(dto).toMatchObject({ recordedBy: "presenter", answeredBy: "co" });
+  });
+
+  it("reads an office the reader does not see as the generic CEA", () => {
+    const dto = toPositionDto(
+      stored,
+      "a",
+      "main",
+      recorders("office", new Set(["office"])),
+      true,
+    );
+    expect(dto.answeredBy).toBe(GENERIC_EXECUTIVE_MEMBER_ID);
+  });
+
+  it("names nobody to a reader who may not know who answered", () => {
+    expect(
+      toPositionDto(stored, "a", "main", recorders("co"), false).answeredBy,
+    ).toBeNull();
   });
 });
 

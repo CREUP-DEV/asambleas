@@ -12,10 +12,11 @@ import {
  *
  * - "¿Lo presentáis varios miembros?", folded unless there are co-presenters
  *   already, holds a member search to add them, saying that they prepare
- *   the text too but cannot change who answers the amendments (only that
- *   member or the Secretaría can; the server refuses it with `main_only`);
- * - with several presenters, the required choice of who answers the
- *   amendments (the main presenter), with what that means in one line.
+ *   the text and answer the amendments too but cannot change who the main
+ *   presenter is (only that member or the Secretaría can; the server
+ *   refuses it with `main_only`);
+ * - with several presenters, the required choice of the main presenter,
+ *   with what that means in one line.
  *
  * The lead (the member picked under "Quién lo presenta", or the presenter's
  * own member) is fixed here: it is never offered as a co-presenter and is

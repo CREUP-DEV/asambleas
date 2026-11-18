@@ -1155,24 +1155,24 @@
       },
       "coLabel": "Other members presenting it",
       "coHelp": {
-        "presenter": "They can prepare the text with you and will always see what is decided about the amendments. Only the member answering the amendments or the Secretariat can change who answers.",
-        "manager": "They prepare the text together and always see what is decided about the amendments. Only the member answering the amendments or the Secretariat can change who answers."
+        "presenter": "They can prepare the text with you and answer the amendments. Only the main presenter or the Secretariat can change who the main presenter is.",
+        "manager": "They prepare the text together and can answer the amendments. Only the main presenter or the Secretariat can change who the main presenter is."
       },
       "coPlaceholder": "Choose the members",
-      "main": "Who answers the amendments (main presenter)",
-      "mainHelp": "Only this member accepts or rejects the amendments. The others always see what it decided and when.",
+      "main": "Main presenter",
+      "mainHelp": "It appears as the document's presenter. It and the other members presenting it can accept or reject the amendments, and everyone sees who answered and when.",
       "mainLockedHelp": "Only that member or the Secretariat can change it.",
-      "mainRequired": "Choose who answers the amendments.",
+      "mainRequired": "Choose the main presenter.",
       "yours": "Your member",
       "sentence": "Presented by {main} with {others}",
       "short": "{main} with {others}",
       "more": "{count} more",
       "workingWith": "You present it together with {members}, who can also edit the draft.",
-      "mainIsYours": "You answer the amendments on behalf of {member}, as the main presenter.",
-      "mainIsOther": "{member} answers the amendments as the main presenter; you will always see what it decides.",
+      "mainIsYours": "{member} is the main presenter. Those presenting it with you can also answer the amendments.",
+      "mainIsOther": "{member} is the main presenter. You can also answer the amendments.",
       "moreLabel": "{count} more: see who else presents it",
-      "handOver": "If you leave it like this, {member} will answer the amendments and only {member} or the Secretariat will be able to change it.",
-      "answers": "{member} answers the amendments.",
+      "handOver": "If you leave it like this, {member} will be the main presenter and only {member} or the Secretariat will be able to change it.",
+      "answers": "Main presenter: {member}.",
       "droppedWithoutLead": "If nobody presents it, {members} is removed as well. | If nobody presents it, {members} are removed as well."
     },
     "acceptedRule": {
@@ -1523,7 +1523,10 @@
       "answerAuto": "Accepted automatically: formal amendment",
       "answerAutoCleared": "Unanswered again: no longer a formal amendment",
       "blocked": {
-        "publication": "It can be answered once the Secretariat publishes it."
+        "publication": "It can be answered once the Secretariat publishes it.",
+        "validation": "It can be answered once the Secretariat validates it.",
+        "authors": "It can be answered once the main authors of the amendments it groups accept it.",
+        "admission": "It can be answered once the assembly decides to consider it."
       },
       "next": {
         "incorporateIfAccepted": "If the document's presenter accepts it, it goes into the text without a vote. Otherwise the assembly votes on it.",
@@ -3579,8 +3582,7 @@
     "more": {
       "label": "More",
       "consolidated": "Consolidated text and PDF",
-      "transactional": "Propose a transactional amendment",
-      "answers": "See the answers"
+      "transactional": "Propose a transactional amendment"
     },
     "corrections": {
       "title": "The Secretariat asks you to fix one amendment | The Secretariat asks you to fix {count} amendments",
@@ -4698,7 +4700,9 @@
       "change": "{from} to {to}",
       "treatedByResult": "It counts as dealt with because of the result noted by hand.",
       "resultMesaOnly": "Only the Mesa notes the result.",
-      "leftSheet": "The item has left the sheet: someone changed it at the same time."
+      "leftSheet": "The item has left the sheet: someone changed it at the same time.",
+      "positionFor": "You answer on behalf of {member}. Who changes it and when is recorded.",
+      "positionHint": "Who changes it and when is recorded."
     },
     "add": {
       "button": "Add item",
@@ -5693,7 +5697,7 @@
     },
     "noAccess": {
       "title": "You cannot answer these amendments",
-      "description": "Only the main presenter of the document and the Mesa answer its amendments."
+      "description": "Only the document's presenters and the Mesa answer its amendments."
     },
     "closed": {
       "title": "This document is no longer under debate",
@@ -5729,63 +5733,6 @@
       "publicationDescription": "The Secretariat has not published it yet. You can answer it once it is published.",
       "voted": "{label}: the answer was not saved",
       "votedDescription": "The document was voted on meanwhile, so the answers can no longer change."
-    },
-    "coPresenter": {
-      "pageTitle": "Answers to the amendments: {title}",
-      "heading": "Answers to the amendments",
-      "title": "{member} answers the amendments",
-      "description": "As the main presenter of the document, {member} accepts or rejects the amendments (or the Mesa on its behalf). Here you see what it decides and when. The assembly will vote on the amendments.",
-      "descriptionIncorporate": "As the main presenter of the document, {member} accepts or rejects the amendments (or the Mesa on its behalf). Here you see what it decides and when. The ones it accepts go into the text without a vote.",
-      "someone": "The main presenter",
-      "listTitle": "What has been answered",
-      "awaitingAdmission": "{count} late amendment is waiting for the assembly to decide whether to take it up. It can be answered afterwards. | {count} late amendments are waiting for the assembly to decide whether to take them up. They can be answered afterwards.",
-      "empty": "No amendments to answer yet",
-      "emptyDescription": "When the Secretariat publishes amendments to this document, you will see here what the main presenter answers.",
-      "comment": "Comment",
-      "hidden": "You cannot see the answer of {member} yet.",
-      "answered": {
-        "accept": "{member} accepted it on {date}.",
-        "incorporated": "{member} accepted it on {date} and it went into the text without a vote.",
-        "reject": "{member} rejected it on {date}.",
-        "transact": "{member} chose to propose a transactional on {date}."
-      },
-      "titleDone": "These were the answers of {member}",
-      "descriptionReadOnly": "The document has been voted on: these answers can no longer change.",
-      "descriptionClosed": "The document was withdrawn or postponed: its amendments no longer need an answer.",
-      "listTitleDone": "What was answered",
-      "emptyDone": "No amendment was answered",
-      "emptyDoneDescription": "{member} did not answer any amendment to this document.",
-      "outcome": {
-        "approved": "The assembly approved it.",
-        "approvedFormal": "It was approved as a wording correction.",
-        "rejected": "The assembly rejected it.",
-        "withdrawn": "Its authors withdrew it.",
-        "lapsed": "It lapsed and will not be voted on."
-      },
-      "pending": "{member} has not answered it yet.",
-      "awaitingPublication": "{count} validated amendment is waiting for the Secretariat to publish it. It can be answered afterwards. | {count} validated amendments are waiting for the Secretariat to publish them. They can be answered afterwards.",
-      "answeredByMesa": {
-        "accept": "The Mesa, on behalf of {member}, accepted it on {date}.",
-        "incorporated": "The Mesa, on behalf of {member}, accepted it on {date} and it went into the text without a vote.",
-        "reject": "The Mesa, on behalf of {member}, rejected it on {date}.",
-        "transact": "The Mesa, on behalf of {member}, chose to propose a transactional on {date}."
-      },
-      "answeredBySecretaria": {
-        "accept": "The Secretariat, on behalf of {member}, accepted it on {date}.",
-        "incorporated": "The Secretariat, on behalf of {member}, accepted it on {date} and it went into the text without a vote.",
-        "reject": "The Secretariat, on behalf of {member}, rejected it on {date}.",
-        "transact": "The Secretariat, on behalf of {member}, chose to propose a transactional on {date}."
-      },
-      "answeredByPresidencia": {
-        "accept": "The Presidency, on behalf of {member}, accepted it on {date}.",
-        "incorporated": "The Presidency, on behalf of {member}, accepted it on {date} and it went into the text without a vote.",
-        "reject": "The Presidency, on behalf of {member}, rejected it on {date}.",
-        "transact": "The Presidency, on behalf of {member}, chose to propose a transactional on {date}."
-      },
-      "answeredAuto": {
-        "accept": "It was accepted automatically on behalf of {member} on {date}, as a formal amendment.",
-        "incorporated": "It was accepted automatically on behalf of {member} on {date}, as a formal amendment, and went into the text without a vote."
-      }
     },
     "waiting": {
       "authors": "{count} transactional amendment is waiting for the main authors of the amendments it replaces to accept it. | {count} transactional amendments are waiting for the main authors of the amendments they replace to accept them.",

@@ -146,7 +146,8 @@ const SENTENCE_COLORS: Record<string, string> = {
 
 /**
  * The main presenter, named apart when it shares the document with others
- * and the document takes amendments (only it accepts or rejects them).
+ * and the document takes amendments (any of them answers them, but it is
+ * the document's proponent).
  */
 const answerer = computed(() => {
   const document = props.document;
@@ -270,7 +271,7 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
         <slot name="badges" />
       </div>
 
-      <!-- Several presenters: which one answers the amendments -->
+      <!-- Several presenters: which one is the main presenter -->
       <i18n-t
         v-if="answerer"
         keypath="document.presenters.answers"
