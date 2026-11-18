@@ -27,6 +27,7 @@ export const MILESTONE_KEYS = [
   "agenda_requests_close",
   "agenda_final",
   "documents_close",
+  "reports_close",
   "documents_publish",
   "amendments_open",
   "amendments_close",

@@ -22,6 +22,7 @@ import {
   splitReviewParts,
 } from "~/components/review/-queue";
 import { affectsReviewQueue } from "~/components/review/-live";
+import { sentAfterDeadline } from "~~/shared/utils/documentDeadline";
 
 /**
  * The Secretaría's validation inbox (GET .../review): presented documents;
@@ -302,29 +303,21 @@ function documentBusyFor(id: string): "publish" | "correction" | null {
   return documentBusy.value?.id === id ? documentBusy.value.action : null;
 }
 
-function milestoneTime(key: MilestoneKey): number | null {
-  const at = assembly.value?.milestones.find(
-    (milestone) => milestone.key === key,
-  )?.at;
-  return at ? new Date(at).getTime() : null;
+function milestoneAt(key: MilestoneKey): string | null {
+  return (
+    assembly.value?.milestones.find((milestone) => milestone.key === key)?.at ??
+    null
+  );
 }
 
 /**
- * Sent after its deadline (`candidacies_close` for candidacies, otherwise
- * `documents_close`): marked late, so the Secretaría and the Mesa know the
- * assembly has to agree to treat it.
+ * Sent after its deadline (`documentDeadlineKey`: reports have their own,
+ * `reports_close`): marked late, so the Secretaría and the Mesa know. The
+ * card adds that the assembly has to agree to treat it, except for a
+ * report (`lateNeedsAssembly`).
  */
 function sentLate(document: DocumentSummaryDto): boolean {
-  const due = milestoneTime(
-    document.kind === "candidacy" || document.kind === "venue"
-      ? "candidacies_close"
-      : "documents_close",
-  );
-  return (
-    due !== null &&
-    document.submittedAt !== null &&
-    new Date(document.submittedAt).getTime() > due
-  );
+  return sentAfterDeadline(document, milestoneAt);
 }
 
 // Several documents at once --------------------------------------------------

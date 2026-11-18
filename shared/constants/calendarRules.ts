@@ -35,6 +35,11 @@ export const CALENDAR_RULES_PERMISSION = PERMISSION_KEYS.ASSEMBLY_MANAGE;
  *   20.1);
  * - candidacies_close: 96 hours before the start (RRI art. 41.1).
  *
+ * reports_close, the deadline of the reports (kind `report`), has neither
+ * a minimum nor a default: the regulations set none, and a report comes in
+ * however late (it is only marked so, never put to the assembly). Each
+ * type gets one at /admin/calendario, each assembly on its calendar.
+ *
  * An extraordinary assembly convened with less than 5 days must send every
  * document with the convocation (RRI art. 13.1.a, RFAG art. 10.1.a). A
  * reform of the Estatutos or a regulation needs an amendment window of at

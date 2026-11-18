@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DocumentSummaryDto } from "~~/shared/types/api";
+import { lateNeedsAssembly } from "~~/shared/utils/documentDeadline";
 
 /**
  * A presented document waiting for the Secretaría: what it is, who presents
@@ -9,7 +10,8 @@ import type { DocumentSummaryDto } from "~~/shared/types/api";
  * it. The parent runs both. Every action names the document it acts on
  * through `aria-describedby`, so a list of buttons tells them apart. With
  * `selectable` a checkbox adds it to the bulk validation, and `late` marks
- * one sent after the documents deadline.
+ * one sent after its deadline (documentDeadlineKey), saying the assembly
+ * has to agree to treat it unless it is a report (lateNeedsAssembly).
  */
 const props = withDefaults(
   defineProps<{
@@ -20,7 +22,7 @@ const props = withDefaults(
     busy?: "publish" | "correction" | null;
     /** Another action is running elsewhere: keep the buttons quiet. */
     disabled?: boolean;
-    /** Sent after the documents deadline (documents_close). */
+    /** Sent after its deadline (documentDeadlineKey). */
     late?: boolean;
     /** Show a checkbox to select it for the bulk validation. */
     selectable?: boolean;
@@ -119,7 +121,10 @@ const submittedAbsolute = computed(() =>
             :label="t('review.documents.late')"
           />
         </p>
-        <p v-if="late" class="text-muted text-sm">
+        <p
+          v-if="late && lateNeedsAssembly(document.kind)"
+          class="text-muted text-sm"
+        >
           {{ t("review.documents.lateHint") }}
         </p>
       </div>

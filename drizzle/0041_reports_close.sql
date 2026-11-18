@@ -1,0 +1,1 @@
+ALTER TYPE "public"."milestone_key" ADD VALUE 'reports_close' BEFORE 'documents_publish';

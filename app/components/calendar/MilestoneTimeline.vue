@@ -26,6 +26,7 @@ const MILESTONE_ICONS: Record<MilestoneKey, string> = {
   agenda_requests_close: "i-lucide-list-plus",
   agenda_final: "i-lucide-list-checks",
   documents_close: "i-lucide-file-lock",
+  reports_close: "i-lucide-file-chart-column",
   documents_publish: "i-lucide-file-check",
   amendments_open: "i-lucide-pencil-line",
   amendments_close: "i-lucide-pencil-off",
