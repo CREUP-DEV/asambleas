@@ -20,9 +20,9 @@ const COLORS: Record<
   rejected: "error",
   mixed: "secondary",
   withdrawn: "neutral",
-  // Grey, so it never looks like «Pendiente» (amber).
+  // Grey, so neither looks like «Pendiente» (amber).
   lapsed: "neutral",
-  postponed: "warning",
+  postponed: "neutral",
   not_applicable: "neutral",
 };
 
