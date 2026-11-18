@@ -1075,6 +1075,19 @@ html {
     text-decoration: underline dotted var(--ui-color-info-500);
   }
 
+  /*
+   * The words the Mesa selects on the projection (SessionPointerLayer): a
+   * marker in the pointer's red, strong enough to read from the room.
+   */
+  ::highlight(cx-mesa-select) {
+    background-color: color-mix(
+      in oklab,
+      var(--ui-color-error-400) 38%,
+      transparent
+    );
+    text-decoration: underline 0.12em var(--ui-color-error-500);
+  }
+
   .cx-marker--overlap::before {
     background-color: var(--ui-color-warning-500);
   }

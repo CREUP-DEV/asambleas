@@ -3632,6 +3632,18 @@
     }
   },
   "session": {
+    "pointer": {
+      "toggle": "Pointer",
+      "modeLabel": "What the pointer does when dragging",
+      "draw": "Draw",
+      "select": "Select text",
+      "pin": "Keep strokes",
+      "clear": "Clear strokes",
+      "hint": "The projection shows the pointer over the document. Click to point and drag to draw; strokes fade by themselves unless you keep them."
+    },
+    "nowBar": {
+      "backUp": "Back to the top"
+    },
     "progress": {
       "projected": "Projected",
       "treated": "Treated"
@@ -3836,6 +3848,14 @@
       "itemHasVotedDocuments": "@:common.errors.itemHasVotedDocuments"
     },
     "vote": {
+      "abstentionsAuto": "Abstentions (did not vote)",
+      "presentFixed": "The members present are the latest headcount's, and those who did not vote abstain. To change the members present, correct the headcount.",
+      "addBallot": "Vote",
+      "addBallotFor": "Add a vote: {option}",
+      "removeBallotFor": "Remove a vote: {option}",
+      "undoBallot": "Undo the last one",
+      "liveCountHint": "Each vote shows at once on the projection.",
+      "liveCountHintKeys": "Keys 1 to 4: in favour, against, blank and invalid. Each vote shows at once on the projection.",
       "title": "Vote on {code}",
       "description": "Amendments are decided by simple majority unless the Mesa sets another one.",
       "method": "Method",
@@ -3846,7 +3866,7 @@
       "abstentions": "Abstentions",
       "blank": "Blank",
       "invalid": "Invalid",
-      "present": "Present",
+      "present": "Members present with a vote",
       "optional": "Optional",
       "presentPlaceholder": "Not given",
       "note": "Note",
@@ -3869,7 +3889,7 @@
       "inconsistent": "More votes were cast than there are members present.",
       "submit": "Record vote",
       "assentNoCount": "Assent has no count: the text is approved.",
-      "presentFromHeadcount": "Left empty, the members present come from the Mesa's latest headcount.",
+      "presentFromHeadcount": "The members present come from the Mesa's latest headcount.",
       "presentFromCount": "Members present from the headcount at {time}.",
       "presentCorrected": "Corrected for this vote. The headcount at {time} gives {present}.",
       "noHeadcount": "No headcount yet: enter the members present or take a headcount before voting.",
@@ -4351,6 +4371,11 @@
     }
   },
   "projection": {
+    "tally": {
+      "title": "Secret vote · counting",
+      "castOf": "{count} of {present} present have voted",
+      "cast": "1 vote counted | {count} votes counted"
+    },
     "recess": {
       "title": "Recess",
       "resumesAt": "Resumes at {time}",

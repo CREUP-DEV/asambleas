@@ -4,6 +4,7 @@ import type { AssemblyType } from "../../constants/assemblyTypes";
 import {
   ASSEMBLY_STATUSES,
   DOCUMENT_KINDS,
+  MAJORITIES,
   MILESTONE_KEYS,
 } from "../../constants/domain";
 import type {
@@ -13,7 +14,9 @@ import type {
   AssemblyStatusBody,
   AssemblyUpdateBody,
   CalendarBody,
+  LivePointerBody,
   LiveScrollBody,
+  LiveTallyBody,
   LiveStateBody,
 } from "../../types/api";
 import { normalizeText } from "./content";
@@ -228,6 +231,72 @@ export const liveScrollBodySchema = z.object({
   ]),
 });
 
+const fraction = z.number().min(0).max(1);
+const livePointSchema = z.union([
+  z.object({ block: z.string().min(1).max(100), x: fraction, y: fraction }),
+  z.object({
+    page: z.number().int().min(1).max(10_000),
+    x: fraction,
+    y: fraction,
+  }),
+]);
+
+const spanPointSchema = z.object({
+  blockId: z.string().min(1).max(100),
+  offset: z.number().int().min(0).max(1_000_000),
+});
+
+/** Points a stroke may carry in one piece, and events in one request. */
+export const LIVE_POINTER_MAX_POINTS = 400;
+export const LIVE_POINTER_MAX_EVENTS = 60;
+
+/** POST .../live-pointer: what the Mesa's pointer did on the document. */
+export const livePointerBodySchema = z.object({
+  documentId: assemblyEntityId,
+  events: z
+    .array(
+      z.discriminatedUnion("type", [
+        z.object({
+          type: z.literal("move"),
+          point: livePointSchema.nullable(),
+        }),
+        z.object({ type: z.literal("click"), point: livePointSchema }),
+        z.object({
+          type: z.literal("select"),
+          span: z
+            .object({ start: spanPointSchema, end: spanPointSchema })
+            .nullable(),
+        }),
+        z.object({
+          type: z.literal("stroke"),
+          id: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/),
+          points: z.array(livePointSchema).max(LIVE_POINTER_MAX_POINTS),
+          end: z.boolean(),
+          pinned: z.boolean(),
+        }),
+        z.object({ type: z.literal("clear") }),
+      ]),
+    )
+    .min(1)
+    .max(LIVE_POINTER_MAX_EVENTS),
+});
+
+const ballotCount = z.number().int().min(0).max(100_000);
+
+/** POST .../live-tally: a secret vote's running count, or null. */
+export const liveTallyBodySchema = z.object({
+  tally: z
+    .object({
+      inFavor: ballotCount,
+      against: ballotCount,
+      blank: ballotCount,
+      invalid: ballotCount,
+      present: ballotCount.nullable(),
+      majority: z.enum(MAJORITIES),
+    })
+    .nullable(),
+});
+
 // Compile-time checks: every parsed body is assignable to its API type.
 type Assignable<T, U extends T> = U;
 export type _AssemblySchemaChecks = [
@@ -240,4 +309,6 @@ export type _AssemblySchemaChecks = [
   Assignable<AgendaReorderBody, z.output<typeof agendaReorderBodySchema>>,
   Assignable<LiveStateBody, z.output<typeof liveStateBodySchema>>,
   Assignable<LiveScrollBody, z.output<typeof liveScrollBodySchema>>,
+  Assignable<LivePointerBody, z.output<typeof livePointerBodySchema>>,
+  Assignable<LiveTallyBody, z.output<typeof liveTallyBodySchema>>,
 ];

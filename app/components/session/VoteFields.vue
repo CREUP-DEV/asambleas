@@ -10,6 +10,7 @@ import {
   sessionFillPresent,
   sessionVoteOutcome,
 } from "~/composables/session/sessionModel";
+import { useOptionalSessionConsole } from "~/composables/session/useSessionConsole";
 
 /**
  * Vote entry used by every session dialog: method, counts, majority and
@@ -28,6 +29,16 @@ import {
  * (sessionFillPresent), so the field is not "optional" then.
  * Left undefined (the caller does not load counts), it only says that an
  * empty field takes the latest count, as the server does.
+ *
+ * Who votes is never typed here (user's decision of 2026-11-18): the
+ * members present are the latest headcount's, shown read only (a vote that
+ * already stores its own keeps it), and to change them the Mesa corrects
+ * the count. The members present who cast nothing abstain: abstentions are
+ * worked out, not typed, whenever that base is known. In the session
+ * console, a secret vote is counted live, ballot by ballot (one tile per
+ * kind of ballot, +1 and −1, the keys 1 to 4 and undo), and each change of
+ * the count goes to the projection (session.pushTally) until the form
+ * closes or leaves the secret method.
  */
 const props = withDefaults(
   defineProps<{
@@ -73,13 +84,9 @@ const majorityItems = computed(() =>
 );
 
 type CountKey = "inFavor" | "against" | "abstentions" | "blank" | "invalid";
-const COUNT_KEYS: CountKey[] = [
-  "inFavor",
-  "against",
-  "abstentions",
-  "blank",
-  "invalid",
-];
+/** What a voter casts; abstentions are who cast nothing. */
+type BallotKey = Exclude<CountKey, "abstentions">;
+const BALLOT_KEYS: BallotKey[] = ["inFavor", "against", "blank", "invalid"];
 
 function setCount(key: CountKey | "present", value: number | null | undefined) {
   const next = { ...vote.value };
@@ -118,10 +125,106 @@ const cast = computed(
     (vote.value.invalid ?? 0),
 );
 const onPresent = computed(() => props.settings.denominator === "present");
-/** A headcount the field falls back on: "Opcional" would mislead then. */
-const hasHeadcount = computed(
-  () => onPresent.value && Boolean(props.headcount),
+
+/**
+ * Who votes: the vote's own figure when it stores one (a correction keeps
+ * it), else the latest headcount's; null without either.
+ */
+const base = computed<number | null>(
+  () => vote.value.present ?? props.headcount?.present ?? null,
 );
+const ballots = computed(() =>
+  BALLOT_KEYS.reduce((sum, key) => sum + (vote.value[key] ?? 0), 0),
+);
+// The members present who cast nothing abstain.
+watch(
+  [base, ballots, assent],
+  () => {
+    if (assent.value || base.value === null) return;
+    const value = Math.max(0, base.value - ballots.value);
+    if (vote.value.abstentions !== value) {
+      vote.value = { ...vote.value, abstentions: value };
+    }
+  },
+  { immediate: true },
+);
+
+// A secret vote counted live ---------------------------------------------------
+
+const session = useOptionalSessionConsole();
+/** Counting ballot by ballot, which the projection follows. */
+const liveCount = computed(
+  () => vote.value.method === "secret" && Boolean(session?.inSession.value),
+);
+const { enabled: shortcutsEnabled } = useSingleKeyShortcuts();
+const shortcutsOn = computed(() => liveCount.value && shortcutsEnabled.value);
+/** The ballots added, in order, so «Deshacer» takes the last one back. */
+const history = ref<BallotKey[]>([]);
+
+function addBallot(key: BallotKey): void {
+  setCount(key, (vote.value[key] ?? 0) + 1);
+  history.value = [...history.value, key];
+}
+function removeBallot(key: BallotKey): void {
+  const current = vote.value[key] ?? 0;
+  if (current === 0) return;
+  setCount(key, current - 1);
+  const index = history.value.lastIndexOf(key);
+  if (index !== -1) {
+    history.value = history.value.filter((_, at) => at !== index);
+  }
+}
+function undoBallot(): void {
+  const key = history.value.at(-1);
+  if (!key) return;
+  history.value = history.value.slice(0, -1);
+  setCount(key, Math.max(0, (vote.value[key] ?? 0) - 1));
+}
+
+/** Keys 1 to 4 add a ballot, except in a field (WCAG 2.1.4: they can be off). */
+useEventListener(window, "keydown", (event: KeyboardEvent) => {
+  if (!shortcutsOn.value || event.ctrlKey || event.metaKey || event.altKey) {
+    return;
+  }
+  const target = event.target as HTMLElement | null;
+  if (target?.closest("input, textarea, select, [contenteditable='true']")) {
+    return;
+  }
+  const index = Number(event.key) - 1;
+  const key = BALLOT_KEYS[index];
+  if (!key) return;
+  event.preventDefault();
+  addBallot(key);
+});
+
+let tallyShown = false;
+watch(
+  () =>
+    liveCount.value
+      ? {
+          inFavor: vote.value.inFavor ?? 0,
+          against: vote.value.against ?? 0,
+          blank: vote.value.blank ?? 0,
+          invalid: vote.value.invalid ?? 0,
+          present: base.value,
+          majority: vote.value.majority ?? "simple",
+        }
+      : null,
+  (tally) => {
+    if (!session) return;
+    if (tally) {
+      session.pushTally(tally);
+      tallyShown = true;
+    } else if (tallyShown) {
+      session.pushTally(null);
+      tallyShown = false;
+    }
+  },
+  { deep: true, immediate: true },
+);
+onBeforeUnmount(() => {
+  if (tallyShown) session?.pushTally(null);
+});
 const now = useAppNow();
 /** When the latest count was taken, with its day when not today (Madrid). */
 const taken = computed(() =>
@@ -246,9 +349,77 @@ const denominatorText = computed(() =>
       <legend class="text-highlighted mb-2 text-sm font-medium">
         {{ t("session.vote.counts") }}
       </legend>
-      <div class="grid grid-cols-2 gap-3 sm:grid-cols-3">
+
+      <!-- A secret vote counted live: one tile per ballot, the room sees
+           the count as it goes. -->
+      <div v-if="liveCount" class="space-y-2">
+        <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          <div
+            v-for="(key, index) in BALLOT_KEYS"
+            :key="key"
+            class="border-default flex flex-col items-center gap-2 rounded-lg border p-3"
+          >
+            <span class="text-muted text-sm font-medium">
+              {{ t(`session.vote.${key}`) }}
+            </span>
+            <span
+              class="text-highlighted text-3xl font-bold tabular-nums"
+              aria-live="polite"
+            >
+              {{ vote[key] ?? 0 }}
+            </span>
+            <div class="flex items-center gap-1">
+              <UButton
+                size="lg"
+                icon="i-lucide-plus"
+                :label="t('session.vote.addBallot')"
+                :aria-label="
+                  t('session.vote.addBallotFor', {
+                    option: t(`session.vote.${key}`),
+                  })
+                "
+                :aria-keyshortcuts="shortcutsOn ? String(index + 1) : undefined"
+                @click="addBallot(key)"
+              />
+              <UButton
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-minus"
+                :aria-label="
+                  t('session.vote.removeBallotFor', {
+                    option: t(`session.vote.${key}`),
+                  })
+                "
+                :disabled="(vote[key] ?? 0) === 0"
+                @click="removeBallot(key)"
+              />
+            </div>
+            <UKbd v-if="shortcutsOn" :value="String(index + 1)" />
+          </div>
+        </div>
+        <div class="flex flex-wrap items-center gap-2">
+          <UButton
+            color="neutral"
+            variant="outline"
+            size="sm"
+            icon="i-lucide-undo-2"
+            :label="t('session.vote.undoBallot')"
+            :disabled="history.length === 0"
+            @click="undoBallot"
+          />
+          <p class="text-muted text-xs">
+            {{
+              shortcutsOn
+                ? t("session.vote.liveCountHintKeys")
+                : t("session.vote.liveCountHint")
+            }}
+          </p>
+        </div>
+      </div>
+
+      <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-4">
         <UFormField
-          v-for="key in COUNT_KEYS"
+          v-for="key in BALLOT_KEYS"
           :key="key"
           :label="t(`session.vote.${key}`)"
           :name="`${uid}-${key}`"
@@ -261,27 +432,43 @@ const denominatorText = computed(() =>
             @update:model-value="(value) => setCount(key, value)"
           />
         </UFormField>
-        <UFormField
-          :label="t('session.vote.present')"
-          :hint="hasHeadcount ? undefined : t('session.vote.optional')"
-          :name="`${uid}-present`"
+      </div>
+
+      <!-- Who votes comes from the latest headcount, never typed here; the
+           members present who cast nothing abstain. -->
+      <dl class="grid grid-cols-2 gap-3 text-sm">
+        <div class="border-default rounded-lg border px-3 py-2">
+          <dt class="text-muted text-xs">{{ t("session.vote.present") }}</dt>
+          <dd class="text-highlighted text-lg font-semibold tabular-nums">
+            {{ base ?? "—" }}
+          </dd>
+        </div>
+        <div
+          v-if="base !== null"
+          class="border-default rounded-lg border px-3 py-2"
         >
-          <!-- Left empty, the count's figure is the base: it shows as the
-               placeholder. -->
+          <dt class="text-muted text-xs">
+            {{ t("session.vote.abstentionsAuto") }}
+          </dt>
+          <dd class="text-highlighted text-lg font-semibold tabular-nums">
+            {{ vote.abstentions ?? 0 }}
+          </dd>
+        </div>
+        <UFormField
+          v-else
+          :label="t('session.vote.abstentions')"
+          :name="`${uid}-abstentions`"
+        >
           <UInputNumber
-            :model-value="vote.present ?? undefined"
+            :model-value="vote.abstentions ?? 0"
             :min="0"
             :max="100000"
-            :placeholder="
-              hasHeadcount && headcount
-                ? String(headcount.present)
-                : t('session.vote.presentPlaceholder')
-            "
             class="w-full"
-            @update:model-value="(value) => setCount('present', value)"
+            @update:model-value="(value) => setCount('abstentions', value)"
           />
         </UFormField>
-      </div>
+      </dl>
+      <p class="text-muted text-xs">{{ t("session.vote.presentFixed") }}</p>
       <!-- A count from another day: the same line, with a warning icon and
            a hint to count again. It never blocks the vote. -->
       <p

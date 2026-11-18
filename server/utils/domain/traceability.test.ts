@@ -104,6 +104,14 @@ const NON_RECORDING_MUTATIONS: Readonly<Record<string, string>> = {
   // the projection follows. It changes nothing of the assembly.
   "server/api/assemblies/[assembly]/live-scroll.post.ts":
     "scroll position for the projection, memory only",
+  // What the Mesa's pointer does on the document in debate (moves, clicks,
+  // strokes), many times a second: sent to the streams and forgotten.
+  "server/api/assemblies/[assembly]/live-pointer.post.ts":
+    "pointer for the projection, never kept",
+  // A secret vote's running count, ballot by ballot, for the projection:
+  // memory only; the vote is recorded (recordEvent) once counted.
+  "server/api/assemblies/[assembly]/live-tally.post.ts":
+    "running count for the projection, memory only",
 };
 
 interface ModuleInfo {

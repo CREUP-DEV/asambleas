@@ -43,6 +43,8 @@ useHead(() => ({
 }));
 
 const isDesktop = useMediaQuery("(min-width: 1024px)");
+/** The debate card, which folds into SessionNowBar as the column scrolls. */
+const nowCard = ref<HTMLElement | null>(null);
 
 // One line under each folded section's title, so it is useful folded.
 const headcountSummary = computed(() => {
@@ -312,7 +314,11 @@ defineShortcuts({
             }"
           >
             <template #body>
-              <SessionNowPanel />
+              <!-- One scroll: the card folds into a bar stuck on top. -->
+              <SessionNowBar :target="nowCard" />
+              <div ref="nowCard">
+                <SessionNowPanel />
+              </div>
               <SessionAmendmentQueue />
             </template>
           </UDashboardPanel>

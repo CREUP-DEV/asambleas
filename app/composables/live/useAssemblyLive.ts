@@ -1,5 +1,10 @@
 import type { MaybeRefOrGetter, Ref } from "vue";
-import type { LiveEventDto, LiveScrollDto } from "~~/shared/types/api";
+import type {
+  LiveEventDto,
+  LivePointerDto,
+  LiveScrollDto,
+  LiveTallyDto,
+} from "~~/shared/types/api";
 import {
   LIVE_ONLINE_JITTER_MS,
   LIVE_WATCHDOG_TICK_MS,
@@ -94,6 +99,10 @@ export function useAssemblyLive(
      * batched: each one is delivered as it comes.
      */
     onScroll?: (scroll: LiveScrollDto) => void;
+    /** What the Mesa's pointer does on that document (`pointer` events). */
+    onPointer?: (pointer: LivePointerDto) => void;
+    /** A secret vote's running count (`tally` events). */
+    onTally?: (tally: LiveTallyDto) => void;
   } = {},
 ): { connected: Readonly<Ref<boolean>>; polling: Readonly<Ref<boolean>> } {
   const connected = ref(false);
@@ -262,6 +271,32 @@ export function useAssemblyLive(
         );
       } catch {
         // A malformed position is dropped; the next one comes soon.
+      }
+    });
+
+    stream.addEventListener("tally", (event) => {
+      if (gen !== generation || source !== stream) return;
+      lastMessageAt = Date.now();
+      if (!options.onTally) return;
+      try {
+        options.onTally(
+          JSON.parse((event as MessageEvent).data as string) as LiveTallyDto,
+        );
+      } catch {
+        // A malformed one is dropped; the next ballot sends it again.
+      }
+    });
+
+    stream.addEventListener("pointer", (event) => {
+      if (gen !== generation || source !== stream) return;
+      lastMessageAt = Date.now();
+      if (!options.onPointer) return;
+      try {
+        options.onPointer(
+          JSON.parse((event as MessageEvent).data as string) as LivePointerDto,
+        );
+      } catch {
+        // A malformed one is dropped.
       }
     });
 

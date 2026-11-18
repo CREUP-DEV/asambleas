@@ -2245,6 +2245,83 @@ export interface LiveScrollDto {
 
 export type LiveScrollBody = Omit<LiveScrollDto, "at">;
 
+/**
+ * A point of the document in debate: the block of text or the page it
+ * falls in and where inside it, as fractions of its box (0 to 1), so it
+ * lands on the same place on any screen.
+ */
+export type LivePoint =
+  | { block: string; x: number; y: number }
+  | { page: number; x: number; y: number };
+
+/**
+ * What the Mesa's pointer does on the document in debate (user's decision
+ * of 2026-11-18): it moves (null: it left the document), clicks (the
+ * projection draws ripples), draws a stroke (sent piece by piece under one
+ * id; `end` closes it, `pinned` keeps it until cleared instead of letting
+ * it fade), selects text (a text document: the projection highlights the
+ * same words; null drops it) or clears the strokes and the selection.
+ */
+/**
+ * A stretch of a text document: from a block and a character offset into
+ * its text as it shows to another, so it lands on the same words.
+ */
+export interface LiveTextSpan {
+  start: { blockId: string; offset: number };
+  end: { blockId: string; offset: number };
+}
+
+export type LivePointerEvent =
+  | { type: "move"; point: LivePoint | null }
+  | { type: "select"; span: LiveTextSpan | null }
+  | { type: "click"; point: LivePoint }
+  | {
+      type: "stroke";
+      id: string;
+      points: LivePoint[];
+      end: boolean;
+      pinned: boolean;
+    }
+  | { type: "clear" };
+
+/**
+ * POST .../live-pointer (session:moderate), and the `pointer` event of
+ * GET .../live with `at`. Never stored nor recorded.
+ */
+export interface LivePointerBody {
+  documentId: string;
+  events: LivePointerEvent[];
+}
+
+export interface LivePointerDto extends LivePointerBody {
+  at: IsoDate;
+}
+
+/**
+ * A secret vote being counted, ballot by ballot, so the projection shows
+ * the running count (user's decision of 2026-11-18). `present` is the base
+ * the Mesa counts on (the latest headcount), null without one. Never
+ * stored: the vote is recorded as usual once counted.
+ */
+export interface LiveTally {
+  inFavor: number;
+  against: number;
+  blank: number;
+  invalid: number;
+  present: number | null;
+  majority: Majority;
+}
+
+/** POST .../live-tally (session:moderate): the count, or null when it ends. */
+export interface LiveTallyBody {
+  tally: LiveTally | null;
+}
+
+/** The `tally` event of GET .../live, and GET .../live-tally. */
+export interface LiveTallyDto extends LiveTallyBody {
+  at: IsoDate;
+}
+
 /** Server-sent event pushed on GET /api/assemblies/[assembly]/live. */
 export interface LiveEventDto {
   entityType: string;

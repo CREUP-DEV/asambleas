@@ -6,8 +6,11 @@ import type {
   DocumentDto,
   HeadcountsDto,
   LiveEventDto,
+  LivePointerDto,
   LiveScrollDto,
   LiveStateDto,
+  LiveTally,
+  LiveTallyDto,
   SpeakersDto,
   VoteDto,
 } from "~~/shared/types/api";
@@ -25,6 +28,12 @@ import {
 import { agendaWithTitles } from "~/utils/agendaTitles";
 import { formatMoment, formatTime } from "~/utils/format";
 import { applyScrollAnchor } from "~/utils/scrollAnchor";
+import {
+  EMPTY_POINTER_STATE,
+  applyPointerEvents,
+  type PointerState,
+} from "~/composables/session/pointerState";
+import { usePointerFade } from "~/composables/session/usePointerFade";
 import {
   affectsAgenda,
   affectsLiveVote,
@@ -318,7 +327,69 @@ function onLive(events: LiveEventDto[]): void {
  * that opens, or moves to another document, reads the last one.
  */
 const documentBox = ref<HTMLElement | null>(null);
+const documentContent = ref<HTMLElement | null>(null);
 const mesaScroll = ref<LiveScrollDto | null>(null);
+
+/**
+ * The Mesa's pointer on the document: the dot, the ripples of a click and
+ * the strokes it draws, placed on the same block or page (SessionPointer-
+ * Layer), fading as they do on the Mesa's screen. A new document starts
+ * clean.
+ */
+const mesaPointer = shallowRef<PointerState>(EMPTY_POINTER_STATE);
+
+/**
+ * A secret vote the Mesa is counting, ballot by ballot (user's decision of
+ * 2026-11-18): each ballot arrives on the stream (`tally`) and the count
+ * grows on screen until the vote is recorded, when its result takes over.
+ * A projection that opens mid-count reads the last one.
+ */
+const tally = ref<LiveTally | null>(null);
+function onTally(dto: LiveTallyDto): void {
+  tally.value = dto.tally;
+}
+async function readTally(): Promise<void> {
+  try {
+    const dto = await read<LiveTallyDto | null>(
+      `${assemblyUrl.value}/live-tally`,
+    );
+    tally.value = dto?.tally ?? null;
+  } catch {
+    // The next ballot brings it.
+  }
+}
+onMounted(() => void readTally());
+const tallyRows = computed(() => {
+  const value = tally.value;
+  if (!value) return [];
+  const keys = ["inFavor", "against", "blank", "invalid"] as const;
+  const top = Math.max(1, ...keys.map((key) => value[key]));
+  return keys.map((key) => ({
+    key,
+    count: value[key],
+    share: value[key] / top,
+  }));
+});
+const tallyCast = computed(() =>
+  tally.value
+    ? tally.value.inFavor +
+      tally.value.against +
+      tally.value.blank +
+      tally.value.invalid
+    : 0,
+);
+usePointerFade(mesaPointer);
+function onMesaPointer(pointer: LivePointerDto): void {
+  if (pointer.documentId !== documentId.value) return;
+  mesaPointer.value = applyPointerEvents(
+    mesaPointer.value,
+    pointer.events,
+    Date.now(),
+  );
+}
+watch(documentId, () => {
+  mesaPointer.value = EMPTY_POINTER_STATE;
+});
 
 function followMesaScroll(): void {
   const scroll = mesaScroll.value;
@@ -348,6 +419,8 @@ watch(documentBox, () => followMesaScroll(), { flush: "post" });
 
 const { connected, polling } = useAssemblyLive(() => assemblyId, onLive, {
   onScroll: onMesaScroll,
+  onPointer: onMesaPointer,
+  onTally,
 });
 
 // Until the first connection is ready the screen is connecting, not
@@ -833,8 +906,69 @@ useHead(() => ({
       class="flex flex-1 flex-col gap-[clamp(1rem,2vw,2rem)] px-[clamp(1rem,3vw,3rem)] py-[clamp(1rem,2vw,2rem)] text-[clamp(1.125rem,1.5vw,2rem)]"
       :class="{ 'min-h-0': fitsScreen }"
     >
+      <!-- A secret vote being counted: the count grows ballot by ballot. -->
       <section
-        v-if="vote && mode !== 'recess'"
+        v-if="tally && mode !== 'recess'"
+        role="status"
+        aria-live="polite"
+        class="border-primary/50 bg-primary/5 rounded-2xl border-4 px-[clamp(1rem,2.5vw,2.5rem)] py-[clamp(0.75rem,2vw,2rem)]"
+      >
+        <p
+          class="text-muted flex items-center gap-2 text-[clamp(1rem,1.4vw,1.5rem)] font-medium"
+        >
+          <span
+            class="bg-error size-[0.6em] rounded-full motion-safe:animate-pulse"
+            aria-hidden="true"
+          />
+          {{ t("projection.tally.title") }}
+        </p>
+        <dl
+          class="mt-[clamp(0.5rem,1vw,1rem)] grid grid-cols-2 gap-x-[clamp(1rem,3vw,3rem)] gap-y-[clamp(0.5rem,1vw,1rem)] lg:grid-cols-4"
+        >
+          <div v-for="row in tallyRows" :key="row.key" class="min-w-0">
+            <dt class="text-muted text-[clamp(0.875rem,1.2vw,1.375rem)]">
+              {{ t(`projection.vote.${row.key}`) }}
+            </dt>
+            <dd
+              class="text-[clamp(2.25rem,4.5vw,4.75rem)] leading-tight font-extrabold tabular-nums"
+            >
+              {{ row.count }}
+            </dd>
+            <div
+              class="bg-elevated h-[clamp(0.4rem,0.6vw,0.75rem)] overflow-hidden rounded-full"
+              aria-hidden="true"
+            >
+              <div
+                class="h-full rounded-full transition-[width] duration-300"
+                :class="
+                  row.key === 'inFavor'
+                    ? 'bg-success'
+                    : row.key === 'against'
+                      ? 'bg-error'
+                      : 'bg-(--ui-text-dimmed)'
+                "
+                :style="{ width: `${row.share * 100}%` }"
+              />
+            </div>
+          </div>
+        </dl>
+        <p
+          class="text-default mt-[clamp(0.5rem,1vw,1rem)] text-[clamp(1rem,1.6vw,1.75rem)] tabular-nums"
+        >
+          {{
+            tally.present !== null
+              ? t("projection.tally.castOf", {
+                  count: tallyCast,
+                  present: tally.present,
+                })
+              : t("projection.tally.cast", { count: tallyCast }, tallyCast)
+          }}
+          · {{ t(`session.enums.majority.${tally.majority}`) }}
+        </p>
+      </section>
+
+      <section
+        v-else-if="vote && mode !== 'recess'"
         role="status"
         aria-live="polite"
         aria-atomic="true"
@@ -1074,11 +1208,17 @@ useHead(() => ({
               ref="documentBox"
               class="projection-scroll border-default bg-elevated min-h-0 flex-1 overflow-y-auto rounded-2xl border p-[clamp(0.5rem,1vw,1rem)]"
             >
-              <DocumentPdfPages
-                :url="document.fileUrl"
-                :title="document.title"
-                @ready="followMesaScroll"
-              />
+              <div ref="documentContent" class="relative">
+                <DocumentPdfPages
+                  :url="document.fileUrl"
+                  :title="document.title"
+                  @ready="followMesaScroll"
+                />
+                <SessionPointerLayer
+                  :state="mesaPointer"
+                  :scope="documentContent"
+                />
+              </div>
             </div>
             <p v-else class="text-muted">
               {{ t("projection.pdfPending") }}
@@ -1095,7 +1235,13 @@ useHead(() => ({
             "
             class="projection-document projection-scroll border-default focus-visible:outline-primary min-h-0 flex-1 overflow-y-auto rounded-2xl border p-[clamp(1rem,2.5vw,2.5rem)] focus-visible:outline-2"
           >
-            <ContentView :blocks="previewBlocks" />
+            <div ref="documentContent" class="relative">
+              <ContentView :blocks="previewBlocks" />
+              <SessionPointerLayer
+                :state="mesaPointer"
+                :scope="documentContent"
+              />
+            </div>
           </div>
         </div>
         <nav

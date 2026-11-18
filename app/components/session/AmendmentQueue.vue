@@ -503,6 +503,26 @@ const failed = computed(
           </template>
         </UCollapsible>
       </section>
+
+      <!-- The text the amendments change, under them: the Mesa reads it
+           and the projection follows where it has it in view. -->
+      <section
+        v-if="takesAmendments"
+        class="space-y-2 pt-2"
+        aria-labelledby="session-queue-text-title"
+      >
+        <h2
+          id="session-queue-text-title"
+          class="text-highlighted text-base font-semibold"
+        >
+          {{
+            t("session.queue.documentText", {
+              title: document.reference ?? document.title,
+            })
+          }}
+        </h2>
+        <SessionDocumentPreview :document="document" />
+      </section>
     </template>
   </section>
 </template>

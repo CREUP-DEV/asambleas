@@ -9,7 +9,11 @@ import { toLiveEventDto } from "../../../utils/domain/assemblies";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 import type { AuthEventContext } from "../../../utils/auth/requireAuth";
 import { subscribeToAssembly } from "../../../utils/live/hub";
-import { subscribeToLiveScroll } from "../../../utils/live/scroll";
+import {
+  subscribeToLivePointer,
+  subscribeToLiveScroll,
+  subscribeToLiveTally,
+} from "../../../utils/live/scroll";
 import { markSeen } from "../../../utils/live/online";
 import {
   LIVE_HEARTBEAT_INTERVAL_MS,
@@ -26,6 +30,8 @@ const RETRY_MS = 5_000;
  *   refetch through the permission-checked endpoints);
  * - `scroll` with a LiveScrollDto whenever the Mesa scrolls the document in
  *   debate (server/utils/live/scroll.ts), never recorded;
+ * - `pointer` with a LivePointerDto as the Mesa points or draws on it;
+ * - `tally` with a LiveTallyDto as the Mesa counts a secret vote;
  * - a `ping` heartbeat every 25 s (liveHeartbeat), which clients use to
  *   tell a live stream from one that died in silence, and which keeps the
  *   viewer online (server/utils/live/online.ts) while the page stays open.
@@ -51,6 +57,12 @@ export default defineEventHandler(async (event) => {
   const unsubscribeScroll = subscribeToLiveScroll(assembly.id, (scroll) => {
     push({ event: "scroll", data: JSON.stringify(scroll) });
   });
+  const unsubscribeTally = subscribeToLiveTally(assembly.id, (tally) => {
+    push({ event: "tally", data: JSON.stringify(tally) });
+  });
+  const unsubscribePointer = subscribeToLivePointer(assembly.id, (pointer) => {
+    push({ event: "pointer", data: JSON.stringify(pointer) });
+  });
   // A page with the stream open keeps its person online while idle; the
   // real user, never the account an Admin acts as.
   const viewerId = (event.context as AuthEventContext).realUser?.id ?? null;
@@ -66,6 +78,8 @@ export default defineEventHandler(async (event) => {
     clearInterval(heartbeat);
     unsubscribe();
     unsubscribeScroll();
+    unsubscribePointer();
+    unsubscribeTally();
     stream.close().catch(() => undefined);
   };
   stream.onClosed(cleanup);

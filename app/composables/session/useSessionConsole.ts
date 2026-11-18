@@ -17,6 +17,7 @@ import type {
   SessionProgressDto,
   LiveEventDto,
   LiveStateBody,
+  LiveTally,
   LiveStateDto,
   OutcomeAction,
   PositionBody,
@@ -1023,6 +1024,33 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     return setLive({ recess }, { key: "recess" });
   }
 
+  /**
+   * A secret vote's running count for the projection (POST .../live-tally),
+   * at most every TALLY_SEND_MS, the last one always; null ends it at once.
+   * Memory only on the server: the vote is recorded as usual once counted.
+   */
+  const TALLY_SEND_MS = 120;
+  let tallyTimer: ReturnType<typeof setTimeout> | undefined;
+  let pendingTally: LiveTally | null = null;
+  function sendTally(): void {
+    tallyTimer = undefined;
+    void api
+      .send(`${assemblyUrl.value}/live-tally`, {
+        method: "POST",
+        body: { tally: pendingTally },
+      })
+      .catch(() => undefined);
+  }
+  function pushTally(tally: LiveTally | null): void {
+    pendingTally = tally;
+    if (tally === null) {
+      clearTimeout(tallyTimer);
+      sendTally();
+      return;
+    }
+    if (!tallyTimer) tallyTimer = setTimeout(sendTally, TALLY_SEND_MS);
+  }
+
   /** The default limit of a speaking turn, in seconds. */
   function setSpeakingLimit(seconds: number): Promise<boolean> {
     return setLive(
@@ -1074,6 +1102,22 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   const headcountDialog = reactive({ open: false });
   /** The grid that writes down who asks for the floor. */
   const speakerAddDialog = reactive({ open: false });
+  /**
+   * The Mesa's pointer on the document on screen, shared by the document
+   * preview (which draws and sends) and the bar stuck on top of the debate
+   * column (which offers the controls while the preview scrolls by):
+   * `available` while the preview shows the live document in session,
+   * `clears` counts «Borrar trazos». On a text document (`text`) the Mesa
+   * draws or selects words (`mode`), which the projection highlights.
+   */
+  const pointerTools = reactive({
+    available: false,
+    text: false,
+    on: false,
+    mode: "draw" as "draw" | "select",
+    pinned: false,
+    clears: 0,
+  });
   /** The vote on an agenda item, for the item it was opened on. */
   const itemVoteDialog = reactive({
     open: false,
@@ -2164,6 +2208,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     setMessage,
     setRecess,
     setSpeakingLimit,
+    pushTally,
     setSpeakersVisible,
     // speaking turns
     speakers,
@@ -2188,6 +2233,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     speakerRenameDialog,
     headcountDialog,
     speakerAddDialog,
+    pointerTools,
     itemVoteDialog,
     anyDialogOpen,
     confirm,
@@ -2231,6 +2277,15 @@ const SESSION_CONSOLE_KEY: InjectionKey<SessionConsole> =
 /** Makes the console available to every session component below the page. */
 export function provideSessionConsole(state: SessionConsole): void {
   provide(SESSION_CONSOLE_KEY, state);
+}
+
+/**
+ * The console when the component is inside the session page, else null:
+ * a form shared with other pages (the vote fields) adds what only the
+ * console does, such as counting a secret vote live.
+ */
+export function useOptionalSessionConsole(): SessionConsole | null {
+  return inject(SESSION_CONSOLE_KEY, null);
 }
 
 /** The console provided by the session page. */

@@ -3632,6 +3632,18 @@
     }
   },
   "session": {
+    "pointer": {
+      "toggle": "Puntero",
+      "modeLabel": "Qué hace el puntero al arrastrar",
+      "draw": "Dibujar",
+      "select": "Seleccionar texto",
+      "pin": "Fijar trazos",
+      "clear": "Borrar trazos",
+      "hint": "La proyección muestra el puntero sobre el documento. Haz clic para señalar y arrastra para dibujar; los trazos se desvanecen solos salvo que los fijes."
+    },
+    "nowBar": {
+      "backUp": "Volver arriba"
+    },
     "progress": {
       "projected": "Proyectado",
       "treated": "Tratado"
@@ -3836,6 +3848,14 @@
       "itemHasVotedDocuments": "@:common.errors.itemHasVotedDocuments"
     },
     "vote": {
+      "abstentionsAuto": "Abstenciones (no han votado)",
+      "presentFixed": "Los presentes son los del último recuento y las abstenciones, quienes no han votado. Para cambiar los presentes, corrige el recuento.",
+      "addBallot": "Voto",
+      "addBallotFor": "Añadir un voto: {option}",
+      "removeBallotFor": "Quitar un voto: {option}",
+      "undoBallot": "Deshacer el último",
+      "liveCountHint": "Cada voto se ve al momento en la proyección.",
+      "liveCountHintKeys": "Teclas 1 a 4: a favor, en contra, en blanco y nulo. Cada voto se ve al momento en la proyección.",
       "title": "Votación de {code}",
       "description": "Las enmiendas se deciden por mayoría simple salvo que la Mesa indique otra.",
       "method": "Método",
@@ -3846,7 +3866,7 @@
       "abstentions": "Abstenciones",
       "blank": "En blanco",
       "invalid": "Nulos",
-      "present": "Presentes",
+      "present": "Presentes con derecho a voto",
       "optional": "Opcional",
       "presentPlaceholder": "Sin indicar",
       "note": "Nota",
@@ -3869,7 +3889,7 @@
       "inconsistent": "Hay más votos emitidos que miembros presentes.",
       "submit": "Registrar votación",
       "assentNoCount": "Por asentimiento no hay recuento: el texto queda aprobado.",
-      "presentFromHeadcount": "Si lo dejas vacío, se toman los presentes del último recuento de la Mesa.",
+      "presentFromHeadcount": "Se toman los presentes del último recuento de la Mesa.",
       "presentFromCount": "Presentes del recuento de las {time}.",
       "presentCorrected": "Corregido para esta votación. El recuento de las {time} da {present}.",
       "noHeadcount": "Todavía no hay recuento: indica los presentes o haz un recuento antes de votar.",
@@ -4351,6 +4371,11 @@
     }
   },
   "projection": {
+    "tally": {
+      "title": "Votación secreta · recuento en curso",
+      "castOf": "{count} de {present} presentes han votado",
+      "cast": "1 voto contado | {count} votos contados"
+    },
     "recess": {
       "title": "Receso",
       "resumesAt": "Se retoma a las {time}",
