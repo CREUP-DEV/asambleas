@@ -409,6 +409,7 @@ onBeforeUnmount(() => {
             :key="document.id"
             :url="document.fileUrl"
             :title="document.title"
+            :text-layer="false"
           />
           <SessionPointerLayer :state="pointerState" :scope="content" />
           <div

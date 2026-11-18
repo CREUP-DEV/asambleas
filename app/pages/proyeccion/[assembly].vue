@@ -1212,6 +1212,7 @@ useHead(() => ({
                 <DocumentPdfPages
                   :url="document.fileUrl"
                   :title="document.title"
+                  :text-layer="false"
                   @ready="followMesaScroll"
                 />
                 <SessionPointerLayer

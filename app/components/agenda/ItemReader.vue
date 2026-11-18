@@ -36,9 +36,8 @@ import { isDocumentLiveBatch } from "~/composables/document/useDocument";
  * (DocumentNotes), marked on the text, and "Añadir nota aquí" is in the
  * text's right-click menu.
  *
- * Phones get the PDF as a card with its button (DocumentPdfViewer) and the
- * text in place. The embedded viewer has no "open in a new tab" of its own
- * here: the room goes to the document.
+ * A PDF shows its pages in place on every screen (DocumentPdfViewer), with
+ * no "open in a new tab" of its own here: the room goes to the document.
  */
 const props = defineProps<{
   itemId: string;

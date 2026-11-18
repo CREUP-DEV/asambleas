@@ -196,29 +196,6 @@ const routeRules = {
       rateLimiter: false,
     },
   },
-  // Uploaded PDFs are shown inside the document page and the convocatoria
-  // (DocumentPdfViewer): only these routes may be framed, and only by the
-  // platform itself.
-  "/api/uploads/documents/**": {
-    security: {
-      headers: {
-        contentSecurityPolicy: {
-          "frame-ancestors": ["'self'"],
-        },
-        xFrameOptions: "SAMEORIGIN",
-      },
-    },
-  },
-  "/api/uploads/convocations/**": {
-    security: {
-      headers: {
-        contentSecurityPolicy: {
-          "frame-ancestors": ["'self'"],
-        },
-        xFrameOptions: "SAMEORIGIN",
-      },
-    },
-  },
   "/_nuxt/**": {
     headers: {
       "Cache-Control": "public, max-age=31536000, immutable",
@@ -323,11 +300,11 @@ export default defineNuxtConfig({
         "img-src": ["'self'", "data:", "blob:"],
         "font-src": ["'self'", "data:"],
         "connect-src": ["'self'", ...(umamiOrigin ? [umamiOrigin] : [])],
-        // The document page frames its uploaded PDF; every other page still
-        // refuses to be framed (frame-ancestors).
-        "frame-src": ["'self'"],
-        // pdf.js draws the PDFs the session follows in a worker of our own
-        // origin (DocumentPdfPages).
+        // Nothing is framed: PDFs are drawn in the page (DocumentPdfPages).
+        // Only Nuxt DevTools, in development, frames a page of our own.
+        "frame-src": isDev ? ["'self'"] : ["'none'"],
+        // pdf.js draws every PDF in a worker of our own origin
+        // (DocumentPdfPages).
         "worker-src": ["'self'", "blob:"],
         "frame-ancestors": ["'none'"],
         "object-src": ["'none'"],

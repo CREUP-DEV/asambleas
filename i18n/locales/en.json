@@ -3556,7 +3556,6 @@
     "text": {
       "file": "PDF document",
       "fileDescription": "This document was uploaded as a PDF and cannot be amended on the platform.",
-      "openPdf": "Open the PDF",
       "openPdfTab": "Open in a new tab",
       "pdfFrame": "PDF of “{title}”",
       "unpublished": "Unpublished document",

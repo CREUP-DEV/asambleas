@@ -27,8 +27,8 @@ const ACTIVITY_EVENTS = [
  * (POST .../documents/[document]/reading, docs/design.md "Statistics"):
  * one view when it opens, then every READING_BEAT_MS the seconds the page
  * was visible with someone at it (a key, a scroll, the pointer or a touch
- * in the last READING_IDLE_MS, or the focus in the embedded PDF, whose
- * events the page never sees). A switch to another document, a hidden tab
+ * in the last READING_IDLE_MS; a PDF is drawn in the page itself,
+ * DocumentPdfPages, so its scrolling counts too). A switch to another document, a hidden tab
  * or leaving the page sends what is left. `url` is the document's reading
  * endpoint, or null while there is nothing published to report.
  *
@@ -47,9 +47,7 @@ export function useDocumentReading(url: MaybeRefOrGetter<string | null>): void {
 
   function active(): boolean {
     if (document.visibilityState !== "visible") return false;
-    const focusInFrame =
-      document.hasFocus() && document.activeElement?.tagName === "IFRAME";
-    return focusInFrame || Date.now() - lastActivity < READING_IDLE_MS;
+    return Date.now() - lastActivity < READING_IDLE_MS;
   }
 
   function post(

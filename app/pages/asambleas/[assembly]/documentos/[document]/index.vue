@@ -1781,8 +1781,8 @@ const filteredBlockLabel = computed(() =>
         :pending-description="t('workspace.text.filePending')"
         :open-button="false"
       />
-      <!-- Nothing outside a PDF follows its pages: having it whole on show
-           marks it read (useAutoReadMark). -->
+      <!-- After the PDF's last page: scrolling through it marks it read
+           (useAutoReadMark). -->
       <div
         v-if="document.format === 'file'"
         :key="document.id"

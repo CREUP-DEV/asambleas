@@ -400,7 +400,7 @@ gets 403 with the next step: ask the Secretaría to link it.
 | PUT    | `/api/assemblies/[assembly]/calendar`    | `assembly:manage` | `CalendarBody`. Upserts or deletes the milestones. Returns `AssemblyDto`.                                                                                                                |
 | POST   | `/api/assemblies/[assembly]/convocation` | `assembly:manage` | The signed convocatoria: multipart `file` (PDF up to 20 MB, type and signature checked) and `updatedAt`. Replaces the one before. Records `convocation_uploaded`. Returns `AssemblyDto`. |
 | DELETE | `/api/assemblies/[assembly]/convocation` | `assembly:manage` | `?updatedAt=`. Removes the signed convocatoria and its file. Records `convocation_removed`. Returns `AssemblyDto`.                                                                       |
-| GET    | `/api/uploads/convocations/[filename]`   | visible           | The signed convocatoria (`AssemblyDto.convocationFile.url`) to whoever sees the assembly. May be framed by the platform only.                                                            |
+| GET    | `/api/uploads/convocations/[filename]`   | visible           | The signed convocatoria (`AssemblyDto.convocationFile.url`) to whoever sees the assembly. Drawn in the page by pdf.js, never framed.                                                     |
 | GET    | `/api/assemblies/[assembly]/review`      | see notes         | `ReviewQueueDto`, the Secretaría's validation inbox. `document:manage` or `amendment:review`, otherwise 403. See "Review and work" below.                                                |
 
 **Calendar warnings.** `calendarWarnings` comes from `checkCalendar` with the
