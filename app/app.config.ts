@@ -40,7 +40,12 @@ export default defineAppConfig({
     // and panels fill the group, never a whole screen (min-h-svh), or they
     // overflow it by the banner's height and lose their header and footer.
     dashboardSidebar: { slots: { root: "min-h-full" } },
-    dashboardPanel: { slots: { root: "min-h-full" } },
+    // The panel's body scrolls, so it holds what is positioned inside it:
+    // without `relative` an absolute element (every `sr-only` text) takes a
+    // containing block outside it, escapes its scroll and stretches the
+    // dashboard's own scroll to where it sits, a long empty stretch below a
+    // tall page (the control sheet's count after its table).
+    dashboardPanel: { slots: { root: "min-h-full", body: "relative" } },
     colors: {
       primary: "creup-red",
       secondary: "creup-blue",
