@@ -508,6 +508,7 @@ describe("the members list", () => {
     university: null,
     universityAcronym: null,
     holderName: null,
+    image: null,
     region: null,
     source: "manual",
     active,

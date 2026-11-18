@@ -14,6 +14,7 @@ import {
   genericExecutiveMemberDto,
   toMemberDto,
 } from "../../utils/members/dto";
+import { memberImages } from "../../utils/members/images";
 
 /**
  * Active members first, by acronym. `?all=1` also returns inactive ones.
@@ -26,6 +27,10 @@ import {
  * to name them as authors. It carries members, never who acts for them
  * nor who holds an office, and what that account reads outside the
  * composer is the generic "CEA".
+ *
+ * Each member carries the photo of an account that acts for it
+ * (`image`, memberImages), for its avatar; an office's, like who holds
+ * it, only for those who see the offices.
  */
 export default defineEventHandler(async (event): Promise<MemberDto[]> => {
   const actor = await requireActor(event);
@@ -36,22 +41,32 @@ export default defineEventHandler(async (event): Promise<MemberDto[]> => {
 
   const forAmendment =
     query.data.for !== undefined && canNameExecutiveAuthors(actor);
-  const rows = await db
-    .select()
-    .from(members)
-    .where(
-      query.data.all && !forAmendment ? undefined : eq(members.active, true),
-    )
-    .orderBy(desc(members.active), asc(members.acronym));
+  const [rows, images] = await Promise.all([
+    db
+      .select()
+      .from(members)
+      .where(
+        query.data.all && !forAmendment ? undefined : eq(members.active, true),
+      )
+      .orderBy(desc(members.active), asc(members.acronym)),
+    memberImages(),
+  ]);
+  const toDto = (row: (typeof rows)[number]) =>
+    toMemberDto(row, images.get(row.id) ?? null);
   // The general order of every list of members: asociados, sectorials, the
   // others and the offices (the generic "CEA" among them), each by acronym.
   if (forAmendment) {
     return orderMembers(
-      rows.map((row) => ({ ...toMemberDto(row), holderName: null })),
+      rows.map((row) => ({
+        ...toDto(row),
+        holderName: null,
+        // An office's photo may be its holder's: like the name, not here.
+        image: row.kind === "executive" ? null : (images.get(row.id) ?? null),
+      })),
     );
   }
 
   return orderMembers(
-    collapseExecutive(actor, rows.map(toMemberDto), genericExecutiveMemberDto),
+    collapseExecutive(actor, rows.map(toDto), genericExecutiveMemberDto),
   );
 });

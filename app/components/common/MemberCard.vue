@@ -5,8 +5,9 @@ import { useMemberDirectory } from "~/composables/members/useMemberDirectory";
 
 /**
  * A member as the card its acronym opens on hover shows it (CommonMemberBadge,
- * the control sheet's lists): its avatar (the
- * text accounts acting for it read) and, never cut, what tells it apart:
+ * the control sheet's lists): its avatar (the photo of an account acting
+ * for it, MemberDto.image, else the text those accounts read) and, never
+ * cut, what tells it apart:
  * a council's university first, with its kind and its denomination under
  * it, since councils share the same or nearly the same denomination
  * (user's decision of 2026-11-17); any other member's denomination, with
@@ -86,7 +87,12 @@ const detail = computed(() => {
 
 <template>
   <div class="flex items-center gap-3">
-    <CommonAccountAvatar :alt="member.name" :text="avatarText" size="md" />
+    <CommonAccountAvatar
+      :src="full?.image"
+      :alt="member.name"
+      :text="avatarText"
+      size="md"
+    />
     <div class="min-w-0">
       <!-- The name alone, across the whole width; the tag goes with the
            kind on the line under it, so it never splits the name. -->

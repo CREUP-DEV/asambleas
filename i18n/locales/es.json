@@ -3030,7 +3030,8 @@
       "documentsLabel": "Documentos",
       "documents": "Sin documentos | {count} documento | {count} documentos",
       "agendaProvisional": "ODD provisional",
-      "nextMilestone": "Próximo plazo"
+      "nextMilestone": "Próximo plazo",
+      "live": "En curso"
     },
     "create": {
       "title": "Nueva asamblea",

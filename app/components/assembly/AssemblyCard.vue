@@ -4,7 +4,8 @@ import { formatAssemblyDateRange } from "~/composables/assembly/useCurrentAssemb
 import { assemblyPath } from "~/components/shell/Navigation.vue";
 
 /**
- * Summary card of an assembly: label, type, status, dates, place, document
+ * Summary card of an assembly: label, type, status (none while convened:
+ * «En curso» once it sits), dates, place, document
  * count and a countdown to its next milestone. The whole card links to the
  * assembly; the heading link carries the accessible name.
  */
@@ -82,10 +83,21 @@ const headingTag = computed(() => `h${props.headingLevel}`);
         <p class="text-muted mt-0.5 truncate text-sm">{{ typeName }}</p>
       </div>
       <div class="flex shrink-0 flex-col items-end gap-1">
+        <!-- Convened is how an upcoming assembly is expected to be: it says
+             nothing. A sitting one reads «En curso»; a draft (only its
+             managers see it) or a closed one says so. -->
+        <UBadge
+          v-if="isLive"
+          :label="t('assemblies.card.live')"
+          color="success"
+          variant="subtle"
+          size="sm"
+          icon="i-lucide-radio"
+        />
         <CommonStatusBadge
+          v-else-if="assembly.status !== 'convened'"
           kind="assembly"
           :value="assembly.status"
-          :icon="isLive ? 'i-lucide-radio' : undefined"
         />
         <UBadge
           v-if="agendaProvisional"

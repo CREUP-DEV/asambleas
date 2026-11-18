@@ -3030,7 +3030,8 @@
       "documentsLabel": "Documents",
       "documents": "No documents | {count} document | {count} documents",
       "agendaProvisional": "Provisional agenda",
-      "nextMilestone": "Next deadline"
+      "nextMilestone": "Next deadline",
+      "live": "In progress"
     },
     "create": {
       "title": "New assembly",

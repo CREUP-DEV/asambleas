@@ -15,12 +15,17 @@ export function toMemberRef(
   };
 }
 
-export function toMemberDto(member: MemberRow): MemberDto {
+/** `image`: the photo GET /api/members found for it (memberImages). */
+export function toMemberDto(
+  member: MemberRow,
+  image: string | null = null,
+): MemberDto {
   return {
     ...toMemberRef(member),
     university: member.university,
     universityAcronym: member.universityAcronym,
     holderName: member.holderName,
+    image,
     region: member.region,
     source: member.source,
     active: member.active,
@@ -41,6 +46,7 @@ export function genericExecutiveMemberDto(areas: MemberDto[]): MemberDto {
     university: null,
     universityAcronym: null,
     holderName: null,
+    image: null,
     region: null,
     source: "manual",
     active: areas.some((area) => area.active),

@@ -102,6 +102,13 @@ export interface MemberDto extends MemberRef {
    * any other member, and for everyone who may not see the offices.
    */
   holderName: string | null;
+  /**
+   * The stored photo of an account that acts for it (its logo, for a
+   * council or a sectorial), for its avatar; only in GET /api/members, and
+   * for an office only to those who see the offices (like `holderName`).
+   * Null otherwise and without one.
+   */
+  image: string | null;
   region: string | null;
   source: MemberSource;
   active: boolean;
