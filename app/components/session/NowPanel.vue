@@ -622,25 +622,31 @@ const announcement = computed(() => {
           :disabled="closed"
           @click="openItemVote"
         />
-        <UButton
-          v-if="nextAgenda"
-          :size="nextItemPrimary ? 'lg' : 'md'"
-          :color="nextItemPrimary ? 'primary' : 'neutral'"
-          :variant="nextItemPrimary ? 'solid' : 'ghost'"
-          trailing-icon="i-lucide-arrow-right"
-          :label="t('session.now.nextItem', { title: nextAgendaLabel })"
-          :disabled="closed || liveBusy"
-          @click="session.debateAgendaTarget(nextAgenda)"
-        />
-        <UDropdownMenu :items="itemMoreItems" :content="{ align: 'end' }">
+        <!-- One row that never wraps: a long next item gives way (cut short)
+             so that "Más" always fits beside it. -->
+        <div class="flex max-w-full min-w-0 items-center gap-2">
           <UButton
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-ellipsis"
-            :label="t('session.now.more')"
-            :disabled="liveBusy"
+            v-if="nextAgenda"
+            :size="nextItemPrimary ? 'lg' : 'md'"
+            :color="nextItemPrimary ? 'primary' : 'neutral'"
+            :variant="nextItemPrimary ? 'solid' : 'ghost'"
+            trailing-icon="i-lucide-arrow-right"
+            class="min-w-0"
+            :label="t('session.now.nextItem', { title: nextAgendaLabel })"
+            :disabled="closed || liveBusy"
+            @click="session.debateAgendaTarget(nextAgenda)"
           />
-        </UDropdownMenu>
+          <UDropdownMenu :items="itemMoreItems" :content="{ align: 'end' }">
+            <UButton
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-ellipsis"
+              class="shrink-0"
+              :label="t('session.now.more')"
+              :disabled="liveBusy"
+            />
+          </UDropdownMenu>
+        </div>
       </div>
     </template>
 

@@ -89,35 +89,32 @@ const defaultLimit = computed(
     DEFAULT_SPEAKING_LIMIT_SECONDS,
 );
 const limitBusy = computed(() => Boolean(session.busy.value["speaking-limit"]));
-/** Minutes, as the fields read them (half minutes allowed). */
-const toMinutes = (seconds: number) => Math.round(seconds / 30) / 2;
-const toSeconds = (minutes: number) =>
+/** Seconds within what the server takes (10 seconds to an hour). */
+const clampLimit = (seconds: number) =>
   Math.min(
     SPEAKING_LIMIT_MAX_SECONDS,
-    Math.max(SPEAKING_LIMIT_MIN_SECONDS, Math.round(minutes * 60)),
+    Math.max(SPEAKING_LIMIT_MIN_SECONDS, Math.round(seconds)),
   );
-const defaultMinutes = ref(toMinutes(defaultLimit.value));
+const defaultSeconds = ref(defaultLimit.value);
 watch(defaultLimit, (seconds) => {
-  defaultMinutes.value = toMinutes(seconds);
+  defaultSeconds.value = seconds;
 });
-function saveDefaultLimit(): void {
-  const minutes = Number(defaultMinutes.value);
-  if (!Number.isFinite(minutes) || minutes <= 0) {
-    defaultMinutes.value = toMinutes(defaultLimit.value);
+function saveDefaultLimit(typed: number): void {
+  if (!Number.isFinite(typed) || typed <= 0) {
+    defaultSeconds.value = defaultLimit.value;
     return;
   }
-  const seconds = toSeconds(minutes);
+  const seconds = clampLimit(typed);
+  defaultSeconds.value = seconds;
   if (seconds !== defaultLimit.value) void session.setSpeakingLimit(seconds);
 }
 
 /** The limit of the turn with the floor, changed from its popover. */
 const limitOpen = ref(false);
-const turnMinutes = ref(toMinutes(DEFAULT_SPEAKING_LIMIT_SECONDS));
+const turnSeconds = ref(DEFAULT_SPEAKING_LIMIT_SECONDS);
 watch(limitOpen, (isOpen) => {
   if (!isOpen || !speaking.value) return;
-  turnMinutes.value = toMinutes(
-    speaking.value.limitSeconds ?? defaultLimit.value,
-  );
+  turnSeconds.value = speaking.value.limitSeconds ?? defaultLimit.value;
 });
 async function saveTurnLimit(seconds: number | null): Promise<void> {
   const turn = speaking.value;
@@ -411,19 +408,7 @@ function duration(turn: SpeakingTurnDto): string | null {
           <p class="text-muted text-xs">{{ t("session.speakers.speaking") }}</p>
           <div class="mt-1 flex items-center gap-3">
             <p class="text-highlighted min-w-0 flex-1 text-lg font-semibold">
-              <span class="flex flex-wrap items-center gap-2">
-                <CommonMemberBadge
-                  v-if="speaking.member"
-                  :member="speaking.member"
-                  size="md"
-                />
-                <span v-if="speaking.speaker" class="min-w-0 truncate">
-                  {{ speaking.speaker }}
-                </span>
-                <span v-else-if="!speaking.member">
-                  {{ t("session.speakers.unnamed") }}
-                </span>
-              </span>
+              <LiveViewSpeakerName :turn="speaking" />
             </p>
             <SessionSpeakerTimer
               :started-at="speaking.startedAt"
@@ -475,21 +460,13 @@ function duration(turn: SpeakingTurnDto): string | null {
           />
           <template #content>
             <form
-              class="w-64 space-y-3 p-3"
-              @submit.prevent="saveTurnLimit(toSeconds(Number(turnMinutes)))"
+              class="w-72 space-y-3 p-3"
+              @submit.prevent="saveTurnLimit(clampLimit(turnSeconds))"
             >
-              <UFormField
-                :label="t('session.speakers.limitMinutes')"
-                name="session-turn-limit"
-              >
-                <UInputNumber
-                  v-model="turnMinutes"
-                  :min="0.5"
-                  :max="60"
-                  :step="0.5"
-                  class="w-full"
-                />
-              </UFormField>
+              <SessionDurationFields
+                v-model="turnSeconds"
+                :legend="t('session.speakers.limitMinutes')"
+              />
               <div class="flex flex-wrap justify-end gap-2">
                 <UButton
                   v-if="speaking.limitSeconds"
@@ -595,17 +572,11 @@ function duration(turn: SpeakingTurnDto): string | null {
               {{ index + 1 }}
             </span>
             <span class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
-              <CommonMemberBadge
-                v-if="turn.member"
-                :member="turn.member"
-                size="sm"
+              <LiveViewSpeakerName
+                :turn="turn"
+                badge-size="sm"
+                class="text-default text-sm"
               />
-              <span
-                v-if="turn.speaker || !turn.member"
-                class="text-default min-w-0 truncate text-sm"
-              >
-                {{ turn.speaker ?? t("session.speakers.unnamed") }}
-              </span>
               <UBadge
                 v-if="turn.priority"
                 color="warning"
@@ -703,22 +674,13 @@ function duration(turn: SpeakingTurnDto): string | null {
 
     <!-- Who sees the turns and the default limit: settings, so they come last. -->
     <div class="border-default space-y-3 border-t pt-3">
-      <UFormField
-        :label="t('session.speakers.limitDefault')"
+      <SessionDurationFields
+        v-model="defaultSeconds"
+        :legend="t('session.speakers.limitDefault')"
         :description="t('session.speakers.limitDefaultHint')"
-        name="session-speaking-limit"
-      >
-        <UInputNumber
-          v-model="defaultMinutes"
-          :min="0.5"
-          :max="60"
-          :step="0.5"
-          :disabled="limitBusy"
-          class="w-40"
-          @blur="saveDefaultLimit"
-          @keydown.enter.prevent="saveDefaultLimit"
-        />
-      </UFormField>
+        :disabled="limitBusy"
+        @commit="saveDefaultLimit"
+      />
       <USwitch
         :model-value="visible"
         :loading="visibleBusy"
