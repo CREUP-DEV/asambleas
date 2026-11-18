@@ -2,8 +2,9 @@
 import type { LiveSpeakers } from "~/components/live-view/-model";
 
 /**
- * Who has the floor and who speaks next, as the Mesa wrote them down. Only
- * rendered while the Mesa makes the turns visible (see liveSpeakers).
+ * Who has the floor, for how long, and who speaks next, as the Mesa wrote
+ * them down. Only rendered while the Mesa makes the turns visible (see
+ * liveSpeakers).
  *
  * `size="projection"` is the band at the bottom of the projection screen:
  * large type, the queue on one line, the heading for screen readers only.
@@ -53,13 +54,23 @@ const headingTag = computed(() => `h${props.headingLevel}`);
         </p>
         <p
           v-if="speakers.current"
-          class="text-highlighted text-xl font-semibold"
+          class="text-highlighted flex flex-wrap items-center gap-x-3 gap-y-1 text-xl font-semibold"
         >
-          <LiveViewSpeakerName
-            :turn="speakers.current"
-            badge-size="lg"
-            strong
-          />
+          <LiveViewSpeakerName :turn="speakers.current" badge-size="lg" />
+          <!-- Ticks every second: only in the browser. -->
+          <ClientOnly>
+            <span
+              v-if="speakers.current.startedAt"
+              class="text-muted inline-flex items-center gap-1.5 font-medium"
+            >
+              <UIcon
+                name="i-lucide-timer"
+                class="size-5 shrink-0"
+                aria-hidden="true"
+              />
+              <SessionSpeakerTimer :started-at="speakers.current.startedAt" />
+            </span>
+          </ClientOnly>
         </p>
         <p v-else class="text-muted">
           {{ t("liveView.speakers.empty") }}
@@ -103,13 +114,27 @@ const headingTag = computed(() => `h${props.headingLevel}`);
         </p>
         <p
           v-if="speakers.current"
-          class="text-highlighted text-[clamp(1.5rem,2.8vw,3.25rem)] leading-tight font-bold"
+          class="text-highlighted flex flex-wrap items-center gap-x-[clamp(1rem,2vw,2rem)] gap-y-1 text-[clamp(1.5rem,2.8vw,3.25rem)] leading-tight font-bold"
         >
           <LiveViewSpeakerName
             :turn="speakers.current"
             badge-size="xl"
-            strong
+            :tooltip="false"
           />
+          <!-- Ticks every second: only in the browser. -->
+          <ClientOnly>
+            <span
+              v-if="speakers.current.startedAt"
+              class="text-muted inline-flex items-center gap-[0.3em] font-semibold"
+            >
+              <UIcon
+                name="i-lucide-timer"
+                class="size-[0.9em] shrink-0"
+                aria-hidden="true"
+              />
+              <SessionSpeakerTimer :started-at="speakers.current.startedAt" />
+            </span>
+          </ClientOnly>
         </p>
         <p v-else class="text-muted text-[clamp(1.25rem,2vw,2.25rem)]">
           {{ t("liveView.speakers.empty") }}
@@ -124,7 +149,11 @@ const headingTag = computed(() => `h${props.headingLevel}`);
           class="flex flex-wrap items-center gap-x-[clamp(1rem,2vw,2rem)] gap-y-1 text-[clamp(1.125rem,1.8vw,2rem)] font-semibold"
         >
           <li v-for="turn in speakers.next" :key="turn.id" class="min-w-0">
-            <LiveViewSpeakerName :turn="turn" badge-size="lg" />
+            <LiveViewSpeakerName
+              :turn="turn"
+              badge-size="lg"
+              :tooltip="false"
+            />
           </li>
           <li
             v-if="speakers.more > 0"

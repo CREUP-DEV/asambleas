@@ -153,10 +153,11 @@ const agendaDocuments = computed(() => agenda.data.value?.documents ?? []);
 
 // Tabs and the document of «Enmiendas» live in the query ----------------------
 
-type SheetTab = "general" | "amendments" | "history";
+type SheetTab = "general" | "amendments" | "turns" | "history";
 /** The query value of each tab but «General», the default. */
 const TAB_SLUGS: Partial<Record<SheetTab, string>> = {
   amendments: "enmiendas",
+  turns: "turnos",
   history: "historial",
 };
 const TAB_QUERY = "vista";
@@ -192,6 +193,7 @@ function tabQuery(value: SheetTab): SheetQueryPatch {
 const tabItems = computed<TabsItem[]>(() => [
   { value: "general", label: t("controlSheet.tabs.general") },
   { value: "amendments", label: t("controlSheet.tabs.amendments") },
+  { value: "turns", label: t("controlSheet.tabs.turns") },
   { value: "history", label: t("controlSheet.tabs.history") },
 ]);
 
@@ -585,7 +587,7 @@ const listStateKey = computed(() =>
 watch(
   listStateKey,
   () => {
-    if (tab.value === "history") return;
+    if (tab.value !== "general" && tab.value !== "amendments") return;
     const general = tab.value === "general";
     const sort = general ? generalState.value.sort : amendmentState.value.sort;
     const column = general
@@ -1009,10 +1011,14 @@ function scrollToRow(id: string): void {
   });
 }
 
-/** Opens what the Mesa has on screen: its amendment, or its item. */
+/**
+ * Opens what the Mesa has on screen: its amendment, or its item. Never
+ * from «Turnos de palabra», which lists the whole assembly and has no row
+ * to follow: the debate moving on would take its reader out of it.
+ */
 async function followDebate(): Promise<void> {
   const state = live.value;
-  if (!follow.value || !state) return;
+  if (!follow.value || !state || tab.value === "turns") return;
   if (state.amendmentId && state.documentId) {
     const document = documentOptions.value.find(
       (entry) => entry.id === state.documentId,
@@ -1380,6 +1386,12 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
             </template>
           </template>
         </template>
+
+        <ControlSheetTurns
+          v-else-if="tab === 'turns'"
+          :turns="sheet?.turns ?? []"
+          :items="items"
+        />
 
         <!-- Its first page loads with it (async setup): a skeleton meanwhile. -->
         <Suspense v-else>

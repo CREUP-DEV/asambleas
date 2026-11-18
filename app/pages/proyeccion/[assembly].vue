@@ -46,11 +46,12 @@ import { ROOM_VIEW_QUERY } from "~~/shared/constants/roomView";
 
 /**
  * Projection screen for the room: chrome-free, large type, high contrast.
- * It shows what the Mesa puts in debate (agenda item, document, amendment
- * with the blocks it changes), the result of the last vote and the Mesa's
- * message; when nothing is in debate, the agenda. While the Mesa makes the
- * speaking turns visible, a band at the bottom shows who has the floor and
- * who is next. The header also shows the Mesa's latest headcount (members
+ * It shows what the Mesa puts in debate (a document with its text or its
+ * PDF beside the agenda, an amendment with the blocks it changes), the
+ * result of the last vote and the Mesa's message; when nothing is in
+ * debate, the agenda. While the Mesa makes the speaking turns visible, a
+ * band at the bottom shows who has the floor, for how long, and who is
+ * next. The header also shows the Mesa's latest headcount (members
  * present, quorum and the majorities it gives), for transparency. It
  * follows the live state and is open to every signed-in user.
  *
@@ -448,6 +449,29 @@ const mode = computed<"amendment" | "document" | "idle">(() => {
   if (document.value) return "document";
   return "idle";
 });
+/** The page takes the screen's height exactly: its box scrolls itself. */
+const fitsScreen = computed(() => mode.value !== "idle");
+
+/**
+ * The browser's viewer without its toolbar and side panel, the page as wide
+ * as the frame: the room reads the PDF, it does not work with it.
+ */
+function pdfPreviewUrl(url: string): string {
+  return `${url.split("#")[0]}#toolbar=0&navpanes=0&view=FitH`;
+}
+
+// Beside a document the agenda keeps to the screen's height: it scrolls
+// itself so the item in debate stays in view.
+const agendaNav = ref<HTMLElement | null>(null);
+watch(
+  () => [live.value?.agendaItemId, agendaNav.value, rows.value.length],
+  () => {
+    const current =
+      agendaNav.value?.querySelector<HTMLElement>("[aria-current]");
+    current?.scrollIntoView({ block: "nearest" });
+  },
+  { flush: "post" },
+);
 
 // An agenda item's vote names the item as the room reads it, from the
 // room view's agenda (the item on screen is in it, with its title only
@@ -665,29 +689,31 @@ useHead(() => ({
 <template>
   <div
     class="projection bg-default text-highlighted flex flex-col font-sans"
-    :class="mode === 'amendment' ? 'h-dvh' : 'min-h-dvh'"
+    :class="fitsScreen ? 'h-dvh' : 'min-h-dvh'"
   >
-    <!-- An amendment fits the screen (its box scrolls itself): the page
-         then takes the screen's height exactly. -->
+    <!-- An amendment or a document fits the screen (its box scrolls
+         itself): the page then takes the screen's height exactly. -->
     <header
       class="border-default flex flex-wrap items-center gap-x-6 gap-y-2 border-b px-[clamp(1rem,3vw,3rem)] py-[clamp(0.75rem,1.5vw,1.5rem)]"
     >
       <img
-        src="/marca/horizontal-corto-granate.svg"
+        src="/marca/vertical-granate.svg"
         :alt="t('projection.logo')"
-        class="h-[clamp(2rem,3.5vw,3.5rem)] w-auto dark:hidden"
+        class="projection-logo dark:hidden"
       />
       <img
-        src="/marca/horizontal-corto-blanco.svg"
+        src="/marca/vertical-beige.svg"
         :alt="t('projection.logo')"
-        class="hidden h-[clamp(2rem,3.5vw,3.5rem)] w-auto dark:block"
+        class="projection-logo hidden dark:block"
       />
       <div class="min-w-0 flex-1">
         <p class="text-[clamp(1.25rem,2vw,2.25rem)] leading-tight font-bold">
           {{ assembly?.label }}
         </p>
+        <!-- Only with an amendment on screen: otherwise the agenda beside
+             the text already names the item. -->
         <p
-          v-if="currentRow"
+          v-if="currentRow && mode === 'amendment'"
           class="text-muted truncate text-[clamp(1rem,1.4vw,1.5rem)]"
         >
           <AgendaItemNumber :number="currentRow.number" />
@@ -738,7 +764,7 @@ useHead(() => ({
 
     <main
       class="flex flex-1 flex-col gap-[clamp(1rem,2vw,2rem)] px-[clamp(1rem,3vw,3rem)] py-[clamp(1rem,2vw,2rem)] text-[clamp(1.125rem,1.5vw,2rem)]"
-      :class="{ 'min-h-0': mode === 'amendment' }"
+      :class="{ 'min-h-0': fitsScreen }"
     >
       <section
         v-if="vote"
@@ -849,7 +875,6 @@ useHead(() => ({
               :key="author.id"
               :member="author"
               size="xl"
-              variant="solid"
               :tooltip="false"
               show-name
             />
@@ -871,7 +896,7 @@ useHead(() => ({
           role="region"
           tabindex="0"
           aria-labelledby="projection-amendment-title"
-          class="projection-text border-default focus-visible:outline-primary min-h-0 flex-1 overflow-y-auto rounded-2xl border p-[clamp(1rem,2.5vw,2.5rem)] focus-visible:outline-2"
+          class="projection-text projection-scroll border-default focus-visible:outline-primary min-h-0 flex-1 overflow-y-auto rounded-2xl border p-[clamp(1rem,2.5vw,2.5rem)] focus-visible:outline-2"
         >
           <ContentAmendmentDiff
             :id="debated.id"
@@ -884,67 +909,95 @@ useHead(() => ({
 
       <section
         v-else-if="mode === 'document' && document"
-        class="grid flex-1 gap-[clamp(1rem,3vw,3rem)] lg:grid-cols-[3fr_2fr]"
-        aria-live="polite"
+        class="grid min-h-0 flex-1 gap-[clamp(1rem,3vw,3rem)] lg:grid-cols-[3fr_2fr]"
       >
-        <div class="space-y-[clamp(0.75rem,1.5vw,1.5rem)]">
-          <p class="text-muted text-[clamp(1rem,1.4vw,1.5rem)]">
-            {{ t("projection.inDebate") }}
-          </p>
-          <h1
-            class="text-[clamp(2rem,4vw,4.5rem)] leading-tight font-extrabold tracking-tight"
+        <div class="flex min-h-0 flex-col gap-[clamp(0.75rem,1.5vw,1.5rem)]">
+          <!-- What changes is announced; the text below is not. -->
+          <div
+            class="flex flex-col gap-[clamp(0.5rem,1vw,1rem)]"
+            aria-live="polite"
           >
-            {{ document.title }}
-          </h1>
-          <div class="flex flex-wrap items-center gap-2">
-            <UBadge
-              v-if="document.reference"
-              color="neutral"
-              variant="outline"
-              size="xl"
-              :label="document.reference"
-            />
-            <CommonMemberBadge
-              v-if="document.proponent"
-              :member="document.proponent"
-              size="xl"
-              variant="solid"
-              show-name
-              :tooltip="false"
-            />
+            <div class="flex flex-wrap items-baseline gap-x-4 gap-y-2">
+              <h1
+                id="projection-document-title"
+                class="text-[clamp(1.5rem,2.5vw,2.75rem)] leading-tight font-bold tracking-tight"
+              >
+                {{ document.title }}
+              </h1>
+              <UBadge
+                v-if="document.reference"
+                color="neutral"
+                variant="outline"
+                size="lg"
+                :label="document.reference"
+                class="self-center"
+              />
+            </div>
+            <p v-if="live?.amendmentId && !debated" class="text-muted">
+              {{ t("projection.amendmentHidden") }}
+            </p>
+            <p
+              v-if="document.amendable && amendmentStats.total > 0"
+              class="text-default text-[clamp(1.125rem,1.6vw,1.75rem)] tabular-nums"
+            >
+              {{
+                t("projection.amendmentStats", {
+                  approved: amendmentStats.approved,
+                  undecided: amendmentStats.undecided,
+                  total: amendmentStats.total,
+                })
+              }}
+            </p>
+            <p
+              v-if="document.finalVote"
+              class="text-[clamp(1.125rem,1.8vw,2rem)] font-bold"
+              :class="
+                document.finalVote.result === 'approved'
+                  ? 'text-(--ui-color-success-800) dark:text-(--ui-color-success-300)'
+                  : 'text-(--ui-color-error-700) dark:text-(--ui-color-error-300)'
+              "
+            >
+              {{
+                document.finalVote.result === "approved"
+                  ? t("projection.finalApproved")
+                  : t("projection.finalRejected")
+              }}
+            </p>
           </div>
-          <p v-if="live?.amendmentId && !debated" class="text-muted">
-            {{ t("projection.amendmentHidden") }}
-          </p>
-          <p
-            v-if="document.amendable && amendmentStats.total > 0"
-            class="text-default text-[clamp(1.25rem,2vw,2.25rem)] tabular-nums"
-          >
-            {{
-              t("projection.amendmentStats", {
-                approved: amendmentStats.approved,
-                undecided: amendmentStats.undecided,
-                total: amendmentStats.total,
-              })
-            }}
-          </p>
-          <p
-            v-if="document.finalVote"
-            class="text-[clamp(1.25rem,2vw,2.25rem)] font-bold"
-            :class="
-              document.finalVote.result === 'approved'
-                ? 'text-(--ui-color-success-800) dark:text-(--ui-color-success-300)'
-                : 'text-(--ui-color-error-700) dark:text-(--ui-color-error-300)'
+          <!-- The document itself, filling what is left: the browser's own
+               viewer for a PDF, the text as presented otherwise. The Mesa
+               may scroll it from the laptop; a new document starts at the
+               top (keyed). -->
+          <template v-if="document.format === 'file'">
+            <iframe
+              v-if="document.fileUrl"
+              :key="document.id"
+              :src="pdfPreviewUrl(document.fileUrl)"
+              :title="t('workspace.text.pdfFrame', { title: document.title })"
+              class="border-default bg-elevated block min-h-0 w-full flex-1 rounded-2xl border"
+            />
+            <p v-else class="text-muted">
+              {{ t("projection.pdfPending") }}
+            </p>
+          </template>
+          <div
+            v-else-if="base.length > 0"
+            :key="document.id"
+            role="region"
+            tabindex="0"
+            :aria-label="
+              t('projection.documentText', { title: document.title })
             "
+            class="projection-document projection-scroll border-default focus-visible:outline-primary min-h-0 flex-1 overflow-y-auto rounded-2xl border p-[clamp(1rem,2.5vw,2.5rem)] focus-visible:outline-2"
           >
-            {{
-              document.finalVote.result === "approved"
-                ? t("projection.finalApproved")
-                : t("projection.finalRejected")
-            }}
-          </p>
+            <ContentView :blocks="base" />
+          </div>
         </div>
-        <nav :aria-label="t('projection.agenda')" class="hidden lg:block">
+        <nav
+          ref="agendaNav"
+          :aria-label="t('projection.agenda')"
+          class="projection-scroll hidden min-h-0 overflow-y-auto lg:block"
+        >
           <SessionProjectionAgenda
             :rows="rows"
             :current-id="live?.agendaItemId ?? null"
@@ -1031,13 +1084,29 @@ useHead(() => ({
   line-height: 1.55;
 }
 
-/* Only the page scrolls the box: a scrollbar on the projector is noise. */
-.projection-text {
+/* The page or the Mesa scrolls these boxes: a scrollbar on the projector is noise. */
+.projection-scroll {
   scrollbar-width: none;
 }
 
-.projection-text::-webkit-scrollbar {
+.projection-scroll::-webkit-scrollbar {
   display: none;
+}
+
+/*
+ * The vertical logo, as tall as the two lines beside it; its drawing keeps
+ * a margin inside the square, which the negative margins give back.
+ */
+.projection-logo {
+  height: clamp(3.5rem, 6vw, 6.5rem);
+  width: auto;
+  margin-block: calc(clamp(3.5rem, 6vw, 6.5rem) * -0.12);
+}
+
+/* A whole document never fits: one readable size, and the box scrolls. */
+.projection-document :deep(.rich-text) {
+  font-size: clamp(1.125rem, 1.6vw, 2rem);
+  line-height: 1.55;
 }
 
 .projection-text :deep(.rich-text p + p),

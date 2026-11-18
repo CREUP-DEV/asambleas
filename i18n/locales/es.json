@@ -4291,7 +4291,8 @@
     "exitFullscreen": "Salir de la pantalla completa",
     "agenda": "Orden del día",
     "agendaEmpty": "Todavía no hay orden del día.",
-    "inDebate": "En debate",
+    "documentText": "Texto de «{title}»",
+    "pdfPending": "El PDF de este documento todavía no se ha subido.",
     "amendment": "Enmienda {code}",
     "amendmentHidden": "La enmienda en debate todavía no es pública.",
     "amendmentStats": "{approved} enmiendas aprobadas · {undecided} por decidir · {total} en total",
@@ -4563,7 +4564,43 @@
       "label": "Partes de la hoja de control",
       "general": "General",
       "amendments": "Enmiendas",
+      "turns": "Turnos de palabra",
       "history": "Historial"
+    },
+    "turns": {
+      "title": "Turnos de palabra",
+      "description": "Cada vez que alguien ha tomado la palabra en la asamblea, en orden, con el punto del orden del día en que se le dio y cuánto duró. «Por interviniente» suma los turnos y el tiempo de cada uno.",
+      "emptyTitle": "Todavía no ha hablado nadie",
+      "emptyDescription": "Los turnos aparecen aquí en cuanto la Mesa da la palabra.",
+      "noMatchesTitle": "Ningún turno coincide con los filtros",
+      "noItem": "Sin punto en debate",
+      "speaking": "Tiene la palabra",
+      "ongoing": "un turno sigue en curso",
+      "summary": "{count} turno · {time} en total | {count} turnos · {time} en total",
+      "views": {
+        "label": "Cómo ver los turnos",
+        "list": "Cada turno",
+        "totals": "Por interviniente"
+      },
+      "columns": {
+        "index": "N.º",
+        "started": "Inicio",
+        "item": "Punto",
+        "who": "Interviniente",
+        "duration": "Duración",
+        "turns": "Turnos",
+        "total": "Tiempo total",
+        "average": "Media por turno"
+      },
+      "filters": {
+        "item": "Punto del orden del día",
+        "allItems": "Todos los puntos",
+        "searchItem": "Buscar un punto",
+        "who": "Interviniente",
+        "everyone": "Todo el mundo",
+        "searchWho": "Buscar por siglas o nombre",
+        "clear": "Quitar los filtros"
+      }
     },
     "history": {
       "title": "Historial de cambios",

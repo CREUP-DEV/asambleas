@@ -4291,7 +4291,8 @@
     "exitFullscreen": "Exit full screen",
     "agenda": "Agenda",
     "agendaEmpty": "There is no agenda yet.",
-    "inDebate": "Under debate",
+    "documentText": "Text of “{title}”",
+    "pdfPending": "The PDF of this document has not been uploaded yet.",
     "amendment": "Amendment {code}",
     "amendmentHidden": "The amendment under debate is not public yet.",
     "amendmentStats": "{approved} amendments approved · {undecided} undecided · {total} in total",
@@ -4563,7 +4564,43 @@
       "label": "Parts of the control sheet",
       "general": "Overview",
       "amendments": "Amendments",
+      "turns": "Speaking turns",
       "history": "History"
+    },
+    "turns": {
+      "title": "Speaking turns",
+      "description": "Every time someone took the floor in the assembly, in order, with the agenda item it was given in and how long it lasted. “By speaker” adds up each one's turns and time.",
+      "emptyTitle": "Nobody has spoken yet",
+      "emptyDescription": "Turns show here as soon as the Mesa gives the floor.",
+      "noMatchesTitle": "No turn matches the filters",
+      "noItem": "No item under debate",
+      "speaking": "Has the floor",
+      "ongoing": "one turn is still running",
+      "summary": "{count} turn · {time} in total | {count} turns · {time} in total",
+      "views": {
+        "label": "How to show the turns",
+        "list": "Each turn",
+        "totals": "By speaker"
+      },
+      "columns": {
+        "index": "No.",
+        "started": "Started",
+        "item": "Item",
+        "who": "Speaker",
+        "duration": "Length",
+        "turns": "Turns",
+        "total": "Total time",
+        "average": "Average per turn"
+      },
+      "filters": {
+        "item": "Agenda item",
+        "allItems": "All items",
+        "searchItem": "Search for an item",
+        "who": "Speaker",
+        "everyone": "Everyone",
+        "searchWho": "Search by acronym or name",
+        "clear": "Clear the filters"
+      }
     },
     "history": {
       "title": "Change history",
