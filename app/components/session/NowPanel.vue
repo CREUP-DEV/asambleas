@@ -23,10 +23,11 @@ import { useSessionStageLabel } from "~/composables/session/useSessionStageLabel
  *   election), the main action when it is marked «Se vota el punto» and
  *   has no vote in force, and then one line says how it went; "Más" votes
  *   it again, voids the vote or changes its unanimity;
- * - a document: start with (or go on to) the next amendment the Mesa can
- *   decide, then the final vote, then the item's next document, then the
- *   next item; the item's other documents are one click away above them,
- *   and "Más" takes it out of the debate and back to its item;
+ * - a document: the same card of its item (user's decision of 2026-11-18),
+ *   its row marked as the one in debate and pressed again to take it out;
+ *   under it, where it stands and its next step: the next amendment the
+ *   Mesa can decide, then the final vote. None of the item's documents is
+ *   pushed as the next step: the Mesa picks;
  * - an amendment: its change and the actions that fit (NowAmendment).
  *
  * When this device is looking at another document than the one in debate,
@@ -108,9 +109,22 @@ const itemDocuments = computed(() => sessionItemDocuments(liveRow.value));
 const nextDocument = computed(() =>
   sessionNextItemDocument(liveRow.value, live.value?.documentId ?? null),
 );
-/** How a document is named on a button: its reference, else its title. */
-const documentName = (document: DocumentSummaryDto) =>
-  document.reference ?? document.title;
+/** The document in debate, if any. */
+const selectedId = computed(() => live.value?.documentId ?? null);
+/**
+ * The documents the card lists: the item's, or the one in debate alone
+ * when the agenda does not have its item.
+ */
+const cardDocuments = computed<DocumentSummaryDto[]>(() => {
+  if (itemDocuments.value.length > 0) return itemDocuments.value;
+  return liveDocumentSummary.value ? [liveDocumentSummary.value] : [];
+});
+
+/** Puts a document in debate, or takes the one in debate out of it. */
+function toggleDocument(item: DocumentSummaryDto): void {
+  if (item.id === selectedId.value) void session.clearDebatedDocument();
+  else void session.debateDocument(item);
+}
 
 // Document under debate ------------------------------------------------------------
 
@@ -166,29 +180,6 @@ const documentStatus = computed(() => {
   return t("session.now.document.waiting");
 });
 
-/**
- * The one main step of a document: its next amendment, its final vote,
- * then the item's next document, then the next item.
- */
-const documentStep = computed<"amendment" | "final" | "document" | "item">(
-  () => {
-    if (next.value) return "amendment";
-    if (finalVoteReady.value) return "final";
-    return nextDocument.value ? "document" : "item";
-  },
-);
-
-/** "Más" of a document: back to its agenda item, out of the debate. */
-const documentMoreItems = computed<DropdownMenuItem[][]>(() => [
-  [
-    {
-      label: t("session.now.undebateDocument"),
-      icon: "i-lucide-radio-tower",
-      onSelect: () => void session.clearDebatedDocument(),
-    },
-  ],
-]);
-
 // Agenda item under debate ---------------------------------------------------------
 
 /**
@@ -212,6 +203,18 @@ const offerItemVote = computed(
 );
 /** «Se vota el punto» and no vote yet: the vote is the main action. */
 const itemVotePending = computed(() => Boolean(itemPlan.value?.pending));
+
+/**
+ * "Siguiente punto" is the main step once nothing else is left: no
+ * document to debate (and no vote of the item pending) or, with one in
+ * debate, no amendment, no final vote and no other document after it.
+ */
+const nextItemPrimary = computed(() => {
+  if (itemVotePending.value) return false;
+  if (!selectedId.value) return cardDocuments.value.length === 0;
+  return !next.value && !finalVoteReady.value && !nextDocument.value;
+});
+
 const itemVoteText = useItemVoteText();
 const itemVoteBusy = computed(
   () =>
@@ -273,8 +276,9 @@ const itemMoreItems = computed<DropdownMenuItem[][]>(() => {
   return groups;
 });
 
-/** The sentence under the item's title. */
+/** The sentence under the item's title, until a document is in debate. */
 const itemSentence = computed(() => {
+  if (selectedId.value) return null;
   const count = itemDocuments.value.length;
   if (count > 0) return t("session.now.item.documents", { count }, count);
   return itemVotePending.value
@@ -434,165 +438,19 @@ const announcement = computed(() => {
       </template>
     </template>
 
-    <!-- A document, between amendments. -->
-    <template v-else-if="mode === 'document'">
-      <div class="space-y-1">
-        <h3 class="text-highlighted text-2xl font-bold sm:text-3xl">
-          {{ document?.title ?? liveDocumentSummary?.title ?? "" }}
-        </h3>
-        <p
-          v-if="document?.reference ?? liveDocumentSummary?.reference"
-          class="text-muted text-sm"
-        >
-          {{ document?.reference ?? liveDocumentSummary?.reference }}
-        </p>
-      </div>
-
-      <!-- The item's other documents, one click away. -->
-      <nav
-        v-if="itemDocuments.length >= 2"
-        class="space-y-1.5"
-        :aria-label="t('session.now.itemDocuments')"
-      >
-        <p class="text-muted text-xs font-medium">
-          {{ t("session.now.itemDocuments") }}
-        </p>
-        <ol class="flex flex-wrap gap-1.5">
-          <li v-for="(item, index) in itemDocuments" :key="item.id">
-            <UButton
-              size="sm"
-              :color="item.id === live?.documentId ? 'primary' : 'neutral'"
-              :variant="item.id === live?.documentId ? 'soft' : 'outline'"
-              :icon="
-                item.id === live?.documentId ? 'i-lucide-radio' : undefined
-              "
-              :label="`${index + 1}. ${documentName(item)}`"
-              :aria-current="item.id === live?.documentId ? 'true' : undefined"
-              :aria-label="
-                item.id === live?.documentId
-                  ? t('session.now.documentInDebate', { title: item.title })
-                  : t('session.agenda.debateDocumentNamed', {
-                      title: item.title,
-                    })
-              "
-              :disabled="closed || liveBusy"
-              class="max-w-full text-start whitespace-normal"
-              @click="
-                item.id !== live?.documentId && session.debateDocument(item)
-              "
-            />
-          </li>
-        </ol>
-      </nav>
-
-      <div
-        v-if="!document || (!amendmentsLoaded && document.amendable)"
-        class="space-y-2"
-        role="status"
-      >
-        <span class="sr-only">{{ t("common.loading") }}</span>
-        <USkeleton aria-hidden="true" class="h-6 w-2/3" />
-      </div>
-      <template v-else>
-        <p class="text-default text-base font-medium">{{ documentStatus }}</p>
-        <ul
-          v-if="!next && !finalVote && finalVoteReasons.length > 0"
-          class="text-muted list-disc space-y-1 ps-5 text-sm"
-        >
-          <li v-for="reason in finalVoteReasons" :key="reason">
-            {{ reason }}
-          </li>
-        </ul>
-
-        <UAlert
-          v-if="lateCount > 0"
-          color="warning"
-          variant="subtle"
-          icon="i-lucide-clock-alert"
-          :title="t('session.now.late', { count: lateCount }, lateCount)"
-          :description="t('session.queue.lateHint')"
-          :actions="[
-            {
-              label: t(
-                'session.queue.lateDecide',
-                { count: lateCount },
-                lateCount,
-              ),
-              color: 'warning',
-              variant: 'soft',
-              icon: 'i-lucide-gavel',
-              onClick: () =>
-                session.openAdmission(
-                  session.queue.value.pending.map((amendment) => amendment.id),
-                  'admitted',
-                ),
-            },
-          ]"
-        />
-
-        <div class="flex flex-wrap items-center gap-2">
-          <UButton
-            v-if="next"
-            size="lg"
-            icon="i-lucide-play"
-            :label="
-              t('session.now.startWith', { code: session.label(next.id) })
-            "
-            :loading="liveBusy"
-            :disabled="closed"
-            @click="session.debateNext()"
-          />
-          <UButton
-            v-else-if="finalVoteReady"
-            size="lg"
-            icon="i-lucide-gavel"
-            :label="t('session.finalVote.open')"
-            :disabled="closed"
-            @click="session.finalVoteDialog.open = true"
-          />
-          <UButton
-            v-if="nextDocument"
-            :size="documentStep === 'document' ? 'lg' : 'md'"
-            :color="documentStep === 'document' ? 'primary' : 'neutral'"
-            :variant="documentStep === 'document' ? 'solid' : 'outline'"
-            trailing-icon="i-lucide-arrow-right"
-            :label="
-              t('session.now.nextDocument', {
-                title: documentName(nextDocument),
-              })
-            "
-            :loading="liveBusy && documentStep === 'document'"
-            :disabled="closed"
-            @click="session.debateDocument(nextDocument)"
-          />
-          <UButton
-            v-if="nextAgenda"
-            :size="documentStep === 'item' ? 'lg' : 'md'"
-            :color="documentStep === 'item' ? 'primary' : 'neutral'"
-            :variant="documentStep === 'item' ? 'solid' : 'ghost'"
-            trailing-icon="i-lucide-arrow-right"
-            :label="t('session.now.nextItem', { title: nextAgendaLabel })"
-            :loading="liveBusy && documentStep === 'item'"
-            :disabled="closed"
-            @click="session.debateAgendaTarget(nextAgenda)"
-          />
-          <UDropdownMenu :items="documentMoreItems" :content="{ align: 'end' }">
-            <UButton
-              color="neutral"
-              variant="ghost"
-              icon="i-lucide-ellipsis"
-              :label="t('session.now.more')"
-              :disabled="liveBusy"
-            />
-          </UDropdownMenu>
-        </div>
-      </template>
-    </template>
-
-    <!-- An agenda item without a document in debate. -->
-    <template v-else-if="mode === 'item' && liveRow">
+    <!-- An agenda item, with or without one of its documents in debate. -->
+    <template
+      v-else-if="
+        (mode === 'item' || mode === 'document') &&
+        (liveRow || cardDocuments.length > 0)
+      "
+    >
       <h3 class="text-highlighted text-2xl font-bold sm:text-3xl">
-        {{ rowLabel(liveRow) }}
+        {{
+          liveRow
+            ? rowLabel(liveRow)
+            : (document?.title ?? liveDocumentSummary?.title ?? "")
+        }}
       </h3>
       <p
         v-if="itemVote"
@@ -612,32 +470,130 @@ const announcement = computed(() => {
         />
         <span class="tabular-nums">{{ itemVoteText.line(itemVote) }}</span>
       </p>
-      <p class="text-default">{{ itemSentence }}</p>
-      <ul v-if="itemDocuments.length > 0" class="space-y-2">
+      <p v-if="itemSentence" class="text-default">{{ itemSentence }}</p>
+      <ul v-if="cardDocuments.length > 0" class="space-y-2">
         <li
-          v-for="(item, index) in itemDocuments"
+          v-for="item in cardDocuments"
           :key="item.id"
-          class="border-default flex flex-wrap items-center gap-2 rounded-lg border px-3 py-2"
+          class="rounded-lg border px-3 py-2"
+          :class="
+            item.id === selectedId
+              ? 'border-primary/50 bg-primary/5'
+              : 'border-default'
+          "
         >
-          <span class="min-w-0 flex-1">
-            <span class="text-highlighted block truncate font-medium">
-              {{ item.title }}
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="min-w-0 flex-1">
+              <span class="text-highlighted block truncate font-medium">
+                {{ item.title }}
+              </span>
+              <span v-if="item.reference" class="text-muted text-xs">
+                {{ item.reference }}
+              </span>
             </span>
-            <span v-if="item.reference" class="text-muted text-xs">
-              {{ item.reference }}
-            </span>
-          </span>
-          <UButton
-            :color="index === 0 && !itemVotePending ? 'primary' : 'neutral'"
-            :variant="index === 0 && !itemVotePending ? 'solid' : 'outline'"
-            icon="i-lucide-radio"
-            :label="t('session.agenda.debateDocument')"
-            :aria-label="
-              t('session.agenda.debateDocumentNamed', { title: item.title })
-            "
-            :disabled="closed || liveBusy"
-            @click="session.debateDocument(item)"
-          />
+            <!-- A toggle: pressed again, it takes the document out. -->
+            <UTooltip
+              :text="t('session.now.undebateDocument')"
+              :disabled="item.id !== selectedId"
+            >
+              <UButton
+                :color="item.id === selectedId ? 'primary' : 'neutral'"
+                :variant="item.id === selectedId ? 'soft' : 'outline'"
+                icon="i-lucide-radio"
+                :label="
+                  item.id === selectedId
+                    ? t('session.now.inDebate')
+                    : t('session.agenda.debateDocument')
+                "
+                :aria-label="
+                  item.id === selectedId
+                    ? t('session.now.documentInDebate', { title: item.title })
+                    : t('session.agenda.debateDocumentNamed', {
+                        title: item.title,
+                      })
+                "
+                :aria-pressed="item.id === selectedId"
+                :disabled="closed || liveBusy"
+                @click="toggleDocument(item)"
+              />
+            </UTooltip>
+          </div>
+
+          <!-- Where the document in debate stands, and its next step. -->
+          <div
+            v-if="item.id === selectedId"
+            class="border-primary/20 mt-2 space-y-3 border-t pt-3"
+          >
+            <div
+              v-if="!document || (!amendmentsLoaded && document.amendable)"
+              class="space-y-2"
+              role="status"
+            >
+              <span class="sr-only">{{ t("common.loading") }}</span>
+              <USkeleton aria-hidden="true" class="h-5 w-2/3" />
+            </div>
+            <template v-else>
+              <p class="text-default text-sm font-medium">
+                {{ documentStatus }}
+              </p>
+              <ul
+                v-if="!next && !finalVote && finalVoteReasons.length > 0"
+                class="text-muted list-disc space-y-1 ps-5 text-sm"
+              >
+                <li v-for="reason in finalVoteReasons" :key="reason">
+                  {{ reason }}
+                </li>
+              </ul>
+
+              <UAlert
+                v-if="lateCount > 0"
+                color="warning"
+                variant="subtle"
+                icon="i-lucide-clock-alert"
+                :title="t('session.now.late', { count: lateCount }, lateCount)"
+                :description="t('session.queue.lateHint')"
+                :actions="[
+                  {
+                    label: t(
+                      'session.queue.lateDecide',
+                      { count: lateCount },
+                      lateCount,
+                    ),
+                    color: 'warning',
+                    variant: 'soft',
+                    icon: 'i-lucide-gavel',
+                    onClick: () =>
+                      session.openAdmission(
+                        session.queue.value.pending.map(
+                          (amendment) => amendment.id,
+                        ),
+                        'admitted',
+                      ),
+                  },
+                ]"
+              />
+
+              <div v-if="next || finalVoteReady">
+                <UButton
+                  v-if="next"
+                  icon="i-lucide-play"
+                  :label="
+                    t('session.now.startWith', { code: session.label(next.id) })
+                  "
+                  :loading="liveBusy"
+                  :disabled="closed"
+                  @click="session.debateNext()"
+                />
+                <UButton
+                  v-else
+                  icon="i-lucide-gavel"
+                  :label="t('session.finalVote.open')"
+                  :disabled="closed"
+                  @click="session.finalVoteDialog.open = true"
+                />
+              </div>
+            </template>
+          </div>
         </li>
       </ul>
       <div class="flex flex-wrap items-center gap-2">
@@ -654,19 +610,12 @@ const announcement = computed(() => {
         />
         <UButton
           v-if="nextAgenda"
-          :size="itemDocuments.length === 0 && !itemVotePending ? 'lg' : 'md'"
-          :color="
-            itemDocuments.length === 0 && !itemVotePending
-              ? 'primary'
-              : 'neutral'
-          "
-          :variant="
-            itemDocuments.length === 0 && !itemVotePending ? 'solid' : 'ghost'
-          "
+          :size="nextItemPrimary ? 'lg' : 'md'"
+          :color="nextItemPrimary ? 'primary' : 'neutral'"
+          :variant="nextItemPrimary ? 'solid' : 'ghost'"
           trailing-icon="i-lucide-arrow-right"
           :label="t('session.now.nextItem', { title: nextAgendaLabel })"
-          :loading="liveBusy"
-          :disabled="closed"
+          :disabled="closed || liveBusy"
           @click="session.debateAgendaTarget(nextAgenda)"
         />
         <UDropdownMenu :items="itemMoreItems" :content="{ align: 'end' }">

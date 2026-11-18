@@ -5,7 +5,8 @@ import type { DocumentDto } from "~~/shared/types/api";
  * The text of the document the console shows, for the Mesa to follow what
  * the room reads when it takes no amendments: its uploaded PDF in the
  * browser's own viewer (DocumentPdfViewer: a card with the button on
- * phones), else its text as voted or, before, as published. An amendable
+ * phones; no "open in a new tab" above it), else its text as voted or,
+ * before, as published. An amendable
  * text is read in «Texto consolidado», with its amendments applied.
  */
 const props = defineProps<{ document: DocumentDto }>();
@@ -31,6 +32,7 @@ const blocks = computed(
         :key="document.id"
         :url="document.fileUrl"
         :title="document.title"
+        :open-button="false"
         :pending-description="t('session.queue.pdfPending')"
       />
     </div>

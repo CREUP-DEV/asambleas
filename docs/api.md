@@ -1644,6 +1644,14 @@ speakers refetch them.
 | GET    | `/api/assemblies/[assembly]/headcounts`             | visible            | `HeadcountsDto`: counts newest first, `latest`, `members`, `quorum`. |
 | POST   | `/api/assemblies/[assembly]/headcounts`             | `session:moderate` | `HeadcountBody`. 201 with `HeadcountsDto`.                           |
 | PUT    | `/api/assemblies/[assembly]/headcounts/[headcount]` | `session:moderate` | `HeadcountUpdateBody` (with `updatedAt`). Returns `HeadcountsDto`.   |
+| GET    | `/api/assemblies/[assembly]/headcounts/expected`    | `session:moderate` | `HeadcountExpectedDto`: who registered in the Intranet.              |
+
+`expected` lists the members (`memberIds`, councils and sectorials) and the
+guest accounts (`guestIds`) whose Intranet account has somebody registered
+for the assembly (`GET {intranet}/asambleas/{type}/{number}/inscritos`,
+docs/intranet.md), asked at most once a minute per assembly; `status` says
+how the Intranet answered (`ok`, `not_found`, `unavailable`, `failed`,
+`unconfigured`). Never with `?view=room`.
 
 The Mesa's counts of the asociados with a vote, with the sectorials and the
 guests (accounts with the role `Invitado`, `CAI` or `CdG`: `HEADCOUNT_GUEST_ROLES`) in the room, who never vote nor

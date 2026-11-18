@@ -31,13 +31,20 @@ const { t } = useI18n();
 const localePath = useLocalePath();
 
 const document = computed(() => session.document.value);
-/** The heading names the document the list belongs to. */
+/** A document without amendments shows its text here instead. */
+const takesAmendments = computed(
+  () =>
+    !document.value ||
+    (document.value.amendable && document.value.format !== "file"),
+);
+/** The heading names the document the list (or the text) belongs to. */
 const title = computed(() => {
   const current = document.value;
   const name = current?.reference ?? current?.title ?? null;
-  return name
+  if (!name) return t("session.queue.title");
+  return takesAmendments.value
     ? t("session.queue.titleFor", { document: name })
-    : t("session.queue.title");
+    : t("session.queue.documentText", { title: name });
 });
 /** A Mesa member picked another document than the one the room debates. */
 const notLive = computed(
@@ -157,9 +164,12 @@ const failed = computed(
 <template>
   <section class="space-y-3" aria-labelledby="session-queue-title">
     <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+      <!-- Over a document without amendments the text speaks for itself:
+           its name stays for screen readers only. -->
       <h2
         id="session-queue-title"
         class="text-highlighted min-w-0 text-base font-semibold"
+        :class="{ 'sr-only': !takesAmendments }"
       >
         {{ title }}
       </h2>
@@ -245,18 +255,9 @@ const failed = computed(
     />
 
     <template v-else-if="document">
-      <!-- No amendments to take: the Mesa reads the text itself. -->
-      <template v-if="!document.amendable || document.format === 'file'">
-        <p class="text-muted flex items-start gap-1.5 text-sm" role="note">
-          <UIcon
-            name="i-lucide-file-lock"
-            class="mt-0.5 size-4 shrink-0"
-            aria-hidden="true"
-          />
-          {{ t("session.queue.notAmendable") }}
-        </p>
-        <SessionDocumentPreview :document="document" />
-      </template>
+      <!-- No amendments to take: the Mesa reads the text itself, under a
+           heading that names it (no note that it takes none). -->
+      <SessionDocumentPreview v-if="!takesAmendments" :document="document" />
       <CommonEmptyState
         v-else-if="counts.total === 0 && awaitingValidation.length === 0"
         icon="i-lucide-inbox"

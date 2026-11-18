@@ -7,7 +7,9 @@ import type { LiveSpeakers } from "~/components/live-view/-model";
  * liveSpeakers).
  *
  * `size="projection"` is the band at the bottom of the projection screen:
- * large type, the queue on one line, the heading for screen readers only.
+ * large type, the queue on one line, the heading for screen readers only,
+ * and nothing about who has the floor while nobody does (the page leaves
+ * the band out when nobody is waiting either).
  */
 const props = withDefaults(
   defineProps<{
@@ -106,14 +108,14 @@ const headingTag = computed(() => `h${props.headingLevel}`);
       </div>
     </div>
 
-    <!-- Projection: one band -->
+    <!-- Projection: one band. Nobody with the floor says nothing: the
+         screen keeps that room for the document and the agenda. -->
     <template v-else>
-      <div class="min-w-0">
+      <div v-if="speakers.current" class="min-w-0">
         <p class="text-muted text-[clamp(1rem,1.4vw,1.5rem)] font-medium">
           {{ t("liveView.speakers.current") }}
         </p>
         <p
-          v-if="speakers.current"
           class="text-highlighted flex flex-wrap items-center gap-x-[clamp(1rem,2vw,2rem)] gap-y-1 text-[clamp(1.5rem,2.8vw,3.25rem)] leading-tight font-bold"
         >
           <LiveViewSpeakerName
@@ -135,9 +137,6 @@ const headingTag = computed(() => `h${props.headingLevel}`);
               <SessionSpeakerTimer :started-at="speakers.current.startedAt" />
             </span>
           </ClientOnly>
-        </p>
-        <p v-else class="text-muted text-[clamp(1.25rem,2vw,2.25rem)]">
-          {{ t("liveView.speakers.empty") }}
         </p>
       </div>
 

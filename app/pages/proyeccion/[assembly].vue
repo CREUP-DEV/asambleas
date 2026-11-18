@@ -1024,10 +1024,11 @@ useHead(() => ({
         Nobody scrolls a projector: the band sticks to the bottom of the
         screen when a long agenda overflows it (an amendment's diff fits in
         its own box above it). The opaque wrapper hides the text scrolling
-        behind the translucent band.
+        behind the translucent band. Nobody speaking nor waiting leaves it
+        out: the document and the agenda take that room.
       -->
       <div
-        v-if="speakers"
+        v-if="speakers && (speakers.current || speakers.next.length > 0)"
         class="bg-default sticky bottom-0 z-10 mt-auto pt-2 pb-[clamp(0.25rem,0.5vw,0.5rem)]"
       >
         <LiveViewSpeakers

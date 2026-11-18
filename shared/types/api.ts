@@ -1563,6 +1563,29 @@ export interface HeadcountsDto {
   quorum: QuorumThreshold;
 }
 
+/**
+ * How the Intranet answered which accounts registered somebody for the
+ * assembly: `ok`; `not_found` (no Intranet event carries its type and
+ * number); `unavailable` (the Intranet has no such route yet); `failed`;
+ * `unconfigured` (no Intranet URL).
+ */
+export type HeadcountExpectedStatus =
+  "ok" | "not_found" | "unavailable" | "failed" | "unconfigured";
+
+/**
+ * GET /api/assemblies/[assembly]/headcounts/expected (session:moderate):
+ * who the headcount form marks as expected, the councils and sectorials
+ * (`memberIds`) and the guest accounts (`guestIds`) with somebody
+ * registered for the assembly in the Intranet. Asked of the Intranet at
+ * most once a minute (`checkedAt`); empty unless `status` is `ok`.
+ */
+export interface HeadcountExpectedDto {
+  status: HeadcountExpectedStatus;
+  memberIds: string[];
+  guestIds: string[];
+  checkedAt: IsoDate | null;
+}
+
 /** One mark of the Mesa's form; absent members are left out. */
 export interface HeadcountEntryInput {
   memberId: string;

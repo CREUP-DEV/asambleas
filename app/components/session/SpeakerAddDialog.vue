@@ -9,10 +9,14 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * may ask as a grid of tiles (SessionMemberTile: avatar, acronym, a
  * council's university or any other member's name), grouped by kind, so
  * the Mesa finds them at a glance and clicks one; a search narrows the
- * grid, and Enter picks the only match. The person's name is optional, with
- * the names written before for that member to pick again; a turn may also
- * carry a name alone. Writing a turn down keeps the dialog open and clears
- * it, since several ask for the floor at once.
+ * grid, and Enter picks the only match. Several may be picked at once, in
+ * the order they asked (user's decision of 2026-11-18): each tile shows its
+ * number, a second click takes it out and the others close up, and they
+ * are written down one after another in that order. The person's name is
+ * optional and goes with a single member, with the names written before
+ * for that member to pick again; a turn may also carry a name alone.
+ * Writing turns down keeps the dialog open and clears it, since several ask
+ * for the floor at once.
  *
  * Who is offered: the active members, councils and sectorials only while
  * in the room or delegated at the latest headcount (whoever holds the
@@ -95,23 +99,36 @@ const groups = computed(() =>
   })).filter((group) => group.members.length > 0),
 );
 
-const memberId = ref<string | null>(null);
+/** The members picked, in the order they asked for the floor. */
+const memberIds = ref<string[]>([]);
 const speakerName = ref("");
-const added = ref<string | null>(null);
+/** Who was just written down, and how many. */
+const added = ref<{ who: string; count: number } | null>(null);
+/** While the turns go out one after another. */
+const sending = ref(false);
 const searchInput = useTemplateRef<{ inputRef?: HTMLInputElement | null }>(
   "searchInput",
 );
 
-const chosen = computed(() =>
-  memberId.value
-    ? (offered.value.find((member) => member.id === memberId.value) ?? null)
-    : null,
+const offeredById = computed(
+  () => new Map(offered.value.map((member) => [member.id, member])),
 );
+/** The members picked that are still offered, in order. */
+const chosen = computed(() =>
+  memberIds.value
+    .map((id) => offeredById.value.get(id))
+    .filter((member): member is MemberDto => Boolean(member)),
+);
+/** A name goes with one member (or alone), never with several. */
+const single = computed(() =>
+  chosen.value.length === 1 ? chosen.value[0]! : null,
+);
+const several = computed(() => chosen.value.length > 1);
 
 /** The names already written down for the member chosen, latest first. */
 const suggestions = computed(() =>
-  memberId.value
-    ? (speakers.history.value.get(memberId.value)?.speakers ?? [])
+  single.value
+    ? (speakers.history.value.get(single.value.id)?.speakers ?? [])
     : [],
 );
 const suggestionsId = useId();
@@ -119,18 +136,28 @@ const suggestionsId = useId();
 watch(open, (isOpen) => {
   if (!isOpen) return;
   filter.value = "";
-  memberId.value = null;
+  memberIds.value = [];
   speakerName.value = "";
   added.value = null;
 });
 
+/** Picks a member as the next to speak, or takes it out of the picks. */
 function choose(id: string): void {
-  memberId.value = memberId.value === id ? null : id;
+  memberIds.value = memberIds.value.includes(id)
+    ? memberIds.value.filter((entry) => entry !== id)
+    : [...memberIds.value, id];
+}
+
+/** Its place among the picks, from 1; null when not picked. */
+function orderOf(id: string): number | null {
+  const index = memberIds.value.indexOf(id);
+  return index === -1 ? null : index + 1;
 }
 
 /** Enter in the search picks the only member it leaves. */
 function pickOnlyMatch(): void {
-  if (matching.value.length === 1) memberId.value = matching.value[0]!.id;
+  const only = matching.value.length === 1 ? matching.value[0]! : null;
+  if (only && !memberIds.value.includes(only.id)) choose(only.id);
 }
 
 function noteOf(member: MemberDto): string | null {
@@ -138,24 +165,46 @@ function noteOf(member: MemberDto): string | null {
   return count > 0 ? t("session.speakers.spokenCount", { count }, count) : null;
 }
 
-const adding = computed(() => Boolean(session.busy.value["speaker-add"]));
+const adding = computed(
+  () => sending.value || Boolean(session.busy.value["speaker-add"]),
+);
 const canAdd = computed(
   () =>
     !adding.value &&
     session.inSession.value &&
-    (Boolean(memberId.value) || speakerName.value.trim() !== ""),
+    (chosen.value.length > 0 || speakerName.value.trim() !== ""),
 );
 
+/**
+ * Writes the turns down one after another, in the order picked. One that
+ * fails stops the rest: those already written leave the picks, the others
+ * stay to try again.
+ */
 async function addTurn(): Promise<void> {
   if (!canAdd.value || !session.requireInSession()) return;
-  const who = chosen.value?.acronym ?? speakerName.value.trim();
-  const ok = await speakers.add({
-    memberId: memberId.value,
-    speaker: speakerName.value.trim() || null,
-  });
-  if (!ok) return;
-  added.value = who;
-  memberId.value = null;
+  const name = several.value ? null : speakerName.value.trim() || null;
+  const queue: (MemberDto | null)[] =
+    chosen.value.length > 0 ? [...chosen.value] : [null];
+  const written: string[] = [];
+  sending.value = true;
+  try {
+    for (const member of queue) {
+      const ok = await speakers.add({
+        memberId: member?.id ?? null,
+        speaker: name,
+      });
+      if (!ok) break;
+      written.push(member?.acronym ?? name ?? "");
+      if (member) {
+        memberIds.value = memberIds.value.filter((id) => id !== member.id);
+      }
+    }
+  } finally {
+    sending.value = false;
+  }
+  if (written.length === 0) return;
+  added.value = { who: written.join(", "), count: written.length };
+  if (memberIds.value.length > 0) return;
   speakerName.value = "";
   filter.value = "";
   await nextTick();
@@ -222,7 +271,15 @@ async function addTurn(): Promise<void> {
               <li v-for="member in group.members" :key="member.id">
                 <SessionMemberTile
                   :member="member"
-                  :selected="memberId === member.id"
+                  :selected="orderOf(member.id) !== null"
+                  :order="orderOf(member.id)"
+                  :order-label="
+                    orderOf(member.id)
+                      ? t('session.speakers.pickOrder', {
+                          n: orderOf(member.id),
+                        })
+                      : null
+                  "
                   :note="noteOf(member)"
                   class="h-full"
                   @toggle="choose(member.id)"
@@ -235,10 +292,22 @@ async function addTurn(): Promise<void> {
     </template>
     <template #footer="{ close }">
       <div class="flex w-full flex-wrap items-end gap-2">
+        <!-- Several at once: no name, the order they go in instead. -->
+        <p
+          v-if="several"
+          class="text-default min-w-60 flex-1 self-center text-sm"
+        >
+          {{
+            t("session.speakers.pickedOrder", {
+              who: chosen.map((member) => member.acronym).join(", "),
+            })
+          }}
+        </p>
         <UFormField
+          v-else
           :label="
-            chosen
-              ? t('session.speakers.personFor', { member: chosen.acronym })
+            single
+              ? t('session.speakers.personFor', { member: single.acronym })
               : t('session.speakers.person')
           "
           :hint="t('session.vote.optional')"
@@ -262,7 +331,11 @@ async function addTurn(): Promise<void> {
           type="submit"
           form="session-speaker-add"
           icon="i-lucide-plus"
-          :label="t('session.speakers.add')"
+          :label="
+            several
+              ? t('session.speakers.addMany', { count: chosen.length })
+              : t('session.speakers.add')
+          "
           :loading="adding"
           :disabled="!canAdd"
         />
@@ -273,7 +346,13 @@ async function addTurn(): Promise<void> {
           @click="close"
         />
         <p class="text-muted w-full text-xs" role="status" aria-live="polite">
-          {{ added ? t("session.speakers.added", { who: added }) : "" }}
+          {{
+            !added
+              ? ""
+              : added.count > 1
+                ? t("session.speakers.addedMany", { who: added.who })
+                : t("session.speakers.added", { who: added.who })
+          }}
         </p>
       </div>
     </template>

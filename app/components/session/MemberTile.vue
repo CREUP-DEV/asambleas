@@ -10,7 +10,10 @@ import { useMemberDirectory } from "~/composables/members/useMemberDirectory";
  * denomination: memberHighlight), never cut. A guest, an account without a
  * member, shows its name and initials. The whole tile is one button that
  * says whether it is chosen (`aria-pressed`): a ring and a check mark, the
- * text staying neutral. What else the tile offers (a delegation menu) goes
+ * text staying neutral. Where the order of the choices matters (who asks
+ * for the floor first), `order` puts the number in place of the check.
+ * `expected` (the headcount: somebody registered in the Intranet) adds the
+ * mark «Inscrito» under the name. What else the tile offers (a delegation menu) goes
  * in the `extra` slot, under the button and never inside it.
  */
 const props = withDefaults(
@@ -28,11 +31,27 @@ const props = withDefaults(
     /** A quiet line under the name ("2 turnos"). */
     note?: string | null;
     disabled?: boolean;
+    /** Its place among the chosen ones, shown instead of the check. */
+    order?: number | null;
+    /** What `order` means, for screen readers ("2.º en pedir la palabra"). */
+    orderLabel?: string | null;
+    /** Somebody registered for the assembly: expected in the room. */
+    expected?: boolean;
   }>(),
-  { member: null, guest: null, note: null, disabled: false },
+  {
+    member: null,
+    guest: null,
+    note: null,
+    disabled: false,
+    order: null,
+    orderLabel: null,
+    expected: false,
+  },
 );
 
 const emit = defineEmits<{ toggle: [] }>();
+
+const { t } = useI18n();
 
 const directory = useMemberDirectory();
 onMounted(() => {
@@ -98,7 +117,15 @@ const avatarText = computed(() =>
             :tooltip="false"
             class="min-w-0"
           />
+          <span
+            v-if="selected && order !== null"
+            class="bg-primary text-inverted ms-auto flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-bold tabular-nums"
+          >
+            <span aria-hidden="true">{{ order }}</span>
+            <span v-if="orderLabel" class="sr-only">{{ orderLabel }}</span>
+          </span>
           <UIcon
+            v-else
             :name="selected ? 'i-lucide-circle-check' : 'i-lucide-circle'"
             class="ms-auto size-4 shrink-0"
             :class="selected ? 'text-primary' : 'text-dimmed'"
@@ -110,6 +137,17 @@ const avatarText = computed(() =>
           class="text-highlighted text-xs leading-snug font-semibold break-words"
         >
           {{ highlight }}
+        </span>
+        <span
+          v-if="expected"
+          class="text-default flex items-center gap-1 text-xs font-medium"
+        >
+          <UIcon
+            name="i-lucide-ticket-check"
+            class="text-info size-3.5 shrink-0"
+            aria-hidden="true"
+          />
+          {{ t("session.headcount.expected") }}
         </span>
         <span v-if="note" class="text-muted text-xs">{{ note }}</span>
       </span>

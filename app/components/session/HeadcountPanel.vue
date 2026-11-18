@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { HeadcountDto } from "~~/shared/types/api";
+import type { HeadcountDto, HeadcountExpectedDto } from "~~/shared/types/api";
 import { quorumRequired, tallyHeadcount } from "~~/shared/utils/headcount";
 import { HEADCOUNT_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/headcount";
 import {
@@ -19,6 +19,7 @@ import {
   type HeadcountDraft,
   type HeadcountForm,
 } from "~/composables/session/headcountForm";
+import { useApi } from "~/composables/api/useApi";
 import { useSessionConsoleContext } from "~/composables/session/useSessionConsole";
 
 /**
@@ -37,7 +38,11 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
  * came and who left; a new count starts from the previous one. A
  * delegation, less frequent, is a quiet searchable menu under the tile of
  * a member that is not in the room; it counts only while its receiver is
- * in the room, and stays on the form otherwise. Until it is saved, the form is kept as a
+ * in the room, and stays on the form otherwise. Whoever has somebody
+ * registered for the assembly in the Intranet carries the mark «Inscrito»
+ * (GET .../headcounts/expected, read each time the form opens), so the
+ * Mesa sees who is expected in the room (user's decision of 2026-11-18).
+ * Until it is saved, the form is kept as a
  * draft on this device, so closing it by mistake (or reloading) loses
  * nothing.
  */
@@ -172,6 +177,44 @@ onBeforeUnmount(() => {
 });
 /** The count being corrected; null for a new one. */
 const editing = ref<HeadcountDto | null>(null);
+
+// Who is expected: registered in the Intranet ---------------------------------
+
+const api = useApi();
+const expected = ref<HeadcountExpectedDto | null>(null);
+const expectedMembers = computed(() => new Set(expected.value?.memberIds));
+const expectedGuests = computed(() => new Set(expected.value?.guestIds));
+
+/** Asked again each time the form opens; the server keeps it a minute. */
+async function loadExpected(): Promise<void> {
+  const id = session.assembly.value?.id;
+  if (!id) return;
+  try {
+    expected.value = await api.get<HeadcountExpectedDto>(
+      `/api/assemblies/${encodeURIComponent(id)}/headcounts/expected`,
+    );
+  } catch {
+    expected.value = null;
+  }
+}
+watch(open, (isOpen) => {
+  if (isOpen) void loadExpected();
+});
+
+/** One quiet line on what the marks say, or why there are none. */
+const expectedLine = computed(() => {
+  const value = expected.value;
+  if (!value) return null;
+  if (value.status === "ok") {
+    const count = value.memberIds.length + value.guestIds.length;
+    return t("session.headcount.expectedLine", { count }, count);
+  }
+  if (value.status === "not_found") {
+    return t("session.headcount.expectedNotLinked");
+  }
+  if (value.status === "failed") return t("session.headcount.expectedFailed");
+  return null;
+});
 const form = ref<HeadcountForm>({});
 const guestForm = ref<GuestForm>({});
 const note = ref("");
@@ -601,6 +644,17 @@ async function save(): Promise<void> {
           </div>
 
           <p
+            v-if="expectedLine"
+            class="text-muted flex items-center gap-1.5 text-sm"
+          >
+            <UIcon
+              name="i-lucide-ticket-check"
+              class="size-4 shrink-0"
+              aria-hidden="true"
+            />
+            {{ expectedLine }}
+          </p>
+          <p
             v-if="formMembers.length === 0 && formGuests.length === 0"
             class="text-muted text-sm"
           >
@@ -633,6 +687,7 @@ async function save(): Promise<void> {
               <li v-for="member in group.members" :key="member.id">
                 <SessionMemberTile
                   :member="member"
+                  :expected="expectedMembers.has(member.id)"
                   :selected="form[member.id]?.present ?? false"
                   class="h-full"
                   @toggle="togglePresent(member.id, !form[member.id]?.present)"
@@ -743,6 +798,7 @@ async function save(): Promise<void> {
               <li v-for="guest in shownGuests" :key="guest.userId">
                 <SessionMemberTile
                   :guest="guest.name"
+                  :expected="expectedGuests.has(guest.userId)"
                   :selected="guestForm[guest.userId] ?? false"
                   class="h-full"
                   @toggle="toggleGuest(guest.userId, !guestForm[guest.userId])"
