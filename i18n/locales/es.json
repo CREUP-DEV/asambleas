@@ -701,8 +701,7 @@
       "reference": "Referencia",
       "proponent": "Presenta",
       "amendmentsOpen": "Apertura de enmiendas",
-      "amendmentsClose": "Cierre de enmiendas",
-      "amendmentsClosed": "Plazo de enmiendas cerrado"
+      "amendmentsClose": "Cierre de enmiendas"
     },
     "stats": {
       "words": "ninguna palabra | {count} palabra | {count} palabras",
@@ -3165,7 +3164,6 @@
     "document": {
       "windowCloses": "Enmiendas: cierran",
       "windowOpens": "Enmiendas: abren",
-      "windowClosed": "Plazo de enmiendas cerrado",
       "consolidated": "Texto final",
       "amendments": "Sin enmiendas | {count} enmienda | {count} enmiendas"
     },

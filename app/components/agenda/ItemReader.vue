@@ -420,17 +420,6 @@ function pick(slug: unknown): void {
                 dated
               />
             </template>
-            <template v-else-if="documentWindow.closed.value">
-              <span aria-hidden="true">·</span>
-              <span class="inline-flex items-center gap-1">
-                <UIcon
-                  name="i-lucide-lock"
-                  class="size-3.5 shrink-0"
-                  aria-hidden="true"
-                />
-                {{ t("agenda.document.windowClosed") }}
-              </span>
-            </template>
           </div>
         </div>
 

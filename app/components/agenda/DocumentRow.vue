@@ -46,9 +46,7 @@ const callToAction = computed(() =>
 );
 
 // Its amendment window, against the shared clock.
-const { countdown: windowCountdown, closed: windowClosed } = useDocumentWindow(
-  () => props.document,
-);
+const { countdown: windowCountdown } = useDocumentWindow(() => props.document);
 
 const showStatus = useDocumentStatusShown(() => props.document);
 const marks = useReadMarks();
@@ -118,13 +116,6 @@ const SENTENCE_COLORS: Record<string, string> = {
             icon="i-lucide-timer"
             :urgent-hours="48"
           />
-        </template>
-        <template v-else-if="windowClosed">
-          <span aria-hidden="true">·</span>
-          <span class="inline-flex items-center gap-1">
-            <UIcon name="i-lucide-lock" class="size-3.5" aria-hidden="true" />
-            {{ t("agenda.document.windowClosed") }}
-          </span>
         </template>
       </div>
       <!-- Where it stands and what comes next (before publication) -->

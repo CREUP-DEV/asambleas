@@ -259,14 +259,8 @@ const windowState = computed<"open" | "upcoming" | "closed" | null>(() => {
           class="text-sm"
           @expired="expiredTick++"
         />
-        <UBadge
-          v-else-if="windowState === 'closed'"
-          color="neutral"
-          variant="soft"
-          size="sm"
-          icon="i-lucide-lock"
-          :label="t('document.header.amendmentsClosed')"
-        />
+        <!-- A closed window says nothing here: the composer warns whoever
+             goes to present one that it will be late. -->
 
         <slot name="badges" />
       </div>

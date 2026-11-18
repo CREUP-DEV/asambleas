@@ -50,10 +50,7 @@ export function useDocumentWindow(document: () => DocumentSummaryDto) {
     return null;
   });
 
-  /** The window closed for good (nothing left to count down to). */
-  const closed = computed(
-    () => hasWindow.value && !openNow.value && !countdown.value,
-  );
-
-  return { hasWindow, openNow, countdown, closed };
+  // A closed window has nothing to show: the composer warns whoever goes to
+  // present an amendment that it will be late.
+  return { hasWindow, openNow, countdown };
 }

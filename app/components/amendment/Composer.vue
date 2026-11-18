@@ -962,6 +962,29 @@ const questionClass = "text-highlighted text-sm font-semibold";
       </template>
     </UAlert>
 
+    <!-- The window is closed: said as soon as it opens, before any writing,
+         and again before sending. -->
+    <UAlert
+      v-if="stage === 'edit' && lateOnSend"
+      color="warning"
+      variant="subtle"
+      icon="i-lucide-clock-alert"
+      :title="
+        t(
+          lateKept
+            ? 'amendment.composer.lateKeptTitle'
+            : 'amendment.composer.lateTitle',
+        )
+      "
+      :description="
+        t(
+          lateKept
+            ? 'amendment.composer.lateKeptWarning'
+            : 'amendment.composer.lateWarning',
+        )
+      "
+    />
+
     <UAlert
       v-if="cannotPresent"
       color="error"

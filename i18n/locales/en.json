@@ -701,8 +701,7 @@
       "reference": "Reference",
       "proponent": "Presented by",
       "amendmentsOpen": "Amendments open",
-      "amendmentsClose": "Amendments close",
-      "amendmentsClosed": "Amendment window closed"
+      "amendmentsClose": "Amendments close"
     },
     "stats": {
       "words": "no words | {count} word | {count} words",
@@ -3165,7 +3164,6 @@
     "document": {
       "windowCloses": "Amendments close",
       "windowOpens": "Amendments open",
-      "windowClosed": "Amendment window closed",
       "consolidated": "Final text",
       "amendments": "No amendments | {count} amendment | {count} amendments"
     },
