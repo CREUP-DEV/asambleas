@@ -65,6 +65,7 @@ import { withCoProponentIds } from "./presenters";
 import { loadSpokenTurns } from "./speakers";
 import {
   canSeeDocument,
+  canSeePositions,
   isAmendmentInsider,
   isDocumentPresenter,
   seesAnswerRecord,
@@ -99,6 +100,16 @@ function fail(statusCode: number, message: string, data?: unknown): never {
   throw createError({ statusCode, message, ...(data ? { data } : {}) });
 }
 
+/**
+ * Everyone who sees the assembly reads its sheet (user's decision of
+ * 2026-11-19), but only its public part: the agenda, the presenters (an
+ * office as "CEA" to whoever may not see it), the votes and the amendments,
+ * with the presenter's answers once they are public to that reader
+ * (canSeePositions). What the sheet itself notes (observations, the Mesa's
+ * marks and results by hand, who spoke, its history) stays with whoever
+ * holds a sheet key (canViewControlSheet), and every endpoint that serves
+ * it calls this.
+ */
 export function requireControlSheetReader(actor: Actor): void {
   if (!canViewControlSheet(actor)) {
     fail(403, "No tienes permiso para ver la hoja de control");
@@ -308,15 +319,21 @@ export function sheetPositions(
   return result;
 }
 
+/**
+ * The sheet as the actor reads it. Whoever holds a sheet key
+ * (canViewControlSheet) reads all of it; everyone else only its public part
+ * (requireControlSheetReader): no notes, marks, turns nor session start, and
+ * the presenter's answers only where canSeePositions lets it read them.
+ */
 export async function loadControlSheet(
   actor: Actor,
   assembly: AssemblyRow,
 ): Promise<ControlSheetDto> {
-  requireControlSheetReader(actor);
+  const internal = canViewControlSheet(actor);
 
   const [visibleDocuments, sessionStartedAt] = await Promise.all([
     loadVisibleDocuments(actor, assembly.id),
-    loadSessionStartedAt(assembly.id),
+    internal ? loadSessionStartedAt(assembly.id) : Promise.resolve(null),
   ]);
   const finalVoteIds = visibleDocuments
     .map((row) => row.finalVoteId)
@@ -335,11 +352,13 @@ export async function loadControlSheet(
     finalVoteIds.length > 0
       ? db.select().from(votes).where(inArray(votes.id, finalVoteIds))
       : Promise.resolve([]),
-    loadSpokenTurns(actor, assembly.id),
-    db
-      .select()
-      .from(controlSheetItems)
-      .where(eq(controlSheetItems.assemblyId, assembly.id)),
+    internal ? loadSpokenTurns(actor, assembly.id) : Promise.resolve([]),
+    internal
+      ? db
+          .select()
+          .from(controlSheetItems)
+          .where(eq(controlSheetItems.assemblyId, assembly.id))
+      : Promise.resolve([]),
     loadItemVoteRows(assembly.id),
   ]);
 
@@ -374,8 +393,22 @@ export async function loadControlSheet(
     },
   );
 
+  // The answers this reader may read: all of them with a sheet key, else
+  // those of documents whose answers it reads anywhere (canSeePositions).
+  const answeredRows = internal
+    ? visibleRows
+    : visibleRows.filter((row) => {
+        const document = documentById.get(row.documentId);
+        return (
+          !!document &&
+          canSeePositions(actor, {
+            document,
+            isPresenter: isDocumentPresenter(actor, document),
+          })
+        );
+      });
   const [amendmentSheet, recorders] = await Promise.all([
-    visibleAmendments.size > 0
+    internal && visibleAmendments.size > 0
       ? db
           .select()
           .from(controlSheetAmendments)
@@ -385,7 +418,7 @@ export async function loadControlSheet(
             ]),
           )
       : Promise.resolve([]),
-    loadPositionRecorders(visibleRows, actor),
+    loadPositionRecorders(answeredRows, actor),
   ]);
   // Rows of items the reader does not get stay out, as the items do.
   const itemRows = itemSheet.filter((row) => itemsById.has(row.agendaItemId));
@@ -404,7 +437,7 @@ export async function loadControlSheet(
     amendmentRows: amendmentSheet.map((row) =>
       toAmendmentRowDto(row, visibleAmendments.get(row.amendmentId)!, names),
     ),
-    positions: sheetPositions(visibleRows, documentById, recorders, (row) => {
+    positions: sheetPositions(answeredRows, documentById, recorders, (row) => {
       const document = documentById.get(row.documentId);
       return seesAnswerRecord(actor, {
         insider: isAmendmentInsider(actor, {
@@ -420,7 +453,11 @@ export async function loadControlSheet(
     itemVotes: itemVoteRows
       .filter((row) => itemsById.has(row.subjectId))
       .map((row) => toItemVoteDto(row, readerItems.titleHidden)),
-    can: { edit: canEditControlSheet(actor), moderate: canModerate(actor) },
+    can: {
+      internal,
+      edit: canEditControlSheet(actor),
+      moderate: canModerate(actor),
+    },
   };
 }
 

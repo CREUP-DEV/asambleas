@@ -40,6 +40,18 @@ const props = defineProps<{
    */
   treatedPending: Readonly<Record<string, boolean>>;
   sort: SheetSort<AmendmentSortKey>;
+  /**
+   * A sheet key (ControlSheetDto.can.internal): the treated mark, who spoke
+   * and the observations. Without it those columns are not there.
+   */
+  internal: boolean;
+  /**
+   * The reader reads the presenter's answers to this document's amendments
+   * (with a sheet key, once public, or as its presenter): otherwise the
+   * column is not there, so no row reads «Sin respuesta» for an answer it
+   * may not read yet.
+   */
+  showPositions: boolean;
 }>();
 const emit = defineEmits<{
   open: [row: AmendmentSheetRow];
@@ -129,7 +141,7 @@ function approvalWithoutVote(amendment: AmendmentDto): string | null {
 
 const count = computed(() => props.rows.length);
 
-const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
+const ALL_COLUMNS: { key: AmendmentSortKey; label: string; class: string }[] = [
   { key: "code", label: "controlSheet.columns.code", class: "w-24" },
   {
     key: "authors",
@@ -159,6 +171,18 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
   { key: "vote", label: "controlSheet.columns.vote", class: "w-56" },
   { key: "speakers", label: "controlSheet.columns.speakers", class: "w-44" },
 ];
+/** Columns only a sheet key reads. */
+const INTERNAL_COLUMNS: ReadonlySet<AmendmentSortKey> = new Set([
+  "treated",
+  "speakers",
+]);
+const columns = computed(() =>
+  ALL_COLUMNS.filter(
+    (column) =>
+      (props.internal || !INTERNAL_COLUMNS.has(column.key)) &&
+      (props.showPositions || column.key !== "position"),
+  ),
+);
 </script>
 
 <template>
@@ -166,7 +190,12 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
     <div
       class="border-default hidden overflow-x-auto rounded-lg border lg:block"
     >
-      <table class="w-full min-w-[72rem] text-left text-sm">
+      <table
+        :class="[
+          'w-full text-left text-sm',
+          internal ? 'min-w-[72rem]' : 'min-w-[52rem]',
+        ]"
+      >
         <caption class="sr-only">
           {{
             t("controlSheet.tabs.amendments")
@@ -184,8 +213,11 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
               :fallback="DEFAULT_AMENDMENT_SORT"
               @sort="(key: AmendmentSortKey) => emit('sort', key)"
             />
-            <th scope="col" class="w-56 px-3 py-2 font-medium">
+            <th v-if="internal" scope="col" class="w-56 px-3 py-2 font-medium">
               {{ t("controlSheet.columns.observations") }}
+            </th>
+            <th v-else scope="col" class="w-12 px-3 py-2">
+              <span class="sr-only">{{ t("controlSheet.columns.open") }}</span>
             </th>
           </tr>
         </thead>
@@ -225,7 +257,7 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
                 :label="t(`controlSheet.kind.${kindOf(row.amendment)}`)"
               />
             </td>
-            <td class="px-3 py-2 text-center">
+            <td v-if="showPositions" class="px-3 py-2 text-center">
               <CommonStatusBadge
                 v-if="row.position"
                 kind="position"
@@ -235,7 +267,7 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
                 t("controlSheet.positionNone")
               }}</span>
             </td>
-            <td class="px-3 py-2 text-center">
+            <td v-if="internal" class="px-3 py-2 text-center">
               <ControlSheetTreated
                 v-bind="treatedOf(row)"
                 :label="
@@ -270,20 +302,20 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
                 t("controlSheet.noVote")
               }}</span>
             </td>
-            <td class="px-3 py-2">
+            <td v-if="internal" class="px-3 py-2">
               <ControlSheetSpeakers :speakers="row.speakers" />
             </td>
             <td class="px-3 py-2">
               <div class="flex items-start justify-between gap-2">
                 <p
-                  v-if="row.sheet?.observations"
+                  v-if="internal && row.sheet?.observations"
                   class="text-default line-clamp-3 text-sm whitespace-pre-line"
                 >
                   {{ row.sheet.observations }}
                 </p>
                 <!-- Nothing written: the cell stays empty, said only to screen
                      readers. -->
-                <span v-else class="sr-only">{{
+                <span v-else-if="internal" class="sr-only">{{
                   t("controlSheet.noObservations")
                 }}</span>
                 <UButton
@@ -355,7 +387,7 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
                 />
               </dd>
             </div>
-            <div>
+            <div v-if="showPositions">
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.position") }}
               </dt>
@@ -370,7 +402,7 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
                 }}</span>
               </dd>
             </div>
-            <div>
+            <div v-if="internal">
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.treated") }}
               </dt>
@@ -404,7 +436,10 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
                 }}</span>
               </dd>
             </div>
-            <div v-if="row.speakers.length > 0" class="sm:col-span-2">
+            <div
+              v-if="internal && row.speakers.length > 0"
+              class="sm:col-span-2"
+            >
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.speakers") }}
               </dt>
@@ -412,7 +447,10 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
                 <ControlSheetSpeakers :speakers="row.speakers" />
               </dd>
             </div>
-            <div v-if="row.sheet?.observations" class="sm:col-span-2">
+            <div
+              v-if="internal && row.sheet?.observations"
+              class="sm:col-span-2"
+            >
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.observations") }}
               </dt>

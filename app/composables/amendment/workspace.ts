@@ -24,6 +24,10 @@ import type {
   AmendmentOp,
   Block,
 } from "~~/shared/types/content";
+import {
+  compareAmendmentAnswers,
+  type AmendmentOrderOptions,
+} from "~~/shared/utils/amendmentOrder";
 import { consolidate } from "~~/shared/utils/content/consolidate";
 import { diffPassage } from "~~/shared/utils/content/diff";
 import {
@@ -40,7 +44,7 @@ type AmendmentLike = Pick<
   AmendmentDto,
   "id" | "kind" | "status" | "ops" | "positionKey" | "number" | "code"
 > &
-  Partial<Pick<AmendmentDto, "submittedAt" | "decidedAt">>;
+  Partial<Pick<AmendmentDto, "submittedAt" | "decidedAt" | "position">>;
 
 // Status and labels ------------------------------------------------------------
 
@@ -656,8 +660,19 @@ function timeOf(value: string | null | undefined): number {
   return Number.isNaN(time) ? Number.POSITIVE_INFINITY : time;
 }
 
-/** Text order: position in the base, then number, then submission time. */
-export function compareAmendments(a: AmendmentLike, b: AmendmentLike): number {
+/**
+ * Text order: position in the base, then number, then submission time.
+ * Once the document's answers are public (`answersPublic`), grouped first
+ * by the main presenter's answer: accepted or transacted, rejected, the
+ * rest (shared/utils/amendmentOrder.ts).
+ */
+export function compareAmendments(
+  a: AmendmentLike,
+  b: AmendmentLike,
+  options: AmendmentOrderOptions = {},
+): number {
+  const answers = compareAmendmentAnswers(a, b, options);
+  if (answers !== 0) return answers;
   if (a.positionKey !== b.positionKey) return a.positionKey - b.positionKey;
   const na = a.number ?? Number.POSITIVE_INFINITY;
   const nb = b.number ?? Number.POSITIVE_INFINITY;
@@ -668,8 +683,11 @@ export function compareAmendments(a: AmendmentLike, b: AmendmentLike): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-export function sortAmendments<T extends AmendmentLike>(list: T[]): T[] {
-  return [...list].sort(compareAmendments);
+export function sortAmendments<T extends AmendmentLike>(
+  list: T[],
+  options: AmendmentOrderOptions = {},
+): T[] {
+  return [...list].sort((a, b) => compareAmendments(a, b, options));
 }
 
 // Overlaps ---------------------------------------------------------------------
@@ -754,13 +772,16 @@ export interface AmendmentGroup<T extends AmendmentLike = AmendmentDto> {
 }
 
 /**
- * Groups amendments by overlap cluster, in text order. Groups follow the
- * position of their first member; members keep text order.
+ * Groups amendments by overlap cluster, in the list's order (sortAmendments:
+ * text order, grouped by the main presenter's answer once the answers are
+ * public). Groups follow the position of their first member, even when the
+ * members' answers differ; members keep that order.
  */
 export function groupAmendmentsByOverlap<T extends AmendmentLike>(
   list: T[],
+  options: AmendmentOrderOptions = {},
 ): AmendmentGroup<T>[] {
-  const sorted = sortAmendments(list);
+  const sorted = sortAmendments(list, options);
   const { clusters } = findOverlaps(
     passageAmendments(sorted).map(({ id, ops }) => ({ id, ops })),
   );

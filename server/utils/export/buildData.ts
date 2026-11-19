@@ -21,6 +21,7 @@ import {
   visibleAgendaItems,
 } from "../../../shared/utils/agendaSubmissions";
 import { consolidate } from "../../../shared/utils/content/consolidate";
+import { positionsArePublic } from "../../../shared/utils/positions";
 import { formatAssemblyLabel } from "../../../shared/utils/slug";
 import {
   canManageAssemblies,
@@ -250,6 +251,7 @@ async function loadAnnexAmendments(
       },
       sources: { columns: { sourceId: true } },
       derived: { columns: { transactionalId: true } },
+      position: { columns: { position: true } },
     },
     orderBy: [asc(amendments.number), asc(amendments.createdAt)],
   });
@@ -269,6 +271,7 @@ async function loadAnnexAmendments(
       approvalMethod: row.approvalMethod,
       decidedAt: row.decidedAt,
       positionKey: row.positionKey,
+      answer: row.position?.position ?? null,
       // Several offices read as one "CEA" for a reader who may not see them.
       authors: [
         ...new Set(
@@ -300,7 +303,10 @@ async function loadAnnexAmendments(
  */
 export async function annotatedBody(
   actor: Actor,
-  document: Pick<DocumentRow, "id" | "baseVersionId">,
+  document: Pick<DocumentRow, "id" | "baseVersionId"> &
+    Partial<
+      Pick<DocumentRow, "positionsPublishedAt" | "positionsDebateStartedAt">
+    >,
 ): Promise<ExportBody> {
   const baseVersionId = document.baseVersionId!;
   const [baseBlocks, amendmentRows, { visible }] = await Promise.all([
@@ -325,6 +331,11 @@ export async function annotatedBody(
       amendments: readable,
       visibleIds: visible,
       conflicts: result.conflicts,
+      // The order the room debated them in (inDebateOrder).
+      answersPublic: positionsArePublic({
+        positionsPublishedAt: document.positionsPublishedAt ?? null,
+        positionsDebateStartedAt: document.positionsDebateStartedAt ?? null,
+      }),
     }),
   };
 }

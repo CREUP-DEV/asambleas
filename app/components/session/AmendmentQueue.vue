@@ -391,7 +391,16 @@ useEventListener(scroller, "pointerdown", letGo);
         </ul>
       </section>
 
-      <ol class="space-y-1.5" :aria-label="t('session.queue.listLabel')">
+      <ol
+        class="space-y-1.5"
+        :aria-label="
+          t(
+            session.answersPublic.value
+              ? 'session.queue.listLabelByAnswer'
+              : 'session.queue.listLabel',
+          )
+        "
+      >
         <li
           v-for="entry in entries"
           :key="entry.type === 'cluster' ? `c-${entry.id}` : entry.amendment.id"

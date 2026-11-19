@@ -899,6 +899,23 @@ describe("proponentReviewItems", () => {
     ]);
   });
 
+  it("groups them by answer once the answers are public", () => {
+    const withRejected = [
+      ...list,
+      amendment("no", { positionKey: 2, position: answered("reject") }),
+    ];
+    const ids = (answersPublic: boolean) =>
+      proponentReviewItems(
+        withRejected,
+        "incorporate",
+        {},
+        { answersPublic },
+      ).map((item) => item.id);
+    expect(ids(false)).toEqual(["no", "first", "2", "in", "late"]);
+    // A transactional goes with the accepted, whatever its answer.
+    expect(ids(true)).toEqual(["first", "2", "in", "no", "late"]);
+  });
+
   it("counts the progress over the amendments to answer", () => {
     const items = proponentReviewItems(list, "incorporate");
     expect(proponentReviewProgress(items)).toEqual({ answered: 2, total: 4 });

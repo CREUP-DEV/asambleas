@@ -1,4 +1,5 @@
 import type { Block } from "~~/shared/types/content";
+import { positionsArePublic } from "~~/shared/utils/positions";
 import { errorStatus } from "../api/useApi";
 import { useCurrentAssembly } from "../assembly/useCurrentAssembly";
 import { useDocument } from "../document/useDocument";
@@ -44,6 +45,9 @@ export function useDocumentWorkspace() {
     document: documentParam,
     assemblyId: () => hub.assembly.value?.id,
     documentId: () => document.value?.id,
+    // Grouped by the main presenter's answers once they are public.
+    answersPublic: () =>
+      document.value ? positionsArePublic(document.value) : false,
   });
 
   /** Base url of the amendment API, by ids once the DTOs are loaded. */

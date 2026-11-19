@@ -48,7 +48,13 @@ export type RowPanelTarget =
 const props = defineProps<{
   target: RowPanelTarget | null;
   apiBase: string;
-  can: { edit: boolean; moderate: boolean };
+  /**
+   * `internal`: a sheet key (ControlSheetDto.can.internal). Without it the
+   * panel shows only what is public: the result, the presenter's answer and
+   * the votes; never the treated mark, a result by hand, who spoke, the
+   * observations nor their history (user's decision of 2026-11-19).
+   */
+  can: { internal: boolean; edit: boolean; moderate: boolean };
   /** The treated mark on its way for this row. */
   treatedPending?: boolean;
   /** What the votes on an item depend on besides the row. */
@@ -498,12 +504,15 @@ function historyDetail(
   >
     <template #body>
       <div v-if="target" class="flex flex-col gap-6">
-        <p v-if="!can.edit && !can.moderate" class="text-muted text-sm">
+        <p
+          v-if="can.internal && !can.edit && !can.moderate"
+          class="text-muted text-sm"
+        >
           {{ t("controlSheet.panel.readOnly") }}
         </p>
 
         <!-- Treated -->
-        <div class="space-y-1">
+        <div v-if="can.internal" class="space-y-1">
           <USwitch
             v-model="treated"
             :label="
@@ -590,7 +599,7 @@ function historyDetail(
 
         <!-- Result by hand (items) -->
         <UFormField
-          v-if="target.kind === 'item'"
+          v-if="target.kind === 'item' && can.internal"
           :label="t('controlSheet.manualResult.label')"
           :description="
             target.row.outcome.byVote
@@ -612,7 +621,11 @@ function historyDetail(
         </UFormField>
 
         <!-- Who spoke: each once, noted by whoever notes the speakers -->
-        <section class="space-y-2" aria-labelledby="control-sheet-speakers">
+        <section
+          v-if="can.internal"
+          class="space-y-2"
+          aria-labelledby="control-sheet-speakers"
+        >
           <h3
             id="control-sheet-speakers"
             class="text-highlighted text-sm font-medium"
@@ -633,7 +646,7 @@ function historyDetail(
         </section>
 
         <!-- Observations -->
-        <div class="space-y-2">
+        <div v-if="can.internal" class="space-y-2">
           <div class="flex flex-wrap items-baseline justify-between gap-2">
             <label
               for="control-sheet-observations"
@@ -718,9 +731,20 @@ function historyDetail(
             />
           </div>
         </div>
+        <!-- Without the observations, the answer keeps its own save. -->
+        <div v-else-if="positionAnswer?.editable" class="flex justify-end">
+          <UButton
+            size="sm"
+            icon="i-lucide-save"
+            :label="t('controlSheet.panel.save')"
+            :loading="anySaving"
+            :disabled="!anyDirty"
+            @click="saveAll"
+          />
+        </div>
 
         <!-- Listed by hand -->
-        <div v-if="showUnlist" class="space-y-1">
+        <div v-if="showUnlist && can.internal" class="space-y-1">
           <p class="text-muted text-xs">
             {{ t("controlSheet.panel.listedHint") }}
           </p>
@@ -736,7 +760,7 @@ function historyDetail(
         </div>
 
         <!-- History -->
-        <div class="border-default space-y-3 border-t pt-4">
+        <div v-if="can.internal" class="border-default space-y-3 border-t pt-4">
           <UButton
             size="sm"
             color="neutral"

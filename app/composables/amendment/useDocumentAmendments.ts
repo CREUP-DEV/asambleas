@@ -38,12 +38,22 @@ export interface UseDocumentAmendmentsOptions {
   assemblyId?: MaybeRefOrGetter<string | undefined>;
   /** Document id, to recognise the live events that concern it. */
   documentId?: MaybeRefOrGetter<string | undefined>;
+  /**
+   * The main presenter's answers to the document's amendments are public
+   * (positionsArePublic): the list on screen (`groups`) is then grouped by
+   * them (accepted, rejected, the rest), each group in text order. Text
+   * order alone when omitted, and always for `amendments`, `listed` and
+   * `mine`.
+   */
+  answersPublic?: MaybeRefOrGetter<boolean>;
 }
 
 /**
  * The amendments of one document as the actor sees them
  * (GET .../documents/{document}/amendments), with everything the workspace
- * derives from them: text order, overlap clusters, gutter markers, filters
+ * derives from them: text order, overlap clusters (`groups`, the list on
+ * screen, grouped by the main presenter's answer once public:
+ * `answersPublic`), gutter markers, filters
  * and the actor's drafts. Refreshes itself on live events for the document.
  *
  * The main list leaves drafts out; `mine` holds the actor's drafts and
@@ -80,9 +90,14 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
 
   const pending = computed(() => status.value === "pending");
 
+  // Text order: what the pickers, the composer and `mine` read. Only the
+  // list on screen (`groups`) is grouped by the answers once public.
   const amendments = computed<AmendmentDto[]>(() =>
     sortAmendments(data.value?.amendments ?? []),
   );
+  const order = computed(() => ({
+    answersPublic: toValue(options.answersPublic) ?? false,
+  }));
   const relations = computed(() => data.value?.relations ?? []);
   const byId = computed(
     () =>
@@ -173,7 +188,9 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
       (id) => unreadKept.value.has(id) || isLeft(id),
     ),
   );
-  const groups = computed(() => groupAmendmentsByOverlap(filtered.value));
+  const groups = computed(() =>
+    groupAmendmentsByOverlap(filtered.value, order.value),
+  );
 
   // Nothing left sent back (fixed and sent again, or another document): show
   // the whole list again rather than an empty filtered one.

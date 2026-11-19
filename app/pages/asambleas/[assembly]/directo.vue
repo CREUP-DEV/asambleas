@@ -374,8 +374,12 @@ const currentRow = computed(
 );
 
 const debatedId = computed(() => live.value?.amendmentId ?? null);
+// Grouped by the main presenter's answers once they are public (as
+// showPosition below), as on the Mesa's console.
 const amendmentRows = computed(() =>
-  liveAmendmentRows(amendments.value, debatedId.value),
+  liveAmendmentRows(amendments.value, debatedId.value, {
+    answersPublic: document.value ? positionsArePublic(document.value) : false,
+  }),
 );
 const debated = computed(
   () => amendmentRows.value.find((row) => row.current) ?? null,

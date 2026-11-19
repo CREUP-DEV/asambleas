@@ -72,6 +72,7 @@ import {
   flattenAgendaTree,
   numberedAgendaTitle,
 } from "~/utils/agendaTree";
+import { positionsArePublic } from "~~/shared/utils/positions";
 
 /**
  * The control sheet of the assembly (hoja de control), for the Mesa, the
@@ -79,6 +80,12 @@ import {
  * «General», one row per agenda item with documents, and «Enmiendas», the
  * amendments of one document. It replaces the spreadsheet they kept during
  * the session and feeds the minutes (docs/control-sheet-plan.md).
+ *
+ * Everyone else who sees the assembly reads it too (user's decision of
+ * 2026-11-19), only what is public (ControlSheetDto.can.internal false):
+ * «General» and «Enmiendas» without the treated mark, who spoke and the
+ * observations, the presenter's answers once public, and neither «Turnos de
+ * palabra» nor «Historial».
  *
  * The agenda comes from the hub (useAssemblyAgenda); the sheet's own answer
  * adds the final votes, the votes on items, the amendment counts and who
@@ -101,14 +108,6 @@ useHead({
       .filter(Boolean)
       .join(" · "),
 });
-
-const allowed = computed(
-  () =>
-    can(PERMISSION_KEYS.CONTROL_SHEET_VIEW) ||
-    can(PERMISSION_KEYS.CONTROL_SHEET_EDIT) ||
-    can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS) ||
-    can(PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT),
-);
 
 /**
  * Recording results from the sheet, never projected (the Mesa and
@@ -137,7 +136,6 @@ const sheetFetch = useFetch<ControlSheetDto>(
   () => `${apiBase.value}/control-sheet`,
   {
     key: computed(() => `control-sheet-${assembly.value?.id ?? "none"}`),
-    immediate: allowed.value,
     dedupe: "defer",
   },
 );
@@ -148,7 +146,6 @@ useStaleDataNotice(stale);
 
 const liveFetch = useFetch<LiveStateDto>(() => `${apiBase.value}/live-state`, {
   key: computed(() => `control-sheet-live-${assembly.value?.id ?? "none"}`),
-  immediate: allowed.value,
   dedupe: "defer",
 });
 
@@ -173,6 +170,8 @@ const membersById = computed<ReadonlyMap<string, MemberDto>>(
 );
 
 const live = computed(() => liveFetch.data.value ?? null);
+/** A sheet key: its notes, turns and history (ControlSheetDto.can). */
+const internal = computed(() => sheet.value?.can.internal ?? false);
 const items = computed(() => agenda.data.value?.items ?? []);
 const agendaDocuments = computed(() => agenda.data.value?.documents ?? []);
 
@@ -194,6 +193,11 @@ const tab = computed<SheetTab>({
     const match = (Object.keys(TAB_SLUGS) as SheetTab[]).find(
       (key) => TAB_SLUGS[key] === slug,
     );
+    // The turns and the history are the sheet's own: a link to them opens
+    // «General» to everyone else.
+    if (!internal.value && (match === "turns" || match === "history")) {
+      return "general";
+    }
     return match ?? "general";
   },
   set: (value) => {
@@ -218,8 +222,12 @@ function tabQuery(value: SheetTab): SheetQueryPatch {
 const tabItems = computed<TabsItem[]>(() => [
   { value: "general", label: t("controlSheet.tabs.general") },
   { value: "amendments", label: t("controlSheet.tabs.amendments") },
-  { value: "turns", label: t("controlSheet.tabs.turns") },
-  { value: "history", label: t("controlSheet.tabs.history") },
+  ...(internal.value
+    ? [
+        { value: "turns", label: t("controlSheet.tabs.turns") },
+        { value: "history", label: t("controlSheet.tabs.history") },
+      ]
+    : []),
 ]);
 
 const documentOptions = computed(() =>
@@ -276,7 +284,7 @@ const amendmentsFetch = useAsyncData<SheetAmendments | null>(
   computed(() => `control-sheet-amendments:${amendmentsUrl.value ?? "none"}`),
   async () => {
     const documentId = selectedDocument.value?.id;
-    if (!amendmentsUrl.value || !allowed.value || !documentId) return null;
+    if (!amendmentsUrl.value || !documentId) return null;
     const dto = await api.get<DocumentAmendmentsDto>(amendmentsUrl.value);
     return { ...dto, documentId };
   },
@@ -309,13 +317,63 @@ const amendmentRows = computed(() =>
     sheet.value?.amendmentRows ?? [],
     sheet.value?.positions ?? [],
     sheet.value?.turns ?? [],
+    {
+      answersPublic: selectedDocument.value
+        ? positionsArePublic(selectedDocument.value)
+        : false,
+    },
   ),
 );
 
 // Sorting and filtering, kept in the query ------------------------------------
 
-const generalState = computed(() => parseGeneralSheetQuery(route.query));
-const amendmentState = computed(() => parseAmendmentSheetQuery(route.query));
+/**
+ * Whether the reader reads the presenter's answers to the chosen document's
+ * amendments: with a sheet key, once they are public, or when the sheet
+ * gives it some (its presenters read them before).
+ */
+const showPositions = computed(
+  () =>
+    internal.value ||
+    (selectedDocument.value !== null &&
+      positionsArePublic(selectedDocument.value)) ||
+    amendmentRows.value.some((row) => row.position !== null),
+);
+
+/** Sort keys a reader without a sheet key has no column for. */
+const INTERNAL_SORT_KEYS: ReadonlySet<string> = new Set([
+  "treated",
+  "speakers",
+]);
+
+/**
+ * The state in the query as this reader may use it: without a sheet key,
+ * no view but «Todas» and no sort by a column it does not have (a link
+ * from someone else's sheet falls back to the defaults).
+ */
+const generalState = computed(() => {
+  const state = parseGeneralSheetQuery(route.query);
+  if (internal.value) return state;
+  return {
+    ...state,
+    sort: INTERNAL_SORT_KEYS.has(state.sort.key)
+      ? DEFAULT_GENERAL_SORT
+      : state.sort,
+    filters: { ...state.filters, view: EMPTY_GENERAL_FILTERS.view },
+  };
+});
+const amendmentState = computed(() => {
+  const state = parseAmendmentSheetQuery(route.query);
+  if (internal.value) return state;
+  const hidden =
+    INTERNAL_SORT_KEYS.has(state.sort.key) ||
+    (!showPositions.value && state.sort.key === "position");
+  return {
+    ...state,
+    sort: hidden ? DEFAULT_AMENDMENT_SORT : state.sort,
+    filters: { ...state.filters, view: EMPTY_AMENDMENT_FILTERS.view },
+  };
+});
 
 function replaceQuery(patch: SheetQueryPatch): void {
   void router.replace({ query: { ...route.query, ...patch } });
@@ -542,17 +600,22 @@ const AMENDMENT_COLUMN_KEYS: Record<AmendmentSortKey, string> = {
   speakers: "controlSheet.columns.speakers",
 };
 
+// The views tell rows apart by the sheet's marks: only with a sheet key.
 const generalViewItems = computed(() =>
-  GENERAL_VIEWS.map((value) => ({
-    value,
-    label: t(`controlSheet.filters.views.general.${value}`),
-  })),
+  internal.value
+    ? GENERAL_VIEWS.map((value) => ({
+        value,
+        label: t(`controlSheet.filters.views.general.${value}`),
+      }))
+    : [],
 );
 const amendmentViewItems = computed(() =>
-  AMENDMENT_VIEWS.map((value) => ({
-    value,
-    label: t(`controlSheet.filters.views.amendments.${value}`),
-  })),
+  internal.value
+    ? AMENDMENT_VIEWS.map((value) => ({
+        value,
+        label: t(`controlSheet.filters.views.amendments.${value}`),
+      }))
+    : [],
 );
 const resultItems = computed(() =>
   RESULT_FILTERS.map((value) => ({
@@ -567,13 +630,19 @@ const stateItems = computed(() =>
   })),
 );
 const generalSortItems = computed(() =>
-  GENERAL_SORT_KEYS.map((value) => ({
+  GENERAL_SORT_KEYS.filter(
+    (value) => internal.value || !INTERNAL_SORT_KEYS.has(value),
+  ).map((value) => ({
     value,
     label: t(GENERAL_COLUMN_KEYS[value]),
   })),
 );
 const amendmentSortItems = computed(() =>
-  AMENDMENT_SORT_KEYS.map((value) => ({
+  AMENDMENT_SORT_KEYS.filter(
+    (value) =>
+      (internal.value || !INTERNAL_SORT_KEYS.has(value)) &&
+      (showPositions.value || value !== "position"),
+  ).map((value) => ({
     value,
     label: t(AMENDMENT_COLUMN_KEYS[value]),
   })),
@@ -1008,7 +1077,6 @@ function onPositionSaved(): void {
 }
 
 function refreshSheet(): void {
-  if (!allowed.value) return;
   void sheetFetch.refresh({ dedupe: "defer" });
   if (amendmentsUrl.value) void amendmentsFetch.refresh();
 }
@@ -1016,7 +1084,7 @@ function refreshSheet(): void {
 onLive((events) => {
   headcounts.onLive(events);
   if (affectsControlSheet(events)) refreshSheet();
-  if (affectsLiveDebate(events) && allowed.value) {
+  if (affectsLiveDebate(events)) {
     void liveFetch.refresh({ dedupe: "defer" });
   }
 });
@@ -1122,100 +1190,271 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
 
 <template>
   <div v-if="assembly" class="space-y-6">
-    <CommonEmptyState
-      v-if="!allowed"
-      icon="i-lucide-shield-x"
-      :title="t('controlSheet.forbiddenTitle')"
-      :description="t('controlSheet.forbiddenDescription')"
-      variant="outline"
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div class="min-w-0 space-y-1">
+        <h2 class="text-highlighted text-xl font-semibold">
+          {{ t("controlSheet.title") }}
+        </h2>
+        <p class="text-muted max-w-3xl text-sm">
+          {{ t(internal ? "controlSheet.intro" : "controlSheet.introPublic") }}
+        </p>
+      </div>
+      <USwitch
+        v-model="follow"
+        :label="t('controlSheet.follow')"
+        :description="t('controlSheet.followHint')"
+        class="max-w-xs"
+      />
+    </div>
+
+    <div v-if="loading" class="space-y-3" role="status">
+      <span class="sr-only">{{ t("controlSheet.loading") }}</span>
+      <USkeleton
+        v-for="n in 4"
+        :key="n"
+        aria-hidden="true"
+        class="h-16 w-full"
+      />
+    </div>
+
+    <UAlert
+      v-else-if="failed"
+      color="error"
+      variant="subtle"
+      icon="i-lucide-circle-alert"
+      :title="t('controlSheet.loadError')"
+      :actions="[
+        {
+          label: t('controlSheet.retry'),
+          color: 'error',
+          variant: 'outline',
+          onClick: () => refreshSheet(),
+        },
+      ]"
+      role="alert"
     />
 
     <template v-else>
-      <div class="flex flex-wrap items-start justify-between gap-3">
-        <div class="min-w-0 space-y-1">
-          <h2 class="text-highlighted text-xl font-semibold">
-            {{ t("controlSheet.title") }}
-          </h2>
-          <p class="text-muted max-w-3xl text-sm">
-            {{ t("controlSheet.intro") }}
-          </p>
-        </div>
-        <USwitch
-          v-model="follow"
-          :label="t('controlSheet.follow')"
-          :description="t('controlSheet.followHint')"
-          class="max-w-xs"
-        />
-      </div>
-
-      <div v-if="loading" class="space-y-3" role="status">
-        <span class="sr-only">{{ t("controlSheet.loading") }}</span>
-        <USkeleton
-          v-for="n in 4"
-          :key="n"
-          aria-hidden="true"
-          class="h-16 w-full"
-        />
-      </div>
-
-      <UAlert
-        v-else-if="failed"
-        color="error"
-        variant="subtle"
-        icon="i-lucide-circle-alert"
-        :title="t('controlSheet.loadError')"
-        :actions="[
-          {
-            label: t('controlSheet.retry'),
-            color: 'error',
-            variant: 'outline',
-            onClick: () => refreshSheet(),
-          },
-        ]"
-        role="alert"
+      <UTabs
+        v-model="tab"
+        :items="tabItems"
+        :content="false"
+        variant="link"
+        :aria-label="t('controlSheet.tabs.label')"
       />
 
-      <template v-else>
-        <UTabs
-          v-model="tab"
-          :items="tabItems"
-          :content="false"
-          variant="link"
-          :aria-label="t('controlSheet.tabs.label')"
+      <template v-if="tab === 'general'">
+        <CommonEmptyState
+          v-if="generalRows.length === 0"
+          icon="i-lucide-sheet"
+          :title="t('controlSheet.emptyTitle')"
+          :description="t('controlSheet.emptyDescription')"
+          variant="outline"
         />
-
-        <template v-if="tab === 'general'">
-          <CommonEmptyState
-            v-if="generalRows.length === 0"
-            icon="i-lucide-sheet"
-            :title="t('controlSheet.emptyTitle')"
-            :description="t('controlSheet.emptyDescription')"
-            variant="outline"
+        <template v-else>
+          <ControlSheetToolbar
+            v-model:search="searchDraft"
+            v-model:view="generalView"
+            v-model:extra="generalResults"
+            v-model:sort="generalSort"
+            :search-label="t('controlSheet.filters.search')"
+            :search-placeholder="
+              t(
+                internal
+                  ? 'controlSheet.filters.searchGeneral'
+                  : 'controlSheet.filters.searchGeneralPublic',
+              )
+            "
+            :views="generalViewItems"
+            :views-label="t('controlSheet.filters.viewsGeneral')"
+            :extra-items="resultItems"
+            :extra-label="t('controlSheet.columns.result')"
+            :sort-items="generalSortItems"
+            :fallback="DEFAULT_GENERAL_SORT"
+            :active="generalActive"
+            :count="generalActive > 0 ? generalCount : null"
+            :status="listStatus"
+            @clear="clearGeneralFilters"
           />
+          <!-- A heading in debate is shown even when no item row is. -->
+          <CommonEmptyState
+            v-if="shownGeneral.length === 0"
+            icon="i-lucide-search-x"
+            :title="t('controlSheet.filters.noMatchesTitle')"
+            :description="t('controlSheet.filters.noMatchesDescription')"
+            variant="outline"
+          >
+            <template #action>
+              <UButton
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-filter-x"
+                :label="t('controlSheet.filters.clear')"
+                @click="clearGeneralFilters"
+              />
+            </template>
+          </CommonEmptyState>
+          <ControlSheetGeneral
+            v-else
+            :rows="shownGeneral"
+            :document-path="documentPath"
+            :members="membersById"
+            :can-edit="canEdit || canModerate"
+            :treated-pending="treatedPending"
+            :sort="generalSort"
+            :flat="generalFlat"
+            :internal="internal"
+            @open="openItem"
+            @sort="onGeneralSort"
+          />
+        </template>
+        <div v-if="canEdit">
+          <UButton
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-list-plus"
+            :label="t('controlSheet.add.button')"
+            @click="addOpen = true"
+          />
+        </div>
+      </template>
+
+      <template v-else-if="tab === 'amendments'">
+        <CommonEmptyState
+          v-if="documentOptions.length === 0"
+          icon="i-lucide-file-pen-line"
+          :title="t('controlSheet.document.noneTitle')"
+          :description="t('controlSheet.document.none')"
+          variant="outline"
+        />
+        <template v-else>
+          <UFormField
+            :label="t('controlSheet.document.label')"
+            class="max-w-3xl"
+          >
+            <USelectMenu
+              v-model="selectedDocumentId"
+              :items="selectItems"
+              value-key="value"
+              :search-input="{
+                placeholder: t('controlSheet.document.search'),
+              }"
+              :ui="{
+                value: 'whitespace-normal text-start',
+                itemLabel: 'whitespace-normal',
+              }"
+              class="w-full"
+            />
+          </UFormField>
+          <!--
+              Where the document is in the agenda, and who answers its
+              amendments: its main presenter.
+            -->
+          <dl
+            v-if="selectedDocument"
+            class="grid grid-cols-1 gap-x-3 gap-y-1.5 text-sm sm:grid-cols-[auto_1fr] sm:items-center"
+          >
+            <template v-if="selectedTrail.length > 0">
+              <dt class="text-muted">
+                {{ t("controlSheet.documentItem") }}
+              </dt>
+              <dd>
+                <ol class="flex flex-wrap items-center gap-x-1.5 gap-y-1">
+                  <li
+                    v-for="(step, index) in selectedTrail"
+                    :key="step.id"
+                    class="flex items-center gap-1.5"
+                  >
+                    <UIcon
+                      v-if="index > 0"
+                      name="i-lucide-chevron-right"
+                      class="text-dimmed size-3.5 shrink-0"
+                      aria-hidden="true"
+                    />
+                    <ULink
+                      :to="agendaItemPath(sectionPath(), step)"
+                      class="text-default underline-offset-2 hover:underline"
+                      >{{ trailLabel(step) }}</ULink
+                    >
+                  </li>
+                </ol>
+              </dd>
+            </template>
+            <dt class="text-muted">
+              {{ t("controlSheet.documentPresenter") }}
+            </dt>
+            <dd class="flex flex-wrap items-center gap-2">
+              <ControlSheetMemberTags
+                :main="
+                  selectedDocument.proponent ? [selectedDocument.proponent] : []
+                "
+                :others="selectedDocument.coProponents"
+                :members="membersById"
+                :label="t('controlSheet.documentPresenter')"
+                :others-title="t('controlSheet.otherPresenters')"
+              />
+              <span v-if="!selectedDocument.proponent" class="text-dimmed">{{
+                t("controlSheet.proponentNone")
+              }}</span>
+            </dd>
+          </dl>
+          <div
+            v-if="amendmentsFetch.pending.value && !amendmentsData"
+            class="space-y-3"
+            role="status"
+          >
+            <span class="sr-only">{{ t("controlSheet.loading") }}</span>
+            <USkeleton
+              v-for="n in 3"
+              :key="n"
+              aria-hidden="true"
+              class="h-14 w-full"
+            />
+          </div>
+          <UAlert
+            v-else-if="amendmentsFetch.error.value && !amendmentsData"
+            color="error"
+            variant="subtle"
+            icon="i-lucide-circle-alert"
+            :title="t('controlSheet.amendmentsLoadError')"
+            :actions="[
+              {
+                label: t('controlSheet.retry'),
+                color: 'error',
+                variant: 'outline',
+                onClick: () => {
+                  void amendmentsFetch.refresh();
+                },
+              },
+            ]"
+            role="alert"
+          />
+          <p v-else-if="amendmentRows.length === 0" class="text-muted text-sm">
+            {{ t("controlSheet.amendmentsEmpty") }}
+          </p>
           <template v-else>
             <ControlSheetToolbar
               v-model:search="searchDraft"
-              v-model:view="generalView"
-              v-model:extra="generalResults"
-              v-model:sort="generalSort"
+              v-model:view="amendmentView"
+              v-model:extra="amendmentStates"
+              v-model:sort="amendmentSort"
               :search-label="t('controlSheet.filters.search')"
-              :search-placeholder="t('controlSheet.filters.searchGeneral')"
-              :views="generalViewItems"
-              :views-label="t('controlSheet.filters.viewsGeneral')"
-              :extra-items="resultItems"
+              :search-placeholder="t('controlSheet.filters.searchAmendments')"
+              :views="amendmentViewItems"
+              :views-label="t('controlSheet.filters.viewsAmendments')"
+              :extra-items="stateItems"
               :extra-label="t('controlSheet.columns.result')"
-              :sort-items="generalSortItems"
-              :fallback="DEFAULT_GENERAL_SORT"
-              :active="generalActive"
-              :count="generalActive > 0 ? generalCount : null"
+              :sort-items="amendmentSortItems"
+              :fallback="DEFAULT_AMENDMENT_SORT"
+              :active="amendmentActive"
+              :count="amendmentActive > 0 ? amendmentCountText : null"
               :status="listStatus"
-              @clear="clearGeneralFilters"
+              @clear="clearAmendmentFilters"
             />
-            <!-- A heading in debate is shown even when no item row is. -->
             <CommonEmptyState
-              v-if="shownGeneral.length === 0"
+              v-if="shownAmendments.length === 0"
               icon="i-lucide-search-x"
-              :title="t('controlSheet.filters.noMatchesTitle')"
+              :title="t('controlSheet.filters.noMatchesAmendments')"
               :description="t('controlSheet.filters.noMatchesDescription')"
               variant="outline"
             >
@@ -1225,291 +1464,114 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
                   variant="outline"
                   icon="i-lucide-filter-x"
                   :label="t('controlSheet.filters.clear')"
-                  @click="clearGeneralFilters"
+                  @click="clearAmendmentFilters"
                 />
               </template>
             </CommonEmptyState>
-            <ControlSheetGeneral
+            <ControlSheetAmendments
               v-else
-              :rows="shownGeneral"
-              :document-path="documentPath"
+              :rows="shownAmendments"
+              :amendment-path="amendmentPath"
               :members="membersById"
               :can-edit="canEdit || canModerate"
               :treated-pending="treatedPending"
-              :sort="generalSort"
-              :flat="generalFlat"
-              @open="openItem"
-              @sort="onGeneralSort"
+              :sort="amendmentSort"
+              :internal="internal"
+              :show-positions="showPositions"
+              @open="openAmendment"
+              @sort="onAmendmentSort"
             />
-          </template>
-          <div v-if="canEdit">
-            <UButton
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-list-plus"
-              :label="t('controlSheet.add.button')"
-              @click="addOpen = true"
-            />
-          </div>
-        </template>
-
-        <template v-else-if="tab === 'amendments'">
-          <CommonEmptyState
-            v-if="documentOptions.length === 0"
-            icon="i-lucide-file-pen-line"
-            :title="t('controlSheet.document.noneTitle')"
-            :description="t('controlSheet.document.none')"
-            variant="outline"
-          />
-          <template v-else>
-            <UFormField
-              :label="t('controlSheet.document.label')"
-              class="max-w-3xl"
-            >
-              <USelectMenu
-                v-model="selectedDocumentId"
-                :items="selectItems"
-                value-key="value"
-                :search-input="{
-                  placeholder: t('controlSheet.document.search'),
-                }"
-                :ui="{
-                  value: 'whitespace-normal text-start',
-                  itemLabel: 'whitespace-normal',
-                }"
-                class="w-full"
-              />
-            </UFormField>
-            <!--
-              Where the document is in the agenda, and who answers its
-              amendments: its main presenter.
-            -->
-            <dl
-              v-if="selectedDocument"
-              class="grid grid-cols-1 gap-x-3 gap-y-1.5 text-sm sm:grid-cols-[auto_1fr] sm:items-center"
-            >
-              <template v-if="selectedTrail.length > 0">
-                <dt class="text-muted">
-                  {{ t("controlSheet.documentItem") }}
-                </dt>
-                <dd>
-                  <ol class="flex flex-wrap items-center gap-x-1.5 gap-y-1">
-                    <li
-                      v-for="(step, index) in selectedTrail"
-                      :key="step.id"
-                      class="flex items-center gap-1.5"
-                    >
-                      <UIcon
-                        v-if="index > 0"
-                        name="i-lucide-chevron-right"
-                        class="text-dimmed size-3.5 shrink-0"
-                        aria-hidden="true"
-                      />
-                      <ULink
-                        :to="agendaItemPath(sectionPath(), step)"
-                        class="text-default underline-offset-2 hover:underline"
-                        >{{ trailLabel(step) }}</ULink
-                      >
-                    </li>
-                  </ol>
-                </dd>
-              </template>
-              <dt class="text-muted">
-                {{ t("controlSheet.documentPresenter") }}
-              </dt>
-              <dd class="flex flex-wrap items-center gap-2">
-                <ControlSheetMemberTags
-                  :main="
-                    selectedDocument.proponent
-                      ? [selectedDocument.proponent]
-                      : []
-                  "
-                  :others="selectedDocument.coProponents"
-                  :members="membersById"
-                  :label="t('controlSheet.documentPresenter')"
-                  :others-title="t('controlSheet.otherPresenters')"
-                />
-                <span v-if="!selectedDocument.proponent" class="text-dimmed">{{
-                  t("controlSheet.proponentNone")
-                }}</span>
-              </dd>
-            </dl>
-            <div
-              v-if="amendmentsFetch.pending.value && !amendmentsData"
-              class="space-y-3"
-              role="status"
-            >
-              <span class="sr-only">{{ t("controlSheet.loading") }}</span>
-              <USkeleton
-                v-for="n in 3"
-                :key="n"
-                aria-hidden="true"
-                class="h-14 w-full"
-              />
-            </div>
-            <UAlert
-              v-else-if="amendmentsFetch.error.value && !amendmentsData"
-              color="error"
-              variant="subtle"
-              icon="i-lucide-circle-alert"
-              :title="t('controlSheet.amendmentsLoadError')"
-              :actions="[
-                {
-                  label: t('controlSheet.retry'),
-                  color: 'error',
-                  variant: 'outline',
-                  onClick: () => {
-                    void amendmentsFetch.refresh();
-                  },
-                },
-              ]"
-              role="alert"
-            />
-            <p
-              v-else-if="amendmentRows.length === 0"
-              class="text-muted text-sm"
-            >
-              {{ t("controlSheet.amendmentsEmpty") }}
-            </p>
-            <template v-else>
-              <ControlSheetToolbar
-                v-model:search="searchDraft"
-                v-model:view="amendmentView"
-                v-model:extra="amendmentStates"
-                v-model:sort="amendmentSort"
-                :search-label="t('controlSheet.filters.search')"
-                :search-placeholder="t('controlSheet.filters.searchAmendments')"
-                :views="amendmentViewItems"
-                :views-label="t('controlSheet.filters.viewsAmendments')"
-                :extra-items="stateItems"
-                :extra-label="t('controlSheet.columns.result')"
-                :sort-items="amendmentSortItems"
-                :fallback="DEFAULT_AMENDMENT_SORT"
-                :active="amendmentActive"
-                :count="amendmentActive > 0 ? amendmentCountText : null"
-                :status="listStatus"
-                @clear="clearAmendmentFilters"
-              />
-              <CommonEmptyState
-                v-if="shownAmendments.length === 0"
-                icon="i-lucide-search-x"
-                :title="t('controlSheet.filters.noMatchesAmendments')"
-                :description="t('controlSheet.filters.noMatchesDescription')"
-                variant="outline"
-              >
-                <template #action>
-                  <UButton
-                    color="neutral"
-                    variant="outline"
-                    icon="i-lucide-filter-x"
-                    :label="t('controlSheet.filters.clear')"
-                    @click="clearAmendmentFilters"
-                  />
-                </template>
-              </CommonEmptyState>
-              <ControlSheetAmendments
-                v-else
-                :rows="shownAmendments"
-                :amendment-path="amendmentPath"
-                :members="membersById"
-                :can-edit="canEdit || canModerate"
-                :treated-pending="treatedPending"
-                :sort="amendmentSort"
-                @open="openAmendment"
-                @sort="onAmendmentSort"
-              />
-            </template>
           </template>
         </template>
-
-        <ControlSheetTurns
-          v-else-if="tab === 'turns'"
-          :turns="sheet?.turns ?? []"
-          :items="items"
-        />
-
-        <!-- Its first page loads with it (async setup): a skeleton meanwhile. -->
-        <Suspense v-else>
-          <ControlSheetHistory
-            :api-base="apiBase"
-            :items="items"
-            :documents="agendaDocuments"
-          />
-          <template #fallback>
-            <div class="space-y-3" role="status">
-              <span class="sr-only">{{ t("controlSheet.loading") }}</span>
-              <USkeleton
-                v-for="n in 4"
-                :key="n"
-                aria-hidden="true"
-                class="h-12 w-full"
-              />
-            </div>
-          </template>
-        </Suspense>
       </template>
 
-      <ControlSheetRowPanel
-        v-model:open="panelOpen"
-        :target="panelTarget"
-        :api-base="apiBase"
-        :can="{ edit: canEdit, moderate: canModerate }"
-        :treated-pending="panelTreatedPending"
-        :vote-context="voteContext"
-        :document="panelDocument"
-        :speaker-turns="sheet?.turns ?? []"
-        :speakers="{ note: canNoteSpeakers, open: speakerNotesOpen }"
-        :results="{
-          record: canRecordResults,
-          amendments: amendmentsData?.amendments ?? [],
-          finalVoted: panelFinalVoted,
-        }"
-        @item-saved="onItemSaved"
-        @amendment-saved="onAmendmentSaved"
-        @treated="onPanelTreated"
-        @vote-changed="onVoteChanged"
-        @position-saved="onPositionSaved"
-        @speakers-updated="refreshSheet"
-        @result-changed="onPositionSaved"
+      <ControlSheetTurns
+        v-else-if="tab === 'turns'"
+        :turns="sheet?.turns ?? []"
+        :items="items"
       />
 
-      <UModal
-        v-model:open="addOpen"
-        :title="t('controlSheet.add.title')"
-        :description="t('controlSheet.add.description')"
-      >
-        <template #body>
-          <p v-if="addItems.length === 0" class="text-muted text-sm">
-            {{ t("controlSheet.add.none") }}
-          </p>
-          <UFormField v-else :label="t('controlSheet.add.label')">
-            <USelectMenu
-              v-model="addChoice"
-              :items="addItems"
-              value-key="value"
-              :placeholder="t('controlSheet.add.placeholder')"
-              class="w-full"
-            />
-          </UFormField>
-        </template>
-        <template #footer>
-          <div class="flex w-full justify-end gap-2">
-            <UButton
-              color="neutral"
-              variant="outline"
-              :label="t('common.cancel')"
-              @click="addOpen = false"
-            />
-            <UButton
-              icon="i-lucide-list-plus"
-              :label="t('controlSheet.add.confirm')"
-              :loading="adding"
-              :disabled="!addChoice"
-              @click="addItem"
+      <!-- Its first page loads with it (async setup): a skeleton meanwhile. -->
+      <Suspense v-else>
+        <ControlSheetHistory
+          :api-base="apiBase"
+          :items="items"
+          :documents="agendaDocuments"
+        />
+        <template #fallback>
+          <div class="space-y-3" role="status">
+            <span class="sr-only">{{ t("controlSheet.loading") }}</span>
+            <USkeleton
+              v-for="n in 4"
+              :key="n"
+              aria-hidden="true"
+              class="h-12 w-full"
             />
           </div>
         </template>
-      </UModal>
+      </Suspense>
     </template>
+
+    <ControlSheetRowPanel
+      v-model:open="panelOpen"
+      :target="panelTarget"
+      :api-base="apiBase"
+      :can="{ internal, edit: canEdit, moderate: canModerate }"
+      :treated-pending="panelTreatedPending"
+      :vote-context="voteContext"
+      :document="panelDocument"
+      :speaker-turns="sheet?.turns ?? []"
+      :speakers="{ note: canNoteSpeakers, open: speakerNotesOpen }"
+      :results="{
+        record: canRecordResults,
+        amendments: amendmentsData?.amendments ?? [],
+        finalVoted: panelFinalVoted,
+      }"
+      @item-saved="onItemSaved"
+      @amendment-saved="onAmendmentSaved"
+      @treated="onPanelTreated"
+      @vote-changed="onVoteChanged"
+      @position-saved="onPositionSaved"
+      @speakers-updated="refreshSheet"
+      @result-changed="onPositionSaved"
+    />
+
+    <UModal
+      v-model:open="addOpen"
+      :title="t('controlSheet.add.title')"
+      :description="t('controlSheet.add.description')"
+    >
+      <template #body>
+        <p v-if="addItems.length === 0" class="text-muted text-sm">
+          {{ t("controlSheet.add.none") }}
+        </p>
+        <UFormField v-else :label="t('controlSheet.add.label')">
+          <USelectMenu
+            v-model="addChoice"
+            :items="addItems"
+            value-key="value"
+            :placeholder="t('controlSheet.add.placeholder')"
+            class="w-full"
+          />
+        </UFormField>
+      </template>
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton
+            color="neutral"
+            variant="outline"
+            :label="t('common.cancel')"
+            @click="addOpen = false"
+          />
+          <UButton
+            icon="i-lucide-list-plus"
+            :label="t('controlSheet.add.confirm')"
+            :loading="adding"
+            :disabled="!addChoice"
+            @click="addItem"
+          />
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

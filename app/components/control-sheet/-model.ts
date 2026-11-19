@@ -52,6 +52,7 @@ import {
   type LiveAmendmentState,
 } from "~/components/live-view/-model";
 import { sortSessionAmendments } from "~/composables/session/sessionModel";
+import type { AmendmentOrderOptions } from "~~/shared/utils/amendmentOrder";
 
 /** A document as a row of «General» shows it. */
 export interface SheetRowDocument {
@@ -396,6 +397,8 @@ export function buildAmendmentRows(
   sheetRows: readonly ControlSheetAmendmentRowDto[] = [],
   positions: readonly ControlSheetPositionDto[] = [],
   turns: readonly SpeakingTurnDto[] = [],
+  /** The console's order: by answer once the answers are public. */
+  order: AmendmentOrderOptions = {},
 ): AmendmentSheetRow[] {
   const notes = new Map(sheetRows.map((row) => [row.amendmentId, row]));
   const turnsByAmendment = new Map<string, SpeakingTurnDto[]>();
@@ -410,6 +413,7 @@ export function buildAmendmentRows(
   );
   const rows: LiveAmendmentRow[] = sortSessionAmendments(
     list.filter((amendment) => amendment.status !== "draft"),
+    order,
   ).map((amendment) => ({
     amendment,
     state: liveAmendmentState(amendment, liveAmendmentId),

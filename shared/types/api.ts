@@ -1932,9 +1932,9 @@ export interface ControlSheetDto {
   amendmentRows: ControlSheetAmendmentRowDto[];
   /**
    * The main presenter's answer to every amendment the reader sees that has
-   * one, as soon as it is given: every sheet reader reads it here, public
-   * or not yet (canSeePositions, which still rules AmendmentDto.position
-   * everywhere else).
+   * one: with a sheet key (`can.internal`) as soon as it is given, public
+   * or not yet; for everyone else only once canSeePositions lets it read
+   * them, as AmendmentDto.position everywhere else.
    */
   positions: ControlSheetPositionDto[];
   /**
@@ -1943,6 +1943,14 @@ export interface ControlSheetDto {
    */
   itemVotes: VoteDto[];
   can: {
+    /**
+     * A sheet key (canViewControlSheet): reads what the sheet notes, its
+     * turns and its history. Everyone else reads only the public part
+     * (user's decision of 2026-11-19): `turns`, `itemRows` and
+     * `amendmentRows` come empty, `sessionStartedAt` null, and `positions`
+     * only where the reader reads the answers anywhere (canSeePositions).
+     */
+    internal: boolean;
     /** control_sheet:edit. */
     edit: boolean;
     /** session:moderate: the Mesa's marks. */

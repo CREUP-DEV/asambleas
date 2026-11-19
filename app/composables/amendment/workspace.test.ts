@@ -24,6 +24,7 @@ import {
   revealAmendmentKind,
   filterAmendmentList,
   groupAmendmentsByOverlap,
+  sortAmendments,
   isAmendmentPrivate,
   isNewerAmendmentVersion,
   mineAmendments,
@@ -535,6 +536,63 @@ describe("markers and groups", () => {
       ["overlap", ["a", "b"]],
       ["single", ["c"]],
     ]);
+  });
+
+  describe("once the main presenter's answers are public", () => {
+    const answer = (
+      position: "accept" | "reject" | "transact" | "pending",
+    ) => ({
+      position,
+      recordedBy: "presenter" as const,
+      comment: null,
+      updatedAt: "",
+    });
+    const rejected = { ...c, position: answer("reject") };
+    const accepted = { ...b, position: answer("accept") };
+
+    it("sorts accepted, rejected, the rest, each in text order", () => {
+      const list = [
+        amendment("n", [], { positionKey: 0 }),
+        amendment("r", [], { positionKey: 1, position: answer("reject") }),
+        amendment("t", [], { positionKey: 2, position: answer("transact") }),
+        amendment("p", [], { positionKey: 3, position: answer("pending") }),
+        amendment("y", [], { positionKey: 4, position: answer("accept") }),
+      ];
+      expect(sortAmendments(list).map((x) => x.id)).toEqual([
+        "n",
+        "r",
+        "t",
+        "p",
+        "y",
+      ]);
+      expect(
+        sortAmendments(list, { answersPublic: true }).map((x) => x.id),
+      ).toEqual(["t", "y", "r", "n", "p"]);
+    });
+
+    it("keeps text order before they are public", () => {
+      const groups = groupAmendmentsByOverlap([rejected, accepted, a], {
+        answersPublic: false,
+      });
+      expect(
+        groups.map((g) => [g.kind, g.amendments.map((x) => x.id)]),
+      ).toEqual([
+        ["overlap", ["a", "b"]],
+        ["single", ["c"]],
+      ]);
+    });
+
+    it("places a cluster at its first member, members by answer", () => {
+      const groups = groupAmendmentsByOverlap([rejected, accepted, a], {
+        answersPublic: true,
+      });
+      expect(
+        groups.map((g) => [g.kind, g.amendments.map((x) => x.id)]),
+      ).toEqual([
+        ["overlap", ["b", "a"]],
+        ["single", ["c"]],
+      ]);
+    });
   });
 
   it("does not list a transactional and what it combines as overlaps", () => {

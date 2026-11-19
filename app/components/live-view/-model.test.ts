@@ -254,6 +254,28 @@ describe("live amendments", () => {
     ).toBe("approved");
   });
 
+  it("groups the rows by answer once the answers are public", () => {
+    const answer = (position: "accept" | "reject" | "transact") => ({
+      position,
+      recordedBy: "presenter" as const,
+      comment: null,
+      updatedAt: "",
+    });
+    const list = [
+      amendment("open", { positionKey: 1 }),
+      amendment("no", { positionKey: 2, position: answer("reject") }),
+      amendment("yes", { positionKey: 3, position: answer("accept") }),
+      amendment("deal", { positionKey: 4, position: answer("transact") }),
+    ];
+    const ids = (answersPublic?: boolean) =>
+      liveAmendmentRows(list, null, { answersPublic }).map(
+        (row) => row.amendment.id,
+      );
+    expect(ids()).toEqual(["open", "no", "yes", "deal"]);
+    expect(ids(false)).toEqual(["open", "no", "yes", "deal"]);
+    expect(ids(true)).toEqual(["yes", "deal", "no", "open"]);
+  });
+
   it("counts incorporated amendments as part of the text", () => {
     const rows = liveAmendmentRows(
       [

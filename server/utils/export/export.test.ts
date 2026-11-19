@@ -470,7 +470,7 @@ describe("annex", () => {
     ]);
   });
 
-  it("lists visible amendments past draft by number, without leaking hidden codes", () => {
+  it("lists visible amendments past draft in text order, without leaking hidden codes", () => {
     const visible = new Set(["a1", "a2", "a3", "t1", "a4", "draft"]);
     const rows = buildAnnexRows({
       amendments,
@@ -489,6 +489,26 @@ describe("annex", () => {
     expect(byId.t1!.sourceCodes).toEqual(["DA 1"]);
     expect(byId.a4!.conflict).toEqual(["CEUM 1"]);
     expect(byId.a1!.conflict).toBeNull();
+  });
+
+  it("lists the annex in text order, and by answer once the answers are public", () => {
+    const list = [
+      amendment({ id: "r", number: 1, positionKey: 1, answer: "reject" }),
+      amendment({ id: "n", number: 2, positionKey: 0, answer: null }),
+      amendment({ id: "a", number: 3, positionKey: 5, answer: "accept" }),
+      amendment({ id: "x", number: 4, positionKey: 2, answer: "transact" }),
+      amendment({ id: "t", number: 5, positionKey: 9, kind: "transactional" }),
+    ];
+    const visibleIds = new Set(list.map((entry) => entry.id));
+    const order = (answersPublic: boolean) =>
+      buildAnnexRows({
+        amendments: list,
+        visibleIds,
+        conflicts: [],
+        answersPublic,
+      }).map((row) => row.id);
+    expect(order(false)).toEqual(["n", "r", "x", "a", "t"]);
+    expect(order(true)).toEqual(["x", "a", "t", "r", "n"]);
   });
 
   it("leaves approved amendments without operations out of consolidation", () => {

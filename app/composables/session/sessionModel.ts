@@ -34,6 +34,10 @@ import {
 } from "~/composables/amendment/workspace";
 import { cellFillOf } from "~~/shared/constants/cellFills";
 import {
+  compareAmendmentAnswers,
+  type AmendmentOrderOptions,
+} from "~~/shared/utils/amendmentOrder";
+import {
   agendaChildGroups,
   numberAgendaItems,
 } from "~~/shared/utils/agendaNumbering";
@@ -665,10 +669,19 @@ export function isSessionPositionByMesa(
   );
 }
 
-/** Text order (as positionKey encodes it), then number. */
-export function sortSessionAmendments(list: AmendmentDto[]): AmendmentDto[] {
+/**
+ * Text order (as positionKey encodes it), then number. Once the document's
+ * answers are public (`answersPublic`), grouped first by the main
+ * presenter's answer: accepted or transacted, rejected, the rest
+ * (shared/utils/amendmentOrder.ts).
+ */
+export function sortSessionAmendments(
+  list: AmendmentDto[],
+  options: AmendmentOrderOptions = {},
+): AmendmentDto[] {
   return [...list].sort(
     (a, b) =>
+      compareAmendmentAnswers(a, b, options) ||
       a.positionKey - b.positionKey ||
       (a.number ?? Number.MAX_SAFE_INTEGER) -
         (b.number ?? Number.MAX_SAFE_INTEGER) ||
@@ -700,7 +713,10 @@ export interface SessionQueue {
   validation: AmendmentDto[];
   /** Late amendments waiting for an admission decision, in text order. */
   pending: AmendmentDto[];
-  /** Everything else, in text order, with overlapping ones grouped. */
+  /**
+   * Everything else, in debate order (sortSessionAmendments), with
+   * overlapping ones grouped.
+   */
   entries: SessionQueueEntry[];
 }
 
@@ -718,15 +734,22 @@ function clusterable(amendment: AmendmentDto): boolean {
  * The console queue of a document. Drafts are left out, except those the
  * Secretaría sent back for a correction. Amendments not validated yet go to
  * their own group, outside the debate. Late amendments pending admission
- * come next; the rest follow the text, and amendments that act on the same
- * passage (findOverlaps) are grouped where the first of them appears.
+ * come next; the rest follow the debate order (sortSessionAmendments: the
+ * text's, grouped by the main presenter's answer once the answers are
+ * public), and amendments that act on the same passage (findOverlaps) are
+ * grouped where the first of them appears, even when their answers differ:
+ * they are debated together.
  */
-export function buildSessionQueue(list: AmendmentDto[]): SessionQueue {
+export function buildSessionQueue(
+  list: AmendmentDto[],
+  options: AmendmentOrderOptions = {},
+): SessionQueue {
   const sorted = sortSessionAmendments(
     list.filter(
       (amendment) =>
         amendment.status !== "draft" || isSessionAwaitingValidation(amendment),
     ),
+    options,
   );
   const validation = sorted.filter(isSessionAwaitingValidation);
   const ready = sorted.filter(

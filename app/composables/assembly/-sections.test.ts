@@ -13,7 +13,6 @@ const NONE: AssemblySectionAccess = {
   reviewAmendments: false,
   manage: false,
   moderate: false,
-  controlSheet: false,
   seating: false,
   online: false,
 };
@@ -22,7 +21,7 @@ const keys = (access: AssemblySectionAccess) =>
   visibleAssemblySections(access).map((section) => section.key);
 
 describe("visibleAssemblySections", () => {
-  it("gives a guest the public sections, calendar and projection included", () => {
+  it("gives a guest the public sections, the control sheet and the projection included", () => {
     expect(keys(NONE)).toEqual([
       "overview",
       "live",
@@ -30,6 +29,7 @@ describe("visibleAssemblySections", () => {
       "documents",
       "calendar",
       "convocation",
+      "controlSheet",
       "projection",
     ]);
   });
@@ -55,7 +55,6 @@ describe("visibleAssemblySections", () => {
         reviewAmendments: true,
         manage: true,
         moderate: true,
-        controlSheet: true,
         seating: true,
         online: false,
       }),
@@ -74,12 +73,6 @@ describe("visibleAssemblySections", () => {
       "seating",
       "projection",
     ]);
-  });
-
-  it("adds the control sheet only to whoever may read it", () => {
-    expect(keys(NONE)).not.toContain("controlSheet");
-    expect(keys({ ...NONE, moderate: true })).not.toContain("controlSheet");
-    expect(keys({ ...NONE, controlSheet: true })).toContain("controlSheet");
   });
 
   it("adds the room only to whoever may read it, never for an AGET", () => {
@@ -110,6 +103,7 @@ describe("groupAssemblySections", () => {
           "documents",
           "calendar",
           "convocation",
+          "controlSheet",
           "projection",
         ],
       ],
@@ -123,7 +117,6 @@ describe("groupAssemblySections", () => {
         reviewAmendments: true,
         manage: true,
         moderate: true,
-        controlSheet: true,
         seating: true,
         online: false,
       }),
@@ -143,26 +136,8 @@ describe("groupAssemblySections", () => {
     ).toEqual(["assembly", "mesa"]);
   });
 
-  it("keeps one list without titles for a CEA account with the sheet", () => {
-    expect(grouped({ ...NONE, controlSheet: true })).toEqual([
-      [
-        null,
-        [
-          "overview",
-          "live",
-          "agenda",
-          "documents",
-          "calendar",
-          "convocation",
-          "controlSheet",
-          "projection",
-        ],
-      ],
-    ]);
-  });
-
   it("keeps one list without titles for a CEA account with the room", () => {
-    expect(grouped({ ...NONE, controlSheet: true, seating: true })).toEqual([
+    expect(grouped({ ...NONE, seating: true })).toEqual([
       [
         null,
         [

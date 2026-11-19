@@ -30,6 +30,7 @@ import type {
   ProponentPosition,
 } from "~~/shared/constants/domain";
 import type { AmendmentDto, PositionBody } from "~~/shared/types/api";
+import type { AmendmentOrderOptions } from "~~/shared/utils/amendmentOrder";
 import { positionRecorderKey } from "~/utils/format";
 import {
   positionsArePublic,
@@ -512,16 +513,18 @@ function toItem(amendment: AmendmentDto): ProponentReviewItem {
 }
 
 /**
- * Everything the actor answers here, in text order: nothing once the
- * document is voted (`context.finalVoted`).
+ * Everything the actor answers here, in text order (grouped by the answers
+ * once the document's are public, `order.answersPublic`, as everywhere
+ * else): nothing once the document is voted (`context.finalVoted`).
  */
 export function proponentReviewItems(
   amendments: readonly AmendmentDto[],
   rule: AcceptedAmendmentRule,
   context: PositionContext = {},
+  order: AmendmentOrderOptions = {},
 ): ProponentReviewItem[] {
   if (context.finalVoted) return [];
-  return sortAmendments([...amendments])
+  return sortAmendments([...amendments], order)
     .filter((amendment) => isPositionReviewable(amendment, rule, context))
     .map(toItem);
 }

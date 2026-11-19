@@ -44,6 +44,11 @@ const props = defineProps<{
   treatedPending: Readonly<Record<string, boolean>>;
   sort: SheetSort<GeneralSortKey>;
   flat: boolean;
+  /**
+   * A sheet key (ControlSheetDto.can.internal): the treated mark, who spoke
+   * and the observations. Without it those columns are not there.
+   */
+  internal: boolean;
 }>();
 const emit = defineEmits<{
   open: [row: GeneralSheetRow];
@@ -130,7 +135,7 @@ function parentLine(row: GeneralSheetRow): string | null {
   });
 }
 
-const columns: { key: GeneralSortKey; label: string; class: string }[] = [
+const ALL_COLUMNS: { key: GeneralSortKey; label: string; class: string }[] = [
   { key: "number", label: "controlSheet.columns.number", class: "w-16" },
   { key: "item", label: "controlSheet.columns.item", class: "min-w-64" },
   {
@@ -151,6 +156,16 @@ const columns: { key: GeneralSortKey; label: string; class: string }[] = [
   { key: "votes", label: "controlSheet.columns.votes", class: "w-64" },
   { key: "speakers", label: "controlSheet.columns.speakers", class: "w-48" },
 ];
+/** Columns only a sheet key reads. */
+const INTERNAL_COLUMNS: ReadonlySet<GeneralSortKey> = new Set([
+  "treated",
+  "speakers",
+]);
+const columns = computed(() =>
+  props.internal
+    ? ALL_COLUMNS
+    : ALL_COLUMNS.filter((column) => !INTERNAL_COLUMNS.has(column.key)),
+);
 
 const itemRows = computed(() =>
   props.rows.filter((row) => row.kind === "item"),
@@ -163,7 +178,12 @@ const itemRows = computed(() =>
     <div
       class="border-default hidden overflow-x-auto rounded-lg border lg:block"
     >
-      <table class="w-full min-w-[78rem] text-left text-sm">
+      <table
+        :class="[
+          'w-full text-left text-sm',
+          internal ? 'min-w-[78rem]' : 'min-w-[56rem]',
+        ]"
+      >
         <caption class="sr-only">
           {{
             t("controlSheet.tabs.general")
@@ -181,8 +201,11 @@ const itemRows = computed(() =>
               :fallback="DEFAULT_GENERAL_SORT"
               @sort="(key: GeneralSortKey) => emit('sort', key)"
             />
-            <th scope="col" class="w-64 px-3 py-2 font-medium">
+            <th v-if="internal" scope="col" class="w-64 px-3 py-2 font-medium">
               {{ t("controlSheet.columns.observations") }}
+            </th>
+            <th v-else scope="col" class="w-12 px-3 py-2">
+              <span class="sr-only">{{ t("controlSheet.columns.open") }}</span>
             </th>
           </tr>
         </thead>
@@ -204,7 +227,7 @@ const itemRows = computed(() =>
             <th
               v-if="row.kind === 'heading'"
               scope="row"
-              colspan="7"
+              :colspan="columns.length"
               class="text-highlighted px-3 py-2 font-semibold"
             >
               {{ row.title }}
@@ -263,7 +286,7 @@ const itemRows = computed(() =>
                   class="justify-center"
                 />
               </td>
-              <td class="px-3 py-2 text-center">
+              <td v-if="internal" class="px-3 py-2 text-center">
                 <ControlSheetTreated
                   v-bind="treatedOf(row)"
                   :label="
@@ -291,20 +314,20 @@ const itemRows = computed(() =>
                   >{{ t("controlSheet.noVote") }}</span
                 >
               </td>
-              <td class="px-3 py-2">
+              <td v-if="internal" class="px-3 py-2">
                 <ControlSheetSpeakers :speakers="row.speakers" />
               </td>
               <td class="px-3 py-2">
                 <div class="flex items-start justify-between gap-2">
                   <p
-                    v-if="row.sheet?.observations"
+                    v-if="internal && row.sheet?.observations"
                     class="text-default line-clamp-3 text-sm whitespace-pre-line"
                   >
                     {{ row.sheet.observations }}
                   </p>
                   <!-- Nothing written: the cell stays empty, said only to screen
                        readers. -->
-                  <span v-else class="sr-only">{{
+                  <span v-else-if="internal" class="sr-only">{{
                     t("controlSheet.noObservations")
                   }}</span>
                   <UButton
@@ -397,7 +420,7 @@ const itemRows = computed(() =>
                 />
               </dd>
             </div>
-            <div>
+            <div v-if="internal">
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.treated") }}
               </dt>
@@ -438,13 +461,16 @@ const itemRows = computed(() =>
                 >
               </dd>
             </div>
-            <div class="sm:col-span-2">
+            <div v-if="internal" class="sm:col-span-2">
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.speakers") }}
               </dt>
               <dd><ControlSheetSpeakers :speakers="row.speakers" /></dd>
             </div>
-            <div v-if="row.sheet?.observations" class="sm:col-span-2">
+            <div
+              v-if="internal && row.sheet?.observations"
+              class="sm:col-span-2"
+            >
               <dt class="text-muted text-xs">
                 {{ t("controlSheet.columns.observations") }}
               </dt>

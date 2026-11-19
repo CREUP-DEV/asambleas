@@ -73,7 +73,9 @@ const extraSelectItems = computed<{ value: string; label: string }[]>(() =>
 
 <template>
   <div class="flex flex-col gap-2 lg:flex-row lg:flex-wrap lg:items-center">
+    <!-- Without the sheet's marks there is nothing to choose: no chips. -->
     <div
+      v-if="views.length > 0"
       class="flex flex-wrap items-center gap-1.5"
       role="group"
       :aria-label="viewsLabel"

@@ -4,6 +4,7 @@ import type {
   AmendmentStatus,
   ApprovalMethod,
   DocumentKind,
+  ProponentPosition,
 } from "../../../shared/constants/domain";
 import type {
   AmendmentInput,
@@ -14,6 +15,7 @@ import {
   agendaChildGroups,
   numberAgendaItems,
 } from "../../../shared/utils/agendaNumbering";
+import { compareAmendmentAnswers } from "../../../shared/utils/amendmentOrder";
 import type {
   ExportAgendaNode,
   ExportAnnexRow,
@@ -121,6 +123,11 @@ export interface AnnexAmendment {
   approvalMethod: ApprovalMethod | null;
   decidedAt: Date | null;
   positionKey: number;
+  /**
+   * The main presenter's answer. Never printed: it only orders the annex
+   * once the document's answers are public (shared/utils/amendmentOrder.ts).
+   */
+  answer?: ProponentPosition | null;
   /** Acronyms of the presenting members, first author first. */
   authors: string[];
   /** Parents of a transactional. */
@@ -156,6 +163,23 @@ function byNumber(a: AnnexAmendment, b: AnnexAmendment): number {
   return a.positionKey - b.positionKey || a.id.localeCompare(b.id);
 }
 
+/**
+ * The order amendments are shown and debated in (user's decision of
+ * 2026-11-19): by answer once the answers are public (transactionals and
+ * accepted, rejected, the rest), then where they act in the text, then
+ * presentation order.
+ */
+function inDebateOrder(answersPublic: boolean) {
+  return (a: AnnexAmendment, b: AnnexAmendment): number =>
+    compareAmendmentAnswers(
+      { kind: a.kind, position: a.answer ? { position: a.answer } : null },
+      { kind: b.kind, position: b.answer ? { position: b.answer } : null },
+      { answersPublic },
+    ) ||
+    a.positionKey - b.positionKey ||
+    byNumber(a, b);
+}
+
 /** Approved amendments in the order they were decided, as consolidate expects. */
 export function approvalOrder<T extends AnnexAmendment>(amendments: T[]): T[] {
   return amendments
@@ -186,14 +210,17 @@ export function amendmentCodes(
 }
 
 /**
- * Annex rows for the amendments the requester can see, past draft, by
- * running number. Codes of related amendments are only listed when those
+ * Annex rows for the amendments the requester can see, past draft, in the
+ * order they are debated (inDebateOrder; by answer only with
+ * `answersPublic`). Codes of related amendments are only listed when those
  * are visible too.
  */
 export function buildAnnexRows(input: {
   amendments: AnnexAmendment[];
   visibleIds: Set<string>;
   conflicts: ConsolidationConflict[];
+  /** The document's answers are public (positionsArePublic). */
+  answersPublic?: boolean;
 }): ExportAnnexRow[] {
   const byId = new Map(
     input.amendments.map((amendment) => [amendment.id, amendment]),
@@ -211,7 +238,7 @@ export function buildAnnexRows(input: {
     .filter(
       (amendment) => amendment.status !== "draft" && visible(amendment.id),
     )
-    .sort(byNumber)
+    .sort(inDebateOrder(input.answersPublic ?? false))
     .map((amendment) => {
       const derived = amendment.derivedIds.filter(visible);
       const approvedDerived = derived.filter(

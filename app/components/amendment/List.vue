@@ -21,11 +21,17 @@ const props = withDefaults(
     canTransact?: boolean;
     /** Status of any amendment of the document, for transactionals. */
     statusOf?: (id: string) => AmendmentStatus | undefined;
+    /**
+     * The document's answers are public, so the list goes by answer
+     * (shared/utils/amendmentOrder.ts): its label says so.
+     */
+    byAnswer?: boolean;
   }>(),
   {
     selectedId: null,
     canTransact: false,
     statusOf: undefined,
+    byAnswer: false,
   },
 );
 
@@ -59,7 +65,12 @@ function groupLabel(group: AmendmentGroup<AmendmentDto>): string {
 </script>
 
 <template>
-  <ul class="flex flex-col gap-3" :aria-label="t('amendment.list.label')">
+  <ul
+    class="flex flex-col gap-3"
+    :aria-label="
+      t(byAnswer ? 'amendment.list.labelByAnswer' : 'amendment.list.label')
+    "
+  >
     <li v-for="group in groups" :key="group.key">
       <div
         v-if="group.kind === 'overlap'"

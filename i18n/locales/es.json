@@ -1394,6 +1394,7 @@
     },
     "list": {
       "label": "Enmiendas en orden del texto",
+      "labelByAnswer": "Enmiendas: aceptadas y transaccionales, rechazadas y sin respuesta, cada grupo en el orden del texto",
       "overlapGroup": "Mismo pasaje · una enmienda | Mismo pasaje · {count} enmiendas",
       "count": "Ninguna enmienda | Una enmienda | {count} enmiendas",
       "loading": "Cargando enmiendas",
@@ -3735,6 +3736,7 @@
       "emptyHint": "Si el documento se vota, puedes pasar a la votación final.",
       "late": "Fuera de plazo",
       "listLabel": "Enmiendas en el orden del texto",
+      "listLabelByAnswer": "Enmiendas: aceptadas y transaccionales, rechazadas y sin respuesta, cada grupo en el orden del texto",
       "clusterLabel": "Grupo de {count} enmiendas sobre el mismo pasaje",
       "clusterTitle": "{codes} modifican el mismo pasaje",
       "clusterHint": "No pueden aprobarse todas tal cual: transaccionadlas, retirad alguna o votad una de ellas.",
@@ -4653,8 +4655,7 @@
   "controlSheet": {
     "title": "Hoja de control",
     "intro": "Cómo va cada punto y cada enmienda: si se ha tratado, con qué resultado, cómo se votó y quién intervino.",
-    "forbiddenTitle": "No puedes ver la hoja de control",
-    "forbiddenDescription": "La ven la Mesa, la CEA, la Secretaría y la Presidencia.",
+    "introPublic": "Cómo va cada punto y cada enmienda: con qué resultado y cómo se votó.",
     "loading": "Cargando la hoja de control",
     "loadError": "No se ha podido cargar la hoja de control",
     "retry": "Reintentar",
@@ -4889,6 +4890,7 @@
     "filters": {
       "search": "Buscar en la hoja",
       "searchGeneral": "Nº, punto, documento o interviniente",
+      "searchGeneralPublic": "Nº, punto o documento",
       "searchAmendments": "Código o quién la presenta",
       "viewsGeneral": "Qué puntos ver",
       "viewsAmendments": "Qué enmiendas ver",

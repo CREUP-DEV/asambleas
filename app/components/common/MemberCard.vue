@@ -2,11 +2,16 @@
 import type { MemberDto, MemberRef } from "~~/shared/types/api";
 import { accountAvatarText } from "~~/shared/utils/accountAvatar";
 import { useMemberDirectory } from "~/composables/members/useMemberDirectory";
+import { isGenericExecutiveMember } from "~/utils/executiveMembers";
+
+/** The CREUP emblem, the generic "CEA"'s avatar (user's decision of 2026-11-19). */
+const CREUP_EMBLEM = "/marca/isotipo-granate.svg";
 
 /**
  * A member as the card its acronym opens on hover shows it (CommonMemberBadge,
  * the control sheet's lists): its avatar (the photo of an account acting
- * for it, MemberDto.image, else the text those accounts read) and, never
+ * for it, MemberDto.image, else the text those accounts read; the CREUP
+ * emblem for the generic "CEA", which is no member) and, never
  * cut, what tells it apart:
  * a council's university first, with its kind and its denomination under
  * it, since councils share the same or nearly the same denomination
@@ -38,6 +43,11 @@ const full = computed(() =>
   props.member.id
     ? (props.members ?? directory.byId.value).get(props.member.id)
     : undefined,
+);
+
+/** The avatar's picture: the CREUP emblem for the generic "CEA". */
+const image = computed(() =>
+  isGenericExecutiveMember(props.member.id) ? CREUP_EMBLEM : full.value?.image,
 );
 
 /** The text of the member's avatar, as accounts acting for it read it. */
@@ -90,7 +100,7 @@ const detail = computed(() => {
 <template>
   <div class="flex items-center gap-3">
     <CommonAccountAvatar
-      :src="full?.image"
+      :src="image"
       :alt="member.name"
       :text="avatarText"
       size="md"

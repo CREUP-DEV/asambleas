@@ -81,7 +81,7 @@ const sheet = (over: Partial<ControlSheetDto> = {}): ControlSheetDto => ({
   amendmentRows: [],
   positions: [],
   itemVotes: [],
-  can: { edit: true, moderate: false },
+  can: { internal: true, edit: true, moderate: false },
   ...over,
 });
 

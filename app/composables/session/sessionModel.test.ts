@@ -78,6 +78,7 @@ import {
   sessionTransactionalWaitsFor,
   sessionItemVotePlan,
   sessionItemVotes,
+  sortSessionAmendments,
 } from "./sessionModel";
 
 const b = (id: string, text: string): Block => ({
@@ -185,6 +186,61 @@ describe("session model", () => {
       ),
     ).toEqual(["a3", "a1+a2"]);
     expect(sessionQueueOrder(q)).toEqual(["a4", "a3", "a1", "a2"]);
+  });
+
+  describe("order by the main presenter's answers", () => {
+    const answer = (
+      position: "accept" | "reject" | "transact" | "pending",
+    ) => ({
+      position,
+      recordedBy: "presenter" as const,
+      comment: null,
+      updatedAt: "",
+    });
+    const r1 = am("r1", { positionKey: 0.1, position: answer("reject") });
+    const p1 = am("p1", { positionKey: 0.2, position: answer("pending") });
+    const n1 = am("n1", { positionKey: 0.3 });
+    const t1 = am("t1", { positionKey: 0.4, position: answer("transact") });
+    const c1 = am("c1", { positionKey: 0.5, position: answer("accept") });
+    const r2 = am("r2", { positionKey: 0.6, position: answer("reject") });
+    const list = [c1, r2, n1, t1, p1, r1];
+    const ids = (sorted: AmendmentDto[]) => sorted.map((x) => x.id);
+
+    it("keeps text order until the answers are public", () => {
+      const text = ["r1", "p1", "n1", "t1", "c1", "r2"];
+      expect(ids(sortSessionAmendments(list))).toEqual(text);
+      expect(
+        ids(sortSessionAmendments(list, { answersPublic: false })),
+      ).toEqual(text);
+    });
+
+    it("groups accepted, rejected and the rest once public, in text order", () => {
+      expect(ids(sortSessionAmendments(list, { answersPublic: true }))).toEqual(
+        ["t1", "c1", "r1", "r2", "p1", "n1"],
+      );
+      expect(
+        sessionQueueOrder(buildSessionQueue(list, { answersPublic: true })),
+      ).toEqual(["t1", "c1", "r1", "r2", "p1", "n1"]);
+    });
+
+    it("keeps a passage's amendments together, where the first one lands", () => {
+      // a3 (b1) rejected; a1 and a2 overlap on b2: a2 accepted, a1 not answered.
+      const queue = buildSessionQueue(
+        [
+          { ...a1, position: null },
+          { ...a2, position: answer("accept") },
+          { ...a3, position: answer("reject") },
+        ],
+        { answersPublic: true },
+      );
+      expect(
+        queue.entries.map((e) =>
+          e.type === "cluster"
+            ? e.amendments.map((x) => x.id).join("+")
+            : e.amendment.id,
+        ),
+      ).toEqual(["a2+a1", "a3"]);
+    });
   });
 
   describe("validation by the Secretaría", () => {

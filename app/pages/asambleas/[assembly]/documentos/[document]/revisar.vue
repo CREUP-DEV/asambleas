@@ -211,12 +211,16 @@ function transactLink(amendment: AmendmentDto): RouteLocationRaw | null {
 
 // Steps -------------------------------------------------------------------------
 
-/** What is answered here: nothing once the document is voted. */
+/**
+ * What is answered here: nothing once the document is voted. Grouped by
+ * the answers once they are public (not `reserved`), as everywhere else.
+ */
 const items = computed<ProponentReviewItem[]>(() =>
   proponentReviewItems(
     list.amendments.value,
     acceptedRule.value,
     positionContext.value,
+    { answersPublic: !reserved.value },
   ),
 );
 const progress = computed(() => proponentReviewProgress(items.value));

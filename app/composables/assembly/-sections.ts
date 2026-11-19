@@ -51,8 +51,10 @@ export const ASSEMBLY_SECTION_DEFS: readonly AssemblySectionDef[] = [
   { key: "tracking", group: "secretariat", icon: "i-lucide-list-checks" },
   { key: "settings", group: "secretariat", icon: "i-lucide-settings" },
   { key: "session", group: "mesa", icon: "i-lucide-gavel" },
-  // The CEA keeps it with the Mesa: a CEA account sees it in its single
-  // list, since it is not one of the STAFF_SECTIONS that turn groups on.
+  // Everyone reads it (user's decision of 2026-11-19): whoever has no
+  // Secretaría or Mesa section sees it in its single list, since it is not
+  // one of the STAFF_SECTIONS that turn groups on; its notes, turns and
+  // history only whoever holds a sheet key (ControlSheetDto.can.internal).
   { key: "controlSheet", group: "mesa", icon: "i-lucide-sheet" },
   // The room and who sits where: the CEA lays it out with the Mesa, so like
   // the control sheet it is not a staff section.
@@ -72,8 +74,6 @@ export interface AssemblySectionAccess {
   manage: boolean;
   /** `AssemblyDto.can.moderate`. */
   moderate: boolean;
-  /** `control_sheet:view` or `control_sheet:edit`: reads the control sheet. */
-  controlSheet: boolean;
   /** `seating:view` or `seating:edit`: reads the room (Sala). */
   seating: boolean;
   /** The assembly is held online (an AGET): it has no room. */
@@ -93,8 +93,6 @@ function isVisible(
       return access.manage;
     case "session":
       return access.moderate;
-    case "controlSheet":
-      return access.controlSheet;
     case "seating":
       return access.seating && !access.online;
     default:

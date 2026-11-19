@@ -2487,6 +2487,7 @@ const filteredBlockLabel = computed(() =>
                   :label-of="list.labelOf"
                   :can-transact="canTransact"
                   :status-of="amendmentStatusOf"
+                  :by-answer="positionsArePublic(document)"
                   @select="selectAmendment"
                   @transact="startTransactional"
                 />

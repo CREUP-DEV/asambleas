@@ -1709,19 +1709,19 @@ count (docs/design.md, "Headcounts and quorum"). Schemas:
 
 ## Control sheet
 
-| Method | Path                                                              | Who                  | Notes                                                               |
-| ------ | ----------------------------------------------------------------- | -------------------- | ------------------------------------------------------------------- |
-| GET    | `/api/assemblies/[assembly]/control-sheet`                        | `control_sheet:view` | `ControlSheetDto`. Never with `?view=room` (403).                   |
-| PATCH  | `/api/assemblies/[assembly]/control-sheet/items/[item]`           | see below            | `ControlSheetItemBody`. Returns `ControlSheetItemRowDto`.           |
-| PATCH  | `/api/assemblies/[assembly]/control-sheet/amendments/[amendment]` | see below            | `ControlSheetAmendmentBody`. Returns `ControlSheetAmendmentRowDto`. |
-| GET    | `/api/assemblies/[assembly]/control-sheet/history?row=`           | `control_sheet:view` | `ControlSheetHistoryDto`: one sheet row's changes, newest first.    |
-| GET    | `/api/assemblies/[assembly]/control-sheet/activity`               | `control_sheet:view` | `ActivityPageDto`: the sheet's «Historial» (below).                 |
-| GET    | `/api/assemblies/[assembly]/control-sheet/activity/people`        | `control_sheet:view` | `UserRef[]`: whoever recorded a row of the «Historial».             |
-| GET    | `/api/assemblies/[assembly]/control-sheet/documents/[document]`   | `control_sheet:view` | `ControlSheetDocumentObservationsDto`: see below.                   |
-| POST   | `/api/assemblies/[assembly]/agenda/[item]/votes`                  | see below            | `ItemVoteBody`. Returns `ItemVoteResultDto`.                        |
-| GET    | `/api/assemblies/[assembly]/item-votes`                           | see below            | `ItemVotesDto`. Never with `?view=room`.                            |
-| DELETE | `/api/assemblies/[assembly]/votes/[vote]`                         | see below            | `VoteVoidBody`. Voids an item vote. Returns `VoteDto`.              |
-| PATCH  | `/api/assemblies/[assembly]/votes/[vote]/unanimity`               | see below            | `VoteUnanimityBody`. Returns `VoteDto`.                             |
+| Method | Path                                                              | Who                  | Notes                                                                                                                                                                                                             |
+| ------ | ----------------------------------------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| GET    | `/api/assemblies/[assembly]/control-sheet`                        | visible              | `ControlSheetDto`: all of it with a sheet key (`can.internal`), its public part to everyone else (no notes, marks, turns nor session start; answers only where `canSeePositions`). Never with `?view=room` (403). |
+| PATCH  | `/api/assemblies/[assembly]/control-sheet/items/[item]`           | see below            | `ControlSheetItemBody`. Returns `ControlSheetItemRowDto`.                                                                                                                                                         |
+| PATCH  | `/api/assemblies/[assembly]/control-sheet/amendments/[amendment]` | see below            | `ControlSheetAmendmentBody`. Returns `ControlSheetAmendmentRowDto`.                                                                                                                                               |
+| GET    | `/api/assemblies/[assembly]/control-sheet/history?row=`           | `control_sheet:view` | `ControlSheetHistoryDto`: one sheet row's changes, newest first.                                                                                                                                                  |
+| GET    | `/api/assemblies/[assembly]/control-sheet/activity`               | `control_sheet:view` | `ActivityPageDto`: the sheet's «Historial» (below).                                                                                                                                                               |
+| GET    | `/api/assemblies/[assembly]/control-sheet/activity/people`        | `control_sheet:view` | `UserRef[]`: whoever recorded a row of the «Historial».                                                                                                                                                           |
+| GET    | `/api/assemblies/[assembly]/control-sheet/documents/[document]`   | `control_sheet:view` | `ControlSheetDocumentObservationsDto`: see below.                                                                                                                                                                 |
+| POST   | `/api/assemblies/[assembly]/agenda/[item]/votes`                  | see below            | `ItemVoteBody`. Returns `ItemVoteResultDto`.                                                                                                                                                                      |
+| GET    | `/api/assemblies/[assembly]/item-votes`                           | see below            | `ItemVotesDto`. Never with `?view=room`.                                                                                                                                                                          |
+| DELETE | `/api/assemblies/[assembly]/votes/[vote]`                         | see below            | `VoteVoidBody`. Voids an item vote. Returns `VoteDto`.                                                                                                                                                            |
+| PATCH  | `/api/assemblies/[assembly]/votes/[vote]/unanimity`               | see below            | `VoteUnanimityBody`. Returns `VoteDto`.                                                                                                                                                                           |
 
 `control_sheet:edit` also reads. Schemas: `shared/utils/schemas/controlSheet.ts`, and `shared/utils/schemas/vote.ts` for votes.
 
