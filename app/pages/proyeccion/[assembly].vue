@@ -820,6 +820,15 @@ const {
   isSupported: fullscreenSupported,
   toggle: toggleFullscreen,
 } = useFullscreen();
+/**
+ * Full screen in or out, and the button lets the focus go: the projector
+ * would otherwise show its focus ring over the room until someone clicks
+ * elsewhere.
+ */
+function onFullscreenClick(event: MouseEvent): void {
+  void toggleFullscreen();
+  (event.currentTarget as HTMLElement | null)?.blur();
+}
 
 useHead(() => ({
   title: t("projection.pageTitle", { label: assembly.value?.label ?? "" }),
@@ -896,7 +905,7 @@ useHead(() => ({
                 ? t('projection.exitFullscreen')
                 : t('projection.fullscreen')
             "
-            @click="toggleFullscreen()"
+            @click="onFullscreenClick"
           />
         </ClientOnly>
       </div>
