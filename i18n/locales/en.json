@@ -4298,6 +4298,7 @@
       "noQuorum": "No quorum",
       "figures": "{present} of {eligible} with a vote, no delegations | {present} of {eligible} with a vote, {delegated} by delegation | {present} of {eligible} with a vote, {delegated} by delegation",
       "required": "Quorum: {required} · Count at {time}",
+      "majorities": "Absolute majority: {absolute} · Two thirds: {twoThirds}",
       "requiredOnly": "{required} needed for quorum.",
       "none": "No headcount yet. Votes take the members present from the latest one.",
       "new": "New headcount",

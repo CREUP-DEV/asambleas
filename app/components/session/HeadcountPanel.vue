@@ -2,6 +2,7 @@
 import type { HeadcountDto, HeadcountExpectedDto } from "~~/shared/types/api";
 import { quorumRequired, tallyHeadcount } from "~~/shared/utils/headcount";
 import { HEADCOUNT_NOTE_MAX_LENGTH } from "~~/shared/utils/schemas/headcount";
+import { majorityThreshold } from "~~/shared/utils/votes";
 import {
   delegateOptions,
   delegationsReceived,
@@ -88,6 +89,20 @@ function requiredLine(headcount: HeadcountDto): string {
         moment: text,
       });
 }
+
+/**
+ * The votes each majority needs on the latest count (user's decision of
+ * 2026-11-19), when majorities are counted on the members present; on the
+ * valid votes they depend on each vote, so none is given.
+ */
+const majorities = computed(() => {
+  const count = latest.value;
+  if (!count || session.settings.value.denominator !== "present") return null;
+  return t("session.headcount.majorities", {
+    absolute: majorityThreshold("absolute", count.present),
+    twoThirds: majorityThreshold("two_thirds", count.present),
+  });
+});
 
 /** The title of the form that corrects a count. */
 function correctTitle(headcount: HeadcountDto): string {
@@ -536,6 +551,12 @@ async function save(): Promise<void> {
             {{ figures(latest) }}
           </span>
         </div>
+        <p
+          v-if="majorities"
+          class="text-default text-sm font-medium tabular-nums"
+        >
+          {{ majorities }}
+        </p>
         <p class="text-muted text-xs tabular-nums">
           {{ requiredLine(latest) }}
           <template v-if="latest.note"> · {{ latest.note }}</template>

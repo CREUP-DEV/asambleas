@@ -4298,6 +4298,7 @@
       "noQuorum": "No hay quórum",
       "figures": "{present} de {eligible} con voto, sin delegaciones | {present} de {eligible} con voto, {delegated} por delegación | {present} de {eligible} con voto, {delegated} por delegación",
       "required": "Quórum: {required} · Recuento de las {time}",
+      "majorities": "Mayoría absoluta: {absolute} · Dos tercios: {twoThirds}",
       "requiredOnly": "Hacen falta {required} para el quórum.",
       "none": "Todavía no hay ningún recuento. Las votaciones toman los presentes del último.",
       "new": "Nuevo recuento",
