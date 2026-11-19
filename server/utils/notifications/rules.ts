@@ -148,6 +148,22 @@ export function noticesForEvent(
         add("transactional_ready", [], readyKey);
       }
       break;
+    case "transactional_revision_proposed":
+      // Including amendments in a transactional: its parties answer again
+      // (the ones still to answer travel in the payload, never shown).
+      add(
+        "transactional_acceptance_requested",
+        ids(event.payload.pendingMemberIds),
+      );
+      break;
+    case "transactional_revision_ready":
+      // A member's inclusion every party accepted: to the Secretaría.
+      add(
+        "transactional_ready",
+        [],
+        `transactional_revision_ready:${String(event.payload.revisionId)}`,
+      );
+      break;
     case "amendment_validated":
       // The Mesa's own transactional, validated as it presents it.
       if (event.payload.method === "mesa") break;

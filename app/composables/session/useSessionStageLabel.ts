@@ -28,6 +28,7 @@ export function useSessionStageLabel() {
       case "awaiting_validation":
       case "correction_requested":
       case "late":
+      case "sources_admission":
       case "acceptances":
       case "open":
       case "incorporated":

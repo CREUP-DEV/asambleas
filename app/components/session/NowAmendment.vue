@@ -11,6 +11,7 @@ import {
   sessionMissingAcceptances,
   sessionReplacedIds,
   sessionReplacingIds,
+  sessionSourcesAwaitingAdmission,
   sessionSupersededSourceIds,
   sessionTransactionalRejectors,
 } from "~/composables/session/sessionModel";
@@ -105,6 +106,15 @@ const statusText = computed(() => {
         { count: missing.value, codes: codes(props.amendment.sourceIds) },
         missing.value,
       );
+    case "sources_admission":
+      return t("session.now.stage.sources_admission", {
+        codes: codes(
+          sessionSourcesAwaitingAdmission(
+            props.amendment,
+            session.byId.value,
+          ).map((source) => source.id),
+        ),
+      });
     case "open":
       return assentFirst.value
         ? t("session.now.stage.openAccepted")

@@ -7,6 +7,7 @@ import { validateOps } from "~~/shared/utils/content/ops";
 import {
   isSessionDecidable,
   isSessionOpen,
+  isSessionPendingAdmission,
   sessionSameBlocks,
   sessionSameIds,
   sessionTransactionalParties,
@@ -86,7 +87,9 @@ function documentTitle(id: string | null): string {
 const eligible = computed(() =>
   session.amendments.value.filter(
     (amendment) =>
-      isSessionOpen(amendment) || sourceIds.value.includes(amendment.id),
+      isSessionOpen(amendment) ||
+      isSessionPendingAdmission(amendment) ||
+      sourceIds.value.includes(amendment.id),
   ),
 );
 const sourceItems = computed(() =>
@@ -94,6 +97,10 @@ const sourceItems = computed(() =>
     label: `${session.label(amendment.id)} · ${amendment.authors
       .map((author) => author.acronym)
       .join(", ")}`,
+    // Late and awaiting the assembly: it goes in only if admitted.
+    description: isSessionPendingAdmission(amendment)
+      ? t("transactional.composer.lateSource")
+      : undefined,
     value: amendment.id,
   })),
 );

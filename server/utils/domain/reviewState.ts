@@ -345,23 +345,44 @@ export function admissionNeedsValidation(
 }
 
 /**
- * Why an amendment cannot be replaced by a transactional, or null when it
- * can: it must be presented, admitted and undecided. Under the Secretaría's
- * validation the usual reason is an amendment still waiting for it, or a
- * late one still waiting for the assembly to decide whether it is treated
- * (validated with its admission pending: an on-time amendment is admitted by
- * its validation).
+ * A late amendment the Secretaría validated while the assembly has not
+ * decided whether to treat it (admission pending; an on-time amendment is
+ * admitted by its validation). It may be a parent of a transactional (user's
+ * decision of 2026-11-19), linked but never replaced before that decision:
+ * admitted, the transactional replaces it (decideAmendmentAdmission);
+ * not admitted, it leaves the transactional, which lapses if nothing else
+ * is left (inadmissibleSourcePlan).
+ */
+export function isPendingLateSource(row: {
+  status: AmendmentStatus;
+  admission: AdmissionStatus;
+  validatedAt: Date | null;
+  decidedAt: Date | null;
+}): boolean {
+  return (
+    row.status === "submitted" &&
+    !row.decidedAt &&
+    row.admission === "pending" &&
+    row.validatedAt !== null
+  );
+}
+
+/**
+ * Why an amendment cannot be a parent of a transactional, or null when it
+ * can: presented and undecided, and admitted or, late, still waiting for
+ * the assembly's decision (isPendingLateSource). Under the Secretaría's
+ * validation the usual reason is an amendment still waiting for it.
  */
 export function unopenSourceReason(row: {
   status: AmendmentStatus;
   admission: AdmissionStatus;
   validatedAt: Date | null;
   decidedAt: Date | null;
-}): "not_validated" | "not_admitted" | "decided" | null {
+}): "not_validated" | "decided" | null {
   if (row.status === "submitted" && !row.decidedAt) {
     if (row.admission === "admitted") return null;
     if (row.admission === "pending") {
-      return row.validatedAt === null ? "not_validated" : "not_admitted";
+      return row.validatedAt === null ? "not_validated" : null;
     }
   }
   return "decided";
@@ -374,8 +395,6 @@ export const UNOPEN_SOURCE_MESSAGES: Record<
 > = {
   not_validated:
     "Alguna de las enmiendas que agrupa todavía no está validada por la Secretaría",
-  not_admitted:
-    "Alguna de las enmiendas que agrupa está fuera de plazo y la asamblea todavía no ha decidido si se trata",
   decided: "Alguna de las enmiendas de origen ya está decidida",
 };
 
@@ -388,7 +407,7 @@ export function unopenSourcesMessage(
   rows: Parameters<typeof unopenSourceReason>[0][],
 ): string | null {
   const reasons = new Set(rows.map(unopenSourceReason));
-  for (const reason of ["not_validated", "not_admitted", "decided"] as const) {
+  for (const reason of ["not_validated", "decided"] as const) {
     if (reasons.has(reason)) return UNOPEN_SOURCE_MESSAGES[reason];
   }
   return null;
@@ -410,13 +429,7 @@ export function transactionalSourceReason(row: {
   decidedAt: Date | null;
   publishedAt: Date | null;
   authorsApproval?: AcceptanceDecision | null;
-}):
-  | "not_validated"
-  | "not_admitted"
-  | "awaits_authors"
-  | "not_published"
-  | "decided"
-  | null {
+}): "not_validated" | "awaits_authors" | "not_published" | "decided" | null {
   const reason = unopenSourceReason(row);
   if (reason) return reason;
   if (row.authorsApproval === "pending" || row.authorsApproval === "rejected") {
@@ -448,7 +461,6 @@ export function transactionalSourcesMessage(
   const reasons = new Set(rows.map(transactionalSourceReason));
   for (const reason of [
     "not_validated",
-    "not_admitted",
     "awaits_authors",
     "not_published",
     "decided",

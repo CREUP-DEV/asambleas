@@ -228,6 +228,90 @@ export const amendmentAcceptances = pgTable(
   ],
 );
 
+/**
+ * Where an inclusion in a transactional stands (transactional_revisions):
+ * waiting for its parties, then (proposed by a member) for the Secretaría;
+ * applied, rejected by a party, or cancelled by whoever proposed it.
+ */
+export const transactionalRevisionStatusEnum = pgEnum(
+  "transactional_revision_status",
+  ["pending_parties", "pending_validation", "applied", "rejected", "cancelled"],
+);
+
+/**
+ * A proposal to include amendments in an existing transactional, with its
+ * new text (user's decision of 2026-11-19): every party of the new version
+ * accepts it again (transactional_revision_acceptances); a rejection leaves
+ * the transactional as it was. The version in force stays in `amendments`,
+ * `amendment_sources` and `amendment_acceptances` until it is applied. At
+ * most one open per transactional (partial unique index).
+ */
+export const transactionalRevisions = pgTable(
+  "transactional_revisions",
+  {
+    id: text("id").primaryKey().$defaultFn(cuid),
+    transactionalId: text("transactional_id")
+      .notNull()
+      .references(() => amendments.id, { onDelete: "cascade" }),
+    proposedByUserId: text("proposed_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    /** The member it was proposed for, null when the Mesa or the Secretaría did. */
+    proposedAsMemberId: text("proposed_as_member_id").references(
+      () => members.id,
+      { onDelete: "set null" },
+    ),
+    /** Applied at once when its parties accept (the Mesa's, the Secretaría's). */
+    staffProposed: boolean("staff_proposed").notNull().default(false),
+    addedSourceIds: text("added_source_ids")
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    ops: jsonb("ops").$type<AmendmentOp[]>().notNull(),
+    justification: text("justification").notNull().default(""),
+    status: transactionalRevisionStatusEnum("status")
+      .notNull()
+      .default("pending_parties"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .notNull()
+      .defaultNow(),
+    decidedAt: timestamp("decided_at", { withTimezone: true, mode: "date" }),
+  },
+  (table) => [
+    index("idx_transactional_revisions_transactional").on(
+      table.transactionalId,
+    ),
+    uniqueIndex("transactional_revisions_open_unique")
+      .on(table.transactionalId)
+      .where(sql`status in ('pending_parties', 'pending_validation')`),
+  ],
+);
+
+/** Each party's answer to an inclusion (transactional_revisions). */
+export const transactionalRevisionAcceptances = pgTable(
+  "transactional_revision_acceptances",
+  {
+    id: text("id").primaryKey().$defaultFn(cuid),
+    revisionId: text("revision_id")
+      .notNull()
+      .references(() => transactionalRevisions.id, { onDelete: "cascade" }),
+    memberId: text("member_id")
+      .notNull()
+      .references(() => members.id, { onDelete: "cascade" }),
+    decision: acceptanceDecisionEnum("decision").notNull().default("pending"),
+    decidedAt: timestamp("decided_at", { withTimezone: true, mode: "date" }),
+    recordedByUserId: text("recorded_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+  },
+  (table) => [
+    uniqueIndex("transactional_revision_acceptances_party_unique").on(
+      table.revisionId,
+      table.memberId,
+    ),
+  ],
+);
+
 /** The document proponent's position on an amendment. */
 export const amendmentPositions = pgTable("amendment_positions", {
   amendmentId: text("amendment_id")

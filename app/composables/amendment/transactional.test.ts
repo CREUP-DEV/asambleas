@@ -166,7 +166,7 @@ const vote: NonNullable<AmendmentDto["outcomeVote"]> = {
 describe("transactional sources", () => {
   const change = [replace("b2", 3, 10, "Comité")];
 
-  it("combines only published, admitted, undecided amendments with text", () => {
+  it("combines published, undecided amendments with text, late ones awaiting admission too", () => {
     expect(transactionalSourceEligible(amendment("a", change))).toBe(true);
     // Recorded before validation existed: public.
     expect(
@@ -180,8 +180,10 @@ describe("transactional sources", () => {
     expect(no({ reviewState: "pending_validation" })).toBe(false);
     expect(no({ reviewState: "validated" })).toBe(false);
     expect(no({ reviewState: "pending_authors" })).toBe(false);
-    // Late and still waiting for the assembly's decision.
-    expect(no({ late: true, admission: "pending" })).toBe(false);
+    // Late and still waiting for the assembly's decision: a parent too,
+    // replaced only once admitted (user's decision of 2026-11-19).
+    expect(no({ late: true, admission: "pending" })).toBe(true);
+    expect(no({ late: true, admission: "inadmissible" })).toBe(false);
     expect(no({ status: "approved", decidedAt: "2026-11-02" })).toBe(false);
     expect(no({ status: "withdrawn" })).toBe(false);
     expect(no({ status: "transacted" })).toBe(false);
@@ -264,12 +266,14 @@ describe("transactional sources", () => {
       status: "rejected",
       decidedAt: "2026-11-02",
     });
+    // A late one awaiting the assembly is a candidate too.
     expect(
       transactionalSourceCandidates([second, late, decided, first]).map(
         (item) => item.id,
       ),
-    ).toEqual(["first", "second"]);
+    ).toEqual(["late", "first", "second"]);
     expect(transactionalGroupSources([late, first, decided, second])).toEqual([
+      "late",
       "first",
       "second",
     ]);
@@ -630,6 +634,37 @@ describe("transactional progress", () => {
     (status: AmendmentDto["status"]) =>
     (id: string): AmendmentDto["status"] | undefined =>
       id === "s1" || id === "s2" ? status : undefined;
+
+  it("waits for the assembly's admission of a late amendment it groups", () => {
+    const view = transactionalProgressOf(
+      transactional({
+        acceptances: [party("ceum", "author", "accepted")],
+      }),
+      null,
+      statusOf("submitted"),
+      (id) => id === "s2",
+    );
+    expect(view?.stage).toBe("sourcesAdmission");
+    expect(view?.waitingSourceIds).toEqual(["s2"]);
+    expect(
+      view &&
+        transactionalProgressMessage(view, "short", {
+          sources: ["UM3", "ULL1"],
+        }),
+    ).toEqual({
+      key: "transactional.progress.short.sourcesAdmission",
+      params: { list: "ULL1" },
+    });
+    // Nothing waiting: as before.
+    expect(
+      transactionalProgressOf(
+        transactional({ acceptances: [party("ceum", "author", "accepted")] }),
+        null,
+        statusOf("transacted"),
+        () => false,
+      )?.stage,
+    ).toBe("replaced");
+  });
 
   it("says nothing for drafts, decided ones and ordinary amendments", () => {
     expect(
@@ -1003,6 +1038,7 @@ describe("transactional progress sentences", () => {
     missing: [],
     rejected: [],
     sourceIds: ["s1", "s2"],
+    waitingSourceIds: [],
     actorTurn: false,
     ...extra,
   });

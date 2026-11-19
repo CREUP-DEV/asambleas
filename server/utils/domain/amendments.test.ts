@@ -71,6 +71,8 @@ const {
   sourcesAreOpen,
   toPositionDto,
   sourcesToReplace,
+  canReviseTransactional,
+  revisionAfterAnswers,
   transactionalsShareSources,
   unauthorizedTransactionalAuthors,
 } = await import("./amendments");
@@ -811,6 +813,13 @@ describe("transactional sources", () => {
       ).toHaveProperty("message");
     });
 
+    it("leaves a late source awaiting the assembly linked, not replaced", () => {
+      const late = { ...open("late"), admission: "pending" as const };
+      expect(sourcesToReplace([open("a"), late])).toEqual({ ids: ["a"] });
+      expect(sourcesToReplace([late])).toEqual({ ids: [] });
+      expect(sourcesAreOpen([open("a"), late])).toBe(true);
+    });
+
     it("refuses a source already replaced, unless approving under the earlier rule", () => {
       const transacted = { ...open("b"), status: "transacted" as const };
       expect(sourcesToReplace([open("a"), transacted])).toHaveProperty(
@@ -1294,5 +1303,31 @@ describe("visibility", () => {
         false,
       );
     });
+  });
+});
+
+describe("inclusions in a transactional (2026-11-19)", () => {
+  it("lets its main author, the Mesa and the Secretaría propose one", () => {
+    const who = (over: Partial<Parameters<typeof canReviseTransactional>[0]>) =>
+      canReviseTransactional({
+        moderate: false,
+        review: false,
+        actsForMainAuthor: false,
+        ...over,
+      });
+    expect(who({})).toBe(false);
+    expect(who({ actsForMainAuthor: true })).toBe(true);
+    expect(who({ moderate: true })).toBe(true);
+    expect(who({ review: true })).toBe(true);
+  });
+
+  it("waits, falls back, applies or goes to the Secretaría", () => {
+    expect(revisionAfterAnswers(["accepted", "pending"], false)).toBe("wait");
+    expect(revisionAfterAnswers(["accepted", "rejected"], true)).toBe(
+      "rejected",
+    );
+    expect(revisionAfterAnswers(["accepted", "accepted"], true)).toBe("apply");
+    expect(revisionAfterAnswers(["accepted"], false)).toBe("validation");
+    expect(revisionAfterAnswers([], false)).toBe("validation");
   });
 });

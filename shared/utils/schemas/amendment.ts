@@ -119,6 +119,13 @@ export const transactionalBodySchema = z.object({
   submit: z.boolean().optional(),
 });
 
+/** POST .../[amendment]/revisions (TransactionalRevisionBody). */
+export const transactionalRevisionBodySchema = z.object({
+  addSourceIds: uniqueIds(MAX_TRANSACTIONAL_SOURCES, 1),
+  ops: amendmentOpsSchema,
+  justification: justificationSchema,
+});
+
 export const admissionBodySchema = z
   .object({
     amendmentIds: uniqueIds(MAX_ADMISSION_BATCH, 1),

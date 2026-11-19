@@ -1121,6 +1121,40 @@ export type AmendmentReviewState =
   | "validated"
   | "published";
 
+/**
+ * An inclusion proposed on a transactional and not resolved yet (user's
+ * decision of 2026-11-19): the amendments it adds (those the reader sees),
+ * the new text, and every party's answer. Applied once every party accepts
+ * it (and, proposed by a member, the Secretaría validates it); a rejection
+ * leaves the transactional as it was.
+ */
+export interface TransactionalRevisionDto {
+  id: string;
+  status: "pending_parties" | "pending_validation";
+  addedSourceIds: string[];
+  ops: AmendmentOp[];
+  justification: string;
+  /** Proposed by the Mesa or the Secretaría: applied as soon as all accept. */
+  staffProposed: boolean;
+  createdAt: IsoDate;
+  acceptances: AcceptanceDto[];
+  can: {
+    /** The reader's member has to answer, or the Mesa records answers. */
+    answer: boolean;
+    /** The Secretaría validates it (amendment:review). */
+    validate: boolean;
+    /** Whoever proposed it, the Mesa or the Secretaría withdraws it. */
+    cancel: boolean;
+  };
+}
+
+/** POST .../amendments/[amendment]/revisions. */
+export interface TransactionalRevisionBody {
+  addSourceIds: string[];
+  ops: AmendmentOp[];
+  justification: string;
+}
+
 export interface AmendmentDto {
   id: string;
   documentId: string;
@@ -1160,6 +1194,8 @@ export interface AmendmentDto {
   /** Transactionals built on this amendment. */
   transactionalIds: string[];
   acceptances: AcceptanceDto[];
+  /** A transactional's inclusion still open, null otherwise. */
+  openRevision?: TransactionalRevisionDto | null;
   updatedAt: IsoDate;
   can: AmendmentCapabilities;
 }

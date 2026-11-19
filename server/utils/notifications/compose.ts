@@ -231,6 +231,20 @@ const COMPOSERS: Record<NotificationKind, Composer> = {
     if (!amendment) return null;
     const paths = base(ctx);
     const by = acronyms(ctx, amendmentAuthorIds(amendment));
+    // An inclusion every party accepted: validated on the transactional.
+    if (ctx.event.type === "transactional_revision_ready") {
+      return {
+        subject: `Inclusión en una transaccional lista para validar: ${quoted(ctx.document.title)}`,
+        heading: "Inclusión lista para validar",
+        lead: `Todas las partes han aceptado incluir enmiendas en la transaccional ${text(amendment.code) ?? ""} del documento ${quoted(ctx.document.title)}. Ya puede validarse.`,
+        details: [...paths.details, ...amendmentDetails(ctx, amendment)],
+        note: null,
+        action: {
+          label: "Validar en la plataforma",
+          url: amendmentLink(paths.documentPath, amendment),
+        },
+      };
+    }
     return {
       subject: `Transaccional lista para validar: ${quoted(ctx.document.title)}`,
       heading: "Transaccional lista para validar",
@@ -294,6 +308,19 @@ const COMPOSERS: Record<NotificationKind, Composer> = {
     if (!amendment) return null;
     const paths = base(ctx);
     const by = acronyms(ctx, amendmentAuthorIds(amendment));
+    if (ctx.event.type === "transactional_revision_proposed") {
+      return {
+        subject: `Inclusión en una transaccional pendiente de tu respuesta: ${quoted(ctx.document.title)}`,
+        heading: "Te piden aceptar una nueva versión de una transaccional",
+        lead: `Se propone incluir más enmiendas en la transaccional ${text(amendment.code) ?? ""} del documento ${quoted(ctx.document.title)}, con un texto nuevo. Solo se aplica si todas las partes lo aceptan; si alguna lo rechaza, la transaccional sigue como estaba.`,
+        details: [...paths.details],
+        note: null,
+        action: {
+          label: "Responder en la plataforma",
+          url: amendmentLink(paths.documentPath, amendment),
+        },
+      };
+    }
     return {
       subject: `Transaccional pendiente de tu respuesta: ${quoted(ctx.document.title)}`,
       heading: "Te piden aceptar una transaccional",
@@ -463,7 +490,9 @@ const COMPOSERS: Record<NotificationKind, Composer> = {
         lead =
           payload.reason === "sources_transacted"
             ? `Tu transaccional ${c} ${of} ha decaído: otra transaccional sustituye ya a las enmiendas que agrupaba.`
-            : `Tu enmienda ${c} ${of} ha decaído.`;
+            : payload.reason === "sources_inadmissible"
+              ? `Tu transaccional ${c} ${of} ha decaído: la asamblea no ha admitido la enmienda fuera de plazo que agrupaba.`
+              : `Tu enmienda ${c} ${of} ha decaído.`;
         break;
       case "amendment_withdrawn":
         if (payload.by === "sources_closed") {

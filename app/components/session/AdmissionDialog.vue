@@ -5,6 +5,7 @@ import {
   type DecisionMethod,
 } from "~~/shared/constants/domain";
 import {
+  sessionAdmissionTransactionalEffects,
   isSessionVoteReady,
   sessionAdmissionCandidates,
   sessionCleanVote,
@@ -104,14 +105,25 @@ const outcome = computed(() =>
 );
 
 /**
- * Declaring it inadmissible withdraws a pending transactional over it:
- * said on its row. Admitting settles nothing (and transactionals only
- * build on admitted amendments).
+ * What the decision does to the transactionals over it, said on its row
+ * (sessionAdmissionTransactionalEffects): admitted, it goes into them; not
+ * admitted, it leaves them, and one left with no parent lapses.
  */
 function transactionalsLine(amendment: AmendmentDto): string | null {
-  return decision.value === "inadmissible"
-    ? session.transactionalsOver.line(amendment)
-    : null;
+  const effects = sessionAdmissionTransactionalEffects(
+    amendment.id,
+    decision.value,
+    chosen.value,
+    session.byId.value,
+  );
+  if (effects.length === 0) return null;
+  return effects
+    .map((entry) =>
+      t(`session.admission.transactionalEffect.${entry.effect}`, {
+        code: session.label(entry.transactionalId),
+      }),
+    )
+    .join(" ");
 }
 const blocked = computed(
   () =>

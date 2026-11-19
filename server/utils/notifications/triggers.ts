@@ -24,6 +24,8 @@ export const NOTIFYING_EVENT_TYPES: ReadonlySet<string> = new Set([
   "amendment_reclassified",
   "amendment_authors_changed",
   "acceptance_recorded",
+  "transactional_revision_proposed",
+  "transactional_revision_ready",
 ]);
 
 /** The changes of a document that tell its presenters something. */

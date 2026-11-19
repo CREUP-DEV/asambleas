@@ -51,6 +51,7 @@ const STAGE_DOT: Record<SessionAmendmentStage, string> = {
   awaiting_validation: "bg-(--ui-text-dimmed)",
   correction_requested: "bg-(--ui-text-dimmed)",
   late: "bg-warning",
+  sources_admission: "bg-warning",
   acceptances: "bg-warning",
   open: "bg-info",
   incorporated: "bg-success",

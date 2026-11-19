@@ -14,6 +14,7 @@ import {
   countPositionsPending,
   hasPendingReview,
   isAmendmentPublishable,
+  isPendingLateSource,
   isDocumentOverdue,
   mainAuthorOf,
   numberingToKeep,
@@ -154,9 +155,13 @@ describe("transactional sources", () => {
     expect(
       unopenSourceReason(source({ admission: "pending", validatedAt: null })),
     ).toBe("not_validated");
-    expect(unopenSourceReason(source({ admission: "pending" }))).toBe(
-      "not_admitted",
-    );
+    // Late and awaiting the assembly: a parent, replaced only once admitted.
+    expect(unopenSourceReason(source({ admission: "pending" }))).toBeNull();
+    expect(isPendingLateSource(source({ admission: "pending" }))).toBe(true);
+    expect(isPendingLateSource(source())).toBe(false);
+    expect(
+      isPendingLateSource(source({ admission: "pending", validatedAt: null })),
+    ).toBe(false);
     expect(unopenSourceReason(source({ status: "approved" }))).toBe("decided");
     expect(unopenSourceReason(source({ decidedAt: at }))).toBe("decided");
   });
@@ -174,7 +179,7 @@ describe("transactional sources", () => {
         source({ status: "withdrawn" }),
         source({ admission: "pending" }),
       ]),
-    ).toBe(UNOPEN_SOURCE_MESSAGES.not_admitted);
+    ).toBe(UNOPEN_SOURCE_MESSAGES.decided);
   });
 });
 
@@ -389,7 +394,11 @@ describe("sources of a new transactional", () => {
         source({ publishedAt: null }),
         source({ admission: "pending" }),
       ]),
-    ).toBe(TRANSACTIONAL_SOURCE_MESSAGES.not_admitted);
+    ).toBe(TRANSACTIONAL_SOURCE_MESSAGES.not_published);
+    // A late one awaiting the assembly may be grouped.
+    expect(
+      transactionalSourcesMessage([source({ admission: "pending" })]),
+    ).toBe(null);
     expect(transactionalSourcesMessage([source({ decidedAt: at })])).toBe(
       UNOPEN_SOURCE_MESSAGES.decided,
     );

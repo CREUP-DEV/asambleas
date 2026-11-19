@@ -247,7 +247,7 @@ defineShortcuts({
     withFocused(event, (amendment) => decideByKey(amendment, "assent")),
   v: (event?: KeyboardEvent) =>
     withFocused(event, (amendment) =>
-      isSessionDecidable(amendment)
+      isSessionDecidable(amendment, session.byId.value)
         ? session.openVote(amendment)
         : notAvailable(amendment),
     ),

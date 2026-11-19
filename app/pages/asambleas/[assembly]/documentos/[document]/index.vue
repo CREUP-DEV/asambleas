@@ -159,6 +159,8 @@ interface TransactionalState {
   key: number;
   /** Amendments it starts from (none: the author picks them). */
   sourceIds: string[];
+  /** Include them in this existing transactional (an inclusion). */
+  reviseId?: string;
 }
 
 const { t } = useI18n();
@@ -804,6 +806,21 @@ function startTransactional(ids: string[]): void {
   if (!canTransact.value) return;
   composer.value = null;
   transactional.value = { key: (composerSeq += 1), sourceIds: [...ids] };
+  showComposerPanel();
+}
+
+/**
+ * Include amendments in an existing transactional (user's decision of
+ * 2026-11-19): the composer in inclusion mode, starting from `ids` if any.
+ */
+function startInclusion(transactionalId: string, ids: string[] = []): void {
+  if (!canTransact.value) return;
+  composer.value = null;
+  transactional.value = {
+    key: (composerSeq += 1),
+    sourceIds: [...ids],
+    reviseId: transactionalId,
+  };
   showComposerPanel();
 }
 
@@ -2319,6 +2336,13 @@ const filteredBlockLabel = computed(() =>
                 :amendments="list.listed.value"
                 :label-of="list.labelOf"
                 :initial-source-ids="transactional.sourceIds"
+                :revise="
+                  transactional.reviseId
+                    ? (list.listed.value.find(
+                        (item) => item.id === transactional!.reviseId,
+                      ) ?? null)
+                    : null
+                "
                 @close="closeTransactional"
                 @created="onTransactionalCreated"
                 @view="onTransactionalView"
@@ -2346,6 +2370,7 @@ const filteredBlockLabel = computed(() =>
                 @locate="showInDocument"
                 @edit="onDetailEdit"
                 @transact="startTransactional"
+                @include="startInclusion"
                 @updated="list.upsert"
                 @replaced="list.replace"
                 @removed="onDetailRemoved"
@@ -2524,6 +2549,7 @@ const filteredBlockLabel = computed(() =>
               @locate="showInDocument"
               @edit="onDetailEdit"
               @transact="startTransactional"
+              @include="startInclusion"
               @updated="list.upsert"
               @replaced="list.replace"
               @removed="onDetailRemoved"

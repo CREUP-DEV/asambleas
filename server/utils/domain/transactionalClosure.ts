@@ -116,6 +116,53 @@ export function transactionalsToClose(
   return result;
 }
 
+/**
+ * What declaring amendments inadmissible does to the open transactionals over
+ * them (user's decision of 2026-11-19): a transactional keeps going without
+ * them while another parent is left (admitted, replaced by it, or late still
+ * waiting for the assembly), and their authors stop being its parties
+ * (`drop`); one with nothing else left lapses (`lapse`). Only `submitted`
+ * candidates count; in candidate order.
+ */
+export function inadmissibleSourcePlan(
+  sourceMap: ReadonlyMap<string, readonly string[]>,
+  inadmissibleIds: readonly string[],
+  candidates: readonly { id: string; status: AmendmentStatus }[],
+): {
+  drop: { id: string; sourceIds: string[]; remainingIds: string[] }[];
+  lapse: { id: string; sourceIds: string[] }[];
+} {
+  const inadmissible = new Set(inadmissibleIds);
+  const drop: { id: string; sourceIds: string[]; remainingIds: string[] }[] =
+    [];
+  const lapse: { id: string; sourceIds: string[] }[] = [];
+  const seen = new Set<string>();
+  for (const candidate of candidates) {
+    if (
+      candidate.status !== "submitted" ||
+      inadmissible.has(candidate.id) ||
+      seen.has(candidate.id)
+    ) {
+      continue;
+    }
+    const sources = sourceMap.get(candidate.id) ?? [];
+    const leaving = sources.filter((id) => inadmissible.has(id));
+    if (leaving.length === 0) continue;
+    seen.add(candidate.id);
+    const remaining = sources.filter((id) => !inadmissible.has(id));
+    if (remaining.length > 0) {
+      drop.push({
+        id: candidate.id,
+        sourceIds: leaving,
+        remainingIds: remaining,
+      });
+    } else {
+      lapse.push({ id: candidate.id, sourceIds: leaving });
+    }
+  }
+  return { drop, lapse };
+}
+
 /** Every transactional -> sources edge of the document. */
 export async function loadSourceMap(
   executor: Executor,

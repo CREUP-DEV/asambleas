@@ -455,6 +455,16 @@ function detailOf(event: EventDto): string | null {
         : null;
     }
     case "amendment_lapsed": {
+      if (payload.reason === "sources_inadmissible") {
+        const codes = Array.isArray(payload.sourceCodes)
+          ? payload.sourceCodes.filter(
+              (code): code is string => typeof code === "string",
+            )
+          : [];
+        return t("amendment.history.lapsedByInadmission", {
+          codes: codes.join(", "),
+        });
+      }
       if (!lapsedBySources(event)) return text(payload.note);
       const replacement = amendmentName(
         text(payload.transactionalId),
@@ -463,6 +473,15 @@ function detailOf(event: EventDto): string | null {
       return replacement
         ? t("amendment.history.lapsedBySources", { label: replacement })
         : t("amendment.history.lapsedBySourcesUnknown");
+    }
+    case "transactional_source_dropped": {
+      const source = amendmentName(
+        text(payload.sourceId),
+        text(payload.sourceCode),
+      );
+      return source
+        ? t("amendment.history.sourceDroppedDetail", { source })
+        : null;
     }
     case "amendment_transacted": {
       const label = amendmentName(

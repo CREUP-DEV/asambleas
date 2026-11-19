@@ -10,6 +10,7 @@ const { recordEvent } = await import("./events");
 const {
   buildSourceMap,
   competingTransactionalIds,
+  inadmissibleSourcePlan,
   latestByEntity,
   reopenTransactionalsClosedBy,
   restoreLockIds,
@@ -18,6 +19,52 @@ const {
   transactionalsToClose,
   transactionalsToRestore,
 } = await import("./transactionalClosure");
+
+describe("inadmissibleSourcePlan", () => {
+  // T1 groups A (on time) and L (late), T2 groups L alone, T3 groups L and
+  // M (both late), T4 groups A only.
+  const sourceMap = buildSourceMap([
+    { transactionalId: "T1", sourceId: "A" },
+    { transactionalId: "T1", sourceId: "L" },
+    { transactionalId: "T2", sourceId: "L" },
+    { transactionalId: "T3", sourceId: "L" },
+    { transactionalId: "T3", sourceId: "M" },
+    { transactionalId: "T4", sourceId: "A" },
+  ]);
+  const open = (id: string) => ({ id, status: "submitted" as const });
+
+  it("drops the parent where another is left and lapses where none is", () => {
+    expect(
+      inadmissibleSourcePlan(
+        sourceMap,
+        ["L"],
+        [open("T1"), open("T2"), open("T3"), open("T4")],
+      ),
+    ).toEqual({
+      drop: [
+        { id: "T1", sourceIds: ["L"], remainingIds: ["A"] },
+        { id: "T3", sourceIds: ["L"], remainingIds: ["M"] },
+      ],
+      lapse: [{ id: "T2", sourceIds: ["L"] }],
+    });
+  });
+
+  it("lapses one whose parents are all declared inadmissible together", () => {
+    expect(inadmissibleSourcePlan(sourceMap, ["L", "M"], [open("T3")])).toEqual(
+      { drop: [], lapse: [{ id: "T3", sourceIds: ["L", "M"] }] },
+    );
+  });
+
+  it("leaves closed transactionals alone", () => {
+    expect(
+      inadmissibleSourcePlan(
+        sourceMap,
+        ["L"],
+        [{ id: "T2", status: "withdrawn" as const }],
+      ),
+    ).toEqual({ drop: [], lapse: [] });
+  });
+});
 
 describe("transactionalsToClose", () => {
   // T1 groups A and B, T2 groups B, T3 groups C, T4 groups T1 (it replaced

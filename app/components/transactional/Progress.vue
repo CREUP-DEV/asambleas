@@ -17,8 +17,10 @@ const props = withDefaults(
     amendment: AmendmentDto;
     labelOf?: (id: string) => string;
     statusOf?: (id: string) => AmendmentStatus | undefined;
+    /** A grouped amendment that is late and awaits the assembly. */
+    awaitsAdmissionOf?: (id: string) => boolean;
   }>(),
-  { labelOf: undefined, statusOf: undefined },
+  { labelOf: undefined, statusOf: undefined, awaitsAdmissionOf: undefined },
 );
 
 const { member } = useMe();
@@ -29,6 +31,7 @@ const view = computed(() =>
     props.amendment,
     member.value?.id ?? null,
     props.statusOf,
+    props.awaitsAdmissionOf,
   ),
 );
 

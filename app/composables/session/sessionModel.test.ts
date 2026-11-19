@@ -9,6 +9,8 @@ import type { Block } from "~~/shared/types/content";
 import { diffPassage } from "~~/shared/utils/content/diff";
 import { validateOps } from "~~/shared/utils/content/ops";
 import {
+  sessionAdmissionTransactionalEffects,
+  sessionSourcesAwaitingAdmission,
   buildSessionQueue,
   isSessionAdmissionEligible,
   isSessionFinalVoteReady,
@@ -2135,5 +2137,59 @@ describe("agenda item votes", () => {
     );
     expect(plan.vote).toBeNull();
     expect(plan.canRecord).toBe(false);
+  });
+});
+
+describe("late amendments in a transactional (2026-11-19)", () => {
+  const late = am("ull1", { late: true, admission: "pending" });
+  const onTime = am("um3", {});
+  const t5 = am("t5", {
+    kind: "transactional",
+    sourceIds: ["um3", "ull1"],
+    acceptances: [],
+  });
+  const tLate = am("t6", {
+    kind: "transactional",
+    sourceIds: ["ull1"],
+    acceptances: [],
+  });
+  const byId = new Map([late, onTime, t5, tLate].map((a) => [a.id, a]));
+
+  it("lets a late one awaiting admission be grouped", () => {
+    expect(isSessionTransactable(late)).toBe(true);
+    expect(
+      isSessionTransactable(
+        am("x", {
+          late: true,
+          admission: "inadmissible",
+          status: "inadmissible",
+        }),
+      ),
+    ).toBe(false);
+  });
+
+  it("holds the transactional until the assembly decides on it", () => {
+    expect(sessionSourcesAwaitingAdmission(t5, byId).map((a) => a.id)).toEqual([
+      "ull1",
+    ]);
+    expect(sessionAmendmentStage(t5, byId)).toBe("sources_admission");
+    expect(isSessionDecidable(t5, byId)).toBe(false);
+    // Without the list nothing is known: as before.
+    expect(isSessionDecidable(t5)).toBe(true);
+  });
+
+  it("says what each decision does to the transactionals over it", () => {
+    expect(
+      sessionAdmissionTransactionalEffects("ull1", "admitted", [], byId),
+    ).toEqual([
+      { transactionalId: "t5", effect: "included" },
+      { transactionalId: "t6", effect: "included" },
+    ]);
+    expect(
+      sessionAdmissionTransactionalEffects("ull1", "inadmissible", [], byId),
+    ).toEqual([
+      { transactionalId: "t5", effect: "leaves" },
+      { transactionalId: "t6", effect: "lapses" },
+    ]);
   });
 });

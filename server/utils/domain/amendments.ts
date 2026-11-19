@@ -23,6 +23,8 @@ import {
   amendmentSources,
   amendments,
   decisions,
+  transactionalRevisionAcceptances,
+  transactionalRevisions,
   documentVersions,
   documents,
   events,
@@ -76,6 +78,8 @@ import type {
   RelationBody,
   RelationDto,
   TransactionalBody,
+  TransactionalRevisionBody,
+  TransactionalRevisionDto,
   ValidateAmendmentsBody,
   VoteInput,
 } from "../../../shared/types/api";
@@ -163,6 +167,7 @@ import {
   amendmentReviewState,
   authorsApproval,
   awaitsAssemblyDecision,
+  isPendingLateSource,
   awaitsAuthors,
   awaitsPartyAnswer,
   awaitsPublication,
@@ -188,6 +193,7 @@ import {
 import {
   closeTransactionalsOver,
   competingTransactionalIds,
+  inadmissibleSourcePlan,
   loadSourceMap,
   reopenTransactionalsClosedBy,
   restoreLockIds,
@@ -239,6 +245,21 @@ const SYMMETRIC_RELATIONS: RelationKind[] = ["incompatible", "duplicate"];
 /** 409 on a transactional its main authors have not all accepted yet. */
 const AWAITS_AUTHORS_MESSAGE =
   "Los autores principales de las enmiendas que sustituye todavía no han aceptado esta transaccional";
+
+/**
+ * 409 when deciding a transactional some of whose parents are late and still
+ * waiting for the assembly's admission: the Mesa decides that first (user's
+ * decision of 2026-11-19), since not admitting one may make it lapse.
+ */
+export const AWAITS_ADMISSION_MESSAGE =
+  "Alguna de las enmiendas que agrupa esta transaccional está fuera de plazo y la asamblea todavía no ha decidido si la admite. Decide primero su admisión";
+
+/** Whether any of a transactional's parents waits for its admission. */
+export function sourcesAwaitAdmission(
+  sources: Parameters<typeof isPendingLateSource>[0][],
+): boolean {
+  return sources.some(isPendingLateSource);
+}
 
 /** 409 when accepting a transactional that can no longer go through. */
 const CLOSED_SOURCES_MESSAGE =
@@ -409,8 +430,11 @@ export function nextTransactionalCode(
 
 /**
  * Which sources a transactional that replaces them now turns `transacted`,
- * or why it cannot: every source must still be open (presented, admitted,
- * undecided), or the message of unopenSourcesMessage says what is missing.
+ * or why it cannot: every source must still be open (presented, admitted or
+ * late awaiting admission, undecided), or the message of
+ * unopenSourcesMessage says what is missing. A late one still waiting for
+ * the assembly is left out: it is replaced once admitted
+ * (decideAmendmentAdmission), never before.
  * With `allowTransacted` (approving a transactional presented under the
  * earlier rule, which replaced its sources only on approval) one already
  * `transacted` is left as it is.
@@ -429,7 +453,7 @@ export function sourcesToReplace(
   }
   return {
     ids: sources
-      .filter((source) => !skipped(source))
+      .filter((source) => !skipped(source) && !isPendingLateSource(source))
       .map((source) => source.id),
   };
 }
@@ -1186,6 +1210,188 @@ function restoreDependents(
 }
 
 /**
+ * Declared inadmissible, amendments leave the open transactionals over them
+ * (inadmissibleSourcePlan; user's decision of 2026-11-19): one with another
+ * parent left goes on without them, and their main authors stop being its
+ * parties unless they are through another parent; one with nothing else
+ * left lapses. `dependents` are the transactionals over them
+ * (findCompetitors), locked in the same ordered pass as those amendments.
+ */
+async function settleTransactionalsOverInadmissible(
+  tx: Tx,
+  ctx: DocumentAmendmentContext,
+  dependents: Competitors,
+  locked: Iterable<LockedAmendment>,
+  inadmissible: { id: string; code: string | null }[],
+): Promise<void> {
+  const { sourceMap, rows } = lockedCompetitors(dependents, locked);
+  const plan = inadmissibleSourcePlan(
+    sourceMap,
+    inadmissible.map((row) => row.id),
+    rows,
+  );
+  const codeOf = new Map(inadmissible.map((row) => [row.id, row.code]));
+
+  if (plan.lapse.length > 0) {
+    const lapsed = await tx
+      .update(amendments)
+      .set({ status: "lapsed", decidedAt: ctx.now, outcomeNote: null })
+      .where(
+        and(
+          inArray(
+            amendments.id,
+            plan.lapse.map((entry) => entry.id),
+          ),
+          eq(amendments.status, "submitted"),
+        ),
+      )
+      .returning({ id: amendments.id });
+    const done = new Set(lapsed.map((row) => row.id));
+    for (const entry of plan.lapse) {
+      if (!done.has(entry.id)) continue;
+      await recordEvent(tx, {
+        assemblyId: ctx.assembly.id,
+        documentId: ctx.document.id,
+        entityType: "amendment",
+        entityId: entry.id,
+        type: "amendment_lapsed",
+        payload: {
+          reason: "sources_inadmissible",
+          sourceIds: entry.sourceIds,
+          sourceCodes: entry.sourceIds.map((id) => codeOf.get(id) ?? null),
+        },
+        actor: ctx.actor,
+      });
+    }
+  }
+
+  if (plan.drop.length === 0) return;
+  const remaining = unique(plan.drop.flatMap((entry) => entry.remainingIds));
+  const mainAuthors = new Map(
+    (await findAmendments(tx, inArray(amendments.id, remaining))).map((row) => [
+      row.id,
+      loadedMainAuthor(row),
+    ]),
+  );
+  for (const entry of plan.drop) {
+    await tx
+      .delete(amendmentSources)
+      .where(
+        and(
+          eq(amendmentSources.transactionalId, entry.id),
+          inArray(amendmentSources.sourceId, entry.sourceIds),
+        ),
+      );
+    // Its parties are the main authors of the parents left.
+    const keep = new Set(
+      entry.remainingIds
+        .map((id) => mainAuthors.get(id))
+        .filter((id): id is string => !!id),
+    );
+    const parties = await tx
+      .select({
+        id: amendmentAcceptances.id,
+        memberId: amendmentAcceptances.memberId,
+      })
+      .from(amendmentAcceptances)
+      .where(eq(amendmentAcceptances.amendmentId, entry.id));
+    const leaving = parties
+      .filter((party) => !keep.has(party.memberId))
+      .map((party) => party.id);
+    if (leaving.length > 0) {
+      await tx
+        .delete(amendmentAcceptances)
+        .where(inArray(amendmentAcceptances.id, leaving));
+    }
+    for (const sourceId of entry.sourceIds) {
+      await recordEvent(tx, {
+        assemblyId: ctx.assembly.id,
+        documentId: ctx.document.id,
+        entityType: "amendment",
+        entityId: entry.id,
+        type: "transactional_source_dropped",
+        payload: {
+          sourceId,
+          sourceCode: codeOf.get(sourceId) ?? null,
+          reason: "inadmissible",
+        },
+        actor: ctx.actor,
+      });
+    }
+  }
+}
+
+/**
+ * Admitted, late amendments that are parents of a transactional already in
+ * force (validated, or the Mesa's, and accepted by every main author) are
+ * replaced by it now (replaceSources), as its other parents were: until the
+ * assembly's decision they stayed linked and undecided
+ * (isPendingLateSource). `sourceMap`, `locked` and `parties` are those of
+ * the transactionals over them (transactionalsOverIds), locked with them.
+ */
+async function replaceAdmittedInForce(
+  tx: Tx,
+  ctx: DocumentAmendmentContext,
+  sourceMap: ReadonlyMap<string, readonly string[]>,
+  locked: LockedAmendment[],
+  parties: Awaited<ReturnType<typeof lockParties>>,
+  admitted: LockedAmendment[],
+): Promise<void> {
+  if (admitted.length === 0) return;
+  const overIds = transactionalsOverIds(
+    sourceMap,
+    admitted.map((row) => row.id),
+  );
+  const replaced = new Set<string>();
+  for (const transactional of locked) {
+    if (
+      !overIds.includes(transactional.id) ||
+      transactional.kind !== "transactional" ||
+      transactional.status !== "submitted" ||
+      transactional.validatedAt === null ||
+      authorsApproval({
+        kind: "transactional",
+        acceptances: parties.filter(
+          (party) => party.amendmentId === transactional.id,
+        ),
+      }) !== "accepted"
+    ) {
+      continue;
+    }
+    const sources = admitted
+      .filter(
+        (row) =>
+          !replaced.has(row.id) &&
+          (sourceMap.get(transactional.id) ?? []).includes(row.id),
+      )
+      .map((row) => ({
+        ...row,
+        admission: "admitted" as const,
+        validatedAt: row.validatedAt ?? ctx.now,
+      }));
+    if (sources.length === 0) continue;
+    await replaceSources(tx, {
+      assemblyId: ctx.assembly.id,
+      documentId: ctx.document.id,
+      actor: ctx.actor,
+      now: ctx.now,
+      transactional: { id: transactional.id, code: transactional.code },
+      sources,
+      competitors: lockedCompetitors(
+        {
+          sourceMap: new Map(
+            [...sourceMap].map(([id, list]) => [id, [...list]]),
+          ),
+          ids: overIds.filter((id) => id !== transactional.id),
+        },
+        locked,
+      ),
+    });
+    for (const row of sources) replaced.add(row.id);
+  }
+}
+
+/**
  * A transactional replaces the amendments it groups (docs/design.md,
  * "Transactionals"): once the Secretaría validated it (or the Mesa presented
  * it) and every main author accepted it, whichever comes last, its sources
@@ -1414,6 +1620,7 @@ export async function buildAmendmentDtos(
   const review = canReviewAmendments(ctx.actor);
   const voted = documentVoted(ctx.document);
   const keep = (id: string) => !visibleIds || visibleIds.has(id);
+  const openRevisions = await loadOpenRevisions(ctx, rows, keep);
 
   return rows.map((row) => {
     const meta = readMeta(row);
@@ -1487,6 +1694,7 @@ export async function buildAmendmentDtos(
           ),
         })),
       ),
+      openRevision: openRevisions.get(row.id) ?? null,
       updatedAt: row.updatedAt.toISOString(),
       can: amendmentCapabilities({
         status: row.status,
@@ -3215,18 +3423,17 @@ export async function decideAmendmentAdmission(
       });
     }
     if (admission === "inadmissible") {
-      await closeDependents(
+      // Not admitted, it leaves the transactionals over it: they go on with
+      // their other parents, or lapse with none left (user's decision of
+      // 2026-11-19).
+      await settleTransactionalsOverInadmissible(
         tx,
         ctx,
         dependents,
         lockedAll,
         locked
           .filter((row) => row.status === "submitted")
-          .map((row) => ({
-            id: row.id,
-            code: row.code,
-            status: "inadmissible" as const,
-          })),
+          .map((row) => ({ id: row.id, code: row.code })),
       );
     }
     if (readmitting.length > 0) {
@@ -3242,6 +3449,16 @@ export async function decideAmendmentAdmission(
       );
     }
     if (admission === "admitted") {
+      // Late parents of a transactional already in force are replaced by it
+      // now, before anything else could decide them on their own.
+      await replaceAdmittedInForce(
+        tx,
+        ctx,
+        sourceMap,
+        lockedAll,
+        restoreParties,
+        locked.filter((row) => row.status === "submitted"),
+      );
       // A formal one nobody answered yet is answered by itself, and under
       // "incorporate" the accepted ones go into the text now.
       await autoAcceptFormal(tx, ctx, {
@@ -4600,6 +4817,16 @@ export async function setAmendmentPosition(
     };
     const lockedBlocker = positionBlocker(fields, ctx.rule);
     if (lockedBlocker) fail(409, POSITION_BLOCKER_MESSAGES[lockedBlocker]);
+    // Accepted under `incorporate`, a transactional is approved at once: not
+    // while a parent still waits for the assembly's admission.
+    if (
+      amendment.kind === "transactional" &&
+      ctx.rule === "incorporate" &&
+      body.position === "accept" &&
+      sourcesAwaitAdmission(locked.filter((row) => sourceIds.includes(row.id)))
+    ) {
+      fail(409, AWAITS_ADMISSION_MESSAGE);
+    }
 
     const stored = (await lockPositions(tx, [amendment.id])).get(amendment.id);
     if (
@@ -4780,6 +5007,13 @@ export async function applyAmendmentOutcome(
           "accepted"
         ) {
           fail(409, AWAITS_AUTHORS_MESSAGE);
+        }
+        if (
+          sourcesAwaitAdmission(
+            locked.filter((row) => sourceIds.includes(row.id)),
+          )
+        ) {
+          fail(409, AWAITS_ADMISSION_MESSAGE);
         }
       }
 
@@ -5571,6 +5805,607 @@ export async function recordAmendmentAcceptance(
   });
 
   return amendmentDto(ctx, amendment.id);
+}
+
+// Inclusions in a transactional (revisions) ----------------------------------
+
+/** Statuses of an inclusion still waiting for someone. */
+const OPEN_REVISION_STATUSES = [
+  "pending_parties",
+  "pending_validation",
+] as const;
+
+type RevisionRow = typeof transactionalRevisions.$inferSelect;
+
+/**
+ * Who may propose including amendments in an existing transactional (user's
+ * decision of 2026-11-19): its main author (who proposed it), the Mesa and
+ * the Secretaría (amendment:review).
+ */
+export function canReviseTransactional(input: {
+  moderate: boolean;
+  review: boolean;
+  actsForMainAuthor: boolean;
+}): boolean {
+  return input.moderate || input.review || input.actsForMainAuthor;
+}
+
+/**
+ * Where an inclusion goes once every party answered: any rejection leaves
+ * the transactional as it was (`rejected`); all accepted, the Mesa's or the
+ * Secretaría's is applied at once (`apply`), a member's waits for the
+ * Secretaría (`validation`); otherwise it keeps waiting (`wait`).
+ */
+export function revisionAfterAnswers(
+  decisions: readonly AcceptanceDecision[],
+  staffProposed: boolean,
+): "rejected" | "apply" | "validation" | "wait" {
+  if (decisions.includes("rejected")) return "rejected";
+  if (decisions.some((decision) => decision === "pending")) return "wait";
+  return staffProposed ? "apply" : "validation";
+}
+
+function lockRevision(tx: Tx, transactionalId: string, revisionId: string) {
+  return tx
+    .select()
+    .from(transactionalRevisions)
+    .where(
+      and(
+        eq(transactionalRevisions.id, revisionId),
+        eq(transactionalRevisions.transactionalId, transactionalId),
+      ),
+    )
+    .for("update");
+}
+
+function lockRevisionParties(tx: Tx, revisionId: string) {
+  return tx
+    .select()
+    .from(transactionalRevisionAcceptances)
+    .where(eq(transactionalRevisionAcceptances.revisionId, revisionId))
+    .orderBy(asc(transactionalRevisionAcceptances.id))
+    .for("no key update");
+}
+
+/**
+ * The transactional, its parents (current and added) and the other
+ * transactionals over them, in one ordered pass, after the document lock;
+ * then its acceptances. What applying an inclusion needs locked.
+ */
+async function lockForRevision(
+  tx: Tx,
+  ctx: AmendmentContext,
+  addedSourceIds: readonly string[],
+) {
+  const { amendment, document } = ctx;
+  await lockDocument(tx, document.id, "share");
+  const parentIds = unique([
+    ...amendment.sources.map((source) => source.sourceId),
+    ...addedSourceIds,
+  ]);
+  const competitors = await findCompetitors(
+    tx,
+    document.id,
+    amendment.id,
+    parentIds,
+  );
+  const locked = await lockAmendments(tx, document.id, [
+    amendment.id,
+    ...parentIds,
+    ...competitors.ids,
+  ]);
+  const current = locked.find((row) => row.id === amendment.id);
+  if (!current || current.status !== "submitted") {
+    fail(409, "La transaccional ya está decidida");
+  }
+  const parties = (
+    await lockParties(tx, [amendment.id], "no key update")
+  ).filter((row) => row.role === "author");
+  return { competitors, locked, current, parties };
+}
+
+/**
+ * Applies an inclusion every party accepted: the transactional takes its
+ * new text and parents, the main authors it adds become parties (accepted),
+ * and, when the transactional is already in force (validated and accepted),
+ * it replaces the parents it adds now (replaceSources; a late one awaiting
+ * the assembly stays linked, isPendingLateSource).
+ */
+async function applyRevision(
+  tx: Tx,
+  ctx: AmendmentContext,
+  revision: RevisionRow,
+  locks: Awaited<ReturnType<typeof lockForRevision>>,
+  revisionParties: { memberId: string }[],
+): Promise<void> {
+  const { actor, amendment, document, now } = ctx;
+  const added = revision.addedSourceIds;
+  const addedRows = locks.locked.filter((row) => added.includes(row.id));
+  if (addedRows.length !== added.length || !sourcesAreOpen(addedRows)) {
+    fail(409, CLOSED_SOURCES_MESSAGE);
+  }
+  const base = await loadBaseBlocks(document);
+  await tx
+    .update(amendments)
+    .set({
+      ops: revision.ops,
+      justification: revision.justification,
+      positionKey: amendmentSortKey(revision.ops, base),
+    })
+    .where(eq(amendments.id, amendment.id));
+  if (added.length > 0) {
+    await tx
+      .insert(amendmentSources)
+      .values(
+        added.map((sourceId) => ({ transactionalId: amendment.id, sourceId })),
+      )
+      .onConflictDoNothing();
+  }
+  const known = new Set(locks.parties.map((party) => party.memberId));
+  const joining = revisionParties.filter((party) => !known.has(party.memberId));
+  if (joining.length > 0) {
+    await tx.insert(amendmentAcceptances).values(
+      joining.map((party) => ({
+        amendmentId: amendment.id,
+        memberId: party.memberId,
+        role: "author" as const,
+        decision: "accepted" as const,
+        decidedAt: now,
+        recordedByUserId: actor.user.id,
+      })),
+    );
+  }
+  const inForce =
+    locks.current.validatedAt !== null &&
+    authorsApproval({
+      kind: "transactional",
+      acceptances: locks.parties,
+    }) === "accepted";
+  if (inForce && addedRows.length > 0) {
+    await replaceSources(tx, {
+      assemblyId: ctx.assembly.id,
+      documentId: document.id,
+      actor,
+      now,
+      transactional: { id: amendment.id, code: amendment.code },
+      sources: addedRows,
+      competitors: lockedCompetitors(locks.competitors, locks.locked),
+    });
+  }
+  await tx
+    .update(transactionalRevisions)
+    .set({ status: "applied", decidedAt: now })
+    .where(eq(transactionalRevisions.id, revision.id));
+  await recordEvent(tx, {
+    assemblyId: ctx.assembly.id,
+    documentId: document.id,
+    entityType: "amendment",
+    entityId: amendment.id,
+    type: "transactional_revision_applied",
+    payload: {
+      revisionId: revision.id,
+      addedSourceIds: added,
+      addedCodes: addedRows.map((row) => row.code),
+    },
+    actor,
+  });
+}
+
+/**
+ * Settles an inclusion after an answer or its proposal: rejected, applied,
+ * or on to the Secretaría, as revisionAfterAnswers says.
+ */
+async function settleRevision(
+  tx: Tx,
+  ctx: AmendmentContext,
+  revision: RevisionRow,
+  locks: Awaited<ReturnType<typeof lockForRevision>>,
+  parties: { memberId: string; decision: AcceptanceDecision }[],
+): Promise<void> {
+  const next = revisionAfterAnswers(
+    parties.map((party) => party.decision),
+    revision.staffProposed,
+  );
+  const base = {
+    assemblyId: ctx.assembly.id,
+    documentId: ctx.document.id,
+    entityType: "amendment" as const,
+    entityId: ctx.amendment.id,
+    actor: ctx.actor,
+  };
+  if (next === "rejected") {
+    await tx
+      .update(transactionalRevisions)
+      .set({ status: "rejected", decidedAt: ctx.now })
+      .where(eq(transactionalRevisions.id, revision.id));
+    await recordEvent(tx, {
+      ...base,
+      type: "transactional_revision_rejected",
+      payload: { revisionId: revision.id },
+    });
+  } else if (next === "apply") {
+    await applyRevision(tx, ctx, revision, locks, parties);
+  } else if (next === "validation" && revision.status === "pending_parties") {
+    await tx
+      .update(transactionalRevisions)
+      .set({ status: "pending_validation" })
+      .where(eq(transactionalRevisions.id, revision.id));
+    await recordEvent(tx, {
+      ...base,
+      type: "transactional_revision_ready",
+      payload: { revisionId: revision.id },
+    });
+  }
+}
+
+/**
+ * Proposes including amendments in an existing transactional, with its new
+ * text (user's decision of 2026-11-19). Every party of the new version (the
+ * main authors of its parents, old and added) answers it; the proposer's
+ * member is accepted from the start. Until it is applied the transactional
+ * stays as it is.
+ */
+export async function proposeTransactionalRevision(
+  ctx: AmendmentContext,
+  body: TransactionalRevisionBody,
+): Promise<AmendmentDto> {
+  const { actor, amendment, document, now } = ctx;
+  if (amendment.kind !== "transactional") {
+    fail(409, "Solo se pueden incluir enmiendas en una transaccional");
+  }
+  if (amendment.status !== "submitted") {
+    fail(409, "La transaccional ya está decidida");
+  }
+  assertAmendable(ctx);
+  const moderate = canModerate(actor);
+  const review = canReviewAmendments(actor);
+  const mainAuthor = loadedMainAuthor(amendment);
+  if (
+    !canReviseTransactional({
+      moderate,
+      review,
+      actsForMainAuthor: !!mainAuthor && actsFor(actor, [mainAuthor]),
+    })
+  ) {
+    fail(403, "No tienes permiso para incluir enmiendas en esta transaccional");
+  }
+  const currentIds = amendment.sources.map((source) => source.sourceId);
+  const added = unique(body.addSourceIds).filter(
+    (id) => id !== amendment.id && !currentIds.includes(id),
+  );
+  if (added.length === 0) {
+    fail(422, "Elige al menos una enmienda que todavía no agrupe");
+  }
+  const [addedRows, currentRows] = await Promise.all([
+    findAmendments(
+      db,
+      and(
+        eq(amendments.documentId, document.id),
+        inArray(amendments.id, added),
+      ),
+    ),
+    currentIds.length > 0
+      ? findAmendments(db, inArray(amendments.id, currentIds))
+      : Promise.resolve([]),
+  ]);
+  if (
+    addedRows.length !== added.length ||
+    !addedRows.every((row) => isVisible(ctx, row))
+  ) {
+    fail(404, "Enmienda no encontrada");
+  }
+  const unopen = transactionalSourcesMessage(
+    addedRows.map((row) => ({ ...row, authorsApproval: authorsApproval(row) })),
+  );
+  if (unopen) fail(409, unopen);
+  const parties = buildAcceptanceParties(
+    [...currentRows, ...addedRows].map(loadedMainAuthor),
+    moderate || review ? null : actor.memberId,
+  );
+  const staffProposed = moderate || review;
+
+  await db.transaction(async (tx) => {
+    const locks = await lockForRevision(tx, ctx, added);
+    const [open] = await tx
+      .select({ id: transactionalRevisions.id })
+      .from(transactionalRevisions)
+      .where(
+        and(
+          eq(transactionalRevisions.transactionalId, amendment.id),
+          inArray(transactionalRevisions.status, [...OPEN_REVISION_STATUSES]),
+        ),
+      )
+      .for("update");
+    if (open) {
+      fail(
+        409,
+        "Ya hay una inclusión pendiente en esta transaccional: espera a que se resuelva o retírala",
+      );
+    }
+    const addedLocked = locks.locked.filter((row) => added.includes(row.id));
+    if (addedLocked.length !== added.length || !sourcesAreOpen(addedLocked)) {
+      fail(409, CLOSED_SOURCES_MESSAGE);
+    }
+    const base = await loadBaseBlocks(document);
+    const { ops, errors } = prepareAmendmentOps({
+      ops: body.ops,
+      base,
+      takenIds: await otherInsertedIds(tx, document.id, amendment.id),
+    });
+    assertValidOps(errors);
+    await assertOpImagesBelong(document.id, ops);
+
+    const [revision] = await tx
+      .insert(transactionalRevisions)
+      .values({
+        transactionalId: amendment.id,
+        proposedByUserId: actor.user.id,
+        proposedAsMemberId: staffProposed ? null : actor.memberId,
+        staffProposed,
+        addedSourceIds: added,
+        ops,
+        justification: body.justification,
+      })
+      .returning();
+    const rows = parties.map((party) => ({
+      revisionId: revision!.id,
+      memberId: party.memberId,
+      decision: party.accepted ? ("accepted" as const) : ("pending" as const),
+      decidedAt: party.accepted ? now : null,
+      recordedByUserId: party.accepted ? actor.user.id : null,
+    }));
+    if (rows.length > 0) {
+      await tx.insert(transactionalRevisionAcceptances).values(rows);
+    }
+    await recordEvent(tx, {
+      assemblyId: ctx.assembly.id,
+      documentId: document.id,
+      entityType: "amendment",
+      entityId: amendment.id,
+      type: "transactional_revision_proposed",
+      payload: {
+        revisionId: revision!.id,
+        addedSourceIds: added,
+        addedCodes: addedLocked.map((row) => row.code),
+        // For the notices only (rules.ts): never an activity key.
+        pendingMemberIds: rows
+          .filter((row) => row.decision === "pending")
+          .map((row) => row.memberId),
+      },
+      actor,
+    });
+    await settleRevision(tx, ctx, revision!, locks, rows);
+  });
+
+  return amendmentDto(ctx, amendment.id);
+}
+
+/**
+ * A party answers an inclusion, or the Mesa records the answer it gave in
+ * the room (`memberId`), as recordAmendmentAcceptance does for the
+ * transactional itself. Any rejection leaves the transactional as it was.
+ */
+export async function answerTransactionalRevision(
+  ctx: AmendmentContext,
+  revisionId: string,
+  body: AcceptanceBody,
+): Promise<AmendmentDto> {
+  const { actor, amendment, now } = ctx;
+  assertNotFinal(ctx);
+  const moderate = canModerate(actor);
+  const memberId = body.memberId ?? actor.memberId;
+  if (!memberId) fail(403, UNLINKED_ACCOUNT_MESSAGE);
+  if (memberId !== actor.memberId && !moderate) {
+    fail(403, "Solo la Mesa puede registrar la respuesta de otra parte");
+  }
+
+  await db.transaction(async (tx) => {
+    const [revision] = await lockRevision(tx, amendment.id, revisionId);
+    if (!revision) fail(404, "Inclusión no encontrada");
+    if (revision.status !== "pending_parties") {
+      fail(409, "Esta inclusión ya no espera respuestas");
+    }
+    const locks = await lockForRevision(tx, ctx, revision.addedSourceIds);
+    const parties = await lockRevisionParties(tx, revision.id);
+    const row = parties.find((party) => party.memberId === memberId);
+    if (!row) fail(404, "Ese miembro no tiene que responder a esta inclusión");
+    if (row.decision !== "pending" && !moderate) {
+      fail(409, "Esta parte ya ha respondido");
+    }
+    await tx
+      .update(transactionalRevisionAcceptances)
+      .set({
+        decision: body.decision,
+        decidedAt: now,
+        recordedByUserId: actor.user.id,
+      })
+      .where(eq(transactionalRevisionAcceptances.id, row.id));
+    await recordEvent(tx, {
+      assemblyId: ctx.assembly.id,
+      documentId: ctx.document.id,
+      entityType: "amendment",
+      entityId: amendment.id,
+      type: "transactional_revision_answered",
+      payload: {
+        revisionId: revision.id,
+        memberId,
+        decision: body.decision,
+        ...(memberId !== actor.memberId
+          ? { recordedForMemberId: memberId }
+          : {}),
+      },
+      actor,
+    });
+    await settleRevision(
+      tx,
+      ctx,
+      revision,
+      locks,
+      parties.map((party) =>
+        party.id === row.id ? { ...party, decision: body.decision } : party,
+      ),
+    );
+  });
+
+  return amendmentDto(ctx, amendment.id);
+}
+
+/**
+ * The Secretaría validates an inclusion a member proposed and every party
+ * accepted: it is applied (applyRevision).
+ */
+export async function validateTransactionalRevision(
+  ctx: AmendmentContext,
+  revisionId: string,
+): Promise<AmendmentDto> {
+  const { actor, amendment } = ctx;
+  if (!canReviewAmendments(actor)) {
+    fail(403, "No tienes permiso para validar inclusiones");
+  }
+  assertNotFinal(ctx);
+  await db.transaction(async (tx) => {
+    const [revision] = await lockRevision(tx, amendment.id, revisionId);
+    if (!revision) fail(404, "Inclusión no encontrada");
+    if (revision.status !== "pending_validation") {
+      fail(409, "Esta inclusión no está esperando la validación");
+    }
+    const locks = await lockForRevision(tx, ctx, revision.addedSourceIds);
+    const parties = await lockRevisionParties(tx, revision.id);
+    await applyRevision(tx, ctx, revision, locks, parties);
+  });
+  return amendmentDto(ctx, amendment.id);
+}
+
+/**
+ * Whoever proposed an inclusion, the Mesa or the Secretaría withdraws it
+ * while it is open: the transactional stays as it is.
+ */
+export async function cancelTransactionalRevision(
+  ctx: AmendmentContext,
+  revisionId: string,
+): Promise<AmendmentDto> {
+  const { actor, amendment, now } = ctx;
+  await db.transaction(async (tx) => {
+    const [revision] = await lockRevision(tx, amendment.id, revisionId);
+    if (!revision) fail(404, "Inclusión no encontrada");
+    if (
+      !(OPEN_REVISION_STATUSES as readonly string[]).includes(revision.status)
+    ) {
+      fail(409, "Esta inclusión ya está resuelta");
+    }
+    if (
+      revision.proposedByUserId !== actor.user.id &&
+      !canModerate(actor) &&
+      !canReviewAmendments(actor)
+    ) {
+      fail(
+        403,
+        "Solo quien la propuso, la Mesa o la Secretaría pueden retirarla",
+      );
+    }
+    await tx
+      .update(transactionalRevisions)
+      .set({ status: "cancelled", decidedAt: now })
+      .where(eq(transactionalRevisions.id, revision.id));
+    await recordEvent(tx, {
+      assemblyId: ctx.assembly.id,
+      documentId: ctx.document.id,
+      entityType: "amendment",
+      entityId: amendment.id,
+      type: "transactional_revision_cancelled",
+      payload: { revisionId: revision.id },
+      actor,
+    });
+  });
+  return amendmentDto(ctx, amendment.id);
+}
+
+/**
+ * The open inclusion of each of these transactionals, as the reader gets
+ * it (TransactionalRevisionDto): its parents only when the reader sees
+ * them, its parties with offices redacted.
+ */
+async function loadOpenRevisions(
+  ctx: DocumentAmendmentContext,
+  rows: LoadedAmendment[],
+  keep: (id: string) => boolean,
+): Promise<Map<string, TransactionalRevisionDto>> {
+  const ids = rows
+    .filter((row) => row.kind === "transactional" && row.status === "submitted")
+    .map((row) => row.id);
+  const result = new Map<string, TransactionalRevisionDto>();
+  if (ids.length === 0) return result;
+  const revisions = await db
+    .select()
+    .from(transactionalRevisions)
+    .where(
+      and(
+        inArray(transactionalRevisions.transactionalId, ids),
+        inArray(transactionalRevisions.status, [...OPEN_REVISION_STATUSES]),
+      ),
+    );
+  if (revisions.length === 0) return result;
+  const parties = await db
+    .select({
+      revisionId: transactionalRevisionAcceptances.revisionId,
+      decision: transactionalRevisionAcceptances.decision,
+      decidedAt: transactionalRevisionAcceptances.decidedAt,
+      member: {
+        id: members.id,
+        acronym: members.acronym,
+        name: members.name,
+        kind: members.kind,
+      },
+    })
+    .from(transactionalRevisionAcceptances)
+    .innerJoin(
+      members,
+      eq(members.id, transactionalRevisionAcceptances.memberId),
+    )
+    .where(
+      inArray(
+        transactionalRevisionAcceptances.revisionId,
+        revisions.map((revision) => revision.id),
+      ),
+    )
+    .orderBy(asc(members.acronym));
+  const moderate = canModerate(ctx.actor);
+  const review = canReviewAmendments(ctx.actor);
+  for (const revision of revisions) {
+    const own = parties.filter((party) => party.revisionId === revision.id);
+    const pendingFor = (memberId: string | null) =>
+      own.some(
+        (party) => party.member.id === memberId && party.decision === "pending",
+      );
+    result.set(revision.transactionalId, {
+      id: revision.id,
+      status: revision.status as TransactionalRevisionDto["status"],
+      addedSourceIds: revision.addedSourceIds.filter(keep),
+      ops: revision.ops,
+      justification: revision.justification,
+      staffProposed: revision.staffProposed,
+      createdAt: revision.createdAt.toISOString(),
+      acceptances: redactAcceptances(
+        ctx.actor,
+        own.map((party) => ({
+          member: toMemberRef(party.member),
+          role: "author" as const,
+          decision: party.decision,
+          decidedAt: iso(party.decidedAt),
+          recordedBy: "party" as const,
+        })),
+      ),
+      can: {
+        answer:
+          revision.status === "pending_parties" &&
+          (moderate || pendingFor(ctx.actor.memberId)),
+        validate: revision.status === "pending_validation" && review,
+        cancel:
+          revision.proposedByUserId === ctx.actor.user.id || moderate || review,
+      },
+    });
+  }
+  return result;
 }
 
 // Relations ------------------------------------------------------------------

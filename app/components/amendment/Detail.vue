@@ -12,6 +12,7 @@ import { firstTouchedBlockId } from "~~/shared/utils/content/ops";
 import {
   transactionalAuthorTurn,
   transactionalClosure,
+  isLateAwaitingAdmission,
   transactionalGroupSources,
   transactionalLinksOf,
   transactionalProgressMessage,
@@ -128,6 +129,8 @@ const emit = defineEmits<{
   edit: [amendment: AmendmentDto];
   /** Open the transactional composer on these amendments. */
   transact: [ids: string[]];
+  /** Include these amendments in that existing transactional. */
+  include: [transactionalId: string, ids: string[]];
   updated: [amendment: AmendmentDto];
   /** The whole list, after the Secretaría validated or published it. */
   replaced: [dto: DocumentAmendmentsDto];
@@ -290,6 +293,45 @@ const showKind = computed(() => props.amendment.kind !== "partial");
 const transactable = computed(
   () => props.canTransact && transactionalSourceEligible(props.amendment),
 );
+
+/**
+ * Whether the viewer may include amendments in this transactional (user's
+ * decision of 2026-11-19): its main author, the Mesa or the Secretaría,
+ * while it is undecided and has no inclusion open.
+ */
+function revisable(item: AmendmentDto): boolean {
+  return (
+    props.canTransact &&
+    item.kind === "transactional" &&
+    item.status === "submitted" &&
+    !item.openRevision &&
+    (item.can.moderate ||
+      item.can.review ||
+      (!!member.value?.id && item.mainAuthorId === member.value.id))
+  );
+}
+/** «Incluir otra enmienda», on a transactional. */
+const includable = computed(() => revisable(props.amendment));
+/**
+ * The open transactionals this amendment may be included in, for
+ * «Incluir en una transaccional».
+ */
+const includeTargets = computed(() =>
+  transactable.value
+    ? props.candidates.filter(
+        (item) =>
+          item.id !== props.amendment.id &&
+          revisable(item) &&
+          !item.sourceIds.includes(props.amendment.id),
+      )
+    : [],
+);
+const includeItems = computed(() =>
+  includeTargets.value.map((item) => ({
+    label: item.code ?? props.labelOf(item.id),
+    onSelect: () => emit("include", item.id, [props.amendment.id]),
+  })),
+);
 /** This one and the amendments on the same passage that can be combined. */
 const overlapSources = computed(() => {
   if (!transactable.value) return [];
@@ -327,7 +369,12 @@ const authors = computed(() => amendmentAuthorsInOrder(props.amendment));
  * with the Secretaría while that says more, else its status.
  */
 const progress = computed(() =>
-  transactionalProgressOf(props.amendment, member.value?.id ?? null, statusOf),
+  transactionalProgressOf(
+    props.amendment,
+    member.value?.id ?? null,
+    statusOf,
+    awaitsAdmissionOf,
+  ),
 );
 const hasProgress = computed(
   () =>
@@ -375,6 +422,11 @@ const byId = computed(
 );
 function statusOf(id: string) {
   return byId.value.get(id)?.status;
+}
+/** A grouped amendment that is late and awaits the assembly's admission. */
+function awaitsAdmissionOf(id: string): boolean {
+  const amendment = byId.value.get(id);
+  return !!amendment && isLateAwaitingAdmission(amendment);
 }
 /**
  * What accepting it would set off under the "incorporate" rule, for the
@@ -678,6 +730,7 @@ async function remove(): Promise<void> {
         :amendment="amendment"
         :label-of="labelOf"
         :status-of="statusOf"
+        :awaits-admission-of="awaitsAdmissionOf"
       />
       <div v-else class="flex items-center">
         <UBadge
@@ -822,6 +875,16 @@ async function remove(): Promise<void> {
       :withdraws="acceptWithdraws"
       @updated="emit('updated', $event)"
       @conflict="emit('changed')"
+    />
+
+    <!-- An inclusion proposed on this transactional and still open. -->
+    <TransactionalRevisionPanel
+      v-if="amendment.openRevision"
+      :amendment="amendment"
+      :base="base"
+      :amendments-url="amendmentsUrl"
+      :label-of="labelOf"
+      @updated="emit('updated', $event)"
     />
 
     <!-- Transactionals over this one that wait for the viewer's answer. -->
@@ -1251,6 +1314,26 @@ async function remove(): Promise<void> {
           :label="t('amendment.detail.transact')"
           :disabled="busy !== null"
           @click="emit('transact', [amendment.id])"
+        />
+        <UDropdownMenu v-if="includeItems.length > 0" :items="includeItems">
+          <UButton
+            icon="i-lucide-git-pull-request-arrow"
+            color="neutral"
+            variant="outline"
+            size="sm"
+            :label="t('transactional.revision.includeIn')"
+            :disabled="busy !== null"
+          />
+        </UDropdownMenu>
+        <UButton
+          v-if="includable"
+          icon="i-lucide-git-pull-request-arrow"
+          color="neutral"
+          variant="outline"
+          size="sm"
+          :label="t('transactional.revision.includeMore')"
+          :disabled="busy !== null"
+          @click="emit('include', amendment.id, [])"
         />
         <UButton
           v-if="amendment.can.edit"

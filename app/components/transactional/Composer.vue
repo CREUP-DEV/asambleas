@@ -6,6 +6,7 @@ import type {
   MemberDto,
   MemberRef,
   TransactionalBody,
+  TransactionalRevisionBody,
 } from "~~/shared/types/api";
 import type { Block } from "~~/shared/types/content";
 import { diffPassage } from "~~/shared/utils/content/diff";
@@ -19,6 +20,7 @@ import {
 import { useComposerLeaveGuard } from "~/composables/amendment/useComposerLeaveGuard";
 import { useTransactionalProgressText } from "~/composables/amendment/useTransactionalProgressText";
 import {
+  isLateAwaitingAdmission,
   transactionalAuthorsToAsk,
   transactionalComposerSeed,
   transactionalMemberList,
@@ -68,8 +70,15 @@ const props = withDefaults(
     labelOf: (id: string) => string;
     /** Amendments to start from (an overlap group, one amendment), or none. */
     initialSourceIds?: string[];
+    /**
+     * Include amendments in this existing transactional instead (user's
+     * decision of 2026-11-19): its parents stay chosen, the text starts as
+     * it is with the added ones applied, and sending proposes an inclusion
+     * (POST .../[amendment]/revisions) that every party answers again.
+     */
+    revise?: AmendmentDto | null;
   }>(),
-  { initialSourceIds: () => [] },
+  { initialSourceIds: () => [], revise: null },
 );
 
 const emit = defineEmits<{
@@ -107,22 +116,37 @@ const mainAuthorBox = useTemplateRef<HTMLElement>("mainAuthorBox");
 const byId = computed(
   () => new Map(props.amendments.map((amendment) => [amendment.id, amendment])),
 );
+/** In inclusion mode, the parents the transactional already groups. */
+const fixedIds = computed(() => new Set(props.revise?.sourceIds ?? []));
 const candidates = computed(() =>
-  transactionalSourceCandidates(props.amendments),
+  transactionalSourceCandidates(props.amendments).filter(
+    (amendment) =>
+      amendment.id !== props.revise?.id && !fixedIds.value.has(amendment.id),
+  ),
 );
 
-const sourceIds = ref<string[]>(
-  props.initialSourceIds.filter((id) => {
+const sourceIds = ref<string[]>([
+  ...(props.revise?.sourceIds ?? []),
+  ...props.initialSourceIds.filter((id) => {
     const amendment = byId.value.get(id);
-    return amendment !== undefined && transactionalSourceEligible(amendment);
+    return (
+      amendment !== undefined &&
+      id !== props.revise?.id &&
+      !fixedIds.value.has(id) &&
+      transactionalSourceEligible(amendment)
+    );
   }),
+]);
+/** The amendments an inclusion adds (all of them otherwise). */
+const addedIds = computed(() =>
+  sourceIds.value.filter((id) => !fixedIds.value.has(id)),
 );
 /** The list of amendments is open while nothing is chosen. */
-const choosing = ref(sourceIds.value.length === 0);
+const choosing = ref(addedIds.value.length === 0);
 
 /** Chosen ones that were decided or withdrawn meanwhile. */
 const blockers = computed(() =>
-  transactionalSourceBlockers(sourceIds.value, byId.value),
+  transactionalSourceBlockers(addedIds.value, byId.value),
 );
 /** The most a transactional can combine (the server's limit). */
 const sourceLimit = computed(() => transactionalSourceLimit(sourceIds.value));
@@ -165,15 +189,35 @@ const sourceItems = computed(() => {
     .map((id) => byId.value.get(id))
     .filter((amendment) => amendment !== undefined);
   const chosen = new Set(sourceIds.value);
-  return [...candidates.value, ...stale].map((amendment) => ({
-    label: `${props.labelOf(amendment.id)} · ${authorsOf(amendment)}`,
-    description: listed.has(amendment.id)
-      ? (whereOf(amendment) ?? undefined)
-      : t("transactional.composer.noLongerOpen"),
-    value: amendment.id,
-    // At the limit, only the chosen ones can still change (be removed).
-    disabled: sourceLimit.value.full && !chosen.has(amendment.id),
-  }));
+  // In inclusion mode the parents it already groups stay, checked and fixed.
+  const fixed = [...fixedIds.value]
+    .map((id) => byId.value.get(id))
+    .filter((amendment) => amendment !== undefined)
+    .map((amendment) => ({
+      label: `${props.labelOf(amendment.id)} · ${authorsOf(amendment)}`,
+      description: t("transactional.composer.alreadyGrouped"),
+      value: amendment.id,
+      disabled: true,
+    }));
+  return [
+    ...fixed,
+    ...[
+      ...candidates.value,
+      ...stale.filter((a) => !fixedIds.value.has(a.id)),
+    ].map((amendment) => ({
+      label: `${props.labelOf(amendment.id)} · ${authorsOf(amendment)}`,
+      description: !listed.has(amendment.id)
+        ? t("transactional.composer.noLongerOpen")
+        : isLateAwaitingAdmission(amendment)
+          ? [t("transactional.composer.lateSource"), whereOf(amendment)]
+              .filter(Boolean)
+              .join(" · ")
+          : (whereOf(amendment) ?? undefined),
+      value: amendment.id,
+      // At the limit, only the chosen ones can still change (be removed).
+      disabled: sourceLimit.value.full && !chosen.has(amendment.id),
+    })),
+  ];
 });
 
 // Text -----------------------------------------------------------------------------
@@ -183,9 +227,19 @@ const edited = ref<Block[]>([]);
 const editorKey = ref(0);
 
 function reseed(): void {
+  // An inclusion starts from the transactional's text as it is, with the
+  // amendments it adds applied.
   seed.value = transactionalComposerSeed(
     props.base,
-    sources.value.map(({ id, ops }) => ({ id, ops })),
+    props.revise
+      ? [
+          { id: props.revise.id, ops: props.revise.ops },
+          ...addedIds.value
+            .map((id) => byId.value.get(id))
+            .filter((amendment) => amendment !== undefined)
+            .map(({ id, ops }) => ({ id, ops })),
+        ]
+      : sources.value.map(({ id, ops }) => ({ id, ops })),
     createId,
   );
   edited.value = seed.value.seed.map((block) => ({
@@ -238,9 +292,14 @@ const changeStatus = computed(() =>
 );
 
 function onSourcesChange(value: unknown): void {
-  const next = Array.isArray(value)
+  const picked = Array.isArray(value)
     ? value.filter((id): id is string => typeof id === "string")
     : [];
+  // The parents an inclusion keeps never leave the choice.
+  const next = [
+    ...fixedIds.value,
+    ...picked.filter((id) => !fixedIds.value.has(id)),
+  ];
   if (transactionalSameIds(next, sourceIds.value)) {
     sourceIds.value = next;
     return;
@@ -381,7 +440,7 @@ const mainAuthorItems = computed(() =>
 
 // Sending ----------------------------------------------------------------------------
 
-const justification = ref("");
+const justification = ref(props.revise?.justification ?? "");
 const attempted = ref(false);
 const busy = ref(false);
 const serverReasons = ref<string[]>([]);
@@ -392,14 +451,17 @@ const createdNow = computed(() =>
 );
 
 const justificationMissing = computed(() => !justification.value.trim());
-const sourcesMissing = computed(() => sourceIds.value.length === 0);
+const sourcesMissing = computed(() => addedIds.value.length === 0);
 /**
  * The Mesa presents it on behalf of someone: with nobody picked, the server
  * would create it without authors.
  */
 const authorsMissing = computed(
   () =>
-    isMesa.value && sources.value.length > 0 && authorIds.value.length === 0,
+    !props.revise &&
+    isMesa.value &&
+    sources.value.length > 0 &&
+    authorIds.value.length === 0,
 );
 const showAuthorsError = computed(
   () => authorsMissing.value && (attempted.value || authorsTouched.value),
@@ -413,7 +475,7 @@ const canSend = computed(
     ops.value.length > 0 &&
     opReasons.value.length === 0 &&
     !authorsMissing.value &&
-    !mainAuthor.value.missing,
+    (Boolean(props.revise) || !mainAuthor.value.missing),
 );
 
 /**
@@ -423,6 +485,18 @@ const canSend = computed(
  * Secretaría. The Mesa's is public at once.
  */
 const nextNotice = computed(() => {
+  if (props.revise) {
+    // Every party of the new version answers it again.
+    const toAsk = transactionalAuthorsToAsk(
+      sources.value,
+      isMesa.value ? null : (member.value?.id ?? null),
+    );
+    return toAsk.length === 0
+      ? t("transactional.composer.revise.nextSelf")
+      : t("transactional.composer.revise.next", {
+          members: join(toAsk.map((party) => party.acronym)),
+        });
+  }
   if (isMesa.value) return t("transactional.composer.next.mesa");
   if (sources.value.length === 0) {
     return t("transactional.composer.next.memberGeneric");
@@ -476,7 +550,7 @@ async function send(): Promise<void> {
       ?.focus();
     return;
   }
-  if (mainAuthor.value.missing) {
+  if (!props.revise && mainAuthor.value.missing) {
     optionsOpen.value = true;
     executiveOpen.value = true;
     await nextTick();
@@ -488,6 +562,34 @@ async function send(): Promise<void> {
   if (!canSend.value) return;
   busy.value = true;
   serverReasons.value = [];
+  if (props.revise) {
+    try {
+      const body: TransactionalRevisionBody = {
+        addSourceIds: addedIds.value,
+        ops: ops.value,
+        justification: justification.value.trim(),
+      };
+      const result = await api.send<AmendmentDto>(
+        `${props.amendmentsUrl}/${encodeURIComponent(props.revise.id)}/revisions`,
+        { body },
+      );
+      emit("created", result);
+      toast.add({
+        title: t("transactional.composer.revise.sent"),
+        color: "success",
+        icon: "i-lucide-git-pull-request-arrow",
+      });
+      emit("view", result.id);
+      emit("close");
+    } catch (error) {
+      serverReasons.value = amendmentErrorReasons(error);
+      api.notifyError(error, "transactional.composer.sendFailed");
+      if (api.isConflict(error)) emit("conflict");
+    } finally {
+      busy.value = false;
+    }
+    return;
+  }
   try {
     const body: TransactionalBody = {
       sourceIds: sources.value.map((amendment) => amendment.id),
@@ -681,10 +783,20 @@ const stepBadge =
           tabindex="-1"
           class="text-highlighted text-lg font-semibold outline-none"
         >
-          {{ t("transactional.composer.title") }}
+          {{
+            revise
+              ? t("transactional.composer.revise.title", {
+                  code: revise.code ?? labelOf(revise.id),
+                })
+              : t("transactional.composer.title")
+          }}
         </h2>
         <p class="text-muted text-sm">
-          {{ t("transactional.composer.intro") }}
+          {{
+            revise
+              ? t("transactional.composer.revise.intro")
+              : t("transactional.composer.intro")
+          }}
         </p>
       </div>
       <UButton
@@ -960,7 +1072,7 @@ const stepBadge =
       </UFormField>
 
       <!-- The Mesa names who presents it (by default, the authors). -->
-      <UCollapsible v-if="isMesa" v-model:open="optionsOpen">
+      <UCollapsible v-if="isMesa && !revise" v-model:open="optionsOpen">
         <UButton
           color="neutral"
           variant="link"
@@ -1033,7 +1145,7 @@ const stepBadge =
 
       <!-- A member may present it together with offices of the CEA. -->
       <UCollapsible
-        v-else-if="executiveItems.length > 0"
+        v-else-if="!revise && executiveItems.length > 0"
         v-model:open="executiveOpen"
       >
         <UButton
@@ -1129,7 +1241,11 @@ const stepBadge =
           icon="i-lucide-send"
           :loading="busy"
           :disabled="busy || nothingToCombine || blockers.length > 0"
-          :label="t('transactional.composer.send')"
+          :label="
+            revise
+              ? t('transactional.composer.revise.send')
+              : t('transactional.composer.send')
+          "
         />
       </div>
     </footer>

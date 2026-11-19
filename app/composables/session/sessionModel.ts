@@ -564,27 +564,99 @@ export function sessionMissingAcceptances(amendment: AmendmentDto): number {
 }
 
 /**
+ * The late amendments a transactional groups that still await the
+ * assembly's admission (user's decision of 2026-11-19): the transactional is
+ * not decided until the Mesa decides on them, since not admitting one may
+ * make it lapse. Empty for any other amendment, or without the list.
+ */
+export function sessionSourcesAwaitingAdmission(
+  amendment: AmendmentDto,
+  byId?: ReadonlyMap<string, AmendmentDto>,
+): AmendmentDto[] {
+  if (amendment.kind !== "transactional" || !byId) return [];
+  return amendment.sourceIds
+    .map((id) => byId.get(id))
+    .filter(
+      (source): source is AmendmentDto =>
+        !!source && isSessionPendingAdmission(source),
+    );
+}
+
+/** What an admission decision does to one transactional over an amendment. */
+export interface SessionAdmissionEffect {
+  transactionalId: string;
+  /**
+   * `included`: admitted, the transactional replaces it (now, or once it is
+   * in force); `leaves`: not admitted, it leaves the transactional, which
+   * goes on with its other parents; `lapses`: not admitted, the
+   * transactional is left with no parent and lapses.
+   */
+  effect: "included" | "leaves" | "lapses";
+}
+
+/**
+ * What deciding the admission of `amendmentId` (with the others decided at
+ * once, `decidedIds`) does to the open transactionals over it, as the server
+ * does it (decideAmendmentAdmission; user's decision of 2026-11-19).
+ */
+export function sessionAdmissionTransactionalEffects(
+  amendmentId: string,
+  decision: "admitted" | "inadmissible",
+  decidedIds: readonly string[],
+  byId: ReadonlyMap<string, AmendmentDto>,
+): SessionAdmissionEffect[] {
+  const decided = new Set([amendmentId, ...decidedIds]);
+  const effects: SessionAdmissionEffect[] = [];
+  for (const transactional of byId.values()) {
+    if (
+      transactional.kind !== "transactional" ||
+      transactional.status !== "submitted" ||
+      !transactional.sourceIds.includes(amendmentId)
+    ) {
+      continue;
+    }
+    if (decision === "admitted") {
+      effects.push({ transactionalId: transactional.id, effect: "included" });
+      continue;
+    }
+    const left = transactional.sourceIds.filter((id) => !decided.has(id));
+    effects.push({
+      transactionalId: transactional.id,
+      effect: left.length > 0 ? "leaves" : "lapses",
+    });
+  }
+  return effects;
+}
+
+/**
  * Whether the Mesa may approve or vote it right now: open, accepted by
- * every party of a transactional, and public (nothing is decided that
+ * every party of a transactional, with no grouped amendment still awaiting
+ * its admission (with `byId`), and public (nothing is decided that
  * delegates cannot read; the server answers 409 otherwise).
  */
-export function isSessionDecidable(amendment: AmendmentDto): boolean {
+export function isSessionDecidable(
+  amendment: AmendmentDto,
+  byId?: ReadonlyMap<string, AmendmentDto>,
+): boolean {
   return (
     isSessionOpen(amendment) &&
     amendment.publishedAt !== null &&
-    sessionMissingAcceptances(amendment) === 0
+    sessionMissingAcceptances(amendment) === 0 &&
+    sessionSourcesAwaitingAdmission(amendment, byId).length === 0
   );
 }
 
 /**
- * Whether it can be a source of a transactional now: open and public (the
- * server refuses private sources: delegates could not read what is merged)
- * and, for a transactional, accepted by every main author (until then its
- * originals are still there, and the server refuses it as a source).
+ * Whether it can be a source of a transactional now: open, or late and
+ * awaiting the assembly (linked, replaced only once admitted; user's
+ * decision of 2026-11-19), public (the server refuses private sources:
+ * delegates could not read what is merged) and, for a transactional,
+ * accepted by every main author (until then its originals are still there,
+ * and the server refuses it as a source).
  */
 export function isSessionTransactable(amendment: AmendmentDto): boolean {
   return (
-    isSessionOpen(amendment) &&
+    (isSessionOpen(amendment) || isSessionPendingAdmission(amendment)) &&
     amendment.publishedAt !== null &&
     sessionMissingAcceptances(amendment) === 0
   );
@@ -991,6 +1063,7 @@ export type SessionAmendmentStage =
   | "awaiting_validation"
   | "correction_requested"
   | "late"
+  | "sources_admission"
   | "acceptances"
   | "open"
   | "incorporated"
@@ -1016,6 +1089,9 @@ export function sessionAmendmentStage(
   if (isSessionIncorporated(amendment)) return "incorporated";
   if (amendment.status !== "submitted") return amendment.status;
   if (amendment.admission !== "admitted") return "late";
+  if (sessionSourcesAwaitingAdmission(amendment, byId).length > 0) {
+    return "sources_admission";
+  }
   if (sessionMissingAcceptances(amendment) > 0) return "acceptances";
   return "open";
 }

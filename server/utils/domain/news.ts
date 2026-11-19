@@ -136,7 +136,10 @@ export function isAutomaticClosure(
 ): boolean {
   return (
     (type === "amendment_withdrawn" && payload.by === "sources_closed") ||
-    (type === "amendment_lapsed" && payload.reason === "sources_transacted")
+    (type === "amendment_lapsed" &&
+      (payload.reason === "sources_transacted" ||
+        payload.reason === "sources_inadmissible")) ||
+    type === "transactional_source_dropped"
   );
 }
 
@@ -255,9 +258,13 @@ export function newsValue(
     case "amendment_transacted":
       return text(payload.code);
     case "amendment_lapsed":
+      // Named after the transactional that replaced its parents; one that
+      // lapsed because its late parent was not admitted reads plain.
       return payload.reason === "sources_transacted"
         ? text(payload.code)
         : null;
+    case "transactional_source_dropped":
+      return text(payload.sourceCode);
     case "amendment_withdrawn":
       return payload.by === "sources_closed" ? text(payload.sourceCode) : null;
     case "amendment_reopened":
@@ -511,8 +518,9 @@ export async function loadWorkNews(
           ),
           and(
             eq(events.type, "amendment_lapsed"),
-            sql`${events.payload}->>'reason' = 'sources_transacted'`,
+            sql`${events.payload}->>'reason' in ('sources_transacted', 'sources_inadmissible')`,
           ),
+          eq(events.type, "transactional_source_dropped"),
           and(
             eq(events.type, "amendment_reopened"),
             sql`${events.payload}->>'reason' = 'source_reopened'`,

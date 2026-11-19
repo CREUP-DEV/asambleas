@@ -62,10 +62,28 @@ function acceptedByMainAuthors(
 }
 
 /**
+ * Late, validated and still waiting for the assembly to decide whether it is
+ * treated: it may be a parent of a transactional (user's decision of
+ * 2026-11-19), linked but replaced only once admitted; not admitted, it
+ * leaves the transactional, which lapses if nothing else is left (the
+ * server's isPendingLateSource).
+ */
+export function isLateAwaitingAdmission(
+  amendment: Pick<AmendmentDto, "status" | "admission" | "reviewState">,
+): boolean {
+  return (
+    amendment.status === "submitted" &&
+    amendment.admission === "pending" &&
+    (amendment.reviewState === "published" ||
+      amendment.reviewState === "validated")
+  );
+}
+
+/**
  * Whether an amendment can be combined into a transactional: published (or
- * recorded before validation existed, hence public), admitted and still
- * undecided, and changing some passage of the text. Late amendments still waiting for the assembly's
- * decision are left out, as the server does. A transactional is a source
+ * recorded before validation existed, hence public), admitted or late and
+ * awaiting the assembly (isLateAwaitingAdmission), still undecided, and
+ * changing some passage of the text, as the server does. A transactional is a source
  * only once its main authors accepted it (it then replaced what it groups):
  * one still waiting for them, such as the Mesa's live one, published at
  * once, or one a main author rejected, is left out (the server's
@@ -75,7 +93,7 @@ export function transactionalSourceEligible(amendment: SourceLike): boolean {
   return (
     amendment.status === "submitted" &&
     amendment.decidedAt === null &&
-    amendment.admission === "admitted" &&
+    amendment.admission !== "inadmissible" &&
     (amendment.reviewState === "published" || amendment.reviewState === null) &&
     amendment.ops.length > 0 &&
     acceptedByMainAuthors(amendment)
@@ -304,6 +322,9 @@ export function transactionalSameIds(a: string[], b: string[]): boolean {
  * - `publication`: checked but still private, only for transactionals
  *   validated before that rule: the Secretaría has to publish it;
  * - `admission`: late, the assembly still has to decide whether to treat it;
+ * - `sourcesAdmission`: accepted and validated, but some amendment it groups
+ *   is late and the assembly has not decided yet whether to treat it: it is
+ *   not debated until then (`waitingSourceIds`);
  * - `replaced`: accepted and validated, it replaced the original amendments
  *   (they are "transacted") and follows the normal flow;
  * - `accepted`: accepted and validated, but the list does not show its
@@ -316,6 +337,7 @@ export type TransactionalStage =
   | "validation"
   | "publication"
   | "admission"
+  | "sourcesAdmission"
   | "replaced"
   | "accepted";
 
@@ -329,6 +351,8 @@ export interface TransactionalProgressView {
   rejected: MemberRef[];
   /** The amendments it would replace (or replaced). */
   sourceIds: string[];
+  /** Of those, the late ones still awaiting the assembly's admission. */
+  waitingSourceIds: string[];
   /** The viewer's member has to answer now. */
   actorTurn: boolean;
 }
@@ -342,6 +366,7 @@ const STAGE_LOOK: Record<
   validation: { color: "info", icon: "i-lucide-hourglass" },
   publication: { color: "info", icon: "i-lucide-eye-off" },
   admission: { color: "warning", icon: "i-lucide-clock-alert" },
+  sourcesAdmission: { color: "warning", icon: "i-lucide-clock-alert" },
   replaced: { color: "success", icon: "i-lucide-git-merge" },
   accepted: { color: "success", icon: "i-lucide-circle-check" },
 };
@@ -505,6 +530,7 @@ function stageOf(
   amendment: ProgressInput,
   missing: number,
   statusOf?: (id: string) => AmendmentStatus | undefined,
+  waiting: readonly string[] = [],
 ): TransactionalStage {
   if (transactionalRejectedByAuthors(amendment)) return "rejected";
   if (missing > 0) return "authors";
@@ -516,6 +542,7 @@ function stageOf(
   }
   if (amendment.reviewState === "validated") return "publication";
   if (amendment.admission !== "admitted") return "admission";
+  if (waiting.length > 0) return "sourcesAdmission";
   return transactionalSourcesReplaced(amendment.sourceIds, statusOf)
     ? "replaced"
     : "accepted";
@@ -533,6 +560,8 @@ export function transactionalProgressOf(
   amendment: ProgressInput,
   actorMemberId: string | null,
   statusOf?: (id: string) => AmendmentStatus | undefined,
+  /** Whether a grouped amendment is late and awaits the assembly. */
+  awaitsAdmission?: (id: string) => boolean,
 ): TransactionalProgressView | null {
   if (amendment.kind !== "transactional") return null;
   if (
@@ -547,7 +576,10 @@ export function transactionalProgressOf(
   const rejected = amendment.acceptances
     .filter((party) => party.decision === "rejected")
     .map((party) => party.member);
-  const stage = stageOf(amendment, missing.length, statusOf);
+  const waitingSourceIds = awaitsAdmission
+    ? amendment.sourceIds.filter((id) => awaitsAdmission(id))
+    : [];
+  const stage = stageOf(amendment, missing.length, statusOf, waitingSourceIds);
   const actorTurn =
     stage === "authors" &&
     actorMemberId !== null &&
@@ -558,6 +590,7 @@ export function transactionalProgressOf(
     missing,
     rejected,
     sourceIds: [...amendment.sourceIds],
+    waitingSourceIds,
     actorTurn,
   };
 }
@@ -620,6 +653,18 @@ export function transactionalProgressMessage(
         };
       }
       return { key: `${prefix}.authors`, params: { members } };
+    }
+    case "sourcesAdmission": {
+      // The labels of the grouped amendments still awaiting the assembly.
+      const labels = view.sourceIds
+        .map((id, index) =>
+          view.waitingSourceIds.includes(id) ? words.sources?.[index] : null,
+        )
+        .filter((label): label is string => !!label);
+      return {
+        key: `${prefix}.sourcesAdmission`,
+        params: { list: join(labels) },
+      };
     }
     case "replaced": {
       const sources = words.sources ?? [];
