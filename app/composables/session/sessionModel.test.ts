@@ -416,7 +416,7 @@ describe("session model", () => {
       const approved = { ...a1, status: "approved" as const };
       const offer = sessionLapseOffer(approved, [approved, a2, v1], [], {
         overlapsWithApproved: [],
-        incompatible: ["v1"],
+        incompatible: ["v1", "a2"],
       });
       expect(offer.lapse).toEqual(["a2"]);
 
@@ -435,7 +435,7 @@ describe("session model", () => {
     });
   });
 
-  it("offers lapses", () => {
+  it("offers lapses by link only, never for changing the same text", () => {
     const approved = { ...a1, status: "approved" as const };
     const offer = sessionLapseOffer(
       approved,
@@ -452,7 +452,8 @@ describe("session model", () => {
       ],
       { overlapsWithApproved: [], incompatible: ["a3"] },
     );
-    expect(offer.lapse.sort()).toEqual(["a2", "a3"]);
+    // a2 changes the same text as a1: it is debated, not lapsed.
+    expect(offer.lapse).toEqual(["a3"]);
     expect(offer.collisions).toEqual([]);
   });
 

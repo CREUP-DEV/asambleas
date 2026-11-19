@@ -1368,10 +1368,10 @@ function unique(ids: string[]): string[] {
 
 /**
  * What to offer after deciding `target`:
- * - approved: undecided amendments that hard-overlap it, or that are linked
- *   as incompatible, duplicate, or subsumed by it, become lapse candidates;
- *   approved ones that hard-overlap it are reported as collisions (the final
- *   consolidation would refuse them).
+ * - approved: undecided amendments linked as incompatible, duplicate, or
+ *   subsumed by it become lapse candidates (one that only changes the same
+ *   text does not); approved ones that hard-overlap it are reported as
+ *   collisions (the final consolidation would refuse them).
  * - rejected: undecided amendments that depend on it, or are a consequence of
  *   it, become lapse candidates.
  * The server's `warnings` are merged in. A transactional's own sources are
@@ -1435,11 +1435,12 @@ export function sessionLapseOffer(
     return [];
   });
 
-  const lapse = unique([
-    ...overlapping,
-    ...linked,
-    ...(warnings?.incompatible ?? []),
-  ]).filter(undecided);
+  // Changing the same text is no reason to lapse: the next one is debated
+  // over the text as it stands (user's decision of 2026-11-19). Only what
+  // someone linked by hand is offered.
+  const lapse = unique([...linked, ...(warnings?.incompatible ?? [])]).filter(
+    undecided,
+  );
   const collisions = unique([
     ...overlapping.filter((id) => byId.get(id)?.status === "approved"),
     ...(warnings?.overlapsWithApproved ?? []),
