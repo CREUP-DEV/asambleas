@@ -321,17 +321,6 @@ const SHORTCUTS = [
           </template>
         </UPopover>
 
-        <UTooltip :text="t('session.toolbar.refreshHint')">
-          <UButton
-            color="neutral"
-            variant="ghost"
-            icon="i-lucide-refresh-cw"
-            size="sm"
-            :aria-label="t('session.toolbar.refresh')"
-            @click="session.refreshAll()"
-          />
-        </UTooltip>
-
         <!-- Opening, suspending, closing or reopening the session -->
         <AssemblyStatusActions
           :only="[

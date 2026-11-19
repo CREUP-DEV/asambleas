@@ -24,6 +24,11 @@ import {
 const props = defineProps<{
   /** The document in debate, null when the Mesa shows none. */
   document: DocumentDto | null;
+  /**
+   * The Mesa put another document on screen and it is on its way: the
+   * window shows a skeleton rather than the last one meanwhile.
+   */
+  loading?: boolean;
   /** Where the Mesa has it scrolled, the latest the page heard. */
   scroll: LiveScrollDto | null;
   /** Localized path of the document's page. */
@@ -176,7 +181,8 @@ useEventListener(
     }"
   >
     <template #body>
-      <div v-if="shown" ref="content" class="relative">
+      <CommonDocumentSkeleton v-if="loading" />
+      <div v-else-if="shown" ref="content" class="relative">
         <template v-if="isFile">
           <DocumentPdfPages
             v-if="shown.fileUrl"

@@ -245,6 +245,10 @@ const document = computed<DocumentDto | null>(() =>
     ? documentData.value
     : null,
 );
+/** The Mesa put a document on screen that is still on its way. */
+const documentLoading = computed(
+  () => documentId.value !== null && !document.value && !documentFailed.value,
+);
 const amendments = computed<AmendmentDto[]>(() =>
   (amendmentsData.value?.amendments ?? []).filter(
     (amendment) => amendment.documentId === documentId.value,
@@ -819,6 +823,7 @@ watch(
       <LiveViewDocumentWindow
         v-model:open="documentWindowOpen"
         :document="document"
+        :loading="documentLoading"
         :scroll="mesaScroll"
         :document-path="documentPath"
       />

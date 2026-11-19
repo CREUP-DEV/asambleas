@@ -7,6 +7,7 @@
     "cta": "Ver Asambleas"
   },
   "common": {
+    "loadingDocument": "Cargando el documento…",
     "save": "Guardar",
     "cancel": "Cancelar",
     "delete": "Eliminar",
@@ -2645,6 +2646,11 @@
     }
   },
   "shell": {
+    "newVersion": {
+      "title": "Hay una versión nueva de la plataforma",
+      "description": "Recarga la página para usarla. Si estás escribiendo algo, guárdalo antes.",
+      "reload": "Recargar"
+    },
     "appName": "Asambleas CREUP",
     "skipToNavigation": "Saltar al menú",
     "skipToContent": "Saltar al contenido",
@@ -3357,7 +3363,6 @@
       "choose": "Elegir documento",
       "open": "Abrir documento",
       "viewAmendments": "Ver enmiendas",
-      "loading": "Cargando el documento",
       "loadError": "No se ha podido cargar el documento"
     },
     "itemVote": {
@@ -3706,8 +3711,6 @@
       "messageSave": "Mostrar",
       "messageClear": "Quitar",
       "shortcuts": "Atajos",
-      "refresh": "Recargar datos",
-      "refreshHint": "Recargar los datos de la consola. Se actualizan solos; úsalo si algo parece desfasado.",
       "projection": "Abrir proyección",
       "projectionNewTab": "Abrir la proyección (se abre en una pestaña nueva)",
       "connecting": "Conectando…"

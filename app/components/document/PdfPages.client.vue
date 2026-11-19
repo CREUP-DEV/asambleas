@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import workerUrl from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import type { PDFDocumentProxy, RenderTask } from "pdfjs-dist";
+import { scrollParentOf } from "~/utils/scrollAnchor";
 
 /**
  * A PDF drawn by the platform itself (pdf.js), page after page at the
@@ -53,6 +54,18 @@ let pdf: PDFDocumentProxy | null = null;
 let observer: IntersectionObserver | null = null;
 /** Pages drawn, or being drawn, at the current width. */
 const drawn = new Set<number>();
+/**
+ * Pages whose drawing is on show: the others show a skeleton over their
+ * box, so a page never reads as a blank sheet while it loads.
+ */
+const shown = shallowRef<ReadonlySet<number>>(new Set());
+function markShown(number: number, value: boolean): void {
+  if (shown.value.has(number) === value) return;
+  const next = new Set(shown.value);
+  if (value) next.add(number);
+  else next.delete(number);
+  shown.value = next;
+}
 /** The render under way of each page. */
 const renders = new Map<number, RenderTask>();
 /** Bumped whenever a page's drawing is started or freed. */
@@ -67,6 +80,7 @@ async function load(url: string): Promise<void> {
   const token = ++loadToken;
   failed.value = false;
   freeAll();
+  shown.value = new Set();
   sizes.value = [];
   try {
     const pdfjs = await import("pdfjs-dist");
@@ -132,6 +146,7 @@ async function draw(number: number): Promise<void> {
     renders.set(number, task);
     await task.promise;
     if (renders.get(number) === task) renders.delete(number);
+    if (token === pageTokens.get(number)) markShown(number, true);
   } catch {
     if (token === pageTokens.get(number)) drawn.delete(number);
   }
@@ -147,6 +162,7 @@ function free(number: number): void {
     canvas.width = 0;
     canvas.height = 0;
   }
+  markShown(number, false);
 }
 
 function freeAll(): void {
@@ -168,8 +184,10 @@ function observePages(): void {
       }
     },
     // A page and a half ahead, so scrolling never shows a blank page; past
-    // that a page is freed.
-    { rootMargin: "150% 0px" },
+    // that a page is freed. Measured against the box that scrolls (a page
+    // panel, the console's column, the projection's box): against the
+    // window, a margin never reaches past that box's edge.
+    { root: scrollParentOf(root.value), rootMargin: "150% 0px" },
   );
   for (const element of root.value.querySelectorAll("[data-page]")) {
     observer.observe(element);
@@ -301,6 +319,11 @@ onBeforeUnmount(() => {
       }"
     >
       <canvas class="absolute inset-0 block size-full" aria-hidden="true" />
+      <USkeleton
+        v-if="!shown.has(index + 1)"
+        class="absolute inset-0 rounded-none"
+        aria-hidden="true"
+      />
       <template v-if="textLayer">
         <div class="textLayer" />
         <div class="pdf-links" />

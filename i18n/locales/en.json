@@ -7,6 +7,7 @@
     "cta": "View Assemblies"
   },
   "common": {
+    "loadingDocument": "Loading the document…",
     "save": "Save",
     "cancel": "Cancel",
     "delete": "Delete",
@@ -2645,6 +2646,11 @@
     }
   },
   "shell": {
+    "newVersion": {
+      "title": "A new version of the platform is out",
+      "description": "Reload the page to use it. If you are writing something, save it first.",
+      "reload": "Reload"
+    },
     "appName": "CREUP Assemblies",
     "skipToNavigation": "Skip to navigation",
     "skipToContent": "Skip to content",
@@ -3357,7 +3363,6 @@
       "choose": "Choose a document",
       "open": "Open document",
       "viewAmendments": "See amendments",
-      "loading": "Loading the document",
       "loadError": "The document could not be loaded"
     },
     "itemVote": {
@@ -3706,8 +3711,6 @@
       "messageSave": "Show",
       "messageClear": "Remove",
       "shortcuts": "Shortcuts",
-      "refresh": "Reload data",
-      "refreshHint": "Reload the console's data. It updates by itself; use this if something looks out of date.",
       "projection": "Open projection",
       "projectionNewTab": "Open the projection (opens in a new tab)",
       "connecting": "Connecting…"

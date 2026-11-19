@@ -17,6 +17,7 @@ import type {
 import { errorStatus, useApi } from "~/composables/api/useApi";
 import {
   keepLastGoodData,
+  onlyForKey,
   useRetryFailed,
 } from "~/composables/fetch/lastGoodData";
 import { useAssemblyLive } from "~/composables/live/useAssemblyLive";
@@ -224,10 +225,21 @@ const documentFetch = await useAsyncData(
 // Reset when the Mesa moves to another document: the previous one must not
 // stand in for it if its fetch fails.
 const {
-  data: document,
+  data: keptDocument,
   stale: documentStale,
   failed: documentFailed,
 } = keepLastGoodData(documentFetch, { isGone, resetOn: documentId });
+// Nuxt seeds a new key with the previous document until the new one lands:
+// only the document the Mesa has on screen is ever shown under it.
+const document = onlyForKey(
+  keptDocument,
+  () => documentId.value,
+  (value) => value.id,
+);
+/** The Mesa moved to a document still on its way: a skeleton meanwhile. */
+const documentLoading = computed(
+  () => documentId.value !== null && !document.value && !documentFailed.value,
+);
 const refreshDocument = documentFetch.refresh;
 
 const amendmentsFetch = await useAsyncData(
@@ -572,7 +584,7 @@ const recess = computed(() => live.value?.recess ?? null);
 const mode = computed<"recess" | "amendment" | "document" | "idle">(() => {
   if (recess.value) return "recess";
   if (debated.value) return "amendment";
-  if (document.value) return "document";
+  if (document.value || documentLoading.value) return "document";
   return "idle";
 });
 /**
@@ -1192,6 +1204,28 @@ useHead(() => ({
             :context="0"
           />
         </div>
+      </section>
+
+      <section
+        v-else-if="mode === 'document' && documentLoading"
+        class="grid min-h-0 flex-1 gap-[clamp(1rem,3vw,3rem)] lg:grid-cols-[3fr_2fr]"
+      >
+        <!-- The document the Mesa just put on screen, on its way. -->
+        <div
+          class="projection-document border-default min-h-0 flex-1 overflow-hidden rounded-2xl border p-[clamp(1rem,2.5vw,2.5rem)]"
+        >
+          <CommonDocumentSkeleton :paragraphs="4" />
+        </div>
+        <nav
+          :aria-label="t('projection.agenda')"
+          class="projection-scroll hidden min-h-0 overflow-y-auto lg:block"
+        >
+          <SessionProjectionAgenda
+            :rows="rows"
+            :current-id="live?.agendaItemId ?? null"
+            size="compact"
+          />
+        </nav>
       </section>
 
       <section

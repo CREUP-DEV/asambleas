@@ -12,6 +12,7 @@ import {
   shouldReopenOnRestore,
   shouldReopenOnShow,
 } from "./-watchdog";
+import { checkForNewVersion } from "~/composables/shell/newVersion";
 
 /** Quiet period before a burst of changes is delivered as one batch. */
 const DEBOUNCE_MS = 300;
@@ -109,6 +110,7 @@ export function useAssemblyLive(
   const polling = ref(false);
   const result = { connected: readonly(connected), polling: readonly(polling) };
   if (import.meta.server) return result;
+  const nuxtApp = useNuxtApp();
 
   let source: EventSource | null = null;
   let activeId: string | undefined;
@@ -251,7 +253,12 @@ export function useAssemblyLive(
       failures = 0;
       missedChanges = false;
       stopPolling();
-      if (resync) enqueue(livePollEvent(id));
+      if (resync) {
+        enqueue(livePollEvent(id));
+        // A deploy restarts the app and drops every stream: a stream back
+        // after missing changes looks for a new version at once.
+        void checkForNewVersion(nuxtApp);
+      }
     });
 
     stream.addEventListener("change", (event) => {

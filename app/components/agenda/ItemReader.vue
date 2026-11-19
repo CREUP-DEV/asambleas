@@ -479,11 +479,7 @@ function pick(slug: unknown): void {
           ]"
         />
 
-        <div v-else-if="!detail" class="space-y-3" role="status">
-          <span class="sr-only">{{ t("agenda.reader.loading") }}</span>
-          <USkeleton aria-hidden="true" class="h-5 w-2/3" />
-          <USkeleton aria-hidden="true" class="h-64 w-full" />
-        </div>
+        <CommonDocumentSkeleton v-else-if="!detail" class="max-w-3xl" />
 
         <template v-else>
           <p

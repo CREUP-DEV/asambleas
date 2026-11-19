@@ -454,6 +454,10 @@ export default defineNuxtConfig({
   },
 
   experimental: {
+    // Every open page looks for a new deploy once a minute (one small
+    // request) and says so (app/plugins/new-version.client.ts); the live
+    // stream also looks at once when it reconnects after a restart.
+    checkOutdatedBuildInterval: 60_000,
     payloadExtraction: true,
     renderJsonPayloads: true,
     componentIslands: true,
