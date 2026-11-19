@@ -51,6 +51,12 @@ const ALLOWLIST: AllowlistEntry[] = [
     reason: "The CEA is the association's own acronym in every locale.",
   },
   {
+    pattern:
+      /^(amendment\.mesaWording|export\.pdf\.mesaCode|session\.wording\.code)$/,
+    reason:
+      "The Mesa is the body's own name, kept untranslated in English too.",
+  },
+  {
     pattern: /^admin\.roles\.title$/,
     reason: "Role management label is identical in Spanish and English.",
   },
