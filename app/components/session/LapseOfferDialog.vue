@@ -23,9 +23,11 @@ const target = computed(() =>
     : null,
 );
 
+// Nothing is ticked: the Mesa picks which ones lapse, so one click never
+// lapses them all (user's decision of 2026-11-19).
 const selected = ref<string[]>([]);
 watch(open, (isOpen) => {
-  if (isOpen) selected.value = [...session.lapseDialog.lapse];
+  if (isOpen) selected.value = [];
 });
 
 const candidates = computed(() =>
