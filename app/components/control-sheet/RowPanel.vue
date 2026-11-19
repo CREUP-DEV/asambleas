@@ -58,6 +58,17 @@ const props = defineProps<{
   /** Every turn that spoke in the assembly (ControlSheetDto.turns). */
   speakerTurns?: readonly SpeakingTurnDto[];
   /**
+   * Recording results here (the Mesa and assembly:vote_result; user's
+   * decision of 2026-11-19), never projected: the document's amendments as
+   * loaded, and whether the document of an amendment's row has its final
+   * vote.
+   */
+  results?: {
+    record: boolean;
+    amendments: readonly AmendmentDto[];
+    finalVoted: boolean;
+  };
+  /**
    * Noting who spoke: `note` for the Mesa and session:record_speakers,
    * `open` while the assembly takes notes (convened, in session).
    */
@@ -75,6 +86,8 @@ const emit = defineEmits<{
   positionSaved: [amendment: AmendmentDto];
   /** Someone was noted as having spoken, or taken back. */
   speakersUpdated: [];
+  /** A result was recorded or annulled here: the page fetches again. */
+  resultChanged: [];
 }>();
 
 const { t, locale } = useI18n();
@@ -533,6 +546,19 @@ function historyDetail(
           </p>
         </div>
 
+        <!-- The amendment's result, recorded without projecting -->
+        <ControlSheetAmendmentResult
+          v-if="target.kind === 'amendment' && results?.record"
+          :amendment="target.row.amendment"
+          :amendments="results.amendments"
+          :document="document ?? null"
+          :final-voted="results.finalVoted"
+          :api-base="apiBase"
+          :context="voteContext"
+          :code="target.code"
+          @changed="emit('resultChanged')"
+        />
+
         <!-- The presenter's answer to the amendment -->
         <ControlSheetPositionAnswer
           v-if="target.kind === 'amendment'"
@@ -551,6 +577,15 @@ function historyDetail(
           :can-write="can.edit || can.moderate"
           :context="voteContext"
           @changed="(vote) => emit('voteChanged', vote)"
+        />
+
+        <!-- The final votes of its documents, recorded without projecting -->
+        <ControlSheetFinalVotes
+          v-if="target.kind === 'item' && results?.record"
+          :documents="target.row.documents"
+          :api-base="apiBase"
+          :context="voteContext"
+          @changed="emit('resultChanged')"
         />
 
         <!-- Result by hand (items) -->

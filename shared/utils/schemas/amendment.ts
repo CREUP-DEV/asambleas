@@ -174,6 +174,7 @@ export const outcomeBodySchema = z.discriminatedUnion("action", [
     action: z.literal("vote"),
     vote: voteInputSchema,
     updatedAt: updatedAtSchema,
+    project: z.boolean().optional(),
   }),
   z.object({
     action: z.literal("withdraw"),

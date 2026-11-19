@@ -6,6 +6,7 @@ import { assertOptimisticLock } from "../optimisticLock";
 import { validateCuid } from "../validation";
 import {
   canEditControlSheet,
+  canRecordResults,
   canManageDocuments,
   canModerate,
   canViewControlSheet,
@@ -74,9 +75,12 @@ function fail(statusCode: number, message: string, data?: unknown): never {
   throw createError({ statusCode, message, ...(data ? { data } : {}) });
 }
 
-/** Recording and voiding votes on agenda items: the Mesa and the sheet's editors. */
+/**
+ * Recording and voiding votes on agenda items: the Mesa, the sheet's
+ * editors and whoever records results (assembly:vote_result).
+ */
 export function canRecordItemVotes(actor: Actor): boolean {
-  return canModerate(actor) || canEditControlSheet(actor);
+  return canRecordResults(actor) || canEditControlSheet(actor);
 }
 
 export function requireItemVoteRecorder(actor: Actor): void {

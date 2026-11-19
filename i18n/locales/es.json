@@ -4503,6 +4503,10 @@
       "bulkConfirmVisible": "Toda la asamblea podrá leerlos.",
       "bulkConfirmFrozen": "Sus textos quedan fijados: ya no se podrán editar y recibirán su referencia si su tipo la lleva."
     },
+    "transactionals": {
+      "title": "Transaccionales",
+      "toValidate": "Ninguna por validar | {count} por validar | {count} por validar"
+    },
     "amendments": {
       "title": "Enmiendas",
       "tabs": {
@@ -4948,6 +4952,45 @@
       "button": "Editar",
       "item": "Editar el punto {title}",
       "amendment": "Editar la enmienda {code}"
+    },
+    "results": {
+      "title": "Resultado",
+      "assent": "Aprobada por asentimiento",
+      "vote": "Votación",
+      "withdraw": "Retirada",
+      "lapse": "Decaída",
+      "reopen": "Reabrir la decisión",
+      "voteTitle": "Votación de la enmienda {code}",
+      "notProjected": "Se anota en el acta sin proyectarlo: la proyección sigue donde la tiene la Mesa.",
+      "voteApproved": "Aprobada",
+      "voteRejected": "Rechazada",
+      "failed": "No se pudo anotar el resultado",
+      "finalVoted": "El documento ya tiene su votación final: este resultado ya no cambia.",
+      "notInSession": "Los resultados se anotan con la sesión abierta.",
+      "pendingAdmission": "Está fuera de plazo: primero la asamblea decide, desde la sesión, si la trata.",
+      "awaitingAuthors": "Falta que la acepten los autores de las enmiendas que agrupa.",
+      "notPublished": "No está publicada: la Secretaría tiene que publicarla antes.",
+      "done": {
+        "approve": "{code}: aprobada por asentimiento",
+        "vote": "{code}: votación anotada",
+        "withdraw": "{code}: retirada",
+        "lapse": "{code}: decaída",
+        "reopen": "{code}: decisión reabierta"
+      },
+      "confirm": {
+        "assent": "¿Anotar {code} como aprobada por asentimiento?",
+        "withdraw": "¿Anotar {code} como retirada?",
+        "lapse": "¿Anotar {code} como decaída?",
+        "reopen": "¿Reabrir la decisión sobre {code}?"
+      },
+      "finalTitle": "Votación final",
+      "finalVote": "Anotar la votación final",
+      "finalRecorded": "Votación final anotada: {title}",
+      "finalAnnulled": "Votación final anulada: {title}",
+      "annul": "Anular",
+      "annulTitle": "Anular la votación final",
+      "annulHint": "La votación queda en el historial, pero el documento vuelve a estar pendiente de votación final y pierde su texto consolidado.",
+      "undecidedLeft": "Queda {count} enmienda por decidir antes de la votación final. | Quedan {count} enmiendas por decidir antes de la votación final."
     }
   },
   "seating": {

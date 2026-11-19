@@ -32,7 +32,8 @@ export function provideSheetObservations(
     () =>
       can(PERMISSION_KEYS.CONTROL_SHEET_VIEW) ||
       can(PERMISSION_KEYS.CONTROL_SHEET_EDIT) ||
-      can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS),
+      can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS) ||
+      can(PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT),
   );
   const url = computed(() => {
     const id = toValue(documentId);

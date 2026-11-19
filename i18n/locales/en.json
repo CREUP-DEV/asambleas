@@ -4503,6 +4503,10 @@
       "bulkConfirmVisible": "The whole assembly will be able to read them.",
       "bulkConfirmFrozen": "Their texts are fixed: they can no longer be edited, and they get their reference if their kind has one."
     },
+    "transactionals": {
+      "title": "Transactional amendments",
+      "toValidate": "None to validate | {count} to validate | {count} to validate"
+    },
     "amendments": {
       "title": "Amendments",
       "tabs": {
@@ -4948,6 +4952,45 @@
       "button": "Edit",
       "item": "Edit item {title}",
       "amendment": "Edit amendment {code}"
+    },
+    "results": {
+      "title": "Result",
+      "assent": "Approved by assent",
+      "vote": "Vote",
+      "withdraw": "Withdrawn",
+      "lapse": "Lapsed",
+      "reopen": "Reopen the decision",
+      "voteTitle": "Vote on amendment {code}",
+      "notProjected": "It goes into the record without being projected: the projection stays where the Mesa has it.",
+      "voteApproved": "Approved",
+      "voteRejected": "Rejected",
+      "failed": "The result could not be recorded",
+      "finalVoted": "The document already has its final vote: this result no longer changes.",
+      "notInSession": "Results are recorded while the session is open.",
+      "pendingAdmission": "It is out of time: the assembly first decides, from the session, whether to treat it.",
+      "awaitingAuthors": "The authors of the amendments it groups have not all accepted it yet.",
+      "notPublished": "It is not published: the Secretaría has to publish it first.",
+      "done": {
+        "approve": "{code}: approved by assent",
+        "vote": "{code}: vote recorded",
+        "withdraw": "{code}: withdrawn",
+        "lapse": "{code}: lapsed",
+        "reopen": "{code}: decision reopened"
+      },
+      "confirm": {
+        "assent": "Record {code} as approved by assent?",
+        "withdraw": "Record {code} as withdrawn?",
+        "lapse": "Record {code} as lapsed?",
+        "reopen": "Reopen the decision on {code}?"
+      },
+      "finalTitle": "Final vote",
+      "finalVote": "Record the final vote",
+      "finalRecorded": "Final vote recorded: {title}",
+      "finalAnnulled": "Final vote annulled: {title}",
+      "annul": "Annul",
+      "annulTitle": "Annul the final vote",
+      "annulHint": "The vote stays in the history, but the document is pending its final vote again and loses its consolidated text.",
+      "undecidedLeft": "{count} amendment is left to decide before the final vote. | {count} amendments are left to decide before the final vote."
     }
   },
   "seating": {

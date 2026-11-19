@@ -105,6 +105,9 @@ const rows: GeneralSheetRow[] = [
         status: "published",
         voted: true,
         finalVote: vote({ result: "rejected" }),
+        majority: "simple",
+        undecided: 0,
+        updatedAt: "2026-11-19T10:00:00.000Z",
         proponent: {
           id: "m1",
           acronym: "UCM",

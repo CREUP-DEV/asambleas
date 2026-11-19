@@ -106,7 +106,18 @@ const allowed = computed(
   () =>
     can(PERMISSION_KEYS.CONTROL_SHEET_VIEW) ||
     can(PERMISSION_KEYS.CONTROL_SHEET_EDIT) ||
-    can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS),
+    can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS) ||
+    can(PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT),
+);
+
+/**
+ * Recording results from the sheet, never projected (the Mesa and
+ * assembly:vote_result; user's decision of 2026-11-19).
+ */
+const canRecordResults = computed(
+  () =>
+    can(PERMISSION_KEYS.SESSION_MODERATE) ||
+    can(PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT),
 );
 
 /** Noting who spoke (the Mesa and session:record_speakers). */
@@ -971,6 +982,14 @@ function amendmentPath(amendment: AmendmentDto): string {
 // Live -----------------------------------------------------------------------
 
 /** The document of the amendment in the panel: who answers it, its rule. */
+/** The document of an amendment's row has its final vote. */
+const panelFinalVoted = computed(() => {
+  const id = panelDocument.value?.id;
+  return Boolean(
+    id && sheet.value?.documents.find((entry) => entry.id === id)?.finalVote,
+  );
+});
+
 const panelDocument = computed(() => {
   const target = panelTarget.value;
   if (target?.kind !== "amendment") return null;
@@ -1440,12 +1459,18 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
         :document="panelDocument"
         :speaker-turns="sheet?.turns ?? []"
         :speakers="{ note: canNoteSpeakers, open: speakerNotesOpen }"
+        :results="{
+          record: canRecordResults,
+          amendments: amendmentsData?.amendments ?? [],
+          finalVoted: panelFinalVoted,
+        }"
         @item-saved="onItemSaved"
         @amendment-saved="onAmendmentSaved"
         @treated="onPanelTreated"
         @vote-changed="onVoteChanged"
         @position-saved="onPositionSaved"
         @speakers-updated="refreshSheet"
+        @result-changed="onPositionSaved"
       />
 
       <UModal

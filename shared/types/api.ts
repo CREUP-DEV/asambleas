@@ -1301,7 +1301,15 @@ export type OutcomeAction =
   | { action: "lapse"; note?: string | null }
   | { action: "reopen"; note?: string | null };
 
-export type OutcomeBody = OutcomeAction & { updatedAt: IsoDate };
+export type OutcomeBody = OutcomeAction & {
+  updatedAt: IsoDate;
+  /**
+   * A vote goes on screen (the console's default); false records it and
+   * leaves the projection where it is (the control sheet). Only the Mesa
+   * projects.
+   */
+  project?: boolean;
+};
 
 /**
  * POST .../documents/[document]/amendments/validate (amendment:review):
@@ -1341,6 +1349,8 @@ export interface FinalVoteBody {
   vote: VoteInput;
   /** Amendment ids in application order; defaults to approval order. */
   order?: string[];
+  /** As OutcomeBody.project: false leaves the projection where it is. */
+  project?: boolean;
 }
 
 /**

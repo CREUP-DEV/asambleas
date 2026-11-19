@@ -166,6 +166,7 @@ export const finalVoteSchema = z.object({
       message: "duplicate_amendment_id",
     })
     .optional(),
+  project: z.boolean().optional(),
 });
 
 /** Body of DELETE .../final-vote (FinalVoteAnnulBody). An empty note is null. */

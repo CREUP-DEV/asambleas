@@ -119,6 +119,7 @@ import {
 import {
   actsFor,
   canModerate,
+  canRecordResults,
   canReviewAmendments,
   requireActor,
   UNLINKED_ACCOUNT_MESSAGE,
@@ -1331,11 +1332,6 @@ function assertAmendable(ctx: DocumentAmendmentContext): void {
   }
   if (ctx.assembly.status === "closed") fail(409, "La asamblea está cerrada");
   assertNotFinal(ctx);
-}
-
-function assertModerator(actor: Actor): void {
-  if (!canModerate(actor))
-    fail(403, "No tienes permiso para realizar esta acción");
 }
 
 function assertValidOps(errors: OpError[]): void {
@@ -4684,11 +4680,18 @@ export async function applyAmendmentOutcome(
   body: OutcomeBody,
 ): Promise<AmendmentOutcomeResult> {
   const { actor, amendment, document, now } = ctx;
-  assertModerator(actor);
+  if (!canRecordResults(actor)) {
+    fail(403, "No tienes permiso para realizar esta acción");
+  }
   assertNotFinal(ctx);
   // The Mesa decides in the room: only while the session is open. Reopening
   // a decision recorded by mistake corrects the record and may wait.
   if (body.action !== "reopen") assertSessionOpen(ctx.assembly.status);
+  // A vote goes on screen only from the console (the Mesa's, unless it says
+  // otherwise): one recorded from the control sheet leaves the projection
+  // where it is (user's decision of 2026-11-19).
+  const projectVote =
+    body.action === "vote" && body.project !== false && canModerate(actor);
   const lock = buildOptimisticLockCondition(
     amendments.updatedAt,
     body.updatedAt,
@@ -4870,7 +4873,7 @@ export async function applyAmendmentOutcome(
       const warnings = approved
         ? await approvalWarnings(tx, document.id, amendment)
         : null;
-      if (voteRow) {
+      if (voteRow && projectVote) {
         await pointLiveVote(tx, {
           assemblyId: ctx.assembly.id,
           voteId: voteRow.id,

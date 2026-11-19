@@ -128,7 +128,8 @@ export function useAssemblySections(
       controlSheet:
         can(PERMISSION_KEYS.CONTROL_SHEET_VIEW) ||
         can(PERMISSION_KEYS.CONTROL_SHEET_EDIT) ||
-        can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS),
+        can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS) ||
+        can(PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT),
       seating:
         can(PERMISSION_KEYS.SEATING_VIEW) || can(PERMISSION_KEYS.SEATING_EDIT),
       online: !hasSeatingRoom(current.type),

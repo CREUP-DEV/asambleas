@@ -444,14 +444,19 @@ describe("splitReviewParts", () => {
       entry(docA, amendment("t", "pending_authors", { kind: "transactional" })),
       entry(docA, late("l")),
     ]);
-    const { toReview, toPublish } = splitReviewParts(groups);
+    const { toReview, toPublish, transactionals } = splitReviewParts(groups);
 
     expect(toReview.map((group) => group.document.id)).toEqual(["a"]);
     expect(toReview[0]!.toValidate.map((value) => value.id)).toEqual(["a1"]);
-    expect(toReview[0]!.awaitingAuthors.map((value) => value.id)).toEqual([
-      "t",
-    ]);
+    expect(toReview[0]!.awaitingAuthors).toEqual([]);
     expect(toReview[0]!.toPublish).toEqual([]);
+
+    // Transactionals go apart, with their own document groups.
+    expect(transactionals.map((group) => group.document.id)).toEqual(["a"]);
+    expect(transactionals[0]!.awaitingAuthors.map((value) => value.id)).toEqual(
+      ["t"],
+    );
+    expect(transactionals[0]!.toValidate).toEqual([]);
 
     expect(toPublish.map((group) => group.document.id)).toEqual(["b", "a"]);
     expect(toPublish[1]!.toPublish.map((value) => value.id)).toEqual(["a2"]);
@@ -459,7 +464,7 @@ describe("splitReviewParts", () => {
     expect(toPublish[1]!.awaitingAuthors).toEqual([]);
 
     // Late ones stay in "Fuera de plazo".
-    for (const group of [...toReview, ...toPublish]) {
+    for (const group of [...toReview, ...toPublish, ...transactionals]) {
       expect(group.late).toEqual([]);
     }
   });
@@ -467,7 +472,7 @@ describe("splitReviewParts", () => {
   it("leaves both parts empty when there is only something late", () => {
     expect(
       splitReviewParts(groupReviewAmendments([entry(docB, late("l"))])),
-    ).toEqual({ toReview: [], toPublish: [] });
+    ).toEqual({ toReview: [], toPublish: [], transactionals: [] });
   });
 });
 

@@ -47,6 +47,7 @@ import {
   canManageAssemblies,
   canManageDocuments,
   canModerate,
+  canRecordResults,
   requireActor,
   type Actor,
 } from "./actor";
@@ -2684,9 +2685,12 @@ export async function recordFinalVote(
   body: FinalVoteBody,
 ): Promise<DocumentDto> {
   const { actor, assembly } = ctx;
-  if (!canModerate(actor))
+  if (!canRecordResults(actor))
     fail(403, "No tienes permiso para registrar votaciones");
   assertSessionOpen(assembly.status);
+  // Recorded from the control sheet, or by whoever only records results:
+  // the projection stays where the Mesa has it.
+  const project = body.project !== false && canModerate(actor);
   // The members present come from the Mesa's latest headcount unless typed.
   const based = await withHeadcount(
     assembly.id,
@@ -2846,16 +2850,18 @@ export async function recordFinalVote(
       },
       actor,
     });
-    await pointLiveVote(tx, {
-      assemblyId: assembly.id,
-      voteId: voteRow!.id,
-      actor,
-      subject: {
-        documentId: document.id,
-        agendaItemId: document.agendaItemId,
-        amendmentId: null,
-      },
-    });
+    if (project) {
+      await pointLiveVote(tx, {
+        assemblyId: assembly.id,
+        voteId: voteRow!.id,
+        actor,
+        subject: {
+          documentId: document.id,
+          agendaItemId: document.agendaItemId,
+          amendmentId: null,
+        },
+      });
+    }
   });
 
   return loadDocumentDto(assembly, ctx.document.id, actor);
@@ -2874,7 +2880,7 @@ export async function annulFinalVote(
   body: FinalVoteAnnulBody,
 ): Promise<DocumentDto> {
   const { actor, assembly } = ctx;
-  if (!canModerate(actor))
+  if (!canRecordResults(actor))
     fail(403, "No tienes permiso para anular votaciones");
   if (assembly.status === "closed") fail(409, "La asamblea ya está cerrada");
 

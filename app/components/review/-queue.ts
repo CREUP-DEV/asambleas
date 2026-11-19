@@ -263,13 +263,37 @@ export function groupReviewAmendments(
 export function splitReviewParts(groups: readonly ReviewDocumentGroup[]): {
   toReview: ReviewDocumentGroup[];
   toPublish: ReviewDocumentGroup[];
+  transactionals: ReviewDocumentGroup[];
 } {
+  const isTransactional = (amendment: AmendmentDto) =>
+    amendment.kind === "transactional";
   return {
     toReview: groups
+      .map((group) => ({
+        ...group,
+        toValidate: group.toValidate.filter((item) => !isTransactional(item)),
+        awaitingAuthors: group.awaitingAuthors.filter(
+          (item) => !isTransactional(item),
+        ),
+        toPublish: [],
+        late: [],
+      }))
       .filter(
         (group) => group.toValidate.length + group.awaitingAuthors.length > 0,
-      )
-      .map((group) => ({ ...group, toPublish: [], late: [] })),
+      ),
+    // A section of their own (user's decision of 2026-11-19): validating
+    // one publishes it and replaces the amendments it groups.
+    transactionals: groups
+      .map((group) => ({
+        ...group,
+        toValidate: group.toValidate.filter(isTransactional),
+        awaitingAuthors: group.awaitingAuthors.filter(isTransactional),
+        toPublish: [],
+        late: [],
+      }))
+      .filter(
+        (group) => group.toValidate.length + group.awaitingAuthors.length > 0,
+      ),
     toPublish: groups
       .filter((group) => group.toPublish.length > 0)
       .map((group) => ({

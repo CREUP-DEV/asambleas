@@ -61,6 +61,12 @@ export interface SheetRowDocument {
   status: DocumentSummaryDto["status"];
   voted: boolean;
   finalVote: VoteDto | null;
+  /** The majority its final vote takes. */
+  majority: DocumentSummaryDto["majority"];
+  /** Its amendments still undecided, which hold back the final vote. */
+  undecided: number;
+  /** Optimistic lock token, for annulling its final vote. */
+  updatedAt: string;
   /** The main presenter, as the server redacts it (offices may read "CEA"). */
   proponent: MemberRef | null;
   /** Those who present it with the main presenter, redacted the same way. */
@@ -177,6 +183,12 @@ export function buildGeneralRows(
       document.finalVote,
     ]),
   );
+  const undecidedBy = new Map(
+    (sheet?.documents ?? []).map((document) => [
+      document.id,
+      document.undecided,
+    ]),
+  );
   const documentsByItem = new Map<string, SheetRowDocument[]>();
   for (const document of presented) {
     const list = documentsByItem.get(document.agendaItemId) ?? [];
@@ -187,6 +199,9 @@ export function buildGeneralRows(
       status: document.status,
       voted: document.voted,
       finalVote: finalVotes.get(document.id) ?? null,
+      majority: document.majority,
+      undecided: undecidedBy.get(document.id) ?? 0,
+      updatedAt: document.updatedAt,
       proponent: document.proponent,
       coProponents: document.coProponents,
     });

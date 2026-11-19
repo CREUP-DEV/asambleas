@@ -26,10 +26,12 @@ import { sentAfterDeadline } from "~~/shared/utils/documentDeadline";
 
 /**
  * The Secretaría's validation inbox (GET .../review): presented documents;
- * then "Enmiendas" in two tabs: "Por revisar", the amendments nobody else
- * sees until they are validated and the transactionals still waiting for
- * the main authors of the amendments they would replace (with who is
- * missing; one any of them rejected is gone), and "Validadas sin publicar",
+ * then "Transaccionales", a section of their own (user's decision of
+ * 2026-11-19): those to validate and those still waiting for the main
+ * authors of the amendments they would replace (with who is missing; one
+ * any of them rejected is gone); then "Enmiendas" in two tabs: "Por
+ * revisar", the amendments nobody else sees until they are validated, and
+ * "Validadas sin publicar",
  * the amendments it validated and kept private, to publish them; and, in
  * "Fuera de plazo",
  * the late ones that wait for the assembly to decide whether to treat them.
@@ -155,12 +157,18 @@ const amendmentTabItems = computed<TabsItem[]>(() => [
     },
   },
 ]);
-/** A transactional is listed: say that validating one publishes it. */
-const transactionalListed = computed(() =>
-  reviewGroups.value.some((group) =>
-    [...group.toValidate, ...group.awaitingAuthors].some(
-      (amendment) => amendment.kind === "transactional",
-    ),
+/** The transactionals listed apart: to validate, and waiting for authors. */
+const transactionalsToValidate = computed(() =>
+  parts.value.transactionals.reduce(
+    (total, group) => total + group.toValidate.length,
+    0,
+  ),
+);
+const transactionalsListed = computed(() =>
+  parts.value.transactionals.reduce(
+    (total, group) =>
+      total + group.toValidate.length + group.awaitingAuthors.length,
+    0,
   ),
 );
 const lateCount = computed(() =>
@@ -590,6 +598,58 @@ async function confirmBulkPublish() {
           </template>
         </section>
 
+        <!-- Transactionals: validating one publishes it and replaces the
+             amendments it groups, so they are never mixed with the rest. -->
+        <section
+          v-if="canAmendments && transactionalsListed > 0"
+          class="border-primary/30 bg-primary/5 space-y-4 rounded-xl border p-4 sm:p-5"
+          aria-labelledby="review-transactionals-heading"
+        >
+          <div class="space-y-1">
+            <h3
+              id="review-transactionals-heading"
+              class="text-highlighted flex items-center gap-2 text-lg font-semibold"
+            >
+              <UIcon
+                name="i-lucide-merge"
+                class="text-primary size-5 shrink-0"
+                aria-hidden="true"
+              />
+              {{ t("review.transactionals.title") }}
+              <UBadge
+                color="primary"
+                variant="soft"
+                size="sm"
+                :label="String(transactionalsToValidate)"
+                :aria-label="
+                  t(
+                    'review.transactionals.toValidate',
+                    { count: transactionalsToValidate },
+                    transactionalsToValidate,
+                  )
+                "
+              />
+            </h3>
+            <p class="text-default max-w-3xl text-sm">
+              {{ t("review.amendments.transactionalsPublished") }}
+            </p>
+          </div>
+          <div class="space-y-8">
+            <ReviewAmendmentGroup
+              v-for="group in parts.transactionals"
+              :key="group.document.id"
+              :group="group"
+              :api-base="apiBase"
+              :assembly-id="assembly.id"
+              :document-path="documentPath(group.document.slug)"
+              @updated="onAmendmentsUpdated"
+              @removed="onAmendmentsRemoved"
+              @conflict="refresh"
+              @announce="announce"
+            />
+          </div>
+        </section>
+
         <section
           v-if="canAmendments"
           class="space-y-4"
@@ -614,9 +674,6 @@ async function confirmBulkPublish() {
           <div v-show="amendmentTab === 'review'" class="space-y-4">
             <p v-if="toReviewListed > 0" class="text-muted max-w-3xl text-sm">
               {{ t("review.amendments.help") }}
-              <template v-if="transactionalListed">
-                {{ t("review.amendments.transactionalsPublished") }}
-              </template>
             </p>
             <p v-else class="text-muted text-sm">
               {{ t("review.amendments.none") }}
