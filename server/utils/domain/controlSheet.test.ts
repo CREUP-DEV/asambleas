@@ -54,6 +54,11 @@ const CEA_READER = makeActor(SYSTEM_ROLES.CEA, [
   PERMISSION_KEYS.CONTROL_SHEET_VIEW,
 ]);
 
+/** Someone given the control sheet by hand, outside the CEA. */
+const SHEET_READER = makeActor(SYSTEM_ROLES.ASOCIADO, [
+  PERMISSION_KEYS.CONTROL_SHEET_VIEW,
+]);
+
 const DOCUMENT: DocumentPresenters = {
   proponentMemberId: PRESENTER,
   coProponentMemberIds: [],
@@ -124,20 +129,21 @@ describe("control sheet positions", () => {
 
   it("leave out amendments the reader does not see", () => {
     const documents = new Map([["doc", DOCUMENT]]);
-    const rows = visibleSheetAmendments(
-      CEA_READER,
-      [
-        // Presented, not validated yet: only its insiders, the Secretaría
-        // and the Mesa read it.
-        amendment("hidden", { validatedAt: null, publishedAt: null }),
-        // Validated, unpublished: a sheet reader reads it.
-        amendment("validated", { publishedAt: null }),
-        // A document the reader does not see.
-        amendment("other", { documentId: "elsewhere" }),
-      ],
-      documents,
-    );
-    expect(rows.map((row) => row.id)).toEqual(["validated"]);
+    const list = [
+      // Presented, not validated yet: its insiders, the Secretaría, the
+      // Mesa and the CEA read it (user's decision of 2026-11-19).
+      amendment("presented", { validatedAt: null, publishedAt: null }),
+      // Validated, unpublished: every sheet reader reads it.
+      amendment("validated", { publishedAt: null }),
+      // A document the reader does not see.
+      amendment("other", { documentId: "elsewhere" }),
+    ];
+    const ids = (reader: Actor) =>
+      visibleSheetAmendments(reader, list, documents).map((row) => row.id);
+    expect(ids(CEA_READER)).toEqual(["presented", "validated"]);
+    // A sheet reader outside the CEA waits for the validation.
+    expect(ids(SHEET_READER)).toEqual(["validated"]);
+    const rows = visibleSheetAmendments(SHEET_READER, list, documents);
     expect(
       sheetPositions(rows, documents, NO_RECORDERS).map(
         (entry) => entry.amendmentId,
