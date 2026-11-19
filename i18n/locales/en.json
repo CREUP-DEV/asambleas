@@ -315,6 +315,7 @@
       "amendmentReview": "Validate and publish amendments, and record their admission",
       "assemblyVoteResult": "Record assembly vote result",
       "sessionModerate": "Moderate the session: live state, admissions, votes and transactionals",
+      "sessionRecordSpeakers": "Note who speaks on each item and amendment, from the live view and the control sheet (which it can also read)",
       "controlSheetView": "See the control sheet of each assembly",
       "controlSheetEdit": "Edit the control sheet: observations, the CEA position and items added by hand",
       "seatingView": "See the room of each assembly: its layout and who sits where",
@@ -4791,7 +4792,6 @@
     },
     "speakers": {
       "none": "Nobody",
-      "times": "{label} ({count} times)",
       "names": "{label}: see who spoke"
     },
     "manualResult": {
@@ -6256,6 +6256,8 @@
       "speaking_turn_restored": "Speaking turn restored",
       "speaking_turn_moved": "Speaking turn moved in the list",
       "speaking_turn_updated": "Speaking turn changed",
+      "speaking_turn_noted": "Speaker noted",
+      "speaking_turn_unnoted": "Speaker note removed",
       "vote_recorded": "Vote result recorded",
       "decision_recorded": "Decision recorded",
       "control_sheet_observations_updated": "Control sheet observations changed",
@@ -6487,6 +6489,25 @@
       "item": "About the document",
       "amendment": "Amendment {code}",
       "edited": "Last edited by {name}, {when}"
+    }
+  },
+  "speakerNotes": {
+    "title": "Who has spoken",
+    "onItem": "On the item under debate. Each one shows once, however many times they speak.",
+    "onAmendment": "On amendment {code}, under debate. Each one shows once, however many times they speak.",
+    "none": "Nobody yet.",
+    "list": "Have spoken",
+    "fromQueue": "Floor given from the session",
+    "remove": "Remove {label}",
+    "member": "Member",
+    "memberPlaceholder": "Choose who",
+    "searchMember": "Search a member",
+    "name": "Person",
+    "namePlaceholder": "Name, if you know it",
+    "add": "Note",
+    "errors": {
+      "add": "The speaker could not be noted",
+      "remove": "The note could not be removed"
     }
   }
 }

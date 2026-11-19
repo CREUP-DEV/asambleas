@@ -101,22 +101,30 @@ export function buildTurnRows(
   turns: readonly SpeakingTurnDto[],
   items: ReadonlyMap<string, TurnItem>,
 ): TurnRow[] {
-  return turns
-    .filter((turn) => turn.status === "speaking" || turn.status === "done")
-    .map((turn, index) => {
-      const speaking = turn.status === "speaking";
-      return {
-        turn,
-        index: index + 1,
-        item: turn.agendaItemId ? (items.get(turn.agendaItemId) ?? null) : null,
-        whoKey: turnWhoKey(turn),
-        seconds:
-          speaking || !turn.startedAt
-            ? null
-            : sessionElapsedSeconds(turn.startedAt, timeOf(turn.endedAt)),
-        speaking,
-      };
-    });
+  return (
+    turns
+      // Noted by hand: who spoke, never a turn with a time («Intervinientes»).
+      .filter(
+        (turn) =>
+          !turn.noted && (turn.status === "speaking" || turn.status === "done"),
+      )
+      .map((turn, index) => {
+        const speaking = turn.status === "speaking";
+        return {
+          turn,
+          index: index + 1,
+          item: turn.agendaItemId
+            ? (items.get(turn.agendaItemId) ?? null)
+            : null,
+          whoKey: turnWhoKey(turn),
+          seconds:
+            speaking || !turn.startedAt
+              ? null
+              : sessionElapsedSeconds(turn.startedAt, timeOf(turn.endedAt)),
+          speaking,
+        };
+      })
+  );
 }
 
 export interface TurnFilters {

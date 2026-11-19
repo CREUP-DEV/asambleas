@@ -26,6 +26,7 @@ import type {
   LiveEventDto,
   MemberRef,
   PositionDto,
+  SpeakingTurnDto,
   VoteDto,
 } from "~~/shared/types/api";
 import {
@@ -193,7 +194,8 @@ export function buildGeneralRows(
   }
   const turnsByItem = new Map<string, NonNullable<typeof sheet>["turns"]>();
   for (const turn of sheet?.turns ?? []) {
-    if (!turn.agendaItemId) continue;
+    // A turn on an amendment counts in the amendment's row, not the item's.
+    if (!turn.agendaItemId || turn.amendmentId) continue;
     const list = turnsByItem.get(turn.agendaItemId) ?? [];
     list.push(turn);
     turnsByItem.set(turn.agendaItemId, list);
@@ -350,6 +352,8 @@ export interface AmendmentSheetRow {
    */
   position: PositionDto | null;
   live: boolean;
+  /** Who spoke on it, each once (sheetSpeakers). */
+  speakers: SheetSpeaker[];
 }
 
 /**
@@ -376,8 +380,16 @@ export function buildAmendmentRows(
   liveAmendmentId: string | null,
   sheetRows: readonly ControlSheetAmendmentRowDto[] = [],
   positions: readonly ControlSheetPositionDto[] = [],
+  turns: readonly SpeakingTurnDto[] = [],
 ): AmendmentSheetRow[] {
   const notes = new Map(sheetRows.map((row) => [row.amendmentId, row]));
+  const turnsByAmendment = new Map<string, SpeakingTurnDto[]>();
+  for (const turn of turns) {
+    if (!turn.amendmentId) continue;
+    const list = turnsByAmendment.get(turn.amendmentId) ?? [];
+    list.push(turn);
+    turnsByAmendment.set(turn.amendmentId, list);
+  }
   const answers = new Map(
     positions.map((entry) => [entry.amendmentId, entry.position]),
   );
@@ -407,6 +419,7 @@ export function buildAmendmentRows(
         row.amendment.position,
       ),
       live: row.current,
+      speakers: sheetSpeakers(turnsByAmendment.get(row.amendment.id) ?? []),
     };
   });
 }

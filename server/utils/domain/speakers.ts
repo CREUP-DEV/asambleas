@@ -3,11 +3,15 @@ import { and, asc, eq, inArray, isNotNull, isNull, or, sql } from "drizzle-orm";
 import { db } from "../../db";
 import {
   agendaItems,
+  amendments,
+  documents,
   liveState,
   members,
   speakingTurns,
 } from "../../db/schema";
 import type {
+  SpeakerNoteBody,
+  SpeakerNotesDto,
   SpeakersDto,
   SpeakingTurnBody,
   SpeakingTurnDto,
@@ -17,7 +21,8 @@ import { SPEAKING_QUEUE_MAX_LENGTH } from "~~/shared/utils/schemas/speakers";
 import { DEFAULT_SPEAKING_LIMIT_SECONDS } from "~~/shared/utils/schemas/assembly";
 import { getOptimisticLockTimestampMs } from "../optimisticLock";
 import { toMemberRef } from "../members/dto";
-import { canModerate, type Actor } from "./actor";
+import { canModerate, canNoteSpeakers, type Actor } from "./actor";
+import { loadVisibleAmendmentIds } from "./documents";
 import { canSeeExecutiveMembers, redactMember } from "./visibility";
 import { lockAssembly } from "./agendaWrites";
 import type { AssemblyRow } from "./assemblies";
@@ -67,6 +72,8 @@ function toTurnDto(
     turn: TurnRow;
     member: MemberColumns | null;
   },
+  /** Only the sheet and the notes say which amendment; null elsewhere. */
+  withAmendment = false,
 ): SpeakingTurnDto {
   const { turn } = row;
   const hidden =
@@ -76,6 +83,8 @@ function toTurnDto(
     member: row.member ? redactMember(actor, toMemberRef(row.member)) : null,
     speaker: hidden ? null : turn.speaker,
     agendaItemId: turn.agendaItemId,
+    amendmentId: withAmendment ? turn.amendmentId : null,
+    noted: turn.noted,
     status: turn.status,
     position: turn.position,
     startedAt: iso(turn.startedAt),
@@ -103,17 +112,23 @@ function assertOpen(
 async function readLiveSpeakers(
   executor: Executor,
   assemblyId: string,
-): Promise<{ visible: boolean; agendaItemId: string | null }> {
+): Promise<{
+  visible: boolean;
+  agendaItemId: string | null;
+  amendmentId: string | null;
+}> {
   const [row] = await executor
     .select({
       visible: liveState.speakersVisible,
       agendaItemId: liveState.agendaItemId,
+      amendmentId: liveState.amendmentId,
     })
     .from(liveState)
     .where(eq(liveState.assemblyId, assemblyId));
   return {
     visible: row?.visible ?? false,
     agendaItemId: row?.agendaItemId ?? null,
+    amendmentId: row?.amendmentId ?? null,
   };
 }
 
@@ -149,6 +164,8 @@ export async function loadSpeakers(
     .where(
       and(
         eq(speakingTurns.assemblyId, assemblyId),
+        // Turns noted by hand never were in the queue.
+        eq(speakingTurns.noted, false),
         moderate
           ? or(
               open,
@@ -185,9 +202,11 @@ export async function loadSpeakers(
 }
 
 /**
- * Every turn of the assembly that took the floor (speaking or done), in the
- * order it did, as the actor may read it: the control sheet's speakers per
- * agenda item. Callers check that the actor reads the sheet.
+ * Every turn of the assembly that spoke (took the floor, or was noted by
+ * hand), in the order it did, as the actor may read it, with the amendment
+ * it belongs to: the control sheet's «Intervinientes» and «Turnos de
+ * palabra», and the noted speakers. A turn on an amendment the actor may
+ * not read is left out. Callers check that the actor may read them.
  */
 export async function loadSpokenTurns(
   actor: Actor,
@@ -216,7 +235,23 @@ export async function loadSpokenTurns(
       asc(speakingTurns.createdAt),
       asc(speakingTurns.id),
     );
-  return rows.map((row) => toTurnDto(actor, row));
+  const amendmentIds = [
+    ...new Set(rows.flatMap((row) => row.turn.amendmentId ?? [])),
+  ];
+  let visible = new Set<string>();
+  if (amendmentIds.length > 0) {
+    const owners = await db
+      .selectDistinct({ documentId: amendments.documentId })
+      .from(amendments)
+      .where(inArray(amendments.id, amendmentIds));
+    visible = await loadVisibleAmendmentIds(
+      actor,
+      owners.map((row) => row.documentId),
+    );
+  }
+  return rows
+    .filter((row) => !row.turn.amendmentId || visible.has(row.turn.amendmentId))
+    .map((row) => toTurnDto(actor, row, true));
 }
 
 /** Every turn of the assembly with a member, for speakerHistory (the Mesa). */
@@ -233,6 +268,7 @@ function loadTurnHistory(assemblyId: string) {
       and(
         eq(speakingTurns.assemblyId, assemblyId),
         isNotNull(speakingTurns.memberId),
+        eq(speakingTurns.noted, false),
       ),
     );
 }
@@ -443,6 +479,9 @@ export async function updateSpeakingTurn(
     }
 
     const now = new Date();
+    // Taking the floor stamps what is in debate then: the sheet names the
+    // speaker under that item or amendment, whenever it asked.
+    const stamp = plan.start ? await readLiveSpeakers(tx, assembly.id) : null;
     const position = plan.queue.indexOf(turn.id);
     const moved = position >= 0 && position !== turn.position;
     const renamed = speaker !== turn.speaker;
@@ -466,7 +505,14 @@ export async function updateSpeakingTurn(
         speaker,
         limitSeconds,
         ...(position >= 0 ? { position } : {}),
-        ...(plan.start ? { startedAt: now, endedAt: null } : {}),
+        ...(plan.start && stamp
+          ? {
+              startedAt: now,
+              endedAt: null,
+              agendaItemId: stamp.agendaItemId,
+              amendmentId: stamp.amendmentId,
+            }
+          : {}),
         ...(plan.end ? { endedAt: now } : {}),
         ...(plan.reset ? { startedAt: null, endedAt: null } : {}),
       })
@@ -594,4 +640,207 @@ export async function closeSpeakingTurns(
     payload: { visible: false, reason: "assembly_closed" },
     actor,
   });
+}
+
+// Noting who spoke ----------------------------------------------------------------
+//
+// Whoever notes the speakers (the Mesa and session:record_speakers; user's
+// decision of 2026-11-19) says who spoke on an agenda item or one of its
+// amendments, from the live view or the control sheet. A note is a turn
+// `noted` and `done`, out of the queue, with no times of its own beyond
+// when it was noted; the turns the Mesa gives from the queue count as well,
+// so the sheet's «Intervinientes» name everyone once. Allowed while the
+// assembly is not closed, as corrections of the record are.
+
+function assertNotable(assembly: Pick<AssemblyRow, "status">): void {
+  if (assembly.status === "closed") fail(409, "La asamblea está cerrada");
+  if (assembly.status === "draft") {
+    fail(409, "La asamblea todavía no se ha convocado");
+  }
+}
+
+/** GET .../speakers/notes: every turn that spoke, for noting the rest. */
+export async function loadSpeakerNotes(
+  actor: Actor,
+  assemblyId: string,
+): Promise<SpeakerNotesDto> {
+  if (!canNoteSpeakers(actor)) fail(403, "No puedes anotar intervenciones");
+  return { turns: await loadSpokenTurns(actor, assemblyId) };
+}
+
+/**
+ * POST .../speakers/notes: notes that a member, or a person by name, spoke
+ * on an item or an amendment of it. Nothing changes when that member (or
+ * that name, without a member) already spoke there, from the queue or
+ * noted. The amendment must be one of the item's documents' and readable
+ * by the actor; without an item, the amendment's own item is taken.
+ */
+export async function noteSpeaker(
+  actor: Actor,
+  assembly: AssemblyRow,
+  body: SpeakerNoteBody,
+): Promise<SpeakerNotesDto> {
+  if (!canNoteSpeakers(actor)) fail(403, "No puedes anotar intervenciones");
+  assertNotable(assembly);
+  const memberId = body.memberId ?? null;
+  const speaker = body.speaker ?? null;
+  if (!memberId && !speaker) {
+    fail(422, "Indica el miembro o el nombre de quien ha intervenido");
+  }
+
+  await db.transaction(async (tx) => {
+    assertNotable(await lockAssembly(tx, assembly.id));
+
+    if (memberId) {
+      const [member] = await tx
+        .select({ id: members.id })
+        .from(members)
+        .where(eq(members.id, memberId));
+      if (!member) fail(422, "Ese miembro no existe");
+    }
+
+    let agendaItemId = body.agendaItemId;
+    const amendmentId = body.amendmentId ?? null;
+    if (amendmentId) {
+      const [owner] = await tx
+        .select({
+          documentId: amendments.documentId,
+          agendaItemId: documents.agendaItemId,
+          assemblyId: documents.assemblyId,
+        })
+        .from(amendments)
+        .innerJoin(documents, eq(documents.id, amendments.documentId))
+        .where(eq(amendments.id, amendmentId));
+      const readable =
+        owner?.assemblyId === assembly.id &&
+        (await loadVisibleAmendmentIds(actor, [owner.documentId], tx)).has(
+          amendmentId,
+        );
+      if (!owner || !readable) {
+        fail(422, "La enmienda no pertenece a esta asamblea");
+      }
+      agendaItemId ??= owner.agendaItemId;
+    }
+    if (agendaItemId) {
+      const [item] = await tx
+        .select({ id: agendaItems.id })
+        .from(agendaItems)
+        .where(
+          and(
+            eq(agendaItems.id, agendaItemId),
+            eq(agendaItems.assemblyId, assembly.id),
+          ),
+        );
+      if (!item) fail(422, "El punto no pertenece a esta asamblea");
+    }
+
+    // Under the assembly lock, so two notes of the same member cannot race.
+    const [already] = await tx
+      .select({ id: speakingTurns.id })
+      .from(speakingTurns)
+      .where(
+        and(
+          eq(speakingTurns.assemblyId, assembly.id),
+          inArray(speakingTurns.status, ["speaking", "done"]),
+          agendaItemId
+            ? eq(speakingTurns.agendaItemId, agendaItemId)
+            : isNull(speakingTurns.agendaItemId),
+          amendmentId
+            ? eq(speakingTurns.amendmentId, amendmentId)
+            : isNull(speakingTurns.amendmentId),
+          memberId
+            ? eq(speakingTurns.memberId, memberId)
+            : and(
+                isNull(speakingTurns.memberId),
+                sql`lower(${speakingTurns.speaker}) = lower(${speaker})`,
+              ),
+        ),
+      )
+      .limit(1);
+    if (already) return;
+
+    const now = new Date();
+    const [created] = await tx
+      .insert(speakingTurns)
+      .values({
+        assemblyId: assembly.id,
+        agendaItemId: agendaItemId ?? null,
+        amendmentId,
+        memberId,
+        speaker,
+        noted: true,
+        status: "done",
+        startedAt: now,
+        endedAt: now,
+        createdByUserId: actor.user.id,
+      })
+      .returning({ id: speakingTurns.id });
+
+    await recordEvent(tx, {
+      assemblyId: assembly.id,
+      entityType: "speakers",
+      entityId: created!.id,
+      type: "speaking_turn_noted",
+      // Ids only: never the name written down.
+      payload: {
+        memberId,
+        agendaItemId: agendaItemId ?? null,
+        ...(amendmentId ? { amendmentId } : {}),
+        ...(speaker ? { named: true } : {}),
+      },
+      actor,
+    });
+  });
+
+  return loadSpeakerNotes(actor, assembly.id);
+}
+
+/**
+ * DELETE .../speakers/notes/[turn]: takes back a note (cancelled, never
+ * deleted). Only notes: a turn given from the queue spoke for real and
+ * stays. Taking back one already gone changes nothing.
+ */
+export async function removeSpeakerNote(
+  actor: Actor,
+  assembly: AssemblyRow,
+  turnId: string,
+): Promise<SpeakerNotesDto> {
+  if (!canNoteSpeakers(actor)) fail(403, "No puedes anotar intervenciones");
+  assertNotable(assembly);
+
+  await db.transaction(async (tx) => {
+    assertNotable(await lockAssembly(tx, assembly.id));
+    const [turn] = await tx
+      .select()
+      .from(speakingTurns)
+      .where(
+        and(
+          eq(speakingTurns.id, turnId),
+          eq(speakingTurns.assemblyId, assembly.id),
+        ),
+      );
+    if (!turn) fail(404, "Intervención no encontrada");
+    if (!turn.noted) {
+      fail(409, "Ese turno se dio desde la sesión: no se puede quitar aquí");
+    }
+    if (turn.status === "cancelled") return;
+    await tx
+      .update(speakingTurns)
+      .set({ status: "cancelled" })
+      .where(eq(speakingTurns.id, turn.id));
+    await recordEvent(tx, {
+      assemblyId: assembly.id,
+      entityType: "speakers",
+      entityId: turn.id,
+      type: "speaking_turn_unnoted",
+      payload: {
+        memberId: turn.memberId,
+        agendaItemId: turn.agendaItemId,
+        ...(turn.amendmentId ? { amendmentId: turn.amendmentId } : {}),
+      },
+      actor,
+    });
+  });
+
+  return loadSpeakerNotes(actor, assembly.id);
 }

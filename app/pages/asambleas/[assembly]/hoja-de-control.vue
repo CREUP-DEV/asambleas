@@ -105,7 +105,21 @@ useHead({
 const allowed = computed(
   () =>
     can(PERMISSION_KEYS.CONTROL_SHEET_VIEW) ||
-    can(PERMISSION_KEYS.CONTROL_SHEET_EDIT),
+    can(PERMISSION_KEYS.CONTROL_SHEET_EDIT) ||
+    can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS),
+);
+
+/** Noting who spoke (the Mesa and session:record_speakers). */
+const canNoteSpeakers = computed(
+  () =>
+    can(PERMISSION_KEYS.SESSION_MODERATE) ||
+    can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS),
+);
+/** Notes are taken from the convocation until the assembly closes. */
+const speakerNotesOpen = computed(
+  () =>
+    assembly.value?.status === "convened" ||
+    assembly.value?.status === "in_session",
 );
 
 const sheetFetch = useFetch<ControlSheetDto>(
@@ -283,6 +297,7 @@ const amendmentRows = computed(() =>
     live.value?.amendmentId ?? null,
     sheet.value?.amendmentRows ?? [],
     sheet.value?.positions ?? [],
+    sheet.value?.turns ?? [],
   ),
 );
 
@@ -513,6 +528,7 @@ const AMENDMENT_COLUMN_KEYS: Record<AmendmentSortKey, string> = {
   treated: "controlSheet.columns.treated",
   result: "controlSheet.columns.result",
   vote: "controlSheet.columns.vote",
+  speakers: "controlSheet.columns.speakers",
 };
 
 const generalViewItems = computed(() =>
@@ -1422,11 +1438,14 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
         :treated-pending="panelTreatedPending"
         :vote-context="voteContext"
         :document="panelDocument"
+        :speaker-turns="sheet?.turns ?? []"
+        :speakers="{ note: canNoteSpeakers, open: speakerNotesOpen }"
         @item-saved="onItemSaved"
         @amendment-saved="onAmendmentSaved"
         @treated="onPanelTreated"
         @vote-changed="onVoteChanged"
         @position-saved="onPositionSaved"
+        @speakers-updated="refreshSheet"
       />
 
       <UModal

@@ -315,6 +315,7 @@
       "amendmentReview": "Validar y publicar enmiendas, y anotar si se admiten",
       "assemblyVoteResult": "Registrar resultado de votación en asamblea",
       "sessionModerate": "Moderar la sesión: estado en directo, admisiones, votaciones y transaccionales",
+      "sessionRecordSpeakers": "Anotar quién interviene en cada punto y enmienda, desde «En directo» y la hoja de control (que también puede leer)",
       "controlSheetView": "Ver la hoja de control de cada asamblea",
       "controlSheetEdit": "Editar la hoja de control: observaciones, posición de la CEA y puntos añadidos a mano",
       "seatingView": "Ver la sala de cada asamblea: la disposición y quién se sienta dónde",
@@ -4791,7 +4792,6 @@
     },
     "speakers": {
       "none": "Nadie",
-      "times": "{label} ({count} veces)",
       "names": "{label}: ver quién habló"
     },
     "manualResult": {
@@ -6256,6 +6256,8 @@
       "speaking_turn_restored": "Turno de palabra recuperado",
       "speaking_turn_moved": "Turno de palabra movido en la lista",
       "speaking_turn_updated": "Turno de palabra cambiado",
+      "speaking_turn_noted": "Intervención anotada",
+      "speaking_turn_unnoted": "Intervención quitada",
       "vote_recorded": "Resultado de una votación anotado",
       "decision_recorded": "Decisión anotada",
       "control_sheet_observations_updated": "Observaciones de la hoja de control cambiadas",
@@ -6487,6 +6489,25 @@
       "item": "Sobre el documento",
       "amendment": "Enmienda {code}",
       "edited": "Última edición: {name}, {when}"
+    }
+  },
+  "speakerNotes": {
+    "title": "Quién ha intervenido",
+    "onItem": "Sobre el punto en debate. Cada uno sale una vez, intervenga las veces que intervenga.",
+    "onAmendment": "Sobre la enmienda {code}, en debate. Cada uno sale una vez, intervenga las veces que intervenga.",
+    "none": "Nadie todavía.",
+    "list": "Han intervenido",
+    "fromQueue": "Turno dado desde la sesión",
+    "remove": "Quitar a {label}",
+    "member": "Miembro",
+    "memberPlaceholder": "Elige quién",
+    "searchMember": "Buscar un miembro",
+    "name": "Persona",
+    "namePlaceholder": "Nombre, si lo sabes",
+    "add": "Anotar",
+    "errors": {
+      "add": "No se pudo anotar la intervención",
+      "remove": "No se pudo quitar la intervención"
     }
   }
 }

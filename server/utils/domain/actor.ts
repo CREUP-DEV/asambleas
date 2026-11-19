@@ -106,12 +106,25 @@ export function canManageDocuments(actor: Actor): boolean {
 
 /**
  * Reading the control sheet of an assembly (hoja de control): whoever may
- * edit it reads it too.
+ * edit it reads it too, and so does whoever notes the speakers, who notes
+ * them from there as well.
  */
 export function canViewControlSheet(actor: Actor): boolean {
   return (
     actor.can(PERMISSION_KEYS.CONTROL_SHEET_VIEW) ||
-    actor.can(PERMISSION_KEYS.CONTROL_SHEET_EDIT)
+    actor.can(PERMISSION_KEYS.CONTROL_SHEET_EDIT) ||
+    actor.can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS)
+  );
+}
+
+/**
+ * Noting who spoke on an agenda item or an amendment (user's decision of
+ * 2026-11-19), from the live view and the control sheet: the Mesa and
+ * whoever holds session:record_speakers.
+ */
+export function canNoteSpeakers(actor: Actor): boolean {
+  return (
+    canModerate(actor) || actor.can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS)
   );
 }
 

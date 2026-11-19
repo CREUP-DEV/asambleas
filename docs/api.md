@@ -1947,8 +1947,28 @@ max-age=31536000, immutable`, `nosniff` and `Content-Disposition: inline`.
 | POST   | `/api/assemblies/[assembly]/speakers`        | `session:moderate` | `SpeakingTurnBody`. Adds a turn. 201 with `SpeakersDto`. |
 | PUT    | `/api/assemblies/[assembly]/speakers/[turn]` | `session:moderate` | `SpeakingTurnUpdateBody`. Returns `SpeakersDto`.         |
 
+| Method | Path                                               | Who                                             | Notes                                          |
+| ------ | -------------------------------------------------- | ----------------------------------------------- | ---------------------------------------------- |
+| GET    | `/api/assemblies/[assembly]/speakers/notes`        | `session:moderate` or `session:record_speakers` | `SpeakerNotesDto`: every turn that spoke.      |
+| POST   | `/api/assemblies/[assembly]/speakers/notes`        | `session:moderate` or `session:record_speakers` | `SpeakerNoteBody`. 201 with `SpeakerNotesDto`. |
+| DELETE | `/api/assemblies/[assembly]/speakers/notes/[turn]` | `session:moderate` or `session:record_speakers` | Takes a note back. Returns `SpeakerNotesDto`.  |
+
 The Mesa writes down who asks to speak, gives and ends the floor and orders
 the queue (`speaking_turns`). Schemas: `shared/utils/schemas/speakers.ts`.
+
+- **Who spoke.** Giving the floor stamps the turn with the item and the
+  amendment in debate then (`amendmentId`). Whoever notes the speakers
+  (`canNoteSpeakers`) notes who spoke on an item or an amendment of it, from
+  the live view and the control sheet: a `noted` turn, `done`, out of the
+  queue. Noting a member (or, without one, a name) already there, given the
+  floor or noted, changes nothing; only notes are taken back (`cancelled`,
+  409 for a turn given from the queue). 422 for an item or an amendment of
+  another assembly, or an amendment the actor may not read; 409 while the
+  assembly is a draft or closed. `GET` leaves out turns on amendments the
+  actor may not read. Notes never reach `GET .../speakers`, `history`, the
+  sheet's «Turnos de palabra» nor the statistics; the sheet's
+  «Intervinientes» names everyone once. Events `speaking_turn_noted` and
+  `speaking_turn_unnoted` (ids only).
 
 - **Reading.** The Mesa (`session:moderate`) gets the turns that are
   `speaking` or `waiting` and every turn of the agenda item in debate

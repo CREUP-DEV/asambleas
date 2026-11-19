@@ -134,6 +134,8 @@ describe("buildGeneralRows", () => {
             },
             speaker: "Ana",
             agendaItemId: "2a",
+            amendmentId: null,
+            noted: false,
             status: "done",
             position: 0,
             startedAt: null,
@@ -148,9 +150,7 @@ describe("buildGeneralRows", () => {
       null,
     );
     expect(rows.map((row) => row.id)).toEqual(["2", "2a"]);
-    expect(rows[1]!.speakers).toEqual([
-      { label: "CEUAM", names: ["Ana"], times: 1 },
-    ]);
+    expect(rows[1]!.speakers).toEqual([{ label: "CEUAM", names: ["Ana"] }]);
     expect(rows[1]!.outcome.result).toBe("not_applicable");
   });
 });
@@ -527,6 +527,54 @@ describe("buildAmendmentRows", () => {
       [{ amendmentId: "a1", position: answer("accept") }],
     );
     expect(row!.position?.position).toBe("accept");
+  });
+
+  it("names who spoke on each amendment once, noted or given the floor", () => {
+    const spoke = (
+      id: string,
+      amendmentId: string,
+      memberId: string,
+      noted: boolean,
+    ) => ({
+      id,
+      member: {
+        id: memberId,
+        acronym: memberId.toUpperCase(),
+        name: memberId,
+        kind: "asociado" as const,
+      },
+      speaker: null,
+      agendaItemId: "i1",
+      amendmentId,
+      noted,
+      status: "done" as const,
+      position: 0,
+      startedAt: null,
+      endedAt: null,
+      limitSeconds: null,
+      priority: false,
+      createdAt: "2026-11-19T10:00:00.000Z",
+      updatedAt: "2026-11-19T10:00:00.000Z",
+    });
+    const rows = buildAmendmentRows(
+      [
+        amendment({ id: "a1", positionKey: 0 }),
+        amendment({ id: "a2", positionKey: 1 }),
+      ],
+      null,
+      null,
+      [],
+      [],
+      [
+        spoke("t1", "a1", "ugr", false),
+        spoke("t2", "a1", "ugr", true),
+        spoke("t3", "a1", "anem", true),
+        spoke("t4", "a2", "cas", false),
+      ],
+    );
+    expect(rows.map((row) => row.speakers.map((entry) => entry.label))).toEqual(
+      [["UGR", "ANEM"], ["CAS"]],
+    );
   });
 
   it("leaves out the live view's sentence for one out of time", () => {

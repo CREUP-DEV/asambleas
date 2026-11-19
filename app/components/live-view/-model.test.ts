@@ -40,6 +40,8 @@ const turn = (
   },
   speaker: null,
   agendaItemId: "i1",
+  amendmentId: null,
+  noted: false,
   status: "waiting",
   position: 0,
   startedAt: null,

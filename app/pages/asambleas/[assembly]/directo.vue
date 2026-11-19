@@ -7,9 +7,12 @@ import type {
   HeadcountsDto,
   LiveScrollDto,
   LiveStateDto,
+  SpeakerNotesDto,
   SpeakersDto,
+  SpeakingTurnDto,
 } from "~~/shared/types/api";
 import { DEFAULT_ASSEMBLY_SETTINGS } from "~~/shared/constants/domain";
+import { PERMISSION_KEYS } from "~~/shared/constants/permissions";
 import { positionsArePublic } from "~~/shared/utils/positions";
 import { errorStatus } from "~/composables/api/useApi";
 import { agendaWithTitles } from "~/utils/agendaTitles";
@@ -44,7 +47,10 @@ import {
  * stands, with the provisional consolidated text one tap away. The
  * document on screen opens in a floating window that follows the part the
  * Mesa shows (LiveViewDocumentWindow), and each amendment in a preview
- * window (LiveViewAmendmentWindow), without leaving the page.
+ * window (LiveViewAmendmentWindow), without leaving the page. Whoever notes
+ * the speakers (the Mesa and session:record_speakers) notes here who spoke
+ * on what is in debate (SpeakerNotesEditor); nobody else fetches anything
+ * of it.
  *
  * Open to everyone who can see the assembly, at any time: before the
  * session and after it, it says so and points to what can be read
@@ -516,6 +522,34 @@ watch(documentId, () => {
   if (documentWindowOpen.value) void readMesaScroll();
 });
 
+// Who spoke on what is in debate, for whoever notes it --------------------------
+
+const { can } = useMe();
+const canNoteSpeakers = computed(
+  () =>
+    can(PERMISSION_KEYS.SESSION_MODERATE) ||
+    can(PERMISSION_KEYS.SESSION_RECORD_SPEAKERS),
+);
+const spokenTurns = ref<SpeakingTurnDto[]>([]);
+async function readSpokenTurns(): Promise<void> {
+  if (!canNoteSpeakers.value || !inSession.value) return;
+  try {
+    const dto = await api.get<SpeakerNotesDto>(
+      `${apiBase.value}/speakers/notes`,
+    );
+    spokenTurns.value = dto.turns;
+  } catch {
+    // The next change of the speakers reads them again.
+  }
+}
+onMounted(() => void readSpokenTurns());
+watch(inSession, () => void readSpokenTurns());
+onLive((events) => {
+  if (events.some((event) => event.entityType === "speakers")) {
+    void readSpokenTurns();
+  }
+});
+
 /** The amendment previewed from the list; null when none is. */
 const previewAmendmentId = ref<string | null>(null);
 watch(documentId, () => {
@@ -784,6 +818,43 @@ watch(
         :scroll="mesaScroll"
         :document-path="documentPath"
       />
+
+      <section
+        v-if="canNoteSpeakers && !nothingInDebate && !amendmentHidden && live"
+        aria-labelledby="live-notes-title"
+        class="flex flex-col gap-3"
+      >
+        <div>
+          <h2
+            id="live-notes-title"
+            class="text-highlighted text-lg font-semibold"
+          >
+            {{ t("speakerNotes.title") }}
+          </h2>
+          <p class="text-muted text-sm">
+            {{
+              debated
+                ? t("speakerNotes.onAmendment", {
+                    code:
+                      liveAmendmentCode(debated.amendment) ||
+                      t(
+                        `session.enums.amendmentKind.${debated.amendment.kind}`,
+                      ),
+                  })
+                : t("speakerNotes.onItem")
+            }}
+          </p>
+        </div>
+        <div class="ring-default rounded-lg p-4 ring">
+          <SpeakerNotesEditor
+            :agenda-item-id="live.agendaItemId"
+            :amendment-id="debated?.amendment.id ?? null"
+            :turns="spokenTurns"
+            :writable="true"
+            @updated="spokenTurns = $event"
+          />
+        </div>
+      </section>
 
       <LiveViewSpeakers v-if="speakers" :speakers="speakers" />
 

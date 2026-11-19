@@ -309,6 +309,13 @@
       "when": 1795017677816,
       "tag": "0043_priority_speaking_turns",
       "breakpoints": true
+    },
+    {
+      "idx": 44,
+      "version": "7",
+      "when": 1795078851590,
+      "tag": "0044_speaking_turn_subjects",
+      "breakpoints": true
     }
   ]
 }

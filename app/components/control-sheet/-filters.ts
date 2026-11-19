@@ -59,6 +59,7 @@ export const AMENDMENT_SORT_KEYS = [
   "treated",
   "result",
   "vote",
+  "speakers",
 ] as const;
 export type AmendmentSortKey = (typeof AMENDMENT_SORT_KEYS)[number];
 
@@ -183,7 +184,7 @@ function generalSortValue(
     case "votes":
       return latestVoteAt(row);
     case "speakers":
-      return row.speakers.reduce((sum, speaker) => sum + speaker.times, 0);
+      return row.speakers.length;
   }
 }
 
@@ -217,6 +218,8 @@ function amendmentSortValue(
       return LIVE_AMENDMENT_STATES.indexOf(row.state);
     case "vote":
       return row.amendment.outcomeVote?.recordedAt ?? null;
+    case "speakers":
+      return row.speakers.length;
   }
 }
 
@@ -514,6 +517,7 @@ const AMENDMENT_SORT_SLUGS: Record<AmendmentSortKey, string> = {
   treated: "tratada",
   result: "resultado",
   vote: "votacion",
+  speakers: "intervinientes",
 };
 const GENERAL_VIEW_SLUGS: Record<GeneralView, string> = {
   all: "todos",

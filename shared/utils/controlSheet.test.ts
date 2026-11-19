@@ -363,7 +363,7 @@ describe("controlSheetRows", () => {
 });
 
 describe("sheetSpeakers", () => {
-  it("lists each speaker once, with times and names", () => {
+  it("lists each speaker once, with their names, never how many times", () => {
     const ceuam = { id: "m1", acronym: "CEUAM" };
     expect(
       sheetSpeakers([
@@ -374,9 +374,9 @@ describe("sheetSpeakers", () => {
         { member: null, speaker: " " },
       ]),
     ).toEqual([
-      { label: "CEUAM", names: ["Ana", "Luis"], times: 2 },
-      { label: "CEUIB", names: [], times: 1 },
-      { label: "Invitada", names: [], times: 1 },
+      { label: "CEUAM", names: ["Ana", "Luis"] },
+      { label: "CEUIB", names: [] },
+      { label: "Invitada", names: [] },
     ]);
   });
 });

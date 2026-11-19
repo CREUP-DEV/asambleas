@@ -10,6 +10,7 @@ export const PERMISSION_KEYS = {
   AMENDMENT_REVIEW: "amendment:review",
   ASSEMBLY_VOTE_RESULT: "assembly:vote_result",
   SESSION_MODERATE: "session:moderate",
+  SESSION_RECORD_SPEAKERS: "session:record_speakers",
   CONTROL_SHEET_VIEW: "control_sheet:view",
   CONTROL_SHEET_EDIT: "control_sheet:edit",
   SEATING_VIEW: "seating:view",
@@ -43,6 +44,8 @@ export const PERMISSION_DESCRIPTION_I18N_KEYS: Record<PermissionKey, string> = {
     "permissions.descriptions.assemblyVoteResult",
   [PERMISSION_KEYS.SESSION_MODERATE]:
     "permissions.descriptions.sessionModerate",
+  [PERMISSION_KEYS.SESSION_RECORD_SPEAKERS]:
+    "permissions.descriptions.sessionRecordSpeakers",
   [PERMISSION_KEYS.CONTROL_SHEET_VIEW]:
     "permissions.descriptions.controlSheetView",
   [PERMISSION_KEYS.CONTROL_SHEET_EDIT]:
@@ -72,6 +75,7 @@ export const PERMISSION_ICONS: Record<PermissionKey, string> = {
   [PERMISSION_KEYS.AMENDMENT_REVIEW]: "i-lucide-badge-check",
   [PERMISSION_KEYS.ASSEMBLY_VOTE_RESULT]: "i-lucide-vote",
   [PERMISSION_KEYS.SESSION_MODERATE]: "i-lucide-gavel",
+  [PERMISSION_KEYS.SESSION_RECORD_SPEAKERS]: "i-lucide-notebook-pen",
   [PERMISSION_KEYS.CONTROL_SHEET_VIEW]: "i-lucide-sheet",
   [PERMISSION_KEYS.CONTROL_SHEET_EDIT]: "i-lucide-file-spreadsheet",
   [PERMISSION_KEYS.SEATING_VIEW]: "i-lucide-armchair",

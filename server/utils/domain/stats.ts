@@ -668,6 +668,8 @@ async function loadMemberWork(assemblyId: string) {
           inArray(speakingTurns.status, ["done", "speaking"]),
           isNotNull(speakingTurns.memberId),
           isNotNull(speakingTurns.startedAt),
+          // Noted by hand: who spoke, never a turn of its own.
+          eq(speakingTurns.noted, false),
         ),
       )
       .groupBy(speakingTurns.memberId),

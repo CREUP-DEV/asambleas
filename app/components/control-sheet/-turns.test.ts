@@ -34,6 +34,8 @@ function turn(
     member: null,
     speaker: null,
     agendaItemId: null,
+    amendmentId: null,
+    noted: false,
     status: "done",
     position: 0,
     startedAt: null,
@@ -73,6 +75,8 @@ const TURNS = [
     member: ANEM,
     speaker: "Ana Pérez",
     agendaItemId: "a",
+    amendmentId: null,
+    noted: false,
     startedAt: "2026-11-21T10:03:00.000Z",
     endedAt: "2026-11-21T10:04:00.000Z",
   }),
@@ -119,6 +123,11 @@ describe("buildTurnRows", () => {
   it("leaves out turns that never took the floor", () => {
     const waiting = turn("w", { status: "waiting" });
     expect(buildTurnRows([...TURNS, waiting], AGENDA)).toHaveLength(4);
+  });
+
+  it("leaves out who was noted by hand: no turn, no time", () => {
+    const noted = turn("n", { noted: true, member: UGR });
+    expect(buildTurnRows([...TURNS, noted], AGENDA)).toHaveLength(4);
   });
 });
 

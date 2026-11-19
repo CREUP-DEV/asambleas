@@ -350,8 +350,6 @@ export interface SheetSpeaker {
   label: string;
   /** The names written down for it, in order, each once. */
   names: string[];
-  /** How many times it took the floor there. */
-  times: number;
 }
 
 /** What a turn needs for «Intervinientes». */
@@ -361,8 +359,10 @@ export interface SheetTurn {
 }
 
 /**
- * The speakers of a row, each once, in the order they first spoke, with how
- * many times and the names written down for them.
+ * The speakers of a row, each once, in the order they first spoke, with the
+ * names written down for them: who spoke, never how many times (user's
+ * decision of 2026-11-19). Turns given from the queue and those noted by
+ * hand count alike.
  */
 export function sheetSpeakers(turns: readonly SheetTurn[]): SheetSpeaker[] {
   const byKey = new Map<string, SheetSpeaker>();
@@ -371,8 +371,7 @@ export function sheetSpeakers(turns: readonly SheetTurn[]): SheetSpeaker[] {
     const key = turn.member ? `m:${turn.member.id}` : name ? `n:${name}` : null;
     if (!key) continue;
     const label = turn.member ? turn.member.acronym : name!;
-    const entry = byKey.get(key) ?? { label, names: [], times: 0 };
-    entry.times += 1;
+    const entry = byKey.get(key) ?? { label, names: [] };
     if (turn.member && name && !entry.names.includes(name)) {
       entry.names.push(name);
     }

@@ -81,7 +81,7 @@ const rows: GeneralSheetRow[] = [
     index: 0,
     title: "Informe de la Presidencia",
     outcome: { result: "not_applicable", treated: true, byVote: false },
-    speakers: [{ label: "CEUAM", names: ["Ana"], times: 2 }],
+    speakers: [{ label: "CEUAM", names: ["Ana"] }],
   }),
   row({
     id: "2",
@@ -158,7 +158,7 @@ const rows: GeneralSheetRow[] = [
       }),
     ],
     outcome: { result: "approved", treated: true, byVote: true },
-    speakers: [{ label: "UGR", names: [], times: 1 }],
+    speakers: [{ label: "UGR", names: [] }],
   }),
 ];
 

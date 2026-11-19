@@ -2,10 +2,10 @@
 import type { SheetSpeaker } from "~~/shared/utils/controlSheet";
 
 /**
- * «Intervinientes» of a row: each member (or person) once, in the order
- * they first spoke, with how many times. The names written down for a
- * member open from its button, so keyboards and touch screens reach them
- * too, never only on hover.
+ * «Intervinientes» of a row: who spoke, each member (or person) once, in
+ * the order they first spoke, never how many times (user's decision of
+ * 2026-11-19). The names written down for a member open from its button,
+ * so keyboards and touch screens reach them too, never only on hover.
  */
 defineProps<{
   speakers: SheetSpeaker[];
@@ -29,24 +29,9 @@ const { t } = useI18n();
           color="neutral"
           variant="soft"
           size="xs"
-          :label="
-            speaker.times > 1
-              ? t('controlSheet.speakers.times', {
-                  label: speaker.label,
-                  count: speaker.times,
-                })
-              : speaker.label
-          "
+          :label="speaker.label"
           :aria-label="
-            t('controlSheet.speakers.names', {
-              label:
-                speaker.times > 1
-                  ? t('controlSheet.speakers.times', {
-                      label: speaker.label,
-                      count: speaker.times,
-                    })
-                  : speaker.label,
-            })
+            t('controlSheet.speakers.names', { label: speaker.label })
           "
         />
         <template #content>
@@ -60,14 +45,7 @@ const { t } = useI18n();
         color="neutral"
         variant="soft"
         size="sm"
-        :label="
-          speaker.times > 1
-            ? t('controlSheet.speakers.times', {
-                label: speaker.label,
-                count: speaker.times,
-              })
-            : speaker.label
-        "
+        :label="speaker.label"
       />
     </li>
   </ul>

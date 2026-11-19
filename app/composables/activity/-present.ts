@@ -111,6 +111,8 @@ export const ACTIVITY_ACTION_ICONS = {
   speaking_turn_restored: "i-lucide-rotate-ccw",
   speaking_turn_moved: "i-lucide-arrow-up-down",
   speaking_turn_updated: "i-lucide-pencil",
+  speaking_turn_noted: "i-lucide-notebook-pen",
+  speaking_turn_unnoted: "i-lucide-eraser",
   headcount_recorded: "i-lucide-users-round",
   headcount_corrected: "i-lucide-user-round-pen",
   vote_recorded: "i-lucide-vote",

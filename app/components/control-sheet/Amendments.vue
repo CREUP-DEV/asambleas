@@ -157,6 +157,7 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
     class: "min-w-48 text-center",
   },
   { key: "vote", label: "controlSheet.columns.vote", class: "w-56" },
+  { key: "speakers", label: "controlSheet.columns.speakers", class: "w-44" },
 ];
 </script>
 
@@ -268,6 +269,9 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
               <span v-else class="text-dimmed text-sm">{{
                 t("controlSheet.noVote")
               }}</span>
+            </td>
+            <td class="px-3 py-2">
+              <ControlSheetSpeakers :speakers="row.speakers" />
             </td>
             <td class="px-3 py-2">
               <div class="flex items-start justify-between gap-2">
@@ -398,6 +402,14 @@ const columns: { key: AmendmentSortKey; label: string; class: string }[] = [
                 <span v-else class="text-dimmed text-sm">{{
                   t("controlSheet.noVote")
                 }}</span>
+              </dd>
+            </div>
+            <div v-if="row.speakers.length > 0" class="sm:col-span-2">
+              <dt class="text-muted text-xs">
+                {{ t("controlSheet.columns.speakers") }}
+              </dt>
+              <dd>
+                <ControlSheetSpeakers :speakers="row.speakers" />
               </dd>
             </div>
             <div v-if="row.sheet?.observations" class="sm:col-span-2">

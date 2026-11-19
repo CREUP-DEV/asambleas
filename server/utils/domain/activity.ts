@@ -97,7 +97,7 @@ import { toMemberRef } from "../members/dto";
 import {
   canManageAssemblies,
   canManageDocuments,
-  canModerate,
+  canNoteSpeakers,
   canViewControlSheet,
   canViewSeating,
   canReviewAmendments,
@@ -943,6 +943,8 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
   speaking_turn_restored: ["from", "to", "position"],
   speaking_turn_moved: ["from", "to", "position"],
   speaking_turn_updated: ["from", "to", "position", "renamed", "limitSeconds"],
+  speaking_turn_noted: ["named"],
+  speaking_turn_unnoted: [],
   headcount_recorded: ["call", "eligible", "present", "required", "quorum"],
   headcount_corrected: [
     "call",
@@ -2117,8 +2119,9 @@ function eventTarget(
       };
     }
     case "speakers":
-      // The queue's history is the Mesa's: attendees only see who has the floor.
-      return { ...base, visible: !actor || canModerate(actor) };
+      // The queue's history is the Mesa's and that of whoever notes the
+      // speakers: attendees only see who has the floor.
+      return { ...base, visible: !actor || canNoteSpeakers(actor) };
     case "seating":
       // The room is its readers' (seating:view or seating:edit).
       return { ...base, visible: !actor || canViewSeating(actor) };

@@ -1651,6 +1651,17 @@ export interface SpeakingTurnDto {
    */
   speaker: string | null;
   agendaItemId: string | null;
+  /**
+   * The amendment in debate when it took the floor, or the one it was noted
+   * on; only in the control sheet and the noted speakers
+   * (SpeakerNotesDto), null everywhere else.
+   */
+  amendmentId: string | null;
+  /**
+   * Noted by hand as having spoken (no queue, no times): it counts for
+   * «Intervinientes» only, never as a turn.
+   */
+  noted: boolean;
   status: SpeakingTurnStatus;
   position: number;
   startedAt: IsoDate | null;
@@ -1690,6 +1701,28 @@ export interface SpeakerHistoryDto {
   spoken: number;
   /** The people written down for it, the latest first, each once. */
   speakers: string[];
+}
+
+/**
+ * GET .../speakers/notes (the Mesa and session:record_speakers): every turn
+ * of the assembly that spoke (given from the queue or noted by hand), with
+ * the item and the amendment it belongs to, for noting who spoke from the
+ * live view. Turns on an amendment the reader may not see are left out.
+ */
+export interface SpeakerNotesDto {
+  turns: SpeakingTurnDto[];
+}
+
+/**
+ * POST .../speakers/notes: notes that a member (or a person by name) spoke
+ * on an agenda item or one of its amendments. Noting one already there,
+ * from the queue or by hand, changes nothing.
+ */
+export interface SpeakerNoteBody {
+  agendaItemId: string | null;
+  amendmentId?: string | null;
+  memberId?: string | null;
+  speaker?: string | null;
 }
 
 /** POST /api/assemblies/[assembly]/speakers (session:moderate): add to the queue. */

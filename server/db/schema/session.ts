@@ -15,6 +15,7 @@ import { cuid } from "./common";
 import { users } from "./auth";
 import { members } from "./member";
 import { agendaItems } from "./agendaItem";
+import { amendments } from "./amendment";
 import { assemblies } from "./assembly";
 import { impersonations } from "./impersonation";
 import {
@@ -277,6 +278,12 @@ export const events = pgTable(
  * Requests to speak the Mesa writes down during the session, in order. A
  * turn belongs to a member (who speaks for it) and, optionally, to the
  * agenda item being debated; `speaker` is the person's name when known.
+ * When it takes the floor it is stamped with what is in debate then (the
+ * item and the amendment), so the control sheet's «Intervinientes» name it
+ * under the right row. A `noted` turn was written down by hand by whoever
+ * notes the speakers (session:record_speakers or the Mesa): it says who
+ * spoke on an item or an amendment, never for how long, and stays out of
+ * the queue, the «Turnos de palabra» tab and every count of turns.
  */
 export const speakingTurns = pgTable(
   "speaking_turns",
@@ -288,6 +295,12 @@ export const speakingTurns = pgTable(
     agendaItemId: text("agenda_item_id").references(() => agendaItems.id, {
       onDelete: "set null",
     }),
+    /** The amendment in debate when it took the floor, or noted on. */
+    amendmentId: text("amendment_id").references(() => amendments.id, {
+      onDelete: "set null",
+    }),
+    /** Written down by hand as having spoken: no queue, no times. */
+    noted: boolean("noted").notNull().default(false),
     memberId: text("member_id").references(() => members.id, {
       onDelete: "set null",
     }),

@@ -330,6 +330,18 @@ updatedAt }`, `session:moderate`, the same `assertStatusChange` checks
 
 ## 7. Speakers
 
+**Built (2026-11-19), narrower than proposed below.** The turns are the one
+source and giving the floor stamps the item and the amendment in debate
+(`speaking_turns.amendment_id`; migration 0044 stamped the earlier turns
+from the `live_changed` events). The person who notes the speakers holds
+`session:record_speakers`, which also opens the sheet (read only): they do
+not run the queue, they note who spoke (`noted` turns, out of the queue,
+idempotent per member or name) from «En directo» and from the sheet's row
+panel, and take back their notes. «Intervinientes» in «General» and
+«Enmiendas» says who spoke, each once, never how many times. Not built:
+moving a turn given from the queue to another item or amendment, or
+cancelling one from the sheet; notes after the assembly closes.
+
 - The speaking turns are the one source. A turn records the item and now
   the amendment, re-stamped from the live state when the floor is given,
   inside the speakers transaction under the assembly lock (the queue carries

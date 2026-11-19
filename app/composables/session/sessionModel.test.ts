@@ -1655,6 +1655,8 @@ describe("session model", () => {
       },
       speaker: null,
       agendaItemId: null,
+      amendmentId: null,
+      noted: false,
       status: "waiting",
       position: 0,
       startedAt: null,

@@ -12,6 +12,7 @@ import type {
   ControlSheetItemBody,
   ControlSheetItemRowDto,
   DocumentSummaryDto,
+  SpeakingTurnDto,
   VoteDto,
 } from "~~/shared/types/api";
 import { CONTROL_SHEET_OBSERVATIONS_MAX_LENGTH } from "~~/shared/utils/schemas/controlSheet";
@@ -30,7 +31,8 @@ import {
  * observations (shared, with who wrote each version and a way back to an
  * earlier one), the result noted by hand, the Mesa's treated mark, the
  * votes on an item (ItemVotes), the presenter's answer to an amendment
- * (PositionAnswer, for whoever may answer it), and the history. Each field
+ * (PositionAnswer, for whoever may answer it), who spoke on it (noted by
+ * whoever notes the speakers, SpeakerNotesEditor), and the history. Each field
  * saves on its
  * own with its own lock token (the treated mark through the page:
  * `treated`, `treatedPending`; the lists only show it); a field someone
@@ -53,6 +55,13 @@ const props = defineProps<{
   voteContext: ItemVoteContext;
   /** The document of an amendment's row: who answers it, and its rule. */
   document?: DocumentSummaryDto | null;
+  /** Every turn that spoke in the assembly (ControlSheetDto.turns). */
+  speakerTurns?: readonly SpeakingTurnDto[];
+  /**
+   * Noting who spoke: `note` for the Mesa and session:record_speakers,
+   * `open` while the assembly takes notes (convened, in session).
+   */
+  speakers?: { note: boolean; open: boolean };
 }>();
 const open = defineModel<boolean>("open", { required: true });
 const emit = defineEmits<{
@@ -64,6 +73,8 @@ const emit = defineEmits<{
   voteChanged: [vote: VoteDto | null];
   /** The presenter's answer to the amendment changed. */
   positionSaved: [amendment: AmendmentDto];
+  /** Someone was noted as having spoken, or taken back. */
+  speakersUpdated: [];
 }>();
 
 const { t, locale } = useI18n();
@@ -564,6 +575,27 @@ function historyDetail(
             class="w-full sm:w-64"
           />
         </UFormField>
+
+        <!-- Who spoke: each once, noted by whoever notes the speakers -->
+        <section class="space-y-2" aria-labelledby="control-sheet-speakers">
+          <h3
+            id="control-sheet-speakers"
+            class="text-highlighted text-sm font-medium"
+          >
+            {{ t("controlSheet.columns.speakers") }}
+          </h3>
+          <SpeakerNotesEditor
+            v-if="speakers?.note"
+            :agenda-item-id="target.kind === 'item' ? target.row.id : null"
+            :amendment-id="
+              target.kind === 'amendment' ? target.row.amendment.id : null
+            "
+            :turns="speakerTurns ?? []"
+            :writable="speakers.open"
+            @updated="emit('speakersUpdated')"
+          />
+          <ControlSheetSpeakers v-else :speakers="target.row.speakers" />
+        </section>
 
         <!-- Observations -->
         <div class="space-y-2">

@@ -1,6 +1,10 @@
 import { z } from "zod/v4";
 import { SPEAKING_TURN_STATUSES } from "../../constants/domain";
-import type { SpeakingTurnBody, SpeakingTurnUpdateBody } from "../../types/api";
+import type {
+  SpeakerNoteBody,
+  SpeakingTurnBody,
+  SpeakingTurnUpdateBody,
+} from "../../types/api";
 import { normalizeText } from "./content";
 import {
   SPEAKING_LIMIT_MAX_SECONDS,
@@ -55,6 +59,14 @@ export const speakingTurnUpdateBodySchema = z.object({
   updatedAt: z.iso.datetime({ offset: true }),
 });
 
+/** POST /api/assemblies/[assembly]/speakers/notes (SpeakerNoteBody). */
+export const speakerNoteBodySchema = z.object({
+  agendaItemId: entityId.nullable(),
+  amendmentId: entityId.nullable().optional(),
+  memberId: entityId.nullable().optional(),
+  speaker: speakerNameSchema,
+});
+
 // Compile-time checks: every parsed body is assignable to its API type.
 type Assignable<T, U extends T> = U;
 export type _SpeakerSchemaChecks = [
@@ -63,4 +75,5 @@ export type _SpeakerSchemaChecks = [
     SpeakingTurnUpdateBody,
     z.output<typeof speakingTurnUpdateBodySchema>
   >,
+  Assignable<SpeakerNoteBody, z.output<typeof speakerNoteBodySchema>>,
 ];
