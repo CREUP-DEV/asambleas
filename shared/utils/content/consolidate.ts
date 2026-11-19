@@ -347,8 +347,20 @@ export function previewAmendment(
     )
     .map(({ i }) => i);
   if (touched.length === 0) return [];
+  return annotatedFragment(annotated, touched, context);
+}
+
+/**
+ * The blocks at `indices` of an annotated text, with `context` neighbours
+ * on each side, numbered as they read in the whole text.
+ */
+export function annotatedFragment(
+  annotated: ConsolidatedBlock[],
+  indices: number[],
+  context = 0,
+): ConsolidatedBlock[] {
   const keep = new Set<number>();
-  for (const i of touched) {
+  for (const i of indices) {
     for (let k = i - context; k <= i + context; k += 1) {
       if (k >= 0 && k < annotated.length) keep.add(k);
     }

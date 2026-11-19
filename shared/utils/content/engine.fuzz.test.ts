@@ -21,6 +21,7 @@ import {
   sameBlockFormat,
 } from "./format";
 import { orderedListNumbers } from "./lists";
+import { consolidateApproved, passageFragment } from "./passages";
 import { compareReplaceOps, validateOps } from "./ops";
 import {
   findOverlaps,
@@ -1816,6 +1817,82 @@ describe("amendment engine properties", () => {
     coverage.expectAtLeast({
       "deleted ordered item": 10,
       "fragment past 1": 40,
+    });
+  });
+
+  it("8. approved amendments always consolidate, and alike when nothing meets", () => {
+    const coverage = new Coverage();
+    forAll(300, 8_000_000, (rng, ctx) => {
+      const base = randomDocument(rng, 2, 5, { maxWords: 5 });
+      const amendments = randomAmendments(rng, base, rng.int(2, 7), {
+        maxWords: 3,
+      });
+      Object.assign(ctx, { base, amendments });
+
+      for (const order of [amendments, rng.shuffle(amendments)]) {
+        ctx.order = order.map((amendment) => amendment.id);
+        const result = consolidateApproved(base, order);
+        coverage.hit(
+          "pending passage",
+          result.passages.some((item) => item.status === "pending"),
+        );
+        coverage.hit("deletion wins", result.superseded.length > 0);
+        // Every approved amendment applies, whatever it meets.
+        expect(result.conflicts).toEqual([]);
+        expect(result.applied).toEqual(order.map((a) => a.id));
+        assertWellFormed(result);
+        // A passage holds amendments that really meet, each once.
+        for (const passage of result.passages) {
+          expect(passage.amendmentIds.length).toBeGreaterThan(1);
+          expect(new Set(passage.amendmentIds).size).toBe(
+            passage.amendmentIds.length,
+          );
+        }
+        if (result.passages.length === 0) {
+          expect(result.blocks).toEqual(consolidate(base, order).blocks);
+        }
+        // The Mesa's wording of the proposal as it reads applies as is.
+        for (const passage of result.passages) {
+          const fragment = passageFragment(result.annotated, passage.blockIds);
+          const first = base.findIndex((b) => b.id === passage.blockIds[0]);
+          const last = base.findIndex((b) => b.id === passage.blockIds.at(-1));
+          const basePassage = base.slice(first, last + 1);
+          const edited = result.blocks.filter((block) =>
+            fragment.some(
+              (item) => item.id === block.id && item.status !== "deleted",
+            ),
+          );
+          if (edited.length === 0) continue;
+          const ops = diffPassage(
+            basePassage,
+            edited,
+            first > 0 ? base[first - 1]!.id : null,
+            (() => {
+              let n = 0;
+              return () => `w${n++}`;
+            })(),
+          );
+          if (ops.length === 0) continue;
+          const worded = consolidateApproved(base, order, {
+            wordings: [
+              {
+                id: "W",
+                amendmentIds: passage.amendmentIds,
+                blockIds: passage.blockIds,
+                ops,
+              },
+            ],
+          });
+          coverage.hit("worded", worded.wordingIds.includes("W"));
+          expect(worded.conflicts).toEqual([]);
+          assertWellFormed(worded);
+        }
+      }
+    });
+    coverage.expectAtLeast({
+      "pending passage": 40,
+      "deletion wins": 20,
+      worded: 20,
     });
   });
 });
