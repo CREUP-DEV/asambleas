@@ -201,6 +201,21 @@ watch(open, (isOpen) => {
   if (isOpen) void loadExpected();
 });
 
+/**
+ * Only the members and guests with somebody registered (user's decision of
+ * 2026-11-19), offered while the Intranet said who is: «Marcar presentes»
+ * then marks only the registered asociados.
+ */
+const onlyExpected = ref(false);
+const canFilterExpected = computed(
+  () =>
+    expected.value?.status === "ok" &&
+    expected.value.memberIds.length + expected.value.guestIds.length > 0,
+);
+const filteringExpected = computed(
+  () => onlyExpected.value && canFilterExpected.value,
+);
+
 /** One quiet line on what the marks say, or why there are none. */
 const expectedLine = computed(() => {
   const value = expected.value;
@@ -269,6 +284,7 @@ function freshForm(target: HeadcountDto | null): void {
 function start(target: HeadcountDto | null): void {
   editing.value = target;
   filter.value = "";
+  onlyExpected.value = false;
   freshForm(target);
   const saved = readDraft();
   if (saved && saved.targetId === (target?.id ?? null)) {
@@ -358,13 +374,14 @@ const query = computed(() =>
 );
 
 const shown = computed(() => {
-  const matching = query.value
-    ? formMembers.value.filter((member) =>
+  const matching = formMembers.value.filter(
+    (member) =>
+      (!filteringExpected.value || expectedMembers.value.has(member.id)) &&
+      (!query.value ||
         [member.acronym, member.name, member.university ?? ""].some((value) =>
           value.toLocaleLowerCase(locale.value).includes(query.value),
-        ),
-      )
-    : formMembers.value;
+        )),
+  );
   const groups: { key: RollCallGroup; members: FormMember[] }[] = [];
   for (const member of matching) {
     const key = groupOf(member);
@@ -376,11 +393,12 @@ const shown = computed(() => {
 });
 
 const shownGuests = computed(() =>
-  query.value
-    ? formGuests.value.filter((guest) =>
-        guest.name.toLocaleLowerCase(locale.value).includes(query.value),
-      )
-    : formGuests.value,
+  formGuests.value.filter(
+    (guest) =>
+      (!filteringExpected.value || expectedGuests.value.has(guest.userId)) &&
+      (!query.value ||
+        guest.name.toLocaleLowerCase(locale.value).includes(query.value)),
+  ),
 );
 
 /** "12 de 48 en la sala" for a group's heading. */
@@ -445,6 +463,7 @@ function chooseDelegate(memberId: string, value: unknown): void {
 function markAllPresent(): void {
   let next = form.value;
   for (const id of voterOrder.value) {
+    if (filteringExpected.value && !expectedMembers.value.has(id)) continue;
     if (!next[id]?.present) next = setHeadcountPresent(next, id, true);
   }
   form.value = next;
@@ -638,22 +657,33 @@ async function save(): Promise<void> {
               color="neutral"
               variant="outline"
               icon="i-lucide-check-check"
-              :label="t('session.headcount.allPresent')"
+              :label="
+                filteringExpected
+                  ? t('session.headcount.allExpectedPresent')
+                  : t('session.headcount.allPresent')
+              "
               @click="markAllPresent"
             />
           </div>
 
-          <p
+          <div
             v-if="expectedLine"
-            class="text-muted flex items-center gap-1.5 text-sm"
+            class="flex flex-wrap items-center justify-between gap-x-4 gap-y-2"
           >
-            <UIcon
-              name="i-lucide-ticket-check"
-              class="size-4 shrink-0"
-              aria-hidden="true"
+            <p class="text-muted flex items-center gap-1.5 text-sm">
+              <UIcon
+                name="i-lucide-ticket-check"
+                class="size-4 shrink-0"
+                aria-hidden="true"
+              />
+              {{ expectedLine }}
+            </p>
+            <USwitch
+              v-if="canFilterExpected"
+              v-model="onlyExpected"
+              :label="t('session.headcount.onlyExpected')"
             />
-            {{ expectedLine }}
-          </p>
+          </div>
           <p
             v-if="formMembers.length === 0 && formGuests.length === 0"
             class="text-muted text-sm"
