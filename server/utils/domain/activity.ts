@@ -97,6 +97,7 @@ import { toMemberRef } from "../members/dto";
 import {
   canManageAssemblies,
   canManageDocuments,
+  canModerate,
   canNoteSpeakers,
   canViewControlSheet,
   canViewSeating,
@@ -912,6 +913,8 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
     "speakingLimitSeconds",
   ],
   speakers_visibility_changed: ["visible", "reason"],
+  // Who took control is the event's actor; never a tab id.
+  projection_control_changed: ["reason"],
   // Never the observations' text nor the row's ids.
   control_sheet_observations_updated: ["subjectType", "cleared"],
   control_sheet_treated_changed: ["subjectType", "treated", "byDebate"],
@@ -2125,6 +2128,9 @@ function eventTarget(
     case "seating":
       // The room is its readers' (seating:view or seating:edit).
       return { ...base, visible: !actor || canViewSeating(actor) };
+    case "projection":
+      // Which console controls the projection is the Mesa's business.
+      return { ...base, visible: !actor || canModerate(actor) };
     case "control_sheet": {
       // The sheet's readers, and only for an item or amendment they read:
       // the subject's own rule, then the sheet's key.

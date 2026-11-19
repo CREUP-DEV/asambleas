@@ -1,8 +1,10 @@
 import {
   ACTING_USER_HEADER_NAME,
+  CONSOLE_TAB_HEADER_NAME,
   CSRF_COOKIE_NAME,
   CSRF_HEADER_NAME,
 } from "~~/shared/constants/security";
+import { currentConsoleTab } from "../session/consoleTab";
 import { useMe } from "../security/useMe";
 
 export type ApiMethod = "POST" | "PUT" | "PATCH" | "DELETE";
@@ -221,6 +223,9 @@ export function useApi() {
     const headers: Record<string, string> = {};
     if (token) headers[CSRF_HEADER_NAME] = token;
     if (actingUserId) headers[ACTING_USER_HEADER_NAME] = actingUserId;
+    // From the session console: which tab, for control of the projection.
+    const consoleTab = currentConsoleTab();
+    if (consoleTab) headers[CONSOLE_TAB_HEADER_NAME] = consoleTab;
     // Nitro's typed routes cannot narrow a runtime URL, so the method union
     // does not type-check against them; the request shape is plain ofetch.
     const fetchJson = requestFetch as unknown as (

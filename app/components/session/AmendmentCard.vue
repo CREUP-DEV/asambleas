@@ -80,9 +80,7 @@ function kbdsOf(key: string): string[] | undefined {
 const id = computed(() => props.amendment.id);
 const code = computed(() => session.label(id.value));
 const focused = computed(() => session.focusedId.value === id.value);
-const debated = computed(
-  () => session.liveState.value?.amendmentId === id.value,
-);
+const debated = computed(() => session.debate.value?.amendmentId === id.value);
 const busy = computed(() => Boolean(session.busy.value[id.value]));
 /** This amendment, or a bulk validation that includes it, is being sent. */
 const reviewBusy = computed(

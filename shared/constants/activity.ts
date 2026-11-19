@@ -318,6 +318,7 @@ export const EVENT_TYPES = [
   "agenda_reordered",
   // Live session, speakers, votes and decisions
   "live_changed",
+  "projection_control_changed",
   "speakers_visibility_changed",
   "speaking_turn_added",
   "speaking_turn_started",
@@ -490,6 +491,7 @@ const EVENT_CATEGORIES: Record<EventType, ActivityCategory> = {
   agenda_item_deleted: "agenda",
   agenda_reordered: "agenda",
   live_changed: "session",
+  projection_control_changed: "session",
   speakers_visibility_changed: "session",
   speaking_turn_added: "session",
   speaking_turn_started: "session",

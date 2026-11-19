@@ -42,7 +42,44 @@ import { useSessionStageLabel } from "~/composables/session/useSessionStageLabel
 const session = useSessionConsoleContext();
 const { t } = useI18n();
 
-const live = computed(() => session.liveState.value);
+// What this console debates: the projection with control, else its own.
+const live = computed(() => session.debate.value);
+
+/**
+ * What is on screen, for a console that does not control the projection:
+ * the amendment's code, the document or the agenda item.
+ */
+const screenLine = computed(() => {
+  if (session.inControl.value) return null;
+  const screen = session.liveState.value;
+  if (!screen) return null;
+  const documentTitle = screen.documentId
+    ? session.agenda.value?.documents.find(
+        (document) => document.id === screen.documentId,
+      )?.title
+    : null;
+  const row = screen.agendaItemId
+    ? session.agendaRows.value.find(
+        (other) => other.item.id === screen.agendaItemId,
+      )
+    : null;
+  const what = [
+    screen.amendmentId && session.byId.value.has(screen.amendmentId)
+      ? session.label(screen.amendmentId)
+      : null,
+    documentTitle ??
+      (row
+        ? numberedAgendaTitle(
+            row.number,
+            row.item.title,
+            t("agenda.unlisted.inText"),
+          )
+        : null),
+  ].filter((part): part is string => Boolean(part));
+  return what.length > 0
+    ? t("session.control.onScreen", { what: what.join(" · ") })
+    : t("session.control.onScreenNothing");
+});
 const liveBusy = computed(() => Boolean(session.busy.value.live));
 /** Nothing goes on screen or is recorded before the session opens. */
 const closed = computed(() => !session.inSession.value);
@@ -354,6 +391,31 @@ const announcement = computed(() => {
       <p v-if="context" class="text-muted min-w-0 truncate text-sm">
         {{ context }}
       </p>
+    </div>
+
+    <!-- Without control: this console works on its own; the screen is
+         another console's. -->
+    <div
+      v-if="screenLine"
+      class="border-default bg-elevated/50 flex flex-wrap items-center justify-between gap-2 rounded-lg border px-3 py-2 text-sm"
+    >
+      <p class="text-muted flex min-w-0 items-center gap-2">
+        <UIcon
+          name="i-lucide-monitor"
+          class="size-4 shrink-0"
+          aria-hidden="true"
+        />
+        <span class="min-w-0">{{ screenLine }}</span>
+      </p>
+      <UButton
+        v-if="session.awayFromScreen.value"
+        size="xs"
+        color="neutral"
+        variant="outline"
+        icon="i-lucide-undo-2"
+        :label="t('session.control.followScreen')"
+        @click="session.followScreen()"
+      />
     </div>
 
     <div v-if="mode === 'loading'" class="space-y-3" role="status">

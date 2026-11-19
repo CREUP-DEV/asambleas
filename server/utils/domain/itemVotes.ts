@@ -175,14 +175,20 @@ async function itemTitlePayload(
  * votes take the latest headcount as any vote (fillPresent) and a simple
  * majority unless the body names one; a tie under tieRule "repeat" answers
  * 409 `{ tie: true }` and stores nothing. Only an assent may be unanimous. With
- * `project` (the Mesa only) it goes on screen while the projection is still
- * on the item; `projected` says whether it did, and it is stored either way.
+ * `project` (the Mesa only, from the console that controls the projection)
+ * it goes on screen while the projection is still on the item; `projected`
+ * says whether it did, and it is stored either way.
  */
 export async function recordItemVote(
   actor: Actor,
   assembly: AssemblyRow,
   item: AgendaItemRow,
   body: ItemVoteBody,
+  /**
+   * The request comes from the session console that controls the
+   * projection (controlsProjection): only then does a vote go on screen.
+   */
+  options: { controlsProjection?: boolean } = {},
 ): Promise<ItemVoteResultDto> {
   requireItemVoteRecorder(actor);
   if (body.project && !canModerate(actor)) {
@@ -292,6 +298,7 @@ export async function recordItemVote(
     });
     const projected =
       body.project === true &&
+      options.controlsProjection === true &&
       (await projectItemVote(tx, {
         assemblyId: assembly.id,
         voteId: row!.id,

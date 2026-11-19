@@ -36,6 +36,23 @@ export function liveStateClearsOnly(body: LiveStateBody): boolean {
 }
 
 /**
+ * A change of the live state that moves what is on screen: it points at, or
+ * takes off, the agenda item, document, amendment or vote in debate. Only
+ * the console that controls the projection sends one (user's decision of
+ * 2026-11-19); the message, the recess, the speakers' visibility and the
+ * default limit of a turn any console of the Mesa may change.
+ */
+export function liveStateMovesScreen(body: LiveStateBody): boolean {
+  return (
+    ["agendaItemId", "documentId", "amendmentId", "voteId"] as const
+  ).some((key) => body[key] !== undefined);
+}
+
+/** The i18n key of the 409 a console without control gets for one. */
+export const PROJECTION_CONTROL_MESSAGE_KEY =
+  "session.control.errors.notInControl";
+
+/**
  * A change of a speaking turn that only clears the list: the floor ends or a
  * turn is taken off it, with nothing moved or renamed.
  */

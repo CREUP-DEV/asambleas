@@ -6,14 +6,16 @@ import { db } from "../../../db";
 import { liveState } from "../../../db/schema";
 import { requireActor, requireCan } from "../../../utils/domain/actor";
 import { readAssemblyBody } from "../../../utils/domain/assemblies";
+import { controlsProjection } from "../../../utils/domain/projectionControl";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 import { publishLivePointer } from "../../../utils/live/scroll";
 
 /**
  * The Mesa points or draws on the document in debate: the projection shows
  * the pointer, the ripples of a click and the strokes (server/utils/live/
- * scroll.ts). Only for the document on screen and while the session is
- * open; anything else is ignored with a 204. Records and keeps nothing.
+ * scroll.ts). Only for the document on screen, while the session is open
+ * and from the console that controls the projection; anything else is
+ * ignored with a 204. Records and keeps nothing.
  */
 export default defineEventHandler(async (event) => {
   const actor = await requireActor(event);
@@ -25,6 +27,7 @@ export default defineEventHandler(async (event) => {
   const body = await readAssemblyBody(event, livePointerBodySchema);
   setResponseStatus(event, 204);
   if (assembly.status !== "in_session") return null;
+  if (!controlsProjection(event, assembly.id, actor)) return null;
   const [state] = await db
     .select({ documentId: liveState.documentId })
     .from(liveState)

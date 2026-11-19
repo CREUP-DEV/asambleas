@@ -31,7 +31,12 @@ export type EntityType =
    * The room (Sala): entityId is the seating plan; the group, the person or
    * the counts in the payload, never a name.
    */
-  | "seating";
+  | "seating"
+  /**
+   * Control of the projection passed to another session console
+   * (projection_control_changed): entityId is the assembly. The Mesa's.
+   */
+  | "projection";
 
 export interface LiveMessage {
   assemblyId: string;

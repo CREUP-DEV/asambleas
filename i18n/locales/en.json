@@ -3674,6 +3674,26 @@
     "forbiddenHint": "You can follow the session live on the projection screen.",
     "notInSession": "The session is not open",
     "notInSessionHint": "Until you open it with “Open the assembly session”, nothing is projected or recorded: not what is debated, nor votes, headcounts or speaking turns. Meanwhile you can go over the agenda and the amendments.",
+    "control": {
+      "yours": "You control the projection",
+      "heldBy": "{name} controls the projection",
+      "heldBySameAccount": "Another tab of this account controls the projection",
+      "take": "Take control",
+      "takeTitle": "Take control of the projection?",
+      "takeDescription": "{holder}. From now on, what you put in debate and the votes you record show on screen; taking control changes nothing yet.",
+      "gained": "You now control the projection",
+      "gainedHint": "What you put in debate shows on screen.",
+      "lostTo": "{name} has taken control of the projection",
+      "lost": "You no longer control the projection",
+      "lostHint": "You can keep working: what you do does not change the screen.",
+      "onScreen": "On screen: {what}",
+      "onScreenNothing": "Nothing in debate on screen",
+      "followScreen": "Go to what is on screen",
+      "errors": {
+        "notInControl": "Another console controls the projection: what you do here does not change the screen.",
+        "take": "Could not take control of the projection"
+      }
+    },
     "toolbar": {
       "live": "Connected",
       "polling": "Updating every few seconds",
@@ -6293,6 +6313,7 @@
       "agenda_item_deleted": "Agenda item removed",
       "agenda_reordered": "Agenda reordered",
       "live_changed": "Change in what is being discussed live",
+      "projection_control_changed": "Change of who controls the projection",
       "speakers_visibility_changed": "Speakers list shown or hidden",
       "speaking_turn_added": "Speaking turn added",
       "speaking_turn_started": "Speaking turn started",

@@ -87,6 +87,7 @@ import { agendaWithTitles } from "~/utils/agendaTitles";
 import { useHeadcounts } from "./useSessionHeadcounts";
 import { useSessionSpeakers } from "./useSessionSpeakers";
 import { useSessionTransactionalsOver } from "./useSessionTransactionalsOver";
+import { useProjectionControl } from "./useProjectionControl";
 
 /**
  * Busy key of the "who sees the speaking turns" switch. It must not start
@@ -95,6 +96,16 @@ import { useSessionTransactionalsOver } from "./useSessionTransactionalsOver";
 export const SPEAKERS_VISIBLE_BUSY_KEY = "speakers-visible";
 
 /** What the console's `confirm` shows (SessionConfirmDialog's props). */
+/**
+ * What a console without control of the projection works on: its own
+ * agenda item, document and amendment (useSessionConsole's cursor).
+ */
+export interface SessionCursor {
+  agendaItemId: string | null;
+  documentId: string | null;
+  amendmentId: string | null;
+}
+
 export interface SessionConfirmProps {
   title: string;
   description: string;
@@ -273,6 +284,73 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     resetOn: param,
   });
 
+  // Control of the projection (user's decision of 2026-11-19) -------------------
+
+  /**
+   * One console tab of the Mesa controls what is on screen
+   * (useProjectionControl). Every other console works on its own: its debate
+   * actions move only its own `cursor`, and what it records goes on no
+   * screen (the server decides that, whatever the console sends).
+   */
+  const control = useProjectionControl(assemblyUrl);
+  const inControl = computed(() => control.inControl.value);
+
+  /**
+   * What this console works on without control: an agenda item, a document
+   * and an amendment of its own. Null follows the projection (a console
+   * that has not moved on its own, or went back to what is on screen).
+   */
+  const cursor = ref<SessionCursor | null>(null);
+  // Losing control, or gaining it: back to following what is on screen.
+  watch(inControl, () => {
+    cursor.value = null;
+  });
+
+  /**
+   * What the console works on, shaped like the live state: the projection
+   * itself with control, else this console's cursor over it (the vote on
+   * screen only while the cursor is where the projection is).
+   */
+  const debate = computed<LiveStateDto | null>(() => {
+    const live = liveState.value ?? null;
+    const own = cursor.value;
+    if (inControl.value || !own || !live) return live;
+    const onScreen =
+      own.agendaItemId === live.agendaItemId &&
+      own.documentId === live.documentId &&
+      own.amendmentId === live.amendmentId;
+    return {
+      ...live,
+      agendaItemId: own.agendaItemId,
+      documentId: own.documentId,
+      amendmentId: own.amendmentId,
+      vote: onScreen ? live.vote : null,
+    };
+  });
+  /** This console works on something else than what is on screen. */
+  const awayFromScreen = computed(() => {
+    const live = liveState.value;
+    const own = debate.value;
+    if (inControl.value || !live || !own) return false;
+    return (
+      own.agendaItemId !== live.agendaItemId ||
+      own.documentId !== live.documentId ||
+      own.amendmentId !== live.amendmentId
+    );
+  });
+  /** Back to what is on screen, following it from now on. */
+  function followScreen(): void {
+    cursor.value = null;
+    const id = liveState.value?.documentId;
+    if (id) documentId.value = id;
+  }
+  /** Takes control of the projection: the console follows what is on it. */
+  async function takeControl(): Promise<boolean> {
+    const ok = await control.take();
+    if (ok) followScreen();
+    return ok;
+  }
+
   const settings = computed<AssemblySettings>(() => ({
     ...DEFAULT_ASSEMBLY_SETTINGS,
     ...(assembly.value?.settings ?? {}),
@@ -299,7 +377,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   const documentId = ref<string | null>(null);
 
   watch(
-    () => liveState.value?.documentId ?? null,
+    () => debate.value?.documentId ?? null,
     (id) => {
       if (id) documentId.value = id;
     },
@@ -310,10 +388,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   // item left (or one opened from the agenda) goes too (user's decision of
   // 2026-11-19), so the console never shows the previous item's text.
   watch(
-    () => liveState.value?.agendaItemId ?? null,
+    () => debate.value?.agendaItemId ?? null,
     (itemId, previous) => {
       if (itemId === previous || previous === undefined) return;
-      if (!liveState.value?.documentId) documentId.value = null;
+      if (!debate.value?.documentId) documentId.value = null;
     },
   );
 
@@ -475,23 +553,22 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
    */
   const showingLiveDocument = computed(
     () =>
-      !liveState.value?.documentId ||
-      liveState.value.documentId === documentId.value,
+      !debate.value?.documentId || debate.value.documentId === documentId.value,
   );
   /** The amendment under debate, when the console has it loaded. */
   const debatedAmendment = computed<AmendmentDto | null>(() => {
-    const id = liveState.value?.amendmentId;
+    const id = debate.value?.amendmentId;
     if (!id || !showingLiveDocument.value) return null;
     return byId.value.get(id) ?? null;
   });
   /** What "Siguiente" debates: the next amendment the Mesa can decide. */
   const nextAmendment = computed<AmendmentDto | null>(() => {
-    if (!showingLiveDocument.value || !liveState.value?.documentId) {
+    if (!showingLiveDocument.value || !debate.value?.documentId) {
       return null;
     }
     const id = sessionNextAmendmentId(
       queue.value,
-      liveState.value.amendmentId ?? null,
+      debate.value.amendmentId ?? null,
     );
     return id ? (byId.value.get(id) ?? null) : null;
   });
@@ -499,13 +576,13 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   const nextAgendaTarget = computed(() =>
     sessionNextAgendaTarget(
       agendaRows.value,
-      liveState.value?.agendaItemId ?? null,
+      debate.value?.agendaItemId ?? null,
     ),
   );
 
   /** Goes back to the document under debate after looking at another one. */
   function followLive(): void {
-    const id = liveState.value?.documentId;
+    const id = debate.value?.documentId;
     if (id) documentId.value = id;
   }
 
@@ -535,7 +612,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   // debated amendment stays the target (the watcher below may run first
   // when the debate jumps to another document).
   watch(documentId, (id) => {
-    const live = liveState.value;
+    const live = debate.value;
     focusedId.value =
       id && live?.documentId === id ? (live.amendmentId ?? null) : null;
   });
@@ -547,7 +624,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
    * focus. `focused` resolves the id once its document's amendments arrive.
    */
   watch(
-    () => liveState.value?.amendmentId ?? null,
+    () => debate.value?.amendmentId ?? null,
     (id) => {
       focusedId.value = id;
     },
@@ -748,6 +825,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     let itemVotesChanged = false;
     let progressChanged = false;
     const projectedVoteId = liveState.value?.vote?.id ?? null;
+    // Control of the projection moved: this console asks who holds it now.
+    if (events.some((event) => event.entityType === "projection")) {
+      void control.refresh();
+    }
     for (const event of events) {
       if (event.entityType === "live") live = true;
       // A document goes on screen or the debate moves on (live), or the
@@ -881,8 +962,38 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     }
   }
 
+  /**
+   * Moves what the console debates: with control, what is on screen (the
+   * live state); without it, only this console's cursor, with the same
+   * rules (a document brings its agenda item, another document drops the
+   * amendment). Nothing is sent then, so the session need not be open.
+   */
+  async function moveDebate(body: LiveStateBody): Promise<boolean> {
+    if (inControl.value) return setLive(body);
+    const from = debate.value;
+    const next: SessionCursor = {
+      agendaItemId: from?.agendaItemId ?? null,
+      documentId: from?.documentId ?? null,
+      amendmentId: from?.amendmentId ?? null,
+    };
+    if (body.agendaItemId !== undefined) next.agendaItemId = body.agendaItemId;
+    if (body.documentId !== undefined) {
+      if (body.documentId !== next.documentId) next.amendmentId = null;
+      next.documentId = body.documentId;
+      const owner = body.documentId
+        ? agenda.value?.documents.find((entry) => entry.id === body.documentId)
+        : undefined;
+      if (owner && body.agendaItemId === undefined) {
+        next.agendaItemId = owner.agendaItemId;
+      }
+    }
+    if (body.amendmentId !== undefined) next.amendmentId = body.amendmentId;
+    cursor.value = next;
+    return true;
+  }
+
   function debateAgendaItem(itemId: string): Promise<boolean> {
-    return setLive({
+    return moveDebate({
       agendaItemId: itemId,
       documentId: null,
       amendmentId: null,
@@ -894,7 +1005,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     id: string;
     agendaItemId: string;
   }): Promise<boolean> {
-    const ok = await setLive({
+    const ok = await moveDebate({
       agendaItemId: target.agendaItemId,
       documentId: target.id,
       amendmentId: null,
@@ -908,7 +1019,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   }
 
   function debateAmendment(amendment: AmendmentDto): Promise<boolean> {
-    return setLive({
+    return moveDebate({
       documentId: amendment.documentId,
       amendmentId: amendment.id,
       voteId: null,
@@ -928,6 +1039,8 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
    */
   async function requestDebate(amendment: AmendmentDto): Promise<boolean> {
     const fresh = byId.value.get(amendment.id) ?? amendment;
+    // Without control nothing goes on screen: no publication, nothing to ask.
+    if (!inControl.value) return debateAmendment(fresh);
     const code = label(fresh.id);
     const isPrivate = fresh.publishedAt === null;
     if (isPrivate && !isSessionPublishable(fresh)) {
@@ -969,7 +1082,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   }
 
   function clearDebatedAmendment(): Promise<boolean> {
-    return setLive({ amendmentId: null, voteId: null });
+    return moveDebate({ amendmentId: null, voteId: null });
   }
 
   /**
@@ -978,7 +1091,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
    * Clearing the item too would offer the first agenda item again.
    */
   function clearDebatedDocument(): Promise<boolean> {
-    return setLive({ documentId: null, amendmentId: null, voteId: null });
+    return moveDebate({ documentId: null, amendmentId: null, voteId: null });
   }
 
   /**
@@ -986,7 +1099,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
    * first agenda item again and attendees see that nothing is debated.
    */
   function clearDebate(): Promise<boolean> {
-    return setLive({
+    return moveDebate({
       agendaItemId: null,
       documentId: null,
       amendmentId: null,
@@ -1056,6 +1169,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       .catch(() => undefined);
   }
   function pushTally(tally: LiveTally | null): void {
+    // Only the console in control shows the count (the server ignores the
+    // rest), so another console's form never clears it either.
+    if (!inControl.value) return;
     pendingTally = tally;
     if (tally === null) {
       clearTimeout(tallyTimer);
@@ -1154,7 +1270,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   // Likewise the item vote: once the debate moves to another item (from
   // any Mesa device), it must not record a vote on the one the room left.
   watch(
-    () => liveState.value?.agendaItemId ?? null,
+    () => debate.value?.agendaItemId ?? null,
     (id) => {
       if (itemVoteDialog.open && id !== itemVoteDialog.agendaItemId) {
         itemVoteDialog.open = false;
@@ -2171,6 +2287,13 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     agendaError,
     agendaRows,
     liveState,
+    /** What the console works on: the projection with control, else its own. */
+    debate,
+    inControl,
+    control,
+    awayFromScreen,
+    followScreen,
+    takeControl,
     liveStatus,
     documentId,
     document,

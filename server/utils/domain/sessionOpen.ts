@@ -2,8 +2,26 @@ import { createError } from "h3";
 import type { AssemblyStatus } from "~~/shared/constants/domain";
 import {
   isSessionInProgress,
+  PROJECTION_CONTROL_MESSAGE_KEY,
   SESSION_NOT_OPEN_MESSAGE_KEY,
 } from "~~/shared/utils/sessionGate";
+
+/**
+ * 409 unless the request's console controls the projection
+ * (controlsProjection in projectionControl.ts): only it moves what is on
+ * screen.
+ */
+export function assertControlsProjection(controls: boolean): void {
+  if (controls) return;
+  throw createError({
+    statusCode: 409,
+    message: "Otra consola controla la proyección",
+    data: {
+      code: "projection_control",
+      messageKey: PROJECTION_CONTROL_MESSAGE_KEY,
+    },
+  });
+}
 
 /**
  * 409 unless the session is open (`in_session`): nothing is projected or

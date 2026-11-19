@@ -2368,6 +2368,35 @@ export interface LiveTallyBody {
   tally: LiveTally | null;
 }
 
+/**
+ * POST /api/assemblies/[assembly]/projection-control: a session console
+ * beats while open, takes control of the projection or says goodbye.
+ */
+export interface ProjectionControlBody {
+  /** The console's browser tab (CONSOLE_TAB_HEADER_NAME carries the same). */
+  tabId: string;
+  action: "beat" | "take" | "leave";
+}
+
+/**
+ * Who controls the projection (user's decision of 2026-11-19): one console
+ * tab decides what is on screen; every other works on its own and records
+ * without projecting.
+ */
+export interface ProjectionControlDto {
+  /** The holder, or null while no console is open. */
+  holder: {
+    /** Its account's name (intranet's, else Google's). */
+    name: string;
+    /** It is the caller's own tab. */
+    you: boolean;
+    /** Another tab of the caller's account. */
+    sameAccount: boolean;
+  } | null;
+  /** Open consoles, the holder's included. */
+  consoles: number;
+}
+
 /** The `tally` event of GET .../live, and GET .../live-tally. */
 export interface LiveTallyDto extends LiveTallyBody {
   at: IsoDate;

@@ -17,6 +17,7 @@ import type {
   LivePointerBody,
   LiveScrollBody,
   LiveTallyBody,
+  ProjectionControlBody,
   LiveStateBody,
 } from "../../types/api";
 import { normalizeText } from "./content";
@@ -217,6 +218,18 @@ export const liveStateBodySchema = z.object({
 });
 
 /** POST .../live-scroll: where the Mesa has the document in debate. */
+/** A console's browser tab id (crypto.randomUUID or similar). */
+export const consoleTabIdSchema = z
+  .string()
+  .min(8)
+  .max(64)
+  .regex(/^[A-Za-z0-9-]+$/);
+
+export const projectionControlBodySchema = z.object({
+  tabId: consoleTabIdSchema,
+  action: z.enum(["beat", "take", "leave"]),
+});
+
 export const liveScrollBodySchema = z.object({
   documentId: assemblyEntityId,
   anchor: z.union([
@@ -311,4 +324,8 @@ export type _AssemblySchemaChecks = [
   Assignable<LiveScrollBody, z.output<typeof liveScrollBodySchema>>,
   Assignable<LivePointerBody, z.output<typeof livePointerBodySchema>>,
   Assignable<LiveTallyBody, z.output<typeof liveTallyBodySchema>>,
+  Assignable<
+    ProjectionControlBody,
+    z.output<typeof projectionControlBodySchema>
+  >,
 ];

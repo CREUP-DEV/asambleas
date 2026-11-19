@@ -28,7 +28,7 @@ import {
 } from "../../db/schema";
 import { isUniqueConstraintViolation, throwMutationError } from "../errors";
 import { recordEvent, type Executor, type LiveMessage } from "./events";
-import { assertSessionOpen } from "./sessionOpen";
+import { assertControlsProjection, assertSessionOpen } from "./sessionOpen";
 import {
   canManageAssemblies,
   canManageDocuments,
@@ -69,7 +69,10 @@ import {
   type CalendarRules,
   type Milestones,
 } from "~~/shared/utils/calendar";
-import { liveStateClearsOnly } from "~~/shared/utils/sessionGate";
+import {
+  liveStateClearsOnly,
+  liveStateMovesScreen,
+} from "~~/shared/utils/sessionGate";
 import { loadCalendarRules } from "./calendarRules";
 import {
   publicTitleHiddenItemIds,
@@ -940,12 +943,19 @@ function sameMoment(a: Date | null, b: Date | null): boolean {
  * `speakersVisible` shows attendees who has the floor and who is next; a
  * change of it also records `speakers_visibility_changed` (entityType
  * "speakers"), so clients that follow the speakers refetch them.
+ * Moving what is on screen (liveStateMovesScreen) needs the console that
+ * controls the projection (`controlsProjection`); the message, the recess,
+ * the speakers' visibility and the default limit do not.
  */
 export async function updateLiveState(
   actor: Actor,
   assemblyId: string,
   body: LiveStateBody,
+  options: { controlsProjection: boolean },
 ): Promise<LiveStateDto> {
+  if (liveStateMovesScreen(body)) {
+    assertControlsProjection(options.controlsProjection);
+  }
   await db.transaction(async (tx) => {
     const locked = await lockAssembly(tx, assemblyId);
     // Nothing goes on screen before the session opens, nor while it is

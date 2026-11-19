@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   isSessionInProgress,
   liveStateClearsOnly,
+  liveStateMovesScreen,
   speakerUpdateClearsOnly,
 } from "./sessionGate";
 
@@ -35,6 +36,24 @@ describe("session gate", () => {
     expect(liveStateClearsOnly({ documentId: "doc" })).toBe(false);
     expect(liveStateClearsOnly({ amendmentId: "amendment" })).toBe(false);
     expect(liveStateClearsOnly({ voteId: "vote" })).toBe(false);
+  });
+
+  it("tells what moves the screen, which only the console in control sends", () => {
+    expect(liveStateMovesScreen({ agendaItemId: "item" })).toBe(true);
+    expect(liveStateMovesScreen({ documentId: "doc" })).toBe(true);
+    expect(liveStateMovesScreen({ amendmentId: "amendment" })).toBe(true);
+    expect(liveStateMovesScreen({ voteId: "vote" })).toBe(true);
+    // Taking the debate off the screen moves it too.
+    expect(liveStateMovesScreen({ amendmentId: null, voteId: null })).toBe(
+      true,
+    );
+    // Any console of the Mesa may change these.
+    expect(liveStateMovesScreen({ message: "Volvemos a las 17:00" })).toBe(
+      false,
+    );
+    expect(liveStateMovesScreen({ recess: null })).toBe(false);
+    expect(liveStateMovesScreen({ speakersVisible: true })).toBe(false);
+    expect(liveStateMovesScreen({ speakingLimitSeconds: 120 })).toBe(false);
   });
 
   it("lets a turn end or leave the list, nothing else", () => {

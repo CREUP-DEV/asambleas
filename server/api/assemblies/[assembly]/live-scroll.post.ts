@@ -6,13 +6,15 @@ import { db } from "../../../db";
 import { liveState } from "../../../db/schema";
 import { requireActor, requireCan } from "../../../utils/domain/actor";
 import { readAssemblyBody } from "../../../utils/domain/assemblies";
+import { controlsProjection } from "../../../utils/domain/projectionControl";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 import { publishLiveScroll } from "../../../utils/live/scroll";
 
 /**
  * The Mesa scrolls the document in debate: the projection follows
  * (server/utils/live/scroll.ts). Only for the document on screen and while
- * the session is open; anything else is ignored with a 204, since a late
+ * the session is open, and from the console that controls the projection;
+ * anything else is ignored with a 204, since a late
  * position after the debate moved on is no mistake. Records nothing: it is
  * where a page is scrolled, not a change of the assembly.
  */
@@ -26,6 +28,7 @@ export default defineEventHandler(async (event) => {
   const body = await readAssemblyBody(event, liveScrollBodySchema);
   setResponseStatus(event, 204);
   if (assembly.status !== "in_session") return null;
+  if (!controlsProjection(event, assembly.id, actor)) return null;
   const [state] = await db
     .select({ documentId: liveState.documentId })
     .from(liveState)

@@ -2943,6 +2943,11 @@ function assertValidatedForAdmission(
 export async function decideAmendmentAdmission(
   ctx: DocumentAmendmentContext,
   body: AdmissionBody,
+  /**
+   * The request comes from the session console that controls the
+   * projection (controlsProjection): only then does a vote go on screen.
+   */
+  options: { controlsProjection?: boolean } = {},
 ): Promise<AmendmentAdmissionResult> {
   const { actor, document, now } = ctx;
   if (!canReviewAmendments(actor) && !canModerate(actor)) {
@@ -3255,7 +3260,10 @@ export async function decideAmendmentAdmission(
         voted: false,
       });
     }
-    if (voteRow) {
+    // On screen only from the console that controls the projection
+    // (user's decision of 2026-11-19): one recorded from Validación or the
+    // amendment's page leaves it where it is.
+    if (voteRow && options.controlsProjection) {
       await pointLiveVote(tx, {
         assemblyId: ctx.assembly.id,
         voteId: voteRow.id,
@@ -4678,6 +4686,11 @@ async function approvalWarnings(
 export async function applyAmendmentOutcome(
   ctx: AmendmentContext,
   body: OutcomeBody,
+  /**
+   * The request comes from the session console that controls the
+   * projection (controlsProjection): only then does a vote go on screen.
+   */
+  options: { controlsProjection?: boolean } = {},
 ): Promise<AmendmentOutcomeResult> {
   const { actor, amendment, document, now } = ctx;
   if (!canRecordResults(actor)) {
@@ -4687,11 +4700,15 @@ export async function applyAmendmentOutcome(
   // The Mesa decides in the room: only while the session is open. Reopening
   // a decision recorded by mistake corrects the record and may wait.
   if (body.action !== "reopen") assertSessionOpen(ctx.assembly.status);
-  // A vote goes on screen only from the console (the Mesa's, unless it says
-  // otherwise): one recorded from the control sheet leaves the projection
-  // where it is (user's decision of 2026-11-19).
+  // A vote goes on screen only from the console that controls the
+  // projection, unless it says otherwise: one recorded from the control
+  // sheet or another console leaves the projection where it is (user's
+  // decisions of 2026-11-19).
   const projectVote =
-    body.action === "vote" && body.project !== false && canModerate(actor);
+    body.action === "vote" &&
+    body.project !== false &&
+    canModerate(actor) &&
+    options.controlsProjection === true;
   const lock = buildOptimisticLockCondition(
     amendments.updatedAt,
     body.updatedAt,

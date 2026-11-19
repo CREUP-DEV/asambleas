@@ -15,12 +15,9 @@ const session = useSessionConsoleContext();
 const { t } = useI18n();
 
 const rows = computed(() => session.agendaRows.value);
-const liveItemId = computed(
-  () => session.liveState.value?.agendaItemId ?? null,
-);
-const liveDocumentId = computed(
-  () => session.liveState.value?.documentId ?? null,
-);
+// What this console debates: the projection with control, else its own.
+const liveItemId = computed(() => session.debate.value?.agendaItemId ?? null);
+const liveDocumentId = computed(() => session.debate.value?.documentId ?? null);
 
 const documents = computed(() => rows.value.flatMap((row) => row.documents));
 const votable = computed(() =>

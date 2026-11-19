@@ -370,6 +370,7 @@ describe("recordItemVote", () => {
       assembly,
       item,
       body({ method: "assent" }, true),
+      { controlsProjection: true },
     );
     expect(shown.projected).toBe(true);
     expect(documents.projectItemVote).toHaveBeenCalledWith(expect.anything(), {
@@ -386,8 +387,23 @@ describe("recordItemVote", () => {
       assembly,
       item,
       body({ method: "assent" }, true),
+      { controlsProjection: true },
     );
     expect(moved.projected).toBe(false);
+  });
+
+  it("never projects from a console without control of the projection", async () => {
+    vi.mocked(documents.projectItemVote).mockClear();
+    recording("in_session");
+    const kept = await recordItemVote(
+      mesa,
+      assembly,
+      item,
+      body({ method: "assent" }, true),
+      { controlsProjection: false },
+    );
+    expect(kept.projected).toBe(false);
+    expect(documents.projectItemVote).not.toHaveBeenCalled();
   });
 });
 

@@ -103,6 +103,7 @@ export const ACTIVITY_ACTION_ICONS = {
   agenda_item_deleted: "i-lucide-list-x",
   agenda_reordered: "i-lucide-arrow-up-down",
   live_changed: "i-lucide-radio",
+  projection_control_changed: "i-lucide-monitor-check",
   speakers_visibility_changed: "i-lucide-eye",
   speaking_turn_added: "i-lucide-mic",
   speaking_turn_started: "i-lucide-mic",
@@ -302,6 +303,7 @@ export function activityLink(
     case "live":
     case "speakers":
     case "headcount":
+    case "projection":
       return at("live");
     case "vote":
     case "decision":

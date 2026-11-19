@@ -8,7 +8,10 @@ import { recessTimeOf, recessUntilFromTime } from "~/utils/recess";
  * Top bar of the Mesa console: assembly status, live connection, the
  * projection link, the message shown on the projection, a recess (with
  * the time it resumes, optional) and the keyboard shortcuts. What is under
- * debate leads the console itself (NowPanel).
+ * debate leads the console itself (NowPanel). It also says which console
+ * controls the projection (user's decision of 2026-11-19): this one, or
+ * another one, with «Tomar el control» at any time, a console that opened
+ * later included.
  */
 const session = useSessionConsoleContext();
 const { t, locale } = useI18n();
@@ -78,6 +81,29 @@ async function endRecess(): Promise<void> {
   if (ok) recessOpen.value = false;
 }
 
+// Control of the projection ----------------------------------------------------
+
+const control = computed(() => session.control.state.value);
+const holderLabel = computed(() =>
+  session.control.holderSameAccount.value
+    ? t("session.control.heldBySameAccount")
+    : t("session.control.heldBy", {
+        name: session.control.holderName.value ?? "",
+      }),
+);
+
+async function takeControl(): Promise<void> {
+  const confirmed = await session.confirm({
+    title: t("session.control.takeTitle"),
+    description: t("session.control.takeDescription", {
+      holder: holderLabel.value,
+    }),
+    confirmLabel: t("session.control.take"),
+    confirmIcon: "i-lucide-monitor-check",
+  });
+  if (confirmed) await session.takeControl();
+}
+
 /** Single-key shortcuts may be off in this browser (WCAG 2.1.4). */
 const { enabled: shortcutsEnabled } = useSingleKeyShortcuts();
 
@@ -115,6 +141,35 @@ const SHORTCUTS = [
           :data-state="connection.state"
           role="status"
         />
+        <!-- Which console decides what is on screen. -->
+        <template v-if="control?.holder">
+          <UBadge
+            v-if="session.inControl.value"
+            color="success"
+            variant="subtle"
+            icon="i-lucide-monitor-check"
+            :label="t('session.control.yours')"
+            role="status"
+          />
+          <template v-else>
+            <UBadge
+              color="warning"
+              variant="subtle"
+              icon="i-lucide-monitor-x"
+              :label="holderLabel"
+              role="status"
+            />
+            <UButton
+              size="sm"
+              color="neutral"
+              variant="outline"
+              icon="i-lucide-monitor-check"
+              :label="t('session.control.take')"
+              :loading="session.control.taking.value"
+              @click="takeControl"
+            />
+          </template>
+        </template>
       </div>
     </template>
     <template #right>

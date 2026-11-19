@@ -8,9 +8,14 @@ import {
   throwAssemblyMutationError,
   updateLiveState,
 } from "../../../utils/domain/assemblies";
+import { controlsProjection } from "../../../utils/domain/projectionControl";
 import { resolveAssembly } from "../../../utils/domain/resolvers";
 
-/** The Mesa points the session at an agenda item, document, amendment or vote. */
+/**
+ * The Mesa points the session at an agenda item, document, amendment or
+ * vote (only the console that controls the projection), or sets the
+ * message, the recess, the speakers' visibility or the default limit.
+ */
 export default defineEventHandler(async (event): Promise<LiveStateDto> => {
   const actor = await requireActor(event);
   requireCan(actor, PERMISSION_KEYS.SESSION_MODERATE);
@@ -21,7 +26,9 @@ export default defineEventHandler(async (event): Promise<LiveStateDto> => {
   const body = await readAssemblyBody(event, liveStateBodySchema);
 
   try {
-    return await updateLiveState(actor, assembly.id, body);
+    return await updateLiveState(actor, assembly.id, body, {
+      controlsProjection: controlsProjection(event, assembly.id, actor),
+    });
   } catch (error) {
     throwAssemblyMutationError("assemblies.liveState", error, event);
   }

@@ -8,6 +8,7 @@ import {
   requireItemVoteRecorder,
   resolveVotableItem,
 } from "../../../../../utils/domain/itemVotes";
+import { controlsProjection } from "../../../../../utils/domain/projectionControl";
 import { resolveAssembly } from "../../../../../utils/domain/resolvers";
 import { throwMutationError } from "../../../../../utils/errors";
 
@@ -31,7 +32,9 @@ export default defineEventHandler(async (event): Promise<ItemVoteResultDto> => {
   );
   const body = await readAssemblyBody(event, itemVoteBodySchema);
   try {
-    return await recordItemVote(actor, assembly, item, body);
+    return await recordItemVote(actor, assembly, item, body, {
+      controlsProjection: controlsProjection(event, assembly.id, actor),
+    });
   } catch (error) {
     throwMutationError("itemVotes.record", error, event);
   }

@@ -3674,6 +3674,26 @@
     "forbiddenHint": "Puedes seguir la sesión en directo desde la proyección.",
     "notInSession": "La sesión no está abierta",
     "notInSessionHint": "Hasta que la abras con «Abrir la sesión de la asamblea» no se proyecta ni se registra nada: ni lo que se debate, ni votaciones, ni recuentos, ni turnos de palabra. Mientras, puedes repasar el orden del día y las enmiendas.",
+    "control": {
+      "yours": "Controlas la proyección",
+      "heldBy": "La proyección la controla {name}",
+      "heldBySameAccount": "La proyección la controla otra pestaña de esta cuenta",
+      "take": "Tomar el control",
+      "takeTitle": "¿Tomar el control de la proyección?",
+      "takeDescription": "{holder}. Desde ahora, lo que pongas en debate y las votaciones que registres se verán en pantalla; al tomarlo no cambia nada.",
+      "gained": "Ahora controlas la proyección",
+      "gainedHint": "Lo que pongas en debate se verá en pantalla.",
+      "lostTo": "{name} ha tomado el control de la proyección",
+      "lost": "Ya no controlas la proyección",
+      "lostHint": "Puedes seguir trabajando: lo que hagas no cambia la pantalla.",
+      "onScreen": "En pantalla: {what}",
+      "onScreenNothing": "En pantalla no hay nada en debate",
+      "followScreen": "Ir a lo proyectado",
+      "errors": {
+        "notInControl": "Otra consola controla la proyección: lo que hagas aquí no cambia la pantalla.",
+        "take": "No se ha podido tomar el control de la proyección"
+      }
+    },
     "toolbar": {
       "live": "Conectado",
       "polling": "Se actualiza cada pocos segundos",
@@ -6293,6 +6313,7 @@
       "agenda_item_deleted": "Punto quitado del orden del día",
       "agenda_reordered": "Orden del día reordenado",
       "live_changed": "Cambio en lo que se está tratando en directo",
+      "projection_control_changed": "Cambio de quién controla la proyección",
       "speakers_visibility_changed": "Lista de turnos de palabra mostrada u ocultada",
       "speaking_turn_added": "Turno de palabra añadido",
       "speaking_turn_started": "Turno de palabra iniciado",

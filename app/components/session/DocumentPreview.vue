@@ -66,10 +66,14 @@ const root = ref<HTMLElement | null>(null);
 const content = ref<HTMLElement | null>(null);
 const isFile = computed(() => props.document.format === "file");
 const kind = computed<AnchorKind>(() => (isFile.value ? "page" : "block"));
-/** The projection follows only the document the room debates. */
+/**
+ * The projection follows only the document the room debates, and only the
+ * console that controls it (the server ignores the rest).
+ */
 const follows = computed(
   () =>
     session.inSession.value &&
+    session.inControl.value &&
     session.liveState.value?.documentId === props.document.id,
 );
 const assemblyUrl = computed(() => {

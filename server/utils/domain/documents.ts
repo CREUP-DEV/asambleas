@@ -2683,14 +2683,22 @@ export function evaluateFinalVote(
 export async function recordFinalVote(
   ctx: DocumentRouteContext,
   body: FinalVoteBody,
+  /**
+   * The request comes from the session console that controls the
+   * projection (controlsProjection): only then does a vote go on screen.
+   */
+  options: { controlsProjection?: boolean } = {},
 ): Promise<DocumentDto> {
   const { actor, assembly } = ctx;
   if (!canRecordResults(actor))
     fail(403, "No tienes permiso para registrar votaciones");
   assertSessionOpen(assembly.status);
-  // Recorded from the control sheet, or by whoever only records results:
-  // the projection stays where the Mesa has it.
-  const project = body.project !== false && canModerate(actor);
+  // Recorded from the control sheet, from a console without control, or by
+  // whoever only records results: the projection stays where it is.
+  const project =
+    body.project !== false &&
+    canModerate(actor) &&
+    options.controlsProjection === true;
   // The members present come from the Mesa's latest headcount unless typed.
   const based = await withHeadcount(
     assembly.id,

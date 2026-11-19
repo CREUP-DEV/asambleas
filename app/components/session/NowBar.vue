@@ -46,7 +46,8 @@ watch(
 );
 onBeforeUnmount(() => observer?.disconnect());
 
-const live = computed(() => session.liveState.value);
+// What this console debates: the projection with control, else its own.
+const live = computed(() => session.debate.value);
 const liveRow = computed(() => {
   const id = live.value?.agendaItemId;
   return id

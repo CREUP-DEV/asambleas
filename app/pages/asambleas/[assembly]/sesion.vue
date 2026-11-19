@@ -84,7 +84,7 @@ const speakersSummary = computed(() => {
     : t("session.speakers.summaryEmpty");
 });
 const agendaSummary = computed(() => {
-  const id = session.liveState.value?.agendaItemId;
+  const id = session.debate.value?.agendaItemId;
   const row = id
     ? session.agendaRows.value.find((other) => other.item.id === id)
     : null;
@@ -233,7 +233,7 @@ function decideByKey(amendment: AmendmentDto, kind: "assent" | "lapse"): void {
   const options = {
     notDebated: sessionShortcutNeedsConfirm(
       amendment.id,
-      session.liveState.value?.amendmentId,
+      session.debate.value?.amendmentId,
     ),
   };
   if (kind === "assent") void session.approve(amendment, "assent", options);
