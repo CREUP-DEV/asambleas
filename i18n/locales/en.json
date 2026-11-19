@@ -3643,6 +3643,12 @@
     "nowBar": {
       "backUp": "Back to the top"
     },
+    "side": {
+      "label": "Mesa panels",
+      "strip": "Open a panel",
+      "pin": "Pin",
+      "unpin": "Unpin"
+    },
     "progress": {
       "projected": "Projected",
       "treated": "Treated"

@@ -103,6 +103,34 @@ const previewSummary = computed(() => {
   return t("session.preview.applied", { count }, count);
 });
 
+/** The side column's strip: one icon per section, with its summary. */
+const sideItems = computed(() => [
+  {
+    id: "speakers",
+    icon: "i-lucide-mic",
+    title: t("session.speakers.title"),
+    summary: speakersSummary.value,
+  },
+  {
+    id: "headcount",
+    icon: "i-lucide-users-round",
+    title: t("session.headcount.title"),
+    summary: headcountSummary.value,
+  },
+  {
+    id: "agenda",
+    icon: "i-lucide-list-tree",
+    title: t("session.agenda.title"),
+    summary: agendaSummary.value,
+  },
+  {
+    id: "preview",
+    icon: "i-lucide-file-check-2",
+    title: t("session.preview.title"),
+    summary: previewSummary.value,
+  },
+]);
+
 const assemblyLoading = computed(
   () => !assembly.value && session.assemblyPending.value,
 );
@@ -296,77 +324,56 @@ defineShortcuts({
           />
         </div>
 
-        <!-- Wide screens: the debate, and beside it the foldable panels. -->
-        <UDashboardGroup
-          v-if="isDesktop"
-          storage-key="session-console-v2"
-          class="relative inset-auto min-h-0 flex-1"
-        >
-          <UDashboardPanel
-            id="session-debate"
-            resizable
-            :default-size="64"
-            :min-size="45"
-            :max-size="78"
-            :ui="{
-              root: 'min-h-0',
-              body: 'relative gap-4 sm:gap-4 p-3 sm:p-4',
-            }"
+        <!-- Wide screens: the debate, and beside it the foldable panels
+             folded into a strip that opens on hover (SessionSideRail). -->
+        <div v-if="isDesktop" class="relative flex min-h-0 flex-1">
+          <div
+            class="relative flex min-h-0 min-w-0 flex-1 flex-col gap-4 overflow-y-auto p-3 sm:p-4"
           >
-            <template #body>
-              <!-- One scroll: the card folds into a bar stuck on top. -->
-              <SessionNowBar :target="nowCard" />
-              <div ref="nowCard">
-                <SessionNowPanel />
-              </div>
-              <SessionAmendmentQueue />
-            </template>
-          </UDashboardPanel>
+            <!-- One scroll: the card folds into a bar stuck on top. -->
+            <SessionNowBar :target="nowCard" />
+            <div ref="nowCard">
+              <SessionNowPanel />
+            </div>
+            <SessionAmendmentQueue />
+          </div>
 
-          <UDashboardPanel
-            id="session-side"
-            :ui="{
-              root: 'min-h-0',
-              body: 'relative gap-3 sm:gap-3 p-3 sm:p-4 bg-elevated/30',
-            }"
-          >
-            <template #body>
-              <SessionFoldPanel
-                id="speakers"
-                :title="t('session.speakers.title')"
-                icon="i-lucide-mic"
-                :summary="speakersSummary"
-              >
-                <SessionSpeakersPanel />
-              </SessionFoldPanel>
-              <SessionFoldPanel
-                id="headcount"
-                :title="t('session.headcount.title')"
-                icon="i-lucide-users-round"
-                :summary="headcountSummary"
-              >
-                <SessionHeadcountPanel />
-              </SessionFoldPanel>
-              <SessionFoldPanel
-                id="agenda"
-                :title="t('session.agenda.title')"
-                icon="i-lucide-list-tree"
-                :summary="agendaSummary"
-              >
-                <SessionAgendaPanel />
-              </SessionFoldPanel>
-              <SessionFoldPanel
-                id="preview"
-                :title="t('session.preview.title')"
-                icon="i-lucide-file-check-2"
-                :summary="previewSummary"
-                :default-open="false"
-              >
-                <SessionConsolidatedPanel />
-              </SessionFoldPanel>
-            </template>
-          </UDashboardPanel>
-        </UDashboardGroup>
+          <SessionSideRail :items="sideItems">
+            <SessionFoldPanel
+              id="speakers"
+              :title="t('session.speakers.title')"
+              icon="i-lucide-mic"
+              :summary="speakersSummary"
+            >
+              <SessionSpeakersPanel />
+            </SessionFoldPanel>
+            <SessionFoldPanel
+              id="headcount"
+              :title="t('session.headcount.title')"
+              icon="i-lucide-users-round"
+              :summary="headcountSummary"
+            >
+              <SessionHeadcountPanel />
+            </SessionFoldPanel>
+            <SessionFoldPanel
+              id="agenda"
+              :title="t('session.agenda.title')"
+              icon="i-lucide-list-tree"
+              :summary="agendaSummary"
+            >
+              <SessionAgendaPanel />
+            </SessionFoldPanel>
+            <SessionFoldPanel
+              id="preview"
+              :title="t('session.preview.title')"
+              icon="i-lucide-file-check-2"
+              :summary="previewSummary"
+              :default-open="false"
+            >
+              <SessionConsolidatedPanel />
+            </SessionFoldPanel>
+          </SessionSideRail>
+        </div>
 
         <!-- Phones and tablets: one column, the debate first. -->
         <div v-else class="space-y-3 p-3">

@@ -25,6 +25,10 @@ import { assemblyPath } from "~/components/shell/Navigation.vue";
  * apart, folded away, since the Mesa cannot debate them: whoever can
  * validate them does it there (asking first when it is several at once) or
  * opens them in Validación, where they can also be sent back.
+ *
+ * When this console puts a document in debate, the column scrolls to its
+ * start once it has loaded, so «Ahora en debate» folds into the bar on top
+ * and the document fills the column (session.documentScrolls).
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -159,10 +163,55 @@ const loading = computed(
 const failed = computed(
   () => Boolean(session.amendmentsError.value) && !session.amendmentsDto.value,
 );
+
+const root = ref<HTMLElement | null>(null);
+let scrollPending = false;
+/**
+ * Until when the start is kept at the top: the document lays out after it
+ * loads (a PDF page by page), and a scroll made while the column is still
+ * short stops before the start. A scroll of the Mesa's own lets it go.
+ */
+let holdUntil = 0;
+function placeStart(): void {
+  if (Date.now() > holdUntil) return;
+  root.value?.scrollIntoView({ block: "start" });
+}
+function scrollToStart(): void {
+  if (!scrollPending || loading.value) return;
+  if (document.value?.id !== session.documentId.value) return;
+  scrollPending = false;
+  holdUntil = Date.now() + 2500;
+  void nextTick(() => requestAnimationFrame(placeStart));
+}
+watch(
+  () => session.documentScrolls.value,
+  () => {
+    scrollPending = true;
+    scrollToStart();
+  },
+);
+watch(
+  () => [document.value?.id, loading.value],
+  () => scrollToStart(),
+);
+useResizeObserver(root, () => placeStart());
+const scroller = computed(() => root.value?.parentElement ?? null);
+function letGo(): void {
+  holdUntil = 0;
+}
+useEventListener(scroller, "wheel", letGo, { passive: true });
+useEventListener(scroller, "touchstart", letGo, { passive: true });
+useEventListener(scroller, "keydown", letGo);
+useEventListener(scroller, "pointerdown", letGo);
 </script>
 
 <template>
-  <section class="space-y-3" aria-labelledby="session-queue-title">
+  <!-- scroll-mt: the start shows below the folded bar on top. -->
+  <section
+    ref="root"
+    class="scroll-mt-14 space-y-3"
+    aria-labelledby="session-queue-title"
+  >
     <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
       <!-- Over a document without amendments the text speaks for itself:
            its name stays for screen readers only. -->

@@ -877,7 +877,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       amendmentId: null,
       voteId: null,
     });
-    if (ok) documentId.value = target.id;
+    if (ok) {
+      documentId.value = target.id;
+      documentScrolls.value++;
+    }
     return ok;
   }
 
@@ -1106,6 +1109,12 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     pinned: false,
     clears: 0,
   });
+  /**
+   * Counts the documents this console put in debate: the debate column
+   * then scrolls to the document's start, the card folded into the bar on
+   * top (user's decision of 2026-11-19; SessionAmendmentQueue).
+   */
+  const documentScrolls = ref(0);
   /** The vote on an agenda item, for the item it was opened on. */
   const itemVoteDialog = reactive({
     open: false,
@@ -2222,6 +2231,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     headcountDialog,
     speakerAddDialog,
     pointerTools,
+    documentScrolls,
     itemVoteDialog,
     anyDialogOpen,
     confirm,

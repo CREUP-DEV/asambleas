@@ -3643,6 +3643,12 @@
     "nowBar": {
       "backUp": "Volver arriba"
     },
+    "side": {
+      "label": "Paneles de la Mesa",
+      "strip": "Abrir un panel",
+      "pin": "Fijar",
+      "unpin": "Soltar"
+    },
     "progress": {
       "projected": "Proyectado",
       "treated": "Tratado"
