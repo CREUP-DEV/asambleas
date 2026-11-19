@@ -289,30 +289,18 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       agenda.value?.documents ?? [],
     ),
   );
-  const agendaDocuments = computed(() =>
-    agendaRows.value.flatMap((row) => row.documents),
-  );
-
-  /** The document the console shows. It follows the one in debate. */
+  /**
+   * The document the console shows. It follows the one in debate; with
+   * nothing in debate it shows none until the Mesa opens one from the
+   * agenda (never a document picked for it, which read as if it were in
+   * debate before the session opened).
+   */
   const documentId = ref<string | null>(null);
 
   watch(
     () => liveState.value?.documentId ?? null,
     (id) => {
       if (id) documentId.value = id;
-    },
-    { immediate: true },
-  );
-
-  watch(
-    agendaDocuments,
-    (documents) => {
-      if (documentId.value || documents.length === 0) return;
-      const first =
-        documents.find(
-          (document) => document.status === "published" && document.amendable,
-        ) ?? documents.find((document) => document.status === "published");
-      documentId.value = first?.id ?? null;
     },
     { immediate: true },
   );
