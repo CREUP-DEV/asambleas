@@ -581,8 +581,8 @@ pnpm db:seed
 pnpm db:studio
 pnpm i18n:check
 pnpm i18n:audit-identical
-pnpm verify    # lint, format:check, typecheck, i18n:check, i18n:audit-identical and test
-bash ./scripts/deploy.sh    # pnpm verify, build, push to GHCR and roll out on the VPS (DEPLOYMENT.md); refuses a dirty tree without --allow-dirty, asks before deploying while an assembly is in session, dumps the database before migrating; --seed also runs the RBAC seed
+pnpm verify    # nuxt prepare, then lint, format:check, typecheck, i18n:check, i18n:audit-identical and test side by side (scripts/verify.mjs)
+bash ./scripts/deploy.sh    # pnpm verify while it builds the image, push to GHCR once both pass and roll out on the VPS (DEPLOYMENT.md); refuses a dirty tree without --allow-dirty, asks before deploying while an assembly is in session, dumps the database before migrating; --seed also runs the RBAC seed
 bash ./scripts/rollback.sh  # previous image; refuses one older than the database's migrations without --force (restore the pre-deploy dump first)
 bash ./scripts/clone-prod-db.sh  # replace the local database and uploads with production's (DEPLOYMENT.md); backups/ keeps both sides
 ```
@@ -601,7 +601,7 @@ pnpm test
 pnpm build
 ```
 
-`pnpm verify` runs all of it except `pnpm build`, and `scripts/deploy.sh` runs it before building; only `DEPLOY_SKIP_VERIFY=1` skips it (`DEPLOY_SKIP_BUILD=1` does not).
+`pnpm verify` runs all of it except `pnpm build`, side by side after one `nuxt prepare` (`scripts/verify.mjs`: Vitest on half the cores, the type check through `vue-tsc -b` on incremental build info in `.nuxt`; `VERIFY_SERIAL=1` runs the steps one at a time), and stamps the tree it passed on (`node_modules/.cache/verify/tree`). `scripts/deploy.sh` runs it while the image builds and pushes nothing unless both pass; it skips it only for `DEPLOY_SKIP_VERIFY=1` or a tree that already passed unchanged (`DEPLOY_REVERIFY=1` runs it again; `DEPLOY_SKIP_BUILD=1` does not skip it). `pnpm lint` and `pnpm format:check` keep content caches in `node_modules/.cache`. Tests that spawn processes one after another go in several files, since Vitest runs files side by side (the DOCX converter's `docx*.test.ts` share `server/testing/docx.ts`, outside what Nitro scans).
 
 Also verify manually when relevant:
 

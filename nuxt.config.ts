@@ -214,6 +214,18 @@ export default defineNuxtConfig({
   compatibilityDate: "2026-04-09",
   devtools: { enabled: isDev },
   future: { compatibilityVersion: 4 },
+  // Server sourcemaps only in development: production never starts Node with
+  // --enable-source-maps, so nothing read them, and writing them slowed the
+  // server and Nitro bundles of every deploy's build.
+  sourcemap: { server: isDev, client: false },
+  // `vue-tsc -b --noEmit` (pnpm typecheck) only skips the files that did not
+  // change when the projects keep incremental build info; without it every
+  // check read the whole app again.
+  typescript: {
+    tsConfig: { compilerOptions: { incremental: true } },
+    sharedTsConfig: { compilerOptions: { incremental: true } },
+    nodeTsConfig: { compilerOptions: { incremental: true } },
+  },
   vite: {
     plugins: [tailwindcss()],
     server: {
@@ -375,6 +387,8 @@ export default defineNuxtConfig({
 
   nitro: {
     compressPublicAssets: true,
+    // The server's project, like the others in `typescript` above.
+    typescript: { tsConfig: { compilerOptions: { incremental: true } } },
     // Raleway for the UI, from the files the PDF exports embed (fonts.css).
     publicAssets: [
       {

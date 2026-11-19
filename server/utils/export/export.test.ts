@@ -1486,6 +1486,11 @@ function stable(pdf: Buffer): string {
 }
 
 describe("render process", () => {
+  // Above the render's own limit (PDF_RENDER_LIMITS.timeoutMs): these renders
+  // take some 20 s alone, and pnpm verify runs them while it lints, type-checks
+  // and deploy.sh builds the image, so only a render that fails fails them.
+  const RENDER_TEST_TIMEOUT = 180_000;
+
   const fonts = Object.fromEntries(
     Object.values(RALEWAY_FILES).map((name) => [
       name,
@@ -1585,7 +1590,7 @@ describe("render process", () => {
       expect(there.subarray(0, 5).toString("latin1")).toBe("%PDF-");
       expect(stable(there)).toBe(stable(here));
     },
-    60_000,
+    RENDER_TEST_TIMEOUT,
   );
 
   it("refuses a definition JSON cannot carry before starting the process", async () => {
@@ -1665,38 +1670,46 @@ describe("render process", () => {
     ]);
   });
 
-  it("reports the render's memory and its wait for the slot", async () => {
-    const definition = buildDocumentPdf(
-      {
-        assembly,
-        document: meta,
-        body: { variant: "clean", source: "base", blocks: base },
-        generatedAt: new Date(),
-      },
-      "es",
-    );
-    const result = await renderPdf(definition, fonts);
-    expect(result.pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
-    expect(result.waitedMs).toBeGreaterThanOrEqual(0);
-    expect(result.maxRssKb).toBeGreaterThan(0);
-  }, 60_000);
+  it(
+    "reports the render's memory and its wait for the slot",
+    async () => {
+      const definition = buildDocumentPdf(
+        {
+          assembly,
+          document: meta,
+          body: { variant: "clean", source: "base", blocks: base },
+          generatedAt: new Date(),
+        },
+        "es",
+      );
+      const result = await renderPdf(definition, fonts);
+      expect(result.pdf.subarray(0, 5).toString("latin1")).toBe("%PDF-");
+      expect(result.waitedMs).toBeGreaterThanOrEqual(0);
+      expect(result.maxRssKb).toBeGreaterThan(0);
+    },
+    RENDER_TEST_TIMEOUT,
+  );
 
-  it("renders a batch in one process, each PDF as it renders alone", async () => {
-    const definitions = cases.map(([, build]) => build());
-    const [{ pdfs }, ...alone] = await Promise.all([
-      renderPdfBatch(
-        cases.map(([, build]) => build()),
-        fonts,
-      ),
-      ...definitions.map((definition) =>
-        pdfmake.createPdf(definition).getBuffer(),
-      ),
-    ]);
-    expect(pdfs).toHaveLength(cases.length);
-    pdfs.forEach((pdf, index) => {
-      expect(stable(pdf)).toBe(stable(alone[index]!));
-    });
-  }, 60_000);
+  it(
+    "renders a batch in one process, each PDF as it renders alone",
+    async () => {
+      const definitions = cases.map(([, build]) => build());
+      const [{ pdfs }, ...alone] = await Promise.all([
+        renderPdfBatch(
+          cases.map(([, build]) => build()),
+          fonts,
+        ),
+        ...definitions.map((definition) =>
+          pdfmake.createPdf(definition).getBuffer(),
+        ),
+      ]);
+      expect(pdfs).toHaveLength(cases.length);
+      pdfs.forEach((pdf, index) => {
+        expect(stable(pdf)).toBe(stable(alone[index]!));
+      });
+    },
+    RENDER_TEST_TIMEOUT,
+  );
 
   it("refuses a batch answer whose sizes do not add up", () => {
     const body = Buffer.from("aaabb");

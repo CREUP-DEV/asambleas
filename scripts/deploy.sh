@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Verifies the tree (pnpm verify), builds the production image, pushes it to
-# GHCR and rolls it out on the VPS: database dump, migrations, optional RBAC
-# seed, app recreate, health wait, NGINX reload and old image cleanup.
+# Verifies the tree (pnpm verify) while it builds the production image, pushes
+# the image to GHCR once both pass and rolls it out on the VPS: database dump,
+# migrations, optional RBAC seed, app recreate, health wait, NGINX reload and
+# old image cleanup.
 # Usage: bash ./scripts/deploy.sh [--seed] [--allow-dirty]   (settings in the local .env, see DEPLOYMENT.md)
 set -euo pipefail
 
@@ -22,6 +23,10 @@ Usage:
 Environment:
   DEPLOY_SKIP_VERIFY=1        skip `pnpm verify` (lint, format, types, i18n, tests);
                               DEPLOY_SKIP_BUILD=1 does not skip it
+  DEPLOY_REVERIFY=1           run `pnpm verify` even when it already passed on
+                              this exact tree
+  DEPLOY_BUILD_AFTER_VERIFY=1 build the image after verify instead of during it
+                              (both share the CPU: for a test that fails under load)
   DEPLOY_SKIP_BUILD=1         deploy IMAGE without building it
   DEPLOY_ALLOW_IN_SESSION=1   deploy while an assembly is in session without
                               being asked, here or in the VPS re-check before
@@ -29,8 +34,14 @@ Environment:
 EOF
 }
 
+# Minutes and seconds since the deploy started, on every step, so a slow
+# deploy says where its time went.
+elapsed() {
+  printf '%d:%02d' $((SECONDS / 60)) $((SECONDS % 60))
+}
+
 log() {
-  printf '== %s ==\n' "$1"
+  printf '== %s (%s) ==\n' "$1" "$(elapsed)"
 }
 
 require_command() {
@@ -70,6 +81,38 @@ run_verify() {
   fi
   require_command pnpm
   pnpm verify
+}
+
+# Where a passing `pnpm verify` leaves the tree it checked (scripts/verify.mjs).
+VERIFIED_TREE_FILE=node_modules/.cache/verify/tree
+
+# The git tree of the working directory as it is, uncommitted and untracked
+# files included, built in a copy of the index (the real one is never
+# touched); scripts/verify.mjs works it out the same way. Fails when git
+# cannot tell.
+working_tree_hash() {
+  local index tree status=1
+  index="$(mktemp)"
+  if cp "$(git rev-parse --git-path index)" "$index" 2>/dev/null &&
+    GIT_INDEX_FILE="$index" git add -A >/dev/null 2>&1 &&
+    tree="$(GIT_INDEX_FILE="$index" git write-tree 2>/dev/null)"; then
+    printf '%s\n' "$tree"
+    status=0
+  fi
+  rm -f "$index"
+  return "$status"
+}
+
+# True when `pnpm verify` already passed on this very tree, say a deploy that
+# failed on the VPS and is run again, or a verify run by hand just before.
+# Under WSL the stamp comes from Windows' git, whose line endings may differ:
+# then the hashes never match and it verifies again, which is the safe side.
+already_verified() {
+  local tree
+  [ "${DEPLOY_REVERIFY:-}" != 1 ] || return 1
+  [ -s "$VERIFIED_TREE_FILE" ] || return 1
+  tree="$(working_tree_hash)" || return 1
+  [ "$tree" = "$(tr -d '\r\n' <"$VERIFIED_TREE_FILE")" ]
 }
 
 # The assemblies in session, one "<number> <type>" per line. ASCII only: it
@@ -119,7 +162,15 @@ confirm_no_session() {
   esac
 }
 
-build_and_push_image() {
+# The image is built into the local Docker, in the background, while verify
+# runs (the two used to take some 6 and 4 minutes one after the other), and
+# pushed only once both are done: nothing that failed verify ever reaches the
+# registry. Its output goes to BUILD_LOG, so the two logs never interleave.
+BUILD_PID=
+BUILD_LOG=
+BUILD_STARTED=
+
+start_build() {
   local args=(
     --platform "$DOCKER_PLATFORM"
     --build-arg "NUXT_SITE_URL=$BUILD_SITE_URL"
@@ -132,12 +183,56 @@ build_and_push_image() {
     args+=(-t "${IMAGE_NAME}:latest")
   fi
 
+  BUILD_LOG="$(mktemp)"
+  BUILD_STARTED=$SECONDS
+  log "Build $IMAGE (embeds $BUILD_SITE_URL), log in $BUILD_LOG"
   if docker buildx version >/dev/null 2>&1; then
-    docker buildx build "${args[@]}" --push .
-    return
+    docker buildx build "${args[@]}" --load . >"$BUILD_LOG" 2>&1 &
+  else
+    docker build "${args[@]}" . >"$BUILD_LOG" 2>&1 &
   fi
+  BUILD_PID=$!
+}
 
-  docker build "${args[@]}" .
+# Stops a build still running (verify failed, Ctrl-C, any error). Under Git
+# Bash the docker client is a Windows process that a signal does not reach,
+# so its whole tree goes through taskkill; BuildKit cancels the build when
+# its client goes.
+stop_build() {
+  [ -n "$BUILD_PID" ] || return 0
+  if kill -0 "$BUILD_PID" 2>/dev/null; then
+    printf 'Stopping the image build\n' >&2
+    if [ -r "/proc/$BUILD_PID/winpid" ] && command -v taskkill >/dev/null 2>&1; then
+      taskkill //T //F //PID "$(cat "/proc/$BUILD_PID/winpid")" >/dev/null 2>&1 || true
+    else
+      pkill -TERM -P "$BUILD_PID" 2>/dev/null || true
+      kill "$BUILD_PID" 2>/dev/null || true
+    fi
+  fi
+  wait "$BUILD_PID" 2>/dev/null || true
+  BUILD_PID=
+}
+
+finish_build() {
+  local status=0
+  if kill -0 "$BUILD_PID" 2>/dev/null; then
+    log "Wait for the image build"
+  fi
+  wait "$BUILD_PID" || status=$?
+  BUILD_PID=
+  if [ "$status" -ne 0 ]; then
+    printf 'ERROR: the image build failed (exit %s); its last lines, the whole log in %s:\n' "$status" "$BUILD_LOG" >&2
+    tail -n 60 "$BUILD_LOG" >&2
+    exit 1
+  fi
+  # Nuxt's own split of its build time, the one line worth keeping.
+  grep -E 'config [0-9.]+m?s · modules' "$BUILD_LOG" | sed 's/^#[0-9]* [0-9.]* /    nuxt build: /' || true
+  printf '    image built in %ds\n' $((SECONDS - BUILD_STARTED))
+  rm -f "$BUILD_LOG"
+}
+
+push_image() {
+  log "Push $IMAGE"
   docker push "$IMAGE"
   if [ "$DIRTY" = false ]; then
     docker push "${IMAGE_NAME}:latest"
@@ -156,6 +251,11 @@ set -euo pipefail
 
 cd "$COMPOSE_DIR"
 export ASAMBLEAS_IMAGE="$IMAGE"
+
+# Each step says how long the remote side has run when it starts.
+step() {
+  printf '== %s (+%ds) ==\n' "$1" "$SECONDS"
+}
 
 wait_healthy() {
   local service="$1" seconds="$2" container_id status=missing
@@ -213,7 +313,7 @@ persist_image() {
   echo "    $line"
 }
 
-echo "== Check host data directories =="
+step "Check host data directories"
 # Created by the deploy user: left to Docker, a missing bind source is created
 # as root and the app (uid $APP_UID) cannot write to it.
 mkdir -p "$REMOTE_DIR/data/exports" "$REMOTE_DIR/data/uploads"
@@ -225,7 +325,7 @@ for dir in "$REMOTE_DIR/data/exports" "$REMOTE_DIR/data/uploads"; do
   fi
 done
 
-echo "== Check PostgreSQL =="
+step "Check PostgreSQL"
 # The database is shared by every project: never recreate it from here.
 if [ -z "$(docker compose ps -q --status running "$POSTGRES_SERVICE" </dev/null 2>/dev/null || true)" ]; then
   echo "    not running, starting it"
@@ -234,7 +334,7 @@ fi
 wait_healthy "$POSTGRES_SERVICE" 60
 echo "    healthy"
 
-echo "== Save current app image for rollback =="
+step "Save current app image for rollback"
 current_id="$(docker compose ps -q "$APP_SERVICE" </dev/null 2>/dev/null || true)"
 if [ -z "$current_id" ]; then
   echo "    no app container yet"
@@ -246,12 +346,12 @@ else
   echo "    current app is not healthy, keeping $(cat "$ROLLBACK_IMAGE_FILE" 2>/dev/null || echo 'no saved image')"
 fi
 
-echo "== Pull image =="
+step "Pull image"
 # Tags are never reused (dirty builds carry a timestamp), so pull only when
 # the VPS does not have it yet.
 docker compose pull --policy missing "$APP_SERVICE" </dev/null
 
-echo "== Check for an assembly in session =="
+step "Check for an assembly in session"
 # Checked again: verify and the build may have taken long enough for one to
 # open since the operator was asked. A failed query only goes on, as there.
 if [ "$ALLOW_IN_SESSION" = true ]; then
@@ -265,7 +365,7 @@ else
   echo "    none"
 fi
 
-echo "== Dump the database before migrating =="
+step "Dump the database before migrating"
 # A migration that succeeds but transforms data wrongly cannot be undone, and
 # the cluster-wide pg_dumpall runs only once a day: no dump, no deploy.
 # Retention only ever touches this script's own files: the directory is shared
@@ -293,19 +393,19 @@ if [[ "$DUMP_RETENTION" =~ ^[0-9]+$ ]] && [ "$DUMP_RETENTION" -ge 1 ]; then
   echo "    kept the last $DUMP_RETENTION, removed $removed"
 fi
 
-echo "== Apply database migrations =="
+step "Apply database migrations"
 migrations_before="$(applied_migrations)"
 docker compose run -T --rm --no-deps "$APP_SERVICE" /app/ops/migrate.mjs </dev/null
 
 if [ "$RUN_SEED" = true ]; then
-  echo "== Seed roles and permissions =="
+  step "Seed roles and permissions"
   docker compose run -T --rm --no-deps "$APP_SERVICE" /app/ops/seed.mjs </dev/null
 fi
 
-echo "== Recreate app container =="
+step "Recreate app container"
 docker compose up -d --no-deps "$APP_SERVICE" </dev/null
 
-echo "== Wait for the app to be healthy =="
+step "Wait for the app to be healthy"
 if ! wait_healthy "$APP_SERVICE" 120; then
   echo "Last logs:" >&2
   docker compose logs --tail 80 "$APP_SERVICE" </dev/null >&2 || true
@@ -326,7 +426,7 @@ if ! wait_healthy "$APP_SERVICE" 120; then
 fi
 echo "    healthy"
 
-echo "== Persist ASAMBLEAS_IMAGE in .env =="
+step "Persist ASAMBLEAS_IMAGE in .env"
 # Without it a later bare `docker compose up -d` (another project's deploy, a
 # manual restart) would fall back to a stale ':latest'. Written only once the
 # app is healthy, so that `up -d` after a failed deploy brings back the last
@@ -335,13 +435,13 @@ persist_image "$IMAGE"
 
 services="$(docker compose config --services </dev/null)"
 if grep -qx "$NGINX_SERVICE" <<<"$services"; then
-  echo "== Reload NGINX =="
+  step "Reload NGINX"
   docker compose exec -T "$NGINX_SERVICE" nginx -t </dev/null
   docker compose exec -T "$NGINX_SERVICE" nginx -s reload </dev/null
 fi
 
 if [[ "$IMAGE_RETENTION" =~ ^[0-9]+$ ]] && [ "$IMAGE_RETENTION" -ge 1 ]; then
-  echo "== Remove old app images =="
+  step "Remove old app images"
   keep_ids=" $(docker image inspect --format '{{.Id}}' "$IMAGE" 2>/dev/null || true) "
   if [ -s "$ROLLBACK_IMAGE_FILE" ]; then
     keep_ids+=" $(docker image inspect --format '{{.Id}}' "$(cat "$ROLLBACK_IMAGE_FILE")" 2>/dev/null || true) "
@@ -364,6 +464,7 @@ if [[ "$IMAGE_RETENTION" =~ ^[0-9]+$ ]] && [ "$IMAGE_RETENTION" -ge 1 ]; then
   echo "    kept $kept, removed $removed"
 fi
 
+echo "    the VPS took ${SECONDS}s"
 echo "== Remote deploy done =="
 REMOTE
 
@@ -483,26 +584,49 @@ fi
 
 confirm_no_session
 
+VERIFY=true
 if [ "${DEPLOY_SKIP_VERIFY:-}" = 1 ]; then
   printf 'WARNING: DEPLOY_SKIP_VERIFY=1: lint, format, types, i18n and tests not run\n' >&2
-else
-  log "Verify: pnpm verify"
-  run_verify
+  VERIFY=false
+elif already_verified; then
+  log "Verify: skipped, pnpm verify already passed on this exact tree (DEPLOY_REVERIFY=1 runs it again)"
+  VERIFY=false
 fi
+
+verify() {
+  log "Verify: pnpm verify"
+  if ! run_verify; then
+    printf 'ERROR: pnpm verify failed; nothing was pushed nor deployed\n' >&2
+    exit 1
+  fi
+}
+
+trap stop_build EXIT
 
 if [ "${DEPLOY_SKIP_BUILD:-}" = 1 ]; then
   log "Skip build: $IMAGE must already be in the registry or on the VPS"
+  if [ "$VERIFY" = true ]; then
+    verify
+  fi
 else
   if [ -n "${GHCR_USERNAME:-}" ] && [ -n "${GHCR_TOKEN:-}" ]; then
     log "GHCR login"
     printf '%s\n' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USERNAME" --password-stdin
   fi
 
-  log "Build and push: $IMAGE (embeds $BUILD_SITE_URL)"
-  build_and_push_image
+  if [ "$VERIFY" = true ] && [ "${DEPLOY_BUILD_AFTER_VERIFY:-}" = 1 ]; then
+    verify
+    VERIFY=false
+  fi
+  start_build
+  if [ "$VERIFY" = true ]; then
+    verify
+  fi
+  finish_build
+  push_image
 fi
 
 log "Deploy to $VPS_HOST:$COMPOSE_DIR (seed: $RUN_SEED)"
 remote_deploy
 
-printf 'Deploy finished successfully: %s\n' "$IMAGE"
+printf 'Deploy finished successfully in %s: %s\n' "$(elapsed)" "$IMAGE"

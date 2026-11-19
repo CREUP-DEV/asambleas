@@ -197,8 +197,8 @@ Con la primera imagen publicada, el paquete `ghcr.io/creup-dev/asambleas` aparec
 
 1. Carga el `.env` local. Con cambios sin confirmar se para, salvo con `--allow-dirty` (`bash ./scripts/deploy.sh --allow-dirty`): entonces la etiqueta es `<commit>-dirty-<fecha y hora UTC>`, distinta en cada build, y no mueve `latest`, que solo nombra builds confirmados. Mejor desplegar siempre un commit.
 2. Pregunta al VPS si hay una asamblea `in_session`. Si la hay, la nombra y pide confirmación (`[y/N]`; cualquier otra respuesta cancela). Sin terminal (un script, una tarea programada) no puede preguntar y se para, salvo con `DEPLOY_ALLOW_IN_SESSION=1`, que despliega igualmente: a propósito, porque una sesión es el único momento en que desplegar hace daño. Si la consulta falla (primer despliegue, sin tablas), avisa y sigue. El VPS vuelve a mirarlo antes de migrar (paso 5.5).
-3. Ejecuta `pnpm verify`: la lista de verificación de `AGENTS.md` menos el build (lint, formato, tipos, i18n y tests). Si algo falla, no construye ni despliega nada. Bajo WSL la ejecuta el `pnpm` de Windows, el que instaló `node_modules`. Solo `DEPLOY_SKIP_VERIFY=1` la salta; `DEPLOY_SKIP_BUILD=1` no.
-4. Construye la imagen para `linux/amd64`, etiquetada con el commit, y la publica en GHCR.
+3. Construye la imagen para `linux/amd64`, etiquetada con el commit, en el Docker local y en segundo plano (su log va a un fichero temporal, que muestra si falla), y mientras tanto ejecuta `pnpm verify`: la lista de verificación de `AGENTS.md` menos el build (lint, formato, tipos, i18n y tests, a la vez). Si `verify` falla, para el build y no publica ni despliega nada. Bajo WSL la ejecuta el `pnpm` de Windows, el que instaló `node_modules`. La salta con `DEPLOY_SKIP_VERIFY=1`, o si ya pasó sobre este mismo árbol, con lo no confirmado incluido (al repetir un despliegue que falló en el VPS, o tras un `pnpm verify` a mano); `DEPLOY_REVERIFY=1` la repite igualmente. `DEPLOY_SKIP_BUILD=1` no la salta. Build y verify comparten la CPU: si un test falla solo con la máquina cargada, `DEPLOY_BUILD_AFTER_VERIFY=1` construye después, como antes.
+4. Con las dos cosas bien, publica la imagen en GHCR.
 5. Por SSH, en `COMPOSE_DIR`:
    1. Crea `asambleas/data/exports` y `asambleas/data/uploads` si faltan, como el usuario de despliegue, y se para si no son del uid 1000, el de la app: no podría escribir los PDFs.
    2. Comprueba que `postgresql` está en marcha y sano. Si estuviera parado lo arranca, pero nunca lo recrea: lo comparten todos los proyectos.
@@ -212,6 +212,7 @@ Con la primera imagen publicada, el paquete `ghcr.io/creup-dev/asambleas` aparec
    10. Ya sana, guarda `ASAMBLEAS_IMAGE` en el `.env` raíz, para que un `up -d` posterior no vuelva a un `latest` viejo.
    11. Comprueba y recarga nginx, y borra las imágenes viejas del proyecto. Conserva la nueva, la del rollback y hasta `DEPLOY_IMAGE_RETENTION` (2 por defecto).
 6. Si el lado remoto no llega al final, el script termina con error aunque la conexión no lo diga.
+7. Cada paso dice cuánto tiempo lleva el despliegue (`m:ss`) y cada paso del VPS cuánto lleva el lado remoto (`+Ns`). El build resume lo que tardó y el desglose de `nuxt build`, así que un despliegue lento dice dónde se fue el tiempo.
 
 Para volver a desplegar una imagen ya publicada sin compilar: `DEPLOY_SKIP_BUILD=1 DEPLOY_SKIP_VERIFY=1 IMAGE=ghcr.io/creup-dev/asambleas:<etiqueta> bash ./scripts/deploy.sh`. Sin `DEPLOY_SKIP_VERIFY=1` verifica el árbol local, aunque no sea el de esa imagen.
 

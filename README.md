@@ -117,10 +117,10 @@ server/assets/    Fuentes y assets empaquetados para servidor
 
 ## Verificación Antes De PR
 
-La lista que manda es la de [AGENTS.md](AGENTS.md#verification-checklist). `pnpm verify` ejecuta en orden todo menos el build, y `scripts/deploy.sh` la ejecuta antes de construir la imagen:
+La lista que manda es la de [AGENTS.md](AGENTS.md#verification-checklist). `pnpm verify` ejecuta a la vez todo menos el build, y `scripts/deploy.sh` la ejecuta mientras construye la imagen:
 
 ```bash
-pnpm verify    # pnpm lint, format:check, typecheck, i18n:check, i18n:audit-identical y test
+pnpm verify    # nuxt prepare y luego, a la vez, lint, format:check, typecheck, i18n:check, i18n:audit-identical y test
 pnpm build
 ```
 
