@@ -50,11 +50,22 @@ const props = defineProps<{
    * and the observations. Without it those columns are not there.
    */
   internal: boolean;
+  /**
+   * The amendments the reader sees of each document, by id (those without
+   * any are left out): a document with some opens them in «Enmiendas».
+   */
+  amendmentCounts: ReadonlyMap<string, number>;
 }>();
 const emit = defineEmits<{
   open: [row: GeneralSheetRow];
   sort: [column: GeneralSortKey];
+  /** Open this document's amendments in «Enmiendas». */
+  amendments: [document: SheetRowDocument];
 }>();
+
+/** How many amendments of the document «Enmiendas» lists, 0 if none. */
+const amendmentsOf = (document: SheetRowDocument) =>
+  props.amendmentCounts.get(document.id) ?? 0;
 
 /** The row's box: what is on its way first, then what the sheet says. */
 function treatedOf(row: GeneralSheetRow): TreatedBox {
@@ -266,6 +277,32 @@ const itemRows = computed(() =>
                     :label="t('controlSheet.live')"
                   />
                 </p>
+                <UButton
+                  v-if="ownDocument(row) && amendmentsOf(ownDocument(row)!)"
+                  color="primary"
+                  variant="link"
+                  size="xs"
+                  icon="i-lucide-file-pen-line"
+                  class="p-0"
+                  :label="
+                    t(
+                      'controlSheet.amendmentCount',
+                      { count: amendmentsOf(ownDocument(row)!) },
+                      amendmentsOf(ownDocument(row)!),
+                    )
+                  "
+                  :aria-label="
+                    t(
+                      'controlSheet.openAmendments',
+                      {
+                        count: amendmentsOf(ownDocument(row)!),
+                        title: ownDocument(row)!.title,
+                      },
+                      amendmentsOf(ownDocument(row)!),
+                    )
+                  "
+                  @click="emit('amendments', ownDocument(row)!)"
+                />
                 <ul
                   v-if="listedDocuments(row).length > 0"
                   class="mt-1 space-y-0.5"
@@ -273,6 +310,7 @@ const itemRows = computed(() =>
                   <li
                     v-for="document in listedDocuments(row)"
                     :key="document.id"
+                    class="flex flex-wrap items-baseline gap-x-2"
                   >
                     <ULink
                       :to="documentPath(document)"
@@ -280,6 +318,32 @@ const itemRows = computed(() =>
                     >
                       {{ document.title }}
                     </ULink>
+                    <UButton
+                      v-if="amendmentsOf(document)"
+                      color="primary"
+                      variant="link"
+                      size="xs"
+                      icon="i-lucide-file-pen-line"
+                      class="p-0"
+                      :label="
+                        t(
+                          'controlSheet.amendmentCount',
+                          { count: amendmentsOf(document) },
+                          amendmentsOf(document),
+                        )
+                      "
+                      :aria-label="
+                        t(
+                          'controlSheet.openAmendments',
+                          {
+                            count: amendmentsOf(document),
+                            title: document.title,
+                          },
+                          amendmentsOf(document),
+                        )
+                      "
+                      @click="emit('amendments', document)"
+                    />
                   </li>
                 </ul>
               </th>
@@ -401,14 +465,67 @@ const itemRows = computed(() =>
                 :label="t('controlSheet.live')"
               />
             </p>
+            <UButton
+              v-if="ownDocument(row) && amendmentsOf(ownDocument(row)!)"
+              color="primary"
+              variant="link"
+              size="xs"
+              icon="i-lucide-file-pen-line"
+              class="p-0"
+              :label="
+                t(
+                  'controlSheet.amendmentCount',
+                  { count: amendmentsOf(ownDocument(row)!) },
+                  amendmentsOf(ownDocument(row)!),
+                )
+              "
+              :aria-label="
+                t(
+                  'controlSheet.openAmendments',
+                  {
+                    count: amendmentsOf(ownDocument(row)!),
+                    title: ownDocument(row)!.title,
+                  },
+                  amendmentsOf(ownDocument(row)!),
+                )
+              "
+              @click="emit('amendments', ownDocument(row)!)"
+            />
             <ul v-if="listedDocuments(row).length > 0" class="mt-1 space-y-0.5">
-              <li v-for="document in listedDocuments(row)" :key="document.id">
+              <li
+                v-for="document in listedDocuments(row)"
+                :key="document.id"
+                class="flex flex-wrap items-baseline gap-x-2"
+              >
                 <ULink
                   :to="documentPath(document)"
                   class="text-muted hover:text-default text-xs underline-offset-2 hover:underline"
                 >
                   {{ document.title }}
                 </ULink>
+                <UButton
+                  v-if="amendmentsOf(document)"
+                  color="primary"
+                  variant="link"
+                  size="xs"
+                  icon="i-lucide-file-pen-line"
+                  class="p-0"
+                  :label="
+                    t(
+                      'controlSheet.amendmentCount',
+                      { count: amendmentsOf(document) },
+                      amendmentsOf(document),
+                    )
+                  "
+                  :aria-label="
+                    t(
+                      'controlSheet.openAmendments',
+                      { count: amendmentsOf(document), title: document.title },
+                      amendmentsOf(document),
+                    )
+                  "
+                  @click="emit('amendments', document)"
+                />
               </li>
             </ul>
           </div>

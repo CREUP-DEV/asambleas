@@ -4698,7 +4698,7 @@
     "loadError": "The control sheet could not be loaded",
     "retry": "Try again",
     "follow": "Follow the debate",
-    "followHint": "Opens what the Mesa is debating and marks it.",
+    "followHint": "Opens what the Mesa is debating and marks it. In «Amendments», those of the document in debate.",
     "live": "Under debate",
     "noVote": "Not voted",
     "positionNone": "No answer",
@@ -4714,6 +4714,7 @@
     "amendmentsLoadError": "The amendments could not be loaded",
     "rowCount": "{count} item on the sheet | {count} items on the sheet",
     "amendmentCount": "{count} amendment | {count} amendments",
+    "openAmendments": "{count} amendment of «{title}» | {count} amendments of «{title}»",
     "tabs": {
       "label": "Parts of the control sheet",
       "general": "Overview",

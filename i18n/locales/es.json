@@ -4698,7 +4698,7 @@
     "loadError": "No se ha podido cargar la hoja de control",
     "retry": "Reintentar",
     "follow": "Seguir el debate",
-    "followHint": "Abre lo que la Mesa tiene en debate y lo señala.",
+    "followHint": "Abre lo que la Mesa tiene en debate y lo señala. En «Enmiendas», las del documento en debate.",
     "live": "En debate",
     "noVote": "Sin votar",
     "positionNone": "Sin respuesta",
@@ -4714,6 +4714,7 @@
     "amendmentsLoadError": "No se han podido cargar las enmiendas",
     "rowCount": "{count} punto en la hoja | {count} puntos en la hoja",
     "amendmentCount": "{count} enmienda | {count} enmiendas",
+    "openAmendments": "{count} enmienda de «{title}» | {count} enmiendas de «{title}»",
     "tabs": {
       "label": "Partes de la hoja de control",
       "general": "General",

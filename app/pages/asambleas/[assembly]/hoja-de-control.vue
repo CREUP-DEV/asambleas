@@ -104,8 +104,10 @@ import { positionsArePublic } from "~~/shared/utils/positions";
  * The agenda comes from the hub (useAssemblyAgenda); the sheet's own answer
  * adds the final votes, the votes on items, the amendment counts and who
  * spoke. «Seguir el debate» opens what the Mesa has on screen and marks its
- * row. Each list sorts by its columns and filters (-filters.ts), both kept
- * in the query next to the tab and the document.
+ * row; in «Enmiendas», the amendments of the document in debate. Each list
+ * sorts by its columns and filters (-filters.ts), both kept in the query
+ * next to the tab and the document. The tabs stay at hand while scrolling,
+ * and «General» opens a document's amendments in «Enmiendas».
  */
 
 const { t, locale } = useI18n();
@@ -201,6 +203,17 @@ const TAB_SLUGS: Partial<Record<SheetTab, string>> = {
 const TAB_QUERY = "vista";
 const DOCUMENT_QUERY = "documento";
 
+/**
+ * «Seguir el debate»: on while the assembly is in session, unless the
+ * reader turns it off, or opened a link that names a tab, an order or a
+ * filter (user's decision of 2026-11-19): following would take it
+ * somewhere else at once.
+ */
+const linkNamesView = Object.keys(route.query).some(
+  (key) => key === TAB_QUERY || SHEET_FILTER_QUERY_KEYS.includes(key),
+);
+const follow = ref(assembly.value?.status === "in_session" && !linkNamesView);
+
 const tab = computed<SheetTab>({
   get: () => {
     const slug = route.query[TAB_QUERY];
@@ -215,7 +228,17 @@ const tab = computed<SheetTab>({
     return match ?? "general";
   },
   set: (value) => {
-    void router.replace({ query: { ...route.query, ...tabQuery(value) } });
+    // Following the debate, «Enmiendas» opens on the document in debate.
+    const debated =
+      value === "amendments" && follow.value ? debateDocument.value : null;
+    void router.replace({
+      query: {
+        ...route.query,
+        ...tabQuery(value),
+        ...(debated ? { [DOCUMENT_QUERY]: debated.slug } : {}),
+      },
+    });
+    scrollToTabs();
   },
 });
 
@@ -267,12 +290,41 @@ const tabItems = computed<TabsItem[]>(() => [
 const documentOptions = computed(() =>
   amendedDocuments(agendaDocuments.value, sheet.value ?? null, items.value),
 );
+/** The amendments «Enmiendas» lists of each document, for «General». */
+const amendmentCounts = computed<ReadonlyMap<string, number>>(
+  () =>
+    new Map(
+      documentOptions.value.map((document) => [
+        document.id,
+        document.amendments,
+      ]),
+    ),
+);
+/**
+ * The document in debate, among those with amendments the reader sees:
+ * the one the Mesa has on screen, or else the first of the item in debate
+ * (user's decision of 2026-11-19).
+ */
+const debateDocument = computed(() => {
+  const state = live.value;
+  if (!state) return null;
+  const onScreen = state.documentId
+    ? documentOptions.value.find((entry) => entry.id === state.documentId)
+    : undefined;
+  if (onScreen) return onScreen;
+  return state.agendaItemId
+    ? (documentOptions.value.find(
+        (entry) => entry.agendaItemId === state.agendaItemId,
+      ) ?? null)
+    : null;
+});
 const selectedDocument = computed(() => {
   const wanted = route.query[DOCUMENT_QUERY];
   return (
     documentOptions.value.find(
       (document) => document.slug === wanted || document.id === wanted,
     ) ??
+    (follow.value ? debateDocument.value : null) ??
     documentOptions.value[0] ??
     null
   );
@@ -1242,6 +1294,44 @@ function trailLabel(step: AgendaTrailStep): string {
     : numberedAgendaTitle(step.number, step.title, unlisted);
 }
 
+/** «N enmiendas» of a document in «General»: its amendments here. */
+function openDocumentAmendments(document: SheetRowDocument): void {
+  const option = documentOptions.value.find(
+    (entry) => entry.id === document.id,
+  );
+  if (!option) return;
+  void router.replace({
+    query: {
+      ...route.query,
+      ...tabQuery("amendments"),
+      [DOCUMENT_QUERY]: option.slug,
+    },
+  });
+  scrollToTabs();
+}
+
+/**
+ * The tabs stick to the top while the page scrolls (user's decision of
+ * 2026-11-19). Changing tab from there brings the page back to its top,
+ * not to wherever the last tab was left; with the tabs in their place it
+ * stays put. `tabsAnchor` is the heading just above them.
+ */
+const tabsAnchor = ref<HTMLElement | null>(null);
+const tabsBar = ref<HTMLElement | null>(null);
+function scrollToTabs(): void {
+  if (!import.meta.client) return;
+  void nextTick(() => {
+    const anchor = tabsAnchor.value;
+    const bar = tabsBar.value;
+    if (!anchor || !bar) return;
+    // In their place they sit one gap (1.5rem) under the heading.
+    const gap =
+      bar.getBoundingClientRect().top - anchor.getBoundingClientRect().bottom;
+    if (gap <= 25) return;
+    anchor.scrollIntoView({ block: "start" });
+  });
+}
+
 function documentPath(document: SheetRowDocument): string {
   return sectionPath(`documentos/${encodeURIComponent(document.slug)}`);
 }
@@ -1296,16 +1386,6 @@ onLive((events) => {
 
 // Following the debate ----------------------------------------------------------
 
-/**
- * On while the assembly is in session, unless the reader turns it off, or
- * opened a link that names a tab, an order or a filter (user's decision of
- * 2026-11-19): following would take it somewhere else at once.
- */
-const linkNamesView = Object.keys(route.query).some(
-  (key) => key === TAB_QUERY || SHEET_FILTER_QUERY_KEYS.includes(key),
-);
-const follow = ref(assembly.value?.status === "in_session" && !linkNamesView);
-
 function scrollToRow(id: string): void {
   if (!import.meta.client) return;
   void nextTick(() => {
@@ -1327,9 +1407,11 @@ function scrollToRow(id: string): void {
 }
 
 /**
- * Opens what the Mesa has on screen: its amendment, or its item. Never
- * from «Turnos de palabra», which lists the whole assembly and has no row
- * to follow: the debate moving on would take its reader out of it.
+ * Opens what the Mesa has on screen: its amendment, or its item; in
+ * «Enmiendas», the amendments of the document in debate if it has any the
+ * reader sees. Never from «Turnos de palabra», which lists the whole
+ * assembly and has no row to follow: the debate moving on would take its
+ * reader out of it.
  */
 async function followDebate(): Promise<void> {
   const state = live.value;
@@ -1350,6 +1432,15 @@ async function followDebate(): Promise<void> {
       scrollToRow(state.amendmentId);
       return;
     }
+  }
+  const debated = debateDocument.value;
+  if (tab.value === "amendments" && debated) {
+    if (selectedDocument.value?.id !== debated.id) {
+      await router.replace({
+        query: { ...route.query, [DOCUMENT_QUERY]: debated.slug },
+      });
+    }
+    return;
   }
   if (state.agendaItemId) {
     if (tab.value !== "general") {
@@ -1402,7 +1493,10 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
 
 <template>
   <div v-if="assembly" class="space-y-6">
-    <div class="flex flex-wrap items-start justify-between gap-3">
+    <div
+      ref="tabsAnchor"
+      class="flex flex-wrap items-start justify-between gap-3"
+    >
       <div class="min-w-0 space-y-1">
         <h2 class="text-highlighted text-xl font-semibold">
           {{ t("controlSheet.title") }}
@@ -1447,13 +1541,20 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
     />
 
     <template v-else>
-      <UTabs
-        v-model="tab"
-        :items="tabItems"
-        :content="false"
-        variant="link"
-        :aria-label="t('controlSheet.tabs.label')"
-      />
+      <!--
+        The tabs stick to the top of the scroll area (its padding is what the
+        negative offset takes back), so changing tab never needs scrolling
+        up. The heading above them tells whether they are stuck.
+      -->
+      <div ref="tabsBar" class="bg-default sticky -top-4 z-20 pt-1 sm:-top-6">
+        <UTabs
+          v-model="tab"
+          :items="tabItems"
+          :content="false"
+          variant="link"
+          :aria-label="t('controlSheet.tabs.label')"
+        />
+      </div>
 
       <template v-if="tab === 'general'">
         <CommonEmptyState
@@ -1516,8 +1617,10 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
             :sort="generalSort"
             :flat="generalFlat"
             :internal="internal"
+            :amendment-counts="amendmentCounts"
             @open="openItem"
             @sort="onGeneralSort"
+            @amendments="openDocumentAmendments"
           />
         </template>
         <div v-if="canEdit">
