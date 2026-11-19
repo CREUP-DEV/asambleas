@@ -305,6 +305,17 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     { immediate: true },
   );
 
+  // Another agenda item in debate without a document: the document of the
+  // item left (or one opened from the agenda) goes too (user's decision of
+  // 2026-11-19), so the console never shows the previous item's text.
+  watch(
+    () => liveState.value?.agendaItemId ?? null,
+    (itemId, previous) => {
+      if (itemId === previous || previous === undefined) return;
+      if (!liveState.value?.documentId) documentId.value = null;
+    },
+  );
+
   const documentUrl = computed(() =>
     documentId.value
       ? `${assemblyUrl.value}/documents/${encodeURIComponent(documentId.value)}`
