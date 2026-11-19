@@ -143,7 +143,9 @@ import {
   itemAcceptsKind,
   SUBMISSION_KIND_REFUSED_REASON,
 } from "~~/shared/utils/agendaSubmissions";
-import { consolidate } from "~~/shared/utils/content/consolidate";
+import { inApprovalOrder } from "~~/shared/utils/approvalOrder";
+import { consolidateApproved } from "~~/shared/utils/content/passages";
+import { loadPassageWordings, wordingInputs } from "./wordings";
 import { hashContent } from "~~/shared/utils/diff";
 import {
   FILE_FORMAT_REFUSED_REASON,
@@ -2742,15 +2744,9 @@ export async function recordFinalVote(
       fail(409, "Quedan enmiendas sin decidir", { undecided });
     }
 
-    const approved = rows
-      .filter((row) => row.status === "approved")
-      .sort(
-        (a, b) =>
-          (a.decidedAt?.getTime() ?? 0) - (b.decidedAt?.getTime() ?? 0) ||
-          (a.number ?? Number.MAX_SAFE_INTEGER) -
-            (b.number ?? Number.MAX_SAFE_INTEGER) ||
-          a.createdAt.getTime() - b.createdAt.getTime(),
-      );
+    const approved = inApprovalOrder(
+      rows.filter((row) => row.status === "approved"),
+    );
     let ordered = approved;
     if (body.order) {
       const byId = new Map(approved.map((row) => [row.id, row]));
@@ -2765,20 +2761,40 @@ export async function recordFinalVote(
       ordered = body.order.map((id) => byId.get(id)!);
     }
 
-    let consolidated: { blocks: Block[]; applied: string[] } | null = null;
+    let consolidated: {
+      blocks: Block[];
+      applied: string[];
+      wordingIds: string[];
+    } | null = null;
     if (document.format === "structured") {
       const base = await loadVersion(document.baseVersionId, tx);
       if (!base) fail(409, "El documento no tiene texto base");
-      const outcome = consolidate(
+      const wordings = await loadPassageWordings(tx, document.id);
+      const outcome = consolidateApproved(
         base.blocks,
         ordered.map((row) => ({ id: row.id, ops: row.ops })),
+        { wordings: wordingInputs(wordings) },
       );
       if (outcome.conflicts.length > 0) {
         fail(409, "Las enmiendas aprobadas no se pueden aplicar juntas", {
           conflicts: outcome.conflicts,
         });
       }
-      consolidated = { blocks: outcome.blocks, applied: outcome.applied };
+      // Where approved amendments collide, the Mesa words the passage
+      // first (shared/utils/content/passages.ts).
+      const pendingPassages = outcome.passages.filter(
+        (passage) => passage.status === "pending",
+      );
+      if (pendingPassages.length > 0) {
+        fail(409, "Falta que la Mesa fije la redacción de algún pasaje", {
+          pendingPassages,
+        });
+      }
+      consolidated = {
+        blocks: outcome.blocks,
+        applied: outcome.applied,
+        wordingIds: outcome.wordingIds,
+      };
     }
 
     const [voteRow] = await tx
@@ -2861,6 +2877,8 @@ export async function recordFinalVote(
         consolidatedVersionId,
         appliedAmendmentIds:
           result === "approved" ? (consolidated?.applied ?? []) : [],
+        wordingIds:
+          result === "approved" ? (consolidated?.wordingIds ?? []) : [],
       },
       actor,
     });

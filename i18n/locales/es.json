@@ -2519,6 +2519,7 @@
         "code": "El código en superíndice indica la enmienda que introduce cada cambio. Consulta el anexo."
       },
       "conflicts": "Enmiendas aprobadas que no se han podido incorporar porque chocan con otras o ya no encajan en el texto: {codes}.",
+      "mesaCode": "Mesa",
       "annex": {
         "title": "Anexo: enmiendas",
         "empty": "No se han presentado enmiendas.",
@@ -2530,7 +2531,10 @@
         "sources": "Transacciona {codes}",
         "late": "Fuera de plazo",
         "notApplied": "Sin incorporar: choca con {codes}",
-        "notAppliedInvalid": "Sin incorporar: ya no encaja en el texto"
+        "notAppliedInvalid": "Sin incorporar: ya no encaja en el texto",
+        "supersededBy": "Sin efecto en el texto final: lo suprimió {codes}",
+        "worded": "Redacción fijada por la Mesa junto con {codes}",
+        "wordingPending": "Redacción pendiente de la Mesa, junto con {codes}"
       },
       "amendmentStatuses": {
         "draft": "Borrador",
@@ -6437,6 +6441,8 @@
       "document_deleted": "Documento borrado",
       "document_voted": "Votación final del documento",
       "final_vote_annulled": "Votación final anulada",
+      "passage_worded": "Redacción de un pasaje fijada por la Mesa",
+      "passage_wording_removed": "Redacción de un pasaje quitada",
       "amendment_created": "@:amendment.history.events.amendment_created",
       "amendment_updated": "Borrador de enmienda editado",
       "amendment_deleted": "Borrador de enmienda borrado",

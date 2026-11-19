@@ -330,6 +330,13 @@
       "when": 1795112476921,
       "tag": "0046_vote_not_cast",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1795114664487,
+      "tag": "0047_fantastic_stellaris",
+      "breakpoints": true
     }
   ]
 }

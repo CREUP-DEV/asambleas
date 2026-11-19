@@ -16,6 +16,11 @@ import {
   numberAgendaItems,
 } from "../../../shared/utils/agendaNumbering";
 import { compareAmendmentAnswers } from "../../../shared/utils/amendmentOrder";
+import { inApprovalOrder } from "../../../shared/utils/approvalOrder";
+import type {
+  Passage,
+  SupersededChange,
+} from "../../../shared/utils/content/passages";
 import type {
   ExportAgendaNode,
   ExportAnnexRow,
@@ -183,24 +188,27 @@ function inDebateOrder(byAnswer: boolean) {
     byNumber(a, b);
 }
 
-/** Approved amendments in the order they were decided, as consolidate expects. */
+/**
+ * Approved amendments in the order they were decided, as the final vote
+ * applies them (inApprovalOrder).
+ */
 export function approvalOrder<T extends AnnexAmendment>(amendments: T[]): T[] {
-  return amendments
-    .filter((amendment) => amendment.status === "approved")
-    .sort((a, b) => {
-      const at = a.decidedAt?.getTime() ?? Number.POSITIVE_INFINITY;
-      const bt = b.decidedAt?.getTime() ?? Number.POSITIVE_INFINITY;
-      return at - bt || byNumber(a, b);
-    });
+  return inApprovalOrder(
+    amendments.filter((amendment) => amendment.status === "approved"),
+  );
 }
 
-/** What consolidate applies: approved amendments in decision order. */
+/** What consolidateApproved applies: approved amendments in decision order. */
 export function consolidationInput(
   amendments: (AnnexAmendment & { ops: AmendmentOp[] })[],
 ): AmendmentInput[] {
   return approvalOrder(amendments)
     .filter((amendment) => amendment.ops.length > 0)
     .map(({ id, ops }) => ({ id, ops }));
+}
+
+function unique<T>(values: T[]): T[] {
+  return [...new Set(values)];
 }
 
 /** Superscript codes by amendment id. */
@@ -222,6 +230,10 @@ export function buildAnnexRows(input: {
   amendments: AnnexAmendment[];
   visibleIds: Set<string>;
   conflicts: ConsolidationConflict[];
+  /** Where approved amendments collide (consolidateApproved). */
+  passages?: Passage[];
+  /** Approved changes a deletion wins over. */
+  superseded?: SupersededChange[];
   /** The document's answers are public (positionsArePublic). */
   byAnswer?: boolean;
 }): ExportAnnexRow[] {
@@ -248,6 +260,11 @@ export function buildAnnexRows(input: {
         (id) => byId.get(id)!.status === "approved",
       );
       const collisions = conflicts.get(amendment.id);
+      const passage = input.passages?.find(
+        (item) =>
+          item.status !== "automatic" &&
+          item.amendmentIds.includes(amendment.id),
+      );
       return {
         id: amendment.id,
         displayCode: annexDisplayCode(amendment),
@@ -265,6 +282,20 @@ export function buildAnnexRows(input: {
         ).map(codeOf),
         conflict: collisions
           ? collisions.filter((id) => byId.has(id)).map(codeOf)
+          : null,
+        supersededBy: unique(
+          (input.superseded ?? [])
+            .filter((item) => item.amendmentId === amendment.id)
+            .map((item) => item.by)
+            .filter(visible),
+        ).map(codeOf),
+        passage: passage
+          ? {
+              status: passage.status === "worded" ? "worded" : "pending",
+              with: passage.amendmentIds
+                .filter((id) => id !== amendment.id && visible(id))
+                .map(codeOf),
+            }
           : null,
       };
     });

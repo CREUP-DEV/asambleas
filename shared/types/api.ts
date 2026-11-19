@@ -1209,9 +1209,34 @@ export interface RelationDto {
   createdAt: IsoDate;
 }
 
+/**
+ * The Mesa's wording of a passage where approved amendments collide
+ * (shared/utils/content/passages.ts): `ops` against the base replace their
+ * changes in `blockIds` while those amendments and blocks are still the
+ * passage.
+ */
+export interface PassageWordingDto {
+  id: string;
+  amendmentIds: string[];
+  blockIds: string[];
+  ops: AmendmentOp[];
+  note: string | null;
+  updatedAt: IsoDate;
+}
+
+/** Body of PUT .../documents/[document]/wordings. */
+export interface PassageWordingBody {
+  amendmentIds: string[];
+  blockIds: string[];
+  ops: AmendmentOp[];
+  note?: string | null;
+}
+
 export interface DocumentAmendmentsDto {
   amendments: AmendmentDto[];
   relations: RelationDto[];
+  /** The Mesa's wordings, those over amendments the reader sees. */
+  wordings: PassageWordingDto[];
   baseVersionId: string | null;
 }
 
@@ -1407,7 +1432,10 @@ export interface FinalVoteAnnulBody {
 
 /** Ids the client can offer to lapse after an approval. */
 export interface ApprovalWarnings {
-  /** Approved amendments that collide with this one in the base text. */
+  /**
+   * Approved amendments this one now shares a passage with: the Mesa words
+   * it, or a deletion wins (shared/utils/content/passages.ts).
+   */
   overlapsWithApproved: string[];
   /** Undecided or approved amendments linked by an "incompatible" relation. */
   incompatible: string[];

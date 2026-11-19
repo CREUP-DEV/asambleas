@@ -150,6 +150,8 @@ export const ACTIVITY_ACTION_ICONS = {
   document_deleted: "i-lucide-file-x",
   document_voted: "i-lucide-vote",
   final_vote_annulled: "i-lucide-undo-2",
+  passage_worded: "i-lucide-pen-line",
+  passage_wording_removed: "i-lucide-eraser",
   amendment_created: "i-lucide-file-plus",
   amendment_updated: "i-lucide-pencil",
   amendment_deleted: "i-lucide-file-x",

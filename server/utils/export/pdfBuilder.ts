@@ -136,6 +136,13 @@ export interface ExportAnnexRow {
    * collides with, or an empty array when it no longer fits the base.
    */
   conflict: string[] | null;
+  /** Codes of the approved deletions that leave its changes without effect. */
+  supersededBy: string[];
+  /**
+   * The passage it shares with other approved amendments: the Mesa worded
+   * it, or the wording is still pending (the text carries a proposal).
+   */
+  passage: { status: "worded" | "pending"; with: string[] } | null;
 }
 
 export type CleanSource = "consolidated" | "base" | "working";
@@ -147,6 +154,8 @@ export type ExportBody =
       blocks: ConsolidatedBlock[];
       /** Superscript code by amendment id. */
       codes: Record<string, string>;
+      /** The Mesa's wordings in the text: their changes read «Mesa». */
+      wordingIds?: string[];
       annex: ExportAnnexRow[];
     };
 
@@ -675,6 +684,23 @@ function annexRow(row: ExportAnnexRow, t: Translate): TableCell[] {
       color: CREUP_RED,
     });
   }
+  if (row.supersededBy.length > 0) {
+    outcome.push({
+      text: t("annex.supersededBy", { codes: row.supersededBy.join(", ") }),
+      color: MUTED_GREY,
+    });
+  }
+  if (row.passage) {
+    outcome.push({
+      text: t(
+        row.passage.status === "worded"
+          ? "annex.worded"
+          : "annex.wordingPending",
+        { codes: row.passage.with.join(", ") },
+      ),
+      color: row.passage.status === "worded" ? MUTED_GREY : CREUP_RED,
+    });
+  }
 
   return [
     { text: row.displayCode, bold: true, style: "tableCell" },
@@ -817,7 +843,9 @@ export function buildDocumentPdf(
         ? [{ text: t("emptyDocument"), style: "note" }]
         : annotatedToPdf(body.blocks, {
             ...ctx,
-            codeOf: (id) => body.codes[id] ?? "?",
+            codeOf: (id) =>
+              body.codes[id] ??
+              (body.wordingIds?.includes(id) ? t("mesaCode") : "?"),
             formatLabel: createFormatLabeller(locale),
           })),
       ...linksSection(links, t),

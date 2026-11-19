@@ -107,10 +107,6 @@ import {
   type OpError,
 } from "../../../shared/utils/content/ops";
 import {
-  isHardOverlap,
-  overlapBetween,
-} from "../../../shared/utils/content/overlaps";
-import {
   computeVoteOutcome,
   type VoteCounts,
   type VoteOutcome,
@@ -137,6 +133,8 @@ import {
   shareLockAssembly,
 } from "./documents";
 import { recordEvent } from "./events";
+import { loadPassageWordings, toPassageWordingDto } from "./wordings";
+import { amendmentsMeet } from "../../../shared/utils/content/passages";
 import { assertSessionOpen } from "./sessionOpen";
 import { toVoteDto, type VoteRow } from "./votes";
 import {
@@ -621,7 +619,10 @@ export function amendmentCapabilities(
   };
 }
 
-/** Hard overlaps with approved amendments and live "incompatible" links. */
+/**
+ * Approved amendments this one now shares a passage with (amendmentsMeet:
+ * the Mesa words it, or a deletion wins) and live "incompatible" links.
+ */
 export function computeApprovalWarnings(
   target: { id: string; ops: AmendmentOp[] },
   approved: { id: string; ops: AmendmentOp[] }[],
@@ -630,7 +631,7 @@ export function computeApprovalWarnings(
   return {
     overlapsWithApproved: approved
       .filter((other) => other.id !== target.id)
-      .filter((other) => isHardOverlap(overlapBetween(target.ops, other.ops)))
+      .filter((other) => amendmentsMeet(target.ops, other.ops))
       .map((other) => other.id),
     incompatible: unique(incompatibleIds.filter((id) => id !== target.id)),
   };
@@ -2021,11 +2022,16 @@ export async function listDocumentAmendments(
           .orderBy(asc(amendmentRelations.createdAt))
       : [];
 
+  const wordingRows = await loadPassageWordings(db, ctx.document.id);
+
   return {
     amendments: dtos,
     relations: relationRows
       .filter((row) => visibleIds.has(row.fromId) && visibleIds.has(row.toId))
       .map(toRelationDto),
+    wordings: wordingRows
+      .filter((row) => row.amendmentIds.every((id) => visibleIds.has(id)))
+      .map(toPassageWordingDto),
     baseVersionId: ctx.document.baseVersionId,
   };
 }

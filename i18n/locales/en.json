@@ -2519,6 +2519,7 @@
         "code": "The superscript code names the amendment behind each change. See the annex."
       },
       "conflicts": "Approved amendments that could not be incorporated because they clash with others or no longer fit the text: {codes}.",
+      "mesaCode": "Mesa",
       "annex": {
         "title": "Annex: amendments",
         "empty": "No amendments were submitted.",
@@ -2530,7 +2531,10 @@
         "sources": "Combines {codes}",
         "late": "Late",
         "notApplied": "Not incorporated: clashes with {codes}",
-        "notAppliedInvalid": "Not incorporated: no longer fits the text"
+        "notAppliedInvalid": "Not incorporated: no longer fits the text",
+        "supersededBy": "No effect on the final text: {codes} deleted it",
+        "worded": "Wording set by the Mesa together with {codes}",
+        "wordingPending": "Wording pending from the Mesa, together with {codes}"
       },
       "amendmentStatuses": {
         "draft": "Draft",
@@ -6437,6 +6441,8 @@
       "document_deleted": "Document deleted",
       "document_voted": "Final vote on the document",
       "final_vote_annulled": "Final vote annulled",
+      "passage_worded": "Passage wording set by the Mesa",
+      "passage_wording_removed": "Passage wording removed",
       "amendment_created": "@:amendment.history.events.amendment_created",
       "amendment_updated": "Amendment draft edited",
       "amendment_deleted": "Amendment draft deleted",

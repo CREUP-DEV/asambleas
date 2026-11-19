@@ -138,7 +138,25 @@ function linkIn(a: Touch, b: Touch): Link | null {
   return touching ? "adjacent" : null;
 }
 
-function sortedKey(amendmentIds: string[], blockIds: string[]): string {
+/**
+ * Whether two amendments meet in some block: one deletes what the other
+ * changes, or they change the same text or text that touches.
+ */
+export function amendmentsMeet(a: AmendmentOp[], b: AmendmentOp[]): boolean {
+  const left = touchesOf(a);
+  const right = touchesOf(b);
+  for (const [blockId, touch] of left) {
+    const other = right.get(blockId);
+    if (other && linkIn(touch, other)) return true;
+  }
+  return false;
+}
+
+/** What a wording is set for: its amendments and blocks, sorted. */
+export function passageKey(
+  amendmentIds: readonly string[],
+  blockIds: readonly string[],
+): string {
   return `${[...amendmentIds].sort().join(",")}|${[...blockIds].sort().join(",")}`;
 }
 
@@ -275,7 +293,7 @@ export function consolidateApproved(
   for (const group of groups.values()) {
     const amendmentIds = group.members.map((i) => valid[i]!.id);
     const blocks = new Set(group.blocks);
-    const key = sortedKey(amendmentIds, group.blocks);
+    const key = passageKey(amendmentIds, group.blocks);
     const wording = options.wordings?.find(
       (candidate) =>
         sameSet(candidate.amendmentIds, amendmentIds) &&

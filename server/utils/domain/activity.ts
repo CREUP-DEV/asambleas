@@ -990,6 +990,8 @@ export const EVENT_PAYLOAD_KEYS: Record<EventType, readonly string[]> = {
     "unanimous",
   ],
   final_vote_annulled: ["result", "note"],
+  passage_worded: ["codes"],
+  passage_wording_removed: ["codes"],
   amendment_created: ["kind", "code"],
   amendment_updated: ["kind"],
   amendment_deleted: ["kind", "code"],

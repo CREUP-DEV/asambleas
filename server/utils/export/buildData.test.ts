@@ -154,6 +154,12 @@ vi.mock("../../db", async () => {
     },
   };
 });
+vi.mock("../domain/wordings", async () => ({
+  ...(await vi.importActual<typeof import("../domain/wordings")>(
+    "../domain/wordings",
+  )),
+  loadPassageWordings: async () => [],
+}));
 vi.mock("./actor", async () => ({
   ...(await vi.importActual<typeof import("./actor")>("./actor")),
   loadExportActor: async () => secretaria,

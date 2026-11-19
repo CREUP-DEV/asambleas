@@ -20,7 +20,7 @@ import {
   titleDocumentId,
   visibleAgendaItems,
 } from "../../../shared/utils/agendaSubmissions";
-import { consolidate } from "../../../shared/utils/content/consolidate";
+import { consolidateApproved } from "../../../shared/utils/content/passages";
 import { positionsArePublic } from "../../../shared/utils/positions";
 import { formatAssemblyLabel } from "../../../shared/utils/slug";
 import {
@@ -29,6 +29,7 @@ import {
   type Actor,
 } from "../domain/actor";
 import { loadAmendmentVisibility } from "../domain/documents";
+import { loadPassageWordings, wordingInputs } from "../domain/wordings";
 import { getImageDir, imageFileName } from "../domain/documentImages";
 import { logError } from "../core/logger";
 import { loadCoProponents, withCoProponentIds } from "../domain/presenters";
@@ -322,18 +323,27 @@ export async function annotatedBody(
   // out of the text, its codes and the annex. Deciding one needs it
   // published, so for approved amendments this is a second guard.
   const readable = amendmentRows.filter((row) => visible.has(row.id));
-  const result = consolidate(
+  // The text as the final vote fixes it: the Mesa's wordings over the
+  // readable amendments apply (shared/utils/content/passages.ts).
+  const wordings = (await loadPassageWordings(db, document.id)).filter((row) =>
+    row.amendmentIds.every((id) => visible.has(id)),
+  );
+  const result = consolidateApproved(
     baseBlocks.get(baseVersionId) ?? [],
     consolidationInput(readable),
+    { wordings: wordingInputs(wordings) },
   );
   return {
     variant: "annotated",
     blocks: result.annotated,
     codes: amendmentCodes(readable),
+    wordingIds: result.wordingIds,
     annex: buildAnnexRows({
       amendments: readable,
       visibleIds: visible,
       conflicts: result.conflicts,
+      passages: result.passages,
+      superseded: result.superseded,
       // The order the room debated them in (inDebateOrder).
       byAnswer: positionsArePublic({
         positionsPublishedAt: document.positionsPublishedAt ?? null,

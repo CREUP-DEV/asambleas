@@ -8,6 +8,7 @@ import {
 } from "../../constants/domain";
 import type {
   AcceptanceBody,
+  PassageWordingBody,
   AdmissionBody,
   AmendmentAuthorsBody,
   AmendmentDraftBody,
@@ -22,7 +23,12 @@ import type {
   VoteInput,
 } from "../../types/api";
 import { RECLASSIFIABLE_KINDS } from "../amendmentReclassify";
-import { amendmentOpsSchema, normalizeText } from "./content";
+import {
+  amendmentOpsSchema,
+  BLOCK_ID_PATTERN,
+  DOCUMENT_MAX_BLOCKS,
+  normalizeText,
+} from "./content";
 import { voteInputSchema } from "./vote";
 
 /**
@@ -212,6 +218,26 @@ export const relationBodySchema = z
     path: ["toId"],
   });
 
+/** Approved amendments a passage holds, at most. */
+export const MAX_PASSAGE_AMENDMENTS = 200;
+
+/**
+ * Body of PUT .../documents/[document]/wordings (PassageWordingBody): the
+ * Mesa's wording of a passage where approved amendments collide.
+ */
+export const passageWordingBodySchema = z.object({
+  amendmentIds: uniqueIds(MAX_PASSAGE_AMENDMENTS, 1),
+  blockIds: z
+    .array(z.string().regex(BLOCK_ID_PATTERN))
+    .min(1)
+    .max(DOCUMENT_MAX_BLOCKS)
+    .refine((ids) => new Set(ids).size === ids.length, {
+      message: "duplicate_id",
+    }),
+  ops: amendmentOpsSchema.min(1),
+  note: noteSchema,
+});
+
 /** Body of POST .../amendments/[amendment]/reclassify (ReclassifyBody). */
 export const reclassifyBodySchema = z.object({
   kind: z.enum(RECLASSIFIABLE_KINDS),
@@ -247,4 +273,5 @@ export type _AmendmentSchemaChecks = [
   Assignable<AcceptanceBody, z.output<typeof acceptanceBodySchema>>,
   Assignable<OutcomeBody, z.output<typeof outcomeBodySchema>>,
   Assignable<RelationBody, z.output<typeof relationBodySchema>>,
+  Assignable<PassageWordingBody, z.output<typeof passageWordingBodySchema>>,
 ];

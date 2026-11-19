@@ -358,6 +358,46 @@ export const amendmentRelations = pgTable(
   ],
 );
 
+/**
+ * The wording the Mesa set for a passage where approved amendments collide
+ * (shared/utils/content/passages.ts): `ops` against the base replace their
+ * changes in `blockIds`. It applies while those amendments and blocks are
+ * still the passage (`passageKey`, the engine's key); otherwise it waits.
+ */
+export const passageWordings = pgTable(
+  "passage_wordings",
+  {
+    id: text("id").primaryKey().$defaultFn(cuid),
+    documentId: text("document_id")
+      .notNull()
+      .references(() => documents.id, { onDelete: "cascade" }),
+    passageKey: text("passage_key").notNull(),
+    amendmentIds: text("amendment_ids").array().notNull(),
+    blockIds: text("block_ids").array().notNull(),
+    ops: jsonb("ops").$type<AmendmentOp[]>().notNull(),
+    note: text("note"),
+    createdByUserId: text("created_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    updatedByUserId: text("updated_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" })
+      .defaultNow()
+      .notNull()
+      .$onUpdate(() => sql`now()`),
+  },
+  (table) => [
+    uniqueIndex("passage_wordings_passage").on(
+      table.documentId,
+      table.passageKey,
+    ),
+  ],
+);
+
 export const amendmentsRelations = relations(amendments, ({ one, many }) => ({
   document: one(documents, {
     fields: [amendments.documentId],
