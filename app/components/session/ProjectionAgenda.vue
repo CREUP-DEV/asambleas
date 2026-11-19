@@ -38,7 +38,8 @@ function rowStyle(row: SessionAgendaRow) {
 
 function rowClass(row: SessionAgendaRow): string[] {
   return [
-    "rounded-xl pe-4",
+    // The highlight moves with a short fade as the debate moves on.
+    "rounded-xl pe-4 transition-colors duration-500 motion-reduce:transition-none",
     props.size === "full" ? "py-3" : "py-2 text-[clamp(1rem,1.3vw,1.5rem)]",
     row.item.id === props.currentId
       ? "bg-primary text-inverted font-bold"
@@ -50,7 +51,9 @@ function rowClass(row: SessionAgendaRow): string[] {
 </script>
 
 <template>
-  <ol :class="size === 'full' ? 'gap-x-8 xl:columns-2' : 'space-y-2'">
+  <!-- One column: the projection keeps the current item in the middle
+       of a box that scrolls, with the items before and after around it. -->
+  <ol :class="size === 'full' ? '' : 'space-y-2'">
     <li
       v-for="group in groups"
       :key="group.head.item.id"

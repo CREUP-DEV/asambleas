@@ -575,20 +575,45 @@ const mode = computed<"recess" | "amendment" | "document" | "idle">(() => {
   if (document.value) return "document";
   return "idle";
 });
-/** The page takes the screen's height exactly: its box scrolls itself. */
-const fitsScreen = computed(
-  () => mode.value === "amendment" || mode.value === "document",
-);
+/**
+ * The page takes the screen's height exactly: its boxes scroll themselves
+ * (the document, and the agenda beside it or on its own), so a long agenda
+ * never pushes the item in debate off the screen.
+ */
+const fitsScreen = computed(() => mode.value !== "recess");
 
 // Beside a document the agenda keeps to the screen's height: it scrolls
 // itself so the item in debate stays in view.
+// The item in debate sits in the middle of the agenda whenever the list
+// allows it (user's decision of 2026-11-19), so the room sees the items
+// before and after it; moving on scrolls there smoothly. Only the list
+// scrolls, never the page.
 const agendaNav = ref<HTMLElement | null>(null);
+/** The list last placed: a new one (another mode) is placed at once. */
+let placedIn: HTMLElement | null = null;
 watch(
   () => [live.value?.agendaItemId, agendaNav.value, rows.value.length],
   () => {
-    const current =
-      agendaNav.value?.querySelector<HTMLElement>("[aria-current]");
-    current?.scrollIntoView({ block: "nearest" });
+    const box = agendaNav.value;
+    const current = box?.querySelector<HTMLElement>("[aria-current]");
+    if (!box || !current) return;
+    const boxRect = box.getBoundingClientRect();
+    const rect = current.getBoundingClientRect();
+    const top =
+      rect.top -
+      boxRect.top +
+      box.scrollTop -
+      (box.clientHeight - rect.height) / 2;
+    const reduce = window.matchMedia(
+      "(prefers-reduced-motion: reduce)",
+    ).matches;
+    box.scrollTo({
+      top: Math.max(0, top),
+      // A list placed for the first time (the screen opening, or another
+      // mode's list) goes there at once; moving on in it glides.
+      behavior: placedIn === box && !reduce ? "smooth" : "auto",
+    });
+    placedIn = box;
   },
   { flush: "post" },
 );
@@ -888,6 +913,26 @@ useHead(() => ({
       <div class="flex items-center gap-3">
         <!-- Fullscreen support is only known in the browser. -->
         <ClientOnly>
+          <!-- The connection, a dot by the clock (the bottom bar is gone so
+               the text takes its room); a warning only when it matters. -->
+          <span
+            class="inline-flex items-center gap-2 text-sm"
+            role="status"
+            :title="connectionLabel"
+          >
+            <span
+              class="size-3 rounded-full"
+              :class="CONNECTION_DOT[connection]"
+              aria-hidden="true"
+            />
+            <span class="sr-only">{{ connectionLabel }}</span>
+            <span v-if="stale" class="text-warning font-medium">
+              {{ t("projection.stale") }}
+            </span>
+            <span v-else-if="failed" class="text-warning font-medium">
+              {{ t("projection.loadFailed") }}
+            </span>
+          </span>
           <span
             class="text-[clamp(1.25rem,2vw,2.25rem)] font-semibold tabular-nums"
             :aria-label="t('projection.clock', { time: clock })"
@@ -1159,22 +1204,11 @@ useHead(() => ({
             class="flex flex-col gap-[clamp(0.5rem,1vw,1rem)]"
             aria-live="polite"
           >
-            <div class="flex flex-wrap items-baseline gap-x-4 gap-y-2">
-              <h1
-                id="projection-document-title"
-                class="text-[clamp(1.5rem,2.5vw,2.75rem)] leading-tight font-bold tracking-tight"
-              >
-                {{ document.title }}
-              </h1>
-              <UBadge
-                v-if="document.reference"
-                color="neutral"
-                variant="outline"
-                size="lg"
-                :label="document.reference"
-                class="self-center"
-              />
-            </div>
+            <!-- The agenda beside it already names the document: its title
+                 stays for screen readers, and the text takes the room. -->
+            <h1 id="projection-document-title" class="sr-only">
+              {{ document.title }}
+            </h1>
             <p v-if="live?.amendmentId && !debated" class="text-muted">
               {{ t("projection.amendmentHidden") }}
             </p>
@@ -1267,7 +1301,10 @@ useHead(() => ({
         </nav>
       </section>
 
-      <section v-else class="flex flex-1 flex-col gap-[clamp(1rem,2vw,2rem)]">
+      <section
+        v-else
+        class="flex min-h-0 flex-1 flex-col gap-[clamp(1rem,2vw,2rem)]"
+      >
         <h1 class="text-[clamp(2rem,4vw,4.5rem)] leading-tight font-extrabold">
           {{ t("projection.agenda") }}
         </h1>
@@ -1275,11 +1312,19 @@ useHead(() => ({
         <p v-if="rows.length === 0" class="text-muted">
           {{ agenda ? t("projection.agendaEmpty") : t("agenda.loadError") }}
         </p>
-        <SessionProjectionAgenda
+        <!-- Its own box at the screen's height, the item in debate in the
+             middle: a long agenda never runs off the screen. -->
+        <nav
           v-else
-          :rows="rows"
-          :current-id="live?.agendaItemId ?? null"
-        />
+          ref="agendaNav"
+          :aria-label="t('projection.agenda')"
+          class="projection-scroll min-h-0 flex-1 overflow-y-auto"
+        >
+          <SessionProjectionAgenda
+            :rows="rows"
+            :current-id="live?.agendaItemId ?? null"
+          />
+        </nav>
       </section>
       <!--
         Nobody scrolls a projector: the band sticks to the bottom of the
@@ -1303,36 +1348,6 @@ useHead(() => ({
         />
       </div>
     </main>
-
-    <footer
-      class="border-default text-muted flex flex-wrap items-center justify-between gap-2 border-t px-[clamp(1rem,3vw,3rem)] py-2 text-sm"
-    >
-      <span class="inline-flex items-center gap-2" role="status">
-        <span
-          class="size-2.5 rounded-full"
-          :class="CONNECTION_DOT[connection]"
-          aria-hidden="true"
-        />
-        {{ connectionLabel }}
-      </span>
-      <ClientOnly>
-        <span class="inline-flex flex-wrap items-center gap-x-3">
-          <span v-if="stale" class="text-warning font-medium">
-            {{ t("projection.stale") }}
-          </span>
-          <span v-else-if="failed" class="text-warning font-medium">
-            {{ t("projection.loadFailed") }}
-          </span>
-          <span v-if="lastUpdate">
-            {{
-              t("projection.updated", {
-                time: formatTime(lastUpdate, { locale }),
-              })
-            }}
-          </span>
-        </span>
-      </ClientOnly>
-    </footer>
   </div>
 </template>
 
