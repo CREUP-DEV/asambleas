@@ -36,6 +36,13 @@ export type SortDir = "asc" | "desc";
 export interface SheetSort<K extends string> {
   key: K;
   dir: SortDir;
+  /**
+   * In a column of states (a result, an answer), the state that goes first
+   * (user's decision of 2026-11-19), the rest after it in the column's own
+   * order and direction. One of SHEET_SORT_LEADS for the key; absent or
+   * null otherwise.
+   */
+  lead?: string | null;
 }
 
 /** The columns «General» sorts by. `number` is the agenda's own order. */
@@ -50,8 +57,14 @@ export const GENERAL_SORT_KEYS = [
 ] as const;
 export type GeneralSortKey = (typeof GENERAL_SORT_KEYS)[number];
 
-/** The columns «Enmiendas» sorts by. `code` is the console's order. */
+/**
+ * The orders «Enmiendas» sorts by. `treatment` is the order they are dealt
+ * with, the console's (text order, by answer once public: the default, no
+ * column of its own); `code`, the «Enmienda» column, is the order they were
+ * presented in (user's decision of 2026-11-19).
+ */
 export const AMENDMENT_SORT_KEYS = [
+  "treatment",
   "code",
   "authors",
   "kind",
@@ -68,7 +81,7 @@ export const DEFAULT_GENERAL_SORT: SheetSort<GeneralSortKey> = {
   dir: "asc",
 };
 export const DEFAULT_AMENDMENT_SORT: SheetSort<AmendmentSortKey> = {
-  key: "code",
+  key: "treatment",
   dir: "asc",
 };
 
@@ -77,7 +90,7 @@ export function isDefaultSort<K extends string>(
   sort: SheetSort<K>,
   fallback: SheetSort<K>,
 ): boolean {
-  return sort.key === fallback.key && sort.dir === fallback.dir;
+  return sort.key === fallback.key && sort.dir === fallback.dir && !sort.lead;
 }
 
 /**
@@ -90,10 +103,14 @@ export function nextSort<K extends string>(
   fallback: SheetSort<K>,
 ): SheetSort<K> {
   if (current.key !== key) return { key, dir: "asc" };
+  // The state chosen to go first stays while the direction turns.
+  const lead = current.lead ? { lead: current.lead } : {};
   if (key === fallback.key) {
-    return { key, dir: current.dir === "asc" ? "desc" : "asc" };
+    return { key, dir: current.dir === "asc" ? "desc" : "asc", ...lead };
   }
-  return current.dir === "asc" ? { key, dir: "desc" } : { ...fallback };
+  return current.dir === "asc"
+    ? { key, dir: "desc", ...lead }
+    : { ...fallback };
 }
 
 /**
@@ -126,17 +143,36 @@ function sortBy<T>(
   tieBreak: (row: T) => number,
   dir: SortDir,
   locale: string,
+  /** The rows of the state chosen to go first (SheetSort.lead). */
+  first?: (row: T) => boolean,
 ): T[] {
   const collator = new Intl.Collator(locale, {
     numeric: true,
     sensitivity: "base",
   });
+  const lead = (row: T) => (first?.(row) ? 0 : 1);
   return [...rows].sort(
     (a, b) =>
+      lead(a) - lead(b) ||
       compareValues(value(a), value(b), dir, collator) ||
       tieBreak(a) - tieBreak(b),
   );
 }
+
+// States that may go first ------------------------------------------------------
+
+/**
+ * The main presenter's answers as «Respuesta del proponente» reads them:
+ * `none` is a row without one.
+ */
+export const POSITION_LEADS = [
+  "accept",
+  "transact",
+  "reject",
+  "pending",
+  "none",
+] as const;
+export type PositionLead = (typeof POSITION_LEADS)[number];
 
 /** «Resultado» in «General»: decided results first, «Pendiente» last. */
 const RESULT_ORDER: readonly ControlSheetResult[] = [
@@ -159,6 +195,14 @@ function latestVoteAt(row: GeneralSheetRow): string | null {
     }
   }
   return latest;
+}
+
+/** A row's state in a column of states; null for any other column. */
+function generalLeadValue(
+  row: GeneralSheetRow,
+  key: GeneralSortKey,
+): string | null {
+  return key === "result" ? (row.outcome.result ?? "pending") : null;
 }
 
 function generalSortValue(
@@ -194,14 +238,28 @@ function mainAuthorAcronym(row: AmendmentSheetRow): string | null {
   return (main ?? authors[0])?.acronym ?? null;
 }
 
+/** A row's state in a column of states; null for any other column. */
+function amendmentLeadValue(
+  row: AmendmentSheetRow,
+  key: AmendmentSortKey,
+): string | null {
+  if (key === "result") return row.state;
+  if (key === "position") return row.position?.position ?? "none";
+  return null;
+}
+
 function amendmentSortValue(
   row: AmendmentSheetRow,
   key: AmendmentSortKey,
   position: number,
 ): SortValue {
   switch (key) {
-    case "code":
+    case "treatment":
       return position;
+    case "code":
+      // The order they were presented in; drafts never reach the sheet,
+      // one presented before numbering existed goes last.
+      return row.amendment.number;
     case "authors":
       return mainAuthorAcronym(row);
     case "kind":
@@ -447,12 +505,14 @@ export function shownGeneralRows(
       return [row.kind === "heading" ? row : { ...row, kind: "heading" }];
     });
   }
+  const lead = sort.lead ?? null;
   return sortBy(
     shown,
     (row) => generalSortValue(row, sort.key),
     (row) => row.index,
     sort.dir,
     locale,
+    lead ? (row) => generalLeadValue(row, sort.key) === lead : undefined,
   );
 }
 
@@ -473,12 +533,14 @@ export function shownAmendmentRows(
   );
   if (isDefaultSort(sort, DEFAULT_AMENDMENT_SORT)) return shown;
   const at = (row: AmendmentSheetRow) => position.get(row.amendment.id) ?? 0;
+  const lead = sort.lead ?? null;
   return sortBy(
     shown,
     (row) => amendmentSortValue(row, sort.key, at(row)),
     at,
     sort.dir,
     locale,
+    lead ? (row) => amendmentLeadValue(row, sort.key) === lead : undefined,
   );
 }
 
@@ -491,6 +553,8 @@ export function shownAmendmentRows(
 export const SHEET_QUERY = {
   sort: "orden",
   dir: "sentido",
+  /** The state that goes first in a column of states. */
+  lead: "primero",
   search: "q",
   view: "ver",
   results: "resultado",
@@ -510,7 +574,8 @@ const GENERAL_SORT_SLUGS: Record<GeneralSortKey, string> = {
   speakers: "intervinientes",
 };
 const AMENDMENT_SORT_SLUGS: Record<AmendmentSortKey, string> = {
-  code: "enmienda",
+  treatment: "tratamiento",
+  code: "presentacion",
   authors: "presenta",
   kind: "tipo",
   position: "respuesta",
@@ -555,6 +620,31 @@ const STATE_SLUGS: Record<LiveAmendmentState, string> = {
   inadmissible: "inadmitida",
 };
 
+const POSITION_SLUGS: Record<PositionLead, string> = {
+  accept: "acepta",
+  transact: "transacciona",
+  reject: "rechaza",
+  pending: "pendiente",
+  none: "sin-respuesta",
+};
+
+/**
+ * The columns of states and the states each may put first, with their
+ * slugs in the query (`primero`), in the column's own order.
+ */
+export const GENERAL_SORT_LEADS: Partial<
+  Record<GeneralSortKey, readonly string[]>
+> = { result: RESULT_FILTERS };
+export const AMENDMENT_SORT_LEADS: Partial<
+  Record<AmendmentSortKey, readonly string[]>
+> = { result: LIVE_AMENDMENT_STATES, position: POSITION_LEADS };
+const GENERAL_LEAD_SLUGS: Partial<
+  Record<GeneralSortKey, Record<string, string>>
+> = { result: RESULT_SLUGS };
+const AMENDMENT_LEAD_SLUGS: Partial<
+  Record<AmendmentSortKey, Record<string, string>>
+> = { result: STATE_SLUGS, position: POSITION_SLUGS };
+
 function firstValue(value: LocationQuery[string] | undefined): string {
   const raw = Array.isArray(value) ? value[0] : value;
   return typeof raw === "string" ? raw : "";
@@ -588,13 +678,19 @@ function sortFromQuery<K extends string>(
   query: LocationQuery,
   slugs: Record<K, string>,
   fallback: SheetSort<K>,
+  leadSlugs: Partial<Record<K, Record<string, string>>>,
 ): SheetSort<K> {
   const slug = firstValue(query[SHEET_QUERY.sort]);
   const key = slug ? fromSlug(slugs, slug) : fallback.key;
   // A column it does not know: the default order, whatever the direction.
   if (key === null) return { ...fallback };
   const dir = firstValue(query[SHEET_QUERY.dir]) === "desc" ? "desc" : "asc";
-  return { key, dir };
+  // A state the column has, or none.
+  const states = leadSlugs[key];
+  const lead = states
+    ? fromSlug(states, firstValue(query[SHEET_QUERY.lead]))
+    : null;
+  return lead ? { key, dir, lead } : { key, dir };
 }
 
 export interface GeneralSheetState {
@@ -612,7 +708,12 @@ export function parseGeneralSheetQuery(
   query: LocationQuery,
 ): GeneralSheetState {
   return {
-    sort: sortFromQuery(query, GENERAL_SORT_SLUGS, DEFAULT_GENERAL_SORT),
+    sort: sortFromQuery(
+      query,
+      GENERAL_SORT_SLUGS,
+      DEFAULT_GENERAL_SORT,
+      GENERAL_LEAD_SLUGS,
+    ),
     filters: {
       query: firstValue(query[SHEET_QUERY.search]).trim(),
       view:
@@ -631,7 +732,12 @@ export function parseAmendmentSheetQuery(
   query: LocationQuery,
 ): AmendmentSheetState {
   return {
-    sort: sortFromQuery(query, AMENDMENT_SORT_SLUGS, DEFAULT_AMENDMENT_SORT),
+    sort: sortFromQuery(
+      query,
+      AMENDMENT_SORT_SLUGS,
+      DEFAULT_AMENDMENT_SORT,
+      AMENDMENT_LEAD_SLUGS,
+    ),
     filters: {
       query: firstValue(query[SHEET_QUERY.search]).trim(),
       view:
@@ -653,13 +759,21 @@ function sortToQuery<K extends string>(
   sort: SheetSort<K>,
   slugs: Record<K, string>,
   fallback: SheetSort<K>,
+  leadSlugs: Partial<Record<K, Record<string, string>>>,
 ): SheetQueryPatch {
   if (isDefaultSort(sort, fallback)) {
-    return { [SHEET_QUERY.sort]: undefined, [SHEET_QUERY.dir]: undefined };
+    return {
+      [SHEET_QUERY.sort]: undefined,
+      [SHEET_QUERY.dir]: undefined,
+      [SHEET_QUERY.lead]: undefined,
+    };
   }
   return {
     [SHEET_QUERY.sort]: sort.key === fallback.key ? undefined : slugs[sort.key],
     [SHEET_QUERY.dir]: sort.dir === "desc" ? "desc" : undefined,
+    [SHEET_QUERY.lead]: sort.lead
+      ? (leadSlugs[sort.key]?.[sort.lead] ?? undefined)
+      : undefined,
   };
 }
 
@@ -678,7 +792,12 @@ function listToQuery<T extends string>(
 export function generalSheetQuery(state: GeneralSheetState): SheetQueryPatch {
   const { filters } = state;
   return {
-    ...sortToQuery(state.sort, GENERAL_SORT_SLUGS, DEFAULT_GENERAL_SORT),
+    ...sortToQuery(
+      state.sort,
+      GENERAL_SORT_SLUGS,
+      DEFAULT_GENERAL_SORT,
+      GENERAL_LEAD_SLUGS,
+    ),
     [SHEET_QUERY.search]: filters.query.trim() || undefined,
     [SHEET_QUERY.view]:
       filters.view === "all" ? undefined : GENERAL_VIEW_SLUGS[filters.view],
@@ -696,7 +815,12 @@ export function amendmentSheetQuery(
 ): SheetQueryPatch {
   const { filters } = state;
   return {
-    ...sortToQuery(state.sort, AMENDMENT_SORT_SLUGS, DEFAULT_AMENDMENT_SORT),
+    ...sortToQuery(
+      state.sort,
+      AMENDMENT_SORT_SLUGS,
+      DEFAULT_AMENDMENT_SORT,
+      AMENDMENT_LEAD_SLUGS,
+    ),
     [SHEET_QUERY.search]: filters.query.trim() || undefined,
     [SHEET_QUERY.view]:
       filters.view === "all" ? undefined : AMENDMENT_VIEW_SLUGS[filters.view],

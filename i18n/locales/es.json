@@ -4900,6 +4900,12 @@
     },
     "noObservations": "Sin observaciones",
     "sort": {
+      "treatment": "Orden de tratamiento",
+      "presentation": "Orden de presentación",
+      "lead": "Qué va primero en {column}",
+      "leadPrefix": "Primero:",
+      "leadNone": "el orden de la columna",
+      "leadStatus": "primero: {state}",
       "label": "Ordenar por",
       "asc": "ascendente",
       "desc": "descendente",

@@ -174,6 +174,27 @@ const ids = (list: readonly GeneralSheetRow[]) =>
   list.map((entry) => `${entry.kind === "heading" ? "#" : ""}${entry.id}`);
 
 describe("nextSort", () => {
+  it("keeps the state that goes first while the direction turns", () => {
+    const led = {
+      key: "result" as const,
+      dir: "asc" as const,
+      lead: "rejected",
+    };
+    expect(nextSort(led, "result", DEFAULT_GENERAL_SORT)).toEqual({
+      key: "result",
+      dir: "desc",
+      lead: "rejected",
+    });
+    // Another column starts plain; back to the default drops it.
+    expect(nextSort(led, "votes", DEFAULT_GENERAL_SORT)).toEqual({
+      key: "votes",
+      dir: "asc",
+    });
+    expect(
+      nextSort({ ...led, dir: "desc" }, "result", DEFAULT_GENERAL_SORT),
+    ).toEqual(DEFAULT_GENERAL_SORT);
+  });
+
   it("goes ascending, descending, then back to the default order", () => {
     let sort = nextSort(DEFAULT_GENERAL_SORT, "result", DEFAULT_GENERAL_SORT);
     expect(sort).toEqual({ key: "result", dir: "asc" });
@@ -625,6 +646,41 @@ describe("shownAmendmentRows", () => {
       ),
     ).toEqual(["a2", "a3"]);
   });
+
+  it("sorts by the order they were presented in, by «Enmienda»", () => {
+    // The console's order (the rows' own) is a2, a3, a1; presented 3, 1, 2.
+    const presented = [
+      amendment("a2", {}, { number: 3 }),
+      amendment("a3", {}, { number: 1 }),
+      amendment("a1", {}, { number: 2 }),
+    ];
+    const by = (key: "code" | "treatment", dir: "asc" | "desc") =>
+      amendmentIds(
+        shownAmendmentRows(presented, { key, dir }, EMPTY_AMENDMENT_FILTERS),
+      );
+    expect(by("code", "asc")).toEqual(["a3", "a1", "a2"]);
+    expect(by("code", "desc")).toEqual(["a2", "a1", "a3"]);
+    // The default, the order of treatment, is the rows' own.
+    expect(by("treatment", "asc")).toEqual(["a2", "a3", "a1"]);
+    expect(by("treatment", "desc")).toEqual(["a1", "a3", "a2"]);
+  });
+
+  it("puts any state first, the rest in the column's order", () => {
+    const states = (key: "result" | "position", lead: string) =>
+      amendmentIds(
+        shownAmendmentRows(
+          amendments,
+          { key, dir: "asc", lead },
+          EMPTY_AMENDMENT_FILTERS,
+        ),
+      );
+    // a1 approved, a2 pending, a3 rejected.
+    expect(states("result", "rejected")).toEqual(["a3", "a2", "a1"]);
+    expect(states("result", "approved")).toEqual(["a1", "a2", "a3"]);
+    // a1 accepts, a2 has no answer, a3 is pending: no answer may lead.
+    expect(states("position", "none")).toEqual(["a2", "a3", "a1"]);
+    expect(states("position", "accept")).toEqual(["a1", "a3", "a2"]);
+  });
 });
 
 describe("keepSeen", () => {
@@ -716,10 +772,43 @@ describe("the query", () => {
     });
     expect(
       amendmentSheetQuery({
-        sort: { key: "code", dir: "desc" },
+        sort: { key: "treatment", dir: "desc" },
         filters: EMPTY_AMENDMENT_FILTERS,
       }),
     ).toMatchObject({ orden: undefined, sentido: "desc" });
+  });
+
+  it("round-trips the state that goes first, only on a column of states", () => {
+    const sort = { key: "result" as const, dir: "asc" as const, lead: "late" };
+    const query = amendmentSheetQuery({
+      sort,
+      filters: EMPTY_AMENDMENT_FILTERS,
+    });
+    expect(query).toMatchObject({
+      orden: "resultado",
+      primero: "fuera-de-plazo",
+    });
+    expect(
+      parseAmendmentSheetQuery({
+        orden: "resultado",
+        primero: "fuera-de-plazo",
+      }).sort,
+    ).toEqual(sort);
+    expect(
+      parseAmendmentSheetQuery({ orden: "respuesta", primero: "sin-respuesta" })
+        .sort,
+    ).toEqual({ key: "position", dir: "asc", lead: "none" });
+    // A state the column does not have, or a column without states.
+    expect(
+      parseAmendmentSheetQuery({ orden: "resultado", primero: "raro" }).sort,
+    ).toEqual({ key: "result", dir: "asc" });
+    expect(
+      parseAmendmentSheetQuery({ orden: "presenta", primero: "pendiente" })
+        .sort,
+    ).toEqual({ key: "authors", dir: "asc" });
+    expect(
+      parseGeneralSheetQuery({ orden: "resultado", primero: "pendiente" }).sort,
+    ).toEqual({ key: "result", dir: "asc", lead: "pending" });
   });
 
   it("leaves out what it does not know", () => {

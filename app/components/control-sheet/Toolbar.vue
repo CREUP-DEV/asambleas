@@ -10,7 +10,8 @@ import type { SheetSort } from "./-filters";
  * chips (role=group, aria-pressed), a search box, a «Filtros» popover for
  * the result, and, below large screens where the table's headers are not
  * shown, the column to sort by and its direction (the same state the
- * headers set). The page keeps it all in the query; `status` is what the
+ * headers set). When the order is by a column of states (a result, an
+ * answer), at every size, which of them goes first («Primero»). The page keeps it all in the query; `status` is what the
  * polite live region says after a change («Ordenado por Resultado,
  * ascendente · 12 de 30 puntos»), `count` what shows while filtering.
  */
@@ -23,6 +24,11 @@ const props = defineProps<{
   extraLabel: string;
   sortItems: readonly { value: K; label: string }[];
   fallback: SheetSort<K>;
+  /**
+   * The states of the column the list is sorted by, any of which may go
+   * first; empty for a column without states.
+   */
+  leadItems?: readonly { value: string; label: string }[];
   /** Filters in use, the search included. */
   active: number;
   count: string | null;
@@ -66,6 +72,26 @@ function flipDir(): void {
 const sortSelectItems = computed<{ value: string; label: string }[]>(() =>
   props.sortItems.map((item) => ({ value: item.value, label: item.label })),
 );
+/** «Primero»: the column's own order, or one of its states first. */
+const COLUMN_ORDER = "__column__";
+const leadSelectItems = computed<{ value: string; label: string }[]>(() => [
+  { value: COLUMN_ORDER, label: t("controlSheet.sort.leadNone") },
+  ...(props.leadItems ?? []).map((item) => ({
+    value: item.value,
+    label: item.label,
+  })),
+]);
+const leadValue = computed<string>({
+  get: () => sort.value.lead ?? COLUMN_ORDER,
+  set: (value) => {
+    const lead = (props.leadItems ?? []).some((item) => item.value === value)
+      ? value
+      : null;
+    if (lead === (sort.value.lead ?? null)) return;
+    sort.value = { key: sort.value.key, dir: sort.value.dir, lead };
+  },
+});
+
 const extraSelectItems = computed<{ value: string; label: string }[]>(() =>
   props.extraItems.map((item) => ({ value: item.value, label: item.label })),
 );
@@ -170,6 +196,24 @@ const extraSelectItems = computed<{ value: string; label: string }[]>(() =>
             })
           "
           @click="flipDir"
+        />
+      </div>
+
+      <!-- Which state of the sorted column goes first, at every size. -->
+      <div
+        v-if="leadItems && leadItems.length > 0"
+        class="flex items-center gap-1.5"
+      >
+        <span class="text-muted text-sm" aria-hidden="true">{{
+          t("controlSheet.sort.leadPrefix")
+        }}</span>
+        <USelect
+          v-model="leadValue"
+          :items="leadSelectItems"
+          value-key="value"
+          size="sm"
+          class="w-52"
+          :aria-label="t('controlSheet.sort.lead', { column: sortLabel })"
         />
       </div>
 

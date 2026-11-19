@@ -17,13 +17,16 @@ import type {
 } from "~~/shared/types/api";
 import {
   AMENDMENT_SORT_KEYS,
+  AMENDMENT_SORT_LEADS,
   AMENDMENT_VIEWS,
   DEFAULT_AMENDMENT_SORT,
   DEFAULT_GENERAL_SORT,
   EMPTY_AMENDMENT_FILTERS,
   EMPTY_GENERAL_FILTERS,
   GENERAL_SORT_KEYS,
+  GENERAL_SORT_LEADS,
   GENERAL_VIEWS,
+  POSITION_LEADS,
   RESULT_FILTERS,
   SHEET_QUERY,
   activeFilterCount,
@@ -44,6 +47,7 @@ import {
   type AmendmentSortKey,
   type GeneralSheetFilters,
   type GeneralSortKey,
+  type PositionLead,
   type SheetQueryPatch,
   type SheetSort,
 } from "~/components/control-sheet/-filters";
@@ -590,7 +594,8 @@ const GENERAL_COLUMN_KEYS: Record<GeneralSortKey, string> = {
   speakers: "controlSheet.columns.speakers",
 };
 const AMENDMENT_COLUMN_KEYS: Record<AmendmentSortKey, string> = {
-  code: "controlSheet.columns.code",
+  treatment: "controlSheet.sort.treatment",
+  code: "controlSheet.sort.presentation",
   authors: "controlSheet.columns.authors",
   kind: "controlSheet.columns.kind",
   position: "controlSheet.columns.position",
@@ -648,6 +653,30 @@ const amendmentSortItems = computed(() =>
   })),
 );
 
+/**
+ * The states the sorted column may put first («Primero»): a result in
+ * «General»; a result or the presenter's answer in «Enmiendas».
+ */
+const POSITION_LEAD_LABELS: Record<PositionLead, string> = {
+  accept: "common.status.position.accept",
+  transact: "common.status.position.transact",
+  reject: "common.status.position.reject",
+  pending: "common.status.position.pending",
+  none: "controlSheet.positionNone",
+};
+const generalLeadItems = computed(() =>
+  GENERAL_SORT_LEADS[generalSort.value.key] ? resultItems.value : [],
+);
+const amendmentLeadItems = computed(() => {
+  const key = amendmentSort.value.key;
+  if (!AMENDMENT_SORT_LEADS[key]) return [];
+  if (key === "result") return stateItems.value;
+  return POSITION_LEADS.map((value) => ({
+    value,
+    label: t(POSITION_LEAD_LABELS[value]),
+  }));
+});
+
 const generalCount = computed(() =>
   t(
     "controlSheet.filters.count",
@@ -677,8 +706,8 @@ const amendmentActive = computed(() =>
 const listStatus = ref("");
 const listStateKey = computed(() =>
   tab.value === "general"
-    ? `general|${generalState.value.sort.key}|${generalState.value.sort.dir}|${filtersKey(generalState.value.filters)}`
-    : `amendments|${amendmentState.value.sort.key}|${amendmentState.value.sort.dir}|${filtersKey(amendmentState.value.filters)}`,
+    ? `general|${generalState.value.sort.key}|${generalState.value.sort.dir}|${generalState.value.sort.lead ?? ""}|${filtersKey(generalState.value.filters)}`
+    : `amendments|${amendmentState.value.sort.key}|${amendmentState.value.sort.dir}|${amendmentState.value.sort.lead ?? ""}|${filtersKey(amendmentState.value.filters)}`,
 );
 watch(
   listStateKey,
@@ -689,10 +718,20 @@ watch(
     const column = general
       ? GENERAL_COLUMN_KEYS[sort.key as GeneralSortKey]
       : AMENDMENT_COLUMN_KEYS[sort.key as AmendmentSortKey];
-    listStatus.value = `${t("controlSheet.sort.status", {
-      column: t(column),
-      direction: t(`controlSheet.sort.${sort.dir}`),
-    })} · ${general ? generalCount.value : amendmentCountText.value}`;
+    const leads = general ? generalLeadItems.value : amendmentLeadItems.value;
+    const lead = sort.lead
+      ? leads.find((item) => item.value === sort.lead)?.label
+      : undefined;
+    listStatus.value = [
+      t("controlSheet.sort.status", {
+        column: t(column),
+        direction: t(`controlSheet.sort.${sort.dir}`),
+      }),
+      lead ? t("controlSheet.sort.leadStatus", { state: lead }) : null,
+      general ? generalCount.value : amendmentCountText.value,
+    ]
+      .filter(Boolean)
+      .join(" · ");
   },
   { flush: "post" },
 );
@@ -1270,6 +1309,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
             :extra-items="resultItems"
             :extra-label="t('controlSheet.columns.result')"
             :sort-items="generalSortItems"
+            :lead-items="generalLeadItems"
             :fallback="DEFAULT_GENERAL_SORT"
             :active="generalActive"
             :count="generalActive > 0 ? generalCount : null"
@@ -1445,6 +1485,7 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
               :extra-items="stateItems"
               :extra-label="t('controlSheet.columns.result')"
               :sort-items="amendmentSortItems"
+              :lead-items="amendmentLeadItems"
               :fallback="DEFAULT_AMENDMENT_SORT"
               :active="amendmentActive"
               :count="amendmentActive > 0 ? amendmentCountText : null"

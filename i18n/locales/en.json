@@ -4900,6 +4900,12 @@
     },
     "noObservations": "No observations",
     "sort": {
+      "treatment": "Order of treatment",
+      "presentation": "Order of presentation",
+      "lead": "What goes first in {column}",
+      "leadPrefix": "First:",
+      "leadNone": "the column's order",
+      "leadStatus": "first: {state}",
       "label": "Sort by",
       "asc": "ascending",
       "desc": "descending",
