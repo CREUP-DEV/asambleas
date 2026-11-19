@@ -10,17 +10,19 @@ import {
 /**
  * Where every amendment of the document in debate stands, for the room:
  * a line of counts, then one row per amendment in text order (the one in
- * debate highlighted), each opening the amendment in the document, and the
+ * debate highlighted), each opening the amendment in a preview window
+ * without leaving the page (`preview`, LiveViewAmendmentWindow), and the
  * link to the provisional consolidated text.
  */
 const props = defineProps<{
   rows: LiveAmendmentRow[];
-  /** Localized path of the document workspace. */
-  documentPath: string;
   /** Localized path of the consolidated text; null when there is none. */
   consolidatedPath: string | null;
   headingId?: string;
 }>();
+
+/** A row is chosen: the page opens its preview. */
+const emit = defineEmits<{ preview: [amendmentId: string] }>();
 
 const { t } = useI18n();
 
@@ -36,10 +38,6 @@ const counts = computed(() => liveAmendmentCounts(props.rows));
 function note(row: LiveAmendmentRow): string {
   const found = liveAmendmentNote(row, props.rows);
   return found ? t(found.key, found.params ?? {}) : "";
-}
-
-function link(row: LiveAmendmentRow): string {
-  return `${props.documentPath}?enmienda=${encodeURIComponent(row.amendment.id)}`;
 }
 
 function title(row: LiveAmendmentRow): string {
@@ -84,13 +82,15 @@ function title(row: LiveAmendmentRow): string {
 
       <ul class="ring-default divide-default divide-y rounded-lg ring">
         <li v-for="row in rows" :key="row.amendment.id">
-          <NuxtLink
-            :to="link(row)"
-            class="hover:bg-elevated/50 focus-visible:outline-primary flex min-h-14 items-center gap-3 px-4 py-3 focus-visible:outline-2 focus-visible:-outline-offset-2"
+          <button
+            type="button"
+            class="w-full text-start hover:bg-elevated/50 focus-visible:outline-primary flex min-h-14 items-center gap-3 px-4 py-3 focus-visible:outline-2 focus-visible:-outline-offset-2"
             :class="
               row.current ? 'bg-primary/10 border-primary border-s-4 ps-3' : ''
             "
             :aria-current="row.current ? 'true' : undefined"
+            aria-haspopup="dialog"
+            @click="emit('preview', row.amendment.id)"
           >
             <div class="min-w-0 flex-1">
               <p
@@ -111,7 +111,7 @@ function title(row: LiveAmendmentRow): string {
               <!--
                 Acronyms on screen, full names for screen readers (which would
                 spell "CEUM" letter by letter), as CommonMemberBadge does. No
-                badges here: the row is already a link.
+                badges here: the row is already a button.
               -->
               <p
                 v-if="row.amendment.authors.length > 0"
@@ -139,7 +139,7 @@ function title(row: LiveAmendmentRow): string {
               class="text-dimmed size-4 shrink-0"
               aria-hidden="true"
             />
-          </NuxtLink>
+          </button>
         </li>
       </ul>
     </template>

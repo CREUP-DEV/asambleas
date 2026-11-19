@@ -5457,8 +5457,23 @@
       "justification": "Why it is proposed",
       "wholeDocument": "The document as a whole is under debate.",
       "itemOnly": "This agenda item is being discussed.",
-      "openAmendment": "Read the full amendment",
-      "openDocument": "Open the document"
+      "openAmendment": "Read the full amendment"
+    },
+    "document": {
+      "view": "View the document",
+      "onScreen": "On screen now",
+      "gone": "The Mesa no longer shows it.",
+      "goToProjected": "Go to what is on screen",
+      "openPage": "Open its page",
+      "empty": "This document has no text yet.",
+      "following": "Following the screen"
+    },
+    "amendmentWindow": {
+      "title": "Amendment",
+      "position": "Amendment {index} of {total}",
+      "previous": "Previous amendment",
+      "next": "Next amendment",
+      "open": "Open in the document"
     },
     "speakers": {
       "title": "Speaking turns",

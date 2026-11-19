@@ -1,5 +1,10 @@
 import type { ComputedRef, InjectionKey, Ref } from "vue";
-import type { AgendaDto, AssemblyDto, LiveEventDto } from "~~/shared/types/api";
+import type {
+  AgendaDto,
+  AssemblyDto,
+  LiveEventDto,
+  LiveScrollDto,
+} from "~~/shared/types/api";
 import { agendaWithTitles } from "~/utils/agendaTitles";
 import { APP_TIME_ZONE, intlLocale, toDate } from "~/utils/format";
 import type { DateInput } from "~/utils/format";
@@ -21,6 +26,7 @@ import { shouldRefetchAgenda, shouldRefetchAssembly } from "./-liveFilters";
  */
 
 export type AssemblyLiveHandler = (events: LiveEventDto[]) => void;
+export type AssemblyScrollHandler = (scroll: LiveScrollDto) => void;
 
 export interface CurrentAssemblyContext {
   /**
@@ -49,6 +55,11 @@ export interface CurrentAssemblyContext {
    * calling component is disposed; also returns the unsubscribe function.
    */
   onLive: (handler: AssemblyLiveHandler) => () => void;
+  /**
+   * Subscribes to where the Mesa has the document in debate scrolled (the
+   * stream's `scroll` events), as onLive: the live view follows it.
+   */
+  onLiveScroll: (handler: AssemblyScrollHandler) => () => void;
   /** State of the live stream. */
   live: {
     connected: Readonly<Ref<boolean>>;
@@ -129,6 +140,7 @@ export function provideCurrentAssembly(
   });
 
   const handlers = new Set<AssemblyLiveHandler>();
+  const scrollHandlers = new Set<AssemblyScrollHandler>();
 
   // Keyed on the kept assembly, so a failed refresh never closes the stream.
   const live = useAssemblyLive(
@@ -148,12 +160,26 @@ export function provideCurrentAssembly(
         }
       }
     },
+    {
+      onScroll: (scroll) => {
+        for (const handler of scrollHandlers) handler(scroll);
+      },
+    },
   );
 
   function onLive(handler: AssemblyLiveHandler): () => void {
     handlers.add(handler);
     const off = () => {
       handlers.delete(handler);
+    };
+    if (getCurrentScope()) onScopeDispose(off);
+    return off;
+  }
+
+  function onLiveScroll(handler: AssemblyScrollHandler): () => void {
+    scrollHandlers.add(handler);
+    const off = () => {
+      scrollHandlers.delete(handler);
     };
     if (getCurrentScope()) onScopeDispose(off);
     return off;
@@ -172,6 +198,7 @@ export function provideCurrentAssembly(
       lastGood.data.value = dto;
     },
     onLive,
+    onLiveScroll,
     live,
   };
   provide(CURRENT_ASSEMBLY_KEY, context);
@@ -213,6 +240,7 @@ export function useCurrentAssembly(): CurrentAssemblyContext {
       shared.value = dto;
     },
     onLive: () => () => {},
+    onLiveScroll: () => () => {},
     live: { connected: readonly(ref(false)), polling: readonly(ref(false)) },
   };
 }

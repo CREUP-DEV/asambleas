@@ -1,12 +1,7 @@
 <script setup lang="ts">
 import type { AmendmentDto, DocumentDto } from "~~/shared/types/api";
 import type { SessionAgendaRow } from "~/composables/session/sessionModel";
-import {
-  LIVE_STATE_COLORS,
-  liveAmendmentCode,
-  livePositionLine,
-  type LiveAmendmentState,
-} from "~/components/live-view/-model";
+import type { LiveAmendmentState } from "~/components/live-view/-model";
 
 /**
  * What the Mesa has in debate, for the live view: the agenda item, the
@@ -14,9 +9,11 @@ import {
  * co-presenters before "N más") and, when there is one, the amendment with
  * its change in readable type, a sentence on where it stands, how the
  * document's main presenter answered it (when the room may see it) and its
- * justification, folded away. Nothing here is announced by itself: the page
- * keeps one short aria-live line for that, so a refresh never reads the
- * passage aloud.
+ * justification, folded away (LiveViewAmendmentSummary). «Ver el
+ * documento» opens the document in a floating window that follows the
+ * projection (LiveViewDocumentWindow), without leaving the page. Nothing
+ * here is announced by itself: the page keeps one short aria-live line for
+ * that, so a refresh never reads the passage aloud.
  */
 const props = defineProps<{
   row: SessionAgendaRow | null;
@@ -41,55 +38,10 @@ const props = defineProps<{
   documentPath: string | null;
 }>();
 
+/** «Ver el documento»: the page opens it in its floating window. */
+const emit = defineEmits<{ viewDocument: [] }>();
+
 const { t } = useI18n();
-
-const base = computed(() => props.document?.baseVersion?.blocks ?? []);
-const code = computed(() => liveAmendmentCode(props.amendment));
-const justification = computed(
-  () => props.amendment?.justification.trim() || "",
-);
-const justificationOpen = ref(false);
-
-watch(
-  () => props.amendment?.id,
-  () => {
-    justificationOpen.value = false;
-  },
-);
-
-/** States whose note says it better than the state sentence. */
-const NOTE_REPLACES: ReadonlySet<LiveAmendmentState> = new Set([
-  "late",
-  "transacted",
-  "incorporated",
-  "turned_down",
-]);
-
-/**
- * Where it stands, one sentence per line. A late, replaced, incorporated
- * or turned-down amendment has its own sentence (the note names who or
- * what); anything else keeps the state sentence and adds the note under it.
- */
-const stateLines = computed(() => {
-  const state = props.state;
-  if (!state) return [];
-  const note = props.note?.trim() || null;
-  if (note && NOTE_REPLACES.has(state)) return [note];
-  const sentence = t(`liveView.state.${state}.sentence`);
-  return note ? [sentence, note] : [sentence];
-});
-
-/**
- * How the main presenter answered it, in one plain sentence ("Respuesta de
- * CEUM: la acepta"), without its comment, to keep the phone view light.
- */
-const positionLine = computed(() => {
-  if (!props.showPosition || !props.amendment) return null;
-  // Its state sentence already says the presenter accepted it.
-  if (props.state === "incorporated") return null;
-  const line = livePositionLine(props.amendment, props.document?.proponent);
-  return line ? t(line.key, line.params ?? {}) : null;
-});
 
 const amendmentLink = computed(() =>
   props.amendment && props.documentPath
@@ -147,75 +99,15 @@ const amendmentLink = computed(() =>
       </div>
 
       <!-- The amendment in debate -->
-      <div v-if="amendment" class="flex flex-col gap-3">
-        <div class="flex flex-wrap items-center gap-2">
-          <h3
-            class="text-highlighted text-2xl leading-tight font-bold sm:text-3xl"
-          >
-            {{
-              code
-                ? t("projection.amendment", { code })
-                : t(`session.enums.amendmentKind.${amendment.kind}`)
-            }}
-          </h3>
-          <UBadge
-            v-if="state"
-            :color="LIVE_STATE_COLORS[state]"
-            :variant="state === 'debating' ? 'solid' : 'subtle'"
-            size="lg"
-            :label="t(`liveView.state.${state}.label`)"
-          />
-        </div>
-        <div class="flex flex-wrap items-center gap-2 text-sm">
-          <UBadge
-            color="neutral"
-            variant="outline"
-            :label="t(`session.enums.amendmentKind.${amendment.kind}`)"
-          />
-          <CommonMemberBadge
-            v-for="author in amendment.authors"
-            :key="author.id"
-            :member="author"
-            :show-name="amendment.authors.length === 1"
-          />
-        </div>
-        <p v-for="line in stateLines" :key="line" class="text-default">
-          {{ line }}
-        </p>
-        <p v-if="positionLine" class="text-default">
-          {{ positionLine }}
-        </p>
-
-        <div class="live-text border-default rounded-lg border p-3 sm:p-4">
-          <ContentAmendmentDiff
-            :id="amendment.id"
-            :base="base"
-            :ops="amendment.ops"
-            :context="1"
-          />
-        </div>
-
-        <UCollapsible v-if="justification" v-model:open="justificationOpen">
-          <UButton
-            color="neutral"
-            variant="link"
-            size="lg"
-            class="min-h-11 px-0"
-            :icon="
-              justificationOpen
-                ? 'i-lucide-chevron-up'
-                : 'i-lucide-chevron-down'
-            "
-            :label="t('liveView.now.justification')"
-          />
-          <template #content>
-            <p class="text-default mt-1 whitespace-pre-line">
-              {{ justification }}
-            </p>
-          </template>
-        </UCollapsible>
-      </div>
-
+      <LiveViewAmendmentSummary
+        v-if="amendment"
+        :amendment="amendment"
+        :document="document"
+        :state="state"
+        :note="note"
+        :show-position="showPosition"
+        fold-justification
+      />
       <p v-else-if="amendmentHidden" class="text-muted">
         {{ t("projection.amendmentHidden") }}
       </p>
@@ -226,41 +118,33 @@ const amendmentLink = computed(() =>
         {{ t("liveView.now.itemOnly") }}
       </p>
 
-      <!-- The only way on from here: a full-width target on phones -->
-      <div v-if="documentPath" class="border-default flex border-t pt-3">
+      <!-- The ways on from here: full-width targets on phones -->
+      <div
+        v-if="document"
+        class="border-default flex flex-col gap-2 border-t pt-3 sm:flex-row sm:flex-wrap"
+      >
         <UButton
-          :to="amendmentLink ?? documentPath"
+          color="neutral"
+          :variant="amendmentLink ? 'outline' : 'solid'"
+          size="lg"
+          block
+          class="sm:w-auto"
+          icon="i-lucide-book-open"
+          :label="t('liveView.document.view')"
+          @click="emit('viewDocument')"
+        />
+        <UButton
+          v-if="amendmentLink"
+          :to="amendmentLink"
           color="neutral"
           variant="outline"
           size="lg"
           block
           class="sm:w-auto"
           trailing-icon="i-lucide-arrow-right"
-          :label="
-            amendmentLink
-              ? t('liveView.now.openAmendment')
-              : t('liveView.now.openDocument')
-          "
+          :label="t('liveView.now.openAmendment')"
         />
       </div>
     </div>
   </section>
 </template>
-
-<style scoped>
-/* The change, large enough to read on a phone held at arm's length. */
-.live-text :deep(.rich-text) {
-  font-size: 1.125rem;
-  line-height: 1.65;
-}
-
-.live-text :deep(.rich-text > * + *) {
-  margin-top: 0.75em;
-}
-
-@media (min-width: 640px) {
-  .live-text :deep(.rich-text) {
-    font-size: 1.25rem;
-  }
-}
-</style>

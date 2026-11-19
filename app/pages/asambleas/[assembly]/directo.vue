@@ -5,6 +5,7 @@ import type {
   DocumentAmendmentsDto,
   DocumentDto,
   HeadcountsDto,
+  LiveScrollDto,
   LiveStateDto,
   SpeakersDto,
 } from "~~/shared/types/api";
@@ -40,7 +41,10 @@ import {
  * the Mesa has in debate (agenda item, document, amendment with its change
  * in readable type), who has the floor and who is next while the Mesa
  * shows it, the last result, and where every amendment of the document
- * stands, with the provisional consolidated text one tap away.
+ * stands, with the provisional consolidated text one tap away. The
+ * document on screen opens in a floating window that follows the part the
+ * Mesa shows (LiveViewDocumentWindow), and each amendment in a preview
+ * window (LiveViewAmendmentWindow), without leaving the page.
  *
  * Open to everyone who can see the assembly, at any time: before the
  * session and after it, it says so and points to what can be read
@@ -63,6 +67,7 @@ const {
   apiBase,
   sectionPath,
   onLive,
+  onLiveScroll,
   live: stream,
 } = useCurrentAssembly();
 
@@ -478,6 +483,45 @@ const consolidatedPath = computed(() =>
     : null,
 );
 
+// The document on screen and the amendments, in floating windows ----------------
+
+const documentWindowOpen = ref(false);
+
+/**
+ * Where the Mesa has the document in debate scrolled: each position comes
+ * on the stream; the last one is read when the panel opens or the Mesa
+ * moves to another document while it is open.
+ */
+const mesaScroll = ref<LiveScrollDto | null>(null);
+onLiveScroll((scroll) => {
+  mesaScroll.value = scroll;
+});
+async function readMesaScroll(): Promise<void> {
+  if (!documentId.value) return;
+  try {
+    const scroll = await api.get<LiveScrollDto | null>(
+      `${apiBase.value}/live-scroll`,
+    );
+    if (scroll) mesaScroll.value = scroll;
+  } catch {
+    // The next position the Mesa sends puts it right.
+  }
+}
+/** Opens the window once it knows where the Mesa is. */
+async function openDocumentWindow(): Promise<void> {
+  await readMesaScroll();
+  documentWindowOpen.value = true;
+}
+watch(documentId, () => {
+  if (documentWindowOpen.value) void readMesaScroll();
+});
+
+/** The amendment previewed from the list; null when none is. */
+const previewAmendmentId = ref<string | null>(null);
+watch(documentId, () => {
+  previewAmendmentId.value = null;
+});
+
 const now = useAppNow();
 
 /**
@@ -732,6 +776,13 @@ watch(
         :amendment-hidden="amendmentHidden"
         :document-path="documentPath"
         :show-position="showPosition"
+        @view-document="openDocumentWindow"
+      />
+      <LiveViewDocumentWindow
+        v-model:open="documentWindowOpen"
+        :document="document"
+        :scroll="mesaScroll"
+        :document-path="documentPath"
       />
 
       <LiveViewSpeakers v-if="speakers" :speakers="speakers" />
@@ -759,8 +810,16 @@ watch(
       <LiveViewAmendmentList
         v-if="showAmendments && documentPath"
         :rows="amendmentRows"
-        :document-path="documentPath"
         :consolidated-path="consolidatedPath"
+        @preview="previewAmendmentId = $event"
+      />
+      <LiveViewAmendmentWindow
+        v-if="showAmendments"
+        v-model:amendment-id="previewAmendmentId"
+        :rows="amendmentRows"
+        :document="document"
+        :show-position="showPosition"
+        :document-path="documentPath"
       />
     </template>
   </div>

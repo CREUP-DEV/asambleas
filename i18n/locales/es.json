@@ -5457,8 +5457,23 @@
       "justification": "Por qué se propone",
       "wholeDocument": "Se debate el documento en su conjunto.",
       "itemOnly": "Se está tratando este punto del orden del día.",
-      "openAmendment": "Leer la enmienda completa",
-      "openDocument": "Abrir el documento"
+      "openAmendment": "Leer la enmienda completa"
+    },
+    "document": {
+      "view": "Ver el documento",
+      "onScreen": "En proyección ahora",
+      "gone": "La Mesa ya no lo proyecta.",
+      "goToProjected": "Ir a lo proyectado",
+      "openPage": "Abrir su página",
+      "empty": "Este documento aún no tiene texto.",
+      "following": "Sigue la proyección"
+    },
+    "amendmentWindow": {
+      "title": "Enmienda",
+      "position": "Enmienda {index} de {total}",
+      "previous": "Enmienda anterior",
+      "next": "Enmienda siguiente",
+      "open": "Abrir en el documento"
     },
     "speakers": {
       "title": "Turno de palabra",
