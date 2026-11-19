@@ -1312,16 +1312,21 @@ export interface VoteInput {
   method: VoteMethod;
   inFavor?: number;
   against?: number;
+  /** Show of hands, roll call and the portal only. */
   abstentions?: number;
+  /** A secret vote only, like `invalid` (user's decision of 2026-11-19). */
   blank?: number;
   invalid?: number;
+  /** Members present who cast nothing (votos no emitidos). */
+  notCast?: number;
   present?: number | null;
   majority?: Majority;
   note?: string | null;
   /**
-   * An assent vote nobody objected to when unanimity was asked. Only agenda
-   * item votes take it when they are recorded (ignored elsewhere and on any
-   * other method); PATCH .../votes/[vote]/unanimity sets it later.
+   * An assent vote nobody objected to when unanimity was asked. An agenda
+   * item's vote and a document's final vote take it when they are recorded
+   * (ignored elsewhere and on any other method); PATCH
+   * .../votes/[vote]/unanimity sets it later.
    */
   unanimous?: boolean;
 }
@@ -1433,9 +1438,13 @@ export interface VoteDto {
   method: VoteMethod;
   inFavor: number;
   against: number;
+  /** Show of hands, roll call and the portal (0 in a secret vote). */
   abstentions: number;
+  /** A secret vote only, like `invalid` (user's decision of 2026-11-19). */
   blank: number;
   invalid: number;
+  /** Members present who cast nothing (votos no emitidos). */
+  notCast: number;
   present: number | null;
   majority: Majority;
   result: VoteResult;

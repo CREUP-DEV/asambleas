@@ -588,7 +588,7 @@
         "options": {
           "valid_votes": {
             "label": "Valid votes",
-            "description": "In favour, against and abstentions. Blank and spoilt votes do not count."
+            "description": "In favour, against, abstentions and blank. Invalid ballots and votes not cast do not count."
           },
           "present": {
             "label": "Members present",
@@ -1713,11 +1713,13 @@
     "vote": {
       "counts": "Count",
       "inline": "{inFavor} in favour, {against} against, {abstentions} abstentions",
+      "inlineSecret": "{inFavor} in favour, {against} against, {blank} blank",
       "inFavor": "In favour",
       "against": "Against",
       "abstentions": "Abstentions",
       "blank": "Blank",
       "invalid": "Invalid",
+      "notCast": "Not cast",
       "present": "Present",
       "recordedAt": "Recorded on {date}",
       "methods": {
@@ -2481,6 +2483,7 @@
       },
       "emptyDocument": "This document has no text.",
       "voteCounts": "votes in favour: {inFavor}, against: {against}, abstentions: {abstentions}",
+      "voteCountsSecret": "votes in favour: {inFavor}, against: {against}, blank: {blank}",
       "finalVote": {
         "approved": "Approved at the {assembly} on {date} by {majority} ({counts}).",
         "rejected": "Rejected at the {assembly} on {date} ({counts}); it required a {majority}.",
@@ -3800,6 +3803,7 @@
       "missingAcceptances": "1 main author has not answered | {count} main authors have not answered",
       "needsAcceptances": "The main authors must accept it before it is decided",
       "voteCounts": "In favour {inFavor} · Against {against} · Abstentions {abstentions}",
+      "voteCountsSecret": "In favour {inFavor} · Against {against} · Blank {blank}",
       "show": "Show changes",
       "hide": "Hide changes",
       "awaitingBadge": "Not validated",
@@ -3888,8 +3892,8 @@
       "itemHasVotedDocuments": "@:common.errors.itemHasVotedDocuments"
     },
     "vote": {
-      "abstentionsAuto": "Abstentions (did not vote)",
-      "presentFixed": "The members present are the latest headcount's, and those who did not vote abstain. To change the members present, correct the headcount.",
+      "notCastAuto": "Not cast (did not vote)",
+      "presentFixed": "The members present are those of the latest headcount, and those not cast are who did not vote. To change the members present, correct the headcount.",
       "addBallot": "Vote",
       "addBallotFor": "Add a vote: {option}",
       "removeBallotFor": "Remove a vote: {option}",
@@ -3906,6 +3910,7 @@
       "abstentions": "Abstentions",
       "blank": "Blank",
       "invalid": "Invalid",
+      "notCast": "Not cast",
       "present": "Members present with a vote",
       "optional": "Optional",
       "presentPlaceholder": "Not given",
@@ -4418,7 +4423,8 @@
         "rejected": "Rejected",
         "assent": "Approved by assent",
         "unanimous": "Approved unanimously",
-        "spoken": "{result}. {method}. In favour: {inFavor}; against: {against}; abstentions: {abstentions}."
+        "spoken": "{result}. {method}. In favour: {inFavor}; against: {against}; abstentions: {abstentions}.",
+        "spokenSecret": "{result}. {method}. In favour: {inFavor}; against: {against}; blank: {blank}."
       }
     }
   },
@@ -4467,6 +4473,7 @@
       "abstentions": "Abstentions",
       "blank": "Blank",
       "invalid": "Invalid",
+      "notCast": "Not cast",
       "majority": "Majority",
       "agendaItem": "Vote on item {title}",
       "agendaItemUnknown": "Vote on an agenda item",

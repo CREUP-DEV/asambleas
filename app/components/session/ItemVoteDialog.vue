@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { voteTextKey } from "~~/shared/utils/votes";
 import type { VoteInput } from "~~/shared/types/api";
 import { ASSEMBLY_TYPES } from "~~/shared/constants/assemblyTypes";
 import type { VoteMethod } from "~~/shared/constants/domain";
@@ -179,11 +180,12 @@ const methodText = computed(() => {
       : t("session.enums.approvalMethod.assent");
   }
   return `${t(`session.enums.voteMethod.${vote.value.method}`)} · ${t(
-    "session.card.voteCounts",
+    voteTextKey("session.card.voteCounts", vote.value.method),
     {
       inFavor: vote.value.inFavor ?? 0,
       against: vote.value.against ?? 0,
       abstentions: vote.value.abstentions ?? 0,
+      blank: vote.value.blank ?? 0,
     },
   )}`;
 });
@@ -278,13 +280,7 @@ async function record(): Promise<void> {
           :headcount="session.voteHeadcount.value"
           :methods="methods"
           :assent-text="t('session.itemVote.assentText')"
-        />
-
-        <UCheckbox
-          v-if="assent"
-          v-model="unanimous"
-          :label="t('session.itemVote.unanimous')"
-          :description="t('session.itemVote.unanimousHint')"
+          unanimity
         />
 
         <div

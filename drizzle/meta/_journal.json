@@ -323,6 +323,13 @@
       "when": 1795108297334,
       "tag": "0045_transactional_revisions",
       "breakpoints": true
+    },
+    {
+      "idx": 46,
+      "version": "7",
+      "when": 1795112476921,
+      "tag": "0046_vote_not_cast",
+      "breakpoints": true
     }
   ]
 }

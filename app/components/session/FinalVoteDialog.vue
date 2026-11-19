@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { voteTextKey } from "~~/shared/utils/votes";
 import type { VoteInput } from "~~/shared/types/api";
 import type { ConsolidationConflict } from "~~/shared/types/content";
 import { VOTE_METHODS } from "~~/shared/constants/domain";
@@ -247,6 +248,7 @@ async function record(): Promise<void> {
           :settings="session.settings.value"
           :headcount="session.voteHeadcount.value"
           :methods="FINAL_VOTE_METHODS"
+          unanimity
         />
 
         <div
@@ -275,13 +277,16 @@ async function record(): Promise<void> {
             <span class="tabular-nums">
               {{
                 assent
-                  ? t("session.enums.approvalMethod.assent")
+                  ? vote.unanimous
+                    ? t("session.itemVote.unanimous")
+                    : t("session.enums.approvalMethod.assent")
                   : `${t(`session.enums.voteMethod.${vote.method}`)} · ${t(
-                      "session.card.voteCounts",
+                      voteTextKey("session.card.voteCounts", vote.method),
                       {
                         inFavor: vote.inFavor ?? 0,
                         against: vote.against ?? 0,
                         abstentions: vote.abstentions ?? 0,
+                        blank: vote.blank ?? 0,
                       },
                     )}`
               }}

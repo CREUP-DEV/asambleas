@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import type { VoteDto } from "~~/shared/types/api";
+import { shownVoteCounts, voteTextKey } from "~~/shared/utils/votes";
 
 /**
  * Result and counts of a recorded vote (on an amendment or the final text).
- * Blank and invalid votes and the members present only show when recorded.
+ * Abstentions, or blank ballots in a secret vote; invalid ones, those who
+ * cast nothing and the members present only when recorded.
  */
 const props = withDefaults(
   defineProps<{
@@ -18,13 +20,7 @@ const { t, locale } = useI18n();
 
 const counts = computed(() => {
   const vote = props.vote;
-  const rows: { key: string; value: number }[] = [
-    { key: "inFavor", value: vote.inFavor },
-    { key: "against", value: vote.against },
-    { key: "abstentions", value: vote.abstentions },
-  ];
-  if (vote.blank > 0) rows.push({ key: "blank", value: vote.blank });
-  if (vote.invalid > 0) rows.push({ key: "invalid", value: vote.invalid });
+  const rows: { key: string; value: number }[] = shownVoteCounts(vote);
   if (vote.present !== null) rows.push({ key: "present", value: vote.present });
   return rows;
 });
@@ -43,10 +39,11 @@ const methodLabel = computed(() =>
 const summary = computed(() =>
   isAssent.value
     ? methodLabel.value
-    : t("amendment.vote.inline", {
+    : t(voteTextKey("amendment.vote.inline", props.vote.method), {
         inFavor: props.vote.inFavor,
         against: props.vote.against,
         abstentions: props.vote.abstentions,
+        blank: props.vote.blank,
       }),
 );
 </script>

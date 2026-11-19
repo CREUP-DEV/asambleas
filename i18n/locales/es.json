@@ -588,7 +588,7 @@
         "options": {
           "valid_votes": {
             "label": "Votos válidos",
-            "description": "A favor, en contra y abstenciones. Los votos en blanco y los nulos no cuentan."
+            "description": "A favor, en contra, abstenciones y en blanco. Los nulos y los no emitidos no cuentan."
           },
           "present": {
             "label": "Miembros presentes",
@@ -1713,11 +1713,13 @@
     "vote": {
       "counts": "Recuento",
       "inline": "{inFavor} a favor, {against} en contra, {abstentions} abstenciones",
+      "inlineSecret": "{inFavor} a favor, {against} en contra, {blank} en blanco",
       "inFavor": "A favor",
       "against": "En contra",
       "abstentions": "Abstenciones",
       "blank": "En blanco",
       "invalid": "Nulos",
+      "notCast": "No emitidos",
       "present": "Presentes",
       "recordedAt": "Registrada el {date}",
       "methods": {
@@ -2481,6 +2483,7 @@
       },
       "emptyDocument": "Este documento no tiene texto.",
       "voteCounts": "votos a favor: {inFavor}, en contra: {against}, abstenciones: {abstentions}",
+      "voteCountsSecret": "votos a favor: {inFavor}, en contra: {against}, en blanco: {blank}",
       "finalVote": {
         "approved": "Aprobado en la {assembly} el {date} por {majority} ({counts}).",
         "rejected": "Rechazado en la {assembly} el {date} ({counts}); requería {majority}.",
@@ -3800,6 +3803,7 @@
       "missingAcceptances": "Falta la respuesta de 1 autor principal | Faltan las respuestas de {count} autores principales",
       "needsAcceptances": "Los autores principales tienen que aceptarla antes de decidirla",
       "voteCounts": "A favor {inFavor} · En contra {against} · Abstenciones {abstentions}",
+      "voteCountsSecret": "A favor {inFavor} · En contra {against} · En blanco {blank}",
       "show": "Ver cambios",
       "hide": "Ocultar cambios",
       "awaitingBadge": "Sin validar",
@@ -3888,8 +3892,8 @@
       "itemHasVotedDocuments": "@:common.errors.itemHasVotedDocuments"
     },
     "vote": {
-      "abstentionsAuto": "Abstenciones (no han votado)",
-      "presentFixed": "Los presentes son los del último recuento y las abstenciones, quienes no han votado. Para cambiar los presentes, corrige el recuento.",
+      "notCastAuto": "No emitidos (no han votado)",
+      "presentFixed": "Los presentes son los del último recuento y los no emitidos, quienes no han votado. Para cambiar los presentes, corrige el recuento.",
       "addBallot": "Voto",
       "addBallotFor": "Añadir un voto: {option}",
       "removeBallotFor": "Quitar un voto: {option}",
@@ -3906,6 +3910,7 @@
       "abstentions": "Abstenciones",
       "blank": "En blanco",
       "invalid": "Nulos",
+      "notCast": "No emitidos",
       "present": "Presentes con derecho a voto",
       "optional": "Opcional",
       "presentPlaceholder": "Sin indicar",
@@ -4418,7 +4423,8 @@
         "rejected": "Rechazado",
         "assent": "Aprobado por asentimiento",
         "unanimous": "Aprobado por unanimidad",
-        "spoken": "{result}. {method}. A favor: {inFavor}; en contra: {against}; abstenciones: {abstentions}."
+        "spoken": "{result}. {method}. A favor: {inFavor}; en contra: {against}; abstenciones: {abstentions}.",
+        "spokenSecret": "{result}. {method}. A favor: {inFavor}; en contra: {against}; en blanco: {blank}."
       }
     }
   },
@@ -4467,6 +4473,7 @@
       "abstentions": "Abstenciones",
       "blank": "En blanco",
       "invalid": "Nulos",
+      "notCast": "No emitidos",
       "majority": "Mayoría",
       "agendaItem": "Votación del punto {title}",
       "agendaItemUnknown": "Votación de un punto del orden del día",

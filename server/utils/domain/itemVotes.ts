@@ -272,6 +272,7 @@ export async function recordItemVote(
         abstentions: vote.abstentions ?? 0,
         blank: vote.blank ?? 0,
         invalid: vote.invalid ?? 0,
+        notCast: vote.notCast ?? 0,
         present: vote.present ?? null,
         headcountId: based.headcountId,
         majority,

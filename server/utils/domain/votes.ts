@@ -42,6 +42,7 @@ export function toVoteDto(vote: VoteRow): VoteDto {
     abstentions: vote.abstentions,
     blank: vote.blank,
     invalid: vote.invalid,
+    notCast: vote.notCast,
     present: vote.present,
     majority: vote.majority,
     result: vote.result,

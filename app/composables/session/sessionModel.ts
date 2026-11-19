@@ -50,7 +50,11 @@ import {
   isHardOverlap,
   overlapBetween,
 } from "~~/shared/utils/content/overlaps";
-import { computeVoteOutcome, type VoteOutcome } from "~~/shared/utils/votes";
+import {
+  ballotKeysOf,
+  computeVoteOutcome,
+  type VoteOutcome,
+} from "~~/shared/utils/votes";
 
 // Errors ---------------------------------------------------------------------
 
@@ -1855,6 +1859,7 @@ export function sessionEmptyVote(
     abstentions: 0,
     blank: 0,
     invalid: 0,
+    notCast: 0,
     present,
     majority,
     note: null,
@@ -1952,9 +1957,12 @@ export function sessionFinalVoteResult(
 }
 
 /**
- * Counts without empty fields, so the request carries what was typed. Assent
- * has no counts, present members or majority: only the method, the note and
- * whether it was unanimous (only an agenda item vote takes it). No other
+ * Counts without empty fields, so the request carries what was typed: the
+ * ballots the method takes (blank and invalid only in a secret vote,
+ * abstentions in any other) and those who cast nothing. Assent has no
+ * counts, present members or majority: only the method, the note and
+ * whether it was unanimous (an agenda item's vote and a document's final
+ * vote take it). No other
  * method carries unanimity.
  */
 export function sessionCleanVote(vote: VoteInput): VoteInput {
@@ -1965,13 +1973,7 @@ export function sessionCleanVote(vote: VoteInput): VoteInput {
     if (vote.unanimous === true) clean.unanimous = true;
     return clean;
   }
-  for (const key of [
-    "inFavor",
-    "against",
-    "abstentions",
-    "blank",
-    "invalid",
-  ] as const) {
+  for (const key of [...ballotKeysOf(vote.method), "notCast"] as const) {
     const value = vote[key];
     if (typeof value === "number" && Number.isFinite(value)) {
       clean[key] = Math.max(0, Math.trunc(value));

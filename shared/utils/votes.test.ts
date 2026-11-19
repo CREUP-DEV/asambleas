@@ -5,7 +5,16 @@ import {
   DOCUMENT_KIND_DEFAULTS,
   type DocumentKind,
 } from "../constants/domain";
-import { computeVoteOutcome, type VoteCounts } from "./votes";
+import { voteInputSchema } from "./schemas/vote";
+import {
+  ballotKeysOf,
+  computeVoteOutcome,
+  foreignBallotKeys,
+  shownVoteCounts,
+  thirdCount,
+  voteTextKey,
+  type VoteCounts,
+} from "./votes";
 
 /**
  * Votes recorded in the minutes of the 77.ª AGO (Sevilla, April 2025), with
@@ -165,5 +174,120 @@ describe("computeVoteOutcome with the default settings", () => {
         inconsistent: false,
       });
     }
+  });
+});
+
+describe("the ballots each method takes (user's decision of 2026-11-19)", () => {
+  it("counts blank and invalid ballots only in a secret vote", () => {
+    expect(ballotKeysOf("secret")).toEqual([
+      "inFavor",
+      "against",
+      "blank",
+      "invalid",
+    ]);
+    for (const method of ["show_of_hands", "roll_call", "portal"] as const) {
+      expect(ballotKeysOf(method)).toEqual([
+        "inFavor",
+        "against",
+        "abstentions",
+      ]);
+      expect(foreignBallotKeys(method)).toEqual(["blank", "invalid"]);
+    }
+    expect(foreignBallotKeys("secret")).toEqual(["abstentions"]);
+    expect(ballotKeysOf("assent")).toEqual([]);
+    expect(foreignBallotKeys("assent")).toEqual([]);
+  });
+
+  it("refuses a count the method does not take, but not a zero", () => {
+    expect(
+      voteInputSchema.safeParse({ method: "show_of_hands", blank: 1 }).success,
+    ).toBe(false);
+    expect(
+      voteInputSchema.safeParse({ method: "roll_call", invalid: 2 }).success,
+    ).toBe(false);
+    expect(
+      voteInputSchema.safeParse({ method: "secret", abstentions: 1 }).success,
+    ).toBe(false);
+    expect(
+      voteInputSchema.safeParse({
+        method: "show_of_hands",
+        inFavor: 3,
+        abstentions: 2,
+        blank: 0,
+        invalid: 0,
+        notCast: 4,
+      }).success,
+    ).toBe(true);
+    expect(
+      voteInputSchema.safeParse({
+        method: "secret",
+        inFavor: 3,
+        blank: 2,
+        invalid: 1,
+        abstentions: 0,
+      }).success,
+    ).toBe(true);
+  });
+
+  it("counts blank ballots as valid votes, never those not cast", () => {
+    const settings = {
+      ...DEFAULT_ASSEMBLY_SETTINGS,
+      denominator: "valid_votes" as const,
+    };
+    expect(
+      computeVoteOutcome(
+        {
+          inFavor: 10,
+          against: 4,
+          abstentions: 0,
+          blank: 6,
+          invalid: 3,
+          notCast: 9,
+        },
+        "absolute",
+        settings,
+      ),
+    ).toEqual({
+      result: "rejected",
+      threshold: 11,
+      denominator: 20,
+      inconsistent: false,
+    });
+  });
+
+  it("shows abstentions, or blank ballots in a secret vote", () => {
+    const base = {
+      inFavor: 5,
+      against: 2,
+      abstentions: 3,
+      blank: 0,
+      invalid: 0,
+      notCast: 0,
+    };
+    expect(shownVoteCounts({ ...base, method: "show_of_hands" })).toEqual([
+      { key: "inFavor", value: 5 },
+      { key: "against", value: 2 },
+      { key: "abstentions", value: 3 },
+    ]);
+    expect(
+      shownVoteCounts({
+        ...base,
+        abstentions: 0,
+        blank: 4,
+        invalid: 1,
+        notCast: 2,
+        method: "secret",
+      }),
+    ).toEqual([
+      { key: "inFavor", value: 5 },
+      { key: "against", value: 2 },
+      { key: "blank", value: 4 },
+      { key: "invalid", value: 1 },
+      { key: "notCast", value: 2 },
+    ]);
+    expect(thirdCount({ abstentions: 3, blank: 4, method: "secret" })).toBe(4);
+    expect(thirdCount({ abstentions: 3, blank: 4, method: "portal" })).toBe(3);
+    expect(voteTextKey("a.b", "secret")).toBe("a.bSecret");
+    expect(voteTextKey("a.b", "show_of_hands")).toBe("a.b");
   });
 });

@@ -645,6 +645,7 @@ function voteCounts(vote: VoteInput): Required<Omit<VoteCounts, "present">> & {
     abstentions: vote.abstentions ?? 0,
     blank: vote.blank ?? 0,
     invalid: vote.invalid ?? 0,
+    notCast: vote.notCast ?? 0,
     present: vote.present ?? null,
   };
 }
@@ -5093,6 +5094,9 @@ export async function applyAmendmentOutcome(
                 inFavor: voteRow.inFavor,
                 against: voteRow.against,
                 abstentions: voteRow.abstentions,
+                blank: voteRow.blank,
+                invalid: voteRow.invalid,
+                notCast: voteRow.notCast,
               }
             : {}),
         },

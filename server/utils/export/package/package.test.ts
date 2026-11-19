@@ -247,6 +247,7 @@ describe("planPackage", () => {
       inFavor: 30,
       against: 2,
       abstentions: 1,
+      blank: 0,
       majority: "simple" as const,
       result: "approved" as const,
       method: "show_of_hands" as const,

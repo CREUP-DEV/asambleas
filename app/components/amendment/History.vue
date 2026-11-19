@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { voteTextKey } from "~~/shared/utils/votes";
 import type { TimelineItem } from "@nuxt/ui";
 import {
   PROPONENT_POSITIONS,
@@ -398,10 +399,11 @@ function admissionDetail(
         : null,
     result ? t(`common.status.vote.${result}`) : null,
     vote && vote.method !== "assent"
-      ? t("amendment.vote.inline", {
+      ? t(voteTextKey("amendment.vote.inline", vote.method), {
           inFavor: vote.inFavor,
           against: vote.against,
           abstentions: vote.abstentions,
+          blank: vote.blank,
         })
       : null,
     decision?.note?.trim() || null,

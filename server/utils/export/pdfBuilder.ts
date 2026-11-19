@@ -21,6 +21,7 @@ import type {
 } from "../../../shared/constants/domain";
 import type { Block, ConsolidatedBlock } from "../../../shared/types/content";
 import { fillApprovalLines } from "../../../shared/utils/content/approvalLine";
+import { thirdCount, voteTextKey } from "../../../shared/utils/votes";
 import {
   BRAND_RED,
   CONTACT,
@@ -85,7 +86,10 @@ export interface ExportAssembly {
 export interface ExportVote {
   inFavor: number;
   against: number;
+  /** Show of hands, roll call and the portal. */
   abstentions: number;
+  /** A secret vote's blank ballots, which stand where abstentions would. */
+  blank: number;
   majority: Majority;
   result: VoteResult;
   method: VoteMethod;
@@ -119,7 +123,10 @@ export interface ExportAnnexRow {
   admission: AdmissionStatus;
   late: boolean;
   approvalMethod: ApprovalMethod | null;
-  vote: Pick<ExportVote, "inFavor" | "against" | "abstentions"> | null;
+  vote: Pick<
+    ExportVote,
+    "inFavor" | "against" | "abstentions" | "blank" | "method"
+  > | null;
   /** Codes of the parents of a transactional. */
   sourceCodes: string[];
   /** Codes of the transactionals that absorbed this amendment. */
@@ -486,13 +493,17 @@ function documentHeaderRight(meta: ExportDocumentMeta): string {
 }
 
 function voteCounts(
-  vote: Pick<ExportVote, "inFavor" | "against" | "abstentions">,
+  vote: Pick<
+    ExportVote,
+    "inFavor" | "against" | "abstentions" | "blank" | "method"
+  >,
   t: Translate,
 ): string {
-  return t("voteCounts", {
+  return t(voteTextKey("voteCounts", vote.method), {
     inFavor: vote.inFavor,
     against: vote.against,
     abstentions: vote.abstentions,
+    blank: vote.blank,
   });
 }
 
@@ -672,7 +683,7 @@ function annexRow(row: ExportAnnexRow, t: Translate): TableCell[] {
     { stack: outcome, style: "tableCell" },
     {
       text: row.vote
-        ? `${row.vote.inFavor} / ${row.vote.against} / ${row.vote.abstentions}`
+        ? `${row.vote.inFavor} / ${row.vote.against} / ${thirdCount(row.vote)}`
         : "-",
       alignment: "center",
       style: "tableCell",

@@ -2793,11 +2793,15 @@ export async function recordFinalVote(
         abstentions: vote.abstentions ?? 0,
         blank: vote.blank ?? 0,
         invalid: vote.invalid ?? 0,
+        notCast: vote.notCast ?? 0,
         present: vote.present ?? null,
         headcountId: based.headcountId,
         majority,
         result,
         note: vote.note ?? null,
+        // An assent nobody objected to when the Mesa asked for unanimity
+        // (user's decision of 2026-11-19), as on an agenda item's vote.
+        unanimous: vote.method === "assent" && vote.unanimous === true,
         recordedByUserId: actor.user.id,
       })
       .returning();
@@ -2851,7 +2855,9 @@ export async function recordFinalVote(
         abstentions: voteRow!.abstentions,
         blank: voteRow!.blank,
         invalid: voteRow!.invalid,
+        notCast: voteRow!.notCast,
         present: voteRow!.present,
+        unanimous: voteRow!.unanimous,
         consolidatedVersionId,
         appliedAmendmentIds:
           result === "approved" ? (consolidated?.applied ?? []) : [],

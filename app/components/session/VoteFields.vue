@@ -11,6 +11,12 @@ import {
   sessionVoteOutcome,
 } from "~/composables/session/sessionModel";
 import { useOptionalSessionConsole } from "~/composables/session/useSessionConsole";
+import {
+  ballotKeysOf,
+  foreignBallotKeys,
+  SECRET_BALLOT_KEYS,
+  type BallotKey,
+} from "~~/shared/utils/votes";
 
 /**
  * Vote entry used by every session dialog: method, counts, majority and
@@ -33,7 +39,10 @@ import { useOptionalSessionConsole } from "~/composables/session/useSessionConso
  * Who votes is never typed here (user's decision of 2026-11-18): the
  * members present are the latest headcount's, shown read only (a vote that
  * already stores its own keeps it), and to change them the Mesa corrects
- * the count. The members present who cast nothing abstain: abstentions are
+ * the count. What each voter may cast depends on the method (user's
+ * decision of 2026-11-19): in favour, against or abstain by show of hands,
+ * roll call or the portal; in favour, against, blank or invalid in a
+ * secret vote. The members present who cast nothing are «no emitidos»,
  * worked out, not typed, whenever that base is known. In the session
  * console, a secret vote is counted live, ballot by ballot (one tile per
  * kind of ballot, +1 and −1, the keys 1 to 4 and undo), and each change of
@@ -55,6 +64,12 @@ const props = withDefaults(
      * else (an agenda item) says what it approves.
      */
     assentText?: string;
+    /**
+     * An assent may be recorded unanimous (an agenda item's vote, a
+     * document's final vote): nobody objected when the Mesa asked for
+     * unanimity. Otherwise it stays an assent.
+     */
+    unanimity?: boolean;
   }>(),
   {
     methods: () => VOTE_METHODS.filter((method) => method !== "assent"),
@@ -62,6 +77,7 @@ const props = withDefaults(
     showNote: true,
     headcount: undefined,
     assentText: undefined,
+    unanimity: false,
   },
 );
 
@@ -83,10 +99,9 @@ const majorityItems = computed(() =>
   })),
 );
 
-type CountKey = "inFavor" | "against" | "abstentions" | "blank" | "invalid";
-/** What a voter casts; abstentions are who cast nothing. */
-type BallotKey = Exclude<CountKey, "abstentions">;
-const BALLOT_KEYS: BallotKey[] = ["inFavor", "against", "blank", "invalid"];
+type CountKey = BallotKey | "notCast";
+/** What a voter may cast under the vote's method. */
+const ballotKeys = computed(() => ballotKeysOf(vote.value.method));
 
 function setCount(key: CountKey | "present", value: number | null | undefined) {
   const next = { ...vote.value };
@@ -102,10 +117,23 @@ function setField<K extends "method" | "majority" | "note">(
   key: K,
   value: VoteInput[K],
 ) {
-  vote.value = { ...vote.value, [key]: value };
+  const next = { ...vote.value, [key]: value };
+  // Another method drops the ballots it does not take (blank and invalid
+  // outside a secret vote, abstentions in one).
+  if (key === "method") {
+    for (const foreign of foreignBallotKeys(next.method)) next[foreign] = 0;
+  }
+  vote.value = next;
 }
 
 const assent = computed(() => vote.value.method === "assent");
+/** An assent nobody objected to when unanimity was asked. */
+const unanimous = computed({
+  get: () => vote.value.unanimous === true,
+  set: (value: boolean) => {
+    vote.value = { ...vote.value, unanimous: value };
+  },
+});
 /**
  * The vote as the server will count it: an empty "present" takes the latest
  * headcount's (sessionFillPresent, like the server's fillPresent).
@@ -134,16 +162,16 @@ const base = computed<number | null>(
   () => vote.value.present ?? props.headcount?.present ?? null,
 );
 const ballots = computed(() =>
-  BALLOT_KEYS.reduce((sum, key) => sum + (vote.value[key] ?? 0), 0),
+  ballotKeys.value.reduce((sum, key) => sum + (vote.value[key] ?? 0), 0),
 );
-// The members present who cast nothing abstain.
+// The members present who cast nothing: «no emitidos».
 watch(
   [base, ballots, assent],
   () => {
     if (assent.value || base.value === null) return;
     const value = Math.max(0, base.value - ballots.value);
-    if (vote.value.abstentions !== value) {
-      vote.value = { ...vote.value, abstentions: value };
+    if (vote.value.notCast !== value) {
+      vote.value = { ...vote.value, notCast: value };
     }
   },
   { immediate: true },
@@ -191,7 +219,7 @@ useEventListener(window, "keydown", (event: KeyboardEvent) => {
     return;
   }
   const index = Number(event.key) - 1;
-  const key = BALLOT_KEYS[index];
+  const key = SECRET_BALLOT_KEYS[index];
   if (!key) return;
   event.preventDefault();
   addBallot(key);
@@ -341,9 +369,17 @@ const denominatorText = computed(() =>
       </UFormField>
     </div>
 
-    <p v-if="assent" class="text-muted text-sm">
-      {{ assentText ?? t("session.vote.assentNoCount") }}
-    </p>
+    <template v-if="assent">
+      <p class="text-muted text-sm">
+        {{ assentText ?? t("session.vote.assentNoCount") }}
+      </p>
+      <UCheckbox
+        v-if="unanimity"
+        v-model="unanimous"
+        :label="t('session.itemVote.unanimous')"
+        :description="t('session.itemVote.unanimousHint')"
+      />
+    </template>
 
     <fieldset v-else class="space-y-3">
       <legend class="text-highlighted mb-2 text-sm font-medium">
@@ -355,7 +391,7 @@ const denominatorText = computed(() =>
       <div v-if="liveCount" class="space-y-2">
         <div class="grid grid-cols-2 gap-2 sm:grid-cols-4">
           <div
-            v-for="(key, index) in BALLOT_KEYS"
+            v-for="(key, index) in SECRET_BALLOT_KEYS"
             :key="key"
             class="border-default flex flex-col items-center gap-2 rounded-lg border p-3"
           >
@@ -417,9 +453,15 @@ const denominatorText = computed(() =>
         </div>
       </div>
 
-      <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div
+        v-else
+        :class="[
+          'grid grid-cols-2 gap-3',
+          ballotKeys.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-4',
+        ]"
+      >
         <UFormField
-          v-for="key in BALLOT_KEYS"
+          v-for="key in ballotKeys"
           :key="key"
           :label="t(`session.vote.${key}`)"
           :name="`${uid}-${key}`"
@@ -435,7 +477,7 @@ const denominatorText = computed(() =>
       </div>
 
       <!-- Who votes comes from the latest headcount, never typed here; the
-           members present who cast nothing abstain. -->
+           members present who cast nothing are «no emitidos». -->
       <dl class="grid grid-cols-2 gap-3 text-sm">
         <div class="border-default rounded-lg border px-3 py-2">
           <dt class="text-muted text-xs">{{ t("session.vote.present") }}</dt>
@@ -448,23 +490,23 @@ const denominatorText = computed(() =>
           class="border-default rounded-lg border px-3 py-2"
         >
           <dt class="text-muted text-xs">
-            {{ t("session.vote.abstentionsAuto") }}
+            {{ t("session.vote.notCastAuto") }}
           </dt>
           <dd class="text-highlighted text-lg font-semibold tabular-nums">
-            {{ vote.abstentions ?? 0 }}
+            {{ vote.notCast ?? 0 }}
           </dd>
         </div>
         <UFormField
           v-else
-          :label="t('session.vote.abstentions')"
-          :name="`${uid}-abstentions`"
+          :label="t('session.vote.notCast')"
+          :name="`${uid}-not-cast`"
         >
           <UInputNumber
-            :model-value="vote.abstentions ?? 0"
+            :model-value="vote.notCast ?? 0"
             :min="0"
             :max="100000"
             class="w-full"
-            @update:model-value="(value) => setCount('abstentions', value)"
+            @update:model-value="(value) => setCount('notCast', value)"
           />
         </UFormField>
       </dl>

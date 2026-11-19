@@ -2017,6 +2017,7 @@ describe("agenda item votes", () => {
     abstentions: 1,
     blank: 0,
     invalid: 0,
+    notCast: 0,
     present: null,
     majority: "simple",
     result: "approved",

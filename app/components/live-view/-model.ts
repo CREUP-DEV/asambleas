@@ -1,3 +1,4 @@
+import { shownVoteCounts } from "~~/shared/utils/votes";
 /**
  * Pure helpers of the attendees' live view (/asambleas/<slug>/directo) and
  * the projection: who has the floor, where every amendment of the document
@@ -599,18 +600,15 @@ export function affectsLiveVote(
 }
 
 export type LiveVoteCountKey =
-  "inFavor" | "against" | "abstentions" | "blank" | "invalid";
+  "inFavor" | "against" | "abstentions" | "blank" | "invalid" | "notCast";
 
-/** The counts to show: blank and invalid only when there were any. */
+/**
+ * The counts to show (shownVoteCounts): abstentions, or blank ballots in a
+ * secret vote; invalid ones and those who cast nothing only when there
+ * were any.
+ */
 export function liveVoteCounts(
   vote: VoteDto,
 ): { key: LiveVoteCountKey; value: number }[] {
-  const counts: { key: LiveVoteCountKey; value: number }[] = [
-    { key: "inFavor", value: vote.inFavor },
-    { key: "against", value: vote.against },
-    { key: "abstentions", value: vote.abstentions },
-  ];
-  if (vote.blank > 0) counts.push({ key: "blank", value: vote.blank });
-  if (vote.invalid > 0) counts.push({ key: "invalid", value: vote.invalid });
-  return counts;
+  return shownVoteCounts(vote);
 }

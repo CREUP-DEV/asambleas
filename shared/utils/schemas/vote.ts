@@ -1,5 +1,6 @@
 import { z } from "zod/v4";
 import { MAJORITIES, VOTE_METHODS } from "../../constants/domain";
+import { foreignBallotKeys } from "../votes";
 import type {
   ItemVoteBody,
   VoteInput,
@@ -27,18 +28,39 @@ const noteSchema = z
   .nullable()
   .optional();
 
-export const voteInputSchema = z.object({
-  method: z.enum(VOTE_METHODS),
-  inFavor: count.optional(),
-  against: count.optional(),
-  abstentions: count.optional(),
-  blank: count.optional(),
-  invalid: count.optional(),
-  present: count.nullable().optional(),
-  majority: z.enum(MAJORITIES).optional(),
-  note: noteSchema,
-  unanimous: z.boolean().optional(),
-});
+/**
+ * Blank and invalid ballots only in a secret vote, abstentions in any other
+ * counted one (user's decision of 2026-11-19): a count the method does not
+ * take is refused unless it is zero.
+ */
+export const voteInputSchema = z
+  .object({
+    method: z.enum(VOTE_METHODS),
+    inFavor: count.optional(),
+    against: count.optional(),
+    abstentions: count.optional(),
+    blank: count.optional(),
+    invalid: count.optional(),
+    notCast: count.optional(),
+    present: count.nullable().optional(),
+    majority: z.enum(MAJORITIES).optional(),
+    note: noteSchema,
+    unanimous: z.boolean().optional(),
+  })
+  .superRefine((vote, ctx) => {
+    for (const key of foreignBallotKeys(vote.method)) {
+      if ((vote[key] ?? 0) > 0) {
+        ctx.addIssue({
+          code: "custom",
+          path: [key],
+          message:
+            key === "abstentions"
+              ? "A secret vote counts blank ballots, not abstentions"
+              : "Only a secret vote counts blank and invalid ballots",
+        });
+      }
+    }
+  });
 
 const updatedAt = z.iso.datetime({ offset: true });
 

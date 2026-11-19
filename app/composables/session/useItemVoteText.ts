@@ -1,3 +1,4 @@
+import { thirdCount, voteTextKey } from "~~/shared/utils/votes";
 import type { VoteDto } from "~~/shared/types/api";
 
 /**
@@ -25,14 +26,14 @@ export function useItemVoteText() {
   }
 
   function line(vote: VoteDto): string {
-    // In favour, against and abstentions, in that order: the Mesa's own
-    // shorthand, the same in every language.
+    // In favour, against and abstentions (blank in a secret vote), in that
+    // order: the Mesa's own shorthand, the same in every language.
     return (
       assentLine(vote) ??
       [
         result(vote),
         t(`session.enums.voteMethod.${vote.method}`),
-        `${vote.inFavor} / ${vote.against} / ${vote.abstentions}`,
+        `${vote.inFavor} / ${vote.against} / ${thirdCount(vote)}`,
       ].join(" · ")
     );
   }
@@ -40,12 +41,13 @@ export function useItemVoteText() {
   function spoken(vote: VoteDto): string {
     return (
       assentLine(vote) ??
-      t("session.itemVote.status.spoken", {
+      t(voteTextKey("session.itemVote.status.spoken", vote.method), {
         result: result(vote),
         method: t(`session.enums.voteMethod.${vote.method}`),
         inFavor: vote.inFavor,
         against: vote.against,
         abstentions: vote.abstentions,
+        blank: vote.blank,
       })
     );
   }

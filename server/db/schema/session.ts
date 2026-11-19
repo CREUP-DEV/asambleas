@@ -146,9 +146,15 @@ export const votes = pgTable(
     method: voteMethodEnum("method").notNull(),
     inFavor: integer("in_favor").notNull().default(0),
     against: integer("against").notNull().default(0),
+    /**
+     * Show of hands, roll call and the portal; blank and invalid ballots
+     * only in a secret vote (user's decision of 2026-11-19).
+     */
     abstentions: integer("abstentions").notNull().default(0),
     blank: integer("blank").notNull().default(0),
     invalid: integer("invalid").notNull().default(0),
+    /** Members present who cast nothing (votos no emitidos). */
+    notCast: integer("not_cast").notNull().default(0),
     /** Members present with vote, when the denominator needs it. */
     present: integer("present"),
     /** The Mesa's headcount in force when the vote was recorded. */

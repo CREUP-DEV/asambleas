@@ -217,7 +217,13 @@ const amendments: AnnexAmendment[] = [
     approvalMethod: "vote",
     decidedAt: new Date("2026-11-21T10:00:00Z"),
     authors: ["CEUM"],
-    vote: { inFavor: 30, against: 4, abstentions: 2 },
+    vote: {
+      inFavor: 30,
+      against: 4,
+      abstentions: 2,
+      blank: 0,
+      method: "show_of_hands",
+    },
   }),
   amendment({
     id: "a2",
@@ -296,6 +302,7 @@ const meta: ExportDocumentMeta = {
     inFavor: 40,
     against: 2,
     abstentions: 1,
+    blank: 0,
     majority: "two_thirds",
     result: "approved",
     method: "show_of_hands",

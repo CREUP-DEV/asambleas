@@ -16,8 +16,8 @@ import type { ItemVoteContext } from "./-model";
 /**
  * A vote recorded from the control sheet (an amendment's, a document's
  * final vote): the console's own fields (SessionVoteFields: the members
- * present from the latest headcount, abstentions worked out, the result
- * previewed), so what is stored is what the console would store. Nothing
+ * present from the latest headcount, those not cast worked out, the
+ * result previewed; a final vote by assent may be unanimous), so what is stored is what the console would store. Nothing
  * is projected from here.
  */
 const props = defineProps<{
@@ -77,6 +77,7 @@ const ready = computed(() =>
           :settings="context.settings"
           :methods="methods"
           :headcount="context.headcount"
+          :unanimity="withAssent"
         />
         <p class="text-muted text-xs">
           {{ t("controlSheet.results.notProjected") }}

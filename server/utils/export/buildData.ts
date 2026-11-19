@@ -112,6 +112,7 @@ export function toExportVote(vote: VoteRow): ExportVote {
     inFavor: vote.inFavor,
     against: vote.against,
     abstentions: vote.abstentions,
+    blank: vote.blank,
     majority: vote.majority,
     result: vote.result,
     method: vote.method,
@@ -285,6 +286,8 @@ async function loadAnnexAmendments(
             inFavor: vote.inFavor,
             against: vote.against,
             abstentions: vote.abstentions,
+            blank: vote.blank,
+            method: vote.method,
           }
         : null,
       ops: row.ops,

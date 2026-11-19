@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import type { VoteDto } from "~~/shared/types/api";
 import { isUnanimousVote } from "~~/shared/utils/controlSheet";
+import { shownVoteCounts } from "~~/shared/utils/votes";
 
 /**
- * One recorded vote in a cell of the control sheet: how it was voted, every
- * count that is not zero (blank and invalid ones too, as the minutes record
- * them) and its result. `label` names what was voted when it helps (the
+ * One recorded vote in a cell of the control sheet: how it was voted, its
+ * counts (shownVoteCounts: abstentions, or blank in a secret vote; invalid
+ * and not cast when there were any, as the minutes record them) and its
+ * result. `label` names what was voted when it helps (the
  * title of each document when a row holds several, the question of a vote
  * on the item), on a line of its own; `clamp` cuts a long one to three
  * lines, as the lists do. A `voided` vote reads «Anulada», dimmed and
@@ -22,18 +24,9 @@ const { t } = useI18n();
 
 const counts = computed(() => {
   if (props.vote.method === "assent") return "";
-  const parts: string[] = [
-    `${t("amendment.vote.inFavor")} ${props.vote.inFavor}`,
-    `${t("amendment.vote.against")} ${props.vote.against}`,
-    `${t("amendment.vote.abstentions")} ${props.vote.abstentions}`,
-  ];
-  if (props.vote.blank > 0) {
-    parts.push(`${t("amendment.vote.blank")} ${props.vote.blank}`);
-  }
-  if (props.vote.invalid > 0) {
-    parts.push(`${t("amendment.vote.invalid")} ${props.vote.invalid}`);
-  }
-  return parts.join(" · ");
+  return shownVoteCounts(props.vote)
+    .map(({ key, value }) => `${t(`amendment.vote.${key}`)} ${value}`)
+    .join(" · ");
 });
 
 const unanimous = computed(() => isUnanimousVote(props.vote));

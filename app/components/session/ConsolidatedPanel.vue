@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { voteTextKey } from "~~/shared/utils/votes";
 import type { ConsolidationConflict } from "~~/shared/types/content";
 import { liveAssentKey } from "~/components/live-view/-model";
 import { useFinalVoteReasonText } from "~/composables/session/useFinalVoteReasonText";
@@ -57,10 +58,11 @@ const finalVoteMethodText = computed(() => {
   const assentKey = liveAssentKey(vote);
   return assentKey
     ? t(assentKey)
-    : t("session.card.voteCounts", {
+    : t(voteTextKey("session.card.voteCounts", vote.method), {
         inFavor: vote.inFavor,
         against: vote.against,
         abstentions: vote.abstentions,
+        blank: vote.blank,
       });
 });
 

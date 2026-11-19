@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { voteTextKey } from "~~/shared/utils/votes";
 import type { DropdownMenuItem } from "@nuxt/ui";
 import type { AmendmentDto } from "~~/shared/types/api";
 import {
@@ -169,10 +170,11 @@ const replacingCodes = computed(() =>
 const voteSummary = computed(() => {
   const vote = props.amendment.outcomeVote;
   if (!vote) return null;
-  return t("session.card.voteCounts", {
+  return t(voteTextKey("session.card.voteCounts", vote.method), {
     inFavor: vote.inFavor,
     against: vote.against,
     abstentions: vote.abstentions,
+    blank: vote.blank,
   });
 });
 
