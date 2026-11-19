@@ -1232,6 +1232,7 @@
     }
   },
   "amendment": {
+    "mesaWording": "Mesa",
     "title": "Amendments",
     "create": "Create amendment",
     "edit": "Edit amendment",
@@ -3566,7 +3567,8 @@
       "applied": "One amendment incorporated. Underlined fragments show where they come from. | {count} amendments incorporated. Underlined fragments show where they come from.",
       "conflicts": "Some approved amendments cannot be applied together",
       "conflictWith": "{label} clashes with {others} and was not applied.",
-      "conflictInvalid": "{label} no longer fits the text and was not applied."
+      "conflictInvalid": "{label} no longer fits the text and was not applied.",
+      "pendingWordings": "1 passage where approved amendments collide awaits the Mesa's wording: until then it reads the automatic proposal | {count} passages where approved amendments collide await the Mesa's wording: until then they read the automatic proposal"
     },
     "compare": {
       "original": "Original text",
@@ -3884,6 +3886,7 @@
       "outcome": "The decision could not be recorded",
       "admission": "The admission could not be recorded",
       "relation": "The link could not be saved",
+      "wording": "The passage wording could not be saved",
       "transactional": "The transactional could not be created",
       "acceptance": "The answer could not be recorded",
       "finalVote": "The final vote could not be recorded",
@@ -3981,13 +3984,47 @@
       "note": "Note",
       "submit": "Add link"
     },
+    "wording": {
+      "code": "Mesa",
+      "title": "Wording of the passage: {codes}",
+      "pending": "These approved amendments change the same text or text next to each other, so the Mesa sets how the passage reads. It starts from an automatic proposal: where they change the same text the last approved prevails, and where they only touch both apply.",
+      "deletionWins": "{by} deletes text that {codes} changed: those changes have no effect on the final text. If that is not what was approved, correct it.",
+      "worded": "The Mesa already set the wording of this passage. You can change it or go back to the automatic proposal.",
+      "changed": "This passage has changed: another amendment that touches it was reopened or approved. Open it again from the consolidated text.",
+      "now": "How it reads now",
+      "text": "Wording of the passage",
+      "reset": "Back to the starting text",
+      "diff": "Changes to the base text",
+      "noChanges": "With this wording the passage reads as in the base text.",
+      "invalid": "This wording cannot be saved: check the text.",
+      "correct": "Correct",
+      "keep": "Keep it so",
+      "automatic": "Back to the automatic proposal",
+      "later": "Later",
+      "save": "Set this wording",
+      "saved": "Passage wording set",
+      "passagesTitle": "Passages where approved amendments collide",
+      "set": "Set wording",
+      "review": "Review",
+      "status": {
+        "pending": "To word",
+        "automatic": "The deletion wins",
+        "worded": "Worded by the Mesa"
+      }
+    },
+    "collision": {
+      "meets": "It acts on text {codes} (approved) already changed. It is debated over the text as it stands; if approved, the Mesa sets how the passage reads.",
+      "deletes": "It deletes text that {codes}, already approved, changed: if approved, those changes have no effect.",
+      "deleted": "It changes text {codes} (approved) already deleted: if approved, this change has no effect unless the Mesa corrects it.",
+      "howItReads": "How it reads",
+      "now": "Now",
+      "after": "If approved"
+    },
     "lapse": {
       "title": "After deciding {code}",
       "titleBatch": "After the batch approval",
-      "descriptionApproved": "These amendments change the same text or are incompatible with the approved one. Mark them as lapsed?",
+      "descriptionApproved": "These amendments are linked to the approved one: incompatible, duplicate or absorbed by it. Mark them as lapsed?",
       "descriptionRejected": "These amendments depended on the rejected one. Mark them as lapsed?",
-      "collisionsTitle": "Collides with amendments already approved",
-      "collisions": "{codes} are already approved and change the same text: the consolidated text cannot include them all.",
       "candidates": "Affected amendments",
       "select": "Mark {code} as lapsed",
       "keep": "Keep them",
@@ -4076,6 +4113,7 @@
       "notPublished": "The document is not published",
       "undecided": "1 amendment is still undecided | {count} amendments are still undecided",
       "amendmentsLoading": "Loading the document's amendments…",
+      "pendingWordings": "The Mesa still has to set the wording of 1 passage where approved amendments collide. | The Mesa still has to set the wording of {count} passages where approved amendments collide.",
       "awaitingValidation": "1 amendment is waiting for the Secretariat: it has to validate it or send it back to its authors before the final vote. | {count} amendments are waiting for the Secretariat: it has to validate them or send them back to their authors before the final vote.",
       "awaitingProponent": "1 transactional awaits approval from the document's presenter. | {count} transactionals await approval from the document's presenter.",
       "proponentRejected": "1 transactional turned down by the document's presenter is still presented: whoever proposed it or the Mesa has to withdraw it. | {count} transactionals turned down by the document's presenter are still presented: whoever proposed them or the Mesa has to withdraw them.",

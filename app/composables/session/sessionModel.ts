@@ -18,7 +18,6 @@ import type {
   AmendmentInput,
   AmendmentOp,
   Block,
-  ConsolidationResult,
 } from "~~/shared/types/content";
 import type {
   AcceptedAmendmentRule,
@@ -42,6 +41,17 @@ import {
   numberAgendaItems,
 } from "~~/shared/utils/agendaNumbering";
 import { consolidate } from "~~/shared/utils/content/consolidate";
+import { inApprovalOrder } from "~~/shared/utils/approvalOrder";
+import {
+  amendmentsMeet,
+  approvalImpact,
+  consolidateApproved,
+  passageFragment,
+  type ApprovalImpact,
+  type ApprovedConsolidation,
+  type Passage,
+  type PassageWordingInput,
+} from "~~/shared/utils/content/passages";
 import { itemTakesOwnVote, latestItemVote } from "~~/shared/utils/controlSheet";
 import { copyShape, seedListStarts } from "~~/shared/utils/content/lists";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
@@ -1001,7 +1011,8 @@ export type SessionFinalVoteReason =
   | { key: "superseded"; count: number }
   | { key: "late"; count: number }
   | { key: "awaitingAuthors"; count: number }
-  | { key: "awaitingValidation"; count: number };
+  | { key: "awaitingValidation"; count: number }
+  | { key: "pendingWordings"; count: number };
 
 /**
  * Why the final vote on a document cannot be recorded yet, one reason per
@@ -1013,6 +1024,8 @@ export function sessionFinalVoteReasons(input: {
   document: { voted: boolean; status: string } | null;
   amendmentsLoaded: boolean;
   blockers: ReturnType<typeof sessionFinalVoteBlockers>;
+  /** Passages where approved amendments collide that the Mesa has not worded. */
+  pendingWordings?: number;
 }): SessionFinalVoteReason[] {
   const { document, blockers } = input;
   if (!document) return [];
@@ -1029,6 +1042,9 @@ export function sessionFinalVoteReasons(input: {
   ] as const) {
     const count = blockers[key].length;
     if (count > 0) reasons.push({ key, count });
+  }
+  if (input.pendingWordings) {
+    reasons.push({ key: "pendingWordings", count: input.pendingWordings });
   }
   return reasons;
 }
@@ -1358,8 +1374,6 @@ export function sessionQueueOrder(
 export interface SessionLapseOffer {
   /** Undecided amendments the Mesa may want to mark as lapsed. */
   lapse: string[];
-  /** Approved amendments that collide with this one in the base text. */
-  collisions: string[];
 }
 
 function unique(ids: string[]): string[] {
@@ -1367,15 +1381,16 @@ function unique(ids: string[]): string[] {
 }
 
 /**
- * What to offer after deciding `target`:
+ * What to offer after deciding `target`. Changing the same text is no
+ * reason to lapse: the next amendment is debated over the text as it
+ * stands, and where approved ones collide the Mesa words the passage
+ * (user's decisions of 2026-11-19). Only what is linked by hand is offered:
  * - approved: undecided amendments linked as incompatible, duplicate, or
- *   subsumed by it become lapse candidates (one that only changes the same
- *   text does not); approved ones that hard-overlap it are reported as
- *   collisions (the final consolidation would refuse them).
- * - rejected: undecided amendments that depend on it, or are a consequence of
- *   it, become lapse candidates.
- * The server's `warnings` are merged in. A transactional's own sources are
- * never offered: approving it already marks them transacted.
+ *   subsumed by it;
+ * - rejected: undecided amendments that depend on it, or are a consequence
+ *   of it.
+ * The server's `warnings.incompatible` are merged in. A transactional's own
+ * sources are never offered: approving it already marks them transacted.
  */
 export function sessionLapseOffer(
   target: AmendmentDto,
@@ -1403,19 +1418,9 @@ export function sessionLapseOffer(
             relation.kind === "consequence_of"),
       )
       .map((relation) => relation.fromId);
-    return { lapse: unique(dependants.filter(undecided)), collisions: [] };
+    return { lapse: unique(dependants.filter(undecided)) };
   }
-  if (target.status !== "approved") return { lapse: [], collisions: [] };
-
-  const overlapping = list
-    .filter(
-      (other) =>
-        other.id !== target.id &&
-        other.ops.length > 0 &&
-        target.ops.length > 0 &&
-        isHardOverlap(overlapBetween(target.ops, other.ops)),
-    )
-    .map((other) => other.id);
+  if (target.status !== "approved") return { lapse: [] };
 
   const linked = relations.flatMap((relation) => {
     const other =
@@ -1435,17 +1440,11 @@ export function sessionLapseOffer(
     return [];
   });
 
-  // Changing the same text is no reason to lapse: the next one is debated
-  // over the text as it stands (user's decision of 2026-11-19). Only what
-  // someone linked by hand is offered.
-  const lapse = unique([...linked, ...(warnings?.incompatible ?? [])]).filter(
-    undecided,
-  );
-  const collisions = unique([
-    ...overlapping.filter((id) => byId.get(id)?.status === "approved"),
-    ...(warnings?.overlapsWithApproved ?? []),
-  ]).filter((id) => id !== target.id);
-  return { lapse, collisions };
+  return {
+    lapse: unique([...linked, ...(warnings?.incompatible ?? [])]).filter(
+      undecided,
+    ),
+  };
 }
 
 // Bulk assent ----------------------------------------------------------------
@@ -1620,40 +1619,97 @@ export function sessionSettleConfirm(input: {
 
 // Consolidated preview -------------------------------------------------------
 
-export interface SessionConsolidatedPreview extends ConsolidationResult {
+export interface SessionConsolidatedPreview extends ApprovedConsolidation {
   /** Approved amendments with text, in the order they were applied. */
   order: string[];
 }
 
-function decidedTime(amendment: AmendmentDto): number {
-  return amendment.decidedAt ? new Date(amendment.decidedAt).getTime() : 0;
+/** Approved amendments with text, in approval order (inApprovalOrder). */
+function approvedInputs(list: AmendmentDto[]): AmendmentInput[] {
+  return inApprovalOrder(
+    list.filter(
+      (amendment) =>
+        amendment.status === "approved" && amendment.ops.length > 0,
+    ),
+  ).map((amendment) => ({ id: amendment.id, ops: amendment.ops }));
 }
 
 /**
  * The text as it stands: the base with every approved amendment applied in
- * approval order (decidedAt, then number), as the final vote does.
+ * approval order and the Mesa's wordings, as the final vote does
+ * (consolidateApproved).
  */
 export function sessionConsolidatedPreview(
   base: Block[],
   list: AmendmentDto[],
+  wordings: readonly PassageWordingInput[] = [],
 ): SessionConsolidatedPreview {
-  const approved = list
-    .filter((amendment) => amendment.status === "approved")
-    .sort(
-      (a, b) =>
-        decidedTime(a) - decidedTime(b) ||
-        (a.number ?? Number.MAX_SAFE_INTEGER) -
-          (b.number ?? Number.MAX_SAFE_INTEGER) ||
-        compareAmendmentCodes(a.code, b.code),
-    );
-  const withText = approved.filter((amendment) => amendment.ops.length > 0);
-  const result = consolidate(
+  const inputs = approvedInputs(list);
+  return {
+    ...consolidateApproved(base, inputs, { wordings }),
+    order: inputs.map((input) => input.id),
+  };
+}
+
+/**
+ * What approving an undecided amendment does to the approved text
+ * (approvalImpact): the passage it would share with approved ones, as it
+ * reads now and as it would read. Null when it meets none.
+ */
+export function sessionApprovalImpact(
+  base: Block[],
+  list: AmendmentDto[],
+  target: AmendmentDto,
+  wordings: readonly PassageWordingInput[] = [],
+): ApprovalImpact | null {
+  if (target.status !== "submitted" || target.ops.length === 0) return null;
+  const approved = approvedInputs(list);
+  // Most amendments meet none: no need to consolidate the text twice.
+  if (!approved.some((other) => amendmentsMeet(other.ops, target.ops))) {
+    return null;
+  }
+  return approvalImpact(
     base,
-    withText.map((amendment) => ({ id: amendment.id, ops: amendment.ops })),
+    approved,
+    { id: target.id, ops: target.ops },
+    wordings,
+  );
+}
+
+export interface SessionWordingSeed {
+  /** The base blocks from the passage's first block to its last. */
+  basePassage: Block[];
+  /** The base block right before them, null at the start. */
+  anchorBefore: string | null;
+  /** The passage as the text reads it now, to start editing from. */
+  seed: Block[];
+}
+
+/**
+ * What the Mesa edits to word a passage: the base it is written against
+ * and the passage as it reads now (the automatic proposal, a deletion that
+ * wins, or the wording already set).
+ */
+export function sessionWordingSeed(
+  base: Block[],
+  preview: Pick<ApprovedConsolidation, "annotated" | "blocks">,
+  passage: Pick<Passage, "blockIds">,
+): SessionWordingSeed {
+  const wanted = new Set(passage.blockIds);
+  const positions = base
+    .map((block, i) => (wanted.has(block.id) ? i : -1))
+    .filter((i) => i >= 0);
+  const first = Math.min(...positions);
+  const last = Math.max(...positions);
+  const shown = new Set(
+    passageFragment(preview.annotated, passage.blockIds)
+      .filter((block) => block.status !== "deleted")
+      .map((block) => block.id),
   );
   return {
-    ...result,
-    order: withText.map((amendment) => amendment.id),
+    basePassage: positions.length > 0 ? base.slice(first, last + 1) : [],
+    anchorBefore: first > 0 ? base[first - 1]!.id : null,
+    seed: preview.blocks.filter((block) => shown.has(block.id)),
   };
 }
 

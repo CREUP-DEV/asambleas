@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { AmendmentStatus } from "~~/shared/constants/domain";
-import { consolidate } from "~~/shared/utils/content/consolidate";
+import { consolidateApproved } from "~~/shared/utils/content/passages";
 import { kindAcceptsFile } from "~~/shared/utils/documentFormat";
 import { consolidationInputs } from "~/composables/amendment/workspace";
 
@@ -61,8 +61,20 @@ const finalText = computed(
 
 const consolidation = computed(() =>
   base.value.length > 0
-    ? consolidate(base.value, consolidationInputs(list.amendments.value))
+    ? consolidateApproved(
+        base.value,
+        consolidationInputs(list.amendments.value),
+        { wordings: list.wordings.value },
+      )
     : null,
+);
+
+/** Passages the Mesa has not worded yet, while the text is not final. */
+const pendingPassages = computed(
+  () =>
+    consolidation.value?.passages.filter(
+      (passage) => passage.status === "pending",
+    ) ?? [],
 );
 
 /**
@@ -244,6 +256,26 @@ watch(popoverOpen, (open) => {
           "
         />
 
+        <UAlert
+          v-if="!finalText && pendingPassages.length > 0"
+          color="info"
+          variant="subtle"
+          icon="i-lucide-pen-line"
+          :title="
+            t(
+              'workspace.consolidated.pendingWordings',
+              { count: pendingPassages.length },
+              pendingPassages.length,
+            )
+          "
+          :description="
+            pendingPassages
+              .map((passage) =>
+                passage.amendmentIds.map((id) => list.labelOf(id)).join(', '),
+              )
+              .join(' · ')
+          "
+        />
         <UAlert
           v-if="consolidation.conflicts.length > 0"
           color="warning"

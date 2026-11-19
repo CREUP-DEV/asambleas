@@ -1232,6 +1232,7 @@
     }
   },
   "amendment": {
+    "mesaWording": "Mesa",
     "title": "Enmiendas",
     "create": "Crear enmienda",
     "edit": "Editar enmienda",
@@ -3566,7 +3567,8 @@
       "applied": "Una enmienda incorporada. Los fragmentos subrayados indican su procedencia. | {count} enmiendas incorporadas. Los fragmentos subrayados indican su procedencia.",
       "conflicts": "Hay enmiendas aprobadas que no se pueden aplicar juntas",
       "conflictWith": "{label} choca con {others} y no se ha aplicado.",
-      "conflictInvalid": "{label} ya no encaja con el texto y no se ha aplicado."
+      "conflictInvalid": "{label} ya no encaja con el texto y no se ha aplicado.",
+      "pendingWordings": "1 pasaje donde chocan enmiendas aprobadas espera la redacción de la Mesa: hasta entonces se lee la propuesta automática | {count} pasajes donde chocan enmiendas aprobadas esperan la redacción de la Mesa: hasta entonces se lee la propuesta automática"
     },
     "compare": {
       "original": "Texto original",
@@ -3884,6 +3886,7 @@
       "outcome": "No se ha podido registrar la decisión",
       "admission": "No se ha podido registrar la admisión",
       "relation": "No se ha podido guardar la relación",
+      "wording": "No se ha podido guardar la redacción del pasaje",
       "transactional": "No se ha podido crear la transaccional",
       "acceptance": "No se ha podido registrar la respuesta",
       "finalVote": "No se ha podido registrar la votación final",
@@ -3981,13 +3984,47 @@
       "note": "Nota",
       "submit": "Añadir relación"
     },
+    "wording": {
+      "code": "Mesa",
+      "title": "Redacción del pasaje: {codes}",
+      "pending": "Estas enmiendas aprobadas cambian el mismo texto o texto contiguo, así que la Mesa fija cómo queda el pasaje. Se parte de una propuesta automática: donde pisan el mismo texto prevalece la última aprobada, y donde solo se tocan se aplican las dos.",
+      "deletionWins": "{by} suprime texto que cambiaban {codes}: esos cambios quedan sin efecto en el texto final. Si no es lo que se aprobó, corrígelo.",
+      "worded": "La Mesa ya fijó la redacción de este pasaje. Puedes cambiarla o volver a la propuesta automática.",
+      "changed": "Este pasaje ha cambiado: se ha reabierto o aprobado otra enmienda que lo toca. Ábrelo de nuevo desde el texto consolidado.",
+      "now": "Cómo se lee ahora",
+      "text": "Redacción del pasaje",
+      "reset": "Volver al texto de partida",
+      "diff": "Cambios sobre el texto base",
+      "noChanges": "Con esta redacción el pasaje queda como en el texto base.",
+      "invalid": "Esta redacción no se puede guardar: revisa el texto.",
+      "correct": "Corregir",
+      "keep": "Dejarla así",
+      "automatic": "Volver a la automática",
+      "later": "Más tarde",
+      "save": "Fijar esta redacción",
+      "saved": "Redacción del pasaje fijada",
+      "passagesTitle": "Pasajes donde chocan enmiendas aprobadas",
+      "set": "Fijar redacción",
+      "review": "Revisar",
+      "status": {
+        "pending": "Por redactar",
+        "automatic": "Gana la supresión",
+        "worded": "Redactado por la Mesa"
+      }
+    },
+    "collision": {
+      "meets": "Actúa sobre texto que ya cambió {codes} (aprobada). Se debate sobre el texto como ha quedado; si se aprueba, la Mesa fija cómo queda el pasaje.",
+      "deletes": "Suprime texto que cambiaron {codes}, ya aprobadas: si se aprueba, esos cambios quedan sin efecto.",
+      "deleted": "Cambia texto que ya suprimió {codes} (aprobada): si se aprueba, este cambio queda sin efecto salvo que la Mesa lo corrija.",
+      "howItReads": "Cómo queda",
+      "now": "Ahora",
+      "after": "Si se aprueba"
+    },
     "lapse": {
       "title": "Tras decidir {code}",
       "titleBatch": "Tras la aprobación en bloque",
-      "descriptionApproved": "Estas enmiendas modifican el mismo texto o son incompatibles con la aprobada. ¿Las marcas como decaídas?",
+      "descriptionApproved": "Estas enmiendas están vinculadas a la aprobada: incompatibles, duplicadas o absorbidas por ella. ¿Las marcas como decaídas?",
       "descriptionRejected": "Estas enmiendas dependían de la rechazada. ¿Las marcas como decaídas?",
-      "collisionsTitle": "Choca con enmiendas ya aprobadas",
-      "collisions": "{codes} ya están aprobadas y modifican el mismo texto: el texto consolidado no podrá incluirlas todas.",
       "candidates": "Enmiendas afectadas",
       "select": "Marcar {code} como decaída",
       "keep": "Mantenerlas",
@@ -4076,6 +4113,7 @@
       "notPublished": "El documento no está publicado",
       "undecided": "Queda 1 enmienda por decidir | Quedan {count} enmiendas por decidir",
       "amendmentsLoading": "Cargando las enmiendas del documento…",
+      "pendingWordings": "Falta que la Mesa fije la redacción de 1 pasaje donde chocan enmiendas aprobadas. | Falta que la Mesa fije la redacción de {count} pasajes donde chocan enmiendas aprobadas.",
       "awaitingValidation": "1 enmienda está pendiente de validar por Secretaría: tiene que validarla o devolverla a sus autores antes de la votación final. | {count} enmiendas están pendientes de validar por Secretaría: tiene que validarlas o devolverlas a sus autores antes de la votación final.",
       "awaitingProponent": "1 transaccional espera la aprobación de quien presenta el documento. | {count} transaccionales esperan la aprobación de quien presenta el documento.",
       "proponentRejected": "1 transaccional rechazada por quien presenta el documento sigue presentada: quien la propuso o la Mesa tiene que retirarla. | {count} transaccionales rechazadas por quien presenta el documento siguen presentadas: quien las propuso o la Mesa tiene que retirarlas.",

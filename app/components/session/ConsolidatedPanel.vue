@@ -28,6 +28,15 @@ const document = computed(() => session.document.value);
 const preview = computed(() => session.preview.value);
 const structured = computed(() => document.value?.format === "structured");
 const finalVote = computed(() => document.value?.finalVote ?? null);
+/** The Mesa words passages until the final vote fixes the text. */
+const canWord = computed(
+  () => Boolean(document.value?.can.moderate) && !finalVote.value,
+);
+const PASSAGE_COLORS = {
+  pending: "warning",
+  automatic: "neutral",
+  worded: "success",
+} as const;
 const blockers = computed(() => session.finalVoteBlockers.value);
 /** Whoever can validate the waiting amendments gets a way to do it. */
 const validationPath = computed(() => {
@@ -295,6 +304,50 @@ const awaitingValidation = computed(
             </ul>
           </template>
         </UAlert>
+
+        <section v-if="preview.passages.length > 0" class="space-y-2">
+          <h3 class="text-highlighted text-sm font-medium">
+            {{ t("session.wording.passagesTitle") }}
+          </h3>
+          <ul
+            class="border-default divide-default divide-y rounded-lg border text-sm"
+          >
+            <li
+              v-for="passage in preview.passages"
+              :key="passage.key"
+              class="flex flex-wrap items-center gap-2 px-3 py-2"
+            >
+              <UBadge
+                :color="PASSAGE_COLORS[passage.status]"
+                variant="subtle"
+                size="sm"
+                :label="t(`session.wording.status.${passage.status}`)"
+              />
+              <span class="min-w-0 flex-1">
+                {{ passage.amendmentIds.map(session.label).join(", ") }}
+              </span>
+              <UButton
+                v-if="canWord"
+                size="xs"
+                color="neutral"
+                variant="outline"
+                :icon="
+                  passage.status === 'pending'
+                    ? 'i-lucide-pen-line'
+                    : 'i-lucide-eye'
+                "
+                :label="
+                  t(
+                    passage.status === 'pending'
+                      ? 'session.wording.set'
+                      : 'session.wording.review',
+                  )
+                "
+                @click="session.openWording(passage)"
+              />
+            </li>
+          </ul>
+        </section>
 
         <p class="text-muted text-xs" aria-live="polite">
           {{

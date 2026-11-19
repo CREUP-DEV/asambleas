@@ -99,6 +99,8 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     byAnswer: toValue(options.byAnswer) ?? false,
   }));
   const relations = computed(() => data.value?.relations ?? []);
+  /** The Mesa's wordings of passages where approved amendments collide. */
+  const wordings = computed(() => data.value?.wordings ?? []);
   const byId = computed(
     () =>
       new Map(amendments.value.map((amendment) => [amendment.id, amendment])),
@@ -222,7 +224,11 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
   /** "12 · CEUM 4", or "Borrador" for unnumbered drafts. */
   function labelOf(id: string): string {
     const amendment = byId.value.get(id);
-    if (!amendment) return t("amendment.unknownAmendment");
+    if (!amendment) {
+      return wordings.value.some((wording) => wording.id === id)
+        ? t("amendment.mesaWording")
+        : t("amendment.unknownAmendment");
+    }
     // Numbered on publication: sent and not published yet, it has none.
     return (
       amendmentDisplayLabel(amendment) ??
@@ -237,7 +243,11 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
   /** Short reference for provenance marks ("CEUM 4", "T1"). */
   function shortLabelOf(id: string): string {
     const amendment = byId.value.get(id);
-    if (!amendment) return "?";
+    if (!amendment) {
+      return wordings.value.some((wording) => wording.id === id)
+        ? t("amendment.mesaWording")
+        : "?";
+    }
     return amendmentShortLabel(amendment) ?? t("amendment.draftShort");
   }
 
@@ -306,6 +316,7 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     unreadIds,
     source,
     relations,
+    wordings,
     byId,
     overlaps,
     markers,

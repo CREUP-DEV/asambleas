@@ -29,6 +29,7 @@ import {
   type AmendmentOrderOptions,
 } from "~~/shared/utils/amendmentOrder";
 import { consolidate } from "~~/shared/utils/content/consolidate";
+import { inApprovalOrder } from "~~/shared/utils/approvalOrder";
 import { diffPassage } from "~~/shared/utils/content/diff";
 import {
   firstTouchedBlockId,
@@ -1688,14 +1689,16 @@ export function consolidationInputs(
   list: (AmendmentLike & Pick<AmendmentDto, "position">)[],
   includeAccepted = false,
 ): AmendmentInput[] {
-  const approved = list
-    .filter((amendment) => amendment.status === "approved")
-    .filter((amendment) => amendment.ops.length > 0)
-    .sort((a, b) => {
-      const ta = timeOf(a.decidedAt);
-      const tb = timeOf(b.decidedAt);
-      return ta !== tb ? ta - tb : compareAmendments(a, b);
-    });
+  // The order the final vote applies them in (inApprovalOrder).
+  const approved = inApprovalOrder(
+    list
+      .filter((amendment) => amendment.status === "approved")
+      .filter((amendment) => amendment.ops.length > 0)
+      .map((amendment) => ({
+        ...amendment,
+        decidedAt: amendment.decidedAt ?? null,
+      })),
+  );
   const accepted = includeAccepted
     ? sortAmendments(
         list.filter(

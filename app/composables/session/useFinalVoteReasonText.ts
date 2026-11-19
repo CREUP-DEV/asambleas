@@ -20,6 +20,7 @@ export function useFinalVoteReasonText() {
       case "late":
       case "awaitingAuthors":
       case "awaitingValidation":
+      case "pendingWordings":
         return t(
           `session.preview.${reason.key}`,
           { count: reason.count },

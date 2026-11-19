@@ -20,6 +20,8 @@ import type {
   LiveTally,
   LiveStateDto,
   OutcomeAction,
+  PassageWordingBody,
+  PassageWordingDto,
   PositionBody,
   PublishAmendmentsBody,
   RelationBody,
@@ -32,7 +34,11 @@ import type {
   VoteUnanimityBody,
   VoteVoidBody,
 } from "~~/shared/types/api";
-import type { ConsolidationConflict } from "~~/shared/types/content";
+import type {
+  AmendmentOp,
+  ConsolidationConflict,
+} from "~~/shared/types/content";
+import type { ApprovalImpact, Passage } from "~~/shared/utils/content/passages";
 import {
   DEFAULT_ASSEMBLY_SETTINGS,
   type AssemblySettings,
@@ -64,6 +70,7 @@ import {
   sessionAssentPlan,
   sessionCleanVote,
   sessionConnectionState,
+  sessionApprovalImpact,
   sessionConsolidatedPreview,
   sessionErrorData,
   sessionErrorIds,
@@ -121,6 +128,8 @@ export type SessionFinalVoteResult =
       conflicts: ConsolidationConflict[];
       undecided: string[];
       tie: boolean;
+      /** Passages the Mesa has not worded yet (consolidateApproved). */
+      pendingPassages: Passage[];
     };
 
 /** What recording an agenda item's vote came to, for its dialog. */
@@ -160,7 +169,14 @@ export interface SessionLapseDialog {
   /** The amendment just decided. */
   targetId: string | null;
   lapse: string[];
-  collisions: string[];
+}
+
+/** The passage the wording dialog is open on (its key), if any. */
+export interface SessionWordingDialog {
+  open: boolean;
+  passageKey: string | null;
+  /** Open on the editor: a deletion that wins first asks whether to keep it. */
+  editing: boolean;
 }
 
 /** How a one-click decision was asked for. */
@@ -470,6 +486,8 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
 
   const amendments = computed(() => amendmentsDto.value?.amendments ?? []);
   const relations = computed(() => amendmentsDto.value?.relations ?? []);
+  /** The Mesa's wordings of passages where approved amendments collide. */
+  const wordings = computed(() => amendmentsDto.value?.wordings ?? []);
   const byId = computed(
     () =>
       new Map(amendments.value.map((amendment) => [amendment.id, amendment])),
@@ -488,7 +506,12 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   /** Short label of an amendment: its code, or "#n" before it has one. */
   function label(id: string): string {
     const amendment = byId.value.get(id);
-    if (!amendment) return "?";
+    if (!amendment) {
+      // A passage the Mesa worded reads «Mesa» in the consolidated text.
+      return wordings.value.some((wording) => wording.id === id)
+        ? t("session.wording.code")
+        : "?";
+    }
     return amendment.code ?? (amendment.number ? `#${amendment.number}` : "?");
   }
 
@@ -525,8 +548,24 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     sessionFinalVoteBlockers(amendments.value),
   );
   const preview = computed(() =>
-    sessionConsolidatedPreview(base.value, amendments.value),
+    sessionConsolidatedPreview(base.value, amendments.value, wordings.value),
   );
+  /** Passages the Mesa still has to word before the final vote. */
+  const pendingPassages = computed(() =>
+    preview.value.passages.filter((passage) => passage.status === "pending"),
+  );
+  /**
+   * What approving an undecided amendment does to the approved text, for the
+   * notice before deciding it (sessionApprovalImpact).
+   */
+  function impactOf(amendment: AmendmentDto): ApprovalImpact | null {
+    return sessionApprovalImpact(
+      base.value,
+      amendments.value,
+      amendment,
+      wordings.value,
+    );
+  }
   const assentPlan = computed(() => sessionAssentPlan(amendments.value));
   /** Why the final vote cannot be recorded yet (empty when it can). */
   const finalVoteReasons = computed(() =>
@@ -534,6 +573,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       document: document.value ?? null,
       amendmentsLoaded: Boolean(amendmentsDto.value),
       blockers: finalVoteBlockers.value,
+      pendingWordings: pendingPassages.value.length,
     }),
   );
 
@@ -1212,8 +1252,15 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     open: false,
     targetId: null,
     lapse: [],
-    collisions: [],
   });
+  const wordingDialog = reactive<SessionWordingDialog>({
+    open: false,
+    passageKey: null,
+    editing: false,
+  });
+  // The amendment just approved whose passage the Mesa words once the lapse
+  // dialog, if any, is closed.
+  const wordingAfterLapse = ref<string | null>(null);
   // Kept here, like every dialog, so anyDialogOpen pauses the shortcuts
   // while a name is being corrected (focus may be on a button, not a field).
   const speakerRenameDialog = reactive({
@@ -1367,6 +1414,7 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       finalVoteAnnulDialog.open ||
       assentDialog.open ||
       lapseDialog.open ||
+      wordingDialog.open ||
       speakerRenameDialog.open ||
       speakerAddDialog.open ||
       headcountDialog.open ||
@@ -1490,6 +1538,14 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
 
       if (options.offer !== false) {
         offerLapses(result.amendment, result.warnings);
+        // It now shares a passage with approved ones: the Mesa words it,
+        // or sees the deletion that wins (user's decisions of 2026-11-19).
+        if (
+          result.amendment.status === "approved" &&
+          (result.warnings?.overlapsWithApproved.length ?? 0) > 0
+        ) {
+          wordingAfterLapse.value = result.amendment.id;
+        }
       }
       return result;
     } catch (error) {
@@ -1519,11 +1575,83 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
       relations.value,
       warnings,
     );
-    if (offer.lapse.length === 0 && offer.collisions.length === 0) return;
+    if (offer.lapse.length === 0) return;
     lapseDialog.targetId = target.id;
     lapseDialog.lapse = offer.lapse;
-    lapseDialog.collisions = offer.collisions;
     lapseDialog.open = true;
+  }
+
+  // Wordings ------------------------------------------------------------------
+
+  /** Opens the wording dialog on a passage of the consolidated text. */
+  function openWording(passage: Passage, editing = false): void {
+    wordingDialog.passageKey = passage.key;
+    wordingDialog.editing = editing || passage.status !== "automatic";
+    wordingDialog.open = true;
+  }
+
+  // After an approval, once the lapse dialog is out of the way, the passage
+  // the amendment joined.
+  watch(
+    [wordingAfterLapse, () => lapseDialog.open, preview],
+    ([id, lapseOpen]) => {
+      if (!id || lapseOpen || wordingDialog.open) return;
+      const passage = preview.value.passages.find((item) =>
+        item.amendmentIds.includes(id),
+      );
+      if (!passage) return;
+      wordingAfterLapse.value = null;
+      if (passage.status !== "worded") openWording(passage);
+    },
+  );
+
+  /** Sets the Mesa's wording of a passage (PUT .../wordings). */
+  async function setWording(
+    passage: Pick<Passage, "amendmentIds" | "blockIds">,
+    ops: AmendmentOp[],
+  ): Promise<boolean> {
+    try {
+      const body: PassageWordingBody = {
+        amendmentIds: passage.amendmentIds,
+        blockIds: passage.blockIds,
+        ops,
+      };
+      await track("wording", () =>
+        api.send<PassageWordingDto>(documentApi("/wordings"), {
+          method: "PUT",
+          body,
+        }),
+      );
+      await refreshAmendments();
+      toast.add({
+        title: t("session.wording.saved"),
+        color: "success",
+        icon: "i-lucide-pen-line",
+      });
+      return true;
+    } catch (error) {
+      api.notifyError(error, "session.errors.wording");
+      onConflict(error);
+      void refreshAmendments();
+      return false;
+    }
+  }
+
+  /** Removes a wording: the passage goes back to the automatic proposal. */
+  async function removeWording(wordingId: string): Promise<boolean> {
+    try {
+      await track(`wording-${wordingId}`, () =>
+        api.send(documentApi(`/wordings/${encodeURIComponent(wordingId)}`), {
+          method: "DELETE",
+        }),
+      );
+      await refreshAmendments();
+      return true;
+    } catch (error) {
+      api.notifyError(error, "session.errors.wording");
+      onConflict(error);
+      return false;
+    }
   }
 
   /**
@@ -1668,7 +1796,6 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
 
     // One lapse offer for the whole batch.
     const lapseIds = new Set<string>();
-    const collisionIds = new Set<string>();
     for (const result of results) {
       const offer = sessionLapseOffer(
         result.amendment,
@@ -1677,12 +1804,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         result.warnings,
       );
       offer.lapse.forEach((id) => lapseIds.add(id));
-      offer.collisions.forEach((id) => collisionIds.add(id));
     }
-    if (lapseIds.size > 0 || collisionIds.size > 0) {
+    if (lapseIds.size > 0) {
       lapseDialog.targetId = null;
       lapseDialog.lapse = [...lapseIds];
-      lapseDialog.collisions = [...collisionIds];
       lapseDialog.open = true;
     }
     void refreshAmendments();
@@ -2015,7 +2140,13 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     body: FinalVoteBody,
   ): Promise<SessionFinalVoteResult> {
     if (!requireInSession()) {
-      return { ok: false, conflicts: [], undecided: [], tie: false };
+      return {
+        ok: false,
+        conflicts: [],
+        undecided: [],
+        tie: false,
+        pendingPassages: [],
+      };
     }
     try {
       const updated = await track("final-vote", () =>
@@ -2040,11 +2171,26 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
         : [];
       const undecidedIds = sessionErrorIds(error, "undecided");
       const tie = data?.tie === true;
-      if (conflicts.length === 0 && undecidedIds.length === 0 && !tie) {
+      const pending = Array.isArray(data?.pendingPassages)
+        ? (data.pendingPassages as Passage[])
+        : [];
+      if (
+        conflicts.length === 0 &&
+        undecidedIds.length === 0 &&
+        !tie &&
+        pending.length === 0
+      ) {
         api.notifyError(error, "session.errors.finalVote");
       }
+      if (pending.length > 0) void refreshAmendments();
       onConflict(error);
-      return { ok: false, conflicts, undecided: undecidedIds, tie };
+      return {
+        ok: false,
+        conflicts,
+        undecided: undecidedIds,
+        tie,
+        pendingPassages: pending,
+      };
     }
   }
 
@@ -2297,6 +2443,9 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     amendmentsError,
     amendments,
     relations,
+    wordings,
+    pendingPassages,
+    impactOf,
     byId,
     base,
     incorporatesAccepted,
@@ -2366,6 +2515,10 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     finalVoteAnnulDialog,
     assentDialog,
     lapseDialog,
+    wordingDialog,
+    openWording,
+    setWording,
+    removeWording,
     speakerRenameDialog,
     headcountDialog,
     speakerAddDialog,

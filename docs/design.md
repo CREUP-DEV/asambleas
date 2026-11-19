@@ -446,6 +446,10 @@ time, even when one office plays several roles:
 - **Relations**: `amendment_relations` with `incompatible`, `duplicate`,
   `depends_on`, `consequence_of`, `subsumed_by`, `same_in_other_document`,
   plus note, author and visibility.
+- **Passage wordings**: `passage_wordings` holds the Mesa's wording of a
+  passage where approved amendments collide: their ids, the base blocks and
+  `ops` against the base, unique per document and `passage_key` (the
+  engine's key, shared/utils/content/passages.ts).
 - **Transactionals**: `amendment_sources` links a transactional to 1..N parent
   amendments. `amendment_acceptances` holds one row per party (each parent's
   authors and, by default, the document proponent). It can be voted only once

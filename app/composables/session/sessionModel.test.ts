@@ -18,7 +18,9 @@ import {
   sessionAdmissionCandidates,
   sessionAssentPlan,
   sessionCleanVote,
+  sessionApprovalImpact,
   sessionConsolidatedPreview,
+  sessionWordingSeed,
   sessionEmptyVote,
   sessionFinalVoteResult,
   sessionLapseOffer,
@@ -454,7 +456,6 @@ describe("session model", () => {
     );
     // a2 changes the same text as a1: it is debated, not lapsed.
     expect(offer.lapse).toEqual(["a3"]);
-    expect(offer.collisions).toEqual([]);
   });
 
   it("plans bulk assent", () => {
@@ -475,17 +476,47 @@ describe("session model", () => {
     ]);
   });
 
-  it("previews consolidation with conflicts", () => {
-    const p = sessionConsolidatedPreview(base, [
-      { ...a1, status: "approved", decidedAt: "2026-01-01T10:00:00Z" },
-      { ...a2, status: "approved", decidedAt: "2026-01-01T11:00:00Z" },
+  it("previews colliding approvals as a passage the Mesa words", () => {
+    const approved = [
+      { ...a1, status: "approved" as const, decidedAt: "2026-01-01T10:00:00Z" },
+      { ...a2, status: "approved" as const, decidedAt: "2026-01-01T11:00:00Z" },
+    ];
+    const p = sessionConsolidatedPreview(base, approved);
+    expect(p.applied).toEqual(["a1", "a2"]);
+    expect(p.conflicts).toEqual([]);
+    // Until the Mesa words it, the last approved wins over the same text.
+    expect(p.passages).toEqual([
+      expect.objectContaining({
+        amendmentIds: ["a1", "a2"],
+        status: "pending",
+        dropped: ["a1"],
+      }),
     ]);
-    expect(p.applied).toEqual(["a1"]);
-    expect(p.conflicts[0]).toEqual({
-      amendmentId: "a2",
-      conflictsWith: ["a1"],
-    });
-    expect(p.blocks[1]!.text).toBe("La choza es grande y bonita.");
+    const text = "La " + "choza es" + base[1]!.text.slice(15);
+    expect(p.blocks[1]!.text).toBe(text);
+
+    // The editor starts from the passage as it reads.
+    const seed = sessionWordingSeed(base, p, p.passages[0]!);
+    expect(seed.basePassage.map((block) => block.id)).toEqual(["b2"]);
+    expect(seed.anchorBefore).toBe("b1");
+    expect(seed.seed.map((block) => block.text)).toEqual([text]);
+
+    // The Mesa's wording applies to exactly that passage.
+    const worded = sessionConsolidatedPreview(base, approved, [
+      {
+        id: "w",
+        amendmentIds: ["a1", "a2"],
+        blockIds: ["b2"],
+        ops: [rep("b2", 3, 7, "chabola")],
+      },
+    ]);
+    expect(worded.passages[0]!.status).toBe("worded");
+    expect(worded.blocks[1]!.text).toBe("La chabola es grande y bonita.");
+
+    // Before deciding a2: what approving it would do.
+    const impact = sessionApprovalImpact(base, [approved[0]!, a2], a2);
+    expect(impact?.others).toEqual(["a1"]);
+    expect(sessionApprovalImpact(base, [a2], a2)).toBeNull();
   });
 
   it("seeds a transactional and diffs back", () => {

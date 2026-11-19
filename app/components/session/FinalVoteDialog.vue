@@ -2,6 +2,7 @@
 import { voteTextKey } from "~~/shared/utils/votes";
 import type { VoteInput } from "~~/shared/types/api";
 import type { ConsolidationConflict } from "~~/shared/types/content";
+import type { Passage } from "~~/shared/utils/content/passages";
 import { VOTE_METHODS } from "~~/shared/constants/domain";
 import {
   isSessionFinalVoteReady,
@@ -136,8 +137,16 @@ const blocked = computed(
     // hide undecided amendments.
     !session.amendmentsDto.value ||
     undecided.value.length > 0 ||
+    // Where approved amendments collide, the Mesa words the passage first.
+    session.pendingPassages.value.length > 0 ||
     !isSessionFinalVoteReady(vote.value, outcome.value),
 );
+
+/** Leaves the vote for the passage to word. */
+function wordPassage(passage: Passage): void {
+  open.value = false;
+  session.openWording(passage);
+}
 
 function conflictText(conflict: ConsolidationConflict): string {
   const code = session.label(conflict.amendmentId);
@@ -218,6 +227,41 @@ async function record(): Promise<void> {
           :title="t(group.key, { count: group.ids.length }, group.ids.length)"
           :description="group.ids.map(session.label).join(', ')"
         />
+        <UAlert
+          v-if="session.pendingPassages.value.length > 0"
+          color="warning"
+          variant="subtle"
+          icon="i-lucide-pen-line"
+          :title="
+            t(
+              'session.preview.pendingWordings',
+              { count: session.pendingPassages.value.length },
+              session.pendingPassages.value.length,
+            )
+          "
+        >
+          <template #description>
+            <ul class="mt-1 space-y-1">
+              <li
+                v-for="passage in session.pendingPassages.value"
+                :key="passage.key"
+                class="flex flex-wrap items-center gap-2"
+              >
+                <span>{{
+                  passage.amendmentIds.map(session.label).join(", ")
+                }}</span>
+                <UButton
+                  size="xs"
+                  color="neutral"
+                  variant="outline"
+                  icon="i-lucide-pen-line"
+                  :label="t('session.wording.set')"
+                  @click="wordPassage(passage)"
+                />
+              </li>
+            </ul>
+          </template>
+        </UAlert>
         <UAlert
           v-if="conflicts.length > 0"
           color="error"

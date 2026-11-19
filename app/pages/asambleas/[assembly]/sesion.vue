@@ -425,6 +425,7 @@ defineShortcuts({
       <SessionFinalVoteDialog />
       <SessionItemVoteDialog />
       <SessionLapseOfferDialog />
+      <SessionWordingDialog />
       <SessionBulkAssentDialog />
       <SessionTransactionalComposer />
 

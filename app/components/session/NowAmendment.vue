@@ -413,6 +413,9 @@ const moreItems = computed<DropdownMenuItem[][]>(() => {
       </p>
     </div>
 
+    <!-- It acts on text approved amendments already changed. -->
+    <SessionApprovalImpact v-if="!decided" :amendment="amendment" />
+
     <!-- Waiting for its main authors: recording their answers comes next. -->
     <SessionAcceptanceList
       v-if="amendment.kind === 'transactional' && awaitingAnswers"

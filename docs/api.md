@@ -818,11 +818,29 @@ removes them all.
 - Records the vote on the whole text, whatever its result, as `finalVoteId`.
   That closes every amendment action on the document.
 - When it is approved, consolidates the base with the approved amendments, in
-  approval order or in `order`, using `consolidate`, and stores the result as
-  a `consolidated` version (`consolidatedVersionId`).
-- If `consolidate` reports conflicts, it returns 409 with `{ conflicts }` and
-  stores nothing.
+  approval order (`inApprovalOrder`) or in `order`, and the Mesa's wordings,
+  using `consolidateApproved` (shared/utils/content/passages.ts), and stores
+  the result as a `consolidated` version (`consolidatedVersionId`). A
+  deletion wins over the approved changes inside what it deletes; where
+  approved amendments change the same text, or text that touches, the Mesa
+  words the passage first.
+- An approved amendment that no longer fits the base returns 409 with
+  `{ conflicts }`; a passage still without the Mesa's wording returns 409
+  with `{ pendingPassages }`. Nothing is stored.
 - The live projection shows the vote (see the live session below).
+
+**Wording a passage.** `PUT .../documents/[document]/wordings`
+(`session:moderate` or `assembly:vote_result`, until the final vote) takes
+`PassageWordingBody` `{ amendmentIds, blockIds, ops, note? }`: the approved
+amendments and base blocks of a passage as `consolidateApproved` reports it
+(409 `passage_changed` otherwise) and `ops` against the base that change only
+those blocks (422 `wording_outside` otherwise). Setting it again for the same
+passage replaces it. It applies while those amendments and blocks are still
+the passage; if one of them is reopened or another approved amendment touches
+those blocks, it waits, kept. `DELETE .../wordings/[wording]` removes it (the
+automatic proposal applies again). They record `passage_worded` and
+`passage_wording_removed`, and `GET .../amendments` returns them as
+`wordings` (only those over amendments the reader sees).
 
 **Annulling the final vote.** `DELETE .../final-vote` with
 `FinalVoteAnnulBody` (`updatedAt` of the document for the optimistic lock,

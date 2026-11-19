@@ -541,6 +541,12 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
     <p v-else-if="incorporated" class="text-default mt-1.5 text-sm">
       {{ t("session.card.incorporated") }}
     </p>
+    <SessionApprovalImpact
+      v-else-if="amendment.status === 'submitted' && !awaiting"
+      :amendment="amendment"
+      compact
+      class="mt-1.5"
+    />
 
     <div
       class="text-muted mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs"

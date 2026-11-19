@@ -3,10 +3,9 @@ import { useSessionConsoleContext } from "~/composables/session/useSessionConsol
 
 /**
  * After a decision, offers to mark as lapsed ("decae") the undecided
- * amendments it leaves without object: those that change the same text,
- * incompatible or duplicate ones, or those that depended on a rejected one.
- * Approved amendments that collide with the new one are shown as a warning,
- * because the final consolidation would refuse them.
+ * amendments someone linked to it by hand (sessionLapseOffer): incompatible,
+ * duplicate or subsumed ones, or those that depended on a rejected one.
+ * Nothing is ticked: the Mesa picks which ones lapse.
  */
 const session = useSessionConsoleContext();
 const { t } = useI18n();
@@ -66,20 +65,6 @@ async function submit(): Promise<void> {
   >
     <template #body>
       <div class="space-y-4">
-        <UAlert
-          v-if="session.lapseDialog.collisions.length > 0"
-          color="error"
-          variant="subtle"
-          icon="i-lucide-git-compare"
-          :title="t('session.lapse.collisionsTitle')"
-          :description="
-            t('session.lapse.collisions', {
-              codes: session.lapseDialog.collisions
-                .map(session.label)
-                .join(', '),
-            })
-          "
-        />
         <fieldset v-if="candidates.length > 0" class="space-y-2">
           <legend class="text-highlighted mb-2 text-sm font-medium">
             {{ t("session.lapse.candidates") }}

@@ -15,6 +15,7 @@ import type {
   AmendmentDto,
 } from "~~/shared/types/api";
 import { consolidate } from "~~/shared/utils/content/consolidate";
+import { consolidateApproved } from "~~/shared/utils/content/passages";
 import {
   firstTouchedBlockId,
   touchedBlockIds,
@@ -1540,14 +1541,22 @@ const overlapBlockIds = computed(() => {
 
 const consolidation = computed(() =>
   base.value.length > 0
-    ? consolidate(
+    ? consolidateApproved(
         base.value,
         consolidationInputs(
           list.amendments.value,
           includeAccepted.value && showAcceptedToggle.value,
         ),
+        { wordings: list.wordings.value },
       )
     : null,
+);
+/** Passages the Mesa has not worded yet, while the text is not final. */
+const pendingPassages = computed(
+  () =>
+    consolidation.value?.passages.filter(
+      (passage) => passage.status === "pending",
+    ) ?? [],
 );
 const compareBlocks = computed(
   () => finalText.value ?? consolidation.value?.blocks ?? [],
@@ -2199,6 +2208,28 @@ const filteredBlockLabel = computed(() =>
                     )
                   }}
                 </p>
+                <UAlert
+                  v-if="!finalText && pendingPassages.length > 0"
+                  color="info"
+                  variant="subtle"
+                  icon="i-lucide-pen-line"
+                  :title="
+                    t(
+                      'workspace.consolidated.pendingWordings',
+                      { count: pendingPassages.length },
+                      pendingPassages.length,
+                    )
+                  "
+                  :description="
+                    pendingPassages
+                      .map((passage) =>
+                        passage.amendmentIds
+                          .map((id) => list.labelOf(id))
+                          .join(', '),
+                      )
+                      .join(' · ')
+                  "
+                />
                 <UAlert
                   v-if="consolidation.conflicts.length > 0"
                   color="warning"
