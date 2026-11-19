@@ -174,10 +174,13 @@ export function isAmendmentInsider(
  * - Presented and published (`publishedAt`): everyone.
  * - Presented, not published yet (waiting for validation, validated but kept
  *   private, or decided before publication): its authors, its creator, the
- *   parties of a transactional, reviewers and the Mesa.
- * - Once validated, though not published: also the CEA's accounts and the
- *   control sheet's readers (`seesValidatedAmendments`). They read it,
- *   nothing more: its correction notes stay with the insiders. The
+ *   parties of a transactional, reviewers, the Mesa and the CEA's accounts
+ *   (`seesPresentedAmendments`; user's decision of 2026-11-19: the whole CEA
+ *   reads them from the moment they are presented).
+ * - Once validated, though not published: also the control sheet's readers
+ *   (`seesValidatedAmendments`). The CEA and they read it, nothing more:
+ *   its correction notes stay with the insiders, and its main presenter
+ *   answers it only once validated (positionBlocker), whoever reads it. The
  *   presenters of the document it amends wait for its publication, unless
  *   they are the CEA (user's decision of 2026-11-17: the main presenter
  *   answers what it sees, so an office of the CEA answers once validated,
@@ -200,7 +203,19 @@ export function canSeeAmendment(
   }
   if (amendment.publishedAt) return true;
   if (insider || seesAllPresentedAmendments(actor)) return true;
+  if (seesPresentedAmendments(actor)) return true;
   return amendment.validatedAt !== null && seesValidatedAmendments(actor);
+}
+
+/**
+ * Who reads a presented amendment before the Secretaría validates it,
+ * besides its insiders, reviewers and the Mesa: the CEA's accounts (role
+ * CEA; user's decision of 2026-11-19). Reading only: correction notes stay
+ * with the insiders (seesAllPresentedAmendments), and nobody answers an
+ * amendment before its validation (positionBlocker).
+ */
+export function seesPresentedAmendments(actor: Actor): boolean {
+  return actor.user.role?.name === SYSTEM_ROLES.CEA;
 }
 
 /**
@@ -218,8 +233,9 @@ export function seesWithdrawnAmendments(actor: Actor): boolean {
 
 /**
  * Who reads an amendment the Secretaría validated and has not published:
- * the CEA's accounts (role CEA) and whoever reads the control sheet (it
- * lists every validated amendment, published or not). Not the presenters of
+ * the CEA's accounts (role CEA, who read it even before, see
+ * seesPresentedAmendments) and whoever reads the control sheet (it lists
+ * every validated amendment, published or not). Not the presenters of
  * the amended document as such (user's decision of 2026-11-17).
  */
 export function seesValidatedAmendments(actor: Actor): boolean {

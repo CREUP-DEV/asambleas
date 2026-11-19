@@ -1079,9 +1079,10 @@ describe("visibility", () => {
       }
     });
 
-    it("keeps an amendment waiting for validation from the CEA and the document's presenters", () => {
+    it("shows an amendment waiting for validation to the CEA, not to the document's presenters", () => {
       const waiting = amendment("submitted");
-      expect(canSeeAmendment(cea, waiting)).toBe(false);
+      // The whole CEA reads it from the moment it is presented.
+      expect(canSeeAmendment(cea, waiting)).toBe(true);
       expect(canSeeAmendment(sheetReader, waiting)).toBe(false);
       expect(canSeeAmendment(actor("member", "presenter"), waiting)).toBe(
         false,
