@@ -474,6 +474,27 @@ describe("session model", () => {
     expect(plan.skipped.map((x) => [x.amendment.id, x.reason])).toEqual([
       ["a2", "overlap_candidate"],
     ]);
+
+    // Changes that only touch are left out too: the Mesa words them.
+    const touching = am("a9", {
+      ops: [rep("b2", 7, 7, " grande")],
+      positionKey: 1.2,
+    });
+    const touched = sessionAssentPlan([
+      { ...a1, position: accept },
+      { ...touching, position: accept },
+    ]);
+    expect(touched.ready.map((x) => x.id)).toEqual(["a1"]);
+    expect(touched.skipped.map((x) => [x.amendment.id, x.reason])).toEqual([
+      ["a9", "overlap_candidate"],
+    ]);
+    const afterApproved = sessionAssentPlan([
+      { ...a1, status: "approved" },
+      { ...touching, position: accept },
+    ]);
+    expect(afterApproved.skipped.map((x) => x.reason)).toEqual([
+      "overlap_approved",
+    ]);
   });
 
   it("previews colliding approvals as a passage the Mesa words", () => {

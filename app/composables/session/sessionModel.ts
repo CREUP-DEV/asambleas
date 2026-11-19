@@ -55,11 +55,7 @@ import {
 import { itemTakesOwnVote, latestItemVote } from "~~/shared/utils/controlSheet";
 import { copyShape, seedListStarts } from "~~/shared/utils/content/lists";
 import { touchedBlockIds } from "~~/shared/utils/content/ops";
-import {
-  findOverlaps,
-  isHardOverlap,
-  overlapBetween,
-} from "~~/shared/utils/content/overlaps";
+import { findOverlaps } from "~~/shared/utils/content/overlaps";
 import {
   ballotKeysOf,
   computeVoteOutcome,
@@ -1496,8 +1492,10 @@ export function sessionAssentPlan(list: AmendmentDto[]): SessionAssentPlan {
   );
 
   const skipped: SessionAssentPlan["skipped"] = [];
+  // Meeting approved text, or another of the batch, in any way the Mesa
+  // would word (amendmentsMeet): those are debated one by one.
   const collides = (a: AmendmentOp[], b: AmendmentOp[]) =>
-    a.length > 0 && b.length > 0 && isHardOverlap(overlapBetween(a, b));
+    a.length > 0 && b.length > 0 && amendmentsMeet(a, b);
   const collidingIds = (amendment: AmendmentDto, others: AmendmentDto[]) =>
     others
       .filter(

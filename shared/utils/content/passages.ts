@@ -5,6 +5,7 @@ import type {
   ConsolidatedBlock,
   ConsolidationConflict,
   ConsolidationResult,
+  InsertOp,
   ReplaceOp,
 } from "../../types/content";
 import { annotatedFragment, consolidate } from "./consolidate";
@@ -56,9 +57,15 @@ export type PassageStatus = "pending" | "automatic" | "worded";
 export interface Passage {
   /** amendmentIds and blockIds, sorted: what a wording is set for. */
   key: string;
-  /** Every approved amendment that changes these blocks, in approval order. */
+  /**
+   * Every approved amendment that changes, deletes or inserts after these
+   * blocks, in approval order.
+   */
   amendmentIds: string[];
-  /** The base blocks where they collide, in base order. */
+  /**
+   * The run of base blocks from the first where they collide to the last,
+   * in base order: what the Mesa words as one piece of text.
+   */
   blockIds: string[];
   status: PassageStatus;
   wordingId: string | null;
@@ -100,9 +107,16 @@ function opsCollide(a: ReplaceOp, b: ReplaceOp): boolean {
   return isFormat(a) || isFormat(b) || rangesCollide(a, b);
 }
 
+/**
+ * What an amendment does to one base block: changes of its text, deleting
+ * it, or new blocks it inserts right after it (which never meet anything,
+ * but a wording of the passage takes them over, since the passage shows
+ * them).
+ */
 interface Touch {
   replaces: ReplaceOp[];
   deleted: boolean;
+  inserts: InsertOp[];
 }
 
 function touchesOf(ops: AmendmentOp[]): Map<string, Touch> {
@@ -110,7 +124,7 @@ function touchesOf(ops: AmendmentOp[]): Map<string, Touch> {
   const touch = (id: string) => {
     let entry = touches.get(id);
     if (!entry) {
-      entry = { replaces: [], deleted: false };
+      entry = { replaces: [], deleted: false, inserts: [] };
       touches.set(id, entry);
     }
     return entry;
@@ -119,14 +133,21 @@ function touchesOf(ops: AmendmentOp[]): Map<string, Touch> {
     if (op.op === "replace") touch(op.blockId).replaces.push(op);
     else if (op.op === "delete")
       op.blockIds.forEach((id) => (touch(id).deleted = true));
+    else if (op.afterBlockId !== null) touch(op.afterBlockId).inserts.push(op);
   }
   return touches;
 }
 
 type Link = "removed_block" | "same_text" | "adjacent";
 
+/** Whether a touch changes or deletes the block (not only inserts after it). */
+function changes(touch: Touch): boolean {
+  return touch.deleted || touch.replaces.length > 0;
+}
+
 /** How two amendments meet in one block, if they do. */
 function linkIn(a: Touch, b: Touch): Link | null {
+  if (!changes(a) || !changes(b)) return null;
   if (a.deleted || b.deleted) return "removed_block";
   let touching = false;
   for (const x of a.replaces) {
@@ -189,20 +210,18 @@ function wordingFits(
   });
 }
 
-/** The ops of `ops` left once `dropReplace` / `dropDelete` are taken out. */
+/** The ops of `ops` left once the dropped ones are taken out. */
 function keepOps(
   ops: AmendmentOp[],
-  dropReplace: Set<ReplaceOp>,
+  dropped: Set<ReplaceOp | InsertOp>,
   dropDelete: Set<string>,
 ): AmendmentOp[] {
   const kept: AmendmentOp[] = [];
   for (const op of ops) {
-    if (op.op === "replace") {
-      if (!dropReplace.has(op)) kept.push(op);
-    } else if (op.op === "delete") {
+    if (op.op === "delete") {
       const blockIds = op.blockIds.filter((id) => !dropDelete.has(id));
       if (blockIds.length > 0) kept.push({ ...op, blockIds });
-    } else {
+    } else if (!dropped.has(op)) {
       kept.push(op);
     }
   }
@@ -253,8 +272,10 @@ export function consolidateApproved(
     }
   }
 
-  // A passage: every amendment that changes a contested block, joined with
-  // those of the other contested blocks they change.
+  // A passage: the run of base blocks from the first contested block to
+  // the last of those its amendments meet in (runs that overlap join), and
+  // every approved amendment that changes, deletes or inserts after any of
+  // them. Contiguous, so the Mesa words it as one piece of text.
   const parent = valid.map((_, i) => i);
   const find = (i: number): number => {
     while (parent[i] !== i) {
@@ -264,48 +285,60 @@ export function consolidateApproved(
     return i;
   };
   for (const blockId of contested.keys()) {
-    const members = byBlock.get(blockId)!;
-    for (const member of members.slice(1)) {
-      parent[find(member)] = find(members[0]!);
+    const linked = byBlock
+      .get(blockId)!
+      .filter((i) => changes(touches[i]!.get(blockId)!));
+    for (const member of linked.slice(1)) {
+      parent[find(member)] = find(linked[0]!);
     }
   }
-  const groups = new Map<number, { members: number[]; blocks: string[] }>();
+  const spans = new Map<number, { lo: number; hi: number }>();
   for (const blockId of contested.keys()) {
-    const root = find(byBlock.get(blockId)![0]!);
-    const group = groups.get(root) ?? { members: [], blocks: [] };
-    group.blocks.push(blockId);
-    groups.set(root, group);
-  }
-  for (const [root, group] of groups) {
-    group.members = valid.map((_, i) => i).filter((i) => find(i) === root);
-    group.blocks.sort(
-      (a, b) => (basePosition.get(a) ?? 0) - (basePosition.get(b) ?? 0),
+    const root = find(
+      byBlock.get(blockId)!.find((i) => changes(touches[i]!.get(blockId)!))!,
     );
+    const at = basePosition.get(blockId) ?? 0;
+    const span = spans.get(root);
+    if (span) {
+      span.lo = Math.min(span.lo, at);
+      span.hi = Math.max(span.hi, at);
+    } else spans.set(root, { lo: at, hi: at });
+  }
+  const runs: { lo: number; hi: number }[] = [];
+  for (const span of [...spans.values()].sort((a, b) => a.lo - b.lo)) {
+    const last = runs.at(-1);
+    if (last && span.lo <= last.hi) last.hi = Math.max(last.hi, span.hi);
+    else runs.push({ ...span });
   }
 
-  const dropReplace = new Set<ReplaceOp>();
+  const dropped = new Set<ReplaceOp | InsertOp>();
   const dropDelete = valid.map(() => new Set<string>());
   const passages: Passage[] = [];
   const superseded: SupersededChange[] = [];
   const wordingInputs: AmendmentInput[] = [];
   const wordingIds: string[] = [];
 
-  for (const group of groups.values()) {
-    const amendmentIds = group.members.map((i) => valid[i]!.id);
-    const blocks = new Set(group.blocks);
-    const key = passageKey(amendmentIds, group.blocks);
+  for (const run of runs) {
+    const blockIds = base.slice(run.lo, run.hi + 1).map((block) => block.id);
+    const blocks = new Set(blockIds);
+    const members = valid
+      .map((_, i) => i)
+      .filter((i) => blockIds.some((id) => touches[i]!.has(id)));
+    const amendmentIds = members.map((i) => valid[i]!.id);
+    const key = passageKey(amendmentIds, blockIds);
     const wording = options.wordings?.find(
       (candidate) =>
         sameSet(candidate.amendmentIds, amendmentIds) &&
-        sameSet(candidate.blockIds, group.blocks) &&
-        wordingFits(base, candidate.ops, group.blocks),
+        sameSet(candidate.blockIds, blockIds) &&
+        wordingFits(base, candidate.ops, blockIds),
     );
 
     if (wording) {
-      for (const i of group.members) {
+      for (const i of members) {
         for (const [blockId, touch] of touches[i]!) {
           if (!blocks.has(blockId)) continue;
-          touch.replaces.forEach((op) => dropReplace.add(op));
+          touch.replaces.forEach((op) => dropped.add(op));
+          touch.inserts.forEach((op) => dropped.add(op));
           if (touch.deleted) dropDelete[i]!.add(blockId);
         }
       }
@@ -314,7 +347,7 @@ export function consolidateApproved(
       passages.push({
         key,
         amendmentIds,
-        blockIds: group.blocks,
+        blockIds,
         status: "worded",
         wordingId: wording.id,
         dropped: [],
@@ -323,20 +356,21 @@ export function consolidateApproved(
     }
 
     // The automatic proposal.
-    const dropped = new Set<number>();
+    const left = new Set<number>();
     let collides = false;
-    for (const blockId of group.blocks) {
-      const members = group.members.filter((i) => touches[i]!.has(blockId));
-      const deleter = members.find((i) => touches[i]!.get(blockId)!.deleted);
+    for (const blockId of blockIds) {
+      if (!contested.has(blockId)) continue;
+      const here = members.filter((i) => touches[i]!.has(blockId));
+      const deleter = here.find((i) => touches[i]!.get(blockId)!.deleted);
       if (deleter !== undefined) {
         // The first to delete it wins; another deletion of it adds nothing.
-        for (const i of members) {
+        for (const i of here) {
           if (i === deleter) continue;
           const touch = touches[i]!.get(blockId)!;
           if (touch.deleted) dropDelete[i]!.add(blockId);
           if (touch.replaces.length === 0) continue;
-          touch.replaces.forEach((op) => dropReplace.add(op));
-          dropped.add(i);
+          touch.replaces.forEach((op) => dropped.add(op));
+          left.add(i);
           const by = valid[deleter]!.id;
           const entry = superseded.find(
             (item) => item.amendmentId === valid[i]!.id && item.by === by,
@@ -351,24 +385,19 @@ export function consolidateApproved(
         }
         continue;
       }
-      if (
-        contested.get(blockId)?.has("same_text") ||
-        contested.get(blockId)?.has("adjacent")
-      ) {
-        collides = true;
-      }
+      collides = true;
       // The last approved wins over the same text; touching changes stay.
       const kept: ReplaceOp[] = [];
-      for (const i of [...members].reverse()) {
+      for (const i of [...here].reverse()) {
         for (const op of touches[i]!.get(blockId)!.replaces) {
           if (kept.some((other) => opsCollide(op, other))) {
-            dropReplace.add(op);
-            dropped.add(i);
+            dropped.add(op);
+            left.add(i);
           }
         }
         kept.push(
           ...touches[i]!.get(blockId)!.replaces.filter(
-            (op) => !dropReplace.has(op),
+            (op) => !dropped.has(op),
           ),
         );
       }
@@ -376,16 +405,16 @@ export function consolidateApproved(
     passages.push({
       key,
       amendmentIds,
-      blockIds: group.blocks,
+      blockIds,
       status: collides ? "pending" : "automatic",
       wordingId: null,
-      dropped: [...dropped].sort((a, b) => a - b).map((i) => valid[i]!.id),
+      dropped: [...left].sort((a, b) => a - b).map((i) => valid[i]!.id),
     });
   }
 
   const inputs: AmendmentInput[] = [];
   valid.forEach((amendment, i) => {
-    const ops = keepOps(amendment.ops, dropReplace, dropDelete[i]!);
+    const ops = keepOps(amendment.ops, dropped, dropDelete[i]!);
     if (ops.length > 0) inputs.push({ id: amendment.id, ops });
   });
   const result = consolidate(base, [...inputs, ...wordingInputs]);

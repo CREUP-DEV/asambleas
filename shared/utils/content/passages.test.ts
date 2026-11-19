@@ -220,6 +220,95 @@ describe("consolidateApproved", () => {
     expect(text(result.blocks, "b2")).toBe(kept[0]!.text);
   });
 
+  it("takes over what is inserted after the passage, never twice", () => {
+    const a = {
+      id: "A",
+      ops: [
+        replace("b2", "muchas", "bastantes"),
+        {
+          op: "insert" as const,
+          afterBlockId: "b2",
+          blocks: [p("n1", "Nuevo párrafo de A.")],
+        },
+      ],
+    };
+    const b = {
+      id: "B",
+      ops: [replace("b2", "en muchas asignaturas", "en las troncales")],
+    };
+    const other = {
+      id: "C",
+      ops: [
+        {
+          op: "insert" as const,
+          afterBlockId: "b2",
+          blocks: [p("n2", "Nuevo párrafo de C.")],
+        },
+      ],
+    };
+    const now = consolidateApproved(base, [a, b, other]);
+    const passage = now.passages[0]!;
+    expect(passage.amendmentIds).toEqual(["A", "B", "C"]);
+    // Worded exactly as it reads, the text stays the same.
+    const shown = passageFragment(now.annotated, passage.blockIds)
+      .filter((block) => block.status !== "deleted")
+      .map((block) => now.blocks.find((item) => item.id === block.id)!);
+    const ops = diffPassage([base[1]!], shown, "b1", () => "x");
+    const worded = consolidateApproved(base, [a, b, other], {
+      wordings: [
+        {
+          id: "W",
+          amendmentIds: passage.amendmentIds,
+          blockIds: passage.blockIds,
+          ops,
+        },
+      ],
+    });
+    expect(worded.passages[0]!.status).toBe("worded");
+    expect(worded.blocks.map((block) => block.text)).toEqual(
+      now.blocks.map((block) => block.text),
+    );
+    const ids = worded.blocks.map((block) => block.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("makes a passage one run of blocks", () => {
+    const a = {
+      id: "A",
+      ops: [replace("b1", "públicas", "estatales"), del("b3")],
+    };
+    const b = {
+      id: "B",
+      ops: [
+        replace("b1", "públicas y", "públicas, y"),
+        replace("b3", "modelo", "enfoque"),
+      ],
+    };
+    const c = { id: "C", ops: [replace("b2", "muchas", "bastantes")] };
+    const result = consolidateApproved(base, [a, b, c]);
+    expect(result.passages).toEqual([
+      expect.objectContaining({
+        amendmentIds: ["A", "B", "C"],
+        blockIds: ["b1", "b2", "b3"],
+      }),
+    ]);
+  });
+
+  it("never makes a passage of an insert after a deleted block", () => {
+    const deletes = { id: "D", ops: [del("b2")] };
+    const inserts = {
+      id: "I",
+      ops: [
+        {
+          op: "insert" as const,
+          afterBlockId: "b2",
+          blocks: [p("n1", "Nuevo párrafo.")],
+        },
+      ],
+    };
+    expect(consolidateApproved(base, [deletes, inserts]).passages).toEqual([]);
+  });
+
   it("ignores a wording that changes text outside its passage", () => {
     const wording = {
       id: "W",

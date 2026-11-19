@@ -1886,6 +1886,17 @@ describe("amendment engine properties", () => {
           coverage.hit("worded", worded.wordingIds.includes("W"));
           expect(worded.conflicts).toEqual([]);
           assertWellFormed(worded);
+          // Worded exactly as it reads, the text reads the same (but for
+          // new blank paragraphs, which diffPassage never keeps).
+          expect(worded.wordingIds).toEqual(["W"]);
+          const baseIds = new Set(base.map((block) => block.id));
+          const texts = (blocks: Block[]) =>
+            blocks
+              .filter((block) => baseIds.has(block.id) || block.text.trim())
+              .map((block) => block.text);
+          expect(texts(worded.blocks)).toEqual(texts(result.blocks));
+          const ids = worded.blocks.map((block) => block.id);
+          expect(new Set(ids).size).toBe(ids.length);
         }
       }
     });

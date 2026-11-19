@@ -309,7 +309,13 @@ export async function annotatedBody(
   actor: Actor,
   document: Pick<DocumentRow, "id" | "baseVersionId"> &
     Partial<
-      Pick<DocumentRow, "positionsPublishedAt" | "positionsDebateStartedAt">
+      Pick<
+        DocumentRow,
+        | "positionsPublishedAt"
+        | "positionsDebateStartedAt"
+        | "finalVoteId"
+        | "consolidatedVersionId"
+      >
     >,
 ): Promise<ExportBody> {
   const baseVersionId = document.baseVersionId!;
@@ -342,7 +348,12 @@ export async function annotatedBody(
       amendments: readable,
       visibleIds: visible,
       conflicts: result.conflicts,
-      passages: result.passages,
+      // Once the text is voted nothing is pending: a passage voted before
+      // the Mesa worded passages (both touching changes applied) stays so.
+      passages:
+        document.finalVoteId || document.consolidatedVersionId
+          ? result.passages.filter((passage) => passage.status === "worded")
+          : result.passages,
       superseded: result.superseded,
       // The order the room debated them in (inDebateOrder).
       byAnswer: positionsArePublic({

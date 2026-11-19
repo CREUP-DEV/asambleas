@@ -305,7 +305,10 @@ const awaitingValidation = computed(
           </template>
         </UAlert>
 
-        <section v-if="preview.passages.length > 0" class="space-y-2">
+        <section
+          v-if="!finalVote && preview.passages.length > 0"
+          class="space-y-2"
+        >
           <h3 class="text-highlighted text-sm font-medium">
             {{ t("session.wording.passagesTitle") }}
           </h3>
