@@ -220,7 +220,7 @@ const items = computed<ProponentReviewItem[]>(() =>
     list.amendments.value,
     acceptedRule.value,
     positionContext.value,
-    { answersPublic: !reserved.value },
+    { byAnswer: true },
   ),
 );
 const progress = computed(() => proponentReviewProgress(items.value));

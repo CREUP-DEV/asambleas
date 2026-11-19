@@ -267,8 +267,8 @@ describe("live amendments", () => {
       amendment("yes", { positionKey: 3, position: answer("accept") }),
       amendment("deal", { positionKey: 4, position: answer("transact") }),
     ];
-    const ids = (answersPublic?: boolean) =>
-      liveAmendmentRows(list, null, { answersPublic }).map(
+    const ids = (byAnswer?: boolean) =>
+      liveAmendmentRows(list, null, { byAnswer }).map(
         (row) => row.amendment.id,
       );
     expect(ids()).toEqual(["open", "no", "yes", "deal"]);

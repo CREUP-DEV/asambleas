@@ -662,7 +662,7 @@ function timeOf(value: string | null | undefined): number {
 
 /**
  * Text order: position in the base, then number, then submission time.
- * Once the document's answers are public (`answersPublic`), grouped first
+ * Once the document's answers are public (`byAnswer`), grouped first
  * by the main presenter's answer: accepted or transacted, rejected, the
  * rest (shared/utils/amendmentOrder.ts).
  */

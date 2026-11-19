@@ -283,13 +283,11 @@ function amendmentSortValue(
 
 // Filtering ------------------------------------------------------------------
 
-/** The chips of «General». «Pendientes» are the items not treated yet. */
-export const GENERAL_VIEWS = [
-  "all",
-  "pending",
-  "treated",
-  "observations",
-] as const;
+/**
+ * The chips of «General». «Pendientes» are the items not treated yet; the
+ * observations are a filter (`observations`) since 2026-11-19.
+ */
+export const GENERAL_VIEWS = ["all", "pending", "treated"] as const;
 export type GeneralView = (typeof GENERAL_VIEWS)[number];
 
 /** The chips of «Enmiendas». «Pendientes» are the ones not treated yet. */
@@ -303,40 +301,88 @@ export const RESULT_FILTERS: readonly ResultFilter[] = [
   ...RESULT_ORDER,
 ];
 
+/** Whether a row has a vote recorded (an item's, a document's, its own). */
+export const VOTE_FILTERS = ["voted", "unvoted"] as const;
+export type VoteFilter = (typeof VOTE_FILTERS)[number];
+
+/** An amendment's type as the sheet reads it (amendmentSheetKind). */
+export const KIND_FILTERS = ["content", "formal"] as const;
+export type KindFilter = (typeof KIND_FILTERS)[number];
+
+/**
+ * The filters of «General». Every list is «any» when empty; members are
+ * the main presenters of the item's documents, by id.
+ */
 export interface GeneralSheetFilters {
   query: string;
   view: GeneralView;
-  /** Empty: any result. */
   results: ResultFilter[];
+  members: string[];
+  votes: VoteFilter[];
+  /** Only the items the sheet has observations about (a sheet key's). */
+  observations: boolean;
 }
 
+/**
+ * The filters of «Enmiendas». Every list is «any» when empty; members are
+ * the amendment's authors, by id; positions the presenter's answer.
+ */
 export interface AmendmentSheetFilters {
   query: string;
   view: AmendmentView;
-  /** Empty: any state. */
   states: LiveAmendmentState[];
+  kinds: KindFilter[];
+  members: string[];
+  positions: PositionLead[];
+  votes: VoteFilter[];
 }
 
 export const EMPTY_GENERAL_FILTERS: GeneralSheetFilters = {
   query: "",
   view: "all",
   results: [],
+  members: [],
+  votes: [],
+  observations: false,
 };
 export const EMPTY_AMENDMENT_FILTERS: AmendmentSheetFilters = {
   query: "",
   view: "all",
   states: [],
+  kinds: [],
+  members: [],
+  positions: [],
+  votes: [],
 };
+
+/** The lists of «Filtros» a set of filters has, each «any» when empty. */
+function filterLists(
+  filters: GeneralSheetFilters | AmendmentSheetFilters,
+): readonly (readonly string[])[] {
+  return "results" in filters
+    ? [
+        filters.results,
+        filters.members,
+        filters.votes,
+        filters.observations ? ["with"] : [],
+      ]
+    : [
+        filters.states,
+        filters.kinds,
+        filters.members,
+        filters.positions,
+        filters.votes,
+      ];
+}
 
 /** Filters in use, the search included; the chip «Todos» is none. */
 export function activeFilterCount(
   filters: GeneralSheetFilters | AmendmentSheetFilters,
 ): number {
-  const values = "results" in filters ? filters.results : filters.states;
   return (
     (filters.query.trim() ? 1 : 0) +
     (filters.view === "all" ? 0 : 1) +
-    (values.length > 0 ? 1 : 0)
+    filterLists(filters).filter((values) => values.length > 0).length
   );
 }
 
@@ -344,8 +390,16 @@ export function activeFilterCount(
 export function filtersKey(
   filters: GeneralSheetFilters | AmendmentSheetFilters,
 ): string {
-  const values = "results" in filters ? filters.results : filters.states;
-  return [filters.query.trim(), filters.view, values.join(",")].join("|");
+  return [
+    filters.query.trim(),
+    filters.view,
+    ...filterLists(filters).map((values) => values.join(",")),
+  ].join("|");
+}
+
+/** Whether a vote filter lets a row through: none chosen lets every one. */
+function passesVotes(votes: readonly VoteFilter[], voted: boolean): boolean {
+  return votes.length === 0 || votes.includes(voted ? "voted" : "unvoted");
 }
 
 function fold(text: string): string {
@@ -399,13 +453,23 @@ export function generalRowMatches(
   if (row.kind !== "item") return false;
   if (filters.view === "pending" && row.outcome.treated) return false;
   if (filters.view === "treated" && !row.outcome.treated) return false;
-  if (filters.view === "observations" && !row.sheet?.observations.trim()) {
-    return false;
-  }
+  if (filters.observations && !row.sheet?.observations.trim()) return false;
   if (
     filters.results.length > 0 &&
     !filters.results.includes(row.outcome.result ?? "pending")
   ) {
+    return false;
+  }
+  if (
+    filters.members.length > 0 &&
+    !row.documents.some(
+      (document) =>
+        document.proponent && filters.members.includes(document.proponent.id),
+    )
+  ) {
+    return false;
+  }
+  if (!passesVotes(filters.votes, rowVoteEntries(row).length > 0)) {
     return false;
   }
   return generalMatchesQuery(row, filters.query);
@@ -419,6 +483,27 @@ export function amendmentRowMatches(
   if (filters.view === "pending" && row.treated) return false;
   if (filters.view === "treated" && !row.treated) return false;
   if (filters.states.length > 0 && !filters.states.includes(row.state)) {
+    return false;
+  }
+  if (
+    filters.kinds.length > 0 &&
+    !filters.kinds.includes(amendmentSheetKind(row.amendment))
+  ) {
+    return false;
+  }
+  if (
+    filters.members.length > 0 &&
+    !row.amendment.authors.some((author) => filters.members.includes(author.id))
+  ) {
+    return false;
+  }
+  if (
+    filters.positions.length > 0 &&
+    !filters.positions.includes(row.position?.position ?? "none")
+  ) {
+    return false;
+  }
+  if (!passesVotes(filters.votes, row.amendment.outcomeVote !== null)) {
     return false;
   }
   const tokens = searchTokens(filters.query);
@@ -559,6 +644,11 @@ export const SHEET_QUERY = {
   view: "ver",
   results: "resultado",
   states: "estado",
+  kinds: "tipo",
+  members: "quien",
+  positions: "respuesta",
+  votes: "votacion",
+  observations: "observaciones",
 } as const;
 
 export const SHEET_FILTER_QUERY_KEYS: readonly string[] =
@@ -588,8 +678,17 @@ const GENERAL_VIEW_SLUGS: Record<GeneralView, string> = {
   all: "todos",
   pending: "pendientes",
   treated: "tratados",
-  observations: "con-observaciones",
 };
+const VOTE_SLUGS: Record<VoteFilter, string> = {
+  voted: "votadas",
+  unvoted: "sin-votar",
+};
+const KIND_SLUGS: Record<KindFilter, string> = {
+  content: "contenido",
+  formal: "forma",
+};
+/** A member id as the query carries it (cuid2, or a fixed id). */
+const MEMBER_ID = /^[A-Za-z0-9_-]{1,64}$/;
 const AMENDMENT_VIEW_SLUGS: Record<AmendmentView, string> = {
   all: "todas",
   pending: "pendientes",
@@ -674,6 +773,16 @@ function listFromQuery<T extends string>(
   return order.filter((entry) => chosen.has(entry));
 }
 
+/** Member ids from the query, well formed ones only, each once. */
+function membersFromQuery(value: LocationQuery[string] | undefined): string[] {
+  const raw = (Array.isArray(value) ? value : [value])
+    .filter((entry): entry is string => typeof entry === "string")
+    .flatMap((entry) => entry.split(","))
+    .map((entry) => entry.trim())
+    .filter((entry) => MEMBER_ID.test(entry));
+  return [...new Set(raw)];
+}
+
 function sortFromQuery<K extends string>(
   query: LocationQuery,
   slugs: Record<K, string>,
@@ -724,6 +833,9 @@ export function parseGeneralSheetQuery(
         RESULT_SLUGS,
         RESULT_FILTERS,
       ),
+      members: membersFromQuery(query[SHEET_QUERY.members]),
+      votes: listFromQuery(query[SHEET_QUERY.votes], VOTE_SLUGS, VOTE_FILTERS),
+      observations: firstValue(query[SHEET_QUERY.observations]) === "con",
     },
   };
 }
@@ -748,6 +860,14 @@ export function parseAmendmentSheetQuery(
         STATE_SLUGS,
         LIVE_AMENDMENT_STATES,
       ),
+      kinds: listFromQuery(query[SHEET_QUERY.kinds], KIND_SLUGS, KIND_FILTERS),
+      members: membersFromQuery(query[SHEET_QUERY.members]),
+      positions: listFromQuery(
+        query[SHEET_QUERY.positions],
+        POSITION_SLUGS,
+        POSITION_LEADS,
+      ),
+      votes: listFromQuery(query[SHEET_QUERY.votes], VOTE_SLUGS, VOTE_FILTERS),
     },
   };
 }
@@ -807,6 +927,12 @@ export function generalSheetQuery(state: GeneralSheetState): SheetQueryPatch {
       RESULT_FILTERS,
     ),
     [SHEET_QUERY.states]: undefined,
+    [SHEET_QUERY.kinds]: undefined,
+    [SHEET_QUERY.members]:
+      filters.members.length > 0 ? filters.members.join(",") : undefined,
+    [SHEET_QUERY.positions]: undefined,
+    [SHEET_QUERY.votes]: listToQuery(filters.votes, VOTE_SLUGS, VOTE_FILTERS),
+    [SHEET_QUERY.observations]: filters.observations ? "con" : undefined,
   };
 }
 
@@ -830,6 +956,16 @@ export function amendmentSheetQuery(
       STATE_SLUGS,
       LIVE_AMENDMENT_STATES,
     ),
+    [SHEET_QUERY.kinds]: listToQuery(filters.kinds, KIND_SLUGS, KIND_FILTERS),
+    [SHEET_QUERY.members]:
+      filters.members.length > 0 ? filters.members.join(",") : undefined,
+    [SHEET_QUERY.positions]: listToQuery(
+      filters.positions,
+      POSITION_SLUGS,
+      POSITION_LEADS,
+    ),
+    [SHEET_QUERY.votes]: listToQuery(filters.votes, VOTE_SLUGS, VOTE_FILTERS),
+    [SHEET_QUERY.observations]: undefined,
   };
 }
 

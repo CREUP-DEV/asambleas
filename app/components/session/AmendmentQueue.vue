@@ -393,13 +393,7 @@ useEventListener(scroller, "pointerdown", letGo);
 
       <ol
         class="space-y-1.5"
-        :aria-label="
-          t(
-            session.answersPublic.value
-              ? 'session.queue.listLabelByAnswer'
-              : 'session.queue.listLabel',
-          )
-        "
+        :aria-label="t('session.queue.listLabelByAnswer')"
       >
         <li
           v-for="entry in entries"

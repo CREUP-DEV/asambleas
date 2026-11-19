@@ -514,7 +514,7 @@ function toItem(amendment: AmendmentDto): ProponentReviewItem {
 
 /**
  * Everything the actor answers here, in text order (grouped by the answers
- * once the document's are public, `order.answersPublic`, as everywhere
+ * once the document's are public, `order.byAnswer`, as everywhere
  * else): nothing once the document is voted (`context.finalVoted`).
  */
 export function proponentReviewItems(

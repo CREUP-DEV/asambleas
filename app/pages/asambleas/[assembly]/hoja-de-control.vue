@@ -26,9 +26,12 @@ import {
   GENERAL_SORT_KEYS,
   GENERAL_SORT_LEADS,
   GENERAL_VIEWS,
+  KIND_FILTERS,
   POSITION_LEADS,
   RESULT_FILTERS,
+  SHEET_FILTER_QUERY_KEYS,
   SHEET_QUERY,
+  VOTE_FILTERS,
   activeFilterCount,
   amendmentSheetQuery,
   clearedSheetQuery,
@@ -47,7 +50,10 @@ import {
   type AmendmentSortKey,
   type GeneralSheetFilters,
   type GeneralSortKey,
+  type KindFilter,
   type PositionLead,
+  type ResultFilter,
+  type VoteFilter,
   type SheetQueryPatch,
   type SheetSort,
 } from "~/components/control-sheet/-filters";
@@ -68,7 +74,11 @@ import {
   type SheetRowDocument,
   type TreatedControl,
 } from "~/components/control-sheet/-model";
-import { LIVE_AMENDMENT_STATES } from "~/components/live-view/-model";
+import {
+  LIVE_AMENDMENT_STATES,
+  type LiveAmendmentState,
+} from "~/components/live-view/-model";
+import type { SheetFilterGroup } from "~/components/control-sheet/Toolbar.vue";
 import { agendaItemPath } from "~/composables/document/agendaReturn";
 import type { RowPanelTarget } from "~/components/control-sheet/RowPanel.vue";
 import {
@@ -210,16 +220,36 @@ const tab = computed<SheetTab>({
 });
 
 /**
+ * Each tab's order, filters and search as it left them (user's decision of
+ * 2026-11-19): coming back to a tab finds them again, for as long as the
+ * page stays open.
+ */
+const tabQueries = new Map<SheetTab, SheetQueryPatch>();
+
+/** The order, filters and search in the query now. */
+function currentSheetQuery(): SheetQueryPatch {
+  return Object.fromEntries(
+    SHEET_FILTER_QUERY_KEYS.map((key) => {
+      const value = route.query[key];
+      const first = Array.isArray(value) ? value[0] : value;
+      return [key, typeof first === "string" && first ? first : undefined];
+    }),
+  );
+}
+
+/**
  * The query that opens a tab. Each tab sorts and filters by its own
- * columns: another tab starts in its default order, unfiltered, with the
- * search box empty, so a search typed a moment before (still on its way to
- * the query) is never written on the other tab.
+ * columns: another tab starts as it was left, or in its default order,
+ * unfiltered, with the search box empty, so a search typed a moment before
+ * (still on its way to the query) is never written on the other tab.
  */
 function tabQuery(value: SheetTab): SheetQueryPatch {
   if (value === tab.value) return {};
+  tabQueries.set(tab.value, currentSheetQuery());
   clearSearchBox();
   return {
     ...clearedSheetQuery(),
+    ...(tabQueries.get(value) ?? {}),
     [TAB_QUERY]: TAB_SLUGS[value],
   };
 }
@@ -321,11 +351,8 @@ const amendmentRows = computed(() =>
     sheet.value?.amendmentRows ?? [],
     sheet.value?.positions ?? [],
     sheet.value?.turns ?? [],
-    {
-      answersPublic: selectedDocument.value
-        ? positionsArePublic(selectedDocument.value)
-        : false,
-    },
+    // The console's order, by answer whether public or not yet.
+    { byAnswer: true },
   ),
 );
 
@@ -363,7 +390,11 @@ const generalState = computed(() => {
     sort: INTERNAL_SORT_KEYS.has(state.sort.key)
       ? DEFAULT_GENERAL_SORT
       : state.sort,
-    filters: { ...state.filters, view: EMPTY_GENERAL_FILTERS.view },
+    filters: {
+      ...state.filters,
+      view: EMPTY_GENERAL_FILTERS.view,
+      observations: false,
+    },
   };
 });
 const amendmentState = computed(() => {
@@ -375,9 +406,22 @@ const amendmentState = computed(() => {
   return {
     ...state,
     sort: hidden ? DEFAULT_AMENDMENT_SORT : state.sort,
-    filters: { ...state.filters, view: EMPTY_AMENDMENT_FILTERS.view },
+    filters: {
+      ...state.filters,
+      view: EMPTY_AMENDMENT_FILTERS.view,
+      positions: showPositions.value ? state.filters.positions : [],
+    },
   };
 });
+
+/** How the presenter's answers read in «Primero» and «Filtros». */
+const POSITION_LEAD_LABELS: Record<PositionLead, string> = {
+  accept: "common.status.position.accept",
+  transact: "common.status.position.transact",
+  reject: "common.status.position.reject",
+  pending: "common.status.position.pending",
+  none: "controlSheet.positionNone",
+};
 
 function replaceQuery(patch: SheetQueryPatch): void {
   void router.replace({ query: { ...route.query, ...patch } });
@@ -406,11 +450,6 @@ const generalView = computed<GeneralSheetFilters["view"]>({
   set: (view) =>
     setGeneral(generalSort.value, { ...generalState.value.filters, view }),
 });
-const generalResults = computed<GeneralSheetFilters["results"]>({
-  get: () => generalState.value.filters.results,
-  set: (results) =>
-    setGeneral(generalSort.value, { ...generalState.value.filters, results }),
-});
 const amendmentSort = computed<SheetSort<AmendmentSortKey>>({
   get: () => amendmentState.value.sort,
   set: (sort) => setAmendments(sort, amendmentState.value.filters),
@@ -423,14 +462,148 @@ const amendmentView = computed<AmendmentSheetFilters["view"]>({
       view,
     }),
 });
-const amendmentStates = computed<AmendmentSheetFilters["states"]>({
-  get: () => amendmentState.value.filters.states,
-  set: (states) =>
-    setAmendments(amendmentSort.value, {
-      ...amendmentState.value.filters,
-      states,
-    }),
+
+// «Filtros»: one list per thing to filter by ---------------------------------
+
+/** Members as a filter offers them: each once, by acronym. */
+function memberItems(
+  members: Iterable<{ id: string; acronym: string }>,
+): { value: string; label: string }[] {
+  const byId = new Map<string, string>();
+  for (const member of members) byId.set(member.id, member.acronym);
+  return [...byId]
+    .map(([value, label]) => ({ value, label }))
+    .sort((a, b) => a.label.localeCompare(b.label, locale.value));
+}
+
+const voteItems = computed(() =>
+  VOTE_FILTERS.map((value) => ({
+    value,
+    label: t(`controlSheet.filters.votes.${value}`),
+  })),
+);
+
+const generalGroups = computed<SheetFilterGroup[]>(() => {
+  const filters = generalState.value.filters;
+  const groups: SheetFilterGroup[] = [
+    {
+      key: "results",
+      label: t("controlSheet.columns.result"),
+      items: resultItems.value,
+      selected: filters.results,
+    },
+    {
+      key: "members",
+      label: t("controlSheet.columns.proponent"),
+      items: memberItems(
+        generalRows.value.flatMap((row) =>
+          row.documents.flatMap((document) =>
+            document.proponent ? [document.proponent] : [],
+          ),
+        ),
+      ),
+      selected: filters.members,
+    },
+    {
+      key: "votes",
+      label: t("controlSheet.columns.votes"),
+      items: voteItems.value,
+      selected: filters.votes,
+    },
+  ];
+  // The sheet's own notes: only whoever reads them filters by them.
+  if (internal.value) {
+    groups.push({
+      key: "observations",
+      label: t("controlSheet.columns.observations"),
+      items: [
+        {
+          value: "with",
+          label: t("controlSheet.filters.views.general.observations"),
+        },
+      ],
+      selected: filters.observations ? ["with"] : [],
+    });
+  }
+  return groups;
 });
+
+const amendmentGroups = computed<SheetFilterGroup[]>(() => {
+  const filters = amendmentState.value.filters;
+  const groups: SheetFilterGroup[] = [
+    {
+      key: "states",
+      label: t("controlSheet.columns.result"),
+      items: stateItems.value,
+      selected: filters.states,
+    },
+    {
+      key: "kinds",
+      label: t("controlSheet.columns.kind"),
+      items: KIND_FILTERS.map((value) => ({
+        value,
+        label: t(`controlSheet.kind.${value}`),
+      })),
+      selected: filters.kinds,
+    },
+    {
+      key: "members",
+      label: t("controlSheet.columns.authors"),
+      items: memberItems(
+        amendmentRows.value.flatMap((row) => row.amendment.authors),
+      ),
+      selected: filters.members,
+    },
+  ];
+  if (showPositions.value) {
+    groups.push({
+      key: "positions",
+      label: t("controlSheet.columns.position"),
+      items: POSITION_LEADS.map((value) => ({
+        value,
+        label: t(POSITION_LEAD_LABELS[value]),
+      })),
+      selected: filters.positions,
+    });
+  }
+  groups.push({
+    key: "votes",
+    label: t("controlSheet.columns.vote"),
+    items: voteItems.value,
+    selected: filters.votes,
+  });
+  return groups;
+});
+
+function onGeneralFilter(key: string, values: string[]): void {
+  const filters = { ...generalState.value.filters };
+  if (key === "results") filters.results = values as ResultFilter[];
+  else if (key === "members") filters.members = values;
+  else if (key === "votes") filters.votes = values as VoteFilter[];
+  else if (key === "observations") filters.observations = values.length > 0;
+  setGeneral(generalSort.value, filters);
+}
+
+function onAmendmentFilter(key: string, values: string[]): void {
+  const filters = { ...amendmentState.value.filters };
+  if (key === "states") filters.states = values as LiveAmendmentState[];
+  else if (key === "kinds") filters.kinds = values as KindFilter[];
+  else if (key === "members") filters.members = values;
+  else if (key === "positions") filters.positions = values as PositionLead[];
+  else if (key === "votes") filters.votes = values as VoteFilter[];
+  setAmendments(amendmentSort.value, filters);
+}
+
+/** «Restablecer»: the default order, no filters, an empty search box. */
+function resetGeneral(): void {
+  searchDraft.value = "";
+  setGeneral(DEFAULT_GENERAL_SORT, EMPTY_GENERAL_FILTERS);
+}
+
+function resetAmendments(): void {
+  searchDraft.value = "";
+  setAmendments(DEFAULT_AMENDMENT_SORT, EMPTY_AMENDMENT_FILTERS);
+}
 
 function onGeneralSort(column: GeneralSortKey): void {
   generalSort.value = nextSort(generalSort.value, column, DEFAULT_GENERAL_SORT);
@@ -585,7 +758,7 @@ const generalShownCount = computed(
 );
 
 const GENERAL_COLUMN_KEYS: Record<GeneralSortKey, string> = {
-  number: "controlSheet.columns.number",
+  number: "controlSheet.sort.agenda",
   item: "controlSheet.columns.item",
   proponent: "controlSheet.columns.proponent",
   treated: "controlSheet.columns.treated",
@@ -657,13 +830,6 @@ const amendmentSortItems = computed(() =>
  * The states the sorted column may put first («Primero»): a result in
  * «General»; a result or the presenter's answer in «Enmiendas».
  */
-const POSITION_LEAD_LABELS: Record<PositionLead, string> = {
-  accept: "common.status.position.accept",
-  transact: "common.status.position.transact",
-  reject: "common.status.position.reject",
-  pending: "common.status.position.pending",
-  none: "controlSheet.positionNone",
-};
 const generalLeadItems = computed(() =>
   GENERAL_SORT_LEADS[generalSort.value.key] ? resultItems.value : [],
 );
@@ -1130,8 +1296,15 @@ onLive((events) => {
 
 // Following the debate ----------------------------------------------------------
 
-/** On while the assembly is in session, unless the reader turns it off. */
-const follow = ref(assembly.value?.status === "in_session");
+/**
+ * On while the assembly is in session, unless the reader turns it off, or
+ * opened a link that names a tab, an order or a filter (user's decision of
+ * 2026-11-19): following would take it somewhere else at once.
+ */
+const linkNamesView = Object.keys(route.query).some(
+  (key) => key === TAB_QUERY || SHEET_FILTER_QUERY_KEYS.includes(key),
+);
+const follow = ref(assembly.value?.status === "in_session" && !linkNamesView);
 
 function scrollToRow(id: string): void {
   if (!import.meta.client) return;
@@ -1294,7 +1467,6 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
           <ControlSheetToolbar
             v-model:search="searchDraft"
             v-model:view="generalView"
-            v-model:extra="generalResults"
             v-model:sort="generalSort"
             :search-label="t('controlSheet.filters.search')"
             :search-placeholder="
@@ -1306,15 +1478,15 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
             "
             :views="generalViewItems"
             :views-label="t('controlSheet.filters.viewsGeneral')"
-            :extra-items="resultItems"
-            :extra-label="t('controlSheet.columns.result')"
+            :groups="generalGroups"
             :sort-items="generalSortItems"
             :lead-items="generalLeadItems"
             :fallback="DEFAULT_GENERAL_SORT"
             :active="generalActive"
             :count="generalActive > 0 ? generalCount : null"
             :status="listStatus"
-            @clear="clearGeneralFilters"
+            @filter="onGeneralFilter"
+            @reset="resetGeneral"
           />
           <!-- A heading in debate is shown even when no item row is. -->
           <CommonEmptyState
@@ -1476,21 +1648,20 @@ const failed = computed(() => Boolean(sheetFetch.error.value) && !sheet.value);
             <ControlSheetToolbar
               v-model:search="searchDraft"
               v-model:view="amendmentView"
-              v-model:extra="amendmentStates"
               v-model:sort="amendmentSort"
               :search-label="t('controlSheet.filters.search')"
               :search-placeholder="t('controlSheet.filters.searchAmendments')"
               :views="amendmentViewItems"
               :views-label="t('controlSheet.filters.viewsAmendments')"
-              :extra-items="stateItems"
-              :extra-label="t('controlSheet.columns.result')"
+              :groups="amendmentGroups"
               :sort-items="amendmentSortItems"
               :lead-items="amendmentLeadItems"
               :fallback="DEFAULT_AMENDMENT_SORT"
               :active="amendmentActive"
               :count="amendmentActive > 0 ? amendmentCountText : null"
               :status="listStatus"
-              @clear="clearAmendmentFilters"
+              @filter="onAmendmentFilter"
+              @reset="resetAmendments"
             />
             <CommonEmptyState
               v-if="shownAmendments.length === 0"

@@ -34,15 +34,15 @@ describe("amendmentAnswerRank", () => {
 describe("amendmentOrderRank", () => {
   it("ranks by the group only while the answers are public", () => {
     const rejected = answered("reject");
-    expect(amendmentOrderRank(rejected, { answersPublic: true })).toBe(1);
-    expect(amendmentOrderRank(rejected, { answersPublic: false })).toBe(0);
+    expect(amendmentOrderRank(rejected, { byAnswer: true })).toBe(1);
+    expect(amendmentOrderRank(rejected, { byAnswer: false })).toBe(0);
     expect(amendmentOrderRank(rejected)).toBe(0);
     expect(amendmentOrderRank(answered(null))).toBe(0);
   });
 });
 
 describe("compareAmendmentAnswers", () => {
-  const pub = { answersPublic: true };
+  const pub = { byAnswer: true };
 
   it("orders by group once public and leaves ties to text order", () => {
     expect(

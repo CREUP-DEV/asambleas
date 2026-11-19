@@ -671,7 +671,7 @@ export function isSessionPositionByMesa(
 
 /**
  * Text order (as positionKey encodes it), then number. Once the document's
- * answers are public (`answersPublic`), grouped first by the main
+ * answers are public (`byAnswer`), grouped first by the main
  * presenter's answer: accepted or transacted, rejected, the rest
  * (shared/utils/amendmentOrder.ts).
  */

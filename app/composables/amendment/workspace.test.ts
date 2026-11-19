@@ -565,14 +565,14 @@ describe("markers and groups", () => {
         "p",
         "y",
       ]);
-      expect(
-        sortAmendments(list, { answersPublic: true }).map((x) => x.id),
-      ).toEqual(["t", "y", "r", "n", "p"]);
+      expect(sortAmendments(list, { byAnswer: true }).map((x) => x.id)).toEqual(
+        ["t", "y", "r", "n", "p"],
+      );
     });
 
     it("keeps text order before they are public", () => {
       const groups = groupAmendmentsByOverlap([rejected, accepted, a], {
-        answersPublic: false,
+        byAnswer: false,
       });
       expect(
         groups.map((g) => [g.kind, g.amendments.map((x) => x.id)]),
@@ -584,7 +584,7 @@ describe("markers and groups", () => {
 
     it("places a cluster at its first member, members by answer", () => {
       const groups = groupAmendmentsByOverlap([rejected, accepted, a], {
-        answersPublic: true,
+        byAnswer: true,
       });
       expect(
         groups.map((g) => [g.kind, g.amendments.map((x) => x.id)]),

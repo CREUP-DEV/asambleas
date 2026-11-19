@@ -500,12 +500,12 @@ describe("annex", () => {
       amendment({ id: "t", number: 5, positionKey: 9, kind: "transactional" }),
     ];
     const visibleIds = new Set(list.map((entry) => entry.id));
-    const order = (answersPublic: boolean) =>
+    const order = (byAnswer: boolean) =>
       buildAnnexRows({
         amendments: list,
         visibleIds,
         conflicts: [],
-        answersPublic,
+        byAnswer,
       }).map((row) => row.id);
     expect(order(false)).toEqual(["n", "r", "x", "a", "t"]);
     expect(order(true)).toEqual(["x", "a", "t", "r", "n"]);

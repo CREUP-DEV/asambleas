@@ -7,6 +7,7 @@ import {
 } from "./-filters";
 import {
   itemTreatedControl,
+  itemVoteNeedsLabel,
   rowVoteEntries,
   type GeneralSheetRow,
   type SheetRowDocument,
@@ -107,9 +108,10 @@ const { t } = useI18n();
 
 /**
  * The documents' final votes, or the votes on the item in force (the
- * latest gives the result), each named by its question. With more than one
- * vote on the item in force, the one that gives the result says so
- * (`decidesShown`), as in the panel.
+ * latest gives the result), each named by its question only when that adds
+ * something to the row (itemVoteNeedsLabel). With more than one vote on the
+ * item in force, the one that gives the result says so (`decidesShown`),
+ * as in the panel.
  */
 const votesOf = (row: GeneralSheetRow) => {
   const entries = rowVoteEntries(row);
@@ -117,7 +119,9 @@ const votesOf = (row: GeneralSheetRow) => {
   return entries.map((entry) => ({
     ...entry,
     label: entry.ownVote
-      ? (entry.label ?? t("controlSheet.itemVotes.fallbackQuestion"))
+      ? itemVoteNeedsLabel(entry.label, row.title, ownInForce)
+        ? (entry.label ?? t("controlSheet.itemVotes.fallbackQuestion"))
+        : null
       : entry.label,
     decidesShown: entry.decides && ownInForce > 1,
   }));

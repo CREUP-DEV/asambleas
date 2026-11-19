@@ -45,7 +45,7 @@ export interface UseDocumentAmendmentsOptions {
    * order alone when omitted, and always for `amendments`, `listed` and
    * `mine`.
    */
-  answersPublic?: MaybeRefOrGetter<boolean>;
+  byAnswer?: MaybeRefOrGetter<boolean>;
 }
 
 /**
@@ -53,7 +53,7 @@ export interface UseDocumentAmendmentsOptions {
  * (GET .../documents/{document}/amendments), with everything the workspace
  * derives from them: text order, overlap clusters (`groups`, the list on
  * screen, grouped by the main presenter's answer once public:
- * `answersPublic`), gutter markers, filters
+ * `byAnswer`), gutter markers, filters
  * and the actor's drafts. Refreshes itself on live events for the document.
  *
  * The main list leaves drafts out; `mine` holds the actor's drafts and
@@ -96,7 +96,7 @@ export function useDocumentAmendments(options: UseDocumentAmendmentsOptions) {
     sortAmendments(data.value?.amendments ?? []),
   );
   const order = computed(() => ({
-    answersPublic: toValue(options.answersPublic) ?? false,
+    byAnswer: toValue(options.byAnswer) ?? false,
   }));
   const relations = computed(() => data.value?.relations ?? []);
   const byId = computed(

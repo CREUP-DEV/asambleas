@@ -3758,7 +3758,6 @@
       "empty": "No amendments were submitted",
       "emptyHint": "If the document is voted on, you can go to the final vote.",
       "late": "Late",
-      "listLabel": "Amendments in text order",
       "listLabelByAnswer": "Amendments: accepted and transactional, rejected and unanswered, each group in text order",
       "clusterLabel": "Group of {count} amendments on the same passage",
       "clusterTitle": "{codes} change the same passage",
@@ -4903,10 +4902,16 @@
     },
     "noObservations": "No observations",
     "sort": {
+      "agenda": "Agenda order",
+      "button": "Order: {column}",
+      "direction": "Direction",
+      "ascLabel": "Ascending",
+      "descLabel": "Descending",
+      "leadField": "First",
+      "leadHint": "That state goes on top; the rest, in the column's order.",
       "treatment": "Order of treatment",
       "presentation": "Order of presentation",
       "lead": "What goes first in {column}",
-      "leadPrefix": "First:",
       "leadNone": "the column's order",
       "leadStatus": "first: {state}",
       "label": "Sort by",
@@ -4917,6 +4922,13 @@
       "status": "Sorted by {column}, {direction}"
     },
     "filters": {
+      "reset": "Reset",
+      "inUse": "Filters in use",
+      "remove": "Remove the filter “{filter}”",
+      "votes": {
+        "voted": "With a vote",
+        "unvoted": "Without a vote"
+      },
       "search": "Search the sheet",
       "searchGeneral": "No., item, document or speaker",
       "searchGeneralPublic": "No., item or document",

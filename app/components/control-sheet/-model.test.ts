@@ -21,6 +21,7 @@ import {
   rowVoteEntries,
   staleSheetRow,
   type AmendmentSheetRow,
+  itemVoteNeedsLabel,
 } from "./-model";
 
 const item = (over: Partial<AgendaItemDto>): AgendaItemDto =>
@@ -725,5 +726,24 @@ describe("amendmentSheetKind", () => {
     for (const kind of ["partial", "transactional"] as const) {
       expect(amendmentSheetKind({ kind })).toBe("content");
     }
+  });
+});
+
+describe("itemVoteNeedsLabel", () => {
+  const title = "Ratificación de la Mesa de Moderación";
+
+  it("leaves out a single vote that only repeats the item", () => {
+    expect(itemVoteNeedsLabel(`1. ${title}`, title, 1)).toBe(false);
+    expect(itemVoteNeedsLabel(`  ${title.toUpperCase()} `, title, 1)).toBe(
+      false,
+    );
+    expect(itemVoteNeedsLabel(null, title, 1)).toBe(false);
+  });
+
+  it("keeps a question that says more, or one of several votes", () => {
+    expect(itemVoteNeedsLabel("Ratificación de la Vocalía", title, 1)).toBe(
+      true,
+    );
+    expect(itemVoteNeedsLabel(`1. ${title}`, title, 2)).toBe(true);
   });
 });

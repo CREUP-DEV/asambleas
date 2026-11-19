@@ -60,10 +60,11 @@ const unanimous = computed(() => isUnanimousVote(props.vote));
         size="sm"
         :label="t('controlSheet.itemVotes.voided')"
       />
+      <!-- The size of «Resultado»'s badges, so the cell reads as one. -->
       <CommonStatusBadge
         kind="vote"
         :value="vote.result"
-        size="xs"
+        size="sm"
         :label="
           unanimous ? t('controlSheet.result.approved_unanimous') : undefined
         "

@@ -2,18 +2,19 @@ import type { AmendmentKind, ProponentPosition } from "../constants/domain";
 
 /**
  * The order a document's amendments are shown and debated in (user's
- * decision of 2026-11-19). Always text order (where they act in the base
- * text, then presentation order); once the main presenter's answers are
- * public (positionsArePublic), grouped first, each group in text order:
+ * decisions of 2026-11-19). Text order (where they act in the base text,
+ * then presentation order), grouped first, each group in text order:
  * 0. transactionals, and those accepted or answered with "transact";
  * 1. rejected;
  * 2. the rest (no answer, or pending).
- * Before publication the order stays the text's for every viewer, the Mesa
- * included, even though it reads the answers earlier.
+ * On screen it is grouped whether the answers are public or not yet, by the
+ * answer as the reader gets it (null, the rest, when it may not read it):
+ * the order never tells an answer a reader does not read. A public export
+ * groups only once they are public (buildAnnexRows).
  */
 export interface AmendmentOrderOptions {
-  /** The document's answers are public (positionsArePublic). */
-  answersPublic?: boolean;
+  /** Group by the main presenter's answer (see above). */
+  byAnswer?: boolean;
 }
 
 export type AmendmentAnswerRank = 0 | 1 | 2;
@@ -43,19 +44,19 @@ export function amendmentAnswerRank(
 }
 
 /**
- * The rank to sort by before text order: the group's while the answers are
- * public, the same for every amendment otherwise (text order alone).
+ * The rank to sort by before text order: the group's when grouping by
+ * answer, the same for every amendment otherwise (text order alone).
  */
 export function amendmentOrderRank(
   amendment: AmendmentOrderSubject,
   options: AmendmentOrderOptions = {},
 ): AmendmentAnswerRank {
-  return options.answersPublic ? amendmentAnswerRank(amendment) : 0;
+  return options.byAnswer ? amendmentAnswerRank(amendment) : 0;
 }
 
 /**
- * Compares two amendments by their group (only while the answers are
- * public); 0 when they share it, so text order decides.
+ * Compares two amendments by their group (only when grouping by answer);
+ * 0 when they share it, so text order decides.
  */
 export function compareAmendmentAnswers(
   a: AmendmentOrderSubject,

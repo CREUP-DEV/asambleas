@@ -3758,7 +3758,6 @@
       "empty": "No se han presentado enmiendas",
       "emptyHint": "Si el documento se vota, puedes pasar a la votación final.",
       "late": "Fuera de plazo",
-      "listLabel": "Enmiendas en el orden del texto",
       "listLabelByAnswer": "Enmiendas: aceptadas y transaccionales, rechazadas y sin respuesta, cada grupo en el orden del texto",
       "clusterLabel": "Grupo de {count} enmiendas sobre el mismo pasaje",
       "clusterTitle": "{codes} modifican el mismo pasaje",
@@ -4903,10 +4902,16 @@
     },
     "noObservations": "Sin observaciones",
     "sort": {
+      "agenda": "Orden del día",
+      "button": "Orden: {column}",
+      "direction": "Sentido",
+      "ascLabel": "Ascendente",
+      "descLabel": "Descendente",
+      "leadField": "Primero",
+      "leadHint": "Ese estado va arriba; el resto, en el orden de la columna.",
       "treatment": "Orden de tratamiento",
       "presentation": "Orden de presentación",
       "lead": "Qué va primero en {column}",
-      "leadPrefix": "Primero:",
       "leadNone": "el orden de la columna",
       "leadStatus": "primero: {state}",
       "label": "Ordenar por",
@@ -4917,6 +4922,13 @@
       "status": "Ordenado por {column}, {direction}"
     },
     "filters": {
+      "reset": "Restablecer",
+      "inUse": "Filtros en uso",
+      "remove": "Quitar el filtro «{filter}»",
+      "votes": {
+        "voted": "Con votación",
+        "unvoted": "Sin votación"
+      },
       "search": "Buscar en la hoja",
       "searchGeneral": "Nº, punto, documento o interviniente",
       "searchGeneralPublic": "Nº, punto o documento",

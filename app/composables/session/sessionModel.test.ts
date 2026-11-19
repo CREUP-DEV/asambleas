@@ -209,17 +209,22 @@ describe("session model", () => {
     it("keeps text order until the answers are public", () => {
       const text = ["r1", "p1", "n1", "t1", "c1", "r2"];
       expect(ids(sortSessionAmendments(list))).toEqual(text);
-      expect(
-        ids(sortSessionAmendments(list, { answersPublic: false })),
-      ).toEqual(text);
+      expect(ids(sortSessionAmendments(list, { byAnswer: false }))).toEqual(
+        text,
+      );
     });
 
     it("groups accepted, rejected and the rest once public, in text order", () => {
-      expect(ids(sortSessionAmendments(list, { answersPublic: true }))).toEqual(
-        ["t1", "c1", "r1", "r2", "p1", "n1"],
-      );
+      expect(ids(sortSessionAmendments(list, { byAnswer: true }))).toEqual([
+        "t1",
+        "c1",
+        "r1",
+        "r2",
+        "p1",
+        "n1",
+      ]);
       expect(
-        sessionQueueOrder(buildSessionQueue(list, { answersPublic: true })),
+        sessionQueueOrder(buildSessionQueue(list, { byAnswer: true })),
       ).toEqual(["t1", "c1", "r1", "r2", "p1", "n1"]);
     });
 
@@ -231,7 +236,7 @@ describe("session model", () => {
           { ...a2, position: answer("accept") },
           { ...a3, position: answer("reject") },
         ],
-        { answersPublic: true },
+        { byAnswer: true },
       );
       expect(
         queue.entries.map((e) =>

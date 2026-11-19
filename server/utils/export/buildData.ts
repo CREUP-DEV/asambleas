@@ -332,7 +332,7 @@ export async function annotatedBody(
       visibleIds: visible,
       conflicts: result.conflicts,
       // The order the room debated them in (inDebateOrder).
-      answersPublic: positionsArePublic({
+      byAnswer: positionsArePublic({
         positionsPublishedAt: document.positionsPublishedAt ?? null,
         positionsDebateStartedAt: document.positionsDebateStartedAt ?? null,
       }),

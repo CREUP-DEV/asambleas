@@ -904,13 +904,10 @@ describe("proponentReviewItems", () => {
       ...list,
       amendment("no", { positionKey: 2, position: answered("reject") }),
     ];
-    const ids = (answersPublic: boolean) =>
-      proponentReviewItems(
-        withRejected,
-        "incorporate",
-        {},
-        { answersPublic },
-      ).map((item) => item.id);
+    const ids = (byAnswer: boolean) =>
+      proponentReviewItems(withRejected, "incorporate", {}, { byAnswer }).map(
+        (item) => item.id,
+      );
     expect(ids(false)).toEqual(["no", "first", "2", "in", "late"]);
     // A transactional goes with the accepted, whatever its answer.
     expect(ids(true)).toEqual(["first", "2", "in", "no", "late"]);

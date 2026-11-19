@@ -317,6 +317,32 @@ export interface RowVoteEntry {
   decides: boolean;
 }
 
+/** A title without its agenda number («1. », «3.2. ») nor case or spaces. */
+function bareTitle(text: string): string {
+  return text
+    .replace(/^\s*\d+(?:\.\d+)*\.?\s*/, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLocaleLowerCase("es");
+}
+
+/**
+ * Whether a vote on the item needs its question over it in «Votaciones»
+ * (user's decision of 2026-11-19): only when the item has more than one
+ * vote in force, or the question says something its title does not. A
+ * single vote whose question is the item's title (the console offers it,
+ * with or without the number) or none would only repeat the row.
+ */
+export function itemVoteNeedsLabel(
+  question: string | null,
+  title: string,
+  votesInForce: number,
+): boolean {
+  if (votesInForce > 1) return true;
+  if (!question?.trim()) return false;
+  return bareTitle(question) !== bareTitle(title);
+}
+
 /**
  * What the «Votaciones» cell shows: the documents' final votes, or, for an
  * item not voted through its documents, the votes on the item in force,
@@ -411,14 +437,28 @@ export function buildAmendmentRows(
   const answers = new Map(
     positions.map((entry) => [entry.amendmentId, entry.position]),
   );
+  // Sorted by the answer the row shows (the sheet's own, which a sheet
+  // reader gets before it is public), so the order matches what it reads.
+  const presented = list.filter((amendment) => amendment.status !== "draft");
+  const originals = new Map(
+    presented.map((amendment) => [amendment.id, amendment]),
+  );
   const rows: LiveAmendmentRow[] = sortSessionAmendments(
-    list.filter((amendment) => amendment.status !== "draft"),
+    presented.map((amendment) => ({
+      ...amendment,
+      position: newerPosition(
+        answers.get(amendment.id) ?? null,
+        amendment.position,
+      ),
+    })),
     order,
-  ).map((amendment) => ({
-    amendment,
-    state: liveAmendmentState(amendment, liveAmendmentId),
-    current: amendment.id === liveAmendmentId,
-  }));
+  )
+    .map((sorted) => originals.get(sorted.id)!)
+    .map((amendment) => ({
+      amendment,
+      state: liveAmendmentState(amendment, liveAmendmentId),
+      current: amendment.id === liveAmendmentId,
+    }));
   return rows.map((row) => {
     const autoTreated = amendmentTreatedInSession(
       row.amendment,

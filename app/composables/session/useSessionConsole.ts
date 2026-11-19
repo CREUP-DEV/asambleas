@@ -42,7 +42,6 @@ import {
   isSessionInProgress,
   liveStateClearsOnly,
 } from "~~/shared/utils/sessionGate";
-import { positionsArePublic } from "~~/shared/utils/positions";
 import { useApi } from "../api/useApi";
 import { CURRENT_ASSEMBLY_KEY } from "../assembly/useCurrentAssembly";
 import {
@@ -505,17 +504,11 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
   // Queue ---------------------------------------------------------------------
 
   const hideDecided = ref(false);
-  /**
-   * The main presenter's answers are public: the queue is then grouped by
-   * them (accepted, rejected, the rest), for the Mesa too, never before.
-   */
-  const answersPublic = computed(() =>
-    document.value ? positionsArePublic(document.value) : false,
-  );
+  // Grouped by the main presenter's answers as the Mesa reads them
+  // (accepted, rejected, the rest), public or not yet (user's decision of
+  // 2026-11-19).
   const queue = computed(() =>
-    buildSessionQueue(amendments.value, {
-      answersPublic: answersPublic.value,
-    }),
+    buildSessionQueue(amendments.value, { byAnswer: true }),
   );
   const isVisible = (amendment: AmendmentDto) =>
     !hideDecided.value || amendment.status === "submitted";
@@ -2312,8 +2305,6 @@ export function useSessionConsole(assemblyParam: MaybeRefOrGetter<string>) {
     // derived
     hideDecided,
     queue,
-    /** The document's answers are public: the queue goes by answer. */
-    answersPublic,
     queueOrder,
     queueCounts,
     isVisible,

@@ -211,7 +211,7 @@ export function liveAmendmentState(
 /**
  * The amendments the whole room can read, in the console's order (text
  * order, grouped by the main presenter's answer once the document's answers
- * are public: `answersPublic`, sortSessionAmendments), with where each
+ * are public: `byAnswer`, sortSessionAmendments), with where each
  * stands. Only published ones are listed, so a member of the Mesa or the
  * Secretaría (who also receives private ones) sees what attendees see.
  */

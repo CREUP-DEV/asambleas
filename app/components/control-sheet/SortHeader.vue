@@ -8,7 +8,9 @@ import { nextSort, type SheetSort } from "./-filters";
  * «Quitar el orden por Resultado»), since a fixed «Ordenar por» never says
  * which way. Classes given to it go on the `<th>`; a label that wraps
  * follows its alignment (`text-center` on a centred column), the icon
- * after its last word.
+ * after its last word. The icon shows on the sorted column only, and on
+ * any other while the pointer or the keyboard is on it, so eight headers
+ * do not all carry one.
  */
 const props = defineProps<{
   label: string;
@@ -53,7 +55,7 @@ const action = computed(() => {
   <th scope="col" :aria-sort="ariaSort" class="px-3 py-2 font-medium">
     <button
       type="button"
-      class="hover:text-default focus-visible:outline-primary -mx-1 rounded px-1 py-0.5 [text-align:inherit] focus-visible:outline-2"
+      class="group hover:text-default focus-visible:outline-primary -mx-1 rounded px-1 py-0.5 [text-align:inherit] focus-visible:outline-2"
       :class="sorted ? 'text-highlighted' : ''"
       :aria-label="action"
       @click="emit('sort', column)"
@@ -63,7 +65,12 @@ const action = computed(() => {
         >{{ words.tail
         }}<UIcon
           :name="icon"
-          :class="['ms-1 size-3.5 align-middle', sorted ? '' : 'text-dimmed']"
+          :class="[
+            'ms-1 size-3.5 align-middle',
+            sorted
+              ? ''
+              : 'text-dimmed opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100',
+          ]"
           aria-hidden="true"
       /></span>
     </button>

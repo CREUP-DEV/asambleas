@@ -366,7 +366,7 @@ describe("shownGeneralRows", () => {
     const find = (filters: Partial<GeneralSheetFilters>) =>
       [...matchingGeneralIds(rows, general(filters))].sort();
     expect(find({ view: "pending" })).toEqual(["2b"]);
-    expect(find({ view: "observations" })).toEqual(["2b"]);
+    expect(find({ observations: true })).toEqual(["2b"]);
     expect(find({ results: ["pending", "rejected"] })).toEqual(["2a", "2b"]);
   });
 
@@ -647,6 +647,53 @@ describe("shownAmendmentRows", () => {
     ).toEqual(["a2", "a3"]);
   });
 
+  it("filters by type, who presents, the answer and the vote", () => {
+    const find = (filters: Partial<AmendmentSheetFilters>) =>
+      amendmentIds(
+        shownAmendmentRows(
+          amendments,
+          DEFAULT_AMENDMENT_SORT,
+          amendmentFilters(filters),
+        ),
+      );
+    // a2 is ANEM's (m2), the others m1's.
+    expect(find({ members: ["m2"] })).toEqual(["a2"]);
+    // a1 accepts, a2 has no answer, a3 is pending.
+    expect(find({ positions: ["none", "accept"] })).toEqual(["a1", "a2"]);
+    // a1 and a3 have their vote.
+    expect(find({ votes: ["voted"] })).toEqual(["a1", "a3"]);
+    expect(find({ votes: ["unvoted"] })).toEqual(["a2"]);
+    expect(find({ votes: ["voted", "unvoted"] })).toEqual(["a1", "a2", "a3"]);
+    expect(find({ kinds: ["formal"] })).toEqual([]);
+    expect(find({ kinds: ["content"] })).toEqual(["a1", "a2", "a3"]);
+  });
+
+  it("round-trips the new filters of «Enmiendas»", () => {
+    const filters = amendmentFilters({
+      kinds: ["formal"],
+      members: ["m2"],
+      positions: ["none"],
+      votes: ["voted"],
+    });
+    const query = amendmentSheetQuery({
+      sort: DEFAULT_AMENDMENT_SORT,
+      filters,
+    });
+    expect(query).toMatchObject({
+      tipo: "forma",
+      quien: "m2",
+      respuesta: "sin-respuesta",
+      votacion: "votadas",
+    });
+    expect(
+      parseAmendmentSheetQuery(query as Record<string, string>).filters,
+    ).toEqual(filters);
+    // A malformed member id is left out.
+    expect(
+      parseAmendmentSheetQuery({ quien: "m1,<x>,m1" }).filters.members,
+    ).toEqual(["m1"]);
+  });
+
   it("sorts by the order they were presented in, by «Enmienda»", () => {
     // The console's order (the rows' own) is a2, a3, a1; presented 3, 1, 2.
     const presented = [
@@ -725,17 +772,23 @@ describe("the query", () => {
       sort: { key: "result" as const, dir: "desc" as const },
       filters: general({
         query: "becas",
-        view: "observations",
+        view: "pending",
         results: ["rejected", "pending"],
+        members: ["m1", "m2"],
+        votes: ["unvoted"],
+        observations: true,
       }),
     };
     const query = generalSheetQuery(state);
-    expect(query).toEqual({
+    expect(query).toMatchObject({
       orden: "resultado",
       sentido: "desc",
       q: "becas",
-      ver: "con-observaciones",
+      ver: "pendientes",
       resultado: "pendiente,rechazado",
+      quien: "m1,m2",
+      votacion: "sin-votar",
+      observaciones: "con",
       estado: undefined,
     });
     expect(parseGeneralSheetQuery(query as Record<string, string>)).toEqual({
