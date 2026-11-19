@@ -3988,7 +3988,7 @@
       "code": "Mesa",
       "title": "Wording of the passage: {codes}",
       "pending": "These approved amendments change the same text or text next to each other, so the Mesa sets how the passage reads. It starts from an automatic proposal: where they change the same text the last approved prevails, and where they only touch both apply.",
-      "deletionWins": "{by} deletes text that {codes} changed: those changes have no effect on the final text. If that is not what was approved, correct it.",
+      "deletionWins": "{by} deletes text that {codes} changed: that change has no effect on the final text. If that is not what was approved, correct it. | {by} deletes text that {codes} changed: those changes have no effect on the final text. If that is not what was approved, correct it.",
       "worded": "The Mesa already set the wording of this passage. You can change it or go back to the automatic proposal.",
       "changed": "This passage has changed: another amendment that touches it was reopened or approved. Open it again from the consolidated text.",
       "now": "How it reads now",
@@ -4013,9 +4013,9 @@
       }
     },
     "collision": {
-      "meets": "It acts on text {codes} (approved) already changed. It is debated over the text as it stands; if approved, the Mesa sets how the passage reads.",
-      "deletes": "It deletes text that {codes}, already approved, changed: if approved, those changes have no effect.",
-      "deleted": "It changes text {codes} (approved) already deleted: if approved, this change has no effect unless the Mesa corrects it.",
+      "meets": "It acts on text {codes} (approved) already changed. It is debated over the text as it stands; if approved, the Mesa sets how the passage reads. | It acts on text {codes} (approved) already changed. It is debated over the text as it stands; if approved, the Mesa sets how the passage reads.",
+      "deletes": "It deletes text that {codes}, already approved, changed: if approved, that change has no effect. | It deletes text that {codes}, already approved, changed: if approved, those changes have no effect.",
+      "deleted": "It changes text {codes} (approved) already deleted: if approved, this change has no effect unless the Mesa corrects it. | It changes text {codes} (approved) already deleted: if approved, this change has no effect unless the Mesa corrects it.",
       "howItReads": "How it reads",
       "now": "Now",
       "after": "If approved"

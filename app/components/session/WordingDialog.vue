@@ -100,14 +100,19 @@ const description = computed(() => {
   if (!passage.value) return t("session.wording.changed");
   if (passage.value.status === "worded") return t("session.wording.worded");
   if (passage.value.status === "automatic") {
-    return t("session.wording.deletionWins", {
-      by: [...new Set(superseded.value.map((item) => item.by))]
-        .map(session.label)
-        .join(", "),
-      codes: [...new Set(superseded.value.map((item) => item.amendmentId))]
-        .map(session.label)
-        .join(", "),
-    });
+    const changed = [
+      ...new Set(superseded.value.map((item) => item.amendmentId)),
+    ];
+    return t(
+      "session.wording.deletionWins",
+      {
+        by: [...new Set(superseded.value.map((item) => item.by))]
+          .map(session.label)
+          .join(", "),
+        codes: changed.map(session.label).join(", "),
+      },
+      changed.length,
+    );
   }
   return t("session.wording.pending");
 });
@@ -129,9 +134,12 @@ async function backToAutomatic(): Promise<void> {
     v-model:open="open"
     :title="t('session.wording.title', { codes })"
     :description="description"
-    :ui="{ content: 'sm:max-w-5xl' }"
+    :ui="{ content: 'sm:max-w-5xl', description: 'sr-only' }"
   >
     <template #body>
+      <!-- In the body, not the header: long, it would cover the passage on
+           a narrow screen. -->
+      <p class="text-default mb-4 text-sm">{{ description }}</p>
       <div v-if="passage" class="space-y-4">
         <section class="space-y-2">
           <h3 class="text-highlighted text-sm font-medium">
@@ -139,7 +147,7 @@ async function backToAutomatic(): Promise<void> {
           </h3>
           <ContentView
             :annotated="now"
-            mode="provenance"
+            mode="diff"
             :label="session.label"
             :headings="false"
           />

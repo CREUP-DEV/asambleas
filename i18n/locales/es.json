@@ -3988,7 +3988,7 @@
       "code": "Mesa",
       "title": "Redacción del pasaje: {codes}",
       "pending": "Estas enmiendas aprobadas cambian el mismo texto o texto contiguo, así que la Mesa fija cómo queda el pasaje. Se parte de una propuesta automática: donde pisan el mismo texto prevalece la última aprobada, y donde solo se tocan se aplican las dos.",
-      "deletionWins": "{by} suprime texto que cambiaban {codes}: esos cambios quedan sin efecto en el texto final. Si no es lo que se aprobó, corrígelo.",
+      "deletionWins": "{by} suprime texto que cambiaba {codes}: ese cambio queda sin efecto en el texto final. Si no es lo que se aprobó, corrígelo. | {by} suprime texto que cambiaban {codes}: esos cambios quedan sin efecto en el texto final. Si no es lo que se aprobó, corrígelo.",
       "worded": "La Mesa ya fijó la redacción de este pasaje. Puedes cambiarla o volver a la propuesta automática.",
       "changed": "Este pasaje ha cambiado: se ha reabierto o aprobado otra enmienda que lo toca. Ábrelo de nuevo desde el texto consolidado.",
       "now": "Cómo se lee ahora",
@@ -4013,9 +4013,9 @@
       }
     },
     "collision": {
-      "meets": "Actúa sobre texto que ya cambió {codes} (aprobada). Se debate sobre el texto como ha quedado; si se aprueba, la Mesa fija cómo queda el pasaje.",
-      "deletes": "Suprime texto que cambiaron {codes}, ya aprobadas: si se aprueba, esos cambios quedan sin efecto.",
-      "deleted": "Cambia texto que ya suprimió {codes} (aprobada): si se aprueba, este cambio queda sin efecto salvo que la Mesa lo corrija.",
+      "meets": "Actúa sobre texto que ya cambió {codes} (aprobada). Se debate sobre el texto como ha quedado; si se aprueba, la Mesa fija cómo queda el pasaje. | Actúa sobre texto que ya cambiaron {codes} (aprobadas). Se debate sobre el texto como ha quedado; si se aprueba, la Mesa fija cómo queda el pasaje.",
+      "deletes": "Suprime texto que cambió {codes}, ya aprobada: si se aprueba, ese cambio queda sin efecto. | Suprime texto que cambiaron {codes}, ya aprobadas: si se aprueba, esos cambios quedan sin efecto.",
+      "deleted": "Cambia texto que ya suprimió {codes} (aprobada): si se aprueba, este cambio queda sin efecto salvo que la Mesa lo corrija. | Cambia texto que ya suprimieron {codes} (aprobadas): si se aprueba, este cambio queda sin efecto salvo que la Mesa lo corrija.",
       "howItReads": "Cómo queda",
       "now": "Ahora",
       "after": "Si se aprueba"

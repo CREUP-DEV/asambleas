@@ -23,21 +23,22 @@ const session = useSessionConsoleContext();
 const { t } = useI18n();
 
 const impact = computed(() => session.impactOf(props.amendment));
-const codes = (ids: readonly string[]) =>
-  [...new Set(ids)].map(session.label).join(", ");
+/** The sentence with its codes, singular or plural as they are. */
+function sentence(key: string, ids: readonly string[]): string {
+  const unique = [...new Set(ids)];
+  return t(key, { codes: unique.map(session.label).join(", ") }, unique.length);
+}
 
 const text = computed(() => {
   const value = impact.value;
   if (!value) return "";
   if (value.supersedes.length > 0) {
-    return t("session.collision.deletes", { codes: codes(value.supersedes) });
+    return sentence("session.collision.deletes", value.supersedes);
   }
   if (value.supersededBy.length > 0) {
-    return t("session.collision.deleted", {
-      codes: codes(value.supersededBy),
-    });
+    return sentence("session.collision.deleted", value.supersededBy);
   }
-  return t("session.collision.meets", { codes: codes(value.others) });
+  return sentence("session.collision.meets", value.others);
 });
 
 const shown = ref(false);
@@ -71,7 +72,7 @@ const shown = ref(false);
           </h4>
           <ContentView
             :annotated="impact.now"
-            mode="provenance"
+            mode="diff"
             :label="session.label"
             :headings="false"
           />
@@ -82,7 +83,7 @@ const shown = ref(false);
           </h4>
           <ContentView
             :annotated="impact.after"
-            mode="provenance"
+            mode="diff"
             :label="session.label"
             :headings="false"
           />
